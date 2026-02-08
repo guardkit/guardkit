@@ -10,7 +10,10 @@ from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Union
+
+if TYPE_CHECKING:
+    from guardkit.orchestrator.autobuild import DesignContext
 
 from guardkit.orchestrator.exceptions import (
     AgentInvocationError,
@@ -901,6 +904,7 @@ class AgentInvoker:
         feedback: Optional[str],
         acceptance_criteria: Optional[List[Dict[str, str]]] = None,
         context: str = "",
+        design_context: Optional["DesignContext"] = None,
     ) -> str:
         """Build prompt for Player agent invocation with acceptance criteria.
 
@@ -912,6 +916,7 @@ class AgentInvoker:
             acceptance_criteria: Optional list of acceptance criteria with id and text
             context: Job-specific context from Graphiti (role constraints, quality gates,
                 turn states). Included before requirements for prompt context.
+            design_context: Optional design context for UI implementation tasks
 
         Returns:
             Formatted prompt string for Player agent
@@ -933,6 +938,30 @@ Please address all feedback points in this turn.
 ## Job-Specific Context
 
 {context}
+"""
+
+        # Build design context section if provided
+        design_section = ""
+        if design_context:
+            design_section = f"""
+## Design Context
+
+**Source**: {design_context.source}
+
+### Elements in Design
+{self._format_design_elements(design_context.elements)}
+
+### Design Tokens
+{self._format_design_tokens(design_context.tokens)}
+
+### Design Boundaries (Prohibition Checklist)
+{self._format_design_constraints(design_context.constraints)}
+
+### Instructions
+- Generate components matching the design EXACTLY
+- Apply design tokens with no approximation
+- DO NOT add anything not shown in the design
+- Delegate to the appropriate UI specialist
 """
 
         # Build acceptance criteria section if provided
@@ -967,7 +996,7 @@ Please address all feedback points in this turn.
 
 Task ID: {task_id}
 Turn: {turn}
-{context_section}
+{context_section}{design_section}
 ## Requirements
 
 {requirements}
@@ -1013,6 +1042,62 @@ Follow the report format specified in your agent definition.
 """
         return prompt
 
+    def _format_design_elements(self, elements: List[Dict[str, Any]]) -> str:
+        """Format design elements for prompt.
+
+        Args:
+            elements: List of design element dictionaries
+
+        Returns:
+            Formatted markdown string of design elements
+        """
+        if not elements:
+            return "No elements specified"
+        lines = []
+        for elem in elements:
+            name = elem.get("name", "Unknown")
+            elem_type = elem.get("type", "component")
+            props = elem.get("props", [])
+            variants = elem.get("variants", [])
+            line = f"- **{name}** ({elem_type})"
+            if props:
+                line += f"\n  Props: {', '.join(props)}"
+            if variants:
+                line += f"\n  Variants: {', '.join(variants)}"
+            lines.append(line)
+        return "\n".join(lines)
+
+    def _format_design_tokens(self, tokens: Dict[str, Any]) -> str:
+        """Format design tokens for prompt.
+
+        Args:
+            tokens: Dictionary of design tokens
+
+        Returns:
+            Formatted JSON string of design tokens
+        """
+        if not tokens:
+            return "No tokens specified"
+        return json.dumps(tokens, indent=2)
+
+    def _format_design_constraints(self, constraints: Dict[str, Any]) -> str:
+        """Format design constraints/prohibition checklist.
+
+        Args:
+            constraints: Dictionary of design constraints
+
+        Returns:
+            Formatted markdown string of constraints
+        """
+        if not constraints:
+            return "No specific constraints"
+        lines = ["The following constraints MUST be followed:"]
+        for key, value in constraints.items():
+            if value:
+                formatted_key = key.replace("_", " ").title()
+                lines.append(f"- ❌ {formatted_key}")
+        return "\n".join(lines)
+
     def _build_coach_prompt(
         self,
         task_id: str,
@@ -1021,6 +1106,7 @@ Follow the report format specified in your agent definition.
         player_report: Dict[str, Any],
         honesty_verification: Optional[HonestyVerification] = None,
         acceptance_criteria: Optional[List[Dict[str, str]]] = None,
+        design_context: Optional["DesignContext"] = None,
     ) -> str:
         """Build prompt for Coach agent invocation with promise verification.
 
@@ -1031,6 +1117,7 @@ Follow the report format specified in your agent definition.
             player_report: Player's report from current turn
             honesty_verification: Optional verification results for Player claims
             acceptance_criteria: Optional list of acceptance criteria with id and text
+            design_context: Optional design context for visual verification
 
         Returns:
             Formatted prompt string for Coach agent
@@ -1071,6 +1158,27 @@ Follow the report format specified in your agent definition.
 {",".join(example_verifications)}
   ],'''
 
+        # Build visual verification section if design context provided
+        visual_verification_section = ""
+        if design_context:
+            visual_verification_section = f"""
+## Visual Verification (Design Mode)
+
+In addition to standard code review:
+1. Render the generated component in a browser
+2. Capture a screenshot
+3. Compare against design reference using SSIM
+4. Check prohibition checklist compliance
+5. Report: visual fidelity score + any constraint violations
+
+**Visual Reference**: {design_context.visual_reference or "Not available"}
+
+Quality Gates:
+- Visual fidelity: >= 95% SSIM match
+- Constraint violations: Zero tolerance
+- Design tokens: 100% applied (exact match)
+"""
+
         prompt = f"""You are the Coach agent. Validate the Player's implementation.
 
 Task ID: {task_id}
@@ -1083,7 +1191,7 @@ Turn: {turn}
 ## Player's Report
 
 {json.dumps(player_report, indent=2)}
-{honesty_section}
+{honesty_section}{visual_verification_section}
 ## Your Responsibilities
 
 1. Independently verify the Player's claims

@@ -1,26 +1,33 @@
 ---
-id: TASK-DM-007
-title: "Integrate design context into Player-Coach prompts"
-status: backlog
-created: 2026-02-07T10:00:00Z
-updated: 2026-02-07T10:00:00Z
-priority: high
-task_type: feature
-parent_review: TASK-REV-D3E0
-feature_id: FEAT-D4CE
-wave: 4
-implementation_mode: task-work
 complexity: 6
+created: 2026-02-07 10:00:00+00:00
 dependencies:
-  - TASK-DM-003
-  - TASK-DM-004
-  - TASK-DM-005
-  - TASK-DM-006
-tags: [design-mode, player, coach, prompt-engineering, integration]
+- TASK-DM-003
+- TASK-DM-004
+- TASK-DM-005
+- TASK-DM-006
+feature_id: FEAT-D4CE
+id: TASK-DM-007
+implementation_mode: task-work
+parent_review: TASK-REV-D3E0
+priority: high
+status: in_review
+tags:
+- design-mode
+- player
+- coach
+- prompt-engineering
+- integration
+task_type: feature
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  coverage: "100%"
+  last_run: "2026-02-08T12:00:00Z"
+  status: passed
+  tests_passed: 13
+  tests_total: 13
+title: Integrate design context into Player-Coach prompts
+updated: 2026-02-07 10:00:00+00:00
+wave: 4
 ---
 
 # Integrate Design Context into Player-Coach Prompts

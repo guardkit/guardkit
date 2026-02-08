@@ -295,6 +295,8 @@ class TurnRecord:
     decision: Literal["approve", "feedback", "error"]
     feedback: Optional[str]
     timestamp: str
+    visual_verification: Optional[Dict[str, Any]] = None
+    design_compliance: Optional[Dict[str, Any]] = None
 
 
 @dataclass
