@@ -1,9 +1,9 @@
 ---
 id: TASK-DM-008
-title: "Add design change detection and state-aware handling"
-status: backlog
-created: 2026-02-07T10:00:00Z
-updated: 2026-02-07T10:00:00Z
+title: Add design change detection and state-aware handling
+status: blocked
+created: 2026-02-07 10:00:00+00:00
+updated: 2026-02-07 10:00:00+00:00
 priority: high
 task_type: feature
 parent_review: TASK-REV-D3E0
@@ -12,12 +12,38 @@ wave: 4
 implementation_mode: task-work
 complexity: 5
 dependencies:
-  - TASK-DM-003
-tags: [design-mode, change-detection, cache, state-management]
+- TASK-DM-003
+tags:
+- design-mode
+- change-detection
+- cache
+- state-management
 test_results:
   status: pending
   coverage: null
   last_run: null
+autobuild_state:
+  current_turn: 2
+  max_turns: 15
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-D4CE
+  base_branch: main
+  started_at: '2026-02-08T08:05:44.437388'
+  last_updated: '2026-02-08T08:22:13.039540'
+  turns:
+  - turn: 1
+    decision: feedback
+    feedback: '- Tests did not pass during task-work execution'
+    timestamp: '2026-02-08T08:05:44.437388'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
+  - turn: 2
+    decision: feedback
+    feedback: '- Tests did not pass during task-work execution'
+    timestamp: '2026-02-08T08:17:26.870982'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Add Design Change Detection and State-Aware Handling

@@ -724,8 +724,23 @@ class CoachValidator:
             tests_passed = True
             logger.debug("Tests not required per task type profile, skipping")
         elif "all_passed" in quality_gates:
-            tests_passed = quality_gates["all_passed"]
-            logger.debug(f"Extracted tests_passed={tests_passed} from quality_gates.all_passed")
+            all_passed_value = quality_gates["all_passed"]
+            if all_passed_value is None:
+                # Player session didn't reach quality gate evaluation (e.g. exhausted SDK turns)
+                # Fall through to tests_failed check for partial data
+                if "tests_failed" in quality_gates:
+                    tests_failed_count = quality_gates["tests_failed"]
+                    tests_passed = tests_failed_count == 0
+                    logger.debug(
+                        f"all_passed is null, falling back to tests_failed={tests_failed_count}, "
+                        f"tests_passed={tests_passed}"
+                    )
+                else:
+                    tests_passed = False
+                    logger.debug("all_passed is null and no tests_failed data, defaulting to False")
+            else:
+                tests_passed = all_passed_value
+                logger.debug(f"Extracted tests_passed={tests_passed} from quality_gates.all_passed")
         elif "tests_failed" in quality_gates:
             # If we have test counts, check if any failed
             tests_failed = quality_gates["tests_failed"]
@@ -1147,15 +1162,35 @@ class CoachValidator:
 
         # Only report failures for required gates
         if gates.tests_required and not gates.tests_passed:
-            issues.append({
-                "severity": "must_fix",
-                "category": "test_failure",
-                "description": "Tests did not pass during task-work execution",
-                "details": {
-                    "failed_count": quality_gates.get("tests_failed", 0),
-                    "total_count": quality_gates.get("tests_passed", 0) + quality_gates.get("tests_failed", 0),
-                },
-            })
+            # Detect incomplete session (all_passed is null, no test counts)
+            all_passed_value = quality_gates.get("all_passed")
+            tests_passed_count = quality_gates.get("tests_passed", 0) or 0
+            tests_failed_count = quality_gates.get("tests_failed", 0) or 0
+            if all_passed_value is None and tests_passed_count == 0 and tests_failed_count == 0:
+                issues.append({
+                    "severity": "must_fix",
+                    "category": "test_failure",
+                    "description": (
+                        "Quality gate evaluation was not completed — the Player session "
+                        "may have exhausted SDK turns before reaching Phase 4.5. "
+                        "Focus on completing implementation within fewer SDK turns."
+                    ),
+                    "details": {
+                        "failed_count": 0,
+                        "total_count": 0,
+                        "incomplete_session": True,
+                    },
+                })
+            else:
+                issues.append({
+                    "severity": "must_fix",
+                    "category": "test_failure",
+                    "description": "Tests did not pass during task-work execution",
+                    "details": {
+                        "failed_count": tests_failed_count,
+                        "total_count": tests_passed_count + tests_failed_count,
+                    },
+                })
 
         if gates.coverage_required and not gates.coverage_met:
             issues.append({

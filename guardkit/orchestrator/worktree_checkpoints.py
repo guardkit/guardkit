@@ -472,7 +472,7 @@ class WorktreeCheckpointManager:
             logger.error(f"Rollback failed: {e}")
             raise
 
-    def should_rollback(self, consecutive_failures: int = 2) -> bool:
+    def should_rollback(self, consecutive_failures: int = 3) -> bool:
         """Detect if rollback is needed based on test failure patterns.
 
         This method analyzes recent checkpoint history to detect context pollution.
@@ -481,7 +481,7 @@ class WorktreeCheckpointManager:
 
         Args:
             consecutive_failures: Number of consecutive failures to trigger rollback
-                                 (default: 2 per acceptance criteria)
+                                 (default: 3, allows recovery from incomplete sessions)
 
         Returns:
             True if rollback should be triggered, False otherwise

@@ -2841,7 +2841,10 @@ class AutoBuildOrchestrator:
         # Primary path: quality_gates.tests_passed (Coach stores results here)
         quality_gates = validation.get("quality_gates") or {}
         if "tests_passed" in quality_gates:
-            return quality_gates.get("tests_passed", False)
+            value = quality_gates.get("tests_passed")
+            if value is None:
+                return False
+            return bool(value)
         # Fallback: top-level tests_passed (backward compatibility)
         return validation.get("tests_passed", False)
 

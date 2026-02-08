@@ -1,9 +1,9 @@
 ---
 id: TASK-DM-004
-title: "Generate prohibition checklist from design data"
-status: backlog
-created: 2026-02-07T10:00:00Z
-updated: 2026-02-07T10:00:00Z
+title: Generate prohibition checklist from design data
+status: in_review
+created: 2026-02-07 10:00:00+00:00
+updated: 2026-02-07 10:00:00+00:00
 priority: high
 task_type: feature
 parent_review: TASK-REV-D3E0
@@ -12,12 +12,31 @@ wave: 2
 implementation_mode: task-work
 complexity: 5
 dependencies:
-  - TASK-DM-002
-tags: [design-mode, prohibition-checklist, constraints, scope-creep]
+- TASK-DM-002
+tags:
+- design-mode
+- prohibition-checklist
+- constraints
+- scope-creep
 test_results:
   status: pending
   coverage: null
   last_run: null
+autobuild_state:
+  current_turn: 1
+  max_turns: 15
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-D4CE
+  base_branch: main
+  started_at: '2026-02-08T07:51:44.524698'
+  last_updated: '2026-02-08T08:05:06.641582'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-02-08T07:51:44.524698'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Generate Prohibition Checklist from Design Data
