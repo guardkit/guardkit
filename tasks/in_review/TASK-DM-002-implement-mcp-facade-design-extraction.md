@@ -22,7 +22,7 @@ id: TASK-DM-002
 implementation_mode: task-work
 parent_review: TASK-REV-D3E0
 priority: high
-status: design_approved
+status: in_review
 tags:
 - design-mode
 - mcp
@@ -31,9 +31,11 @@ tags:
 - facade
 task_type: feature
 test_results:
-  coverage: null
-  last_run: null
-  status: pending
+  coverage: 92
+  last_run: '2026-02-08T11:30:00Z'
+  status: passed
+  tests_passed: 68
+  tests_total: 68
 title: Implement MCP facade for design extraction
 updated: 2026-02-07 10:00:00+00:00
 wave: 1
