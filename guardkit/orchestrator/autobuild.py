@@ -43,8 +43,9 @@ Example:
 import asyncio
 import hashlib
 import logging
+import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
@@ -121,6 +122,14 @@ from guardkit.knowledge.graphiti_client import get_graphiti
 # Import AutoBuild context loader for job-specific context (TASK-GR6-006)
 from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
 
+# Import MCP design extractor for Phase 0 (TASK-DM-003)
+from guardkit.orchestrator.mcp_design_extractor import (
+    DesignData,
+    DesignExtractor,
+    DesignExtractionError,
+    MCPUnavailableError,
+)
+
 # Setup logging
 logger = logging.getLogger(__name__)
 
@@ -173,9 +182,76 @@ class PreLoopPhaseError(OrchestrationError):
     pass
 
 
+class DesignExtractionPhaseError(OrchestrationError):
+    """Raised when Phase 0 design extraction fails.
+
+    This error indicates that design extraction could not be completed,
+    either due to MCP unavailability or extraction failure.
+
+    Attributes
+    ----------
+    source : str
+        Design source ('figma' or 'zeplin')
+    reason : str
+        Human-readable reason for failure
+    """
+
+    def __init__(self, message: str, source: Optional[str] = None, reason: Optional[str] = None):
+        self.source = source
+        self.reason = reason
+        super().__init__(message)
+
+
 # ============================================================================
 # Data Models
 # ============================================================================
+
+
+@dataclass
+class DesignContext:
+    """
+    Design context extracted from Figma or Zeplin for agent consumption.
+
+    This dataclass captures design information extracted via MCP during Phase 0,
+    providing structured context for Player and Coach agents.
+
+    Attributes
+    ----------
+    elements : List[Dict[str, Any]]
+        Component structure from design (what's in the design)
+    tokens : Dict[str, Any]
+        Design tokens: colors, spacing, typography
+    constraints : Dict[str, bool]
+        Prohibition checklist (12 categories for design compliance)
+    visual_reference : Optional[str]
+        Path or URL to reference screenshot
+    summary : str
+        ~3K token summary for agent context (not raw MCP data)
+    source : str
+        Design source: "figma" or "zeplin"
+    metadata : Dict[str, Any]
+        Additional metadata: file_key, node_id, extraction timestamp, hash
+
+    Examples
+    --------
+    >>> context = DesignContext(
+    ...     elements=[{"name": "Button", "type": "component"}],
+    ...     tokens={"colors": {"primary": "#3B82F6"}},
+    ...     constraints={"no_shadcn_icons": True},
+    ...     visual_reference="https://figma.com/api/v1/images/...",
+    ...     summary="Button component with primary/secondary variants...",
+    ...     source="figma",
+    ...     metadata={"file_key": "abc123", "node_id": "2:2"},
+    ... )
+    """
+
+    elements: List[Dict[str, Any]]
+    tokens: Dict[str, Any]
+    constraints: Dict[str, bool]
+    visual_reference: Optional[str]
+    summary: str
+    source: str
+    metadata: Dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -219,6 +295,8 @@ class TurnRecord:
     decision: Literal["approve", "feedback", "error"]
     feedback: Optional[str]
     timestamp: str
+    visual_verification: Optional[Dict[str, Any]] = None
+    design_compliance: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -261,13 +339,14 @@ class OrchestrationResult:
     task_id: str
     success: bool
     total_turns: int
-    final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "pre_loop_blocked", "rate_limited"]
+    final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "pre_loop_blocked", "rate_limited", "design_extraction_failed"]
     turn_history: List[TurnRecord]
     worktree: Worktree
     error: Optional[str] = None
     pre_loop_result: Optional[Dict[str, Any]] = None  # Results from pre-loop quality gates
     ablation_mode: bool = False  # Track if result was from ablation mode
     recovery_count: int = 0  # Number of state recovery attempts
+    design_context: Optional["DesignContext"] = None  # Phase 0 design extraction result
 
 
 # ============================================================================
@@ -888,6 +967,381 @@ class AutoBuildOrchestrator:
             "clarifications": result.clarifications,
         }
 
+    def _extract_design_phase(
+        self,
+        task_id: str,
+        task_data: Dict[str, Any],
+        task_file_path: Optional[Path] = None,
+    ) -> Optional[DesignContext]:
+        """
+        Phase 0: Extract design data from Figma or Zeplin via MCP.
+
+        This phase runs before pre-loop quality gates when a task has a
+        `design_url` in its frontmatter. It extracts design information
+        and makes it available as context for the Player-Coach loop.
+
+        Phase 0 Execution Steps
+        -----------------------
+        0.1: Verify required MCP tools available (fail fast)
+        0.2: Extract design data via DesignExtractor
+        0.3: Store extraction metadata (timestamp, hash) in task frontmatter
+        0.4: Return DesignContext for downstream use
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier
+        task_data : Dict[str, Any]
+            Task data including frontmatter
+        task_file_path : Optional[Path]
+            Path to task file for metadata storage
+
+        Returns
+        -------
+        Optional[DesignContext]
+            DesignContext if design_url present and extraction succeeded,
+            None if no design_url (backward compatible)
+
+        Raises
+        ------
+        DesignExtractionPhaseError
+            If MCP unavailable or extraction fails
+
+        Notes
+        -----
+        This phase is completely skipped for tasks without design_url,
+        ensuring backward compatibility with non-design tasks.
+        """
+        frontmatter = task_data.get("frontmatter", {})
+        design_url = frontmatter.get("design_url")
+
+        # Skip Phase 0 entirely if no design_url present (backward compatible)
+        if not design_url:
+            logger.debug(f"Phase 0 skipped for {task_id}: no design_url in frontmatter")
+            return None
+
+        logger.info(f"Phase 0 (Design Extraction): Starting for {task_id}")
+        logger.debug(f"Design URL: {design_url}")
+
+        # Phase 0.1: Detect design source and verify MCP availability
+        source = self._detect_design_source(design_url)
+        if source is None:
+            raise DesignExtractionPhaseError(
+                f"Unrecognized design URL format: {design_url}. "
+                "Expected Figma (figma.com) or Zeplin (zeplin.io) URL.",
+                source="unknown",
+                reason="unrecognized_url_format",
+            )
+
+        # Initialize DesignExtractor (lazy initialization)
+        if not hasattr(self, "_design_extractor") or self._design_extractor is None:
+            self._design_extractor = DesignExtractor()
+
+        # Verify MCP tools are available (fail fast)
+        if not self._design_extractor.verify_mcp_availability(source):
+            raise DesignExtractionPhaseError(
+                f"{source.title()} MCP tools not available. "
+                f"Enable in claude_desktop_config.json. "
+                f"Required tools: {self._design_extractor.FIGMA_MCP_TOOLS if source == 'figma' else self._design_extractor.ZEPLIN_MCP_TOOLS}",
+                source=source,
+                reason="mcp_unavailable",
+            )
+
+        logger.info(f"Phase 0.1: MCP tools verified for {source}")
+
+        # Phase 0.2: Extract design data
+        try:
+            design_data = self._extract_design_data(source, design_url)
+        except Exception as e:
+            raise DesignExtractionPhaseError(
+                f"Design extraction failed for {design_url}: {e}",
+                source=source,
+                reason="extraction_failed",
+            ) from e
+
+        logger.info(f"Phase 0.2: Design data extracted from {source}")
+
+        # Generate summary for agent context (~3K tokens)
+        summary = self._design_extractor.summarize_design_data(design_data)
+
+        # Build DesignContext
+        design_context = DesignContext(
+            elements=design_data.elements,
+            tokens=design_data.tokens,
+            constraints=self._build_design_constraints(design_data),
+            visual_reference=design_data.visual_reference,
+            summary=summary,
+            source=source,
+            metadata={
+                **design_data.metadata,
+                "design_url": design_url,
+            },
+        )
+
+        # Phase 0.3: Store extraction metadata in task frontmatter
+        if task_file_path and task_file_path.exists():
+            self._store_extraction_metadata(
+                task_file_path, design_context, design_data
+            )
+            logger.info(f"Phase 0.3: Extraction metadata stored in {task_file_path}")
+
+        logger.info(f"Phase 0.4: DesignContext created for {task_id}")
+
+        return design_context
+
+    def _detect_design_source(self, design_url: str) -> Optional[str]:
+        """
+        Detect design source (Figma or Zeplin) from URL.
+
+        Parameters
+        ----------
+        design_url : str
+            Design URL to analyze
+
+        Returns
+        -------
+        Optional[str]
+            'figma' or 'zeplin', or None if unrecognized
+        """
+        if "figma.com" in design_url or "figma.design" in design_url:
+            return "figma"
+        elif "zeplin.io" in design_url or "app.zeplin.io" in design_url:
+            return "zeplin"
+        return None
+
+    def _extract_design_data(self, source: str, design_url: str) -> DesignData:
+        """
+        Extract design data from URL via appropriate MCP.
+
+        Parameters
+        ----------
+        source : str
+            Design source ('figma' or 'zeplin')
+        design_url : str
+            Full design URL
+
+        Returns
+        -------
+        DesignData
+            Extracted design data
+
+        Raises
+        ------
+        DesignExtractionPhaseError
+            If URL parsing or extraction fails
+        """
+        if source == "figma":
+            file_key, node_id = self._parse_figma_url(design_url)
+            return asyncio.run(self._design_extractor.extract_figma(file_key, node_id))
+        elif source == "zeplin":
+            project_id, screen_id = self._parse_zeplin_url(design_url)
+            return asyncio.run(self._design_extractor.extract_zeplin(project_id, screen_id))
+        else:
+            raise DesignExtractionPhaseError(
+                f"Unsupported design source: {source}",
+                source=source,
+                reason="unsupported_source",
+            )
+
+    def _parse_figma_url(self, url: str) -> Tuple[str, str]:
+        """
+        Parse Figma URL to extract file_key and node_id.
+
+        Supports formats:
+        - https://www.figma.com/file/{file_key}?node-id={node_id}
+        - https://www.figma.com/design/{file_key}?node-id={node_id}
+        - https://figma.com/file/{file_key}/{name}?node-id={node_id}
+
+        Parameters
+        ----------
+        url : str
+            Figma URL
+
+        Returns
+        -------
+        Tuple[str, str]
+            (file_key, node_id) in colon format
+
+        Raises
+        ------
+        DesignExtractionPhaseError
+            If URL cannot be parsed
+        """
+        # Extract file key from path
+        file_key_match = re.search(r"/(?:file|design)/([a-zA-Z0-9]+)", url)
+        if not file_key_match:
+            raise DesignExtractionPhaseError(
+                f"Could not extract file_key from Figma URL: {url}",
+                source="figma",
+                reason="invalid_url",
+            )
+        file_key = file_key_match.group(1)
+
+        # Extract node-id from query params
+        node_id_match = re.search(r"node-id=([0-9:-]+)", url)
+        if not node_id_match:
+            raise DesignExtractionPhaseError(
+                f"Could not extract node-id from Figma URL: {url}. "
+                "Include ?node-id=X:Y in the URL.",
+                source="figma",
+                reason="missing_node_id",
+            )
+        node_id = node_id_match.group(1)
+
+        # Convert dash format to colon format (URL uses dash, MCP uses colon)
+        node_id = node_id.replace("-", ":")
+
+        return file_key, node_id
+
+    def _parse_zeplin_url(self, url: str) -> Tuple[str, str]:
+        """
+        Parse Zeplin URL to extract project_id and screen_id.
+
+        Supports formats:
+        - https://app.zeplin.io/project/{project_id}/screen/{screen_id}
+        - https://zeplin.io/project/{project_id}/screen/{screen_id}
+
+        Parameters
+        ----------
+        url : str
+            Zeplin URL
+
+        Returns
+        -------
+        Tuple[str, str]
+            (project_id, screen_id)
+
+        Raises
+        ------
+        DesignExtractionPhaseError
+            If URL cannot be parsed
+        """
+        # Extract project_id
+        project_match = re.search(r"/project/([a-zA-Z0-9-]+)", url)
+        if not project_match:
+            raise DesignExtractionPhaseError(
+                f"Could not extract project_id from Zeplin URL: {url}",
+                source="zeplin",
+                reason="invalid_url",
+            )
+        project_id = project_match.group(1)
+
+        # Extract screen_id
+        screen_match = re.search(r"/screen/([a-zA-Z0-9-]+)", url)
+        if not screen_match:
+            raise DesignExtractionPhaseError(
+                f"Could not extract screen_id from Zeplin URL: {url}. "
+                "Include /screen/{screen_id} in the URL.",
+                source="zeplin",
+                reason="missing_screen_id",
+            )
+        screen_id = screen_match.group(1)
+
+        return project_id, screen_id
+
+    def _build_design_constraints(self, design_data: DesignData) -> Dict[str, bool]:
+        """
+        Build prohibition checklist from design data.
+
+        This checklist helps agents avoid common design compliance issues.
+
+        Parameters
+        ----------
+        design_data : DesignData
+            Extracted design data
+
+        Returns
+        -------
+        Dict[str, bool]
+            Constraint checklist (True = constraint applies)
+        """
+        # Default constraints (all False = no restrictions)
+        constraints = {
+            "no_shadcn_icons": False,
+            "no_radix_icons": False,
+            "no_lucide_icons": False,
+            "no_heroicons": False,
+            "custom_colors_only": False,
+            "custom_spacing_only": False,
+            "no_tailwind_defaults": False,
+            "exact_typography": False,
+            "no_animations": False,
+            "no_transitions": False,
+            "accessibility_required": False,
+            "dark_mode_required": False,
+        }
+
+        # Infer constraints from design tokens
+        if design_data.tokens.get("colors"):
+            constraints["custom_colors_only"] = True
+
+        if design_data.tokens.get("spacing"):
+            constraints["custom_spacing_only"] = True
+
+        if design_data.tokens.get("typography"):
+            constraints["exact_typography"] = True
+
+        return constraints
+
+    def _store_extraction_metadata(
+        self,
+        task_file_path: Path,
+        design_context: DesignContext,
+        design_data: DesignData,
+    ) -> None:
+        """
+        Store extraction metadata in task frontmatter.
+
+        Writes timestamp and hash to enable cache invalidation
+        and extraction tracking.
+
+        Parameters
+        ----------
+        task_file_path : Path
+            Path to task markdown file
+        design_context : DesignContext
+            Extracted design context
+        design_data : DesignData
+            Raw design data for hash calculation
+        """
+        try:
+            content = task_file_path.read_text()
+
+            # Parse frontmatter
+            if not content.startswith("---"):
+                logger.warning("Task file missing frontmatter, skipping metadata storage")
+                return
+
+            parts = content.split("---", 2)
+            if len(parts) < 3:
+                logger.warning("Invalid task file format, skipping metadata storage")
+                return
+
+            frontmatter = yaml.safe_load(parts[1]) or {}
+            body = parts[2]
+
+            # Calculate content hash for cache invalidation
+            content_hash = hashlib.sha256(
+                design_data.to_json().encode()
+            ).hexdigest()[:16]
+
+            # Add design_extraction metadata
+            frontmatter["design_extraction"] = {
+                "extracted_at": datetime.now().isoformat(),
+                "design_hash": content_hash,
+                "source": design_context.source,
+                "elements_count": len(design_context.elements),
+                "tokens_count": len(design_context.tokens),
+            }
+
+            # Write updated file
+            new_content = f"---\n{yaml.dump(frontmatter, default_flow_style=False)}---{body}"
+            task_file_path.write_text(new_content)
+
+        except Exception as e:
+            logger.warning(f"Failed to store extraction metadata: {e}")
+            # Non-critical failure - don't raise
+
     def _loop_phase(
         self,
         task_id: str,
@@ -898,7 +1352,7 @@ class AutoBuildOrchestrator:
         task_file_path: Optional[Path] = None,
         implementation_plan: Optional[Dict[str, Any]] = None,
         task_type: Optional[str] = None,
-    ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error"]]:
+    ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "design_extraction_failed"]]:
         """
         Phase 3: Execute Player↔Coach adversarial loop.
 
@@ -930,7 +1384,7 @@ class AutoBuildOrchestrator:
 
         Returns
         -------
-        Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "error"]]
+        Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "error", "design_extraction_failed"]]
             Tuple of (turn_history, final_decision)
 
         Decision Logic
@@ -1337,7 +1791,7 @@ class AutoBuildOrchestrator:
     def _finalize_phase(
         self,
         worktree: Worktree,
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "pre_loop_blocked"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "pre_loop_blocked", "design_extraction_failed"],
         turn_history: List[TurnRecord],
     ) -> None:
         """
@@ -1353,12 +1807,13 @@ class AutoBuildOrchestrator:
         - max_turns_exceeded: Preserve for inspection (with blocked report if available)
         - error: Preserve for debugging
         - pre_loop_blocked: Preserve for review (quality gate failure)
+        - design_extraction_failed: Preserve for review (Phase 0 MCP failure)
 
         Parameters
         ----------
         worktree : Worktree
             Worktree to finalize
-        final_decision : Literal["approved", "max_turns_exceeded", "error", "pre_loop_blocked"]
+        final_decision : Literal["approved", "max_turns_exceeded", "error", "pre_loop_blocked", "design_extraction_failed"]
             Loop exit reason
         turn_history : List[TurnRecord]
             Complete turn history
@@ -2452,7 +2907,7 @@ class AutoBuildOrchestrator:
     def _build_summary_details(
         self,
         turn_history: List[TurnRecord],
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "pre_loop_blocked"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "pre_loop_blocked", "design_extraction_failed"],
     ) -> str:
         """
         Build detailed summary text for final report.
@@ -2461,7 +2916,7 @@ class AutoBuildOrchestrator:
         ----------
         turn_history : List[TurnRecord]
             Complete turn history
-        final_decision : Literal["approved", "max_turns_exceeded", "error", "pre_loop_blocked"]
+        final_decision : Literal["approved", "max_turns_exceeded", "error", "pre_loop_blocked", "design_extraction_failed"]
             Final orchestration decision
 
         Returns
@@ -2498,6 +2953,14 @@ class AutoBuildOrchestrator:
                 f"Worktree preserved for review. Check pre_loop_result for details."
             )
 
+        elif final_decision == "design_extraction_failed":
+            return (
+                f"Phase 0 design extraction failed.\n"
+                f"MCP tools may be unavailable or design URL may be invalid.\n"
+                f"Worktree preserved for review.\n"
+                f"Suggested action: Verify MCP tools are configured in claude_desktop_config.json."
+            )
+
         else:  # error
             error_turn = next(
                 (t for t in reversed(turn_history) if t.decision == "error"), None
@@ -2518,7 +2981,7 @@ class AutoBuildOrchestrator:
 
     def _build_error_message(
         self,
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "pre_loop_blocked"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "pre_loop_blocked", "design_extraction_failed"],
         turn_history: List[TurnRecord],
     ) -> str:
         """
@@ -2526,7 +2989,7 @@ class AutoBuildOrchestrator:
 
         Parameters
         ----------
-        final_decision : Literal["approved", "max_turns_exceeded", "error", "pre_loop_blocked"]
+        final_decision : Literal["approved", "max_turns_exceeded", "error", "pre_loop_blocked", "design_extraction_failed"]
             Final orchestration decision
         turn_history : List[TurnRecord]
             Complete turn history
@@ -2547,6 +3010,9 @@ class AutoBuildOrchestrator:
 
         elif final_decision == "pre_loop_blocked":
             return "Pre-loop quality gates blocked execution"
+
+        elif final_decision == "design_extraction_failed":
+            return "Phase 0 design extraction failed - MCP tools unavailable or design URL invalid"
 
         elif final_decision == "error":
             error_turn = next(

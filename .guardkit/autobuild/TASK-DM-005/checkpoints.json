@@ -1,0 +1,22 @@
+{
+  "task_id": "TASK-DM-005",
+  "checkpoints": [
+    {
+      "turn": 1,
+      "commit_hash": "0c1cbc42b2dd350f225697bcdc2a675ced7e2605",
+      "timestamp": "2026-02-08T12:01:31.285044",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 1 complete (tests: fail)"
+    },
+    {
+      "turn": 2,
+      "commit_hash": "739983c00133056327f1f8933accfc7c965faeb8",
+      "timestamp": "2026-02-08T12:03:52.122573",
+      "tests_passed": true,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 2 complete (tests: pass)"
+    }
+  ],
+  "last_updated": "2026-02-08T12:03:52.122721"
+}
