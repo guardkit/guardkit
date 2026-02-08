@@ -45,6 +45,16 @@ from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.orchestrator.progress import ProgressDisplay
 from guardkit.orchestrator.protocol import OrchestratorProtocol
 
+# Import browser verifier module
+from guardkit.orchestrator.browser_verifier import (
+    BrowserVerifier,
+    AgentBrowserVerifier,
+    PlaywrightAppiumVerifier,
+    select_verifier,
+    BrowserVerifierError,
+    AgentBrowserNotInstalledError,
+)
+
 # Import quality gates module
 from guardkit.orchestrator.quality_gates import (
     PreLoopQualityGates,
@@ -78,6 +88,11 @@ __all__ = [
     "TaskArtifactPaths",
     # Protocol
     "OrchestratorProtocol",
+    # Browser Verifier
+    "BrowserVerifier",
+    "AgentBrowserVerifier",
+    "PlaywrightAppiumVerifier",
+    "select_verifier",
     # Quality Gates
     "PreLoopQualityGates",
     "TaskWorkInterface",
@@ -100,6 +115,9 @@ __all__ = [
     "FeatureParseError",
     "FeatureValidationError",
     "FeatureOrchestrationError",
+    # Exceptions - Browser Verifier
+    "BrowserVerifierError",
+    "AgentBrowserNotInstalledError",
     # Exceptions - Quality Gates
     "QualityGateError",
     "QualityGateBlocked",
