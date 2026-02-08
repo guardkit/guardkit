@@ -23,7 +23,7 @@ id: TASK-DM-004
 implementation_mode: task-work
 parent_review: TASK-REV-D3E0
 priority: high
-status: design_approved
+status: in_review
 tags:
 - design-mode
 - prohibition-checklist
@@ -31,9 +31,11 @@ tags:
 - scope-creep
 task_type: feature
 test_results:
-  coverage: null
-  last_run: null
-  status: pending
+  coverage: 95
+  last_run: '2026-02-08T08:30:00'
+  status: passed
+  tests_passed: 73
+  tests_total: 73
 title: Generate prohibition checklist from design data
 updated: 2026-02-07 10:00:00+00:00
 wave: 2
@@ -83,14 +85,14 @@ Implement the 12-category prohibition checklist that analyses extracted design d
 
 ## Acceptance Criteria
 
-- [ ] 12-category checklist generated from design elements
-- [ ] Categories 5, 8, 11, 12 always prohibited regardless of design content
-- [ ] Override detection for categories 1-4, 6-7, 9-10 based on design elements
-- [ ] `validate_compliance()` detects violations via pattern matching
-- [ ] Tier 2 AST analysis activates only when Tier 1 finds possible violations
-- [ ] Zero false negatives for unconditionally prohibited categories
-- [ ] Checklist serialisable for inclusion in agent context
-- [ ] Unit tests for all 12 categories including override scenarios
+- [x] 12-category checklist generated from design elements
+- [x] Categories 5, 8, 11, 12 always prohibited regardless of design content
+- [x] Override detection for categories 1-4, 6-7, 9-10 based on design elements
+- [x] `validate_compliance()` detects violations via pattern matching
+- [x] Tier 2 AST analysis activates only when Tier 1 finds possible violations
+- [x] Zero false negatives for unconditionally prohibited categories
+- [x] Checklist serialisable for inclusion in agent context
+- [x] Unit tests for all 12 categories including override scenarios
 
 ## Technical Notes
 
