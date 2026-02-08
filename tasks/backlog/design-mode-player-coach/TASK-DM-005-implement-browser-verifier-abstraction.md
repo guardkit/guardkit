@@ -24,17 +24,25 @@ test_results:
   coverage: null
   last_run: null
 autobuild_state:
-  current_turn: 1
-  max_turns: 15
+  current_turn: 2
+  max_turns: 25
   worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-D4CE
   base_branch: main
-  started_at: '2026-02-08T08:05:44.435793'
-  last_updated: '2026-02-08T08:13:49.880952'
+  started_at: '2026-02-08T11:41:22.221751'
+  last_updated: '2026-02-08T12:03:52.126553'
   turns:
   - turn: 1
+    decision: feedback
+    feedback: '- task-work execution exceeded 1200s timeout'
+    timestamp: '2026-02-08T11:41:22.221751'
+    player_summary: '[RECOVERED via player_report] Original error: SDK timeout after
+      1200s: task-work execution exceeded 1200s timeout'
+    player_success: true
+    coach_success: true
+  - turn: 2
     decision: approve
     feedback: null
-    timestamp: '2026-02-08T08:05:44.435793'
+    timestamp: '2026-02-08T12:01:31.285566'
     player_summary: Implementation via task-work delegation
     player_success: true
     coach_success: true

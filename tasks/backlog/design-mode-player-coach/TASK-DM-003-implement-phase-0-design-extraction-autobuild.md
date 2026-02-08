@@ -25,16 +25,16 @@ test_results:
   last_run: null
 autobuild_state:
   current_turn: 1
-  max_turns: 15
+  max_turns: 25
   worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-D4CE
   base_branch: main
-  started_at: '2026-02-08T07:51:44.525045'
-  last_updated: '2026-02-08T08:05:44.408310'
+  started_at: '2026-02-08T11:27:50.914745'
+  last_updated: '2026-02-08T11:35:05.978020'
   turns:
   - turn: 1
     decision: approve
     feedback: null
-    timestamp: '2026-02-08T07:51:44.525045'
+    timestamp: '2026-02-08T11:27:50.914745'
     player_summary: Implementation via task-work delegation
     player_success: true
     coach_success: true

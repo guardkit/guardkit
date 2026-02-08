@@ -1,9 +1,9 @@
 ---
 id: TASK-DM-007
-title: "Integrate design context into Player-Coach prompts"
-status: backlog
-created: 2026-02-07T10:00:00Z
-updated: 2026-02-07T10:00:00Z
+title: Integrate design context into Player-Coach prompts
+status: in_review
+created: 2026-02-07 10:00:00+00:00
+updated: 2026-02-07 10:00:00+00:00
 priority: high
 task_type: feature
 parent_review: TASK-REV-D3E0
@@ -12,15 +12,35 @@ wave: 4
 implementation_mode: task-work
 complexity: 6
 dependencies:
-  - TASK-DM-003
-  - TASK-DM-004
-  - TASK-DM-005
-  - TASK-DM-006
-tags: [design-mode, player, coach, prompt-engineering, integration]
+- TASK-DM-003
+- TASK-DM-004
+- TASK-DM-005
+- TASK-DM-006
+tags:
+- design-mode
+- player
+- coach
+- prompt-engineering
+- integration
 test_results:
   status: pending
   coverage: null
   last_run: null
+autobuild_state:
+  current_turn: 1
+  max_turns: 25
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-D4CE
+  base_branch: main
+  started_at: '2026-02-08T12:12:45.115024'
+  last_updated: '2026-02-08T12:26:25.896118'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-02-08T12:12:45.115024'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Integrate Design Context into Player-Coach Prompts

@@ -2026,6 +2026,430 @@ class TestQualityGateConfigIntegration:
 
 
 # ============================================================================
+# Primary Test Detection via task_work_results (TASK-FIX-TDPR)
+# ============================================================================
+
+
+class TestPrimaryTestDetection:
+    """Tests for detecting test files from task_work_results (primary path).
+
+    The primary detection path extracts test files from task_work_results
+    files_created/files_modified lists (already in memory). The task-ID
+    glob pattern is kept as a fallback for when results aren't available.
+    """
+
+    def test_detect_tests_from_results_finds_created_tests(self, tmp_worktree):
+        """Test that test files in files_created list are detected."""
+        # Create the test file in the worktree
+        test_dir = tmp_worktree / "tests" / "orchestrator"
+        test_dir.mkdir(parents=True)
+        (test_dir / "test_mcp_design_extractor.py").write_text("def test_x(): pass")
+
+        task_work_results = {
+            "files_created": [
+                "guardkit/orchestrator/mcp_design_extractor.py",
+                "tests/orchestrator/test_mcp_design_extractor.py",
+            ],
+            "files_modified": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-DM-002")
+        result = validator._detect_tests_from_results(task_work_results)
+
+        assert result is not None
+        assert "test_mcp_design_extractor.py" in result
+        assert "pytest" in result
+
+    def test_detect_tests_from_results_finds_modified_tests(self, tmp_worktree):
+        """Test that test files in files_modified list are detected."""
+        test_dir = tmp_worktree / "tests" / "unit"
+        test_dir.mkdir(parents=True)
+        (test_dir / "test_design_integration.py").write_text("def test_y(): pass")
+
+        task_work_results = {
+            "files_created": [],
+            "files_modified": ["tests/unit/test_design_integration.py"],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-DM-007")
+        result = validator._detect_tests_from_results(task_work_results)
+
+        assert result is not None
+        assert "test_design_integration.py" in result
+
+    def test_detect_tests_from_results_ignores_nonexistent_files(self, tmp_worktree):
+        """Test that test files listed but not present on disk are skipped."""
+        # Don't create the file on disk
+        task_work_results = {
+            "files_created": ["tests/test_nonexistent.py"],
+            "files_modified": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-DM-003")
+        result = validator._detect_tests_from_results(task_work_results)
+
+        assert result is None
+
+    def test_detect_tests_from_results_returns_none_when_no_tests(self, tmp_worktree):
+        """Test that None is returned when results have no test files."""
+        task_work_results = {
+            "files_created": ["guardkit/models/frontmatter.py"],
+            "files_modified": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-DM-001")
+        result = validator._detect_tests_from_results(task_work_results)
+
+        assert result is None
+
+    def test_detect_tests_from_results_handles_suffix_test_naming(self, tmp_worktree):
+        """Test detection of *_test.py naming convention."""
+        test_dir = tmp_worktree / "tests"
+        test_dir.mkdir(parents=True)
+        (test_dir / "browser_verifier_test.py").write_text("def test_a(): pass")
+
+        task_work_results = {
+            "files_created": ["tests/browser_verifier_test.py"],
+            "files_modified": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-DM-009")
+        result = validator._detect_tests_from_results(task_work_results)
+
+        assert result is not None
+        assert "browser_verifier_test.py" in result
+
+    def test_detect_tests_from_results_deduplicates_files(self, tmp_worktree):
+        """Test that duplicate test files across created/modified are deduplicated."""
+        test_dir = tmp_worktree / "tests"
+        test_dir.mkdir(parents=True)
+        (test_dir / "test_detector.py").write_text("def test_a(): pass")
+
+        task_work_results = {
+            "files_created": ["tests/test_detector.py"],
+            "files_modified": ["tests/test_detector.py"],  # Same file in both lists
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-DM-010")
+        result = validator._detect_tests_from_results(task_work_results)
+
+        assert result is not None
+        # Should appear only once
+        assert result.count("test_detector.py") == 1
+
+    def test_detect_test_command_uses_results_as_primary(self, tmp_worktree):
+        """Test that _detect_test_command uses task_work_results as primary source."""
+        (tmp_worktree / "pyproject.toml").touch()
+
+        # No task-ID-named tests exist
+        tests_dir = tmp_worktree / "tests" / "unit"
+        tests_dir.mkdir(parents=True)
+        (tests_dir / "test_mcp_extractor.py").write_text("def test_x(): pass")
+
+        task_work_results = {
+            "files_created": ["tests/unit/test_mcp_extractor.py"],
+            "files_modified": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-DM-002")
+        test_cmd = validator._detect_test_command(
+            "TASK-DM-002", task_work_results=task_work_results
+        )
+
+        assert test_cmd is not None
+        assert "test_mcp_extractor.py" in test_cmd
+        assert "pytest" in test_cmd
+
+    def test_detect_test_command_falls_back_to_glob_when_no_results(self, tmp_worktree):
+        """Test that _detect_test_command falls back to glob when task_work_results is None."""
+        (tmp_worktree / "pyproject.toml").touch()
+
+        # Create task-ID-named test file (matches glob pattern)
+        tests_dir = tmp_worktree / "tests"
+        tests_dir.mkdir(parents=True)
+        (tests_dir / "test_task_dm_002_main.py").touch()
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-DM-002")
+        test_cmd = validator._detect_test_command("TASK-DM-002", task_work_results=None)
+
+        assert test_cmd is not None
+        assert "test_task_dm_002_main.py" in test_cmd
+
+    def test_detect_test_command_falls_back_to_glob_when_results_have_no_tests(self, tmp_worktree):
+        """Test that _detect_test_command falls back to glob when results have no test files."""
+        (tmp_worktree / "pyproject.toml").touch()
+
+        # Create task-ID-named test file (matches glob pattern)
+        tests_dir = tmp_worktree / "tests"
+        tests_dir.mkdir(parents=True)
+        (tests_dir / "test_task_dm_002_main.py").touch()
+
+        # Results have no test files
+        task_work_results = {
+            "files_created": ["guardkit/models/frontmatter.py"],
+            "files_modified": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-DM-002")
+        test_cmd = validator._detect_test_command(
+            "TASK-DM-002", task_work_results=task_work_results
+        )
+
+        # Should fall back to glob pattern since results had no tests
+        assert test_cmd is not None
+        assert "test_task_dm_002_main.py" in test_cmd
+
+    def test_detect_test_command_results_take_priority_over_glob(self, tmp_worktree):
+        """Test that task_work_results take priority over task-ID glob pattern."""
+        (tmp_worktree / "pyproject.toml").touch()
+
+        tests_dir = tmp_worktree / "tests"
+        tests_dir.mkdir(parents=True)
+
+        # Create task-ID-named test file (matches glob pattern)
+        (tests_dir / "test_task_dm_002_main.py").touch()
+
+        # Create a different test file referenced in results
+        (tests_dir / "test_mcp_extractor.py").write_text("def test_x(): pass")
+
+        task_work_results = {
+            "files_created": ["tests/test_mcp_extractor.py"],
+            "files_modified": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-DM-002")
+        test_cmd = validator._detect_test_command(
+            "TASK-DM-002", task_work_results=task_work_results
+        )
+
+        # Should use the results-based test, not the glob pattern
+        assert "test_mcp_extractor.py" in test_cmd
+        assert "test_task_dm_002_main.py" not in test_cmd
+
+    def test_detect_test_command_returns_none_when_no_tests_anywhere(self, tmp_worktree):
+        """Test None returned when neither results nor glob find tests."""
+        (tmp_worktree / "pyproject.toml").touch()
+
+        # No tests exist at all
+        task_work_results = {
+            "files_created": ["guardkit/models/frontmatter.py"],
+            "files_modified": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-DM-002")
+        test_cmd = validator._detect_test_command(
+            "TASK-DM-002", task_work_results=task_work_results
+        )
+
+        assert test_cmd is None
+
+
+# ============================================================================
+# Approval Rationale and Zero-Test Anomaly (TASK-FIX-QGVZ + TASK-FIX-ITDF)
+# ============================================================================
+
+
+class TestApprovalRationaleAndZeroTestAnomaly:
+    """Tests for accurate rationale messages and zero-test anomaly detection."""
+
+    def test_rationale_when_tests_independently_verified(self, tmp_worktree, task_work_results_dir):
+        """Test rationale when independent tests actually ran."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.FEATURE)
+        test_result = IndependentTestResult(
+            tests_passed=True,
+            test_command="pytest tests/test_something.py -v",
+            test_output_summary="5 passed",
+            duration_seconds=1.5,
+        )
+        task_work_results = make_task_work_results()
+
+        validator = CoachValidator(str(tmp_worktree))
+        rationale = validator._build_approval_rationale(
+            test_result=test_result,
+            gates_status=QualityGateStatus(
+                tests_passed=True, coverage_met=True,
+                arch_review_passed=True, plan_audit_passed=True,
+            ),
+            task_work_results=task_work_results,
+            profile=profile,
+        )
+
+        assert "Independent verification confirmed." in rationale
+        assert "skipped" not in rationale.lower()
+
+    def test_rationale_when_tests_skipped_no_files_found(self, tmp_worktree, task_work_results_dir):
+        """Test rationale when independent tests were skipped (no tests found)."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.FEATURE)
+        test_result = IndependentTestResult(
+            tests_passed=True,
+            test_command="skipped",
+            test_output_summary="No task-specific tests found",
+            duration_seconds=0.0,
+        )
+        task_work_results = make_task_work_results()
+
+        validator = CoachValidator(str(tmp_worktree))
+        rationale = validator._build_approval_rationale(
+            test_result=test_result,
+            gates_status=QualityGateStatus(
+                tests_passed=True, coverage_met=True,
+                arch_review_passed=True, plan_audit_passed=True,
+            ),
+            task_work_results=task_work_results,
+            profile=profile,
+        )
+
+        assert "Independent verification skipped: no task-specific tests found." in rationale
+        assert "confirmed" not in rationale.lower()
+
+    def test_rationale_when_tests_not_required(self, tmp_worktree, task_work_results_dir):
+        """Test rationale for scaffolding tasks where tests aren't required."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.SCAFFOLDING)
+        test_result = IndependentTestResult(
+            tests_passed=True,
+            test_command="skipped",
+            test_output_summary="Independent test verification skipped (tests_required=False)",
+            duration_seconds=0.0,
+        )
+        task_work_results = make_task_work_results()
+
+        validator = CoachValidator(str(tmp_worktree))
+        rationale = validator._build_approval_rationale(
+            test_result=test_result,
+            gates_status=QualityGateStatus(
+                tests_passed=True, coverage_met=True,
+                arch_review_passed=True, plan_audit_passed=True,
+            ),
+            task_work_results=task_work_results,
+            profile=profile,
+        )
+
+        assert "Tests not required for this task type." in rationale
+
+    def test_zero_test_anomaly_detected_for_feature_task(self, tmp_worktree):
+        """Test that zero-test anomaly is detected for feature tasks."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.FEATURE)
+        task_work_results = {
+            "quality_gates": {
+                "tests_passing": True,
+                "tests_passed": 0,
+                "tests_failed": 0,
+                "coverage": None,
+                "coverage_met": None,
+                "all_passed": True,
+            },
+        }
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(task_work_results, profile)
+
+        assert len(issues) == 1
+        assert issues[0]["category"] == "zero_test_anomaly"
+        assert issues[0]["severity"] == "warning"
+        assert "no tests were executed" in issues[0]["description"]
+
+    def test_zero_test_anomaly_not_raised_for_scaffolding(self, tmp_worktree):
+        """Test that zero-test anomaly is NOT raised for scaffolding tasks."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.SCAFFOLDING)
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 0,
+                "tests_failed": 0,
+                "coverage": None,
+                "all_passed": True,
+            },
+        }
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(task_work_results, profile)
+
+        assert len(issues) == 0
+
+    def test_zero_test_anomaly_not_raised_when_tests_exist(self, tmp_worktree):
+        """Test that zero-test anomaly is NOT raised when tests actually ran."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.FEATURE)
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 37,
+                "tests_failed": 0,
+                "coverage": 82.0,
+                "all_passed": True,
+            },
+        }
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(task_work_results, profile)
+
+        assert len(issues) == 0
+
+    def test_zero_test_anomaly_not_raised_when_all_passed_false(self, tmp_worktree):
+        """Test that anomaly is NOT raised when all_passed is False (failure, not anomaly)."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.FEATURE)
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 0,
+                "tests_failed": 0,
+                "coverage": None,
+                "all_passed": False,
+            },
+        }
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(task_work_results, profile)
+
+        assert len(issues) == 0
+
+    def test_zero_test_anomaly_included_in_approval_issues(self, tmp_worktree, task_work_results_dir):
+        """Test that zero-test anomaly appears in approval result issues."""
+        # Create task work results with zero tests
+        results = {
+            "quality_gates": {
+                "tests_passing": True,
+                "tests_passed": 0,
+                "tests_failed": 0,
+                "coverage": None,
+                "coverage_met": None,
+                "all_passed": True,
+            },
+            "code_review": {"score": 85},
+            "plan_audit": {"violations": 0},
+            "requirements_met": ["Criterion A"],
+        }
+        (task_work_results_dir / "task_work_results.json").write_text(json.dumps(results))
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-001")
+        result = validator.validate(
+            task_id="TASK-001",
+            turn=1,
+            task={
+                "acceptance_criteria": ["Criterion A"],
+                "task_type": "feature",
+            },
+        )
+
+        assert result.decision == "approve"
+        # Should have the zero-test warning in issues
+        assert len(result.issues) == 1
+        assert result.issues[0]["category"] == "zero_test_anomaly"
+        # Rationale should mention skipped verification
+        assert "skipped" in result.rationale.lower()
+
+
+# ============================================================================
 # Run Tests
 # ============================================================================
 
