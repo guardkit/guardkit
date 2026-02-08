@@ -1,42 +1,42 @@
 ---
-id: TASK-DM-004
-title: Generate prohibition checklist from design data
-status: in_review
-created: 2026-02-07 10:00:00+00:00
-updated: 2026-02-07 10:00:00+00:00
-priority: high
-task_type: feature
-parent_review: TASK-REV-D3E0
-feature_id: FEAT-D4CE
-wave: 2
-implementation_mode: task-work
+autobuild_state:
+  base_branch: main
+  current_turn: 1
+  last_updated: '2026-02-08T08:05:06.641582'
+  max_turns: 15
+  started_at: '2026-02-08T07:51:44.524698'
+  turns:
+  - coach_success: true
+    decision: approve
+    feedback: null
+    player_success: true
+    player_summary: Implementation via task-work delegation
+    timestamp: '2026-02-08T07:51:44.524698'
+    turn: 1
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-D4CE
 complexity: 5
+created: 2026-02-07 10:00:00+00:00
 dependencies:
 - TASK-DM-002
+feature_id: FEAT-D4CE
+id: TASK-DM-004
+implementation_mode: task-work
+parent_review: TASK-REV-D3E0
+priority: high
+status: design_approved
 tags:
 - design-mode
 - prohibition-checklist
 - constraints
 - scope-creep
+task_type: feature
 test_results:
-  status: pending
   coverage: null
   last_run: null
-autobuild_state:
-  current_turn: 1
-  max_turns: 15
-  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-D4CE
-  base_branch: main
-  started_at: '2026-02-08T07:51:44.524698'
-  last_updated: '2026-02-08T08:05:06.641582'
-  turns:
-  - turn: 1
-    decision: approve
-    feedback: null
-    timestamp: '2026-02-08T07:51:44.524698'
-    player_summary: Implementation via task-work delegation
-    player_success: true
-    coach_success: true
+  status: pending
+title: Generate prohibition checklist from design data
+updated: 2026-02-07 10:00:00+00:00
+wave: 2
 ---
 
 # Generate Prohibition Checklist from Design Data

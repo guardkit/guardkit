@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 # Type aliases
 TurnStatus = Literal["in_progress", "success", "feedback", "error"]
-FinalStatus = Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error"]
+FinalStatus = Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "design_extraction_failed"]
 
 
 def _handle_display_error(func):
