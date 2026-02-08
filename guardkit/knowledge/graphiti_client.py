@@ -1396,6 +1396,7 @@ def get_current_project_name() -> str:
 
 # Module-level singleton
 _graphiti: Optional[GraphitiClient] = None
+_graphiti_init_attempted: bool = False
 
 
 async def init_graphiti(config: Optional[GraphitiConfig] = None) -> bool:
@@ -1416,23 +1417,108 @@ async def init_graphiti(config: Optional[GraphitiConfig] = None) -> bool:
         if success:
             client = get_graphiti()
     """
-    global _graphiti
+    global _graphiti, _graphiti_init_attempted
+    _graphiti_init_attempted = True
     _graphiti = GraphitiClient(config)
-    return await _graphiti.initialize()
+    success = await _graphiti.initialize()
+    if not success:
+        _graphiti = None
+    return success
+
+
+def _try_lazy_init() -> Optional[GraphitiClient]:
+    """Attempt lazy initialization of Graphiti singleton from config.
+
+    Creates a GraphitiClient from load_graphiti_config() and runs
+    async initialize() in a sync context. Only attempts once per process
+    to avoid repeated connection failures.
+
+    Returns:
+        Initialized GraphitiClient if successful, None otherwise.
+    """
+    global _graphiti, _graphiti_init_attempted
+    import asyncio
+
+    _graphiti_init_attempted = True
+
+    try:
+        from guardkit.knowledge.config import load_graphiti_config
+        settings = load_graphiti_config()
+
+        if not settings.enabled:
+            logger.info("Graphiti disabled in configuration, lazy-init skipped")
+            return None
+
+        config = GraphitiConfig(
+            enabled=settings.enabled,
+            neo4j_uri=settings.neo4j_uri,
+            neo4j_user=settings.neo4j_user,
+            neo4j_password=settings.neo4j_password,
+            timeout=settings.timeout,
+            project_id=settings.project_id,
+        )
+
+        client = GraphitiClient(config)
+
+        # Run async initialize() in sync context
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            # Already in an async context — can't use asyncio.run()
+            # Create the client but defer initialization
+            # The client will be available but not connected until
+            # initialize() is called in an async context
+            logger.info(
+                "Graphiti lazy-init: async loop running, created client "
+                "but deferred connection (will connect on first async use)"
+            )
+            _graphiti = client
+            return client
+        else:
+            # No running loop — safe to use asyncio.run()
+            success = asyncio.run(client.initialize())
+            if success:
+                _graphiti = client
+                logger.info("Graphiti lazy-init successful")
+                return client
+            else:
+                logger.info("Graphiti lazy-init failed: initialize() returned False")
+                return None
+
+    except ImportError as e:
+        logger.info(f"Graphiti lazy-init skipped: {e}")
+        return None
+    except Exception as e:
+        logger.info(f"Graphiti lazy-init failed: {e}")
+        return None
 
 
 def get_graphiti() -> Optional[GraphitiClient]:
-    """Get the global Graphiti client.
+    """Get the global Graphiti client, with lazy initialization.
 
-    Returns the singleton GraphitiClient instance if initialized,
-    or None if init_graphiti has not been called.
+    Returns the singleton GraphitiClient instance. If not yet initialized,
+    attempts lazy initialization from config (load_graphiti_config()).
+    Lazy-init is only attempted once per process to avoid repeated
+    connection failures.
 
     Returns:
-        GraphitiClient instance or None if not initialized.
+        GraphitiClient instance or None if not available.
 
     Example:
         client = get_graphiti()
         if client and client.enabled:
             results = await client.search("query")
     """
-    return _graphiti
+    global _graphiti, _graphiti_init_attempted
+
+    if _graphiti is not None:
+        return _graphiti
+
+    # Only attempt lazy-init once
+    if not _graphiti_init_attempted:
+        return _try_lazy_init()
+
+    return None

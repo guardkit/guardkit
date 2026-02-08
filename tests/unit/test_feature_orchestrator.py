@@ -1513,3 +1513,103 @@ async def test_dependency_failed_tasks_skipped_in_parallel(temp_repo, sample_fea
 
         # Verify _execute_task was never called
         mock_execute.assert_not_called()
+
+
+# ============================================================================
+# enable_context Flag Forwarding Tests (TASK-FIX-GCW4)
+# ============================================================================
+
+
+def test_enable_context_defaults_to_true(temp_repo, mock_worktree_manager):
+    """Test that enable_context defaults to True in FeatureOrchestrator."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+    assert orchestrator.enable_context is True
+
+
+def test_enable_context_can_be_set_to_false(temp_repo, mock_worktree_manager):
+    """Test that enable_context can be explicitly set to False."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        enable_context=False,
+    )
+    assert orchestrator.enable_context is False
+
+
+@patch("guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator")
+@patch("guardkit.orchestrator.feature_orchestrator.TaskLoader.load_task")
+def test_execute_task_forwards_enable_context_true(
+    mock_load_task, mock_ab_class,
+    temp_repo, sample_feature, mock_worktree, mock_worktree_manager,
+):
+    """Test that _execute_task forwards enable_context=True to AutoBuildOrchestrator."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        enable_context=True,
+    )
+
+    # Setup mocks
+    mock_load_task.return_value = {
+        "requirements": "Test requirements",
+        "acceptance_criteria": ["AC1"],
+        "frontmatter": {"id": "TASK-T-001", "title": "Test"},
+        "file_path": "tasks/backlog/TASK-T-001.md",
+    }
+
+    mock_result = MagicMock()
+    mock_result.success = True
+    mock_result.total_turns = 1
+    mock_result.final_decision = "approved"
+    mock_result.error = None
+    mock_result.recovery_count = 0
+    mock_ab_class.return_value.orchestrate.return_value = mock_result
+
+    # Execute
+    task = sample_feature.tasks[0]
+    orchestrator._execute_task(task, sample_feature, mock_worktree)
+
+    # Verify enable_context was forwarded
+    call_kwargs = mock_ab_class.call_args[1]
+    assert call_kwargs["enable_context"] is True
+
+
+@patch("guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator")
+@patch("guardkit.orchestrator.feature_orchestrator.TaskLoader.load_task")
+def test_execute_task_forwards_enable_context_false(
+    mock_load_task, mock_ab_class,
+    temp_repo, sample_feature, mock_worktree, mock_worktree_manager,
+):
+    """Test that _execute_task forwards enable_context=False to AutoBuildOrchestrator."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        enable_context=False,
+    )
+
+    # Setup mocks
+    mock_load_task.return_value = {
+        "requirements": "Test requirements",
+        "acceptance_criteria": ["AC1"],
+        "frontmatter": {"id": "TASK-T-001", "title": "Test"},
+        "file_path": "tasks/backlog/TASK-T-001.md",
+    }
+
+    mock_result = MagicMock()
+    mock_result.success = True
+    mock_result.total_turns = 1
+    mock_result.final_decision = "approved"
+    mock_result.error = None
+    mock_result.recovery_count = 0
+    mock_ab_class.return_value.orchestrate.return_value = mock_result
+
+    # Execute
+    task = sample_feature.tasks[0]
+    orchestrator._execute_task(task, sample_feature, mock_worktree)
+
+    # Verify enable_context was forwarded as False
+    call_kwargs = mock_ab_class.call_args[1]
+    assert call_kwargs["enable_context"] is False

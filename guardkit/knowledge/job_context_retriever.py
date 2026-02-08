@@ -312,7 +312,7 @@ class JobContextRetriever:
         from guardkit.knowledge.task_analyzer import TaskPhase
         from guardkit.knowledge.relevance_tuning import RelevanceConfig
 
-        graphiti = await get_graphiti()
+        graphiti = get_graphiti()
 
         # Default thresholds
         retriever = JobContextRetriever(graphiti)

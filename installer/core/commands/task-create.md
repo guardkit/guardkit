@@ -227,7 +227,9 @@ test_results:
 
 ### library_context Field (Optional)
 
-The `library_context` frontmatter field allows manual specification of library API documentation. This is useful when:
+The `library_context` frontmatter field allows manual specification of library API documentation. This resolves via **Context7 MCP** (library documentation service), not the Graphiti knowledge graph. Any library available in Context7 can be referenced here.
+
+This is useful when:
 - Libraries are internal/proprietary and not available in Context7
 - Specific version documentation is needed
 - You want to override or supplement Context7 results
@@ -235,17 +237,18 @@ The `library_context` frontmatter field allows manual specification of library A
 **Field Structure:**
 ```yaml
 library_context:
-  - name: graphiti-core                    # Required: library name
-    import: "from graphiti_core import Graphiti"  # Optional: import statement
+  - name: pydantic                          # Required: library name
+    import: "from pydantic import BaseModel, Field"  # Optional: import statement
     initialization: |                       # Optional: initialization code
-      graphiti = Graphiti(neo4j_uri, neo4j_user, neo4j_password)
-      await graphiti.build_indices()
+      class UserModel(BaseModel):
+          name: str = Field(description="User name")
+          age: int = Field(ge=0, le=150)
     key_methods:                            # Optional: key method documentation
-      - name: search
-        signature: "async def search(query: str, group_ids: List[str], num_results: int) -> List[Edge]"
-        returns: "List of Edge objects with uuid, fact, name, created_at, score"
-      - name: add_episode
-        signature: "async def add_episode(name: str, body: str, group_id: str) -> EpisodeResult"
+      - name: model_validate
+        signature: "def model_validate(cls, obj: Any, *, strict: bool = False) -> Self"
+        returns: "Validated model instance"
+      - name: model_dump
+        signature: "def model_dump(self, *, mode: str = 'python', exclude_none: bool = False) -> dict"
 ```
 
 **Field Schema:**

@@ -493,8 +493,7 @@ class TestRetrieverInitialization:
         from guardkit.knowledge.job_context_retriever import JobContextRetriever
 
         with patch(
-            'installer.core.commands.lib.graphiti_context_loader.get_graphiti',
-            new_callable=AsyncMock
+            'installer.core.commands.lib.graphiti_context_loader.get_graphiti'
         ) as mock_get_graphiti:
             mock_get_graphiti.return_value = MagicMock()
 
@@ -510,8 +509,7 @@ class TestRetrieverInitialization:
         )
 
         with patch(
-            'installer.core.commands.lib.graphiti_context_loader.get_graphiti',
-            new_callable=AsyncMock
+            'installer.core.commands.lib.graphiti_context_loader.get_graphiti'
         ) as mock_get_graphiti:
             mock_graphiti = MagicMock()
             mock_get_graphiti.return_value = mock_graphiti
@@ -528,8 +526,7 @@ class TestRetrieverInitialization:
         )
 
         with patch(
-            'installer.core.commands.lib.graphiti_context_loader.get_graphiti',
-            new_callable=AsyncMock
+            'installer.core.commands.lib.graphiti_context_loader.get_graphiti'
         ) as mock_get_graphiti:
             mock_get_graphiti.side_effect = Exception("Connection failed")
 

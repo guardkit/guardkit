@@ -21,12 +21,15 @@ Example Usage:
     print(f"Captured {len(captured)} knowledge items")
 """
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Callable, Any
 
 from .graphiti_client import get_graphiti
 from .gap_analyzer import KnowledgeGapAnalyzer, KnowledgeGap, KnowledgeCategory
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -97,9 +100,24 @@ class InteractiveCaptureSession:
 
     def __init__(self):
         """Initialize the InteractiveCaptureSession."""
-        self._graphiti = get_graphiti()
+        self._graphiti_client: Optional[Any] = None
+        self._graphiti_resolved = False
         self._analyzer = KnowledgeGapAnalyzer()
         self._captured: List[CapturedKnowledge] = []
+
+    @property
+    def _graphiti(self):
+        """Lazy-resolve Graphiti client on first access."""
+        if not self._graphiti_resolved:
+            self._graphiti_client = get_graphiti()
+            self._graphiti_resolved = True
+        return self._graphiti_client
+
+    @_graphiti.setter
+    def _graphiti(self, value):
+        """Allow explicit setting (for testing and direct assignment)."""
+        self._graphiti_client = value
+        self._graphiti_resolved = True
 
     @property
     def captured(self) -> List[CapturedKnowledge]:
@@ -234,6 +252,45 @@ class InteractiveCaptureSession:
 
         return list(self._captured)
 
+    # Review mode to KnowledgeCategory mapping for abbreviated sessions
+    _REVIEW_MODE_CATEGORY_MAP = {
+        "architectural": KnowledgeCategory.ARCHITECTURE,
+        "code-quality": KnowledgeCategory.DOMAIN,
+        "decision": KnowledgeCategory.DECISIONS,
+        "technical-debt": KnowledgeCategory.DOMAIN,
+        "security": KnowledgeCategory.CONSTRAINTS,
+    }
+
+    def _process_answer_from_text(
+        self, question: str, answer: str, review_mode: str
+    ) -> CapturedKnowledge:
+        """Process a text Q&A pair into CapturedKnowledge.
+
+        Maps review mode to KnowledgeCategory and extracts facts from the answer.
+        Used by run_abbreviated() which receives plain question strings instead
+        of KnowledgeGap objects.
+
+        Args:
+            question: The question that was asked
+            answer: The user's answer
+            review_mode: Review mode string (architectural, code-quality, etc.)
+
+        Returns:
+            CapturedKnowledge with mapped category and extracted facts
+        """
+        category = self._REVIEW_MODE_CATEGORY_MAP.get(
+            review_mode, KnowledgeCategory.DOMAIN
+        )
+        extracted_facts = self._extract_facts(answer, category)
+
+        return CapturedKnowledge(
+            category=category,
+            question=question,
+            answer=answer,
+            extracted_facts=extracted_facts,
+            confidence=0.8,
+        )
+
     def _process_answer(self, gap: KnowledgeGap, answer: str) -> CapturedKnowledge:
         """Process a user's answer into captured knowledge.
 
@@ -302,6 +359,10 @@ class InteractiveCaptureSession:
 
         # Handle case where Graphiti is unavailable
         if self._graphiti is None:
+            logger.info(
+                "[Graphiti] Knowledge capture: Graphiti unavailable, %d insights not persisted",
+                len(self._captured),
+            )
             return
 
         # Group captured by category
@@ -312,6 +373,7 @@ class InteractiveCaptureSession:
             by_category[captured.category].append(captured)
 
         # Save each category
+        stored_count = 0
         for category, items in by_category.items():
             group_id = self._category_to_group_id(category)
 
@@ -352,9 +414,13 @@ class InteractiveCaptureSession:
                     group_id=group_id,
                     source_description="interactive_capture"
                 )
+                stored_count += len(items)
             except Exception:
-                # Graceful degradation - silently continue on failure
-                pass
+                # Graceful degradation - continue on failure
+                logger.debug("[Graphiti] Failed to store %s knowledge", category.value)
+
+        if stored_count > 0:
+            logger.info("[Graphiti] Knowledge capture: %d insights stored", stored_count)
 
     def _category_to_group_id(self, category: KnowledgeCategory) -> str:
         """Map a knowledge category to a Graphiti group ID.
@@ -432,40 +498,112 @@ class InteractiveCaptureSession:
     async def run_abbreviated(
         self,
         questions: List[str],
-        task_context: Optional[Dict[str, Any]] = None
+        task_context: Optional[Dict[str, Any]] = None,
+        ui_callback: Optional[Callable] = None
     ) -> Dict[str, Any]:
         """Run an abbreviated knowledge capture session with provided questions.
 
-        This method supports the /task-review --capture-knowledge workflow by
-        accepting pre-generated questions rather than querying the gap analyzer.
+        Unlike run_session() which discovers gaps and generates questions,
+        this method accepts pre-generated questions (from ReviewKnowledgeCapture)
+        and runs the capture loop directly.
 
         Args:
             questions: List of questions to ask (typically 3-5)
-            task_context: Optional task metadata to include in results
+            task_context: Optional task metadata (task_id, review_mode)
+            ui_callback: Optional callback for UI interactions.
+                        Called with (event, data) where event is one of:
+                        - 'question': Question data dict
+                        - 'get_input': Request user input (returns answer string)
+                        - 'captured': Captured knowledge confirmation
+                        - 'summary': Session summary message
 
         Returns:
             Dictionary with:
-                - captured_items: List of captured Q&A pairs
+                - captured_items: List of captured Q&A pairs with categories
                 - task_id: Task ID from context (if provided)
                 - review_mode: Review mode from context (if provided)
+                - questions_asked: Number of questions presented
+                - answers_captured: Number of answers stored
 
         Example:
             result = await session.run_abbreviated(
-                questions=[
-                    "What patterns were identified?",
-                    "What should be remembered?"
-                ],
-                task_context={'task_id': 'TASK-001', 'review_mode': 'architectural'}
+                questions=["What patterns were identified?"],
+                task_context={'task_id': 'TASK-001', 'review_mode': 'architectural'},
+                ui_callback=my_callback
             )
         """
+        # Clear captured list at start of session
+        self._captured = []
+
         task_context = task_context or {}
+        review_mode = task_context.get("review_mode", "general")
         captured_items: List[Dict[str, Any]] = []
 
-        # Results structure
+        # Process each question
+        for i, question in enumerate(questions):
+            # Show question
+            if ui_callback:
+                ui_callback('question', {
+                    'number': i + 1,
+                    'total': len(questions),
+                    'question': question,
+                    'review_mode': review_mode,
+                })
+
+            # Get user input
+            answer = None
+            if ui_callback:
+                answer = ui_callback('get_input')
+
+            # Handle None answer (no callback or callback returned None)
+            if answer is None:
+                answer = ''
+
+            # Normalize answer
+            answer_lower = answer.lower().strip()
+
+            # Handle skip commands
+            if answer_lower in ('skip', 's', ''):
+                continue
+
+            # Handle quit commands
+            if answer_lower in ('quit', 'q', 'exit'):
+                break
+
+            # Process the answer
+            captured = self._process_answer_from_text(question, answer, review_mode)
+            self._captured.append(captured)
+
+            # Build captured item for result
+            captured_items.append({
+                "question": question,
+                "answer": answer,
+                "category": captured.category.value,
+                "facts": captured.extracted_facts,
+            })
+
+            # Notify UI of captured knowledge
+            if ui_callback:
+                ui_callback('captured', {
+                    'category': captured.category.value,
+                    'question': question,
+                    'facts_count': len(captured.extracted_facts)
+                })
+
+        # Save captured knowledge to Graphiti
+        await self._save_captured_knowledge()
+
+        # Show summary
+        if ui_callback:
+            ui_callback('summary', self._format_summary())
+
+        # Build result dict
         result: Dict[str, Any] = {
             "captured_items": captured_items,
             "task_id": task_context.get("task_id", ""),
-            "review_mode": task_context.get("review_mode", ""),
+            "review_mode": review_mode,
+            "questions_asked": len(questions),
+            "answers_captured": len(captured_items),
         }
 
         return result

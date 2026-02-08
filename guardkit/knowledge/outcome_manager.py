@@ -142,11 +142,11 @@ async def capture_task_outcome(
     client = get_graphiti()
 
     if client is None:
-        logger.debug("Graphiti client not initialized, skipping episode creation")
+        logger.debug("[Graphiti] Client unavailable, skipping outcome capture")
         return outcome_id
 
     if not client.enabled:
-        logger.debug("Graphiti client disabled, skipping episode creation")
+        logger.debug("[Graphiti] Client disabled, skipping outcome capture")
         return outcome_id
 
     try:
@@ -157,9 +157,9 @@ async def capture_task_outcome(
             source="auto_captured",
             entity_type="task_outcome"
         )
-        logger.info(f"Captured task outcome {outcome_id} for {task_id}")
+        logger.info(f"[Graphiti] Captured task outcome {outcome_id} for {task_id}")
     except Exception as e:
-        logger.warning(f"Failed to store outcome in Graphiti: {e}")
+        logger.warning(f"[Graphiti] Failed to store outcome {outcome_id}: {e}")
 
     return outcome_id
 

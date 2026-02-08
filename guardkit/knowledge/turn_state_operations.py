@@ -87,12 +87,12 @@ async def capture_turn_state(
     """
     # Graceful degradation: return early if client is None
     if graphiti_client is None:
-        logger.debug("Graphiti client is None, skipping turn state capture")
+        logger.debug("[Graphiti] Client unavailable, skipping turn state capture")
         return
 
     # Graceful degradation: return early if client is disabled
     if not graphiti_client.enabled:
-        logger.debug("Graphiti is disabled, skipping turn state capture")
+        logger.debug("[Graphiti] Client disabled, skipping turn state capture")
         return
 
     try:
@@ -113,11 +113,11 @@ async def capture_turn_state(
             entity_type="turn_state"
         )
 
-        logger.info(f"Captured turn state: {entity.id}")
+        logger.info(f"[Graphiti] Captured turn state: {entity.id}")
 
     except Exception as e:
         # Graceful degradation: log and continue
-        logger.warning(f"Error capturing turn state {entity.id}: {e}")
+        logger.warning(f"[Graphiti] Failed to capture turn state {entity.id}: {e}")
 
 
 async def load_turn_continuation_context(
@@ -162,17 +162,17 @@ async def load_turn_continuation_context(
     """
     # No previous turn for turn 1
     if current_turn <= 1:
-        logger.debug("Turn 1 has no previous turn to load")
+        logger.debug("[Graphiti] Turn 1 has no previous turn to load")
         return None
 
     # Graceful degradation: return None if client is None
     if graphiti_client is None:
-        logger.debug("Graphiti client is None, returning None for turn context")
+        logger.debug("[Graphiti] Client unavailable, returning None for turn context")
         return None
 
     # Graceful degradation: return None if client is disabled
     if not graphiti_client.enabled:
-        logger.debug("Graphiti is disabled, returning None for turn context")
+        logger.debug("[Graphiti] Client disabled, returning None for turn context")
         return None
 
     try:
@@ -186,7 +186,7 @@ async def load_turn_continuation_context(
         )
 
         if not results:
-            logger.debug(f"No previous turn found for {task_id} turn {prev_turn_num}")
+            logger.debug(f"[Graphiti] No previous turn found for {task_id} turn {prev_turn_num}")
             return None
 
         # Get the first result
@@ -194,7 +194,7 @@ async def load_turn_continuation_context(
         body = result.get("body", {})
 
         if not body or not isinstance(body, dict):
-            logger.debug(f"Malformed turn state result for {task_id}")
+            logger.debug(f"[Graphiti] Malformed turn state result for {task_id}")
             return None
 
         # Format as actionable context
@@ -244,7 +244,7 @@ async def load_turn_continuation_context(
         return "\n".join(context_lines)
 
     except Exception as e:
-        logger.warning(f"Error loading turn continuation context: {e}")
+        logger.warning(f"[Graphiti] Failed to load turn continuation context: {e}")
         return None
 
 
@@ -287,12 +287,12 @@ async def load_turn_context(feature_id: str, task_id: str) -> str:
 
     # Graceful degradation: return first turn message if client is None
     if graphiti_client is None:
-        logger.debug("Graphiti client is None, returning first turn message")
+        logger.debug("[Graphiti] Client unavailable, returning first turn message")
         return "First turn - no previous context."
 
     # Graceful degradation: return first turn message if client is disabled
     if not graphiti_client.enabled:
-        logger.debug("Graphiti is disabled, returning first turn message")
+        logger.debug("[Graphiti] Client disabled, returning first turn message")
         return "First turn - no previous context."
 
     try:
@@ -329,7 +329,7 @@ async def load_turn_context(feature_id: str, task_id: str) -> str:
         return "\n".join(context_lines)
 
     except Exception as e:
-        logger.warning(f"Error loading turn context: {e}")
+        logger.warning(f"[Graphiti] Failed to load turn context: {e}")
         return "First turn - no previous context."
 
 

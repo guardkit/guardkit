@@ -226,6 +226,7 @@ class FeatureOrchestrator:
         quiet: bool = False,
         sdk_timeout: Optional[int] = None,
         enable_pre_loop: Optional[bool] = None,
+        enable_context: bool = True,
     ):
         """
         Initialize FeatureOrchestrator.
@@ -255,6 +256,8 @@ class FeatureOrchestrator:
         enable_pre_loop : Optional[bool], optional
             Enable/disable pre-loop quality gates. If None, uses cascade:
             task frontmatter > feature YAML > default (True).
+        enable_context : bool, optional
+            Enable/disable Graphiti context retrieval (default: True).
 
         Raises
         ------
@@ -276,6 +279,7 @@ class FeatureOrchestrator:
         self.quiet = quiet
         self.sdk_timeout = sdk_timeout
         self.enable_pre_loop = enable_pre_loop
+        self.enable_context = enable_context
         self.features_dir = features_dir or self.repo_root / ".guardkit" / "features"
 
         # Initialize dependencies
@@ -289,7 +293,8 @@ class FeatureOrchestrator:
         logger.info(
             f"FeatureOrchestrator initialized: repo={self.repo_root}, "
             f"max_turns={self.max_turns}, stop_on_failure={self.stop_on_failure}, "
-            f"resume={self.resume}, fresh={self.fresh}, enable_pre_loop={self.enable_pre_loop}"
+            f"resume={self.resume}, fresh={self.fresh}, enable_pre_loop={self.enable_pre_loop}, "
+            f"enable_context={self.enable_context}"
         )
 
     def orchestrate(
@@ -1252,6 +1257,7 @@ The detailed specifications are in the task markdown file.
                 worktree_manager=self._worktree_manager,
                 sdk_timeout=effective_sdk_timeout,
                 enable_pre_loop=effective_enable_pre_loop,
+                enable_context=self.enable_context,
             )
 
             # Execute task orchestration

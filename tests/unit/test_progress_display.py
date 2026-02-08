@@ -29,7 +29,8 @@ from guardkit.orchestrator.progress import (
     ProgressDisplay,
     TurnStatus,
     FinalStatus,
-    _handle_display_error
+    _handle_display_error,
+    format_context_status,
 )
 
 
@@ -696,3 +697,82 @@ def test_final_status_colors(mock_console, final_status, expected_color):
 
     # Panel should be created with correct border color
     assert mock_console.print.called
+
+
+# ============================================================================
+# Test: format_context_status (TASK-FIX-GCW5)
+# ============================================================================
+
+
+class TestFormatContextStatus:
+    """Tests for format_context_status rendering function."""
+
+    def test_none_returns_empty_string(self):
+        """Should return empty string when context_status is None."""
+        assert format_context_status(None) == ""
+
+    def test_retrieved_shows_categories_and_tokens(self):
+        """Should show category count and token usage when retrieved."""
+        from guardkit.orchestrator.autobuild import ContextStatus
+
+        cs = ContextStatus(
+            status="retrieved",
+            categories_count=6,
+            budget_used=2500,
+            budget_total=4000,
+        )
+        result = format_context_status(cs)
+        assert result == "Context: retrieved (6 categories, 2500/4000 tokens)"
+
+    def test_retrieved_zero_categories(self):
+        """Should handle zero categories gracefully."""
+        from guardkit.orchestrator.autobuild import ContextStatus
+
+        cs = ContextStatus(
+            status="retrieved",
+            categories_count=0,
+            budget_used=0,
+            budget_total=4000,
+        )
+        result = format_context_status(cs)
+        assert result == "Context: retrieved (0 categories, 0/4000 tokens)"
+
+    def test_skipped_shows_reason(self):
+        """Should show reason when skipped."""
+        from guardkit.orchestrator.autobuild import ContextStatus
+
+        cs = ContextStatus(status="skipped", reason="no context_loader")
+        result = format_context_status(cs)
+        assert result == "Context: skipped (no context_loader)"
+
+    def test_skipped_unknown_reason(self):
+        """Should show 'unknown' when reason is None for skipped."""
+        from guardkit.orchestrator.autobuild import ContextStatus
+
+        cs = ContextStatus(status="skipped", reason=None)
+        result = format_context_status(cs)
+        assert result == "Context: skipped (unknown)"
+
+    def test_disabled_shows_simple_message(self):
+        """Should show simple disabled message."""
+        from guardkit.orchestrator.autobuild import ContextStatus
+
+        cs = ContextStatus(status="disabled")
+        result = format_context_status(cs)
+        assert result == "Context: disabled"
+
+    def test_failed_shows_error_reason(self):
+        """Should show error reason when failed."""
+        from guardkit.orchestrator.autobuild import ContextStatus
+
+        cs = ContextStatus(status="failed", reason="connection error")
+        result = format_context_status(cs)
+        assert result == "Context: failed (connection error)"
+
+    def test_failed_unknown_reason(self):
+        """Should show 'unknown error' when reason is None for failed."""
+        from guardkit.orchestrator.autobuild import ContextStatus
+
+        cs = ContextStatus(status="failed", reason=None)
+        result = format_context_status(cs)
+        assert result == "Context: failed (unknown error)"

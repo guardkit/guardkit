@@ -109,8 +109,8 @@ class TestInteractiveCaptureSessionInit:
             session = InteractiveCaptureSession()
             assert session is not None
 
-    def test_session_initializes_graphiti_client(self):
-        """Test that session initializes with graphiti client."""
+    def test_session_initializes_graphiti_client_lazily(self):
+        """Test that session lazily initializes graphiti client on first access."""
         from guardkit.knowledge.interactive_capture import InteractiveCaptureSession
 
         with patch('guardkit.knowledge.interactive_capture.get_graphiti') as mock_get:
@@ -119,7 +119,13 @@ class TestInteractiveCaptureSessionInit:
 
             session = InteractiveCaptureSession()
 
-            mock_get.assert_called()
+            # get_graphiti should NOT be called during __init__ (lazy)
+            mock_get.assert_not_called()
+
+            # Access _graphiti to trigger lazy initialization
+            client = session._graphiti
+            mock_get.assert_called_once()
+            assert client is mock_graphiti
 
     def test_session_initializes_gap_analyzer(self):
         """Test that session initializes with KnowledgeGapAnalyzer."""

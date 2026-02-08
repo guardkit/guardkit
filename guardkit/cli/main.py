@@ -19,6 +19,7 @@ from rich.console import Console
 from guardkit.cli.autobuild import autobuild
 from guardkit.cli.graphiti import graphiti
 from guardkit.cli.init import init
+from guardkit.cli.review import review
 
 # Load .env files automatically
 # Priority: .env in current directory, then traverse up to find project root
@@ -104,6 +105,9 @@ cli.add_command(graphiti)
 
 # Add Init command
 cli.add_command(init)
+
+# Add Review command
+cli.add_command(review)
 
 
 # ============================================================================

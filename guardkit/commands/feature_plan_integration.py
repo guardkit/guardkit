@@ -20,11 +20,14 @@ class FeaturePlanIntegration:
     with context retrieved from the Graphiti knowledge graph.
     """
 
-    def __init__(self, project_root: Path):
+    def __init__(self, project_root: Path, enable_context: bool = True):
         """Initialize the integration.
 
         Args:
             project_root: Path to the project root directory
+            enable_context: Enable Graphiti context enrichment (default: True).
+                When False, build_enriched_prompt returns the description without
+                Graphiti context, useful for debugging or offline work.
 
         Raises:
             TypeError: If project_root is None
@@ -33,6 +36,7 @@ class FeaturePlanIntegration:
             raise TypeError("project_root cannot be None")
 
         self.project_root = project_root
+        self.enable_context = enable_context
 
         # Create context builder
         self.context_builder = FeaturePlanContextBuilder(project_root)
@@ -51,8 +55,17 @@ class FeaturePlanIntegration:
             tech_stack: Technology stack (default: python)
 
         Returns:
-            Enriched prompt string with context injection
+            Enriched prompt string with context injection.
+            When enable_context is False, returns description without
+            Graphiti context enrichment.
         """
+        if not self.enable_context:
+            logger.info("Graphiti context disabled (--no-context), skipping enrichment")
+            return f"""## Feature to Plan
+
+{description}
+"""
+
         logger.info("Building feature plan context...")
 
         # Build context using the context builder
@@ -67,6 +80,18 @@ class FeaturePlanIntegration:
 
         # Format context as prompt
         context_text = context.to_prompt_context()
+
+        # Seed feature spec back to Graphiti (write path)
+        feature_id = context.feature_spec.get("id") if context.feature_spec else None
+        if feature_id:
+            try:
+                await self.context_builder.seed_feature_spec(
+                    feature_id=feature_id,
+                    feature_spec=context.feature_spec,
+                    description=description,
+                )
+            except Exception as e:
+                logger.warning(f"[Graphiti] Failed to seed feature spec: {e}")
 
         logger.info("Feature plan context built successfully")
 

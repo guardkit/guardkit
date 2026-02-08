@@ -411,3 +411,190 @@ def test_integration_can_be_imported_from_command():
     # This test verifies the module structure is correct
     from guardkit.commands.feature_plan_integration import FeaturePlanIntegration
     assert FeaturePlanIntegration is not None
+
+
+# ============================================================================
+# 7. Enable Context Flag Tests (TASK-FIX-GCI7)
+# ============================================================================
+
+
+def test_enable_context_defaults_to_true(project_root, mock_context_builder):
+    """Test that enable_context defaults to True."""
+    with patch('guardkit.commands.feature_plan_integration.FeaturePlanContextBuilder',
+               return_value=mock_context_builder):
+        integration = FeaturePlanIntegration(project_root=project_root)
+        assert integration.enable_context is True
+
+
+def test_enable_context_can_be_set_false(project_root, mock_context_builder):
+    """Test that enable_context can be explicitly set to False."""
+    with patch('guardkit.commands.feature_plan_integration.FeaturePlanContextBuilder',
+               return_value=mock_context_builder):
+        integration = FeaturePlanIntegration(
+            project_root=project_root, enable_context=False
+        )
+        assert integration.enable_context is False
+
+
+@pytest.mark.asyncio
+async def test_enable_context_false_skips_graphiti(project_root, mock_context_builder):
+    """Test that enable_context=False skips Graphiti context builder calls."""
+    with patch('guardkit.commands.feature_plan_integration.FeaturePlanContextBuilder',
+               return_value=mock_context_builder):
+        integration = FeaturePlanIntegration(
+            project_root=project_root, enable_context=False
+        )
+
+        result = await integration.build_enriched_prompt("Implement new feature")
+
+        # Context builder should NOT have been called
+        mock_context_builder.build_context.assert_not_called()
+
+        # Result should still contain the description
+        assert "Implement new feature" in result
+
+
+@pytest.mark.asyncio
+async def test_enable_context_false_returns_description_only(
+    project_root, mock_context_builder
+):
+    """Test that enable_context=False returns prompt with description only."""
+    with patch('guardkit.commands.feature_plan_integration.FeaturePlanContextBuilder',
+               return_value=mock_context_builder):
+        integration = FeaturePlanIntegration(
+            project_root=project_root, enable_context=False
+        )
+
+        result = await integration.build_enriched_prompt("Plan FEAT-GR-003")
+
+        # Should NOT have enriched context section
+        assert "# Enriched Context" not in result
+        # Should have the description
+        assert "Plan FEAT-GR-003" in result
+        assert "## Feature to Plan" in result
+
+
+@pytest.mark.asyncio
+async def test_enable_context_true_calls_graphiti(integration):
+    """Test that enable_context=True (default) calls Graphiti context builder."""
+    await integration.build_enriched_prompt("Implement FEAT-GR-003")
+
+    # Context builder SHOULD have been called
+    integration.context_builder.build_context.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_enable_context_false_logs_skip(project_root, mock_context_builder, caplog):
+    """Test that enable_context=False logs that enrichment was skipped."""
+    with patch('guardkit.commands.feature_plan_integration.FeaturePlanContextBuilder',
+               return_value=mock_context_builder):
+        integration = FeaturePlanIntegration(
+            project_root=project_root, enable_context=False
+        )
+
+        with caplog.at_level("INFO"):
+            await integration.build_enriched_prompt("Test feature")
+
+        log_messages = [record.message for record in caplog.records]
+        assert any("disabled" in msg.lower() or "skipping" in msg.lower()
+                    for msg in log_messages)
+
+
+# ============================================================================
+# 8. Seed Feature Spec Tests (TASK-FIX-GG01)
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_seed_feature_spec_called_after_build_context(integration):
+    """Test that seed_feature_spec is called after build_context with feature_id."""
+    integration.context_builder.seed_feature_spec = AsyncMock(return_value=True)
+
+    await integration.build_enriched_prompt("Implement FEAT-GR-003")
+
+    integration.context_builder.seed_feature_spec.assert_called_once()
+    call_kwargs = integration.context_builder.seed_feature_spec.call_args[1]
+    assert call_kwargs["feature_id"] == "FEAT-GR-003"
+    assert call_kwargs["description"] == "Implement FEAT-GR-003"
+    assert isinstance(call_kwargs["feature_spec"], dict)
+
+
+@pytest.mark.asyncio
+async def test_seed_feature_spec_not_called_when_no_context(
+    project_root, mock_context_builder
+):
+    """Test that seed_feature_spec is NOT called when enable_context=False."""
+    mock_context_builder.seed_feature_spec = AsyncMock(return_value=True)
+
+    with patch('guardkit.commands.feature_plan_integration.FeaturePlanContextBuilder',
+               return_value=mock_context_builder):
+        integration = FeaturePlanIntegration(
+            project_root=project_root, enable_context=False
+        )
+
+        await integration.build_enriched_prompt("Implement FEAT-GR-003")
+
+        mock_context_builder.seed_feature_spec.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_seed_feature_spec_not_called_when_no_feature_id(project_root):
+    """Test that seed_feature_spec is NOT called when feature_spec has no id."""
+    mock_builder = Mock()
+
+    async def mock_build_no_id(description, context_files=None, tech_stack="python"):
+        from guardkit.knowledge.feature_plan_context import FeaturePlanContext
+        return FeaturePlanContext(
+            feature_spec={},  # No "id" key
+            related_features=[],
+            relevant_patterns=[],
+            similar_implementations=[],
+            project_architecture={},
+            warnings=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            implementation_modes=[]
+        )
+
+    mock_builder.build_context = AsyncMock(side_effect=mock_build_no_id)
+    mock_builder.seed_feature_spec = AsyncMock(return_value=True)
+
+    with patch('guardkit.commands.feature_plan_integration.FeaturePlanContextBuilder',
+               return_value=mock_builder):
+        integration = FeaturePlanIntegration(project_root=project_root)
+
+        await integration.build_enriched_prompt("Add new feature without ID")
+
+        mock_builder.seed_feature_spec.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_seed_feature_spec_failure_does_not_crash(integration, caplog):
+    """Test graceful degradation when seed_feature_spec raises an exception."""
+    integration.context_builder.seed_feature_spec = AsyncMock(
+        side_effect=Exception("Graphiti connection failed")
+    )
+
+    with caplog.at_level("WARNING"):
+        result = await integration.build_enriched_prompt("Implement FEAT-GR-003")
+
+    # Should still return enriched prompt despite seeding failure
+    assert result is not None
+    assert "FEAT-GR-003" in result
+
+    # Should log the warning
+    log_messages = [record.message for record in caplog.records]
+    assert any("Failed to seed feature spec" in msg for msg in log_messages)
+
+
+@pytest.mark.asyncio
+async def test_seed_feature_spec_receives_feature_spec_dict(integration):
+    """Test that seed_feature_spec receives the full feature_spec dict from context."""
+    integration.context_builder.seed_feature_spec = AsyncMock(return_value=True)
+
+    await integration.build_enriched_prompt("Implement FEAT-GR-003")
+
+    call_kwargs = integration.context_builder.seed_feature_spec.call_args[1]
+    feature_spec = call_kwargs["feature_spec"]
+    assert feature_spec["id"] == "FEAT-GR-003"
+    assert feature_spec["title"] == "Graphiti Enhanced Context"

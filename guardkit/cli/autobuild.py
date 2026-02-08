@@ -198,6 +198,12 @@ def autobuild():
     default=False,
     help="Run in ablation mode (no Coach feedback) for testing Block research findings",
 )
+@click.option(
+    "--enable-context/--no-context",
+    "enable_context",
+    default=True,
+    help="Enable/disable Graphiti context retrieval (default: enabled)",
+)
 @click.pass_context
 @handle_cli_errors
 def task(
@@ -214,6 +220,7 @@ def task(
     no_checkpoints: bool,
     no_rollback: bool,
     ablation_mode: bool,
+    enable_context: bool,
 ):
     """
     Execute AutoBuild orchestration for a task.
@@ -375,6 +382,7 @@ def task(
         enable_checkpoints=enable_checkpoints,
         rollback_on_pollution=rollback_on_pollution,
         ablation_mode=ablation_mode,
+        enable_context=enable_context,
     )
 
     # Phase 3: Execute orchestration
@@ -513,6 +521,12 @@ def status(ctx, task_id: str, verbose: bool):
         "Adds 60-90 min per task. See: docs/guides/guardkit-workflow.md#pre-loop-decision-guide"
     ),
 )
+@click.option(
+    "--enable-context/--no-context",
+    "enable_context",
+    default=True,
+    help="Enable/disable Graphiti context retrieval (default: enabled)",
+)
 @click.pass_context
 @handle_cli_errors
 def feature(
@@ -526,6 +540,7 @@ def feature(
     verbose: bool,
     sdk_timeout: Optional[int],
     enable_pre_loop: Optional[bool],
+    enable_context: bool,
 ):
     """
     Execute AutoBuild for all tasks in a feature.
@@ -606,6 +621,7 @@ def feature(
             quiet=ctx_obj.get("quiet", False),
             sdk_timeout=sdk_timeout,
             enable_pre_loop=enable_pre_loop,
+            enable_context=enable_context,
         )
 
         # Execute feature orchestration

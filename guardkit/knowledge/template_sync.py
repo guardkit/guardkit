@@ -84,10 +84,10 @@ def extract_agent_metadata(content: str) -> Dict[str, Any]:
         return metadata if isinstance(metadata, dict) else {}
 
     except yaml.YAMLError as e:
-        logger.warning(f"Failed to parse agent frontmatter: {e}")
+        logger.warning(f"[Graphiti] Failed to parse agent frontmatter: {e}")
         return {}
     except Exception as e:
-        logger.warning(f"Unexpected error extracting agent metadata: {e}")
+        logger.warning(f"[Graphiti] Unexpected error extracting agent metadata: {e}")
         return {}
 
 
@@ -156,17 +156,17 @@ async def sync_template_to_graphiti(template_path: Path) -> bool:
     client = get_graphiti()
 
     if not client:
-        logger.warning("Template sync skipped: Graphiti client not initialized")
+        logger.warning("[Graphiti] Template sync skipped: client unavailable")
         return False
 
     if not client.enabled:
-        logger.debug("Template sync skipped: Graphiti client disabled")
+        logger.debug("[Graphiti] Template sync skipped: client disabled")
         return False
 
     # Check manifest exists
     manifest_path = template_path / "manifest.json"
     if not manifest_path.exists():
-        logger.warning(f"Template sync failed: manifest.json not found at {manifest_path}")
+        logger.warning(f"[Graphiti] Template sync failed: manifest.json not found at {manifest_path}")
         return False
 
     # Load manifest
@@ -174,10 +174,10 @@ async def sync_template_to_graphiti(template_path: Path) -> bool:
         manifest_text = manifest_path.read_text()
         manifest = json.loads(manifest_text)
     except json.JSONDecodeError as e:
-        logger.warning(f"Template sync failed: invalid JSON in manifest.json: {e}")
+        logger.warning(f"[Graphiti] Template sync failed: invalid JSON in manifest.json: {e}")
         return False
     except Exception as e:
-        logger.warning(f"Template sync failed: could not read manifest.json: {e}")
+        logger.warning(f"[Graphiti] Template sync failed: could not read manifest.json: {e}")
         return False
 
     template_id = manifest.get('name', template_path.name)
@@ -208,9 +208,9 @@ async def sync_template_to_graphiti(template_path: Path) -> bool:
             source="template_sync",
             entity_type="template"
         )
-        logger.info(f"Synced template '{template_id}' to Graphiti")
+        logger.info(f"[Graphiti] Synced template '{template_id}'")
     except Exception as e:
-        logger.warning(f"Failed to sync template to Graphiti: {e}")
+        logger.warning(f"[Graphiti] Failed to sync template '{template_id}': {e}")
         return False
 
     # Sync agents if agents/ directory exists
@@ -223,7 +223,7 @@ async def sync_template_to_graphiti(template_path: Path) -> bool:
             try:
                 await sync_agent_to_graphiti(agent_file, template_id)
             except Exception as e:
-                logger.warning(f"Failed to sync agent {agent_file.name}: {e}")
+                logger.warning(f"[Graphiti] Failed to sync agent {agent_file.name}: {e}")
 
     # Sync rules if .claude/rules/ directory exists
     rules_dir = template_path / ".claude" / "rules"
@@ -232,7 +232,7 @@ async def sync_template_to_graphiti(template_path: Path) -> bool:
             try:
                 await sync_rule_to_graphiti(rule_file, template_id)
             except Exception as e:
-                logger.warning(f"Failed to sync rule {rule_file.name}: {e}")
+                logger.warning(f"[Graphiti] Failed to sync rule {rule_file.name}: {e}")
 
     return True
 
@@ -264,29 +264,29 @@ async def sync_agent_to_graphiti(agent_path: Path, template_id: str) -> bool:
     client = get_graphiti()
 
     if not client:
-        logger.warning("Agent sync skipped: Graphiti client not initialized")
+        logger.warning("[Graphiti] Agent sync skipped: client unavailable")
         return False
 
     if not client.enabled:
-        logger.debug("Agent sync skipped: Graphiti client disabled")
+        logger.debug("[Graphiti] Agent sync skipped: client disabled")
         return False
 
     # Check file exists
     if not agent_path.exists():
-        logger.warning(f"Agent sync failed: file not found at {agent_path}")
+        logger.warning(f"[Graphiti] Agent sync failed: file not found at {agent_path}")
         return False
 
     # Read and parse agent content
     try:
         content = agent_path.read_text()
     except Exception as e:
-        logger.warning(f"Agent sync failed: could not read {agent_path}: {e}")
+        logger.warning(f"[Graphiti] Agent sync failed: could not read {agent_path}: {e}")
         return False
 
     metadata = extract_agent_metadata(content)
 
     if not metadata:
-        logger.warning(f"Agent sync skipped: no metadata found in {agent_path}")
+        logger.warning(f"[Graphiti] Agent sync skipped: no metadata found in {agent_path}")
         return False
 
     agent_name = metadata.get('name', agent_path.stem)
@@ -316,10 +316,10 @@ async def sync_agent_to_graphiti(agent_path: Path, template_id: str) -> bool:
             source="template_sync",
             entity_type="agent"
         )
-        logger.info(f"Synced agent '{agent_name}' to Graphiti")
+        logger.info(f"[Graphiti] Synced agent '{agent_name}'")
         return True
     except Exception as e:
-        logger.warning(f"Failed to sync agent to Graphiti: {e}")
+        logger.warning(f"[Graphiti] Failed to sync agent '{agent_name}': {e}")
         return False
 
 
@@ -350,23 +350,23 @@ async def sync_rule_to_graphiti(rule_path: Path, template_id: str) -> bool:
     client = get_graphiti()
 
     if not client:
-        logger.warning("Rule sync skipped: Graphiti client not initialized")
+        logger.warning("[Graphiti] Rule sync skipped: client unavailable")
         return False
 
     if not client.enabled:
-        logger.debug("Rule sync skipped: Graphiti client disabled")
+        logger.debug("[Graphiti] Rule sync skipped: client disabled")
         return False
 
     # Check file exists
     if not rule_path.exists():
-        logger.warning(f"Rule sync failed: file not found at {rule_path}")
+        logger.warning(f"[Graphiti] Rule sync failed: file not found at {rule_path}")
         return False
 
     # Read and parse rule content
     try:
         content = rule_path.read_text()
     except Exception as e:
-        logger.warning(f"Rule sync failed: could not read {rule_path}: {e}")
+        logger.warning(f"[Graphiti] Rule sync failed: could not read {rule_path}: {e}")
         return False
 
     metadata = _extract_rule_metadata(content)
@@ -411,8 +411,8 @@ async def sync_rule_to_graphiti(rule_path: Path, template_id: str) -> bool:
             source="template_sync",
             entity_type="rule"
         )
-        logger.info(f"Synced rule '{rule_name}' to Graphiti")
+        logger.info(f"[Graphiti] Synced rule '{rule_name}'")
         return True
     except Exception as e:
-        logger.warning(f"Failed to sync rule to Graphiti: {e}")
+        logger.warning(f"[Graphiti] Failed to sync rule '{rule_name}': {e}")
         return False

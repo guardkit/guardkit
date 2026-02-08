@@ -255,6 +255,35 @@ class DesignContext:
 
 
 @dataclass(frozen=True)
+class ContextStatus:
+    """
+    Context retrieval status for a single agent invocation.
+
+    Captures whether Graphiti context was retrieved, skipped, disabled, or failed,
+    along with token usage and category counts for observability.
+
+    Attributes
+    ----------
+    status : Literal["retrieved", "skipped", "disabled", "failed"]
+        Outcome of the context retrieval attempt
+    categories_count : int
+        Number of context categories populated (0 if not retrieved)
+    budget_used : int
+        Tokens used from the context budget (0 if not retrieved)
+    budget_total : int
+        Total context token budget (0 if not retrieved)
+    reason : Optional[str]
+        Reason for skip/failure (None if retrieved successfully)
+    """
+
+    status: Literal["retrieved", "skipped", "disabled", "failed"]
+    categories_count: int = 0
+    budget_used: int = 0
+    budget_total: int = 0
+    reason: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class TurnRecord:
     """
     Immutable record of a Player↔Coach turn.
@@ -276,6 +305,10 @@ class TurnRecord:
         Coach feedback text for next turn (None if approved or error)
     timestamp : str
         ISO 8601 timestamp when turn completed
+    player_context_status : Optional[ContextStatus]
+        Context retrieval status for Player invocation (None if not tracked)
+    coach_context_status : Optional[ContextStatus]
+        Context retrieval status for Coach invocation (None if not tracked)
 
     Examples
     --------
@@ -297,6 +330,8 @@ class TurnRecord:
     timestamp: str
     visual_verification: Optional[Dict[str, Any]] = None
     design_compliance: Optional[Dict[str, Any]] = None
+    player_context_status: Optional[ContextStatus] = None
+    coach_context_status: Optional[ContextStatus] = None
 
 
 @dataclass
@@ -551,6 +586,26 @@ class AutoBuildOrchestrator:
         self.verbose = verbose
         self._context_loader = context_loader
         self._feature_id: Optional[str] = None  # Set during orchestration from task metadata
+        # Per-turn context status tracking for progress display (TASK-FIX-GCW5)
+        self._last_player_context_status: Optional[ContextStatus] = None
+        self._last_coach_context_status: Optional[ContextStatus] = None
+
+        # Auto-initialize context_loader if enable_context=True and no loader provided (TASK-FIX-GCW3)
+        if self.enable_context and self._context_loader is None:
+            try:
+                from guardkit.knowledge import get_graphiti, AutoBuildContextLoader
+                graphiti = get_graphiti()
+                if graphiti and graphiti.enabled:
+                    self._context_loader = AutoBuildContextLoader(
+                        graphiti=graphiti, verbose=self.verbose
+                    )
+                    logger.info("Auto-initialized context_loader with Graphiti")
+                else:
+                    logger.info("Graphiti not available, context retrieval disabled")
+            except ImportError:
+                logger.info("Graphiti dependencies not installed, context retrieval disabled")
+            except Exception as e:
+                logger.info(f"Could not auto-initialize context_loader: {e}")
 
         # Log warning if ablation mode is active
         if self.ablation_mode:
@@ -581,6 +636,7 @@ class AutoBuildOrchestrator:
             f"ablation_mode={self.ablation_mode}, "
             f"existing_worktree={'provided' if existing_worktree else 'None'}, "
             f"enable_context={self.enable_context}, "
+            f"context_loader={'provided' if self._context_loader else 'None'}, "
             f"verbose={self.verbose}"
         )
 
@@ -1618,11 +1674,19 @@ class AutoBuildOrchestrator:
             requirements=requirements,
             feedback=previous_feedback,
         )
+        # Snapshot context status after invocation (TASK-FIX-GCW5)
+        player_context_status = self._last_player_context_status
 
         # Display Player completion
         if player_result.success:
             summary = self._build_player_summary(player_result.report)
             self._progress_display.complete_turn("success", summary)
+            # Show context status line if context was retrieved (TASK-FIX-GCW5)
+            if player_context_status and player_context_status.status != "disabled":
+                from guardkit.orchestrator.progress import format_context_status
+                ctx_line = format_context_status(player_context_status)
+                if ctx_line:
+                    self._progress_display.console.print(f"   [dim]{ctx_line}[/dim]")
         else:
             # Check for unrecoverable error first - exit immediately without retry (TASK-AB-FIX-003)
             is_unrecoverable = player_result.report.get("unrecoverable", False)
@@ -1644,6 +1708,7 @@ class AutoBuildOrchestrator:
                     decision="error",
                     feedback=None,
                     timestamp=timestamp,
+                    player_context_status=player_context_status,
                 )
 
             # Distinguish between missing report and actual failure
@@ -1704,6 +1769,7 @@ class AutoBuildOrchestrator:
                     decision="error",
                     feedback=None,
                     timestamp=timestamp,
+                    player_context_status=player_context_status,
                 )
 
         # ===== Coach Phase =====
@@ -1722,6 +1788,7 @@ class AutoBuildOrchestrator:
                 decision="approve",  # Auto-approve in ablation mode
                 feedback=None,
                 timestamp=timestamp,
+                player_context_status=player_context_status,
             )
 
         self._progress_display.start_turn(turn, "Coach Validation")
@@ -1736,6 +1803,8 @@ class AutoBuildOrchestrator:
             task_type=task_type,
             skip_arch_review=skip_arch_review,
         )
+        # Snapshot context status after coach invocation (TASK-FIX-GCW5)
+        coach_context_status = self._last_coach_context_status
 
         # Parse Coach decision
         if not coach_result.success:
@@ -1751,6 +1820,8 @@ class AutoBuildOrchestrator:
                 decision="error",
                 feedback=None,
                 timestamp=timestamp,
+                player_context_status=player_context_status,
+                coach_context_status=coach_context_status,
             )
 
         # Extract decision and feedback
@@ -1761,6 +1832,12 @@ class AutoBuildOrchestrator:
                 "success",
                 "Coach approved - ready for human review",
             )
+            # Show coach context status line (TASK-FIX-GCW5)
+            if coach_context_status and coach_context_status.status != "disabled":
+                from guardkit.orchestrator.progress import format_context_status
+                ctx_line = format_context_status(coach_context_status)
+                if ctx_line:
+                    self._progress_display.console.print(f"   [dim]{ctx_line}[/dim]")
             return TurnRecord(
                 turn=turn,
                 player_result=player_result,
@@ -1768,6 +1845,8 @@ class AutoBuildOrchestrator:
                 decision="approve",
                 feedback=None,
                 timestamp=timestamp,
+                player_context_status=player_context_status,
+                coach_context_status=coach_context_status,
             )
 
         else:  # feedback
@@ -1778,6 +1857,12 @@ class AutoBuildOrchestrator:
                 else f"Feedback: {feedback_text}"
             )
             self._progress_display.complete_turn("feedback", summary)
+            # Show coach context status line (TASK-FIX-GCW5)
+            if coach_context_status and coach_context_status.status != "disabled":
+                from guardkit.orchestrator.progress import format_context_status
+                ctx_line = format_context_status(coach_context_status)
+                if ctx_line:
+                    self._progress_display.console.print(f"   [dim]{ctx_line}[/dim]")
 
             return TurnRecord(
                 turn=turn,
@@ -1786,6 +1871,8 @@ class AutoBuildOrchestrator:
                 decision="feedback",
                 feedback=feedback_text,
                 timestamp=timestamp,
+                player_context_status=player_context_status,
+                coach_context_status=coach_context_status,
             )
 
     def _finalize_phase(
@@ -2570,6 +2657,7 @@ class AutoBuildOrchestrator:
 
             # Retrieve job-specific context if enabled (TASK-GR6-006)
             context_prompt = ""
+            self._last_player_context_status = None  # Reset per invocation (TASK-FIX-GCW5)
             if self.enable_context and self._context_loader is not None:
                 try:
                     context_result = loop.run_until_complete(
@@ -2585,6 +2673,14 @@ class AutoBuildOrchestrator:
                     )
                     context_prompt = context_result.prompt_text
 
+                    # Record context status for progress display (TASK-FIX-GCW5)
+                    self._last_player_context_status = ContextStatus(
+                        status="retrieved",
+                        categories_count=len(context_result.categories_populated),
+                        budget_used=context_result.budget_used,
+                        budget_total=context_result.budget_total,
+                    )
+
                     # Log verbose details if enabled
                     if self.verbose and context_result.verbose_details:
                         logger.info(f"Context retrieval details:\n{context_result.verbose_details}")
@@ -2598,6 +2694,16 @@ class AutoBuildOrchestrator:
                     # Graceful degradation - continue without context
                     logger.warning(f"Failed to retrieve Player context for {task_id}: {e}")
                     context_prompt = ""
+                    self._last_player_context_status = ContextStatus(
+                        status="failed", reason=str(e)
+                    )
+            elif self.enable_context:
+                logger.info(f"Player context retrieval skipped: context_loader not provided for {task_id}")
+                self._last_player_context_status = ContextStatus(
+                    status="skipped", reason="no context_loader"
+                )
+            else:
+                self._last_player_context_status = ContextStatus(status="disabled")
 
             result = loop.run_until_complete(
                 self._agent_invoker.invoke_player(
@@ -2721,6 +2827,7 @@ class AutoBuildOrchestrator:
 
         # Retrieve job-specific context for Coach if enabled (TASK-GR6-006)
         context_prompt = ""
+        self._last_coach_context_status = None  # Reset per invocation (TASK-FIX-GCW5)
         if self.enable_context and self._context_loader is not None:
             try:
                 # Create event loop if needed
@@ -2743,6 +2850,14 @@ class AutoBuildOrchestrator:
                 )
                 context_prompt = context_result.prompt_text
 
+                # Record context status for progress display (TASK-FIX-GCW5)
+                self._last_coach_context_status = ContextStatus(
+                    status="retrieved",
+                    categories_count=len(context_result.categories_populated),
+                    budget_used=context_result.budget_used,
+                    budget_total=context_result.budget_total,
+                )
+
                 # Log verbose details if enabled
                 if self.verbose and context_result.verbose_details:
                     logger.info(f"Coach context retrieval details:\n{context_result.verbose_details}")
@@ -2756,6 +2871,16 @@ class AutoBuildOrchestrator:
                 # Graceful degradation - continue without context
                 logger.warning(f"Failed to retrieve Coach context for {task_id}: {e}")
                 context_prompt = ""
+                self._last_coach_context_status = ContextStatus(
+                    status="failed", reason=str(e)
+                )
+        elif self.enable_context:
+            logger.info(f"Coach context retrieval skipped: context_loader not provided for {task_id}")
+            self._last_coach_context_status = ContextStatus(
+                status="skipped", reason="no context_loader"
+            )
+        else:
+            self._last_coach_context_status = ContextStatus(status="disabled")
 
         # Try lightweight CoachValidator first (Option D architecture)
         try:
@@ -3518,6 +3643,7 @@ def finalize_autobuild(
 
 __all__ = [
     "AutoBuildOrchestrator",
+    "ContextStatus",
     "OrchestrationResult",
     "TurnRecord",
     "OrchestrationError",

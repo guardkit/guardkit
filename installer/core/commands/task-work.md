@@ -9,6 +9,13 @@ This command supports **graceful degradation** based on installed packages:
 - Executes full workflow with architectural review and quality gates
 - No requirements/epic loading (require-kit features)
 
+### GuardKit + Graphiti (Knowledge-Enhanced Workflow)
+- All core features PLUS:
+- Loads job-specific context from knowledge graph during Phase 1.7
+- Injects feature context, similar outcomes, relevant patterns, warnings into planning prompt
+- Uses "standard" budget allocation (6 categories, ~4000 tokens)
+- Graceful degradation: works identically when Graphiti is unavailable
+
 ### GuardKit + Require-Kit (Enhanced Workflow)
 - All core features PLUS:
 - Loads EARS requirements if linked in task frontmatter
@@ -600,6 +607,7 @@ The task-work command now supports a `--micro` flag for streamlined execution of
 - Phase 5: Quick Review (lint only, skip SOLID/DRY/YAGNI)
 
 **Phases skipped**:
+- Phase 1.7: Graphiti Context Loading
 - Phase 2: Implementation Planning
 - Phase 2.1: Library Context Gathering
 - Phase 2.5A: Pattern Suggestion
@@ -767,7 +775,7 @@ The task-work command now supports optional flags for design-first workflow, ena
 
 **Purpose**: Execute complete workflow in single session.
 
-**Phases executed**: All phases in sequence (1 → 2 → 2.5A → 2.5B → 2.7 → 2.8 → 3 → 4 → 4.5 → 5)
+**Phases executed**: All phases in sequence (1 → 1.7 → 2 → 2.1 → 2.5A → 2.5B → 2.7 → 2.8 → 3 → 4 → 4.5 → 5 → 5.5)
 
 **Phase 2.8 checkpoint**: Triggered based on complexity evaluation (auto-proceed for 1-3, optional for 4-6, mandatory for 7-10).
 
@@ -1637,6 +1645,103 @@ Feature: {feature or 'None'}
 Acceptance Criteria: {len(acceptance_criteria)} items
 ```
 
+**PROCEED** to Phase 1.7 (Graphiti Context Loading)
+
+#### Phase 1.7: Graphiti Context Loading (Knowledge Graph)
+
+**Purpose**: Load job-specific context from the Graphiti knowledge graph to enrich implementation planning with historical patterns, similar outcomes, and domain knowledge.
+
+**Trigger**: Always execute after Phase 1.5 (fast no-op if Graphiti unavailable)
+
+**Skip Conditions**:
+- `--implement-only` flag is set (uses saved design)
+- `--no-context` flag is set
+
+**Workflow**:
+
+**STEP 1: Check Graphiti Availability**
+
+```python
+from installer.core.commands.lib.graphiti_context_loader import (
+    is_graphiti_enabled,
+    load_task_context_sync,
+)
+
+graphiti_available = is_graphiti_enabled()
+```
+
+**IF** Graphiti not available:
+```
+DISPLAY: "[Graphiti] Context: unavailable (continuing without)"
+SET task_context["graphiti_context"] = None
+PROCEED to Step 2
+```
+
+**STEP 2: Load Context from Knowledge Graph**
+
+**IF** Graphiti available:
+
+```python
+graphiti_context = load_task_context_sync(
+    task_id=task_id,
+    task_data={
+        "description": task_context.get("description", ""),
+        "tech_stack": detected_stack or "unknown",
+        "complexity": task_context.get("complexity", 5),
+        "feature_id": task_context.get("feature", None),
+    },
+    phase="plan"
+)
+
+task_context["graphiti_context"] = graphiti_context
+```
+
+**IF** context loaded successfully:
+```
+DISPLAY: "[Graphiti] Context loaded: {category_count} categories, {token_count} tokens"
+```
+
+**IF** context loading failed (returns None):
+```
+DISPLAY: "[Graphiti] Context: loading failed (continuing without)"
+SET task_context["graphiti_context"] = None
+```
+
+**STEP 3: Store for Phase 2 Injection**
+
+The `graphiti_context` string (or None) is stored in `task_context` and injected into the Phase 2 planning prompt. See Phase 2 for the injection template.
+
+**ERROR HANDLING**:
+
+All Graphiti operations follow the 3-layer graceful degradation pattern:
+1. Null check (is_graphiti_enabled)
+2. Enabled check (env var GRAPHITI_ENABLED)
+3. Try/except (load_task_context_sync catches all exceptions internally)
+
+Task-work NEVER blocks or fails due to Graphiti errors.
+
+**Example Flow**:
+
+```
+/task-work TASK-a3f8
+
+Phase 1.5: Loading context...
+Phase 1.7: Graphiti Context Loading
+
+[Graphiti] Context loaded: 4 categories, 2800/4000 tokens
+
+Phase 2: Planning implementation with knowledge context...
+```
+
+Or when unavailable:
+```
+Phase 1.7: Graphiti Context Loading
+
+[Graphiti] Context: unavailable (continuing without)
+
+Phase 2: Planning implementation...
+```
+
 **PROCEED** to Step 2 (Detect Technology Stack)
 
 ### Step 2: Detect Technology Stack (REQUIRED - 10 seconds)
@@ -1978,9 +2083,9 @@ task_context["library_context"] = library_context
 **DISPLAY**:
 ```
 📚 Library Context Gathered:
-  • graphiti-core
-    Import: from graphiti_core import Graphiti
-    Methods: search(), add_episode(), build_indices()
+  • pydantic
+    Import: from pydantic import BaseModel, Field
+    Methods: model_validate(), model_dump(), model_json_schema()
 
 Proceed with planning? [Y/n]:
 ```
@@ -1995,7 +2100,7 @@ Add `library_context` to Phase 2 agent prompt. The planning agent receives libra
 
 If Context7 resolution fails for a library:
 ```
-⚠️  Could not resolve: graphiti-core
+⚠️  Could not resolve: some-internal-lib
     Error: Not found in Context7 registry
     Proceeding with training data for this library.
 ```
@@ -2011,23 +2116,23 @@ Phase 1.6: Clarifying Questions (complexity: 5)
 Phase 2.1: Library Context Gathering
 
 📚 Library Context Gathering:
-  Detected: graphiti-core, neo4j
+  Detected: pydantic, httpx
 
 📚 Resolving via Context7...
-  ✓ graphiti-core → /falkordb/graphiti
-  ✓ neo4j → /neo4j/neo4j-python-driver
+  ✓ pydantic → /pydantic/pydantic
+  ✓ httpx → /encode/httpx
 
 📚 Fetching documentation...
-  ✓ graphiti-core: initialization, search(), add_episode()
-  ✓ neo4j: driver setup, session management
+  ✓ pydantic: BaseModel, Field, model_validate()
+  ✓ httpx: AsyncClient, request(), response handling
 
 📚 Library Context Gathered:
-  • graphiti-core
-    Import: from graphiti_core import Graphiti
-    Methods: search(), add_episode(), build_indices()
-  • neo4j
-    Import: from neo4j import GraphDatabase
-    Methods: driver(), session(), run()
+  • pydantic
+    Import: from pydantic import BaseModel, Field
+    Methods: model_validate(), model_dump(), model_json_schema()
+  • httpx
+    Import: from httpx import AsyncClient
+    Methods: get(), post(), request()
 
 Proceed with planning? [Y/n]: Y
 
@@ -2082,6 +2187,9 @@ clarification_context: {clarification_context}
 {if library_context:}
 library_context: {list(library_context.keys())}
 {endif}
+{if task_context.graphiti_context:}
+graphiti_context: available
+{endif}
 </AGENT_CONTEXT>
 
 Design {stack} implementation approach for {task_id}.
@@ -2101,6 +2209,15 @@ Defaults applied (user did not override):
 {endfor}
 
 Use these clarifications to inform your implementation plan.
+{endif}
+
+{if task_context.graphiti_context:}
+KNOWLEDGE GRAPH CONTEXT (from Phase 1.7 - Graphiti):
+The following context was retrieved from the project knowledge graph.
+Use this to inform architectural decisions, avoid known pitfalls, and
+build on successful patterns from previous tasks:
+
+{task_context.graphiti_context}
 {endif}
 
 {if library_context:}

@@ -1197,3 +1197,68 @@ def test_task_command_pre_loop_default_enabled(
     mock_orchestrator_class.assert_called_once()
     call_kwargs = mock_orchestrator_class.call_args[1]
     assert call_kwargs["enable_pre_loop"] is True
+
+
+# ============================================================================
+# enable_context CLI Flag Tests (TASK-FIX-GCW4)
+# ============================================================================
+
+
+@patch("guardkit.cli.autobuild._require_sdk")
+@patch("guardkit.cli.autobuild.AutoBuildOrchestrator")
+@patch("guardkit.cli.autobuild.TaskLoader.load_task")
+def test_task_command_enable_context_default(
+    mock_load_task, mock_orchestrator_class, mock_require_sdk,
+    cli_runner, mock_task_data, mock_success_result,
+):
+    """Test that enable_context defaults to True for task command."""
+    mock_load_task.return_value = mock_task_data
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.orchestrate.return_value = mock_success_result
+    mock_orchestrator_class.return_value = mock_orchestrator
+
+    result = cli_runner.invoke(task, ["TASK-AB-001"])
+
+    mock_orchestrator_class.assert_called_once()
+    call_kwargs = mock_orchestrator_class.call_args[1]
+    assert call_kwargs["enable_context"] is True
+
+
+@patch("guardkit.cli.autobuild._require_sdk")
+@patch("guardkit.cli.autobuild.AutoBuildOrchestrator")
+@patch("guardkit.cli.autobuild.TaskLoader.load_task")
+def test_task_command_no_context_flag(
+    mock_load_task, mock_orchestrator_class, mock_require_sdk,
+    cli_runner, mock_task_data, mock_success_result,
+):
+    """Test that --no-context flag sets enable_context=False."""
+    mock_load_task.return_value = mock_task_data
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.orchestrate.return_value = mock_success_result
+    mock_orchestrator_class.return_value = mock_orchestrator
+
+    result = cli_runner.invoke(task, ["TASK-AB-001", "--no-context"])
+
+    mock_orchestrator_class.assert_called_once()
+    call_kwargs = mock_orchestrator_class.call_args[1]
+    assert call_kwargs["enable_context"] is False
+
+
+@patch("guardkit.cli.autobuild._require_sdk")
+@patch("guardkit.cli.autobuild.AutoBuildOrchestrator")
+@patch("guardkit.cli.autobuild.TaskLoader.load_task")
+def test_task_command_enable_context_flag(
+    mock_load_task, mock_orchestrator_class, mock_require_sdk,
+    cli_runner, mock_task_data, mock_success_result,
+):
+    """Test that --enable-context flag explicitly sets enable_context=True."""
+    mock_load_task.return_value = mock_task_data
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.orchestrate.return_value = mock_success_result
+    mock_orchestrator_class.return_value = mock_orchestrator
+
+    result = cli_runner.invoke(task, ["TASK-AB-001", "--enable-context"])
+
+    mock_orchestrator_class.assert_called_once()
+    call_kwargs = mock_orchestrator_class.call_args[1]
+    assert call_kwargs["enable_context"] is True

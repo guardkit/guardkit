@@ -760,3 +760,739 @@ class TestContextLoaderInitialization:
         )
 
         assert orchestrator.verbose == True
+
+
+# ============================================================================
+# Test Context Skip Logging (TASK-FIX-GCW2)
+# ============================================================================
+
+
+class TestContextSkipLogging:
+    """Test INFO log emission when enable_context=True but context_loader is None."""
+
+    def test_player_logs_info_when_context_enabled_but_loader_none(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """
+        Given enable_context=True and context_loader=None
+        When _invoke_player_safely is called
+        Then an INFO log 'Player context retrieval skipped' is emitted.
+        """
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/repo"),
+            max_turns=3,
+            enable_context=True,
+            context_loader=None,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        # Mock agent_invoker.invoke_player to return a basic result
+        mock_result = Mock()
+        mock_result.success = True
+        mock_result.error = None
+        mock_result.report = {"summary": "test"}
+        mock_agent_invoker.invoke_player = AsyncMock(return_value=mock_result)
+
+        with patch("guardkit.orchestrator.autobuild.logger") as mock_logger:
+            orchestrator._invoke_player_safely(
+                task_id="TASK-TEST-001",
+                turn=1,
+                requirements="Test requirements",
+                feedback=None,
+            )
+            mock_logger.info.assert_any_call(
+                "Player context retrieval skipped: context_loader not provided for TASK-TEST-001"
+            )
+
+    def test_coach_logs_info_when_context_enabled_but_loader_none(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """
+        Given enable_context=True and context_loader=None
+        When _invoke_coach_safely is called
+        Then an INFO log 'Coach context retrieval skipped' is emitted.
+        """
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/repo"),
+            max_turns=3,
+            enable_context=True,
+            context_loader=None,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        # Mock worktree
+        mock_worktree = Mock()
+        mock_worktree.path = Path("/tmp/worktree")
+
+        # Mock coach invocation to return a basic result
+        mock_result = Mock()
+        mock_result.success = True
+        mock_result.error = None
+        mock_result.report = {"decision": "approve", "rationale": "test"}
+        mock_agent_invoker.invoke_coach = AsyncMock(return_value=mock_result)
+
+        with patch("guardkit.orchestrator.autobuild.logger") as mock_logger:
+            orchestrator._invoke_coach_safely(
+                task_id="TASK-TEST-001",
+                turn=1,
+                requirements="Test requirements",
+                player_report={"summary": "test"},
+                worktree=mock_worktree,
+            )
+            mock_logger.info.assert_any_call(
+                "Coach context retrieval skipped: context_loader not provided for TASK-TEST-001"
+            )
+
+    def test_no_log_when_context_disabled(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """
+        Given enable_context=False
+        When _invoke_player_safely is called
+        Then no context skip log is emitted.
+        """
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/repo"),
+            max_turns=3,
+            enable_context=False,
+            context_loader=None,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        mock_result = Mock()
+        mock_result.success = True
+        mock_result.error = None
+        mock_result.report = {"summary": "test"}
+        mock_agent_invoker.invoke_player = AsyncMock(return_value=mock_result)
+
+        with patch("guardkit.orchestrator.autobuild.logger") as mock_logger:
+            orchestrator._invoke_player_safely(
+                task_id="TASK-TEST-001",
+                turn=1,
+                requirements="Test requirements",
+                feedback=None,
+            )
+            # Verify no call with "skipped" message
+            for call in mock_logger.info.call_args_list:
+                assert "context retrieval skipped" not in str(call), (
+                    f"Unexpected skip log when enable_context=False: {call}"
+                )
+
+
+# ============================================================================
+# Test: Auto-Init Context Loader (TASK-FIX-GCW3)
+# ============================================================================
+
+
+class TestAutoInitContextLoader:
+    """Tests for auto-initialization of AutoBuildContextLoader in __init__."""
+
+    def test_auto_init_when_graphiti_available(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """
+        Given enable_context=True, no context_loader, and Graphiti singleton available
+        When AutoBuildOrchestrator is initialized
+        Then _context_loader is auto-created with the Graphiti client.
+        """
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        mock_graphiti = MagicMock()
+        mock_graphiti.enabled = True
+
+        with patch("guardkit.orchestrator.autobuild.get_graphiti", return_value=mock_graphiti) as mock_get, \
+             patch("guardkit.orchestrator.autobuild.AutoBuildContextLoader") as MockLoader:
+            # Prevent the import-based path; patch at module level
+            # The auto-init imports from guardkit.knowledge, so patch at the call site
+            pass
+
+        # Use a more targeted approach: patch the imports inside __init__
+        with patch.dict("sys.modules", {}):
+            pass
+
+        # Simplest approach: patch at the guardkit.knowledge level
+        mock_graphiti = MagicMock()
+        mock_graphiti.enabled = True
+
+        mock_loader_class = MagicMock()
+        mock_loader_instance = MagicMock()
+        mock_loader_class.return_value = mock_loader_instance
+
+        with patch("guardkit.knowledge.get_graphiti", return_value=mock_graphiti), \
+             patch("guardkit.knowledge.AutoBuildContextLoader", mock_loader_class):
+            orchestrator = AutoBuildOrchestrator(
+                repo_root=Path("/tmp/repo"),
+                max_turns=3,
+                enable_context=True,
+                context_loader=None,
+                worktree_manager=mock_worktree_manager,
+                agent_invoker=mock_agent_invoker,
+                progress_display=mock_progress_display,
+            )
+
+        assert orchestrator._context_loader is mock_loader_instance
+        mock_loader_class.assert_called_once_with(
+            graphiti=mock_graphiti, verbose=False
+        )
+
+    def test_auto_init_skipped_when_context_loader_provided(
+        self,
+        mock_worktree_manager,
+        mock_context_loader,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """
+        Given enable_context=True and an explicit context_loader is provided
+        When AutoBuildOrchestrator is initialized
+        Then auto-init is skipped; the provided loader is used.
+        """
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        with patch("guardkit.knowledge.get_graphiti") as mock_get:
+            orchestrator = AutoBuildOrchestrator(
+                repo_root=Path("/tmp/repo"),
+                max_turns=3,
+                enable_context=True,
+                context_loader=mock_context_loader,
+                worktree_manager=mock_worktree_manager,
+                agent_invoker=mock_agent_invoker,
+                progress_display=mock_progress_display,
+            )
+
+        # DI takes precedence: auto-init should not have fired
+        assert orchestrator._context_loader is mock_context_loader
+
+    def test_auto_init_skipped_when_context_disabled(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """
+        Given enable_context=False
+        When AutoBuildOrchestrator is initialized
+        Then no auto-init is attempted.
+        """
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        with patch("guardkit.knowledge.get_graphiti") as mock_get:
+            orchestrator = AutoBuildOrchestrator(
+                repo_root=Path("/tmp/repo"),
+                max_turns=3,
+                enable_context=False,
+                context_loader=None,
+                worktree_manager=mock_worktree_manager,
+                agent_invoker=mock_agent_invoker,
+                progress_display=mock_progress_display,
+            )
+
+        assert orchestrator._context_loader is None
+        mock_get.assert_not_called()
+
+    def test_auto_init_graceful_when_graphiti_none(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """
+        Given enable_context=True and get_graphiti() returns None
+        When AutoBuildOrchestrator is initialized
+        Then _context_loader remains None (graceful degradation).
+        """
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        with patch("guardkit.knowledge.get_graphiti", return_value=None):
+            orchestrator = AutoBuildOrchestrator(
+                repo_root=Path("/tmp/repo"),
+                max_turns=3,
+                enable_context=True,
+                context_loader=None,
+                worktree_manager=mock_worktree_manager,
+                agent_invoker=mock_agent_invoker,
+                progress_display=mock_progress_display,
+            )
+
+        assert orchestrator._context_loader is None
+
+    def test_auto_init_graceful_when_graphiti_not_enabled(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """
+        Given enable_context=True and get_graphiti() returns client with enabled=False
+        When AutoBuildOrchestrator is initialized
+        Then _context_loader remains None (graceful degradation).
+        """
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        mock_graphiti = MagicMock()
+        mock_graphiti.enabled = False
+
+        with patch("guardkit.knowledge.get_graphiti", return_value=mock_graphiti):
+            orchestrator = AutoBuildOrchestrator(
+                repo_root=Path("/tmp/repo"),
+                max_turns=3,
+                enable_context=True,
+                context_loader=None,
+                worktree_manager=mock_worktree_manager,
+                agent_invoker=mock_agent_invoker,
+                progress_display=mock_progress_display,
+            )
+
+        assert orchestrator._context_loader is None
+
+    def test_auto_init_graceful_on_import_error(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """
+        Given enable_context=True but graphiti dependencies not installed
+        When AutoBuildOrchestrator is initialized
+        Then _context_loader remains None with no crash.
+        """
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        with patch(
+            "guardkit.knowledge.get_graphiti",
+            side_effect=ImportError("No module named 'graphiti_core'"),
+        ):
+            orchestrator = AutoBuildOrchestrator(
+                repo_root=Path("/tmp/repo"),
+                max_turns=3,
+                enable_context=True,
+                context_loader=None,
+                worktree_manager=mock_worktree_manager,
+                agent_invoker=mock_agent_invoker,
+                progress_display=mock_progress_display,
+            )
+
+        assert orchestrator._context_loader is None
+
+    def test_auto_init_graceful_on_unexpected_error(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """
+        Given enable_context=True and get_graphiti() raises unexpected error
+        When AutoBuildOrchestrator is initialized
+        Then _context_loader remains None with no crash.
+        """
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        with patch(
+            "guardkit.knowledge.get_graphiti",
+            side_effect=RuntimeError("Connection refused"),
+        ):
+            orchestrator = AutoBuildOrchestrator(
+                repo_root=Path("/tmp/repo"),
+                max_turns=3,
+                enable_context=True,
+                context_loader=None,
+                worktree_manager=mock_worktree_manager,
+                agent_invoker=mock_agent_invoker,
+                progress_display=mock_progress_display,
+            )
+
+        assert orchestrator._context_loader is None
+
+    def test_auto_init_passes_verbose_flag(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """
+        Given enable_context=True and verbose=True
+        When AutoBuildOrchestrator auto-initializes context_loader
+        Then verbose=True is passed to AutoBuildContextLoader.
+        """
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        mock_graphiti = MagicMock()
+        mock_graphiti.enabled = True
+
+        mock_loader_class = MagicMock()
+
+        with patch("guardkit.knowledge.get_graphiti", return_value=mock_graphiti), \
+             patch("guardkit.knowledge.AutoBuildContextLoader", mock_loader_class):
+            orchestrator = AutoBuildOrchestrator(
+                repo_root=Path("/tmp/repo"),
+                max_turns=3,
+                enable_context=True,
+                verbose=True,
+                context_loader=None,
+                worktree_manager=mock_worktree_manager,
+                agent_invoker=mock_agent_invoker,
+                progress_display=mock_progress_display,
+            )
+
+        mock_loader_class.assert_called_once_with(
+            graphiti=mock_graphiti, verbose=True
+        )
+
+    def test_auto_init_logs_success(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """
+        Given successful auto-init
+        When AutoBuildOrchestrator is initialized
+        Then an INFO log 'Auto-initialized context_loader with Graphiti' is emitted.
+        """
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        mock_graphiti = MagicMock()
+        mock_graphiti.enabled = True
+
+        with patch("guardkit.knowledge.get_graphiti", return_value=mock_graphiti), \
+             patch("guardkit.knowledge.AutoBuildContextLoader"), \
+             patch("guardkit.orchestrator.autobuild.logger") as mock_logger:
+            orchestrator = AutoBuildOrchestrator(
+                repo_root=Path("/tmp/repo"),
+                max_turns=3,
+                enable_context=True,
+                context_loader=None,
+                worktree_manager=mock_worktree_manager,
+                agent_invoker=mock_agent_invoker,
+                progress_display=mock_progress_display,
+            )
+
+        mock_logger.info.assert_any_call(
+            "Auto-initialized context_loader with Graphiti"
+        )
+
+    def test_auto_init_logs_graphiti_unavailable(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """
+        Given get_graphiti() returns None
+        When AutoBuildOrchestrator is initialized
+        Then an INFO log 'Graphiti not available' is emitted.
+        """
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        with patch("guardkit.knowledge.get_graphiti", return_value=None), \
+             patch("guardkit.orchestrator.autobuild.logger") as mock_logger:
+            orchestrator = AutoBuildOrchestrator(
+                repo_root=Path("/tmp/repo"),
+                max_turns=3,
+                enable_context=True,
+                context_loader=None,
+                worktree_manager=mock_worktree_manager,
+                agent_invoker=mock_agent_invoker,
+                progress_display=mock_progress_display,
+            )
+
+        mock_logger.info.assert_any_call(
+            "Graphiti not available, context retrieval disabled"
+        )
+
+
+# ============================================================================
+# Test: Context Status Tracking (TASK-FIX-GCW5)
+# ============================================================================
+
+
+class TestContextStatusTracking:
+    """Tests for ContextStatus being set on orchestrator during invocations."""
+
+    def test_player_context_status_set_when_retrieved(
+        self,
+        mock_worktree_manager,
+        mock_worktree,
+        mock_context_loader,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """
+        Given context retrieval succeeds
+        When _invoke_player_safely is called
+        Then _last_player_context_status is set with 'retrieved' status
+        """
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/repo"),
+            max_turns=3,
+            enable_context=True,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+            context_loader=mock_context_loader,
+        )
+        orchestrator._existing_worktree = mock_worktree
+
+        orchestrator._invoke_player_safely(
+            task_id="TASK-TEST-001",
+            turn=1,
+            requirements="Test requirements",
+            feedback=None,
+        )
+
+        cs = orchestrator._last_player_context_status
+        assert cs is not None
+        assert cs.status == "retrieved"
+        assert cs.categories_count == 4  # from mock_context_result fixture
+        assert cs.budget_used == 1500
+        assert cs.budget_total == 4000
+
+    def test_player_context_status_disabled_when_context_off(
+        self,
+        mock_worktree_manager,
+        mock_worktree,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """
+        Given enable_context=False
+        When _invoke_player_safely is called
+        Then _last_player_context_status is 'disabled'
+        """
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/repo"),
+            max_turns=3,
+            enable_context=False,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+        orchestrator._existing_worktree = mock_worktree
+
+        orchestrator._invoke_player_safely(
+            task_id="TASK-TEST-001",
+            turn=1,
+            requirements="Test requirements",
+            feedback=None,
+        )
+
+        cs = orchestrator._last_player_context_status
+        assert cs is not None
+        assert cs.status == "disabled"
+
+    def test_player_context_status_skipped_when_no_loader(
+        self,
+        mock_worktree_manager,
+        mock_worktree,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """
+        Given enable_context=True but no context_loader
+        When _invoke_player_safely is called
+        Then _last_player_context_status is 'skipped'
+        """
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        mock_result = Mock()
+        mock_result.success = True
+        mock_result.error = None
+        mock_result.report = {"summary": "test"}
+        mock_agent_invoker.invoke_player = AsyncMock(return_value=mock_result)
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/repo"),
+            max_turns=3,
+            enable_context=True,
+            context_loader=None,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+        orchestrator._existing_worktree = mock_worktree
+
+        orchestrator._invoke_player_safely(
+            task_id="TASK-TEST-001",
+            turn=1,
+            requirements="Test requirements",
+            feedback=None,
+        )
+
+        cs = orchestrator._last_player_context_status
+        assert cs is not None
+        assert cs.status == "skipped"
+        assert cs.reason == "no context_loader"
+
+    def test_player_context_status_failed_on_exception(
+        self,
+        mock_worktree_manager,
+        mock_worktree,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """
+        Given context retrieval raises an exception
+        When _invoke_player_safely is called
+        Then _last_player_context_status is 'failed' with the error
+        """
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        failing_loader = MagicMock()
+        failing_loader.get_player_context = AsyncMock(
+            side_effect=Exception("Graphiti unavailable")
+        )
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/repo"),
+            max_turns=3,
+            enable_context=True,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+            context_loader=failing_loader,
+        )
+        orchestrator._existing_worktree = mock_worktree
+
+        orchestrator._invoke_player_safely(
+            task_id="TASK-TEST-001",
+            turn=1,
+            requirements="Test requirements",
+            feedback=None,
+        )
+
+        cs = orchestrator._last_player_context_status
+        assert cs is not None
+        assert cs.status == "failed"
+        assert "Graphiti unavailable" in cs.reason
+
+    def test_coach_context_status_set_when_retrieved(
+        self,
+        mock_worktree_manager,
+        mock_worktree,
+        mock_context_loader,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """
+        Given context retrieval succeeds for Coach
+        When _invoke_coach_safely is called
+        Then _last_coach_context_status is set with 'retrieved' status
+        """
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/repo"),
+            max_turns=3,
+            enable_context=True,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+            context_loader=mock_context_loader,
+        )
+        orchestrator._existing_worktree = mock_worktree
+        orchestrator._feature_id = "FEAT-0F4A"
+
+        with patch('guardkit.orchestrator.autobuild.CoachValidator') as MockValidator:
+            mock_validator_instance = Mock()
+            mock_validator_instance.validate.return_value = Mock(
+                decision="approve",
+                to_dict=Mock(return_value={"decision": "approve"}),
+            )
+            mock_validator_instance.save_decision = Mock()
+            MockValidator.return_value = mock_validator_instance
+
+            orchestrator._invoke_coach_safely(
+                task_id="TASK-TEST-001",
+                turn=1,
+                requirements="Test requirements",
+                player_report={"tests_passed": 5},
+                worktree=mock_worktree,
+            )
+
+        cs = orchestrator._last_coach_context_status
+        assert cs is not None
+        assert cs.status == "retrieved"
+        assert cs.categories_count == 4
+        assert cs.budget_used == 1500
+        assert cs.budget_total == 4000
+
+    def test_coach_context_status_failed_on_exception(
+        self,
+        mock_worktree_manager,
+        mock_worktree,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """
+        Given Coach context retrieval fails
+        When _invoke_coach_safely is called
+        Then _last_coach_context_status is 'failed'
+        """
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        failing_loader = MagicMock()
+        failing_loader.get_coach_context = AsyncMock(
+            side_effect=Exception("Graphiti unavailable")
+        )
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/repo"),
+            max_turns=3,
+            enable_context=True,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+            context_loader=failing_loader,
+        )
+        orchestrator._existing_worktree = mock_worktree
+        orchestrator._feature_id = "FEAT-0F4A"
+
+        with patch('guardkit.orchestrator.autobuild.CoachValidator') as MockValidator:
+            mock_validator_instance = Mock()
+            mock_validator_instance.validate.return_value = Mock(
+                decision="approve",
+                to_dict=Mock(return_value={"decision": "approve"}),
+            )
+            mock_validator_instance.save_decision = Mock()
+            MockValidator.return_value = mock_validator_instance
+
+            orchestrator._invoke_coach_safely(
+                task_id="TASK-TEST-001",
+                turn=1,
+                requirements="Test requirements",
+                player_report={"tests_passed": 5},
+                worktree=mock_worktree,
+            )
+
+        cs = orchestrator._last_coach_context_status
+        assert cs is not None
+        assert cs.status == "failed"
+        assert "Graphiti unavailable" in cs.reason

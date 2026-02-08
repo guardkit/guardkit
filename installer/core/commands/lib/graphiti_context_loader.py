@@ -148,7 +148,7 @@ async def _get_retriever() -> "JobContextRetriever":
     if not GRAPHITI_AVAILABLE or get_graphiti is None:
         raise RuntimeError("Graphiti modules not available")
 
-    graphiti = await get_graphiti()
+    graphiti = get_graphiti()
     return JobContextRetriever(graphiti)
 
 
@@ -187,6 +187,8 @@ async def load_task_context(
         logger.debug("Graphiti not enabled, skipping context loading")
         return None
 
+    logger.info("[Graphiti] Loading task context for Phase %s...", phase)
+
     try:
         # Get retriever
         retriever = await _get_retriever()
@@ -202,10 +204,25 @@ async def load_task_context(
         context = await retriever.retrieve(task, task_phase)
 
         # Format for prompt
-        return context.to_prompt()
+        prompt_text = context.to_prompt()
+
+        # Count populated categories for log summary
+        category_count = sum(1 for attr in [
+            context.feature_context, context.similar_outcomes,
+            context.relevant_patterns, context.architecture_context,
+            context.warnings, context.domain_knowledge,
+        ] if attr)
+        logger.info(
+            "[Graphiti] Task context: %d categories, %d/%d tokens",
+            category_count,
+            context.budget_used,
+            context.budget_total,
+        )
+        return prompt_text
 
     except Exception as e:
-        logger.warning(f"Error loading task context: {e}")
+        logger.warning("[Graphiti] Task context unavailable, continuing without")
+        logger.debug("Graphiti context loading error: %s", e)
         return None
 
 

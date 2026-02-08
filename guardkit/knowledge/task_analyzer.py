@@ -185,7 +185,7 @@ class TaskAnalyzer:
         from guardkit.knowledge import get_graphiti
         from guardkit.knowledge.task_analyzer import TaskAnalyzer, TaskPhase
 
-        graphiti = await get_graphiti()
+        graphiti = get_graphiti()
         analyzer = TaskAnalyzer(graphiti)
 
         task = {

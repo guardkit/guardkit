@@ -5,8 +5,12 @@ for feature planning, including AutoBuild support fields for role constraints,
 quality gates, and implementation modes.
 """
 
+import json
+import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -295,10 +299,25 @@ class FeaturePlanContextBuilder:
 
         # Import here to avoid circular imports
         from .feature_detector import FeatureDetector
-        from .graphiti_client import get_graphiti
 
         self.feature_detector = FeatureDetector(project_root)
-        self.graphiti_client = get_graphiti()
+        self._graphiti_client_resolved = False
+        self._graphiti_client_cache: Optional[Any] = None
+
+    @property
+    def graphiti_client(self):
+        """Lazy-resolve Graphiti client on first access."""
+        if not self._graphiti_client_resolved:
+            from .graphiti_client import get_graphiti
+            self._graphiti_client_cache = get_graphiti()
+            self._graphiti_client_resolved = True
+        return self._graphiti_client_cache
+
+    @graphiti_client.setter
+    def graphiti_client(self, value):
+        """Allow explicit setting (for testing)."""
+        self._graphiti_client_cache = value
+        self._graphiti_client_resolved = True
 
     async def build_context(
         self,
@@ -355,6 +374,7 @@ class FeaturePlanContextBuilder:
 
         # Step 3: Query Graphiti for enrichment (with graceful degradation)
         if self.graphiti_client is not None and self.graphiti_client.enabled:
+            logger.info("[Graphiti] Loading context for feature planning...")
             # Query related features
             related_features = await self._safe_search(
                 query=f"features related to {description}",
@@ -404,6 +424,23 @@ class FeaturePlanContextBuilder:
                 query=f"similar implementations to {description}",
                 group_ids=["task_outcomes", "feature_completions"]
             )
+
+            # Count populated categories for log summary
+            category_count = sum(1 for items in [
+                related_features, relevant_patterns, warnings,
+                role_constraints, quality_gate_configs, implementation_modes,
+            ] if items)
+            if project_architecture:
+                category_count += 1
+            if similar_implementations:
+                category_count += 1
+            logger.info(
+                "[Graphiti] Context loaded: %d categories",
+                category_count,
+            )
+        else:
+            if self.graphiti_client is None or not self.graphiti_client.enabled:
+                logger.info("[Graphiti] Context unavailable, continuing without enrichment")
 
         return FeaturePlanContext(
             feature_spec=feature_spec,
@@ -488,3 +525,60 @@ class FeaturePlanContextBuilder:
             return spec
         except Exception:
             return {}
+
+    async def seed_feature_spec(
+        self,
+        feature_id: str,
+        feature_spec: Dict[str, Any],
+        description: str,
+    ) -> bool:
+        """Seed generated feature spec to Graphiti knowledge graph.
+
+        Uses upsert_episode() so re-running /feature-plan updates rather than
+        duplicating the spec. The episode body follows ADR-GBF-001: domain data only.
+
+        Args:
+            feature_id: Feature identifier (e.g., "FEAT-GR-006")
+            feature_spec: The generated feature specification dict
+            description: Human-readable feature description
+
+        Returns:
+            True if seeded successfully, False otherwise (graceful degradation).
+        """
+        if self.graphiti_client is None:
+            return False
+        if not self.graphiti_client.enabled:
+            return False
+
+        try:
+            episode_body_dict = {
+                "id": feature_id,
+                "title": feature_spec.get("title", description),
+                "description": description,
+                "tasks": feature_spec.get("tasks", []),
+                "tech_stack": feature_spec.get("tech_stack", "python"),
+                "complexity": feature_spec.get("complexity"),
+                "acceptance_criteria": feature_spec.get("acceptance_criteria", []),
+                "architecture_notes": feature_spec.get("architecture_notes", ""),
+                "status": "planned",
+            }
+            episode_body = json.dumps(episode_body_dict)
+
+            result = await self.graphiti_client.upsert_episode(
+                name=f"feature_spec_{feature_id}",
+                episode_body=episode_body,
+                group_id="feature_specs",
+                entity_id=feature_id,
+                source="feature_plan",
+                entity_type="feature_spec",
+            )
+
+            if result:
+                action = "created" if result.was_created else ("updated" if result.was_updated else "skipped")
+                logger.info(f"[Graphiti] Feature spec {feature_id}: {action}")
+                return True
+            return False
+
+        except Exception as e:
+            logger.warning(f"[Graphiti] Failed to seed feature spec {feature_id}: {e}")
+            return False

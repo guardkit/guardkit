@@ -556,9 +556,58 @@ class ProgressDisplay:
         )
 
 
+def format_context_status(context_status) -> str:
+    """
+    Format a ContextStatus for display in turn summaries.
+
+    Parameters
+    ----------
+    context_status : ContextStatus or None
+        Context retrieval status from autobuild orchestrator.
+        If None, returns empty string (no context line displayed).
+
+    Returns
+    -------
+    str
+        Formatted context status string for Rich console output.
+
+    Examples
+    --------
+    >>> from guardkit.orchestrator.autobuild import ContextStatus
+    >>> cs = ContextStatus(status="retrieved", categories_count=6, budget_used=2500, budget_total=4000)
+    >>> format_context_status(cs)
+    'Context: retrieved (6 categories, 2500/4000 tokens)'
+    >>> cs = ContextStatus(status="disabled")
+    >>> format_context_status(cs)
+    'Context: disabled'
+    """
+    if context_status is None:
+        return ""
+
+    status = context_status.status
+
+    if status == "retrieved":
+        return (
+            f"Context: retrieved "
+            f"({context_status.categories_count} categories, "
+            f"{context_status.budget_used}/{context_status.budget_total} tokens)"
+        )
+    elif status == "skipped":
+        reason = context_status.reason or "unknown"
+        return f"Context: skipped ({reason})"
+    elif status == "disabled":
+        return "Context: disabled"
+    elif status == "failed":
+        reason = context_status.reason or "unknown error"
+        return f"Context: failed ({reason})"
+    else:
+        return f"Context: {status}"
+
+
 # Public API
 __all__ = [
     "ProgressDisplay",
     "TurnStatus",
-    "FinalStatus"
+    "FinalStatus",
+    "format_context_status",
 ]

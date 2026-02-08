@@ -186,6 +186,8 @@ class AutoBuildContextLoader:
             logger.debug(f"Graphiti not available, skipping Player context for {task_id}")
             return self._empty_result(task_id)
 
+        logger.info("[Graphiti] Loading Player context (turn %d)...", turn_number)
+
         # Build task dict for JobContextRetriever
         task = self._build_task_dict(
             task_id=task_id,
@@ -208,7 +210,14 @@ class AutoBuildContextLoader:
             )
 
             # Build result
-            return self._build_result(context, actor="player")
+            result = self._build_result(context, actor="player")
+            logger.info(
+                "[Graphiti] Player context: %d categories, %d/%d tokens",
+                len(result.categories_populated),
+                result.budget_used,
+                result.budget_total,
+            )
+            return result
 
         except Exception as e:
             logger.warning(f"Failed to retrieve Player context for {task_id}: {e}")
@@ -248,6 +257,8 @@ class AutoBuildContextLoader:
             logger.debug(f"Graphiti not available, skipping Coach context for {task_id}")
             return self._empty_result(task_id)
 
+        logger.info("[Graphiti] Loading Coach context (turn %d)...", turn_number)
+
         # Build task dict for JobContextRetriever
         task = self._build_task_dict(
             task_id=task_id,
@@ -269,7 +280,14 @@ class AutoBuildContextLoader:
             )
 
             # Build result with Coach-specific formatting
-            return self._build_result(context, actor="coach")
+            result = self._build_result(context, actor="coach")
+            logger.info(
+                "[Graphiti] Coach context: %d categories, %d/%d tokens",
+                len(result.categories_populated),
+                result.budget_used,
+                result.budget_total,
+            )
+            return result
 
         except Exception as e:
             logger.warning(f"Failed to retrieve Coach context for {task_id}: {e}")

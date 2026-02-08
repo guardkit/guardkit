@@ -158,11 +158,11 @@ async def capture_failed_approach(
     client = get_graphiti()
 
     if client is None:
-        logger.debug("Graphiti client not initialized, skipping episode creation")
+        logger.debug("[Graphiti] Client unavailable, skipping failed approach capture")
         return failure
 
     if not client.enabled:
-        logger.debug("Graphiti client disabled, skipping episode creation")
+        logger.debug("[Graphiti] Client disabled, skipping failed approach capture")
         return failure
 
     try:
@@ -173,9 +173,9 @@ async def capture_failed_approach(
             source="auto_captured",
             entity_type="failed_approach"
         )
-        logger.info(f"Captured failed approach {failure_id}")
+        logger.info(f"[Graphiti] Captured failed approach {failure_id}")
     except Exception as e:
-        logger.warning(f"Failed to store failed approach in Graphiti: {e}")
+        logger.warning(f"[Graphiti] Failed to store failed approach {failure_id}: {e}")
 
     return failure
 
@@ -208,11 +208,11 @@ async def load_relevant_failures(
     client = get_graphiti()
 
     if client is None:
-        logger.debug("Graphiti client not initialized, returning empty list")
+        logger.debug("[Graphiti] Client unavailable, returning empty failure list")
         return []
 
     if not client.enabled:
-        logger.debug("Graphiti client disabled, returning empty list")
+        logger.debug("[Graphiti] Client disabled, returning empty failure list")
         return []
 
     try:
@@ -241,7 +241,7 @@ async def load_relevant_failures(
         return warnings[:limit]
 
     except Exception as e:
-        logger.warning(f"Failed to load failures from Graphiti: {e}")
+        logger.warning(f"[Graphiti] Failed to load relevant failures: {e}")
         return []
 
 
@@ -267,11 +267,11 @@ async def increment_occurrence(failure_id: str) -> Optional[FailedApproachEpisod
     client = get_graphiti()
 
     if client is None:
-        logger.debug("Graphiti client not initialized, cannot increment")
+        logger.debug("[Graphiti] Client unavailable, cannot increment occurrence")
         return None
 
     if not client.enabled:
-        logger.debug("Graphiti client disabled, cannot increment")
+        logger.debug("[Graphiti] Client disabled, cannot increment occurrence")
         return None
 
     try:
@@ -283,7 +283,7 @@ async def increment_occurrence(failure_id: str) -> Optional[FailedApproachEpisod
         )
 
         if not results:
-            logger.debug(f"Failure {failure_id} not found")
+            logger.debug(f"[Graphiti] Failure {failure_id} not found")
             return None
 
         # Parse the body
@@ -292,7 +292,7 @@ async def increment_occurrence(failure_id: str) -> Optional[FailedApproachEpisod
             try:
                 body = json.loads(body)
             except json.JSONDecodeError:
-                logger.warning(f"Failed to parse body for {failure_id}")
+                logger.warning(f"[Graphiti] Failed to parse body for {failure_id}")
                 return None
 
         # Parse severity
@@ -349,11 +349,11 @@ async def increment_occurrence(failure_id: str) -> Optional[FailedApproachEpisod
             entity_type="failed_approach"
         )
 
-        logger.info(f"Incremented occurrence for {failure_id} to {updated_failure.occurrences}")
+        logger.info(f"[Graphiti] Incremented occurrence for {failure_id} to {updated_failure.occurrences}")
         return updated_failure
 
     except Exception as e:
-        logger.warning(f"Failed to increment occurrence for {failure_id}: {e}")
+        logger.warning(f"[Graphiti] Failed to increment occurrence for {failure_id}: {e}")
         return None
 
 

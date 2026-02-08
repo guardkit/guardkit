@@ -343,6 +343,34 @@ class TestConstructor:
         )
         assert orchestrator_bdd.development_mode == "bdd"
 
+    def test_init_log_includes_context_loader_provided(self, caplog):
+        """Test init log shows context_loader=provided when loader is given."""
+        import logging
+
+        mock_loader = Mock()
+        with caplog.at_level(logging.INFO, logger="guardkit.orchestrator.autobuild"):
+            AutoBuildOrchestrator(
+                repo_root=Path.cwd(),
+                max_turns=5,
+                enable_context=True,
+                context_loader=mock_loader,
+            )
+
+        assert "context_loader=provided" in caplog.text
+
+    def test_init_log_includes_context_loader_none(self, caplog):
+        """Test init log shows context_loader=None when no loader is given."""
+        import logging
+
+        with caplog.at_level(logging.INFO, logger="guardkit.orchestrator.autobuild"):
+            AutoBuildOrchestrator(
+                repo_root=Path.cwd(),
+                max_turns=5,
+                enable_context=True,
+            )
+
+        assert "context_loader=None" in caplog.text
+
 
 # ============================================================================
 # Test Setup Phase
