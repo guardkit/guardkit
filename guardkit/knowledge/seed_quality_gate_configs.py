@@ -57,7 +57,9 @@ async def seed_quality_gate_configs(graphiti) -> None:
             await graphiti.add_episode(
                 name=f"quality_gate_config_{config.id}",
                 episode_body=episode_body,
-                group_id="quality_gate_configs"
+                group_id="quality_gate_configs",
+                source="guardkit_seeding",
+                entity_type="quality_gate_config"
             )
             logger.info(f"Seeded quality gate config: {config.id}")
         except Exception as e:

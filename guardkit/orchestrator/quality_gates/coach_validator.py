@@ -577,7 +577,7 @@ class CoachValidator:
             )
             logger.info(f"Independent test verification skipped for {task_id} (tests_required=False)")
         else:
-            test_result = self.run_independent_tests()
+            test_result = self.run_independent_tests(task_work_results=task_work_results)
 
         if not test_result.tests_passed:
             logger.warning(f"Independent test verification failed for {task_id}")
@@ -618,6 +618,14 @@ class CoachValidator:
         # 5. All checks passed - approve
         logger.info(f"Coach approved {task_id} turn {turn}")
 
+        # Build accurate rationale based on actual verification status
+        rationale = self._build_approval_rationale(
+            test_result=test_result,
+            gates_status=gates_status,
+            task_work_results=task_work_results,
+            profile=profile,
+        )
+
         return CoachValidationResult(
             task_id=task_id,
             turn=turn,
@@ -625,8 +633,8 @@ class CoachValidator:
             quality_gates=gates_status,
             independent_tests=test_result,
             requirements=requirements,
-            issues=[],
-            rationale="All quality gates passed. Independent verification confirmed. All acceptance criteria met.",
+            issues=self._check_zero_test_anomaly(task_work_results, profile),
+            rationale=rationale,
         )
 
     def read_quality_gate_results(self, task_id: str) -> Dict[str, Any]:
@@ -724,8 +732,23 @@ class CoachValidator:
             tests_passed = True
             logger.debug("Tests not required per task type profile, skipping")
         elif "all_passed" in quality_gates:
-            tests_passed = quality_gates["all_passed"]
-            logger.debug(f"Extracted tests_passed={tests_passed} from quality_gates.all_passed")
+            all_passed_value = quality_gates["all_passed"]
+            if all_passed_value is None:
+                # Player session didn't reach quality gate evaluation (e.g. exhausted SDK turns)
+                # Fall through to tests_failed check for partial data
+                if "tests_failed" in quality_gates:
+                    tests_failed_count = quality_gates["tests_failed"]
+                    tests_passed = tests_failed_count == 0
+                    logger.debug(
+                        f"all_passed is null, falling back to tests_failed={tests_failed_count}, "
+                        f"tests_passed={tests_passed}"
+                    )
+                else:
+                    tests_passed = False
+                    logger.debug("all_passed is null and no tests_failed data, defaulting to False")
+            else:
+                tests_passed = all_passed_value
+                logger.debug(f"Extracted tests_passed={tests_passed} from quality_gates.all_passed")
         elif "tests_failed" in quality_gates:
             # If we have test counts, check if any failed
             tests_failed = quality_gates["tests_failed"]
@@ -801,20 +824,31 @@ class CoachValidator:
 
         return status
 
-    def run_independent_tests(self) -> IndependentTestResult:
+    def run_independent_tests(
+        self,
+        task_work_results: Optional[Dict[str, Any]] = None,
+    ) -> IndependentTestResult:
         """
         Run tests independently to verify Player's report.
 
         This is a "trust but verify" check - we run the tests ourselves
         to ensure the Player's reported results are accurate.
 
+        Parameters
+        ----------
+        task_work_results : Optional[Dict[str, Any]]
+            Task-work results dict (already loaded in memory). Passed through
+            to _detect_test_command for primary test file detection.
+
         Returns
         -------
         IndependentTestResult
             Result of independent test execution
         """
-        # Determine test command (pass task_id for task-specific filtering)
-        test_cmd = self.test_command or self._detect_test_command(self.task_id)
+        # Determine test command (pass task_id and results for task-specific filtering)
+        test_cmd = self.test_command or self._detect_test_command(
+            self.task_id, task_work_results=task_work_results
+        )
 
         # If test_cmd is None, it means task-specific filtering was requested
         # but no matching tests were found. Skip verification in this case.
@@ -953,12 +987,20 @@ class CoachValidator:
         """
         return task_id.replace("-", "_").lower()
 
-    def _detect_test_command(self, task_id: Optional[str] = None) -> Optional[str]:
+    def _detect_test_command(
+        self,
+        task_id: Optional[str] = None,
+        task_work_results: Optional[Dict[str, Any]] = None,
+    ) -> Optional[str]:
         """
         Auto-detect the test command based on project files.
 
         When task_id is provided, attempts to find task-specific test files
-        first. If no task-specific tests are found and task_id was provided,
+        using two sources in priority order:
+        1. Primary: Extract test files from task_work_results (already in memory)
+        2. Fallback: Task-ID glob pattern on disk
+
+        If no task-specific tests are found and task_id was provided,
         returns None to signal that independent verification should be skipped.
         This is essential for shared worktrees where parallel tasks may have
         tests with unmet dependencies.
@@ -970,6 +1012,10 @@ class CoachValidator:
             the method will search for test files matching the task ID
             pattern. If no matching tests found, returns None to skip
             verification (prevents running all tests from parallel tasks).
+        task_work_results : Optional[Dict[str, Any]]
+            Task-work results dict (already loaded in memory). Used as
+            primary source for test file detection via files_created
+            and files_modified lists.
 
         Returns
         -------
@@ -979,6 +1025,13 @@ class CoachValidator:
         """
         # Try task-specific filtering first (for shared worktrees)
         if task_id:
+            # Primary: extract test files from task_work_results (already in memory)
+            if task_work_results:
+                cmd = self._detect_tests_from_results(task_work_results)
+                if cmd:
+                    return cmd
+
+            # Fallback: task-ID glob pattern on disk
             task_prefix = self._task_id_to_pattern_prefix(task_id)
             # Pattern: tests/test_{task_prefix}*.py (most common test organization)
             pattern = f"tests/test_{task_prefix}*.py"
@@ -995,11 +1048,10 @@ class CoachValidator:
                 logger.info(f"Task-specific tests detected for {task_id}: {len(unique_files)} file(s)")
                 logger.debug(f"Test files: {files_str}")
                 return f"pytest {files_str} -v --tb=short"
-            else:
-                # No task-specific tests found - skip verification in this case
-                # Running all tests would include tests from other parallel tasks
-                logger.info(f"No task-specific tests found for {task_id}, skipping independent verification")
-                return None
+
+            # No task-specific tests found via any method
+            logger.info(f"No task-specific tests found for {task_id}, skipping independent verification")
+            return None
 
         # Fallback to original detection logic
         # Check for Python projects
@@ -1022,6 +1074,53 @@ class CoachValidator:
         # Default to pytest
         logger.warning("Could not detect project type, defaulting to pytest")
         return "pytest tests/ -v --tb=short"
+
+    def _detect_tests_from_results(
+        self, task_work_results: Dict[str, Any]
+    ) -> Optional[str]:
+        """
+        Primary test detection: find test files from task_work_results.
+
+        Extracts test files (matching ``test_*.py`` or ``*_test.py``) from
+        the files_created/files_modified lists in task_work_results. Only
+        returns files that actually exist in the worktree.
+
+        Parameters
+        ----------
+        task_work_results : Dict[str, Any]
+            Task-work results dict containing files_created and files_modified
+
+        Returns
+        -------
+        Optional[str]
+            pytest command targeting discovered test files, or None
+        """
+        test_files = []
+        for file_list_key in ("files_created", "files_modified"):
+            for filepath in task_work_results.get(file_list_key, []):
+                basename = Path(filepath).name
+                if basename.startswith("test_") and basename.endswith(".py"):
+                    full_path = self.worktree_path / filepath
+                    if full_path.exists():
+                        test_files.append(filepath)
+                elif basename.endswith("_test.py"):
+                    full_path = self.worktree_path / filepath
+                    if full_path.exists():
+                        test_files.append(filepath)
+
+        if not test_files:
+            logger.debug("No test files found in task_work_results")
+            return None
+
+        # Deduplicate and build command
+        unique_files = sorted(set(test_files))
+        files_str = " ".join(unique_files)
+        logger.info(
+            f"Task-specific tests detected via task_work_results: "
+            f"{len(unique_files)} file(s)"
+        )
+        logger.debug(f"Test files (from task_work_results): {files_str}")
+        return f"pytest {files_str} -v --tb=short"
 
     def _summarize_test_output(self, output: str, max_length: int = 500) -> str:
         """
@@ -1064,6 +1163,92 @@ class CoachValidator:
             summary = summary[:max_length - 3] + "..."
 
         return summary
+
+    def _build_approval_rationale(
+        self,
+        test_result: IndependentTestResult,
+        gates_status: QualityGateStatus,
+        task_work_results: Dict[str, Any],
+        profile: QualityGateProfile,
+    ) -> str:
+        """
+        Build an accurate rationale message for approval based on actual verification status.
+
+        Parameters
+        ----------
+        test_result : IndependentTestResult
+            Result of independent test verification
+        gates_status : QualityGateStatus
+            Quality gate status
+        task_work_results : Dict[str, Any]
+            Task-work results
+        profile : QualityGateProfile
+            Quality gate profile for task type
+
+        Returns
+        -------
+        str
+            Accurate rationale message
+        """
+        parts = ["All quality gates passed."]
+
+        if test_result.test_command == "skipped":
+            if not profile.tests_required:
+                parts.append("Tests not required for this task type.")
+            else:
+                parts.append("Independent verification skipped: no task-specific tests found.")
+        else:
+            parts.append("Independent verification confirmed.")
+
+        parts.append("All acceptance criteria met.")
+        return " ".join(parts)
+
+    def _check_zero_test_anomaly(
+        self,
+        task_work_results: Dict[str, Any],
+        profile: QualityGateProfile,
+    ) -> List[Dict[str, Any]]:
+        """
+        Check for zero-test anomaly: all_passed=true with no tests actually executed.
+
+        Returns a warning issue (not blocking) when a feature task reports quality
+        gates as passed but has zero test execution and no coverage data.
+
+        Parameters
+        ----------
+        task_work_results : Dict[str, Any]
+            Task-work results
+        profile : QualityGateProfile
+            Quality gate profile for task type
+
+        Returns
+        -------
+        List[Dict[str, Any]]
+            List containing a warning issue if anomaly detected, empty otherwise
+        """
+        if not profile.tests_required:
+            return []
+
+        quality_gates = task_work_results.get("quality_gates", {})
+        all_passed = quality_gates.get("all_passed")
+        tests_passed_count = quality_gates.get("tests_passed", 0) or 0
+        coverage = quality_gates.get("coverage")
+
+        if all_passed is True and tests_passed_count == 0 and coverage is None:
+            logger.warning(
+                f"Zero-test anomaly: all_passed=true but tests_passed=0 and coverage=null. "
+                f"Player may have reported quality gates as passed without running tests."
+            )
+            return [{
+                "severity": "warning",
+                "category": "zero_test_anomaly",
+                "description": (
+                    "Quality gates reported as passed but no tests were executed "
+                    "(tests_passed=0, coverage=null). Player may not have run tests."
+                ),
+            }]
+
+        return []
 
     def _feedback_result(
         self,
@@ -1147,15 +1332,35 @@ class CoachValidator:
 
         # Only report failures for required gates
         if gates.tests_required and not gates.tests_passed:
-            issues.append({
-                "severity": "must_fix",
-                "category": "test_failure",
-                "description": "Tests did not pass during task-work execution",
-                "details": {
-                    "failed_count": quality_gates.get("tests_failed", 0),
-                    "total_count": quality_gates.get("tests_passed", 0) + quality_gates.get("tests_failed", 0),
-                },
-            })
+            # Detect incomplete session (all_passed is null, no test counts)
+            all_passed_value = quality_gates.get("all_passed")
+            tests_passed_count = quality_gates.get("tests_passed", 0) or 0
+            tests_failed_count = quality_gates.get("tests_failed", 0) or 0
+            if all_passed_value is None and tests_passed_count == 0 and tests_failed_count == 0:
+                issues.append({
+                    "severity": "must_fix",
+                    "category": "test_failure",
+                    "description": (
+                        "Quality gate evaluation was not completed — the Player session "
+                        "may have exhausted SDK turns before reaching Phase 4.5. "
+                        "Focus on completing implementation within fewer SDK turns."
+                    ),
+                    "details": {
+                        "failed_count": 0,
+                        "total_count": 0,
+                        "incomplete_session": True,
+                    },
+                })
+            else:
+                issues.append({
+                    "severity": "must_fix",
+                    "category": "test_failure",
+                    "description": "Tests did not pass during task-work execution",
+                    "details": {
+                        "failed_count": tests_failed_count,
+                        "total_count": tests_passed_count + tests_failed_count,
+                    },
+                })
 
         if gates.coverage_required and not gates.coverage_met:
             issues.append({

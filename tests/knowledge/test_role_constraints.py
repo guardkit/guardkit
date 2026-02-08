@@ -256,8 +256,8 @@ class TestToEpisodeBody:
         result = fact.to_episode_body()
         assert isinstance(result, dict)
 
-    def test_to_episode_body_includes_entity_type(self):
-        """Test that episode body includes entity_type field."""
+    def test_to_episode_body_excludes_entity_type(self):
+        """Test that episode body does NOT include entity_type (injected by client)."""
         fact = RoleConstraintFact(
             role="player",
             context="feature-build",
@@ -268,10 +268,11 @@ class TestToEpisodeBody:
         )
 
         result = fact.to_episode_body()
-        assert result["entity_type"] == "role_constraint"
+        assert "entity_type" not in result, \
+            "entity_type should be injected by GraphitiClient, not in body"
 
     def test_to_episode_body_includes_all_required_fields(self):
-        """Test that episode body includes all required fields."""
+        """Test that episode body includes all domain fields."""
         fact = RoleConstraintFact(
             role="player",
             context="feature-build",
@@ -291,10 +292,10 @@ class TestToEpisodeBody:
         assert "ask_before" in result
         assert "good_examples" in result
         assert "bad_examples" in result
-        assert "created_at" in result
+        # created_at is NOT in body - it's a metadata field injected by client
 
-    def test_to_episode_body_serializes_datetime(self):
-        """Test that datetime is serialized to ISO format string."""
+    def test_to_episode_body_excludes_created_at(self):
+        """Test that created_at is NOT in body (metadata handled by client)."""
         fact = RoleConstraintFact(
             role="player",
             context="feature-build",
@@ -306,10 +307,9 @@ class TestToEpisodeBody:
 
         result = fact.to_episode_body()
 
-        # created_at should be a string in ISO format
-        assert isinstance(result["created_at"], str)
-        # Should be parseable back to datetime
-        datetime.fromisoformat(result["created_at"])
+        # created_at should NOT be in body - it's metadata injected by client
+        assert "created_at" not in result, \
+            "created_at should be injected by GraphitiClient, not in body"
 
     def test_to_episode_body_preserves_lists(self):
         """Test that lists are preserved correctly."""
@@ -474,20 +474,14 @@ class TestSeedRoleConstraints:
         """Test that episode names are descriptive."""
         mock_client = AsyncMock()
         mock_client.enabled = True
-
-        captured_names = []
-
-        async def capture_episode(name, episode_body, group_id):
-            captured_names.append(name)
-            return "episode_id"
-
-        mock_client.add_episode = capture_episode
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
 
         await seed_role_constraints(mock_client)
 
         # Names should include role and context
-        assert len(captured_names) == 2
-        for name in captured_names:
+        assert mock_client.add_episode.call_count == 2
+        for call_obj in mock_client.add_episode.call_args_list:
+            name = call_obj.kwargs["name"]
             assert "role_constraint" in name
             assert any(role in name for role in ["player", "coach"])
 
@@ -496,20 +490,14 @@ class TestSeedRoleConstraints:
         """Test that episode bodies are valid JSON."""
         mock_client = AsyncMock()
         mock_client.enabled = True
-
-        captured_bodies = []
-
-        async def capture_episode(name, episode_body, group_id):
-            captured_bodies.append(episode_body)
-            return "episode_id"
-
-        mock_client.add_episode = capture_episode
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
 
         await seed_role_constraints(mock_client)
 
         # All bodies should be valid JSON strings
-        assert len(captured_bodies) == 2
-        for body in captured_bodies:
+        assert mock_client.add_episode.call_count == 2
+        for call_obj in mock_client.add_episode.call_args_list:
+            body = call_obj.kwargs["episode_body"]
             assert isinstance(body, str)
             # Should parse without exception
             parsed = json.loads(body)

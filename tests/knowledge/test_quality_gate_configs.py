@@ -304,8 +304,8 @@ class TestToEpisodeBody:
         result = fact.to_episode_body()
         assert isinstance(result, dict)
 
-    def test_to_episode_body_includes_entity_type(self):
-        """Test that episode body includes entity_type field."""
+    def test_to_episode_body_excludes_entity_type(self):
+        """Test that episode body does NOT include entity_type (injected by client)."""
         fact = QualityGateConfigFact(
             id="QG-TEST-BODY-002",
             name="Entity Type Test",
@@ -317,11 +317,12 @@ class TestToEpisodeBody:
             coverage_required=True,
             coverage_threshold=80.0,
             lint_required=True,
-            rationale="Testing entity_type in body."
+            rationale="Testing entity_type not in body."
         )
 
         result = fact.to_episode_body()
-        assert result["entity_type"] == "quality_gate_config"
+        assert "entity_type" not in result, \
+            "entity_type should be injected by GraphitiClient, not in body"
 
     def test_to_episode_body_includes_all_fields(self):
         """Test that episode body includes all fact fields."""
@@ -343,7 +344,6 @@ class TestToEpisodeBody:
 
         result = fact.to_episode_body()
 
-        assert "entity_type" in result
         assert "id" in result
         assert "name" in result
         assert "task_type" in result
@@ -618,24 +618,20 @@ class TestSeedQualityGateConfigs:
         mock_client = AsyncMock()
         mock_client.enabled = True
 
-        captured_bodies = []
-
-        async def capture_episode(name, episode_body, group_id):
-            captured_bodies.append(episode_body)
-            return "episode_id"
-
-        mock_client.add_episode = capture_episode
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
 
         await seed_quality_gate_configs(mock_client)
 
         # All bodies should be valid JSON strings
-        assert len(captured_bodies) == len(QUALITY_GATE_CONFIGS)
-        for body in captured_bodies:
+        assert mock_client.add_episode.call_count == len(QUALITY_GATE_CONFIGS)
+        for call_obj in mock_client.add_episode.call_args_list:
+            body = call_obj.kwargs["episode_body"]
             assert isinstance(body, str)
             # Should parse without exception
             parsed = json.loads(body)
             assert isinstance(parsed, dict)
-            assert parsed["entity_type"] == "quality_gate_config"
+            # entity_type is passed as kwarg, not in body
+            assert call_obj.kwargs["entity_type"] == "quality_gate_config"
 
     @pytest.mark.asyncio
     async def test_seed_handles_disabled_client_gracefully(self):
