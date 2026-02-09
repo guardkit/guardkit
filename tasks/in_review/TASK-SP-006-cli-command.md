@@ -8,7 +8,7 @@ feature_id: FEAT-SP-001
 id: TASK-SP-006
 implementation_mode: task-work
 parent_review: TASK-REV-DBBC
-status: design_approved
+status: in_review
 tags:
 - system-plan
 - cli
