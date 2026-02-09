@@ -1,7 +1,7 @@
 ---
 id: TASK-REV-DBBC
 title: "Plan: Build /system-plan command"
-status: review_complete
+status: completed
 created: 2026-02-09T10:00:00Z
 updated: 2026-02-09T10:00:00Z
 priority: high

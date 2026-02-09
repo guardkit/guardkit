@@ -1,0 +1,106 @@
+id: FEAT-6EDD
+name: Build /system-plan command
+description: Interactive architecture planning command with Graphiti integration,
+  mode auto-detection, adaptive question flow, methodology-aware output, and integration/e2e
+  seam tests
+created: '2026-02-09T08:00:10.094824'
+status: planned
+complexity: 7
+estimated_tasks: 8
+tasks:
+- id: TASK-SP-001
+  name: Create architecture entity definitions
+  file_path: tasks/backlog/system-plan/TASK-SP-001-architecture-entity-definitions.md
+  complexity: 4
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-SP-002
+  name: Add complexity gating for architecture context
+  file_path: tasks/backlog/system-plan/TASK-SP-002-complexity-gating.md
+  complexity: 3
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+- id: TASK-SP-003
+  name: Implement SystemPlanGraphiti read-write operations
+  file_path: tasks/backlog/system-plan/TASK-SP-003-graphiti-arch-operations.md
+  complexity: 6
+  dependencies:
+  - TASK-SP-001
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 113
+- id: TASK-SP-004
+  name: Implement adaptive question flow engine
+  file_path: tasks/backlog/system-plan/TASK-SP-004-question-adapter.md
+  complexity: 5
+  dependencies:
+  - TASK-SP-001
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-SP-005
+  name: Implement architecture markdown writer with Jinja2 templates
+  file_path: tasks/backlog/system-plan/TASK-SP-005-architecture-writer.md
+  complexity: 5
+  dependencies:
+  - TASK-SP-001
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-SP-006
+  name: Create guardkit system-plan CLI command
+  file_path: tasks/backlog/system-plan/TASK-SP-006-cli-command.md
+  complexity: 6
+  dependencies:
+  - TASK-SP-003
+  - TASK-SP-004
+  - TASK-SP-005
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 113
+- id: TASK-SP-007
+  name: Create system-plan slash command specification
+  file_path: tasks/backlog/system-plan/TASK-SP-007-slash-command-spec.md
+  complexity: 5
+  dependencies:
+  - TASK-SP-003
+  - TASK-SP-004
+  - TASK-SP-005
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-SP-008
+  name: Create integration and end-to-end seam tests
+  file_path: tasks/backlog/system-plan/TASK-SP-008-integration-seam-tests.md
+  complexity: 7
+  dependencies:
+  - TASK-SP-003
+  - TASK-SP-005
+  - TASK-SP-006
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 170
+orchestration:
+  parallel_groups:
+  - - TASK-SP-001
+    - TASK-SP-002
+  - - TASK-SP-003
+    - TASK-SP-004
+    - TASK-SP-005
+  - - TASK-SP-006
+    - TASK-SP-007
+  - - TASK-SP-008
+  estimated_duration_minutes: 704
+  recommended_parallel: 3
