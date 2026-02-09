@@ -21,7 +21,7 @@ feature_id: FEAT-SP-001
 id: TASK-SP-003
 implementation_mode: task-work
 parent_review: TASK-REV-DBBC
-status: design_approved
+status: in_review
 tags:
 - system-plan
 - graphiti
@@ -39,21 +39,21 @@ Create the `SystemPlanGraphiti` class that encapsulates all Graphiti read/write 
 
 ## Acceptance Criteria
 
-- [ ] `SystemPlanGraphiti` class with `client` and `project_id` constructor params
-- [ ] `_available` property checks `client is not None and client.enabled`
-- [ ] `upsert_component(component: ComponentDef) -> Optional[str]` — upserts with stable entity_id
-- [ ] `upsert_adr(adr: ArchitectureDecision) -> Optional[str]` — upserts with ADR-SP-NNN entity_id
-- [ ] `upsert_system_context(system: SystemContextDef) -> Optional[str]` — upserts system context
-- [ ] `upsert_crosscutting(concern: CrosscuttingConcernDef) -> Optional[str]` — upserts concern
-- [ ] `has_architecture_context() -> bool` — quick check for mode detection
-- [ ] `get_architecture_summary() -> Optional[dict]` — retrieves architecture + decision facts
-- [ ] `get_relevant_context_for_topic(topic: str, num_results: int) -> List[Dict]` — semantic search
-- [ ] All write operations use `client.get_group_id()` for correct group prefixing
-- [ ] All write operations use `upsert_episode()` (NOT `add_episode()`)
-- [ ] All operations have graceful degradation (return None/[]/False on failure or disabled client)
-- [ ] `[Graphiti]` prefix on all log messages
-- [ ] Unit tests: mock GraphitiClient, verify correct API calls and params
-- [ ] >=85% coverage
+- [x] `SystemPlanGraphiti` class with `client` and `project_id` constructor params
+- [x] `_available` property checks `client is not None and client.enabled`
+- [x] `upsert_component(component: ComponentDef) -> Optional[str]` — upserts with stable entity_id
+- [x] `upsert_adr(adr: ArchitectureDecision) -> Optional[str]` — upserts with ADR-SP-NNN entity_id
+- [x] `upsert_system_context(system: SystemContextDef) -> Optional[str]` — upserts system context
+- [x] `upsert_crosscutting(concern: CrosscuttingConcernDef) -> Optional[str]` — upserts concern
+- [x] `has_architecture_context() -> bool` — quick check for mode detection
+- [x] `get_architecture_summary() -> Optional[dict]` — retrieves architecture + decision facts
+- [x] `get_relevant_context_for_topic(topic: str, num_results: int) -> List[Dict]` — semantic search
+- [x] All write operations use `client.get_group_id()` for correct group prefixing
+- [x] All write operations use `upsert_episode()` (NOT `add_episode()`)
+- [x] All operations have graceful degradation (return None/[]/False on failure or disabled client)
+- [x] `[Graphiti]` prefix on all log messages
+- [x] Unit tests: mock GraphitiClient, verify correct API calls and params
+- [x] >=85% coverage (achieved 93%)
 
 ## Files to Create
 
