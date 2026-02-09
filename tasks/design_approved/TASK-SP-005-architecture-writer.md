@@ -1,35 +1,35 @@
 ---
-id: TASK-SP-005
-title: Implement architecture markdown writer with Jinja2 templates
-status: in_progress
-task_type: feature
-parent_review: TASK-REV-DBBC
-feature_id: FEAT-SP-001
-wave: 2
-implementation_mode: task-work
+autobuild_state:
+  base_branch: main
+  current_turn: 1
+  last_updated: '2026-02-09T12:21:00.009465'
+  max_turns: 25
+  started_at: '2026-02-09T12:10:32.867475'
+  turns:
+  - coach_success: true
+    decision: approve
+    feedback: null
+    player_success: true
+    player_summary: Implementation via task-work delegation
+    timestamp: '2026-02-09T12:10:32.867475'
+    turn: 1
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-6EDD
 complexity: 5
 dependencies:
 - TASK-SP-001
+feature_id: FEAT-SP-001
+id: TASK-SP-005
+implementation_mode: task-work
+parent_review: TASK-REV-DBBC
+status: design_approved
 tags:
 - system-plan
 - templates
 - markdown
 - jinja2
-autobuild_state:
-  current_turn: 1
-  max_turns: 25
-  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-6EDD
-  base_branch: main
-  started_at: '2026-02-09T12:10:32.867475'
-  last_updated: '2026-02-09T12:21:00.009465'
-  turns:
-  - turn: 1
-    decision: approve
-    feedback: null
-    timestamp: '2026-02-09T12:10:32.867475'
-    player_summary: Implementation via task-work delegation
-    player_success: true
-    coach_success: true
+task_type: feature
+title: Implement architecture markdown writer with Jinja2 templates
+wave: 2
 ---
 
 # Task: Implement Architecture Markdown Writer with Jinja2 Templates

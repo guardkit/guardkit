@@ -1,34 +1,34 @@
 ---
-id: TASK-SP-003
-title: Implement SystemPlanGraphiti read/write operations
-status: in_progress
-task_type: feature
-parent_review: TASK-REV-DBBC
-feature_id: FEAT-SP-001
-wave: 2
-implementation_mode: task-work
+autobuild_state:
+  base_branch: main
+  current_turn: 1
+  last_updated: '2026-02-09T12:21:21.543237'
+  max_turns: 25
+  started_at: '2026-02-09T12:10:32.865958'
+  turns:
+  - coach_success: true
+    decision: approve
+    feedback: null
+    player_success: true
+    player_summary: Implementation via task-work delegation
+    timestamp: '2026-02-09T12:10:32.865958'
+    turn: 1
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-6EDD
 complexity: 6
 dependencies:
 - TASK-SP-001
+feature_id: FEAT-SP-001
+id: TASK-SP-003
+implementation_mode: task-work
+parent_review: TASK-REV-DBBC
+status: design_approved
 tags:
 - system-plan
 - graphiti
 - persistence
-autobuild_state:
-  current_turn: 1
-  max_turns: 25
-  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-6EDD
-  base_branch: main
-  started_at: '2026-02-09T12:10:32.865958'
-  last_updated: '2026-02-09T12:21:21.543237'
-  turns:
-  - turn: 1
-    decision: approve
-    feedback: null
-    timestamp: '2026-02-09T12:10:32.865958'
-    player_summary: Implementation via task-work delegation
-    player_success: true
-    coach_success: true
+task_type: feature
+title: Implement SystemPlanGraphiti read/write operations
+wave: 2
 ---
 
 # Task: Implement SystemPlanGraphiti Read/Write Operations
