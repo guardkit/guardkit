@@ -1,18 +1,21 @@
 ---
-id: TASK-SP-006
-title: "Create guardkit system-plan CLI command"
-status: pending
-task_type: feature
-parent_review: TASK-REV-DBBC
-feature_id: FEAT-SP-001
-wave: 3
-implementation_mode: task-work
 complexity: 6
 dependencies:
-  - TASK-SP-003
-  - TASK-SP-004
-  - TASK-SP-005
-tags: [system-plan, cli, click]
+- TASK-SP-003
+- TASK-SP-004
+- TASK-SP-005
+feature_id: FEAT-SP-001
+id: TASK-SP-006
+implementation_mode: task-work
+parent_review: TASK-REV-DBBC
+status: design_approved
+tags:
+- system-plan
+- cli
+- click
+task_type: feature
+title: Create guardkit system-plan CLI command
+wave: 3
 ---
 
 # Task: Create guardkit system-plan CLI Command
