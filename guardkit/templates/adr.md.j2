@@ -1,0 +1,26 @@
+# {{ adr.entity_id }}: {{ adr.title }}
+
+> Status: {{ adr.status }}
+> Date: {{ date }}
+
+## Context
+
+{{ adr.context }}
+
+## Decision
+
+{{ adr.decision }}
+
+## Consequences
+
+{% for consequence in adr.consequences %}
+- {{ consequence }}
+{% endfor %}
+
+{% if adr.related_components %}
+## Related Components
+
+{% for comp in adr.related_components %}
+- {{ comp }}
+{% endfor %}
+{% endif %}
