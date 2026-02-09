@@ -1,18 +1,23 @@
 ---
-id: TASK-SP-008
-title: "Create integration and end-to-end seam tests"
-status: pending
-task_type: testing
-parent_review: TASK-REV-DBBC
-feature_id: FEAT-SP-001
-wave: 4
-implementation_mode: task-work
 complexity: 7
 dependencies:
-  - TASK-SP-003
-  - TASK-SP-005
-  - TASK-SP-006
-tags: [system-plan, testing, integration, e2e, seams]
+- TASK-SP-003
+- TASK-SP-005
+- TASK-SP-006
+feature_id: FEAT-SP-001
+id: TASK-SP-008
+implementation_mode: task-work
+parent_review: TASK-REV-DBBC
+status: design_approved
+tags:
+- system-plan
+- testing
+- integration
+- e2e
+- seams
+task_type: testing
+title: Create integration and end-to-end seam tests
+wave: 4
 ---
 
 # Task: Create Integration and End-to-End Seam Tests
