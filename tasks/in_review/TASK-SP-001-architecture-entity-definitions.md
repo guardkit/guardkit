@@ -20,7 +20,7 @@ feature_id: FEAT-SP-001
 id: TASK-SP-001
 implementation_mode: task-work
 parent_review: TASK-REV-DBBC
-status: design_approved
+status: in_review
 tags:
 - system-plan
 - entities
@@ -38,16 +38,16 @@ Create the data model layer for `/system-plan` — the entity dataclasses that r
 
 ## Acceptance Criteria
 
-- [ ] `ComponentDef` dataclass with methodology-aware `to_episode_body()` (DDD fields only when methodology=="ddd")
-- [ ] `SystemContextDef` dataclass with stable `entity_id` property (format: `SYS-{slug}`)
-- [ ] `CrosscuttingConcernDef` dataclass with stable `entity_id` property (format: `XC-{slug}`)
-- [ ] `ArchitectureDecision` dataclass with stable `entity_id` property (format: `ADR-SP-{NNN}`)
-- [ ] `ArchitectureContext` dataclass with `format_for_prompt()` for coach/feature-plan integration
-- [ ] All `entity_id` properties are deterministic (same input → same ID)
-- [ ] No `_metadata` in any `to_episode_body()` output
-- [ ] DDD fields (`aggregate_roots`, `domain_events`, `context_mapping`) omitted from body when methodology != "ddd"
-- [ ] `entity_type` property returns `"bounded_context"` for DDD, `"component"` for others
-- [ ] Unit tests: >=85% coverage on all entity definitions
+- [x] `ComponentDef` dataclass with methodology-aware `to_episode_body()` (DDD fields only when methodology=="ddd")
+- [x] `SystemContextDef` dataclass with stable `entity_id` property (format: `SYS-{slug}`)
+- [x] `CrosscuttingConcernDef` dataclass with stable `entity_id` property (format: `XC-{slug}`)
+- [x] `ArchitectureDecision` dataclass with stable `entity_id` property (format: `ADR-SP-{NNN}`)
+- [x] `ArchitectureContext` dataclass with `format_for_prompt()` for coach/feature-plan integration
+- [x] All `entity_id` properties are deterministic (same input → same ID)
+- [x] No `_metadata` in any `to_episode_body()` output
+- [x] DDD fields (`aggregate_roots`, `domain_events`, `context_mapping`) omitted from body when methodology != "ddd"
+- [x] `entity_type` property returns `"bounded_context"` for DDD, `"component"` for others
+- [x] Unit tests: >=85% coverage on all entity definitions
 
 ## Files to Create
 

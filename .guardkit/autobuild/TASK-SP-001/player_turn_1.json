@@ -1,0 +1,22 @@
+{
+  "task_id": "TASK-SP-001",
+  "turn": 1,
+  "files_modified": [
+    "tasks/design_approved/TASK-SP-001-architecture-entity-definitions.md",
+    "tests/unit/knowledge/test_architecture_entities.py"
+  ],
+  "files_created": [
+    ".guardkit/autobuild/TASK-SP-001/task_work_results.json",
+    ".guardkit/autobuild/TASK-SP-002/checkpoints.json",
+    "tasks/in_review/TASK-SP-001-architecture-entity-definitions.md"
+  ],
+  "tests_written": [],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation",
+  "concerns": [],
+  "requirements_addressed": [],
+  "requirements_remaining": [],
+  "tests_passed_count": 47
+}

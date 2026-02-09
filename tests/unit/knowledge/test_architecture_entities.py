@@ -16,7 +16,6 @@ Entities tested:
 
 import json
 import pytest
-from dataclasses import FrozenInstanceError
 from typing import List
 
 # These imports will fail until implementation exists (TDD RED phase)
@@ -588,6 +587,80 @@ class TestArchitectureContext:
 
         # ctx2 should NOT be affected
         assert len(ctx2.components) == 0
+
+    def test_format_for_prompt_very_small_budget_skips_facts(self):
+        """Test format_for_prompt with very small budget skips facts section."""
+        ctx = ArchitectureContext(
+            system_context=None,
+            components=[],
+            decisions=[],
+            crosscutting_concerns=[],
+            retrieved_facts=[{"content": "Some fact", "score": 0.9}],
+        )
+        # With tiny budget, facts section should be empty
+        prompt = ctx.format_for_prompt(token_budget=10)
+        # Should just say no context available or be very short
+        assert len(prompt) < 100
+
+    def test_format_for_prompt_budget_truncates_sections(self):
+        """Test sections are skipped when budget is exceeded."""
+        # Create context with multiple sections
+        ctx = ArchitectureContext(
+            system_context=SystemContextDef(
+                name="A Very Long System Name That Takes Up Space",
+                purpose="A very long purpose description that takes up a lot of space in the output",
+                bounded_contexts=["Context1", "Context2", "Context3"],
+                external_systems=["External1", "External2"],
+                methodology="ddd",
+            ),
+            components=[
+                ComponentDef(
+                    name="Component A",
+                    description="A long description for component A",
+                    responsibilities=[],
+                    dependencies=[],
+                    methodology="layered",
+                ),
+                ComponentDef(
+                    name="Component B",
+                    description="A long description for component B",
+                    responsibilities=[],
+                    dependencies=[],
+                    methodology="layered",
+                ),
+            ],
+            decisions=[
+                ArchitectureDecision(
+                    number=1,
+                    title="Decision 1",
+                    status="accepted",
+                    context="Context",
+                    decision="Decision",
+                    consequences=[],
+                    related_components=[],
+                ),
+            ],
+            crosscutting_concerns=[
+                CrosscuttingConcernDef(
+                    name="Concern A",
+                    description="Description A",
+                    applies_to=[],
+                    implementation_notes="",
+                ),
+            ],
+            retrieved_facts=[
+                {"content": "Fact 1", "score": 0.9},
+                {"content": "Fact 2", "score": 0.8},
+            ],
+        )
+
+        # Very small budget should truncate
+        prompt_small = ctx.format_for_prompt(token_budget=50)
+        prompt_full = ctx.format_for_prompt(token_budget=5000)
+
+        assert len(prompt_small) < len(prompt_full)
+        # Small prompt should not include all sections
+        assert prompt_small.count("##") < prompt_full.count("##")
 
 
 # =========================================================================
