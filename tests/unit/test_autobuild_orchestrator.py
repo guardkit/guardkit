@@ -3155,14 +3155,23 @@ class TestPerThreadGraphiti:
         orch._cleanup_thread_loaders()
         assert len(orch._thread_loaders) == 0
 
-    def test_capture_turn_state_uses_factory_client(self):
-        """Test _capture_turn_state prefers factory's thread client over get_graphiti."""
+    def test_capture_turn_state_uses_thread_loaders_client(self):
+        """Test _capture_turn_state retrieves client from _thread_loaders (TASK-FIX-FD02).
+
+        After TASK-FIX-FD02, _capture_turn_state retrieves the Graphiti client from
+        self._thread_loaders (same storage as _get_thread_local_loader) instead of
+        calling self._factory.get_thread_client() which uses independent threading.local()
+        storage and creates a redundant client bound to a dead event loop.
+        """
         from guardkit.knowledge.graphiti_client import GraphitiClientFactory
 
         mock_thread_client = AsyncMock()
         mock_thread_client.enabled = True
+
+        mock_loader = Mock()
+        mock_loader.graphiti = mock_thread_client
+
         mock_factory = Mock(spec=GraphitiClientFactory)
-        mock_factory.get_thread_client.return_value = mock_thread_client
 
         orch = AutoBuildOrchestrator(
             repo_root=Path.cwd(),
@@ -3170,6 +3179,9 @@ class TestPerThreadGraphiti:
             enable_context=True,
         )
         orch._factory = mock_factory
+        # Store loader in _thread_loaders for the current thread
+        import threading
+        orch._thread_loaders[threading.get_ident()] = mock_loader
 
         player_result = make_player_result()
         coach_result = make_coach_result(decision="approve")
@@ -3191,9 +3203,9 @@ class TestPerThreadGraphiti:
                 acceptance_criteria=["AC-001: Test"],
                 task_id="TASK-TEST-001",
             )
-            # Should use the factory's thread client
-            mock_factory.get_thread_client.assert_called_once()
-            # capture_turn_state should be called with the thread client
+            # Should NOT call get_thread_client (old dual-storage path)
+            mock_factory.get_thread_client.assert_not_called()
+            # capture_turn_state should be called with the loader's client
             assert mock_capture.called
             assert mock_capture.call_args[0][0] is mock_thread_client
 
@@ -3255,6 +3267,207 @@ class TestPerThreadGraphiti:
                     enable_context=True,
                 )
         assert "factory=available" in caplog.text
+
+    def test_capture_turn_state_no_get_thread_client_call(self):
+        """Test _capture_turn_state does NOT call factory.get_thread_client() (TASK-FIX-FD02).
+
+        The dual-storage bug occurred because get_thread_client() uses threading.local()
+        while _get_thread_local_loader() uses self._thread_loaders dict. After the fix,
+        _capture_turn_state should only use _thread_loaders.
+        """
+        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+
+        mock_factory = Mock(spec=GraphitiClientFactory)
+
+        orch = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            enable_context=True,
+        )
+        orch._factory = mock_factory
+        # No thread loader registered — should fall back to get_graphiti()
+
+        player_result = make_player_result()
+        coach_result = make_coach_result(decision="approve")
+        turn_record = TurnRecord(
+            turn=1,
+            player_result=player_result,
+            coach_result=coach_result,
+            decision="approve",
+            feedback=None,
+            timestamp="2025-01-29T10:00:00Z",
+        )
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.enabled = True
+
+        with patch(
+            "guardkit.orchestrator.autobuild.get_graphiti",
+            return_value=mock_graphiti,
+        ), patch(
+            "guardkit.orchestrator.autobuild.capture_turn_state",
+            new_callable=AsyncMock,
+        ) as mock_capture:
+            orch._capture_turn_state(
+                turn_record=turn_record,
+                acceptance_criteria=["AC-001: Test"],
+                task_id="TASK-TEST-001",
+            )
+            # get_thread_client should NEVER be called after FD02 fix
+            mock_factory.get_thread_client.assert_not_called()
+            # Falls back to get_graphiti() since no thread loader
+            assert mock_capture.called
+            assert mock_capture.call_args[0][0] is mock_graphiti
+
+    def test_capture_turn_state_thread_loader_with_none_graphiti(self):
+        """Test _capture_turn_state falls back when thread loader has None graphiti (TASK-FIX-FD02)."""
+        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+
+        mock_factory = Mock(spec=GraphitiClientFactory)
+
+        # Loader exists but graphiti is None (init failed)
+        mock_loader = Mock()
+        mock_loader.graphiti = None
+
+        orch = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            enable_context=True,
+        )
+        orch._factory = mock_factory
+        import threading
+        orch._thread_loaders[threading.get_ident()] = mock_loader
+
+        player_result = make_player_result()
+        coach_result = make_coach_result(decision="approve")
+        turn_record = TurnRecord(
+            turn=1,
+            player_result=player_result,
+            coach_result=coach_result,
+            decision="approve",
+            feedback=None,
+            timestamp="2025-01-29T10:00:00Z",
+        )
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.enabled = True
+
+        with patch(
+            "guardkit.orchestrator.autobuild.get_graphiti",
+            return_value=mock_graphiti,
+        ), patch(
+            "guardkit.orchestrator.autobuild.capture_turn_state",
+            new_callable=AsyncMock,
+        ) as mock_capture:
+            orch._capture_turn_state(
+                turn_record=turn_record,
+                acceptance_criteria=["AC-001: Test"],
+                task_id="TASK-TEST-001",
+            )
+            # Should fall back to get_graphiti() since loader.graphiti is None
+            assert mock_capture.called
+            assert mock_capture.call_args[0][0] is mock_graphiti
+
+    def test_capture_turn_state_thread_loader_none_entry(self):
+        """Test _capture_turn_state falls back when thread loader entry is None (TASK-FIX-FD02).
+
+        When _get_thread_local_loader fails, it stores None in _thread_loaders.
+        _capture_turn_state should handle this gracefully.
+        """
+        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+
+        mock_factory = Mock(spec=GraphitiClientFactory)
+
+        orch = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            enable_context=True,
+        )
+        orch._factory = mock_factory
+        import threading
+        # Simulate failed loader init
+        orch._thread_loaders[threading.get_ident()] = None
+
+        player_result = make_player_result()
+        coach_result = make_coach_result(decision="approve")
+        turn_record = TurnRecord(
+            turn=1,
+            player_result=player_result,
+            coach_result=coach_result,
+            decision="approve",
+            feedback=None,
+            timestamp="2025-01-29T10:00:00Z",
+        )
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.enabled = True
+
+        with patch(
+            "guardkit.orchestrator.autobuild.get_graphiti",
+            return_value=mock_graphiti,
+        ), patch(
+            "guardkit.orchestrator.autobuild.capture_turn_state",
+            new_callable=AsyncMock,
+        ) as mock_capture:
+            orch._capture_turn_state(
+                turn_record=turn_record,
+                acceptance_criteria=["AC-001: Test"],
+                task_id="TASK-TEST-001",
+            )
+            # Should fall back to get_graphiti() since loader is None
+            assert mock_capture.called
+            assert mock_capture.call_args[0][0] is mock_graphiti
+
+    def test_capture_turn_state_no_thread_loader_for_thread(self):
+        """Test _capture_turn_state falls back when no loader exists for current thread (TASK-FIX-FD02).
+
+        In a different thread (e.g., not yet initialized), _thread_loaders won't
+        have an entry for the current thread ID.
+        """
+        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+
+        mock_factory = Mock(spec=GraphitiClientFactory)
+
+        orch = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            enable_context=True,
+        )
+        orch._factory = mock_factory
+        # _thread_loaders is empty — no loader for any thread
+        assert len(orch._thread_loaders) == 0
+
+        player_result = make_player_result()
+        coach_result = make_coach_result(decision="approve")
+        turn_record = TurnRecord(
+            turn=1,
+            player_result=player_result,
+            coach_result=coach_result,
+            decision="approve",
+            feedback=None,
+            timestamp="2025-01-29T10:00:00Z",
+        )
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.enabled = True
+
+        with patch(
+            "guardkit.orchestrator.autobuild.get_graphiti",
+            return_value=mock_graphiti,
+        ), patch(
+            "guardkit.orchestrator.autobuild.capture_turn_state",
+            new_callable=AsyncMock,
+        ) as mock_capture:
+            orch._capture_turn_state(
+                turn_record=turn_record,
+                acceptance_criteria=["AC-001: Test"],
+                task_id="TASK-TEST-001",
+            )
+            # No get_thread_client call
+            mock_factory.get_thread_client.assert_not_called()
+            # Falls back to get_graphiti()
+            assert mock_capture.called
+            assert mock_capture.call_args[0][0] is mock_graphiti
 
 
 # ============================================================================

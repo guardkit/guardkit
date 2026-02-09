@@ -2415,10 +2415,15 @@ class AutoBuildOrchestrator:
             )
 
             # Capture to Graphiti (sync call via run_until_complete, graceful degradation)
-            # Use factory's per-thread client to avoid cross-loop errors (TASK-FIX-GTP2)
+            # Retrieve client from _thread_loaders (same storage as _get_thread_local_loader)
+            # to avoid dual-storage bug where get_thread_client() creates a redundant
+            # client via asyncio.run() bound to a dead loop (TASK-FIX-FD02)
             graphiti = None
             if self._factory is not None:
-                graphiti = self._factory.get_thread_client()
+                thread_id = threading.get_ident()
+                loader = self._thread_loaders.get(thread_id)
+                if loader is not None and loader.graphiti is not None:
+                    graphiti = loader.graphiti
             if graphiti is None:
                 # Fallback to module-level get_graphiti() for non-factory usage
                 graphiti = get_graphiti()

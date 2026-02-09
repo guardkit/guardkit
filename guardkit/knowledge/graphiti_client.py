@@ -1475,8 +1475,9 @@ class GraphitiClientFactory:
             self._thread_local.client = client
             return client
         else:
+            coro = client.initialize()
             try:
-                success = asyncio.run(client.initialize())
+                success = asyncio.run(coro)
                 if success:
                     self._thread_local.client = client
                     logger.info("Graphiti factory: thread client initialized successfully")
@@ -1485,6 +1486,7 @@ class GraphitiClientFactory:
                     logger.info("Graphiti factory: thread client init failed")
                     return None
             except Exception as e:
+                coro.close()  # Suppress RuntimeWarning by explicitly closing
                 logger.info(f"Graphiti factory: thread client init error: {e}")
                 return None
 

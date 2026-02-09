@@ -284,3 +284,101 @@ class TestGetFactory:
         graphiti_module._factory = factory
 
         assert get_factory() is factory
+
+
+# ============================================================================
+# 6. Unawaited Coroutine Warning Fix Tests (TASK-FIX-FD04)
+# ============================================================================
+
+
+class TestUnawaitedCoroutineWarningFix:
+    """Tests for coro.close() in get_thread_client error path.
+
+    When asyncio.run(client.initialize()) fails (e.g., FD exhaustion
+    causing OSError during event loop creation), the coroutine object
+    must be explicitly closed to suppress RuntimeWarning.
+    """
+
+    def test_no_runtime_warning_when_asyncio_run_raises_os_error(self):
+        """No RuntimeWarning emitted when asyncio.run raises OSError (FD exhaustion)."""
+        import warnings
+
+        config = GraphitiConfig(enabled=True)
+        factory = GraphitiClientFactory(config)
+
+        mock_client = MagicMock(spec=GraphitiClient)
+        # Create a real coroutine that we can track
+        async def mock_init():
+            return True
+
+        mock_client.initialize = mock_init
+
+        with patch.object(factory, 'create_client', return_value=mock_client), \
+             patch('asyncio.get_running_loop', side_effect=RuntimeError), \
+             patch('asyncio.run', side_effect=OSError("[Errno 24] Too many open files")):
+
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                result = factory.get_thread_client()
+
+            assert result is None
+            # No RuntimeWarning about unawaited coroutine
+            runtime_warnings = [x for x in w if issubclass(x.category, RuntimeWarning)]
+            assert len(runtime_warnings) == 0
+
+    def test_no_runtime_warning_when_asyncio_run_raises_generic_exception(self):
+        """No RuntimeWarning emitted on generic Exception from asyncio.run."""
+        import warnings
+
+        config = GraphitiConfig(enabled=True)
+        factory = GraphitiClientFactory(config)
+
+        mock_client = MagicMock(spec=GraphitiClient)
+        async def mock_init():
+            return True
+
+        mock_client.initialize = mock_init
+
+        with patch.object(factory, 'create_client', return_value=mock_client), \
+             patch('asyncio.get_running_loop', side_effect=RuntimeError), \
+             patch('asyncio.run', side_effect=RuntimeError("event loop creation failed")):
+
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                result = factory.get_thread_client()
+
+            assert result is None
+            runtime_warnings = [x for x in w if issubclass(x.category, RuntimeWarning)]
+            assert len(runtime_warnings) == 0
+
+    def test_successful_init_unaffected_by_coro_fix(self):
+        """Successful asyncio.run(coro) still works correctly after refactor."""
+        config = GraphitiConfig(enabled=True)
+        factory = GraphitiClientFactory(config)
+
+        mock_client = MagicMock(spec=GraphitiClient)
+        mock_client.initialize = AsyncMock(return_value=True)
+
+        with patch.object(factory, 'create_client', return_value=mock_client), \
+             patch('asyncio.get_running_loop', side_effect=RuntimeError), \
+             patch('asyncio.run', return_value=True):
+
+            result = factory.get_thread_client()
+
+        assert result is mock_client
+
+    def test_failed_init_returns_none_after_coro_fix(self):
+        """asyncio.run returning False still returns None correctly."""
+        config = GraphitiConfig(enabled=True)
+        factory = GraphitiClientFactory(config)
+
+        mock_client = MagicMock(spec=GraphitiClient)
+        mock_client.initialize = AsyncMock(return_value=False)
+
+        with patch.object(factory, 'create_client', return_value=mock_client), \
+             patch('asyncio.get_running_loop', side_effect=RuntimeError), \
+             patch('asyncio.run', return_value=False):
+
+            result = factory.get_thread_client()
+
+        assert result is None

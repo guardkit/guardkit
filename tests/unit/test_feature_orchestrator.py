@@ -1823,3 +1823,321 @@ async def test_timeout_updates_feature_state(
             error_result = call_args[0][2]  # Third positional arg is the result
             assert error_result.success is False
             assert error_result.final_decision == "timeout"
+
+
+# ============================================================================
+# Test: File Descriptor Limit Elevation (TASK-FIX-FD01)
+# ============================================================================
+
+
+class TestRaiseFdLimit:
+    """Tests for _raise_fd_limit() file descriptor limit elevation."""
+
+    def test_raises_limit_when_below_target(self, temp_repo, mock_worktree_manager):
+        """Test that FD limit is raised when soft limit is below target."""
+        with patch("guardkit.orchestrator.feature_orchestrator.resource") as mock_resource:
+            mock_resource.RLIMIT_NOFILE = 7  # Real constant value
+            mock_resource.RLIM_INFINITY = -1
+            mock_resource.getrlimit.return_value = (256, 245760)
+            mock_resource.setrlimit = MagicMock()
+
+            FeatureOrchestrator(
+                repo_root=temp_repo,
+                worktree_manager=mock_worktree_manager,
+            )
+
+            mock_resource.setrlimit.assert_called_once_with(
+                mock_resource.RLIMIT_NOFILE, (4096, 245760)
+            )
+
+    def test_noop_when_already_high(self, temp_repo, mock_worktree_manager):
+        """Test no-op when soft limit is already >= target."""
+        with patch("guardkit.orchestrator.feature_orchestrator.resource") as mock_resource:
+            mock_resource.RLIMIT_NOFILE = 7
+            mock_resource.RLIM_INFINITY = -1
+            mock_resource.getrlimit.return_value = (8192, 245760)
+
+            FeatureOrchestrator(
+                repo_root=temp_repo,
+                worktree_manager=mock_worktree_manager,
+            )
+
+            mock_resource.setrlimit.assert_not_called()
+
+    def test_respects_hard_limit(self, temp_repo, mock_worktree_manager):
+        """Test that new soft limit does not exceed hard limit."""
+        with patch("guardkit.orchestrator.feature_orchestrator.resource") as mock_resource:
+            mock_resource.RLIMIT_NOFILE = 7
+            mock_resource.RLIM_INFINITY = -1
+            mock_resource.getrlimit.return_value = (256, 1024)  # Hard < target
+            mock_resource.setrlimit = MagicMock()
+
+            FeatureOrchestrator(
+                repo_root=temp_repo,
+                worktree_manager=mock_worktree_manager,
+            )
+
+            mock_resource.setrlimit.assert_called_once_with(
+                mock_resource.RLIMIT_NOFILE, (1024, 1024)
+            )
+
+    def test_handles_infinity_hard_limit(self, temp_repo, mock_worktree_manager):
+        """Test handling of RLIM_INFINITY hard limit."""
+        with patch("guardkit.orchestrator.feature_orchestrator.resource") as mock_resource:
+            mock_resource.RLIMIT_NOFILE = 7
+            mock_resource.RLIM_INFINITY = -1
+            mock_resource.getrlimit.return_value = (256, -1)  # RLIM_INFINITY
+            mock_resource.setrlimit = MagicMock()
+
+            FeatureOrchestrator(
+                repo_root=temp_repo,
+                worktree_manager=mock_worktree_manager,
+            )
+
+            mock_resource.setrlimit.assert_called_once_with(
+                mock_resource.RLIMIT_NOFILE, (4096, -1)
+            )
+
+    def test_graceful_on_oserror(self, temp_repo, mock_worktree_manager):
+        """Test graceful handling when setrlimit raises OSError."""
+        with patch("guardkit.orchestrator.feature_orchestrator.resource") as mock_resource:
+            mock_resource.RLIMIT_NOFILE = 7
+            mock_resource.RLIM_INFINITY = -1
+            mock_resource.getrlimit.return_value = (256, 245760)
+            mock_resource.setrlimit.side_effect = OSError("Operation not permitted")
+
+            # Should not raise — continues gracefully
+            orchestrator = FeatureOrchestrator(
+                repo_root=temp_repo,
+                worktree_manager=mock_worktree_manager,
+            )
+            assert orchestrator is not None
+
+    def test_graceful_on_value_error(self, temp_repo, mock_worktree_manager):
+        """Test graceful handling when setrlimit raises ValueError."""
+        with patch("guardkit.orchestrator.feature_orchestrator.resource") as mock_resource:
+            mock_resource.RLIMIT_NOFILE = 7
+            mock_resource.RLIM_INFINITY = -1
+            mock_resource.getrlimit.return_value = (256, 245760)
+            mock_resource.setrlimit.side_effect = ValueError("Invalid limit")
+
+            # Should not raise — continues gracefully
+            orchestrator = FeatureOrchestrator(
+                repo_root=temp_repo,
+                worktree_manager=mock_worktree_manager,
+            )
+            assert orchestrator is not None
+
+    def test_logs_info_on_success(self, temp_repo, mock_worktree_manager, caplog):
+        """Test that INFO log is emitted when limit is raised."""
+        with patch("guardkit.orchestrator.feature_orchestrator.resource") as mock_resource:
+            mock_resource.RLIMIT_NOFILE = 7
+            mock_resource.RLIM_INFINITY = -1
+            mock_resource.getrlimit.return_value = (256, 245760)
+            mock_resource.setrlimit = MagicMock()
+
+            import logging
+            with caplog.at_level(logging.INFO, logger="guardkit.orchestrator.feature_orchestrator"):
+                FeatureOrchestrator(
+                    repo_root=temp_repo,
+                    worktree_manager=mock_worktree_manager,
+                )
+
+            assert any("Raised file descriptor limit: 256" in msg for msg in caplog.messages)
+
+    def test_logs_warning_on_error(self, temp_repo, mock_worktree_manager, caplog):
+        """Test that WARNING log is emitted on setrlimit failure."""
+        with patch("guardkit.orchestrator.feature_orchestrator.resource") as mock_resource:
+            mock_resource.RLIMIT_NOFILE = 7
+            mock_resource.RLIM_INFINITY = -1
+            mock_resource.getrlimit.return_value = (256, 245760)
+            mock_resource.setrlimit.side_effect = OSError("Permission denied")
+
+            import logging
+            with caplog.at_level(logging.WARNING, logger="guardkit.orchestrator.feature_orchestrator"):
+                FeatureOrchestrator(
+                    repo_root=temp_repo,
+                    worktree_manager=mock_worktree_manager,
+                )
+
+            assert any("Could not raise file descriptor limit" in msg for msg in caplog.messages)
+
+
+# ============================================================================
+# Test: Graphiti Factory Pre-Initialization (TASK-FIX-FD03)
+# ============================================================================
+
+
+class TestPreInitGraphiti:
+    """Tests for _pre_init_graphiti() factory pre-initialization."""
+
+    def test_pre_init_calls_get_graphiti_when_context_enabled(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """Test that _pre_init_graphiti calls get_graphiti when enable_context=True."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            enable_context=True,
+        )
+
+        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
+            mock_client = MagicMock()
+            mock_get.return_value = mock_client
+
+            orchestrator._pre_init_graphiti()
+
+            mock_get.assert_called_once()
+
+    def test_pre_init_skips_when_context_disabled(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """Test that _pre_init_graphiti is a no-op when enable_context=False."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            enable_context=False,
+        )
+
+        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
+            orchestrator._pre_init_graphiti()
+
+            mock_get.assert_not_called()
+
+    def test_pre_init_graceful_on_import_error(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """Test graceful degradation when guardkit.knowledge import fails."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            enable_context=True,
+        )
+
+        with patch(
+            "guardkit.orchestrator.feature_orchestrator.get_graphiti",
+            side_effect=ImportError("No module named 'graphiti_core'"),
+        ):
+            # Should not raise
+            orchestrator._pre_init_graphiti()
+
+    def test_pre_init_graceful_on_exception(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """Test graceful degradation when get_graphiti raises unexpected error."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            enable_context=True,
+        )
+
+        with patch(
+            "guardkit.orchestrator.feature_orchestrator.get_graphiti",
+            side_effect=RuntimeError("Connection refused"),
+        ):
+            # Should not raise
+            orchestrator._pre_init_graphiti()
+
+    def test_pre_init_logs_info_when_client_available(
+        self, temp_repo, mock_worktree_manager, caplog
+    ):
+        """Test INFO log when Graphiti client is successfully pre-initialized."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            enable_context=True,
+        )
+
+        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
+            mock_get.return_value = MagicMock()
+
+            import logging
+            with caplog.at_level(logging.INFO, logger="guardkit.orchestrator.feature_orchestrator"):
+                orchestrator._pre_init_graphiti()
+
+            assert any(
+                "Pre-initialized Graphiti factory" in msg for msg in caplog.messages
+            )
+
+    def test_pre_init_logs_info_when_client_none(
+        self, temp_repo, mock_worktree_manager, caplog
+    ):
+        """Test INFO log when Graphiti is not available (returns None)."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            enable_context=True,
+        )
+
+        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
+            mock_get.return_value = None
+
+            import logging
+            with caplog.at_level(logging.INFO, logger="guardkit.orchestrator.feature_orchestrator"):
+                orchestrator._pre_init_graphiti()
+
+            assert any(
+                "Graphiti not available" in msg for msg in caplog.messages
+            )
+
+    def test_pre_init_logs_warning_on_error(
+        self, temp_repo, mock_worktree_manager, caplog
+    ):
+        """Test WARNING log when pre-initialization fails with exception."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            enable_context=True,
+        )
+
+        with patch(
+            "guardkit.orchestrator.feature_orchestrator.get_graphiti",
+            side_effect=RuntimeError("Neo4j down"),
+        ):
+            import logging
+            with caplog.at_level(logging.WARNING, logger="guardkit.orchestrator.feature_orchestrator"):
+                orchestrator._pre_init_graphiti()
+
+            assert any(
+                "Failed to pre-initialize Graphiti" in msg for msg in caplog.messages
+            )
+
+    def test_wave_phase_calls_pre_init(
+        self, temp_repo, sample_feature, mock_worktree, mock_worktree_manager
+    ):
+        """Test that _wave_phase calls _pre_init_graphiti before wave execution."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+        )
+
+        call_order = []
+
+        original_execute_wave = orchestrator._execute_wave
+
+        def mock_pre_init():
+            call_order.append("pre_init")
+
+        def mock_execute_wave(wave_number, task_ids, feature, worktree):
+            call_order.append(f"wave_{wave_number}")
+            return WaveExecutionResult(
+                wave_number=wave_number,
+                task_ids=task_ids,
+                results=[
+                    TaskExecutionResult(
+                        task_id=tid, success=True,
+                        total_turns=1, final_decision="approved"
+                    )
+                    for tid in task_ids
+                ],
+                all_succeeded=True,
+            )
+
+        with patch.object(orchestrator, '_pre_init_graphiti', side_effect=mock_pre_init), \
+             patch.object(orchestrator, '_execute_wave', side_effect=mock_execute_wave), \
+             patch.object(orchestrator, '_dependencies_satisfied', return_value=True):
+            orchestrator._wave_phase(sample_feature, mock_worktree)
+
+        # pre_init must come before any wave execution
+        assert call_order[0] == "pre_init"
+        assert all(item.startswith("wave_") for item in call_order[1:])

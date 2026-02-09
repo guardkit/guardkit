@@ -24,6 +24,7 @@ Example:
 
 import asyncio
 import logging
+import resource
 import shutil
 from dataclasses import dataclass
 from datetime import datetime
@@ -34,6 +35,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from guardkit.knowledge import get_graphiti
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator, OrchestrationResult
 from guardkit.orchestrator.feature_loader import (
     Feature,
@@ -287,6 +289,9 @@ class FeatureOrchestrator:
         self.task_timeout = task_timeout
         self.features_dir = features_dir or self.repo_root / ".guardkit" / "features"
 
+        # Raise file descriptor limit for parallel task execution
+        self._raise_fd_limit()
+
         # Initialize dependencies
         self._worktree_manager = worktree_manager or WorktreeManager(
             repo_root=self.repo_root
@@ -301,6 +306,29 @@ class FeatureOrchestrator:
             f"resume={self.resume}, fresh={self.fresh}, enable_pre_loop={self.enable_pre_loop}, "
             f"enable_context={self.enable_context}, task_timeout={self.task_timeout}s"
         )
+
+    def _raise_fd_limit(self, target: int = 4096) -> None:
+        """
+        Raise the file descriptor soft limit for parallel task execution.
+
+        Each parallel AutoBuild task consumes ~60-90 file descriptors (Claude Code
+        subprocess + Neo4j + OpenAI + git + runtime). With 3+ parallel tasks, the
+        macOS default soft limit of 256 is insufficient, causing [Errno 24] crashes.
+
+        Parameters
+        ----------
+        target : int, optional
+            Target soft limit (default: 4096)
+        """
+        try:
+            soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+            if soft >= target:
+                return
+            new_soft = min(target, hard) if hard != resource.RLIM_INFINITY else target
+            resource.setrlimit(resource.RLIMIT_NOFILE, (new_soft, hard))
+            logger.info(f"Raised file descriptor limit: {soft} → {new_soft}")
+        except (ValueError, OSError) as e:
+            logger.warning(f"Could not raise file descriptor limit: {e}")
 
     def orchestrate(
         self,
@@ -890,6 +918,30 @@ The detailed specifications are in the task markdown file.
         FeatureLoader.save_feature(feature, self.repo_root)
         console.print("[green]✓[/green] Reset feature state")
 
+    def _pre_init_graphiti(self) -> None:
+        """
+        Pre-initialize Graphiti factory before parallel task dispatch.
+
+        Ensures the global GraphitiClientFactory is created on the main thread
+        before any worker threads call get_graphiti(). Without this, there is a
+        race condition where the first task's AutoBuildOrchestrator.__init__()
+        triggers lazy initialization while other parallel tasks see factory=None.
+
+        This is a no-op when enable_context is False or when Graphiti is
+        unavailable/disabled.
+        """
+        if not self.enable_context:
+            return
+
+        try:
+            client = get_graphiti()
+            if client is not None:
+                logger.info("Pre-initialized Graphiti factory for parallel execution")
+            else:
+                logger.info("Graphiti not available, parallel tasks will run without context")
+        except Exception as e:
+            logger.warning(f"Failed to pre-initialize Graphiti: {e}")
+
     def _wave_phase(
         self,
         feature: Feature,
@@ -915,6 +967,11 @@ The detailed specifications are in the task markdown file.
             f"(task_timeout={self.task_timeout}s)"
         )
         wave_results = []
+
+        # Pre-initialize Graphiti factory before any parallel dispatch
+        # to avoid race condition where first task triggers lazy init
+        # while other tasks see factory=None (BUG-4 from TASK-REV-B9E1)
+        self._pre_init_graphiti()
 
         console.print()
         console.print(
