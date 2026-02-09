@@ -13,7 +13,7 @@
 
 | Module | Responsibility | Key Exports |
 |--------|---------------|-------------|
-| `guardkit/knowledge/graphiti_client.py` | Graphiti wrapper with graceful degradation | `GraphitiClient`, `GraphitiConfig`, `init_graphiti`, `get_graphiti` |
+| `guardkit/knowledge/graphiti_client.py` | Graphiti wrapper with graceful degradation | `GraphitiClient`, `GraphitiConfig`, `GraphitiClientFactory`, `init_graphiti`, `get_graphiti`, `get_factory` |
 | `guardkit/knowledge/config.py` | YAML config loading | `GraphitiSettings`, `load_graphiti_config`, `get_config_path` |
 | `guardkit/knowledge/__init__.py` | Public API surface (~70 exports) | All public types and functions |
 
@@ -129,9 +129,10 @@ healthy = await client.health_check()  # Returns bool
 # Cleanup
 await client.close()
 
-# Singleton pattern
-await init_graphiti(config)     # Initialize once
-client = get_graphiti()          # Get anywhere
+# Per-thread factory pattern (replaced singleton in TASK-FIX-GTP1)
+await init_graphiti(config)     # Creates factory + initializes thread client
+client = get_graphiti()          # Returns thread-local client (lazy-init if needed)
+factory = get_factory()          # Get factory directly (no lazy-init)
 ```
 
 ### Episode Operations

@@ -1,7 +1,7 @@
 ---
 id: TASK-SP-004
-title: "Implement adaptive question flow engine"
-status: pending
+title: Implement adaptive question flow engine
+status: in_progress
 task_type: feature
 parent_review: TASK-REV-DBBC
 feature_id: FEAT-SP-001
@@ -9,8 +9,19 @@ wave: 2
 implementation_mode: task-work
 complexity: 5
 dependencies:
-  - TASK-SP-001
-tags: [system-plan, questions, adaptive-flow]
+- TASK-SP-001
+tags:
+- system-plan
+- questions
+- adaptive-flow
+autobuild_state:
+  current_turn: 0
+  max_turns: 25
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-6EDD
+  base_branch: main
+  started_at: '2026-02-09T08:16:46.595330'
+  last_updated: '2026-02-09T08:16:46.595333'
+  turns: []
 ---
 
 # Task: Implement Adaptive Question Flow Engine

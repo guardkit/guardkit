@@ -39,7 +39,7 @@ from rich import box
 logger = logging.getLogger(__name__)
 
 # Type aliases
-TaskStatus = Literal["pending", "in_progress", "success", "failed", "skipped"]
+TaskStatus = Literal["pending", "in_progress", "success", "failed", "skipped", "timeout"]
 FeatureStatus = Literal["completed", "failed", "paused"]
 
 
@@ -210,6 +210,7 @@ class WaveProgressDisplay:
             "success": "[green]✓[/green]",
             "failed": "[red]✗[/red]",
             "skipped": "[yellow]⏭[/yellow]",
+            "timeout": "[red]⏱[/red]",
         }
         icon = status_icons.get(status, "•")
 
@@ -305,6 +306,7 @@ class WaveProgressDisplay:
                     "success": "green",
                     "failed": "red",
                     "skipped": "yellow",
+                    "timeout": "red",
                 }.get(ts.status, "dim")
 
                 table.add_row(
@@ -469,6 +471,7 @@ class WaveProgressDisplay:
                 "success": "green",
                 "failed": "red",
                 "skipped": "yellow",
+                "timeout": "red",
             }.get(ts.status, "dim")
 
             table.add_row(

@@ -1,14 +1,14 @@
 """
-Tests for Graphiti client lazy initialization (TASK-FIX-GCW6).
+Tests for Graphiti client lazy initialization (TASK-FIX-GCW6, updated TASK-FIX-GTP1).
 
 Tests the lazy-init behavior of get_graphiti() which auto-initializes
-the singleton from config when it hasn't been explicitly initialized.
+the factory from config when it hasn't been explicitly initialized.
 
 Coverage Target: >=80%
 Test Organization:
     - Lazy-init success path
     - Lazy-init when Neo4j unavailable (graceful degradation)
-    - Singleton reuse (no re-init)
+    - Factory reuse (no re-init)
     - Config loading integration
     - Async context handling
     - init_graphiti interaction with lazy-init flag
@@ -23,6 +23,7 @@ import guardkit.knowledge.graphiti_client as graphiti_module
 from guardkit.knowledge.graphiti_client import (
     GraphitiConfig,
     GraphitiClient,
+    GraphitiClientFactory,
     init_graphiti,
     get_graphiti,
     _try_lazy_init,
@@ -56,12 +57,12 @@ def _make_settings(
 
 @pytest.fixture(autouse=True)
 def reset_singleton():
-    """Reset the module-level singleton before and after each test."""
-    graphiti_module._graphiti = None
-    graphiti_module._graphiti_init_attempted = False
+    """Reset the module-level factory before and after each test."""
+    graphiti_module._factory = None
+    graphiti_module._factory_init_attempted = False
     yield
-    graphiti_module._graphiti = None
-    graphiti_module._graphiti_init_attempted = False
+    graphiti_module._factory = None
+    graphiti_module._factory_init_attempted = False
 
 
 # ============================================================================
@@ -74,7 +75,7 @@ class TestLazyInitSuccess:
 
     def test_get_graphiti_triggers_lazy_init_when_none(self):
         """
-        Given singleton is None and init not attempted
+        Given factory is None and init not attempted
         When get_graphiti() is called
         Then _try_lazy_init is called to initialize.
         """
@@ -101,11 +102,11 @@ class TestLazyInitSuccess:
             result = get_graphiti()
             assert result is mock_client
 
-    def test_lazy_init_creates_client_from_config(self):
+    def test_lazy_init_creates_factory_from_config(self):
         """
         Given valid config from load_graphiti_config
         When _try_lazy_init is called
-        Then creates GraphitiClient with correct config values.
+        Then creates factory with correct config values.
         """
         settings = _make_settings(
             neo4j_uri="bolt://test:7687",
@@ -119,22 +120,22 @@ class TestLazyInitSuccess:
         mock_client.initialize = AsyncMock(return_value=True)
 
         with patch(CONFIG_PATCH, return_value=settings), \
-             patch(CLIENT_PATCH, return_value=mock_client) as MockCls:
+             patch(CLIENT_PATCH, return_value=mock_client):
             result = _try_lazy_init()
 
-            MockCls.assert_called_once()
-            config = MockCls.call_args[0][0]
-            assert config.neo4j_uri == "bolt://test:7687"
-            assert config.neo4j_user == "testuser"
-            assert config.neo4j_password == "testpass"
-            assert config.timeout == 60.0
-            assert config.project_id == "test-project"
+        assert graphiti_module._factory is not None
+        config = graphiti_module._factory.config
+        assert config.neo4j_uri == "bolt://test:7687"
+        assert config.neo4j_user == "testuser"
+        assert config.neo4j_password == "testpass"
+        assert config.timeout == 60.0
+        assert config.project_id == "test-project"
 
-    def test_lazy_init_sets_singleton(self):
+    def test_lazy_init_sets_factory(self):
         """
         Given successful lazy-init
         When _try_lazy_init completes
-        Then module-level _graphiti is set.
+        Then module-level _factory is set.
         """
         mock_client = MagicMock(spec=GraphitiClient)
         mock_client.initialize = AsyncMock(return_value=True)
@@ -143,8 +144,8 @@ class TestLazyInitSuccess:
              patch(CLIENT_PATCH, return_value=mock_client):
             result = _try_lazy_init()
 
-        assert graphiti_module._graphiti is mock_client
-        assert graphiti_module._graphiti_init_attempted is True
+        assert graphiti_module._factory is not None
+        assert graphiti_module._factory_init_attempted is True
 
 
 # ============================================================================
@@ -159,13 +160,13 @@ class TestLazyInitGracefulDegradation:
         """
         Given config has enabled=False
         When _try_lazy_init is called
-        Then returns None without creating client.
+        Then returns None without creating factory.
         """
         with patch(CONFIG_PATCH, return_value=_make_settings(enabled=False)):
             result = _try_lazy_init()
 
         assert result is None
-        assert graphiti_module._graphiti_init_attempted is True
+        assert graphiti_module._factory_init_attempted is True
 
     def test_lazy_init_returns_none_when_initialize_fails(self):
         """
@@ -181,7 +182,6 @@ class TestLazyInitGracefulDegradation:
             result = _try_lazy_init()
 
         assert result is None
-        assert graphiti_module._graphiti is None
 
     def test_lazy_init_returns_none_on_import_error(self):
         """
@@ -193,7 +193,7 @@ class TestLazyInitGracefulDegradation:
             result = _try_lazy_init()
 
         assert result is None
-        assert graphiti_module._graphiti_init_attempted is True
+        assert graphiti_module._factory_init_attempted is True
 
     def test_lazy_init_returns_none_on_connection_error(self):
         """
@@ -209,25 +209,27 @@ class TestLazyInitGracefulDegradation:
             result = _try_lazy_init()
 
         assert result is None
-        assert graphiti_module._graphiti_init_attempted is True
+        assert graphiti_module._factory_init_attempted is True
 
 
 # ============================================================================
-# Test: Singleton Reuse (No Re-Init)
+# Test: Factory Reuse (No Re-Init)
 # ============================================================================
 
 
 class TestSingletonReuse:
-    """Tests for singleton reuse behavior."""
+    """Tests for factory reuse behavior."""
 
-    def test_get_graphiti_returns_existing_singleton(self):
+    def test_get_graphiti_returns_client_from_existing_factory(self):
         """
-        Given singleton is already set
+        Given factory is already set
         When get_graphiti() is called
-        Then returns the existing singleton without lazy-init.
+        Then returns client from factory without lazy-init.
         """
         mock_client = MagicMock(spec=GraphitiClient)
-        graphiti_module._graphiti = mock_client
+        mock_factory = MagicMock(spec=GraphitiClientFactory)
+        mock_factory.get_thread_client.return_value = mock_client
+        graphiti_module._factory = mock_factory
 
         with patch(
             "guardkit.knowledge.graphiti_client._try_lazy_init"
@@ -242,8 +244,8 @@ class TestSingletonReuse:
         When get_graphiti() is called again
         Then returns None without re-attempting.
         """
-        graphiti_module._graphiti_init_attempted = True
-        graphiti_module._graphiti = None
+        graphiti_module._factory_init_attempted = True
+        graphiti_module._factory = None
 
         with patch(
             "guardkit.knowledge.graphiti_client._try_lazy_init"
@@ -252,19 +254,21 @@ class TestSingletonReuse:
             mock_lazy.assert_not_called()
             assert result is None
 
-    def test_second_get_graphiti_reuses_lazy_init_result(self):
+    def test_second_get_graphiti_reuses_factory(self):
         """
         Given first get_graphiti() lazy-inits successfully
         When get_graphiti() is called again
-        Then returns same client without re-initializing.
+        Then returns client from same factory without re-initializing.
         """
         mock_client = MagicMock(spec=GraphitiClient)
+        mock_factory = MagicMock(spec=GraphitiClientFactory)
+        mock_factory.get_thread_client.return_value = mock_client
         call_count = 0
 
         def mock_lazy():
             nonlocal call_count
             call_count += 1
-            graphiti_module._graphiti = mock_client
+            graphiti_module._factory = mock_factory
             return mock_client
 
         with patch(
@@ -273,7 +277,7 @@ class TestSingletonReuse:
         ):
             result1 = get_graphiti()
 
-        # Second call should use cached singleton
+        # Second call should use cached factory
         result2 = get_graphiti()
 
         assert result1 is mock_client
@@ -294,7 +298,7 @@ class TestInitGraphitiInteraction:
         """
         Given init_graphiti is called explicitly
         When initialization completes
-        Then _graphiti_init_attempted is set to True.
+        Then _factory_init_attempted is set to True.
         """
         mock_client = MagicMock(spec=GraphitiClient)
         mock_client.initialize = AsyncMock(return_value=True)
@@ -302,14 +306,14 @@ class TestInitGraphitiInteraction:
         with patch(CLIENT_PATCH, return_value=mock_client):
             await init_graphiti()
 
-        assert graphiti_module._graphiti_init_attempted is True
+        assert graphiti_module._factory_init_attempted is True
 
     @pytest.mark.asyncio
-    async def test_init_graphiti_success_sets_singleton(self):
+    async def test_init_graphiti_success_sets_factory(self):
         """
         Given init_graphiti succeeds
         When initialization completes
-        Then singleton is set and get_graphiti returns it.
+        Then factory is set and get_graphiti returns a client.
         """
         mock_client = MagicMock(spec=GraphitiClient)
         mock_client.initialize = AsyncMock(return_value=True)
@@ -318,15 +322,17 @@ class TestInitGraphitiInteraction:
             result = await init_graphiti()
 
         assert result is True
-        assert graphiti_module._graphiti is mock_client
-        assert get_graphiti() is mock_client
+        assert graphiti_module._factory is not None
+        # get_graphiti should return the thread-local client
+        client = get_graphiti()
+        assert client is mock_client
 
     @pytest.mark.asyncio
-    async def test_init_graphiti_failure_clears_singleton(self):
+    async def test_init_graphiti_failure_clears_factory(self):
         """
         Given init_graphiti fails (initialize returns False)
         When initialization completes
-        Then singleton is None.
+        Then factory is None.
         """
         mock_client = MagicMock(spec=GraphitiClient)
         mock_client.initialize = AsyncMock(return_value=False)
@@ -335,7 +341,7 @@ class TestInitGraphitiInteraction:
             result = await init_graphiti()
 
         assert result is False
-        assert graphiti_module._graphiti is None
+        assert graphiti_module._factory is None
 
     @pytest.mark.asyncio
     async def test_init_graphiti_prevents_subsequent_lazy_init(self):
@@ -350,7 +356,7 @@ class TestInitGraphitiInteraction:
         with patch(CLIENT_PATCH, return_value=mock_client):
             await init_graphiti()
 
-        assert graphiti_module._graphiti is None
+        assert graphiti_module._factory is None
 
         with patch(
             "guardkit.knowledge.graphiti_client._try_lazy_init"
@@ -372,7 +378,7 @@ class TestAsyncContextHandling:
         """
         Given no running asyncio loop
         When _try_lazy_init is called
-        Then uses asyncio.run() for initialization.
+        Then uses asyncio.run() for initialization via factory.
         """
         mock_client = MagicMock(spec=GraphitiClient)
         mock_client.initialize = AsyncMock(return_value=True)
@@ -414,7 +420,7 @@ class TestAutobuildAutoInitIntegration:
         """
         Given get_graphiti() was not explicitly initialized
         When autobuild auto-init block calls get_graphiti()
-        Then lazy-init provides a working client.
+        Then lazy-init provides a working client via factory.
         """
         mock_client = MagicMock(spec=GraphitiClient)
         mock_client.enabled = True

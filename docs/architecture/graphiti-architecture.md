@@ -166,27 +166,61 @@ if client.enabled:
 
 **Graceful Degradation:** All methods return empty results or None on failure instead of raising exceptions.
 
-#### `init_graphiti` / `get_graphiti`
+#### `init_graphiti` / `get_graphiti` / `get_factory`
 
-Singleton pattern for global client access.
+Per-thread factory pattern for client access. Each thread gets its own `GraphitiClient` with its own Neo4j driver bound to that thread's event loop. The `GraphitiConfig` (frozen dataclass) is shared across threads.
 
 ```python
-from guardkit.knowledge import init_graphiti, get_graphiti, GraphitiConfig
+from guardkit.knowledge import init_graphiti, get_graphiti, get_factory, GraphitiConfig
 
-# Initialize once (typically in application startup)
+# Initialize factory + thread client (typically in application startup)
 config = GraphitiConfig(enabled=True)
 success = await init_graphiti(config)
 
-# Get instance anywhere
+# Get thread-local client anywhere (lazy-init if needed)
 client = get_graphiti()
 if client and client.enabled:
     results = await client.search("query")
+
+# Get factory directly (for multi-threaded scenarios)
+factory = get_factory()
+if factory:
+    thread_client = factory.get_thread_client()
 ```
 
 **Functions:**
 
-- `init_graphiti(config: Optional[GraphitiConfig] = None) -> bool`: Initialize global client
-- `get_graphiti() -> Optional[GraphitiClient]`: Get global client instance
+- `init_graphiti(config: Optional[GraphitiConfig] = None) -> bool`: Create factory and initialize a client for the current thread
+- `get_graphiti() -> Optional[GraphitiClient]`: Get thread-local client (lazy-init from config if no factory exists)
+- `get_factory() -> Optional[GraphitiClientFactory]`: Get the global factory (no lazy-init)
+
+#### `GraphitiClientFactory`
+
+Thread-safe factory using `threading.local()` for per-thread client storage (TASK-FIX-GTP1).
+
+```python
+from guardkit.knowledge import GraphitiClientFactory, GraphitiConfig
+
+config = GraphitiConfig(enabled=True)
+factory = GraphitiClientFactory(config)
+
+# Create uninitialized client
+client = factory.create_client()
+
+# Create and initialize client (async)
+client = await factory.create_and_init_client()
+
+# Get/set thread-local client
+client = factory.get_thread_client()      # Lazy-creates if needed
+factory.set_thread_client(client)          # Explicit set (e.g., after async init)
+```
+
+**Methods:**
+
+- `create_client() -> GraphitiClient`: Create uninitialized client from shared config
+- `create_and_init_client() -> Optional[GraphitiClient]`: Create and initialize (async, binds to current event loop)
+- `get_thread_client() -> Optional[GraphitiClient]`: Get or lazily create thread-local client
+- `set_thread_client(client) -> None`: Explicitly set thread-local client
 
 ### Context Loading
 

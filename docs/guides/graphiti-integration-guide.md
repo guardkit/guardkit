@@ -873,12 +873,12 @@ Each category lives in its own `seed_*.py` module. The `seeding.py` orchestrator
 
 ### Can I query Graphiti directly?
 
-**Yes!** Use the Python API:
+**Yes!** Use the Python API. Note that `get_graphiti()` returns a thread-local client — each thread gets its own `GraphitiClient` with its own Neo4j driver:
 
 ```python
 from guardkit.knowledge import get_graphiti
 
-client = get_graphiti()
+client = get_graphiti()  # Thread-local client (lazy-init if needed)
 
 # Search across categories
 results = await client.search(
@@ -1076,9 +1076,10 @@ group = "role_constraints"  # No prefix
 **Auto-detection (Recommended)**:
 ```python
 # Uses current directory name as project_id
+# Creates a GraphitiClientFactory and initializes a thread-local client
 await init_graphiti()
 
-client = get_graphiti()
+client = get_graphiti()  # Returns thread-local client
 print(client.project_id)  # e.g., "guardkit"
 ```
 

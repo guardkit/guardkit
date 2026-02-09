@@ -585,11 +585,22 @@ class TestGraphitiClientClose:
 
 
 class TestSingletonPattern:
-    """Test singleton functions init_graphiti() and get_graphiti()."""
+    """Test factory functions init_graphiti() and get_graphiti()."""
+
+    @pytest.fixture(autouse=True)
+    def reset_factory(self):
+        """Reset module-level factory before/after each test."""
+        original_factory = graphiti_module._factory
+        original_attempted = graphiti_module._factory_init_attempted
+        graphiti_module._factory = None
+        graphiti_module._factory_init_attempted = False
+        yield
+        graphiti_module._factory = original_factory
+        graphiti_module._factory_init_attempted = original_attempted
 
     @pytest.mark.asyncio
-    async def test_init_graphiti_creates_instance(self):
-        """Test init_graphiti creates and initializes instance."""
+    async def test_init_graphiti_creates_factory(self):
+        """Test init_graphiti creates factory and initializes thread client."""
         config = GraphitiConfig(enabled=True)
 
         with patch.object(graphiti_module, 'GraphitiClient') as MockClient:
@@ -597,17 +608,11 @@ class TestSingletonPattern:
             mock_instance.initialize = AsyncMock(return_value=True)
             MockClient.return_value = mock_instance
 
-            # Reset singleton
-            original = graphiti_module._graphiti
-            graphiti_module._graphiti = None
-            try:
-                result = await init_graphiti(config)
+            result = await init_graphiti(config)
 
-                assert result is True
-                MockClient.assert_called_once_with(config)
-                mock_instance.initialize.assert_called_once()
-            finally:
-                graphiti_module._graphiti = original
+            assert result is True
+            assert graphiti_module._factory is not None
+            assert graphiti_module._factory_init_attempted is True
 
     @pytest.mark.asyncio
     async def test_init_graphiti_initialization_failure(self):
@@ -619,35 +624,28 @@ class TestSingletonPattern:
             mock_instance.initialize = AsyncMock(return_value=False)
             MockClient.return_value = mock_instance
 
-            original = graphiti_module._graphiti
-            graphiti_module._graphiti = None
-            try:
-                result = await init_graphiti(config)
-                assert result is False
-            finally:
-                graphiti_module._graphiti = original
+            result = await init_graphiti(config)
+            assert result is False
+            assert graphiti_module._factory is None
 
     def test_get_graphiti_returns_none_before_init(self):
-        """Test get_graphiti returns None before initialization."""
-        original = graphiti_module._graphiti
-        graphiti_module._graphiti = None
-        try:
-            client = get_graphiti()
-            assert client is None
-        finally:
-            graphiti_module._graphiti = original
+        """Test get_graphiti returns None when factory not set and lazy-init skipped."""
+        graphiti_module._factory_init_attempted = True
+        client = get_graphiti()
+        assert client is None
 
     def test_get_graphiti_returns_instance_after_init(self):
-        """Test get_graphiti returns instance after initialization."""
-        mock_client = MagicMock(spec=GraphitiClient)
+        """Test get_graphiti returns instance via factory."""
+        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
 
-        original = graphiti_module._graphiti
-        graphiti_module._graphiti = mock_client
-        try:
-            client = get_graphiti()
-            assert client is mock_client
-        finally:
-            graphiti_module._graphiti = original
+        mock_client = MagicMock(spec=GraphitiClient)
+        mock_factory = MagicMock(spec=GraphitiClientFactory)
+        mock_factory.get_thread_client.return_value = mock_client
+
+        graphiti_module._factory = mock_factory
+        client = get_graphiti()
+        assert client is mock_client
+        mock_factory.get_thread_client.assert_called_once()
 
 
 class TestCheckGraphitiCore:

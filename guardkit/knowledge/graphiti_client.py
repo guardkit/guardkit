@@ -19,9 +19,9 @@ Example Usage:
 
     await client.close()
 
-Singleton Pattern:
-    await init_graphiti(config)  # Initialize once
-    client = get_graphiti()       # Get instance anywhere
+Thread-Safe Factory Pattern:
+    await init_graphiti(config)  # Initialize factory + thread client
+    client = get_graphiti()       # Get per-thread client anywhere
 """
 
 from dataclasses import dataclass
@@ -31,6 +31,7 @@ import logging
 import os
 import re
 import json
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -1384,6 +1385,122 @@ class GraphitiClient:
                 self._connected = False
 
 
+class GraphitiClientFactory:
+    """Thread-safe factory for creating per-thread GraphitiClient instances.
+
+    Stores shared configuration (frozen dataclass, thread-safe) and manages
+    thread-local client storage. Each client gets its own Neo4j driver and
+    OpenAI embedder, bound to the event loop of the calling thread.
+
+    This solves BUG-1 from TASK-REV-2AA0: the shared singleton's Neo4j driver
+    was bound to one event loop, causing cross-loop errors when worker threads
+    in FeatureOrchestrator created their own event loops.
+
+    Attributes:
+        config: Frozen GraphitiConfig instance (shared across threads)
+    """
+
+    def __init__(self, config: GraphitiConfig):
+        self._config = config
+        self._thread_local = threading.local()
+
+    @property
+    def config(self) -> GraphitiConfig:
+        """Get the shared configuration."""
+        return self._config
+
+    def create_client(self) -> GraphitiClient:
+        """Create a new uninitialized GraphitiClient.
+
+        The caller is responsible for calling ``await client.initialize()``
+        in the appropriate async context.
+
+        Returns:
+            A new GraphitiClient instance, not yet connected.
+        """
+        return GraphitiClient(self._config)
+
+    async def create_and_init_client(self) -> Optional[GraphitiClient]:
+        """Create and initialize a new GraphitiClient.
+
+        Must be called from an async context. The client's Neo4j driver
+        and OpenAI embedder will be bound to the current thread's event loop.
+
+        Returns:
+            Initialized GraphitiClient, or None if initialization fails.
+        """
+        client = self.create_client()
+        success = await client.initialize()
+        return client if success else None
+
+    def get_thread_client(self) -> Optional[GraphitiClient]:
+        """Get or lazily create a client for the current thread.
+
+        Uses threading.local() for automatic per-thread storage.
+        On first access in a thread, creates a new client and attempts
+        initialization (mirrors _try_lazy_init behavior for async context
+        detection).
+
+        Returns:
+            GraphitiClient for the current thread, or None if config is
+            disabled or initialization fails.
+        """
+        client = getattr(self._thread_local, 'client', None)
+        if client is not None:
+            return client
+
+        init_attempted = getattr(self._thread_local, 'init_attempted', False)
+        if init_attempted:
+            return None
+
+        self._thread_local.init_attempted = True
+
+        if not self._config.enabled:
+            logger.info("Graphiti disabled in configuration, thread client not created")
+            return None
+
+        client = self.create_client()
+
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            logger.info(
+                "Graphiti factory: async loop running in thread, created client "
+                "but deferred connection"
+            )
+            self._thread_local.client = client
+            return client
+        else:
+            try:
+                success = asyncio.run(client.initialize())
+                if success:
+                    self._thread_local.client = client
+                    logger.info("Graphiti factory: thread client initialized successfully")
+                    return client
+                else:
+                    logger.info("Graphiti factory: thread client init failed")
+                    return None
+            except Exception as e:
+                logger.info(f"Graphiti factory: thread client init error: {e}")
+                return None
+
+    def set_thread_client(self, client: Optional[GraphitiClient]) -> None:
+        """Explicitly set the client for the current thread.
+
+        Useful for testing or when a caller has already initialized
+        a client in the correct async context.
+
+        Args:
+            client: GraphitiClient to store, or None to clear.
+        """
+        self._thread_local.client = client
+        self._thread_local.init_attempted = True
+
+
 def get_current_project_name() -> str:
     """Get the current project name from the working directory.
 
@@ -1394,16 +1511,17 @@ def get_current_project_name() -> str:
     return Path.cwd().name
 
 
-# Module-level singleton
-_graphiti: Optional[GraphitiClient] = None
-_graphiti_init_attempted: bool = False
+# Module-level factory (replaces singleton)
+_factory: Optional[GraphitiClientFactory] = None
+_factory_init_attempted: bool = False
 
 
 async def init_graphiti(config: Optional[GraphitiConfig] = None) -> bool:
-    """Initialize the global Graphiti client.
+    """Initialize the global Graphiti client factory.
 
-    Creates and initializes a singleton GraphitiClient instance.
-    Safe to call multiple times - will create new instance each time.
+    Creates a GraphitiClientFactory and initializes a client for the
+    current thread. Safe to call multiple times - will create a new
+    factory each time.
 
     Args:
         config: GraphitiConfig instance. Uses defaults if None.
@@ -1417,29 +1535,36 @@ async def init_graphiti(config: Optional[GraphitiConfig] = None) -> bool:
         if success:
             client = get_graphiti()
     """
-    global _graphiti, _graphiti_init_attempted
-    _graphiti_init_attempted = True
-    _graphiti = GraphitiClient(config)
-    success = await _graphiti.initialize()
-    if not success:
-        _graphiti = None
-    return success
+    global _factory, _factory_init_attempted
+    _factory_init_attempted = True
+
+    if config is None:
+        config = GraphitiConfig()
+
+    _factory = GraphitiClientFactory(config)
+
+    client = await _factory.create_and_init_client()
+    if client is not None:
+        _factory.set_thread_client(client)
+        return True
+    else:
+        _factory = None
+        return False
 
 
 def _try_lazy_init() -> Optional[GraphitiClient]:
-    """Attempt lazy initialization of Graphiti singleton from config.
+    """Attempt lazy initialization of Graphiti factory from config.
 
-    Creates a GraphitiClient from load_graphiti_config() and runs
-    async initialize() in a sync context. Only attempts once per process
+    Creates a GraphitiClientFactory from load_graphiti_config() and
+    returns a thread-local client. Only attempts once per process
     to avoid repeated connection failures.
 
     Returns:
-        Initialized GraphitiClient if successful, None otherwise.
+        GraphitiClient for the current thread if successful, None otherwise.
     """
-    global _graphiti, _graphiti_init_attempted
-    import asyncio
+    global _factory, _factory_init_attempted
 
-    _graphiti_init_attempted = True
+    _factory_init_attempted = True
 
     try:
         from guardkit.knowledge.config import load_graphiti_config
@@ -1458,35 +1583,8 @@ def _try_lazy_init() -> Optional[GraphitiClient]:
             project_id=settings.project_id,
         )
 
-        client = GraphitiClient(config)
-
-        # Run async initialize() in sync context
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        if loop and loop.is_running():
-            # Already in an async context — can't use asyncio.run()
-            # Create the client but defer initialization
-            # The client will be available but not connected until
-            # initialize() is called in an async context
-            logger.info(
-                "Graphiti lazy-init: async loop running, created client "
-                "but deferred connection (will connect on first async use)"
-            )
-            _graphiti = client
-            return client
-        else:
-            # No running loop — safe to use asyncio.run()
-            success = asyncio.run(client.initialize())
-            if success:
-                _graphiti = client
-                logger.info("Graphiti lazy-init successful")
-                return client
-            else:
-                logger.info("Graphiti lazy-init failed: initialize() returned False")
-                return None
+        _factory = GraphitiClientFactory(config)
+        return _factory.get_thread_client()
 
     except ImportError as e:
         logger.info(f"Graphiti lazy-init skipped: {e}")
@@ -1497,12 +1595,11 @@ def _try_lazy_init() -> Optional[GraphitiClient]:
 
 
 def get_graphiti() -> Optional[GraphitiClient]:
-    """Get the global Graphiti client, with lazy initialization.
+    """Get a Graphiti client for the current thread, with lazy initialization.
 
-    Returns the singleton GraphitiClient instance. If not yet initialized,
-    attempts lazy initialization from config (load_graphiti_config()).
-    Lazy-init is only attempted once per process to avoid repeated
-    connection failures.
+    Backward-compatible API. Now returns a thread-local client instead
+    of a shared singleton. Each thread gets its own GraphitiClient with
+    its own Neo4j driver bound to that thread's event loop.
 
     Returns:
         GraphitiClient instance or None if not available.
@@ -1512,13 +1609,25 @@ def get_graphiti() -> Optional[GraphitiClient]:
         if client and client.enabled:
             results = await client.search("query")
     """
-    global _graphiti, _graphiti_init_attempted
+    global _factory, _factory_init_attempted
 
-    if _graphiti is not None:
-        return _graphiti
+    if _factory is not None:
+        return _factory.get_thread_client()
 
-    # Only attempt lazy-init once
-    if not _graphiti_init_attempted:
+    # Only attempt lazy-init once per process
+    if not _factory_init_attempted:
         return _try_lazy_init()
 
     return None
+
+
+def get_factory() -> Optional[GraphitiClientFactory]:
+    """Get the global GraphitiClientFactory.
+
+    Returns the factory if initialized, or None. Does NOT trigger
+    lazy initialization — use get_graphiti() for that.
+
+    Returns:
+        GraphitiClientFactory instance or None.
+    """
+    return _factory

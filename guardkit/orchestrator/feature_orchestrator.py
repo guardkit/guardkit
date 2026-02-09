@@ -227,6 +227,7 @@ class FeatureOrchestrator:
         sdk_timeout: Optional[int] = None,
         enable_pre_loop: Optional[bool] = None,
         enable_context: bool = True,
+        task_timeout: int = 2400,
     ):
         """
         Initialize FeatureOrchestrator.
@@ -258,6 +259,9 @@ class FeatureOrchestrator:
             task frontmatter > feature YAML > default (True).
         enable_context : bool, optional
             Enable/disable Graphiti context retrieval (default: True).
+        task_timeout : int, optional
+            Per-task timeout in seconds for wave execution (default: 2400, i.e. 40 min).
+            Prevents any single task from blocking an entire wave indefinitely.
 
         Raises
         ------
@@ -280,6 +284,7 @@ class FeatureOrchestrator:
         self.sdk_timeout = sdk_timeout
         self.enable_pre_loop = enable_pre_loop
         self.enable_context = enable_context
+        self.task_timeout = task_timeout
         self.features_dir = features_dir or self.repo_root / ".guardkit" / "features"
 
         # Initialize dependencies
@@ -294,7 +299,7 @@ class FeatureOrchestrator:
             f"FeatureOrchestrator initialized: repo={self.repo_root}, "
             f"max_turns={self.max_turns}, stop_on_failure={self.stop_on_failure}, "
             f"resume={self.resume}, fresh={self.fresh}, enable_pre_loop={self.enable_pre_loop}, "
-            f"enable_context={self.enable_context}"
+            f"enable_context={self.enable_context}, task_timeout={self.task_timeout}s"
         )
 
     def orchestrate(
@@ -905,11 +910,17 @@ The detailed specifications are in the task markdown file.
         List[WaveExecutionResult]
             Results for each wave
         """
-        logger.info(f"Phase 2 (Waves): Executing {len(feature.orchestration.parallel_groups)} waves")
+        logger.info(
+            f"Phase 2 (Waves): Executing {len(feature.orchestration.parallel_groups)} waves "
+            f"(task_timeout={self.task_timeout}s)"
+        )
         wave_results = []
 
         console.print()
-        console.print("[bold]Starting Wave Execution[/bold]")
+        console.print(
+            f"[bold]Starting Wave Execution[/bold] "
+            f"[dim](task timeout: {self.task_timeout // 60} min)[/dim]"
+        )
 
         for wave_number, task_ids in enumerate(
             feature.orchestration.parallel_groups, 1
@@ -1059,9 +1070,12 @@ The detailed specifications are in the task markdown file.
             else:
                 console.print(f"  [cyan]▶[/cyan] Executing {task_id}: {task.name}")
 
-            # Add to parallel execution queue
+            # Add to parallel execution queue, wrapped with per-task timeout
             tasks_to_execute.append(
-                asyncio.to_thread(self._execute_task, task, feature, worktree)
+                asyncio.wait_for(
+                    asyncio.to_thread(self._execute_task, task, feature, worktree),
+                    timeout=self.task_timeout,
+                )
             )
             task_id_mapping.append(task_id)
 
@@ -1071,7 +1085,32 @@ The detailed specifications are in the task markdown file.
 
             # Process results and handle exceptions
             for task_id, result in zip(task_id_mapping, parallel_results):
-                if isinstance(result, Exception):
+                if isinstance(result, asyncio.TimeoutError):
+                    timeout_msg = (
+                        f"Task {task_id} timed out after {self.task_timeout}s "
+                        f"({self.task_timeout // 60} min)"
+                    )
+                    logger.warning(timeout_msg)
+                    error_result = TaskExecutionResult(
+                        task_id=task_id,
+                        success=False,
+                        total_turns=0,
+                        final_decision="timeout",
+                        error=timeout_msg,
+                    )
+                    results.append(error_result)
+
+                    # Update task status in display with TIMEOUT status
+                    if self._wave_display:
+                        self._wave_display.update_task_status(
+                            task_id, "timeout", timeout_msg,
+                            turns=0, decision="timeout"
+                        )
+
+                    # Update feature with timeout result
+                    self._update_feature(feature, task_id, error_result, wave_number)
+
+                elif isinstance(result, Exception):
                     error_result = self._create_error_result(task_id, result)
                     results.append(error_result)
 
@@ -1644,7 +1683,7 @@ The detailed specifications are in the task markdown file.
             for task in feature.tasks:
                 status_style = (
                     "green" if task.status == "completed"
-                    else "red" if task.status == "failed"
+                    else "red" if task.status in ("failed", "timeout")
                     else "yellow" if task.status == "skipped"
                     else "dim"
                 )

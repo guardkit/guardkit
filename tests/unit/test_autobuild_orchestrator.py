@@ -2774,6 +2774,488 @@ class TestTurnStateCapture:
                 task_id="TASK-TEST-001",
             )
 
+    def test_capture_turn_state_uses_run_until_complete(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test that _capture_turn_state uses loop.run_until_complete instead of create_task.
+
+        TASK-FIX-GTP3: asyncio.create_task() requires a running event loop in the
+        current thread. Since _capture_turn_state is called from sync _loop_phase(),
+        there is no running loop between run_until_complete() calls. The fix uses
+        loop.run_until_complete() to properly await the coroutine.
+        """
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        player_result = make_player_result()
+        player_result.report["summary"] = "Test implementation"
+        coach_result = make_coach_result(decision="approve")
+
+        turn_record = TurnRecord(
+            turn=1,
+            player_result=player_result,
+            coach_result=coach_result,
+            decision="approve",
+            feedback=None,
+            timestamp="2025-01-29T10:00:00Z",
+        )
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.enabled = True
+        mock_graphiti.add_episode = AsyncMock()
+
+        # Create an event loop for this test thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            with patch(
+                "guardkit.orchestrator.autobuild.get_graphiti",
+                return_value=mock_graphiti,
+            ), patch(
+                "guardkit.orchestrator.autobuild.capture_turn_state",
+                new_callable=AsyncMock,
+            ) as mock_capture:
+                orchestrator._capture_turn_state(
+                    turn_record=turn_record,
+                    acceptance_criteria=["AC-001: Test criterion"],
+                    task_id="TASK-TEST-001",
+                )
+
+                # Verify capture_turn_state was awaited (via run_until_complete)
+                mock_capture.assert_called_once()
+                args = mock_capture.call_args
+                assert args[0][0] is mock_graphiti  # First arg: graphiti client
+        finally:
+            loop.close()
+
+    def test_capture_turn_state_skips_when_no_event_loop(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test that _capture_turn_state skips gracefully when no event loop available.
+
+        TASK-FIX-GTP3: When asyncio.get_event_loop() raises RuntimeError (no loop
+        in thread), the method should log a debug message and continue without error.
+        """
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        player_result = make_player_result()
+        coach_result = make_coach_result(decision="approve")
+
+        turn_record = TurnRecord(
+            turn=1,
+            player_result=player_result,
+            coach_result=coach_result,
+            decision="approve",
+            feedback=None,
+            timestamp="2025-01-29T10:00:00Z",
+        )
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.enabled = True
+
+        with patch(
+            "guardkit.orchestrator.autobuild.get_graphiti",
+            return_value=mock_graphiti,
+        ), patch(
+            "guardkit.orchestrator.autobuild.asyncio.get_event_loop",
+            side_effect=RuntimeError("no current event loop"),
+        ), patch(
+            "guardkit.orchestrator.autobuild.capture_turn_state",
+            new_callable=AsyncMock,
+        ) as mock_capture:
+            # Should NOT raise - graceful degradation
+            orchestrator._capture_turn_state(
+                turn_record=turn_record,
+                acceptance_criteria=["AC-001: Test criterion"],
+                task_id="TASK-TEST-001",
+            )
+
+            # capture_turn_state should NOT have been called
+            mock_capture.assert_not_called()
+
+
+# ============================================================================
+# Per-Thread Graphiti Migration Tests (TASK-FIX-GTP2)
+# ============================================================================
+
+
+class TestPerThreadGraphiti:
+    """Tests for per-thread Graphiti client migration (TASK-FIX-GTP2).
+
+    Validates that AutoBuildOrchestrator uses per-thread Graphiti clients
+    via GraphitiClientFactory instead of a shared singleton.
+    """
+
+    def test_init_stores_factory_when_available(self):
+        """Test __init__ stores factory reference when get_factory() returns one."""
+        from guardkit.knowledge.graphiti_client import GraphitiClientFactory, GraphitiConfig
+
+        mock_factory = Mock(spec=GraphitiClientFactory)
+        with patch(
+            "guardkit.orchestrator.autobuild.get_factory",
+            return_value=mock_factory,
+        ):
+            orch = AutoBuildOrchestrator(
+                repo_root=Path.cwd(),
+                max_turns=5,
+                enable_context=True,
+            )
+        assert orch._factory is mock_factory
+
+    def test_init_triggers_lazy_init_when_factory_none(self):
+        """Test __init__ calls get_graphiti() to trigger lazy-init when factory is None."""
+        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+
+        mock_factory = Mock(spec=GraphitiClientFactory)
+        call_count = [0]
+
+        def mock_get_factory():
+            call_count[0] += 1
+            # First call returns None (not yet initialized)
+            # Second call returns factory (after get_graphiti triggers lazy-init)
+            return None if call_count[0] == 1 else mock_factory
+
+        with patch(
+            "guardkit.orchestrator.autobuild.get_factory",
+            side_effect=mock_get_factory,
+        ), patch(
+            "guardkit.orchestrator.autobuild.get_graphiti",
+            return_value=None,
+        ):
+            orch = AutoBuildOrchestrator(
+                repo_root=Path.cwd(),
+                max_turns=5,
+                enable_context=True,
+            )
+        assert orch._factory is mock_factory
+
+    def test_init_no_factory_when_context_disabled(self):
+        """Test __init__ does not attempt factory when enable_context=False."""
+        with patch(
+            "guardkit.orchestrator.autobuild.get_factory",
+        ) as mock_gf:
+            orch = AutoBuildOrchestrator(
+                repo_root=Path.cwd(),
+                max_turns=5,
+                enable_context=False,
+            )
+        assert orch._factory is None
+        mock_gf.assert_not_called()
+
+    def test_init_no_factory_when_context_loader_provided(self):
+        """Test __init__ skips factory when DI context_loader is provided."""
+        mock_loader = Mock()
+        with patch(
+            "guardkit.orchestrator.autobuild.get_factory",
+        ) as mock_gf:
+            orch = AutoBuildOrchestrator(
+                repo_root=Path.cwd(),
+                max_turns=5,
+                enable_context=True,
+                context_loader=mock_loader,
+            )
+        assert orch._context_loader is mock_loader
+        # Factory lookup is skipped because context_loader is not None
+        mock_gf.assert_not_called()
+
+    def test_get_thread_local_loader_returns_di_loader(self):
+        """Test _get_thread_local_loader returns DI context_loader when set."""
+        mock_loader = Mock()
+        orch = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            enable_context=True,
+            context_loader=mock_loader,
+        )
+        loop = asyncio.new_event_loop()
+        try:
+            result = orch._get_thread_local_loader(loop)
+            assert result is mock_loader
+        finally:
+            loop.close()
+
+    def test_get_thread_local_loader_creates_per_thread_client(self):
+        """Test _get_thread_local_loader creates per-thread client via factory."""
+        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+
+        mock_client = AsyncMock()
+        mock_client.initialize = AsyncMock(return_value=True)
+        mock_factory = Mock(spec=GraphitiClientFactory)
+        mock_factory.create_client.return_value = mock_client
+
+        orch = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            enable_context=True,
+        )
+        orch._factory = mock_factory
+
+        loop = asyncio.new_event_loop()
+        try:
+            loader = orch._get_thread_local_loader(loop)
+            assert loader is not None
+            mock_factory.create_client.assert_called_once()
+            mock_client.initialize.assert_called_once()
+            assert loader.graphiti is mock_client
+        finally:
+            loop.close()
+
+    def test_get_thread_local_loader_caches_per_thread(self):
+        """Test _get_thread_local_loader caches loader per thread ID."""
+        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+
+        mock_client = AsyncMock()
+        mock_client.initialize = AsyncMock(return_value=True)
+        mock_factory = Mock(spec=GraphitiClientFactory)
+        mock_factory.create_client.return_value = mock_client
+
+        orch = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            enable_context=True,
+        )
+        orch._factory = mock_factory
+
+        loop = asyncio.new_event_loop()
+        try:
+            loader1 = orch._get_thread_local_loader(loop)
+            loader2 = orch._get_thread_local_loader(loop)
+            assert loader1 is loader2
+            # create_client should only be called once (cached)
+            mock_factory.create_client.assert_called_once()
+        finally:
+            loop.close()
+
+    def test_get_thread_local_loader_returns_none_when_init_fails(self):
+        """Test _get_thread_local_loader returns None when client init fails."""
+        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+
+        mock_client = AsyncMock()
+        mock_client.initialize = AsyncMock(return_value=False)
+        mock_factory = Mock(spec=GraphitiClientFactory)
+        mock_factory.create_client.return_value = mock_client
+
+        orch = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            enable_context=True,
+        )
+        orch._factory = mock_factory
+
+        loop = asyncio.new_event_loop()
+        try:
+            loader = orch._get_thread_local_loader(loop)
+            assert loader is None
+        finally:
+            loop.close()
+
+    def test_get_thread_local_loader_returns_none_no_factory(self):
+        """Test _get_thread_local_loader returns None when factory is None."""
+        orch = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            enable_context=True,
+        )
+        orch._factory = None
+        orch._context_loader = None
+
+        loop = asyncio.new_event_loop()
+        try:
+            loader = orch._get_thread_local_loader(loop)
+            assert loader is None
+        finally:
+            loop.close()
+
+    def test_get_thread_local_loader_graceful_on_exception(self):
+        """Test _get_thread_local_loader handles exceptions gracefully."""
+        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+
+        mock_factory = Mock(spec=GraphitiClientFactory)
+        mock_factory.create_client.side_effect = RuntimeError("Connection failed")
+
+        orch = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            enable_context=True,
+        )
+        orch._factory = mock_factory
+
+        loop = asyncio.new_event_loop()
+        try:
+            loader = orch._get_thread_local_loader(loop)
+            assert loader is None
+        finally:
+            loop.close()
+
+    def test_cleanup_thread_loaders_closes_clients(self):
+        """Test _cleanup_thread_loaders closes all per-thread clients."""
+        mock_client = AsyncMock()
+        mock_client.close = AsyncMock()
+        mock_loader = Mock()
+        mock_loader.graphiti = mock_client
+
+        orch = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            enable_context=False,
+        )
+        orch._thread_loaders = {12345: mock_loader}
+
+        orch._cleanup_thread_loaders()
+
+        mock_client.close.assert_called_once()
+        assert len(orch._thread_loaders) == 0
+
+    def test_cleanup_thread_loaders_handles_none_loaders(self):
+        """Test _cleanup_thread_loaders handles None loaders gracefully."""
+        orch = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            enable_context=False,
+        )
+        orch._thread_loaders = {12345: None, 67890: None}
+
+        # Should not raise
+        orch._cleanup_thread_loaders()
+        assert len(orch._thread_loaders) == 0
+
+    def test_cleanup_thread_loaders_handles_close_error(self):
+        """Test _cleanup_thread_loaders handles close() errors gracefully."""
+        mock_client = AsyncMock()
+        mock_client.close = AsyncMock(side_effect=RuntimeError("close failed"))
+        mock_loader = Mock()
+        mock_loader.graphiti = mock_client
+
+        orch = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            enable_context=False,
+        )
+        orch._thread_loaders = {12345: mock_loader}
+
+        # Should not raise
+        orch._cleanup_thread_loaders()
+        assert len(orch._thread_loaders) == 0
+
+    def test_capture_turn_state_uses_factory_client(self):
+        """Test _capture_turn_state prefers factory's thread client over get_graphiti."""
+        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+
+        mock_thread_client = AsyncMock()
+        mock_thread_client.enabled = True
+        mock_factory = Mock(spec=GraphitiClientFactory)
+        mock_factory.get_thread_client.return_value = mock_thread_client
+
+        orch = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            enable_context=True,
+        )
+        orch._factory = mock_factory
+
+        player_result = make_player_result()
+        coach_result = make_coach_result(decision="approve")
+        turn_record = TurnRecord(
+            turn=1,
+            player_result=player_result,
+            coach_result=coach_result,
+            decision="approve",
+            feedback=None,
+            timestamp="2025-01-29T10:00:00Z",
+        )
+
+        with patch(
+            "guardkit.orchestrator.autobuild.capture_turn_state",
+            new_callable=AsyncMock,
+        ) as mock_capture:
+            orch._capture_turn_state(
+                turn_record=turn_record,
+                acceptance_criteria=["AC-001: Test"],
+                task_id="TASK-TEST-001",
+            )
+            # Should use the factory's thread client
+            mock_factory.get_thread_client.assert_called_once()
+            # capture_turn_state should be called with the thread client
+            assert mock_capture.called
+            assert mock_capture.call_args[0][0] is mock_thread_client
+
+    def test_capture_turn_state_falls_back_to_get_graphiti(self):
+        """Test _capture_turn_state falls back to get_graphiti when factory is None."""
+        mock_graphiti = AsyncMock()
+        mock_graphiti.enabled = True
+
+        orch = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            enable_context=False,
+        )
+        # No factory set
+        assert orch._factory is None
+
+        player_result = make_player_result()
+        coach_result = make_coach_result(decision="approve")
+        turn_record = TurnRecord(
+            turn=1,
+            player_result=player_result,
+            coach_result=coach_result,
+            decision="approve",
+            feedback=None,
+            timestamp="2025-01-29T10:00:00Z",
+        )
+
+        with patch(
+            "guardkit.orchestrator.autobuild.get_graphiti",
+            return_value=mock_graphiti,
+        ), patch(
+            "guardkit.orchestrator.autobuild.capture_turn_state",
+            new_callable=AsyncMock,
+        ) as mock_capture:
+            orch._capture_turn_state(
+                turn_record=turn_record,
+                acceptance_criteria=["AC-001: Test"],
+                task_id="TASK-TEST-001",
+            )
+            # Should fall back to get_graphiti
+            assert mock_capture.called
+            assert mock_capture.call_args[0][0] is mock_graphiti
+
+    def test_init_log_includes_factory_status(self, caplog):
+        """Test init log includes factory availability status."""
+        import logging
+
+        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+
+        mock_factory = Mock(spec=GraphitiClientFactory)
+        with caplog.at_level(logging.INFO, logger="guardkit.orchestrator.autobuild"):
+            with patch(
+                "guardkit.orchestrator.autobuild.get_factory",
+                return_value=mock_factory,
+            ):
+                AutoBuildOrchestrator(
+                    repo_root=Path.cwd(),
+                    max_turns=5,
+                    enable_context=True,
+                )
+        assert "factory=available" in caplog.text
+
 
 # ============================================================================
 # Run Tests

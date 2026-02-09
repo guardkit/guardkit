@@ -1613,3 +1613,213 @@ def test_execute_task_forwards_enable_context_false(
     # Verify enable_context was forwarded as False
     call_kwargs = mock_ab_class.call_args[1]
     assert call_kwargs["enable_context"] is False
+
+
+# ============================================================================
+# Task Timeout Tests (TASK-FIX-GTP4)
+# ============================================================================
+
+
+def test_task_timeout_default_value(temp_repo, mock_worktree_manager):
+    """Test that task_timeout defaults to 2400 seconds (40 min)."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+    assert orchestrator.task_timeout == 2400
+
+
+def test_task_timeout_custom_value(temp_repo, mock_worktree_manager):
+    """Test that task_timeout accepts a custom value."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        task_timeout=600,
+    )
+    assert orchestrator.task_timeout == 600
+
+
+@pytest.mark.asyncio
+async def test_task_timeout_triggers_on_slow_task(
+    temp_repo, parallel_feature, mock_worktree, mock_worktree_manager,
+):
+    """Test that a task exceeding task_timeout is correctly timed out."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        task_timeout=1,  # 1 second timeout for fast test
+    )
+
+    def mock_execute_task_slow(task, feature, worktree):
+        """Simulate a task that takes too long."""
+        import time
+        time.sleep(5)  # Will exceed the 1s timeout
+        return TaskExecutionResult(
+            task_id=task.id,
+            success=True,
+            total_turns=1,
+            final_decision="approved",
+        )
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task_slow):
+        results = await orchestrator._execute_wave_parallel(
+            1, ["TASK-P-001"], parallel_feature, mock_worktree
+        )
+
+        assert len(results) == 1
+        result = results[0]
+        assert result.success is False
+        assert result.final_decision == "timeout"
+        assert "timed out" in result.error
+        assert "1s" in result.error
+
+
+@pytest.mark.asyncio
+async def test_successful_tasks_unaffected_by_timeout(
+    temp_repo, parallel_feature, mock_worktree, mock_worktree_manager,
+):
+    """Test that tasks completing within timeout are unaffected."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        task_timeout=60,  # Generous timeout
+    )
+
+    def mock_execute_task_fast(task, feature, worktree):
+        """Simulate a fast task that finishes well within timeout."""
+        return TaskExecutionResult(
+            task_id=task.id,
+            success=True,
+            total_turns=2,
+            final_decision="approved",
+        )
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task_fast):
+        results = await orchestrator._execute_wave_parallel(
+            1, ["TASK-P-001", "TASK-P-002"], parallel_feature, mock_worktree
+        )
+
+        assert len(results) == 2
+        assert all(r.success for r in results)
+        assert all(r.final_decision == "approved" for r in results)
+
+
+@pytest.mark.asyncio
+async def test_timeout_mixed_with_success(
+    temp_repo, parallel_feature, mock_worktree, mock_worktree_manager,
+):
+    """Test that timeout on one task doesn't affect successful siblings."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        task_timeout=1,  # 1 second timeout
+    )
+
+    def mock_execute_task_mixed(task, feature, worktree):
+        """One task times out, the other succeeds."""
+        import time
+        if task.id == "TASK-P-001":
+            time.sleep(5)  # Will timeout
+            return TaskExecutionResult(
+                task_id=task.id, success=True,
+                total_turns=1, final_decision="approved",
+            )
+        else:
+            return TaskExecutionResult(
+                task_id=task.id, success=True,
+                total_turns=2, final_decision="approved",
+            )
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task_mixed):
+        results = await orchestrator._execute_wave_parallel(
+            1, ["TASK-P-001", "TASK-P-002"], parallel_feature, mock_worktree
+        )
+
+        assert len(results) == 2
+
+        # Find results by task_id
+        p001 = next(r for r in results if r.task_id == "TASK-P-001")
+        p002 = next(r for r in results if r.task_id == "TASK-P-002")
+
+        # P-001 should have timed out
+        assert p001.success is False
+        assert p001.final_decision == "timeout"
+        assert "timed out" in p001.error
+
+        # P-002 should have succeeded
+        assert p002.success is True
+        assert p002.final_decision == "approved"
+
+
+@pytest.mark.asyncio
+async def test_timeout_updates_wave_display(
+    temp_repo, parallel_feature, mock_worktree, mock_worktree_manager,
+):
+    """Test that timeout triggers correct display update."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        task_timeout=1,
+    )
+
+    # Mock the wave display
+    mock_display = MagicMock()
+    orchestrator._wave_display = mock_display
+
+    def mock_execute_task_slow(task, feature, worktree):
+        import time
+        time.sleep(5)
+        return TaskExecutionResult(
+            task_id=task.id, success=True,
+            total_turns=1, final_decision="approved",
+        )
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task_slow):
+        await orchestrator._execute_wave_parallel(
+            1, ["TASK-P-001"], parallel_feature, mock_worktree
+        )
+
+    # Verify the display was updated with timeout status
+    timeout_calls = [
+        call for call in mock_display.update_task_status.call_args_list
+        if call[0][1] == "timeout" or (call[1].get("status") if call[1] else False)
+    ]
+    # Should have at least one timeout update (besides the initial in_progress)
+    assert len(timeout_calls) >= 1
+    # Check the timeout call args
+    timeout_call = timeout_calls[0]
+    assert timeout_call[0][0] == "TASK-P-001"  # task_id
+    assert timeout_call[0][1] == "timeout"  # status
+
+
+@pytest.mark.asyncio
+async def test_timeout_updates_feature_state(
+    temp_repo, parallel_feature, mock_worktree, mock_worktree_manager,
+):
+    """Test that timeout correctly updates the feature state."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        task_timeout=1,
+    )
+
+    def mock_execute_task_slow(task, feature, worktree):
+        import time
+        time.sleep(5)
+        return TaskExecutionResult(
+            task_id=task.id, success=True,
+            total_turns=1, final_decision="approved",
+        )
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task_slow):
+        with patch.object(orchestrator, '_update_feature') as mock_update:
+            results = await orchestrator._execute_wave_parallel(
+                1, ["TASK-P-001"], parallel_feature, mock_worktree
+            )
+
+            # Verify _update_feature was called with the timeout result
+            assert mock_update.called
+            call_args = mock_update.call_args
+            error_result = call_args[0][2]  # Third positional arg is the result
+            assert error_result.success is False
+            assert error_result.final_decision == "timeout"

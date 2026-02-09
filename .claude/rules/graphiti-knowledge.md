@@ -77,4 +77,25 @@ Automatic context loading during task execution based on task type, complexity, 
 
 Budget scales with complexity: 2000 tokens (simple) to 6000+ tokens (complex).
 
+## Threading Model
+
+GuardKit uses a per-thread factory pattern (`GraphitiClientFactory`) for Graphiti client management. Key rules:
+
+- `get_graphiti()` is **sync** — never `await` it. Returns a thread-local `GraphitiClient`.
+- Each thread gets its own client with its own Neo4j driver bound to that thread's event loop.
+- `GraphitiConfig` (frozen dataclass) is shared across threads — thread-safe by design.
+- In async contexts, `get_thread_client()` defers connection (creates client but skips `initialize()`). The client's `enabled` property returns `False` until connected.
+- For multi-threaded scenarios (e.g., `FeatureOrchestrator` parallel execution), use `get_factory()` to get the factory and let each worker thread call `get_thread_client()`.
+- `init_graphiti(config)` creates the factory and initializes a client for the **calling thread only**.
+
+```python
+# Single-threaded (most common)
+client = get_graphiti()  # Lazy-init factory + thread client
+
+# Multi-threaded (e.g., AutoBuild in FeatureOrchestrator)
+factory = get_factory()
+if factory:
+    thread_client = factory.get_thread_client()  # Per-thread, lazy
+```
+
 **See**: [Interactive Capture Guide](../../docs/guides/graphiti-knowledge-capture.md) | [Integration Guide](../../docs/guides/graphiti-integration-guide.md)

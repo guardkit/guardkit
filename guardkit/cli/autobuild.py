@@ -527,6 +527,14 @@ def status(ctx, task_id: str, verbose: bool):
     default=True,
     help="Enable/disable Graphiti context retrieval (default: enabled)",
 )
+@click.option(
+    "--task-timeout",
+    "task_timeout",
+    default=2400,
+    type=int,
+    help="Per-task timeout in seconds for wave execution (default: 2400 = 40 min)",
+    show_default=True,
+)
 @click.pass_context
 @handle_cli_errors
 def feature(
@@ -541,6 +549,7 @@ def feature(
     sdk_timeout: Optional[int],
     enable_pre_loop: Optional[bool],
     enable_context: bool,
+    task_timeout: int,
 ):
     """
     Execute AutoBuild for all tasks in a feature.
@@ -622,6 +631,7 @@ def feature(
             sdk_timeout=sdk_timeout,
             enable_pre_loop=enable_pre_loop,
             enable_context=enable_context,
+            task_timeout=task_timeout,
         )
 
         # Execute feature orchestration

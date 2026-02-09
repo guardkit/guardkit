@@ -624,11 +624,13 @@ This means a 50-line Python code block becomes a set of facts like "Orchestratio
 
 **Rationale**: `graphiti-core` is an optional dependency. Lazy import allows the module to load without it installed, enabling graceful degradation. The check is cached after first call.
 
-### ADR-5: Singleton Pattern for Client
+### ADR-5: Per-Thread Factory Pattern for Client
 
-**Decision**: Provide `init_graphiti()` / `get_graphiti()` singleton pattern.
+**Decision**: Replace shared singleton with `GraphitiClientFactory` using `threading.local()` for per-thread client storage. Module-level `init_graphiti()` / `get_graphiti()` API preserved for backward compatibility.
 
-**Rationale**: Multiple modules need access to the same Graphiti client instance. A singleton avoids passing the client through every function call while ensuring a single connection pool.
+**Rationale**: The original singleton bound a single Neo4j driver to one event loop. When `FeatureOrchestrator` runs tasks in parallel via `asyncio.to_thread()`, each worker thread creates its own event loop, causing cross-loop errors in the Neo4j driver. The factory pattern gives each thread its own `GraphitiClient` with its own Neo4j driver bound to that thread's event loop, while sharing the immutable `GraphitiConfig` (frozen dataclass) across threads.
+
+**Supersedes**: Original singleton pattern (TASK-FIX-GTP1, resolving BUG-1 from TASK-REV-2AA0).
 
 ---
 

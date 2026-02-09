@@ -35,3 +35,27 @@ Revised Review Complete - TASK-GBF-REV
   Changes Made: Status changed from "Proposed" to "Accepted and Implemented"
   No changes needed:
   - docs/deep-dives/graphiti/episode-upsert.md - Already current
+
+Revised for Per-Thread Factory Migration - TASK-DOC-GTP6
+
+  Summary of Documents Updated (FEAT-C90E: Graphiti Per-Thread Migration)
+
+  Document: docs/reviews/graphiti_baseline/graphiti-technical-reference.md
+  Changes Made: Key exports table updated (added GraphitiClientFactory, get_factory). Connection lifecycle code updated from singleton to per-thread factory pattern.
+  ────────────────────────────────────────
+  Document: docs/reviews/graphiti_baseline/graphiti-storage-theory.md
+  Changes Made: ADR-5 rewritten from "Singleton Pattern for Client" to "Per-Thread Factory Pattern for Client" with cross-loop error rationale.
+  ────────────────────────────────────────
+  Document: docs/architecture/graphiti-architecture.md
+  Changes Made: init_graphiti/get_graphiti section rewritten for per-thread semantics. Added GraphitiClientFactory API section with full method reference.
+  ────────────────────────────────────────
+  Document: docs/guides/graphiti-integration-guide.md
+  Changes Made: FAQ and multi-project sections updated to note thread-local client behavior.
+  ────────────────────────────────────────
+  Document: .claude/rules/graphiti-knowledge.md
+  Changes Made: Added "Threading Model" section with per-thread factory rules and code examples.
+  ────────────────────────────────────────
+  No changes needed:
+  - docs/deep-dives/graphiti/episode-metadata.md - No singleton references
+  - docs/deep-dives/graphiti/episode-upsert.md - Already current (get_graphiti() API unchanged)
+  - docs/architecture/ADR-GBF-001-unified-episode-serialization.md - No singleton references

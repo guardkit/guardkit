@@ -140,8 +140,10 @@ Example:
 from guardkit.knowledge.graphiti_client import (
     GraphitiConfig,
     GraphitiClient,
+    GraphitiClientFactory,
     init_graphiti,
     get_graphiti,
+    get_factory,
 )
 
 from guardkit.knowledge.config import (
@@ -336,9 +338,11 @@ __all__ = [
     # Client classes
     "GraphitiConfig",
     "GraphitiClient",
-    # Singleton functions
+    "GraphitiClientFactory",
+    # Factory functions
     "init_graphiti",
     "get_graphiti",
+    "get_factory",
     # Configuration
     "GraphitiSettings",
     "load_graphiti_config",

@@ -56,24 +56,26 @@ def setup_test_environment(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def reset_graphiti_singleton():
-    """Reset the global Graphiti singleton between tests.
+    """Reset the global Graphiti factory between tests.
 
     This fixture runs automatically for all tests to ensure clean state.
-    The singleton is reset to None before each test and restored after.
+    The factory is reset to None before each test and restored after.
     """
     # Import here to avoid circular imports
     from guardkit.knowledge import graphiti_client
 
     # Save current state
-    original = graphiti_client._graphiti
+    original_factory = graphiti_client._factory
 
     # Reset before test to ensure clean state
-    graphiti_client._graphiti = None
+    graphiti_client._factory = None
+    graphiti_client._factory_init_attempted = False
 
     yield
 
     # Reset after test (don't restore mock objects)
-    graphiti_client._graphiti = None
+    graphiti_client._factory = None
+    graphiti_client._factory_init_attempted = False
 
 
 @pytest.fixture(autouse=True)

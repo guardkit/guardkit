@@ -45,6 +45,7 @@ import hashlib
 import logging
 import re
 import sys
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -117,7 +118,7 @@ from guardkit.knowledge.turn_state_operations import (
     create_turn_state_from_autobuild,
 )
 from guardkit.knowledge.entities.turn_state import TurnMode
-from guardkit.knowledge.graphiti_client import get_graphiti
+from guardkit.knowledge.graphiti_client import get_graphiti, get_factory, GraphitiClientFactory
 
 # Import AutoBuild context loader for job-specific context (TASK-GR6-006)
 from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
@@ -584,28 +585,32 @@ class AutoBuildOrchestrator:
         # Context retrieval settings (TASK-GR6-006)
         self.enable_context = enable_context
         self.verbose = verbose
-        self._context_loader = context_loader
+        self._context_loader = context_loader  # For DI/testing only; thread-local loaders used at runtime
         self._feature_id: Optional[str] = None  # Set during orchestration from task metadata
         # Per-turn context status tracking for progress display (TASK-FIX-GCW5)
         self._last_player_context_status: Optional[ContextStatus] = None
         self._last_coach_context_status: Optional[ContextStatus] = None
+        # Per-thread Graphiti client storage (TASK-FIX-GTP2)
+        self._factory: Optional[GraphitiClientFactory] = None
+        self._thread_loaders: Dict[int, Optional[AutoBuildContextLoader]] = {}
 
-        # Auto-initialize context_loader if enable_context=True and no loader provided (TASK-FIX-GCW3)
+        # Store factory reference for per-thread client creation (TASK-FIX-GTP2)
+        # Replaces shared singleton pattern that caused cross-loop hangs in parallel mode
         if self.enable_context and self._context_loader is None:
             try:
-                from guardkit.knowledge import get_graphiti, AutoBuildContextLoader
-                graphiti = get_graphiti()
-                if graphiti and graphiti.enabled:
-                    self._context_loader = AutoBuildContextLoader(
-                        graphiti=graphiti, verbose=self.verbose
-                    )
-                    logger.info("Auto-initialized context_loader with Graphiti")
+                self._factory = get_factory()
+                if self._factory is None:
+                    # Trigger lazy-init by calling get_graphiti(), then re-fetch factory
+                    get_graphiti()
+                    self._factory = get_factory()
+                if self._factory is not None:
+                    logger.info("Stored Graphiti factory for per-thread context loading")
                 else:
-                    logger.info("Graphiti not available, context retrieval disabled")
+                    logger.info("Graphiti factory not available, context retrieval disabled")
             except ImportError:
                 logger.info("Graphiti dependencies not installed, context retrieval disabled")
             except Exception as e:
-                logger.info(f"Could not auto-initialize context_loader: {e}")
+                logger.info(f"Could not obtain Graphiti factory: {e}")
 
         # Log warning if ablation mode is active
         if self.ablation_mode:
@@ -637,6 +642,7 @@ class AutoBuildOrchestrator:
             f"existing_worktree={'provided' if existing_worktree else 'None'}, "
             f"enable_context={self.enable_context}, "
             f"context_loader={'provided' if self._context_loader else 'None'}, "
+            f"factory={'available' if self._factory else 'None'}, "
             f"verbose={self.verbose}"
         )
 
@@ -1940,6 +1946,9 @@ class AutoBuildOrchestrator:
             details=details,
         )
 
+        # Clean up per-thread Graphiti clients (TASK-FIX-GTP2)
+        self._cleanup_thread_loaders()
+
         logger.info(
             f"Worktree preserved at {worktree.path} for human review. "
             f"Decision: {final_decision}"
@@ -2405,12 +2414,21 @@ class AutoBuildOrchestrator:
                 what_to_try_next=what_to_try_next,
             )
 
-            # Capture to Graphiti (async call, fire-and-forget with graceful degradation)
-            graphiti = get_graphiti()
+            # Capture to Graphiti (sync call via run_until_complete, graceful degradation)
+            # Use factory's per-thread client to avoid cross-loop errors (TASK-FIX-GTP2)
+            graphiti = None
+            if self._factory is not None:
+                graphiti = self._factory.get_thread_client()
+            if graphiti is None:
+                # Fallback to module-level get_graphiti() for non-factory usage
+                graphiti = get_graphiti()
             if graphiti and graphiti.enabled:
-                # Run async capture in the event loop
-                asyncio.create_task(capture_turn_state(graphiti, entity))
-                logger.debug(f"Turn state capture initiated for turn {turn_record.turn}")
+                try:
+                    loop = asyncio.get_event_loop()
+                    loop.run_until_complete(capture_turn_state(graphiti, entity))
+                    logger.debug(f"Turn state captured for turn {turn_record.turn}")
+                except RuntimeError:
+                    logger.debug("No event loop available, skipping turn state capture")
             else:
                 logger.debug("Graphiti disabled, skipping turn state capture")
 
@@ -2602,6 +2620,80 @@ class AutoBuildOrchestrator:
             for line in summary_lines[:3]:  # Limit to 3 lines for display
                 logger.info(line)
 
+    def _get_thread_local_loader(
+        self,
+        loop: asyncio.AbstractEventLoop,
+    ) -> Optional[AutoBuildContextLoader]:
+        """Get or create a context loader for the current thread (TASK-FIX-GTP2).
+
+        Creates a fresh GraphitiClient initialized on this thread's event loop,
+        then wraps it in an AutoBuildContextLoader. Thread-local storage ensures
+        each parallel worker gets its own independent client, avoiding the
+        cross-loop Neo4j errors that caused hangs in FEAT-6EDD.
+
+        Parameters
+        ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the current thread. The Graphiti client's Neo4j
+            driver will be bound to this loop.
+
+        Returns
+        -------
+        Optional[AutoBuildContextLoader]
+            A thread-local loader, or None if factory unavailable or init fails.
+        """
+        # If a DI-provided context_loader exists, use it (for testing)
+        if self._context_loader is not None:
+            return self._context_loader
+
+        if not self.enable_context or self._factory is None:
+            return None
+
+        thread_id = threading.get_ident()
+        if thread_id in self._thread_loaders:
+            return self._thread_loaders[thread_id]
+
+        # Create and initialize a per-thread client
+        try:
+            client = self._factory.create_client()
+            success = loop.run_until_complete(client.initialize())
+            if success:
+                loader = AutoBuildContextLoader(
+                    graphiti=client, verbose=self.verbose
+                )
+                self._thread_loaders[thread_id] = loader
+                logger.info(f"Created per-thread context loader for thread {thread_id}")
+                return loader
+            else:
+                self._thread_loaders[thread_id] = None
+                logger.info(f"Per-thread Graphiti client init failed for thread {thread_id}")
+                return None
+        except Exception as e:
+            self._thread_loaders[thread_id] = None
+            logger.warning(f"Error creating per-thread context loader: {e}")
+            return None
+
+    def _cleanup_thread_loaders(self) -> None:
+        """Close all per-thread Graphiti clients (TASK-FIX-GTP2).
+
+        Called during finalization to clean up resources. Each thread-local
+        GraphitiClient has its own Neo4j driver that must be closed.
+        """
+        for thread_id, loader in list(self._thread_loaders.items()):
+            if loader is not None and loader.graphiti is not None:
+                try:
+                    import asyncio
+                    try:
+                        loop = asyncio.get_event_loop()
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                    loop.run_until_complete(loader.graphiti.close())
+                    logger.debug(f"Closed per-thread Graphiti client for thread {thread_id}")
+                except Exception as e:
+                    logger.debug(f"Error closing per-thread Graphiti client: {e}")
+        self._thread_loaders.clear()
+
     def _invoke_player_safely(
         self,
         task_id: str,
@@ -2655,13 +2747,15 @@ class AutoBuildOrchestrator:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
 
-            # Retrieve job-specific context if enabled (TASK-GR6-006)
+            # Retrieve job-specific context if enabled (TASK-GR6-006, TASK-FIX-GTP2)
+            # Uses per-thread context loader to avoid cross-loop Neo4j errors
             context_prompt = ""
             self._last_player_context_status = None  # Reset per invocation (TASK-FIX-GCW5)
-            if self.enable_context and self._context_loader is not None:
+            thread_loader = self._get_thread_local_loader(loop)
+            if self.enable_context and thread_loader is not None:
                 try:
                     context_result = loop.run_until_complete(
-                        self._context_loader.get_player_context(
+                        thread_loader.get_player_context(
                             task_id=task_id,
                             feature_id=self._feature_id or "",
                             turn_number=turn,
@@ -2698,9 +2792,9 @@ class AutoBuildOrchestrator:
                         status="failed", reason=str(e)
                     )
             elif self.enable_context:
-                logger.info(f"Player context retrieval skipped: context_loader not provided for {task_id}")
+                logger.info(f"Player context retrieval skipped: no factory or loader for {task_id}")
                 self._last_player_context_status = ContextStatus(
-                    status="skipped", reason="no context_loader"
+                    status="skipped", reason="no factory or loader"
                 )
             else:
                 self._last_player_context_status = ContextStatus(status="disabled")
@@ -2825,20 +2919,23 @@ class AutoBuildOrchestrator:
 
         start_time = time.time()
 
-        # Retrieve job-specific context for Coach if enabled (TASK-GR6-006)
+        # Retrieve job-specific context for Coach if enabled (TASK-GR6-006, TASK-FIX-GTP2)
+        # Uses per-thread context loader to avoid cross-loop Neo4j errors
         context_prompt = ""
         self._last_coach_context_status = None  # Reset per invocation (TASK-FIX-GCW5)
-        if self.enable_context and self._context_loader is not None:
-            try:
-                # Create event loop if needed
-                try:
-                    loop = asyncio.get_event_loop()
-                except RuntimeError:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
 
+        # Create event loop if needed (required for thread-local loader creation too)
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        thread_loader = self._get_thread_local_loader(loop)
+        if self.enable_context and thread_loader is not None:
+            try:
                 context_result = loop.run_until_complete(
-                    self._context_loader.get_coach_context(
+                    thread_loader.get_coach_context(
                         task_id=task_id,
                         feature_id=self._feature_id or "",
                         turn_number=turn,
@@ -2875,9 +2972,9 @@ class AutoBuildOrchestrator:
                     status="failed", reason=str(e)
                 )
         elif self.enable_context:
-            logger.info(f"Coach context retrieval skipped: context_loader not provided for {task_id}")
+            logger.info(f"Coach context retrieval skipped: no factory or loader for {task_id}")
             self._last_coach_context_status = ContextStatus(
-                status="skipped", reason="no context_loader"
+                status="skipped", reason="no factory or loader"
             )
         else:
             self._last_coach_context_status = ContextStatus(status="disabled")
