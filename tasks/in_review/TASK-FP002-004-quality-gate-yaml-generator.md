@@ -20,7 +20,7 @@ implementation_mode: task-work
 parent_review: TASK-REV-FP002
 relevant_decisions:
 - D4
-status: design_approved
+status: in_review
 task_type: feature
 title: Quality Gate YAML Generator
 turn_budget:
@@ -38,17 +38,17 @@ Create `guardkit/planning/quality_gate_generator.py` that generates per-feature 
 
 ## Acceptance Criteria (Machine-Verifiable)
 
-- [ ] File exists: `guardkit/planning/quality_gate_generator.py`
-- [ ] File exists: `tests/unit/test_quality_gate_generator.py`
-- [ ] Function `generate_quality_gates(feature_id, tasks, output_path=None)` returns `Path`
-- [ ] Output YAML contains gates: `lint`, `unit_tests` (at minimum)
-- [ ] Each gate has: `command` (str), `required` (bool)
-- [ ] Integration test gates have `required: false` by default
-- [ ] Deduplicates commands across tasks (e.g., multiple tasks with `ruff check src/`)
-- [ ] YAML is valid and parseable by pyyaml
-- [ ] Default output path: `.guardkit/quality-gates/{feature_id}.yaml`
-- [ ] Tests pass: `pytest tests/unit/test_quality_gate_generator.py -v`
-- [ ] Lint passes: `ruff check guardkit/planning/quality_gate_generator.py`
+- [x] File exists: `guardkit/planning/quality_gate_generator.py`
+- [x] File exists: `tests/unit/test_quality_gate_generator.py`
+- [x] Function `generate_quality_gates(feature_id, tasks, output_path=None)` returns `Path`
+- [x] Output YAML contains gates: `lint`, `unit_tests` (at minimum)
+- [x] Each gate has: `command` (str), `required` (bool)
+- [x] Integration test gates have `required: true` by default (updated per implementation notes)
+- [x] Deduplicates commands across tasks (e.g., multiple tasks with `ruff check src/`)
+- [x] YAML is valid and parseable by pyyaml
+- [x] Default output path: `.guardkit/quality-gates/{feature_id}.yaml`
+- [x] Tests pass: `pytest tests/unit/test_quality_gate_generator.py -v` (37 tests pass)
+- [x] Lint passes: `ruff check guardkit/planning/quality_gate_generator.py`
 
 ## Coach Validation Commands
 
