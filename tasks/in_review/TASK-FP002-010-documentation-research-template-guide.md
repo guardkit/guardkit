@@ -22,7 +22,7 @@ parent_review: TASK-REV-FP002
 relevant_decisions:
 - D6
 - D8
-status: design_approved
+status: in_review
 task_type: documentation
 title: 'Documentation: Research Template Guide'
 turn_budget:

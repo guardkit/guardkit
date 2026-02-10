@@ -297,7 +297,7 @@ def _build_coach_validation_section(task: TaskDefinition) -> str:
 
     if task.coach_validation_commands:
         for cmd in task.coach_validation_commands:
-            lines.append(f"```bash")
+            lines.append("```bash")
             lines.append(cmd)
             lines.append("```")
             lines.append("")
