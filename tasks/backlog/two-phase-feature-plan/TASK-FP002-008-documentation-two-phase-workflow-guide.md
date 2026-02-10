@@ -1,6 +1,6 @@
 ---
 id: TASK-FP002-008
-title: "Documentation: Two-Phase Workflow Guide"
+title: 'Documentation: Two-Phase Workflow Guide'
 task_type: documentation
 parent_review: TASK-REV-FP002
 feature_id: FEAT-FP-002
@@ -10,27 +10,43 @@ complexity: 4
 complexity_score: 4
 type: documentation
 domain_tags:
-  - documentation
-  - two-phase-workflow
-  - guides
+- documentation
+- two-phase-workflow
+- guides
 files_to_create:
-  - docs/guides/two-phase-workflow.md
+- docs/guides/two-phase-workflow.md
 files_to_modify: []
 files_not_to_touch:
-  - guardkit/
-  - tests/
+- guardkit/
+- tests/
 dependencies:
-  - TASK-FP002-007
+- TASK-FP002-007
 relevant_decisions:
-  - D1
-  - D2
-  - D6
-  - D7
-  - D8
+- D1
+- D2
+- D6
+- D7
+- D8
 turn_budget:
   expected: 2
   max: 4
 graphiti_context_budget: 4000
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 25
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-FP-002
+  base_branch: main
+  started_at: '2026-02-10T18:18:02.200586'
+  last_updated: '2026-02-10T18:23:25.240570'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-02-10T18:18:02.200586'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-FP002-008: Documentation — Two-Phase Workflow Guide

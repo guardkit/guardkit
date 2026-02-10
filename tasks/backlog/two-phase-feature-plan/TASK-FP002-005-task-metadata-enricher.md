@@ -10,27 +10,43 @@ complexity: 5
 complexity_score: 5
 type: implementation
 domain_tags:
-  - task-metadata
-  - graphiti-integration
-  - turn-budget
-  - domain-tags
+- task-metadata
+- graphiti-integration
+- turn-budget
+- domain-tags
 files_to_create:
-  - guardkit/planning/task_metadata.py
-  - tests/unit/test_task_metadata.py
+- guardkit/planning/task_metadata.py
+- tests/unit/test_task_metadata.py
 files_to_modify: []
 files_not_to_touch:
-  - guardkit/orchestrator/
-  - guardkit/knowledge/
+- guardkit/orchestrator/
+- guardkit/knowledge/
 dependencies:
-  - TASK-FP002-001
-  - TASK-FP002-002
+- TASK-FP002-001
+- TASK-FP002-002
 relevant_decisions:
-  - D5
-  - D10
+- D5
+- D10
 turn_budget:
   expected: 3
   max: 5
 graphiti_context_budget: 4000
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 25
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-FP-002
+  base_branch: main
+  started_at: '2026-02-10T17:50:11.817316'
+  last_updated: '2026-02-10T18:01:52.516766'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-02-10T17:50:11.817316'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-FP002-005: Task Metadata Enricher

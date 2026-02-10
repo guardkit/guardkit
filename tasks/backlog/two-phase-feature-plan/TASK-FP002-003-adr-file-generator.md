@@ -10,23 +10,39 @@ complexity: 4
 complexity_score: 4
 type: implementation
 domain_tags:
-  - adr-generation
-  - documentation
-  - graphiti-seeding
+- adr-generation
+- documentation
+- graphiti-seeding
 files_to_create:
-  - guardkit/planning/adr_generator.py
-  - tests/unit/test_adr_generator.py
+- guardkit/planning/adr_generator.py
+- tests/unit/test_adr_generator.py
 files_to_modify: []
 files_not_to_touch:
-  - docs/adr/
+- docs/adr/
 dependencies:
-  - TASK-FP002-001
+- TASK-FP002-001
 relevant_decisions:
-  - D3
+- D3
 turn_budget:
   expected: 2
   max: 4
 graphiti_context_budget: 4000
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 25
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-FP-002
+  base_branch: main
+  started_at: '2026-02-10T17:50:11.817900'
+  last_updated: '2026-02-10T17:57:35.119784'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-02-10T17:50:11.817900'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-FP002-003: ADR File Generator

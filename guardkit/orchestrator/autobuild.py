@@ -118,7 +118,12 @@ from guardkit.knowledge.turn_state_operations import (
     create_turn_state_from_autobuild,
 )
 from guardkit.knowledge.entities.turn_state import TurnMode
-from guardkit.knowledge.graphiti_client import get_graphiti, get_factory, GraphitiClientFactory
+from guardkit.knowledge.graphiti_client import (
+    get_graphiti,
+    get_factory,
+    GraphitiClientFactory,
+    _suppress_httpx_cleanup_errors,
+)
 
 # Import AutoBuild context loader for job-specific context (TASK-GR6-006)
 from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
@@ -477,6 +482,7 @@ class AutoBuildOrchestrator:
         enable_context: bool = True,
         verbose: bool = False,
         context_loader: Optional[AutoBuildContextLoader] = None,
+        feature_id: Optional[str] = None,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -536,6 +542,9 @@ class AutoBuildOrchestrator:
             When enabled, shows budget usage and category details.
         context_loader : Optional[AutoBuildContextLoader], optional
             Optional AutoBuildContextLoader for DI/testing.
+        feature_id : Optional[str], optional
+            Feature ID to use for turn state capture (default: None).
+            When provided, overrides regex extraction from task ID.
 
         Raises
         ------
@@ -586,7 +595,7 @@ class AutoBuildOrchestrator:
         self.enable_context = enable_context
         self.verbose = verbose
         self._context_loader = context_loader  # For DI/testing only; thread-local loaders used at runtime
-        self._feature_id: Optional[str] = None  # Set during orchestration from task metadata
+        self._feature_id: Optional[str] = feature_id  # Passed from FeatureOrchestrator or set during orchestration
         # Per-turn context status tracking for progress display (TASK-FIX-GCW5)
         self._last_player_context_status: Optional[ContextStatus] = None
         self._last_coach_context_status: Optional[ContextStatus] = None
@@ -2430,6 +2439,7 @@ class AutoBuildOrchestrator:
             if graphiti and graphiti.enabled:
                 try:
                     loop = asyncio.get_event_loop()
+                    _suppress_httpx_cleanup_errors(loop)
                     loop.run_until_complete(capture_turn_state(graphiti, entity))
                     logger.debug(f"Turn state captured for turn {turn_record.turn}")
                 except RuntimeError:
@@ -2448,6 +2458,7 @@ class AutoBuildOrchestrator:
         Examples:
             TASK-GE-001 -> FEAT-GE
             TASK-ABC-123 -> FEAT-ABC
+            TASK-FP002-001 -> FEAT-FP002
             TASK-001 -> FEAT-UNKNOWN
 
         Parameters
@@ -2462,14 +2473,14 @@ class AutoBuildOrchestrator:
         """
         import re
 
-        # Try to extract prefix from task_id (e.g., TASK-GE-001 -> GE)
-        match = re.match(r"TASK-([A-Z]+)-", task_id.upper())
-        if match:
-            return f"FEAT-{match.group(1)}"
-
-        # Fallback: use self._feature_id if available
+        # Fallback: use self._feature_id if available (takes precedence)
         if hasattr(self, "_feature_id") and self._feature_id:
             return self._feature_id
+
+        # Try to extract prefix from task_id (e.g., TASK-GE-001 -> GE, TASK-FP002-001 -> FP002)
+        match = re.match(r"TASK-([A-Z][A-Z0-9]*)-", task_id.upper())
+        if match:
+            return f"FEAT-{match.group(1)}"
 
         return "FEAT-UNKNOWN"
 

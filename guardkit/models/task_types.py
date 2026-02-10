@@ -74,6 +74,11 @@ class QualityGateProfile:
             Scope creep detection and implementation completeness check.
             Required for: FEATURE, INFRASTRUCTURE, SCAFFOLDING
             Skipped for: DOCUMENTATION
+        zero_test_blocking: Whether zero-test anomaly blocks approval (default: False).
+            When True and tests_required is True, a zero-test anomaly returns
+            an error that blocks Coach approval instead of a warning.
+            Enabled for: FEATURE, REFACTOR
+            Disabled for: SCAFFOLDING, INFRASTRUCTURE, DOCUMENTATION, TESTING
 
     Example:
         Feature task profile (maximum validation):
@@ -103,6 +108,7 @@ class QualityGateProfile:
     coverage_threshold: float
     tests_required: bool
     plan_audit_required: bool
+    zero_test_blocking: bool = False
 
     def __post_init__(self) -> None:
         """Validate quality gate profile configuration.
@@ -181,6 +187,7 @@ DEFAULT_PROFILES: Dict[TaskType, QualityGateProfile] = {
         coverage_threshold=80.0,
         tests_required=True,
         plan_audit_required=True,
+        zero_test_blocking=True,
     ),
     TaskType.INFRASTRUCTURE: QualityGateProfile(
         arch_review_required=False,  # Infrastructure design is different paradigm
@@ -213,6 +220,7 @@ DEFAULT_PROFILES: Dict[TaskType, QualityGateProfile] = {
         coverage_threshold=80.0,
         tests_required=True,
         plan_audit_required=True,
+        zero_test_blocking=True,
     ),
 }
 

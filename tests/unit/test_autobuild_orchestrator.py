@@ -371,6 +371,69 @@ class TestConstructor:
 
         assert "context_loader=None" in caplog.text
 
+    def test_constructor_with_feature_id(self):
+        """Test constructor accepts feature_id parameter."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            feature_id="FEAT-FP-002",
+        )
+
+        assert orchestrator._feature_id == "FEAT-FP-002"
+
+    def test_constructor_default_feature_id_none(self):
+        """Test constructor defaults feature_id to None."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+        )
+
+        assert orchestrator._feature_id is None
+
+    def test_extract_feature_id_uses_provided_feature_id(self):
+        """Test _extract_feature_id returns provided feature_id when set."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            feature_id="FEAT-ABC-123",
+        )
+
+        # Should return the provided feature_id, ignoring task_id
+        result = orchestrator._extract_feature_id("TASK-XYZ-999")
+        assert result == "FEAT-ABC-123"
+
+    def test_extract_feature_id_regex_alphanumeric_prefix(self):
+        """Test _extract_feature_id handles alphanumeric prefixes like FP002."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+        )
+
+        # Should extract FP002 from task ID
+        result = orchestrator._extract_feature_id("TASK-FP002-001")
+        assert result == "FEAT-FP002"
+
+    def test_extract_feature_id_regex_alpha_only_prefix(self):
+        """Test _extract_feature_id handles alpha-only prefixes."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+        )
+
+        result = orchestrator._extract_feature_id("TASK-GE-001")
+        assert result == "FEAT-GE"
+
+    def test_extract_feature_id_fallback_to_unknown(self):
+        """Test _extract_feature_id falls back to FEAT-UNKNOWN when regex fails."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+        )
+
+        # Task ID without prefix should return FEAT-UNKNOWN
+        result = orchestrator._extract_feature_id("TASK-001")
+        assert result == "FEAT-UNKNOWN"
+
 
 # ============================================================================
 # Test Setup Phase

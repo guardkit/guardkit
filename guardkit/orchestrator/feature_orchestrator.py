@@ -1354,6 +1354,7 @@ The detailed specifications are in the task markdown file.
                 sdk_timeout=effective_sdk_timeout,
                 enable_pre_loop=effective_enable_pre_loop,
                 enable_context=self.enable_context,
+                feature_id=feature.id,
             )
 
             # Execute task orchestration

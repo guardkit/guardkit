@@ -1,34 +1,49 @@
 ---
+id: TASK-FP002-002
+title: Target Mode Configuration
+task_type: feature
+parent_review: TASK-REV-FP002
+feature_id: FEAT-FP-002
+wave: 1
+implementation_mode: task-work
 complexity: 3
 complexity_score: 3
-dependencies: []
+type: implementation
 domain_tags:
 - target-mode
 - configuration
 - output-formatting
-feature_id: FEAT-FP-002
-files_not_to_touch:
-- .claude/commands/feature-plan.md
-- guardkit/cli/
 files_to_create:
 - guardkit/planning/target_mode.py
 - tests/unit/test_target_mode.py
 files_to_modify: []
-graphiti_context_budget: 2000
-id: TASK-FP002-002
-implementation_mode: task-work
-parent_review: TASK-REV-FP002
+files_not_to_touch:
+- .claude/commands/feature-plan.md
+- guardkit/cli/
+dependencies: []
 relevant_decisions:
 - D1
 - D9
-status: in_review
-task_type: feature
-title: Target Mode Configuration
 turn_budget:
   expected: 1
   max: 3
-type: implementation
-wave: 1
+graphiti_context_budget: 2000
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 25
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-FP-002
+  base_branch: main
+  started_at: '2026-02-10T17:38:08.347500'
+  last_updated: '2026-02-10T17:49:43.645009'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-02-10T17:38:08.347500'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-FP002-002: Target Mode Configuration
@@ -39,16 +54,16 @@ Create `guardkit/planning/target_mode.py` that handles the `--target` flag logic
 
 ## Acceptance Criteria (Machine-Verifiable)
 
-- [x] File exists: `guardkit/planning/target_mode.py`
-- [x] File exists: `tests/unit/test_target_mode.py`
-- [x] `TargetMode` enum has values: `INTERACTIVE`, `LOCAL_MODEL`, `AUTO`
-- [x] `TargetConfig` dataclass has fields: mode, model_name, output_verbosity, include_imports, include_type_hints, structured_coach_blocks
-- [x] `resolve_target("local-model")` returns config with `output_verbosity="explicit"`
-- [x] `resolve_target("interactive")` returns config with `output_verbosity="standard"`
-- [x] `resolve_target("auto")` reads `.guardkit/config.yaml` for `autobuild.endpoint` presence
-- [x] `resolve_target(None)` defaults to `AUTO`
-- [x] Tests pass: `pytest tests/unit/test_target_mode.py -v`
-- [x] Lint passes: `ruff check guardkit/planning/target_mode.py`
+- [ ] File exists: `guardkit/planning/target_mode.py`
+- [ ] File exists: `tests/unit/test_target_mode.py`
+- [ ] `TargetMode` enum has values: `INTERACTIVE`, `LOCAL_MODEL`, `AUTO`
+- [ ] `TargetConfig` dataclass has fields: mode, model_name, output_verbosity, include_imports, include_type_hints, structured_coach_blocks
+- [ ] `resolve_target("local-model")` returns config with `output_verbosity="explicit"`
+- [ ] `resolve_target("interactive")` returns config with `output_verbosity="standard"`
+- [ ] `resolve_target("auto")` reads `.guardkit/config.yaml` for `autobuild.endpoint` presence
+- [ ] `resolve_target(None)` defaults to `AUTO`
+- [ ] Tests pass: `pytest tests/unit/test_target_mode.py -v`
+- [ ] Lint passes: `ruff check guardkit/planning/target_mode.py`
 
 ## Coach Validation Commands
 

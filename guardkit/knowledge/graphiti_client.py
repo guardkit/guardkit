@@ -1386,6 +1386,47 @@ class GraphitiClient:
                 self._connected = False
 
 
+def _suppress_httpx_cleanup_errors(loop: "asyncio.AbstractEventLoop") -> None:
+    """Install a custom exception handler that suppresses httpx cleanup errors.
+
+    When ``asyncio.run()`` creates a temporary event loop for Graphiti client
+    initialization, httpx ``AsyncClient`` objects may schedule background
+    ``aclose()`` tasks.  After ``asyncio.run()`` completes the loop is closed,
+    so those pending tasks raise ``RuntimeError('Event loop is closed')``.
+
+    These errors are harmless — the OS will reclaim the underlying sockets when
+    the thread exits — but they produce noisy ``ERROR:asyncio:Task exception was
+    never retrieved`` log lines.
+
+    This handler silences only those specific errors while letting everything
+    else propagate normally.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop to install the handler on.
+    """
+    original_handler = loop.get_exception_handler()
+
+    def _handler(
+        _loop: "asyncio.AbstractEventLoop", context: dict
+    ) -> None:
+        exception = context.get("exception")
+        if (
+            isinstance(exception, RuntimeError)
+            and str(exception) == "Event loop is closed"
+        ):
+            # Harmless httpx cleanup error — suppress silently
+            return
+        # Delegate everything else to the original handler (or default)
+        if original_handler is not None:
+            original_handler(_loop, context)
+        else:
+            _loop.default_exception_handler(context)
+
+    loop.set_exception_handler(_handler)
+
+
 class GraphitiClientFactory:
     """Thread-safe factory for creating per-thread GraphitiClient instances.
 
@@ -1478,7 +1519,12 @@ class GraphitiClientFactory:
         else:
             coro = client.initialize()
             try:
-                success = asyncio.run(coro)
+                loop = asyncio.new_event_loop()
+                _suppress_httpx_cleanup_errors(loop)
+                try:
+                    success = loop.run_until_complete(coro)
+                finally:
+                    loop.close()
                 if success:
                     self._thread_local.client = client
                     logger.info("Graphiti factory: thread client initialized successfully")

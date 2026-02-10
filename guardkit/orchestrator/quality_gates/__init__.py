@@ -40,6 +40,7 @@ from guardkit.orchestrator.quality_gates.task_work_interface import TaskWorkInte
 from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
     CoachValidationResult,
+    CriterionResult,
     QualityGateStatus,
     IndependentTestResult,
     RequirementsValidation,
@@ -68,6 +69,7 @@ __all__ = [
     # Coach validator
     "CoachValidator",
     "CoachValidationResult",
+    "CriterionResult",
     "QualityGateStatus",
     "IndependentTestResult",
     "RequirementsValidation",

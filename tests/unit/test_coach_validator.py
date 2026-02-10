@@ -31,6 +31,7 @@ sys.path.insert(0, str(_test_root))
 from guardkit.orchestrator.quality_gates import (
     CoachValidator,
     CoachValidationResult,
+    CriterionResult,
     QualityGateStatus,
     IndependentTestResult,
     RequirementsValidation,
@@ -2333,7 +2334,7 @@ class TestApprovalRationaleAndZeroTestAnomaly:
         assert "Tests not required for this task type." in rationale
 
     def test_zero_test_anomaly_detected_for_feature_task(self, tmp_worktree):
-        """Test that zero-test anomaly is detected for feature tasks."""
+        """Test that zero-test anomaly is detected with error severity for feature tasks."""
         from guardkit.models.task_types import get_profile, TaskType
 
         profile = get_profile(TaskType.FEATURE)
@@ -2353,7 +2354,7 @@ class TestApprovalRationaleAndZeroTestAnomaly:
 
         assert len(issues) == 1
         assert issues[0]["category"] == "zero_test_anomaly"
-        assert issues[0]["severity"] == "warning"
+        assert issues[0]["severity"] == "error"  # blocking for feature tasks
         assert "no tests were executed" in issues[0]["description"]
 
     def test_zero_test_anomaly_not_raised_for_scaffolding(self, tmp_worktree):
@@ -2413,8 +2414,8 @@ class TestApprovalRationaleAndZeroTestAnomaly:
 
         assert len(issues) == 0
 
-    def test_zero_test_anomaly_included_in_approval_issues(self, tmp_worktree, task_work_results_dir):
-        """Test that zero-test anomaly appears in approval result issues."""
+    def test_zero_test_anomaly_blocks_feature_task_approval(self, tmp_worktree, task_work_results_dir):
+        """Test that zero-test anomaly blocks approval for feature tasks (zero_test_blocking=True)."""
         # Create task work results with zero tests
         results = {
             "quality_gates": {
@@ -2441,12 +2442,221 @@ class TestApprovalRationaleAndZeroTestAnomaly:
             },
         )
 
-        assert result.decision == "approve"
-        # Should have the zero-test warning in issues
+        # Feature profile has zero_test_blocking=True, so decision should be feedback
+        assert result.decision == "feedback"
         assert len(result.issues) == 1
         assert result.issues[0]["category"] == "zero_test_anomaly"
-        # Rationale should mention skipped verification
-        assert "skipped" in result.rationale.lower()
+        assert result.issues[0]["severity"] == "error"
+        # Rationale should mention zero-test anomaly
+        assert "zero-test anomaly" in result.rationale.lower()
+
+
+# ============================================================================
+# Test Zero-Test Blocking Configuration (TASK-AQG-002)
+# ============================================================================
+
+
+class TestZeroTestBlockingConfiguration:
+    """Test configurable zero-test anomaly blocking behavior."""
+
+    def test_feature_profile_has_zero_test_blocking_true(self):
+        """AC1: Feature profile has zero_test_blocking=True."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.FEATURE)
+        assert profile.zero_test_blocking is True
+
+    def test_refactor_profile_has_zero_test_blocking_true(self):
+        """AC1: Refactor profile has zero_test_blocking=True."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.REFACTOR)
+        assert profile.zero_test_blocking is True
+
+    def test_documentation_profile_has_zero_test_blocking_false(self):
+        """AC3: Documentation profile has zero_test_blocking=False (unaffected)."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.DOCUMENTATION)
+        assert profile.zero_test_blocking is False
+
+    def test_testing_profile_has_zero_test_blocking_false(self):
+        """AC3: Testing profile has zero_test_blocking=False (unaffected)."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.TESTING)
+        assert profile.zero_test_blocking is False
+
+    def test_scaffolding_profile_has_zero_test_blocking_false(self):
+        """AC4: Scaffolding profile keeps default zero_test_blocking=False."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.SCAFFOLDING)
+        assert profile.zero_test_blocking is False
+
+    def test_infrastructure_profile_has_zero_test_blocking_false(self):
+        """AC4: Infrastructure profile keeps default zero_test_blocking=False."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.INFRASTRUCTURE)
+        assert profile.zero_test_blocking is False
+
+    def test_default_zero_test_blocking_is_false(self):
+        """AC4: Default value is False for backward compatibility."""
+        from guardkit.models.task_types import QualityGateProfile
+
+        profile = QualityGateProfile(
+            arch_review_required=False,
+            arch_review_threshold=0,
+            coverage_required=False,
+            coverage_threshold=0.0,
+            tests_required=True,
+            plan_audit_required=False,
+        )
+        assert profile.zero_test_blocking is False
+
+    def test_blocking_enabled_zero_tests_returns_error(self, tmp_worktree):
+        """AC2/AC5: Blocking enabled + zero tests = error severity."""
+        from guardkit.models.task_types import QualityGateProfile
+
+        profile = QualityGateProfile(
+            arch_review_required=False,
+            arch_review_threshold=0,
+            coverage_required=False,
+            coverage_threshold=0.0,
+            tests_required=True,
+            plan_audit_required=False,
+            zero_test_blocking=True,
+        )
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 0,
+                "coverage": None,
+                "all_passed": True,
+            },
+        }
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(task_work_results, profile)
+
+        assert len(issues) == 1
+        assert issues[0]["severity"] == "error"
+        assert issues[0]["category"] == "zero_test_anomaly"
+
+    def test_blocking_disabled_zero_tests_returns_warning(self, tmp_worktree):
+        """AC5: Blocking disabled + zero tests = warning severity (non-blocking)."""
+        from guardkit.models.task_types import QualityGateProfile
+
+        profile = QualityGateProfile(
+            arch_review_required=False,
+            arch_review_threshold=0,
+            coverage_required=False,
+            coverage_threshold=0.0,
+            tests_required=True,
+            plan_audit_required=False,
+            zero_test_blocking=False,
+        )
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 0,
+                "coverage": None,
+                "all_passed": True,
+            },
+        }
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(task_work_results, profile)
+
+        assert len(issues) == 1
+        assert issues[0]["severity"] == "warning"
+        assert issues[0]["category"] == "zero_test_anomaly"
+
+    def test_non_zero_tests_returns_empty_regardless_of_blocking(self, tmp_worktree):
+        """AC5: Non-zero tests = no issues regardless of blocking setting."""
+        from guardkit.models.task_types import QualityGateProfile
+
+        profile = QualityGateProfile(
+            arch_review_required=False,
+            arch_review_threshold=0,
+            coverage_required=False,
+            coverage_threshold=0.0,
+            tests_required=True,
+            plan_audit_required=False,
+            zero_test_blocking=True,
+        )
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 15,
+                "coverage": 85.0,
+                "all_passed": True,
+            },
+        }
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(task_work_results, profile)
+
+        assert len(issues) == 0
+
+    def test_blocking_zero_test_prevents_approval(self, tmp_worktree, task_work_results_dir):
+        """AC2: Feature task with zero tests gets feedback decision (blocked)."""
+        results = {
+            "quality_gates": {
+                "tests_passing": True,
+                "tests_passed": 0,
+                "tests_failed": 0,
+                "coverage": None,
+                "coverage_met": None,
+                "all_passed": True,
+            },
+            "code_review": {"score": 85},
+            "plan_audit": {"violations": 0},
+            "requirements_met": ["Criterion A"],
+        }
+        (task_work_results_dir / "task_work_results.json").write_text(json.dumps(results))
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-001")
+        result = validator.validate(
+            task_id="TASK-001",
+            turn=1,
+            task={
+                "acceptance_criteria": ["Criterion A"],
+                "task_type": "feature",
+            },
+        )
+
+        assert result.decision == "feedback"
+        assert any(i["category"] == "zero_test_anomaly" for i in result.issues)
+        assert "zero-test anomaly" in result.rationale.lower()
+
+    def test_non_blocking_zero_test_allows_approval(self, tmp_worktree, task_work_results_dir):
+        """AC3: Documentation task with zero tests still gets approved."""
+        results = {
+            "quality_gates": {
+                "tests_passing": True,
+                "tests_passed": 0,
+                "tests_failed": 0,
+                "coverage": None,
+                "coverage_met": None,
+                "all_passed": True,
+            },
+            "code_review": {"score": 85},
+            "plan_audit": {"violations": 0},
+            "requirements_met": ["Criterion A"],
+        }
+        (task_work_results_dir / "task_work_results.json").write_text(json.dumps(results))
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-001")
+        result = validator.validate(
+            task_id="TASK-001",
+            turn=1,
+            task={
+                "acceptance_criteria": ["Criterion A"],
+                "task_type": "documentation",
+            },
+        )
+
+        # Documentation tasks have tests_required=False, so anomaly check is skipped entirely
+        assert result.decision == "approve"
 
 
 # ============================================================================
@@ -2642,6 +2852,314 @@ class TestCoachContextIntegration:
 
             # Validator should still work when Graphiti is unavailable
             assert result.decision == "approve"
+
+
+# ============================================================================
+# Test Criteria Verification (TASK-AQG-001)
+# ============================================================================
+
+
+class TestCriteriaVerification:
+    """Test structured acceptance criteria verification in Coach validator."""
+
+    def test_criteria_results_populated_on_full_match(self, tmp_worktree):
+        """AC1: validate_requirements produces per-criterion results when all match."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["OAuth2 flow", "Token refresh", "Session management"])
+        results = make_task_work_results(
+            requirements_met=["OAuth2 flow", "Token refresh", "Session management"]
+        )
+
+        validation = validator.validate_requirements(task, results)
+
+        assert len(validation.criteria_results) == 3
+        assert all(cr.result == "verified" for cr in validation.criteria_results)
+        assert all(cr.status == "verified" for cr in validation.criteria_results)
+        assert validation.criteria_results[0].criterion_id == "AC-001"
+        assert validation.criteria_results[1].criterion_id == "AC-002"
+        assert validation.criteria_results[2].criterion_id == "AC-003"
+
+    def test_criteria_results_populated_on_partial_match(self, tmp_worktree):
+        """AC1: validate_requirements produces per-criterion results with partial match."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature A", "Feature B", "Feature C"])
+        results = make_task_work_results(requirements_met=["Feature A"])
+
+        validation = validator.validate_requirements(task, results)
+
+        assert len(validation.criteria_results) == 3
+        assert validation.criteria_results[0].result == "verified"
+        assert validation.criteria_results[1].result == "rejected"
+        assert validation.criteria_results[2].result == "rejected"
+
+    def test_criteria_results_populated_on_no_match(self, tmp_worktree):
+        """AC1: validate_requirements produces per-criterion results when none match."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["A", "B"])
+        results = make_task_work_results(requirements_met=[])
+
+        validation = validator.validate_requirements(task, results)
+
+        assert len(validation.criteria_results) == 2
+        assert all(cr.result == "rejected" for cr in validation.criteria_results)
+
+    def test_criteria_results_empty_for_empty_criteria(self, tmp_worktree):
+        """AC6: validate_requirements returns empty results for empty criteria list."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = {"acceptance_criteria": []}
+        results = {"requirements_met": []}
+
+        validation = validator.validate_requirements(task, results)
+
+        assert len(validation.criteria_results) == 0
+        assert validation.all_criteria_met is True
+
+    def test_criterion_result_has_evidence(self, tmp_worktree):
+        """AC1: Each criterion result includes evidence string."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature X"])
+        results = make_task_work_results(requirements_met=["Feature X"])
+
+        validation = validator.validate_requirements(task, results)
+
+        cr = validation.criteria_results[0]
+        assert cr.evidence != ""
+        assert "Feature X" in cr.evidence
+
+    def test_criterion_result_has_criterion_text(self, tmp_worktree):
+        """AC1: Each criterion result includes the original criterion text."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["My specific criterion"])
+        results = make_task_work_results(requirements_met=[])
+
+        validation = validator.validate_requirements(task, results)
+
+        assert validation.criteria_results[0].criterion_text == "My specific criterion"
+
+    def test_to_dict_includes_criteria_verification(self):
+        """AC2: to_dict serializes criteria_verification in format for _display_criteria_progress."""
+        cr1 = CriterionResult(
+            criterion_id="AC-001",
+            criterion_text="Feature A",
+            result="verified",
+            status="verified",
+            evidence="Matched",
+        )
+        cr2 = CriterionResult(
+            criterion_id="AC-002",
+            criterion_text="Feature B",
+            result="rejected",
+            status="rejected",
+            evidence="Not found",
+        )
+        reqs = RequirementsValidation(
+            criteria_total=2,
+            criteria_met=1,
+            all_criteria_met=False,
+            missing=["Feature B"],
+            criteria_results=[cr1, cr2],
+        )
+        result = CoachValidationResult(
+            task_id="TASK-001",
+            turn=1,
+            decision="feedback",
+            requirements=reqs,
+        )
+
+        d = result.to_dict()
+
+        # Verify criteria_verification is populated (for _display_criteria_progress)
+        cv = d["criteria_verification"]
+        assert len(cv) == 2
+        assert cv[0]["criterion_id"] == "AC-001"
+        assert cv[0]["result"] == "verified"
+        assert cv[0]["notes"] == "Matched"  # notes alias for evidence
+        assert cv[1]["criterion_id"] == "AC-002"
+        assert cv[1]["result"] == "rejected"
+
+    def test_to_dict_includes_acceptance_criteria_verification(self):
+        """AC2: to_dict serializes acceptance_criteria_verification for _count_criteria_passed."""
+        cr1 = CriterionResult(
+            criterion_id="AC-001",
+            criterion_text="Feature A",
+            result="verified",
+            status="verified",
+            evidence="Matched",
+        )
+        reqs = RequirementsValidation(
+            criteria_total=1,
+            criteria_met=1,
+            all_criteria_met=True,
+            criteria_results=[cr1],
+        )
+        result = CoachValidationResult(
+            task_id="TASK-001",
+            turn=1,
+            decision="approve",
+            requirements=reqs,
+        )
+
+        d = result.to_dict()
+
+        # Verify acceptance_criteria_verification.criteria_results (for _count_criteria_passed)
+        acv = d["acceptance_criteria_verification"]
+        assert "criteria_results" in acv
+        assert len(acv["criteria_results"]) == 1
+        assert acv["criteria_results"][0]["status"] == "verified"
+
+    def test_to_dict_empty_criteria_verification_when_no_requirements(self):
+        """AC2: to_dict returns empty criteria_verification when no requirements."""
+        result = CoachValidationResult(
+            task_id="TASK-001",
+            turn=1,
+            decision="feedback",
+            requirements=None,
+        )
+
+        d = result.to_dict()
+
+        assert d["criteria_verification"] == []
+        assert d["acceptance_criteria_verification"]["criteria_results"] == []
+
+    def test_display_criteria_progress_format_compatibility(self, tmp_worktree):
+        """AC3: criteria_verification format matches CriterionVerification.from_dict expectations."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature A", "Feature B"])
+        results = make_task_work_results(
+            requirements_met=["Feature A"]
+        )
+
+        validation = validator.validate_requirements(task, results)
+
+        # Simulate what _display_criteria_progress does
+        cr_dicts = [cr.to_dict() for cr in validation.criteria_results]
+        for cr_dict in cr_dicts:
+            assert "criterion_id" in cr_dict
+            assert "result" in cr_dict
+            assert "notes" in cr_dict
+            assert cr_dict["result"] in ("verified", "rejected")
+
+    def test_count_criteria_passed_format_compatibility(self, tmp_worktree):
+        """AC4: acceptance_criteria_verification.criteria_results format matches _count_criteria_passed."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["A", "B", "C"])
+        results = make_task_work_results(requirements_met=["A", "C"])
+
+        validation = validator.validate_requirements(task, results)
+
+        # Simulate what _count_criteria_passed does
+        cr_dicts = [cr.to_dict() for cr in validation.criteria_results]
+        count = sum(1 for r in cr_dicts if r.get("status") == "verified")
+        assert count == 2
+
+    def test_existing_gate_evaluation_unchanged(self, tmp_worktree, task_work_results_dir):
+        """AC5: Existing quality gate evaluation is unaffected by criteria verification."""
+        results = make_task_work_results(
+            tests_passed=True,
+            coverage_met=True,
+            arch_score=82,
+            violations=0,
+            requirements_met=["OAuth2 authentication flow", "Token generation", "Token refresh"],
+        )
+        write_task_work_results(task_work_results_dir, results)
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="15 passed in 1.45s",
+                stderr="",
+            )
+            validator = CoachValidator(str(tmp_worktree))
+            task = make_task()
+            result = validator.validate("TASK-001", 1, task)
+
+        assert result.decision == "approve"
+        assert result.quality_gates is not None
+        assert result.quality_gates.all_gates_passed is True
+
+    def test_case_insensitive_criteria_results(self, tmp_worktree):
+        """AC6: Case insensitive matching produces correct per-criterion results."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["OAuth2 Flow"])
+        results = make_task_work_results(requirements_met=["oauth2 flow"])
+
+        validation = validator.validate_requirements(task, results)
+
+        assert len(validation.criteria_results) == 1
+        assert validation.criteria_results[0].result == "verified"
+
+    def test_whitespace_normalized_criteria_results(self, tmp_worktree):
+        """AC6: Whitespace normalization produces correct per-criterion results."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["  Feature A  "])
+        results = make_task_work_results(requirements_met=["Feature A"])
+
+        validation = validator.validate_requirements(task, results)
+
+        assert len(validation.criteria_results) == 1
+        assert validation.criteria_results[0].result == "verified"
+
+    def test_criterion_result_dataclass(self):
+        """Test CriterionResult dataclass fields and to_dict."""
+        cr = CriterionResult(
+            criterion_id="AC-001",
+            criterion_text="Test criterion",
+            result="verified",
+            status="verified",
+            evidence="Found in requirements_met",
+        )
+
+        assert cr.criterion_id == "AC-001"
+        assert cr.criterion_text == "Test criterion"
+        assert cr.result == "verified"
+        assert cr.status == "verified"
+        assert cr.evidence == "Found in requirements_met"
+
+        d = cr.to_dict()
+        assert d["criterion_id"] == "AC-001"
+        assert d["result"] == "verified"
+        assert d["status"] == "verified"
+        assert d["notes"] == "Found in requirements_met"
+
+    def test_requirements_validation_default_criteria_results(self):
+        """Test RequirementsValidation criteria_results defaults to empty list."""
+        validation = RequirementsValidation(
+            criteria_total=3,
+            criteria_met=3,
+            all_criteria_met=True,
+        )
+        assert validation.criteria_results == []
+
+    def test_full_validate_produces_criteria_in_to_dict(
+        self, tmp_worktree, task_work_results_dir
+    ):
+        """AC2+AC3+AC4: Full validate → to_dict produces correct criteria data."""
+        results = make_task_work_results(
+            requirements_met=["OAuth2 authentication flow", "Token generation", "Token refresh"],
+        )
+        write_task_work_results(task_work_results_dir, results)
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="15 passed in 1.45s",
+                stderr="",
+            )
+            validator = CoachValidator(str(tmp_worktree))
+            task = make_task()
+            result = validator.validate("TASK-001", 1, task)
+
+        d = result.to_dict()
+
+        # _display_criteria_progress consumer
+        assert len(d["criteria_verification"]) == 3
+        assert all(v["result"] == "verified" for v in d["criteria_verification"])
+
+        # _count_criteria_passed consumer
+        acv = d["acceptance_criteria_verification"]["criteria_results"]
+        assert len(acv) == 3
+        count = sum(1 for r in acv if r.get("status") == "verified")
+        assert count == 3
 
 
 # ============================================================================

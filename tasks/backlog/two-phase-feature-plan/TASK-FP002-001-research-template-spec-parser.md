@@ -10,24 +10,40 @@ complexity: 5
 complexity_score: 5
 type: implementation
 domain_tags:
-  - spec-parser
-  - markdown-parsing
-  - data-extraction
+- spec-parser
+- markdown-parsing
+- data-extraction
 files_to_create:
-  - guardkit/planning/spec_parser.py
-  - tests/unit/test_spec_parser.py
+- guardkit/planning/spec_parser.py
+- tests/unit/test_spec_parser.py
 files_to_modify: []
 files_not_to_touch:
-  - .claude/commands/feature-plan.md
-  - guardkit/cli/
+- .claude/commands/feature-plan.md
+- guardkit/cli/
 dependencies: []
 relevant_decisions:
-  - D2
-  - D6
+- D2
+- D6
 turn_budget:
   expected: 2
   max: 5
 graphiti_context_budget: 4000
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 25
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-FP-002
+  base_branch: main
+  started_at: '2026-02-10T17:38:08.347313'
+  last_updated: '2026-02-10T17:50:11.756660'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-02-10T17:38:08.347313'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-FP002-001: Research Template Spec Parser

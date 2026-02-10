@@ -154,6 +154,43 @@ class IndependentTestResult:
 
 
 @dataclass
+class CriterionResult:
+    """
+    Structured result for a single acceptance criterion.
+
+    Attributes
+    ----------
+    criterion_id : str
+        Unique identifier (e.g., "AC-001")
+    criterion_text : str
+        Full text of the acceptance criterion
+    result : str
+        Verification result: "verified", "rejected", or "pending"
+    status : str
+        Alias for result, used by _count_criteria_passed consumer
+    evidence : str
+        Summary of what was checked to determine the result
+    """
+
+    criterion_id: str
+    criterion_text: str
+    result: str  # "verified" | "rejected" | "pending"
+    status: str  # same as result, for _count_criteria_passed compatibility
+    evidence: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "criterion_id": self.criterion_id,
+            "criterion_text": self.criterion_text,
+            "result": self.result,
+            "status": self.status,
+            "evidence": self.evidence,
+            "notes": self.evidence,  # alias for _display_criteria_progress
+        }
+
+
+@dataclass
 class RequirementsValidation:
     """
     Result of requirements satisfaction validation.
@@ -168,12 +205,15 @@ class RequirementsValidation:
         True if all criteria are met
     missing : List[str]
         List of missing/unmet criteria
+    criteria_results : List[CriterionResult]
+        Per-criterion structured verification results
     """
 
     criteria_total: int
     criteria_met: int
     all_criteria_met: bool
     missing: List[str] = field(default_factory=list)
+    criteria_results: List[CriterionResult] = field(default_factory=list)
 
 
 @dataclass
@@ -214,11 +254,26 @@ class CoachValidationResult:
         """
         Convert result to dictionary for JSON serialization.
 
+        Includes ``criteria_verification`` and ``acceptance_criteria_verification``
+        fields consumed by ``_display_criteria_progress`` and ``_count_criteria_passed``
+        in the AutoBuild orchestrator.
+
         Returns
         -------
         Dict[str, Any]
             Dictionary representation suitable for JSON
         """
+        # Build per-criterion results from requirements validation
+        criteria_verification: List[Dict[str, Any]] = []
+        acceptance_criteria_results: List[Dict[str, Any]] = []
+        if self.requirements and self.requirements.criteria_results:
+            criteria_verification = [
+                cr.to_dict() for cr in self.requirements.criteria_results
+            ]
+            acceptance_criteria_results = [
+                cr.to_dict() for cr in self.requirements.criteria_results
+            ]
+
         return {
             "task_id": self.task_id,
             "turn": self.turn,
@@ -243,6 +298,12 @@ class CoachValidationResult:
                     "all_criteria_met": self.requirements.all_criteria_met,
                     "missing": self.requirements.missing,
                 } if self.requirements else None,
+            },
+            # For _display_criteria_progress (autobuild.py:2555)
+            "criteria_verification": criteria_verification,
+            # For _count_criteria_passed (autobuild.py:2254)
+            "acceptance_criteria_verification": {
+                "criteria_results": acceptance_criteria_results,
             },
             "issues": self.issues,
             "rationale": self.rationale,
@@ -655,7 +716,29 @@ class CoachValidator:
                 rationale=f"Missing {len(requirements.missing)} acceptance criteria: {', '.join(requirements.missing)}",
             )
 
-        # 5. All checks passed - approve
+        # 5. Check for blocking zero-test anomaly before approval
+        zero_test_issues = self._check_zero_test_anomaly(task_work_results, profile)
+        has_blocking_zero_test = any(
+            issue.get("severity") == "error" for issue in zero_test_issues
+        )
+
+        if has_blocking_zero_test:
+            logger.info(f"Coach rejected {task_id} turn {turn}: zero-test anomaly (blocking)")
+            return self._feedback_result(
+                task_id=task_id,
+                turn=turn,
+                quality_gates=gates_status,
+                independent_tests=test_result,
+                requirements=requirements,
+                issues=zero_test_issues,
+                rationale=(
+                    "Zero-test anomaly detected: quality gates reported as passed but "
+                    "no tests were executed. Tests are required for this task type. "
+                    "Please write and run tests before resubmitting."
+                ),
+            )
+
+        # 6. All checks passed - approve
         logger.info(f"Coach approved {task_id} turn {turn}")
 
         # Build accurate rationale based on actual verification status
@@ -673,7 +756,7 @@ class CoachValidator:
             quality_gates=gates_status,
             independent_tests=test_result,
             requirements=requirements,
-            issues=self._check_zero_test_anomaly(task_work_results, profile),
+            issues=zero_test_issues,
             rationale=rationale,
         )
 
@@ -961,7 +1044,9 @@ class CoachValidator:
         Validate all requirements and acceptance criteria are met.
 
         Compares the task's acceptance criteria against the requirements
-        reported as met by task-work.
+        reported as met by task-work. Produces structured per-criterion
+        verification results consumed by ``_display_criteria_progress``
+        and ``_count_criteria_passed`` in the orchestrator.
 
         Parameters
         ----------
@@ -973,20 +1058,37 @@ class CoachValidator:
         Returns
         -------
         RequirementsValidation
-            Validation result with met/missing criteria
+            Validation result with met/missing criteria and per-criterion results
         """
         acceptance_criteria = task.get("acceptance_criteria", [])
         requirements_met = task_work_results.get("requirements_met", [])
 
-        # Normalize criteria for comparison (lowercase, strip whitespace)
-        normalized_criteria = {c.lower().strip() for c in acceptance_criteria}
+        # Normalize requirements_met for comparison (lowercase, strip whitespace)
         normalized_met = {r.lower().strip() for r in requirements_met}
 
-        # Find missing criteria
-        missing = [
-            c for c in acceptance_criteria
-            if c.lower().strip() not in normalized_met
-        ]
+        # Build per-criterion structured results
+        criteria_results: List[CriterionResult] = []
+        missing: List[str] = []
+
+        for i, criterion_text in enumerate(acceptance_criteria):
+            criterion_id = f"AC-{i+1:03d}"
+            normalized = criterion_text.lower().strip()
+
+            if normalized in normalized_met:
+                result_str = "verified"
+                evidence = f"Matched in Player requirements_met: '{criterion_text}'"
+            else:
+                result_str = "rejected"
+                evidence = f"Not found in Player requirements_met"
+                missing.append(criterion_text)
+
+            criteria_results.append(CriterionResult(
+                criterion_id=criterion_id,
+                criterion_text=criterion_text,
+                result=result_str,
+                status=result_str,
+                evidence=evidence,
+            ))
 
         criteria_met_count = len(acceptance_criteria) - len(missing)
 
@@ -995,6 +1097,7 @@ class CoachValidator:
             criteria_met=criteria_met_count,
             all_criteria_met=len(missing) == 0,
             missing=missing,
+            criteria_results=criteria_results,
         )
 
         logger.debug(
@@ -1090,7 +1193,10 @@ class CoachValidator:
                 return f"pytest {files_str} -v --tb=short"
 
             # No task-specific tests found via any method
-            logger.info(f"No task-specific tests found for {task_id}, skipping independent verification")
+            logger.info(
+                f"No task-specific tests found for {task_id}, skipping independent verification. "
+                f"Glob pattern tried: {pattern}"
+            )
             return None
 
         # Fallback to original detection logic
@@ -1251,8 +1357,9 @@ class CoachValidator:
         """
         Check for zero-test anomaly: all_passed=true with no tests actually executed.
 
-        Returns a warning issue (not blocking) when a feature task reports quality
-        gates as passed but has zero test execution and no coverage data.
+        Returns an error (blocking) or warning (non-blocking) issue based on
+        profile.zero_test_blocking when a task reports quality gates as passed
+        but has zero test execution and no coverage data.
 
         Parameters
         ----------
@@ -1275,12 +1382,14 @@ class CoachValidator:
         coverage = quality_gates.get("coverage")
 
         if all_passed is True and tests_passed_count == 0 and coverage is None:
-            logger.warning(
+            severity = "error" if profile.zero_test_blocking else "warning"
+            log_func = logger.error if profile.zero_test_blocking else logger.warning
+            log_func(
                 f"Zero-test anomaly: all_passed=true but tests_passed=0 and coverage=null. "
                 f"Player may have reported quality gates as passed without running tests."
             )
             return [{
-                "severity": "warning",
+                "severity": severity,
                 "category": "zero_test_anomaly",
                 "description": (
                     "Quality gates reported as passed but no tests were executed "
@@ -1646,6 +1755,7 @@ class CoachValidator:
 __all__ = [
     "CoachValidator",
     "CoachValidationResult",
+    "CriterionResult",
     "QualityGateStatus",
     "IndependentTestResult",
     "RequirementsValidation",

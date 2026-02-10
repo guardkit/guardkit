@@ -10,33 +10,49 @@ complexity: 7
 complexity_score: 7
 type: integration
 domain_tags:
-  - integration-tests
-  - end-to-end
-  - feature-plan-pipeline
-  - technology-seams
+- integration-tests
+- end-to-end
+- feature-plan-pipeline
+- technology-seams
 files_to_create:
-  - tests/integration/test_feature_plan_pipeline.py
-  - tests/integration/test_planning_module_seams.py
-  - tests/fixtures/sample-research-spec.md
+- tests/integration/test_feature_plan_pipeline.py
+- tests/integration/test_planning_module_seams.py
+- tests/fixtures/sample-research-spec.md
 files_to_modify: []
 files_not_to_touch:
-  - guardkit/planning/
-  - docs/
+- guardkit/planning/
+- docs/
 dependencies:
-  - TASK-FP002-001
-  - TASK-FP002-002
-  - TASK-FP002-003
-  - TASK-FP002-004
-  - TASK-FP002-005
-  - TASK-FP002-006
+- TASK-FP002-001
+- TASK-FP002-002
+- TASK-FP002-003
+- TASK-FP002-004
+- TASK-FP002-005
+- TASK-FP002-006
 relevant_decisions:
-  - D2
-  - D6
-  - D9
+- D2
+- D6
+- D9
 turn_budget:
   expected: 3
   max: 5
 graphiti_context_budget: 6000
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 25
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-FP-002
+  base_branch: main
+  started_at: '2026-02-10T18:06:55.496093'
+  last_updated: '2026-02-10T18:17:53.251378'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-02-10T18:06:55.496093'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-FP002-011: Integration and End-to-End Tests

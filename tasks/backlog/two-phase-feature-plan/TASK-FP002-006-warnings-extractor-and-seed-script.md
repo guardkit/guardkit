@@ -10,27 +10,43 @@ complexity: 3
 complexity_score: 3
 type: implementation
 domain_tags:
-  - warnings
-  - graphiti-seeding
-  - shell-scripts
+- warnings
+- graphiti-seeding
+- shell-scripts
 files_to_create:
-  - guardkit/planning/warnings_extractor.py
-  - guardkit/planning/seed_script_generator.py
-  - tests/unit/test_warnings_extractor.py
-  - tests/unit/test_seed_script_generator.py
+- guardkit/planning/warnings_extractor.py
+- guardkit/planning/seed_script_generator.py
+- tests/unit/test_warnings_extractor.py
+- tests/unit/test_seed_script_generator.py
 files_to_modify: []
 files_not_to_touch:
-  - scripts/
-  - docs/warnings/
+- scripts/
+- docs/warnings/
 dependencies:
-  - TASK-FP002-001
-  - TASK-FP002-003
+- TASK-FP002-001
+- TASK-FP002-003
 relevant_decisions:
-  - D7
+- D7
 turn_budget:
   expected: 1
   max: 3
 graphiti_context_budget: 2000
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 25
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-FP-002
+  base_branch: main
+  started_at: '2026-02-10T18:01:52.554953'
+  last_updated: '2026-02-10T18:06:55.460078'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-02-10T18:01:52.554953'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-FP002-006: Warnings Extractor and Seed Script Generator

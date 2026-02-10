@@ -1,0 +1,63 @@
+{
+  "task_id": "TASK-AQG-003",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/autobuild.py",
+    "guardkit/orchestrator/feature_orchestrator.py",
+    "tests/unit/test_autobuild_orchestrator.py"
+  ],
+  "files_created": [],
+  "tests_written": [
+    "tests/unit/test_autobuild_orchestrator.py::TestConstructor::test_constructor_with_feature_id",
+    "tests/unit/test_autobuild_orchestrator.py::TestConstructor::test_constructor_default_feature_id_none",
+    "tests/unit/test_autobuild_orchestrator.py::TestConstructor::test_extract_feature_id_uses_provided_feature_id",
+    "tests/unit/test_autobuild_orchestrator.py::TestConstructor::test_extract_feature_id_regex_alphanumeric_prefix",
+    "tests/unit/test_autobuild_orchestrator.py::TestConstructor::test_extract_feature_id_regex_alpha_only_prefix",
+    "tests/unit/test_autobuild_orchestrator.py::TestConstructor::test_extract_feature_id_fallback_to_unknown"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "15 passed in TestConstructor (6 new tests), 87 total passed, 12 pre-existing failures",
+  "implementation_notes": "Added feature_id parameter to AutoBuildOrchestrator.__init__() to enable feature ID propagation from FeatureOrchestrator. Updated _extract_feature_id() to check self._feature_id first (takes precedence over regex), then improved regex from r'TASK-([A-Z]+)-' to r'TASK-([A-Z][A-Z0-9]*)-' to match alphanumeric prefixes like FP002. Modified FeatureOrchestrator._execute_task() to pass feature_id=feature.id when creating AutoBuildOrchestrator. All 6 new tests pass, verifying: (1) feature_id parameter storage, (2) default None behavior, (3) precedence over regex extraction, (4) alphanumeric prefix handling, (5) alpha-only prefix handling, (6) fallback to FEAT-UNKNOWN.",
+  "concerns": [],
+  "requirements_addressed": [
+    "AC1: Turn states will use correct feature ID when run via FeatureOrchestrator (feature_id parameter passed)",
+    "AC2: Standalone AutoBuild falls back to regex extraction or FEAT-UNKNOWN (default None + improved regex)",
+    "AC3: No regressions in existing tests (87 passed, 12 pre-existing failures unchanged)"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC1",
+      "criterion_text": "Turn states use correct feature ID (e.g., TURN-FEAT-FP-002-1) when run via feature orchestrator",
+      "status": "complete",
+      "evidence": "Added feature_id parameter to AutoBuildOrchestrator.__init__() and wired FeatureOrchestrator to pass feature.id. Updated _extract_feature_id() to check self._feature_id first, ensuring provided feature ID takes precedence over regex extraction.",
+      "test_file": "tests/unit/test_autobuild_orchestrator.py",
+      "implementation_files": [
+        "guardkit/orchestrator/autobuild.py",
+        "guardkit/orchestrator/feature_orchestrator.py"
+      ]
+    },
+    {
+      "criterion_id": "AC2",
+      "criterion_text": "Standalone AutoBuild (no feature context) still falls back to regex extraction or FEAT-UNKNOWN",
+      "status": "complete",
+      "evidence": "feature_id parameter defaults to None, preserving backward compatibility. Updated regex in _extract_feature_id() from r'TASK-([A-Z]+)-' to r'TASK-([A-Z][A-Z0-9]*)-' to handle alphanumeric prefixes like FP002. Falls back to FEAT-UNKNOWN when regex fails.",
+      "test_file": "tests/unit/test_autobuild_orchestrator.py",
+      "implementation_files": [
+        "guardkit/orchestrator/autobuild.py"
+      ]
+    },
+    {
+      "criterion_id": "AC3",
+      "criterion_text": "No regressions in existing AutoBuild orchestrator tests",
+      "status": "complete",
+      "evidence": "Ran full test suite: 87 passed (including 15 TestConstructor tests with 6 new), 12 pre-existing failures (git worktree dependencies + SDK timeout). No new failures introduced.",
+      "test_file": "tests/unit/test_autobuild_orchestrator.py",
+      "implementation_files": [
+        "guardkit/orchestrator/autobuild.py",
+        "guardkit/orchestrator/feature_orchestrator.py"
+      ]
+    }
+  ]
+}
