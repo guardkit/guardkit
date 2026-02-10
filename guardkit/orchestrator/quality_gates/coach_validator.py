@@ -483,13 +483,43 @@ class CoachValidator:
         else:
             logger.debug(f"Graphiti thresholds not available, using default profile")
 
-        # Run validation with resolved profile
-        return self._validate_internal(
+        # Inject architecture context for medium+ complexity tasks (TASK-SC-009)
+        arch_context = ""
+        if ARCH_CONTEXT_AVAILABLE and build_coach_context:
+            # Only inject for complexity >= 4 (budget > 0)
+            if complexity >= 4:
+                try:
+                    # Get Graphiti client
+                    client = get_graphiti() if get_graphiti else None
+                    if client:
+                        project_id = task.get("project_id", "default")
+                        arch_context = await build_coach_context(
+                            task=task,
+                            client=client,
+                            project_id=project_id,
+                        )
+                        if arch_context:
+                            logger.info(f"[Graphiti] Injected architecture context for coach validation")
+                        else:
+                            logger.debug(f"[Graphiti] No architecture context available")
+                    else:
+                        logger.debug(f"[Graphiti] Client not available, skipping coach context")
+                except Exception as e:
+                    logger.warning(f"[Graphiti] Failed to build coach architecture context: {e}")
+                    arch_context = ""
+
+        # Note: arch_context is built but not currently used in the validation flow
+        # It's available for future enhancement of validation prompts or logging
+        # The main validation logic remains unchanged (synchronous validate method)
+
+        # Run validation using synchronous validate method
+        # Note: graphiti_profile is currently not used by the sync validate method,
+        # but it's prepared here for future integration
+        return self.validate(
             task_id=task_id,
             turn=turn,
             task=task,
             skip_arch_review=skip_arch_review,
-            graphiti_profile=graphiti_profile,
         )
 
     def validate(

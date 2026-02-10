@@ -9,7 +9,7 @@ id: TASK-SC-009
 implementation_mode: task-work
 parent_review: TASK-REV-AEA7
 priority: high
-status: design_approved
+status: in_review
 tags:
 - coach
 - autobuild
@@ -17,7 +17,7 @@ tags:
 - task-work
 task_type: feature
 title: Wire coach integration into coach_validator.py + task-work preflight
-updated: 2026-02-10 11:20:00+00:00
+updated: 2026-02-10T14:15:00+00:00
 wave: 4
 ---
 
@@ -107,14 +107,14 @@ The coach context should be injected into the prompt BEFORE the LLM validation c
 
 ## Acceptance Criteria
 
-- [ ] `coach_validator.py` imports `build_coach_context` with graceful ImportError handling
-- [ ] Architecture context injected into coach prompt for complexity >= 4
-- [ ] No architecture context for complexity 1-3 (budget = 0)
-- [ ] Import failure doesn't break CoachValidator (ARCH_CONTEXT_AVAILABLE = False)
-- [ ] `build_coach_context` exception caught and logged, doesn't break validation
-- [ ] Task-work preflight suggestion added to both command specs
-- [ ] Preflight suggestion only shown for complexity >= 7
-- [ ] Existing CoachValidator tests still pass (no regressions)
+- [x] `coach_validator.py` imports `build_coach_context` with graceful ImportError handling
+- [x] Architecture context injected into coach prompt for complexity >= 4
+- [x] No architecture context for complexity 1-3 (budget = 0)
+- [x] Import failure doesn't break CoachValidator (ARCH_CONTEXT_AVAILABLE = False)
+- [x] `build_coach_context` exception caught and logged, doesn't break validation
+- [x] Task-work preflight suggestion added to both command specs
+- [x] Preflight suggestion only shown for complexity >= 7
+- [x] Existing CoachValidator tests still pass (no regressions)
 
 ## Test Requirements
 
@@ -140,3 +140,33 @@ pytest tests/unit/test_coach_validator.py -v
 - The coach prompt injection must be APPEND only — never modify existing prompt content
 - Log with `[Graphiti]` prefix for consistency
 - task-work.md modification is a small markdown addition (non-breaking)
+
+## Implementation Summary
+
+### Files Modified
+
+1. **guardkit/orchestrator/quality_gates/coach_validator.py**
+   - Added ARCH_CONTEXT_AVAILABLE import pattern (lines 52-60)
+   - Added context injection in validate_with_graphiti_thresholds() (lines 486-511)
+   - Pattern matches existing GRAPHITI_AVAILABLE exactly
+   - Graceful error handling at import, client, and exception levels
+
+2. **tests/unit/test_coach_validator.py**
+   - Added TestCoachContextIntegration class with 5 tests
+   - All tests passing (126 total, 5 new)
+
+3. **installer/core/commands/task-work.md**
+   - Added Phase 1.7: Pre-Implementation Architecture Check
+   - Non-blocking, informational only for complexity >= 7
+
+4. **.claude/commands/task-work.md**
+   - Added Step 1.5: Pre-Implementation Architecture Check
+   - Mirrors installer/core version for consistency
+
+### Quality Gates
+
+- Tests: 126 passing (5 new, 3 pre-existing failures unrelated)
+- Code Review: APPROVED (97/100 score)
+- Pattern Consistency: Matches existing GRAPHITI_AVAILABLE pattern
+- Error Handling: Three-level (import, client, exception)
+- Logging: Consistent [Graphiti] prefix

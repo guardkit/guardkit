@@ -52,6 +52,30 @@ Extract:
   - Technology stack
 ```
 
+### Step 1.5: Pre-Implementation Architecture Check (Complexity >= 7)
+
+For high-complexity tasks (complexity score 7 or higher), an informational message displays available architecture context:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📐 PRE-IMPLEMENTATION ARCHITECTURE CHECK
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This is a high-complexity task. Architecture context available:
+
+  /impact-analysis TASK-XXX - see what this task affects
+  /system-overview - review current architecture
+
+Proceeding with task-work...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**Key Points:**
+- Non-blocking - no user action required
+- Informational only - does not affect workflow
+- Automatically skipped for complexity < 7
+- Gracefully skipped if Graphiti unavailable
+
 ### Step 2: Mode-Specific Implementation
 
 #### Standard Mode Flow

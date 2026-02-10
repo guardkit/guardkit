@@ -2040,6 +2040,87 @@ Phase 1.6 is skipped when:
 
 **See**: [Clarifying Questions Feature](../../tasks/backlog/clarifying-questions/) for complete implementation details.
 
+#### Phase 1.7: Pre-Implementation Architecture Check (Complexity >= 7)
+
+**Purpose**: Inform the user about available architecture context for high-complexity tasks before implementation begins.
+
+**Trigger**: After clarifying questions (Phase 1.6), before library context gathering (Phase 2.1)
+
+**Complexity Gating**:
+
+| Complexity | Behavior |
+|------------|----------|
+| 1-6 | Skip - no architecture check |
+| 7-10 | Display available architecture context |
+
+**Workflow**:
+
+**IF** task complexity < 7:
+```
+Skip to Phase 2.1
+```
+
+**ELSE IF** task complexity >= 7 AND Graphiti has architecture context:
+
+**DISPLAY** (informational only):
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📐 PRE-IMPLEMENTATION ARCHITECTURE CHECK
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This is a high-complexity task. Architecture context available:
+
+  /impact-analysis TASK-XXX - see what this task affects
+  /system-overview - review current architecture
+
+Proceeding with task-work...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**ELSE** (no architecture context):
+```
+Skip to Phase 2.1
+```
+
+**Key Characteristics**:
+- Non-blocking - does not wait for user input
+- Informational only - does not require action
+- Graceful degradation - skips if Graphiti unavailable
+- No timeout - immediately proceeds to next phase
+
+**Example**:
+
+For a complexity 8 refactoring task with architecture knowledge:
+```
+Phase 1.6: Clarifying Questions ✓
+Phase 1.7: Pre-Implementation Architecture Check
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📐 PRE-IMPLEMENTATION ARCHITECTURE CHECK
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This is a high-complexity task. Architecture context available:
+
+  /impact-analysis TASK-ABC-789 - see what this task affects
+  /system-overview - review current architecture
+
+Proceeding with task-work...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Phase 2.1: Library Context Gathering
+...
+```
+
+For a complexity 4 task:
+```
+Phase 1.6: Clarifying Questions ✓
+Phase 2.1: Library Context Gathering
+...
+(Phase 1.7 skipped - complexity < 7)
+```
+
+**Implementation Note**: This feature integrates with the coach_context_builder module (TASK-SC-009) to provide contextual architecture awareness before complex implementations begin.
+
 #### Phase 2.1: Library Context Gathering (NEW)
 
 **Purpose**: Proactively fetch library documentation for detected libraries before implementation planning. This prevents stub implementations by ensuring the AI has concrete API knowledge (imports, initialization, method signatures, return types).

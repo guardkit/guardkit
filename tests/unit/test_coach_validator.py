@@ -2493,9 +2493,10 @@ class TestCoachContextIntegration:
             # Verify build_coach_context was called with correct parameters
             assert mock_build.called, "build_coach_context should be called for complexity 5"
             call_args = mock_build.call_args
-            assert call_args[0][0] == task  # First positional arg is task
-            assert call_args[0][1] == mock_client  # Second is client
-            assert call_args[0][2] == "test-project"  # Third is project_id
+            # Check keyword arguments (called with task=, client=, project_id=)
+            assert call_args.kwargs["task"] == task
+            assert call_args.kwargs["client"] == mock_client
+            assert call_args.kwargs["project_id"] == "test-project"
 
     @pytest.mark.asyncio
     async def test_coach_context_skipped_simple_task(self, tmp_worktree, task_work_results_dir):

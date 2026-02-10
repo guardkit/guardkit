@@ -21,6 +21,11 @@ from guardkit.cli.graphiti import graphiti
 from guardkit.cli.init import init
 from guardkit.cli.review import review
 from guardkit.cli.system_plan import system_plan
+from guardkit.cli.system_context import (
+    system_overview,
+    impact_analysis,
+    context_switch,
+)
 
 # Load .env files automatically
 # Priority: .env in current directory, then traverse up to find project root
@@ -112,6 +117,11 @@ cli.add_command(review)
 
 # Add System-Plan command
 cli.add_command(system_plan)
+
+# Add System Context Read commands
+cli.add_command(system_overview)
+cli.add_command(impact_analysis)
+cli.add_command(context_switch)
 
 
 # ============================================================================
