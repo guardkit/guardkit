@@ -1,36 +1,37 @@
 ---
-id: TASK-FP002-008
-title: "Documentation: Two-Phase Workflow Guide"
-task_type: documentation
-parent_review: TASK-REV-FP002
-feature_id: FEAT-FP-002
-wave: 4
-implementation_mode: task-work
 complexity: 4
 complexity_score: 4
-type: documentation
-domain_tags:
-  - documentation
-  - two-phase-workflow
-  - guides
-files_to_create:
-  - docs/guides/two-phase-workflow.md
-files_to_modify: []
-files_not_to_touch:
-  - guardkit/
-  - tests/
 dependencies:
-  - TASK-FP002-007
+- TASK-FP002-007
+domain_tags:
+- documentation
+- two-phase-workflow
+- guides
+feature_id: FEAT-FP-002
+files_not_to_touch:
+- guardkit/
+- tests/
+files_to_create:
+- docs/guides/two-phase-workflow.md
+files_to_modify: []
+graphiti_context_budget: 4000
+id: TASK-FP002-008
+implementation_mode: task-work
+parent_review: TASK-REV-FP002
 relevant_decisions:
-  - D1
-  - D2
-  - D6
-  - D7
-  - D8
+- D1
+- D2
+- D6
+- D7
+- D8
+status: design_approved
+task_type: documentation
+title: 'Documentation: Two-Phase Workflow Guide'
 turn_budget:
   expected: 2
   max: 4
-graphiti_context_budget: 4000
+type: documentation
+wave: 4
 ---
 
 # TASK-FP002-008: Documentation — Two-Phase Workflow Guide
