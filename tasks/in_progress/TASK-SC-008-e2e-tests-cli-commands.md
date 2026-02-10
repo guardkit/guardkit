@@ -1,21 +1,24 @@
 ---
-id: TASK-SC-008
-title: "E2E tests: CLI command invocation for all 3 commands"
-status: backlog
-created: 2026-02-10T11:20:00Z
-updated: 2026-02-10T11:20:00Z
-priority: high
-task_type: testing
-parent_review: TASK-REV-AEA7
-feature_id: FEAT-SC-001
-wave: 4
-implementation_mode: task-work
 complexity: 5
+created: 2026-02-10 11:20:00+00:00
 dependencies:
-  - TASK-SC-005
-  - TASK-SC-006
-  - TASK-SC-007
-tags: [e2e-tests, cli, commands]
+- TASK-SC-005
+- TASK-SC-006
+- TASK-SC-007
+feature_id: FEAT-SC-001
+id: TASK-SC-008
+implementation_mode: task-work
+parent_review: TASK-REV-AEA7
+priority: high
+status: design_approved
+tags:
+- e2e-tests
+- cli
+- commands
+task_type: testing
+title: 'E2E tests: CLI command invocation for all 3 commands'
+updated: 2026-02-10 11:20:00+00:00
+wave: 4
 ---
 
 # Task: E2E tests for CLI command invocation

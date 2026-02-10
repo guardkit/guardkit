@@ -1,20 +1,24 @@
 ---
-id: TASK-SC-009
-title: "Wire coach integration into coach_validator.py + task-work preflight"
-status: backlog
-created: 2026-02-10T11:20:00Z
-updated: 2026-02-10T11:20:00Z
-priority: high
-task_type: feature
-parent_review: TASK-REV-AEA7
-feature_id: FEAT-SC-001
-wave: 4
-implementation_mode: task-work
 complexity: 5
+created: 2026-02-10 11:20:00+00:00
 dependencies:
-  - TASK-SC-004
-  - TASK-SC-006
-tags: [coach, autobuild, integration, task-work]
+- TASK-SC-004
+- TASK-SC-006
+feature_id: FEAT-SC-001
+id: TASK-SC-009
+implementation_mode: task-work
+parent_review: TASK-REV-AEA7
+priority: high
+status: design_approved
+tags:
+- coach
+- autobuild
+- integration
+- task-work
+task_type: feature
+title: Wire coach integration into coach_validator.py + task-work preflight
+updated: 2026-02-10 11:20:00+00:00
+wave: 4
 ---
 
 # Task: Wire coach integration into coach_validator.py + task-work preflight

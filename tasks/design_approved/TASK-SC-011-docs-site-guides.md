@@ -1,19 +1,22 @@
 ---
-id: TASK-SC-011
-title: "Create docs site guides for system context commands"
-status: backlog
-created: 2026-02-10T11:40:00Z
-updated: 2026-02-10T11:40:00Z
-priority: medium
-task_type: documentation
-parent_review: TASK-REV-AEA7
-feature_id: FEAT-SC-001
-wave: 4
-implementation_mode: task-work
 complexity: 4
+created: 2026-02-10 11:40:00+00:00
 dependencies:
-  - TASK-SC-005
-tags: [documentation, docs-site, guides]
+- TASK-SC-005
+feature_id: FEAT-SC-001
+id: TASK-SC-011
+implementation_mode: task-work
+parent_review: TASK-REV-AEA7
+priority: medium
+status: design_approved
+tags:
+- documentation
+- docs-site
+- guides
+task_type: documentation
+title: Create docs site guides for system context commands
+updated: 2026-02-10 11:40:00+00:00
+wave: 4
 ---
 
 # Task: Create docs site guides for system context commands

@@ -49,6 +49,16 @@ except ImportError:
     GRAPHITI_AVAILABLE = False
     get_quality_gate_config = None
 
+# Optional coach context integration (TASK-SC-009)
+try:
+    from guardkit.planning.coach_context_builder import build_coach_context
+    from guardkit.knowledge.graphiti_client import get_graphiti
+    ARCH_CONTEXT_AVAILABLE = True
+except ImportError:
+    ARCH_CONTEXT_AVAILABLE = False
+    build_coach_context = None
+    get_graphiti = None
+
 logger = logging.getLogger(__name__)
 
 # Task type aliases for backward compatibility with legacy task_type values

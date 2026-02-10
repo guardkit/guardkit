@@ -1,0 +1,21 @@
+{
+  "task_id": "TASK-SC-011",
+  "turn": 1,
+  "files_modified": [
+    "tasks/backlog/TASK-SC-008-e2e-tests-cli-commands.md",
+    "tasks/backlog/TASK-SC-009-wire-coach-integration.md",
+    "tasks/backlog/TASK-SC-011-docs-site-guides.md",
+    "tests/unit/test_coach_validator.py"
+  ],
+  "files_created": [
+    "`system-overview-guide.md`"
+  ],
+  "tests_written": [],
+  "tests_run": false,
+  "tests_passed": false,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation",
+  "concerns": [],
+  "requirements_addressed": [],
+  "requirements_remaining": []
+}

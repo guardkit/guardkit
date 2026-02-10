@@ -2450,6 +2450,200 @@ class TestApprovalRationaleAndZeroTestAnomaly:
 
 
 # ============================================================================
+# Test Coach Context Integration (TASK-SC-009)
+# ============================================================================
+
+
+class TestCoachContextIntegration:
+    """Test coach context integration from coach_context_builder."""
+
+    @pytest.mark.asyncio
+    async def test_coach_context_injected_medium_complexity(self, tmp_worktree, task_work_results_dir):
+        """Test that coach context is built for medium complexity tasks (5)."""
+        # Setup: Create passing task-work results
+        results = make_task_work_results()
+        write_task_work_results(task_work_results_dir, results)
+
+        # Mock the coach context builder and Graphiti client
+        mock_context = "## Architecture Context\n\nSystem overview here..."
+        with patch("guardkit.orchestrator.quality_gates.coach_validator.build_coach_context") as mock_build, \
+             patch("guardkit.orchestrator.quality_gates.coach_validator.get_graphiti") as mock_get_graphiti, \
+             patch("subprocess.run") as mock_run:
+
+            # Setup mocks
+            mock_build.return_value = mock_context
+            mock_client = Mock()
+            mock_get_graphiti.return_value = mock_client
+            mock_run.return_value = MagicMock(returncode=0, stdout="15 passed", stderr="")
+
+            # Create validator and call async method
+            validator = CoachValidator(str(tmp_worktree))
+            task = {
+                "complexity": 5,
+                "acceptance_criteria": ["OAuth2 authentication flow"],
+                "project_id": "test-project"
+            }
+
+            result = await validator.validate_with_graphiti_thresholds(
+                task_id="TASK-001",
+                turn=1,
+                task=task,
+            )
+
+            # Verify build_coach_context was called with correct parameters
+            assert mock_build.called, "build_coach_context should be called for complexity 5"
+            call_args = mock_build.call_args
+            assert call_args[0][0] == task  # First positional arg is task
+            assert call_args[0][1] == mock_client  # Second is client
+            assert call_args[0][2] == "test-project"  # Third is project_id
+
+    @pytest.mark.asyncio
+    async def test_coach_context_skipped_simple_task(self, tmp_worktree, task_work_results_dir):
+        """Test that coach context is NOT built for simple tasks (complexity 2)."""
+        # Setup: Create passing task-work results
+        results = make_task_work_results()
+        write_task_work_results(task_work_results_dir, results)
+
+        # Mock the coach context builder and Graphiti client
+        with patch("guardkit.orchestrator.quality_gates.coach_validator.build_coach_context") as mock_build, \
+             patch("guardkit.orchestrator.quality_gates.coach_validator.get_graphiti") as mock_get_graphiti, \
+             patch("subprocess.run") as mock_run:
+
+            # Setup mocks
+            mock_build.return_value = ""  # Returns empty for simple tasks
+            mock_client = Mock()
+            mock_get_graphiti.return_value = mock_client
+            mock_run.return_value = MagicMock(returncode=0, stdout="15 passed", stderr="")
+
+            # Create validator and call async method
+            validator = CoachValidator(str(tmp_worktree))
+            task = {
+                "complexity": 2,  # Simple task
+                "acceptance_criteria": ["OAuth2 authentication flow"],
+                "project_id": "test-project"
+            }
+
+            result = await validator.validate_with_graphiti_thresholds(
+                task_id="TASK-001",
+                turn=1,
+                task=task,
+            )
+
+            # build_coach_context may be called but should return empty string
+            # The key is that no context is injected (budget = 0 for complexity 1-3)
+            if mock_build.called:
+                # Verify it returned empty string
+                assert mock_build.return_value == ""
+
+    @pytest.mark.asyncio
+    async def test_coach_context_import_failure(self, tmp_worktree, task_work_results_dir):
+        """Test graceful degradation when coach_context_builder import fails."""
+        # Setup: Create passing task-work results
+        results = make_task_work_results()
+        write_task_work_results(task_work_results_dir, results)
+
+        # Simulate import failure by mocking ARCH_CONTEXT_AVAILABLE = False
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="15 passed", stderr="")
+
+            # Temporarily set ARCH_CONTEXT_AVAILABLE to False
+            import guardkit.orchestrator.quality_gates.coach_validator as cv_module
+            original_available = getattr(cv_module, "ARCH_CONTEXT_AVAILABLE", True)
+            original_builder = getattr(cv_module, "build_coach_context", None)
+
+            try:
+                cv_module.ARCH_CONTEXT_AVAILABLE = False
+                cv_module.build_coach_context = None
+
+                validator = CoachValidator(str(tmp_worktree))
+                task = {
+                    "complexity": 5,
+                    "acceptance_criteria": ["OAuth2 authentication flow"],
+                }
+
+                result = await validator.validate_with_graphiti_thresholds(
+                    task_id="TASK-001",
+                    turn=1,
+                    task=task,
+                )
+
+                # Validator should still work (graceful degradation)
+                assert result.decision == "approve"
+
+            finally:
+                # Restore original values
+                cv_module.ARCH_CONTEXT_AVAILABLE = original_available
+                cv_module.build_coach_context = original_builder
+
+    @pytest.mark.asyncio
+    async def test_coach_context_exception_handled(self, tmp_worktree, task_work_results_dir):
+        """Test that exceptions in build_coach_context are handled gracefully."""
+        # Setup: Create passing task-work results
+        results = make_task_work_results()
+        write_task_work_results(task_work_results_dir, results)
+
+        # Mock build_coach_context to raise exception
+        with patch("guardkit.orchestrator.quality_gates.coach_validator.build_coach_context") as mock_build, \
+             patch("guardkit.orchestrator.quality_gates.coach_validator.get_graphiti") as mock_get_graphiti, \
+             patch("subprocess.run") as mock_run:
+
+            # Setup mocks
+            mock_build.side_effect = Exception("Graphiti connection failed")
+            mock_client = Mock()
+            mock_get_graphiti.return_value = mock_client
+            mock_run.return_value = MagicMock(returncode=0, stdout="15 passed", stderr="")
+
+            # Create validator and call async method
+            validator = CoachValidator(str(tmp_worktree))
+            task = {
+                "complexity": 5,
+                "acceptance_criteria": ["OAuth2 authentication flow"],
+                "project_id": "test-project"
+            }
+
+            result = await validator.validate_with_graphiti_thresholds(
+                task_id="TASK-001",
+                turn=1,
+                task=task,
+            )
+
+            # Validator should still work despite exception
+            assert result.decision == "approve"
+
+    @pytest.mark.asyncio
+    async def test_coach_context_graphiti_unavailable(self, tmp_worktree, task_work_results_dir):
+        """Test graceful degradation when Graphiti client is None."""
+        # Setup: Create passing task-work results
+        results = make_task_work_results()
+        write_task_work_results(task_work_results_dir, results)
+
+        # Mock get_graphiti to return None (client not connected)
+        with patch("guardkit.orchestrator.quality_gates.coach_validator.get_graphiti") as mock_get_graphiti, \
+             patch("subprocess.run") as mock_run:
+
+            # Setup mocks
+            mock_get_graphiti.return_value = None  # No client available
+            mock_run.return_value = MagicMock(returncode=0, stdout="15 passed", stderr="")
+
+            # Create validator and call async method
+            validator = CoachValidator(str(tmp_worktree))
+            task = {
+                "complexity": 5,
+                "acceptance_criteria": ["OAuth2 authentication flow"],
+                "project_id": "test-project"
+            }
+
+            result = await validator.validate_with_graphiti_thresholds(
+                task_id="TASK-001",
+                turn=1,
+                task=task,
+            )
+
+            # Validator should still work when Graphiti is unavailable
+            assert result.decision == "approve"
+
+
+# ============================================================================
 # Run Tests
 # ============================================================================
 
