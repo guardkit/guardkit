@@ -24,7 +24,7 @@ relevant_decisions:
 - D6
 - D7
 - D8
-status: design_approved
+status: in_review
 task_type: documentation
 title: 'Documentation: Two-Phase Workflow Guide'
 turn_budget:
@@ -42,13 +42,13 @@ Create comprehensive documentation explaining the two-phase workflow model: Phas
 
 ## Acceptance Criteria (Machine-Verifiable)
 
-- [ ] File exists: `docs/guides/two-phase-workflow.md`
-- [ ] Document contains sections: Overview, Phase 1 (Research & Planning), Phase 2 (Implementation), Research Template Guide, Feature-Plan Flags Reference, Graphiti Seeding, Troubleshooting
-- [ ] Contains at least 2 complete command examples showing the full workflow
-- [ ] References `/feature-plan --from-spec` and `--target local-model` flags
-- [ ] References `scripts/seed-FEAT-XXX.sh` and `guardkit feature-build`
-- [ ] Contains ASCII diagram showing the two-phase data flow
-- [ ] Word count > 1500 (comprehensive guide, not a stub)
+- [x] File exists: `docs/guides/two-phase-workflow.md`
+- [x] Document contains sections: Overview, Phase 1 (Research & Planning), Phase 2 (Implementation), Research Template Guide, Feature-Plan Flags Reference, Graphiti Seeding, Troubleshooting
+- [x] Contains at least 2 complete command examples showing the full workflow
+- [x] References `/feature-plan --from-spec` and `--target local-model` flags
+- [x] References `scripts/seed-FEAT-XXX.sh` and `guardkit feature-build`
+- [x] Contains ASCII diagram showing the two-phase data flow
+- [x] Word count > 1500 (comprehensive guide, not a stub) - **Actual: 2509 words**
 
 ## Coach Validation Commands
 

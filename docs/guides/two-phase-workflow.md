@@ -293,10 +293,12 @@ After `/feature-plan --from-spec` generates tasks, you need to seed the knowledg
 
 `/feature-plan --from-spec` generates a seed script at:
 ```
-.guardkit/seed/FEAT-{id}-seed.sh
+scripts/seed-FEAT-XXX.sh
 ```
 
-**Example seed script:**
+This can also be located at `.guardkit/seed/FEAT-{id}-seed.sh` depending on your project configuration.
+
+**Example seed script (`scripts/seed-FEAT-FP002.sh`):**
 
 ```bash
 #!/bin/bash
@@ -324,6 +326,9 @@ echo "✅ Graphiti seeding complete for FEAT-FP002"
 
 ```bash
 # Execute the seed script
+bash scripts/seed-FEAT-FP002.sh
+
+# Alternative location
 bash .guardkit/seed/FEAT-FP002-seed.sh
 
 # Or seed manually
