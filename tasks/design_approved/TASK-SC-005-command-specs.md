@@ -9,7 +9,7 @@ id: TASK-SC-005
 implementation_mode: task-work
 parent_review: TASK-REV-AEA7
 priority: high
-status: design_approved
+status: in_review
 tags:
 - commands
 - slash-commands
