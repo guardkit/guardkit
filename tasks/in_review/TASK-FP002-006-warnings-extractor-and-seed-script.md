@@ -1,36 +1,37 @@
 ---
-id: TASK-FP002-006
-title: Warnings Extractor and Seed Script Generator
-task_type: feature
-parent_review: TASK-REV-FP002
-feature_id: FEAT-FP-002
-wave: 2
-implementation_mode: task-work
 complexity: 3
 complexity_score: 3
-type: implementation
-domain_tags:
-  - warnings
-  - graphiti-seeding
-  - shell-scripts
-files_to_create:
-  - guardkit/planning/warnings_extractor.py
-  - guardkit/planning/seed_script_generator.py
-  - tests/unit/test_warnings_extractor.py
-  - tests/unit/test_seed_script_generator.py
-files_to_modify: []
-files_not_to_touch:
-  - scripts/
-  - docs/warnings/
 dependencies:
-  - TASK-FP002-001
-  - TASK-FP002-003
+- TASK-FP002-001
+- TASK-FP002-003
+domain_tags:
+- warnings
+- graphiti-seeding
+- shell-scripts
+feature_id: FEAT-FP-002
+files_not_to_touch:
+- scripts/
+- docs/warnings/
+files_to_create:
+- guardkit/planning/warnings_extractor.py
+- guardkit/planning/seed_script_generator.py
+- tests/unit/test_warnings_extractor.py
+- tests/unit/test_seed_script_generator.py
+files_to_modify: []
+graphiti_context_budget: 2000
+id: TASK-FP002-006
+implementation_mode: task-work
+parent_review: TASK-REV-FP002
 relevant_decisions:
-  - D7
+- D7
+status: design_approved
+task_type: feature
+title: Warnings Extractor and Seed Script Generator
 turn_budget:
   expected: 1
   max: 3
-graphiti_context_budget: 2000
+type: implementation
+wave: 2
 ---
 
 # TASK-FP002-006: Warnings Extractor and Seed Script Generator

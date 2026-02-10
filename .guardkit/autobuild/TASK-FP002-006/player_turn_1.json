@@ -1,0 +1,27 @@
+{
+  "task_id": "TASK-FP002-006",
+  "turn": 1,
+  "files_modified": [
+    "tasks/backlog/TASK-FP002-006-warnings-extractor-and-seed-script.md"
+  ],
+  "files_created": [
+    ".claude/task-plans/TASK-FP002-006-implementation-plan.md",
+    ".guardkit/autobuild/TASK-FP002-005/checkpoints.json",
+    ".guardkit/autobuild/TASK-FP002-006/task_work_results.json",
+    ".guardkit/autobuild/TASK-FP002-006/turn_context.json",
+    "guardkit/planning/seed_script_generator.py",
+    "guardkit/planning/warnings_extractor.py",
+    "tasks/in_review/TASK-FP002-006-warnings-extractor-and-seed-script.md",
+    "tests/unit/test_seed_script_generator.py",
+    "tests/unit/test_warnings_extractor.py"
+  ],
+  "tests_written": [],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation",
+  "concerns": [],
+  "requirements_addressed": [],
+  "requirements_remaining": [],
+  "tests_passed_count": 27
+}
