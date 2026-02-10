@@ -1,0 +1,156 @@
+id: FEAT-SC-001
+name: System Context Read Commands
+description: Three read-only commands (/system-overview, /impact-analysis, /context-switch)
+  that consume architecture knowledge from /system-plan, plus AutoBuild coach integration
+  for architecture-aware code review
+created: '2026-02-10T11:20:47.906331'
+status: planned
+complexity: 7
+estimated_tasks: 12
+tasks:
+- id: TASK-SC-001
+  name: Implement system_overview.py module
+  file_path: tasks/backlog/system-context-read-commands/TASK-SC-001-system-overview-module.md
+  complexity: 5
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-SC-002
+  name: Implement context_switch.py and register bdd_scenarios group
+  file_path: tasks/backlog/system-context-read-commands/TASK-SC-002-context-switch-and-bdd-group.md
+  complexity: 5
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-SC-003
+  name: Implement impact_analysis.py module
+  file_path: tasks/backlog/system-context-read-commands/TASK-SC-003-impact-analysis-module.md
+  complexity: 6
+  dependencies:
+  - TASK-SC-001
+  - TASK-SC-002
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 113
+- id: TASK-SC-004
+  name: Implement coach_context_builder.py module
+  file_path: tasks/backlog/system-context-read-commands/TASK-SC-004-coach-context-builder.md
+  complexity: 4
+  dependencies:
+  - TASK-SC-001
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-SC-005
+  name: Create command markdown specs for all 3 commands
+  file_path: tasks/backlog/system-context-read-commands/TASK-SC-005-command-specs.md
+  complexity: 4
+  dependencies:
+  - TASK-SC-001
+  - TASK-SC-002
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-SC-006
+  name: Integration tests - Graphiti seams
+  file_path: tasks/backlog/system-context-read-commands/TASK-SC-006-integration-tests-graphiti-seams.md
+  complexity: 6
+  dependencies:
+  - TASK-SC-001
+  - TASK-SC-003
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 113
+- id: TASK-SC-007
+  name: Integration tests - config and coach wiring
+  file_path: tasks/backlog/system-context-read-commands/TASK-SC-007-integration-tests-config-coach.md
+  complexity: 5
+  dependencies:
+  - TASK-SC-002
+  - TASK-SC-004
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-SC-008
+  name: E2E tests - CLI command invocation
+  file_path: tasks/backlog/system-context-read-commands/TASK-SC-008-e2e-tests-cli-commands.md
+  complexity: 5
+  dependencies:
+  - TASK-SC-005
+  - TASK-SC-006
+  - TASK-SC-007
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-SC-009
+  name: Wire coach integration into coach_validator.py
+  file_path: tasks/backlog/system-context-read-commands/TASK-SC-009-wire-coach-integration.md
+  complexity: 5
+  dependencies:
+  - TASK-SC-004
+  - TASK-SC-006
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-SC-010
+  name: Update exports and acceptance test sweep
+  file_path: tasks/backlog/system-context-read-commands/TASK-SC-010-exports-and-acceptance.md
+  complexity: 3
+  dependencies:
+  - TASK-SC-001
+  - TASK-SC-002
+  - TASK-SC-003
+  - TASK-SC-004
+  - TASK-SC-008
+  - TASK-SC-009
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+- id: TASK-SC-011
+  name: Create docs site guides for system context commands
+  file_path: tasks/backlog/system-context-read-commands/TASK-SC-011-docs-site-guides.md
+  complexity: 4
+  dependencies:
+  - TASK-SC-005
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-SC-012
+  name: Update mkdocs.yml nav and CLAUDE.md references
+  file_path: tasks/backlog/system-context-read-commands/TASK-SC-012-update-mkdocs-and-claude-md.md
+  complexity: 2
+  dependencies:
+  - TASK-SC-011
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 20
+orchestration:
+  parallel_groups:
+  - - TASK-SC-001
+    - TASK-SC-002
+  - - TASK-SC-003
+    - TASK-SC-004
+    - TASK-SC-005
+  - - TASK-SC-006
+    - TASK-SC-007
+  - - TASK-SC-008
+    - TASK-SC-009
+    - TASK-SC-011
+  - - TASK-SC-010
+    - TASK-SC-012
+  estimated_duration_minutes: 804
+  recommended_parallel: 3
