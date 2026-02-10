@@ -1,20 +1,23 @@
 ---
-id: TASK-SC-006
-title: "Integration tests: Graphiti seams (overview + impact)"
-status: backlog
-created: 2026-02-10T11:20:00Z
-updated: 2026-02-10T11:20:00Z
-priority: high
-task_type: testing
-parent_review: TASK-REV-AEA7
-feature_id: FEAT-SC-001
-wave: 3
-implementation_mode: task-work
 complexity: 6
+created: 2026-02-10 11:20:00+00:00
 dependencies:
-  - TASK-SC-001
-  - TASK-SC-003
-tags: [integration-tests, graphiti, seams]
+- TASK-SC-001
+- TASK-SC-003
+feature_id: FEAT-SC-001
+id: TASK-SC-006
+implementation_mode: task-work
+parent_review: TASK-REV-AEA7
+priority: high
+status: design_approved
+tags:
+- integration-tests
+- graphiti
+- seams
+task_type: testing
+title: 'Integration tests: Graphiti seams (overview + impact)'
+updated: 2026-02-10 11:20:00+00:00
+wave: 3
 ---
 
 # Task: Integration tests for Graphiti seams (overview + impact analysis)

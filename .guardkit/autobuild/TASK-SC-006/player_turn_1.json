@@ -1,0 +1,31 @@
+{
+  "task_id": "TASK-SC-006",
+  "turn": 1,
+  "files_modified": [
+    ".guardkit/autobuild/TASK-SC-003/checkpoints.json",
+    "tasks/backlog/TASK-SC-006-integration-tests-graphiti-seams.md",
+    "tasks/backlog/TASK-SC-007-integration-tests-config-coach.md"
+  ],
+  "files_created": [
+    ".claude/task-plans/TASK-SC-006-implementation-plan.md",
+    ".claude/task-plans/TASK-SC-007-implementation-plan.md",
+    ".guardkit/autobuild/TASK-SC-006/task_work_results.json",
+    ".guardkit/autobuild/TASK-SC-006/turn_context.json",
+    ".guardkit/autobuild/TASK-SC-007/turn_context.json",
+    "tasks/design_approved/TASK-SC-007-integration-tests-config-coach.md",
+    "tasks/in_review/TASK-SC-006-integration-tests-graphiti-seams.md",
+    "tests/integration/test_coach_context_integration.py",
+    "tests/integration/test_context_switch_config.py",
+    "tests/integration/test_impact_analysis_graphiti.py",
+    "tests/integration/test_system_overview_graphiti.py"
+  ],
+  "tests_written": [],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation",
+  "concerns": [],
+  "requirements_addressed": [],
+  "requirements_remaining": [],
+  "tests_passed_count": 36
+}

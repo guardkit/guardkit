@@ -1,20 +1,24 @@
 ---
-id: TASK-SC-007
-title: "Integration tests: config round-trip + coach validator wiring"
-status: backlog
-created: 2026-02-10T11:20:00Z
-updated: 2026-02-10T11:20:00Z
-priority: high
-task_type: testing
-parent_review: TASK-REV-AEA7
-feature_id: FEAT-SC-001
-wave: 3
-implementation_mode: task-work
 complexity: 5
+created: 2026-02-10 11:20:00+00:00
 dependencies:
-  - TASK-SC-002
-  - TASK-SC-004
-tags: [integration-tests, config, coach, seams]
+- TASK-SC-002
+- TASK-SC-004
+feature_id: FEAT-SC-001
+id: TASK-SC-007
+implementation_mode: task-work
+parent_review: TASK-REV-AEA7
+priority: high
+status: design_approved
+tags:
+- integration-tests
+- config
+- coach
+- seams
+task_type: testing
+title: 'Integration tests: config round-trip + coach validator wiring'
+updated: 2026-02-10 11:20:00+00:00
+wave: 3
 ---
 
 # Task: Integration tests for config round-trip and coach validator wiring
