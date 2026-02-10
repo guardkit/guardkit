@@ -1,0 +1,145 @@
+id: FEAT-FP-002
+name: Two-Phase Feature Plan Enhancements
+description: 'Enhanced /feature-plan for two-phase AI workflows: research with frontier
+  model, autonomous implementation with local model. Adds --from-spec, --target, --generate-adrs,
+  --generate-quality-gates flags.'
+created: '2026-02-10T12:47:29.615335'
+status: planned
+complexity: 7
+estimated_tasks: 11
+tasks:
+- id: TASK-FP002-001
+  name: Research Template Spec Parser
+  file_path: tasks/backlog/two-phase-feature-plan/TASK-FP002-001-research-template-spec-parser.md
+  complexity: 5
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-FP002-002
+  name: Target Mode Configuration
+  file_path: tasks/backlog/two-phase-feature-plan/TASK-FP002-002-target-mode-configuration.md
+  complexity: 3
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+- id: TASK-FP002-003
+  name: ADR File Generator
+  file_path: tasks/backlog/two-phase-feature-plan/TASK-FP002-003-adr-file-generator.md
+  complexity: 4
+  dependencies:
+  - TASK-FP002-001
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-FP002-004
+  name: Quality Gate YAML Generator
+  file_path: tasks/backlog/two-phase-feature-plan/TASK-FP002-004-quality-gate-yaml-generator.md
+  complexity: 5
+  dependencies:
+  - TASK-FP002-001
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-FP002-005
+  name: Task Metadata Enricher
+  file_path: tasks/backlog/two-phase-feature-plan/TASK-FP002-005-task-metadata-enricher.md
+  complexity: 5
+  dependencies:
+  - TASK-FP002-001
+  - TASK-FP002-002
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-FP002-006
+  name: Warnings Extractor and Seed Script Generator
+  file_path: tasks/backlog/two-phase-feature-plan/TASK-FP002-006-warnings-extractor-and-seed-script.md
+  complexity: 3
+  dependencies:
+  - TASK-FP002-001
+  - TASK-FP002-003
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+- id: TASK-FP002-007
+  name: Feature-Plan Command Integration
+  file_path: tasks/backlog/two-phase-feature-plan/TASK-FP002-007-feature-plan-command-integration.md
+  complexity: 7
+  dependencies:
+  - TASK-FP002-001
+  - TASK-FP002-002
+  - TASK-FP002-003
+  - TASK-FP002-004
+  - TASK-FP002-005
+  - TASK-FP002-006
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 170
+- id: TASK-FP002-008
+  name: Documentation Two-Phase Workflow Guide
+  file_path: tasks/backlog/two-phase-feature-plan/TASK-FP002-008-documentation-two-phase-workflow-guide.md
+  complexity: 4
+  dependencies:
+  - TASK-FP002-007
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-FP002-009
+  name: Documentation Feature-Plan Reference
+  file_path: tasks/backlog/two-phase-feature-plan/TASK-FP002-009-documentation-feature-plan-reference.md
+  complexity: 3
+  dependencies:
+  - TASK-FP002-007
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+- id: TASK-FP002-010
+  name: Documentation Research Template Guide
+  file_path: tasks/backlog/two-phase-feature-plan/TASK-FP002-010-documentation-research-template-guide.md
+  complexity: 3
+  dependencies:
+  - TASK-FP002-001
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+- id: TASK-FP002-011
+  name: Integration and End-to-End Tests
+  file_path: tasks/backlog/two-phase-feature-plan/TASK-FP002-011-integration-and-e2e-tests.md
+  complexity: 7
+  dependencies:
+  - TASK-FP002-001
+  - TASK-FP002-002
+  - TASK-FP002-003
+  - TASK-FP002-004
+  - TASK-FP002-005
+  - TASK-FP002-006
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 170
+orchestration:
+  parallel_groups:
+  - - TASK-FP002-001
+    - TASK-FP002-002
+  - - TASK-FP002-003
+    - TASK-FP002-004
+    - TASK-FP002-005
+    - TASK-FP002-010
+  - - TASK-FP002-006
+  - - TASK-FP002-007
+    - TASK-FP002-011
+  - - TASK-FP002-008
+    - TASK-FP002-009
+  estimated_duration_minutes: 797
+  recommended_parallel: 4
