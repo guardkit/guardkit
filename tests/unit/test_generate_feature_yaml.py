@@ -732,3 +732,99 @@ class TestValidateTaskPaths:
         errors = validate_task_paths(feature, tmp_path)
         assert len(errors) == 1
         assert "tasks/backlog/my-feature/TASK-XYZ-missing-task.md" in errors[0]
+
+
+# ============================================================================
+# 10. CLI Validation Tests (TASK-FIX-FP04)
+# ============================================================================
+
+class TestFeatureSlugValidation:
+    """Tests for --feature-slug validation in main()."""
+
+    def test_missing_feature_slug_exits_with_error(self, tmp_path, capsys):
+        """Test that missing --feature-slug exits with clear error when tasks provided."""
+        from generate_feature_yaml import main
+
+        sys.argv = [
+            "generate_feature_yaml.py",
+            "--name", "Test Feature",
+            "--task", "TASK-001:Create service:5:",
+            "--base-path", str(tmp_path),
+        ]
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "--feature-slug is required" in captured.err
+        assert "Example:" in captured.err
+
+    def test_empty_feature_slug_exits_with_error(self, tmp_path, capsys):
+        """Test that explicitly empty --feature-slug is rejected."""
+        from generate_feature_yaml import main
+
+        sys.argv = [
+            "generate_feature_yaml.py",
+            "--name", "Test Feature",
+            "--task", "TASK-001:Create service:5:",
+            "--feature-slug", "",
+            "--base-path", str(tmp_path),
+        ]
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "--feature-slug is required" in captured.err
+
+    def test_provided_feature_slug_succeeds(self, tmp_path, capsys):
+        """Test that providing --feature-slug allows normal execution."""
+        from generate_feature_yaml import main
+
+        sys.argv = [
+            "generate_feature_yaml.py",
+            "--name", "Test Feature",
+            "--task", "TASK-001:Create service:5:",
+            "--feature-slug", "my-feature",
+            "--base-path", str(tmp_path),
+            "--quiet",
+        ]
+
+        # Should not raise SystemExit
+        main()
+
+        # Verify output file was created
+        features_dir = tmp_path / ".guardkit" / "features"
+        assert features_dir.exists()
+        yaml_files = list(features_dir.glob("FEAT-*.yaml"))
+        assert len(yaml_files) == 1
+
+    def test_all_generated_tasks_have_non_empty_file_path(self, tmp_path):
+        """Test that all tasks in generated YAML have non-empty file_path values."""
+        from generate_feature_yaml import main
+        import yaml
+
+        sys.argv = [
+            "generate_feature_yaml.py",
+            "--name", "Test Feature",
+            "--task", "TASK-001:Create service:5:",
+            "--task", "TASK-002:Add tests:3:TASK-001",
+            "--feature-slug", "my-feature",
+            "--base-path", str(tmp_path),
+            "--quiet",
+        ]
+
+        main()
+
+        features_dir = tmp_path / ".guardkit" / "features"
+        yaml_files = list(features_dir.glob("FEAT-*.yaml"))
+        assert len(yaml_files) == 1
+
+        with open(yaml_files[0]) as f:
+            data = yaml.safe_load(f)
+
+        for task in data["tasks"]:
+            assert task["file_path"], f"Task {task['id']} has empty file_path"
+            assert task["file_path"].startswith("tasks/backlog/my-feature/")

@@ -641,10 +641,22 @@ class FeatureLoader:
         if not feature.tasks:
             errors.append("Feature has no tasks defined")
 
-        # Check task files exist
+        # Check task files exist and are valid
         for task in feature.tasks:
             task_file = repo_root / task.file_path
-            if not task_file.exists():
+            if task_file.is_dir():
+                errors.append(
+                    f"Task file_path is a directory, not a file: {task.id} at {task.file_path}"
+                )
+            elif not str(task.file_path).endswith(".md"):
+                errors.append(
+                    f"Task file_path does not end with .md: {task.id} at {task.file_path}"
+                )
+            elif "tasks" not in Path(task.file_path).parts:
+                errors.append(
+                    f"Task file_path does not contain 'tasks' directory: {task.id} at {task.file_path}"
+                )
+            elif not task_file.exists():
                 errors.append(f"Task file not found: {task.id} at {task.file_path}")
 
         # Check orchestration has all tasks

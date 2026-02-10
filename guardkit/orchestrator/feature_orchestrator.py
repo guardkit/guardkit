@@ -643,10 +643,11 @@ class FeatureOrchestrator:
         # -> feature-build-sdk-coordination
         first_task = feature.tasks[0]
         if not first_task.file_path:
-            logger.warning(
-                f"Cannot copy tasks: First task {first_task.id} has no file_path"
+            raise FeatureValidationError(
+                f"Invalid task file_path in task {first_task.id}: file_path is empty. "
+                f"Expected format: tasks/backlog/<feature-slug>/TASK-XXX.md. "
+                f"Ensure --feature-slug was passed to generate-feature-yaml."
             )
-            return
 
         task_file_path = Path(first_task.file_path)
 
@@ -655,24 +656,31 @@ class FeatureOrchestrator:
         parts = task_file_path.parts
         try:
             tasks_idx = parts.index("tasks")
-            if tasks_idx + 1 < len(parts) and parts[tasks_idx + 1] == "backlog":
-                if tasks_idx + 2 < len(parts):
-                    feature_dir = parts[tasks_idx + 2]
-                else:
-                    logger.warning(
-                        f"Cannot copy tasks: Missing feature directory in path: {task_file_path}"
-                    )
-                    return
-            else:
-                logger.warning(
-                    f"Cannot copy tasks: Expected 'backlog' after 'tasks': {task_file_path}"
-                )
-                return
         except ValueError:
-            logger.warning(
-                f"Cannot copy tasks: 'tasks' directory not found in path: {task_file_path}"
+            raise FeatureValidationError(
+                f"Invalid task file_path '{task_file_path}' in task {first_task.id}: "
+                f"'tasks' directory not found in path. "
+                f"Expected format: tasks/backlog/<feature-slug>/TASK-XXX.md. "
+                f"Ensure --feature-slug was passed to generate-feature-yaml."
             )
-            return
+
+        if tasks_idx + 1 < len(parts) and parts[tasks_idx + 1] == "backlog":
+            if tasks_idx + 2 < len(parts):
+                feature_dir = parts[tasks_idx + 2]
+            else:
+                raise FeatureValidationError(
+                    f"Invalid task file_path '{task_file_path}' in task {first_task.id}: "
+                    f"missing feature directory after tasks/backlog/. "
+                    f"Expected format: tasks/backlog/<feature-slug>/TASK-XXX.md. "
+                    f"Ensure --feature-slug was passed to generate-feature-yaml."
+                )
+        else:
+            raise FeatureValidationError(
+                f"Invalid task file_path '{task_file_path}' in task {first_task.id}: "
+                f"expected 'backlog' after 'tasks' directory. "
+                f"Expected format: tasks/backlog/<feature-slug>/TASK-XXX.md. "
+                f"Ensure --feature-slug was passed to generate-feature-yaml."
+            )
         logger.debug(f"Detected feature directory: {feature_dir}")
 
         # Source: main repo's tasks/backlog/{feature_dir}/

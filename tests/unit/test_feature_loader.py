@@ -332,6 +332,205 @@ def test_validate_feature_unknown_dependency(temp_repo_with_tasks):
 
 
 # ============================================================================
+# Test: Feature Validation - file_path checks (TASK-FIX-FP02)
+# ============================================================================
+
+
+def test_validate_feature_rejects_directory_file_path(tmp_path):
+    """Test validation rejects file_path pointing to a directory (e.g., '.')."""
+    feature = Feature(
+        id="FEAT-DIR",
+        name="Dir Test",
+        description="",
+        created="2025-12-31",
+        status="planned",
+        complexity=3,
+        estimated_tasks=1,
+        tasks=[
+            FeatureTask(
+                id="TASK-DIR-001",
+                name="Task with dir path",
+                file_path=Path("."),
+                complexity=3,
+                dependencies=[],
+                status="pending",
+                implementation_mode="task-work",
+                estimated_minutes=30,
+            ),
+        ],
+        orchestration=FeatureOrchestration(
+            parallel_groups=[["TASK-DIR-001"]],
+            estimated_duration_minutes=30,
+            recommended_parallel=1,
+        ),
+    )
+
+    errors = FeatureLoader.validate_feature(feature, repo_root=tmp_path)
+    assert any("directory, not a file" in e for e in errors)
+    assert any("TASK-DIR-001" in e for e in errors)
+
+
+def test_validate_feature_rejects_subdirectory_file_path(tmp_path):
+    """Test validation rejects file_path pointing to an existing subdirectory."""
+    # Create a real directory at the path
+    (tmp_path / "tasks" / "backlog").mkdir(parents=True)
+
+    feature = Feature(
+        id="FEAT-SUBDIR",
+        name="Subdir Test",
+        description="",
+        created="2025-12-31",
+        status="planned",
+        complexity=3,
+        estimated_tasks=1,
+        tasks=[
+            FeatureTask(
+                id="TASK-SUBDIR-001",
+                name="Task with subdir path",
+                file_path=Path("tasks/backlog"),
+                complexity=3,
+                dependencies=[],
+                status="pending",
+                implementation_mode="task-work",
+                estimated_minutes=30,
+            ),
+        ],
+        orchestration=FeatureOrchestration(
+            parallel_groups=[["TASK-SUBDIR-001"]],
+            estimated_duration_minutes=30,
+            recommended_parallel=1,
+        ),
+    )
+
+    errors = FeatureLoader.validate_feature(feature, repo_root=tmp_path)
+    assert any("directory, not a file" in e for e in errors)
+
+
+def test_validate_feature_rejects_non_md_file_path(tmp_path):
+    """Test validation rejects file_path not ending in .md."""
+    # Create the file so it passes exists() check
+    (tmp_path / "tasks" / "backlog").mkdir(parents=True)
+    (tmp_path / "tasks" / "backlog" / "TASK-TXT-001.txt").write_text("content")
+
+    feature = Feature(
+        id="FEAT-TXT",
+        name="Txt Test",
+        description="",
+        created="2025-12-31",
+        status="planned",
+        complexity=3,
+        estimated_tasks=1,
+        tasks=[
+            FeatureTask(
+                id="TASK-TXT-001",
+                name="Task with txt path",
+                file_path=Path("tasks/backlog/TASK-TXT-001.txt"),
+                complexity=3,
+                dependencies=[],
+                status="pending",
+                implementation_mode="task-work",
+                estimated_minutes=30,
+            ),
+        ],
+        orchestration=FeatureOrchestration(
+            parallel_groups=[["TASK-TXT-001"]],
+            estimated_duration_minutes=30,
+            recommended_parallel=1,
+        ),
+    )
+
+    errors = FeatureLoader.validate_feature(feature, repo_root=tmp_path)
+    assert any("does not end with .md" in e for e in errors)
+    assert any("TASK-TXT-001" in e for e in errors)
+
+
+def test_validate_feature_rejects_file_path_without_tasks_dir(tmp_path):
+    """Test validation rejects file_path without 'tasks' in path components."""
+    # Create the file so it passes exists() and suffix checks
+    (tmp_path / "src").mkdir(parents=True)
+    (tmp_path / "src" / "TASK-SRC-001.md").write_text("content")
+
+    feature = Feature(
+        id="FEAT-SRC",
+        name="Src Test",
+        description="",
+        created="2025-12-31",
+        status="planned",
+        complexity=3,
+        estimated_tasks=1,
+        tasks=[
+            FeatureTask(
+                id="TASK-SRC-001",
+                name="Task in wrong dir",
+                file_path=Path("src/TASK-SRC-001.md"),
+                complexity=3,
+                dependencies=[],
+                status="pending",
+                implementation_mode="task-work",
+                estimated_minutes=30,
+            ),
+        ],
+        orchestration=FeatureOrchestration(
+            parallel_groups=[["TASK-SRC-001"]],
+            estimated_duration_minutes=30,
+            recommended_parallel=1,
+        ),
+    )
+
+    errors = FeatureLoader.validate_feature(feature, repo_root=tmp_path)
+    assert any("does not contain 'tasks' directory" in e for e in errors)
+    assert any("TASK-SRC-001" in e for e in errors)
+
+
+def test_validate_feature_valid_file_paths_still_pass(tmp_path):
+    """Test that existing valid file_path values still pass validation."""
+    # Create valid task files
+    (tmp_path / "tasks" / "backlog").mkdir(parents=True)
+    (tmp_path / "tasks" / "backlog" / "TASK-OK-001.md").write_text("# Task")
+    (tmp_path / "tasks" / "backlog" / "TASK-OK-002.md").write_text("# Task")
+
+    feature = Feature(
+        id="FEAT-OK",
+        name="Valid Test",
+        description="",
+        created="2025-12-31",
+        status="planned",
+        complexity=3,
+        estimated_tasks=2,
+        tasks=[
+            FeatureTask(
+                id="TASK-OK-001",
+                name="Valid task 1",
+                file_path=Path("tasks/backlog/TASK-OK-001.md"),
+                complexity=3,
+                dependencies=[],
+                status="pending",
+                implementation_mode="task-work",
+                estimated_minutes=30,
+            ),
+            FeatureTask(
+                id="TASK-OK-002",
+                name="Valid task 2",
+                file_path=Path("tasks/backlog/TASK-OK-002.md"),
+                complexity=3,
+                dependencies=["TASK-OK-001"],
+                status="pending",
+                implementation_mode="task-work",
+                estimated_minutes=30,
+            ),
+        ],
+        orchestration=FeatureOrchestration(
+            parallel_groups=[["TASK-OK-001"], ["TASK-OK-002"]],
+            estimated_duration_minutes=60,
+            recommended_parallel=1,
+        ),
+    )
+
+    errors = FeatureLoader.validate_feature(feature, repo_root=tmp_path)
+    assert errors == []
+
+
+# ============================================================================
 # Test: Circular Dependency Detection
 # ============================================================================
 

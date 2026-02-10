@@ -433,6 +433,18 @@ def main():
         print("Error: At least one task required (--task or --tasks-json)", file=sys.stderr)
         sys.exit(1)
 
+    # Validate --feature-slug is non-empty when tasks are provided (TASK-FIX-FP04)
+    if not args.feature_slug:
+        print(
+            "Error: --feature-slug is required for correct task file_path generation.",
+            file=sys.stderr,
+        )
+        print(
+            "Example: --feature-slug 'my-feature'",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     # Build parallel groups
     parallel_groups = build_parallel_groups(task_specs)
 

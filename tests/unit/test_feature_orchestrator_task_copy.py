@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch, call
 import pytest
 
 from guardkit.orchestrator.feature_orchestrator import FeatureOrchestrator
-from guardkit.orchestrator.feature_loader import Feature, FeatureTask, FeatureOrchestration, FeatureExecution
+from guardkit.orchestrator.feature_loader import Feature, FeatureTask, FeatureOrchestration, FeatureExecution, FeatureValidationError
 from guardkit.worktrees import Worktree
 
 
@@ -262,21 +262,18 @@ def test_copy_tasks_to_worktree_no_tasks(
         assert list(dst_dir.glob("*.md")) == []
 
 
-def test_copy_tasks_to_worktree_missing_file_path(
+def test_copy_tasks_to_worktree_missing_file_path_raises(
     orchestrator: FeatureOrchestrator,
     mock_worktree: Worktree,
     mock_repo_root: Path,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """
-    Test copy when first task has no file_path.
+    Test copy when first task has no file_path raises FeatureValidationError.
 
     Verifies:
-    - Warning logged
-    - No exception raised
-    - No files copied
+    - FeatureValidationError raised (not just a warning)
+    - Error message includes the task ID and expected format
     """
-    # Create feature with task missing file_path
     feature_no_path = Feature(
         id="FEAT-NOPATH",
         name="Feature with no path",
@@ -289,7 +286,7 @@ def test_copy_tasks_to_worktree_missing_file_path(
             FeatureTask(
                 id="TASK-001",
                 name="Task without path",
-                file_path=None,  # Missing file_path
+                file_path=None,
                 complexity=3,
                 dependencies=[],
                 status="pending",
@@ -305,11 +302,8 @@ def test_copy_tasks_to_worktree_missing_file_path(
         execution=FeatureExecution(),
     )
 
-    # Execute copy
-    orchestrator._copy_tasks_to_worktree(feature_no_path, mock_worktree)
-
-    # Verify warning logged
-    assert "Cannot copy tasks: First task TASK-001 has no file_path" in caplog.text
+    with pytest.raises(FeatureValidationError, match="file_path is empty"):
+        orchestrator._copy_tasks_to_worktree(feature_no_path, mock_worktree)
 
 
 def test_copy_tasks_to_worktree_copy_error_recovery(
@@ -342,6 +336,220 @@ def test_copy_tasks_to_worktree_copy_error_recovery(
 
         # Verify copy was called for all tasks
         assert mock_copy.call_count == 3
+
+
+def test_copy_tasks_raises_when_tasks_dir_not_in_path(
+    orchestrator: FeatureOrchestrator,
+    mock_worktree: Worktree,
+    mock_repo_root: Path,
+) -> None:
+    """
+    Test that a file_path without 'tasks' directory raises FeatureValidationError.
+
+    Verifies:
+    - FeatureValidationError raised
+    - Error message includes the bad path and expected format
+    """
+    feature = Feature(
+        id="FEAT-BADPATH",
+        name="Feature with bad path",
+        description="Task with path missing tasks dir",
+        created="2025-01-18T00:00:00Z",
+        status="planned",
+        complexity=3,
+        estimated_tasks=1,
+        tasks=[
+            FeatureTask(
+                id="TASK-BAD-001",
+                name="Task with bad path",
+                file_path="some/random/path/TASK-BAD-001.md",
+                complexity=3,
+                dependencies=[],
+                status="pending",
+                implementation_mode="task-work",
+                estimated_minutes=30,
+            ),
+        ],
+        orchestration=FeatureOrchestration(
+            parallel_groups=[["TASK-BAD-001"]],
+            estimated_duration_minutes=30,
+            recommended_parallel=1,
+        ),
+        execution=FeatureExecution(),
+    )
+
+    with pytest.raises(FeatureValidationError, match="'tasks' directory not found"):
+        orchestrator._copy_tasks_to_worktree(feature, mock_worktree)
+
+
+def test_copy_tasks_raises_when_backlog_missing_after_tasks(
+    orchestrator: FeatureOrchestrator,
+    mock_worktree: Worktree,
+    mock_repo_root: Path,
+) -> None:
+    """
+    Test that a file_path with 'tasks' but not 'backlog' raises FeatureValidationError.
+
+    Verifies:
+    - FeatureValidationError raised
+    - Error message mentions expected 'backlog' after 'tasks'
+    """
+    feature = Feature(
+        id="FEAT-NOBACKLOG",
+        name="Feature with no backlog",
+        description="Task with path missing backlog dir",
+        created="2025-01-18T00:00:00Z",
+        status="planned",
+        complexity=3,
+        estimated_tasks=1,
+        tasks=[
+            FeatureTask(
+                id="TASK-NB-001",
+                name="Task without backlog",
+                file_path="tasks/completed/TASK-NB-001.md",
+                complexity=3,
+                dependencies=[],
+                status="pending",
+                implementation_mode="task-work",
+                estimated_minutes=30,
+            ),
+        ],
+        orchestration=FeatureOrchestration(
+            parallel_groups=[["TASK-NB-001"]],
+            estimated_duration_minutes=30,
+            recommended_parallel=1,
+        ),
+        execution=FeatureExecution(),
+    )
+
+    with pytest.raises(FeatureValidationError, match="expected 'backlog' after 'tasks'"):
+        orchestrator._copy_tasks_to_worktree(feature, mock_worktree)
+
+
+def test_copy_tasks_raises_when_feature_dir_missing(
+    orchestrator: FeatureOrchestrator,
+    mock_worktree: Worktree,
+    mock_repo_root: Path,
+) -> None:
+    """
+    Test that a file_path with 'tasks/backlog' but no feature dir raises FeatureValidationError.
+
+    Verifies:
+    - FeatureValidationError raised
+    - Error message mentions missing feature directory
+    """
+    feature = Feature(
+        id="FEAT-NODIR",
+        name="Feature with no dir",
+        description="Task with path missing feature dir",
+        created="2025-01-18T00:00:00Z",
+        status="planned",
+        complexity=3,
+        estimated_tasks=1,
+        tasks=[
+            FeatureTask(
+                id="TASK-ND-001",
+                name="Task without feature dir",
+                file_path="tasks/backlog",
+                complexity=3,
+                dependencies=[],
+                status="pending",
+                implementation_mode="task-work",
+                estimated_minutes=30,
+            ),
+        ],
+        orchestration=FeatureOrchestration(
+            parallel_groups=[["TASK-ND-001"]],
+            estimated_duration_minutes=30,
+            recommended_parallel=1,
+        ),
+        execution=FeatureExecution(),
+    )
+
+    with pytest.raises(FeatureValidationError, match="missing feature directory"):
+        orchestrator._copy_tasks_to_worktree(feature, mock_worktree)
+
+
+def test_copy_tasks_error_message_includes_path_and_task_id(
+    orchestrator: FeatureOrchestrator,
+    mock_worktree: Worktree,
+    mock_repo_root: Path,
+) -> None:
+    """
+    Test that error messages include both the bad file_path and task ID.
+
+    Verifies:
+    - Error message contains the invalid path value
+    - Error message contains the task ID
+    - Error message includes the expected format hint
+    """
+    bad_path = "wrong/structure/TASK-ERR-001.md"
+    feature = Feature(
+        id="FEAT-ERR",
+        name="Feature with error",
+        description="Task with completely wrong path",
+        created="2025-01-18T00:00:00Z",
+        status="planned",
+        complexity=3,
+        estimated_tasks=1,
+        tasks=[
+            FeatureTask(
+                id="TASK-ERR-001",
+                name="Task with error",
+                file_path=bad_path,
+                complexity=3,
+                dependencies=[],
+                status="pending",
+                implementation_mode="task-work",
+                estimated_minutes=30,
+            ),
+        ],
+        orchestration=FeatureOrchestration(
+            parallel_groups=[["TASK-ERR-001"]],
+            estimated_duration_minutes=30,
+            recommended_parallel=1,
+        ),
+        execution=FeatureExecution(),
+    )
+
+    with pytest.raises(FeatureValidationError) as exc_info:
+        orchestrator._copy_tasks_to_worktree(feature, mock_worktree)
+
+    error_msg = str(exc_info.value)
+    assert bad_path in error_msg
+    assert "TASK-ERR-001" in error_msg
+    assert "tasks/backlog/<feature-slug>/TASK-XXX.md" in error_msg
+
+
+def test_copy_tasks_individual_file_failure_remains_warning(
+    orchestrator: FeatureOrchestrator,
+    mock_feature: Feature,
+    mock_worktree: Worktree,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """
+    Test that individual file copy failures remain as warnings (recoverable).
+
+    Verifies:
+    - No exception raised when individual file copy fails
+    - Warning logged for the failed file
+    - Other files still copied successfully
+    """
+    with patch("shutil.copy") as mock_copy:
+        call_count = 0
+
+        def side_effect(src: Path, dst: Path) -> None:
+            nonlocal call_count
+            call_count += 1
+            if "TASK-002" in str(src):
+                raise OSError("Disk full")
+
+        mock_copy.side_effect = side_effect
+
+        # Should NOT raise - individual file failures are recoverable
+        orchestrator._copy_tasks_to_worktree(mock_feature, mock_worktree)
+
+        assert "Failed to copy TASK-002" in caplog.text or "Disk full" in caplog.text
 
 
 # ============================================================================

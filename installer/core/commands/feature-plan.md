@@ -1723,6 +1723,7 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
     python3 ~/.agentecflow/bin/generate-feature-yaml \
         --name "{feature_name}" \
         --description "{review_findings_summary}" \
+        --feature-slug "{feature_slug}" \
         --task "TASK-001:First task name:5:" \
         --task "TASK-002:Second task name:6:TASK-001" \
         --task "TASK-003:Third task name:3:TASK-001,TASK-002" \
@@ -1740,6 +1741,7 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
     python3 ~/.agentecflow/bin/generate-feature-yaml \
         --name "Implement OAuth2 authentication" \
         --description "Add OAuth2 authentication with multiple providers" \
+        --feature-slug "oauth2" \
         --task "TASK-OAUTH-001:Create auth infrastructure:5:" \
         --task "TASK-OAUTH-002:Implement local JWT auth:6:TASK-OAUTH-001" \
         --task "TASK-OAUTH-003:Add database migrations:4:TASK-OAUTH-001" \
@@ -1875,9 +1877,10 @@ Claude executes internally:
      - Execute: python3 ~/.agentecflow/bin/generate-feature-yaml \
          --name "implement OAuth2" \
          --description "OAuth2 authentication implementation" \
-         --task "TASK-OAUTH-001:Create auth infrastructure:tasks/backlog/oauth2/TASK-OAUTH-001.md:5:" \
-         --task "TASK-OAUTH-002:Implement local JWT auth:tasks/backlog/oauth2/TASK-OAUTH-002.md:6:TASK-OAUTH-001" \
-         ... (one --task arg per subtask with file_path)
+         --feature-slug "oauth2" \
+         --task "TASK-OAUTH-001:Create auth infrastructure:5:" \
+         --task "TASK-OAUTH-002:Implement local JWT auth:6:TASK-OAUTH-001" \
+         ... (one --task arg per subtask)
      - Script outputs: FEAT-D6E7 and writes .guardkit/features/FEAT-D6E7.yaml
      (Skip this step if --no-structured flag is set)
 
