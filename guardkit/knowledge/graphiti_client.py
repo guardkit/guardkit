@@ -188,6 +188,7 @@ class GraphitiClient:
         "project_decisions",
         "project_constraints",
         "domain_knowledge",
+        "bdd_scenarios",  # Added by FEAT-SC-001 for /impact-analysis deep mode
     ]
 
     def __init__(self, config: Optional[GraphitiConfig] = None, auto_detect_project: bool = True):

@@ -12,6 +12,11 @@ from guardkit.planning.complexity_gating import (
 
 from guardkit.planning.graphiti_arch import SystemPlanGraphiti
 from guardkit.planning import mode_detector
+from guardkit.planning.system_overview import (
+    get_system_overview,
+    condense_for_injection,
+    format_overview_display,
+)
 
 __all__ = [
     'ARCHITECTURE_CONTEXT_THRESHOLD',
@@ -19,4 +24,7 @@ __all__ = [
     'get_arch_token_budget',
     'SystemPlanGraphiti',
     'mode_detector',
+    'get_system_overview',
+    'condense_for_injection',
+    'format_overview_display',
 ]
