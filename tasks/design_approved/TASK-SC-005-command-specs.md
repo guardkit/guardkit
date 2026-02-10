@@ -1,20 +1,23 @@
 ---
-id: TASK-SC-005
-title: "Create command markdown specs for all 3 commands"
-status: backlog
-created: 2026-02-10T11:20:00Z
-updated: 2026-02-10T11:20:00Z
-priority: high
-task_type: feature
-parent_review: TASK-REV-AEA7
-feature_id: FEAT-SC-001
-wave: 2
-implementation_mode: task-work
 complexity: 4
+created: 2026-02-10 11:20:00+00:00
 dependencies:
-  - TASK-SC-001
-  - TASK-SC-002
-tags: [commands, slash-commands, spec]
+- TASK-SC-001
+- TASK-SC-002
+feature_id: FEAT-SC-001
+id: TASK-SC-005
+implementation_mode: task-work
+parent_review: TASK-REV-AEA7
+priority: high
+status: design_approved
+tags:
+- commands
+- slash-commands
+- spec
+task_type: feature
+title: Create command markdown specs for all 3 commands
+updated: 2026-02-10 11:20:00+00:00
+wave: 2
 ---
 
 # Task: Create command markdown specs for all 3 commands

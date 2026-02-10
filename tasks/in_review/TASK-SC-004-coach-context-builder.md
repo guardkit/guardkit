@@ -1,19 +1,29 @@
 ---
-id: TASK-SC-004
-title: "Implement coach_context_builder.py module"
-status: backlog
-created: 2026-02-10T11:20:00Z
-updated: 2026-02-10T11:20:00Z
-priority: high
-task_type: feature
-parent_review: TASK-REV-AEA7
-feature_id: FEAT-SC-001
-wave: 2
-implementation_mode: task-work
 complexity: 4
+created: 2026-02-10 11:20:00+00:00
 dependencies:
-  - TASK-SC-001
-tags: [coach, autobuild, context, graphiti]
+- TASK-SC-001
+feature_id: FEAT-SC-001
+id: TASK-SC-004
+implementation_mode: task-work
+parent_review: TASK-REV-AEA7
+priority: high
+status: in_review
+tags:
+- coach
+- autobuild
+- context
+- graphiti
+task_type: feature
+title: Implement coach_context_builder.py module
+updated: 2026-02-10T13:45:00+00:00
+wave: 2
+implementation_complete: true
+tests_pass: true
+coverage: 80
+files_created:
+- guardkit/planning/coach_context_builder.py
+- tests/unit/planning/test_coach_context_builder.py
 ---
 
 # Task: Implement coach_context_builder.py module

@@ -17,6 +17,9 @@ from guardkit.planning.system_overview import (
     condense_for_injection,
     format_overview_display,
 )
+from guardkit.planning.coach_context_builder import (
+    build_coach_context,
+)
 
 __all__ = [
     'ARCHITECTURE_CONTEXT_THRESHOLD',
@@ -27,4 +30,5 @@ __all__ = [
     'get_system_overview',
     'condense_for_injection',
     'format_overview_display',
+    'build_coach_context',
 ]
