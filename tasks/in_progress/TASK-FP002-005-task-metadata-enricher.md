@@ -1,36 +1,37 @@
 ---
-id: TASK-FP002-005
-title: Task Metadata Enricher
-task_type: feature
-parent_review: TASK-REV-FP002
-feature_id: FEAT-FP-002
-wave: 2
-implementation_mode: task-work
 complexity: 5
 complexity_score: 5
-type: implementation
-domain_tags:
-  - task-metadata
-  - graphiti-integration
-  - turn-budget
-  - domain-tags
-files_to_create:
-  - guardkit/planning/task_metadata.py
-  - tests/unit/test_task_metadata.py
-files_to_modify: []
-files_not_to_touch:
-  - guardkit/orchestrator/
-  - guardkit/knowledge/
 dependencies:
-  - TASK-FP002-001
-  - TASK-FP002-002
+- TASK-FP002-001
+- TASK-FP002-002
+domain_tags:
+- task-metadata
+- graphiti-integration
+- turn-budget
+- domain-tags
+feature_id: FEAT-FP-002
+files_not_to_touch:
+- guardkit/orchestrator/
+- guardkit/knowledge/
+files_to_create:
+- guardkit/planning/task_metadata.py
+- tests/unit/test_task_metadata.py
+files_to_modify: []
+graphiti_context_budget: 4000
+id: TASK-FP002-005
+implementation_mode: task-work
+parent_review: TASK-REV-FP002
 relevant_decisions:
-  - D5
-  - D10
+- D5
+- D10
+status: design_approved
+task_type: feature
+title: Task Metadata Enricher
 turn_budget:
   expected: 3
   max: 5
-graphiti_context_budget: 4000
+type: implementation
+wave: 2
 ---
 
 # TASK-FP002-005: Task Metadata Enricher

@@ -1,32 +1,33 @@
 ---
-id: TASK-FP002-003
-title: ADR File Generator
-task_type: feature
-parent_review: TASK-REV-FP002
-feature_id: FEAT-FP-002
-wave: 2
-implementation_mode: task-work
 complexity: 4
 complexity_score: 4
-type: implementation
-domain_tags:
-  - adr-generation
-  - documentation
-  - graphiti-seeding
-files_to_create:
-  - guardkit/planning/adr_generator.py
-  - tests/unit/test_adr_generator.py
-files_to_modify: []
-files_not_to_touch:
-  - docs/adr/
 dependencies:
-  - TASK-FP002-001
+- TASK-FP002-001
+domain_tags:
+- adr-generation
+- documentation
+- graphiti-seeding
+feature_id: FEAT-FP-002
+files_not_to_touch:
+- docs/adr/
+files_to_create:
+- guardkit/planning/adr_generator.py
+- tests/unit/test_adr_generator.py
+files_to_modify: []
+graphiti_context_budget: 4000
+id: TASK-FP002-003
+implementation_mode: task-work
+parent_review: TASK-REV-FP002
 relevant_decisions:
-  - D3
+- D3
+status: in_review
+task_type: feature
+title: ADR File Generator
 turn_budget:
   expected: 2
   max: 4
-graphiti_context_budget: 4000
+type: implementation
+wave: 2
 ---
 
 # TASK-FP002-003: ADR File Generator
@@ -37,16 +38,16 @@ Create `guardkit/planning/adr_generator.py` that generates Architecture Decision
 
 ## Acceptance Criteria (Machine-Verifiable)
 
-- [ ] File exists: `guardkit/planning/adr_generator.py`
-- [ ] File exists: `tests/unit/test_adr_generator.py`
-- [ ] Function `generate_adrs(decisions, feature_id, output_dir)` returns `list[Path]`
-- [ ] Generated ADR files follow naming: `ADR-FP-{feature_number}-{slug}.md`
-- [ ] ADR content includes sections: Status, Date, Context, Decision, Rationale, Alternatives Rejected, Consequences
-- [ ] Duplicate detection: skips if ADR with same title already exists in output_dir (when `check_duplicates=True`)
-- [ ] Handles empty decisions list gracefully (returns empty list)
-- [ ] Slug generation converts titles to lowercase-hyphenated format
-- [ ] Tests pass: `pytest tests/unit/test_adr_generator.py -v`
-- [ ] Lint passes: `ruff check guardkit/planning/adr_generator.py`
+- [x] File exists: `guardkit/planning/adr_generator.py`
+- [x] File exists: `tests/unit/test_adr_generator.py`
+- [x] Function `generate_adrs(decisions, feature_id, output_dir)` returns `list[Path]`
+- [x] Generated ADR files follow naming: `ADR-FP-{feature_number}-{slug}.md`
+- [x] ADR content includes sections: Status, Date, Context, Decision, Rationale, Alternatives Rejected, Consequences
+- [x] Duplicate detection: skips if ADR with same title already exists in output_dir (when `check_duplicates=True`)
+- [x] Handles empty decisions list gracefully (returns empty list)
+- [x] Slug generation converts titles to lowercase-hyphenated format
+- [x] Tests pass: `pytest tests/unit/test_adr_generator.py -v` (29/29 tests passing)
+- [x] Lint passes: `ruff check guardkit/planning/adr_generator.py`
 
 ## Coach Validation Commands
 

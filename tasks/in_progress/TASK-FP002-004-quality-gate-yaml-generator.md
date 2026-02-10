@@ -1,32 +1,33 @@
 ---
-id: TASK-FP002-004
-title: Quality Gate YAML Generator
-task_type: feature
-parent_review: TASK-REV-FP002
-feature_id: FEAT-FP-002
-wave: 2
-implementation_mode: task-work
 complexity: 5
 complexity_score: 5
-type: implementation
-domain_tags:
-  - quality-gates
-  - yaml-generation
-  - coach-validation
-files_to_create:
-  - guardkit/planning/quality_gate_generator.py
-  - tests/unit/test_quality_gate_generator.py
-files_to_modify: []
-files_not_to_touch:
-  - .guardkit/quality-gates/
 dependencies:
-  - TASK-FP002-001
+- TASK-FP002-001
+domain_tags:
+- quality-gates
+- yaml-generation
+- coach-validation
+feature_id: FEAT-FP-002
+files_not_to_touch:
+- .guardkit/quality-gates/
+files_to_create:
+- guardkit/planning/quality_gate_generator.py
+- tests/unit/test_quality_gate_generator.py
+files_to_modify: []
+graphiti_context_budget: 4000
+id: TASK-FP002-004
+implementation_mode: task-work
+parent_review: TASK-REV-FP002
 relevant_decisions:
-  - D4
+- D4
+status: design_approved
+task_type: feature
+title: Quality Gate YAML Generator
 turn_budget:
   expected: 2
   max: 4
-graphiti_context_budget: 4000
+type: implementation
+wave: 2
 ---
 
 # TASK-FP002-004: Quality Gate YAML Generator
