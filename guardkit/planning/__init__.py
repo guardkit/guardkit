@@ -20,6 +20,16 @@ from guardkit.planning.system_overview import (
 from guardkit.planning.coach_context_builder import (
     build_coach_context,
 )
+from guardkit.planning.impact_analysis import (
+    run_impact_analysis,
+    condense_impact_for_injection,
+    format_impact_display,
+)
+from guardkit.planning.context_switch import (
+    GuardKitConfig,
+    execute_context_switch,
+    format_context_switch_display,
+)
 
 __all__ = [
     'ARCHITECTURE_CONTEXT_THRESHOLD',
@@ -31,4 +41,10 @@ __all__ = [
     'condense_for_injection',
     'format_overview_display',
     'build_coach_context',
+    'run_impact_analysis',
+    'condense_impact_for_injection',
+    'format_impact_display',
+    'GuardKitConfig',
+    'execute_context_switch',
+    'format_context_switch_display',
 ]

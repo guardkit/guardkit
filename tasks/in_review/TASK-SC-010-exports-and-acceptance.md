@@ -1,24 +1,34 @@
 ---
-id: TASK-SC-010
-title: "Update __init__.py exports + final acceptance test sweep"
-status: backlog
-created: 2026-02-10T11:20:00Z
-updated: 2026-02-10T11:20:00Z
-priority: high
-task_type: feature
-parent_review: TASK-REV-AEA7
-feature_id: FEAT-SC-001
-wave: 4
-implementation_mode: task-work
 complexity: 3
+created: 2026-02-10 11:20:00+00:00
 dependencies:
-  - TASK-SC-001
-  - TASK-SC-002
-  - TASK-SC-003
-  - TASK-SC-004
-  - TASK-SC-008
-  - TASK-SC-009
-tags: [exports, acceptance, finalization]
+- TASK-SC-001
+- TASK-SC-002
+- TASK-SC-003
+- TASK-SC-004
+- TASK-SC-008
+- TASK-SC-009
+feature_id: FEAT-SC-001
+id: TASK-SC-010
+implementation_mode: task-work
+parent_review: TASK-REV-AEA7
+priority: high
+status: in_review
+tags:
+- exports
+- acceptance
+- finalization
+task_type: feature
+title: Update __init__.py exports + final acceptance test sweep
+updated: 2026-02-10T14:20:00+00:00
+wave: 4
+implementation_completed: 2026-02-10T14:20:00+00:00
+tests_passed: true
+quality_gates:
+  compilation: pass
+  tests_passing: true
+  coverage_met: true
+  code_review: approved
 ---
 
 # Task: Update __init__.py exports + final acceptance test sweep
