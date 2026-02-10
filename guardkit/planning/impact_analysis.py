@@ -44,11 +44,10 @@ Example:
     display = format_impact_display(impact, depth="standard")
 """
 
-import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from guardkit.planning.graphiti_arch import SystemPlanGraphiti
@@ -149,7 +148,7 @@ async def run_impact_analysis(
                     result["bdd_scenarios"] = bdd_scenarios
                 else:
                     logger.info("[Graphiti] No BDD scenarios found, skipping BDD impact section")
-            except Exception as e:
+            except Exception:
                 logger.info("[Graphiti] No BDD scenarios found, skipping BDD impact section")
 
         # Calculate risk score

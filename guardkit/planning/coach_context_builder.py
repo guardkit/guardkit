@@ -30,7 +30,7 @@ Example:
 """
 
 import logging
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import Any, Dict, TYPE_CHECKING
 
 from guardkit.planning.complexity_gating import get_arch_token_budget
 from guardkit.planning.graphiti_arch import SystemPlanGraphiti

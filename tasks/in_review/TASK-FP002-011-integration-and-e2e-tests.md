@@ -1,42 +1,43 @@
 ---
-id: TASK-FP002-011
-title: Integration and End-to-End Tests
-task_type: testing
-parent_review: TASK-REV-FP002
-feature_id: FEAT-FP-002
-wave: 4
-implementation_mode: task-work
 complexity: 7
 complexity_score: 7
-type: integration
-domain_tags:
-  - integration-tests
-  - end-to-end
-  - feature-plan-pipeline
-  - technology-seams
-files_to_create:
-  - tests/integration/test_feature_plan_pipeline.py
-  - tests/integration/test_planning_module_seams.py
-  - tests/fixtures/sample-research-spec.md
-files_to_modify: []
-files_not_to_touch:
-  - guardkit/planning/
-  - docs/
 dependencies:
-  - TASK-FP002-001
-  - TASK-FP002-002
-  - TASK-FP002-003
-  - TASK-FP002-004
-  - TASK-FP002-005
-  - TASK-FP002-006
+- TASK-FP002-001
+- TASK-FP002-002
+- TASK-FP002-003
+- TASK-FP002-004
+- TASK-FP002-005
+- TASK-FP002-006
+domain_tags:
+- integration-tests
+- end-to-end
+- feature-plan-pipeline
+- technology-seams
+feature_id: FEAT-FP-002
+files_not_to_touch:
+- guardkit/planning/
+- docs/
+files_to_create:
+- tests/integration/test_feature_plan_pipeline.py
+- tests/integration/test_planning_module_seams.py
+- tests/fixtures/sample-research-spec.md
+files_to_modify: []
+graphiti_context_budget: 6000
+id: TASK-FP002-011
+implementation_mode: task-work
+parent_review: TASK-REV-FP002
 relevant_decisions:
-  - D2
-  - D6
-  - D9
+- D2
+- D6
+- D9
+status: in_review
+task_type: testing
+title: Integration and End-to-End Tests
 turn_budget:
   expected: 3
   max: 5
-graphiti_context_budget: 6000
+type: integration
+wave: 4
 ---
 
 # TASK-FP002-011: Integration and End-to-End Tests

@@ -39,7 +39,7 @@ Example:
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from guardkit.planning.graphiti_arch import SystemPlanGraphiti

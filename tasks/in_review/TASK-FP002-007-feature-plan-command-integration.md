@@ -1,41 +1,42 @@
 ---
-id: TASK-FP002-007
-title: Feature-Plan Command Integration
-task_type: feature
-parent_review: TASK-REV-FP002
-feature_id: FEAT-FP-002
-wave: 3
-implementation_mode: task-work
 complexity: 7
 complexity_score: 7
-type: integration
+dependencies:
+- TASK-FP002-001
+- TASK-FP002-002
+- TASK-FP002-003
+- TASK-FP002-004
+- TASK-FP002-005
+- TASK-FP002-006
 domain_tags:
-  - feature-plan
-  - command-integration
-  - orchestration
+- feature-plan
+- command-integration
+- orchestration
+feature_id: FEAT-FP-002
+files_not_to_touch:
+- guardkit/orchestrator/
+- guardkit/knowledge/
+- guardkit/cli/autobuild.py
 files_to_create: []
 files_to_modify:
-  - .claude/commands/feature-plan.md
-files_not_to_touch:
-  - guardkit/orchestrator/
-  - guardkit/knowledge/
-  - guardkit/cli/autobuild.py
-dependencies:
-  - TASK-FP002-001
-  - TASK-FP002-002
-  - TASK-FP002-003
-  - TASK-FP002-004
-  - TASK-FP002-005
-  - TASK-FP002-006
+- .claude/commands/feature-plan.md
+graphiti_context_budget: 6000
+id: TASK-FP002-007
+implementation_mode: task-work
+parent_review: TASK-REV-FP002
 relevant_decisions:
-  - D1
-  - D2
-  - D6
-  - D9
+- D1
+- D2
+- D6
+- D9
+status: in_review
+task_type: feature
+title: Feature-Plan Command Integration
 turn_budget:
   expected: 3
   max: 5
-graphiti_context_budget: 6000
+type: integration
+wave: 3
 ---
 
 # TASK-FP002-007: Feature-Plan Command Integration
@@ -46,14 +47,14 @@ Update `.claude/commands/feature-plan.md` to support the new flags (`--from-spec
 
 ## Acceptance Criteria (Machine-Verifiable)
 
-- [ ] `.claude/commands/feature-plan.md` updated with new flag descriptions
-- [ ] When `--from-spec` is provided, command instructs Claude to use `SpecParser` to extract data
-- [ ] When `--target local-model` is set, task output includes YAML frontmatter and structured Coach blocks
-- [ ] When `--generate-adrs` is set, command produces ADR files from Decision Log
-- [ ] When `--generate-quality-gates` is set, command produces quality gate YAML
-- [ ] Existing behaviour (no new flags) is unchanged — backward compatible
-- [ ] Command references correct module imports: `guardkit.planning.spec_parser`, `guardkit.planning.target_mode`, etc.
-- [ ] Lint passes: `ruff check guardkit/planning/`
+- [x] `.claude/commands/feature-plan.md` updated with new flag descriptions
+- [x] When `--from-spec` is provided, command instructs Claude to use `SpecParser` to extract data
+- [x] When `--target local-model` is set, task output includes YAML frontmatter and structured Coach blocks
+- [x] When `--generate-adrs` is set, command produces ADR files from Decision Log
+- [x] When `--generate-quality-gates` is set, command produces quality gate YAML
+- [x] Existing behaviour (no new flags) is unchanged — backward compatible
+- [x] Command references correct module imports: `guardkit.planning.spec_parser`, `guardkit.planning.target_mode`, etc.
+- [x] Lint passes: `ruff check guardkit/planning/`
 
 ## Coach Validation Commands
 

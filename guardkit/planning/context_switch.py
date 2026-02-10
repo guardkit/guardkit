@@ -19,12 +19,10 @@ Example Usage:
     print(format_context_switch_display(result, mode="switch"))
 """
 
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import logging
-import re
 
 logger = logging.getLogger(__name__)
 
