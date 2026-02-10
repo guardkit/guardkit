@@ -203,6 +203,29 @@ class TestRunImpactAnalysis:
         assert result["risk"]["score"] <= 5
 
     @pytest.mark.asyncio
+    async def test_run_impact_analysis_exception_handling(
+        self,
+        mock_sp: MagicMock,
+        mock_client: MagicMock,
+    ):
+        """Test run_impact_analysis handles exceptions gracefully."""
+        # Make search raise an exception
+        mock_client.search = AsyncMock(side_effect=Exception("Search failed"))
+
+        with patch("guardkit.planning.impact_analysis.logger") as mock_logger:
+            result = await run_impact_analysis(
+                sp=mock_sp,
+                client=mock_client,
+                task_or_topic="test query",
+                depth="standard",
+                include_bdd=False,
+                include_tasks=False,
+            )
+
+            assert result["status"] == "no_context"
+            mock_logger.warning.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_run_impact_analysis_quick(
         self,
         mock_sp: MagicMock,
@@ -407,6 +430,19 @@ class TestBuildQuery:
             # Should fall back to using the task ID itself as query
             assert "TASK-INVALID-999" in result or "invalid" in result.lower()
 
+    def test_build_query_file_read_error(self):
+        """Test _build_query handles file read errors gracefully."""
+        with patch("pathlib.Path.exists", return_value=True):
+            with patch("builtins.open", side_effect=IOError("Permission denied")):
+                with patch("guardkit.planning.impact_analysis.logger") as mock_logger:
+                    result = _build_query("TASK-SC-005")
+
+                    # Should fall back to task ID
+                    assert "TASK-SC-005" in result
+
+                    # Should log the error (once per directory tried)
+                    assert mock_logger.debug.call_count >= 1
+
 
 # =========================================================================
 # 4. PARSE FUNCTIONS TESTS (5 tests)
@@ -424,6 +460,23 @@ class TestParseFunctions:
         assert result[0]["name"] == "Order Management"
         assert "order lifecycle" in result[0]["description"].lower()
         assert result[0]["relevance_score"] == 0.95
+
+    def test_parse_component_hits_without_prefix(self):
+        """Test _parse_component_hits handles names without 'Component:' prefix."""
+        hits = [
+            {
+                "uuid": "uuid-001",
+                "name": "Authentication Service",
+                "fact": "Authentication Service provides user authentication and authorization.",
+                "score": 0.92,
+            }
+        ]
+
+        result = _parse_component_hits(hits)
+
+        assert len(result) == 1
+        assert result[0]["name"] == "Authentication Service"
+        assert "authentication" in result[0]["description"].lower()
 
     def test_parse_adr_hits_conflict(self, sample_adr_hits_conflict: List[Dict]):
         """Test _parse_adr_hits detects conflict keywords."""
@@ -459,6 +512,24 @@ class TestParseFunctions:
         # Second scenario has "at risk" keyword
         assert "Handle out-of-stock" in result[1]["scenario_name"]
         assert result[1]["at_risk"] is True
+
+    def test_parse_bdd_hits_without_file_location(self):
+        """Test _parse_bdd_hits handles missing file location."""
+        hits = [
+            {
+                "uuid": "uuid-001",
+                "name": "Scenario: User login",
+                "fact": "Scenario: User login. User provides credentials and logs in.",
+                "score": 0.85,
+            }
+        ]
+
+        result = _parse_bdd_hits(hits)
+
+        assert len(result) == 1
+        assert result[0]["scenario_name"] == "User login"
+        assert result[0]["file_location"] == ""
+        assert result[0]["at_risk"] is False
 
     def test_missing_bdd_group_degrades(self):
         """Test _parse_bdd_hits handles empty/missing results gracefully."""
@@ -533,6 +604,52 @@ class TestCondenseImpactForInjection:
 
         assert result == "" or "no context" in result.lower()
 
+    def test_condense_impact_with_conflicts(self):
+        """Test condense_impact_for_injection prioritizes conflict ADRs."""
+        impact = {
+            "status": "ok",
+            "risk": {"score": 4, "label": "high", "rationale": "Conflicting ADRs"},
+            "components": [
+                {"name": "Payment Service", "description": "Handles payments"}
+            ],
+            "adrs": [
+                {"adr_id": "ADR-SP-001", "title": "Use REST", "conflict": False},
+                {"adr_id": "ADR-SP-002", "title": "Use GraphQL", "conflict": True},
+            ],
+            "implications": ["Payment Service needs refactoring"],
+        }
+
+        result = condense_impact_for_injection(impact, max_tokens=500)
+
+        # Conflicts should appear before informational ADRs
+        assert "CONFLICT" in result
+        assert "ADR-SP-002" in result
+
+    def test_condense_impact_tight_budget(self):
+        """Test condense_impact_for_injection with very tight budget (truncates gracefully)."""
+        impact = {
+            "status": "ok",
+            "risk": {"score": 2, "label": "low", "rationale": "Minimal impact"},
+            "components": [
+                {"name": "Service A"},
+                {"name": "Service B"},
+                {"name": "Service C"},
+            ],
+            "adrs": [
+                {"adr_id": "ADR-001", "title": "Pattern 1", "conflict": False},
+                {"adr_id": "ADR-002", "title": "Pattern 2", "conflict": False},
+            ],
+            "implications": ["Implication 1", "Implication 2", "Implication 3"],
+        }
+
+        result = condense_impact_for_injection(impact, max_tokens=50)
+
+        estimated_tokens = _estimate_tokens(result)
+        assert estimated_tokens <= 50
+
+        # Should at least include risk (highest priority)
+        assert "Risk" in result or "2" in result
+
 
 # =========================================================================
 # 7. FORMAT_IMPACT_DISPLAY TESTS (2 tests)
@@ -578,6 +695,42 @@ class TestFormatImpactDisplay:
         assert "Service A" in result
         # Should not include ADRs or implications (not present in quick)
         assert len(result) < 500  # Reasonably short
+
+    def test_format_impact_display_no_context(self):
+        """Test format_impact_display with no_context status."""
+        impact = {"status": "no_context"}
+
+        result = format_impact_display(impact, depth="standard")
+
+        assert "no impact data" in result.lower()
+
+    def test_format_impact_display_deep_with_bdd(self):
+        """Test format_impact_display with deep depth including BDD scenarios."""
+        impact = {
+            "status": "ok",
+            "risk": {"score": 4, "label": "high", "rationale": "At-risk scenarios"},
+            "components": [{"name": "Auth Service", "relevance_score": 0.95}],
+            "adrs": [{"adr_id": "ADR-SEC-001", "title": "OAuth2", "conflict": True}],
+            "bdd_scenarios": [
+                {
+                    "scenario_name": "User login",
+                    "file_location": "features/auth.feature:15",
+                    "at_risk": True,
+                }
+            ],
+            "implications": ["Security review required"],
+        }
+
+        result = format_impact_display(impact, depth="deep")
+
+        # Should include all sections
+        assert "Auth Service" in result
+        assert "ADR-SEC-001" in result
+        assert "CONFLICT" in result
+        assert "User login" in result
+        assert "AT RISK" in result
+        assert "features/auth.feature:15" in result
+        assert "Security review required" in result
 
 
 # =========================================================================
