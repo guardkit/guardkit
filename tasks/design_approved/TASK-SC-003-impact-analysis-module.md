@@ -1,20 +1,23 @@
 ---
-id: TASK-SC-003
-title: "Implement impact_analysis.py module"
-status: backlog
-created: 2026-02-10T11:20:00Z
-updated: 2026-02-10T11:20:00Z
-priority: high
-task_type: feature
-parent_review: TASK-REV-AEA7
-feature_id: FEAT-SC-001
-wave: 2
-implementation_mode: task-work
 complexity: 6
+created: 2026-02-10 11:20:00+00:00
 dependencies:
-  - TASK-SC-001
-  - TASK-SC-002
-tags: [impact-analysis, risk-scoring, graphiti]
+- TASK-SC-001
+- TASK-SC-002
+feature_id: FEAT-SC-001
+id: TASK-SC-003
+implementation_mode: task-work
+parent_review: TASK-REV-AEA7
+priority: high
+status: design_approved
+tags:
+- impact-analysis
+- risk-scoring
+- graphiti
+task_type: feature
+title: Implement impact_analysis.py module
+updated: 2026-02-10 11:20:00+00:00
+wave: 2
 ---
 
 # Task: Implement impact_analysis.py module
