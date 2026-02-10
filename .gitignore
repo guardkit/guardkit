@@ -76,6 +76,9 @@ obj/
 *.pdb
 *.exe
 
+# GuardKit worktrees (created by autobuild)
+.guardkit/worktrees/
+
 # Temporary files
 *.tmp
 *.temp
