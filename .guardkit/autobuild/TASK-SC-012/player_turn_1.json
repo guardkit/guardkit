@@ -1,0 +1,31 @@
+{
+  "task_id": "TASK-SC-012",
+  "turn": 1,
+  "files_modified": [
+    "mkdocs.yml",
+    "CLAUDE.md"
+  ],
+  "files_created": [
+    "tests/unit/documentation/__init__.py",
+    "tests/unit/documentation/test_mkdocs_navigation.py",
+    "tests/unit/documentation/test_claude_md_references.py"
+  ],
+  "tests_written": [
+    "tests/unit/documentation/test_mkdocs_navigation.py",
+    "tests/unit/documentation/test_claude_md_references.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "All 9 tests passed: mkdocs.yml YAML validation, navigation structure validation (max 3 levels), system context guides present in navigation, guide files exist, CLAUDE.md system context commands section, command descriptions, key references table, and command syntax examples.",
+  "implementation_notes": "Updated mkdocs.yml navigation to include three new system context guides (System Overview, Impact Analysis, Context Switch) in the Guides section. Updated CLAUDE.md to add a new 'System Context Commands' section before Utilities with all three commands and their flags, and added a System Context entry to the Key References table. Created comprehensive tests to validate both files.",
+  "concerns": [],
+  "requirements_addressed": [
+    "Add system context guide entries to mkdocs.yml navigation",
+    "Add command references to CLAUDE.md",
+    "Ensure navigation structure remains compliant (max 3 levels)",
+    "Create tests to validate changes"
+  ],
+  "requirements_remaining": [],
+  "implementation_mode": "direct",
+  "success": true
+}

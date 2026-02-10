@@ -55,6 +55,13 @@ A lightweight, pragmatic task workflow system with built-in quality gates that p
 /template-create [--no-rules-structure]
 ```
 
+### System Context Commands
+```bash
+/system-overview [--verbose] [--section=SECTION]  # Architecture summary
+/impact-analysis TASK-XXX [--depth=DEPTH]         # Pre-task validation
+/context-switch [project-name]                    # Multi-project navigation
+```
+
 ### Utilities
 ```bash
 /debug                                 # Troubleshoot issues
@@ -159,6 +166,7 @@ installer/core/             # Global resources (agents, commands, templates)
 | Command Specs | `installer/core/commands/*.md` |
 | Agent Definitions | `installer/core/agents/*.md` |
 | Workflow Guides | `docs/guides/*.md`, `docs/workflows/*.md` |
+| System Context | `docs/guides/system-overview-guide.md`, `impact-analysis-guide.md`, `context-switch-guide.md` |
 | Stack Templates | `installer/core/templates/*/` |
 | Rules & Patterns | `.claude/rules/` |
 | MCP Integration | `docs/deep-dives/mcp-integration/` |

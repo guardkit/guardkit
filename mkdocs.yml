@@ -92,6 +92,9 @@ nav:
       - Progressive Disclosure: guides/progressive-disclosure.md
       - Hash-Based ID Parallel Development: guides/hash-id-parallel-development.md
       - Hash-Based IDs and PM Tools: guides/hash-id-pm-tools.md
+      - System Overview: guides/system-overview-guide.md
+      - Impact Analysis: guides/impact-analysis-guide.md
+      - Context Switch: guides/context-switch-guide.md
 
   - Workflows:
       - Complexity Management: workflows/complexity-management-workflow.md
