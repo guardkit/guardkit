@@ -1,99 +1,22 @@
 {
   "task_id": "TASK-FP002-005",
   "turn": 1,
-  "files_modified": [],
+  "files_modified": [
+    "guardkit/planning/task_metadata.py",
+    "tasks/in_progress/TASK-FP002-005-task-metadata-enricher.md"
+  ],
   "files_created": [
-    "guardkit/planning/task_metadata.py"
+    ".guardkit/autobuild/TASK-FP002-004/checkpoints.json",
+    ".guardkit/autobuild/TASK-FP002-005/task_work_results.json",
+    "tasks/in_review/TASK-FP002-005-task-metadata-enricher.md"
   ],
-  "tests_written": [
-    "tests/unit/test_task_metadata.py"
-  ],
+  "tests_written": [],
   "tests_run": true,
   "tests_passed": true,
-  "test_output_summary": "43 passed in 1.72s, Coverage: 97% (107 stmts, 1 miss, 36 branches, 3 partial)",
-  "implementation_notes": "Implemented task_metadata.py with EnrichedTask dataclass, enrich_task function, and render_task_markdown function. All 43 tests pass with 97% code coverage, exceeding the 85% target.\n\nKey implementation details:\n- TURN_BUDGETS and CONTEXT_BUDGETS constants defined as specified\n- EnrichedTask dataclass with all required fields including default empty string for enriched_notes\n- enrich_task function looks up budgets based on task.complexity and generates additional guidance for LOCAL_MODEL targets\n- render_task_markdown generates complete markdown with YAML frontmatter and all required sections\n- Handles edge cases: None feature_id, empty lists, multiline content, special characters, long lists\n- Local model mode adds explicit import path and type hint guidance to implementation notes",
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation",
   "concerns": [],
-  "requirements_addressed": [
-    "Define TURN_BUDGETS constant with expected and max values for low, medium, high complexity",
-    "Define CONTEXT_BUDGETS constant with token values for low, medium, high complexity",
-    "Define EnrichedTask dataclass with all required fields",
-    "Implement enrich_task function that looks up budgets and generates LOCAL_MODEL guidance",
-    "Implement render_task_markdown function that generates YAML frontmatter and markdown sections",
-    "Handle all edge cases: None values, empty lists, special characters, multiline content"
-  ],
+  "requirements_addressed": [],
   "requirements_remaining": [],
-  "completion_promises": [
-    {
-      "criterion_id": "AC-001",
-      "criterion_text": "TURN_BUDGETS constant exists with correct structure",
-      "status": "complete",
-      "evidence": "TURN_BUDGETS defined with low: {expected: 1, max: 3}, medium: {expected: 2, max: 5}, high: {expected: 3, max: 5}",
-      "test_file": "tests/unit/test_task_metadata.py",
-      "implementation_files": ["guardkit/planning/task_metadata.py"]
-    },
-    {
-      "criterion_id": "AC-002",
-      "criterion_text": "CONTEXT_BUDGETS constant exists with correct values",
-      "status": "complete",
-      "evidence": "CONTEXT_BUDGETS defined with low: 2000, medium: 4000, high: 6000",
-      "test_file": "tests/unit/test_task_metadata.py",
-      "implementation_files": ["guardkit/planning/task_metadata.py"]
-    },
-    {
-      "criterion_id": "AC-003",
-      "criterion_text": "EnrichedTask dataclass has all required fields",
-      "status": "complete",
-      "evidence": "EnrichedTask dataclass includes: task_definition, feature_id, turn_budget, graphiti_context_budget, target_config, enriched_notes (with default empty string)",
-      "test_file": "tests/unit/test_task_metadata.py",
-      "implementation_files": ["guardkit/planning/task_metadata.py"]
-    },
-    {
-      "criterion_id": "AC-004",
-      "criterion_text": "enrich_task function looks up budgets by complexity",
-      "status": "complete",
-      "evidence": "enrich_task looks up turn_budget from TURN_BUDGETS[task.complexity] and graphiti_context_budget from CONTEXT_BUDGETS[task.complexity]",
-      "test_file": "tests/unit/test_task_metadata.py",
-      "implementation_files": ["guardkit/planning/task_metadata.py"]
-    },
-    {
-      "criterion_id": "AC-005",
-      "criterion_text": "enrich_task adds guidance for LOCAL_MODEL targets",
-      "status": "complete",
-      "evidence": "When target_config.mode == TargetMode.LOCAL_MODEL, enrich_task calls _generate_local_model_guidance to add import path and type hint guidance to enriched_notes",
-      "test_file": "tests/unit/test_task_metadata.py",
-      "implementation_files": ["guardkit/planning/task_metadata.py"]
-    },
-    {
-      "criterion_id": "AC-006",
-      "criterion_text": "render_task_markdown generates YAML frontmatter with all required fields",
-      "status": "complete",
-      "evidence": "render_task_markdown generates frontmatter with: id, feature_id, complexity, complexity_score, type, domain_tags, files_to_create, files_to_modify, files_not_to_touch, dependencies, relevant_decisions, turn_budget, graphiti_context_budget",
-      "test_file": "tests/unit/test_task_metadata.py",
-      "implementation_files": ["guardkit/planning/task_metadata.py"]
-    },
-    {
-      "criterion_id": "AC-007",
-      "criterion_text": "render_task_markdown generates all required sections",
-      "status": "complete",
-      "evidence": "render_task_markdown generates: Description, Acceptance Criteria, Coach Validation Commands, Player Constraints, Implementation Notes sections",
-      "test_file": "tests/unit/test_task_metadata.py",
-      "implementation_files": ["guardkit/planning/task_metadata.py"]
-    },
-    {
-      "criterion_id": "AC-008",
-      "criterion_text": "Implementation handles edge cases gracefully",
-      "status": "complete",
-      "evidence": "Handles None feature_id, empty lists, special characters (quotes, brackets, ampersands), multiline descriptions, long lists (50+ items)",
-      "test_file": "tests/unit/test_task_metadata.py",
-      "implementation_files": ["guardkit/planning/task_metadata.py"]
-    },
-    {
-      "criterion_id": "AC-009",
-      "criterion_text": "Module achieves >=85% test coverage",
-      "status": "complete",
-      "evidence": "Coverage: 97% (107 statements, 1 miss, 36 branches, 3 partial branches). Well above 85% target.",
-      "test_file": "tests/unit/test_task_metadata.py",
-      "implementation_files": ["guardkit/planning/task_metadata.py"]
-    }
-  ]
+  "tests_passed_count": 43
 }

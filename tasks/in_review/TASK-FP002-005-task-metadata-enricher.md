@@ -24,7 +24,7 @@ parent_review: TASK-REV-FP002
 relevant_decisions:
 - D5
 - D10
-status: design_approved
+status: in_review
 task_type: feature
 title: Task Metadata Enricher
 turn_budget:
@@ -42,17 +42,17 @@ Create `guardkit/planning/task_metadata.py` that takes `TaskDefinition` (from Sp
 
 ## Acceptance Criteria (Machine-Verifiable)
 
-- [ ] File exists: `guardkit/planning/task_metadata.py`
-- [ ] File exists: `tests/unit/test_task_metadata.py`
-- [ ] Function `enrich_task(task, target_config, feature_id) -> EnrichedTask` exists
-- [ ] Function `render_task_markdown(enriched_task) -> str` produces valid markdown with YAML frontmatter
-- [ ] YAML frontmatter includes: task_id, feature_id, complexity, complexity_score, type, domain_tags, files_to_create, files_to_modify, files_not_to_touch, dependencies, relevant_decisions, turn_budget, graphiti_context_budget
-- [ ] Turn budget follows rules: low → {expected:1, max:3}, medium → {expected:2, max:5}, high → {expected:3, max:5}
-- [ ] Graphiti context budget follows rules: low → 2000, medium → 4000, high → 6000
-- [ ] `local-model` target adds explicit import paths and type hints to implementation notes
-- [ ] Rendered markdown contains sections: Description, Acceptance Criteria, Coach Validation Commands, Player Constraints, Implementation Notes
-- [ ] Tests pass: `pytest tests/unit/test_task_metadata.py -v`
-- [ ] Lint passes: `ruff check guardkit/planning/task_metadata.py`
+- [x] File exists: `guardkit/planning/task_metadata.py`
+- [x] File exists: `tests/unit/test_task_metadata.py`
+- [x] Function `enrich_task(task, target_config, feature_id) -> EnrichedTask` exists
+- [x] Function `render_task_markdown(enriched_task) -> str` produces valid markdown with YAML frontmatter
+- [x] YAML frontmatter includes: task_id, feature_id, complexity, complexity_score, type, domain_tags, files_to_create, files_to_modify, files_not_to_touch, dependencies, relevant_decisions, turn_budget, graphiti_context_budget
+- [x] Turn budget follows rules: low → {expected:1, max:3}, medium → {expected:2, max:5}, high → {expected:3, max:5}
+- [x] Graphiti context budget follows rules: low → 2000, medium → 4000, high → 6000
+- [x] `local-model` target adds explicit import paths and type hints to implementation notes
+- [x] Rendered markdown contains sections: Description, Acceptance Criteria, Coach Validation Commands, Player Constraints, Implementation Notes
+- [x] Tests pass: `pytest tests/unit/test_task_metadata.py -v` (43 tests passed)
+- [x] Lint passes: `ruff check guardkit/planning/task_metadata.py`
 
 ## Coach Validation Commands
 

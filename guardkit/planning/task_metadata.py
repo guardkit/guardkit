@@ -65,9 +65,9 @@ def enrich_task(
     Returns:
         EnrichedTask with budgets and enriched notes.
     """
-    # Look up budgets based on complexity
-    turn_budget = TURN_BUDGETS[task.complexity]
-    graphiti_context_budget = CONTEXT_BUDGETS[task.complexity]
+    # Look up budgets based on complexity (default to medium if invalid)
+    turn_budget = TURN_BUDGETS.get(task.complexity, TURN_BUDGETS["medium"])
+    graphiti_context_budget = CONTEXT_BUDGETS.get(task.complexity, CONTEXT_BUDGETS["medium"])
 
     # Generate enriched notes for local models
     enriched_notes = ""
