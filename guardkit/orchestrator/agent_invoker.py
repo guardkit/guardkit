@@ -2274,6 +2274,11 @@ Follow the decision format specified in your agent definition.
             results["error"] = error
             results["error_type"] = "DirectModeError"
 
+        # Include completion_promises if Player reported them (TASK-FIX-ACA7b)
+        completion_promises = player_report.get("completion_promises", [])
+        if completion_promises:
+            results["completion_promises"] = completion_promises
+
         results_file.write_text(json.dumps(results, indent=2))
         logger.info(f"Wrote direct mode results to {results_file}")
 
@@ -2332,6 +2337,11 @@ Follow the decision format specified in your agent definition.
             "requirements_remaining": player_report.get("requirements_remaining", []),
             "implementation_mode": "direct",
         }
+
+        # Include completion_promises if Player reported them (TASK-FIX-ACA7b)
+        completion_promises = player_report.get("completion_promises", [])
+        if completion_promises:
+            report["completion_promises"] = completion_promises
 
         # Add error info if failed
         if not success and error:

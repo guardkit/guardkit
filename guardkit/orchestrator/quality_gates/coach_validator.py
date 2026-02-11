@@ -697,7 +697,7 @@ class CoachValidator:
             )
 
         # 4. Validate requirements satisfaction
-        requirements = self.validate_requirements(task, task_work_results)
+        requirements = self.validate_requirements(task, task_work_results, turn=turn)
 
         if not requirements.all_criteria_met:
             logger.info(f"Requirements not met for {task_id}: missing {requirements.missing}")
@@ -1041,14 +1041,21 @@ class CoachValidator:
         self,
         task: Dict[str, Any],
         task_work_results: Dict[str, Any],
+        turn: Optional[int] = None,
     ) -> RequirementsValidation:
         """
         Validate all requirements and acceptance criteria are met.
 
-        Compares the task's acceptance criteria against the requirements
-        reported as met by task-work. Produces structured per-criterion
-        verification results consumed by ``_display_criteria_progress``
-        and ``_count_criteria_passed`` in the orchestrator.
+        Uses two matching strategies in priority order:
+
+        1. **ID-based matching** via ``completion_promises`` from the Player
+           report (``player_turn_N.json``). Each promise has a ``criterion_id``
+           (e.g. ``AC-001``) and ``status`` (``complete``/``incomplete``).
+           This is the preferred strategy because IDs are exact.
+
+        2. **Text matching** via ``requirements_met`` from
+           ``task_work_results.json``. Falls back to this when no
+           completion promises are available (legacy path).
 
         Parameters
         ----------
@@ -1056,6 +1063,9 @@ class CoachValidator:
             Task data including acceptance_criteria
         task_work_results : Dict[str, Any]
             Results from task-work execution
+        turn : Optional[int]
+            Current turn number. When provided, reads the Player report
+            from ``player_turn_{turn}.json`` to extract completion promises.
 
         Returns
         -------
@@ -1063,25 +1073,119 @@ class CoachValidator:
             Validation result with met/missing criteria and per-criterion results
         """
         acceptance_criteria = task.get("acceptance_criteria", [])
+
+        # Strategy 1: ID-based matching via completion_promises (preferred)
+        completion_promises = self._load_completion_promises(
+            task_work_results, turn
+        )
+        if completion_promises:
+            return self._match_by_promises(acceptance_criteria, completion_promises)
+
+        # Strategy 2: Legacy text matching via requirements_met (fallback)
         requirements_met = task_work_results.get("requirements_met", [])
+        return self._match_by_text(acceptance_criteria, requirements_met)
 
-        # Normalize requirements_met for comparison (lowercase, strip whitespace)
-        normalized_met = {r.lower().strip() for r in requirements_met}
+    def _load_completion_promises(
+        self,
+        task_work_results: Dict[str, Any],
+        turn: Optional[int],
+    ) -> List[Dict[str, Any]]:
+        """
+        Load completion promises from available sources.
 
-        # Build per-criterion structured results
+        Checks ``task_work_results`` first, then falls back to reading
+        the Player report file (``player_turn_{turn}.json``).
+
+        Parameters
+        ----------
+        task_work_results : Dict[str, Any]
+            Results from task-work execution
+        turn : Optional[int]
+            Current turn number
+
+        Returns
+        -------
+        List[Dict[str, Any]]
+            List of completion promise dicts, or empty list if unavailable
+        """
+        # Check task_work_results first (may be injected by direct mode writer)
+        promises = task_work_results.get("completion_promises", [])
+        if promises:
+            return promises
+
+        # Try reading from Player report on disk
+        if turn is not None:
+            task_id = task_work_results.get("task_id", "")
+            if task_id:
+                try:
+                    player_path = TaskArtifactPaths.player_report_path(
+                        task_id, turn, self.worktree_path
+                    )
+                    if player_path.exists():
+                        player_data = json.loads(player_path.read_text())
+                        promises = player_data.get("completion_promises", [])
+                        if promises:
+                            logger.debug(
+                                f"Loaded {len(promises)} completion promises "
+                                f"from {player_path.name}"
+                            )
+                            return promises
+                except Exception as e:
+                    logger.debug(f"Could not read Player report for promises: {e}")
+
+        return []
+
+    def _match_by_promises(
+        self,
+        acceptance_criteria: List[str],
+        completion_promises: List[Dict[str, Any]],
+    ) -> RequirementsValidation:
+        """
+        Match acceptance criteria to Player completion promises by criterion ID.
+
+        Each acceptance criterion at index *i* maps to ``AC-{i+1:03d}``.
+        A criterion is verified when a matching promise has status ``complete``.
+
+        Parameters
+        ----------
+        acceptance_criteria : List[str]
+            Acceptance criteria text from the task
+        completion_promises : List[Dict[str, Any]]
+            Completion promises from the Player report
+
+        Returns
+        -------
+        RequirementsValidation
+            Structured validation result
+        """
+        # Build promise map: criterion_id -> promise dict
+        promise_map: Dict[str, Dict[str, Any]] = {}
+        for p in completion_promises:
+            cid = p.get("criterion_id", "")
+            if cid:
+                promise_map[cid] = p
+
         criteria_results: List[CriterionResult] = []
         missing: List[str] = []
 
         for i, criterion_text in enumerate(acceptance_criteria):
             criterion_id = f"AC-{i+1:03d}"
-            normalized = criterion_text.lower().strip()
+            promise = promise_map.get(criterion_id)
 
-            if normalized in normalized_met:
+            if promise and promise.get("status") == "complete":
                 result_str = "verified"
-                evidence = f"Matched in Player requirements_met: '{criterion_text}'"
+                evidence = promise.get(
+                    "evidence",
+                    f"Player completed {criterion_id}",
+                )
             else:
                 result_str = "rejected"
-                evidence = f"Not found in Player requirements_met"
+                if promise:
+                    evidence = (
+                        f"Promise status: {promise.get('status', 'unknown')}"
+                    )
+                else:
+                    evidence = f"No completion promise for {criterion_id}"
                 missing.append(criterion_text)
 
             criteria_results.append(CriterionResult(
@@ -1103,7 +1207,75 @@ class CoachValidator:
         )
 
         logger.debug(
-            f"Requirements validation: {criteria_met_count}/{len(acceptance_criteria)} met, "
+            f"Requirements validation (promises): "
+            f"{criteria_met_count}/{len(acceptance_criteria)} met, "
+            f"missing: {missing}"
+        )
+
+        return validation
+
+    def _match_by_text(
+        self,
+        acceptance_criteria: List[str],
+        requirements_met: List[str],
+    ) -> RequirementsValidation:
+        """
+        Match acceptance criteria to requirements_met by normalized text.
+
+        Legacy matching strategy. Used when completion promises are not
+        available (e.g. older task-work results).
+
+        Parameters
+        ----------
+        acceptance_criteria : List[str]
+            Acceptance criteria text from the task
+        requirements_met : List[str]
+            Requirements reported as met by the Player
+
+        Returns
+        -------
+        RequirementsValidation
+            Structured validation result
+        """
+        # Normalize requirements_met for comparison (lowercase, strip whitespace)
+        normalized_met = {r.lower().strip() for r in requirements_met}
+
+        criteria_results: List[CriterionResult] = []
+        missing: List[str] = []
+
+        for i, criterion_text in enumerate(acceptance_criteria):
+            criterion_id = f"AC-{i+1:03d}"
+            normalized = criterion_text.lower().strip()
+
+            if normalized in normalized_met:
+                result_str = "verified"
+                evidence = f"Matched in Player requirements_met: '{criterion_text}'"
+            else:
+                result_str = "rejected"
+                evidence = "Not found in Player requirements_met"
+                missing.append(criterion_text)
+
+            criteria_results.append(CriterionResult(
+                criterion_id=criterion_id,
+                criterion_text=criterion_text,
+                result=result_str,
+                status=result_str,
+                evidence=evidence,
+            ))
+
+        criteria_met_count = len(acceptance_criteria) - len(missing)
+
+        validation = RequirementsValidation(
+            criteria_total=len(acceptance_criteria),
+            criteria_met=criteria_met_count,
+            all_criteria_met=len(missing) == 0,
+            missing=missing,
+            criteria_results=criteria_results,
+        )
+
+        logger.debug(
+            f"Requirements validation (text): "
+            f"{criteria_met_count}/{len(acceptance_criteria)} met, "
             f"missing: {missing}"
         )
 
@@ -1394,6 +1566,33 @@ class CoachValidator:
             and independent_tests.test_command != "skipped"
         ):
             return []
+
+        # Check for project-wide pass masking zero task-specific tests:
+        # Player created no tests AND independent verification found no task-specific tests.
+        # The project-wide suite may pass (tests_passed_count > 0) but this task
+        # contributes zero test coverage.
+        tests_written = task_work_results.get("tests_written", [])
+        if (
+            len(tests_written) == 0
+            and independent_tests
+            and independent_tests.test_command == "skipped"
+        ):
+            severity = "error" if profile.zero_test_blocking else "warning"
+            log_func = logger.error if profile.zero_test_blocking else logger.warning
+            log_func(
+                "Zero-test anomaly: no task-specific tests created (tests_written=[]) "
+                "and independent verification skipped (no task-specific test files found). "
+                "Project-wide test suite may pass but task contributes zero test coverage."
+            )
+            return [{
+                "severity": severity,
+                "category": "zero_test_anomaly",
+                "description": (
+                    "No task-specific tests created and no task-specific tests found "
+                    "via independent verification. Project-wide test suite may pass "
+                    "but this task contributes zero test coverage."
+                ),
+            }]
 
         quality_gates = task_work_results.get("quality_gates", {})
         all_passed = quality_gates.get("all_passed")

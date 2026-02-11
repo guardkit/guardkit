@@ -2914,6 +2914,263 @@ class TestZeroTestAnomalyIndependentTestOverride:
 
 
 # ============================================================================
+# Test Project-Wide Pass Bypass (TASK-FIX-ACA7a)
+# ============================================================================
+
+
+class TestProjectWidePassBypass:
+    """Test that zero-test anomaly catches project-wide pass masking zero task-specific tests.
+
+    Bug: When a task goes through the task-work delegation path, the stream parser captures
+    "Quality gates: PASSED" from the project's existing test suite. This writes all_passed=True
+    and tests_passed_count > 0 to task_work_results.json. The zero-test anomaly check sees
+    tests_passed_count > 0 and doesn't trigger, even though the task contributed zero new tests.
+    """
+
+    def test_project_wide_pass_with_zero_tests_written_triggers_anomaly(self, tmp_worktree):
+        """AC-001: Detects when tests_written is empty AND independent verification skipped."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.FEATURE)
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 218,
+                "tests_failed": 0,
+                "coverage": 85.0,
+                "all_passed": True,
+            },
+            "tests_written": [],  # Player created zero task-specific tests
+        }
+        independent_tests = IndependentTestResult(
+            tests_passed=True,
+            test_command="skipped",
+            test_output_summary="No task-specific tests found",
+            duration_seconds=0.0,
+        )
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(
+            task_work_results, profile, independent_tests=independent_tests
+        )
+
+        assert len(issues) == 1
+        assert issues[0]["category"] == "zero_test_anomaly"
+        assert "task-specific tests" in issues[0]["description"]
+
+    def test_project_wide_pass_blocking_profile_returns_error(self, tmp_worktree):
+        """AC-002: Blocking error for profiles with zero_test_blocking=True."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.FEATURE)  # zero_test_blocking=True
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 218,
+                "coverage": 85.0,
+                "all_passed": True,
+            },
+            "tests_written": [],
+        }
+        independent_tests = IndependentTestResult(
+            tests_passed=True,
+            test_command="skipped",
+            test_output_summary="No task-specific tests found",
+            duration_seconds=0.0,
+        )
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(
+            task_work_results, profile, independent_tests=independent_tests
+        )
+
+        assert len(issues) == 1
+        assert issues[0]["severity"] == "error"
+
+    def test_project_wide_pass_non_blocking_profile_returns_warning(self, tmp_worktree):
+        """AC-003: Warning for profiles with zero_test_blocking=False."""
+        from guardkit.models.task_types import QualityGateProfile
+
+        profile = QualityGateProfile(
+            arch_review_required=False,
+            arch_review_threshold=0,
+            coverage_required=False,
+            coverage_threshold=0.0,
+            tests_required=True,
+            plan_audit_required=False,
+            zero_test_blocking=False,
+        )
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 218,
+                "coverage": 85.0,
+                "all_passed": True,
+            },
+            "tests_written": [],
+        }
+        independent_tests = IndependentTestResult(
+            tests_passed=True,
+            test_command="skipped",
+            test_output_summary="No task-specific tests found",
+            duration_seconds=0.0,
+        )
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(
+            task_work_results, profile, independent_tests=independent_tests
+        )
+
+        assert len(issues) == 1
+        assert issues[0]["severity"] == "warning"
+
+    def test_no_false_positive_when_task_creates_tests(self, tmp_worktree):
+        """AC-004: No false positive for tasks that DO create tests."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.FEATURE)
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 219,
+                "coverage": 86.0,
+                "all_passed": True,
+            },
+            "tests_written": ["tests/test_new_feature.py"],
+        }
+        independent_tests = IndependentTestResult(
+            tests_passed=True,
+            test_command="pytest tests/test_new_feature.py -v",
+            test_output_summary="1 passed",
+            duration_seconds=0.5,
+        )
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(
+            task_work_results, profile, independent_tests=independent_tests
+        )
+
+        assert len(issues) == 0
+
+    def test_no_false_positive_for_tests_not_required(self, tmp_worktree):
+        """AC-005: No false positive for tasks with tests_required=False."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.SCAFFOLDING)  # tests_required=False
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 218,
+                "coverage": 85.0,
+                "all_passed": True,
+            },
+            "tests_written": [],
+        }
+        independent_tests = IndependentTestResult(
+            tests_passed=True,
+            test_command="skipped",
+            test_output_summary="Independent test verification skipped (tests_required=False)",
+            duration_seconds=0.0,
+        )
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(
+            task_work_results, profile, independent_tests=independent_tests
+        )
+
+        assert len(issues) == 0
+
+    def test_no_false_positive_when_tests_written_missing_from_results(self, tmp_worktree):
+        """No false positive when tests_written key is absent (defaults to empty list)
+        but independent tests actually ran successfully."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.FEATURE)
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 5,
+                "coverage": 80.0,
+                "all_passed": True,
+            },
+            # No tests_written key at all
+        }
+        independent_tests = IndependentTestResult(
+            tests_passed=True,
+            test_command="pytest tests/test_feature.py -v",
+            test_output_summary="5 passed",
+            duration_seconds=1.0,
+        )
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(
+            task_work_results, profile, independent_tests=independent_tests
+        )
+
+        # Independent tests passed with actual test_command (not "skipped"),
+        # so the early return at line 1391-1396 catches this — no anomaly
+        assert len(issues) == 0
+
+    def test_project_wide_pass_blocks_approval_integration(
+        self, tmp_worktree, task_work_results_dir
+    ):
+        """Integration: validate() returns feedback when project-wide pass masks zero task tests."""
+        results = {
+            "quality_gates": {
+                "tests_passing": True,
+                "tests_passed": 218,
+                "tests_failed": 0,
+                "coverage": 85.0,
+                "coverage_met": True,
+                "all_passed": True,
+            },
+            "code_review": {"score": 85},
+            "plan_audit": {"violations": 0},
+            "requirements_met": ["Criterion A"],
+            "tests_written": [],
+        }
+        (task_work_results_dir / "task_work_results.json").write_text(json.dumps(results))
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-001")
+        with patch.object(validator, "run_independent_tests") as mock_run:
+            mock_run.return_value = IndependentTestResult(
+                tests_passed=True,
+                test_command="skipped",
+                test_output_summary="No task-specific tests found",
+                duration_seconds=0.0,
+            )
+            result = validator.validate(
+                task_id="TASK-001",
+                turn=1,
+                task={
+                    "acceptance_criteria": ["Criterion A"],
+                    "task_type": "feature",
+                },
+            )
+
+        assert result.decision == "feedback"
+        assert any(i["category"] == "zero_test_anomaly" for i in result.issues)
+        assert "zero-test anomaly" in result.rationale.lower()
+
+    def test_no_anomaly_without_independent_tests_param(self, tmp_worktree):
+        """No anomaly triggered when independent_tests is None (backward compat)."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.FEATURE)
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 218,
+                "coverage": 85.0,
+                "all_passed": True,
+            },
+            "tests_written": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(
+            task_work_results, profile, independent_tests=None
+        )
+
+        # independent_tests is None, so the new check doesn't trigger
+        # (and the original check at line 1403 also doesn't trigger because tests_passed=218)
+        assert len(issues) == 0
+
+
+# ============================================================================
 # Test Coach Context Integration (TASK-SC-009)
 # ============================================================================
 
@@ -3414,6 +3671,239 @@ class TestCriteriaVerification:
         assert len(acv) == 3
         count = sum(1 for r in acv if r.get("status") == "verified")
         assert count == 3
+
+
+# ============================================================================
+# Test Completion Promises Matching (TASK-FIX-ACA7b)
+# ============================================================================
+
+
+class TestCompletionPromisesMatching:
+    """Test ID-based matching via completion_promises in validate_requirements."""
+
+    def test_promises_match_all_criteria(self, tmp_worktree):
+        """AC-003: All criteria verified when all promises have status complete."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature A", "Feature B", "Feature C"])
+        results = {
+            "completion_promises": [
+                {"criterion_id": "AC-001", "status": "complete", "evidence": "Impl A"},
+                {"criterion_id": "AC-002", "status": "complete", "evidence": "Impl B"},
+                {"criterion_id": "AC-003", "status": "complete", "evidence": "Impl C"},
+            ],
+        }
+
+        validation = validator.validate_requirements(task, results)
+
+        assert validation.all_criteria_met is True
+        assert validation.criteria_met == 3
+        assert validation.criteria_total == 3
+        assert len(validation.criteria_results) == 3
+        assert all(cr.status == "verified" for cr in validation.criteria_results)
+
+    def test_promises_partial_match(self, tmp_worktree):
+        """AC-004: Incomplete promises show as rejected, not false positive."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature A", "Feature B", "Feature C"])
+        results = {
+            "completion_promises": [
+                {"criterion_id": "AC-001", "status": "complete", "evidence": "Done A"},
+                {"criterion_id": "AC-002", "status": "incomplete", "evidence": "WIP"},
+                {"criterion_id": "AC-003", "status": "complete", "evidence": "Done C"},
+            ],
+        }
+
+        validation = validator.validate_requirements(task, results)
+
+        assert validation.all_criteria_met is False
+        assert validation.criteria_met == 2
+        assert validation.criteria_results[0].status == "verified"
+        assert validation.criteria_results[1].status == "rejected"
+        assert validation.criteria_results[2].status == "verified"
+        assert "Feature B" in validation.missing
+
+    def test_promises_missing_criterion(self, tmp_worktree):
+        """AC-004: Missing promise for a criterion shows as rejected."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature A", "Feature B"])
+        results = {
+            "completion_promises": [
+                {"criterion_id": "AC-001", "status": "complete", "evidence": "Done A"},
+                # AC-002 missing entirely
+            ],
+        }
+
+        validation = validator.validate_requirements(task, results)
+
+        assert validation.criteria_met == 1
+        assert validation.criteria_results[0].status == "verified"
+        assert validation.criteria_results[1].status == "rejected"
+        assert "No completion promise for AC-002" in validation.criteria_results[1].evidence
+
+    def test_promises_evidence_preserved(self, tmp_worktree):
+        """AC-003: Evidence from Player promise is included in criterion result."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Implement OAuth2 flow"])
+        results = {
+            "completion_promises": [
+                {
+                    "criterion_id": "AC-001",
+                    "status": "complete",
+                    "evidence": "Added OAuth2 handler in auth.py with token refresh",
+                },
+            ],
+        }
+
+        validation = validator.validate_requirements(task, results)
+
+        cr = validation.criteria_results[0]
+        assert cr.status == "verified"
+        assert "OAuth2 handler" in cr.evidence
+
+    def test_promises_preferred_over_requirements_met(self, tmp_worktree):
+        """AC-002: completion_promises takes priority over requirements_met."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature A", "Feature B"])
+        results = {
+            # Both strategies present — promises should win
+            "completion_promises": [
+                {"criterion_id": "AC-001", "status": "complete", "evidence": "Done"},
+                {"criterion_id": "AC-002", "status": "incomplete"},
+            ],
+            "requirements_met": ["Feature A", "Feature B"],  # Would match both
+        }
+
+        validation = validator.validate_requirements(task, results)
+
+        # Promises say AC-002 incomplete, so it should be rejected
+        # even though requirements_met has "Feature B"
+        assert validation.criteria_met == 1
+        assert validation.criteria_results[1].status == "rejected"
+
+    def test_falls_back_to_text_when_no_promises(self, tmp_worktree):
+        """AC-005: Falls back to requirements_met text matching when no promises."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature A", "Feature B"])
+        results = {
+            "requirements_met": ["Feature A", "Feature B"],
+        }
+
+        validation = validator.validate_requirements(task, results)
+
+        assert validation.all_criteria_met is True
+        assert all(cr.status == "verified" for cr in validation.criteria_results)
+
+    def test_empty_promises_falls_back_to_text(self, tmp_worktree):
+        """AC-005: Empty promises list falls back to text matching."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature A"])
+        results = {
+            "completion_promises": [],
+            "requirements_met": ["Feature A"],
+        }
+
+        validation = validator.validate_requirements(task, results)
+
+        assert validation.all_criteria_met is True
+
+    def test_promises_from_player_report_file(self, tmp_worktree):
+        """AC-002: Reads completion_promises from player_turn_N.json on disk."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature A", "Feature B"])
+        results = {"task_id": "TASK-001"}  # No promises in task_work_results
+
+        # Write player report with promises
+        player_dir = tmp_worktree / ".guardkit" / "autobuild" / "TASK-001"
+        player_dir.mkdir(parents=True, exist_ok=True)
+        player_report = {
+            "completion_promises": [
+                {"criterion_id": "AC-001", "status": "complete", "evidence": "Done A"},
+                {"criterion_id": "AC-002", "status": "complete", "evidence": "Done B"},
+            ],
+        }
+        (player_dir / "player_turn_1.json").write_text(json.dumps(player_report))
+
+        validation = validator.validate_requirements(task, results, turn=1)
+
+        assert validation.all_criteria_met is True
+        assert validation.criteria_met == 2
+
+    def test_no_player_report_falls_back_to_text(self, tmp_worktree):
+        """AC-005: No player report file falls back to text matching."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature A"])
+        results = {
+            "task_id": "TASK-NONEXISTENT",
+            "requirements_met": ["Feature A"],
+        }
+
+        validation = validator.validate_requirements(task, results, turn=1)
+
+        # Should fall back to text matching
+        assert validation.all_criteria_met is True
+
+    def test_promise_id_format_matching(self, tmp_worktree):
+        """AC-002: Criterion IDs are zero-padded (AC-001, AC-002, etc.)."""
+        validator = CoachValidator(str(tmp_worktree))
+        criteria = [f"Criterion {i}" for i in range(1, 11)]
+        task = make_task(criteria)
+        promises = [
+            {"criterion_id": f"AC-{i:03d}", "status": "complete", "evidence": f"Done {i}"}
+            for i in range(1, 11)
+        ]
+        results = {"completion_promises": promises}
+
+        validation = validator.validate_requirements(task, results)
+
+        assert validation.criteria_met == 10
+        assert validation.all_criteria_met is True
+        assert validation.criteria_results[9].criterion_id == "AC-010"
+
+    def test_promise_without_evidence_uses_default(self, tmp_worktree):
+        """AC-003: Missing evidence field uses default message."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature A"])
+        results = {
+            "completion_promises": [
+                {"criterion_id": "AC-001", "status": "complete"},
+                # No evidence field
+            ],
+        }
+
+        validation = validator.validate_requirements(task, results)
+
+        assert validation.criteria_results[0].status == "verified"
+        assert "AC-001" in validation.criteria_results[0].evidence
+
+    def test_promise_with_unknown_status_rejected(self, tmp_worktree):
+        """AC-004: Unknown promise status treated as not complete."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature A"])
+        results = {
+            "completion_promises": [
+                {"criterion_id": "AC-001", "status": "in_progress"},
+            ],
+        }
+
+        validation = validator.validate_requirements(task, results)
+
+        assert validation.criteria_results[0].status == "rejected"
+        assert "in_progress" in validation.criteria_results[0].evidence
+
+    def test_empty_acceptance_criteria_with_promises(self, tmp_worktree):
+        """AC-005: Empty acceptance criteria returns empty results."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = {"acceptance_criteria": []}
+        results = {
+            "completion_promises": [
+                {"criterion_id": "AC-001", "status": "complete"},
+            ],
+        }
+
+        validation = validator.validate_requirements(task, results)
+
+        assert validation.criteria_total == 0
+        assert validation.all_criteria_met is True
 
 
 # ============================================================================
