@@ -2236,6 +2236,13 @@ Follow the decision format specified in your agent definition.
         # Extract test info from Player report
         tests_run = player_report.get("tests_run", False)
         tests_passed = player_report.get("tests_passed", False)
+        tests_written = player_report.get("tests_written", [])
+
+        # Derive test count: use tests_passed_count if available (task-work path),
+        # otherwise derive from tests_written list length when tests_passed is True
+        tests_passed_count = player_report.get("tests_passed_count", 0)
+        if tests_passed_count == 0 and tests_passed and tests_written:
+            tests_passed_count = len(tests_written)
 
         results: Dict[str, Any] = {
             "task_id": task_id,
@@ -2248,7 +2255,7 @@ Follow the decision format specified in your agent definition.
             },
             "quality_gates": {
                 "tests_passing": tests_passed if tests_run else None,
-                "tests_passed": player_report.get("tests_passed_count", 0),
+                "tests_passed": tests_passed_count,
                 "tests_failed": player_report.get("tests_failed_count", 0),
                 "coverage": None,  # No coverage requirement for direct mode
                 "coverage_met": True,  # Direct mode relaxes coverage

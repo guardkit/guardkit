@@ -5165,6 +5165,130 @@ Task with deprecated manual mode - should be normalized to task-work.
         assert results["files_created"] == ["a.py", "z.py"]
 
     # ========================================================================
+    # Direct Mode Test Count Propagation Tests (TASK-FIX-CEE8a)
+    # ========================================================================
+
+    def test_direct_mode_derives_test_count_from_tests_written(
+        self, agent_invoker, worktree_path
+    ):
+        """AC-001: tests_passed=True with tests_written list produces correct count."""
+        task_id = "TASK-CEE8a-001"
+        player_report = {
+            "task_id": task_id,
+            "tests_run": True,
+            "tests_passed": True,
+            "tests_written": ["tests/test_a.py", "tests/test_b.py"],
+            "files_modified": ["src/main.py"],
+        }
+
+        result_path = agent_invoker._write_direct_mode_results(
+            task_id, player_report, success=True
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["quality_gates"]["tests_passed"] == 2
+
+    def test_direct_mode_zero_count_when_tests_failed(
+        self, agent_invoker, worktree_path
+    ):
+        """AC-002: tests_passed=False with tests_written list produces 0."""
+        task_id = "TASK-CEE8a-002"
+        player_report = {
+            "task_id": task_id,
+            "tests_run": True,
+            "tests_passed": False,
+            "tests_written": ["tests/test_a.py"],
+            "files_modified": ["src/main.py"],
+        }
+
+        result_path = agent_invoker._write_direct_mode_results(
+            task_id, player_report, success=True
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["quality_gates"]["tests_passed"] == 0
+
+    def test_direct_mode_zero_count_when_tests_written_empty(
+        self, agent_invoker, worktree_path
+    ):
+        """AC-003: tests_passed=True with empty tests_written produces 0."""
+        task_id = "TASK-CEE8a-003"
+        player_report = {
+            "task_id": task_id,
+            "tests_run": True,
+            "tests_passed": True,
+            "tests_written": [],
+            "files_modified": ["src/main.py"],
+        }
+
+        result_path = agent_invoker._write_direct_mode_results(
+            task_id, player_report, success=True
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["quality_gates"]["tests_passed"] == 0
+
+    def test_direct_mode_preserves_explicit_tests_passed_count(
+        self, agent_invoker, worktree_path
+    ):
+        """AC-004: task-work path with tests_passed_count=12 still works."""
+        task_id = "TASK-CEE8a-004"
+        player_report = {
+            "task_id": task_id,
+            "tests_run": True,
+            "tests_passed": True,
+            "tests_passed_count": 12,
+            "tests_written": ["tests/test_a.py"],
+            "files_modified": ["src/main.py"],
+        }
+
+        result_path = agent_invoker._write_direct_mode_results(
+            task_id, player_report, success=True
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["quality_gates"]["tests_passed"] == 12
+
+    def test_direct_mode_no_tests_written_field(
+        self, agent_invoker, worktree_path
+    ):
+        """Direct mode Player with no tests_written field produces 0."""
+        task_id = "TASK-CEE8a-005"
+        player_report = {
+            "task_id": task_id,
+            "tests_run": True,
+            "tests_passed": True,
+            "files_modified": ["src/main.py"],
+        }
+
+        result_path = agent_invoker._write_direct_mode_results(
+            task_id, player_report, success=True
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["quality_gates"]["tests_passed"] == 0
+
+    def test_direct_mode_no_tests_run(
+        self, agent_invoker, worktree_path
+    ):
+        """Direct mode Player that didn't run tests produces 0."""
+        task_id = "TASK-CEE8a-006"
+        player_report = {
+            "task_id": task_id,
+            "tests_run": False,
+            "tests_passed": False,
+            "tests_written": ["tests/test_a.py"],
+            "files_modified": ["src/main.py"],
+        }
+
+        result_path = agent_invoker._write_direct_mode_results(
+            task_id, player_report, success=True
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["quality_gates"]["tests_passed"] == 0
+
+    # ========================================================================
     # Direct Mode Player Report Tests (TASK-PRH-001)
     # ========================================================================
 

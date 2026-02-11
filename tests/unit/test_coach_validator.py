@@ -2660,6 +2660,260 @@ class TestZeroTestBlockingConfiguration:
 
 
 # ============================================================================
+# Independent Test Override for Zero-Test Anomaly (TASK-FIX-CEE8b)
+# ============================================================================
+
+
+class TestZeroTestAnomalyIndependentTestOverride:
+    """Test that independent test results override zero-test anomaly detection."""
+
+    def test_independent_tests_passed_skips_anomaly(self, tmp_worktree):
+        """AC-001: Zero-test anomaly with independent_tests.tests_passed=True returns empty list."""
+        from guardkit.models.task_types import QualityGateProfile
+
+        profile = QualityGateProfile(
+            arch_review_required=False,
+            arch_review_threshold=0,
+            coverage_required=False,
+            coverage_threshold=0.0,
+            tests_required=True,
+            plan_audit_required=False,
+            zero_test_blocking=True,
+        )
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 0,
+                "coverage": None,
+                "all_passed": True,
+            },
+        }
+        independent_tests = IndependentTestResult(
+            tests_passed=True,
+            test_command="pytest tests/ -v",
+            test_output_summary="5 passed",
+            duration_seconds=1.5,
+        )
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(
+            task_work_results, profile, independent_tests=independent_tests
+        )
+
+        assert len(issues) == 0
+
+    def test_independent_tests_none_still_fires(self, tmp_worktree):
+        """AC-002: Zero-test anomaly with independent_tests=None still fires."""
+        from guardkit.models.task_types import QualityGateProfile
+
+        profile = QualityGateProfile(
+            arch_review_required=False,
+            arch_review_threshold=0,
+            coverage_required=False,
+            coverage_threshold=0.0,
+            tests_required=True,
+            plan_audit_required=False,
+            zero_test_blocking=True,
+        )
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 0,
+                "coverage": None,
+                "all_passed": True,
+            },
+        }
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(
+            task_work_results, profile, independent_tests=None
+        )
+
+        assert len(issues) == 1
+        assert issues[0]["severity"] == "error"
+        assert issues[0]["category"] == "zero_test_anomaly"
+
+    def test_independent_tests_failed_still_fires(self, tmp_worktree):
+        """AC-003: Zero-test anomaly with independent_tests.tests_passed=False still fires."""
+        from guardkit.models.task_types import QualityGateProfile
+
+        profile = QualityGateProfile(
+            arch_review_required=False,
+            arch_review_threshold=0,
+            coverage_required=False,
+            coverage_threshold=0.0,
+            tests_required=True,
+            plan_audit_required=False,
+            zero_test_blocking=True,
+        )
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 0,
+                "coverage": None,
+                "all_passed": True,
+            },
+        }
+        independent_tests = IndependentTestResult(
+            tests_passed=False,
+            test_command="pytest tests/ -v",
+            test_output_summary="2 failed",
+            duration_seconds=1.0,
+        )
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(
+            task_work_results, profile, independent_tests=independent_tests
+        )
+
+        assert len(issues) == 1
+        assert issues[0]["severity"] == "error"
+        assert issues[0]["category"] == "zero_test_anomaly"
+
+    def test_non_zero_tests_with_independent_passed_returns_empty(self, tmp_worktree):
+        """AC-004: Non-zero tests with independent tests passed returns empty list."""
+        from guardkit.models.task_types import QualityGateProfile
+
+        profile = QualityGateProfile(
+            arch_review_required=False,
+            arch_review_threshold=0,
+            coverage_required=False,
+            coverage_threshold=0.0,
+            tests_required=True,
+            plan_audit_required=False,
+            zero_test_blocking=True,
+        )
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 10,
+                "coverage": 85.0,
+                "all_passed": True,
+            },
+        }
+        independent_tests = IndependentTestResult(
+            tests_passed=True,
+            test_command="pytest tests/ -v",
+            test_output_summary="10 passed",
+            duration_seconds=2.0,
+        )
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(
+            task_work_results, profile, independent_tests=independent_tests
+        )
+
+        assert len(issues) == 0
+
+    def test_independent_passed_non_blocking_profile_also_skips(self, tmp_worktree):
+        """Independent tests passed skips anomaly even with non-blocking profile."""
+        from guardkit.models.task_types import QualityGateProfile
+
+        profile = QualityGateProfile(
+            arch_review_required=False,
+            arch_review_threshold=0,
+            coverage_required=False,
+            coverage_threshold=0.0,
+            tests_required=True,
+            plan_audit_required=False,
+            zero_test_blocking=False,
+        )
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 0,
+                "coverage": None,
+                "all_passed": True,
+            },
+        }
+        independent_tests = IndependentTestResult(
+            tests_passed=True,
+            test_command="pytest tests/ -v",
+            test_output_summary="3 passed",
+            duration_seconds=0.5,
+        )
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(
+            task_work_results, profile, independent_tests=independent_tests
+        )
+
+        assert len(issues) == 0
+
+    def test_vacuous_pass_skipped_still_fires_anomaly(self, tmp_worktree):
+        """Vacuous pass (test_command='skipped', no tests found) still fires anomaly."""
+        from guardkit.models.task_types import QualityGateProfile
+
+        profile = QualityGateProfile(
+            arch_review_required=False,
+            arch_review_threshold=0,
+            coverage_required=False,
+            coverage_threshold=0.0,
+            tests_required=True,
+            plan_audit_required=False,
+            zero_test_blocking=True,
+        )
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 0,
+                "coverage": None,
+                "all_passed": True,
+            },
+        }
+        # Vacuous pass: tests_passed=True but test_command="skipped" (no test files found)
+        independent_tests = IndependentTestResult(
+            tests_passed=True,
+            test_command="skipped",
+            test_output_summary="No task-specific tests found",
+            duration_seconds=0.0,
+        )
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(
+            task_work_results, profile, independent_tests=independent_tests
+        )
+
+        assert len(issues) == 1
+        assert issues[0]["severity"] == "error"
+        assert issues[0]["category"] == "zero_test_anomaly"
+
+    def test_validate_approval_with_zero_tests_and_independent_passed(
+        self, tmp_worktree, task_work_results_dir
+    ):
+        """Integration: validate() approves when independent tests pass despite zero-test data."""
+        results = {
+            "quality_gates": {
+                "tests_passing": True,
+                "tests_passed": 0,
+                "tests_failed": 0,
+                "coverage": None,
+                "coverage_met": None,
+                "all_passed": True,
+            },
+            "code_review": {"score": 85},
+            "plan_audit": {"violations": 0},
+            "requirements_met": ["Criterion A"],
+        }
+        (task_work_results_dir / "task_work_results.json").write_text(json.dumps(results))
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-001")
+        # Patch run_independent_tests to return passing result
+        with patch.object(validator, "run_independent_tests") as mock_run:
+            mock_run.return_value = IndependentTestResult(
+                tests_passed=True,
+                test_command="pytest tests/ -v",
+                test_output_summary="5 passed",
+                duration_seconds=1.0,
+            )
+            result = validator.validate(
+                task_id="TASK-001",
+                turn=1,
+                task={
+                    "acceptance_criteria": ["Criterion A"],
+                    "task_type": "feature",
+                },
+            )
+
+        # With independent tests passing, zero-test anomaly should NOT block
+        assert result.decision == "approve"
+
+
+# ============================================================================
 # Test Coach Context Integration (TASK-SC-009)
 # ============================================================================
 

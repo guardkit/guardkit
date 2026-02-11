@@ -717,7 +717,9 @@ class CoachValidator:
             )
 
         # 5. Check for blocking zero-test anomaly before approval
-        zero_test_issues = self._check_zero_test_anomaly(task_work_results, profile)
+        zero_test_issues = self._check_zero_test_anomaly(
+            task_work_results, profile, independent_tests=test_result
+        )
         has_blocking_zero_test = any(
             issue.get("severity") == "error" for issue in zero_test_issues
         )
@@ -1353,6 +1355,7 @@ class CoachValidator:
         self,
         task_work_results: Dict[str, Any],
         profile: QualityGateProfile,
+        independent_tests: Optional["IndependentTestResult"] = None,
     ) -> List[Dict[str, Any]]:
         """
         Check for zero-test anomaly: all_passed=true with no tests actually executed.
@@ -1367,6 +1370,10 @@ class CoachValidator:
             Task-work results
         profile : QualityGateProfile
             Quality gate profile for task type
+        independent_tests : Optional[IndependentTestResult]
+            Result of independent test verification. If tests were independently
+            verified as passing, the zero-test anomaly is a data quality issue
+            in the results writer, not a real missing-tests problem.
 
         Returns
         -------
@@ -1374,6 +1381,18 @@ class CoachValidator:
             List containing a warning issue if anomaly detected, empty otherwise
         """
         if not profile.tests_required:
+            return []
+
+        # Defense-in-depth: if independent test verification confirmed tests pass,
+        # the zero-test anomaly is a results-writer data quality issue, not a real
+        # missing-tests problem. Skip the anomaly check.
+        # Note: "skipped" means no task-specific tests were found (vacuous pass) —
+        # that should NOT override the anomaly, since no tests were actually run.
+        if (
+            independent_tests
+            and independent_tests.tests_passed
+            and independent_tests.test_command != "skipped"
+        ):
             return []
 
         quality_gates = task_work_results.get("quality_gates", {})
