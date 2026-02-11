@@ -1,9 +1,11 @@
 ---
 id: TASK-REV-38BC
 title: Review system-plan, context commands, and FalkorDB migration impact
-status: review_complete
+status: completed
 created: 2026-02-11T15:00:00Z
-updated: 2026-02-11T15:00:00Z
+updated: 2026-02-11T18:00:00Z
+completed: 2026-02-11T18:00:00Z
+completed_location: tasks/completed/TASK-REV-38BC/
 priority: high
 tags: [architecture-review, graphiti, falkordb, system-plan, migration, context-commands]
 task_type: review

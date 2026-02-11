@@ -47,6 +47,10 @@ def _check_graphiti_core() -> bool:
             from graphiti_core import Graphiti
             from graphiti_core.nodes import EpisodeType
             _graphiti_core_available = True
+            # Apply FalkorDB workaround for single group_id search bug
+            # (upstream PR #1170 pending on getzep/graphiti)
+            from guardkit.knowledge.falkordb_workaround import apply_falkordb_workaround
+            apply_falkordb_workaround()
         except ImportError:
             _graphiti_core_available = False
             logger.warning("graphiti-core not installed. Install with: pip install graphiti-core")
