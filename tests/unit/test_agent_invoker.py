@@ -5289,6 +5289,97 @@ Task with deprecated manual mode - should be normalized to task-work.
         assert results["quality_gates"]["tests_passed"] == 0
 
     # ========================================================================
+    # Direct Mode tests_written Propagation Tests (TASK-FIX-93A1)
+    # ========================================================================
+
+    def test_direct_mode_results_include_tests_written(
+        self, agent_invoker, worktree_path
+    ):
+        """AC-001: _write_direct_mode_results includes tests_written in results."""
+        task_id = "TASK-93A1-DM-001"
+        player_report = {
+            "task_id": task_id,
+            "tests_run": True,
+            "tests_passed": True,
+            "tests_written": ["tests/health/test_router.py", "tests/api/test_endpoints.py"],
+            "files_modified": ["src/main.py"],
+        }
+
+        result_path = agent_invoker._write_direct_mode_results(
+            task_id, player_report, success=True
+        )
+
+        results = json.loads(result_path.read_text())
+        assert "tests_written" in results
+        assert results["tests_written"] == [
+            "tests/api/test_endpoints.py",
+            "tests/health/test_router.py",
+        ]
+
+    def test_direct_mode_results_tests_written_empty_when_no_tests(
+        self, agent_invoker, worktree_path
+    ):
+        """AC-004: tests_written is [] when Player reports no tests."""
+        task_id = "TASK-93A1-DM-002"
+        player_report = {
+            "task_id": task_id,
+            "tests_run": True,
+            "tests_passed": True,
+            "tests_written": [],
+            "files_modified": ["src/main.py"],
+        }
+
+        result_path = agent_invoker._write_direct_mode_results(
+            task_id, player_report, success=True
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["tests_written"] == []
+
+    def test_direct_mode_results_tests_written_defaults_empty(
+        self, agent_invoker, worktree_path
+    ):
+        """tests_written defaults to [] when Player report has no field."""
+        task_id = "TASK-93A1-DM-003"
+        player_report = {
+            "task_id": task_id,
+            "tests_run": True,
+            "tests_passed": True,
+            "files_modified": ["src/main.py"],
+        }
+
+        result_path = agent_invoker._write_direct_mode_results(
+            task_id, player_report, success=True
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["tests_written"] == []
+
+    def test_direct_mode_results_tests_written_deduplicated(
+        self, agent_invoker, worktree_path
+    ):
+        """AC-005: tests_written is deduplicated in direct mode results."""
+        task_id = "TASK-93A1-DM-004"
+        player_report = {
+            "task_id": task_id,
+            "tests_run": True,
+            "tests_passed": True,
+            "tests_written": [
+                "tests/test_a.py",
+                "tests/test_b.py",
+                "tests/test_a.py",  # duplicate
+            ],
+            "files_modified": ["src/main.py"],
+        }
+
+        result_path = agent_invoker._write_direct_mode_results(
+            task_id, player_report, success=True
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["tests_written"] == ["tests/test_a.py", "tests/test_b.py"]
+
+    # ========================================================================
     # Direct Mode Player Report Tests (TASK-PRH-001)
     # ========================================================================
 

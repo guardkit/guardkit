@@ -524,5 +524,152 @@ class TestIntegration:
         assert results == expected
 
 
+class TestIntegrationDetection:
+    """Test detection of INTEGRATION task type (TASK-FIX-93C1)."""
+
+    def test_integrate_keyword(self):
+        """AC-003: 'Integrate database health check' returns INTEGRATION."""
+        assert detect_task_type("Integrate database health check") == TaskType.INTEGRATION
+
+    def test_wire_up_keyword(self):
+        """AC-004: 'Wire up payment endpoint' returns INTEGRATION."""
+        assert detect_task_type("Wire up payment endpoint") == TaskType.INTEGRATION
+
+    def test_connect_keyword(self):
+        """AC-005: 'Connect auth middleware' returns INTEGRATION."""
+        assert detect_task_type("Connect auth middleware") == TaskType.INTEGRATION
+
+    def test_wiring_keyword(self):
+        """Test 'wiring' keyword matches INTEGRATION."""
+        assert detect_task_type("Wiring up the API layer") == TaskType.INTEGRATION
+
+    def test_hook_up_keyword(self):
+        """Test 'hook up' keyword matches INTEGRATION."""
+        assert detect_task_type("Hook up notification service") == TaskType.INTEGRATION
+
+    def test_hookup_keyword(self):
+        """Test 'hookup' keyword matches INTEGRATION."""
+        assert detect_task_type("Hookup database connection") == TaskType.INTEGRATION
+
+    def test_case_insensitive(self):
+        """Test case-insensitive matching for integration."""
+        assert detect_task_type("INTEGRATE PAYMENT SERVICE") == TaskType.INTEGRATION
+        assert detect_task_type("Wire Up Database") == TaskType.INTEGRATION
+
+    def test_description_context(self):
+        """Test description provides integration context."""
+        assert (
+            detect_task_type(
+                "Add endpoint handler",
+                "Integrate health check endpoint with existing router"
+            )
+            == TaskType.INTEGRATION
+        )
+
+
+class TestIntegrationNegativeCases:
+    """Test that INTEGRATION doesn't cause false positives (TASK-FIX-93C1)."""
+
+    def test_feature_tasks_unchanged(self):
+        """AC-006: Feature tasks still detected correctly."""
+        assert detect_task_type("Implement user authentication") == TaskType.FEATURE
+        assert detect_task_type("Add payment processing") == TaskType.FEATURE
+
+    def test_infrastructure_priority_preserved(self):
+        """AC-007: Infrastructure tasks still take priority."""
+        assert detect_task_type("Add Docker configuration") == TaskType.INFRASTRUCTURE
+        assert detect_task_type("Setup CI/CD pipeline") == TaskType.INFRASTRUCTURE
+
+    def test_integration_test_matches_testing_not_integration(self):
+        """Test 'integration test' matches TESTING (not INTEGRATION).
+
+        'integrate' is NOT a substring of 'integration' (9th char differs:
+        'e' vs 'i'). So 'Write integration test' falls through INTEGRATION
+        keywords and matches TESTING via 'test' keyword.
+        This validates the keyword design: using verb 'integrate' avoids
+        overlap with the noun 'integration'.
+        """
+        result = detect_task_type("Write integration test")
+        assert result == TaskType.TESTING
+
+    def test_pure_testing_tasks_unchanged(self):
+        """Test pure testing tasks still match TESTING."""
+        assert detect_task_type("Add unit tests") == TaskType.TESTING
+        assert detect_task_type("Configure pytest") == TaskType.TESTING
+        assert detect_task_type("Create test fixtures") == TaskType.TESTING
+
+    def test_scaffolding_tasks_unchanged(self):
+        """Test scaffolding tasks still match SCAFFOLDING."""
+        assert detect_task_type("Configure webpack") == TaskType.SCAFFOLDING
+        assert detect_task_type("Update package.json") == TaskType.SCAFFOLDING
+
+    def test_documentation_tasks_unchanged(self):
+        """Test documentation tasks still match DOCUMENTATION."""
+        assert detect_task_type("Update README") == TaskType.DOCUMENTATION
+        assert detect_task_type("Write API docs") == TaskType.DOCUMENTATION
+
+    def test_refactor_tasks_unchanged(self):
+        """Test refactor tasks still match REFACTOR."""
+        assert detect_task_type("Refactor database layer") == TaskType.REFACTOR
+        assert detect_task_type("Migrate to new API") == TaskType.REFACTOR
+
+
+class TestIntegrationPriority:
+    """Test INTEGRATION priority ordering (TASK-FIX-93C1)."""
+
+    def test_infrastructure_over_integration(self):
+        """Test INFRASTRUCTURE takes priority over INTEGRATION."""
+        # "deploy" is INFRASTRUCTURE, "connect" is INTEGRATION
+        assert detect_task_type("Connect to deployment pipeline") == TaskType.INFRASTRUCTURE
+
+    def test_integration_over_testing(self):
+        """Test INTEGRATION takes priority over TESTING."""
+        # "integrate" is INTEGRATION, "test" is TESTING
+        assert detect_task_type("Integrate test harness") == TaskType.INTEGRATION
+
+    def test_integration_over_scaffolding(self):
+        """Test INTEGRATION takes priority over SCAFFOLDING."""
+        # "connect" is INTEGRATION, "config" is SCAFFOLDING
+        assert detect_task_type("Connect configuration service") == TaskType.INTEGRATION
+
+    def test_integration_over_documentation(self):
+        """Test INTEGRATION takes priority over DOCUMENTATION."""
+        # "integrate" is INTEGRATION, "docs" is DOCUMENTATION
+        assert detect_task_type("Integrate docs service") == TaskType.INTEGRATION
+
+
+class TestIntegrationSummary:
+    """Test INTEGRATION task type summary (TASK-FIX-93C1)."""
+
+    def test_integration_summary(self):
+        """AC-011: get_task_type_summary returns meaningful string for INTEGRATION."""
+        result = get_task_type_summary(TaskType.INTEGRATION)
+        assert result == "Integration and wiring"
+
+
+class TestIntegrationKeywordMappings:
+    """Test INTEGRATION keyword mappings (TASK-FIX-93C1)."""
+
+    def test_integration_keywords_exist(self):
+        """Test INTEGRATION has keyword mappings."""
+        assert TaskType.INTEGRATION in KEYWORD_MAPPINGS
+
+    def test_integration_keywords_are_lowercase(self):
+        """Test all INTEGRATION keywords are lowercase."""
+        for keyword in KEYWORD_MAPPINGS[TaskType.INTEGRATION]:
+            assert keyword == keyword.lower(), (
+                f"Keyword '{keyword}' in INTEGRATION should be lowercase"
+            )
+
+    def test_integration_keyword_does_not_include_bare_integration(self):
+        """Test 'integration' (noun) is NOT in keyword list to avoid overlap."""
+        keywords = KEYWORD_MAPPINGS[TaskType.INTEGRATION]
+        assert "integration" not in keywords
+
+    def test_integration_has_reasonable_keyword_count(self):
+        """Test INTEGRATION has at least 5 keywords."""
+        assert len(KEYWORD_MAPPINGS[TaskType.INTEGRATION]) >= 5
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

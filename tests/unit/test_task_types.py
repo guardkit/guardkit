@@ -24,9 +24,9 @@ from guardkit.models.task_types import (
 class TestTaskTypeEnum:
     """Test TaskType enumeration."""
 
-    def test_task_type_enum_has_six_values(self):
-        """Test that TaskType enum has exactly 6 values."""
-        assert len(TaskType) == 6
+    def test_task_type_enum_has_seven_values(self):
+        """Test that TaskType enum has exactly 7 values."""
+        assert len(TaskType) == 7
 
     def test_task_type_scaffolding_value(self):
         """Test SCAFFOLDING task type value."""
@@ -638,4 +638,86 @@ class TestIntegration:
         assert profile.arch_review_required is True
         assert profile.coverage_required is True
         assert profile.tests_required is True
+        assert profile.plan_audit_required is True
+
+
+# ============================================================================
+# 10. INTEGRATION Task Type Tests (TASK-FIX-93C1)
+# ============================================================================
+
+class TestIntegrationTaskType:
+    """Test INTEGRATION task type enum, profile, and lookup."""
+
+    def test_integration_enum_value(self):
+        """AC-001: TaskType.INTEGRATION exists with value 'integration'."""
+        assert TaskType.INTEGRATION.value == "integration"
+
+    def test_integration_enum_lookup_by_value(self):
+        """Test looking up INTEGRATION by value string."""
+        assert TaskType("integration") == TaskType.INTEGRATION
+
+    def test_integration_profile_configuration(self):
+        """AC-002: INTEGRATION profile has correct field values."""
+        profile = DEFAULT_PROFILES[TaskType.INTEGRATION]
+        assert profile.tests_required is True
+        assert profile.zero_test_blocking is False
+        assert profile.arch_review_required is False
+        assert profile.arch_review_threshold == 0
+        assert profile.coverage_required is False
+        assert profile.coverage_threshold == 0.0
+        assert profile.plan_audit_required is True
+
+    def test_get_profile_with_integration(self):
+        """AC-008: get_profile(TaskType.INTEGRATION) returns correct profile."""
+        profile = get_profile(TaskType.INTEGRATION)
+        assert profile.arch_review_required is False
+        assert profile.tests_required is True
+        assert profile.zero_test_blocking is False
+        assert profile.coverage_required is False
+
+    def test_for_type_returns_integration_profile(self):
+        """Test QualityGateProfile.for_type(TaskType.INTEGRATION) works."""
+        profile = QualityGateProfile.for_type(TaskType.INTEGRATION)
+        assert profile.tests_required is True
+        assert profile.zero_test_blocking is False
+        assert profile.arch_review_required is False
+
+    def test_get_profile_none_still_returns_feature(self):
+        """AC-009: get_profile(None) still returns FEATURE profile."""
+        profile = get_profile(None)
+        assert profile == DEFAULT_PROFILES[TaskType.FEATURE]
+        assert profile.zero_test_blocking is True  # FEATURE has blocking
+
+    def test_default_profiles_contains_integration(self):
+        """Test DEFAULT_PROFILES includes INTEGRATION entry."""
+        assert TaskType.INTEGRATION in DEFAULT_PROFILES
+
+    def test_integration_profile_differs_from_feature(self):
+        """Test INTEGRATION profile is less strict than FEATURE."""
+        integration = get_profile(TaskType.INTEGRATION)
+        feature = get_profile(TaskType.FEATURE)
+        assert integration.zero_test_blocking is False
+        assert feature.zero_test_blocking is True
+        assert integration.arch_review_required is False
+        assert feature.arch_review_required is True
+        assert integration.coverage_required is False
+        assert feature.coverage_required is True
+
+    def test_integration_profile_similar_to_infrastructure(self):
+        """Test INTEGRATION profile is similar to INFRASTRUCTURE."""
+        integration = get_profile(TaskType.INTEGRATION)
+        infrastructure = get_profile(TaskType.INFRASTRUCTURE)
+        assert integration.arch_review_required == infrastructure.arch_review_required
+        assert integration.coverage_required == infrastructure.coverage_required
+        assert integration.tests_required == infrastructure.tests_required
+        assert integration.plan_audit_required == infrastructure.plan_audit_required
+
+    def test_workflow_integration_task(self):
+        """Test complete workflow for integration task."""
+        profile = get_profile(TaskType.INTEGRATION)
+        # Tests should pass if they exist
+        assert profile.tests_required is True
+        # But missing tests should not block
+        assert profile.zero_test_blocking is False
+        # Plan audit ensures integration is complete
         assert profile.plan_audit_required is True

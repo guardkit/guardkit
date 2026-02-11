@@ -1348,10 +1348,10 @@ class CoachValidator:
                 if cmd:
                     return cmd
 
-            # Fallback: task-ID glob pattern on disk
+            # Fallback: task-ID glob pattern on disk (recursive)
             task_prefix = self._task_id_to_pattern_prefix(task_id)
-            # Pattern: tests/test_{task_prefix}*.py (most common test organization)
-            pattern = f"tests/test_{task_prefix}*.py"
+            # Pattern: tests/**/test_{task_prefix}*.py (recursive into subdirectories)
+            pattern = f"tests/**/test_{task_prefix}*.py"
 
             logger.debug(f"Searching for task-specific tests: pattern={pattern}")
             matching_files = list(self.worktree_path.glob(pattern))

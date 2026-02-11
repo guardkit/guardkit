@@ -1337,5 +1337,113 @@ class TestCodeReviewFieldExtraction:
         assert "code_review" not in results
 
 
+# ==================== Tests for tests_written Field (TASK-FIX-93A1) ====================
+
+
+class TestTaskWorkResultsTestsWritten:
+    """Test suite for tests_written field in _write_task_work_results.
+
+    TASK-FIX-93A1: Ensures tests_written is written to task_work_results.json
+    so Coach's _check_zero_test_anomaly() sees actual test files, not [].
+    """
+
+    def test_tests_written_included_when_present(self, agent_invoker):
+        """AC-002: tests_written appears in task-work results when stream parser reports tests."""
+        task_id = "TASK-93A1-TW-001"
+        result_data = {
+            "tests_passed": 5,
+            "tests_failed": 0,
+            "tests_written": ["tests/health/test_router.py", "tests/api/test_endpoints.py"],
+        }
+
+        result_path = agent_invoker._write_task_work_results(
+            task_id, result_data, "standard"
+        )
+
+        results = json.loads(result_path.read_text())
+        assert "tests_written" in results
+        assert results["tests_written"] == [
+            "tests/api/test_endpoints.py",
+            "tests/health/test_router.py",
+        ]
+
+    def test_tests_written_empty_when_no_tests_reported(self, agent_invoker):
+        """AC-004: tests_written is [] when stream parser finds no tests."""
+        task_id = "TASK-93A1-TW-002"
+        result_data = {
+            "tests_passed": 0,
+            "tests_failed": 0,
+            "tests_written": [],
+        }
+
+        result_path = agent_invoker._write_task_work_results(
+            task_id, result_data, "standard"
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["tests_written"] == []
+
+    def test_tests_written_defaults_to_empty_when_absent(self, agent_invoker):
+        """tests_written defaults to [] when not in result_data."""
+        task_id = "TASK-93A1-TW-003"
+        result_data = {
+            "tests_passed": 5,
+            "tests_failed": 0,
+        }
+
+        result_path = agent_invoker._write_task_work_results(
+            task_id, result_data, "standard"
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["tests_written"] == []
+
+    def test_tests_written_deduplicated(self, agent_invoker):
+        """AC-005: tests_written is deduplicated (no duplicate entries)."""
+        task_id = "TASK-93A1-TW-004"
+        result_data = {
+            "tests_passed": 3,
+            "tests_failed": 0,
+            "tests_written": [
+                "tests/test_a.py",
+                "tests/test_b.py",
+                "tests/test_a.py",  # duplicate
+                "tests/test_c.py",
+                "tests/test_b.py",  # duplicate
+            ],
+        }
+
+        result_path = agent_invoker._write_task_work_results(
+            task_id, result_data, "standard"
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["tests_written"] == [
+            "tests/test_a.py",
+            "tests/test_b.py",
+            "tests/test_c.py",
+        ]
+
+    def test_tests_written_sorted(self, agent_invoker):
+        """tests_written is sorted alphabetically."""
+        task_id = "TASK-93A1-TW-005"
+        result_data = {
+            "tests_passed": 3,
+            "tests_failed": 0,
+            "tests_written": ["tests/z_test.py", "tests/a_test.py", "tests/m_test.py"],
+        }
+
+        result_path = agent_invoker._write_task_work_results(
+            task_id, result_data, "standard"
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["tests_written"] == [
+            "tests/a_test.py",
+            "tests/m_test.py",
+            "tests/z_test.py",
+        ]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

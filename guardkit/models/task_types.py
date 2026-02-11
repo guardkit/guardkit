@@ -25,6 +25,7 @@ class TaskType(Enum):
     - SCAFFOLDING: Configuration and boilerplate tasks (no architecture review needed)
     - FEATURE: Primary implementation tasks (full quality gates)
     - INFRASTRUCTURE: DevOps and deployment tasks (tests required, no architecture review)
+    - INTEGRATION: Wiring and integration tasks (tests desirable but not blocking)
     - DOCUMENTATION: Documentation and guides (minimal validation)
     - TESTING: Test creation, test refactoring, coverage improvements (minimal validation)
     - REFACTOR: Code improvements, performance optimization, pattern implementation
@@ -33,6 +34,7 @@ class TaskType(Enum):
         SCAFFOLDING: Configuration files, project setup, templates
         FEATURE: Feature implementation, bug fixes, enhancements
         INFRASTRUCTURE: Docker, deployment, CI/CD, terraform, ansible
+        INTEGRATION: Wiring endpoints, connecting services, hooking up middleware
         DOCUMENTATION: Guides, API docs, tutorials, README files
         TESTING: Test files, test utilities, coverage improvements
         REFACTOR: Code cleanup, performance optimization, pattern refactoring
@@ -41,6 +43,7 @@ class TaskType(Enum):
     SCAFFOLDING = "scaffolding"
     FEATURE = "feature"
     INFRASTRUCTURE = "infrastructure"
+    INTEGRATION = "integration"
     DOCUMENTATION = "documentation"
     TESTING = "testing"
     REFACTOR = "refactor"
@@ -196,6 +199,15 @@ DEFAULT_PROFILES: Dict[TaskType, QualityGateProfile] = {
         coverage_threshold=0.0,
         tests_required=True,  # Deployment must be tested
         plan_audit_required=True,  # Ensure deployment is complete
+    ),
+    TaskType.INTEGRATION: QualityGateProfile(
+        arch_review_required=False,   # Wiring tasks don't need arch review
+        arch_review_threshold=0,
+        coverage_required=False,      # Integration testing is separate concern
+        coverage_threshold=0.0,
+        tests_required=True,          # Integration tests should pass if they exist
+        plan_audit_required=True,     # Ensure integration is complete
+        zero_test_blocking=False,     # Integration tasks may not have task-specific tests
     ),
     TaskType.DOCUMENTATION: QualityGateProfile(
         arch_review_required=False,

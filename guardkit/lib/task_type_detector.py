@@ -2,16 +2,17 @@
 
 Provides automatic task type classification for feature planning workflow.
 Analyzes task titles and descriptions to assign appropriate task types
-(SCAFFOLDING, DOCUMENTATION, INFRASTRUCTURE, TESTING, REFACTOR, FEATURE)
+(SCAFFOLDING, DOCUMENTATION, INFRASTRUCTURE, INTEGRATION, TESTING, REFACTOR, FEATURE)
 based on keyword matching.
 
 The detector uses a priority-based classification system:
 1. INFRASTRUCTURE - DevOps, deployment, CI/CD (checked first for specificity)
-2. TESTING - Test frameworks, test types, test infrastructure
-3. REFACTOR - Code restructuring, migration, modernization
-4. DOCUMENTATION - Docs, guides, tutorials
-5. SCAFFOLDING - Configuration, boilerplate, setup tasks
-6. FEATURE - Default for implementation tasks
+2. INTEGRATION - Wiring, connecting, hooking up services/endpoints
+3. TESTING - Test frameworks, test types, test infrastructure
+4. REFACTOR - Code restructuring, migration, modernization
+5. DOCUMENTATION - Docs, guides, tutorials
+6. SCAFFOLDING - Configuration, boilerplate, setup tasks
+7. FEATURE - Default for implementation tasks
 
 This module supports the /feature-plan workflow by automatically determining
 which quality gate profile should be applied to each subtask.
@@ -35,8 +36,9 @@ from guardkit.models.task_types import TaskType
 
 
 # Keyword mappings for task type classification
-# Priority order: INFRASTRUCTURE → TESTING → REFACTOR → DOCUMENTATION → SCAFFOLDING → FEATURE
+# Priority order: INFRASTRUCTURE → INTEGRATION → TESTING → REFACTOR → DOCUMENTATION → SCAFFOLDING → FEATURE
 # Infrastructure gets priority to avoid "config" matching before "docker config"
+# Integration uses verb forms ("integrate", "wire", "connect") to avoid overlap with "integration test"
 KEYWORD_MAPPINGS = {
     TaskType.INFRASTRUCTURE: [
         # Containerization (check these first - more specific than "config")
@@ -71,6 +73,15 @@ KEYWORD_MAPPINGS = {
         "azure",
         "gcp",
         "cloud",
+    ],
+    TaskType.INTEGRATION: [
+        # Wiring verbs (NOT "integration" to avoid overlap with "integration test")
+        "integrate",
+        "wire up",
+        "wiring",
+        "connect",
+        "hook up",
+        "hookup",
     ],
     TaskType.DOCUMENTATION: [
         # Documentation files
@@ -182,11 +193,12 @@ def detect_task_type(title: str, description: str = "") -> TaskType:
 
     Priority order (first match wins):
     1. INFRASTRUCTURE - DevOps and deployment (most specific keywords)
-    2. TESTING - Test frameworks, test types, test infrastructure
-    3. REFACTOR - Code restructuring, migration, modernization
-    4. DOCUMENTATION - Documentation and guides
-    5. SCAFFOLDING - Configuration and setup tasks (generic keywords)
-    6. FEATURE - Default for all other tasks
+    2. INTEGRATION - Wiring, connecting, hooking up services/endpoints
+    3. TESTING - Test frameworks, test types, test infrastructure
+    4. REFACTOR - Code restructuring, migration, modernization
+    5. DOCUMENTATION - Documentation and guides
+    6. SCAFFOLDING - Configuration and setup tasks (generic keywords)
+    7. FEATURE - Default for all other tasks
 
     Args:
         title: Task title (required, used for primary classification)
@@ -252,10 +264,12 @@ def detect_task_type(title: str, description: str = "") -> TaskType:
         return TaskType.FEATURE
 
     # Check each task type in priority order
-    # Priority: INFRASTRUCTURE → TESTING → REFACTOR → DOCUMENTATION → SCAFFOLDING → FEATURE
+    # Priority: INFRASTRUCTURE → INTEGRATION → TESTING → REFACTOR → DOCUMENTATION → SCAFFOLDING → FEATURE
     # Infrastructure first to catch "docker config" before "config"
+    # Integration before testing to catch "integrate X" before "test" in description
     for task_type in [
         TaskType.INFRASTRUCTURE,
+        TaskType.INTEGRATION,
         TaskType.TESTING,
         TaskType.REFACTOR,
         TaskType.DOCUMENTATION,
@@ -293,6 +307,7 @@ def get_task_type_summary(task_type: TaskType) -> str:
         TaskType.SCAFFOLDING: "Configuration and boilerplate",
         TaskType.DOCUMENTATION: "Documentation and guides",
         TaskType.INFRASTRUCTURE: "DevOps and deployment",
+        TaskType.INTEGRATION: "Integration and wiring",
         TaskType.TESTING: "Test infrastructure and tests",
         TaskType.REFACTOR: "Code refactoring and migration",
         TaskType.FEATURE: "Feature implementation",

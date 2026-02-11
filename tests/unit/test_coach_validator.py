@@ -1109,6 +1109,17 @@ class TestTaskTypeProfileResolution:
 
         assert task_type == TaskType.DOCUMENTATION
 
+    def test_resolve_task_type_integration(self, tmp_worktree):
+        """AC-010: _resolve_task_type accepts 'integration' as valid task_type."""
+        from guardkit.models.task_types import TaskType
+
+        validator = CoachValidator(str(tmp_worktree))
+        task = {"task_type": "integration", "acceptance_criteria": []}
+
+        task_type = validator._resolve_task_type(task)
+
+        assert task_type == TaskType.INTEGRATION
+
     def test_resolve_task_type_invalid(self, tmp_worktree):
         """Test error handling for invalid task_type."""
         validator = CoachValidator(str(tmp_worktree))
@@ -1798,6 +1809,113 @@ class TestTaskSpecificTestDetection:
         # Should run full test suite
         assert result.test_command == "pytest tests/ -v --tb=short"
         mock_run.assert_called_once()
+
+
+# ============================================================================
+# Recursive Test Glob Tests (TASK-FIX-93B1)
+# ============================================================================
+
+
+class TestRecursiveTestGlob:
+    """Test recursive glob pattern for task-specific test detection.
+
+    Verifies that _detect_test_command finds tests in nested subdirectories
+    (e.g., tests/health/, tests/api/, tests/unit/) via the recursive
+    tests/**/test_{prefix}*.py glob pattern.
+
+    Fix for: TASK-FIX-93B1 (P0 from TASK-REV-93E1)
+    """
+
+    def test_finds_tests_in_nested_health_directory(self, tmp_worktree):
+        """Test that tests in tests/health/ subdirectory are found."""
+        (tmp_worktree / "pyproject.toml").touch()
+
+        # Create nested test directory
+        health_dir = tmp_worktree / "tests" / "health"
+        health_dir.mkdir(parents=True)
+        (health_dir / "test_task_db_006_database_health.py").touch()
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-DB-006")
+        test_cmd = validator._detect_test_command("TASK-DB-006")
+
+        assert test_cmd is not None
+        assert "test_task_db_006_database_health.py" in test_cmd
+        assert "pytest" in test_cmd
+
+    def test_finds_tests_in_nested_api_directory(self, tmp_worktree):
+        """Test that tests in tests/api/ subdirectory are found."""
+        (tmp_worktree / "pyproject.toml").touch()
+
+        api_dir = tmp_worktree / "tests" / "api"
+        api_dir.mkdir(parents=True)
+        (api_dir / "test_task_foo_001_endpoints.py").touch()
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FOO-001")
+        test_cmd = validator._detect_test_command("TASK-FOO-001")
+
+        assert test_cmd is not None
+        assert "test_task_foo_001_endpoints.py" in test_cmd
+
+    def test_finds_tests_in_deeply_nested_directory(self, tmp_worktree):
+        """Test that tests in deeply nested directories are found."""
+        (tmp_worktree / "pyproject.toml").touch()
+
+        deep_dir = tmp_worktree / "tests" / "unit" / "models"
+        deep_dir.mkdir(parents=True)
+        (deep_dir / "test_task_abc_001_model.py").touch()
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-ABC-001")
+        test_cmd = validator._detect_test_command("TASK-ABC-001")
+
+        assert test_cmd is not None
+        assert "test_task_abc_001_model.py" in test_cmd
+
+    def test_still_finds_tests_in_flat_directory(self, tmp_worktree):
+        """Test that flat tests/ directory tests are still found (** matches zero dirs)."""
+        (tmp_worktree / "pyproject.toml").touch()
+
+        tests_dir = tmp_worktree / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_task_foo_001_basic.py").touch()
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FOO-001")
+        test_cmd = validator._detect_test_command("TASK-FOO-001")
+
+        assert test_cmd is not None
+        assert "test_task_foo_001_basic.py" in test_cmd
+
+    def test_finds_tests_across_multiple_nested_dirs(self, tmp_worktree):
+        """Test that tests spread across multiple nested dirs are all found."""
+        (tmp_worktree / "pyproject.toml").touch()
+
+        # Create tests in multiple subdirectories
+        for subdir in ["unit", "integration"]:
+            nested = tmp_worktree / "tests" / subdir
+            nested.mkdir(parents=True)
+
+        (tmp_worktree / "tests" / "unit" / "test_task_xyz_001_unit.py").touch()
+        (tmp_worktree / "tests" / "integration" / "test_task_xyz_001_integ.py").touch()
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-XYZ-001")
+        test_cmd = validator._detect_test_command("TASK-XYZ-001")
+
+        assert test_cmd is not None
+        assert "test_task_xyz_001_unit.py" in test_cmd
+        assert "test_task_xyz_001_integ.py" in test_cmd
+
+    def test_no_match_in_nested_returns_none(self, tmp_worktree):
+        """Test that no matches in any directory still returns None."""
+        (tmp_worktree / "pyproject.toml").touch()
+
+        # Create nested dirs with non-matching tests
+        health_dir = tmp_worktree / "tests" / "health"
+        health_dir.mkdir(parents=True)
+        (health_dir / "test_task_other_999.py").touch()
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-DB-006")
+        test_cmd = validator._detect_test_command("TASK-DB-006")
+
+        assert test_cmd is None
 
 
 # ============================================================================
@@ -3168,6 +3286,77 @@ class TestProjectWidePassBypass:
         # independent_tests is None, so the new check doesn't trigger
         # (and the original check at line 1403 also doesn't trigger because tests_passed=218)
         assert len(issues) == 0
+
+
+# ============================================================================
+# Test tests_written End-to-End (TASK-FIX-93A1)
+# ============================================================================
+
+
+class TestTestsWrittenEndToEnd:
+    """Integration test: verify Coach sees tests_written from task_work_results.json.
+
+    TASK-FIX-93A1: When Player reports tests_written, the results writer includes it,
+    and Coach's _check_zero_test_anomaly() sees the actual list (not []).
+    """
+
+    def test_coach_sees_tests_written_from_results(self, tmp_worktree):
+        """AC-003: Coach sees non-empty tests_written when Player reported tests."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.FEATURE)
+        # Simulate task_work_results.json written WITH tests_written (post-fix)
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 5,
+                "tests_failed": 0,
+                "coverage": 80.0,
+                "all_passed": True,
+            },
+            "tests_written": ["tests/health/test_router.py"],
+        }
+        independent_tests = IndependentTestResult(
+            tests_passed=True,
+            test_command="pytest tests/health/test_router.py -v",
+            test_output_summary="5 passed",
+            duration_seconds=0.5,
+        )
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(
+            task_work_results, profile, independent_tests=independent_tests
+        )
+
+        # With non-empty tests_written AND real test_command, no anomaly expected
+        assert len(issues) == 0
+
+    def test_coach_still_detects_anomaly_with_empty_tests_written(self, tmp_worktree):
+        """Empty tests_written + skipped independent tests still triggers anomaly."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.FEATURE)
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 218,
+                "tests_failed": 0,
+                "all_passed": True,
+            },
+            "tests_written": [],  # Player wrote no tests
+        }
+        independent_tests = IndependentTestResult(
+            tests_passed=True,
+            test_command="skipped",
+            test_output_summary="No task-specific tests found",
+            duration_seconds=0.0,
+        )
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(
+            task_work_results, profile, independent_tests=independent_tests
+        )
+
+        assert len(issues) == 1
+        assert issues[0]["category"] == "zero_test_anomaly"
 
 
 # ============================================================================

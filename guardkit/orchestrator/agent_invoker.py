@@ -2264,6 +2264,7 @@ Follow the decision format specified in your agent definition.
             },
             "files_modified": sorted(list(set(player_report.get("files_modified", [])))),
             "files_created": sorted(list(set(player_report.get("files_created", [])))),
+            "tests_written": sorted(list(set(tests_written))),
             "summary": (
                 f"Direct mode implementation {'completed successfully' if success else 'failed'}"
                 + (f": {error}" if error else "")
@@ -3164,6 +3165,7 @@ Follow the decision format specified in your agent definition.
             # Deduplicate file lists using set conversion
             "files_modified": sorted(list(set(result_data.get("files_modified", [])))),
             "files_created": sorted(list(set(result_data.get("files_created", [])))),
+            "tests_written": sorted(list(set(result_data.get("tests_written", [])))),
             "summary": self._generate_summary(result_data),
         }
 
