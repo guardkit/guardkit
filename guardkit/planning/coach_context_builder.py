@@ -176,7 +176,12 @@ async def _get_impact_section(
         task_description = task.get("description", "")
         query = f"{task_title} {task_description}".strip()
 
-        impact_result = await run_impact_analysis(sp, query)
+        impact_result = await run_impact_analysis(
+            sp=sp,
+            client=sp._client,
+            task_or_topic=query,
+            depth="quick",
+        )
 
         if not impact_result or impact_result.get("status") != "ok":
             logger.debug("[Graphiti] Impact analysis returned no data")
