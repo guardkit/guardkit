@@ -1,8 +1,11 @@
 ---
 id: TASK-FKDB-004
 title: FalkorDB Docker Compose configuration
-status: backlog
+status: completed
+completed: 2026-02-11T21:25:00Z
 created: 2026-02-11T17:00:00Z
+updated: 2026-02-11T21:25:00Z
+previous_state: in_review
 priority: high
 tags: [falkordb, docker, infrastructure, migration]
 parent_review: TASK-REV-38BC
@@ -22,13 +25,13 @@ Update `docker/docker-compose.graphiti.yml` to use FalkorDB instead of Neo4j. Ke
 
 ## Acceptance Criteria
 
-- [ ] AC-001: Docker Compose uses `falkordb/falkordb:latest` image
-- [ ] AC-002: Ports mapped: 6379 (Redis/FalkorDB), 3000 (FalkorDB Browser)
-- [ ] AC-003: Health check uses `redis-cli ping`
-- [ ] AC-004: Volume `falkordb_data` for persistence
-- [ ] AC-005: APOC plugin reference removed
-- [ ] AC-006: Comments updated (no Neo4j references in active config)
-- [ ] AC-007: `docker compose up -d` starts FalkorDB successfully
+- [x] AC-001: Docker Compose uses `falkordb/falkordb:latest` image
+- [x] AC-002: Ports mapped: 6379 (Redis/FalkorDB), 3000 (FalkorDB Browser)
+- [x] AC-003: Health check uses `redis-cli ping`
+- [x] AC-004: Volume `falkordb_data` for persistence
+- [x] AC-005: APOC plugin reference removed
+- [x] AC-006: Comments updated (no Neo4j references in active config)
+- [x] AC-007: `docker compose up -d` starts FalkorDB successfully
 
 ## Files to Modify
 

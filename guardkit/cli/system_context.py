@@ -41,6 +41,31 @@ For quick understanding:
 ======================================================================
 """
 
+def _get_graphiti_client():
+    """Obtain a GraphitiClient with graceful degradation.
+
+    Returns None if Graphiti is unavailable.
+    """
+    try:
+        from guardkit.knowledge.graphiti_client import get_graphiti
+        client = get_graphiti()
+        if client is not None and getattr(client, "enabled", False):
+            return client
+        return None
+    except Exception as e:
+        logger.debug(f"Could not obtain Graphiti client: {e}")
+        return None
+
+
+def _detect_project_id() -> str:
+    """Detect project ID from current directory name.
+
+    Returns:
+        Lowercase, hyphenated project ID derived from cwd.
+    """
+    return Path.cwd().name.lower().replace(" ", "-")
+
+
 GRAPHITI_UNAVAILABLE_MESSAGE = """
 ======================================================================
 ARCHITECTURE CONTEXT UNAVAILABLE
@@ -360,9 +385,12 @@ def system_overview(verbose: bool, section: str, output_format: str):
         guardkit system-overview --format=json
     """
     from guardkit.planning.system_overview import get_system_overview
+    from guardkit.planning.graphiti_arch import SystemPlanGraphiti
 
     try:
-        overview = get_system_overview(verbose=verbose)
+        client = _get_graphiti_client()
+        sp = SystemPlanGraphiti(client=client, project_id=_detect_project_id())
+        overview = asyncio.run(get_system_overview(sp, verbose=verbose))
     except Exception as e:
         logger.debug(f"Error getting system overview: {e}")
         overview = {"status": "no_context"}
@@ -412,6 +440,7 @@ def impact_analysis(
         guardkit impact-analysis TASK-042 --depth=deep
     """
     from guardkit.planning.impact_analysis import run_impact_analysis
+    from guardkit.planning.graphiti_arch import SystemPlanGraphiti
 
     # Deep mode auto-enables BDD and tasks
     if depth == "deep":
@@ -419,12 +448,16 @@ def impact_analysis(
         include_tasks = True
 
     try:
-        impact = run_impact_analysis(
+        client = _get_graphiti_client()
+        sp = SystemPlanGraphiti(client=client, project_id=_detect_project_id())
+        impact = asyncio.run(run_impact_analysis(
+            sp=sp,
+            client=client,
             task_or_topic=task_or_topic,
             depth=depth,
             include_bdd=include_bdd,
             include_tasks=include_tasks,
-        )
+        ))
     except Exception as e:
         logger.debug(f"Error running impact analysis: {e}")
         impact = {"status": "no_context"}

@@ -264,6 +264,9 @@ def _build_description_section(task: TaskDefinition) -> str:
 def _build_acceptance_criteria_section(task: TaskDefinition) -> str:
     """Build the Acceptance Criteria section.
 
+    Appends anti-stub criteria for feature/refactor/integration tasks
+    to ensure primary deliverable functions contain real implementations.
+
     Args:
         task: The task definition.
 
@@ -277,6 +280,19 @@ def _build_acceptance_criteria_section(task: TaskDefinition) -> str:
 
     for i, criterion in enumerate(task.acceptance_criteria, start=1):
         lines.append(f"{i}. {criterion}")
+
+    # Add anti-stub criteria for applicable task types
+    # "implementation" is the spec parser's name for FEATURE tasks
+    if task.task_type in ("implementation", "refactor", "integration"):
+        next_num = len(task.acceptance_criteria) + 1
+        lines.append(
+            f"{next_num}. AC-ANTISTUB-1: All primary deliverable functions contain "
+            "meaningful implementation logic (no stubs, pass-only bodies, or TODOs)"
+        )
+        lines.append(
+            f"{next_num + 1}. AC-ANTISTUB-2: At least one test exercises a primary "
+            "function end-to-end without mocking its core logic"
+        )
 
     return "\n".join(lines)
 

@@ -18,6 +18,7 @@ Example:
 import asyncio
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -27,6 +28,13 @@ from rich.table import Table
 
 from guardkit.knowledge.graphiti_client import GraphitiClient, GraphitiConfig
 from guardkit.knowledge.config import load_graphiti_config, GraphitiSettings
+
+
+def _format_connection_target(settings: GraphitiSettings) -> str:
+    """Format the connection target string based on graph store backend."""
+    if settings.graph_store == "falkordb":
+        return f"FalkorDB at {settings.falkordb_host}:{settings.falkordb_port}"
+    return f"Neo4j at {settings.neo4j_uri}"
 from guardkit.knowledge.seeding import (
     seed_all_system_context,
     is_seeded,
@@ -59,6 +67,9 @@ def _get_client_and_config() -> tuple[GraphitiClient, GraphitiSettings]:
         neo4j_password=settings.neo4j_password,
         timeout=settings.timeout,
         project_id=settings.project_id,
+        graph_store=settings.graph_store,
+        falkordb_host=settings.falkordb_host,
+        falkordb_port=settings.falkordb_port,
     )
     client = GraphitiClient(config)
     return client, settings
@@ -79,7 +90,7 @@ async def _cmd_seed(force: bool) -> None:
     client, settings = _get_client_and_config()
 
     # Initialize connection
-    console.print(f"Connecting to Neo4j at {settings.neo4j_uri}...")
+    console.print(f"Connecting to {_format_connection_target(settings)}...")
 
     try:
         initialized = await client.initialize()
@@ -131,11 +142,19 @@ async def _cmd_seed(force: bool) -> None:
                 "agents",
                 "patterns",
                 "rules",
+                "project_overview",
+                "project_architecture",
+                "failed_approaches",
+                "quality_gate_configs",
+                "pattern_examples",
             ]
             for cat in categories:
                 console.print(f"  [green]\u2713[/green] {cat}")
             console.print()
             console.print("Run 'guardkit graphiti verify' to test queries.")
+            console.print()
+            console.print("To seed project ADRs:")
+            console.print("  guardkit graphiti add-context docs/adr/ --type adr")
         else:
             console.print("[yellow]Seeding completed with warnings.[/yellow]")
     finally:
@@ -174,7 +193,7 @@ async def _cmd_status(verbose: bool = False) -> None:
         try:
             if not initialized or not client.enabled:
                 console.print("  [yellow]Connection: Failed[/yellow]")
-                console.print("  [dim]Check Neo4j configuration[/dim]")
+                console.print("  [dim]Check graph database configuration[/dim]")
                 console.print()
                 return
 
@@ -252,7 +271,7 @@ async def _cmd_verify(verbose: bool) -> None:
     client, settings = _get_client_and_config()
 
     # Initialize connection
-    console.print(f"Connecting to Neo4j at {settings.neo4j_uri}...")
+    console.print(f"Connecting to {_format_connection_target(settings)}...")
 
     try:
         initialized = await client.initialize()
@@ -334,7 +353,7 @@ async def _cmd_seed_adrs(force: bool) -> None:
         return
 
     # Initialize connection
-    console.print(f"Connecting to Neo4j at {settings.neo4j_uri}...")
+    console.print(f"Connecting to {_format_connection_target(settings)}...")
 
     try:
         initialized = await client.initialize()
@@ -497,7 +516,13 @@ def seed_adrs(force: bool):
     is_flag=True,
     help="Suppress non-error output",
 )
-def add_context(path: str, parser_type: Optional[str], force: bool, dry_run: bool, pattern: str, verbose: bool, quiet: bool):
+@click.option(
+    "--delay",
+    type=float,
+    default=0.5,
+    help="Inter-episode delay in seconds (default: 0.5, 0 to disable)",
+)
+def add_context(path: str, parser_type: Optional[str], force: bool, dry_run: bool, pattern: str, verbose: bool, quiet: bool, delay: float):
     """Add context from files to Graphiti.
 
     Adds content from markdown files to the Graphiti knowledge graph.
@@ -510,6 +535,8 @@ def add_context(path: str, parser_type: Optional[str], force: bool, dry_run: boo
         guardkit graphiti add-context docs/ --pattern "**/*.md"
         guardkit graphiti add-context docs/ADR-001.md --type adr
         guardkit graphiti add-context docs/ --dry-run
+        guardkit graphiti add-context docs/ --delay 1.0
+        guardkit graphiti add-context docs/ --delay 0
 
     \b
     Supported parser types:
@@ -523,7 +550,7 @@ def add_context(path: str, parser_type: Optional[str], force: bool, dry_run: boo
     if verbose and quiet:
         raise click.UsageError("Options --verbose and --quiet are mutually exclusive")
 
-    asyncio.run(_cmd_add_context(path, parser_type, force, dry_run, pattern, verbose, quiet))
+    asyncio.run(_cmd_add_context(path, parser_type, force, dry_run, pattern, verbose, quiet, delay))
 
 
 async def _cmd_add_context(
@@ -534,176 +561,220 @@ async def _cmd_add_context(
     pattern: str,
     verbose: bool = False,
     quiet: bool = False,
+    delay: float = 0.5,
 ) -> None:
     """Async implementation of add-context command."""
-    if not quiet:
-        console.print("[bold blue]Graphiti Add Context[/bold blue]")
-        console.print()
-
-    # Check if path exists
-    target_path = Path(path)
-    if not target_path.exists():
-        console.print(f"[red]Error: Path does not exist: {path}[/red]")
-        raise SystemExit(1)
-
-    # Create client
-    client = GraphitiClient()
-
-    # Initialize connection
-    try:
-        initialized = await client.initialize()
-    except Exception as e:
-        console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
-        await client.close()
-        raise SystemExit(1)
+    # Set SEMAPHORE_LIMIT before graphiti-core is imported (lazy import in
+    # client.initialize()).  graphiti-core reads this env var at module load
+    # time to cap parallel queries in semaphore_gather().  Save the original
+    # value so we can restore it after the command finishes.
+    original_semaphore = os.environ.get("SEMAPHORE_LIMIT")
+    os.environ["SEMAPHORE_LIMIT"] = "5"
 
     try:
-        if not initialized or not client.enabled:
-            console.print("[red]Graphiti connection failed or disabled.[/red]")
+        # Suppress noisy INFO-level log messages during add-context:
+        # - graphiti_core.driver.falkordb_driver: ~30 "Index already exists" lines at startup
+        # - httpx: HTTP request/response logging for every Graphiti API call
+        logging.getLogger("graphiti_core.driver.falkordb_driver").setLevel(logging.WARNING)
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+
+        if not quiet:
+            console.print("[bold blue]Graphiti Add Context[/bold blue]")
+            console.print()
+
+        # Check if path exists
+        target_path = Path(path)
+        if not target_path.exists():
+            console.print(f"[red]Error: Path does not exist: {path}[/red]")
             raise SystemExit(1)
 
-        if not quiet:
-            console.print("[green]Connected to Graphiti[/green]")
-            console.print()
+        # Create client
+        client, settings = _get_client_and_config()
 
-        # Create parser registry and register all available parsers
-        registry = ParserRegistry()
-        registry.register(ADRParser())
-        registry.register(FeatureSpecParser())
-        registry.register(FullDocParser())
-        registry.register(ProjectDocParser())
-        registry.register(ProjectOverviewParser())
+        # Initialize connection
+        try:
+            initialized = await client.initialize()
+        except Exception as e:
+            console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
+            await client.close()
+            raise SystemExit(1)
 
-        # Collect files to process
-        files_to_process: list[str] = []
+        try:
+            if not initialized or not client.enabled:
+                console.print("[red]Graphiti connection failed or disabled.[/red]")
+                raise SystemExit(1)
 
-        if target_path.is_file():
-            # Use the original path string for single files
-            files_to_process.append(path)
-        elif target_path.is_dir():
-            # Use glob pattern to find files
-            for file_path in target_path.glob(pattern):
-                if file_path.is_file():
-                    files_to_process.append(str(file_path))
+            if not quiet:
+                console.print("[green]Connected to Graphiti[/green]")
+                console.print()
 
-        if not files_to_process:
-            console.print(f"[yellow]No files found matching pattern: {pattern}[/yellow]")
-            return
+            # Create parser registry and register all available parsers
+            # Order matters: FullDocParser MUST be last (lowest-priority fallback)
+            registry = ParserRegistry()
+            registry.register(ADRParser())
+            registry.register(FeatureSpecParser())
+            registry.register(ProjectDocParser())
+            registry.register(ProjectOverviewParser())
+            registry.register(FullDocParser())
 
-        # Track results
-        total_files = len(files_to_process)
-        files_processed = 0
-        episodes_added = 0
-        errors: list[str] = []
-        warnings: list[str] = []
+            # Collect files to process
+            files_to_process: list[str] = []
 
-        # Process each file
-        for file_path_str in files_to_process:
-            try:
-                # Read file content
-                with open(file_path_str, "r", encoding="utf-8") as f:
-                    content = f.read()
+            if target_path.is_file():
+                # Use the original path string for single files
+                files_to_process.append(path)
+            elif target_path.is_dir():
+                # Use glob pattern to find files
+                for file_path in target_path.glob(pattern):
+                    if file_path.is_file():
+                        files_to_process.append(str(file_path))
 
-                # Detect or use specified parser
-                if parser_type:
-                    parser = registry.get_parser(parser_type)
-                    if not parser:
-                        console.print(f"[yellow]No parser for type: {parser_type}[/yellow]")
+            if not files_to_process:
+                console.print(f"[yellow]No files found matching pattern: {pattern}[/yellow]")
+                return
+
+            # Track results
+            total_files = len(files_to_process)
+            files_processed = 0
+            episodes_added = 0
+            episodes_failed = 0
+            errors: list[str] = []
+            warnings: list[str] = []
+
+            # Process each file
+            for file_path_str in files_to_process:
+                try:
+                    # Read file content
+                    with open(file_path_str, "r", encoding="utf-8") as f:
+                        content = f.read()
+
+                    # Detect or use specified parser
+                    if parser_type:
+                        parser = registry.get_parser(parser_type)
+                        if not parser:
+                            console.print(f"[yellow]No parser for type: {parser_type}[/yellow]")
+                            continue
+                    else:
+                        parser = registry.detect_parser(file_path_str, content)
+                        if not parser:
+                            console.print(f"[yellow]No parser found for: {file_path_str} (unsupported)[/yellow]")
+                            continue
+
+                    # Verbose: show parsing info
+                    if verbose:
+                        console.print(f"Parsing {file_path_str} with {parser.parser_type}")
+
+                    # Parse the file
+                    result = parser.parse(content, file_path_str)
+
+                    if not result.success:
+                        errors.append(f"{file_path_str}: Parse failed")
+                        for warn in result.warnings:
+                            warnings.append(f"{file_path_str}: {warn}")
                         continue
-                else:
-                    parser = registry.detect_parser(file_path_str, content)
-                    if not parser:
-                        console.print(f"[yellow]No parser found for: {file_path_str} (unsupported)[/yellow]")
-                        continue
 
-                # Verbose: show parsing info
-                if verbose:
-                    console.print(f"Parsing {file_path_str} with {parser.parser_type}")
+                    # Verbose: show episode count
+                    if verbose:
+                        console.print(f"  Found {len(result.episodes)} episodes")
+                        # Show individual episodes
+                        for ep in result.episodes:
+                            console.print(f"    - {ep.entity_id} ({ep.entity_type})")
 
-                # Parse the file
-                result = parser.parse(content, file_path_str)
-
-                if not result.success:
-                    errors.append(f"{file_path_str}: Parse failed")
+                    # Add warnings from parsing
                     for warn in result.warnings:
                         warnings.append(f"{file_path_str}: {warn}")
-                    continue
 
-                # Verbose: show episode count
-                if verbose:
-                    console.print(f"  Found {len(result.episodes)} episodes")
-                    # Show individual episodes
-                    for ep in result.episodes:
-                        console.print(f"    - {ep.entity_id} ({ep.entity_type})")
+                    # Add episodes to Graphiti (unless dry run)
+                    file_succeeded = 0
+                    file_failed = 0
+                    if not dry_run:
+                        for episode in result.episodes:
+                            try:
+                                # Include parser metadata in episode content for context
+                                # Note: add_episode expects EpisodeMetadata object or None,
+                                # not a dict. Let it auto-generate metadata and include
+                                # parser metadata in the content body instead.
+                                episode_content = episode.content
+                                if episode.metadata:
+                                    metadata_str = json.dumps(episode.metadata, indent=2)
+                                    episode_content = f"{episode.content}\n\n---\nParser metadata:\n```json\n{metadata_str}\n```"
 
-                # Add warnings from parsing
-                for warn in result.warnings:
-                    warnings.append(f"{file_path_str}: {warn}")
+                                result_uuid = await client.add_episode(
+                                    name=episode.entity_id,
+                                    episode_body=episode_content,
+                                    group_id=episode.group_id,
+                                    entity_type=episode.entity_type,
+                                    source="add_context_cli",
+                                )
+                                if result_uuid is not None:
+                                    episodes_added += 1
+                                    file_succeeded += 1
+                                else:
+                                    episodes_failed += 1
+                                    file_failed += 1
+                                    errors.append(f"{file_path_str}: Episode creation returned None (possible silent failure)")
+                                # Inter-episode delay to let FalkorDB drain pending queries
+                                if delay > 0:
+                                    await asyncio.sleep(delay)
+                            except Exception as e:
+                                episodes_failed += 1
+                                file_failed += 1
+                                errors.append(f"{file_path_str}: Error adding episode - {e}")
+                    else:
+                        # In dry run, just count the episodes that would be added
+                        episodes_added += len(result.episodes)
 
-                # Add episodes to Graphiti (unless dry run)
-                if not dry_run:
-                    for episode in result.episodes:
-                        try:
-                            # Include parser metadata in episode content for context
-                            # Note: add_episode expects EpisodeMetadata object or None,
-                            # not a dict. Let it auto-generate metadata and include
-                            # parser metadata in the content body instead.
-                            episode_content = episode.content
-                            if episode.metadata:
-                                metadata_str = json.dumps(episode.metadata, indent=2)
-                                episode_content = f"{episode.content}\n\n---\nParser metadata:\n```json\n{metadata_str}\n```"
+                    files_processed += 1
+                    if not quiet:
+                        if file_failed == 0:
+                            console.print(f"  [green]\u2713[/green] {file_path_str} ({parser.parser_type})")
+                        else:
+                            console.print(f"  [yellow]\u26a0[/yellow] {file_path_str} ({parser.parser_type}) \u2014 {file_failed} episode(s) failed")
 
-                            await client.add_episode(
-                                name=episode.entity_id,
-                                episode_body=episode_content,
-                                group_id=episode.group_id,
-                                entity_type=episode.entity_type,
-                                source="add_context_cli",
-                            )
-                            episodes_added += 1
-                        except Exception as e:
-                            errors.append(f"{file_path_str}: Error adding episode - {e}")
+                except Exception as e:
+                    errors.append(f"{file_path_str}: Error - {e}")
+
+            if not quiet:
+                console.print()
+
+                # Display summary
+                file_word = "file" if files_processed == 1 else "files"
+                episode_word = "episode" if episodes_added == 1 else "episodes"
+
+                if dry_run:
+                    console.print("[bold]Dry run complete - Would add:[/bold]")
+                    console.print(f"  {files_processed} {file_word}, {episodes_added} {episode_word}")
                 else:
-                    # In dry run, just count the episodes that would be added
-                    episodes_added += len(result.episodes)
+                    console.print("[bold]Summary:[/bold]")
+                    console.print(f"  Added {files_processed} {file_word}, {episodes_added} {episode_word}")
+                    if episodes_failed > 0:
+                        failed_word = "episode" if episodes_failed == 1 else "episodes"
+                        console.print(f"  [yellow]Failed: {episodes_failed} {failed_word}[/yellow]")
 
-                files_processed += 1
-                if not quiet:
-                    console.print(f"  [green]\u2713[/green] {file_path_str} ({parser.parser_type})")
+            # Display warnings (always shown, even in quiet mode)
+            if warnings:
+                console.print()
+                console.print("[yellow]Warnings:[/yellow]")
+                for warn in warnings:
+                    console.print(f"  Warning: {warn}")
 
-            except Exception as e:
-                errors.append(f"{file_path_str}: Error - {e}")
+            # Display errors
+            if errors:
+                console.print()
+                console.print("[red]Errors:[/red]")
+                for err in errors:
+                    console.print(f"  Error: {err}")
 
-        if not quiet:
-            console.print()
-
-            # Display summary
-            file_word = "file" if files_processed == 1 else "files"
-            episode_word = "episode" if episodes_added == 1 else "episodes"
-
-            if dry_run:
-                console.print("[bold]Dry run complete - Would add:[/bold]")
-                console.print(f"  {files_processed} {file_word}, {episodes_added} {episode_word}")
-            else:
-                console.print("[bold]Summary:[/bold]")
-                console.print(f"  Added {files_processed} {file_word}, {episodes_added} {episode_word}")
-
-        # Display warnings (always shown, even in quiet mode)
-        if warnings:
-            console.print()
-            console.print("[yellow]Warnings:[/yellow]")
-            for warn in warnings:
-                console.print(f"  Warning: {warn}")
-
-        # Display errors
-        if errors:
-            console.print()
-            console.print("[red]Errors:[/red]")
-            for err in errors:
-                console.print(f"  Error: {err}")
+        finally:
+            await client.close()
 
     finally:
-        await client.close()
+        # Restore original SEMAPHORE_LIMIT so other commands in the same
+        # process are not affected (AC-004).
+        if original_semaphore is None:
+            os.environ.pop("SEMAPHORE_LIMIT", None)
+        else:
+            os.environ["SEMAPHORE_LIMIT"] = original_semaphore
 
 
 async def _cmd_capture(focus: Optional[str], max_questions: int) -> None:
@@ -726,7 +797,7 @@ async def _cmd_capture(focus: Optional[str], max_questions: int) -> None:
     # Create client and verify connection
     client, _ = _get_client_and_config()
 
-    console.print(f"Connecting to Neo4j at {settings.neo4j_uri}...")
+    console.print(f"Connecting to {_format_connection_target(settings)}...")
 
     try:
         initialized = await client.initialize()
@@ -845,7 +916,7 @@ async def _cmd_clear(
         return
 
     # Initialize connection
-    console.print(f"Connecting to Neo4j at {settings.neo4j_uri}...")
+    console.print(f"Connecting to {_format_connection_target(settings)}...")
 
     try:
         initialized = await client.initialize()

@@ -684,6 +684,112 @@ class TestRenderTaskMarkdown:
             pass
 
 
+# Test: Anti-Stub Acceptance Criteria (TASK-FIX-STUB-D)
+class TestAntiStubCriteria:
+    """Test that anti-stub criteria are added for applicable task types."""
+
+    def _make_task(self, task_type: str) -> TaskDefinition:
+        """Create a TaskDefinition with the given task_type."""
+        return TaskDefinition(
+            name="TASK-TEST: Test task",
+            complexity="medium",
+            complexity_score=5,
+            task_type=task_type,
+            domain_tags=["test"],
+            files_to_create=["src/main.py"],
+            files_to_modify=[],
+            files_not_to_touch=[],
+            dependencies=[],
+            inputs="Test input",
+            outputs="Test output",
+            relevant_decisions=[],
+            acceptance_criteria=["Feature works", "Tests pass"],
+            implementation_notes="",
+            player_constraints=[],
+            coach_validation_commands=[],
+        )
+
+    def test_implementation_task_gets_anti_stub_criteria(self, target_config_interactive):
+        """AC-001: Feature/implementation tasks include anti-stub criterion."""
+        task = self._make_task("implementation")
+        enriched = enrich_task(task, target_config_interactive, "FEAT-TEST")
+        markdown = render_task_markdown(enriched)
+
+        assert "AC-ANTISTUB-1" in markdown
+        assert "meaningful implementation logic" in markdown
+
+    def test_refactor_task_gets_anti_stub_criteria(self, target_config_interactive):
+        """AC-001: Refactor tasks include anti-stub criterion."""
+        task = self._make_task("refactor")
+        enriched = enrich_task(task, target_config_interactive, "FEAT-TEST")
+        markdown = render_task_markdown(enriched)
+
+        assert "AC-ANTISTUB-1" in markdown
+        assert "AC-ANTISTUB-2" in markdown
+
+    def test_integration_task_gets_anti_stub_criteria(self, target_config_interactive):
+        """AC-001: Integration tasks include anti-stub criterion."""
+        task = self._make_task("integration")
+        enriched = enrich_task(task, target_config_interactive, "FEAT-TEST")
+        markdown = render_task_markdown(enriched)
+
+        assert "AC-ANTISTUB-1" in markdown
+
+    def test_configuration_task_no_anti_stub_criteria(self, target_config_interactive):
+        """AC-004: Configuration/scaffolding tasks do NOT get anti-stub criteria."""
+        task = self._make_task("configuration")
+        enriched = enrich_task(task, target_config_interactive, "FEAT-TEST")
+        markdown = render_task_markdown(enriched)
+
+        assert "AC-ANTISTUB" not in markdown
+
+    def test_documentation_task_no_anti_stub_criteria(self, target_config_interactive):
+        """AC-004: Documentation tasks do NOT get anti-stub criteria."""
+        task = self._make_task("documentation")
+        enriched = enrich_task(task, target_config_interactive, "FEAT-TEST")
+        markdown = render_task_markdown(enriched)
+
+        assert "AC-ANTISTUB" not in markdown
+
+    def test_anti_stub_e2e_test_criterion(self, target_config_interactive):
+        """AC-002: Anti-stub includes end-to-end test criterion."""
+        task = self._make_task("implementation")
+        enriched = enrich_task(task, target_config_interactive, "FEAT-TEST")
+        markdown = render_task_markdown(enriched)
+
+        assert "AC-ANTISTUB-2" in markdown
+        assert "without mocking its core logic" in markdown
+
+    def test_anti_stub_criteria_use_ac_nnn_format(self, target_config_interactive):
+        """AC-003: Anti-stub criteria use AC-NNN format."""
+        task = self._make_task("implementation")
+        enriched = enrich_task(task, target_config_interactive, "FEAT-TEST")
+        markdown = render_task_markdown(enriched)
+
+        assert "AC-ANTISTUB-1:" in markdown
+        assert "AC-ANTISTUB-2:" in markdown
+
+    def test_anti_stub_criteria_numbered_after_existing(self, target_config_interactive):
+        """Verify anti-stub criteria are numbered after existing criteria."""
+        task = self._make_task("implementation")
+        enriched = enrich_task(task, target_config_interactive, "FEAT-TEST")
+        markdown = render_task_markdown(enriched)
+
+        # Existing criteria are numbered 1 and 2
+        # Anti-stub should be 3 and 4
+        assert "3. AC-ANTISTUB-1:" in markdown
+        assert "4. AC-ANTISTUB-2:" in markdown
+
+    def test_original_criteria_preserved(self, target_config_interactive):
+        """Verify original acceptance criteria are still present."""
+        task = self._make_task("implementation")
+        enriched = enrich_task(task, target_config_interactive, "FEAT-TEST")
+        markdown = render_task_markdown(enriched)
+
+        assert "Feature works" in markdown
+        assert "Tests pass" in markdown
+
+
 # Test: Edge Cases and Error Handling
 class TestEdgeCases:
     """Test edge cases and error handling."""

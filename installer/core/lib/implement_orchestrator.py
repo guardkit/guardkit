@@ -259,6 +259,22 @@ class ImplementOrchestrator:
             # Auto-detect task type based on title and description
             task_type = detect_task_type(title, description)
 
+            # Build acceptance criteria (anti-stub for FEATURE/REFACTOR/INTEGRATION)
+            base_criteria = [
+                "- [ ] Implementation complete",
+                "- [ ] Tests passing",
+                "- [ ] Code reviewed",
+                "- [ ] Documentation updated",
+            ]
+            if task_type.value in ("feature", "refactor", "integration"):
+                base_criteria.extend([
+                    "- [ ] AC-ANTISTUB-1: All primary deliverable functions contain "
+                    "meaningful implementation logic (no stubs, pass-only bodies, or TODOs)",
+                    "- [ ] AC-ANTISTUB-2: At least one test exercises a primary function "
+                    "end-to-end without mocking its core logic",
+                ])
+            acceptance_criteria_block = "\n".join(base_criteria)
+
             # Generate filename
             slug = slugify_task_name(title)
             filename = f"{task_id}-{slug}.md"
@@ -290,10 +306,7 @@ dependencies: {dependencies if dependencies else '[]'}
 
 ## Acceptance Criteria
 
-- [ ] Implementation complete
-- [ ] Tests passing
-- [ ] Code reviewed
-- [ ] Documentation updated
+{acceptance_criteria_block}
 
 ## Files to Modify
 

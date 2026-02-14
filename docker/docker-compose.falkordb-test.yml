@@ -1,0 +1,35 @@
+# Docker Compose for FalkorDB validation testing (TASK-FKDB-001)
+#
+# Standalone FalkorDB instance for validating graphiti-core compatibility
+# before migrating from Neo4j.
+#
+# Usage:
+#   docker compose -f docker/docker-compose.falkordb-test.yml up -d
+#   python scripts/graphiti-validation/validate_falkordb.py
+#   docker compose -f docker/docker-compose.falkordb-test.yml down -v
+
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: guardkit-falkordb-test
+    ports:
+      - "6379:6379"   # Redis protocol (FalkorDB connection)
+      - "3000:3000"   # FalkorDB Browser UI
+    volumes:
+      - falkordb_test_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - guardkit-falkordb-test
+
+volumes:
+  falkordb_test_data:
+    driver: local
+
+networks:
+  guardkit-falkordb-test:
+    driver: bridge

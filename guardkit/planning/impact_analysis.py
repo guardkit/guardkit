@@ -202,48 +202,67 @@ def _build_query(task_or_topic: str) -> str:
     ]
 
     for task_dir in task_dirs:
-        task_file = Path(task_dir) / f"{task_or_topic}.md"
-        if task_file.exists():
-            try:
-                # Use open() for proper mock compatibility
-                with open(task_file, "r") as f:
-                    content = f.read()
+        # Use glob to match descriptive filenames (e.g., TASK-SC-4822-description.md)
+        task_dir_path = Path(task_dir)
+        if not task_dir_path.exists():
+            continue
+        matching_files = list(task_dir_path.glob(f"{task_or_topic}*.md"))
+        if not matching_files:
+            continue
 
-                # Parse frontmatter
-                if content.startswith("---"):
-                    parts = content.split("---", 2)
-                    if len(parts) >= 3:
-                        frontmatter = parts[1]
+        task_file = matching_files[0]
+        try:
+            # Use open() for proper mock compatibility
+            with open(task_file, "r") as f:
+                content = f.read()
 
-                        # Extract title
-                        title_match = re.search(r"title:\s*(.+)", frontmatter)
-                        title = title_match.group(1).strip() if title_match else ""
+            # Parse frontmatter
+            if content.startswith("---"):
+                parts = content.split("---", 2)
+                if len(parts) >= 3:
+                    frontmatter = parts[1]
 
-                        # Extract tags
+                    # Extract title (strip quotes if present)
+                    title_match = re.search(r"title:\s*(.+)", frontmatter)
+                    title = ""
+                    if title_match:
+                        title = title_match.group(1).strip().strip('"').strip("'")
+
+                    # Extract tags - handle both inline [a, b] and multi-line YAML formats
+                    tags = []
+                    inline_tags = re.search(r"tags:\s*\[([^\]]*)\]", frontmatter)
+                    if inline_tags:
+                        # Inline format: tags: [tag1, tag2, tag3]
+                        tags = [
+                            t.strip().strip('"').strip("'")
+                            for t in inline_tags.group(1).split(",")
+                            if t.strip()
+                        ]
+                    else:
+                        # Multi-line format: tags:\n  - tag1\n  - tag2
                         tags_section = re.search(
-                            r"tags:\s*\n((?:  -.*\n)*)", frontmatter
+                            r"tags:\s*\n((?:\s+-.*\n)*)", frontmatter
                         )
-                        tags = []
                         if tags_section:
                             tag_lines = tags_section.group(1).strip().split("\n")
                             tags = [
-                                line.strip().replace("- ", "")
+                                line.strip().lstrip("- ").strip()
                                 for line in tag_lines
                                 if line.strip().startswith("-")
                             ]
 
-                        # Build enriched query
-                        query_parts = []
-                        if title:
-                            query_parts.append(title)
-                        if tags:
-                            query_parts.extend(tags)
+                    # Build enriched query
+                    query_parts = []
+                    if title:
+                        query_parts.append(title)
+                    if tags:
+                        query_parts.extend(tags)
 
-                        if query_parts:
-                            return " ".join(query_parts)
+                    if query_parts:
+                        return " ".join(query_parts)
 
-            except Exception as e:
-                logger.debug(f"[Graphiti] Failed to read task file {task_file}: {e}")
+        except Exception as e:
+            logger.debug(f"[Graphiti] Failed to read task file {task_file}: {e}")
 
     # Fallback: use task ID itself
     return task_or_topic

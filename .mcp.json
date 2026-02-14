@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "graphiti": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/Users/richardwoollcott/Projects/appmilla_github/graphiti/mcp_server",
+        "run",
+        "main.py",
+        "--transport",
+        "stdio",
+        "--config",
+        "/Users/richardwoollcott/Projects/appmilla_github/graphiti/mcp_server/config/config-guardkit.yaml"
+      ],
+      "env": {
+        "OPENAI_API_KEY": "${OPENAI_API_KEY}"
+      }
+    }
+  }
+}

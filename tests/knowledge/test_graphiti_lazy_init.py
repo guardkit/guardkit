@@ -43,6 +43,9 @@ def _make_settings(
     neo4j_password="pass",
     timeout=30.0,
     project_id=None,
+    graph_store="neo4j",
+    falkordb_host="localhost",
+    falkordb_port=6379,
 ):
     """Create a mock GraphitiSettings."""
     s = MagicMock()
@@ -52,6 +55,9 @@ def _make_settings(
     s.neo4j_password = neo4j_password
     s.timeout = timeout
     s.project_id = project_id
+    s.graph_store = graph_store
+    s.falkordb_host = falkordb_host
+    s.falkordb_port = falkordb_port
     return s
 
 
@@ -432,3 +438,73 @@ class TestAutobuildAutoInitIntegration:
 
         assert client is not None
         assert client.enabled is True
+
+
+# ============================================================================
+# Test: load_dotenv() called during lazy-init (TASK-FIX-A1E7)
+# ============================================================================
+
+
+DOTENV_PATCH = "dotenv.load_dotenv"
+
+
+class TestLazyInitLoadsDotenv:
+    """Verify that _try_lazy_init calls load_dotenv() before config loading.
+
+    This fixes the gap where spec-driven commands (e.g. /system-overview)
+    bypass the CLI entry point and never load .env, causing OPENAI_API_KEY
+    to be absent from os.environ.
+    """
+
+    def test_lazy_init_calls_load_dotenv(self):
+        """
+        Given factory is None
+        When _try_lazy_init() is called
+        Then load_dotenv() is invoked before config loading.
+        """
+        call_order = []
+
+        def tracking_load_dotenv(*args, **kwargs):
+            call_order.append("load_dotenv")
+
+        def tracking_load_config(*args, **kwargs):
+            call_order.append("load_config")
+            return _make_settings(enabled=False)
+
+        with patch(DOTENV_PATCH, side_effect=tracking_load_dotenv), \
+             patch(CONFIG_PATCH, side_effect=tracking_load_config):
+            _try_lazy_init()
+
+        assert "load_dotenv" in call_order
+        assert "load_config" in call_order
+        assert call_order.index("load_dotenv") < call_order.index("load_config"), \
+            "load_dotenv must be called BEFORE load_graphiti_config"
+
+    def test_lazy_init_calls_load_dotenv_on_success(self):
+        """
+        Given valid config and successful init
+        When _try_lazy_init() is called
+        Then load_dotenv() is still called.
+        """
+        mock_client = MagicMock(spec=GraphitiClient)
+        mock_client.initialize = AsyncMock(return_value=True)
+
+        with patch(DOTENV_PATCH) as mock_dotenv, \
+             patch(CONFIG_PATCH, return_value=_make_settings()), \
+             patch(CLIENT_PATCH, return_value=mock_client):
+            _try_lazy_init()
+
+        mock_dotenv.assert_called_once()
+
+    def test_lazy_init_calls_load_dotenv_even_when_disabled(self):
+        """
+        Given Graphiti is disabled in config
+        When _try_lazy_init() is called
+        Then load_dotenv() is still called (before config check).
+        """
+        with patch(DOTENV_PATCH) as mock_dotenv, \
+             patch(CONFIG_PATCH, return_value=_make_settings(enabled=False)):
+            result = _try_lazy_init()
+
+        mock_dotenv.assert_called_once()
+        assert result is None

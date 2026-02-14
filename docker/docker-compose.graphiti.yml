@@ -1,7 +1,7 @@
-# Docker Compose configuration for Neo4j knowledge graph backend
+# Docker Compose configuration for FalkorDB knowledge graph backend
 #
 # Services:
-#   - neo4j: Graph database backend for Graphiti knowledge graph
+#   - falkordb: Graph database backend for Graphiti knowledge graph
 #
 # Note: The graphiti-core Python library is used directly instead of
 # the Docker REST API (zepai/graphiti). This provides better control,
@@ -25,55 +25,40 @@
 #   - OPENAI_API_KEY environment variable set (for graphiti-core embeddings)
 #
 # Access:
-#   - Neo4j Browser: http://localhost:7474
-#   - Neo4j Bolt: bolt://localhost:7687
+#   - FalkorDB Browser: http://localhost:3000
+#   - FalkorDB (Redis protocol): localhost:6379
 #
 # Python Usage:
 #   from guardkit.knowledge.graphiti_client import GraphitiClient, GraphitiConfig
 #
 #   config = GraphitiConfig(
-#       neo4j_uri="bolt://localhost:7687",
-#       neo4j_user="neo4j",
-#       neo4j_password="password123"
+#       graph_store="falkordb",
+#       falkordb_host="localhost",
+#       falkordb_port=6379
 #   )
 #   client = GraphitiClient(config)
 #   await client.initialize()
 
 services:
-  neo4j:
-    image: neo4j:5.26.0
-    container_name: guardkit-neo4j
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: guardkit-falkordb
     ports:
-      - "7474:7474"  # HTTP (Neo4j Browser)
-      - "7687:7687"  # Bolt (graphiti-core connection)
-    environment:
-      - NEO4J_AUTH=neo4j/password123
-      - NEO4J_PLUGINS=["apoc"]
+      - "6379:6379"   # Redis protocol (FalkorDB connection)
+      - "3000:3000"   # FalkorDB Browser UI
     volumes:
-      - neo4j_data:/data
-      - neo4j_logs:/logs
+      - falkordb_data:/data
     healthcheck:
-      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "password123", "RETURN 1"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
-      timeout: 10s
-      retries: 10
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
     networks:
       - guardkit-knowledge
 
-  # NOTE: zepai/graphiti Docker REST API has been removed.
-  # We now use the graphiti-core Python library directly for:
-  # - Better error handling and debugging
-  # - Full control over LLM token limits
-  # - Direct Neo4j communication without middleware
-  # - More actively maintained library
-  #
-  # See: https://github.com/getzep/graphiti for graphiti-core documentation
-
 volumes:
-  neo4j_data:
-    driver: local
-  neo4j_logs:
+  falkordb_data:
     driver: local
 
 networks:

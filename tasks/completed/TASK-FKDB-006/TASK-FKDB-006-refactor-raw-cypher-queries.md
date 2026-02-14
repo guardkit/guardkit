@@ -1,7 +1,8 @@
 ---
 id: TASK-FKDB-006
 title: Refactor 3 raw Cypher queries to driver-agnostic execute_query()
-status: backlog
+status: completed
+completed: 2026-02-11T18:00:00Z
 created: 2026-02-11T17:00:00Z
 priority: high
 tags: [falkordb, critical-path, graphiti-client, migration]

@@ -1,0 +1,71 @@
+# FalkorDB on Synology DS918+ NAS
+#
+# Deployed as shared infrastructure for GuardKit knowledge graph (Graphiti).
+# Accessible via Tailscale mesh from MacBook Pro and Dell ProMax GB10.
+#
+# Resource budget (DS918+, 8GB RAM, Celeron J3455 4-core):
+#   - FalkorDB: ~200-500MB typical, capped at 1.5GB container / 1GB maxmemory
+#   - Remaining for DSM + file services: ~5.5-6.8GB
+#
+# Deployment location on NAS: /volume1/guardkit/docker/
+# Data directory on NAS:      /volume1/docker/infrastructure/data/falkordb/
+#
+# Usage:
+#   # Deploy on NAS
+#   ssh richardwoollcott@whitestocks
+#   cd /volume1/guardkit/docker
+#   sudo docker-compose -f docker-compose.falkordb.yml up -d
+#
+#   # Verify
+#   sudo docker-compose -f docker-compose.falkordb.yml ps
+#   sudo docker logs falkordb --tail 20
+#
+#   # Test from MacBook
+#   redis-cli -h whitestocks -p 6379 PING
+#
+# Access:
+#   - FalkorDB (Redis protocol): whitestocks:6379  (Tailscale IP: 100.92.74.2)
+#   - FalkorDB Browser UI:       http://whitestocks:3000
+#
+# RDB Persistence Schedule:
+#   - Every 15 minutes if >= 1 change
+#   - Every 5 minutes if >= 10 changes
+#   - Every 1 minute if >= 10,000 changes
+#
+# Kernel Limitations (DSM 7.x, Linux 4.4.180+):
+#   - No CPU CFS scheduler support — cpus limit cannot be used
+#   - mem_limit works via cgroup memory controller
+#   - FalkorDB's --maxmemory 1gb is the primary resource constraint
+
+version: "3.8"
+
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: falkordb
+    ports:
+      - "6379:6379"   # Redis protocol (FalkorDB connection)
+      - "3000:3000"   # FalkorDB Browser UI
+    volumes:
+      - falkordb_data:/data
+    command: >
+      --maxmemory 1gb
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    mem_limit: 1536m
+    # Note: cpus limit not supported on DS918+ kernel (4.4.180+, no CPU CFS scheduler)
+
+volumes:
+  falkordb_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /volume1/docker/infrastructure/data/falkordb
+      o: bind

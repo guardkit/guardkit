@@ -344,17 +344,21 @@ group_ids:
 
 ### Step 5: Update GraphitiClient Code
 
-The `graphiti-core` library supports FalkorDB natively since v0.26.3. Update connection in `guardkit/knowledge/graphiti_client.py`:
+The `graphiti-core` library supports FalkorDB natively via `FalkorDriver`. GuardKit's `graphiti_client.py` creates the correct driver based on the `graph_store` config field:
 
 ```python
 from graphiti_core import Graphiti
+from graphiti_core.driver.falkordb_driver import FalkorDriver
 
 # FalkorDB connection (replaces Neo4j)
-graphiti = Graphiti(
-    "bolt://localhost:6379",  # FalkorDB uses bolt protocol on Redis port
-    store_raw_episode_content=True,
+driver = FalkorDriver(
+    host="localhost",
+    port=6379,
 )
+graphiti = Graphiti(graph_driver=driver)
 ```
+
+This is handled automatically by `GraphitiClient.initialize()` when `graph_store=falkordb` in the config.
 
 ### Step 6: Re-seed Knowledge
 

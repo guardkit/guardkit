@@ -725,9 +725,19 @@ Create or modify `.guardkit/graphiti.yaml`:
 # Enable/disable Graphiti integration
 enabled: true
 
-# Graphiti server connection settings
-host: localhost
-port: 8000
+# Graph database backend: 'falkordb' (recommended) or 'neo4j'
+graph_store: falkordb
+
+# FalkorDB connection (used when graph_store: falkordb)
+falkordb_host: localhost
+falkordb_port: 6379
+
+# Neo4j connection (used when graph_store: neo4j, kept for backwards compatibility)
+# neo4j_uri: bolt://localhost:7687
+# neo4j_user: neo4j
+# neo4j_password: password123
+
+# Connection timeout
 timeout: 30.0
 
 # OpenAI embedding model for semantic search
@@ -750,9 +760,19 @@ You can override any setting via environment variables:
 # Enable/disable integration
 export GRAPHITI_ENABLED=true
 
-# Connection settings
-export GRAPHITI_HOST=localhost
-export GRAPHITI_PORT=8000
+# Graph store backend
+export GRAPH_STORE=falkordb
+
+# FalkorDB connection
+export FALKORDB_HOST=localhost
+export FALKORDB_PORT=6379
+
+# Neo4j connection (if using neo4j backend)
+# export NEO4J_URI=bolt://localhost:7687
+# export NEO4J_USER=neo4j
+# export NEO4J_PASSWORD=password123
+
+# Connection timeout
 export GRAPHITI_TIMEOUT=30.0
 
 # Required for embeddings
@@ -873,7 +893,7 @@ Each category lives in its own `seed_*.py` module. The `seeding.py` orchestrator
 
 ### Can I query Graphiti directly?
 
-**Yes!** Use the Python API. Note that `get_graphiti()` returns a thread-local client — each thread gets its own `GraphitiClient` with its own Neo4j driver:
+**Yes!** Use the Python API. Note that `get_graphiti()` returns a thread-local client — each thread gets its own `GraphitiClient` with its own graph driver (FalkorDB or Neo4j, depending on config):
 
 ```python
 from guardkit.knowledge import get_graphiti
@@ -900,16 +920,15 @@ guardkit graphiti verify --verbose
 
 **1. Check Docker containers:**
 ```bash
-docker ps | grep graphiti
+docker ps | grep falkordb
 
 # Should show:
-# guardkit-graphiti-1   (port 8000)
-# guardkit-falkordb-1   (port 6379)
+# guardkit-falkordb   (ports 6379, 3000)
 ```
 
 **2. View logs:**
 ```bash
-docker logs guardkit-graphiti-1
+docker logs guardkit-falkordb
 ```
 
 **3. Restart services:**
@@ -922,9 +941,8 @@ docker compose -f docker/docker-compose.graphiti.yml restart
 guardkit graphiti status
 
 # Should show:
-# Connection: OK
-# Health: OK
-# Seeded: Yes
+# Status: ENABLED
+# (Knowledge categories with counts)
 ```
 
 **5. Test queries:**

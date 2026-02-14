@@ -34,8 +34,13 @@ class FullDocParser(BaseParser):
     Creates episodes containing the full document content, with optional
     chunking for large documents (>10KB by default).
 
-    This parser is explicit-only - it will not auto-detect files.
-    Users must specify --type full_doc to use it.
+    Acts as a lowest-priority fallback for .md/.markdown files not matched
+    by any other parser (ADR, feature_spec, project_doc, project_overview).
+    Can also be used explicitly via --type full_doc.
+
+    Note: supported_extensions returns [] to avoid polluting the registry's
+    extension map. The fallback behavior is implemented via can_parse()
+    which checks file extensions directly.
 
     Attributes:
         chunk_threshold: Size in bytes above which documents are chunked.
@@ -64,26 +69,32 @@ class FullDocParser(BaseParser):
     def supported_extensions(self) -> list[str]:
         """Return list of supported file extensions.
 
+        Returns empty list to avoid polluting the registry's extension map.
+        The fallback behavior is handled by can_parse() instead.
+
         Returns:
-            [".md", ".markdown"]
+            [] (empty - extension map registration is skipped)
         """
-        return [".md", ".markdown"]
+        return []
 
     def can_parse(self, content: str, file_path: str) -> bool:
         """Check if this parser can handle the given content.
 
-        This parser is explicit-only, so it always returns False.
-        Users must specify --type full_doc to use this parser.
+        Returns True for .md and .markdown files, acting as a lowest-priority
+        fallback when no other parser matches. Registration order in the
+        registry ensures this parser is tried last.
 
         Args:
             content: The file content to check.
             file_path: Path to the file being checked.
 
         Returns:
-            False (always - explicit parser only)
+            True if file has .md or .markdown extension, False otherwise.
         """
-        # This parser is explicit-only to avoid conflicts with other parsers
-        return False
+        if not file_path:
+            return False
+        lower_path = file_path.lower()
+        return lower_path.endswith(".md") or lower_path.endswith(".markdown")
 
     def parse(self, content: str, file_path: str) -> ParseResult:
         """Parse content and return episodes.

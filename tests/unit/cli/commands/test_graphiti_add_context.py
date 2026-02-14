@@ -13,6 +13,7 @@ Test Coverage:
 """
 
 import asyncio
+import logging
 from pathlib import Path
 from typing import Optional
 from unittest.mock import AsyncMock, Mock, patch, mock_open, MagicMock
@@ -731,3 +732,807 @@ class TestCmdAddContextAsync:
                     verbose=False,
                     quiet=False,
                 )
+
+
+# ============================================================================
+# TEST CLASS: SEMAPHORE_LIMIT and Inter-Episode Delay (TASK-FIX-AC02)
+# ============================================================================
+
+
+class TestSemaphoreLimitAndDelay:
+    """Test SEMAPHORE_LIMIT env var setting and inter-episode delay."""
+
+    def test_delay_option_exists(self, cli_runner):
+        """AC-002: --delay CLI option is present in help."""
+        result = cli_runner.invoke(graphiti, ["add-context", "--help"])
+        assert result.exit_code == 0
+        assert "--delay" in result.output
+
+    def test_delay_default_is_half_second(self, cli_runner):
+        """AC-002: Default delay is 0.5s."""
+        result = cli_runner.invoke(graphiti, ["add-context", "--help"])
+        assert "0.5" in result.output
+
+    @pytest.mark.asyncio
+    async def test_semaphore_limit_set_before_initialize(
+        self, tmp_file, mock_graphiti_client, mock_parser_registry,
+        mock_parser, sample_parse_result
+    ):
+        """AC-001: SEMAPHORE_LIMIT is set to 5 before client.initialize()."""
+        import os
+        mock_parser.parse.return_value = sample_parse_result
+        captured_values = []
+
+        original_init = mock_graphiti_client.initialize
+
+        async def capturing_init():
+            captured_values.append(os.environ.get("SEMAPHORE_LIMIT"))
+            return await original_init()
+
+        mock_graphiti_client.initialize = AsyncMock(side_effect=capturing_init)
+
+        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=mock_graphiti_client):
+            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                await _cmd_add_context(
+                    path=str(tmp_file),
+                    parser_type=None,
+                    force=False,
+                    dry_run=False,
+                    pattern="**/*.md",
+                    verbose=False,
+                    quiet=False,
+                    delay=0,
+                )
+
+        assert captured_values == ["5"]
+
+    @pytest.mark.asyncio
+    async def test_semaphore_limit_restored_after_command(
+        self, tmp_file, mock_graphiti_client, mock_parser_registry,
+        mock_parser, sample_parse_result
+    ):
+        """AC-004: SEMAPHORE_LIMIT is restored after command completes."""
+        import os
+        mock_parser.parse.return_value = sample_parse_result
+
+        # Set a custom value before running
+        os.environ["SEMAPHORE_LIMIT"] = "20"
+
+        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=mock_graphiti_client):
+            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                await _cmd_add_context(
+                    path=str(tmp_file),
+                    parser_type=None,
+                    force=False,
+                    dry_run=False,
+                    pattern="**/*.md",
+                    verbose=False,
+                    quiet=False,
+                    delay=0,
+                )
+
+        # Original value should be restored
+        assert os.environ.get("SEMAPHORE_LIMIT") == "20"
+        # Cleanup
+        del os.environ["SEMAPHORE_LIMIT"]
+
+    @pytest.mark.asyncio
+    async def test_semaphore_limit_removed_if_not_originally_set(
+        self, tmp_file, mock_graphiti_client, mock_parser_registry,
+        mock_parser, sample_parse_result
+    ):
+        """AC-004: SEMAPHORE_LIMIT is removed if it wasn't set before."""
+        import os
+        mock_parser.parse.return_value = sample_parse_result
+
+        # Ensure not set
+        os.environ.pop("SEMAPHORE_LIMIT", None)
+
+        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=mock_graphiti_client):
+            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                await _cmd_add_context(
+                    path=str(tmp_file),
+                    parser_type=None,
+                    force=False,
+                    dry_run=False,
+                    pattern="**/*.md",
+                    verbose=False,
+                    quiet=False,
+                    delay=0,
+                )
+
+        assert "SEMAPHORE_LIMIT" not in os.environ
+
+    @pytest.mark.asyncio
+    async def test_delay_applied_between_episodes(
+        self, tmp_file, mock_graphiti_client, mock_parser_registry,
+        mock_parser
+    ):
+        """AC-005: Delay is applied between episodes."""
+        # Create result with multiple episodes
+        episodes = [
+            EpisodeData(
+                content=f"Content {i}",
+                group_id="test",
+                entity_type="adr",
+                entity_id=f"adr-{i}",
+                metadata={},
+            )
+            for i in range(3)
+        ]
+        multi_result = ParseResult(episodes=episodes, warnings=[], success=True)
+        mock_parser.parse.return_value = multi_result
+
+        sleep_calls = []
+        original_sleep = asyncio.sleep
+
+        async def mock_sleep(seconds):
+            sleep_calls.append(seconds)
+
+        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=mock_graphiti_client):
+            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                with patch("guardkit.cli.graphiti.asyncio.sleep", side_effect=mock_sleep):
+                    await _cmd_add_context(
+                        path=str(tmp_file),
+                        parser_type=None,
+                        force=False,
+                        dry_run=False,
+                        pattern="**/*.md",
+                        verbose=False,
+                        quiet=False,
+                        delay=0.5,
+                    )
+
+        # 3 episodes -> 3 sleeps (after each add_episode)
+        assert len(sleep_calls) == 3
+        assert all(d == 0.5 for d in sleep_calls)
+
+    @pytest.mark.asyncio
+    async def test_delay_zero_skips_sleep(
+        self, tmp_file, mock_graphiti_client, mock_parser_registry,
+        mock_parser
+    ):
+        """AC-002: Delay of 0 disables inter-episode sleep."""
+        episodes = [
+            EpisodeData(
+                content=f"Content {i}",
+                group_id="test",
+                entity_type="adr",
+                entity_id=f"adr-{i}",
+                metadata={},
+            )
+            for i in range(3)
+        ]
+        multi_result = ParseResult(episodes=episodes, warnings=[], success=True)
+        mock_parser.parse.return_value = multi_result
+
+        sleep_calls = []
+
+        async def mock_sleep(seconds):
+            sleep_calls.append(seconds)
+
+        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=mock_graphiti_client):
+            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                with patch("guardkit.cli.graphiti.asyncio.sleep", side_effect=mock_sleep):
+                    await _cmd_add_context(
+                        path=str(tmp_file),
+                        parser_type=None,
+                        force=False,
+                        dry_run=False,
+                        pattern="**/*.md",
+                        verbose=False,
+                        quiet=False,
+                        delay=0,
+                    )
+
+        # No sleeps when delay is 0
+        assert len(sleep_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_delay_not_applied_in_dry_run(
+        self, tmp_file, mock_graphiti_client, mock_parser_registry,
+        mock_parser, sample_parse_result
+    ):
+        """Delay should not be applied in dry-run mode (no episodes added)."""
+        mock_parser.parse.return_value = sample_parse_result
+
+        sleep_calls = []
+
+        async def mock_sleep(seconds):
+            sleep_calls.append(seconds)
+
+        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=mock_graphiti_client):
+            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                with patch("guardkit.cli.graphiti.asyncio.sleep", side_effect=mock_sleep):
+                    await _cmd_add_context(
+                        path=str(tmp_file),
+                        parser_type=None,
+                        force=False,
+                        dry_run=True,
+                        pattern="**/*.md",
+                        verbose=False,
+                        quiet=False,
+                        delay=0.5,
+                    )
+
+        # No sleeps in dry-run mode
+        assert len(sleep_calls) == 0
+
+    def test_delay_cli_option_custom_value(
+        self, cli_runner, tmp_file, mock_graphiti_client,
+        mock_parser_registry, mock_parser, sample_parse_result
+    ):
+        """AC-002: --delay accepts custom values from CLI."""
+        mock_parser.parse.return_value = sample_parse_result
+
+        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=mock_graphiti_client):
+            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                with patch("guardkit.cli.graphiti.asyncio.sleep", new_callable=AsyncMock):
+                    result = cli_runner.invoke(
+                        graphiti,
+                        ["add-context", str(tmp_file), "--delay", "1.0"],
+                    )
+
+        assert result.exit_code == 0
+
+    @pytest.mark.asyncio
+    async def test_semaphore_limit_restored_on_error(
+        self, tmp_path
+    ):
+        """AC-004: SEMAPHORE_LIMIT is restored even when command fails."""
+        import os
+        nonexistent = tmp_path / "nonexistent.md"
+
+        os.environ["SEMAPHORE_LIMIT"] = "20"
+
+        with pytest.raises(SystemExit):
+            await _cmd_add_context(
+                path=str(nonexistent),
+                parser_type=None,
+                force=False,
+                dry_run=False,
+                pattern="**/*.md",
+                verbose=False,
+                quiet=False,
+                delay=0,
+            )
+
+        # Should be restored even after error
+        assert os.environ.get("SEMAPHORE_LIMIT") == "20"
+        del os.environ["SEMAPHORE_LIMIT"]
+
+
+# ============================================================================
+# TEST CLASS: Return Value Checking (TASK-FIX-AC03)
+# ============================================================================
+
+
+class TestAddEpisodeReturnValueChecking:
+    """Test that add_episode return value is checked for success/failure.
+
+    TASK-FIX-AC03: Fix false-positive success reporting.
+    The CLI must check add_episode() return value (UUID or None) and only
+    count successful episodes, show appropriate markers, and report failures.
+    """
+
+    @staticmethod
+    def _normalize(text: str) -> str:
+        """Collapse Rich Console line-wrapping into single-line text for assertions."""
+        import re
+        return re.sub(r"\s+", " ", text)
+
+    @pytest.mark.asyncio
+    async def test_none_return_not_counted_as_success(
+        self, tmp_file, mock_parser_registry, mock_parser, sample_parse_result
+    ):
+        """AC-001: episodes_added only incremented when add_episode returns non-None."""
+        mock_parser.parse.return_value = sample_parse_result
+
+        client = AsyncMock(spec=GraphitiClient)
+        client.enabled = True
+        client.config = GraphitiConfig(enabled=True)
+        client.initialize = AsyncMock(return_value=True)
+        client.close = AsyncMock()
+        client.add_episode = AsyncMock(return_value=None)
+
+        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=client):
+            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                with patch("guardkit.cli.graphiti.asyncio.sleep", new_callable=AsyncMock):
+                    await _cmd_add_context(
+                        path=str(tmp_file),
+                        parser_type=None,
+                        force=False,
+                        dry_run=False,
+                        pattern="**/*.md",
+                        verbose=False,
+                        quiet=False,
+                        delay=0,
+                    )
+
+        # add_episode was called but returned None — should NOT count as added
+        client.add_episode.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_none_return_logged_as_error(
+        self, tmp_file, mock_parser_registry, mock_parser, sample_parse_result, capsys
+    ):
+        """AC-002: Failed episodes logged as errors with file path."""
+        mock_parser.parse.return_value = sample_parse_result
+
+        client = AsyncMock(spec=GraphitiClient)
+        client.enabled = True
+        client.config = GraphitiConfig(enabled=True)
+        client.initialize = AsyncMock(return_value=True)
+        client.close = AsyncMock()
+        client.add_episode = AsyncMock(return_value=None)
+
+        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=client):
+            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                with patch("guardkit.cli.graphiti.asyncio.sleep", new_callable=AsyncMock):
+                    await _cmd_add_context(
+                        path=str(tmp_file),
+                        parser_type=None,
+                        force=False,
+                        dry_run=False,
+                        pattern="**/*.md",
+                        verbose=False,
+                        quiet=False,
+                        delay=0,
+                    )
+
+        captured = capsys.readouterr()
+        normalized = self._normalize(captured.out)
+        assert "Episode creation returned None" in normalized
+
+    @pytest.mark.asyncio
+    async def test_success_return_counted(
+        self, tmp_file, mock_graphiti_client, mock_parser_registry,
+        mock_parser, sample_parse_result, capsys
+    ):
+        """AC-001: Successful add_episode (returns UUID) is counted."""
+        mock_parser.parse.return_value = sample_parse_result
+        mock_graphiti_client.add_episode = AsyncMock(return_value="episode-uuid-123")
+
+        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=mock_graphiti_client):
+            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                with patch("guardkit.cli.graphiti.asyncio.sleep", new_callable=AsyncMock):
+                    await _cmd_add_context(
+                        path=str(tmp_file),
+                        parser_type=None,
+                        force=False,
+                        dry_run=False,
+                        pattern="**/*.md",
+                        verbose=False,
+                        quiet=False,
+                        delay=0,
+                    )
+
+        mock_graphiti_client.add_episode.assert_called_once()
+        captured = capsys.readouterr()
+        assert "1 episode" in captured.out
+        assert "Failed" not in captured.out
+
+    @pytest.mark.asyncio
+    async def test_summary_reports_failed_count(
+        self, tmp_file, mock_parser_registry, mock_parser, capsys
+    ):
+        """AC-003: Summary accurately reports successful vs failed episode counts."""
+        episodes = [
+            EpisodeData(
+                content="Content 1", group_id="test",
+                entity_type="adr", entity_id="adr-1", metadata={},
+            ),
+            EpisodeData(
+                content="Content 2", group_id="test",
+                entity_type="adr", entity_id="adr-2", metadata={},
+            ),
+        ]
+        mock_parser.parse.return_value = ParseResult(
+            episodes=episodes, warnings=[], success=True
+        )
+
+        client = AsyncMock(spec=GraphitiClient)
+        client.enabled = True
+        client.config = GraphitiConfig(enabled=True)
+        client.initialize = AsyncMock(return_value=True)
+        client.close = AsyncMock()
+        # First succeeds, second returns None
+        client.add_episode = AsyncMock(side_effect=["uuid-1", None])
+
+        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=client):
+            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                with patch("guardkit.cli.graphiti.asyncio.sleep", new_callable=AsyncMock):
+                    await _cmd_add_context(
+                        path=str(tmp_file),
+                        parser_type=None,
+                        force=False,
+                        dry_run=False,
+                        pattern="**/*.md",
+                        verbose=False,
+                        quiet=False,
+                        delay=0,
+                    )
+
+        captured = capsys.readouterr()
+        assert "1 episode" in captured.out
+        assert "Failed: 1 episode" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_checkmark_only_shown_for_all_success(
+        self, tmp_file, mock_parser_registry, mock_parser, capsys
+    ):
+        """AC-004: Checkmark only shown for files where ALL episodes succeeded."""
+        mock_parser.parse.return_value = ParseResult(
+            episodes=[EpisodeData(
+                content="Content", group_id="test",
+                entity_type="adr", entity_id="adr-1", metadata={},
+            )],
+            warnings=[], success=True,
+        )
+
+        client = AsyncMock(spec=GraphitiClient)
+        client.enabled = True
+        client.config = GraphitiConfig(enabled=True)
+        client.initialize = AsyncMock(return_value=True)
+        client.close = AsyncMock()
+        client.add_episode = AsyncMock(return_value="uuid-1")
+
+        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=client):
+            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                with patch("guardkit.cli.graphiti.asyncio.sleep", new_callable=AsyncMock):
+                    await _cmd_add_context(
+                        path=str(tmp_file),
+                        parser_type=None,
+                        force=False,
+                        dry_run=False,
+                        pattern="**/*.md",
+                        verbose=False,
+                        quiet=False,
+                        delay=0,
+                    )
+
+        captured = capsys.readouterr()
+        assert "\u2713" in captured.out  # checkmark
+        assert "\u26a0" not in captured.out  # no warning marker
+
+    @pytest.mark.asyncio
+    async def test_warning_marker_for_partial_success(
+        self, tmp_file, mock_parser_registry, mock_parser, capsys
+    ):
+        """AC-005: Files with partial success show warning marker with failed count."""
+        episodes = [
+            EpisodeData(
+                content="Content 1", group_id="test",
+                entity_type="adr", entity_id="adr-1", metadata={},
+            ),
+            EpisodeData(
+                content="Content 2", group_id="test",
+                entity_type="adr", entity_id="adr-2", metadata={},
+            ),
+        ]
+        mock_parser.parse.return_value = ParseResult(
+            episodes=episodes, warnings=[], success=True
+        )
+
+        client = AsyncMock(spec=GraphitiClient)
+        client.enabled = True
+        client.config = GraphitiConfig(enabled=True)
+        client.initialize = AsyncMock(return_value=True)
+        client.close = AsyncMock()
+        client.add_episode = AsyncMock(side_effect=["uuid-1", None])
+
+        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=client):
+            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                with patch("guardkit.cli.graphiti.asyncio.sleep", new_callable=AsyncMock):
+                    await _cmd_add_context(
+                        path=str(tmp_file),
+                        parser_type=None,
+                        force=False,
+                        dry_run=False,
+                        pattern="**/*.md",
+                        verbose=False,
+                        quiet=False,
+                        delay=0,
+                    )
+
+        captured = capsys.readouterr()
+        normalized = self._normalize(captured.out)
+        assert "\u26a0" in captured.out  # warning marker
+        assert "1 episode(s) failed" in normalized
+
+    @pytest.mark.asyncio
+    async def test_exception_path_also_tracked_as_failed(
+        self, tmp_file, mock_parser_registry, mock_parser, capsys
+    ):
+        """AC-006: Exception path tracked as failed episode."""
+        mock_parser.parse.return_value = ParseResult(
+            episodes=[EpisodeData(
+                content="Content", group_id="test",
+                entity_type="adr", entity_id="adr-1", metadata={},
+            )],
+            warnings=[], success=True,
+        )
+
+        client = AsyncMock(spec=GraphitiClient)
+        client.enabled = True
+        client.config = GraphitiConfig(enabled=True)
+        client.initialize = AsyncMock(return_value=True)
+        client.close = AsyncMock()
+        client.add_episode = AsyncMock(side_effect=Exception("DB error"))
+
+        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=client):
+            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                with patch("guardkit.cli.graphiti.asyncio.sleep", new_callable=AsyncMock):
+                    await _cmd_add_context(
+                        path=str(tmp_file),
+                        parser_type=None,
+                        force=False,
+                        dry_run=False,
+                        pattern="**/*.md",
+                        verbose=False,
+                        quiet=False,
+                        delay=0,
+                    )
+
+        captured = capsys.readouterr()
+        normalized = self._normalize(captured.out)
+        assert "\u26a0" in captured.out  # warning marker
+        assert "Failed: 1 episode" in normalized
+
+    @pytest.mark.asyncio
+    async def test_all_none_returns_shows_warning_and_failed_count(
+        self, tmp_file, mock_parser_registry, mock_parser, capsys
+    ):
+        """All episodes returning None: warning marker, no checkmark."""
+        episodes = [
+            EpisodeData(
+                content="Content 1", group_id="test",
+                entity_type="adr", entity_id="adr-1", metadata={},
+            ),
+            EpisodeData(
+                content="Content 2", group_id="test",
+                entity_type="adr", entity_id="adr-2", metadata={},
+            ),
+        ]
+        mock_parser.parse.return_value = ParseResult(
+            episodes=episodes, warnings=[], success=True
+        )
+
+        client = AsyncMock(spec=GraphitiClient)
+        client.enabled = True
+        client.config = GraphitiConfig(enabled=True)
+        client.initialize = AsyncMock(return_value=True)
+        client.close = AsyncMock()
+        client.add_episode = AsyncMock(return_value=None)
+
+        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=client):
+            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                with patch("guardkit.cli.graphiti.asyncio.sleep", new_callable=AsyncMock):
+                    await _cmd_add_context(
+                        path=str(tmp_file),
+                        parser_type=None,
+                        force=False,
+                        dry_run=False,
+                        pattern="**/*.md",
+                        verbose=False,
+                        quiet=False,
+                        delay=0,
+                    )
+
+        captured = capsys.readouterr()
+        normalized = self._normalize(captured.out)
+        assert "\u2713" not in captured.out  # NO checkmark
+        assert "\u26a0" in captured.out  # warning marker
+        assert "2 episode(s) failed" in normalized
+        assert "Failed: 2 episodes" in normalized
+
+    @pytest.mark.asyncio
+    async def test_mixed_success_exception_and_none(
+        self, tmp_file, mock_parser_registry, mock_parser, capsys
+    ):
+        """Mix of success, None return, and exception — all tracked correctly."""
+        episodes = [
+            EpisodeData(
+                content=f"Content {i}", group_id="test",
+                entity_type="adr", entity_id=f"adr-{i}", metadata={},
+            )
+            for i in range(3)
+        ]
+        mock_parser.parse.return_value = ParseResult(
+            episodes=episodes, warnings=[], success=True
+        )
+
+        client = AsyncMock(spec=GraphitiClient)
+        client.enabled = True
+        client.config = GraphitiConfig(enabled=True)
+        client.initialize = AsyncMock(return_value=True)
+        client.close = AsyncMock()
+        # First succeeds, second None, third exception
+        client.add_episode = AsyncMock(
+            side_effect=["uuid-1", None, Exception("timeout")]
+        )
+
+        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=client):
+            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                with patch("guardkit.cli.graphiti.asyncio.sleep", new_callable=AsyncMock):
+                    await _cmd_add_context(
+                        path=str(tmp_file),
+                        parser_type=None,
+                        force=False,
+                        dry_run=False,
+                        pattern="**/*.md",
+                        verbose=False,
+                        quiet=False,
+                        delay=0,
+                    )
+
+        captured = capsys.readouterr()
+        normalized = self._normalize(captured.out)
+        assert "\u26a0" in captured.out  # partial success
+        assert "2 episode(s) failed" in normalized
+        assert "1 episode" in normalized  # 1 added
+        assert "Failed: 2 episodes" in normalized
+
+    @pytest.mark.asyncio
+    async def test_dry_run_unaffected_by_return_check(
+        self, tmp_file, mock_graphiti_client, mock_parser_registry,
+        mock_parser, sample_parse_result, capsys
+    ):
+        """Dry run mode still counts all episodes (no add_episode called)."""
+        mock_parser.parse.return_value = sample_parse_result
+
+        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=mock_graphiti_client):
+            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                await _cmd_add_context(
+                    path=str(tmp_file),
+                    parser_type=None,
+                    force=False,
+                    dry_run=True,
+                    pattern="**/*.md",
+                    verbose=False,
+                    quiet=False,
+                    delay=0,
+                )
+
+        mock_graphiti_client.add_episode.assert_not_called()
+        captured = capsys.readouterr()
+        assert "1" in captured.out  # 1 episode would be added
+
+# ============================================================================
+# TEST CLASS: Log Noise Suppression (TASK-FIX-AC04)
+# ============================================================================
+
+
+class TestLogNoiseSuppression:
+    """Test that noisy INFO-level loggers are suppressed during add-context."""
+
+    @pytest.mark.asyncio
+    async def test_falkordb_driver_logger_set_to_warning(
+        self, tmp_file, mock_graphiti_client, mock_parser_registry,
+        mock_parser, sample_parse_result
+    ):
+        """AC-001: No 'Index already exists' messages — FalkorDB driver logger set to WARNING."""
+        mock_parser.parse.return_value = sample_parse_result
+
+        falkordb_logger = logging.getLogger("graphiti_core.driver.falkordb_driver")
+        original_level = falkordb_logger.level
+
+        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=mock_graphiti_client):
+            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                await _cmd_add_context(
+                    path=str(tmp_file),
+                    parser_type=None,
+                    force=False,
+                    dry_run=False,
+                    pattern="**/*.md",
+                    verbose=False,
+                    quiet=False,
+                    delay=0,
+                )
+
+        assert falkordb_logger.level == logging.WARNING
+        # Restore for other tests
+        falkordb_logger.setLevel(original_level)
+
+    @pytest.mark.asyncio
+    async def test_httpx_logger_set_to_warning(
+        self, tmp_file, mock_graphiti_client, mock_parser_registry,
+        mock_parser, sample_parse_result
+    ):
+        """AC-004: httpx INFO-level request logging suppressed."""
+        mock_parser.parse.return_value = sample_parse_result
+
+        httpx_logger = logging.getLogger("httpx")
+        original_level = httpx_logger.level
+
+        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=mock_graphiti_client):
+            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                await _cmd_add_context(
+                    path=str(tmp_file),
+                    parser_type=None,
+                    force=False,
+                    dry_run=False,
+                    pattern="**/*.md",
+                    verbose=False,
+                    quiet=False,
+                    delay=0,
+                )
+
+        assert httpx_logger.level == logging.WARNING
+        # Restore for other tests
+        httpx_logger.setLevel(original_level)
+
+    @pytest.mark.asyncio
+    async def test_falkordb_error_messages_still_displayed(
+        self, tmp_file, mock_graphiti_client, mock_parser_registry,
+        mock_parser, sample_parse_result
+    ):
+        """AC-002: FalkorDB ERROR-level messages still displayed."""
+        mock_parser.parse.return_value = sample_parse_result
+
+        falkordb_logger = logging.getLogger("graphiti_core.driver.falkordb_driver")
+        original_level = falkordb_logger.level
+
+        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=mock_graphiti_client):
+            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                await _cmd_add_context(
+                    path=str(tmp_file),
+                    parser_type=None,
+                    force=False,
+                    dry_run=False,
+                    pattern="**/*.md",
+                    verbose=False,
+                    quiet=False,
+                    delay=0,
+                )
+
+        # WARNING level still allows ERROR and CRITICAL messages through
+        assert falkordb_logger.level <= logging.ERROR
+        # Restore for other tests
+        falkordb_logger.setLevel(original_level)
+
+    @pytest.mark.asyncio
+    async def test_log_suppression_scoped_to_add_context(self):
+        """AC-003: Log level override scoped to add-context, not global."""
+        # Other loggers (not falkordb_driver or httpx) should NOT be affected
+        unrelated_logger = logging.getLogger("guardkit.cli.graphiti")
+        original_level = unrelated_logger.level
+
+        # The module-level logger should not be changed by add-context
+        # (only the two specific loggers are suppressed)
+        assert unrelated_logger.name != "graphiti_core.driver.falkordb_driver"
+        assert unrelated_logger.name != "httpx"
+        # Level should remain whatever it was before
+        assert unrelated_logger.level == original_level
+
+    @pytest.mark.asyncio
+    async def test_info_messages_blocked_warning_messages_pass(
+        self, tmp_file, mock_graphiti_client, mock_parser_registry,
+        mock_parser, sample_parse_result
+    ):
+        """Verify INFO is blocked but WARNING passes through after suppression."""
+        mock_parser.parse.return_value = sample_parse_result
+
+        falkordb_logger = logging.getLogger("graphiti_core.driver.falkordb_driver")
+        original_level = falkordb_logger.level
+
+        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=mock_graphiti_client):
+            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                await _cmd_add_context(
+                    path=str(tmp_file),
+                    parser_type=None,
+                    force=False,
+                    dry_run=False,
+                    pattern="**/*.md",
+                    verbose=False,
+                    quiet=False,
+                    delay=0,
+                )
+
+        # After running add-context, the logger should be at WARNING
+        # This means INFO (20) is blocked, WARNING (30) passes
+        assert falkordb_logger.isEnabledFor(logging.WARNING)
+        assert falkordb_logger.isEnabledFor(logging.ERROR)
+        assert not falkordb_logger.isEnabledFor(logging.INFO)
+        # Restore for other tests
+        falkordb_logger.setLevel(original_level)

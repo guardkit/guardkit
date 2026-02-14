@@ -1,14 +1,21 @@
 # Graphiti Knowledge Graph Configuration
 #
 # This file configures the Graphiti integration for GuardKit.
+# FalkorDB runs on the Synology DS918+ NAS, accessible via Tailscale.
+#
 # All settings can be overridden via environment variables:
 #   - GRAPHITI_ENABLED: Enable/disable integration
-#   - GRAPHITI_HOST: Server hostname
-#   - GRAPHITI_PORT: Server port
+#   - GRAPH_STORE: Graph backend ('falkordb' or 'neo4j')
+#   - FALKORDB_HOST: FalkorDB host
+#   - FALKORDB_PORT: FalkorDB port
 #   - GRAPHITI_TIMEOUT: Connection timeout in seconds
 #
-# To start Graphiti services:
-#   docker compose -f docker/docker-compose.graphiti.yml up -d
+# FalkorDB on NAS:
+#   ssh richardwoollcott@whitestocks
+#   cd /volume1/guardkit/docker
+#   sudo docker-compose -f docker-compose.falkordb.yml up -d
+#
+# FalkorDB Browser UI: http://whitestocks:3000
 
 # Project ID for namespace prefixing
 # This ensures knowledge persists across directory moves/renames
@@ -17,9 +24,14 @@ project_id: guardkit
 # Enable Graphiti integration (set to false to disable)
 enabled: true
 
-# Graphiti server connection settings
-host: localhost
-port: 8000
+# Graph database backend
+graph_store: falkordb
+
+# FalkorDB connection (Synology DS918+ NAS via Tailscale)
+falkordb_host: whitestocks
+falkordb_port: 6379
+
+# Connection settings
 timeout: 30.0
 
 # OpenAI embedding model for semantic search
@@ -32,3 +44,7 @@ group_ids:
   - product_knowledge      # Domain concepts, entities, relationships
   - command_workflows      # GuardKit command patterns and usage
   - architecture_decisions # ADRs and design rationale
+
+# Deprecated fields (kept for backwards compatibility)
+host: localhost
+port: 8000
