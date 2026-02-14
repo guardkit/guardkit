@@ -1,9 +1,10 @@
 ---
 id: TASK-FIX-AC02
 title: Reduce SEMAPHORE_LIMIT and add inter-episode delay to prevent FalkorDB query saturation
-status: backlog
+status: completed
 created: 2026-02-13T00:00:00Z
-updated: 2026-02-13T00:00:00Z
+updated: 2026-02-14T00:00:00Z
+completed: 2026-02-14T00:00:00Z
 priority: high
 tags: [fix, graphiti, add-context, falkordb, rate-limiting]
 task_type: implementation
@@ -14,9 +15,11 @@ implementation_mode: task-work
 complexity: 3
 dependencies: []
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  total_tests: 10
+  passed: 10
+  failed: 0
+  last_run: 2026-02-14T00:00:00Z
 ---
 
 # Task: Reduce SEMAPHORE_LIMIT and add inter-episode delay
@@ -34,11 +37,11 @@ TASK-REV-1294 recommendations R1 (P0) + R2 (P2). See `.claude/reviews/TASK-REV-1
 
 ## Acceptance Criteria
 
-- [ ] AC-001: `SEMAPHORE_LIMIT` env var set to 5 before graphiti-core import in add-context command
-- [ ] AC-002: `--delay` CLI option controls inter-episode sleep (default 0.5s, 0 to disable)
-- [ ] AC-003: No "Max pending queries exceeded" errors when processing 9+ ADRs sequentially
-- [ ] AC-004: `SEMAPHORE_LIMIT` override only affects add-context command, not global graphiti-core usage
-- [ ] AC-005: Tests verify delay is applied between episodes
+- [x] AC-001: `SEMAPHORE_LIMIT` env var set to 5 before graphiti-core import in add-context command
+- [x] AC-002: `--delay` CLI option controls inter-episode sleep (default 0.5s, 0 to disable)
+- [x] AC-003: No "Max pending queries exceeded" errors when processing 9+ ADRs sequentially
+- [x] AC-004: `SEMAPHORE_LIMIT` override only affects add-context command, not global graphiti-core usage
+- [x] AC-005: Tests verify delay is applied between episodes
 
 ## Implementation Notes
 

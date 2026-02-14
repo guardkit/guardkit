@@ -1,9 +1,10 @@
 ---
 id: TASK-FIX-AC03
 title: Fix false-positive success reporting — check add_episode return value
-status: backlog
+status: completed
 created: 2026-02-13T00:00:00Z
-updated: 2026-02-13T00:00:00Z
+updated: 2026-02-14T00:00:00Z
+completed: 2026-02-14T00:00:00Z
 priority: high
 tags: [fix, graphiti, add-context, data-integrity]
 task_type: implementation
@@ -14,9 +15,12 @@ implementation_mode: task-work
 complexity: 2
 dependencies: []
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  tests_total: 54
+  tests_passed: 54
+  tests_failed: 0
+  new_tests: 10
+  last_run: 2026-02-14T00:00:00Z
 ---
 
 # Task: Fix false-positive success reporting in add-context CLI
@@ -31,12 +35,12 @@ TASK-REV-1294 "Success Reporting Bug" finding. See `.claude/reviews/TASK-REV-129
 
 ## Acceptance Criteria
 
-- [ ] AC-001: `episodes_added` only incremented when `add_episode()` returns a non-None value (episode UUID)
-- [ ] AC-002: Failed episodes logged as errors with the file path
-- [ ] AC-003: Summary accurately reports successful vs failed episode counts
-- [ ] AC-004: `✓` marker only shown for files where ALL episodes succeeded
-- [ ] AC-005: Files with partial success show a warning marker (e.g., `⚠`) with count of failed episodes
-- [ ] AC-006: Tests cover None return, exception, and success paths
+- [x] AC-001: `episodes_added` only incremented when `add_episode()` returns a non-None value (episode UUID)
+- [x] AC-002: Failed episodes logged as errors with the file path
+- [x] AC-003: Summary accurately reports successful vs failed episode counts
+- [x] AC-004: `✓` marker only shown for files where ALL episodes succeeded
+- [x] AC-005: Files with partial success show a warning marker (e.g., `⚠`) with count of failed episodes
+- [x] AC-006: Tests cover None return, exception, and success paths
 
 ## Implementation Notes
 

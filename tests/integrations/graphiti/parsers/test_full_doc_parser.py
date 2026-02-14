@@ -41,19 +41,36 @@ class TestFullDocParserConfiguration:
         parser = FullDocParser()
         assert parser.parser_type == "full_doc"
 
-    def test_supported_extensions(self):
-        """supported_extensions should return ['.md', '.markdown']."""
+    def test_supported_extensions_empty(self):
+        """supported_extensions should return [] to avoid polluting extension map."""
         parser = FullDocParser()
-        assert parser.supported_extensions == [".md", ".markdown"]
+        assert parser.supported_extensions == []
 
-    def test_can_parse_returns_false_always(self):
-        """can_parse should always return False (explicit-only parser)."""
+    def test_can_parse_returns_true_for_md_files(self):
+        """can_parse should return True for .md files (fallback parser)."""
         parser = FullDocParser()
-        # Should return False for any markdown file
-        assert parser.can_parse("# Content", "README.md") is False
-        assert parser.can_parse("# Content", "CLAUDE.md") is False
-        assert parser.can_parse("# Content", "docs/research.md") is False
-        assert parser.can_parse("# Content", "any-file.markdown") is False
+        assert parser.can_parse("# Content", "README.md") is True
+        assert parser.can_parse("# Content", "CLAUDE.md") is True
+        assert parser.can_parse("# Content", "docs/research.md") is True
+
+    def test_can_parse_returns_true_for_markdown_files(self):
+        """can_parse should return True for .markdown files."""
+        parser = FullDocParser()
+        assert parser.can_parse("# Content", "any-file.markdown") is True
+        assert parser.can_parse("# Content", "docs/guide.MARKDOWN") is True
+
+    def test_can_parse_returns_false_for_non_markdown(self):
+        """can_parse should return False for non-markdown files."""
+        parser = FullDocParser()
+        assert parser.can_parse("content", "script.py") is False
+        assert parser.can_parse("content", "data.json") is False
+        assert parser.can_parse("content", "style.css") is False
+        assert parser.can_parse("content", "readme.txt") is False
+
+    def test_can_parse_returns_false_for_empty_path(self):
+        """can_parse should return False for empty file path."""
+        parser = FullDocParser()
+        assert parser.can_parse("# Content", "") is False
 
     def test_default_chunk_threshold(self):
         """Default chunk threshold should be 10KB."""
@@ -655,8 +672,9 @@ Final thoughts.
         project_can_parse = project_parser.can_parse(content, "research.md")
         assert project_can_parse is False  # ProjectDocParser rejects non-CLAUDE/README
 
-        # FullDocParser captures everything (when explicitly requested)
+        # FullDocParser captures everything (as fallback)
         full_parser = FullDocParser()
+        assert full_parser.can_parse(content, "research.md") is True
         result = full_parser.parse(content, "research.md")
         assert result.success is True
 
@@ -665,3 +683,114 @@ Final thoughts.
         assert "Core Tools" in all_content
         assert "Technology Decisions" in all_content
         assert "Conclusion" in all_content
+
+
+# ============================================================================
+# 10. Fallback Behavior and Registry Priority Tests (6 tests)
+# ============================================================================
+
+
+class TestFallbackBehavior:
+    """Tests for FullDocParser acting as lowest-priority fallback."""
+
+    def test_registry_detects_adr_before_full_doc(self):
+        """ADR parser should take precedence over FullDocParser."""
+        from guardkit.integrations.graphiti.parsers.adr import ADRParser
+        from guardkit.integrations.graphiti.parsers.registry import ParserRegistry
+
+        registry = ParserRegistry()
+        registry.register(ADRParser())
+        registry.register(FullDocParser())  # Last = lowest priority
+
+        content = """# ADR-001: Use Repository Pattern
+
+## Status
+Accepted
+
+## Context
+We need a data access pattern.
+
+## Decision
+Use the repository pattern.
+"""
+        detected = registry.detect_parser("docs/adr-001-repo-pattern.md", content)
+        assert detected is not None
+        assert detected.parser_type == "adr"
+
+    def test_registry_falls_back_to_full_doc_for_generic_md(self):
+        """FullDocParser should be used for generic .md files."""
+        from guardkit.integrations.graphiti.parsers.adr import ADRParser
+        from guardkit.integrations.graphiti.parsers.feature_spec import FeatureSpecParser
+        from guardkit.integrations.graphiti.parsers.project_doc_parser import ProjectDocParser
+        from guardkit.integrations.graphiti.parsers.project_overview import ProjectOverviewParser
+        from guardkit.integrations.graphiti.parsers.registry import ParserRegistry
+
+        # Register in production order (FullDocParser last)
+        registry = ParserRegistry()
+        registry.register(ADRParser())
+        registry.register(FeatureSpecParser())
+        registry.register(ProjectDocParser())
+        registry.register(ProjectOverviewParser())
+        registry.register(FullDocParser())
+
+        content = """# Research Notes
+
+## Findings
+Some research findings here.
+
+## Conclusion
+Summary of the research.
+"""
+        detected = registry.detect_parser("docs/research-notes.md", content)
+        assert detected is not None
+        assert detected.parser_type == "full_doc"
+
+    def test_registry_returns_none_for_non_markdown(self):
+        """Non-markdown files should not match FullDocParser."""
+        from guardkit.integrations.graphiti.parsers.registry import ParserRegistry
+
+        registry = ParserRegistry()
+        registry.register(FullDocParser())
+
+        detected = registry.detect_parser("script.py", "print('hello')")
+        assert detected is None
+
+    def test_full_doc_does_not_pollute_extension_map(self):
+        """FullDocParser should not add entries to the extension map."""
+        from guardkit.integrations.graphiti.parsers.registry import ParserRegistry
+
+        registry = ParserRegistry()
+        registry.register(FullDocParser())
+
+        # Extension map should be empty since supported_extensions is []
+        assert ".md" not in registry._extension_map
+        assert ".markdown" not in registry._extension_map
+
+    def test_explicit_type_still_works(self):
+        """--type full_doc should still work via get_parser()."""
+        from guardkit.integrations.graphiti.parsers.registry import ParserRegistry
+
+        registry = ParserRegistry()
+        registry.register(FullDocParser())
+
+        parser = registry.get_parser("full_doc")
+        assert parser is not None
+        assert parser.parser_type == "full_doc"
+
+    def test_feature_spec_takes_precedence(self):
+        """Feature spec parser should take precedence over FullDocParser."""
+        from guardkit.integrations.graphiti.parsers.feature_spec import FeatureSpecParser
+        from guardkit.integrations.graphiti.parsers.registry import ParserRegistry
+
+        registry = ParserRegistry()
+        registry.register(FeatureSpecParser())
+        registry.register(FullDocParser())
+
+        content = """# Feature Spec: Dark Mode
+
+## Description
+Add dark mode support.
+"""
+        detected = registry.detect_parser("feature-spec-dark-mode.md", content)
+        assert detected is not None
+        assert detected.parser_type == "feature-spec"
