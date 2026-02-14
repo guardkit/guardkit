@@ -27,6 +27,13 @@ from rich.table import Table
 
 from guardkit.knowledge.graphiti_client import GraphitiClient, GraphitiConfig
 from guardkit.knowledge.config import load_graphiti_config, GraphitiSettings
+
+
+def _format_connection_target(settings: GraphitiSettings) -> str:
+    """Format the connection target string based on graph store backend."""
+    if settings.graph_store == "falkordb":
+        return f"FalkorDB at {settings.falkordb_host}:{settings.falkordb_port}"
+    return f"Neo4j at {settings.neo4j_uri}"
 from guardkit.knowledge.seeding import (
     seed_all_system_context,
     is_seeded,
@@ -59,6 +66,9 @@ def _get_client_and_config() -> tuple[GraphitiClient, GraphitiSettings]:
         neo4j_password=settings.neo4j_password,
         timeout=settings.timeout,
         project_id=settings.project_id,
+        graph_store=settings.graph_store,
+        falkordb_host=settings.falkordb_host,
+        falkordb_port=settings.falkordb_port,
     )
     client = GraphitiClient(config)
     return client, settings
@@ -79,7 +89,7 @@ async def _cmd_seed(force: bool) -> None:
     client, settings = _get_client_and_config()
 
     # Initialize connection
-    console.print(f"Connecting to Neo4j at {settings.neo4j_uri}...")
+    console.print(f"Connecting to {_format_connection_target(settings)}...")
 
     try:
         initialized = await client.initialize()
@@ -131,11 +141,19 @@ async def _cmd_seed(force: bool) -> None:
                 "agents",
                 "patterns",
                 "rules",
+                "project_overview",
+                "project_architecture",
+                "failed_approaches",
+                "quality_gate_configs",
+                "pattern_examples",
             ]
             for cat in categories:
                 console.print(f"  [green]\u2713[/green] {cat}")
             console.print()
             console.print("Run 'guardkit graphiti verify' to test queries.")
+            console.print()
+            console.print("To seed project ADRs:")
+            console.print("  guardkit graphiti add-context docs/adr/ --type adr")
         else:
             console.print("[yellow]Seeding completed with warnings.[/yellow]")
     finally:
@@ -174,7 +192,7 @@ async def _cmd_status(verbose: bool = False) -> None:
         try:
             if not initialized or not client.enabled:
                 console.print("  [yellow]Connection: Failed[/yellow]")
-                console.print("  [dim]Check Neo4j configuration[/dim]")
+                console.print("  [dim]Check graph database configuration[/dim]")
                 console.print()
                 return
 
@@ -252,7 +270,7 @@ async def _cmd_verify(verbose: bool) -> None:
     client, settings = _get_client_and_config()
 
     # Initialize connection
-    console.print(f"Connecting to Neo4j at {settings.neo4j_uri}...")
+    console.print(f"Connecting to {_format_connection_target(settings)}...")
 
     try:
         initialized = await client.initialize()
@@ -334,7 +352,7 @@ async def _cmd_seed_adrs(force: bool) -> None:
         return
 
     # Initialize connection
-    console.print(f"Connecting to Neo4j at {settings.neo4j_uri}...")
+    console.print(f"Connecting to {_format_connection_target(settings)}...")
 
     try:
         initialized = await client.initialize()
@@ -547,7 +565,7 @@ async def _cmd_add_context(
         raise SystemExit(1)
 
     # Create client
-    client = GraphitiClient()
+    client, settings = _get_client_and_config()
 
     # Initialize connection
     try:
@@ -726,7 +744,7 @@ async def _cmd_capture(focus: Optional[str], max_questions: int) -> None:
     # Create client and verify connection
     client, _ = _get_client_and_config()
 
-    console.print(f"Connecting to Neo4j at {settings.neo4j_uri}...")
+    console.print(f"Connecting to {_format_connection_target(settings)}...")
 
     try:
         initialized = await client.initialize()
@@ -845,7 +863,7 @@ async def _cmd_clear(
         return
 
     # Initialize connection
-    console.print(f"Connecting to Neo4j at {settings.neo4j_uri}...")
+    console.print(f"Connecting to {_format_connection_target(settings)}...")
 
     try:
         initialized = await client.initialize()

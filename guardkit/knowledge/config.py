@@ -12,6 +12,9 @@ Environment Variables:
     - NEO4J_PASSWORD: Neo4j password
     - GRAPHITI_TIMEOUT: Connection timeout in seconds
     - GUARDKIT_CONFIG_DIR: Override config directory location
+    - GRAPH_STORE: Graph database backend ('neo4j' or 'falkordb')
+    - FALKORDB_HOST: FalkorDB host (default: 'localhost')
+    - FALKORDB_PORT: FalkorDB port (default: 6379)
 
     # Deprecated (kept for backwards compatibility):
     - GRAPHITI_HOST: Deprecated - use NEO4J_URI instead
@@ -48,6 +51,9 @@ class GraphitiSettings:
         embedding_model: OpenAI embedding model to use
         project_id: Project ID for namespace prefixing (optional)
         group_ids: Default group IDs for knowledge graph organization
+        graph_store: Graph database backend ('neo4j' or 'falkordb')
+        falkordb_host: FalkorDB host for connection
+        falkordb_port: FalkorDB port for connection
         host: Deprecated - use neo4j_uri instead
         port: Deprecated - use neo4j_uri instead
 
@@ -55,6 +61,7 @@ class GraphitiSettings:
         ValueError: If timeout is not positive
         ValueError: If neo4j_uri is empty
         ValueError: If project_id is invalid (>50 chars)
+        ValueError: If graph_store is not 'neo4j' or 'falkordb'
         TypeError: If values have incorrect types
     """
     enabled: bool = True
@@ -69,6 +76,9 @@ class GraphitiSettings:
         "command_workflows",
         "architecture_decisions",
     ])
+    graph_store: str = "neo4j"  # 'neo4j' or 'falkordb'
+    falkordb_host: str = "localhost"
+    falkordb_port: int = 6379
     # Deprecated fields for backwards compatibility
     host: str = "localhost"
     port: int = 8000
@@ -86,6 +96,12 @@ class GraphitiSettings:
             raise TypeError(f"neo4j_password must be str, got {type(self.neo4j_password).__name__}")
         if not isinstance(self.timeout, (int, float)) or isinstance(self.timeout, bool):
             raise TypeError(f"timeout must be float, got {type(self.timeout).__name__}")
+        if not isinstance(self.graph_store, str):
+            raise TypeError(f"graph_store must be str, got {type(self.graph_store).__name__}")
+        if not isinstance(self.falkordb_host, str):
+            raise TypeError(f"falkordb_host must be str, got {type(self.falkordb_host).__name__}")
+        if not isinstance(self.falkordb_port, int) or isinstance(self.falkordb_port, bool):
+            raise TypeError(f"falkordb_port must be int, got {type(self.falkordb_port).__name__}")
         if not isinstance(self.host, str):
             raise TypeError(f"host must be str, got {type(self.host).__name__}")
         if not isinstance(self.port, int) or isinstance(self.port, bool):
@@ -100,6 +116,10 @@ class GraphitiSettings:
             raise ValueError("neo4j_uri cannot be empty")
         if self.timeout <= 0:
             raise ValueError(f"timeout must be positive, got {self.timeout}")
+        if self.graph_store not in ("neo4j", "falkordb"):
+            raise ValueError(f"graph_store must be 'neo4j' or 'falkordb', got '{self.graph_store}'")
+        if self.falkordb_port < 1 or self.falkordb_port > 65535:
+            raise ValueError(f"falkordb_port must be between 1 and 65535, got {self.falkordb_port}")
         if self.port < 1 or self.port > 65535:
             raise ValueError(f"port must be between 1 and 65535, got {self.port}")
 
@@ -247,6 +267,9 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
         'neo4j_password': 'password123',
         'timeout': 30.0,
         'project_id': None,  # Project ID for namespace prefixing
+        'graph_store': 'neo4j',
+        'falkordb_host': 'localhost',
+        'falkordb_port': 6379,
         'host': 'localhost',  # Deprecated
         'port': 8000,  # Deprecated
     }
@@ -266,6 +289,9 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
                     'neo4j_password': str,
                     'timeout': float,
                     'project_id': str,  # Project ID for namespace prefixing
+                    'graph_store': str,
+                    'falkordb_host': str,
+                    'falkordb_port': int,
                     'host': str,
                     'port': int,
                 }
@@ -298,6 +324,9 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
         'NEO4J_PASSWORD': ('neo4j_password', str),
         'GRAPHITI_TIMEOUT': ('timeout', float),
         'GUARDKIT_PROJECT_ID': ('project_id', str),  # Project ID for namespace prefixing
+        'GRAPH_STORE': ('graph_store', str),
+        'FALKORDB_HOST': ('falkordb_host', str),
+        'FALKORDB_PORT': ('falkordb_port', int),
         # Deprecated env vars (kept for backwards compatibility)
         'GRAPHITI_HOST': ('host', str),
         'GRAPHITI_PORT': ('port', int),

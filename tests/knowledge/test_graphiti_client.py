@@ -196,10 +196,16 @@ class TestGraphitiClientInitialize:
 
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
             # Set up the module mocks before calling initialize
+            # Also patch apply_falkordb_workaround since _check_graphiti_core()
+            # calls it after importing graphiti_core, and the mocked module
+            # causes inspect.getsource() to fail with TypeError
             with patch.dict('sys.modules', {
                 'graphiti_core': mock_graphiti_module,
                 'graphiti_core.nodes': mock_nodes_module
-            }):
+            }), patch(
+                'guardkit.knowledge.falkordb_workaround.apply_falkordb_workaround',
+                return_value=True,
+            ):
                 # Reset the global check flag to force re-check
                 original = graphiti_module._graphiti_core_available
                 graphiti_module._graphiti_core_available = None
@@ -224,7 +230,9 @@ class TestGraphitiClientInitialize:
 
             mock_graphiti_class = MagicMock(side_effect=Exception("Connection failed"))
             mock_module = MagicMock(Graphiti=mock_graphiti_class)
-            with patch.dict('sys.modules', {'graphiti_core': mock_module}):
+            with patch.dict('sys.modules', {'graphiti_core': mock_module}), \
+                 patch('guardkit.knowledge.falkordb_workaround.apply_falkordb_workaround',
+                       return_value=True):
                 result = await client.initialize()
 
                 assert result is False
@@ -664,7 +672,10 @@ class TestCheckGraphitiCore:
         with patch.dict('sys.modules', {
             'graphiti_core': mock_graphiti,
             'graphiti_core.nodes': mock_nodes
-        }):
+        }), patch(
+            'guardkit.knowledge.falkordb_workaround.apply_falkordb_workaround',
+            return_value=True,
+        ):
             try:
                 result = _check_graphiti_core()
                 assert result is True

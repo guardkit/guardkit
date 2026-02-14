@@ -1,7 +1,8 @@
 ---
 id: TASK-FKDB-005
 title: Conditional driver creation in GraphitiClient and Factory
-status: backlog
+status: in_review
+updated: 2026-02-11T18:00:00Z
 created: 2026-02-11T17:00:00Z
 priority: high
 tags: [falkordb, graphiti-client, migration]

@@ -109,12 +109,16 @@ class GraphitiConfig:
         neo4j_password: Neo4j password
         timeout: Connection timeout in seconds
         project_id: Project ID for namespace prefixing (optional)
+        graph_store: Graph database backend ('neo4j' or 'falkordb')
+        falkordb_host: FalkorDB host for connection
+        falkordb_port: FalkorDB port for connection
         host: Deprecated - use neo4j_uri instead (kept for backwards compatibility)
         port: Deprecated - use neo4j_uri instead (kept for backwards compatibility)
 
     Raises:
         ValueError: If timeout is not positive
         ValueError: If project_id is invalid (>50 chars or invalid characters)
+        ValueError: If graph_store is not 'neo4j' or 'falkordb'
 
     Example:
         config = GraphitiConfig(
@@ -132,6 +136,9 @@ class GraphitiConfig:
     neo4j_password: str = "password123"
     timeout: float = 30.0
     project_id: Optional[str] = None  # Project ID for namespace prefixing
+    graph_store: str = "neo4j"  # 'neo4j' or 'falkordb'
+    falkordb_host: str = "localhost"
+    falkordb_port: int = 6379
     # Deprecated fields for backwards compatibility
     host: str = "localhost"
     port: int = 8000
@@ -140,6 +147,8 @@ class GraphitiConfig:
         """Validate and normalize configuration values."""
         if self.timeout <= 0:
             raise ValueError(f"timeout must be positive, got {self.timeout}")
+        if self.graph_store not in ("neo4j", "falkordb"):
+            raise ValueError(f"graph_store must be 'neo4j' or 'falkordb', got '{self.graph_store}'")
 
         # Validate and normalize project_id if provided
         if self.project_id is not None:
@@ -381,9 +390,10 @@ class GraphitiClient:
         return self.config.enabled and self._connected
 
     async def _check_connection(self) -> bool:
-        """Check if connection to Neo4j can be established.
+        """Check if connection to the graph database can be established.
 
-        Attempts to connect using the graphiti-core library.
+        Attempts to connect using the graphiti-core library, creating
+        either a Neo4j or FalkorDB driver based on config.graph_store.
 
         Returns:
             True if connection successful, False otherwise
@@ -395,12 +405,23 @@ class GraphitiClient:
         try:
             from graphiti_core import Graphiti
 
-            # Create a test connection
-            test_graphiti = Graphiti(
-                self.config.neo4j_uri,
-                self.config.neo4j_user,
-                self.config.neo4j_password,
-            )
+            if self.config.graph_store == "falkordb":
+                try:
+                    from graphiti_core.driver.falkordb_driver import FalkorDriver
+                except ImportError:
+                    logger.debug("falkordb package not available for connection check")
+                    return False
+                driver = FalkorDriver(
+                    host=self.config.falkordb_host,
+                    port=self.config.falkordb_port,
+                )
+                test_graphiti = Graphiti(graph_driver=driver)
+            else:
+                test_graphiti = Graphiti(
+                    self.config.neo4j_uri,
+                    self.config.neo4j_user,
+                    self.config.neo4j_password,
+                )
             # Don't build indices here - just test connection
             # The driver will validate the connection on first query
             await test_graphiti.close()
@@ -470,17 +491,42 @@ class GraphitiClient:
         try:
             from graphiti_core import Graphiti
 
-            self._graphiti = Graphiti(
-                self.config.neo4j_uri,
-                self.config.neo4j_user,
-                self.config.neo4j_password,
-            )
+            if self.config.graph_store == "falkordb":
+                try:
+                    from graphiti_core.driver.falkordb_driver import FalkorDriver
+                except ImportError:
+                    logger.warning(
+                        "falkordb package not installed. "
+                        "Install with: pip install graphiti-core[falkordb]"
+                    )
+                    self._connected = False
+                    return False
+
+                driver = FalkorDriver(
+                    host=self.config.falkordb_host,
+                    port=self.config.falkordb_port,
+                    username=self.config.neo4j_user if self.config.neo4j_user != "neo4j" else None,
+                    password=self.config.neo4j_password if self.config.neo4j_password != "password123" else None,
+                )
+                self._graphiti = Graphiti(graph_driver=driver)
+            else:
+                self._graphiti = Graphiti(
+                    self.config.neo4j_uri,
+                    self.config.neo4j_user,
+                    self.config.neo4j_password,
+                )
 
             # Build indices and constraints (safe to call multiple times)
             await self._graphiti.build_indices_and_constraints()
 
             self._connected = True
-            logger.info(f"Connected to Neo4j via graphiti-core at {self.config.neo4j_uri}")
+            if self.config.graph_store == "falkordb":
+                logger.info(
+                    f"Connected to FalkorDB via graphiti-core at "
+                    f"{self.config.falkordb_host}:{self.config.falkordb_port}"
+                )
+            else:
+                logger.info(f"Connected to Neo4j via graphiti-core at {self.config.neo4j_uri}")
             return True
 
         except TimeoutError as e:
@@ -1083,17 +1129,18 @@ class GraphitiClient:
             return []
 
         try:
-            # Query Neo4j for distinct group IDs
+            # Query for distinct group IDs (driver-agnostic)
             driver = getattr(self._graphiti, 'driver', None)
             if not driver:
                 return []
 
-            async with driver.session() as session:
-                result = await session.run(
-                    "MATCH (e:Episode) RETURN DISTINCT e.group_id AS group_id"
-                )
-                records = await result.data()
-                return [r["group_id"] for r in records if r.get("group_id")]
+            result = await driver.execute_query(
+                "MATCH (e:Episode) RETURN DISTINCT e.group_id AS group_id"
+            )
+            if result is None:
+                return []
+            records, _, _ = result
+            return [r["group_id"] for r in records if r.get("group_id")]
         except Exception as e:
             logger.warning(f"Failed to list groups: {e}")
             return []
@@ -1115,19 +1162,20 @@ class GraphitiClient:
             if not driver:
                 return 0
 
-            async with driver.session() as session:
-                # Delete episodes and their relationships in the group
-                result = await session.run(
-                    """
-                    MATCH (e:Episode {group_id: $group_id})
-                    WITH e, count(e) as cnt
-                    DETACH DELETE e
-                    RETURN cnt as count
-                    """,
-                    group_id=group_id
-                )
-                record = await result.single()
-                return record["count"] if record else 0
+            # Delete episodes and their relationships in the group (driver-agnostic)
+            result = await driver.execute_query(
+                """
+                MATCH (e:Episode {group_id: $group_id})
+                WITH e, count(e) as cnt
+                DETACH DELETE e
+                RETURN cnt as count
+                """,
+                group_id=group_id
+            )
+            if result is None:
+                return 0
+            records, _, _ = result
+            return records[0]["count"] if records else 0
         except Exception as e:
             logger.warning(f"Failed to clear group {group_id}: {e}")
             return 0
@@ -1338,24 +1386,24 @@ class GraphitiClient:
                     elif is_project:
                         project_groups.append(group_id)
 
-            # Estimate episode count
+            # Estimate episode count (driver-agnostic)
             estimated = 0
             try:
                 driver = getattr(self._graphiti, 'driver', None)
                 if driver:
-                    async with driver.session() as session:
-                        target_groups = system_groups + project_groups
-                        if target_groups:
-                            result = await session.run(
-                                """
-                                MATCH (e:Episode)
-                                WHERE e.group_id IN $groups
-                                RETURN count(e) as count
-                                """,
-                                groups=target_groups
-                            )
-                            record = await result.single()
-                            estimated = record["count"] if record else 0
+                    target_groups = system_groups + project_groups
+                    if target_groups:
+                        result = await driver.execute_query(
+                            """
+                            MATCH (e:Episode)
+                            WHERE e.group_id IN $groups
+                            RETURN count(e) as count
+                            """,
+                            groups=target_groups
+                        )
+                        if result is not None:
+                            records, _, _ = result
+                            estimated = records[0]["count"] if records else 0
             except Exception:
                 pass  # Estimation is best-effort
 
@@ -1620,6 +1668,12 @@ def _try_lazy_init() -> Optional[GraphitiClient]:
     _factory_init_attempted = True
 
     try:
+        # Load .env before checking for API keys — spec-driven commands
+        # (e.g. /system-overview) bypass the CLI entry point where
+        # load_dotenv() is normally called.  This is idempotent.
+        from dotenv import load_dotenv
+        load_dotenv()
+
         from guardkit.knowledge.config import load_graphiti_config
         settings = load_graphiti_config()
 
@@ -1634,6 +1688,9 @@ def _try_lazy_init() -> Optional[GraphitiClient]:
             neo4j_password=settings.neo4j_password,
             timeout=settings.timeout,
             project_id=settings.project_id,
+            graph_store=settings.graph_store,
+            falkordb_host=settings.falkordb_host,
+            falkordb_port=settings.falkordb_port,
         )
 
         _factory = GraphitiClientFactory(config)

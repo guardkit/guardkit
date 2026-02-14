@@ -1,7 +1,8 @@
 # graphiti-core: `@handle_multiple_group_ids` Decorator Bug — Single Group ID Not Cloned
 
-**Upstream Issue**: [getzep/graphiti#1161](https://github.com/getzep/graphiti/issues/1161)
-**Upstream PR**: [getzep/graphiti#1170](https://github.com/getzep/graphiti/pull/1170)
+**Upstream Issue**: [getzep/graphiti#1161](https://github.com/getzep/graphiti/issues/1161) (filed by `himorishige`, 2026-01-18)
+**Upstream PR**: [getzep/graphiti#1170](https://github.com/getzep/graphiti/pull/1170) (submitted by `himorishige`, 2026-01-22)
+**Independent Confirmation**: GuardKit team (2026-02-11) — this document records our independent reproduction and extended analysis
 **Affected Version**: graphiti-core v0.26.3 (and all prior versions with FalkorDB support)
 **Graph Backend**: FalkorDB (FalkorDriver)
 **Severity**: Critical — FalkorDB is unusable for multi-group workloads without fix
@@ -20,7 +21,7 @@ The `@handle_multiple_group_ids` decorator in `graphiti_core/decorators.py` only
 
 ### The Bug Location
 
-**File**: `graphiti_core/decorators.py`, line 53
+**File**: `graphiti_core/decorators.py`, line ~53 (line numbers may shift between versions — reference against [commit `24105b9` (v0.26.3)](https://github.com/getzep/graphiti/blob/24105b955669f6473ad0324618f452cda07896f9/graphiti_core/decorators.py))
 
 ```python
 # CURRENT (BUGGY):
@@ -35,7 +36,7 @@ if (
 
 ### The Driver Mutation
 
-**File**: `graphiti_core/graphiti.py`, lines 860-861
+**File**: `graphiti_core/graphiti.py`, lines ~860-861 (approximate — verify against your installed version)
 
 When `add_episode()` is called, it permanently mutates the shared driver:
 
@@ -101,6 +102,8 @@ The `and group_ids` check already handles `None` and empty list. The `len(group_
 2. Matches the existing code style
 3. Is the minimal diff (one character change: `>` → `>=`)
 
+> **Note for upstream maintainers**: An alternative cleaner fix would be to remove the `len()` check entirely, since `and group_ids` already evaluates to `False` for `None` and `[]`. This would simplify the condition but is a larger diff.
+
 ---
 
 ## Reproduction
@@ -140,6 +143,8 @@ async def reproduce():
     llm_client = OpenAIClient(
         LLMConfig(api_key=os.environ["OPENAI_API_KEY"])
     )
+    # NOTE: Verify constructor signature matches your installed version.
+    # v0.26.3 uses graph_driver= and llm_client= keyword args.
     g = Graphiti(graph_driver=driver, llm_client=llm_client)
     await g.build_indices_and_constraints()
 
@@ -158,6 +163,9 @@ async def reproduce():
     )
 
     # Step 2: Search Group A — should find results
+    # NOTE: search() return type varies by version. In v0.26.x it returns
+    # a SearchResults object with .edges attribute. If your version returns
+    # a list directly, adjust len() calls accordingly.
     result_1 = await g.search("Alice engineer", group_ids=[group_a])
     print(f"Search Group A (before mutation): {len(result_1.edges)} edges")
     # Expected: > 0 (driver happens to point at A after step 1)
@@ -194,6 +202,11 @@ async def reproduce():
         print("Multi group_id search returns correct results (decorator clones)")
     else:
         print("\nBug NOT reproduced (may be fixed upstream)")
+
+    # Cleanup: The script creates FalkorDB databases named repro_{timestamp}.
+    # These are not automatically cleaned up. To remove them manually:
+    #   redis-cli -p 6379 GRAPH.DELETE repro_<timestamp>
+    # Or restart the FalkorDB container to clear all data.
 
 
 if __name__ == "__main__":
@@ -375,6 +388,12 @@ def test_fix_applied_correctly():
     Verify the fix: inspect decorator source for >= 1 condition.
 
     This test can be used post-fix to confirm the change was applied.
+
+    CAVEAT: This test is fragile — it inspects source code for a literal string.
+    If upstream fixes the bug differently (e.g. removing the len() check entirely,
+    or restructuring the condition), this test will fail even though the bug is
+    fixed. The primary regression test above (test_single_group_id_triggers_clone)
+    is the behavioural test that matters.
     """
     import inspect
     from graphiti_core.decorators import handle_multiple_group_ids
@@ -428,7 +447,7 @@ The workaround auto-detects the upstream fix and becomes a no-op when PR #1170 i
 
 | Scenario | Impact |
 |----------|--------|
-| Single Graphiti instance, single group_id | **Works** (driver not mutated between calls) |
+| Single Graphiti instance, single group_id | **Works** (only if the same group_id is used for ALL add_episode and search calls — driver never points at wrong DB) |
 | Single Graphiti instance, multiple group_ids sequentially | **BROKEN** (driver mutated by add_episode) |
 | Multiple Graphiti instances | **BROKEN** (each instance has own driver, but within an instance, mutation persists) |
 | Neo4j backend | **Not affected** (decorator condition checks for FALKORDB provider) |
@@ -444,7 +463,7 @@ The workaround auto-detects the upstream fix and becomes a no-op when PR #1170 i
 | 2026-01-18 | Issue [#1161](https://github.com/getzep/graphiti/issues/1161) filed by `himorishige` |
 | 2026-01-22 | PR [#1170](https://github.com/getzep/graphiti/pull/1170) submitted by `himorishige` (same fix) |
 | 2026-02-11 | Independent reproduction and root cause confirmation (GuardKit team) |
-| 2026-02-11 | Reproduction evidence added as [comment on #1161](https://github.com/getzep/graphiti/issues/1161#issuecomment-3887027878) |
+| TBD | Add reproduction evidence as comment on [#1161](https://github.com/getzep/graphiti/issues/1161) |
 
 ---
 

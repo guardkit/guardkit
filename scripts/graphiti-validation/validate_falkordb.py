@@ -6,9 +6,9 @@ Validates that graphiti-core works correctly with FalkorDB before migrating
 from Neo4j. This is a GATE task — if any check fails, the migration is blocked.
 
 Prerequisites:
-    - FalkorDB running: docker compose -f docker/docker-compose.falkordb-test.yml up -d
+    - FalkorDB running on NAS (whitestocks:6379 via Tailscale)
     - falkordb package: pip install graphiti-core[falkordb]
-    - OPENAI_API_KEY environment variable set (for embeddings)
+    - .env file with OPENAI_API_KEY (auto-loaded)
 
 Usage:
     python scripts/graphiti-validation/validate_falkordb.py
@@ -30,7 +30,36 @@ import sys
 import time
 import socket
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
+
+
+# ---------------------------------------------------------------------------
+# Auto-load .env file (so we don't need manual export)
+# ---------------------------------------------------------------------------
+
+def _load_dotenv():
+    """Load .env file from project root, exporting variables to os.environ."""
+    script_dir = Path(__file__).resolve().parent
+    for parent in [script_dir] + list(script_dir.parents):
+        env_file = parent / ".env"
+        if env_file.exists():
+            with open(env_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    key, _, value = line.partition("=")
+                    key = key.strip()
+                    value = value.strip()
+                    # Don't override existing env vars
+                    if key not in os.environ:
+                        os.environ[key] = value
+            return str(env_file)
+    return None
+
+
+_env_path = _load_dotenv()
 
 
 # ---------------------------------------------------------------------------
@@ -474,6 +503,8 @@ async def run_async_checks() -> dict[str, bool]:
 
 async def main() -> int:
     header("FalkorDB + graphiti-core Validation (TASK-FKDB-001)")
+    if _env_path:
+        info(f".env loaded: {_env_path}")
     info(f"FalkorDB: {FALKORDB_HOST}:{FALKORDB_PORT}")
     info(f"Database: {FALKORDB_DATABASE}")
     info(f"Group IDs: {GROUP_ID_A}, {GROUP_ID_B}")

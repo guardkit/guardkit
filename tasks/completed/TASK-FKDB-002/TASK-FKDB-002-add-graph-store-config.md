@@ -1,7 +1,10 @@
 ---
 id: TASK-FKDB-002
 title: Add graph_store config field and FalkorDB connection params
-status: backlog
+status: completed
+completed: 2026-02-11T18:05:00Z
+updated: 2026-02-11T18:05:00Z
+previous_state: in_review
 created: 2026-02-11T17:00:00Z
 priority: high
 tags: [falkordb, config, migration]
@@ -22,14 +25,14 @@ Add a `graph_store` configuration field to `GraphitiSettings` and `GraphitiConfi
 
 ## Acceptance Criteria
 
-- [ ] AC-001: `GraphitiSettings` has `graph_store: str = "neo4j"` field (valid: `"neo4j"`, `"falkordb"`)
-- [ ] AC-002: `GraphitiSettings` has `falkordb_host: str = "localhost"` and `falkordb_port: int = 6379` fields
-- [ ] AC-003: `GRAPH_STORE` env var overrides `graph_store` config field
-- [ ] AC-004: `FALKORDB_HOST` and `FALKORDB_PORT` env vars override FalkorDB connection params
-- [ ] AC-005: `GraphitiConfig` has matching fields propagated from settings
-- [ ] AC-006: Existing `neo4j_*` fields, `NEO4J_*` env vars, and YAML config continue to work unchanged
-- [ ] AC-007: `load_graphiti_config()` loads and validates all new fields
-- [ ] AC-008: Tests for new config fields, env var overrides, and validation
+- [x] AC-001: `GraphitiSettings` has `graph_store: str = "neo4j"` field (valid: `"neo4j"`, `"falkordb"`)
+- [x] AC-002: `GraphitiSettings` has `falkordb_host: str = "localhost"` and `falkordb_port: int = 6379` fields
+- [x] AC-003: `GRAPH_STORE` env var overrides `graph_store` config field
+- [x] AC-004: `FALKORDB_HOST` and `FALKORDB_PORT` env vars override FalkorDB connection params
+- [x] AC-005: `GraphitiConfig` has matching fields propagated from settings
+- [x] AC-006: Existing `neo4j_*` fields, `NEO4J_*` env vars, and YAML config continue to work unchanged
+- [x] AC-007: `load_graphiti_config()` loads and validates all new fields
+- [x] AC-008: Tests for new config fields, env var overrides, and validation
 
 ## Files to Modify
 

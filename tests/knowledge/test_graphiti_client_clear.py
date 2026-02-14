@@ -8,13 +8,15 @@ Test Coverage:
 - get_clear_preview() - Preview what would be deleted
 - Graceful degradation on errors
 - Namespace boundary respect
-
-TDD: RED phase - these tests are written first before implementation.
+- Driver-agnostic execute_query() (TASK-FKDB-006)
+- None return handling for FalkorDB edge case (AC-004)
+- Neo4j EagerResult and FalkorDB tuple return types (AC-007)
 """
 
 import pytest
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from typing import Optional, List
+from collections import namedtuple
 import os
 
 # Import will succeed once implemented
@@ -62,6 +64,9 @@ SYSTEM_GROUP_IDS = [
 
 PROJECT_GROUP_PATTERN = "{project}__"  # e.g., "guardkit__project_overview"
 
+# Neo4j EagerResult is a named tuple
+EagerResult = namedtuple("EagerResult", ["records", "summary", "keys"])
+
 
 class TestGraphitiClientClearAll:
     """Test GraphitiClient.clear_all() method."""
@@ -98,13 +103,13 @@ class TestGraphitiClientClearAll:
         client = GraphitiClient(config)
 
         mock_graphiti = MagicMock()
-        # Mock the driver for Neo4j queries
         mock_driver = MagicMock()
-        mock_session = MagicMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
-        mock_session.run = AsyncMock(return_value=MagicMock(data=lambda: [{"count": 100}]))
-        mock_driver.session = MagicMock(return_value=mock_session)
+        # Mock execute_query for _list_groups (returns group records)
+        mock_driver.execute_query = AsyncMock(return_value=(
+            [{"group_id": "guardkit_templates"}],
+            None,
+            None,
+        ))
         mock_graphiti.driver = mock_driver
 
         client._graphiti = mock_graphiti
@@ -123,7 +128,9 @@ class TestGraphitiClientClearAll:
 
         mock_graphiti = MagicMock()
         mock_graphiti.driver = MagicMock()
-        mock_graphiti.driver.session = MagicMock(side_effect=Exception("Database error"))
+        mock_graphiti.driver.execute_query = AsyncMock(
+            side_effect=Exception("Database error")
+        )
         client._graphiti = mock_graphiti
         client._connected = True
 
@@ -281,6 +288,11 @@ class TestGraphitiClientGetClearPreview:
         client = GraphitiClient(config)
 
         mock_graphiti = MagicMock()
+        # Mock execute_query for episode estimation
+        mock_graphiti.driver = MagicMock()
+        mock_graphiti.driver.execute_query = AsyncMock(return_value=(
+            [{"count": 42}], None, None
+        ))
         client._graphiti = mock_graphiti
         client._connected = True
 
@@ -346,19 +358,16 @@ class TestGraphitiClientClearGroup:
 
     @pytest.mark.asyncio
     async def test_clear_group_deletes_episodes(self):
-        """Test _clear_group deletes episodes in a specific group."""
+        """Test _clear_group deletes episodes via execute_query."""
         config = GraphitiConfig(enabled=True)
         client = GraphitiClient(config)
 
         mock_graphiti = MagicMock()
         mock_driver = MagicMock()
-        mock_session = MagicMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
-        mock_result = MagicMock()
-        mock_result.single = MagicMock(return_value={"count": 25})
-        mock_session.run = AsyncMock(return_value=mock_result)
-        mock_driver.session = MagicMock(return_value=mock_session)
+        # execute_query returns (records, summary, keys) tuple
+        mock_driver.execute_query = AsyncMock(return_value=(
+            [{"count": 25}], None, None
+        ))
         mock_graphiti.driver = mock_driver
 
         client._graphiti = mock_graphiti
@@ -366,9 +375,8 @@ class TestGraphitiClientClearGroup:
 
         count = await client._clear_group("test_group")
 
-        assert count >= 0
-        # Verify correct Cypher query was executed
-        mock_session.run.assert_called()
+        assert count == 25
+        mock_driver.execute_query.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_clear_group_handles_empty_group(self):
@@ -378,13 +386,10 @@ class TestGraphitiClientClearGroup:
 
         mock_graphiti = MagicMock()
         mock_driver = MagicMock()
-        mock_session = MagicMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
-        mock_result = MagicMock()
-        mock_result.single = MagicMock(return_value={"count": 0})
-        mock_session.run = AsyncMock(return_value=mock_result)
-        mock_driver.session = MagicMock(return_value=mock_session)
+        # Empty records list
+        mock_driver.execute_query = AsyncMock(return_value=(
+            [], None, None
+        ))
         mock_graphiti.driver = mock_driver
 
         client._graphiti = mock_graphiti
@@ -400,23 +405,22 @@ class TestGraphitiClientListGroups:
 
     @pytest.mark.asyncio
     async def test_list_groups_returns_all_groups(self):
-        """Test _list_groups returns all group IDs."""
+        """Test _list_groups returns all group IDs via execute_query."""
         config = GraphitiConfig(enabled=True)
         client = GraphitiClient(config)
 
         mock_graphiti = MagicMock()
         mock_driver = MagicMock()
-        mock_session = MagicMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
-        mock_result = MagicMock()
-        mock_result.data = MagicMock(return_value=[
-            {"group_id": "group1"},
-            {"group_id": "group2"},
-            {"group_id": "group3"},
-        ])
-        mock_session.run = AsyncMock(return_value=mock_result)
-        mock_driver.session = MagicMock(return_value=mock_session)
+        # execute_query returns (records, summary, keys) tuple
+        mock_driver.execute_query = AsyncMock(return_value=(
+            [
+                {"group_id": "group1"},
+                {"group_id": "group2"},
+                {"group_id": "group3"},
+            ],
+            None,
+            None,
+        ))
         mock_graphiti.driver = mock_driver
 
         client._graphiti = mock_graphiti
@@ -425,7 +429,10 @@ class TestGraphitiClientListGroups:
         groups = await client._list_groups()
 
         assert isinstance(groups, list)
-        assert len(groups) >= 0
+        assert len(groups) == 3
+        assert "group1" in groups
+        assert "group2" in groups
+        assert "group3" in groups
 
     @pytest.mark.asyncio
     async def test_list_groups_handles_error(self):
@@ -511,6 +518,333 @@ class TestEdgeCases:
 
         assert result1 is not None
         assert result2 is not None
+
+
+# =========================================================================
+# TASK-FKDB-006: Driver-agnostic execute_query() tests
+# =========================================================================
+
+class TestExecuteQueryNoneReturn:
+    """Test None return handling from execute_query (AC-004).
+
+    FalkorDB edge case: execute_query() can return None when the driver
+    has no results or encounters certain conditions (DD-8).
+    """
+
+    @pytest.mark.asyncio
+    async def test_list_groups_none_result(self):
+        """Test _list_groups returns empty list when execute_query returns None."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        mock_graphiti = MagicMock()
+        mock_driver = MagicMock()
+        mock_driver.execute_query = AsyncMock(return_value=None)
+        mock_graphiti.driver = mock_driver
+
+        client._graphiti = mock_graphiti
+        client._connected = True
+
+        groups = await client._list_groups()
+
+        assert groups == []
+
+    @pytest.mark.asyncio
+    async def test_clear_group_none_result(self):
+        """Test _clear_group returns 0 when execute_query returns None."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        mock_graphiti = MagicMock()
+        mock_driver = MagicMock()
+        mock_driver.execute_query = AsyncMock(return_value=None)
+        mock_graphiti.driver = mock_driver
+
+        client._graphiti = mock_graphiti
+        client._connected = True
+
+        count = await client._clear_group("test_group")
+
+        assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_get_clear_preview_none_result(self):
+        """Test get_clear_preview handles None from execute_query for estimation."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        mock_graphiti = MagicMock()
+        mock_driver = MagicMock()
+        mock_driver.execute_query = AsyncMock(return_value=None)
+        mock_graphiti.driver = mock_driver
+        client._graphiti = mock_graphiti
+        client._connected = True
+
+        with patch.object(client, '_list_groups', new_callable=AsyncMock) as mock_list:
+            mock_list.return_value = ["guardkit_templates"]
+
+            result = await client.get_clear_preview()
+
+            # estimated_episodes should be 0 when execute_query returns None
+            assert result["estimated_episodes"] == 0
+
+
+class TestExecuteQueryReturnTypes:
+    """Test both Neo4j EagerResult-style and FalkorDB tuple-style return types (AC-005, AC-007).
+
+    Neo4j EagerResult: named tuple (records, summary, keys)
+    FalkorDB: plain tuple (records, header, None)
+    Both support records[0]["field"] access and tuple unpacking.
+    """
+
+    @pytest.mark.asyncio
+    async def test_list_groups_neo4j_eager_result(self):
+        """Test _list_groups with Neo4j EagerResult named tuple."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        mock_graphiti = MagicMock()
+        mock_driver = MagicMock()
+        # Simulate Neo4j EagerResult (named tuple)
+        neo4j_result = EagerResult(
+            records=[{"group_id": "group_a"}, {"group_id": "group_b"}],
+            summary=MagicMock(),
+            keys=["group_id"],
+        )
+        mock_driver.execute_query = AsyncMock(return_value=neo4j_result)
+        mock_graphiti.driver = mock_driver
+
+        client._graphiti = mock_graphiti
+        client._connected = True
+
+        groups = await client._list_groups()
+
+        assert groups == ["group_a", "group_b"]
+
+    @pytest.mark.asyncio
+    async def test_list_groups_falkordb_tuple(self):
+        """Test _list_groups with FalkorDB plain tuple return."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        mock_graphiti = MagicMock()
+        mock_driver = MagicMock()
+        # Simulate FalkorDB return: (records, header, None)
+        falkordb_result = (
+            [{"group_id": "fk_group1"}, {"group_id": "fk_group2"}],
+            ["group_id"],
+            None,
+        )
+        mock_driver.execute_query = AsyncMock(return_value=falkordb_result)
+        mock_graphiti.driver = mock_driver
+
+        client._graphiti = mock_graphiti
+        client._connected = True
+
+        groups = await client._list_groups()
+
+        assert groups == ["fk_group1", "fk_group2"]
+
+    @pytest.mark.asyncio
+    async def test_clear_group_neo4j_eager_result(self):
+        """Test _clear_group with Neo4j EagerResult named tuple."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        mock_graphiti = MagicMock()
+        mock_driver = MagicMock()
+        neo4j_result = EagerResult(
+            records=[{"count": 15}],
+            summary=MagicMock(),
+            keys=["count"],
+        )
+        mock_driver.execute_query = AsyncMock(return_value=neo4j_result)
+        mock_graphiti.driver = mock_driver
+
+        client._graphiti = mock_graphiti
+        client._connected = True
+
+        count = await client._clear_group("test_group")
+
+        assert count == 15
+
+    @pytest.mark.asyncio
+    async def test_clear_group_falkordb_tuple(self):
+        """Test _clear_group with FalkorDB plain tuple return."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        mock_graphiti = MagicMock()
+        mock_driver = MagicMock()
+        # FalkorDB: (records, header, None)
+        falkordb_result = ([{"count": 30}], ["count"], None)
+        mock_driver.execute_query = AsyncMock(return_value=falkordb_result)
+        mock_graphiti.driver = mock_driver
+
+        client._graphiti = mock_graphiti
+        client._connected = True
+
+        count = await client._clear_group("test_group")
+
+        assert count == 30
+
+    @pytest.mark.asyncio
+    async def test_get_clear_preview_neo4j_eager_result(self):
+        """Test get_clear_preview episode estimation with Neo4j EagerResult."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        mock_graphiti = MagicMock()
+        mock_driver = MagicMock()
+        neo4j_result = EagerResult(
+            records=[{"count": 99}],
+            summary=MagicMock(),
+            keys=["count"],
+        )
+        mock_driver.execute_query = AsyncMock(return_value=neo4j_result)
+        mock_graphiti.driver = mock_driver
+        client._graphiti = mock_graphiti
+        client._connected = True
+
+        with patch.object(client, '_list_groups', new_callable=AsyncMock) as mock_list:
+            mock_list.return_value = ["guardkit_templates"]
+
+            result = await client.get_clear_preview()
+
+            assert result["estimated_episodes"] == 99
+
+    @pytest.mark.asyncio
+    async def test_get_clear_preview_falkordb_tuple(self):
+        """Test get_clear_preview episode estimation with FalkorDB tuple."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        mock_graphiti = MagicMock()
+        mock_driver = MagicMock()
+        falkordb_result = ([{"count": 55}], ["count"], None)
+        mock_driver.execute_query = AsyncMock(return_value=falkordb_result)
+        mock_graphiti.driver = mock_driver
+        client._graphiti = mock_graphiti
+        client._connected = True
+
+        with patch.object(client, '_list_groups', new_callable=AsyncMock) as mock_list:
+            mock_list.return_value = ["guardkit_templates"]
+
+            result = await client.get_clear_preview()
+
+            assert result["estimated_episodes"] == 55
+
+    @pytest.mark.asyncio
+    async def test_list_groups_filters_none_group_ids(self):
+        """Test _list_groups filters out None group_id values."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        mock_graphiti = MagicMock()
+        mock_driver = MagicMock()
+        mock_driver.execute_query = AsyncMock(return_value=(
+            [
+                {"group_id": "valid_group"},
+                {"group_id": None},
+                {"group_id": "another_valid"},
+            ],
+            None,
+            None,
+        ))
+        mock_graphiti.driver = mock_driver
+
+        client._graphiti = mock_graphiti
+        client._connected = True
+
+        groups = await client._list_groups()
+
+        assert groups == ["valid_group", "another_valid"]
+
+    @pytest.mark.asyncio
+    async def test_clear_group_empty_records(self):
+        """Test _clear_group returns 0 when records list is empty."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        mock_graphiti = MagicMock()
+        mock_driver = MagicMock()
+        mock_driver.execute_query = AsyncMock(return_value=([], None, None))
+        mock_graphiti.driver = mock_driver
+
+        client._graphiti = mock_graphiti
+        client._connected = True
+
+        count = await client._clear_group("group_with_no_match")
+
+        assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_clear_group_no_driver(self):
+        """Test _clear_group returns 0 when driver is None."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        mock_graphiti = MagicMock()
+        mock_graphiti.driver = None
+        client._graphiti = mock_graphiti
+        client._connected = True
+
+        count = await client._clear_group("test_group")
+
+        assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_list_groups_no_driver(self):
+        """Test _list_groups returns [] when driver is None."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        mock_graphiti = MagicMock()
+        mock_graphiti.driver = None
+        client._graphiti = mock_graphiti
+        client._connected = True
+
+        groups = await client._list_groups()
+
+        assert groups == []
+
+    @pytest.mark.asyncio
+    async def test_list_groups_execute_query_exception(self):
+        """Test _list_groups returns [] when execute_query raises exception."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        mock_graphiti = MagicMock()
+        mock_driver = MagicMock()
+        mock_driver.execute_query = AsyncMock(
+            side_effect=Exception("Connection lost")
+        )
+        mock_graphiti.driver = mock_driver
+        client._graphiti = mock_graphiti
+        client._connected = True
+
+        groups = await client._list_groups()
+
+        assert groups == []
+
+    @pytest.mark.asyncio
+    async def test_clear_group_execute_query_exception(self):
+        """Test _clear_group returns 0 when execute_query raises exception."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        mock_graphiti = MagicMock()
+        mock_driver = MagicMock()
+        mock_driver.execute_query = AsyncMock(
+            side_effect=Exception("Connection lost")
+        )
+        mock_graphiti.driver = mock_driver
+        client._graphiti = mock_graphiti
+        client._connected = True
+
+        count = await client._clear_group("test_group")
+
+        assert count == 0
 
 
 @pytest.mark.integration

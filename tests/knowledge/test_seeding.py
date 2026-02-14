@@ -178,8 +178,8 @@ class TestCommandWorkflowsSeeding:
 
         await seed_command_workflows(mock_client)
 
-        # Should create 7 episodes
-        assert mock_client.add_episode.call_count == 7
+        # Should create 19 episodes (7 original + 12 added in TASK-FIX-986D)
+        assert mock_client.add_episode.call_count == 19
 
     @pytest.mark.asyncio
     async def test_seed_command_workflows_uses_correct_group_id(self):

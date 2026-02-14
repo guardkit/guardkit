@@ -1,33 +1,28 @@
 #!/usr/bin/env bash
 #
-# graphiti-backup.sh - Neo4j backup and restore for GuardKit's Graphiti knowledge graph
+# graphiti-backup.sh - FalkorDB backup and restore for GuardKit's Graphiti knowledge graph
 #
 # Usage:
 #   ./scripts/graphiti-backup.sh backup [--output DIR]
 #   ./scripts/graphiti-backup.sh restore <BACKUP_FILE>
-#   ./scripts/graphiti-backup.sh dump [--output DIR]
-#   ./scripts/graphiti-backup.sh load <DUMP_FILE>
 #   ./scripts/graphiti-backup.sh list
 #   ./scripts/graphiti-backup.sh verify
 #
 # Methods:
-#   backup/restore - Volume-based (fast, same Neo4j version required)
-#   dump/load      - neo4j-admin database dump (portable, cross-version)
+#   backup  - Redis BGSAVE + volume tar (consistent, no downtime for BGSAVE)
+#   restore - Stop container, restore volume, restart
 #
 # Requirements:
-#   - Docker running with guardkit-neo4j container
-#   - For dump/load: Neo4j container must be stopped
+#   - Docker running with guardkit-falkordb container
 #
 
 set -euo pipefail
 
 # Configuration
-CONTAINER_NAME="guardkit-neo4j"
-VOLUME_NAME="docker_neo4j_data"  # Docker Compose prefixes with directory name
+CONTAINER_NAME="guardkit-falkordb"
+VOLUME_NAME="docker_falkordb_data"  # Docker Compose prefixes with directory name
 BACKUP_DIR="${BACKUP_DIR:-./backups/graphiti}"
 COMPOSE_FILE="docker/docker-compose.graphiti.yml"
-NEO4J_USER="neo4j"
-NEO4J_PASSWORD="password123"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 # Colors
@@ -41,7 +36,7 @@ NC='\033[0m' # No Color
 
 print_header() {
     echo -e "\n${BLUE}═══════════════════════════════════════════════════════════════${NC}"
-    echo -e "${BLUE}  GuardKit Graphiti - Neo4j Backup & Restore${NC}"
+    echo -e "${BLUE}  GuardKit Graphiti - FalkorDB Backup & Restore${NC}"
     echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}\n"
 }
 
@@ -64,14 +59,6 @@ check_container_running() {
     fi
 }
 
-check_container_stopped() {
-    if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-        error "Container '${CONTAINER_NAME}' must be stopped for this operation"
-        echo "  Stop it with: docker compose -f ${COMPOSE_FILE} down"
-        exit 1
-    fi
-}
-
 ensure_backup_dir() {
     local dir="${1:-$BACKUP_DIR}"
     mkdir -p "$dir"
@@ -80,12 +67,12 @@ ensure_backup_dir() {
 get_volume_name() {
     # Find the actual volume name (Docker Compose prefixes with project name)
     local volume
-    volume=$(docker volume ls --format '{{.Name}}' | grep 'neo4j_data' | head -1)
+    volume=$(docker volume ls --format '{{.Name}}' | grep 'falkordb_data' | head -1)
     if [ -z "$volume" ]; then
-        error "Neo4j data volume not found"
-        echo "  Expected a volume matching '*neo4j_data'"
+        error "FalkorDB data volume not found"
+        echo "  Expected a volume matching '*falkordb_data'"
         echo "  Available volumes:"
-        docker volume ls --format '  - {{.Name}}' | grep -i neo4j || echo "  (none found)"
+        docker volume ls --format '  - {{.Name}}' | grep -i falkor || echo "  (none found)"
         exit 1
     fi
     echo "$volume"
@@ -98,8 +85,7 @@ cmd_backup() {
     ensure_backup_dir "$output_dir"
 
     print_header
-    info "Method: Volume backup (tar archive)"
-    info "Backing up Neo4j data volume..."
+    info "Method: Redis BGSAVE + volume backup (tar archive)"
 
     check_docker
 
@@ -107,13 +93,33 @@ cmd_backup() {
     volume_name=$(get_volume_name)
     info "Found volume: ${volume_name}"
 
-    local backup_file="${output_dir}/neo4j-backup-${TIMESTAMP}.tar.gz"
+    local backup_file="${output_dir}/falkordb-backup-${TIMESTAMP}.tar.gz"
 
-    # Stop container for consistent backup
+    # Trigger BGSAVE if container is running (ensures data flushed to disk)
+    if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+        info "Triggering Redis BGSAVE for consistency..."
+        docker exec "${CONTAINER_NAME}" redis-cli BGSAVE > /dev/null 2>&1 || true
+        # Wait for BGSAVE to complete
+        local retries=30
+        while [ $retries -gt 0 ]; do
+            local bg_status
+            bg_status=$(docker exec "${CONTAINER_NAME}" redis-cli LASTSAVE 2>/dev/null || echo "0")
+            sleep 1
+            local bg_status_new
+            bg_status_new=$(docker exec "${CONTAINER_NAME}" redis-cli LASTSAVE 2>/dev/null || echo "0")
+            if [ "$bg_status" = "$bg_status_new" ] && [ "$bg_status" != "0" ]; then
+                break
+            fi
+            retries=$((retries - 1))
+        done
+        info "BGSAVE complete"
+    fi
+
+    # Stop container for consistent volume tar
     local was_running=false
     if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
         was_running=true
-        info "Stopping Neo4j for consistent backup..."
+        info "Stopping FalkorDB for consistent backup..."
         docker compose -f "${COMPOSE_FILE}" down
         sleep 2
     fi
@@ -126,10 +132,10 @@ cmd_backup() {
 
     # Restart if it was running
     if [ "$was_running" = true ]; then
-        info "Restarting Neo4j..."
+        info "Restarting FalkorDB..."
         docker compose -f "${COMPOSE_FILE}" up -d
-        info "Waiting for Neo4j to be healthy..."
-        sleep 10
+        info "Waiting for FalkorDB to be healthy..."
+        sleep 5
     fi
 
     local size
@@ -162,7 +168,7 @@ cmd_restore() {
 
     # Must stop container
     if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-        warn "Stopping Neo4j for restore..."
+        warn "Stopping FalkorDB for restore..."
         docker compose -f "${COMPOSE_FILE}" down
         sleep 2
     fi
@@ -173,118 +179,14 @@ cmd_restore() {
         -v "$(cd "$(dirname "$backup_file")" && pwd):/backup" \
         alpine sh -c "rm -rf /data/* && tar xzf /backup/$(basename "$backup_file") -C /data"
 
-    info "Starting Neo4j..."
+    info "Starting FalkorDB..."
     docker compose -f "${COMPOSE_FILE}" up -d
 
-    info "Waiting for Neo4j to be healthy..."
-    sleep 15
+    info "Waiting for FalkorDB to be healthy..."
+    sleep 5
 
     echo ""
     info "Restore complete!"
-    echo "  Run 'guardkit graphiti status' to verify"
-}
-
-cmd_dump() {
-    local output_dir="${1:-$BACKUP_DIR}"
-    ensure_backup_dir "$output_dir"
-
-    print_header
-    info "Method: neo4j-admin database dump (portable)"
-    info "Creating database dump..."
-
-    check_docker
-
-    # Container must be stopped for neo4j-admin dump
-    local was_running=false
-    if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-        was_running=true
-        info "Stopping Neo4j (required for neo4j-admin dump)..."
-        docker compose -f "${COMPOSE_FILE}" down
-        sleep 2
-    fi
-
-    local volume_name
-    volume_name=$(get_volume_name)
-    local dump_file="${output_dir}/neo4j-dump-${TIMESTAMP}.dump"
-
-    info "Running neo4j-admin database dump..."
-    docker run --rm \
-        -v "${volume_name}:/data" \
-        -v "$(cd "$output_dir" && pwd):/dumps" \
-        neo4j:5.26.0 \
-        neo4j-admin database dump neo4j --to-path=/dumps --overwrite-destination
-
-    # neo4j-admin creates the dump as neo4j.dump in the target directory
-    if [ -f "${output_dir}/neo4j.dump" ]; then
-        mv "${output_dir}/neo4j.dump" "$dump_file"
-    fi
-
-    # Restart if it was running
-    if [ "$was_running" = true ]; then
-        info "Restarting Neo4j..."
-        docker compose -f "${COMPOSE_FILE}" up -d
-        sleep 10
-    fi
-
-    local size
-    size=$(du -h "$dump_file" | cut -f1)
-    echo ""
-    info "Dump complete!"
-    echo -e "  File: ${GREEN}${dump_file}${NC}"
-    echo -e "  Size: ${size}"
-    echo ""
-    echo "This dump is portable across Neo4j 5.x installations."
-    echo "To load:  $0 load ${dump_file}"
-}
-
-cmd_load() {
-    local dump_file="$1"
-
-    if [ ! -f "$dump_file" ]; then
-        error "Dump file not found: ${dump_file}"
-        exit 1
-    fi
-
-    print_header
-    info "Method: neo4j-admin database load (portable)"
-    info "Loading from: ${dump_file}"
-
-    check_docker
-
-    local volume_name
-    volume_name=$(get_volume_name)
-
-    # Must stop container
-    if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-        warn "Stopping Neo4j for load..."
-        docker compose -f "${COMPOSE_FILE}" down
-        sleep 2
-    fi
-
-    # Copy dump to temp name expected by neo4j-admin
-    local dump_dir
-    dump_dir=$(cd "$(dirname "$dump_file")" && pwd)
-    local temp_dump="${dump_dir}/neo4j.dump"
-    cp "$dump_file" "$temp_dump"
-
-    info "Loading database dump..."
-    docker run --rm \
-        -v "${volume_name}:/data" \
-        -v "${dump_dir}:/dumps" \
-        neo4j:5.26.0 \
-        neo4j-admin database load neo4j --from-path=/dumps --overwrite-destination
-
-    # Clean up temp file
-    rm -f "$temp_dump"
-
-    info "Starting Neo4j..."
-    docker compose -f "${COMPOSE_FILE}" up -d
-
-    info "Waiting for Neo4j to be healthy..."
-    sleep 15
-
-    echo ""
-    info "Load complete!"
     echo "  Run 'guardkit graphiti status' to verify"
 }
 
@@ -297,7 +199,7 @@ cmd_list() {
 
     local count=0
     if [ -d "$BACKUP_DIR" ]; then
-        for f in "$BACKUP_DIR"/neo4j-backup-*.tar.gz "$BACKUP_DIR"/neo4j-dump-*.dump; do
+        for f in "$BACKUP_DIR"/falkordb-backup-*.tar.gz "$BACKUP_DIR"/falkordb-*.rdb "$BACKUP_DIR"/neo4j-backup-*.tar.gz "$BACKUP_DIR"/neo4j-dump-*.dump; do
             if [ -f "$f" ]; then
                 local size
                 size=$(du -h "$f" | cut -f1)
@@ -318,7 +220,7 @@ cmd_list() {
 
 cmd_verify() {
     print_header
-    info "Verifying Neo4j and Graphiti status..."
+    info "Verifying FalkorDB and Graphiti status..."
 
     check_docker
     check_container_running
@@ -334,20 +236,20 @@ cmd_verify() {
         warn "Container health: ${YELLOW}${health}${NC}"
     fi
 
-    # Check Neo4j connectivity via cypher-shell
-    info "Testing Neo4j connectivity..."
-    if docker exec "${CONTAINER_NAME}" cypher-shell -u "${NEO4J_USER}" -p "${NEO4J_PASSWORD}" "RETURN 1 AS test" &> /dev/null; then
-        info "Neo4j connection: ${GREEN}OK${NC}"
+    # Check FalkorDB connectivity via redis-cli
+    info "Testing FalkorDB connectivity..."
+    if docker exec "${CONTAINER_NAME}" redis-cli PING 2>/dev/null | grep -q "PONG"; then
+        info "FalkorDB connection: ${GREEN}OK${NC}"
     else
-        error "Neo4j connection: FAILED"
+        error "FalkorDB connection: FAILED"
         exit 1
     fi
 
-    # Count nodes
-    local node_count
-    node_count=$(docker exec "${CONTAINER_NAME}" cypher-shell -u "${NEO4J_USER}" -p "${NEO4J_PASSWORD}" \
-        --format plain "MATCH (n) RETURN count(n) AS count" 2>/dev/null | tail -1 | tr -d ' ')
-    info "Total nodes: ${node_count}"
+    # List graphs
+    info "Checking graphs..."
+    local graphs
+    graphs=$(docker exec "${CONTAINER_NAME}" redis-cli GRAPH.LIST 2>/dev/null || echo "(none)")
+    info "Graphs: ${graphs}"
 
     # Check GuardKit status if available
     if command -v guardkit &> /dev/null; then
@@ -362,30 +264,24 @@ cmd_verify() {
 
 cmd_help() {
     cat << 'EOF'
-GuardKit Graphiti - Neo4j Backup & Restore
+GuardKit Graphiti - FalkorDB Backup & Restore
 
 USAGE:
     ./scripts/graphiti-backup.sh <COMMAND> [OPTIONS]
 
 COMMANDS:
-    backup [--output DIR]     Volume-based backup (fast, tar archive)
+    backup [--output DIR]     Volume-based backup (BGSAVE + tar archive)
     restore <BACKUP_FILE>     Restore from volume backup
-    dump [--output DIR]       neo4j-admin database dump (portable)
-    load <DUMP_FILE>          Load from neo4j-admin dump
     list                      List available backups
-    verify                    Verify Neo4j connectivity and data
+    verify                    Verify FalkorDB connectivity and data
 
-BACKUP METHODS:
+BACKUP METHOD:
 
   Volume Backup (backup/restore):
-    - Fast: Direct tar of the data volume
-    - Requires same Neo4j version on restore
+    - Triggers Redis BGSAVE to flush data to disk
+    - Stops container briefly for consistent tar of data volume
+    - Restarts container after backup completes
     - Best for: Local backups, same-machine restore
-
-  Database Dump (dump/load):
-    - Portable: Works across Neo4j 5.x versions
-    - Best for: Migration to another server or Neo4j version
-    - Slightly larger file size
 
 OPTIONS:
     --output DIR    Output directory (default: ./backups/graphiti)
@@ -394,42 +290,30 @@ ENVIRONMENT:
     BACKUP_DIR      Override default backup directory
 
 EXAMPLES:
-    # Create a volume backup
+    # Create a backup
     ./scripts/graphiti-backup.sh backup
 
-    # Create a portable dump for migration
-    ./scripts/graphiti-backup.sh dump
+    # Create backup to custom directory
+    ./scripts/graphiti-backup.sh backup --output /tmp/backups
 
     # Restore from backup
-    ./scripts/graphiti-backup.sh restore backups/graphiti/neo4j-backup-20250205_120000.tar.gz
+    ./scripts/graphiti-backup.sh restore backups/graphiti/falkordb-backup-20260211_120000.tar.gz
 
-    # Load a dump on a new server
-    ./scripts/graphiti-backup.sh load backups/graphiti/neo4j-dump-20250205_120000.dump
-
-    # List all backups
+    # List all backups (includes legacy Neo4j backups)
     ./scripts/graphiti-backup.sh list
 
     # Verify after restore
     ./scripts/graphiti-backup.sh verify
 
-MIGRATION TO REMOTE SERVER:
-    # 1. Create portable dump on local machine
-    ./scripts/graphiti-backup.sh dump
-
-    # 2. Copy dump file to remote server
-    scp backups/graphiti/neo4j-dump-*.dump user@remote:/path/to/guardkit/backups/graphiti/
-
-    # 3. On remote server: load the dump
-    ./scripts/graphiti-backup.sh load backups/graphiti/neo4j-dump-*.dump
-
-    # 4. Verify on remote
-    ./scripts/graphiti-backup.sh verify
+MIGRATION FROM NEO4J:
+    Old Neo4j backups (neo4j-backup-*.tar.gz, neo4j-dump-*.dump) are still
+    listed by the 'list' command but cannot be restored to FalkorDB.
+    To migrate data, re-seed using: guardkit graphiti seed --force
 
 NOTES:
-    - backup/restore will automatically stop and restart Neo4j
-    - dump/load require Neo4j to be stopped (handled automatically)
-    - Always run 'verify' after a restore or load operation
-    - For production, change the default Neo4j password in docker-compose.graphiti.yml
+    - backup will automatically stop and restart FalkorDB
+    - Always run 'verify' after a restore operation
+    - FalkorDB data is stored as Redis dump.rdb in the volume
 EOF
 }
 
@@ -456,23 +340,6 @@ main() {
                 exit 1
             fi
             cmd_restore "$1"
-            ;;
-        dump)
-            local output_dir="$BACKUP_DIR"
-            while [[ $# -gt 0 ]]; do
-                case "$1" in
-                    --output) output_dir="$2"; shift 2 ;;
-                    *) error "Unknown option: $1"; exit 1 ;;
-                esac
-            done
-            cmd_dump "$output_dir"
-            ;;
-        load)
-            if [ $# -lt 1 ]; then
-                error "Usage: $0 load <DUMP_FILE>"
-                exit 1
-            fi
-            cmd_load "$1"
             ;;
         list)
             cmd_list

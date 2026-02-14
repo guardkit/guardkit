@@ -1,8 +1,9 @@
 ---
 id: TASK-FKDB-007
 title: Update tests for FalkorDB compatibility
-status: backlog
+status: completed
 created: 2026-02-11T17:00:00Z
+completed: 2026-02-12T10:30:00Z
 priority: medium
 tags: [falkordb, testing, migration]
 parent_review: TASK-REV-38BC
@@ -23,13 +24,13 @@ Update test fixtures, assertions, and integration tests to work with FalkorDB. M
 
 ## Acceptance Criteria
 
-- [ ] AC-001: `tests/conftest.py` fixtures updated with FalkorDB-aware defaults
-- [ ] AC-002: Config tests verify new `graph_store`, `falkordb_host`, `falkordb_port` fields
-- [ ] AC-003: Integration tests that use real connections parameterized for both backends
-- [ ] AC-004: E2E tests work with FalkorDB Docker container
-- [ ] AC-005: Full test suite passes with `graph_store=neo4j` (no regressions)
-- [ ] AC-006: Key test paths verified with `graph_store=falkordb` (mocked or real)
-- [ ] AC-007: Re-seed and verify knowledge graph with FalkorDB backend
+- [x] AC-001: `tests/conftest.py` fixtures updated with FalkorDB-aware defaults
+- [x] AC-002: Config tests verify new `graph_store`, `falkordb_host`, `falkordb_port` fields
+- [x] AC-003: Integration tests that use real connections parameterized for both backends
+- [x] AC-004: E2E tests work with FalkorDB Docker container
+- [x] AC-005: Full test suite passes with `graph_store=neo4j` (no regressions)
+- [x] AC-006: Key test paths verified with `graph_store=falkordb` (mocked or real)
+- [x] AC-007: Re-seed and verify knowledge graph with FalkorDB backend
 
 ## Files to Modify
 
