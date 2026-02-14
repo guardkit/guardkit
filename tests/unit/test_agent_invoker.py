@@ -5769,3 +5769,185 @@ class TestAgentInvokerClassIntegrity:
         assert is_rate_limit is True
         is_rate_limit, _ = detect_rate_limit("normal error message")
         assert is_rate_limit is False
+
+
+# ==================== TASK-FIX-STUB-C: ToolUseBlock File Tracking ====================
+
+
+class TestToolUseBlockFileTracking:
+    """Test that ToolUseBlock file operations populate files_created/files_modified.
+
+    TASK-FIX-STUB-C: The SDK stream provides Write/Edit operations as structured
+    ToolUseBlock objects. These must be tracked by the parser during stream
+    processing so task_work_results.json has populated file lists.
+
+    Coverage Target: >=90%
+    Test Count: 8 tests
+    """
+
+    @pytest.fixture
+    def parser(self):
+        """Create a fresh TaskWorkStreamParser instance."""
+        return TaskWorkStreamParser()
+
+    def test_write_tool_block_tracked_as_file_created(self, parser):
+        """Write ToolUseBlock adds file_path to files_created."""
+        # Simulate what happens in the SDK stream loop
+        block_input = {"file_path": "/src/feature.py", "content": "code"}
+        parser._track_tool_call("Write", block_input)
+
+        result = parser.to_result()
+        assert "files_created" in result
+        assert "/src/feature.py" in result["files_created"]
+
+    def test_edit_tool_block_tracked_as_file_modified(self, parser):
+        """Edit ToolUseBlock adds file_path to files_modified."""
+        block_input = {
+            "file_path": "/src/existing.py",
+            "old_string": "old",
+            "new_string": "new",
+        }
+        parser._track_tool_call("Edit", block_input)
+
+        result = parser.to_result()
+        assert "files_modified" in result
+        assert "/src/existing.py" in result["files_modified"]
+
+    def test_multiple_write_blocks_accumulated(self, parser):
+        """Multiple Write ToolUseBlocks accumulate in files_created."""
+        parser._track_tool_call("Write", {"file_path": "/src/a.py"})
+        parser._track_tool_call("Write", {"file_path": "/src/b.py"})
+        parser._track_tool_call("Write", {"file_path": "/tests/test_a.py"})
+
+        result = parser.to_result()
+        assert len(result["files_created"]) == 3
+        assert "/src/a.py" in result["files_created"]
+        assert "/src/b.py" in result["files_created"]
+        assert "/tests/test_a.py" in result["files_created"]
+
+    def test_write_test_file_also_tracked_in_test_files(self, parser):
+        """Write of test file adds to both files_created and test_files_created."""
+        parser._track_tool_call("Write", {"file_path": "/tests/test_feature.py"})
+
+        result = parser.to_result()
+        assert "/tests/test_feature.py" in result["files_created"]
+        assert "/tests/test_feature.py" in result["test_files_created"]
+
+    def test_mixed_write_and_edit_blocks(self, parser):
+        """Mixed Write and Edit blocks populate both lists correctly."""
+        parser._track_tool_call("Write", {"file_path": "/src/new_module.py"})
+        parser._track_tool_call("Edit", {"file_path": "/src/main.py"})
+        parser._track_tool_call("Write", {"file_path": "/tests/test_new_module.py"})
+        parser._track_tool_call("Edit", {"file_path": "/src/config.py"})
+
+        result = parser.to_result()
+        assert sorted(result["files_created"]) == [
+            "/src/new_module.py",
+            "/tests/test_new_module.py",
+        ]
+        assert sorted(result["files_modified"]) == [
+            "/src/config.py",
+            "/src/main.py",
+        ]
+
+    def test_duplicate_write_blocks_deduplicated(self, parser):
+        """Duplicate file paths from Write blocks are deduplicated."""
+        parser._track_tool_call("Write", {"file_path": "/src/feature.py"})
+        parser._track_tool_call("Write", {"file_path": "/src/feature.py"})
+
+        result = parser.to_result()
+        assert len(result["files_created"]) == 1
+
+    def test_non_write_edit_blocks_ignored(self, parser):
+        """Non-Write/Edit tool names do not add to file lists."""
+        parser._track_tool_call("Read", {"file_path": "/src/feature.py"})
+        parser._track_tool_call("Bash", {"command": "pytest"})
+        parser._track_tool_call("Grep", {"pattern": "test"})
+
+        result = parser.to_result()
+        assert "files_created" not in result
+        assert "files_modified" not in result
+
+    def test_empty_file_path_ignored(self, parser):
+        """ToolUseBlock with empty or missing file_path is ignored."""
+        parser._track_tool_call("Write", {"file_path": ""})
+        parser._track_tool_call("Write", {})
+        parser._track_tool_call("Edit", {"file_path": None})
+
+        result = parser.to_result()
+        assert "files_created" not in result
+        assert "files_modified" not in result
+
+
+class TestToolUseBlockIntegrationWithWriter:
+    """Test that ToolUseBlock-tracked files flow through to task_work_results.json.
+
+    Validates the end-to-end pipeline: ToolUseBlock → parser → to_result() → writer.
+    """
+
+    @pytest.fixture
+    def agent_invoker(self, tmp_path):
+        """Create AgentInvoker with tmp worktree."""
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        return AgentInvoker(
+            worktree_path=worktree,
+            max_turns_per_agent=30,
+            sdk_timeout_seconds=60,
+        )
+
+    def test_tracked_files_written_to_results_json(self, agent_invoker):
+        """Files tracked via ToolUseBlock appear in task_work_results.json."""
+        parser = TaskWorkStreamParser()
+        parser._track_tool_call("Write", {"file_path": "src/planning/system_plan.py"})
+        parser._track_tool_call("Write", {"file_path": "tests/unit/test_system_plan.py"})
+        parser._track_tool_call("Edit", {"file_path": "guardkit/cli/main.py"})
+
+        # Also parse some text output for test metrics
+        parser.parse_message("5 tests passed, 0 failed")
+        parser.parse_message("Coverage: 92.0%")
+        parser.parse_message("Quality gates: PASSED")
+
+        result_data = parser.to_result()
+        results_path = agent_invoker._write_task_work_results("TASK-001", result_data)
+
+        written = json.loads(results_path.read_text())
+        assert "guardkit/cli/main.py" in written["files_modified"]
+        assert "src/planning/system_plan.py" in written["files_created"]
+        assert "tests/unit/test_system_plan.py" in written["files_created"]
+
+    def test_empty_file_lists_written_as_empty_arrays(self, agent_invoker):
+        """When no files tracked, results have empty arrays (not missing keys)."""
+        parser = TaskWorkStreamParser()
+        parser.parse_message("3 tests passed")
+
+        result_data = parser.to_result()
+        results_path = agent_invoker._write_task_work_results("TASK-002", result_data)
+
+        written = json.loads(results_path.read_text())
+        assert written["files_created"] == []
+        assert written["files_modified"] == []
+
+    def test_detect_tests_from_results_finds_tracked_test_files(self, agent_invoker):
+        """_detect_tests_from_results finds test files from ToolUseBlock tracking."""
+        # Create the test file on disk so exists() check passes
+        test_file_path = agent_invoker.worktree_path / "tests" / "test_system_plan.py"
+        test_file_path.parent.mkdir(parents=True, exist_ok=True)
+        test_file_path.write_text("def test_example(): pass")
+
+        # Simulate results with populated files_created
+        task_work_results = {
+            "files_created": [
+                "src/planning/system_plan.py",
+                "tests/test_system_plan.py",
+            ],
+            "files_modified": ["guardkit/cli/main.py"],
+        }
+
+        from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
+
+        validator = CoachValidator(worktree_path=agent_invoker.worktree_path)
+        cmd = validator._detect_tests_from_results(task_work_results)
+
+        assert cmd is not None
+        assert "tests/test_system_plan.py" in cmd

@@ -1,14 +1,18 @@
 ---
 id: TASK-FIX-407A
 title: Run seed against FalkorDB and verify
-status: in_review
+status: completed
 created: 2026-02-12T00:00:00Z
-updated: 2026-02-12T00:00:00Z
+updated: 2026-02-14T00:00:00Z
+completed: 2026-02-14T00:00:00Z
+completed_location: tasks/completed/TASK-FIX-407A/
 priority: high
 tags: [graphiti, falkordb, verification]
 parent_review: TASK-REV-3ECA
 complexity: 2
 depends_on: [TASK-FIX-986D, TASK-FIX-1584, TASK-FIX-C00D]
+organized_files:
+  - TASK-FIX-407A-falkordb-seed-verify.md
 ---
 
 # Task: Run seed against FalkorDB and verify

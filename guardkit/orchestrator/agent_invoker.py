@@ -2525,6 +2525,9 @@ Follow the decision format specified in your agent definition.
             logger.debug(f"[{task_id}] Prompt (first 500 chars): {prompt[:500]}...")
 
             collected_output: List[str] = []
+            # TASK-FIX-STUB-C: Create parser before stream loop so ToolUseBlock
+            # file operations can be tracked during processing (not just after)
+            parser = TaskWorkStreamParser()
             # TASK-FBSDK-011: Track message statistics
             message_count = 0
             assistant_count = 0
@@ -2549,6 +2552,15 @@ Follow the decision format specified in your agent definition.
                                 elif isinstance(block, ToolUseBlock):
                                     tool_count += 1
                                     logger.debug(f"Tool invoked: {block.name}")
+                                    # TASK-FIX-STUB-C: Track file operations from
+                                    # Write/Edit tools to populate files_created/
+                                    # files_modified in task_work_results.json
+                                    if block.name in ("Write", "Edit"):
+                                        tool_input = getattr(block, "input", {})
+                                        if isinstance(tool_input, dict):
+                                            parser._track_tool_call(
+                                                block.name, tool_input
+                                            )
                                 elif isinstance(block, ToolResultBlock):
                                     # Extract content from tool results if present
                                     if block.content:
@@ -2566,8 +2578,8 @@ Follow the decision format specified in your agent definition.
             # Join collected output for parsing
             output_text = "\n".join(collected_output)
 
-            # Parse output using stream parser for structured data
-            parser = TaskWorkStreamParser()
+            # Parse text output for quality gate metrics (tests, coverage, phases)
+            # Note: parser already has file tracking from ToolUseBlock processing above
             parser.parse_message(output_text)
             parsed_result = parser.to_result()
 

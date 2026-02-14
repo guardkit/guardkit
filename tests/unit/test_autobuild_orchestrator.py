@@ -3534,6 +3534,202 @@ class TestPerThreadGraphiti:
 
 
 # ============================================================================
+# Test Acceptance Criteria Wiring (TASK-FIX-STUB-A)
+# ============================================================================
+
+
+class TestAcceptanceCriteriaWiring:
+    """Test that acceptance_criteria flows from _loop_phase → _execute_turn → _invoke_coach_safely."""
+
+    @pytest.fixture
+    def mock_worktree_for_criteria(self):
+        """Create mock Worktree for acceptance criteria tests."""
+        worktree = Mock(spec=Worktree)
+        worktree.task_id = "TASK-CRIT-001"
+        worktree.path = Path("/tmp/worktrees/TASK-CRIT-001")
+        worktree.branch_name = "autobuild/TASK-CRIT-001"
+        worktree.base_branch = "main"
+        return worktree
+
+    def test_execute_turn_passes_acceptance_criteria_to_coach(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+        mock_worktree_for_criteria,
+    ):
+        """AC-004: When acceptance_criteria is passed to _execute_turn, Coach receives it."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test-repo"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        criteria = ["AC-001: Feature works", "AC-002: Tests pass"]
+
+        with patch.object(orchestrator, "_invoke_player_safely") as mock_player:
+            player_result = AgentInvocationResult(
+                task_id="TASK-CRIT-001",
+                turn=1,
+                agent_type="player",
+                success=True,
+                report={"status": "completed"},
+                duration_seconds=10.0,
+                error=None,
+            )
+            mock_player.return_value = player_result
+
+            with patch.object(orchestrator, "_invoke_coach_safely") as mock_coach:
+                coach_result = AgentInvocationResult(
+                    task_id="TASK-CRIT-001",
+                    turn=1,
+                    agent_type="coach",
+                    success=True,
+                    report={"decision": "approve"},
+                    duration_seconds=5.0,
+                    error=None,
+                )
+                mock_coach.return_value = coach_result
+
+                orchestrator._execute_turn(
+                    turn=1,
+                    task_id="TASK-CRIT-001",
+                    requirements="Test requirements",
+                    worktree=mock_worktree_for_criteria,
+                    previous_feedback=None,
+                    acceptance_criteria=criteria,
+                )
+
+                mock_coach.assert_called_once()
+                call_kwargs = mock_coach.call_args[1]
+                assert "acceptance_criteria" in call_kwargs
+                assert call_kwargs["acceptance_criteria"] == criteria
+
+    def test_execute_turn_default_acceptance_criteria_is_none(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+        mock_worktree_for_criteria,
+    ):
+        """AC-005: When acceptance_criteria not passed, Coach receives None (backward compat)."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test-repo"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        with patch.object(orchestrator, "_invoke_player_safely") as mock_player:
+            player_result = AgentInvocationResult(
+                task_id="TASK-CRIT-001",
+                turn=1,
+                agent_type="player",
+                success=True,
+                report={"status": "completed"},
+                duration_seconds=10.0,
+                error=None,
+            )
+            mock_player.return_value = player_result
+
+            with patch.object(orchestrator, "_invoke_coach_safely") as mock_coach:
+                coach_result = AgentInvocationResult(
+                    task_id="TASK-CRIT-001",
+                    turn=1,
+                    agent_type="coach",
+                    success=True,
+                    report={"decision": "approve"},
+                    duration_seconds=5.0,
+                    error=None,
+                )
+                mock_coach.return_value = coach_result
+
+                # Call without acceptance_criteria — default is None
+                orchestrator._execute_turn(
+                    turn=1,
+                    task_id="TASK-CRIT-001",
+                    requirements="Test requirements",
+                    worktree=mock_worktree_for_criteria,
+                    previous_feedback=None,
+                )
+
+                mock_coach.assert_called_once()
+                call_kwargs = mock_coach.call_args[1]
+                assert "acceptance_criteria" in call_kwargs
+                assert call_kwargs["acceptance_criteria"] is None
+
+    def test_loop_phase_passes_acceptance_criteria_to_execute_turn(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+        mock_worktree_for_criteria,
+    ):
+        """AC-006: Integration — orchestrate with acceptance_criteria flows through to Coach."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test-repo"),
+            max_turns=1,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        criteria = ["AC-001: Feature works", "AC-002: Tests pass", "AC-003: Docs updated"]
+
+        with patch.object(orchestrator, "_execute_turn") as mock_execute:
+            # Return an approved TurnRecord to end the loop
+            mock_execute.return_value = TurnRecord(
+                turn=1,
+                player_result=AgentInvocationResult(
+                    task_id="TASK-CRIT-001",
+                    turn=1,
+                    agent_type="player",
+                    success=True,
+                    report={"status": "completed"},
+                    duration_seconds=10.0,
+                    error=None,
+                ),
+                coach_result=AgentInvocationResult(
+                    task_id="TASK-CRIT-001",
+                    turn=1,
+                    agent_type="coach",
+                    success=True,
+                    report={"decision": "approve"},
+                    duration_seconds=5.0,
+                    error=None,
+                ),
+                decision="approve",
+                feedback=None,
+                timestamp="2026-02-14T00:00:00Z",
+            )
+
+            # Mock checkpoint manager to avoid git worktree dependency
+            mock_checkpoint = Mock()
+            mock_checkpoint.commit_hash = "abc12345"
+            mock_checkpoint_mgr = Mock()
+            mock_checkpoint_mgr.create_checkpoint.return_value = mock_checkpoint
+            orchestrator._checkpoint_manager = mock_checkpoint_mgr
+
+            with patch.object(orchestrator, "_capture_turn_state"):
+                with patch.object(orchestrator, "_record_honesty"):
+                    with patch.object(orchestrator, "_display_criteria_progress"):
+                        turn_history, exit_reason = orchestrator._loop_phase(
+                            task_id="TASK-CRIT-001",
+                            requirements="Test requirements",
+                            worktree=mock_worktree_for_criteria,
+                            acceptance_criteria=criteria,
+                        )
+
+            mock_execute.assert_called_once()
+            call_kwargs = mock_execute.call_args[1]
+            assert "acceptance_criteria" in call_kwargs
+            assert call_kwargs["acceptance_criteria"] == criteria
+
+
+# ============================================================================
 # Run Tests
 # ============================================================================
 

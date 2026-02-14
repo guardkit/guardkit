@@ -1506,6 +1506,7 @@ class AutoBuildOrchestrator:
                     previous_feedback=previous_feedback,
                     task_type=task_type,
                     skip_arch_review=not self.enable_pre_loop,
+                    acceptance_criteria=acceptance_criteria,
                 )
 
                 turn_history.append(turn_record)
@@ -1631,6 +1632,7 @@ class AutoBuildOrchestrator:
         previous_feedback: Optional[str],
         task_type: Optional[str] = None,
         skip_arch_review: bool = False,
+        acceptance_criteria: Optional[List[str]] = None,
     ) -> TurnRecord:
         """
         Execute single Player→Coach turn.
@@ -1815,6 +1817,7 @@ class AutoBuildOrchestrator:
             requirements=requirements,
             player_report=player_result.report,
             worktree=worktree,
+            acceptance_criteria=acceptance_criteria,
             task_type=task_type,
             skip_arch_review=skip_arch_review,
         )

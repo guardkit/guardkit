@@ -1,8 +1,10 @@
 ---
 id: TASK-FIX-STUB-D
 title: Add anti-stub acceptance criteria to feature plan template
-status: backlog
+status: completed
 created: 2026-02-13T12:00:00Z
+completed: 2026-02-14T00:00:00Z
+completed_location: tasks/completed/TASK-FIX-STUB-D/
 priority: medium
 tags: [feature-plan, templates, stub-detection, quality-gates]
 parent_review: TASK-REV-STUB
@@ -33,10 +35,10 @@ For FEATURE-type tasks, add these standard acceptance criteria:
 
 ## Acceptance Criteria
 
-- [ ] AC-001: Feature plan template includes anti-stub criterion for FEATURE-type tasks
-- [ ] AC-002: Feature plan template includes end-to-end test criterion requiring non-mocked execution
-- [ ] AC-003: Template criteria use AC-NNN format compatible with structured criteria verification
-- [ ] AC-004: SCAFFOLDING and INFRASTRUCTURE task types are NOT affected by anti-stub criteria
+- [x] AC-001: Feature plan template includes anti-stub criterion for FEATURE-type tasks
+- [x] AC-002: Feature plan template includes end-to-end test criterion requiring non-mocked execution
+- [x] AC-003: Template criteria use AC-NNN format compatible with structured criteria verification
+- [x] AC-004: SCAFFOLDING and INFRASTRUCTURE task types are NOT affected by anti-stub criteria
 
 ## Technical Notes
 

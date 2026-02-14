@@ -1,7 +1,10 @@
 ---
 id: TASK-FIX-STUB-C
 title: Populate files_created/files_modified in task-work delegation results
-status: backlog
+status: completed
+updated: 2026-02-14T12:00:00Z
+completed: 2026-02-14T12:00:00Z
+completed_location: tasks/completed/TASK-FIX-STUB-C/
 created: 2026-02-13T12:00:00Z
 priority: high
 tags: [autobuild, quality-gates, test-discovery, data-gap]
@@ -49,12 +52,12 @@ In the TASK-SP-006 case, the Player created 5+ files (including test files) but 
 
 ## Acceptance Criteria
 
-- [ ] AC-001: `task_work_results.json` written by the task-work delegation path includes non-empty `files_created` when the Player creates files
-- [ ] AC-002: `task_work_results.json` written by the task-work delegation path includes non-empty `files_modified` when the Player modifies files
-- [ ] AC-003: `_detect_tests_from_results()` can find test files via the populated `files_created`/`files_modified` fields
-- [ ] AC-004: Unit test: task-work delegation results writer extracts files from Player report
-- [ ] AC-005: Unit test: empty file lists are written as `[]` (not omitted) for consistency
-- [ ] AC-006: All existing agent_invoker tests pass without modification
+- [x] AC-001: `task_work_results.json` written by the task-work delegation path includes non-empty `files_created` when the Player creates files
+- [x] AC-002: `task_work_results.json` written by the task-work delegation path includes non-empty `files_modified` when the Player modifies files
+- [x] AC-003: `_detect_tests_from_results()` can find test files via the populated `files_created`/`files_modified` fields
+- [x] AC-004: Unit test: task-work delegation results writer extracts files from Player report
+- [x] AC-005: Unit test: empty file lists are written as `[]` (not omitted) for consistency
+- [x] AC-006: All existing agent_invoker tests pass without modification
 
 ## Technical Notes
 

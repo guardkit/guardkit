@@ -1,8 +1,10 @@
 ---
 id: TASK-FIX-STUB-B
 title: Create anti-stub quality rule for Coach enforcement
-status: backlog
+status: completed
+updated: 2026-02-14T00:00:00Z
 created: 2026-02-13T12:00:00Z
+completed: 2026-02-14T00:00:00Z
 priority: high
 tags: [autobuild, quality-gates, rules, stub-detection]
 parent_review: TASK-REV-STUB
@@ -37,11 +39,11 @@ A **stub** is a function whose body consists of one or more of:
 
 ## Acceptance Criteria
 
-- [ ] AC-001: `.claude/rules/anti-stub.md` exists with clear stub pattern definitions
-- [ ] AC-002: Rule specifies that FEATURE and REFACTOR tasks MUST NOT have primary deliverable functions as stubs
-- [ ] AC-003: Rule specifies that SCAFFOLDING/INFRASTRUCTURE tasks MAY create stubs if acceptance criteria explicitly permit it
-- [ ] AC-004: Rule provides concrete examples of stub vs non-stub implementations
-- [ ] AC-005: Rule defines "primary deliverable function" as the function(s) named or implied by the task's acceptance criteria
+- [x] AC-001: `.claude/rules/anti-stub.md` exists with clear stub pattern definitions
+- [x] AC-002: Rule specifies that FEATURE and REFACTOR tasks MUST NOT have primary deliverable functions as stubs
+- [x] AC-003: Rule specifies that SCAFFOLDING/INFRASTRUCTURE tasks MAY create stubs if acceptance criteria explicitly permit it
+- [x] AC-004: Rule provides concrete examples of stub vs non-stub implementations
+- [x] AC-005: Rule defines "primary deliverable function" as the function(s) named or implied by the task's acceptance criteria
 
 ## Technical Notes
 
