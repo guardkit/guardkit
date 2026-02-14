@@ -2121,6 +2121,87 @@ Phase 2.1: Library Context Gathering
 
 **Implementation Note**: This feature integrates with the coach_context_builder module (TASK-SC-009) to provide contextual architecture awareness before complex implementations begin.
 
+#### Phase 1.8: Feature Diagram Review Prompt
+
+**Purpose**: Surface the parent feature's data flow diagram to help the developer understand where this task fits in the broader feature architecture.
+
+**Trigger**: After architecture check (Phase 1.7), before library context gathering (Phase 2.1). Only when task has `parent_review` or `feature_id` in frontmatter.
+
+**Skip Conditions**:
+- Task has no `parent_review` or `feature_id` field in frontmatter
+- Parent feature has no IMPLEMENTATION-GUIDE.md
+- IMPLEMENTATION-GUIDE.md has no data flow diagram section
+
+**Workflow**:
+
+**IF** task frontmatter contains `feature_id` or `parent_review`:
+
+**SEARCH** for IMPLEMENTATION-GUIDE.md in the feature's subfolder:
+```
+tasks/backlog/{feature-slug}/IMPLEMENTATION-GUIDE.md
+```
+
+**IF** IMPLEMENTATION-GUIDE.md exists AND contains a data flow diagram:
+
+**READ** the diagram section and determine this task's role (write path, read path, or both).
+
+**DISPLAY** (informational only):
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 FEATURE DATA FLOW CONTEXT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This task implements: [write path / read path / both]
+Connected to: [list upstream/downstream components from diagram]
+
+Review the full diagram: tasks/backlog/{feature-slug}/IMPLEMENTATION-GUIDE.md#data-flow
+
+Proceeding with task-work...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**ELSE**:
+```
+Skip to Phase 2.1
+```
+
+**Key Characteristics**:
+- Non-blocking - does not wait for user input
+- Informational only - helps developer understand task's place in feature data flow
+- Graceful degradation - skips silently if no parent feature or no diagram
+- No timeout - immediately proceeds to next phase
+
+**Example**:
+
+For a task with `feature_id: FEAT-a3f8` that implements a write path:
+```
+Phase 1.7: Pre-Implementation Architecture Check ✓
+Phase 1.8: Feature Diagram Review
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 FEATURE DATA FLOW CONTEXT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This task implements: write path (AutoBuild._capture_turn_state → turn_states)
+Connected to: downstream read by load_turn_continuation_context()
+
+Review the full diagram: tasks/backlog/dark-mode/IMPLEMENTATION-GUIDE.md#data-flow
+
+Proceeding with task-work...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Phase 2.1: Library Context Gathering
+...
+```
+
+For a task without parent feature:
+```
+Phase 1.7: Pre-Implementation Architecture Check ✓
+Phase 2.1: Library Context Gathering
+...
+(Phase 1.8 skipped - no parent feature)
+```
+
 #### Phase 2.1: Library Context Gathering (NEW)
 
 **Purpose**: Proactively fetch library documentation for detected libraries before implementation planning. This prevents stub implementations by ensuring the AI has concrete API knowledge (imports, initialization, method signatures, return types).

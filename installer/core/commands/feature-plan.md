@@ -1525,6 +1525,122 @@ When user chooses [I]mplement, the system should:
 - `/task-work` - Implement tasks (used after planning)
 - `/task-status` - Check status of feature tasks
 
+## Mandatory Diagram Output
+
+Every feature plan MUST include Mermaid diagrams in the generated IMPLEMENTATION-GUIDE.md. These diagrams are the primary review artefact — the prose supports them, not the other way around. **The data flow diagram is the most important output of /feature-plan.** If a reviewer only looks at one thing, it should be this diagram.
+
+### 1. Data Flow Diagram (MANDATORY for ALL features)
+
+Show every write path and every read path for this feature. Use `flowchart LR` with subgraphs for Writes, Storage, and Reads.
+
+- Connected paths: solid arrows (`-->`)
+- Disconnected paths: dotted arrows with label (` -.->|"NOT WIRED"| `)
+- Include a "Disconnection Alert" callout if any read path has no caller
+
+**Example template:**
+
+````markdown
+## Data Flow: Read/Write Paths
+
+```mermaid
+flowchart LR
+    subgraph Writes["Write Paths"]
+        W1["ComponentA.write_method()"]
+        W2["ComponentB.save()"]
+    end
+
+    subgraph Storage["Storage"]
+        S1[("data_store_1\n(type)")]
+        S2[("data_store_2\n(type)")]
+    end
+
+    subgraph Reads["Read Paths"]
+        R1["ComponentC.read_method()"]
+        R2["ComponentD.query()"]
+    end
+
+    W1 -->|"trigger"| S1
+    W2 -->|"trigger"| S2
+
+    S1 -->|"via method"| R1
+    S2 -.->|"NOT WIRED"| R2
+
+    style R2 fill:#fcc,stroke:#c00
+```
+
+**Disconnection Alert**: 1 read path has no caller. Add a task to wire this path or document why it is deferred.
+````
+
+### 2. Integration Contract Diagram (MANDATORY for complexity >= 5)
+
+Show the sequence of calls between components using `sequenceDiagram`. Mark any point where data is retrieved but not passed onward. This catches the "fetch then discard" pattern.
+
+**Example template:**
+
+````markdown
+## Integration Contracts
+
+```mermaid
+sequenceDiagram
+    participant A as ComponentA
+    participant B as ComponentB
+    participant C as ExternalService
+    participant D as Consumer
+
+    A->>B: request(params)
+    B->>C: fetch(query)
+    C-->>B: result_data
+    B-->>A: processed_result
+
+    Note over A,D: Data stops here - Consumer never receives it
+    A->>D: consume(task_id)
+    Note over D: No data parameter!
+```
+````
+
+### 3. Task Dependency Graph (MANDATORY for >= 3 tasks)
+
+Show task execution order using `graph TD`. Mark parallel-safe tasks. This supplements the existing text-based wave output.
+
+**Example template:**
+
+````markdown
+## Task Dependencies
+
+```mermaid
+graph TD
+    T1[TASK-001: Foundation] --> T2[TASK-002: Feature A]
+    T1 --> T3[TASK-003: Feature B]
+    T2 --> T4[TASK-004: Integration]
+    T3 --> T4
+    T4 --> T5[TASK-005: Tests]
+
+    style T2 fill:#cfc,stroke:#090
+    style T3 fill:#cfc,stroke:#090
+```
+
+_Tasks with green background can run in parallel._
+````
+
+### Disconnection Rule
+
+If the data flow diagram shows ANY write path without a corresponding read path, add a prominent warning and either:
+- Add an explicit task to wire the read path, OR
+- Document why the read is deferred (with a tracking note in the IMPLEMENTATION-GUIDE.md)
+
+Do not allow features to proceed to implementation with disconnected read/write paths unless explicitly acknowledged in the implementation guide. This is an informational gate — it warns prominently but does not block [I]mplement if the user acknowledges the disconnection.
+
+### Diagram Format Rules
+
+- Use Mermaid fenced code blocks (` ```mermaid `)
+- Keep diagrams under 30 nodes (split into sub-diagrams if larger)
+- Use colour coding: green for healthy paths, yellow for new/changed, red for broken/missing
+- Add a one-line caption below each diagram explaining what to look for
+- Generate diagrams from actual feature analysis, not placeholder content
+- Diagrams must render correctly in GitHub markdown preview
+
+---
+
 ## Output Format
 
 ### Success (Complete Flow)
@@ -1708,6 +1824,29 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
    Scaffolding tasks have no code architecture to review, so they fail the 60-point threshold.
    Including `task_type: scaffolding` tells CoachValidator to skip architectural review for setup tasks.
 
+9.5. ✅ **Generate mandatory Mermaid diagrams in IMPLEMENTATION-GUIDE.md**
+
+   **CRITICAL**: When generating the IMPLEMENTATION-GUIDE.md, you MUST include the following Mermaid diagrams as specified in the "Mandatory Diagram Output" section above:
+
+   **a) Data Flow Diagram (ALWAYS)**:
+   - Use `flowchart LR` with subgraphs for Writes, Storage, and Reads
+   - Show every write path and read path for this feature
+   - Mark disconnected paths with dotted arrows and red styling
+   - Add a Disconnection Alert callout if any read path has no caller
+   - If disconnections exist, either add an explicit task to wire the read path OR document the deferral reason
+
+   **b) Integration Contract Diagram (if feature complexity >= 5)**:
+   - Use `sequenceDiagram` showing calls between components
+   - Mark points where data is retrieved but not passed onward
+   - Highlight the "fetch then discard" anti-pattern if present
+
+   **c) Task Dependency Graph (if >= 3 tasks)**:
+   - Use `graph TD` showing task execution order
+   - Colour parallel-safe tasks in green
+   - This supplements (does not replace) the text-based wave output
+
+   **Disconnection Rule**: If the data flow diagram shows ANY write path without a corresponding read, add a prominent warning in the IMPLEMENTATION-GUIDE.md. This is informational — warn prominently but allow [I]mplement to proceed if the user acknowledges.
+
 10. ✅ **Generate structured YAML feature file** (DEFAULT - unless --no-structured flag set):
 
     **AFTER** creating task markdown files, generate the structured feature file using the CLI script:
@@ -1790,6 +1929,8 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
 ❌ **DO NOT** bypass decision checkpoint
 ❌ **DO NOT** create implementation files without [I]mplement choice
 ❌ **DO NOT** omit `task_type` from task file frontmatter - CoachValidator REQUIRES it for quality gate profiles
+❌ **DO NOT** skip mandatory Mermaid diagrams in IMPLEMENTATION-GUIDE.md - Data Flow diagram is ALWAYS required
+❌ **DO NOT** generate placeholder diagrams - diagrams must reflect actual feature analysis
 
 **REMEMBER**: This is a **coordination command**. Your job is to:
 1. Invoke the `clarification-questioner` agent via Task tool
@@ -1797,6 +1938,7 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
 3. Execute `/task-review` slash command
 4. Present the decision checkpoint
 5. If [I]mplement, invoke `clarification-questioner` again, then create structure
+6. Generate mandatory Mermaid diagrams in IMPLEMENTATION-GUIDE.md (data flow always, integration contract for complexity >= 5, task dependency graph for >= 3 tasks)
 
 You are NOT supposed to do any analysis yourself. Let the agents and commands do their jobs.
 
@@ -1839,7 +1981,11 @@ Claude executes internally:
   7. Creates structure (using context_b):
      - Feature folder
      - Subtasks with Conductor workspace names
-     - Implementation guide
+     - Implementation guide with mandatory Mermaid diagrams:
+       a) Data Flow diagram (always)
+       b) Integration Contract diagram (if complexity >= 5)
+       c) Task Dependency graph (if >= 3 tasks)
+     - Check Disconnection Rule: warn if write paths lack read paths
 
   8. Shows completion summary
 ```
@@ -1871,7 +2017,10 @@ Claude executes internally:
   7. Creates structure (using context_b):
      - Feature folder: tasks/backlog/oauth2/
      - Subtasks: TASK-OAUTH-001.md through TASK-OAUTH-005.md
-     - Implementation guide
+     - Implementation guide with mandatory diagrams:
+       a) Data Flow diagram showing auth write/read paths
+       b) Integration Contract (complexity 6, so included)
+       c) Task Dependency graph (5 tasks, so included)
 
   8. Generate structured feature file (default behavior):
      - Execute: python3 ~/.agentecflow/bin/generate-feature-yaml \
