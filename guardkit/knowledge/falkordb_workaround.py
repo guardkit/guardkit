@@ -1,23 +1,25 @@
 """
-FalkorDB decorator workaround for graphiti-core.
+FalkorDB workarounds for graphiti-core.
 
-Monkey-patches the @handle_multiple_group_ids decorator in graphiti-core to
-fix a bug where single-group-id searches use the wrong FalkorDB database.
+Contains two monkey-patches:
 
-Bug: graphiti-core decorators.py line 53 checks `len(group_ids) > 1`, which
-skips driver cloning for single group_id searches. After add_episode() mutates
-self.driver to point at a different database, subsequent search() calls with a
-single group_id search the wrong database.
+1. handle_multiple_group_ids decorator fix (PR #1170)
+   Fixes a bug where single-group-id searches use the wrong FalkorDB database.
+   Bug: graphiti-core decorators.py checks `len(group_ids) > 1`, which skips
+   driver cloning for single group_id searches.
+   Fix: Change to `len(group_ids) >= 1`.
 
-Fix: Change condition to `len(group_ids) >= 1` so single group_id searches
-also get a cloned driver pointing at the correct database.
+   Upstream references:
+       - Issue: https://github.com/getzep/graphiti/issues/1161
+       - PR: https://github.com/getzep/graphiti/pull/1170
 
-Upstream references:
-    - Issue: https://github.com/getzep/graphiti/issues/1161
-    - PR: https://github.com/getzep/graphiti/pull/1170
-
-This workaround should be removed once PR #1170 is merged and GuardKit
-upgrades to the fixed graphiti-core version.
+2. build_fulltext_query group_id filter removal
+   FalkorDB's RediSearch fulltext queries break when group_ids contain
+   underscores (tokenized at index time) or when the search text is empty
+   after stopword removal (produces invalid '()' syntax).
+   Fix: Remove the @group_id filter from fulltext queries entirely.
+   Group isolation is already handled by the multi-graph driver clone
+   (workaround 1) and the Cypher WHERE clause.
 
 Usage:
     Call apply_falkordb_workaround() once at startup, before creating any
@@ -158,6 +160,10 @@ def apply_falkordb_workaround() -> bool:
         "handle_multiple_group_ids patched for single group_id support "
         "(upstream PR #1170)"
     )
+
+    # Also apply the fulltext query workaround for underscore escaping
+    apply_fulltext_query_workaround()
+
     return True
 
 
@@ -206,8 +212,97 @@ def is_workaround_applied() -> bool:
     return _workaround_applied
 
 
+# =============================================================================
+# Workaround 2: build_fulltext_query underscore escaping
+# =============================================================================
+
+_fulltext_workaround_applied = False
+_original_build_fulltext_query = None
+
+
+def apply_fulltext_query_workaround() -> bool:
+    """Patch FalkorDriver.build_fulltext_query to remove group_id from fulltext queries.
+
+    FalkorDB's multi-graph model means each group_id is a separate named graph.
+    The @handle_multiple_group_ids decorator already clones the driver to point
+    at the correct graph, and the Cypher WHERE clause filters by group_id too.
+
+    The fulltext @group_id filter is therefore redundant on FalkorDB, AND broken:
+    - Underscores in group_ids (product_knowledge) are tokenized at index time,
+      so they can't be matched as exact values in fulltext queries
+    - Even groups without underscores (patterns, agents) fail when the search
+      text is empty after stopword removal, producing invalid syntax like
+      '(@group_id:patterns) ()'
+
+    Fix: Always pass group_ids=None to the original build_fulltext_query so it
+    skips the @group_id filter entirely. Group isolation is already handled by
+    the driver clone + Cypher WHERE clause.
+
+    Returns:
+        True if patch applied (or already applied), False if FalkorDB driver unavailable.
+    """
+    global _fulltext_workaround_applied, _original_build_fulltext_query
+
+    if _fulltext_workaround_applied:
+        return True
+
+    try:
+        from graphiti_core.driver.falkordb_driver import FalkorDriver
+    except ImportError:
+        logger.debug("[Graphiti] FalkorDB driver not available, skipping fulltext workaround")
+        return False
+
+    _original_build_fulltext_query = FalkorDriver.build_fulltext_query
+
+    def build_fulltext_query_fixed(
+        self, query: str, group_ids: list | None = None, max_query_length: int = 128
+    ) -> str:
+        """Fixed build_fulltext_query: drop group_id filter, handle empty queries."""
+        # Always pass group_ids=None to skip the broken @group_id fulltext filter.
+        # Group isolation is handled by:
+        #   1. handle_multiple_group_ids decorator cloning driver per group
+        #   2. Cypher WHERE e.group_id IN $group_ids clause
+        result = _original_build_fulltext_query(self, query, None, max_query_length)
+
+        # If the query text was empty/all-stopwords, build_fulltext_query produces
+        # something like ' ()' or '()' which is invalid RediSearch syntax.
+        # Replace with '*' (match all) so the fulltext search returns results.
+        stripped = result.strip()
+        if stripped == '()' or stripped == '':
+            return '*'
+
+        return result
+
+    FalkorDriver.build_fulltext_query = build_fulltext_query_fixed
+
+    _fulltext_workaround_applied = True
+    logger.info(
+        "[Graphiti] Applied FalkorDB workaround: "
+        "build_fulltext_query patched to remove group_id filter (redundant on FalkorDB)"
+    )
+    return True
+
+
+def is_fulltext_workaround_applied() -> bool:
+    """Check if the fulltext query workaround has been applied."""
+    return _fulltext_workaround_applied
+
+
+def remove_fulltext_workaround() -> None:
+    """Restore original build_fulltext_query (for testing only)."""
+    global _fulltext_workaround_applied, _original_build_fulltext_query
+    if _original_build_fulltext_query is not None:
+        try:
+            from graphiti_core.driver.falkordb_driver import FalkorDriver
+            FalkorDriver.build_fulltext_query = _original_build_fulltext_query
+        except ImportError:
+            pass
+    _fulltext_workaround_applied = False
+    _original_build_fulltext_query = None
+
+
 def remove_workaround() -> None:
-    """Reset the workaround state and restore original decorator (for testing only)."""
+    """Reset all workaround states and restore originals (for testing only)."""
     global _workaround_applied, _original_decorator
     if _original_decorator is not None:
         try:
@@ -228,3 +323,6 @@ def remove_workaround() -> None:
 
     _workaround_applied = False
     _original_decorator = None
+
+    # Also remove the fulltext workaround
+    remove_fulltext_workaround()

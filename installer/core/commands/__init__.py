@@ -1,0 +1,1 @@
+"""GuardKit CLI command resources."""

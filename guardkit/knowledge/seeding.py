@@ -87,14 +87,6 @@ from guardkit.knowledge.seed_project_overview import seed_project_overview  # no
 from guardkit.knowledge.seed_project_architecture import seed_project_architecture  # noqa: E402
 
 
-async def seed_quality_gate_configs_wrapper(client) -> None:
-    """Wrapper for seed_quality_gate_configs to match orchestrator signature."""
-    if not client or not client.enabled:
-        return
-    from guardkit.knowledge.seed_quality_gate_configs import seed_quality_gate_configs
-    await seed_quality_gate_configs(client)
-
-
 async def seed_pattern_examples_wrapper(client) -> None:
     """Wrapper for seed_pattern_examples to match orchestrator signature."""
     if not client or not client.enabled:
@@ -164,7 +156,6 @@ async def seed_all_system_context(client, force: bool = False) -> bool:
         ("project_overview", "seed_project_overview"),  # TASK-CR-005
         ("project_architecture", "seed_project_architecture"),  # TASK-CR-005
         ("failed_approaches", "seed_failed_approaches_wrapper"),  # TASK-GE-004
-        ("quality_gate_configs", "seed_quality_gate_configs_wrapper"),  # TASK-GE-005
         ("pattern_examples", "seed_pattern_examples_wrapper"),  # TASK-CR-006-FIX
     ]
 

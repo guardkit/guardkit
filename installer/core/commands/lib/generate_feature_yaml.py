@@ -23,24 +23,34 @@ import argparse
 import sys
 import json
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Literal
 from dataclasses import dataclass, field
 from datetime import datetime
 import hashlib
 import time
 
+try:
+    from guardkit.orchestrator.feature_loader import FeatureLoader
+    FEATURELOADER_AVAILABLE = True
+except ImportError:
+    FEATURELOADER_AVAILABLE = False
+
 
 @dataclass
 class TaskSpec:
-    """Specification for a single task within a feature."""
+    """
+    Specification for a single task within a feature.
+
+    Aligned with FeatureTask Pydantic model in feature_loader.py.
+    """
     id: str
     name: str
     complexity: int
     file_path: str = ""  # Path to task markdown file (required by FeatureLoader)
     dependencies: List[str] = field(default_factory=list)
-    status: str = "pending"
+    status: Literal["pending", "in_progress", "completed", "failed", "skipped"] = "pending"
     description: str = ""
-    implementation_mode: str = "task-work"
+    implementation_mode: Literal["direct", "task-work", "manual"] = "task-work"
     estimated_minutes: int = 60
 
     def to_dict(self) -> dict:
@@ -381,6 +391,12 @@ def main():
         help="Base path for task files (default: tasks/backlog)"
     )
 
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Make validation errors fatal (exit with error). Default: warn and continue."
+    )
+
     args = parser.parse_args()
 
     # Parse tasks
@@ -475,11 +491,28 @@ def main():
         ext = ".json" if args.json else ".yaml"
         output_path = base_path / ".guardkit" / "features" / f"{feature_id}{ext}"
 
+    # Validate feature data before writing (TASK-YSC-004)
+    feature_dict = feature.to_dict()
+    if FEATURELOADER_AVAILABLE:
+        validation_errors = FeatureLoader.validate_yaml(feature_dict)
+        if validation_errors:
+            print(f"\n⚠️  YAML validation errors ({len(validation_errors)}):", file=sys.stderr)
+            for err in validation_errors:
+                print(f"   {err}", file=sys.stderr)
+            print(file=sys.stderr)
+
+            if args.strict:
+                print("Error: Validation failed and --strict mode enabled. Exiting.", file=sys.stderr)
+                sys.exit(1)
+            else:
+                print("Warning: Validation errors found but continuing (use --strict to fail).", file=sys.stderr)
+                print(file=sys.stderr)
+
     # Write file
     if args.json:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "w") as f:
-            json.dump(feature.to_dict(), f, indent=2, default=str)
+            json.dump(feature_dict, f, indent=2, default=str)
     else:
         write_yaml(feature, output_path)
 

@@ -293,10 +293,191 @@ Architecture context will be passed to /feature-plan:
   • Affected components and dependencies
   • Relevant ADRs and constraints
 
+NOTE: Generated feature YAML MUST conform to the Feature YAML Schema
+      Contract defined below for /feature-build compatibility.
+
 Launching /feature-plan...
 
 [Execute /feature-plan "add real-time notifications" with architecture context]
 ```
+
+### Feature YAML Schema Contract
+
+When `/system-plan` chains to `/feature-plan`, the generated feature YAML file must conform to the `FeatureLoader` schema for `/feature-build` compatibility.
+
+**Authoritative Source**: `guardkit/orchestrator/feature_loader.py` — this schema documentation reflects the loader's requirements.
+
+#### Complete Schema Example
+
+```yaml
+# .guardkit/features/FEAT-A1B2.yaml
+id: FEAT-A1B2
+name: "OAuth2 Authentication"
+description: "Add OAuth2 authentication with multiple providers"
+created: "2026-01-06T10:30:00Z"
+status: planned
+complexity: 6
+estimated_tasks: 5
+
+tasks:
+  - id: TASK-OAUTH-001
+    name: "Create auth infrastructure"
+    file_path: "tasks/backlog/oauth-auth/TASK-OAUTH-001-create-auth-infrastructure.md"
+    complexity: 5
+    dependencies: []
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 60
+
+  - id: TASK-OAUTH-002
+    name: "Implement local JWT auth"
+    file_path: "tasks/backlog/oauth-auth/TASK-OAUTH-002-implement-jwt-auth.md"
+    complexity: 6
+    dependencies:
+      - TASK-OAUTH-001
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 90
+
+  - id: TASK-OAUTH-003
+    name: "Add database migrations"
+    file_path: "tasks/backlog/oauth-auth/TASK-OAUTH-003-database-migrations.md"
+    complexity: 4
+    dependencies:
+      - TASK-OAUTH-001
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 45
+
+  - id: TASK-OAUTH-004
+    name: "Implement social OAuth2"
+    file_path: "tasks/backlog/oauth-auth/TASK-OAUTH-004-social-oauth.md"
+    complexity: 7
+    dependencies:
+      - TASK-OAUTH-002
+      - TASK-OAUTH-003
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 120
+
+  - id: TASK-OAUTH-005
+    name: "Add auth tests"
+    file_path: "tasks/backlog/oauth-auth/TASK-OAUTH-005-auth-tests.md"
+    complexity: 3
+    dependencies:
+      - TASK-OAUTH-004
+    status: pending
+    implementation_mode: direct
+    estimated_minutes: 30
+
+orchestration:
+  parallel_groups:
+    - - TASK-OAUTH-001
+    - - TASK-OAUTH-002
+      - TASK-OAUTH-003
+    - - TASK-OAUTH-004
+    - - TASK-OAUTH-005
+  estimated_duration_minutes: 345
+  recommended_parallel: 2
+```
+
+#### Required Fields
+
+**Feature-level fields:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | ✅ Yes | Feature ID (e.g., "FEAT-A1B2") |
+| `name` | string | ✅ Yes | Human-readable feature name |
+| `tasks` | array | ✅ Yes | List of task objects |
+| `orchestration` | object | ✅ Yes | Execution configuration |
+| `description` | string | No | Feature description |
+| `created` | string | No | ISO 8601 timestamp |
+| `status` | string | No | Valid values: "planned", "in_progress", "completed", "failed", "paused" |
+| `complexity` | int | No | Aggregate complexity (1-10) |
+| `estimated_tasks` | int | No | Task count |
+
+**Task-level fields:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | ✅ Yes | Task ID (e.g., "TASK-OAUTH-001") |
+| `file_path` | string | ✅ Yes | **CRITICAL: Path to task markdown file** (relative to repo root) |
+| `name` | string | No | Task name (defaults to ID) |
+| `complexity` | int | No | Complexity score 1-10 (default: 5) |
+| `dependencies` | array | No | List of dependency task IDs |
+| `status` | string | No | Valid values: "pending", "in_progress", "completed", "failed", "skipped" |
+| `implementation_mode` | string | No | "direct", "task-work" |
+| `estimated_minutes` | int | No | Estimated duration (default: 30) |
+
+**Orchestration fields:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `parallel_groups` | array | ✅ Yes | **CRITICAL: Must be NESTED under orchestration:** (list of lists - each inner list is a wave) |
+| `estimated_duration_minutes` | int | No | Total estimated duration |
+| `recommended_parallel` | int | No | Max recommended parallel tasks |
+
+#### Critical Constraints
+
+**1. file_path is REQUIRED**
+
+The `file_path` field is mandatory for each task. Without it, `FeatureLoader` will fail to parse the feature file.
+
+```yaml
+# ✅ Correct - includes file_path
+tasks:
+  - id: TASK-001
+    name: "Task Name"
+    file_path: "tasks/backlog/feature-name/TASK-001-task-name.md"
+    status: pending
+
+# ❌ Wrong - missing file_path (will cause FeatureLoader error)
+tasks:
+  - id: TASK-001
+    name: "Task Name"
+    status: pending
+```
+
+**2. orchestration.parallel_groups Nesting**
+
+The `parallel_groups` field MUST be nested under `orchestration:` (NOT at top level).
+
+```yaml
+# ✅ Correct - nested under orchestration
+orchestration:
+  parallel_groups:
+    - - TASK-001
+    - - TASK-002
+
+# ❌ Wrong - at top level (will cause FeatureLoader error)
+parallel_groups:
+  - - TASK-001
+  - - TASK-002
+```
+
+**3. Valid status Values**
+
+Feature-level `status` values: "planned", "in_progress", "completed", "failed", "paused"
+
+Task-level `status` values: "pending", "in_progress", "completed", "failed", "skipped"
+
+**4. parallel_groups Format**
+
+The `parallel_groups` field is a **list of lists** where:
+- Each inner list represents a "wave" of tasks that can run in parallel
+- Waves execute sequentially (wave 1 completes before wave 2 starts)
+- Tasks within a wave can execute in parallel
+
+```yaml
+# Example: 4 waves with some parallel execution
+orchestration:
+  parallel_groups:
+    - - TASK-001           # Wave 1: Single task (foundation)
+    - - TASK-002           # Wave 2: Two tasks in parallel
+      - TASK-003
+    - - TASK-004           # Wave 3: Single task (depends on wave 2)
+    - - TASK-005           # Wave 4: Final task
+```
+
+**Note**: This replaces the older `execution_groups` format which is no longer supported.
 
 ### Phase 2: Output Generation
 
@@ -368,6 +549,75 @@ Next steps:
   3. Refine architecture: /system-plan "{project_name}"
 """)
 ```
+
+### Phase 2.5: Mandatory Diagram Output
+
+After capturing architecture and generating prose artefacts, ALWAYS generate these Mermaid diagrams in `docs/architecture/`. These diagrams are NOT optional. They are the primary review artefact — the prose supports them, not the other way around.
+
+#### 1. C4 Context Diagram (in `system-context.md` — setup and refine modes)
+
+Show all system components, external systems, and their relationships using C4Context Mermaid syntax. Mark any read/write asymmetries with a warning marker.
+
+**Example template:**
+
+````markdown
+## System Context Diagram
+
+```mermaid
+C4Context
+    title {Project Name} System Context
+
+    Person(user, "Primary User", "Role description")
+
+    System(main, "{Project Name}", "System purpose")
+
+    System_Boundary(internals, "{Project Name} Internals") {
+        Container(comp1, "Component 1", "Tech", "Responsibilities")
+        Container(comp2, "Component 2", "Tech", "Responsibilities")
+        Container(comp3, "Component 3", "Tech", "Responsibilities")
+    }
+
+    System_Ext(ext1, "External System 1", "Purpose")
+    System_Ext(ext2, "External System 2", "Purpose")
+
+    Rel(user, comp1, "Invokes")
+    Rel(comp1, comp2, "Uses")
+    Rel(comp2, comp3, "Reads/Writes")
+    Rel(comp3, ext1, "Queries")
+```
+
+_Look for: read/write asymmetries, components with only inbound or only outbound arrows, missing connections between components that should communicate._
+````
+
+#### 2. Component Dependency Graph (in `components.md` or `bounded-contexts.md` — all modes)
+
+Show which components depend on which using `graph TD` Mermaid syntax. Highlight shared/critical components with colour coding.
+
+**Example template:**
+
+````markdown
+## Component Dependencies
+
+```mermaid
+graph TD
+    A[Component A] --> B[Component B]
+    A --> C[Component C]
+    C --> D[Component D]
+    B --> D
+    D --> E[(External Store)]
+
+    style D fill:#ff9,stroke:#333
+```
+
+_Look for: circular dependencies, components with too many inbound arrows (high coupling), isolated components with no connections._
+````
+
+**Format rules for all diagrams:**
+- Use Mermaid fenced code blocks (` ```mermaid `)
+- Keep diagrams under 30 nodes (split into sub-diagrams if larger)
+- Use colour coding: green for healthy paths, yellow for new/changed, red for broken/missing
+- Add a one-line caption below each diagram explaining what to look for
+- Generate diagrams from the actual captured architecture data, not placeholder content
 
 ### Phase 3: Graphiti Final Persistence
 
@@ -931,6 +1181,20 @@ print("  └── decisions/")
 print(f"      └── ... {len(decisions)} ADRs")
 ```
 
+### Step 5.5: Generate Mandatory Diagrams
+
+**CRITICAL**: When generating `system-context.md` and `components.md` (or `bounded-contexts.md`), you MUST include Mermaid diagrams as specified in Phase 2.5 above. The diagrams are the primary output — not an afterthought.
+
+**In `system-context.md`**: Include a C4 Context Diagram using `C4Context` Mermaid syntax showing all captured components, external systems, and their relationships. Mark any read/write asymmetries.
+
+**In `components.md` (or `bounded-contexts.md`)**: Include a Component Dependency Graph using `graph TD` Mermaid syntax showing which components depend on which. Highlight shared/critical components with colour coding.
+
+**Validation**: Before finalising output, check:
+- Every captured component appears in at least one diagram
+- Every captured external system appears in the C4 context diagram
+- Relationships between components match what was captured in the interactive session
+- Each diagram has a caption explaining what to look for
+
 ### Step 6: Verify Graphiti Persistence
 
 ```python
@@ -991,7 +1255,8 @@ Claude executes:
   9. Upsert components to Graphiti
   10. ... continue for Categories 3-6 ...
   11. Generate markdown files via ArchitectureWriter
-  12. Display summary with file locations
+  12. Generate mandatory Mermaid diagrams (C4 Context + Component Dependencies)
+  13. Display summary with file locations
 ```
 
 Remember: This is an **interactive planning command**. You MUST present questions, wait for user input, show checkpoints, and allow the user to guide the session. DO NOT try to answer the questions yourself or auto-complete the flow.

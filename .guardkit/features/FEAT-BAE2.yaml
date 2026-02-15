@@ -1,0 +1,80 @@
+id: FEAT-BAE2
+name: AutoBuild Context Payload Optimization
+description: Reduce AutoBuild SDK session preamble from 1800s to 300s by eliminating
+  unnecessary context injection and switching to focused autobuild-specific prompts
+created: '2026-02-15T12:42:41.245427'
+status: planned
+complexity: 6
+estimated_tasks: 6
+tasks:
+- id: TASK-ACO-001
+  name: Extract AutoBuild execution protocol
+  file_path: tasks/backlog/autobuild-context-opt/TASK-ACO-001-extract-autobuild-execution-protocol.md
+  complexity: 4
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-ACO-002
+  name: Build AutoBuild implementation prompt builder
+  file_path: tasks/backlog/autobuild-context-opt/TASK-ACO-002-build-autobuild-implementation-prompt.md
+  complexity: 5
+  dependencies:
+  - TASK-ACO-001
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 113
+- id: TASK-ACO-003
+  name: Build AutoBuild design prompt builder
+  file_path: tasks/backlog/autobuild-context-opt/TASK-ACO-003-build-autobuild-design-prompt.md
+  complexity: 5
+  dependencies:
+  - TASK-ACO-001
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 113
+- id: TASK-ACO-004
+  name: Expand direct mode auto-detection
+  file_path: tasks/backlog/autobuild-context-opt/TASK-ACO-004-expand-direct-mode-auto-detection.md
+  complexity: 2
+  dependencies:
+  - TASK-ACO-001
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-ACO-005
+  name: Add unit tests for prompt builders and auto-detection
+  file_path: tasks/backlog/autobuild-context-opt/TASK-ACO-005-unit-tests-prompt-builders.md
+  complexity: 4
+  dependencies:
+  - TASK-ACO-002
+  - TASK-ACO-003
+  - TASK-ACO-004
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-ACO-006
+  name: Integration validation and preamble measurement
+  file_path: tasks/backlog/autobuild-context-opt/TASK-ACO-006-integration-validation.md
+  complexity: 4
+  dependencies:
+  - TASK-ACO-005
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+orchestration:
+  parallel_groups:
+  - - TASK-ACO-001
+  - - TASK-ACO-002
+    - TASK-ACO-003
+    - TASK-ACO-004
+  - - TASK-ACO-005
+  - - TASK-ACO-006
+  estimated_duration_minutes: 476
+  recommended_parallel: 3

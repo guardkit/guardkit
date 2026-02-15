@@ -22,6 +22,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator, ValidationError
 import yaml
 
 logger = logging.getLogger(__name__)
@@ -185,8 +186,7 @@ Fix: Ensure the YAML contains the '{missing_field}' field.
 # ============================================================================
 
 
-@dataclass
-class FeatureTask:
+class FeatureTask(BaseModel):
     """
     Represents a task within a feature.
 
@@ -220,23 +220,33 @@ class FeatureTask:
         ISO timestamp when task completed
     """
 
+    model_config = ConfigDict(extra="ignore")
+
     id: str
-    name: str
-    file_path: Path
-    complexity: int
-    dependencies: List[str]
-    status: Literal["pending", "in_progress", "completed", "failed", "skipped"]
-    implementation_mode: Literal["direct", "task-work", "manual"]
-    estimated_minutes: int
+    name: str = ""
+    file_path: Path = Path("")
+    complexity: int = Field(default=5, ge=1, le=10)
+    dependencies: List[str] = Field(default_factory=list)
+    status: Literal["pending", "in_progress", "completed", "failed", "skipped"] = "pending"
+    implementation_mode: Literal["direct", "task-work", "manual"] = "task-work"
+    estimated_minutes: int = 30
     result: Optional[Dict[str, Any]] = None
     turns_completed: int = 0
     current_turn: int = 0
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def set_name_default(cls, data):
+        """Set name to id if not provided."""
+        if isinstance(data, dict):
+            if not data.get("name") and data.get("id"):
+                data["name"] = data["id"]
+        return data
 
-@dataclass
-class FeatureOrchestration:
+
+class FeatureOrchestration(BaseModel):
     """
     Orchestration configuration for feature execution.
 
@@ -250,9 +260,11 @@ class FeatureOrchestration:
         Recommended max parallel tasks
     """
 
-    parallel_groups: List[List[str]]
-    estimated_duration_minutes: int
-    recommended_parallel: int
+    model_config = ConfigDict(extra="ignore")
+
+    parallel_groups: List[List[str]] = Field(default_factory=list)
+    estimated_duration_minutes: int = 0
+    recommended_parallel: int = 1
 
 
 @dataclass
@@ -299,8 +311,7 @@ class FeatureExecution:
     archived_to: Optional[str] = None
 
 
-@dataclass
-class Feature:
+class Feature(BaseModel):
     """
     Represents a complete feature definition from YAML.
 
@@ -330,16 +341,18 @@ class Feature:
         Path to feature YAML file
     """
 
+    model_config = ConfigDict(extra="ignore", arbitrary_types_allowed=True)
+
     id: str
     name: str
-    description: str
-    created: str
-    status: Literal["planned", "in_progress", "completed", "failed", "paused"]
-    complexity: int
-    estimated_tasks: int
-    tasks: List[FeatureTask]
-    orchestration: FeatureOrchestration
-    execution: FeatureExecution = field(default_factory=FeatureExecution)
+    description: str = ""
+    created: str = ""
+    status: Literal["planned", "in_progress", "completed", "failed", "paused"] = "planned"
+    complexity: int = 5
+    estimated_tasks: int = 0
+    tasks: List[FeatureTask] = Field(default_factory=list)
+    orchestration: FeatureOrchestration = Field(default_factory=FeatureOrchestration)
+    execution: FeatureExecution = Field(default_factory=FeatureExecution)
     file_path: Optional[Path] = None
 
 
@@ -526,15 +539,16 @@ class FeatureLoader:
                     )
                 ) from e
 
-        # Parse orchestration
+        # Parse orchestration using Pydantic
         orch_data = data.get("orchestration", {})
-        orchestration = FeatureOrchestration(
-            parallel_groups=orch_data.get("parallel_groups", []),
-            estimated_duration_minutes=orch_data.get("estimated_duration_minutes", 0),
-            recommended_parallel=orch_data.get("recommended_parallel", 1),
-        )
+        try:
+            orchestration = FeatureOrchestration.model_validate(orch_data)
+        except ValidationError as e:
+            raise FeatureParseError(
+                f"Invalid orchestration data:\n{e}"
+            ) from e
 
-        # Parse execution (may not exist)
+        # Parse execution (may not exist) - keep as dataclass
         exec_data = data.get("execution", {})
         execution = FeatureExecution(
             started_at=exec_data.get("started_at"),
@@ -550,23 +564,38 @@ class FeatureLoader:
             archived_to=exec_data.get("archived_to"),
         )
 
-        return Feature(
-            id=data["id"],
-            name=data["name"],
-            description=data.get("description", ""),
-            created=data.get("created", datetime.now().isoformat()),
-            status=data.get("status", "planned"),
-            complexity=data.get("complexity", 5),
-            estimated_tasks=data.get("estimated_tasks", len(tasks)),
-            tasks=tasks,
-            orchestration=orchestration,
-            execution=execution,
-        )
+        # Use Pydantic to construct Feature
+        try:
+            # Ensure created is a string (convert datetime if needed)
+            created_value = data.get("created")
+            if created_value is None:
+                created_str = datetime.now().isoformat()
+            elif isinstance(created_value, datetime):
+                created_str = created_value.isoformat()
+            else:
+                created_str = str(created_value)
+
+            return Feature.model_validate({
+                "id": data["id"],
+                "name": data["name"],
+                "description": data.get("description", ""),
+                "created": created_str,
+                "status": data.get("status", "planned"),
+                "complexity": data.get("complexity", 5),
+                "estimated_tasks": data.get("estimated_tasks", len(tasks)),
+                "tasks": tasks,
+                "orchestration": orchestration,
+                "execution": execution,
+            })
+        except ValidationError as e:
+            raise FeatureParseError(
+                f"Invalid feature data:\n{e}"
+            ) from e
 
     @staticmethod
     def _parse_task(task_data: Dict[str, Any]) -> FeatureTask:
         """
-        Parse task dictionary into FeatureTask dataclass.
+        Parse task dictionary into FeatureTask Pydantic model.
 
         Parameters
         ----------
@@ -581,7 +610,7 @@ class FeatureLoader:
         Raises
         ------
         FeatureParseError
-            If required fields are missing, with schema hints
+            If required fields are missing or validation fails
         """
         # Validate required fields with helpful error messages
         required_fields = ["id", "file_path"]
@@ -598,21 +627,14 @@ class FeatureLoader:
                     )
                 )
 
-        return FeatureTask(
-            id=task_data["id"],
-            name=task_data.get("name", task_data["id"]),
-            file_path=Path(task_data["file_path"]),
-            complexity=task_data.get("complexity", 5),
-            dependencies=task_data.get("dependencies", []),
-            status=task_data.get("status", "pending"),
-            implementation_mode=task_data.get("implementation_mode", "task-work"),
-            estimated_minutes=task_data.get("estimated_minutes", 30),
-            result=task_data.get("result"),
-            turns_completed=task_data.get("turns_completed", 0),
-            current_turn=task_data.get("current_turn", 0),
-            started_at=task_data.get("started_at"),
-            completed_at=task_data.get("completed_at"),
-        )
+        # Use Pydantic validation
+        try:
+            return FeatureTask.model_validate(task_data)
+        except ValidationError as e:
+            task_id = task_data.get("id", "<unknown>")
+            raise FeatureParseError(
+                f"Invalid task data for '{task_id}':\n{e}"
+            ) from e
 
     @staticmethod
     def validate_feature(
@@ -780,6 +802,80 @@ class FeatureLoader:
         return errors
 
     @staticmethod
+    def validate_yaml(data: Dict[str, Any]) -> List[str]:
+        """
+        Validate raw feature YAML data against Pydantic schema.
+
+        This method validates a dictionary representation of a feature
+        before writing to YAML. It can be used standalone without a Feature
+        instance.
+
+        Parameters
+        ----------
+        data : Dict[str, Any]
+            Raw feature data dictionary (as would be loaded from YAML)
+
+        Returns
+        -------
+        List[str]
+            List of human-readable error strings (empty if valid).
+            Each error includes field name, expected value, and actual value.
+
+        Examples
+        --------
+        >>> data = {"id": "FEAT-001", "name": "Test", "status": "planned", "tasks": []}
+        >>> errors = FeatureLoader.validate_yaml(data)
+        >>> if errors:
+        ...     for error in errors:
+        ...         print(error)
+        """
+        errors = []
+
+        try:
+            # Validate using Pydantic Feature model
+            Feature.model_validate(data)
+        except ValidationError as e:
+            # Convert Pydantic ValidationError to human-readable strings
+            for error in e.errors():
+                field_path = " -> ".join(str(loc) for loc in error["loc"])
+                error_type = error["type"]
+                msg = error["msg"]
+
+                # Extract field value if available
+                try:
+                    current = data
+                    for loc in error["loc"]:
+                        if isinstance(current, dict):
+                            current = current.get(loc)
+                        elif isinstance(current, list) and isinstance(loc, int):
+                            current = current[loc] if loc < len(current) else None
+                        else:
+                            current = None
+                            break
+                    actual_value = current
+                except (KeyError, IndexError, TypeError):
+                    actual_value = "<not found>"
+
+                # Format human-readable error message
+                if error_type == "literal_error":
+                    # Extract expected values from error message
+                    expected = error.get("ctx", {}).get("expected", "")
+                    error_msg = f"Field '{field_path}': Invalid value '{actual_value}'. Expected one of: {expected}"
+                elif error_type == "missing":
+                    error_msg = f"Field '{field_path}': Required field is missing"
+                elif error_type == "value_error":
+                    error_msg = f"Field '{field_path}': {msg}. Actual value: {actual_value}"
+                elif error_type.startswith("type_error"):
+                    expected_type = error.get("ctx", {}).get("expected_type", "")
+                    error_msg = f"Field '{field_path}': Expected type {expected_type}, got {type(actual_value).__name__}. Actual value: {actual_value}"
+                else:
+                    error_msg = f"Field '{field_path}': {msg}. Actual value: {actual_value}"
+
+                errors.append(error_msg)
+
+        return errors
+
+    @staticmethod
     def save_feature(
         feature: Feature,
         repo_root: Optional[Path] = None,
@@ -793,6 +889,11 @@ class FeatureLoader:
             Feature to save
         repo_root : Optional[Path]
             Repository root (default: current directory)
+
+        Raises
+        ------
+        FeatureValidationError
+            If feature data fails validation before writing
 
         Notes
         -----
@@ -808,6 +909,19 @@ class FeatureLoader:
 
         # Convert to dictionary
         data = FeatureLoader._feature_to_dict(feature)
+
+        # Validate before writing
+        validation_errors = FeatureLoader.validate_yaml(data)
+        if validation_errors:
+            # Log warnings for each error
+            for error in validation_errors:
+                logger.warning(f"Validation error in feature {feature.id}: {error}")
+
+            # Raise exception to block write
+            error_summary = "\n  - ".join(validation_errors)
+            raise FeatureValidationError(
+                f"Feature validation failed for {feature.id}:\n  - {error_summary}"
+            )
 
         # Ensure directory exists
         file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -833,51 +947,30 @@ class FeatureLoader:
         Dict[str, Any]
             Dictionary representation
         """
-        return {
-            "id": feature.id,
-            "name": feature.name,
-            "description": feature.description,
-            "created": feature.created,
-            "status": feature.status,
-            "complexity": feature.complexity,
-            "estimated_tasks": feature.estimated_tasks,
-            "tasks": [
-                {
-                    "id": t.id,
-                    "name": t.name,
-                    "file_path": str(t.file_path),
-                    "complexity": t.complexity,
-                    "dependencies": t.dependencies,
-                    "status": t.status,
-                    "implementation_mode": t.implementation_mode,
-                    "estimated_minutes": t.estimated_minutes,
-                    "result": t.result,
-                    "turns_completed": t.turns_completed,
-                    "current_turn": t.current_turn,
-                    "started_at": t.started_at,
-                    "completed_at": t.completed_at,
-                }
-                for t in feature.tasks
-            ],
-            "orchestration": {
-                "parallel_groups": feature.orchestration.parallel_groups,
-                "estimated_duration_minutes": feature.orchestration.estimated_duration_minutes,
-                "recommended_parallel": feature.orchestration.recommended_parallel,
-            },
-            "execution": {
-                "started_at": feature.execution.started_at,
-                "completed_at": feature.execution.completed_at,
-                "worktree_path": feature.execution.worktree_path,
-                "total_turns": feature.execution.total_turns,
-                "tasks_completed": feature.execution.tasks_completed,
-                "tasks_failed": feature.execution.tasks_failed,
-                "current_wave": feature.execution.current_wave,
-                "completed_waves": feature.execution.completed_waves,
-                "last_updated": feature.execution.last_updated,
-                "archived_at": feature.execution.archived_at,
-                "archived_to": feature.execution.archived_to,
-            },
+        # Use Pydantic's model_dump for Feature, FeatureOrchestration, and FeatureTask
+        data = feature.model_dump(exclude={"file_path", "execution"})
+
+        # Convert Path objects to strings for tasks
+        for task_dict in data["tasks"]:
+            if "file_path" in task_dict:
+                task_dict["file_path"] = str(task_dict["file_path"])
+
+        # Manually serialize execution (dataclass)
+        data["execution"] = {
+            "started_at": feature.execution.started_at,
+            "completed_at": feature.execution.completed_at,
+            "worktree_path": feature.execution.worktree_path,
+            "total_turns": feature.execution.total_turns,
+            "tasks_completed": feature.execution.tasks_completed,
+            "tasks_failed": feature.execution.tasks_failed,
+            "current_wave": feature.execution.current_wave,
+            "completed_waves": feature.execution.completed_waves,
+            "last_updated": feature.execution.last_updated,
+            "archived_at": feature.execution.archived_at,
+            "archived_to": feature.execution.archived_to,
         }
+
+        return data
 
     @staticmethod
     def find_task(feature: Feature, task_id: str) -> Optional[FeatureTask]:

@@ -1,0 +1,62 @@
+id: FEAT-YSC
+name: YAML Schema Contract Enforcement
+description: Enforce feature YAML schema contracts across all generation paths using
+  Pydantic validation, write-time checks, and CLI validation. Prevents recurring schema
+  mismatch bugs like TASK-REV-66B4 and FEAT-AC1A.
+created: '2026-02-14T00:00:00Z'
+status: planned
+complexity: 6
+estimated_tasks: 5
+tasks:
+- id: TASK-YSC-001
+  name: Add schema ref to system-plan.md
+  file_path: tasks/backlog/yaml-schema-contract/TASK-YSC-001-system-plan-schema-ref.md
+  complexity: 2
+  dependencies: []
+  status: pending
+  implementation_mode: direct
+  estimated_minutes: 60
+- id: TASK-YSC-002
+  name: Create Pydantic schema models
+  file_path: tasks/backlog/yaml-schema-contract/TASK-YSC-002-pydantic-schema-models.md
+  complexity: 6
+  dependencies: []
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 360
+- id: TASK-YSC-003
+  name: Add schema validation tests
+  file_path: tasks/backlog/yaml-schema-contract/TASK-YSC-003-schema-validation-tests.md
+  complexity: 4
+  dependencies:
+  - TASK-YSC-002
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 180
+- id: TASK-YSC-004
+  name: Add write-time validation
+  file_path: tasks/backlog/yaml-schema-contract/TASK-YSC-004-write-time-validation.md
+  complexity: 4
+  dependencies:
+  - TASK-YSC-002
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 180
+- id: TASK-YSC-005
+  name: CLI validate command
+  file_path: tasks/backlog/yaml-schema-contract/TASK-YSC-005-cli-validate-command.md
+  complexity: 4
+  dependencies:
+  - TASK-YSC-004
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 180
+orchestration:
+  parallel_groups:
+  - - TASK-YSC-001
+    - TASK-YSC-002
+  - - TASK-YSC-003
+    - TASK-YSC-004
+  - - TASK-YSC-005
+  estimated_duration_minutes: 960
+  recommended_parallel: 2

@@ -321,6 +321,7 @@ def detect_test_results(
     worktree_path: Path,
     task_id: str = "",
     turn: int = 0,
+    test_paths: list[str] | None = None,
 ) -> Optional[TestResultsSummary]:
     """Detect test results by running tests in the worktree.
 
@@ -331,6 +332,9 @@ def detect_test_results(
         worktree_path: Path to the git worktree directory
         task_id: Optional task identifier for logging
         turn: Optional turn number for logging
+        test_paths: Optional list of test file/directory paths to scope
+            the test run. When provided, pytest runs only against these
+            paths instead of the entire worktree.
 
     Returns:
         TestResultsSummary if tests could be run, None on error
@@ -357,7 +361,7 @@ def detect_test_results(
 
         # Create verifier and run tests
         verifier = CoachVerifier(worktree_path)
-        test_result = verifier._run_tests()
+        test_result = verifier._run_tests(test_paths=test_paths)
 
         # Parse results
         passed_count = test_result.test_count if test_result.passed else 0

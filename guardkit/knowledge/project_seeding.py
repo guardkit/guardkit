@@ -5,7 +5,6 @@ This module orchestrates seeding of project knowledge into Graphiti during
 project initialization. It coordinates:
 - Project overview parsing from CLAUDE.md or README.md
 - Role constraints seeding
-- Quality gate configurations seeding
 - Implementation modes seeding
 
 Graceful Degradation:
@@ -26,7 +25,6 @@ from guardkit.integrations.graphiti.episodes.implementation_mode import (
 )
 from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
 from guardkit.integrations.graphiti.parsers.project_doc_parser import ProjectDocParser
-from guardkit.knowledge.seed_quality_gate_configs import seed_quality_gate_configs
 from guardkit.knowledge.seed_role_constraints import seed_role_constraints
 
 logger = logging.getLogger(__name__)
@@ -259,40 +257,6 @@ async def _seed_role_constraints_wrapper(client: Any) -> SeedComponentResult:
         )
 
 
-async def _seed_quality_gate_configs_wrapper(client: Any) -> SeedComponentResult:
-    """Wrapper for seed_quality_gate_configs to return SeedComponentResult.
-
-    Args:
-        client: GraphitiClient instance.
-
-    Returns:
-        SeedComponentResult indicating success/failure.
-    """
-    if client is None or not client.enabled:
-        return SeedComponentResult(
-            component="quality_gate_configs",
-            success=True,
-            message="Skipped (Graphiti unavailable)",
-        )
-
-    try:
-        await seed_quality_gate_configs(client)
-        return SeedComponentResult(
-            component="quality_gate_configs",
-            success=True,
-            message="Seeded quality gate configurations",
-            episodes_created=6,  # Approximate count from QUALITY_GATE_CONFIGS
-        )
-    except Exception as e:
-        logger.warning(f"Failed to seed quality gate configs: {e}")
-        return SeedComponentResult(
-            component="quality_gate_configs",
-            success=True,  # Graceful degradation
-            message=f"Error: {e}",
-            episodes_created=0,
-        )
-
-
 async def seed_project_overview_from_episode(
     project_name: str,
     client: Any,
@@ -366,8 +330,7 @@ async def seed_project_knowledge(
     Orchestrates seeding of:
     1. Project overview (from CLAUDE.md or README.md, or from provided episode)
     2. Role constraints (Player/Coach defaults)
-    3. Quality gate configurations (defaults)
-    4. Implementation modes (defaults)
+    3. Implementation modes (defaults)
 
     Graceful Degradation:
     If client is None or disabled, returns success with skip messages.
@@ -420,12 +383,7 @@ async def seed_project_knowledge(
     result.add_result(constraints_result)
     result.role_constraints_seeded = constraints_result.episodes_created > 0
 
-    # 3. Seed quality gate configs (system-level defaults)
-    quality_result = await _seed_quality_gate_configs_wrapper(client)
-    result.add_result(quality_result)
-    result.quality_gates_seeded = quality_result.episodes_created > 0
-
-    # 4. Seed implementation modes (system-level defaults)
+    # 3. Seed implementation modes (system-level defaults)
     modes_result = await seed_implementation_modes_from_defaults(
         project_name=project_name,
         client=client,

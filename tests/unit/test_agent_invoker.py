@@ -11,7 +11,9 @@ import pytest
 from guardkit.orchestrator.agent_invoker import (
     AgentInvoker,
     AgentInvocationResult,
+    DEFAULT_SDK_TIMEOUT,
     DOCUMENTATION_LEVEL_MAX_FILES,
+    MAX_SDK_TIMEOUT,
     TaskWorkStreamParser,
     TASK_WORK_SDK_MAX_TURNS,
     USE_TASK_WORK_DELEGATION,
@@ -131,7 +133,7 @@ class TestAgentInvokerInit:
         assert invoker.max_turns_per_agent == 30
         assert invoker.player_model == "claude-sonnet-4-5-20250929"
         assert invoker.coach_model == "claude-sonnet-4-5-20250929"
-        assert invoker.sdk_timeout_seconds == 900  # Harmonized default per TASK-FIX-SDKT
+        assert invoker.sdk_timeout_seconds == DEFAULT_SDK_TIMEOUT
         assert invoker.development_mode == "tdd"  # Default is tdd
 
     def test_init_with_custom_values(self, worktree_path):
@@ -5951,3 +5953,165 @@ class TestToolUseBlockIntegrationWithWriter:
 
         assert cmd is not None
         assert "tests/test_system_plan.py" in cmd
+
+
+# ==================== TASK-ASF-008: Dynamic SDK Timeout Tests ====================
+
+
+def _create_task_file(worktree_path, task_id, mode="task-work", complexity=5):
+    """Helper to create a task file with given mode and complexity."""
+    for state_dir in ["backlog", "in_progress", "design_approved"]:
+        task_dir = worktree_path / "tasks" / state_dir
+        task_dir.mkdir(parents=True, exist_ok=True)
+    task_file = worktree_path / "tasks" / "in_progress" / f"{task_id}.md"
+    task_file.write_text(
+        f"---\nid: {task_id}\ntitle: Test task\n"
+        f"implementation_mode: {mode}\ncomplexity: {complexity}\n"
+        f"status: in_progress\n---\n\n# Test Task\nTest content\n"
+    )
+    return task_file
+
+
+class TestCalculateSDKTimeout:
+    """Tests for _calculate_sdk_timeout() dynamic timeout calculation."""
+
+    def test_task_work_mode_complexity_5(self, worktree_path):
+        """Task-work mode with complexity 5 gets 1.5 * 1.5 = 2.25x."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        _create_task_file(worktree_path, "TASK-T-001", mode="task-work", complexity=5)
+
+        timeout = invoker._calculate_sdk_timeout("TASK-T-001")
+
+        expected = int(DEFAULT_SDK_TIMEOUT * 1.5 * 1.5)
+        assert timeout == expected
+
+    def test_task_work_mode_complexity_1(self, worktree_path):
+        """Task-work mode with complexity 1 gets 1.5 * 1.1 = 1.65x."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        _create_task_file(worktree_path, "TASK-T-002", mode="task-work", complexity=1)
+
+        timeout = invoker._calculate_sdk_timeout("TASK-T-002")
+
+        expected = int(DEFAULT_SDK_TIMEOUT * 1.5 * 1.1)
+        assert timeout == expected
+
+    def test_task_work_mode_complexity_10(self, worktree_path):
+        """Task-work mode with complexity 10 gets 1.5 * 2.0 = 3.0x."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        _create_task_file(worktree_path, "TASK-T-003", mode="task-work", complexity=10)
+
+        timeout = invoker._calculate_sdk_timeout("TASK-T-003")
+
+        expected = int(DEFAULT_SDK_TIMEOUT * 1.5 * 2.0)
+        assert timeout == min(expected, MAX_SDK_TIMEOUT)
+
+    def test_direct_mode_complexity_5(self, worktree_path):
+        """Direct mode with complexity 5 gets 1.0 * 1.5 = 1.5x."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        _create_task_file(worktree_path, "TASK-T-004", mode="direct", complexity=5)
+
+        timeout = invoker._calculate_sdk_timeout("TASK-T-004")
+
+        expected = int(DEFAULT_SDK_TIMEOUT * 1.0 * 1.5)
+        assert timeout == expected
+
+    def test_direct_mode_complexity_1(self, worktree_path):
+        """Direct mode with complexity 1 gets 1.0 * 1.1 = 1.1x."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        _create_task_file(worktree_path, "TASK-T-005", mode="direct", complexity=1)
+
+        timeout = invoker._calculate_sdk_timeout("TASK-T-005")
+
+        expected = int(DEFAULT_SDK_TIMEOUT * 1.0 * 1.1)
+        assert timeout == expected
+
+    def test_direct_mode_unchanged_at_complexity_0(self, worktree_path):
+        """Direct mode with default complexity returns base * 1.0 * 1.5 (clamped to 1)."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        # Complexity 0 gets clamped to 1
+        _create_task_file(worktree_path, "TASK-T-006", mode="direct", complexity=0)
+
+        timeout = invoker._calculate_sdk_timeout("TASK-T-006")
+
+        expected = int(DEFAULT_SDK_TIMEOUT * 1.0 * 1.1)  # clamped to min 1
+        assert timeout == expected
+
+    def test_cap_at_max_timeout(self, worktree_path):
+        """High complexity + task-work should cap at MAX_SDK_TIMEOUT."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        _create_task_file(worktree_path, "TASK-T-007", mode="task-work", complexity=10)
+
+        timeout = invoker._calculate_sdk_timeout("TASK-T-007")
+
+        # 1200 * 1.5 * 2.0 = 3600, which equals MAX_SDK_TIMEOUT
+        assert timeout <= MAX_SDK_TIMEOUT
+
+    def test_cli_override_respected(self, worktree_path):
+        """CLI override (non-default timeout) skips dynamic calculation."""
+        custom_timeout = 600
+        invoker = AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=custom_timeout,
+        )
+        _create_task_file(worktree_path, "TASK-T-008", mode="task-work", complexity=10)
+
+        timeout = invoker._calculate_sdk_timeout("TASK-T-008")
+
+        assert timeout == custom_timeout
+
+    def test_task_not_found_returns_base(self, worktree_path):
+        """When task file not found, returns base timeout with defaults."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        # Don't create task file
+
+        timeout = invoker._calculate_sdk_timeout("TASK-NONEXISTENT")
+
+        # Defaults: mode=task-work (1.5x), complexity=5 (1.5x)
+        expected = int(DEFAULT_SDK_TIMEOUT * 1.5 * 1.5)
+        assert timeout == expected
+
+    def test_missing_complexity_defaults_to_5(self, worktree_path):
+        """Missing complexity field in frontmatter defaults to 5."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        # Create task without complexity field
+        task_dir = worktree_path / "tasks" / "in_progress"
+        task_dir.mkdir(parents=True, exist_ok=True)
+        task_file = task_dir / "TASK-T-009.md"
+        task_file.write_text(
+            "---\nid: TASK-T-009\ntitle: Test\n"
+            "implementation_mode: direct\nstatus: in_progress\n---\n\n# Test\n"
+        )
+
+        timeout = invoker._calculate_sdk_timeout("TASK-T-009")
+
+        # mode=direct (1.0x), complexity defaults to 5 (1.5x)
+        expected = int(DEFAULT_SDK_TIMEOUT * 1.0 * 1.5)
+        assert timeout == expected
+
+    def test_missing_mode_defaults_to_task_work(self, worktree_path):
+        """Missing implementation_mode defaults to task-work."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        task_dir = worktree_path / "tasks" / "in_progress"
+        task_dir.mkdir(parents=True, exist_ok=True)
+        task_file = task_dir / "TASK-T-010.md"
+        task_file.write_text(
+            "---\nid: TASK-T-010\ntitle: Test\n"
+            "complexity: 3\nstatus: in_progress\n---\n\n# Test\n"
+        )
+
+        timeout = invoker._calculate_sdk_timeout("TASK-T-010")
+
+        # mode defaults to task-work (1.5x), complexity=3 (1.3x)
+        expected = int(DEFAULT_SDK_TIMEOUT * 1.5 * 1.3)
+        assert timeout == expected
+
+    def test_complexity_clamped_to_valid_range(self, worktree_path):
+        """Complexity values outside 1-10 are clamped."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        _create_task_file(worktree_path, "TASK-T-011", mode="direct", complexity=15)
+
+        timeout = invoker._calculate_sdk_timeout("TASK-T-011")
+
+        # complexity clamped to 10 → 2.0x
+        expected = int(DEFAULT_SDK_TIMEOUT * 1.0 * 2.0)
+        assert timeout == expected

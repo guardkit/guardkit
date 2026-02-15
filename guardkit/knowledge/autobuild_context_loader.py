@@ -209,8 +209,35 @@ class AutoBuildContextLoader:
                 collect_metrics=self.verbose,
             )
 
+            # Load turn continuation context for turn > 1
+            turn_continuation = None
+            if turn_number > 1 and self.graphiti is not None:
+                try:
+                    from guardkit.knowledge.turn_state_operations import load_turn_continuation_context
+                    turn_continuation = await load_turn_continuation_context(
+                        graphiti_client=self.graphiti,
+                        feature_id=feature_id,
+                        task_id=task_id,
+                        current_turn=turn_number,
+                    )
+                    if turn_continuation:
+                        logger.info(
+                            "[Graphiti] Turn continuation loaded: %d chars for turn %d",
+                            len(turn_continuation), turn_number,
+                        )
+                    else:
+                        logger.debug("[Graphiti] No turn continuation available for turn %d", turn_number)
+                except Exception as e:
+                    logger.warning("[Graphiti] Failed to load turn continuation context: %s", e)
+
             # Build result
-            result = self._build_result(context, actor="player")
+            result = self._build_result(context, actor="player", turn_continuation=turn_continuation)
+
+            # Log similar outcomes count
+            similar_outcomes_count = len(context.similar_outcomes) if context.similar_outcomes else 0
+            if similar_outcomes_count > 0:
+                logger.info("[Graphiti] Similar outcomes found: %d matches", similar_outcomes_count)
+
             logger.info(
                 "[Graphiti] Player context: %d categories, %d/%d tokens",
                 len(result.categories_populated),
@@ -279,8 +306,33 @@ class AutoBuildContextLoader:
                 collect_metrics=self.verbose,
             )
 
+            # Load turn continuation context for turn > 1
+            turn_continuation = None
+            if turn_number > 1 and self.graphiti is not None:
+                try:
+                    from guardkit.knowledge.turn_state_operations import load_turn_continuation_context
+                    turn_continuation = await load_turn_continuation_context(
+                        graphiti_client=self.graphiti,
+                        feature_id=feature_id,
+                        task_id=task_id,
+                        current_turn=turn_number,
+                    )
+                    if turn_continuation:
+                        logger.info(
+                            "[Graphiti] Turn continuation loaded: %d chars for turn %d",
+                            len(turn_continuation), turn_number,
+                        )
+                    else:
+                        logger.debug("[Graphiti] No turn continuation available for turn %d", turn_number)
+                except Exception as e:
+                    logger.warning("[Graphiti] Failed to load turn continuation context: %s", e)
+
             # Build result with Coach-specific formatting
-            result = self._build_result(context, actor="coach")
+            result = self._build_result(context, actor="coach", turn_continuation=turn_continuation)
+
+            # Log coach context categories
+            logger.info("[Graphiti] Coach context categories: %s", result.categories_populated)
+
             logger.info(
                 "[Graphiti] Coach context: %d categories, %d/%d tokens",
                 len(result.categories_populated),
@@ -347,18 +399,24 @@ class AutoBuildContextLoader:
         self,
         context: RetrievedContext,
         actor: str,
+        turn_continuation: Optional[str] = None,
     ) -> AutoBuildContextResult:
         """Build AutoBuildContextResult from RetrievedContext.
 
         Args:
             context: Retrieved context from JobContextRetriever
             actor: "player" or "coach"
+            turn_continuation: Optional formatted turn continuation context
 
         Returns:
             AutoBuildContextResult with formatted prompt
         """
         # Format prompt text
         prompt_text = context.to_prompt()
+
+        # Append turn continuation context if available
+        if turn_continuation:
+            prompt_text += f"\n\n{turn_continuation}"
 
         # Identify populated categories
         categories = self._get_populated_categories(context)

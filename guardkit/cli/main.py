@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 
 from guardkit.cli.autobuild import autobuild
+from guardkit.cli.feature import feature
 from guardkit.cli.graphiti import graphiti
 from guardkit.cli.init import init
 from guardkit.cli.review import review
@@ -105,6 +106,9 @@ def cli(ctx, verbose: bool, quiet: bool):
 
 # Add AutoBuild command group
 cli.add_command(autobuild)
+
+# Add Feature command group
+cli.add_command(feature)
 
 # Add Graphiti command group
 cli.add_command(graphiti)

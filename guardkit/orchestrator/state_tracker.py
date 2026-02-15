@@ -175,11 +175,14 @@ class StateTracker(ABC):
     """
 
     @abstractmethod
-    def capture_state(self, turn: int) -> Optional[WorkState]:
+    def capture_state(self, turn: int, test_paths: list[str] | None = None) -> Optional[WorkState]:
         """Capture current work state via available detection methods.
 
         Args:
             turn: Turn number (1-indexed)
+            test_paths: Optional list of test file/directory paths to scope
+                the test run. When provided, pytest runs only against these
+                paths instead of the entire worktree.
 
         Returns:
             WorkState if any work detected, None otherwise
@@ -233,7 +236,7 @@ class MultiLayeredStateTracker(StateTracker):
         self.worktree_path = Path(worktree_path)
         self.autobuild_dir = self.worktree_path / ".guardkit" / "autobuild" / task_id
 
-    def capture_state(self, turn: int) -> Optional[WorkState]:
+    def capture_state(self, turn: int, test_paths: list[str] | None = None) -> Optional[WorkState]:
         """Capture work state using cascade detection.
 
         Detection order:
@@ -244,6 +247,9 @@ class MultiLayeredStateTracker(StateTracker):
 
         Args:
             turn: Turn number (1-indexed)
+            test_paths: Optional list of test file/directory paths to scope
+                the test run. When provided, pytest runs only against these
+                paths instead of the entire worktree.
 
         Returns:
             WorkState if any work detected, None otherwise
@@ -261,6 +267,7 @@ class MultiLayeredStateTracker(StateTracker):
             self.worktree_path,
             task_id=self.task_id,
             turn=turn,
+            test_paths=test_paths,
         )
 
         # Synthesize WorkState from available sources

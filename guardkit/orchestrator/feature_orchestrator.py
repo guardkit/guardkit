@@ -26,6 +26,7 @@ import asyncio
 import logging
 import resource
 import shutil
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -926,6 +927,79 @@ The detailed specifications are in the task markdown file.
         FeatureLoader.save_feature(feature, self.repo_root)
         console.print("[green]✓[/green] Reset feature state")
 
+    def _preflight_check(self) -> bool:
+        """
+        Verify FalkorDB connectivity before launching wave execution.
+
+        Runs a quick health check on the Graphiti client. If the check fails
+        or times out, disables context loading for the entire feature run to
+        avoid per-task retry latency.
+
+        Returns
+        -------
+        bool
+            True if FalkorDB is reachable, False otherwise
+        """
+        if not self.enable_context:
+            return True  # Context already disabled, nothing to check
+
+        try:
+            client = get_graphiti()
+            if client is None or not client.enabled:
+                logger.info("Graphiti client not available, disabling context loading")
+                console.print(
+                    "[yellow]⚠[/yellow] Graphiti client not available — "
+                    "context loading disabled for this run"
+                )
+                self.enable_context = False
+                return False
+
+            # Quick health check with 5-second timeout
+            # Use a fresh event loop for the health check
+            loop = asyncio.new_event_loop()
+            try:
+                healthy = loop.run_until_complete(
+                    asyncio.wait_for(client._check_health(), timeout=5.0)
+                )
+            finally:
+                loop.close()
+
+            if not healthy:
+                logger.warning(
+                    "FalkorDB health check failed — disabling Graphiti context for this run"
+                )
+                console.print(
+                    "[yellow]⚠[/yellow] FalkorDB health check failed — "
+                    "disabling Graphiti context for this run"
+                )
+                self.enable_context = False
+                return False
+
+            logger.info("FalkorDB pre-flight check passed")
+            console.print("[green]✓[/green] FalkorDB pre-flight check passed")
+            return True
+
+        except asyncio.TimeoutError:
+            logger.warning(
+                "FalkorDB pre-flight check timed out (5s) — disabling Graphiti context for this run"
+            )
+            console.print(
+                "[yellow]⚠[/yellow] FalkorDB pre-flight check timed out (5s) — "
+                "disabling Graphiti context for this run"
+            )
+            self.enable_context = False
+            return False
+        except Exception as e:
+            logger.warning(
+                f"FalkorDB pre-flight check failed: {e} — disabling Graphiti context for this run"
+            )
+            console.print(
+                f"[yellow]⚠[/yellow] FalkorDB pre-flight check failed — "
+                f"disabling Graphiti context for this run"
+            )
+            self.enable_context = False
+            return False
+
     def _pre_init_graphiti(self) -> None:
         """
         Pre-initialize Graphiti factory before parallel task dispatch.
@@ -976,9 +1050,14 @@ The detailed specifications are in the task markdown file.
         )
         wave_results = []
 
+        # Pre-flight FalkorDB connectivity check (TASK-ASF-002)
+        # Detect unreachable FalkorDB upfront to avoid per-task retry latency
+        self._preflight_check()
+
         # Pre-initialize Graphiti factory before any parallel dispatch
         # to avoid race condition where first task triggers lazy init
         # while other tasks see factory=None (BUG-4 from TASK-REV-B9E1)
+        # Only runs if pre-flight check passed (enable_context still True)
         self._pre_init_graphiti()
 
         console.print()
@@ -1070,6 +1149,7 @@ The detailed specifications are in the task markdown file.
         results = []
         tasks_to_execute = []
         task_id_mapping = []  # Track which task_id corresponds to which async task
+        cancellation_events: Dict[str, threading.Event] = {}  # Per-task cancellation (TASK-ASF-007)
 
         for task_id in task_ids:
             task = FeatureLoader.find_task(feature, task_id)
@@ -1135,10 +1215,17 @@ The detailed specifications are in the task markdown file.
             else:
                 console.print(f"  [cyan]▶[/cyan] Executing {task_id}: {task.name}")
 
+            # Create per-task cancellation event (TASK-ASF-007)
+            cancel_event = threading.Event()
+            cancellation_events[task_id] = cancel_event
+
             # Add to parallel execution queue, wrapped with per-task timeout
             tasks_to_execute.append(
                 asyncio.wait_for(
-                    asyncio.to_thread(self._execute_task, task, feature, worktree),
+                    asyncio.to_thread(
+                        self._execute_task, task, feature, worktree,
+                        cancellation_event=cancel_event,
+                    ),
                     timeout=self.task_timeout,
                 )
             )
@@ -1146,7 +1233,14 @@ The detailed specifications are in the task markdown file.
 
         # Execute all tasks in parallel if any
         if tasks_to_execute:
-            parallel_results = await asyncio.gather(*tasks_to_execute, return_exceptions=True)
+            try:
+                parallel_results = await asyncio.gather(*tasks_to_execute, return_exceptions=True)
+            finally:
+                # Signal ALL threads to stop after gather completes (TASK-ASF-007)
+                # Safe: completed threads have already exited; timed-out threads
+                # will see the event at their next cancellation checkpoint.
+                for event in cancellation_events.values():
+                    event.set()
 
             # Process results and handle exceptions
             for task_id, result in zip(task_id_mapping, parallel_results):
@@ -1314,6 +1408,7 @@ The detailed specifications are in the task markdown file.
         task: FeatureTask,
         feature: Feature,
         worktree: Worktree,
+        cancellation_event: Optional[threading.Event] = None,
     ) -> TaskExecutionResult:
         """
         Execute single task using AutoBuildOrchestrator with shared worktree.
@@ -1326,6 +1421,9 @@ The detailed specifications are in the task markdown file.
             Parent feature
         worktree : Worktree
             Shared worktree
+        cancellation_event : Optional[threading.Event], optional
+            Cooperative cancellation signal (default: None).
+            When set, AutoBuildOrchestrator exits cleanly at next checkpoint.
 
         Returns
         -------
@@ -1363,6 +1461,7 @@ The detailed specifications are in the task markdown file.
                 enable_pre_loop=effective_enable_pre_loop,
                 enable_context=self.enable_context,
                 feature_id=feature.id,
+                cancellation_event=cancellation_event,  # Cooperative cancellation (TASK-ASF-007)
             )
 
             # Execute task orchestration

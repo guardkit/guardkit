@@ -1657,53 +1657,80 @@ Acceptance Criteria: {len(acceptance_criteria)} items
 - `--implement-only` flag is set (uses saved design)
 - `--no-context` flag is set
 
+**⚠️ IMPORTANT: Graphiti is accessed via the Python client library, NOT via MCP tools.**
+Do NOT check for MCP tools like `mcp__graphiti__search_nodes` to determine availability.
+Instead, run the Python check script via bash as described below.
+
 **Workflow**:
 
-**STEP 1: Check Graphiti Availability**
+**STEP 1: Check Graphiti Availability via Python Client**
 
-```python
-from installer.core.commands.lib.graphiti_context_loader import (
-    is_graphiti_enabled,
-    load_task_context_sync,
-)
+Run the graphiti check script from the project root directory:
 
-graphiti_available = is_graphiti_enabled()
+```bash
+cd {project_root}  # The guardkit project directory
+python -m installer.core.commands.lib.graphiti_check --status --quiet
 ```
 
-**IF** Graphiti not available:
+This script checks:
+1. `GRAPHITI_ENABLED` environment variable (not set to "false")
+2. `graphiti-core` Python library is installed
+3. `.guardkit/graphiti.yaml` configuration exists and is enabled
+4. FalkorDB is reachable at the configured host (whitestocks:6379)
+
+The script outputs JSON to stdout:
+```json
+{"available": true, "error": null, "context": null, ...}
+```
+
+**IF** available == false:
 ```
 DISPLAY: "[Graphiti] Context: unavailable (continuing without)"
+         "  Reason: {error from JSON}"
 SET task_context["graphiti_context"] = None
 PROCEED to Step 2
 ```
 
 **STEP 2: Load Context from Knowledge Graph**
 
-**IF** Graphiti available:
+**IF** Graphiti is available (available == true from Step 1):
 
-```python
-graphiti_context = load_task_context_sync(
-    task_id=task_id,
-    task_data={
-        "description": task_context.get("description", ""),
-        "tech_stack": detected_stack or "unknown",
-        "complexity": task_context.get("complexity", 5),
-        "feature_id": task_context.get("feature", None),
-    },
-    phase="plan"
-)
+Run the context loader with task details:
 
-task_context["graphiti_context"] = graphiti_context
+```bash
+cd {project_root}
+python -m installer.core.commands.lib.graphiti_check \
+    --status --task-context --quiet \
+    --task-id "{task_id}" \
+    --description "{task_description}" \
+    --stack "{detected_stack}" \
+    --complexity {complexity_score} \
+    --phase plan \
+    {--feature-id "{feature_id}" if feature_id else ""}
 ```
 
-**IF** context loaded successfully:
-```
-DISPLAY: "[Graphiti] Context loaded: {category_count} categories, {token_count} tokens"
+Parse the JSON output:
+```json
+{
+    "available": true,
+    "error": null,
+    "context": "## Knowledge Graph Context\n...",
+    "categories": 4,
+    "tokens_used": 2800,
+    "tokens_budget": 4000
+}
 ```
 
-**IF** context loading failed (returns None):
+**IF** context field is not null:
+```
+SET task_context["graphiti_context"] = context_from_json
+DISPLAY: "[Graphiti] Context loaded: {categories} categories, {tokens_used}/{tokens_budget} tokens"
+```
+
+**IF** context is null (loading failed):
 ```
 DISPLAY: "[Graphiti] Context: loading failed (continuing without)"
+         "  Error: {error from JSON}"
 SET task_context["graphiti_context"] = None
 ```
 
@@ -1714,11 +1741,28 @@ The `graphiti_context` string (or None) is stored in `task_context` and injected
 **ERROR HANDLING**:
 
 All Graphiti operations follow the 3-layer graceful degradation pattern:
-1. Null check (is_graphiti_enabled)
-2. Enabled check (env var GRAPHITI_ENABLED)
-3. Try/except (load_task_context_sync catches all exceptions internally)
+1. Python script handles all errors internally and returns JSON
+2. Non-zero exit code = unavailable (script returns exit 1)
+3. If bash execution itself fails, treat as unavailable
 
 Task-work NEVER blocks or fails due to Graphiti errors.
+
+**Alternative: Direct Python Import (if running in-process)**
+
+If the task-work executor has direct Python access (not via Claude Code bash):
+```python
+from installer.core.commands.lib.graphiti_context_loader import (
+    is_graphiti_enabled,
+    load_task_context_sync,
+)
+
+if is_graphiti_enabled():
+    graphiti_context = load_task_context_sync(
+        task_id=task_id,
+        task_data={...},
+        phase="plan"
+    )
+```
 
 **Example Flow**:
 
@@ -1738,6 +1782,7 @@ Or when unavailable:
 Phase 1.7: Graphiti Context Loading
 
 [Graphiti] Context: unavailable (continuing without)
+  Reason: Connection failed: Error 111 connecting to whitestocks:6379
 
 Phase 2: Planning implementation...
 ```
@@ -2120,6 +2165,87 @@ Phase 2.1: Library Context Gathering
 ```
 
 **Implementation Note**: This feature integrates with the coach_context_builder module (TASK-SC-009) to provide contextual architecture awareness before complex implementations begin.
+
+#### Phase 1.8: Feature Diagram Review Prompt
+
+**Purpose**: Surface the parent feature's data flow diagram to help the developer understand where this task fits in the broader feature architecture.
+
+**Trigger**: After architecture check (Phase 1.7), before library context gathering (Phase 2.1). Only when task has `parent_review` or `feature_id` in frontmatter.
+
+**Skip Conditions**:
+- Task has no `parent_review` or `feature_id` field in frontmatter
+- Parent feature has no IMPLEMENTATION-GUIDE.md
+- IMPLEMENTATION-GUIDE.md has no data flow diagram section
+
+**Workflow**:
+
+**IF** task frontmatter contains `feature_id` or `parent_review`:
+
+**SEARCH** for IMPLEMENTATION-GUIDE.md in the feature's subfolder:
+```
+tasks/backlog/{feature-slug}/IMPLEMENTATION-GUIDE.md
+```
+
+**IF** IMPLEMENTATION-GUIDE.md exists AND contains a data flow diagram:
+
+**READ** the diagram section and determine this task's role (write path, read path, or both).
+
+**DISPLAY** (informational only):
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 FEATURE DATA FLOW CONTEXT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This task implements: [write path / read path / both]
+Connected to: [list upstream/downstream components from diagram]
+
+Review the full diagram: tasks/backlog/{feature-slug}/IMPLEMENTATION-GUIDE.md#data-flow
+
+Proceeding with task-work...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**ELSE**:
+```
+Skip to Phase 2.1
+```
+
+**Key Characteristics**:
+- Non-blocking - does not wait for user input
+- Informational only - helps developer understand task's place in feature data flow
+- Graceful degradation - skips silently if no parent feature or no diagram
+- No timeout - immediately proceeds to next phase
+
+**Example**:
+
+For a task with `feature_id: FEAT-a3f8` that implements a write path:
+```
+Phase 1.7: Pre-Implementation Architecture Check ✓
+Phase 1.8: Feature Diagram Review
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 FEATURE DATA FLOW CONTEXT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This task implements: write path (AutoBuild._capture_turn_state → turn_states)
+Connected to: downstream read by load_turn_continuation_context()
+
+Review the full diagram: tasks/backlog/dark-mode/IMPLEMENTATION-GUIDE.md#data-flow
+
+Proceeding with task-work...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Phase 2.1: Library Context Gathering
+...
+```
+
+For a task without parent feature:
+```
+Phase 1.7: Pre-Implementation Architecture Check ✓
+Phase 2.1: Library Context Gathering
+...
+(Phase 1.8 skipped - no parent feature)
+```
 
 #### Phase 2.1: Library Context Gathering (NEW)
 

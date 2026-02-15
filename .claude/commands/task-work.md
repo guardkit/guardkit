@@ -76,6 +76,30 @@ Proceeding with task-work...
 - Automatically skipped for complexity < 7
 - Gracefully skipped if Graphiti unavailable
 
+### Step 1.6: Feature Diagram Review Prompt
+
+If the task has a `parent_review` or `feature_id` field in its frontmatter, check whether the parent feature has an IMPLEMENTATION-GUIDE.md with a data flow diagram. If it does, display a brief contextual note showing where this task fits in the feature's data flow.
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 FEATURE DATA FLOW CONTEXT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This task implements: [write path / read path / both]
+Connected to: [list upstream/downstream components]
+
+Review the full diagram: tasks/backlog/{feature-slug}/IMPLEMENTATION-GUIDE.md#data-flow
+
+Proceeding with task-work...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**Key Points:**
+- Non-blocking - no user action required
+- Informational only - helps developer understand this task's place in the feature
+- Automatically skipped if no parent feature or no diagram exists
+- Reads from IMPLEMENTATION-GUIDE.md in the feature's subfolder
+
 ### Step 2: Mode-Specific Implementation
 
 #### Standard Mode Flow

@@ -4,6 +4,16 @@ paths: config/graphiti.yaml, guardkit/graphiti/**/*.py, docs/**/graphiti*
 
 # Graphiti Knowledge Capture
 
+## ⚠️ Access Method: Python Client Library (NOT MCP)
+
+Graphiti is accessed via the `guardkit.knowledge` Python client library, connecting
+directly to FalkorDB. There is NO Graphiti MCP server configured for this project.
+
+- Do NOT check for MCP tools (`mcp__graphiti__*`) to determine availability
+- Use `python -m installer.core.commands.lib.graphiti_check --status` to check availability
+- Use the Python client imports (`from guardkit.knowledge import get_graphiti`) for direct access
+- Configuration: `.guardkit/graphiti.yaml` (FalkorDB at whitestocks:6379)
+
 GuardKit integrates with Graphiti for persistent knowledge capture across sessions. Build project understanding through guided Q&A and query stored knowledge via CLI.
 
 ## Interactive Capture

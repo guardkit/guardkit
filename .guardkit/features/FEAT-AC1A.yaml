@@ -1,0 +1,199 @@
+id: FEAT-AC1A
+name: Seam-First Testing Strategy
+description: Implement the Honeycomb testing model for GuardKit (seam-first for platform
+  tools) and Trophy model guidance for client app templates. Adds tests/seam/ directory
+  with cross-boundary verification tests for all 8 identified technology seams, updates
+  quality gates, creates ADR-SP-009, and adds testing guidance to client app templates.
+created: '2026-02-14T00:00:00Z'
+status: failed
+complexity: 6
+estimated_tasks: 11
+tasks:
+- id: TASK-SFT-001
+  name: Create tests/seam/ directory with conftest and pytest markers
+  file_path: tasks/backlog/seam-first-testing/TASK-SFT-001-scaffolding.md
+  complexity: 2
+  dependencies: []
+  status: failed
+  implementation_mode: task-work
+  estimated_minutes: 30
+  result:
+    total_turns: 0
+    final_decision: timeout
+    error: Task TASK-SFT-001 timed out after 2400s (40 min)
+  turns_completed: 0
+  current_turn: 0
+  started_at: '2026-02-14T09:55:45.160183'
+  completed_at: '2026-02-14T10:35:45.174520'
+- id: TASK-SFT-002
+  name: Write ADR-SP-009 Honeycomb Testing Model
+  file_path: tasks/backlog/seam-first-testing/TASK-SFT-002-adr.md
+  complexity: 2
+  dependencies: []
+  status: completed
+  implementation_mode: direct
+  estimated_minutes: 30
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-02-14T09:55:45.164383'
+  completed_at: '2026-02-14T10:35:45.179533'
+- id: TASK-SFT-003
+  name: Seam tests S3 - Orchestrator-to-module wiring
+  file_path: tasks/backlog/seam-first-testing/TASK-SFT-003-seam-s3-orchestrator.md
+  complexity: 5
+  dependencies:
+  - TASK-SFT-001
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 180
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
+- id: TASK-SFT-004
+  name: Seam tests S6 - AutoBuild-to-Coach wiring
+  file_path: tasks/backlog/seam-first-testing/TASK-SFT-004-seam-s6-autobuild-coach.md
+  complexity: 6
+  dependencies:
+  - TASK-SFT-001
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 240
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
+- id: TASK-SFT-005
+  name: Seam tests S8 - Quality gate to state transition wiring
+  file_path: tasks/backlog/seam-first-testing/TASK-SFT-005-seam-s8-quality-gate-state.md
+  complexity: 4
+  dependencies:
+  - TASK-SFT-001
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 120
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
+- id: TASK-SFT-006
+  name: Seam tests S2 - CLI-to-Python entry point wiring
+  file_path: tasks/backlog/seam-first-testing/TASK-SFT-006-seam-s2-cli-python.md
+  complexity: 4
+  dependencies:
+  - TASK-SFT-001
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 120
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
+- id: TASK-SFT-007
+  name: Seam tests S4 - Python-to-Graphiti persistence wiring
+  file_path: tasks/backlog/seam-first-testing/TASK-SFT-007-seam-s4-graphiti.md
+  complexity: 5
+  dependencies:
+  - TASK-SFT-001
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 180
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
+- id: TASK-SFT-008
+  name: Seam tests S7 - Task-work delegation to results writer
+  file_path: tasks/backlog/seam-first-testing/TASK-SFT-008-seam-s7-delegation.md
+  complexity: 4
+  dependencies:
+  - TASK-SFT-001
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 120
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
+- id: TASK-SFT-009
+  name: Update QualityGateProfile with seam test requirements
+  file_path: tasks/backlog/seam-first-testing/TASK-SFT-009-quality-gate-update.md
+  complexity: 4
+  dependencies:
+  - TASK-SFT-003
+  - TASK-SFT-004
+  - TASK-SFT-005
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 120
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
+- id: TASK-SFT-010
+  name: Add Trophy-model testing guidance to client app templates
+  file_path: tasks/backlog/seam-first-testing/TASK-SFT-010-template-guidance.md
+  complexity: 3
+  dependencies:
+  - TASK-SFT-002
+  status: pending
+  implementation_mode: direct
+  estimated_minutes: 60
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
+- id: TASK-SFT-011
+  name: Migrate existing seam tests from integration/ to seam/
+  file_path: tasks/backlog/seam-first-testing/TASK-SFT-011-migration.md
+  complexity: 3
+  dependencies:
+  - TASK-SFT-001
+  - TASK-SFT-003
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 60
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
+orchestration:
+  parallel_groups:
+  - - TASK-SFT-001
+    - TASK-SFT-002
+  - - TASK-SFT-003
+    - TASK-SFT-004
+    - TASK-SFT-005
+    - TASK-SFT-006
+    - TASK-SFT-007
+    - TASK-SFT-008
+  - - TASK-SFT-009
+    - TASK-SFT-010
+    - TASK-SFT-011
+  estimated_duration_minutes: 1260
+  recommended_parallel: 6
+execution:
+  started_at: '2026-02-14T09:55:44.286421'
+  completed_at: '2026-02-14T10:40:45.188835'
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A
+  total_turns: 1
+  tasks_completed: 1
+  tasks_failed: 1
+  current_wave: 1
+  completed_waves: []
+  last_updated: '2026-02-14T10:35:45.179538'
+  archived_at: null
+  archived_to: null

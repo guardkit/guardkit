@@ -236,29 +236,39 @@ class CoachVerifier:
 
         return discrepancies
 
-    def _run_tests(self) -> TestResult:
+    def _run_tests(self, test_paths: list[str] | None = None) -> TestResult:
         """Run tests in worktree and return result.
 
         Uses caching to avoid running tests multiple times in the same
-        verification session.
+        verification session. Caching is only used for unscoped runs.
+
+        Args:
+            test_paths: Optional list of test file/directory paths to scope
+                the test run. When provided, pytest runs only against these
+                paths instead of the entire worktree.
 
         Returns:
             TestResult with execution results
         """
-        # Return cached result if available
-        if self._cached_test_result is not None:
+        # Return cached result if available (only for unscoped runs)
+        if test_paths is None and self._cached_test_result is not None:
             return self._cached_test_result
+
+        # Build base pytest command
+        cmd = ["pytest", "--tb=no", "-q"]
+        if test_paths:
+            cmd.extend(test_paths)
 
         # Detect test framework and run appropriate command
         try:
             result = subprocess.run(
-                ["pytest", "--tb=no", "-q"],
+                cmd,
                 cwd=self.worktree_path,
                 capture_output=True,
                 text=True,
                 timeout=120,
             )
-            self._cached_test_result = TestResult(
+            test_result = TestResult(
                 passed=result.returncode == 0,
                 test_count=self._parse_pytest_count(result.stdout),
                 output=result.stdout,
@@ -266,35 +276,42 @@ class CoachVerifier:
         except FileNotFoundError:
             logger.warning("pytest not found, trying python -m pytest")
             try:
+                fallback_cmd = ["python", "-m", "pytest", "--tb=no", "-q"]
+                if test_paths:
+                    fallback_cmd.extend(test_paths)
                 result = subprocess.run(
-                    ["python", "-m", "pytest", "--tb=no", "-q"],
+                    fallback_cmd,
                     cwd=self.worktree_path,
                     capture_output=True,
                     text=True,
                     timeout=120,
                 )
-                self._cached_test_result = TestResult(
+                test_result = TestResult(
                     passed=result.returncode == 0,
                     test_count=self._parse_pytest_count(result.stdout),
                     output=result.stdout,
                 )
             except Exception as e:
                 logger.error(f"Failed to run tests: {e}")
-                self._cached_test_result = TestResult(
+                test_result = TestResult(
                     passed=False, test_count=0, output=str(e)
                 )
         except subprocess.TimeoutExpired:
             logger.error("Test execution timed out after 120s")
-            self._cached_test_result = TestResult(
+            test_result = TestResult(
                 passed=False, test_count=0, output="Test execution timed out"
             )
         except Exception as e:
             logger.error(f"Failed to run tests: {e}")
-            self._cached_test_result = TestResult(
+            test_result = TestResult(
                 passed=False, test_count=0, output=str(e)
             )
 
-        return self._cached_test_result
+        # Only cache unscoped runs
+        if test_paths is None:
+            self._cached_test_result = test_result
+
+        return test_result
 
     def _extract_test_count(self, summary: str) -> Optional[int]:
         """Extract test count from summary string.
