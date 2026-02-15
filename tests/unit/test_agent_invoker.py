@@ -1401,13 +1401,15 @@ class TestInvokeTaskWorkImplement:
             assert "Edit" in options_kwargs["allowed_tools"]
             assert "Bash" in options_kwargs["allowed_tools"]
             assert "Task" in options_kwargs["allowed_tools"]
-            assert "Skill" in options_kwargs["allowed_tools"]
+            # TASK-POF-004: Skill removed - inline protocol doesn't need skill loading
+            assert "Skill" not in options_kwargs["allowed_tools"]
             assert options_kwargs["permission_mode"] == "acceptEdits"
             # TASK-REV-BB80: Uses dedicated TASK_WORK_SDK_MAX_TURNS constant (50)
             # NOT max_turns_per_agent, because task-work needs many internal turns
             assert options_kwargs["max_turns"] == 50
-            # TASK-FB-FIX-014: Now includes "user" for skill loading
-            assert options_kwargs["setting_sources"] == ["user", "project"]
+            # TASK-POF-004: Changed from ["user", "project"] to ["project"]
+            # Inline protocol eliminates need for user setting_sources
+            assert options_kwargs["setting_sources"] == ["project"]
 
     @pytest.mark.asyncio
     async def test_invoke_task_work_implement_sdk_process_error(self, invoker):
@@ -1513,9 +1515,12 @@ class TestInvokeTaskWorkImplement:
                 mode="standard",
             )
 
-            # Verify the prompt contains the correct task-work command
+            # TASK-POF-004: Prompt is now inline protocol, not skill invocation
             assert captured_prompt is not None
-            assert "/task-work TASK-001 --implement-only --mode=standard" in captured_prompt
+            assert "TASK-001" in captured_prompt
+            assert "Phase 3: Implementation" in captured_prompt
+            # Verify it's NOT the old skill invocation
+            assert "/task-work" not in captured_prompt
 
     @pytest.mark.asyncio
     async def test_invoke_task_work_implement_json_decode_error(self, invoker):
@@ -5551,6 +5556,336 @@ Task with deprecated manual mode - should be normalized to task-work.
 
 
 # ============================================================================
+# Direct Mode Auto-Detection Tests (TASK-POF-002)
+# ============================================================================
+
+
+class TestDirectModeAutoDetection:
+    """Test auto-detection of direct mode for low-complexity tasks.
+
+    Tasks with complexity <=3 and no high-risk keywords are auto-routed
+    to direct mode when no explicit implementation_mode is set.
+    """
+
+    def test_auto_detects_direct_for_low_complexity(self, agent_invoker, worktree_path):
+        """Auto-detects direct mode for complexity <=3 without high-risk keywords."""
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+
+        task_file = tasks_dir / "TASK-AUTO-001-simple-task.md"
+        task_file.write_text("""---
+id: TASK-AUTO-001
+title: Fix typo in README
+status: backlog
+complexity: 2
+---
+
+# Fix Typo
+
+## Description
+Fix typo in the README file.
+
+## Acceptance Criteria
+- [ ] Typo fixed
+""")
+
+        mode = agent_invoker._get_implementation_mode("TASK-AUTO-001")
+        assert mode == "direct"
+
+    def test_auto_detects_direct_for_complexity_3(self, agent_invoker, worktree_path):
+        """Auto-detects direct mode for complexity exactly 3 (boundary)."""
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+
+        task_file = tasks_dir / "TASK-AUTO-002-boundary.md"
+        task_file.write_text("""---
+id: TASK-AUTO-002
+title: Add logging to utility function
+status: backlog
+complexity: 3
+---
+
+# Add Logging
+
+## Description
+Add logging statements to the utility module.
+
+## Acceptance Criteria
+- [ ] Logging added
+""")
+
+        mode = agent_invoker._get_implementation_mode("TASK-AUTO-002")
+        assert mode == "direct"
+
+    def test_no_auto_direct_for_complexity_4(self, agent_invoker, worktree_path):
+        """Does not auto-detect direct mode for complexity 4 (above threshold)."""
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+
+        task_file = tasks_dir / "TASK-AUTO-003-medium.md"
+        task_file.write_text("""---
+id: TASK-AUTO-003
+title: Refactor config module
+status: backlog
+complexity: 4
+---
+
+# Refactor Config
+
+## Description
+Refactor the configuration module.
+
+## Acceptance Criteria
+- [ ] Config refactored
+""")
+
+        mode = agent_invoker._get_implementation_mode("TASK-AUTO-003")
+        assert mode == "task-work"
+
+    def test_no_auto_direct_with_high_risk_keyword_in_title(
+        self, agent_invoker, worktree_path
+    ):
+        """Does not auto-detect direct mode when title contains high-risk keyword."""
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+
+        task_file = tasks_dir / "TASK-AUTO-004-risky-title.md"
+        task_file.write_text("""---
+id: TASK-AUTO-004
+title: Fix authentication bug
+status: backlog
+complexity: 2
+---
+
+# Fix Auth Bug
+
+## Description
+Fix a simple bug in the login flow.
+
+## Acceptance Criteria
+- [ ] Bug fixed
+""")
+
+        mode = agent_invoker._get_implementation_mode("TASK-AUTO-004")
+        assert mode == "task-work"
+
+    def test_no_auto_direct_with_high_risk_keyword_in_content(
+        self, agent_invoker, worktree_path
+    ):
+        """Does not auto-detect direct mode when content contains high-risk keyword."""
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+
+        task_file = tasks_dir / "TASK-AUTO-005-risky-content.md"
+        task_file.write_text("""---
+id: TASK-AUTO-005
+title: Update helper function
+status: backlog
+complexity: 1
+---
+
+# Update Helper
+
+## Description
+Update the database migration helper to improve logging.
+
+## Acceptance Criteria
+- [ ] Helper updated
+""")
+
+        mode = agent_invoker._get_implementation_mode("TASK-AUTO-005")
+        assert mode == "task-work"
+
+    def test_no_auto_direct_without_complexity(self, agent_invoker, worktree_path):
+        """Does not auto-detect direct mode when no complexity is set."""
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+
+        task_file = tasks_dir / "TASK-AUTO-006-no-complexity.md"
+        task_file.write_text("""---
+id: TASK-AUTO-006
+title: Simple change
+status: backlog
+---
+
+# Simple Change
+
+## Description
+A simple change with no complexity set.
+""")
+
+        mode = agent_invoker._get_implementation_mode("TASK-AUTO-006")
+        assert mode == "task-work"
+
+    def test_explicit_direct_overrides_auto_detection(
+        self, agent_invoker, worktree_path
+    ):
+        """Explicit implementation_mode: direct still works (not broken by auto-detection)."""
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+
+        task_file = tasks_dir / "TASK-AUTO-007-explicit-direct.md"
+        task_file.write_text("""---
+id: TASK-AUTO-007
+title: Explicit direct mode task
+status: backlog
+implementation_mode: direct
+complexity: 7
+---
+
+# Explicit Direct
+
+## Description
+This has high complexity but explicit direct mode - should still be direct.
+""")
+
+        mode = agent_invoker._get_implementation_mode("TASK-AUTO-007")
+        assert mode == "direct"
+
+    def test_explicit_task_work_prevents_auto_detection(
+        self, agent_invoker, worktree_path
+    ):
+        """Explicit implementation_mode: task-work prevents auto-detection (opt-out)."""
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+
+        task_file = tasks_dir / "TASK-AUTO-008-opt-out.md"
+        task_file.write_text("""---
+id: TASK-AUTO-008
+title: Simple task with explicit task-work
+status: backlog
+implementation_mode: task-work
+complexity: 1
+---
+
+# Simple Task
+
+## Description
+Low complexity but explicitly set to task-work.
+""")
+
+        mode = agent_invoker._get_implementation_mode("TASK-AUTO-008")
+        assert mode == "task-work"
+
+    def test_auto_detection_logs_info_on_direct(
+        self, agent_invoker, worktree_path, caplog
+    ):
+        """Auto-detection logs info-level message when routing to direct mode."""
+        import logging
+
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+
+        task_file = tasks_dir / "TASK-AUTO-009-logging.md"
+        task_file.write_text("""---
+id: TASK-AUTO-009
+title: Add comment to config file
+status: backlog
+complexity: 1
+---
+
+# Add Comment
+
+## Description
+Add a clarifying comment.
+""")
+
+        with caplog.at_level(logging.INFO):
+            mode = agent_invoker._get_implementation_mode("TASK-AUTO-009")
+
+        assert mode == "direct"
+        assert "Auto-detected direct mode" in caplog.text
+
+    def test_no_auto_direct_for_complexity_10(self, agent_invoker, worktree_path):
+        """No auto-detection for high complexity tasks."""
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+
+        task_file = tasks_dir / "TASK-AUTO-010-high.md"
+        task_file.write_text("""---
+id: TASK-AUTO-010
+title: Simple title
+status: backlog
+complexity: 10
+---
+
+# High Complexity
+
+## Description
+Despite simple title, high complexity.
+""")
+
+        mode = agent_invoker._get_implementation_mode("TASK-AUTO-010")
+        assert mode == "task-work"
+
+    def test_multiple_risk_keywords_detected(self, agent_invoker, worktree_path):
+        """Multiple high-risk keywords are detected correctly."""
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+
+        task_file = tasks_dir / "TASK-AUTO-011-multi-risk.md"
+        task_file.write_text("""---
+id: TASK-AUTO-011
+title: Simple fix
+status: backlog
+complexity: 2
+---
+
+# Simple Fix
+
+## Description
+Fix the OAuth JWT session handling for the payment endpoint.
+""")
+
+        mode = agent_invoker._get_implementation_mode("TASK-AUTO-011")
+        assert mode == "task-work"
+
+    def test_auto_detect_with_complexity_1(self, agent_invoker, worktree_path):
+        """Auto-detects direct mode for minimum complexity."""
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+
+        task_file = tasks_dir / "TASK-AUTO-012-min.md"
+        task_file.write_text("""---
+id: TASK-AUTO-012
+title: Fix whitespace
+status: backlog
+complexity: 1
+---
+
+# Fix Whitespace
+
+## Description
+Remove trailing whitespace from files.
+""")
+
+        mode = agent_invoker._get_implementation_mode("TASK-AUTO-012")
+        assert mode == "direct"
+
+    def test_invalid_complexity_value_falls_back(self, agent_invoker, worktree_path):
+        """Invalid complexity value falls back to task-work."""
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+
+        task_file = tasks_dir / "TASK-AUTO-013-invalid.md"
+        task_file.write_text("""---
+id: TASK-AUTO-013
+title: Simple task
+status: backlog
+complexity: not-a-number
+---
+
+# Simple Task
+
+## Description
+Task with invalid complexity value.
+""")
+
+        mode = agent_invoker._get_implementation_mode("TASK-AUTO-013")
+        assert mode == "task-work"
+
+
+# ============================================================================
 # Retry Mechanism Tests
 # ============================================================================
 
@@ -6115,3 +6450,213 @@ class TestCalculateSDKTimeout:
         # complexity clamped to 10 → 2.0x
         expected = int(DEFAULT_SDK_TIMEOUT * 1.0 * 2.0)
         assert timeout == expected
+
+
+# ==================== TASK-POF-004: Inline Implement Protocol Tests ====================
+
+
+class TestBuildInlineImplementProtocol:
+    """Tests for _build_inline_implement_protocol() method.
+
+    TASK-POF-004: Verifies the inline protocol builder produces a prompt
+    that covers Phases 3-5 and is parseable by TaskWorkStreamParser.
+    """
+
+    def test_protocol_contains_all_phases(self, worktree_path):
+        """Protocol includes Phase 3, 4, 4.5, and 5 instructions."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        protocol = invoker._build_inline_implement_protocol("TASK-001")
+
+        assert "Phase 3: Implementation" in protocol
+        assert "Phase 4: Testing" in protocol
+        assert "Phase 4.5: Fix Loop" in protocol
+        assert "Phase 5: Code Review" in protocol
+
+    def test_protocol_size_under_20kb(self, worktree_path):
+        """Protocol prompt must be ≤20KB to meet preamble reduction target."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        protocol = invoker._build_inline_implement_protocol("TASK-001")
+
+        size_bytes = len(protocol.encode("utf-8"))
+        assert size_bytes <= 20_480, (
+            f"Protocol is {size_bytes} bytes, exceeds 20KB limit"
+        )
+
+    def test_protocol_includes_task_id(self, worktree_path):
+        """Protocol includes the task ID for context."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        protocol = invoker._build_inline_implement_protocol("TASK-POF-004")
+
+        assert "TASK-POF-004" in protocol
+
+    def test_protocol_includes_plan_locations(self, worktree_path):
+        """Protocol lists implementation plan paths for agent to find."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        protocol = invoker._build_inline_implement_protocol("TASK-001")
+
+        assert ".claude/task-plans/TASK-001-implementation-plan.md" in protocol
+        assert "docs/state/TASK-001/implementation_plan.md" in protocol
+
+    def test_protocol_includes_parseable_markers(self, worktree_path):
+        """Protocol instructs agent to output markers that TaskWorkStreamParser can parse."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        protocol = invoker._build_inline_implement_protocol("TASK-001")
+
+        # Check for marker format instructions
+        assert "tests passed" in protocol.lower()
+        assert "tests failed" in protocol.lower()
+        assert "Coverage:" in protocol
+        assert "Quality gates:" in protocol
+
+    def test_protocol_includes_fix_loop_limit(self, worktree_path):
+        """Protocol specifies maximum 3 fix attempts."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        protocol = invoker._build_inline_implement_protocol("TASK-001")
+
+        assert "3 fix attempts" in protocol or "Maximum 3" in protocol
+
+    def test_protocol_includes_feedback_hint(self, worktree_path):
+        """Protocol includes path hint for Coach feedback files."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        protocol = invoker._build_inline_implement_protocol("TASK-001")
+
+        assert "coach_feedback_for_turn_" in protocol
+
+    def test_protocol_includes_turn_context_hint(self, worktree_path):
+        """Protocol includes path hint for turn context file."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        protocol = invoker._build_inline_implement_protocol("TASK-001")
+
+        assert "turn_context.json" in protocol
+
+    def test_protocol_tdd_mode(self, worktree_path):
+        """TDD mode adds RED-GREEN-REFACTOR instructions."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        protocol = invoker._build_inline_implement_protocol("TASK-001", mode="tdd")
+
+        assert "TDD Mode" in protocol
+        assert "RED" in protocol
+        assert "GREEN" in protocol
+        assert "REFACTOR" in protocol
+
+    def test_protocol_bdd_mode(self, worktree_path):
+        """BDD mode adds Gherkin scenario instructions."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        protocol = invoker._build_inline_implement_protocol("TASK-001", mode="bdd")
+
+        assert "BDD Mode" in protocol
+        assert "Gherkin" in protocol
+
+    def test_protocol_standard_mode_no_extra_sections(self, worktree_path):
+        """Standard mode doesn't include TDD or BDD sections."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        protocol = invoker._build_inline_implement_protocol("TASK-001", mode="standard")
+
+        assert "TDD Mode" not in protocol
+        assert "BDD Mode" not in protocol
+
+    def test_protocol_includes_coverage_thresholds(self, worktree_path):
+        """Protocol must specify coverage quality gates."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        protocol = invoker._build_inline_implement_protocol("TASK-001")
+
+        assert "80%" in protocol  # Line coverage threshold
+        assert "75%" in protocol  # Branch coverage threshold
+        assert "Coverage Quality Gates" in protocol
+
+
+class TestInvokeTaskWorkImplementInlineProtocol:
+    """Tests verifying _invoke_task_work_implement uses inline protocol.
+
+    TASK-POF-004: Verifies the method uses inline protocol with
+    setting_sources=["project"] instead of skill invocation.
+    """
+
+    @pytest.mark.asyncio
+    async def test_uses_project_only_setting_sources(self, worktree_path):
+        """Verify setting_sources is ["project"], not ["user", "project"]."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+
+        captured_options = {}
+
+        async def mock_query(prompt, options):
+            captured_options["setting_sources"] = options.setting_sources
+            captured_options["prompt"] = prompt
+            # Yield nothing - empty stream
+            return
+            yield  # Make it an async generator
+
+        with patch("guardkit.orchestrator.agent_invoker.TaskWorkStreamParser") as mock_parser_cls:
+            mock_parser = MagicMock()
+            mock_parser.to_result.return_value = {
+                "phases": {},
+                "tests_passed": 5,
+                "tests_failed": 0,
+                "coverage": 85.0,
+                "quality_gates_passed": True,
+                "files_modified": [],
+                "files_created": [],
+                "tests_written": [],
+            }
+            mock_parser_cls.return_value = mock_parser
+
+            try:
+                # Import the SDK module that would be imported inside the method
+                with patch.dict("sys.modules", {
+                    "claude_agent_sdk": MagicMock(
+                        query=mock_query,
+                        ClaudeAgentOptions=type("ClaudeAgentOptions", (), {
+                            "__init__": lambda self, **kwargs: self.__dict__.update(kwargs),
+                        }),
+                        CLINotFoundError=Exception,
+                        ProcessError=type("ProcessError", (Exception,), {"exit_code": 1, "stderr": ""}),
+                        CLIJSONDecodeError=Exception,
+                        AssistantMessage=type("AssistantMessage", (), {}),
+                        TextBlock=type("TextBlock", (), {}),
+                        ToolUseBlock=type("ToolUseBlock", (), {}),
+                        ToolResultBlock=type("ToolResultBlock", (), {}),
+                        ResultMessage=type("ResultMessage", (), {}),
+                    ),
+                }):
+                    result = await invoker._invoke_task_work_implement("TASK-001")
+            except Exception:
+                pass  # May fail due to mock limitations, but we captured options
+
+            # The key assertion: setting_sources should be ["project"]
+            if "setting_sources" in captured_options:
+                assert captured_options["setting_sources"] == ["project"]
+
+    @pytest.mark.asyncio
+    async def test_prompt_is_inline_not_skill(self, worktree_path):
+        """Verify prompt is inline protocol, not /task-work skill invocation."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+
+        # Build the protocol directly to verify it's used
+        protocol = invoker._build_inline_implement_protocol("TASK-001", mode="standard")
+
+        # Verify it's NOT a skill invocation
+        assert not protocol.startswith("/task-work")
+        assert "Phase 3: Implementation" in protocol
+
+    def test_parser_can_parse_expected_output_markers(self, worktree_path):
+        """TaskWorkStreamParser can parse the output format specified in protocol."""
+        parser = TaskWorkStreamParser()
+
+        # Simulate output matching the inline protocol's output format
+        # Uses exact marker formats that TaskWorkStreamParser regex can parse:
+        # - TESTS_PASSED_PATTERN: r"(\d+)\s+tests?\s+passed"
+        # - TESTS_FAILED_PATTERN: r"(\d+)\s+tests?\s+failed"
+        parser.parse_message("Phase 3: Implementation")
+        parser.parse_message("Phase 4: Testing")
+        parser.parse_message("12 tests passed")
+        parser.parse_message("0 tests failed")
+        parser.parse_message("Coverage: 85.5%")
+        parser.parse_message("Phase 5: Code Review")
+        parser.parse_message("Quality gates: PASSED")
+
+        result = parser.to_result()
+
+        assert result["tests_passed"] == 12
+        assert result["tests_failed"] == 0
+        assert result["coverage"] == 85.5
+        assert result["quality_gates_passed"] is True

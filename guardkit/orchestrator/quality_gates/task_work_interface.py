@@ -1,19 +1,20 @@
 """
-Interface for invoking task-work from feature-build.
+Interface for invoking task-work design phases from feature-build.
 
-This module provides a clean interface for delegating to task-work phases
-from the AutoBuild feature-build workflow, enabling 100% code reuse of
-existing quality gates.
+This module provides a clean interface for executing design phases (1.5-2.8)
+from the AutoBuild feature-build workflow, enabling quality gate reuse.
 
 Architecture:
-    Implements Option D (per TASK-REV-0414): Thin delegation layer that
-    invokes task-work with appropriate flags rather than reimplementing
-    the design phases.
+    TASK-POF-003: Uses an inline execution protocol sent directly to the
+    Claude Agent SDK, replacing the previous /task-work --design-only skill
+    invocation. This eliminates ~840KB of unnecessary context loading per
+    session by using setting_sources=["project"] instead of ["user", "project"].
 
-SDK Integration (TASK-FB-FIX-001):
-    The execute_design_phase() method invokes /task-work --design-only via
-    Claude Agent SDK to actually execute design phases (1.6-2.8) rather than
-    returning mock data. This ensures implementation plans are generated.
+    The inline protocol instructs the SDK agent to execute Phases 1.5
+    (task loading), 2 (planning), 2.5B (arch review), 2.7 (complexity),
+    and 2.8 (checkpoint) directly.
+
+    Subprocess fallback still uses the guardkit CLI with --design-only flag.
 
 Example:
     >>> from pathlib import Path
@@ -82,28 +83,28 @@ class DesignPhaseResult:
 
 class TaskWorkInterface:
     """
-    Interface to invoke task-work phases from feature-build.
+    Interface to execute design phases from feature-build.
 
-    Enables feature-build to reuse task-work quality gates without
-    reimplementation. This thin delegation layer invokes task-work
-    with appropriate flags and extracts results.
+    Enables feature-build to reuse task-work quality gates via an inline
+    execution protocol sent to the Claude Agent SDK.
 
-    SDK Integration (TASK-FB-FIX-001):
-        Uses Claude Agent SDK to invoke /task-work --design-only, executing
-        the full design phases (1.6-2.8) including:
-        - Phase 1.6: Clarifying Questions
+    TASK-POF-003: Uses inline protocol instead of /task-work skill invocation.
+    This reduces context loading from ~840KB to ~78KB per session by using
+    setting_sources=["project"] and eliminating user command loading.
+
+    Design phases executed:
+        - Phase 1.5: Task Loading
         - Phase 2: Implementation Planning
-        - Phase 2.5A: Pattern Suggestions
-        - Phase 2.5B: Architectural Review
+        - Phase 2.5B: Architectural Review (optional)
         - Phase 2.7: Complexity Evaluation
-        - Phase 2.8: Human Checkpoint
+        - Phase 2.8: Design Checkpoint (auto-approved)
 
     Attributes
     ----------
     worktree_path : Path
         Path to the worktree where task-work should execute
     sdk_timeout_seconds : int
-        Timeout for SDK invocations (default: 600s)
+        Timeout for SDK invocations (default from DEFAULT_SDK_TIMEOUT)
 
     Example
     -------
@@ -140,15 +141,15 @@ class TaskWorkInterface:
         options: Dict[str, Any],
     ) -> DesignPhaseResult:
         """
-        Execute task-work --design-only phases via Claude Agent SDK.
+        Execute design phases via Claude Agent SDK with inline protocol.
 
-        Invokes /task-work {task_id} --design-only via SDK to execute:
-        - Phase 1.6: Clarifying Questions
+        Sends an inline execution protocol to the SDK that instructs the
+        agent to execute Phases 1.5-2.8 directly (TASK-POF-003):
+        - Phase 1.5: Task Loading
         - Phase 2: Implementation Planning
-        - Phase 2.5A: Pattern Suggestions
-        - Phase 2.5B: Architectural Review
+        - Phase 2.5B: Architectural Review (optional)
         - Phase 2.7: Complexity Evaluation
-        - Phase 2.8: Human Checkpoint
+        - Phase 2.8: Design Checkpoint (auto-approved)
 
         Parameters
         ----------
@@ -214,25 +215,23 @@ class TaskWorkInterface:
         """
         args = [task_id, "--design-only"]
 
-        # Pass through clarification flags
-        if options.get("no_questions"):
-            args.append("--no-questions")
-        if options.get("with_questions"):
-            args.append("--with-questions")
-        if answers := options.get("answers"):
-            args.extend(["--answers", answers])
-
-        # Pass through documentation level
-        if docs := options.get("docs"):
-            args.append(f"--docs={docs}")
-
-        # Pass through defaults flag
-        if options.get("defaults"):
-            args.append("--defaults")
-
-        # Pass through skip_arch_review flag
-        if options.get("skip_arch_review"):
-            args.append("--skip-arch-review")
+        # Composite flag: --autobuild-mode bundles autonomous execution optimizations
+        if options.get("autobuild_mode"):
+            args.append("--autobuild-mode")
+        else:
+            # Pass through individual flags when not using composite mode
+            if options.get("no_questions"):
+                args.append("--no-questions")
+            if options.get("with_questions"):
+                args.append("--with-questions")
+            if answers := options.get("answers"):
+                args.extend(["--answers", answers])
+            if docs := options.get("docs"):
+                args.append(f"--docs={docs}")
+            if options.get("defaults"):
+                args.append("--defaults")
+            if options.get("skip_arch_review"):
+                args.append("--skip-arch-review")
 
         return args
 
@@ -242,10 +241,14 @@ class TaskWorkInterface:
         options: Dict[str, Any],
     ) -> str:
         """
-        Build the prompt for SDK invocation of /task-work --design-only.
+        Build inline design phase execution protocol for SDK invocation.
 
-        Constructs the slash command with all appropriate flags based on
-        the provided options. This prompt is sent directly to the SDK.
+        Instead of invoking /task-work --design-only (which requires loading
+        all user commands ~839KB), this returns a self-contained inline protocol
+        (~15KB) that instructs the SDK agent to execute Phases 1.5-2.8 directly.
+
+        TASK-POF-003: Replaced skill invocation with inline protocol to eliminate
+        ~840KB of unnecessary context loading per session.
 
         Parameters
         ----------
@@ -253,43 +256,24 @@ class TaskWorkInterface:
             Task identifier (e.g., "TASK-001")
         options : Dict[str, Any]
             Options to pass through:
-            - no_questions: Skip Phase 1.6 clarification
-            - with_questions: Force Phase 1.6 clarification
-            - answers: Inline answers for automation
-            - docs: Documentation level
-            - defaults: Use default answers
+            - autobuild_mode: Use autonomous optimizations
+            - skip_arch_review: Skip Phase 2.5B for simple tasks
+            - docs: Documentation level (minimal/standard/comprehensive)
+            - no_questions: Skip clarification (implicit in inline protocol)
+            - with_questions: Force clarification (not used in inline protocol)
+            - answers: Inline answers (not used in inline protocol)
+            - defaults: Use defaults (not used in inline protocol)
 
         Returns
         -------
         str
-            Complete prompt string (e.g., "/task-work TASK-001 --design-only --no-questions")
+            Complete inline protocol string for SDK invocation
         """
-        parts = [f"/task-work {task_id} --design-only"]
+        from guardkit.orchestrator.quality_gates.design_protocol import (
+            build_inline_design_protocol,
+        )
 
-        # SDK mode: Auto-approve checkpoints (no human present)
-        parts.append("--auto-approve-checkpoint")
-
-        # Add clarification flags
-        if options.get("no_questions"):
-            parts.append("--no-questions")
-        elif options.get("with_questions"):
-            parts.append("--with-questions")
-        elif options.get("defaults"):
-            parts.append("--defaults")
-
-        # Add inline answers if provided
-        if answers := options.get("answers"):
-            parts.append(f'--answers="{answers}"')
-
-        # Add documentation level if specified
-        if docs := options.get("docs"):
-            parts.append(f"--docs={docs}")
-
-        # Add skip_arch_review flag if specified
-        if options.get("skip_arch_review"):
-            parts.append("--skip-arch-review")
-
-        return " ".join(parts)
+        return build_inline_design_protocol(task_id, options, self.worktree_path)
 
     async def _execute_via_sdk(self, prompt: str) -> Dict[str, Any]:
         """
@@ -352,12 +336,12 @@ class TaskWorkInterface:
         try:
             options = ClaudeAgentOptions(
                 cwd=str(self.worktree_path),
-                allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task", "Skill"],
+                allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
                 permission_mode="acceptEdits",
-                max_turns=50,  # Design phases can take many turns
-                # TASK-FB-FIX-006: Include "user" to load skills from ~/.claude/commands/
-                # Without "user", the SDK can't find /task-work skill
-                setting_sources=["user", "project"],
+                max_turns=25,  # Inline protocol is simpler than full task-work
+                # TASK-POF-003: Use project-only context (~78KB) instead of user+project (~840KB)
+                # Inline protocol replaces /task-work skill invocation, so user skills not needed
+                setting_sources=["project"],
             )
 
             # Extract task_id from prompt for heartbeat logging

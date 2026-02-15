@@ -1998,41 +1998,52 @@ Follow the decision format specified in your agent definition.
             return None
 
     def _get_implementation_mode(self, task_id: str) -> str:
-        """Determine implementation mode from task frontmatter.
+        """Determine implementation mode from task frontmatter or auto-detection.
 
-        Checks the task file for an `implementation_mode` field in the frontmatter.
-        Used to route direct mode tasks to the legacy SDK path (bypassing task-work
-        delegation which requires an implementation plan).
+        Checks the task file for an explicit `implementation_mode` field in the
+        frontmatter first. If no explicit mode is set, auto-detects eligibility
+        for direct mode based on complexity (<=3) and absence of high-risk keywords.
+
+        Direct mode avoids the task-work preamble overhead by sending a custom
+        prompt directly to the SDK with project-only context.
 
         Args:
             task_id: Task identifier (e.g., "TASK-001")
 
         Returns:
-            Implementation mode: "direct" or "task-work" (default for all other values)
+            Implementation mode: "direct" or "task-work"
 
         Note:
             Import is inside method to avoid circular dependency with TaskLoader.
             Errors are logged but don't fail - defaults to "task-work" behavior.
             Unknown modes (including legacy "manual" mode) are normalized to "task-work".
+            Auto-detection only applies when no explicit implementation_mode is set.
         """
         try:
             from guardkit.tasks.task_loader import TaskLoader, TaskNotFoundError
 
             task_data = TaskLoader.load_task(task_id, self.worktree_path)
-            impl_mode = task_data.get("frontmatter", {}).get("implementation_mode")
+            frontmatter = task_data.get("frontmatter", {})
+            impl_mode = frontmatter.get("implementation_mode")
 
+            # Explicit frontmatter overrides always take priority
             if impl_mode == "direct":
-                logger.debug(f"[{task_id}] Detected implementation_mode: direct")
+                logger.debug(f"[{task_id}] Explicit implementation_mode: direct")
                 return "direct"
 
-            if impl_mode and impl_mode != "task-work":
+            if impl_mode == "task-work":
+                logger.debug(f"[{task_id}] Explicit implementation_mode: task-work")
+                return "task-work"
+
+            if impl_mode:
                 logger.debug(
                     f"[{task_id}] Unknown implementation_mode '{impl_mode}', "
                     "normalizing to task-work"
                 )
+                return "task-work"
 
-            logger.debug(f"[{task_id}] Using implementation_mode: task-work")
-            return "task-work"
+            # No explicit mode - auto-detect based on complexity and risk
+            return self._auto_detect_direct_mode(task_id, task_data)
 
         except Exception as e:
             # Import inside to avoid circular dependency issues at module level
@@ -2044,6 +2055,66 @@ Follow the decision format specified in your agent definition.
                 logger.warning(f"[{task_id}] Error loading task for mode detection: {e}")
 
             return "task-work"
+
+    def _auto_detect_direct_mode(self, task_id: str, task_data: dict) -> str:
+        """Auto-detect if a task is eligible for direct mode.
+
+        Tasks with complexity <=3 and no high-risk keywords in title or
+        description are routed to direct mode to avoid preamble overhead.
+
+        Args:
+            task_id: Task identifier for logging
+            task_data: Parsed task data from TaskLoader
+
+        Returns:
+            "direct" if eligible, "task-work" otherwise
+        """
+        from guardkit.orchestrator.intensity_detector import HIGH_RISK_KEYWORDS
+
+        frontmatter = task_data.get("frontmatter", {})
+        complexity = frontmatter.get("complexity")
+
+        # Require explicit complexity score for auto-detection
+        if complexity is None:
+            logger.debug(
+                f"[{task_id}] No complexity score in frontmatter, "
+                "skipping auto-detection (task-work)"
+            )
+            return "task-work"
+
+        try:
+            complexity = int(complexity)
+        except (ValueError, TypeError):
+            logger.debug(
+                f"[{task_id}] Invalid complexity value '{complexity}', "
+                "skipping auto-detection (task-work)"
+            )
+            return "task-work"
+
+        if complexity > 3:
+            logger.debug(
+                f"[{task_id}] Complexity {complexity} > 3, not eligible "
+                "for auto-direct mode (task-work)"
+            )
+            return "task-work"
+
+        # Check for high-risk keywords in title and content
+        title = frontmatter.get("title", "")
+        content = task_data.get("content", "")
+        searchable_text = f"{title} {content}".lower()
+
+        if any(keyword in searchable_text for keyword in HIGH_RISK_KEYWORDS):
+            logger.debug(
+                f"[{task_id}] High-risk keywords detected in task, "
+                "not eligible for auto-direct mode (task-work)"
+            )
+            return "task-work"
+
+        logger.info(
+            f"[{task_id}] Auto-detected direct mode "
+            f"(complexity={complexity}, no high-risk keywords)"
+        )
+        return "direct"
 
     def _calculate_sdk_timeout(self, task_id: str) -> int:
         """Calculate dynamic SDK timeout based on task characteristics.
@@ -2511,23 +2582,190 @@ Follow the decision format specified in your agent definition.
     # Task-Work Delegation Methods
     # =========================================================================
 
+    def _build_inline_implement_protocol(
+        self,
+        task_id: str,
+        mode: str = "standard",
+    ) -> str:
+        """Build inline implementation protocol prompt for Phases 3-5.
+
+        TASK-POF-004: Replaces /task-work skill invocation with an inline
+        protocol to eliminate ~839KB preamble overhead per Player turn.
+        The inline prompt covers Phases 3 (Implementation), 4 (Testing),
+        4.5 (Fix Loop), and 5 (Code Review).
+
+        Args:
+            task_id: Task identifier (e.g., "TASK-001")
+            mode: Development mode ("standard", "tdd", or "bdd")
+
+        Returns:
+            Inline protocol prompt string (target: ≤20KB)
+        """
+        # Build plan locations list for the prompt
+        plan_paths = TaskArtifactPaths.implementation_plan_paths(
+            task_id, self.worktree_path
+        )
+        plan_locations = "\n".join(f"   - {p}" for p in plan_paths)
+
+        # Build feedback file path hint
+        autobuild_dir = f".guardkit/autobuild/{task_id}"
+        feedback_hint = (
+            f"Check for Coach feedback at: {autobuild_dir}/coach_feedback_for_turn_*.json\n"
+            "If feedback exists, address ALL must_fix items before proceeding."
+        )
+
+        # Build turn context hint
+        turn_context_hint = (
+            f"Check for turn context at: {autobuild_dir}/turn_context.json\n"
+            "If approaching_limit is true and you cannot complete the task,\n"
+            "include a 'blocked_report' field in your player report."
+        )
+
+        # Mode-specific instructions
+        mode_instructions = ""
+        if mode == "tdd":
+            mode_instructions = """
+### TDD Mode
+Follow RED-GREEN-REFACTOR cycle:
+1. Write failing tests first (RED)
+2. Write minimal implementation to pass tests (GREEN)
+3. Refactor for quality while keeping tests green (REFACTOR)
+"""
+        elif mode == "bdd":
+            mode_instructions = """
+### BDD Mode
+Implementation must make BDD step definitions pass:
+1. Read the Gherkin scenarios linked in the task
+2. Implement code to satisfy Given/When/Then steps
+3. Run BDD tests to verify scenarios pass
+"""
+
+        protocol = f"""You are executing the implementation phase (Phases 3-5) for {task_id}.
+
+## Context
+
+- Task ID: {task_id}
+- Mode: {mode}
+- Working directory: {self.worktree_path}
+
+{feedback_hint}
+
+{turn_context_hint}
+{mode_instructions}
+## Phase 3: Implementation
+
+1. **Read the implementation plan** from one of these locations (check in order):
+{plan_locations}
+
+2. **Implement the code changes** described in the plan:
+   - Create new files as specified
+   - Modify existing files as specified
+   - Follow the architecture and patterns from the plan
+   - Write production-quality code with proper error handling
+
+3. **Track your changes** - note every file you create or modify.
+
+## Phase 4: Testing
+
+1. **Verify compilation/build** first - ensure no syntax errors:
+   - Python: `python -m py_compile <file>` or import check
+   - TypeScript: `npx tsc --noEmit`
+   - .NET: `dotnet build`
+
+2. **Run the test suite**:
+   - Python: `pytest tests/ -v --tb=short`
+   - TypeScript: `npm test`
+   - .NET: `dotnet test`
+
+3. **Measure coverage** (if available):
+   - Python: `pytest tests/ -v --cov --cov-report=term`
+   - TypeScript: `npm test -- --coverage`
+
+4. **Coverage Quality Gates**:
+   - Line coverage MUST be >=80%
+   - Branch coverage MUST be >=75%
+   - If below threshold, write additional tests before proceeding
+
+5. **Report results clearly** in your output using these exact formats:
+   - `Phase 3: Implementation` (when you start implementing)
+   - `Phase 4: Testing` (when you start testing)
+   - `X tests passed` and `Y tests failed` (test counts)
+   - `Coverage: Z.Z%` (coverage percentage)
+   - `Phase 5: Code Review` (when you start review)
+   - `Quality gates: PASSED` or `Quality gates: FAILED`
+
+## Phase 4.5: Fix Loop
+
+If tests fail after Phase 4:
+
+1. Analyze the failure output carefully
+2. Make targeted fixes to resolve failures
+3. Re-run the full test suite
+4. **Maximum 3 fix attempts** - if still failing after 3 attempts, report failure
+5. Do NOT skip, comment out, or ignore failing tests
+6. Do NOT modify test assertions unless they are provably incorrect
+
+Quality Gate: ALL tests MUST pass (0 failures) before proceeding to Phase 5.
+
+## Phase 5: Code Review (Lightweight)
+
+1. Check for obvious code quality issues:
+   - Unused imports
+   - Missing error handling on external calls
+   - Hardcoded secrets or credentials
+2. Run linter if available:
+   - Python: `ruff check .` or `flake8`
+   - TypeScript: `npm run lint`
+3. Note any issues found
+
+## Output Format
+
+After completing all phases, output a clear summary:
+
+```
+Phase 3: Implementation
+  Files created: [list]
+  Files modified: [list]
+
+Phase 4: Testing
+  X tests passed, Y tests failed
+  Coverage: Z.Z%
+
+Phase 5: Code Review
+  [any issues or "No issues found"]
+
+Quality gates: PASSED
+```
+
+This summary will be parsed automatically. Use the exact marker formats shown above.
+
+## Important Notes
+
+- Focus on implementing what the plan specifies - no scope creep
+- Run tests after EVERY significant change
+- If a test framework is not set up, set it up first
+- All file paths should be relative to the working directory
+- Write clean, well-documented code following project conventions
+"""
+        return protocol
+
     async def _invoke_task_work_implement(
         self,
         task_id: str,
         mode: str = "standard",
         documentation_level: str = "minimal",
     ) -> TaskWorkResult:
-        """Execute task-work --implement-only via SDK query() in worktree context.
+        """Execute Phases 3-5 (implement-only) via SDK with inline protocol.
 
-        Delegates Player implementation to the full task-work command via
-        Claude Agent SDK query(). This uses the complete subagent infrastructure for:
-        - Implementation planning
-        - Architectural review
-        - Testing
-        - Code review
+        TASK-POF-004: Uses inline protocol instead of /task-work skill delegation
+        to eliminate ~839KB preamble overhead. The inline protocol (~15KB) covers:
+        - Phase 3: Implementation (read plan, write code)
+        - Phase 4: Testing (compile, run tests, measure coverage)
+        - Phase 4.5: Fix Loop (auto-fix failures, max 3 attempts)
+        - Phase 5: Code Review (lint, basic quality checks)
 
-        The SDK invocation pattern follows _invoke_with_role() but invokes
-        the /task-work slash command directly instead of using a custom prompt.
+        Uses setting_sources=["project"] instead of ["user", "project"],
+        reducing context loading from ~1,078KB to ~93KB per Player turn.
 
         Args:
             task_id: Task identifier (e.g., "TASK-001")
@@ -2542,10 +2780,12 @@ Follow the decision format specified in your agent definition.
         Raises:
             SDKTimeoutError: If execution exceeds timeout
         """
-        prompt = f"/task-work {task_id} --implement-only --mode={mode}"
+        # TASK-POF-004: Build inline protocol instead of skill invocation
+        prompt = self._build_inline_implement_protocol(task_id, mode)
 
-        logger.info(f"Executing via SDK: {prompt}")
+        logger.info(f"Executing inline implement protocol for {task_id} (mode={mode})")
         logger.info(f"Working directory: {self.worktree_path}")
+        logger.info(f"Inline protocol size: {len(prompt)} bytes")
 
         try:
             from claude_agent_sdk import (
@@ -2583,15 +2823,16 @@ Follow the decision format specified in your agent definition.
         try:
             options = ClaudeAgentOptions(
                 cwd=str(self.worktree_path),
-                allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task", "Skill"],
+                # TASK-POF-004: Removed "Skill" - inline protocol doesn't invoke skills
+                allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task"],
                 permission_mode="acceptEdits",
                 # TASK-REV-BB80: Use dedicated constant, NOT self.max_turns_per_agent
                 # max_turns_per_agent is for adversarial turns (default: 5)
                 # task-work needs ~50 internal turns for all phases
                 max_turns=TASK_WORK_SDK_MAX_TURNS,
-                # TASK-FB-FIX-014: Include "user" to load skills from ~/.claude/commands/
-                # Without "user", the SDK can't find /task-work skill
-                setting_sources=["user", "project"],
+                # TASK-POF-004: Use "project" only - inline protocol replaces
+                # skill invocation, no need to load user commands (~839KB savings)
+                setting_sources=["project"],
             )
 
             # TASK-FBSDK-011: Log SDK configuration before invocation

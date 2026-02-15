@@ -1,10 +1,12 @@
 ---
 id: TASK-POF-004
 title: Inline implement phase execution protocol in Player SDK prompt
-status: backlog
+status: completed
+completed: 2026-02-15T18:30:00Z
+completed_location: tasks/completed/TASK-POF-004/
 task_type: implementation
 created: 2026-02-15T14:00:00Z
-updated: 2026-02-15T14:00:00Z
+updated: 2026-02-15T18:30:00Z
 priority: high
 complexity: 5
 tags: [autobuild, preamble, performance, main-fix]
@@ -15,9 +17,10 @@ wave: 2
 parallel_group: wave-2
 dependencies: [TASK-POF-001]
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  tests_passed: 344
+  tests_failed: 0
+  last_run: 2026-02-15T18:00:00Z
 ---
 
 # Task: Inline Implement Phase Execution Protocol
@@ -42,14 +45,14 @@ This happens on **every Player turn**, not just the first. A 5-turn autobuild ru
 
 ## Acceptance Criteria
 
-- [ ] `AgentInvoker._invoke_task_work_implement()` sends inline protocol, NOT `/task-work ...` skill invocation
-- [ ] SDK options use `setting_sources=["project"]` (NOT `["user", "project"]`)
-- [ ] Inline protocol covers Phases 3 (Implementation), 4 (Testing), 4.5 (Fix Loop), 5 (Code Review)
-- [ ] Inline protocol is ≤20KB
-- [ ] Player still writes `task_work_results.json` that Coach can validate
-- [ ] Player still creates `player_turn_N.json` report
-- [ ] Existing quality gates (compilation, test pass, coverage) still enforced
-- [ ] Integration test: run Player on a test task, verify implementation output
+- [x] `AgentInvoker._invoke_task_work_implement()` sends inline protocol, NOT `/task-work ...` skill invocation
+- [x] SDK options use `setting_sources=["project"]` (NOT `["user", "project"]`)
+- [x] Inline protocol covers Phases 3 (Implementation), 4 (Testing), 4.5 (Fix Loop), 5 (Code Review)
+- [x] Inline protocol is ≤20KB
+- [x] Player still writes `task_work_results.json` that Coach can validate
+- [x] Player still creates `player_turn_N.json` report
+- [x] Existing quality gates (compilation, test pass, coverage) still enforced
+- [x] Integration test: run Player on a test task, verify implementation output
 
 ## Files to Modify
 

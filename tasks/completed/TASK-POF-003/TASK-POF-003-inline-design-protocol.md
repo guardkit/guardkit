@@ -1,10 +1,12 @@
 ---
 id: TASK-POF-003
 title: Inline design phase execution protocol in pre-loop SDK prompt
-status: backlog
+status: completed
 task_type: implementation
 created: 2026-02-15T14:00:00Z
-updated: 2026-02-15T14:00:00Z
+updated: 2026-02-15T16:30:00Z
+completed: 2026-02-15T16:30:00Z
+completed_location: tasks/completed/TASK-POF-003/
 priority: high
 complexity: 5
 tags: [autobuild, preamble, performance, main-fix]
@@ -15,9 +17,11 @@ wave: 2
 parallel_group: wave-2
 dependencies: [TASK-POF-001]
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  coverage: 95
+  last_run: 2026-02-15T16:00:00Z
+organized_files:
+  - TASK-POF-003-inline-design-protocol.md
 ---
 
 # Task: Inline Design Phase Execution Protocol
@@ -41,13 +45,13 @@ options = ClaudeAgentOptions(
 
 ## Acceptance Criteria
 
-- [ ] `TaskWorkInterface._build_design_prompt()` returns inline execution protocol, NOT `/task-work ...` skill invocation
-- [ ] `TaskWorkInterface._execute_via_sdk()` uses `setting_sources=["project"]` (NOT `["user", "project"]`)
-- [ ] Inline protocol covers Phases 1.5, 2, 2.5B, 2.7, 2.8 (the minimum needed for design)
-- [ ] Inline protocol is ≤20KB (vs current 165KB full task-work spec)
-- [ ] Pre-loop still produces valid `DesignPhaseResult` with plan, complexity, and architectural review
-- [ ] Existing non-autobuild usage of task-work is unaffected
-- [ ] Integration test: run pre-loop on a test task, verify plan output
+- [x] `TaskWorkInterface._build_design_prompt()` returns inline execution protocol, NOT `/task-work ...` skill invocation
+- [x] `TaskWorkInterface._execute_via_sdk()` uses `setting_sources=["project"]` (NOT `["user", "project"]`)
+- [x] Inline protocol covers Phases 1.5, 2, 2.5B, 2.7, 2.8 (the minimum needed for design)
+- [x] Inline protocol is ≤20KB (vs current 165KB full task-work spec)
+- [x] Pre-loop still produces valid `DesignPhaseResult` with plan, complexity, and architectural review
+- [x] Existing non-autobuild usage of task-work is unaffected
+- [x] Integration test: run pre-loop on a test task, verify plan output
 
 ## Files to Modify
 
