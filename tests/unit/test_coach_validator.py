@@ -342,6 +342,106 @@ class TestCoachValidator:
         )
 
 
+    def test_validate_with_context_includes_context_used_in_result(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """Test that validate() with context includes context_used in result."""
+        # Write passing task-work results
+        results = make_task_work_results()
+        write_task_work_results(task_work_results_dir, results)
+
+        # Mock subprocess to return successful test run
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="15 passed in 1.45s",
+                stderr="",
+            )
+
+            validator = CoachValidator(str(tmp_worktree))
+            test_context = "some architecture context about patterns and services"
+            result = validator.validate("TASK-001", 1, make_task(), context=test_context)
+
+        assert result.context_used == test_context
+        assert "Architecture context:" in result.rationale
+
+    def test_validate_with_context_none_is_backward_compatible(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """Test that validate() with context=None is backward compatible."""
+        # Write passing task-work results
+        results = make_task_work_results()
+        write_task_work_results(task_work_results_dir, results)
+
+        # Mock subprocess to return successful test run
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="15 passed in 1.45s",
+                stderr="",
+            )
+
+            validator = CoachValidator(str(tmp_worktree))
+            result = validator.validate("TASK-001", 1, make_task(), context=None)
+
+        assert result.context_used is None
+        assert "Architecture context:" not in result.rationale
+
+    def test_validate_with_empty_context_treated_as_no_context(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """Test that validate() with context="" treated as no context."""
+        # Write passing task-work results
+        results = make_task_work_results()
+        write_task_work_results(task_work_results_dir, results)
+
+        # Mock subprocess to return successful test run
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="15 passed in 1.45s",
+                stderr="",
+            )
+
+            validator = CoachValidator(str(tmp_worktree))
+            result = validator.validate("TASK-001", 1, make_task(), context="")
+
+        assert result.context_used == ""
+        assert "Architecture context:" not in result.rationale
+
+    def test_to_dict_includes_context_used_field(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """Test that to_dict() includes context_used field."""
+        # Write passing task-work results
+        results = make_task_work_results()
+        write_task_work_results(task_work_results_dir, results)
+
+        # Mock subprocess to return successful test run
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="15 passed in 1.45s",
+                stderr="",
+            )
+
+            validator = CoachValidator(str(tmp_worktree))
+            test_context = "test context for validation"
+            result = validator.validate("TASK-001", 1, make_task(), context=test_context)
+
+        result_dict = result.to_dict()
+        assert "context_used" in result_dict
+        assert result_dict["context_used"] == test_context
+
+
 # ============================================================================
 # Test Quality Gate Verification
 # ============================================================================

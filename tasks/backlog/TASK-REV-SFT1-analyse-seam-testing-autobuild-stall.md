@@ -1,9 +1,9 @@
 ---
 id: TASK-REV-SFT1
 title: Analyse seam-first testing autobuild stall
-status: backlog
+status: review_complete
 created: 2026-02-14T12:00:00Z
-updated: 2026-02-14T12:00:00Z
+updated: 2026-02-14T14:30:00Z
 priority: high
 tags: [autobuild, stall-analysis, seam-testing, FEAT-AC1A]
 complexity: 0
@@ -13,6 +13,13 @@ test_results:
   status: pending
   coverage: null
   last_run: null
+review_results:
+  mode: decision
+  depth: standard
+  findings_count: 5
+  recommendations_count: 7
+  report_path: .claude/reviews/TASK-REV-SFT1-review-report.md
+  completed_at: 2026-02-14T14:30:00Z
 ---
 
 # Task: Analyse seam-first testing autobuild stall

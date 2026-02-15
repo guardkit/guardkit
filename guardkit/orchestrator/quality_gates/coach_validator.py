@@ -41,14 +41,6 @@ from typing import Any, Dict, List, Literal, Optional
 from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.models.task_types import TaskType, QualityGateProfile, get_profile
 
-# Optional Graphiti integration for quality gate config queries
-try:
-    from guardkit.knowledge.quality_gate_queries import get_quality_gate_config
-    GRAPHITI_AVAILABLE = True
-except ImportError:
-    GRAPHITI_AVAILABLE = False
-    get_quality_gate_config = None
-
 # Optional coach context integration (TASK-SC-009)
 try:
     from guardkit.planning.coach_context_builder import build_coach_context
@@ -249,6 +241,7 @@ class CoachValidationResult:
     requirements: Optional[RequirementsValidation] = None
     issues: List[Dict[str, Any]] = field(default_factory=list)
     rationale: str = ""
+    context_used: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -307,6 +300,7 @@ class CoachValidationResult:
             },
             "issues": self.issues,
             "rationale": self.rationale,
+            "context_used": self.context_used,
         }
 
 
@@ -350,71 +344,6 @@ class CoachValidator:
     ARCH_REVIEW_THRESHOLD = 60
     # Default profile for backward compatibility
     DEFAULT_PROFILE = get_profile(TaskType.FEATURE)
-
-    @staticmethod
-    async def get_graphiti_thresholds(
-        task_type: str,
-        complexity: int
-    ) -> Optional[QualityGateProfile]:
-        """
-        Get quality gate thresholds from Graphiti knowledge graph.
-
-        Queries Graphiti for task-type and complexity-based thresholds.
-        Falls back to None if Graphiti is unavailable or no config found.
-
-        Parameters
-        ----------
-        task_type : str
-            Task type (e.g., "feature", "scaffolding", "testing", "docs")
-        complexity : int
-            Task complexity level (1-10)
-
-        Returns
-        -------
-        Optional[QualityGateProfile]
-            Profile from Graphiti config, or None if not available
-        """
-        if not GRAPHITI_AVAILABLE or get_quality_gate_config is None:
-            logger.debug("Graphiti not available for threshold lookup")
-            return None
-
-        try:
-            config = await get_quality_gate_config(task_type, complexity)
-
-            if config is None:
-                logger.debug(f"No Graphiti config found for {task_type} complexity {complexity}")
-                return None
-
-            # Convert QualityGateConfigFact to QualityGateProfile
-            # Note: threshold must be 0 when gate is not required (per QualityGateProfile validation)
-            arch_threshold = config.arch_review_threshold if config.arch_review_required else 0
-            if arch_threshold is None:
-                arch_threshold = 60  # Default when required but not specified
-
-            coverage_threshold = config.coverage_threshold if config.coverage_required else 0.0
-            if coverage_threshold is None:
-                coverage_threshold = 80.0  # Default when required but not specified
-
-            profile = QualityGateProfile(
-                tests_required=config.test_pass_required,
-                coverage_required=config.coverage_required,
-                arch_review_required=config.arch_review_required,
-                plan_audit_required=True,  # Always required in current design
-                arch_review_threshold=arch_threshold,
-                coverage_threshold=coverage_threshold,
-            )
-
-            logger.info(
-                f"Loaded Graphiti threshold config: {config.id} "
-                f"(arch_threshold={config.arch_review_threshold}, "
-                f"coverage_threshold={config.coverage_threshold})"
-            )
-
-            return profile
-
-        except Exception as e:
-            logger.warning(f"Error querying Graphiti thresholds: {e}")
-            return None
 
     def __init__(
         self,
@@ -498,97 +427,13 @@ class CoachValidator:
                 f"or valid alias: {', '.join(TASK_TYPE_ALIASES.keys())}"
             ) from None
 
-    async def validate_with_graphiti_thresholds(
-        self,
-        task_id: str,
-        turn: int,
-        task: Dict[str, Any],
-        skip_arch_review: bool = False,
-    ) -> CoachValidationResult:
-        """
-        Async validation entry point that uses Graphiti-configured thresholds.
-
-        This method attempts to load quality gate thresholds from Graphiti
-        based on task type and complexity. Falls back to default profile
-        if Graphiti is unavailable.
-
-        Parameters
-        ----------
-        task_id : str
-            Task identifier (e.g., "TASK-001")
-        turn : int
-            Current turn number (1-based)
-        task : Dict[str, Any]
-            Task data including acceptance_criteria and optional complexity
-        skip_arch_review : bool
-            If True, skip architectural review gate regardless of profile setting.
-
-        Returns
-        -------
-        CoachValidationResult
-            Complete validation result with decision
-        """
-        # Extract task type and complexity for Graphiti lookup
-        task_type_str = task.get("task_type", "feature")
-        complexity = task.get("complexity", 5)  # Default to medium complexity
-
-        # Try to get thresholds from Graphiti
-        graphiti_profile = await self.get_graphiti_thresholds(task_type_str, complexity)
-
-        if graphiti_profile:
-            logger.info(
-                f"Using Graphiti thresholds for {task_id}: "
-                f"arch_threshold={graphiti_profile.arch_review_threshold}, "
-                f"coverage_threshold={graphiti_profile.coverage_threshold}"
-            )
-        else:
-            logger.debug(f"Graphiti thresholds not available, using default profile")
-
-        # Inject architecture context for medium+ complexity tasks (TASK-SC-009)
-        arch_context = ""
-        if ARCH_CONTEXT_AVAILABLE and build_coach_context:
-            # Only inject for complexity >= 4 (budget > 0)
-            if complexity >= 4:
-                try:
-                    # Get Graphiti client
-                    client = get_graphiti() if get_graphiti else None
-                    if client:
-                        project_id = task.get("project_id", "default")
-                        arch_context = await build_coach_context(
-                            task=task,
-                            client=client,
-                            project_id=project_id,
-                        )
-                        if arch_context:
-                            logger.info(f"[Graphiti] Injected architecture context for coach validation")
-                        else:
-                            logger.debug(f"[Graphiti] No architecture context available")
-                    else:
-                        logger.debug(f"[Graphiti] Client not available, skipping coach context")
-                except Exception as e:
-                    logger.warning(f"[Graphiti] Failed to build coach architecture context: {e}")
-                    arch_context = ""
-
-        # Note: arch_context is built but not currently used in the validation flow
-        # It's available for future enhancement of validation prompts or logging
-        # The main validation logic remains unchanged (synchronous validate method)
-
-        # Run validation using synchronous validate method
-        # Note: graphiti_profile is currently not used by the sync validate method,
-        # but it's prepared here for future integration
-        return self.validate(
-            task_id=task_id,
-            turn=turn,
-            task=task,
-            skip_arch_review=skip_arch_review,
-        )
-
     def validate(
         self,
         task_id: str,
         turn: int,
         task: Dict[str, Any],
         skip_arch_review: bool = False,
+        context: Optional[str] = None,
     ) -> CoachValidationResult:
         """
         Main validation entry point.
@@ -619,6 +464,10 @@ class CoachValidator:
         """
         logger.info(f"Starting Coach validation for {task_id} turn {turn}")
 
+        # Log context if provided
+        if context:
+            logger.debug(f"[Graphiti] Coach context provided: {len(context)} chars")
+
         # Resolve task type and get quality gate profile
         try:
             task_type = self._resolve_task_type(task)
@@ -635,6 +484,7 @@ class CoachValidator:
                     "description": str(e),
                 }],
                 rationale=f"Invalid task type: {e}",
+                context_used=context,
             )
 
         # 1. Read task-work quality gate results
@@ -651,6 +501,7 @@ class CoachValidator:
                     "description": task_work_results["error"],
                 }],
                 rationale="Task-work quality gate results not found",
+                context_used=context,
             )
 
         # 2. Verify quality gates passed with profile
@@ -665,6 +516,7 @@ class CoachValidator:
                 turn=turn,
                 gates=gates_status,
                 task_work_results=task_work_results,
+                context_used=context,
             )
 
         # 3. Independent test verification (trust but verify)
@@ -694,6 +546,7 @@ class CoachValidator:
                     "test_output": test_result.test_output_summary,
                 }],
                 rationale="Tests passed according to task-work but failed on independent verification",
+                context_used=context,
             )
 
         # 4. Validate requirements satisfaction
@@ -714,6 +567,7 @@ class CoachValidator:
                     "missing_criteria": requirements.missing,
                 }],
                 rationale=f"Missing {len(requirements.missing)} acceptance criteria: {', '.join(requirements.missing)}",
+                context_used=context,
             )
 
         # 5. Check for blocking zero-test anomaly before approval
@@ -738,6 +592,7 @@ class CoachValidator:
                     "no tests were executed. Tests are required for this task type. "
                     "Please write and run tests before resubmitting."
                 ),
+                context_used=context,
             )
 
         # 6. All checks passed - approve
@@ -749,6 +604,7 @@ class CoachValidator:
             gates_status=gates_status,
             task_work_results=task_work_results,
             profile=profile,
+            context=context,
         )
 
         return CoachValidationResult(
@@ -760,6 +616,7 @@ class CoachValidator:
             requirements=requirements,
             issues=zero_test_issues,
             rationale=rationale,
+            context_used=context,
         )
 
     def read_quality_gate_results(self, task_id: str) -> Dict[str, Any]:
@@ -1490,6 +1347,7 @@ class CoachValidator:
         gates_status: QualityGateStatus,
         task_work_results: Dict[str, Any],
         profile: QualityGateProfile,
+        context: Optional[str] = None,
     ) -> str:
         """
         Build an accurate rationale message for approval based on actual verification status.
@@ -1521,6 +1379,11 @@ class CoachValidator:
             parts.append("Independent verification confirmed.")
 
         parts.append("All acceptance criteria met.")
+
+        # Add context info if provided
+        if context:
+            parts.append(f"Architecture context: {len(context)} chars provided.")
+
         return " ".join(parts)
 
     def _check_zero_test_anomaly(
@@ -1626,6 +1489,7 @@ class CoachValidator:
         quality_gates: Optional[QualityGateStatus] = None,
         independent_tests: Optional[IndependentTestResult] = None,
         requirements: Optional[RequirementsValidation] = None,
+        context_used: Optional[str] = None,
     ) -> CoachValidationResult:
         """
         Create a feedback result.
@@ -1661,6 +1525,7 @@ class CoachValidator:
             requirements=requirements,
             issues=issues,
             rationale=rationale,
+            context_used=context_used,
         )
 
     def _feedback_from_gates(
@@ -1669,6 +1534,7 @@ class CoachValidator:
         turn: int,
         gates: QualityGateStatus,
         task_work_results: Dict[str, Any],
+        context_used: Optional[str] = None,
     ) -> CoachValidationResult:
         """
         Create feedback result from failed quality gates.
@@ -1772,6 +1638,7 @@ class CoachValidator:
             requirements=None,
             issues=issues,
             rationale=f"{len(issues)} quality gate(s) failed",
+            context_used=context_used,
         )
 
     def save_decision(self, result: CoachValidationResult) -> Path:

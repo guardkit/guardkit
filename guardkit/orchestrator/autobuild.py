@@ -3015,7 +3015,14 @@ class AutoBuildOrchestrator:
                     "task_type": task_type,
                 },
                 skip_arch_review=skip_arch_review,
+                context=context_prompt if context_prompt else None,
             )
+
+            # Log context usage (TASK-GWR-002)
+            if context_prompt:
+                logger.info(
+                    f"[Graphiti] Coach context provided: {len(context_prompt)} chars"
+                )
 
             duration = time.time() - start_time
 

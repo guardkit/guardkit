@@ -13,10 +13,12 @@ Test Organization:
     - Test Coach turn context injection
     - Test verbose flag output
     - Test graceful degradation when context unavailable
+    - Test turn continuation wiring (TASK-GWR-003)
 
 References:
     - TASK-GR6-006: Integrate with /feature-build
     - FEAT-GR-006: Job-Specific Context Retrieval
+    - TASK-GWR-003: Wire outcome reads and turn continuation into AutoBuild context
 """
 
 import pytest
@@ -1496,3 +1498,343 @@ class TestContextStatusTracking:
         assert cs is not None
         assert cs.status == "failed"
         assert "Graphiti unavailable" in cs.reason
+
+
+# ============================================================================
+# Test: Turn Continuation Wiring (TASK-GWR-003)
+# ============================================================================
+
+
+@pytest.mark.asyncio
+class TestTurnContinuationWiring:
+    """Tests for turn continuation context wiring (TASK-GWR-003)."""
+
+    async def test_player_turn_2_calls_continuation(self):
+        """
+        AC-F2-01: get_player_context() calls load_turn_continuation_context() for turn > 1.
+
+        Given turn_number=2 and Graphiti available
+        When get_player_context is called
+        Then load_turn_continuation_context is invoked with correct params
+        """
+        from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        mock_graphiti = MagicMock()
+        loader = AutoBuildContextLoader(graphiti=mock_graphiti)
+
+        # Mock the retriever
+        mock_context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=100,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+        mock_retriever = AsyncMock()
+        mock_retriever.retrieve = AsyncMock(return_value=mock_context)
+        loader._retriever = mock_retriever
+
+        with patch("guardkit.knowledge.turn_state_operations.load_turn_continuation_context", new_callable=AsyncMock) as mock_load:
+            mock_load.return_value = "## Previous Turn Summary\nTurn 1: Implemented feature"
+
+            result = await loader.get_player_context(
+                task_id="TASK-001",
+                feature_id="FEAT-001",
+                turn_number=2,
+                description="Test task",
+            )
+
+            # Verify continuation was called with correct params
+            mock_load.assert_called_once_with(
+                graphiti_client=mock_graphiti,
+                feature_id="FEAT-001",
+                task_id="TASK-001",
+                current_turn=2,
+            )
+
+    async def test_player_turn_continuation_included_in_prompt(self):
+        """
+        AC-F2-02: Turn continuation context is included in the Player prompt text when available.
+
+        Given turn_number=2 and continuation context exists
+        When get_player_context is called
+        Then prompt_text includes the continuation context
+        """
+        from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        mock_graphiti = MagicMock()
+        loader = AutoBuildContextLoader(graphiti=mock_graphiti)
+
+        mock_context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=100,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+        mock_retriever = AsyncMock()
+        mock_retriever.retrieve = AsyncMock(return_value=mock_context)
+        loader._retriever = mock_retriever
+
+        continuation_text = "## Previous Turn Summary (Turn 1)\n**What was attempted**: Feature implementation\n**Coach decision**: feedback"
+
+        with patch("guardkit.knowledge.turn_state_operations.load_turn_continuation_context", new_callable=AsyncMock) as mock_load:
+            mock_load.return_value = continuation_text
+
+            result = await loader.get_player_context(
+                task_id="TASK-001",
+                feature_id="FEAT-001",
+                turn_number=2,
+                description="Test task",
+            )
+
+            # Verify continuation is in prompt_text
+            assert continuation_text in result.prompt_text, \
+                "Turn continuation should be included in prompt_text"
+
+    async def test_player_turn_1_no_continuation_call(self):
+        """
+        AC-F2-03: get_player_context() for turn 1 does NOT call continuation.
+
+        Given turn_number=1
+        When get_player_context is called
+        Then load_turn_continuation_context is NOT called
+        """
+        from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        mock_graphiti = MagicMock()
+        loader = AutoBuildContextLoader(graphiti=mock_graphiti)
+
+        mock_context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=100,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+        mock_retriever = AsyncMock()
+        mock_retriever.retrieve = AsyncMock(return_value=mock_context)
+        loader._retriever = mock_retriever
+
+        with patch("guardkit.knowledge.turn_state_operations.load_turn_continuation_context", new_callable=AsyncMock) as mock_load:
+            result = await loader.get_player_context(
+                task_id="TASK-001",
+                feature_id="FEAT-001",
+                turn_number=1,
+                description="Test task",
+            )
+
+            # Verify continuation was NOT called for turn 1
+            mock_load.assert_not_called()
+
+    async def test_graceful_degradation_no_prior_turns(self):
+        """
+        AC-F2-04: Graceful degradation when no prior turn states exist (None returned, no errors).
+
+        Given turn_number=2 but no prior turn data exists
+        When get_player_context is called
+        Then continuation returns None and no error is raised
+        """
+        from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        mock_graphiti = MagicMock()
+        loader = AutoBuildContextLoader(graphiti=mock_graphiti)
+
+        mock_context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=100,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+        mock_retriever = AsyncMock()
+        mock_retriever.retrieve = AsyncMock(return_value=mock_context)
+        loader._retriever = mock_retriever
+
+        with patch("guardkit.knowledge.turn_state_operations.load_turn_continuation_context", new_callable=AsyncMock) as mock_load:
+            # Simulate no previous turn data
+            mock_load.return_value = None
+
+            result = await loader.get_player_context(
+                task_id="TASK-001",
+                feature_id="FEAT-001",
+                turn_number=2,
+                description="Test task",
+            )
+
+            # Should not raise, should return valid result
+            assert result is not None
+            assert result.context.task_id == "TASK-001"
+
+    async def test_graceful_degradation_graphiti_none(self):
+        """
+        AC-F2-05: Graceful degradation when Graphiti client is None or disabled.
+
+        Given Graphiti client is None
+        When get_player_context is called for turn 2
+        Then no continuation call is made and no error is raised
+        """
+        from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        # Loader with None graphiti
+        loader = AutoBuildContextLoader(graphiti=None)
+
+        with patch("guardkit.knowledge.turn_state_operations.load_turn_continuation_context", new_callable=AsyncMock) as mock_load:
+            result = await loader.get_player_context(
+                task_id="TASK-001",
+                feature_id="FEAT-001",
+                turn_number=2,
+                description="Test task",
+            )
+
+            # Verify continuation was NOT called when graphiti is None
+            mock_load.assert_not_called()
+            # Should return empty result gracefully
+            assert result.budget_used == 0
+
+    async def test_coach_turn_2_calls_continuation(self):
+        """
+        Test that Coach also gets turn continuation for turn > 1.
+
+        Given turn_number=2 and Graphiti available
+        When get_coach_context is called
+        Then load_turn_continuation_context is invoked
+        """
+        from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        mock_graphiti = MagicMock()
+        loader = AutoBuildContextLoader(graphiti=mock_graphiti)
+
+        mock_context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=100,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+        mock_retriever = AsyncMock()
+        mock_retriever.retrieve = AsyncMock(return_value=mock_context)
+        loader._retriever = mock_retriever
+
+        with patch("guardkit.knowledge.turn_state_operations.load_turn_continuation_context", new_callable=AsyncMock) as mock_load:
+            mock_load.return_value = "## Previous Turn Summary\nTurn 1: Validated implementation"
+
+            result = await loader.get_coach_context(
+                task_id="TASK-001",
+                feature_id="FEAT-001",
+                turn_number=2,
+                description="Test task",
+            )
+
+            # Verify continuation was called
+            mock_load.assert_called_once_with(
+                graphiti_client=mock_graphiti,
+                feature_id="FEAT-001",
+                task_id="TASK-001",
+                current_turn=2,
+            )
+
+    async def test_structured_logging_for_continuation(self):
+        """
+        AC-F2-07: Structured logging for turn continuation and similar outcomes.
+
+        Given turn continuation is loaded
+        When get_player_context is called
+        Then INFO logs are emitted with continuation length
+        """
+        from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        mock_graphiti = MagicMock()
+        loader = AutoBuildContextLoader(graphiti=mock_graphiti)
+
+        mock_context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=100,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[{"outcome": "test"}],  # 1 similar outcome
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+        mock_retriever = AsyncMock()
+        mock_retriever.retrieve = AsyncMock(return_value=mock_context)
+        loader._retriever = mock_retriever
+
+        continuation_text = "## Previous Turn Summary\nTest"
+
+        with patch("guardkit.knowledge.turn_state_operations.load_turn_continuation_context", new_callable=AsyncMock) as mock_load, \
+             patch("guardkit.knowledge.autobuild_context_loader.logger") as mock_logger:
+            mock_load.return_value = continuation_text
+
+            result = await loader.get_player_context(
+                task_id="TASK-001",
+                feature_id="FEAT-001",
+                turn_number=2,
+                description="Test task",
+            )
+
+            # Verify logging for turn continuation
+            mock_logger.info.assert_any_call(
+                "[Graphiti] Turn continuation loaded: %d chars for turn %d",
+                len(continuation_text),
+                2,
+            )
+
+            # Verify logging for similar outcomes
+            mock_logger.info.assert_any_call(
+                "[Graphiti] Similar outcomes found: %d matches",
+                1,
+            )

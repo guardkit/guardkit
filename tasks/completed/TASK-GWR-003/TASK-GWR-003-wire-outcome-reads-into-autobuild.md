@@ -1,7 +1,12 @@
 ---
 id: TASK-GWR-003
 title: Wire outcome reads and turn continuation into AutoBuild context
-status: backlog
+status: completed
+completed: 2026-02-15T14:00:00Z
+updated: 2026-02-15T14:00:00Z
+previous_state: in_review
+state_transition_reason: "All acceptance criteria verified, tests pass, implementation validated"
+completed_location: tasks/completed/TASK-GWR-003/
 created: 2026-02-14T10:30:00Z
 priority: high
 tags: [graphiti, autobuild, cross-turn-learning, outcomes]
@@ -120,13 +125,13 @@ In `get_coach_context()`:
 
 ## Acceptance Criteria
 
-- [ ] AC-F2-01: `AutoBuildContextLoader.get_player_context()` calls `load_turn_continuation_context()` for turn > 1
-- [ ] AC-F2-02: Turn continuation context is included in the Player prompt text when available
-- [ ] AC-F2-03: `get_player_context()` for turn 1 does NOT call continuation (no previous turn)
-- [ ] AC-F2-04: Graceful degradation when no prior turn states exist (None returned, no errors)
-- [ ] AC-F2-05: Graceful degradation when Graphiti client is None or disabled
-- [ ] AC-F2-06: `JobContextRetriever` round-trip test: capture outcome → retrieve → found in similar_outcomes
-- [ ] AC-F2-07: Structured logging for turn continuation and similar outcomes
+- [x] AC-F2-01: `AutoBuildContextLoader.get_player_context()` calls `load_turn_continuation_context()` for turn > 1
+- [x] AC-F2-02: Turn continuation context is included in the Player prompt text when available
+- [x] AC-F2-03: `get_player_context()` for turn 1 does NOT call continuation (no previous turn)
+- [x] AC-F2-04: Graceful degradation when no prior turn states exist (None returned, no errors)
+- [x] AC-F2-05: Graceful degradation when Graphiti client is None or disabled
+- [x] AC-F2-06: `JobContextRetriever` round-trip test: capture outcome → retrieve → found in similar_outcomes
+- [x] AC-F2-07: Structured logging for turn continuation and similar outcomes
 
 ## Tests Required
 
