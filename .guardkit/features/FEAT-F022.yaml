@@ -1,0 +1,100 @@
+id: FEAT-F022
+name: AutoBuild Coach Reliability and Graphiti Connection Resilience
+description: 'Fix two compounding failures: F2 criteria verification always 0/10,
+  F3 asyncio corruption during parallel execution'
+created: '2026-02-15T17:56:45.910448'
+status: planned
+complexity: 6
+estimated_tasks: 8
+tasks:
+- id: TASK-ACR-001
+  name: Propagate completion_promises in task_work_results writer
+  file_path: tasks/backlog/autobuild-coach-reliability/TASK-ACR-001-propagate-completion-promises.md
+  complexity: 3
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 33
+- id: TASK-ACR-003
+  name: Add criteria matching diagnostic logging
+  file_path: tasks/backlog/autobuild-coach-reliability/TASK-ACR-003-diagnostic-logging.md
+  complexity: 2
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 22
+- id: TASK-ACR-005
+  name: Store event loop reference with thread loaders
+  file_path: tasks/backlog/autobuild-coach-reliability/TASK-ACR-005-store-event-loop-with-loaders.md
+  complexity: 3
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+- id: TASK-ACR-002
+  name: Add fuzzy text matching fallback to coach_validator
+  file_path: tasks/backlog/autobuild-coach-reliability/TASK-ACR-002-fuzzy-text-matching.md
+  complexity: 5
+  dependencies:
+  - TASK-ACR-001
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-ACR-006
+  name: Fix thread-safe Graphiti client cleanup
+  file_path: tasks/backlog/autobuild-coach-reliability/TASK-ACR-006-fix-thread-cleanup.md
+  complexity: 5
+  dependencies:
+  - TASK-ACR-005
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-ACR-007
+  name: Fix event loop handling in turn state capture
+  file_path: tasks/backlog/autobuild-coach-reliability/TASK-ACR-007-fix-turn-state-capture.md
+  complexity: 4
+  dependencies:
+  - TASK-ACR-005
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-ACR-004
+  name: Extend synthetic report promise generation with git analysis
+  file_path: tasks/backlog/autobuild-coach-reliability/TASK-ACR-004-synthetic-report-git-analysis.md
+  complexity: 6
+  dependencies:
+  - TASK-ACR-001
+  - TASK-ACR-002
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 113
+- id: TASK-ACR-008
+  name: Add Graphiti connection health check and circuit breaker
+  file_path: tasks/backlog/autobuild-coach-reliability/TASK-ACR-008-graphiti-circuit-breaker.md
+  complexity: 5
+  dependencies:
+  - TASK-ACR-006
+  - TASK-ACR-007
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+orchestration:
+  parallel_groups:
+  - - TASK-ACR-001
+    - TASK-ACR-003
+    - TASK-ACR-005
+  - - TASK-ACR-002
+    - TASK-ACR-006
+    - TASK-ACR-007
+  - - TASK-ACR-004
+    - TASK-ACR-008
+  estimated_duration_minutes: 476
+  recommended_parallel: 3

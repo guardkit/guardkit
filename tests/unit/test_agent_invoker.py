@@ -1764,11 +1764,16 @@ class TestInvokePlayerWithDelegation:
                     mode="tdd",
                 )
 
-                # Verify delegation was called
+                # Verify delegation was called with all parameters
                 mock_invoke.assert_called_once_with(
                     task_id="TASK-001",
                     mode="tdd",
                     documentation_level="minimal",
+                    turn=1,
+                    requirements="Implement feature",
+                    feedback=None,
+                    max_turns=5,
+                    context="",
                 )
 
                 # Verify result
@@ -6451,6 +6456,40 @@ class TestCalculateSDKTimeout:
         expected = int(DEFAULT_SDK_TIMEOUT * 1.0 * 2.0)
         assert timeout == expected
 
+    def test_default_value_explicit_still_runs_dynamic(self, worktree_path):
+        """Passing DEFAULT_SDK_TIMEOUT explicitly still triggers dynamic calculation.
+
+        TASK-4223: The sentinel pattern sets _sdk_timeout_is_override at
+        construction time. Since we can't distinguish "user passed 1200"
+        from "default is 1200" without an Optional[int] signature change,
+        this documents the current behavior: dynamic calculation runs.
+        """
+        invoker = AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=DEFAULT_SDK_TIMEOUT,
+        )
+        _create_task_file(worktree_path, "TASK-T-012", mode="task-work", complexity=5)
+
+        timeout = invoker._calculate_sdk_timeout("TASK-T-012")
+
+        # Should NOT return DEFAULT_SDK_TIMEOUT unchanged; dynamic calc runs
+        expected = int(DEFAULT_SDK_TIMEOUT * 1.5 * 1.5)
+        assert timeout == expected
+        assert timeout != DEFAULT_SDK_TIMEOUT
+
+    def test_sentinel_flag_set_on_override(self, worktree_path):
+        """Verify _sdk_timeout_is_override is True when non-default passed."""
+        invoker = AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=600,
+        )
+        assert invoker._sdk_timeout_is_override is True
+
+    def test_sentinel_flag_unset_on_default(self, worktree_path):
+        """Verify _sdk_timeout_is_override is False when default used."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        assert invoker._sdk_timeout_is_override is False
+
 
 # ==================== TASK-POF-004: Inline Implement Protocol Tests ====================
 
@@ -6660,3 +6699,280 @@ class TestInvokeTaskWorkImplementInlineProtocol:
         assert result["tests_failed"] == 0
         assert result["coverage"] == 85.5
         assert result["quality_gates_passed"] is True
+
+
+class TestBuildAutobuildImplementationPrompt:
+    """Tests for _build_autobuild_implementation_prompt() method.
+
+    TASK-ACO-002: Verifies the prompt builder loads the execution protocol
+    from autobuild_execution_protocol.md and injects task requirements,
+    coach feedback, graphiti context, and turn context inline.
+    """
+
+    def test_loads_execution_protocol(self, worktree_path):
+        """Prompt contains content from autobuild_execution_protocol.md."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        prompt = invoker._build_autobuild_implementation_prompt("TASK-001")
+
+        assert "PLAYER_REPORT_SCHEMA" in prompt
+        assert "Anti-Stub Rules" in prompt
+        assert "Phase 3: Implementation" in prompt
+
+    def test_includes_task_id(self, worktree_path):
+        """Prompt includes the task ID in header and protocol sections."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        prompt = invoker._build_autobuild_implementation_prompt("TASK-ACO-002")
+
+        assert "TASK-ACO-002" in prompt
+
+    def test_includes_requirements_inline(self, worktree_path):
+        """Requirements text is included inline in the prompt."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        requirements = "Implement the user authentication module with JWT tokens."
+        prompt = invoker._build_autobuild_implementation_prompt(
+            "TASK-001", requirements=requirements
+        )
+
+        assert "## Task Requirements" in prompt
+        assert requirements in prompt
+
+    def test_excludes_requirements_when_empty(self, worktree_path):
+        """No requirements section when requirements is empty."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        prompt = invoker._build_autobuild_implementation_prompt(
+            "TASK-001", requirements=""
+        )
+
+        assert "## Task Requirements" not in prompt
+
+    def test_includes_feedback_when_present(self, worktree_path):
+        """Coach feedback is included inline when available on turn > 1."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        prompt = invoker._build_autobuild_implementation_prompt(
+            "TASK-001",
+            turn=2,
+            feedback="Fix the missing error handling in auth_service.py",
+        )
+
+        assert "## Coach Feedback from Turn 1" in prompt
+        assert "Fix the missing error handling" in prompt
+        assert "must_fix" in prompt
+
+    def test_excludes_feedback_on_turn_one(self, worktree_path):
+        """Feedback section is NOT included on turn 1 even if feedback provided."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        prompt = invoker._build_autobuild_implementation_prompt(
+            "TASK-001",
+            turn=1,
+            feedback="Some feedback",
+        )
+
+        assert "## Coach Feedback" not in prompt
+
+    def test_includes_structured_feedback(self, worktree_path):
+        """Dict feedback is formatted with must_fix and should_fix sections."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        feedback = {
+            "rationale": "Implementation has issues",
+            "issues": [
+                {"severity": "must_fix", "description": "Missing null check"},
+                {"severity": "should_fix", "description": "Add docstring"},
+            ],
+        }
+        prompt = invoker._build_autobuild_implementation_prompt(
+            "TASK-001", turn=2, feedback=feedback
+        )
+
+        assert "Implementation has issues" in prompt
+        assert "Missing null check" in prompt
+        assert "Add docstring" in prompt
+        assert "**Must Fix:**" in prompt
+        assert "**Should Fix:**" in prompt
+
+    def test_includes_graphiti_context_when_present(self, worktree_path):
+        """Graphiti context is included inline when non-empty."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        context = "Use the repository pattern for data access."
+        prompt = invoker._build_autobuild_implementation_prompt(
+            "TASK-001", context=context
+        )
+
+        assert "## Job-Specific Context" in prompt
+        assert context in prompt
+
+    def test_excludes_graphiti_context_when_empty(self, worktree_path):
+        """No context section when context is empty string."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        prompt = invoker._build_autobuild_implementation_prompt(
+            "TASK-001", context=""
+        )
+
+        assert "## Job-Specific Context" not in prompt
+
+    def test_includes_turn_context_inline(self, worktree_path):
+        """Turn number, max_turns, and remaining turns appear in prompt."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        prompt = invoker._build_autobuild_implementation_prompt(
+            "TASK-001", turn=2, max_turns=5
+        )
+
+        assert "## Turn Context" in prompt
+        assert "Current turn: 2" in prompt
+        assert "Max turns: 5" in prompt
+        assert "Turns remaining: 3" in prompt
+
+    def test_approaching_limit_flag(self, worktree_path):
+        """When turn >= max_turns - 1, approaching_limit is true."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        prompt = invoker._build_autobuild_implementation_prompt(
+            "TASK-001", turn=4, max_turns=5
+        )
+
+        assert "Approaching limit: True" in prompt
+        assert "blocked_report" in prompt
+
+    def test_not_approaching_limit(self, worktree_path):
+        """When turn < max_turns - 1, approaching_limit is false."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        prompt = invoker._build_autobuild_implementation_prompt(
+            "TASK-001", turn=1, max_turns=5
+        )
+
+        assert "Approaching limit: False" in prompt
+
+    def test_includes_documentation_level(self, worktree_path):
+        """Documentation level appears in the prompt header."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        prompt = invoker._build_autobuild_implementation_prompt(
+            "TASK-001", documentation_level="standard"
+        )
+
+        assert "Documentation Level: standard" in prompt
+
+    def test_includes_mode(self, worktree_path):
+        """Development mode appears in the prompt header."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        prompt = invoker._build_autobuild_implementation_prompt(
+            "TASK-001", mode="tdd"
+        )
+
+        assert "Mode: tdd" in prompt
+
+    def test_output_markers_compatible_with_parser(self, worktree_path):
+        """Protocol contains output marker formats parseable by TaskWorkStreamParser."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        prompt = invoker._build_autobuild_implementation_prompt("TASK-001")
+
+        # Check for marker format instructions matching TaskWorkStreamParser patterns
+        assert "tests passed" in prompt.lower()
+        assert "tests failed" in prompt.lower()
+        assert "Coverage:" in prompt
+        assert "Quality gates:" in prompt
+
+    def test_player_report_schema_present(self, worktree_path):
+        """PLAYER_REPORT_SCHEMA JSON structure is in the prompt."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        prompt = invoker._build_autobuild_implementation_prompt("TASK-001")
+
+        # Key fields from PLAYER_REPORT_SCHEMA must appear
+        assert "files_modified" in prompt
+        assert "files_created" in prompt
+        assert "tests_written" in prompt
+        assert "tests_passed" in prompt
+        assert "implementation_notes" in prompt
+        assert "completion_promises" in prompt
+
+    def test_includes_plan_locations(self, worktree_path):
+        """Prompt lists implementation plan paths for agent to find."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        prompt = invoker._build_autobuild_implementation_prompt("TASK-001")
+
+        assert ".claude/task-plans/TASK-001-implementation-plan.md" in prompt
+        assert "docs/state/TASK-001/implementation_plan.md" in prompt
+
+    def test_task_id_substituted_in_protocol(self, worktree_path):
+        """Protocol {task_id} placeholders are replaced with actual task ID."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        prompt = invoker._build_autobuild_implementation_prompt("TASK-XYZ-999")
+
+        # Protocol has {task_id} placeholders for plan path and report path
+        assert ".claude/task-plans/TASK-XYZ-999-implementation-plan.md" in prompt
+        assert "{task_id}" not in prompt
+
+    def test_turn_substituted_in_protocol(self, worktree_path):
+        """Protocol {turn} placeholders are replaced with actual turn number."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        prompt = invoker._build_autobuild_implementation_prompt(
+            "TASK-001", turn=3
+        )
+
+        # Protocol has player_turn_{turn}.json reference
+        assert "player_turn_3.json" in prompt
+        assert "{turn}" not in prompt
+
+
+class TestFormatFeedbackForPrompt:
+    """Tests for _format_feedback_for_prompt() helper method.
+
+    TASK-ACO-002: Verifies feedback formatting for inline prompt inclusion.
+    """
+
+    def test_string_feedback_returned_verbatim(self, worktree_path):
+        """String feedback is returned as-is."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        result = invoker._format_feedback_for_prompt("Fix the bug", turn=2)
+
+        assert result == "Fix the bug"
+
+    def test_dict_with_rationale(self, worktree_path):
+        """Dict feedback extracts rationale field."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        feedback = {"rationale": "Tests are failing due to missing import"}
+        result = invoker._format_feedback_for_prompt(feedback, turn=2)
+
+        assert "Tests are failing due to missing import" in result
+
+    def test_dict_with_must_fix_issues(self, worktree_path):
+        """Dict feedback formats must_fix issues as bullet list."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        feedback = {
+            "issues": [
+                {"severity": "must_fix", "description": "Missing error handling"},
+                {"severity": "must_fix", "description": "Null check needed"},
+            ]
+        }
+        result = invoker._format_feedback_for_prompt(feedback, turn=2)
+
+        assert "**Must Fix:**" in result
+        assert "- Missing error handling" in result
+        assert "- Null check needed" in result
+
+    def test_dict_with_should_fix_issues(self, worktree_path):
+        """Dict feedback formats should_fix issues separately."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        feedback = {
+            "issues": [
+                {"severity": "should_fix", "description": "Add docstring"},
+            ]
+        }
+        result = invoker._format_feedback_for_prompt(feedback, turn=2)
+
+        assert "**Should Fix:**" in result
+        assert "- Add docstring" in result
+
+    def test_dict_with_no_recognized_fields(self, worktree_path):
+        """Dict without recognized fields falls back to JSON dump."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        feedback = {"custom_field": "custom_value"}
+        result = invoker._format_feedback_for_prompt(feedback, turn=2)
+
+        assert "custom_field" in result
+        assert "custom_value" in result
+
+    def test_dict_with_feedback_summary(self, worktree_path):
+        """Dict feedback uses feedback_summary as fallback for rationale."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        feedback = {"feedback_summary": "Implementation needs work"}
+        result = invoker._format_feedback_for_prompt(feedback, turn=2)
+
+        assert "Implementation needs work" in result

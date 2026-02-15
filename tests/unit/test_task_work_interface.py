@@ -1108,6 +1108,182 @@ class TestSDKOptionsForInlineProtocol:
 
 
 # ============================================================================
+# Test TASK-ACO-003: AutoBuild Design Prompt Builder
+# ============================================================================
+
+
+class TestBuildAutobuildDesignPrompt:
+    """Test _build_autobuild_design_prompt() method.
+
+    TASK-ACO-003: Tests the protocol-based prompt builder that loads
+    autobuild_design_protocol.md via load_protocol() and injects
+    task-specific context.
+    """
+
+    def test_loads_protocol_from_md_file(self, interface):
+        """Test prompt loads content from autobuild_design_protocol.md."""
+        prompt = interface._build_autobuild_design_prompt("TASK-001", {})
+
+        # Protocol content should include Phase 1.5 and Phase 2 from .md file
+        assert "Phase 1.5" in prompt
+        assert "Phase 2:" in prompt or "Implementation Planning" in prompt
+        assert "Phase 2.7" in prompt or "Complexity Evaluation" in prompt
+
+    def test_substitutes_task_id_in_protocol(self, interface):
+        """Test {task_id} placeholders are replaced with actual task ID."""
+        prompt = interface._build_autobuild_design_prompt("TASK-ABC-999", {})
+
+        assert "TASK-ABC-999" in prompt
+        # Should NOT contain unresolved {task_id} placeholders
+        assert "{task_id}" not in prompt
+
+    def test_includes_phase_skipping_instructions(self, interface):
+        """Test AutoBuild phase skipping is encoded in the prompt."""
+        prompt = interface._build_autobuild_design_prompt("TASK-001", {})
+
+        assert "Phase 1.6" in prompt
+        assert "SKIP" in prompt
+        assert "Phase 2.1" in prompt
+        assert "Phase 2.5A" in prompt
+
+    def test_includes_docs_level(self, interface):
+        """Test documentation level is included in prompt."""
+        prompt = interface._build_autobuild_design_prompt(
+            "TASK-001", {"docs": "comprehensive"}
+        )
+
+        assert "comprehensive" in prompt
+
+    def test_default_docs_level_is_minimal(self, interface):
+        """Test default documentation level is minimal."""
+        prompt = interface._build_autobuild_design_prompt("TASK-001", {})
+
+        assert "minimal" in prompt
+
+    def test_includes_arch_review_by_default(self, interface):
+        """Test Phase 2.5B is included by default (lightweight mode)."""
+        prompt = interface._build_autobuild_design_prompt("TASK-001", {})
+
+        assert "LIGHTWEIGHT" in prompt
+        assert "SOLID" in prompt
+        assert "DRY" in prompt
+        assert "YAGNI" in prompt
+
+    def test_skips_arch_review_with_flag(self, interface):
+        """Test Phase 2.5B is removed when skip_arch_review is set."""
+        prompt = interface._build_autobuild_design_prompt(
+            "TASK-001", {"skip_arch_review": True}
+        )
+
+        # Phase 2.5B section should be stripped from protocol
+        assert "## Phase 2.5B" not in prompt
+
+    def test_checkpoint_auto_approved(self, interface):
+        """Test Phase 2.8 auto-approve is in the prompt."""
+        prompt = interface._build_autobuild_design_prompt("TASK-001", {})
+
+        assert "AUTO-APPROVE" in prompt or "auto-approve" in prompt.lower()
+
+    def test_output_markers_preserved(self, interface):
+        """Test output markers from protocol are preserved for parsing."""
+        prompt = interface._build_autobuild_design_prompt("TASK-001", {})
+
+        assert "Plan saved to:" in prompt
+        assert "Complexity:" in prompt
+        assert "DESIGN_APPROVED" in prompt
+
+    def test_plan_path_uses_correct_convention(self, interface):
+        """Test plan save path uses .claude/task-plans/ convention."""
+        prompt = interface._build_autobuild_design_prompt("TASK-XYZ-001", {})
+
+        assert ".claude/task-plans/TASK-XYZ-001-implementation-plan.md" in prompt
+
+    def test_not_a_skill_invocation(self, interface):
+        """Test prompt is NOT a /task-work skill invocation."""
+        prompt = interface._build_autobuild_design_prompt("TASK-001", {})
+
+        assert not prompt.strip().startswith("/task-work")
+        assert "--design-only" not in prompt
+
+    def test_includes_working_directory(self, interface):
+        """Test working directory is included in prompt context."""
+        prompt = interface._build_autobuild_design_prompt("TASK-001", {})
+
+        assert str(interface.worktree_path) in prompt
+
+    def test_parseable_by_parse_sdk_output(self, interface):
+        """Test prompt output markers can be parsed by _parse_sdk_output().
+
+        Simulates the expected output from an SDK agent that followed the
+        protocol, verifying it is parseable by the existing parser.
+        """
+        # This is the format the protocol instructs the agent to output
+        simulated_output = (
+            "Plan saved to: .claude/task-plans/TASK-001-implementation-plan.md\n"
+            "Architectural Score: 85/100\n"
+            "SOLID: 88, DRY: 82, YAGNI: 85\n"
+            "Complexity: 6/10\n"
+            "Phase 2.8: checkpoint approved\n"
+            "State: DESIGN_APPROVED\n"
+        )
+
+        result = interface._parse_sdk_output(simulated_output)
+
+        assert result["plan_path"] == ".claude/task-plans/TASK-001-implementation-plan.md"
+        assert result["complexity"]["score"] == 6
+        assert result["architectural_review"]["score"] == 85
+        assert result["checkpoint_result"] == "approved"
+
+
+class TestStripArchReviewSection:
+    """Test _strip_arch_review_section() static method."""
+
+    def test_removes_phase_25b_section(self):
+        """Test Phase 2.5B section is removed from protocol."""
+        protocol = (
+            "## Phase 2: Planning\n"
+            "Some planning content.\n"
+            "\n"
+            "## Phase 2.5B: Architectural Review\n"
+            "SOLID content here.\n"
+            "DRY content here.\n"
+            "\n"
+            "## Phase 2.7: Complexity\n"
+            "Complexity content.\n"
+        )
+
+        result = TaskWorkInterface._strip_arch_review_section(protocol)
+
+        assert "## Phase 2: Planning" in result
+        assert "## Phase 2.5B" not in result
+        assert "SOLID content" not in result
+        assert "## Phase 2.7: Complexity" in result
+
+    def test_preserves_content_before_and_after(self):
+        """Test content before and after 2.5B is preserved."""
+        protocol = (
+            "Header content\n"
+            "## Phase 2.5B: Architectural Review\n"
+            "Review content\n"
+            "## Phase 2.7: Complexity\n"
+            "Footer content\n"
+        )
+
+        result = TaskWorkInterface._strip_arch_review_section(protocol)
+
+        assert "Header content" in result
+        assert "Footer content" in result
+
+    def test_noop_when_no_phase_25b(self):
+        """Test no change when Phase 2.5B is not in protocol."""
+        protocol = "## Phase 2: Planning\nContent\n## Phase 2.7: Complexity\n"
+
+        result = TaskWorkInterface._strip_arch_review_section(protocol)
+
+        assert result == protocol
+
+
+# ============================================================================
 # Run Tests
 # ============================================================================
 
