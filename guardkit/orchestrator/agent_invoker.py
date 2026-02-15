@@ -267,8 +267,19 @@ class TaskWorkStreamParser:
             tool_name: Name of the tool (e.g., "Write", "Edit")
             tool_args: Tool arguments dictionary containing file_path
         """
-        file_path = tool_args.get("file_path")
+        # TASK-FIX-PIPELINE: Try multiple key names for file path (Fix 1)
+        # Claude Code SDK tools may use different key names
+        file_path = (
+            tool_args.get("file_path")
+            or tool_args.get("path")
+            or tool_args.get("file")
+            or tool_args.get("filePath")
+        )
         if not file_path or not isinstance(file_path, str):
+            logger.debug(
+                f"Tool {tool_name} call has no recognizable file path key. "
+                f"Available keys: {list(tool_args.keys())}"
+            )
             return
 
         if tool_name == "Write":
@@ -1518,6 +1529,25 @@ Follow the decision format specified in your agent definition.
                 report["files_modified"] = sorted(list(original_modified | git_modified))
                 report["files_created"] = sorted(list(original_created | git_created))
 
+                # TASK-FIX-PIPELINE: Filter invalid entries (Fix 4)
+                # Git detection can produce spurious entries like "**" from glob patterns
+                def _is_valid_path(p: str) -> bool:
+                    """Filter out invalid file path entries."""
+                    if not p or not p.strip():
+                        return False
+                    if p in ("*", "**", "***"):
+                        return False
+                    if p.startswith("*"):
+                        return False
+                    return True
+
+                report["files_modified"] = sorted(
+                    [p for p in report["files_modified"] if _is_valid_path(p)]
+                )
+                report["files_created"] = sorted(
+                    [p for p in report["files_created"] if _is_valid_path(p)]
+                )
+
                 # Log when git detection adds files not in original report
                 new_modified = git_modified - original_modified
                 new_created = git_created - original_created
@@ -1557,11 +1587,110 @@ Follow the decision format specified in your agent definition.
                     report["tests_passed"] = bool(tests_passed_value)
                 report["tests_run"] = True
 
+        # TASK-FIX-PIPELINE: Recover agent-written completion_promises (Fix 2)
+        # The execution protocol instructs the SDK agent to write player_turn_N.json
+        # directly. If the agent did so before this method runs, preserve the
+        # agent's completion_promises and requirements_addressed.
+        if not report.get("completion_promises") and player_report_path.exists():
+            try:
+                with open(player_report_path, "r") as f:
+                    agent_written = json.load(f)
+
+                # Recover completion_promises from agent-written report
+                agent_promises = agent_written.get("completion_promises", [])
+                if agent_promises:
+                    report["completion_promises"] = agent_promises
+                    logger.info(
+                        f"Recovered {len(agent_promises)} completion_promises "
+                        f"from agent-written player report for {task_id}"
+                    )
+
+                # Recover requirements_addressed if ours is empty
+                if not report["requirements_addressed"]:
+                    agent_reqs = agent_written.get("requirements_addressed", [])
+                    if agent_reqs:
+                        report["requirements_addressed"] = agent_reqs
+                        logger.info(
+                            f"Recovered {len(agent_reqs)} requirements_addressed "
+                            f"from agent-written player report for {task_id}"
+                        )
+
+                # Recover requirements_remaining if ours is empty
+                if not report["requirements_remaining"]:
+                    agent_remaining = agent_written.get("requirements_remaining", [])
+                    if agent_remaining:
+                        report["requirements_remaining"] = agent_remaining
+
+            except (json.JSONDecodeError, IOError) as e:
+                logger.debug(f"No agent-written player report to recover from: {e}")
+
+        # TASK-FIX-PIPELINE: File-existence verification fallback (Fix 5)
+        # When no completion_promises exist after Fix 2 recovery, generate
+        # synthetic promises by checking files against acceptance criteria.
+        if not report.get("completion_promises"):
+            # Load task metadata to get acceptance_criteria
+            task_file = self._find_task_file(task_id)
+            if task_file:
+                task_meta = self._load_task_metadata(task_file)
+                acceptance_criteria = task_meta.get("acceptance_criteria", [])
+                if acceptance_criteria:
+                    synthetic_promises = self._generate_file_existence_promises(
+                        task_id=task_id,
+                        files_created=report.get("files_created", []),
+                        files_modified=report.get("files_modified", []),
+                        acceptance_criteria=acceptance_criteria,
+                        worktree_path=self.worktree_path,
+                    )
+                    if synthetic_promises:
+                        report["completion_promises"] = synthetic_promises
+                        logger.info(
+                            f"Generated {len(synthetic_promises)} file-existence promises "
+                            f"for {task_id} (agent did not produce promises)"
+                        )
+
         # Write Player report
         with open(player_report_path, "w") as f:
             json.dump(report, f, indent=2)
 
         logger.info(f"Written Player report to {player_report_path}")
+
+        # TASK-FIX-PIPELINE: Update task_work_results.json with enriched data (Fix 3)
+        # Coach reads task_work_results.json for quality gate evaluation.
+        # It must reflect the enriched file lists and any recovered promises.
+        if task_work_results_path.exists():
+            try:
+                with open(task_work_results_path, "r") as f:
+                    task_work_data = json.load(f)
+
+                updated = False
+
+                # Update file lists if enriched data is richer
+                if len(report.get("files_modified", [])) > len(task_work_data.get("files_modified", [])):
+                    task_work_data["files_modified"] = report["files_modified"]
+                    updated = True
+
+                if len(report.get("files_created", [])) > len(task_work_data.get("files_created", [])):
+                    task_work_data["files_created"] = report["files_created"]
+                    updated = True
+
+                # Propagate completion_promises if not already present
+                if report.get("completion_promises") and not task_work_data.get("completion_promises"):
+                    task_work_data["completion_promises"] = report["completion_promises"]
+                    updated = True
+
+                # Update tests_written from enriched report
+                if len(report.get("tests_written", [])) > len(task_work_data.get("tests_written", [])):
+                    task_work_data["tests_written"] = report["tests_written"]
+                    updated = True
+
+                if updated:
+                    with open(task_work_results_path, "w") as f:
+                        json.dump(task_work_data, f, indent=2)
+                    logger.info(
+                        f"Updated task_work_results.json with enriched data for {task_id}"
+                    )
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Failed to update task_work_results.json: {e}")
 
     def _detect_git_changes(self) -> Dict[str, list]:
         """Detect git changes in worktree.
@@ -1606,6 +1735,126 @@ Follow the decision format specified in your agent definition.
             logger.warning(f"Git change detection failed: {e}")
 
         return result
+
+    def _find_task_file(self, task_id: str) -> Optional[Path]:
+        """Find task file in standard task directories.
+
+        Args:
+            task_id: Task identifier (e.g., "TASK-001")
+
+        Returns:
+            Path to task file if found, None otherwise
+        """
+        # Standard task directories
+        task_dirs = [
+            self.worktree_path / "tasks" / "backlog",
+            self.worktree_path / "tasks" / "in_progress",
+            self.worktree_path / "tasks" / "in_review",
+            self.worktree_path / "tasks" / "completed",
+            self.worktree_path / "tasks" / "blocked",
+        ]
+
+        for task_dir in task_dirs:
+            if not task_dir.exists():
+                continue
+            # Look for task file matching task_id
+            for task_file in task_dir.rglob(f"{task_id}*.md"):
+                return task_file
+
+        return None
+
+    def _load_task_metadata(self, task_file: Path) -> Dict[str, Any]:
+        """Load task metadata from YAML frontmatter.
+
+        Args:
+            task_file: Path to task file
+
+        Returns:
+            Dict with task metadata (may be empty if no frontmatter)
+        """
+        import re
+
+        try:
+            content = task_file.read_text()
+            # Parse YAML frontmatter between --- markers
+            frontmatter_match = re.match(r'^---\n(.*?)\n---', content, re.DOTALL)
+            if frontmatter_match:
+                import yaml
+                frontmatter = frontmatter_match.group(1)
+                return yaml.safe_load(frontmatter) or {}
+        except Exception as e:
+            logger.debug(f"Failed to load task metadata from {task_file}: {e}")
+
+        return {}
+
+    def _generate_file_existence_promises(
+        self,
+        task_id: str,
+        files_created: list,
+        files_modified: list,
+        acceptance_criteria: list,
+        worktree_path: Path,
+    ) -> list:
+        """Generate completion promises from file existence checks.
+
+        For each acceptance criterion, check if files mentioned in the criterion
+        text exist in the worktree. Generate a promise with status "partial" if
+        the file exists, "incomplete" otherwise.
+
+        Args:
+            task_id: Task identifier
+            files_created: Files created by Player
+            files_modified: Files modified by Player
+            acceptance_criteria: List of AC text strings
+            worktree_path: Path to worktree for disk checks
+
+        Returns:
+            List of promise dicts with criterion_id, status, evidence, evidence_type
+        """
+        import re
+
+        all_files = set(files_created) | set(files_modified)
+        promises = []
+
+        for i, criterion in enumerate(acceptance_criteria):
+            criterion_id = f"AC-{i + 1:03d}"
+
+            # Extract file paths from criterion text (backtick-quoted paths)
+            file_refs = re.findall(r'`([^`]+\.[a-zA-Z]+)`', criterion)
+            # Also check for directory references like `tests/seam/`
+            dir_refs = re.findall(r'`([^`]+/)`', criterion)
+
+            found_files = []
+            for ref in file_refs:
+                # Check against known file lists
+                if any(ref in f for f in all_files):
+                    found_files.append(ref)
+                # Check disk as fallback
+                elif (worktree_path / ref).exists():
+                    found_files.append(ref)
+
+            found_dirs = []
+            for ref in dir_refs:
+                if (worktree_path / ref).is_dir():
+                    found_dirs.append(ref)
+
+            if found_files or found_dirs:
+                evidence_items = found_files + found_dirs
+                promises.append({
+                    "criterion_id": criterion_id,
+                    "status": "partial",
+                    "evidence": f"File existence verified: {', '.join(evidence_items)}",
+                    "evidence_type": "file_existence",
+                })
+            else:
+                promises.append({
+                    "criterion_id": criterion_id,
+                    "status": "incomplete",
+                    "evidence": "No file references found or verified",
+                    "evidence_type": "file_existence",
+                })
+
+        return promises
 
     def _load_agent_report(
         self,
@@ -3079,8 +3328,18 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                     if block.name in ("Write", "Edit"):
                                         tool_input = getattr(block, "input", {})
                                         if isinstance(tool_input, dict):
+                                            # TASK-FIX-PIPELINE: Log actual SDK key names (Fix 1)
+                                            logger.info(
+                                                f"[{task_id}] ToolUseBlock {block.name} input keys: "
+                                                f"{list(tool_input.keys())}"
+                                            )
                                             parser._track_tool_call(
                                                 block.name, tool_input
+                                            )
+                                        else:
+                                            logger.warning(
+                                                f"[{task_id}] ToolUseBlock {block.name} input is "
+                                                f"{type(tool_input).__name__}, not dict: {str(tool_input)[:200]}"
                                             )
                                 elif isinstance(block, ToolResultBlock):
                                     # Extract content from tool results if present

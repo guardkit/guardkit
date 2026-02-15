@@ -1627,8 +1627,8 @@ class AutoBuildOrchestrator:
                     if self._is_feedback_stalled(turn_record.feedback, criteria_passed):
                         logger.error(
                             f"Feedback stall detected for {task_id}: "
-                            f"identical feedback for 3 consecutive turns "
-                            f"with 0% criteria progress. "
+                            f"identical feedback with no criteria progress "
+                            f"({criteria_passed} criteria passing). "
                             f"Exiting loop early."
                         )
                         return turn_history, "unrecoverable_stall"
@@ -2627,6 +2627,10 @@ class AutoBuildOrchestrator:
         the same feedback repeats for ``threshold`` consecutive turns with
         no change in the number of passing acceptance criteria.
 
+        When partial progress exists (criteria_passed_count > 0), the threshold
+        is extended by 2 turns to give the Player more runway before declaring
+        stall (TASK-REV-E719 Fix 3).
+
         Parameters
         ----------
         feedback : str
@@ -2660,11 +2664,35 @@ class AutoBuildOrchestrator:
         # Zero criteria progress across all recent turns?
         counts = [count for _, count in recent]
         if all(c == counts[0] for c in counts):
-            logger.warning(
-                f"Feedback stall: identical feedback (sig={feedback_sig}) "
-                f"for {threshold} turns with {counts[0]} criteria passing"
+            if counts[0] == 0:
+                # True zero progress -- unrecoverable
+                logger.warning(
+                    f"Feedback stall: identical feedback (sig={feedback_sig}) "
+                    f"for {threshold} turns with 0 criteria passing"
+                )
+                return True
+
+            # Partial progress but stuck (TASK-REV-E719 Fix 3):
+            # Extend threshold by 2 turns to give Player more runway.
+            extended_threshold = threshold + 2
+            if len(self._feedback_history) >= extended_threshold:
+                extended_recent = self._feedback_history[-extended_threshold:]
+                ext_sigs = {sig for sig, _ in extended_recent}
+                ext_counts = [count for _, count in extended_recent]
+                if len(ext_sigs) == 1 and all(c == ext_counts[0] for c in ext_counts):
+                    logger.warning(
+                        f"Feedback stall: identical feedback (sig={feedback_sig}) "
+                        f"for {extended_threshold} turns with {counts[0]} criteria "
+                        f"passing (extended threshold for partial progress)"
+                    )
+                    return True
+
+            logger.info(
+                f"Partial progress stall warning: {counts[0]} criteria passing "
+                f"but stuck for {len(self._feedback_history)} turns. "
+                f"Extended threshold: {extended_threshold} turns."
             )
-            return True
+            return False
 
         return False
 

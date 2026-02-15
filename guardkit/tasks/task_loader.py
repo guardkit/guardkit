@@ -313,11 +313,13 @@ class TaskLoader:
             elif in_criteria:
                 if line.startswith("##"):  # Next section
                     break
-                # Look for list items (- [ ] or - [x] or - or *)
-                stripped = line.strip()
-                if stripped.startswith(("- [ ]", "- [x]", "- ", "* ")):
+                # Only match TOP-LEVEL list items (no leading whitespace).
+                # Indented items (e.g., "  - sub-bullet") are sub-criteria
+                # belonging to their parent and should not inflate the count.
+                if line.startswith(("- [ ] ", "- [x] ", "- ", "* ")):
                     # Extract text after checkbox/bullet
-                    text = stripped.lstrip("- [x] ").lstrip("- [ ] ").lstrip("- ").lstrip("* ")
+                    text = line.lstrip("- [x] ").lstrip("- [ ] ").lstrip("- ").lstrip("* ")
+                    text = text.strip()
                     if text:
                         criteria_lines.append(text)
 

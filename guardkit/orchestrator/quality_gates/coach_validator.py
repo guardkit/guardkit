@@ -995,6 +995,21 @@ class CoachValidator:
         if completion_promises:
             strategy = "promises"
             validation = self._match_by_promises(acceptance_criteria, completion_promises)
+
+            # Hybrid fallback (TASK-REV-E719 Fix 2): for criteria rejected due to
+            # missing promises, try text matching against requirements_addressed.
+            # This handles cases where the Player wrote fewer promises than criteria
+            # (e.g., criteria parser inflation, SDK turn exhaustion).
+            if not validation.all_criteria_met:
+                requirements_addressed = task_work_results.get(
+                    "requirements_addressed",
+                    task_work_results.get("requirements_met", []),
+                )
+                if requirements_addressed:
+                    validation = self._hybrid_fallback(
+                        validation, acceptance_criteria, requirements_addressed
+                    )
+                    strategy = "hybrid"
         else:
             # Strategy 2: Legacy text matching via requirements_met (fallback)
             strategy = "text"
@@ -1375,6 +1390,84 @@ class CoachValidator:
         )
 
         return validation
+
+    def _hybrid_fallback(
+        self,
+        promise_validation: RequirementsValidation,
+        acceptance_criteria: List[str],
+        requirements_addressed: List[str],
+    ) -> RequirementsValidation:
+        """
+        Re-evaluate rejected criteria using text matching as fallback (TASK-REV-E719).
+
+        When promise-based matching rejects criteria (no matching promise), this
+        method gives them a second chance via text matching against
+        ``requirements_addressed``. Criteria already verified by promises are
+        kept as-is.
+
+        Parameters
+        ----------
+        promise_validation : RequirementsValidation
+            Initial validation from ``_match_by_promises()``
+        acceptance_criteria : List[str]
+            Acceptance criteria text from the task
+        requirements_addressed : List[str]
+            Requirements reported as addressed by the Player
+
+        Returns
+        -------
+        RequirementsValidation
+            Merged validation with text fallback applied to rejected criteria
+        """
+        # Run text matching against requirements_addressed
+        text_validation = self._match_by_text(acceptance_criteria, requirements_addressed)
+
+        # Merge: keep promise results for verified criteria,
+        # upgrade rejected criteria if text matching verifies them
+        merged_results: List[CriterionResult] = []
+        merged_missing: List[str] = []
+        upgraded_count = 0
+
+        for promise_cr, text_cr in zip(
+            promise_validation.criteria_results,
+            text_validation.criteria_results,
+        ):
+            if promise_cr.result == "verified":
+                merged_results.append(promise_cr)
+            elif (
+                text_cr.result == "verified"
+                and "No completion promise" in promise_cr.evidence
+            ):
+                # Only upgrade criteria that had NO promise at all.
+                # If the Player explicitly marked a criterion as "incomplete",
+                # trust that over a text match.
+                upgraded_count += 1
+                merged_results.append(CriterionResult(
+                    criterion_id=text_cr.criterion_id,
+                    criterion_text=text_cr.criterion_text,
+                    result="verified",
+                    status="verified",
+                    evidence=f"[Text fallback] {text_cr.evidence}",
+                ))
+            else:
+                merged_results.append(promise_cr)
+                merged_missing.append(promise_cr.criterion_text)
+
+        criteria_met = len(acceptance_criteria) - len(merged_missing)
+
+        if upgraded_count > 0:
+            logger.info(
+                f"Hybrid fallback upgraded {upgraded_count} criteria "
+                f"via text matching against requirements_addressed"
+            )
+
+        return RequirementsValidation(
+            criteria_total=len(acceptance_criteria),
+            criteria_met=criteria_met,
+            all_criteria_met=len(merged_missing) == 0,
+            missing=merged_missing,
+            criteria_results=merged_results,
+        )
 
     def _build_all_unmet(
         self,
