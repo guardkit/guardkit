@@ -11,7 +11,12 @@ dependencies:
   - TASK-ACO-002
   - TASK-ACO-003
   - TASK-ACO-004
-status: pending
+status: completed
+completed: 2026-02-15T12:10:00Z
+updated: 2026-02-15T12:10:00Z
+previous_state: in_review
+state_transition_reason: "All acceptance criteria met, 112 tests passing"
+completed_location: tasks/completed/TASK-ACO-005/
 priority: high
 ---
 
@@ -68,12 +73,12 @@ Test SDK session configuration:
 
 ## Acceptance Criteria
 
-- [ ] All prompt builder tests pass
-- [ ] All auto-detection tests pass
-- [ ] All SDK session config tests pass
-- [ ] Tests cover edge cases (missing frontmatter, empty body, etc.)
-- [ ] No mocking of the protocol file loading (test actual file reads)
-- [ ] Tests verify no regression to interactive path
+- [x] All prompt builder tests pass (46 tests)
+- [x] All auto-detection tests pass (34 tests)
+- [x] All SDK session config tests pass (32 tests)
+- [x] Tests cover edge cases (missing frontmatter, empty body, etc.)
+- [x] No mocking of the protocol file loading (test actual file reads)
+- [x] Tests verify no regression to interactive path (source inspection tests)
 
 ## Files Created
 

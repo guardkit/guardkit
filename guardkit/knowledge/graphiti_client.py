@@ -217,6 +217,11 @@ class GraphitiClient:
         self._connected = False
         self._auto_detect_project = auto_detect_project
 
+        # Circuit breaker state
+        self._consecutive_failures = 0
+        self._circuit_breaker_tripped = False
+        self._max_failures = 3
+
         # Determine project_id: explicit > auto-detect
         if self.config.project_id is not None:
             self._project_id = self.config.project_id
@@ -389,6 +394,33 @@ class GraphitiClient:
         """
         return self.config.enabled and self._connected
 
+    @property
+    def is_healthy(self) -> bool:
+        """Returns True only if enabled, connected, and circuit breaker not tripped.
+
+        This property provides a safe way to check if the client
+        is ready for operations, including circuit breaker status.
+
+        Returns:
+            True if enabled, connected, and circuit breaker not tripped
+        """
+        return self.config.enabled and self._connected and not self._circuit_breaker_tripped
+
+    def _record_success(self) -> None:
+        """Record a successful operation, resetting the failure counter."""
+        self._consecutive_failures = 0
+
+    def _record_failure(self) -> None:
+        """Record a failed operation, potentially tripping the circuit breaker."""
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= self._max_failures:
+            self._circuit_breaker_tripped = True
+            logger.warning(
+                "Graphiti disabled after %d consecutive failures -- "
+                "continuing without knowledge graph context",
+                self._consecutive_failures,
+            )
+
     async def _check_connection(self) -> bool:
         """Check if connection to the graph database can be established.
 
@@ -437,6 +469,9 @@ class GraphitiClient:
             True if the system is healthy and responding, False otherwise
         """
         if not self.config.enabled:
+            return False
+
+        if self._circuit_breaker_tripped:
             return False
 
         if not self._connected or not self._graphiti:
@@ -573,6 +608,9 @@ class GraphitiClient:
         Returns:
             List of search results as dictionaries
         """
+        if self._circuit_breaker_tripped:
+            return []
+
         if not self._graphiti:
             logger.warning("Graphiti not initialized, search unavailable")
             return []
@@ -586,7 +624,7 @@ class GraphitiClient:
             )
 
             # Convert Edge objects to dictionaries
-            return [
+            result_list = [
                 {
                     "uuid": edge.uuid,
                     "fact": edge.fact,
@@ -598,8 +636,13 @@ class GraphitiClient:
                 for edge in results
             ]
 
+            # Record success
+            self._record_success()
+            return result_list
+
         except Exception as e:
             logger.warning(f"Search request failed: {e}")
+            self._record_failure()
             return []
 
     async def search(
@@ -675,6 +718,9 @@ class GraphitiClient:
         Returns:
             Episode UUID if successful, None otherwise
         """
+        if self._circuit_breaker_tripped:
+            return None
+
         if not self._graphiti:
             logger.warning("Graphiti not initialized, episode creation unavailable")
             return None
@@ -694,11 +740,15 @@ class GraphitiClient:
 
             # Return the episode UUID
             if result and hasattr(result, 'episode') and result.episode:
-                return result.episode.uuid
+                episode_uuid = result.episode.uuid
+                # Record success
+                self._record_success()
+                return episode_uuid
             return None
 
         except Exception as e:
             logger.warning(f"Episode creation request failed: {e}")
+            self._record_failure()
             return None
 
     def _inject_metadata(self, content: str, metadata: "EpisodeMetadata") -> str:
@@ -1014,6 +1064,9 @@ class GraphitiClient:
         # Graceful degradation: return not found if not initialized
         if not self._graphiti:
             logger.warning("Graphiti not initialized, episode_exists unavailable")
+            return ExistsResult.not_found()
+
+        if self._circuit_breaker_tripped:
             return ExistsResult.not_found()
 
         try:

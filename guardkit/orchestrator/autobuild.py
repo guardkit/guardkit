@@ -41,6 +41,7 @@ Example:
 """
 
 import asyncio
+import concurrent.futures
 import hashlib
 import logging
 import re
@@ -606,7 +607,8 @@ class AutoBuildOrchestrator:
         self._last_coach_context_status: Optional[ContextStatus] = None
         # Per-thread Graphiti client storage (TASK-FIX-GTP2)
         self._factory: Optional[GraphitiClientFactory] = None
-        self._thread_loaders: Dict[int, Optional[AutoBuildContextLoader]] = {}
+        # TASK-ACR-005: Store event loop reference with each loader for proper cleanup
+        self._thread_loaders: Dict[int, Tuple[Optional[AutoBuildContextLoader], asyncio.AbstractEventLoop]] = {}
 
         # Store factory reference for per-thread client creation (TASK-FIX-GTP2)
         # Replaces shared singleton pattern that caused cross-loop hangs in parallel mode
@@ -2150,6 +2152,9 @@ class AutoBuildOrchestrator:
                 task_type=task_type,
             )
 
+            # Ensure task_id is populated in report (TASK-ACR-001)
+            synthetic_report["task_id"] = task_id
+
             # Return as AgentInvocationResult
             return AgentInvocationResult(
                 task_id=task_id,
@@ -2197,21 +2202,33 @@ class AutoBuildOrchestrator:
         Dict[str, Any]
             Synthetic Player report
         """
-        # Determine if we should generate file-existence promises
-        should_generate_promises = (
-            task_type == "scaffolding"
-            and acceptance_criteria
-            and len(acceptance_criteria) > 0
+        # Determine promise generation strategy
+        has_criteria = acceptance_criteria and len(acceptance_criteria) > 0
+        should_generate_file_promises = (
+            task_type == "scaffolding" and has_criteria
+        )
+        should_generate_git_promises = (
+            task_type is not None
+            and task_type != "scaffolding"
+            and has_criteria
         )
 
-        # Log synthetic report construction (TASK-ASF-004 + TASK-ASF-006)
-        if should_generate_promises:
+        # Log synthetic report construction (TASK-ASF-004 + TASK-ASF-006 + TASK-ACR-004)
+        if should_generate_file_promises:
             logger.warning(
                 f"[Turn {work_state.turn_number}] Building synthetic report: "
                 f"{len(work_state.files_created)} files created, "
                 f"{len(work_state.files_modified)} files modified, "
                 f"{work_state.test_count} tests. "
                 f"Generating file-existence promises for scaffolding task."
+            )
+        elif should_generate_git_promises:
+            logger.warning(
+                f"[Turn {work_state.turn_number}] Building synthetic report: "
+                f"{len(work_state.files_created)} files created, "
+                f"{len(work_state.files_modified)} files modified, "
+                f"{work_state.test_count} tests. "
+                f"Generating git-analysis promises for {task_type} task."
             )
         else:
             logger.warning(
@@ -2264,7 +2281,7 @@ class AutoBuildOrchestrator:
         }
 
         # Generate file-existence promises for scaffolding tasks (TASK-ASF-006)
-        if should_generate_promises:
+        if should_generate_file_promises:
             promises = self._generate_file_existence_promises(
                 work_state, acceptance_criteria
             )
@@ -2273,6 +2290,18 @@ class AutoBuildOrchestrator:
                 logger.info(
                     f"Generated {len(promises)} file-existence promises "
                     f"for scaffolding task synthetic report"
+                )
+
+        # Generate git-analysis promises for non-scaffolding tasks (TASK-ACR-004)
+        elif should_generate_git_promises:
+            git_promises = self._generate_git_analysis_promises(
+                work_state, acceptance_criteria
+            )
+            if git_promises:
+                report["completion_promises"] = git_promises
+                logger.info(
+                    f"Generated {len(git_promises)} git-analysis promises "
+                    f"for {task_type} task synthetic report"
                 )
 
         return report
@@ -2350,6 +2379,200 @@ class AutoBuildOrchestrator:
             })
 
         return promises
+
+    # --- Git-analysis promise generation (TASK-ACR-004) ---
+
+    # Stopwords excluded from keyword extraction
+    _KEYWORD_STOPWORDS = frozenset({
+        "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
+        "of", "with", "by", "from", "is", "it", "be", "as", "that", "this",
+        "are", "was", "were", "been", "has", "have", "had", "do", "does",
+        "did", "will", "would", "should", "can", "could", "may", "might",
+        "shall", "must", "not", "no", "all", "each", "every", "any", "some",
+        "when", "if", "then", "else", "into", "via", "using", "new",
+    })
+
+    def _generate_git_analysis_promises(
+        self,
+        work_state: WorkState,
+        acceptance_criteria: List[str],
+    ) -> List[Dict[str, Any]]:
+        """
+        Generate git-analysis promises for feature/implementation tasks.
+
+        Analyzes git diff data (files created/modified) to detect whether
+        acceptance criteria were likely addressed. Uses keyword extraction
+        and pattern matching against changed file paths and basenames.
+
+        Unlike file-existence promises (scaffolding), these promises use
+        ``status: "partial"`` to indicate lower confidence.
+
+        Parameters
+        ----------
+        work_state : WorkState
+            Detected work state with files_created, files_modified, git_changes
+        acceptance_criteria : List[str]
+            Acceptance criteria text from the task
+
+        Returns
+        -------
+        List[Dict[str, Any]]
+            List of completion promise dicts with structure::
+
+                {
+                    "criterion_id": "AC-001",
+                    "criterion_text": "...",
+                    "status": "partial" | "incomplete",
+                    "evidence": "...",
+                    "evidence_type": "git_analysis"
+                }
+        """
+        changed_files = set(work_state.files_created + work_state.files_modified)
+        if not changed_files:
+            return []
+
+        promises: List[Dict[str, Any]] = []
+        for i, criterion_text in enumerate(acceptance_criteria):
+            criterion_id = f"AC-{i+1:03d}"
+
+            # Extract file path patterns from criterion text
+            file_patterns = re.findall(r'[\w./\-]+\.\w{1,5}', criterion_text)
+
+            # Extract code patterns (function names, class names, endpoints)
+            code_patterns = self._extract_code_patterns(criterion_text)
+
+            # Extract keywords for fuzzy matching
+            keywords = self._extract_criterion_keywords(criterion_text)
+
+            # Match against changed files
+            matched_files: List[str] = []
+            matched_patterns: List[str] = []
+
+            # 1. File path matching (exact, like scaffolding)
+            for pattern in file_patterns:
+                for f in changed_files:
+                    if f.endswith(pattern) or pattern in f:
+                        if f not in matched_files:
+                            matched_files.append(f)
+
+            # 2. Code pattern matching against file basenames
+            for pattern in code_patterns:
+                pattern_lower = pattern.lower().lstrip("/")
+                for f in changed_files:
+                    f_lower = f.lower()
+                    if pattern_lower in f_lower:
+                        matched_patterns.append(pattern)
+                        if f not in matched_files:
+                            matched_files.append(f)
+                        break
+
+            # 3. Keyword matching against file basenames (fuzzy)
+            if keywords and not matched_files:
+                file_text = " ".join(f.lower() for f in changed_files)
+                matched_kws = [kw for kw in keywords if kw in file_text]
+                if len(matched_kws) >= max(1, len(keywords) * 0.3):
+                    matched_patterns.extend(matched_kws[:3])
+
+            # Build promise
+            if matched_files or matched_patterns:
+                evidence_parts: List[str] = []
+                if matched_files:
+                    file_descs = []
+                    for f in matched_files[:3]:
+                        action = (
+                            "created"
+                            if f in work_state.files_created
+                            else "modified"
+                        )
+                        file_descs.append(f"{f} ({action})")
+                    evidence_parts.append(
+                        "Files: " + ", ".join(file_descs)
+                    )
+                if matched_patterns:
+                    evidence_parts.append(
+                        "Patterns: " + ", ".join(matched_patterns[:3])
+                    )
+                evidence = "Git-analysis detected: " + "; ".join(evidence_parts)
+                status = "partial"
+            else:
+                evidence = "No git-analysis evidence for this criterion"
+                status = "incomplete"
+
+            promises.append({
+                "criterion_id": criterion_id,
+                "criterion_text": criterion_text,
+                "status": status,
+                "evidence": evidence,
+                "evidence_type": "git_analysis",
+            })
+
+        return promises
+
+    def _extract_code_patterns(self, text: str) -> List[str]:
+        """
+        Extract code patterns from criterion text.
+
+        Detects function calls (``word()``), CamelCase class names,
+        and endpoint paths (``/path/to/resource``).
+
+        Parameters
+        ----------
+        text : str
+            Acceptance criterion text
+
+        Returns
+        -------
+        List[str]
+            Extracted code patterns
+        """
+        patterns: List[str] = []
+
+        # Function calls: word()
+        func_matches = re.findall(r'\b(\w+)\(\)', text)
+        patterns.extend(func_matches)
+
+        # CamelCase class names (at least two segments)
+        class_matches = re.findall(
+            r'\b([A-Z][a-z]+(?:[A-Z][a-z]+)+)\b', text
+        )
+        patterns.extend(class_matches)
+        # Also split CamelCase into individual lowercase words for
+        # file-path matching (e.g. PaymentProcessor → payment, processor)
+        for class_name in class_matches:
+            words = re.findall(r'[A-Z][a-z]+', class_name)
+            patterns.extend(w.lower() for w in words)
+
+        # Endpoint paths: /path/to/resource
+        endpoint_matches = re.findall(r'(/[\w/\-]+)', text)
+        patterns.extend(endpoint_matches)
+
+        return patterns
+
+    def _extract_criterion_keywords(self, text: str) -> set:
+        """
+        Extract meaningful keywords from criterion text.
+
+        Splits on non-alphanumeric characters, lowercases, and filters
+        out stopwords and short words (<=3 chars).
+
+        Parameters
+        ----------
+        text : str
+            Acceptance criterion text
+
+        Returns
+        -------
+        set
+            Set of meaningful keyword strings (lowercased)
+        """
+        words = re.findall(r'[a-zA-Z_]\w*', text)
+        return {
+            w.lower()
+            for w in words
+            if len(w) > 3
+            and w.lower() not in self._KEYWORD_STOPWORDS
+            and not w.startswith("AC-")
+        }
 
     # ========================================================================
     # Helper Methods (Error Handling, Summary Building)
@@ -2630,22 +2853,44 @@ class AutoBuildOrchestrator:
             # to avoid dual-storage bug where get_thread_client() creates a redundant
             # client via asyncio.run() bound to a dead loop (TASK-FIX-FD02)
             graphiti = None
+            stored_loop = None
             if self._factory is not None:
                 thread_id = threading.get_ident()
-                loader = self._thread_loaders.get(thread_id)
-                if loader is not None and loader.graphiti is not None:
-                    graphiti = loader.graphiti
+                entry = self._thread_loaders.get(thread_id)
+                if entry is not None:
+                    loader, stored_loop = entry
+                    if loader is not None and loader.graphiti is not None:
+                        graphiti = loader.graphiti
             if graphiti is None:
                 # Fallback to module-level get_graphiti() for non-factory usage
                 graphiti = get_graphiti()
             if graphiti and graphiti.enabled:
+                # TASK-ACR-007: Use stored loop from _thread_loaders or create a fresh one.
+                # Never call asyncio.get_event_loop() which is fragile in worker threads.
+                created_loop = False
+                if stored_loop is not None and not stored_loop.is_closed():
+                    loop = stored_loop
+                else:
+                    loop = asyncio.new_event_loop()
+                    created_loop = True
                 try:
-                    loop = asyncio.get_event_loop()
                     _suppress_httpx_cleanup_errors(loop)
-                    loop.run_until_complete(capture_turn_state(graphiti, entity))
+                    loop.run_until_complete(
+                        asyncio.wait_for(
+                            capture_turn_state(graphiti, entity),
+                            timeout=30,
+                        )
+                    )
                     logger.debug(f"Turn state captured for turn {turn_record.turn}")
-                except RuntimeError:
-                    logger.debug("No event loop available, skipping turn state capture")
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        f"Turn state capture timed out after 30s for turn {turn_record.turn}"
+                    )
+                except RuntimeError as e:
+                    logger.debug(f"Event loop error during turn state capture: {e}")
+                finally:
+                    if created_loop:
+                        loop.close()
             else:
                 logger.debug("Graphiti disabled, skipping turn state capture")
 
@@ -2869,7 +3114,8 @@ class AutoBuildOrchestrator:
 
         thread_id = threading.get_ident()
         if thread_id in self._thread_loaders:
-            return self._thread_loaders[thread_id]
+            loader, _stored_loop = self._thread_loaders[thread_id]
+            return loader
 
         # Create and initialize a per-thread client
         try:
@@ -2879,37 +3125,51 @@ class AutoBuildOrchestrator:
                 loader = AutoBuildContextLoader(
                     graphiti=client, verbose=self.verbose
                 )
-                self._thread_loaders[thread_id] = loader
+                self._thread_loaders[thread_id] = (loader, loop)
                 logger.info(f"Created per-thread context loader for thread {thread_id}")
                 return loader
             else:
-                self._thread_loaders[thread_id] = None
+                self._thread_loaders[thread_id] = (None, loop)
                 logger.info(f"Per-thread Graphiti client init failed for thread {thread_id}")
                 return None
         except Exception as e:
-            self._thread_loaders[thread_id] = None
+            self._thread_loaders[thread_id] = (None, loop)
             logger.warning(f"Error creating per-thread context loader: {e}")
             return None
 
     def _cleanup_thread_loaders(self) -> None:
-        """Close all per-thread Graphiti clients (TASK-FIX-GTP2).
+        """Close all per-thread Graphiti clients (TASK-FIX-GTP2, TASK-ACR-005, TASK-ACR-006).
 
         Called during finalization to clean up resources. Each thread-local
         GraphitiClient has its own Neo4j driver that must be closed.
+
+        TASK-ACR-005: Uses stored event loop reference to avoid cross-loop errors.
+        TASK-ACR-006: Three-branch cleanup based on loop state to prevent
+        RuntimeError when locks are bound to different event loops.
         """
-        for thread_id, loader in list(self._thread_loaders.items()):
-            if loader is not None and loader.graphiti is not None:
-                try:
-                    import asyncio
-                    try:
-                        loop = asyncio.get_event_loop()
-                    except RuntimeError:
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                    loop.run_until_complete(loader.graphiti.close())
-                    logger.debug(f"Closed per-thread Graphiti client for thread {thread_id}")
-                except Exception as e:
-                    logger.debug(f"Error closing per-thread Graphiti client: {e}")
+        for thread_id, (loader, stored_loop) in list(self._thread_loaders.items()):
+            if loader is None or loader.graphiti is None:
+                continue
+            try:
+                if stored_loop.is_running():
+                    # Loop still running on worker thread — schedule close there
+                    future = asyncio.run_coroutine_threadsafe(
+                        loader.graphiti.close(), stored_loop
+                    )
+                    future.result(timeout=30)
+                elif not stored_loop.is_closed():
+                    # Loop stopped but open — run directly
+                    stored_loop.run_until_complete(loader.graphiti.close())
+                else:
+                    # Loop already closed — use fresh loop
+                    asyncio.run(loader.graphiti.close())
+                logger.debug(f"Closed per-thread Graphiti client for thread {thread_id}")
+            except RuntimeError as e:
+                logger.debug(f"Thread {thread_id} cleanup RuntimeError (suppressed): {e}")
+            except concurrent.futures.TimeoutError:
+                logger.warning(f"Thread {thread_id} cleanup timed out after 30s (suppressed)")
+            except Exception as e:
+                logger.warning(f"Error closing per-thread Graphiti client for thread {thread_id}: {e}")
         self._thread_loaders.clear()
 
     def _invoke_player_safely(

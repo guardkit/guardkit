@@ -63,6 +63,16 @@ TASK_TYPE_ALIASES: Dict[str, TaskType] = {
     "research": TaskType.DOCUMENTATION,
 }
 
+# Stopwords for keyword extraction in fuzzy text matching
+STOPWORDS = {
+    "the", "and", "is", "or", "a", "an", "for", "with", "to", "in", "of",
+    "from", "by", "on", "at", "that", "this", "are", "be", "do", "have",
+    "has", "as", "if", "can", "will", "would", "could", "should", "may",
+    "must", "was", "were", "been", "but", "not", "no", "all", "some",
+    "any", "more", "most", "only", "than", "then", "there", "their",
+    "who", "which", "when", "where", "how",
+}
+
 # ============================================================================
 # Data Models
 # ============================================================================
@@ -942,14 +952,39 @@ class CoachValidator:
                 task_work_results, turn
             )
             if completion_promises:
-                return self._match_by_promises(
+                validation = self._match_by_promises(
                     acceptance_criteria, completion_promises
                 )
+                # Diagnostic logging for 0/N on synthetic path (TASK-ACR-003)
+                if validation.criteria_met == 0 and validation.criteria_total > 0:
+                    logger.warning(
+                        "Criteria verification 0/%d - diagnostic dump:",
+                        validation.criteria_total,
+                    )
+                    for ac in acceptance_criteria:
+                        logger.warning("  AC text: %.100s", ac)
+                    logger.warning(
+                        "  completion_promises: %s", completion_promises
+                    )
+                    logger.warning("  matching_strategy: promises (synthetic)")
+                    logger.warning("  _synthetic: True")
+                return validation
             # No promises on synthetic report — all criteria unmet
             logger.warning(
                 "Synthetic report has no completion_promises — "
                 "all criteria marked unmet"
             )
+            # Diagnostic dump for 0/N on synthetic with no promises (TASK-ACR-003)
+            logger.warning(
+                "Criteria verification 0/%d - diagnostic dump:",
+                len(acceptance_criteria),
+            )
+            for ac in acceptance_criteria:
+                logger.warning("  AC text: %.100s", ac)
+            logger.warning("  completion_promises: (empty)")
+            logger.warning("  requirements_met: (not used - synthetic path)")
+            logger.warning("  matching_strategy: synthetic (no promises)")
+            logger.warning("  _synthetic: True")
             return self._build_all_unmet(acceptance_criteria)
 
         # Normal path: promises first, then text fallback
@@ -958,11 +993,34 @@ class CoachValidator:
             task_work_results, turn
         )
         if completion_promises:
-            return self._match_by_promises(acceptance_criteria, completion_promises)
+            strategy = "promises"
+            validation = self._match_by_promises(acceptance_criteria, completion_promises)
+        else:
+            # Strategy 2: Legacy text matching via requirements_met (fallback)
+            strategy = "text"
+            requirements_met = task_work_results.get("requirements_met", [])
+            validation = self._match_by_text(acceptance_criteria, requirements_met)
 
-        # Strategy 2: Legacy text matching via requirements_met (fallback)
-        requirements_met = task_work_results.get("requirements_met", [])
-        return self._match_by_text(acceptance_criteria, requirements_met)
+        # Diagnostic logging for 0/N results (TASK-ACR-003)
+        if validation.criteria_met == 0 and validation.criteria_total > 0:
+            logger.warning(
+                "Criteria verification 0/%d - diagnostic dump:",
+                validation.criteria_total,
+            )
+            for ac in acceptance_criteria:
+                logger.warning("  AC text: %.100s", ac)
+            logger.warning(
+                "  requirements_met: %s",
+                requirements_met if strategy == "text" else "(not used)",
+            )
+            logger.warning(
+                "  completion_promises: %s",
+                completion_promises if strategy == "promises" else "(not used)",
+            )
+            logger.warning("  matching_strategy: %s", strategy)
+            logger.warning("  _synthetic: %s", is_synthetic)
+
+        return validation
 
     def _load_completion_promises(
         self,
@@ -1057,6 +1115,17 @@ class CoachValidator:
                     "evidence",
                     f"Player completed {criterion_id}",
                 )
+            elif promise and promise.get("status") == "partial":
+                # TASK-ACR-004: Treat partial as verified with lower confidence
+                result_str = "verified"
+                evidence_type = promise.get("evidence_type", "unknown")
+                base_evidence = promise.get(
+                    "evidence",
+                    f"Player partially completed {criterion_id}",
+                )
+                evidence = (
+                    f"[Partial confidence - {evidence_type}] {base_evidence}"
+                )
             else:
                 result_str = "rejected"
                 if promise:
@@ -1093,6 +1162,88 @@ class CoachValidator:
 
         return validation
 
+    @staticmethod
+    def _strip_criterion_prefix(text: str) -> str:
+        """
+        Strip common criterion prefixes from text.
+
+        Removes markdown checkbox prefixes (- [ ], - [x ]), bullet points (* ),
+        and numbered prefixes (1. , 2) , 1) ).
+
+        Parameters
+        ----------
+        text : str
+            Text to clean
+
+        Returns
+        -------
+        str
+            Cleaned text without prefix
+        """
+        # Strip leading/trailing whitespace first
+        cleaned = text.strip()
+
+        # Strip markdown checkbox prefixes: "- [ ] ", "- [x] "
+        if cleaned.startswith("- [ ] "):
+            cleaned = cleaned[6:].strip()
+        elif cleaned.startswith("- [x] "):
+            cleaned = cleaned[6:].strip()
+        # Strip bullet points: "* "
+        elif cleaned.startswith("* "):
+            cleaned = cleaned[2:].strip()
+        # Strip numbered prefixes: "1. ", "2) ", "1) "
+        else:
+            # Check for numbered prefix pattern
+            i = 0
+            while i < len(cleaned) and cleaned[i].isdigit():
+                i += 1
+            if i > 0 and i < len(cleaned):
+                # Found digits, check for ". " or ") "
+                if cleaned[i:i+2] == ". " or cleaned[i:i+2] == ") ":
+                    cleaned = cleaned[i+2:].strip()
+
+        return cleaned
+
+    @staticmethod
+    def _extract_keywords(text: str) -> set:
+        """
+        Extract keywords from text for fuzzy matching.
+
+        Extracts meaningful keywords by:
+        1. Splitting on whitespace
+        2. Converting to lowercase
+        3. Filtering words <= 3 characters
+        4. Filtering stopwords
+        5. Filtering non-alphanumeric words
+
+        Parameters
+        ----------
+        text : str
+            Text to extract keywords from
+
+        Returns
+        -------
+        set
+            Set of extracted keywords
+        """
+        # Split on whitespace and lowercase
+        words = text.lower().split()
+
+        # Filter and extract keywords
+        keywords = set()
+        for word in words:
+            # Skip short words
+            if len(word) <= 3:
+                continue
+            # Skip stopwords
+            if word in STOPWORDS:
+                continue
+            # Keep only words with at least one alphabetic character
+            if any(c.isalpha() for c in word):
+                keywords.add(word)
+
+        return keywords
+
     def _match_by_text(
         self,
         acceptance_criteria: List[str],
@@ -1103,6 +1254,11 @@ class CoachValidator:
 
         Legacy matching strategy. Used when completion promises are not
         available (e.g. older task-work results).
+
+        Uses three matching strategies in order:
+        1. Exact match (normalized text)
+        2. Substring containment
+        3. Keyword overlap (>=70% similarity)
 
         Parameters
         ----------
@@ -1116,22 +1272,82 @@ class CoachValidator:
         RequirementsValidation
             Structured validation result
         """
-        # Normalize requirements_met for comparison (lowercase, strip whitespace)
-        normalized_met = {r.lower().strip() for r in requirements_met}
+        # Strip prefixes and normalize requirements_met
+        stripped_met = [self._strip_criterion_prefix(r) for r in requirements_met]
+        normalized_met = {r.lower().strip() for r in stripped_met}
 
         criteria_results: List[CriterionResult] = []
         missing: List[str] = []
 
         for i, criterion_text in enumerate(acceptance_criteria):
             criterion_id = f"AC-{i+1:03d}"
-            normalized = criterion_text.lower().strip()
 
+            # Strip prefix from criterion
+            stripped_criterion = self._strip_criterion_prefix(criterion_text)
+            normalized = stripped_criterion.lower().strip()
+
+            result_str = "rejected"
+            evidence = "Not found in Player requirements_met"
+            strategy = None
+            confidence = 0.0
+
+            # Strategy 1: Exact match
             if normalized in normalized_met:
                 result_str = "verified"
                 evidence = f"Matched in Player requirements_met: '{criterion_text}'"
+                strategy = "exact"
+                confidence = 1.0
             else:
-                result_str = "rejected"
-                evidence = "Not found in Player requirements_met"
+                # Strategy 2: Substring containment
+                for met_text in stripped_met:
+                    normalized_met_text = met_text.lower().strip()
+                    # Check if criterion is contained in requirement or vice versa
+                    if normalized in normalized_met_text or normalized_met_text in normalized:
+                        result_str = "verified"
+                        evidence = f"Substring match with '{met_text}'"
+                        strategy = "substring"
+                        confidence = 0.9
+                        break
+
+                # Strategy 3: Keyword overlap
+                if result_str == "rejected":
+                    criterion_keywords = self._extract_keywords(stripped_criterion)
+
+                    # Only try keyword matching if we have keywords
+                    if criterion_keywords:
+                        best_match_score = 0.0
+                        best_match_text = None
+
+                        for met_text in stripped_met:
+                            met_keywords = self._extract_keywords(met_text)
+
+                            # Skip if no keywords in requirement
+                            if not met_keywords:
+                                continue
+
+                            # Calculate Jaccard similarity
+                            intersection = criterion_keywords & met_keywords
+                            union = criterion_keywords | met_keywords
+
+                            if union:
+                                score = len(intersection) / len(union)
+                                if score > best_match_score:
+                                    best_match_score = score
+                                    best_match_text = met_text
+
+                        # Accept if similarity >= 70%
+                        if best_match_score >= 0.70:
+                            result_str = "verified"
+                            evidence = f"Keyword overlap match ({best_match_score:.0%} similarity) with '{best_match_text}'"
+                            strategy = "keyword"
+                            confidence = best_match_score
+
+            # Log the strategy used for successful matches
+            if result_str == "verified" and strategy:
+                logger.debug(f"{criterion_id}: Matched via {strategy} (confidence: {confidence:.2f})")
+
+            # Add to missing list if not verified
+            if result_str == "rejected":
                 missing.append(criterion_text)
 
             criteria_results.append(CriterionResult(

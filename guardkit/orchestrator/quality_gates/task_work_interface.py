@@ -177,9 +177,9 @@ class TaskWorkInterface:
         """
         logger.info(f"Executing design phase for {task_id} in {self.worktree_path}")
 
-        # Build the prompt for SDK invocation
-        prompt = self._build_design_prompt(task_id, options)
-        logger.debug(f"SDK prompt: {prompt}")
+        # TASK-ACO-003: Use protocol-based prompt builder
+        prompt = self._build_autobuild_design_prompt(task_id, options)
+        logger.debug(f"SDK prompt length: {len(prompt)} chars")
 
         try:
             # Execute via Claude Agent SDK
@@ -274,6 +274,135 @@ class TaskWorkInterface:
         )
 
         return build_inline_design_protocol(task_id, options, self.worktree_path)
+
+    def _build_autobuild_design_prompt(
+        self,
+        task_id: str,
+        options: Dict[str, Any],
+    ) -> str:
+        """
+        Build AutoBuild design prompt from extracted protocol file.
+
+        Loads the design protocol from ``autobuild_design_protocol.md`` via
+        :func:`load_protocol` and prepends task-specific context. This replaces
+        the previous approach of invoking ``/task-work --design-only`` as an
+        SDK skill, eliminating ~840KB of unnecessary context loading.
+
+        TASK-ACO-003: Uses extracted protocol files from TASK-ACO-001 instead
+        of constructing the protocol inline in Python code.
+
+        Phase skipping encoded directly in prompt:
+
+        ========== ============ =========================================
+        Phase      AutoBuild    Rationale
+        ========== ============ =========================================
+        1.6        **Skip**     No human present
+        2          Yes          Essential
+        2.1        **Skip**     Adds 30-60s, marginal value
+        2.5A       **Skip**     Pattern suggestions add latency
+        2.5B       **Lightweight** Inline check, no subagent
+        2.7        Yes          Needed for orchestration decisions
+        2.8        **Auto-approve** Already implemented
+        ========== ============ =========================================
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., "TASK-001")
+        options : Dict[str, Any]
+            Execution options:
+            - skip_arch_review: Omit Phase 2.5B architectural review
+            - docs: Documentation level (minimal/standard/comprehensive)
+
+        Returns
+        -------
+        str
+            Complete prompt for SDK invocation, consisting of task context
+            header plus the loaded design protocol with task_id substituted.
+        """
+        from guardkit.orchestrator.prompts import load_protocol
+
+        # Load the extracted design protocol (from TASK-ACO-001)
+        protocol_content = load_protocol("autobuild_design_protocol")
+
+        # Substitute {task_id} placeholders in the protocol
+        protocol_content = protocol_content.replace("{task_id}", task_id)
+
+        docs_level = options.get("docs", "minimal")
+        skip_arch_review = options.get("skip_arch_review", False)
+
+        # Build task context header
+        header = (
+            f"You are executing the AutoBuild design phase for task {task_id}.\n"
+            f"\n"
+            f"Documentation Level: {docs_level}\n"
+            f"Working Directory: {self.worktree_path}\n"
+        )
+
+        # Add phase-skipping instructions
+        header += (
+            "\n"
+            "## AutoBuild Phase Decisions\n"
+            "\n"
+            "The following phases are SKIPPED in AutoBuild mode:\n"
+            "- Phase 1.6 (Clarifying Questions): SKIP — no human present\n"
+            "- Phase 2.1 (Library Context Gathering): SKIP — Context7 not available in SDK\n"
+            "- Phase 2.5A (Pattern Suggestion): SKIP — Design Patterns MCP not available in SDK\n"
+        )
+
+        if skip_arch_review:
+            header += "- Phase 2.5B (Architectural Review): SKIP — skip_arch_review flag set\n"
+        else:
+            header += (
+                "- Phase 2.5B (Architectural Review): LIGHTWEIGHT — "
+                "inline self-assessment only, do NOT invoke a subagent\n"
+            )
+
+        header += (
+            "- Phase 2.8 (Design Checkpoint): AUTO-APPROVE — no human present\n"
+            "\n"
+            "Execute ONLY the phases listed in the protocol below that are not skipped.\n"
+            "\n"
+            "---\n"
+            "\n"
+        )
+
+        # If arch review is skipped, strip that section from the protocol
+        if skip_arch_review:
+            protocol_content = self._strip_arch_review_section(protocol_content)
+
+        return header + protocol_content
+
+    @staticmethod
+    def _strip_arch_review_section(protocol: str) -> str:
+        """Remove Phase 2.5B section from protocol content.
+
+        Parameters
+        ----------
+        protocol : str
+            Full protocol content
+
+        Returns
+        -------
+        str
+            Protocol with Phase 2.5B section removed
+        """
+        lines = protocol.split("\n")
+        result: List[str] = []
+        skip = False
+
+        for line in lines:
+            # Start skipping at Phase 2.5B heading
+            if line.startswith("## Phase 2.5B"):
+                skip = True
+                continue
+            # Stop skipping at the next ## heading
+            if skip and line.startswith("## "):
+                skip = False
+            if not skip:
+                result.append(line)
+
+        return "\n".join(result)
 
     async def _execute_via_sdk(self, prompt: str) -> Dict[str, Any]:
         """

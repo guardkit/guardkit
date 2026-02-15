@@ -28,6 +28,7 @@ from guardkit.orchestrator.exceptions import (
     TaskWorkResult,
 )
 from guardkit.orchestrator.paths import TaskArtifactPaths
+from guardkit.orchestrator.prompts import load_protocol
 from guardkit.orchestrator.coach_verification import (
     CoachVerifier,
     HonestyVerification,
@@ -590,6 +591,7 @@ class AgentInvoker:
         self.player_model = player_model
         self.coach_model = coach_model
         self.sdk_timeout_seconds = sdk_timeout_seconds
+        self._sdk_timeout_is_override = sdk_timeout_seconds != DEFAULT_SDK_TIMEOUT
         self.use_task_work_delegation = (
             use_task_work_delegation if use_task_work_delegation is not None
             else USE_TASK_WORK_DELEGATION
@@ -696,6 +698,11 @@ class AgentInvoker:
                     task_id=task_id,
                     mode=effective_mode,
                     documentation_level=documentation_level,
+                    turn=turn,
+                    requirements=requirements,
+                    feedback=feedback,
+                    max_turns=max_turns,
+                    context=context,
                 )
 
                 duration = time.time() - start_time
@@ -1482,6 +1489,11 @@ Follow the decision format specified in your agent definition.
                         f"Files actual: {plan_audit.get('files_actual', 0)}"
                     )
 
+                # Propagate completion_promises into player report (TASK-ACR-001)
+                completion_promises = task_work_data.get("completion_promises", [])
+                if completion_promises:
+                    report["completion_promises"] = completion_promises
+
                 logger.info(
                     f"Created Player report from task_work_results.json for {task_id} turn {turn}"
                 )
@@ -2133,7 +2145,7 @@ Follow the decision format specified in your agent definition.
             Effective timeout in seconds, capped at MAX_SDK_TIMEOUT (3600s)
         """
         # Respect CLI override: if user explicitly set a timeout, don't recalculate
-        if self.sdk_timeout_seconds != DEFAULT_SDK_TIMEOUT:
+        if self._sdk_timeout_is_override:
             logger.info(
                 f"[{task_id}] SDK timeout: {self.sdk_timeout_seconds}s "
                 f"(CLI override, skipping dynamic calculation)"
@@ -2582,6 +2594,177 @@ Follow the decision format specified in your agent definition.
     # Task-Work Delegation Methods
     # =========================================================================
 
+    def _build_autobuild_implementation_prompt(
+        self,
+        task_id: str,
+        mode: str = "standard",
+        documentation_level: str = "minimal",
+        turn: int = 1,
+        requirements: str = "",
+        feedback: Optional[Union[str, Dict[str, Any]]] = None,
+        max_turns: int = 5,
+        context: str = "",
+    ) -> str:
+        """Build implementation prompt using loaded execution protocol.
+
+        TASK-ACO-002: Replaces _build_inline_implement_protocol() with a
+        prompt that loads the execution protocol from autobuild_execution_protocol.md
+        via load_protocol(), and injects task requirements, coach feedback,
+        graphiti context, and turn context inline.
+
+        Args:
+            task_id: Task identifier (e.g., "TASK-001")
+            mode: Development mode ("standard", "tdd", or "bdd")
+            documentation_level: Documentation level ("minimal", "standard",
+                or "comprehensive")
+            turn: Current turn number (1-based)
+            requirements: Task requirements from task markdown
+            feedback: Optional Coach feedback from previous turn
+            max_turns: Maximum turns allowed for this orchestration
+            context: Job-specific context from Graphiti
+
+        Returns:
+            Assembled prompt string with protocol and all context sections
+        """
+        approaching_limit = turn >= max_turns - 1
+
+        # --- Section 1: Header ---
+        header = (
+            f"You are executing the implementation phase (Phases 3-5) for {task_id}.\n"
+            f"\n"
+            f"## Context\n"
+            f"\n"
+            f"- Task ID: {task_id}\n"
+            f"- Mode: {mode}\n"
+            f"- Documentation Level: {documentation_level}\n"
+            f"- Working directory: {self.worktree_path}\n"
+        )
+
+        # --- Section 2: Turn context (inline) ---
+        turn_section = (
+            f"\n## Turn Context\n"
+            f"\n"
+            f"- Current turn: {turn}\n"
+            f"- Max turns: {max_turns}\n"
+            f"- Turns remaining: {max_turns - turn}\n"
+            f"- Approaching limit: {approaching_limit}\n"
+        )
+        if approaching_limit:
+            turn_section += (
+                "\nWARNING: Approaching turn limit. If you cannot complete the task,\n"
+                "include a 'blocked_report' field in your player report.\n"
+            )
+
+        # --- Section 3: Requirements (inline) ---
+        requirements_section = ""
+        if requirements:
+            requirements_section = (
+                f"\n## Task Requirements\n"
+                f"\n"
+                f"{requirements}\n"
+            )
+
+        # --- Section 4: Coach feedback (inline when available) ---
+        feedback_section = ""
+        if feedback and turn > 1:
+            formatted = self._format_feedback_for_prompt(feedback, turn)
+            feedback_section = (
+                f"\n## Coach Feedback from Turn {turn - 1}\n"
+                f"\n"
+                f"{formatted}\n"
+                f"\n"
+                f"Address ALL must_fix items before proceeding.\n"
+            )
+
+        # --- Section 5: Graphiti context (inline when available) ---
+        context_section = ""
+        if context:
+            context_section = (
+                f"\n## Job-Specific Context\n"
+                f"\n"
+                f"{context}\n"
+            )
+
+        # --- Section 6: Execution protocol (loaded from file) ---
+        protocol_content = load_protocol("autobuild_execution_protocol")
+        # Substitute placeholders in protocol
+        protocol_content = protocol_content.replace("{task_id}", task_id)
+        protocol_content = protocol_content.replace("{turn}", str(turn))
+
+        # --- Section 7: Implementation plan locations ---
+        plan_paths = TaskArtifactPaths.implementation_plan_paths(
+            task_id, self.worktree_path
+        )
+        plan_locations = "\n".join(f"   - {p}" for p in plan_paths)
+        plan_section = (
+            f"\n## Implementation Plan Locations\n"
+            f"\n"
+            f"Check these paths in order for the implementation plan:\n"
+            f"{plan_locations}\n"
+        )
+
+        # Assemble final prompt
+        prompt = (
+            header
+            + turn_section
+            + requirements_section
+            + feedback_section
+            + context_section
+            + "\n---\n\n"
+            + protocol_content
+            + plan_section
+        )
+
+        return prompt
+
+    def _format_feedback_for_prompt(
+        self,
+        feedback: Union[str, Dict[str, Any]],
+        turn: int,
+    ) -> str:
+        """Format Coach feedback for inline prompt inclusion.
+
+        Args:
+            feedback: Coach feedback as string or structured dict
+            turn: Current turn number
+
+        Returns:
+            Formatted feedback string suitable for prompt inclusion
+        """
+        if isinstance(feedback, str):
+            return feedback
+
+        # Structured feedback dict - extract key fields
+        parts: List[str] = []
+
+        # Summary/rationale
+        rationale = feedback.get("rationale") or feedback.get("feedback_summary", "")
+        if rationale:
+            parts.append(f"**Summary**: {rationale}")
+
+        # Must-fix issues
+        issues = feedback.get("issues", [])
+        must_fix = [i for i in issues if i.get("severity") == "must_fix"]
+        should_fix = [i for i in issues if i.get("severity") == "should_fix"]
+
+        if must_fix:
+            parts.append("\n**Must Fix:**")
+            for issue in must_fix:
+                desc = issue.get("description", str(issue))
+                parts.append(f"- {desc}")
+
+        if should_fix:
+            parts.append("\n**Should Fix:**")
+            for issue in should_fix:
+                desc = issue.get("description", str(issue))
+                parts.append(f"- {desc}")
+
+        # If no structured fields found, dump the whole dict
+        if not parts:
+            return json.dumps(feedback, indent=2)
+
+        return "\n".join(parts)
+
     def _build_inline_implement_protocol(
         self,
         task_id: str,
@@ -2754,15 +2937,18 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         task_id: str,
         mode: str = "standard",
         documentation_level: str = "minimal",
+        turn: int = 1,
+        requirements: str = "",
+        feedback: Optional[Union[str, Dict[str, Any]]] = None,
+        max_turns: int = 5,
+        context: str = "",
     ) -> TaskWorkResult:
-        """Execute Phases 3-5 (implement-only) via SDK with inline protocol.
+        """Execute Phases 3-5 (implement-only) via SDK with loaded protocol.
 
-        TASK-POF-004: Uses inline protocol instead of /task-work skill delegation
-        to eliminate ~839KB preamble overhead. The inline protocol (~15KB) covers:
-        - Phase 3: Implementation (read plan, write code)
-        - Phase 4: Testing (compile, run tests, measure coverage)
-        - Phase 4.5: Fix Loop (auto-fix failures, max 3 attempts)
-        - Phase 5: Code Review (lint, basic quality checks)
+        TASK-ACO-002: Uses _build_autobuild_implementation_prompt() which loads
+        the execution protocol from autobuild_execution_protocol.md and injects
+        task requirements, coach feedback, graphiti context, and turn context
+        inline into the prompt.
 
         Uses setting_sources=["project"] instead of ["user", "project"],
         reducing context loading from ~1,078KB to ~93KB per Player turn.
@@ -2773,6 +2959,11 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             documentation_level: Documentation level for file count constraint
                 validation ("minimal", "standard", or "comprehensive").
                 Default: "minimal" for AutoBuild tasks.
+            turn: Current turn number (1-based). Default: 1.
+            requirements: Task requirements from task markdown. Default: "".
+            feedback: Optional Coach feedback from previous turn. Default: None.
+            max_turns: Maximum turns allowed. Default: 5.
+            context: Job-specific context from Graphiti. Default: "".
 
         Returns:
             TaskWorkResult with success status and output/error
@@ -2780,8 +2971,17 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         Raises:
             SDKTimeoutError: If execution exceeds timeout
         """
-        # TASK-POF-004: Build inline protocol instead of skill invocation
-        prompt = self._build_inline_implement_protocol(task_id, mode)
+        # TASK-ACO-002: Build prompt with loaded protocol and inline context
+        prompt = self._build_autobuild_implementation_prompt(
+            task_id=task_id,
+            mode=mode,
+            documentation_level=documentation_level,
+            turn=turn,
+            requirements=requirements,
+            feedback=feedback,
+            max_turns=max_turns,
+            context=context,
+        )
 
         logger.info(f"Executing inline implement protocol for {task_id} (mode={mode})")
         logger.info(f"Working directory: {self.worktree_path}")
@@ -3505,6 +3705,11 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
 # Add code_review field if architectural review data was found
         if code_review:
             results["code_review"] = code_review
+
+        # Include completion_promises if present in result data (TASK-ACR-001)
+        completion_promises = result_data.get("completion_promises", [])
+        if completion_promises:
+            results["completion_promises"] = completion_promises
 
         # Merge design results if available (for implement-only mode)
         design_data = self._read_design_results(task_id)
