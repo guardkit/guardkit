@@ -13,14 +13,13 @@ Contains two monkey-patches:
        - Issue: https://github.com/getzep/graphiti/issues/1161
        - PR: https://github.com/getzep/graphiti/pull/1170
 
-2. build_fulltext_query underscore escaping fix
-   FalkorDB's RediSearch treats underscores as token separators. Group IDs
-   like 'product_knowledge' produce queries `(@group_id:product_knowledge)`
-   which RediSearch parses as two tokens, causing syntax errors.
-   Fix: Escape underscores in group_id values with backslash before building
-   the RediSearch query (e.g. product_knowledge becomes product backslash-underscore knowledge).
-
-   This affects ALL GuardKit group_ids since they use underscore naming.
+2. build_fulltext_query group_id filter removal
+   FalkorDB's RediSearch fulltext queries break when group_ids contain
+   underscores (tokenized at index time) or when the search text is empty
+   after stopword removal (produces invalid '()' syntax).
+   Fix: Remove the @group_id filter from fulltext queries entirely.
+   Group isolation is already handled by the multi-graph driver clone
+   (workaround 1) and the Cypher WHERE clause.
 
 Usage:
     Call apply_falkordb_workaround() once at startup, before creating any
@@ -221,38 +220,23 @@ _fulltext_workaround_applied = False
 _original_build_fulltext_query = None
 
 
-def _escape_group_id_for_redisearch(group_id: str) -> str:
-    """Escape RediSearch separator characters in a group_id value.
-
-    FalkorDB's RediSearch treats these characters as token separators:
-        , . < > { } [ ] " ' : ; ! @ # $ % ^ & * ( ) - + = ~ _
-
-    Group IDs commonly contain underscores (product_knowledge) and
-    double underscores (guardkit__project_overview). These must be
-    escaped with backslash for exact matching in RediSearch queries.
-
-    Args:
-        group_id: The raw group_id value.
-
-    Returns:
-        Escaped group_id safe for RediSearch query syntax.
-    """
-    # Escape characters that RediSearch treats as separators.
-    # Order matters: backslash must be escaped first to avoid double-escaping.
-    # We only escape the chars likely to appear in group_ids:
-    #   _ (underscore) - most common, e.g. product_knowledge
-    #   - (hyphen) - possible in normalized project IDs
-    result = group_id
-    result = result.replace('_', r'\_')
-    result = result.replace('-', r'\-')
-    return result
-
-
 def apply_fulltext_query_workaround() -> bool:
-    """Patch FalkorDriver.build_fulltext_query to escape underscores in group_ids.
+    """Patch FalkorDriver.build_fulltext_query to remove group_id from fulltext queries.
 
-    Without this patch, queries like (@group_id:product_knowledge) fail with:
-        RediSearch: Syntax error at offset 31 near product_knowledge
+    FalkorDB's multi-graph model means each group_id is a separate named graph.
+    The @handle_multiple_group_ids decorator already clones the driver to point
+    at the correct graph, and the Cypher WHERE clause filters by group_id too.
+
+    The fulltext @group_id filter is therefore redundant on FalkorDB, AND broken:
+    - Underscores in group_ids (product_knowledge) are tokenized at index time,
+      so they can't be matched as exact values in fulltext queries
+    - Even groups without underscores (patterns, agents) fail when the search
+      text is empty after stopword removal, producing invalid syntax like
+      '(@group_id:patterns) ()'
+
+    Fix: Always pass group_ids=None to the original build_fulltext_query so it
+    skips the @group_id filter entirely. Group isolation is already handled by
+    the driver clone + Cypher WHERE clause.
 
     Returns:
         True if patch applied (or already applied), False if FalkorDB driver unavailable.
@@ -273,17 +257,28 @@ def apply_fulltext_query_workaround() -> bool:
     def build_fulltext_query_fixed(
         self, query: str, group_ids: list | None = None, max_query_length: int = 128
     ) -> str:
-        """Fixed build_fulltext_query that escapes underscores in group_ids."""
-        if group_ids is not None:
-            group_ids = [_escape_group_id_for_redisearch(gid) for gid in group_ids]
-        return _original_build_fulltext_query(self, query, group_ids, max_query_length)
+        """Fixed build_fulltext_query: drop group_id filter, handle empty queries."""
+        # Always pass group_ids=None to skip the broken @group_id fulltext filter.
+        # Group isolation is handled by:
+        #   1. handle_multiple_group_ids decorator cloning driver per group
+        #   2. Cypher WHERE e.group_id IN $group_ids clause
+        result = _original_build_fulltext_query(self, query, None, max_query_length)
+
+        # If the query text was empty/all-stopwords, build_fulltext_query produces
+        # something like ' ()' or '()' which is invalid RediSearch syntax.
+        # Replace with '*' (match all) so the fulltext search returns results.
+        stripped = result.strip()
+        if stripped == '()' or stripped == '':
+            return '*'
+
+        return result
 
     FalkorDriver.build_fulltext_query = build_fulltext_query_fixed
 
     _fulltext_workaround_applied = True
     logger.info(
         "[Graphiti] Applied FalkorDB workaround: "
-        "build_fulltext_query patched to escape underscores in group_ids"
+        "build_fulltext_query patched to remove group_id filter (redundant on FalkorDB)"
     )
     return True
 
