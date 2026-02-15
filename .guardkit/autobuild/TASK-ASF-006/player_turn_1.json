@@ -1,0 +1,97 @@
+{
+  "task_id": "TASK-ASF-006",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/autobuild.py",
+    "guardkit/orchestrator/quality_gates/coach_validator.py"
+  ],
+  "files_created": [],
+  "tests_written": [],
+  "tests_run": false,
+  "tests_passed": false,
+  "test_output_summary": "No tests run (implementation-only per instructions)",
+  "implementation_notes": "Implemented TASK-ASF-006: Enrich synthetic recovery reports with file-existence promises.\n\n**Changes Made**:\n\n1. **Added `_generate_file_existence_promises()` method** (autobuild.py, after line 2185):\n   - Extracts file path patterns from acceptance criteria using regex (`[\\w./\\-]+\\.\\w{1,5}`)\n   - Matches patterns against detected files (files_created + files_modified)\n   - Returns list of promise dicts with criterion_id, criterion_text, status (complete/incomplete), evidence\n   - Complete status when files exist, incomplete otherwise\n\n2. **Modified `_build_synthetic_report()` signature** (autobuild.py, line 2112):\n   - Added optional parameters: acceptance_criteria, task_type\n   - Added logic to generate file-existence promises for scaffolding tasks\n   - Updated logging to indicate whether promises were generated\n   - Promises added to report dict when task_type == \"scaffolding\" and criteria available\n\n3. **Threaded parameters through `_attempt_state_recovery()`** (autobuild.py, line 2011):\n   - Added optional parameters: acceptance_criteria, task_type\n   - Passed them to `_build_synthetic_report()` call\n   - Updated docstring to document new parameters\n\n4. **Updated call site in `_execute_turn()`** (autobuild.py, line 1759):\n   - Pass acceptance_criteria and task_type to `_attempt_state_recovery()`\n   - These values are already available in the method signature\n\n5. **Added synthetic report fast-fail in CoachValidator** (coach_validator.py, line 897):\n   - Added early check for `_synthetic` flag at start of `validate_requirements()`\n   - When synthetic, load promises and use promise matching if available\n   - If no promises, call `_build_all_unmet()` to mark all criteria rejected\n   - Logs info/warning messages for observability\n\n6. **Added `_build_all_unmet()` helper method** (coach_validator.py, after line 1161):\n   - Builds RequirementsValidation with all criteria marked rejected\n   - Used for synthetic reports with no promises\n   - Returns structured result with evidence explaining synthetic report limitation\n\n**Implementation Approach**:\n- Used Edit tool for precise changes (no file rewrites)\n- All new parameters have Optional defaults for backward compatibility\n- Promise dict structure matches existing format used by _match_by_promises\n- Followed existing code patterns and style (used module-level logger)\n- File path regex matches patterns like `path/to/file.ext` in criterion text",
+  "concerns": [
+    "Tests not run per instructions (implementation-only)",
+    "No test coverage for new methods - would need unit tests for _generate_file_existence_promises() and _build_all_unmet()",
+    "File path regex pattern may need refinement based on real-world criterion text - currently uses [\\w./\\-]+\\.\\w{1,5}",
+    "Regex may match file paths in descriptive text that aren't actual acceptance criteria - this is acceptable for scaffolding tasks where criteria are typically file-focused"
+  ],
+  "requirements_addressed": [
+    "Synthetic reports for scaffolding tasks include completion_promises based on file existence",
+    "Coach uses fast-fail when _synthetic: True flag detected",
+    "File-existence promises match criteria verifiable by file presence",
+    "Non-scaffolding tasks are unaffected (no promises for non-scaffolding synthetic reports)"
+  ],
+  "requirements_remaining": [
+    "Tests cover: scaffolding task with files present, files missing, non-scaffolding task (tests not written per instructions)"
+  ],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Synthetic reports for scaffolding tasks include `completion_promises` based on file existence",
+      "status": "complete",
+      "evidence": "Implemented _generate_file_existence_promises() method in autobuild.py that extracts file patterns from acceptance criteria and matches them against detected files (files_created + files_modified). Method is called from _build_synthetic_report() when task_type == 'scaffolding' and acceptance_criteria are provided.",
+      "test_file": null,
+      "implementation_files": [
+        "guardkit/orchestrator/autobuild.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Coach uses `_match_synthetic_report()` fast-fail when `_synthetic: True` flag detected",
+      "status": "complete",
+      "evidence": "Implemented fast-fail check at start of validate_requirements() in coach_validator.py. When is_synthetic flag is True, loads promises and uses promise matching, or calls _build_all_unmet() if no promises available. Logs info/warning for observability.",
+      "test_file": null,
+      "implementation_files": [
+        "guardkit/orchestrator/quality_gates/coach_validator.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "File-existence promises only match criteria that are verifiable by file presence (not content)",
+      "status": "complete",
+      "evidence": "The _generate_file_existence_promises() method uses regex to extract file path patterns from criterion text and checks only for file existence (in files_created or files_modified). No content verification is performed. Evidence field clearly states 'File-existence verified' for complete promises.",
+      "test_file": null,
+      "implementation_files": [
+        "guardkit/orchestrator/autobuild.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Non-scaffolding tasks are unaffected (no promises generated for non-scaffolding synthetic reports)",
+      "status": "complete",
+      "evidence": "Promise generation is gated behind check: task_type == 'scaffolding' and acceptance_criteria. If task_type is not 'scaffolding' or acceptance_criteria is None/empty, no promises are generated. Old warning log message is preserved for non-scaffolding tasks.",
+      "test_file": null,
+      "implementation_files": [
+        "guardkit/orchestrator/autobuild.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Coach's test gate still runs after promise matching (promises alone don't bypass test verification)",
+      "status": "complete",
+      "evidence": "The fast-fail in validate_requirements() only affects requirements validation. Test gates (validate_tests()) run separately in Coach workflow and are unaffected by promise matching. The promise matching returns RequirementsValidation which is just one component of the full validation.",
+      "test_file": null,
+      "implementation_files": [
+        "guardkit/orchestrator/quality_gates/coach_validator.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Task-scoped test detection (R5) is used when verifying synthetic report tests",
+      "status": "complete",
+      "evidence": "This implementation does not modify test detection logic - it only adds promise generation and fast-fail for requirements validation. Task-scoped test detection was implemented in TASK-ASF-005 (R5) and remains active for all synthetic reports via the existing _attempt_state_recovery() flow which uses test_paths parameter.",
+      "test_file": null,
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Tests cover: scaffolding task with files present, scaffolding task with files missing, non-scaffolding task",
+      "status": "incomplete",
+      "evidence": "No tests written per implementation instructions which stated: 'Do NOT write tests - just implement the production code changes'",
+      "test_file": null,
+      "implementation_files": []
+    }
+  ]
+}

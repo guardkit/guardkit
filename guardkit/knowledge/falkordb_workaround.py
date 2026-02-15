@@ -1,23 +1,26 @@
 """
-FalkorDB decorator workaround for graphiti-core.
+FalkorDB workarounds for graphiti-core.
 
-Monkey-patches the @handle_multiple_group_ids decorator in graphiti-core to
-fix a bug where single-group-id searches use the wrong FalkorDB database.
+Contains two monkey-patches:
 
-Bug: graphiti-core decorators.py line 53 checks `len(group_ids) > 1`, which
-skips driver cloning for single group_id searches. After add_episode() mutates
-self.driver to point at a different database, subsequent search() calls with a
-single group_id search the wrong database.
+1. handle_multiple_group_ids decorator fix (PR #1170)
+   Fixes a bug where single-group-id searches use the wrong FalkorDB database.
+   Bug: graphiti-core decorators.py checks `len(group_ids) > 1`, which skips
+   driver cloning for single group_id searches.
+   Fix: Change to `len(group_ids) >= 1`.
 
-Fix: Change condition to `len(group_ids) >= 1` so single group_id searches
-also get a cloned driver pointing at the correct database.
+   Upstream references:
+       - Issue: https://github.com/getzep/graphiti/issues/1161
+       - PR: https://github.com/getzep/graphiti/pull/1170
 
-Upstream references:
-    - Issue: https://github.com/getzep/graphiti/issues/1161
-    - PR: https://github.com/getzep/graphiti/pull/1170
+2. build_fulltext_query underscore escaping fix
+   FalkorDB's RediSearch treats underscores as token separators. Group IDs
+   like 'product_knowledge' produce queries `(@group_id:product_knowledge)`
+   which RediSearch parses as two tokens, causing syntax errors.
+   Fix: Escape underscores in group_id values with backslash before building
+   the RediSearch query (e.g. product_knowledge becomes product backslash-underscore knowledge).
 
-This workaround should be removed once PR #1170 is merged and GuardKit
-upgrades to the fixed graphiti-core version.
+   This affects ALL GuardKit group_ids since they use underscore naming.
 
 Usage:
     Call apply_falkordb_workaround() once at startup, before creating any
@@ -158,6 +161,10 @@ def apply_falkordb_workaround() -> bool:
         "handle_multiple_group_ids patched for single group_id support "
         "(upstream PR #1170)"
     )
+
+    # Also apply the fulltext query workaround for underscore escaping
+    apply_fulltext_query_workaround()
+
     return True
 
 
@@ -206,8 +213,101 @@ def is_workaround_applied() -> bool:
     return _workaround_applied
 
 
+# =============================================================================
+# Workaround 2: build_fulltext_query underscore escaping
+# =============================================================================
+
+_fulltext_workaround_applied = False
+_original_build_fulltext_query = None
+
+
+def _escape_group_id_for_redisearch(group_id: str) -> str:
+    """Escape RediSearch separator characters in a group_id value.
+
+    FalkorDB's RediSearch treats these characters as token separators:
+        , . < > { } [ ] " ' : ; ! @ # $ % ^ & * ( ) - + = ~ _
+
+    Group IDs commonly contain underscores (product_knowledge) and
+    double underscores (guardkit__project_overview). These must be
+    escaped with backslash for exact matching in RediSearch queries.
+
+    Args:
+        group_id: The raw group_id value.
+
+    Returns:
+        Escaped group_id safe for RediSearch query syntax.
+    """
+    # Escape characters that RediSearch treats as separators.
+    # Order matters: backslash must be escaped first to avoid double-escaping.
+    # We only escape the chars likely to appear in group_ids:
+    #   _ (underscore) - most common, e.g. product_knowledge
+    #   - (hyphen) - possible in normalized project IDs
+    result = group_id
+    result = result.replace('_', r'\_')
+    result = result.replace('-', r'\-')
+    return result
+
+
+def apply_fulltext_query_workaround() -> bool:
+    """Patch FalkorDriver.build_fulltext_query to escape underscores in group_ids.
+
+    Without this patch, queries like (@group_id:product_knowledge) fail with:
+        RediSearch: Syntax error at offset 31 near product_knowledge
+
+    Returns:
+        True if patch applied (or already applied), False if FalkorDB driver unavailable.
+    """
+    global _fulltext_workaround_applied, _original_build_fulltext_query
+
+    if _fulltext_workaround_applied:
+        return True
+
+    try:
+        from graphiti_core.driver.falkordb_driver import FalkorDriver
+    except ImportError:
+        logger.debug("[Graphiti] FalkorDB driver not available, skipping fulltext workaround")
+        return False
+
+    _original_build_fulltext_query = FalkorDriver.build_fulltext_query
+
+    def build_fulltext_query_fixed(
+        self, query: str, group_ids: list | None = None, max_query_length: int = 128
+    ) -> str:
+        """Fixed build_fulltext_query that escapes underscores in group_ids."""
+        if group_ids is not None:
+            group_ids = [_escape_group_id_for_redisearch(gid) for gid in group_ids]
+        return _original_build_fulltext_query(self, query, group_ids, max_query_length)
+
+    FalkorDriver.build_fulltext_query = build_fulltext_query_fixed
+
+    _fulltext_workaround_applied = True
+    logger.info(
+        "[Graphiti] Applied FalkorDB workaround: "
+        "build_fulltext_query patched to escape underscores in group_ids"
+    )
+    return True
+
+
+def is_fulltext_workaround_applied() -> bool:
+    """Check if the fulltext query workaround has been applied."""
+    return _fulltext_workaround_applied
+
+
+def remove_fulltext_workaround() -> None:
+    """Restore original build_fulltext_query (for testing only)."""
+    global _fulltext_workaround_applied, _original_build_fulltext_query
+    if _original_build_fulltext_query is not None:
+        try:
+            from graphiti_core.driver.falkordb_driver import FalkorDriver
+            FalkorDriver.build_fulltext_query = _original_build_fulltext_query
+        except ImportError:
+            pass
+    _fulltext_workaround_applied = False
+    _original_build_fulltext_query = None
+
+
 def remove_workaround() -> None:
-    """Reset the workaround state and restore original decorator (for testing only)."""
+    """Reset all workaround states and restore originals (for testing only)."""
     global _workaround_applied, _original_decorator
     if _original_decorator is not None:
         try:
@@ -228,3 +328,6 @@ def remove_workaround() -> None:
 
     _workaround_applied = False
     _original_decorator = None
+
+    # Also remove the fulltext workaround
+    remove_fulltext_workaround()

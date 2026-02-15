@@ -380,7 +380,7 @@ class OrchestrationResult:
     task_id: str
     success: bool
     total_turns: int
-    final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "pre_loop_blocked", "rate_limited", "design_extraction_failed"]
+    final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "pre_loop_blocked", "rate_limited", "design_extraction_failed"]
     turn_history: List[TurnRecord]
     worktree: Worktree
     error: Optional[str] = None
@@ -483,6 +483,7 @@ class AutoBuildOrchestrator:
         verbose: bool = False,
         context_loader: Optional[AutoBuildContextLoader] = None,
         feature_id: Optional[str] = None,
+        cancellation_event: Optional[threading.Event] = None,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -545,6 +546,9 @@ class AutoBuildOrchestrator:
         feature_id : Optional[str], optional
             Feature ID to use for turn state capture (default: None).
             When provided, overrides regex extraction from task ID.
+        cancellation_event : Optional[threading.Event], optional
+            Cooperative cancellation signal from FeatureOrchestrator (default: None).
+            When set, _loop_phase() exits cleanly at the next checkpoint.
 
         Raises
         ------
@@ -596,6 +600,7 @@ class AutoBuildOrchestrator:
         self.verbose = verbose
         self._context_loader = context_loader  # For DI/testing only; thread-local loaders used at runtime
         self._feature_id: Optional[str] = feature_id  # Passed from FeatureOrchestrator or set during orchestration
+        self._cancellation_event: Optional[threading.Event] = cancellation_event  # Cooperative cancellation (TASK-ASF-007)
         # Per-turn context status tracking for progress display (TASK-FIX-GCW5)
         self._last_player_context_status: Optional[ContextStatus] = None
         self._last_coach_context_status: Optional[ContextStatus] = None
@@ -1423,7 +1428,7 @@ class AutoBuildOrchestrator:
         task_file_path: Optional[Path] = None,
         implementation_plan: Optional[Dict[str, Any]] = None,
         task_type: Optional[str] = None,
-    ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "design_extraction_failed"]]:
+    ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "design_extraction_failed"]]:
         """
         Phase 3: Execute Player↔Coach adversarial loop.
 
@@ -1434,7 +1439,7 @@ class AutoBuildOrchestrator:
         --------------
         - Turn 1: Player implements from scratch
         - Turn 2+: Player addresses Coach feedback
-        - Exit: Coach approves OR max_turns exceeded OR critical error
+        - Exit: Coach approves OR max_turns exceeded OR critical error OR cancelled
 
         Parameters
         ----------
@@ -1463,6 +1468,7 @@ class AutoBuildOrchestrator:
         - "approved": Coach approved, ready for human review
         - "max_turns_exceeded": Loop limit reached
         - "error": Critical error occurred
+        - "cancelled": Cooperative cancellation via threading.Event (TASK-ASF-007)
 
         Notes
         -----
@@ -1488,6 +1494,14 @@ class AutoBuildOrchestrator:
 
         with self._progress_display:
             for turn in range(start_turn, self.max_turns + 1):
+                # Cooperative cancellation check at TOP of loop (TASK-ASF-007)
+                if self._cancellation_event and self._cancellation_event.is_set():
+                    logger.info(
+                        f"Cancellation requested for {task_id} at turn {turn} "
+                        f"(before Player phase)"
+                    )
+                    return turn_history, "cancelled"
+
                 logger.info(f"Executing turn {turn}/{self.max_turns}")
 
                 # Check if perspective should be reset to prevent anchoring bias
@@ -1511,6 +1525,15 @@ class AutoBuildOrchestrator:
 
                 turn_history.append(turn_record)
                 self._turn_history = turn_history  # Keep internal copy for state
+
+                # Cooperative cancellation check after turn (TASK-ASF-007)
+                # If event was set during _execute_turn (between Player/Coach),
+                # the turn returns "error" — convert to "cancelled" exit
+                if self._cancellation_event and self._cancellation_event.is_set():
+                    logger.info(
+                        f"Cancellation detected after turn {turn} for {task_id}"
+                    )
+                    return turn_history, "cancelled"
 
                 # Capture turn state for cross-turn learning (TASK-GE-002)
                 self._capture_turn_state(turn_record, acceptance_criteria, task_id=task_id)
@@ -1761,6 +1784,8 @@ class AutoBuildOrchestrator:
                 turn=turn,
                 worktree=worktree,
                 original_error=player_result.error,
+                acceptance_criteria=acceptance_criteria,
+                task_type=task_type,
             )
 
             if recovered_player_result:
@@ -1788,6 +1813,33 @@ class AutoBuildOrchestrator:
                     timestamp=timestamp,
                     player_context_status=player_context_status,
                 )
+
+        # Warn if passing synthetic report to Coach (TASK-ASF-004)
+        if player_result.success and player_result.report.get("_synthetic"):
+            logger.warning(
+                f"[Turn {turn}] Passing synthetic report to Coach for {task_id}. "
+                f"Promise matching will fail — falling through to text matching."
+            )
+
+        # Cooperative cancellation check BETWEEN Player and Coach (TASK-ASF-007)
+        if self._cancellation_event and self._cancellation_event.is_set():
+            logger.info(
+                f"Cancellation detected for {task_id} between Player and Coach "
+                f"at turn {turn}"
+            )
+            self._progress_display.complete_turn(
+                "warning",
+                "Cancelled between Player and Coach phases",
+            )
+            return TurnRecord(
+                turn=turn,
+                player_result=player_result,
+                coach_result=None,
+                decision="error",
+                feedback=None,
+                timestamp=timestamp,
+                player_context_status=player_context_status,
+            )
 
         # ===== Coach Phase =====
 
@@ -1896,7 +1948,7 @@ class AutoBuildOrchestrator:
     def _finalize_phase(
         self,
         worktree: Worktree,
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "pre_loop_blocked", "design_extraction_failed"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "pre_loop_blocked", "design_extraction_failed"],
         turn_history: List[TurnRecord],
     ) -> None:
         """
@@ -2007,6 +2059,8 @@ class AutoBuildOrchestrator:
         turn: int,
         worktree: Worktree,
         original_error: Optional[str],
+        acceptance_criteria: Optional[List[str]] = None,
+        task_type: Optional[str] = None,
     ) -> Optional[AgentInvocationResult]:
         """
         Attempt to recover work state when Player fails.
@@ -2032,6 +2086,10 @@ class AutoBuildOrchestrator:
             Worktree for state detection
         original_error : Optional[str]
             Original error from Player failure
+        acceptance_criteria : Optional[List[str]]
+            Acceptance criteria from task (for promise generation)
+        task_type : Optional[str]
+            Task type from frontmatter (e.g., "scaffolding", "feature")
 
         Returns
         -------
@@ -2047,13 +2105,27 @@ class AutoBuildOrchestrator:
         self.recovery_count += 1
 
         try:
+            # Load task to extract test_scope if available
+            from guardkit.tasks.task_loader import TaskLoader
+
+            test_paths = None
+            try:
+                task_data = TaskLoader.load_task(task_id, repo_root=self.repo_root)
+                test_scope = task_data.get("frontmatter", {}).get("test_scope")
+                if test_scope:
+                    test_paths = [test_scope]
+                    logger.debug(f"Using task-specific test scope: {test_scope}")
+            except Exception as e:
+                logger.debug(f"Could not load task for test_scope extraction: {e}")
+                # Continue with full-worktree run (backward compatible)
+
             # Use MultiLayeredStateTracker for cascade detection
             state_tracker = MultiLayeredStateTracker(
                 task_id=task_id,
                 worktree_path=worktree.path,
             )
 
-            work_state = state_tracker.capture_state(turn=turn)
+            work_state = state_tracker.capture_state(turn=turn, test_paths=test_paths)
 
             if not work_state or not work_state.has_work:
                 logger.info(f"No work detected in {worktree.path}")
@@ -2071,7 +2143,12 @@ class AutoBuildOrchestrator:
             state_tracker.save_state(work_state)
 
             # Build synthetic Player report from detected state
-            synthetic_report = self._build_synthetic_report(work_state, original_error)
+            synthetic_report = self._build_synthetic_report(
+                work_state,
+                original_error,
+                acceptance_criteria=acceptance_criteria,
+                task_type=task_type,
+            )
 
             # Return as AgentInvocationResult
             return AgentInvocationResult(
@@ -2092,6 +2169,8 @@ class AutoBuildOrchestrator:
         self,
         work_state: WorkState,
         original_error: Optional[str],
+        acceptance_criteria: Optional[List[str]] = None,
+        task_type: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Build synthetic Player report from detected work state.
@@ -2099,18 +2178,51 @@ class AutoBuildOrchestrator:
         Creates a report structure compatible with existing Coach validation,
         including all detected files and test results.
 
+        For scaffolding tasks, generates file-existence promises to enable
+        promise-based criteria matching (TASK-ASF-006).
+
         Parameters
         ----------
         work_state : WorkState
             Detected work state
         original_error : Optional[str]
             Original error for context
+        acceptance_criteria : Optional[List[str]]
+            Acceptance criteria from task (for promise generation)
+        task_type : Optional[str]
+            Task type from frontmatter (e.g., "scaffolding", "feature")
 
         Returns
         -------
         Dict[str, Any]
             Synthetic Player report
         """
+        # Determine if we should generate file-existence promises
+        should_generate_promises = (
+            task_type == "scaffolding"
+            and acceptance_criteria
+            and len(acceptance_criteria) > 0
+        )
+
+        # Log synthetic report construction (TASK-ASF-004 + TASK-ASF-006)
+        if should_generate_promises:
+            logger.warning(
+                f"[Turn {work_state.turn_number}] Building synthetic report: "
+                f"{len(work_state.files_created)} files created, "
+                f"{len(work_state.files_modified)} files modified, "
+                f"{work_state.test_count} tests. "
+                f"Generating file-existence promises for scaffolding task."
+            )
+        else:
+            logger.warning(
+                f"[Turn {work_state.turn_number}] Building synthetic report: "
+                f"{len(work_state.files_created)} files created, "
+                f"{len(work_state.files_modified)} files modified, "
+                f"{work_state.test_count} tests. "
+                f"Note: report has no completion_promises and cannot satisfy "
+                f"promise-based criteria matching."
+            )
+
         report = {
             "task_id": "",  # Filled by caller
             "turn": work_state.turn_number,
@@ -2134,6 +2246,7 @@ class AutoBuildOrchestrator:
             ],
             "requirements_addressed": [],  # Cannot determine from detection
             "requirements_remaining": [],  # Cannot determine from detection
+            "_synthetic": True,  # TASK-ASF-004: Flag for observability
             "_recovery_metadata": {
                 "detection_method": work_state.detection_method,
                 "git_insertions": (
@@ -2150,7 +2263,93 @@ class AutoBuildOrchestrator:
             },
         }
 
+        # Generate file-existence promises for scaffolding tasks (TASK-ASF-006)
+        if should_generate_promises:
+            promises = self._generate_file_existence_promises(
+                work_state, acceptance_criteria
+            )
+            if promises:
+                report["completion_promises"] = promises
+                logger.info(
+                    f"Generated {len(promises)} file-existence promises "
+                    f"for scaffolding task synthetic report"
+                )
+
         return report
+
+    def _generate_file_existence_promises(
+        self,
+        work_state: WorkState,
+        acceptance_criteria: List[str],
+    ) -> List[Dict[str, Any]]:
+        """
+        Generate file-existence promises for scaffolding tasks.
+
+        Extracts file path patterns from acceptance criteria and matches them
+        against detected files (created + modified). Used for synthetic reports
+        when task-work fails but git changes are detected.
+
+        Parameters
+        ----------
+        work_state : WorkState
+            Detected work state with files_created and files_modified
+        acceptance_criteria : List[str]
+            Acceptance criteria text from the task
+
+        Returns
+        -------
+        List[Dict[str, Any]]
+            List of completion promise dicts with structure:
+            {
+                "criterion_id": "AC-001",
+                "criterion_text": "...",
+                "status": "complete" | "incomplete",
+                "evidence": "..."
+            }
+        """
+        # Combine detected files into a single set
+        detected_files = set(work_state.files_created + work_state.files_modified)
+
+        promises = []
+        for i, criterion_text in enumerate(acceptance_criteria):
+            criterion_id = f"AC-{i+1:03d}"
+
+            # Extract potential file paths from criterion text
+            # Pattern matches: path/to/file.ext (1-5 char extensions)
+            file_patterns = re.findall(r'[\w./\-]+\.\w{1,5}', criterion_text)
+
+            # Check if any pattern matches (as suffix) any detected file
+            matched_files = []
+            for pattern in file_patterns:
+                for detected_file in detected_files:
+                    if detected_file.endswith(pattern) or pattern in detected_file:
+                        matched_files.append(detected_file)
+
+            # Build promise based on match result
+            if matched_files:
+                # Found matching files - mark as complete
+                file_status = []
+                for f in matched_files:
+                    if f in work_state.files_created:
+                        file_status.append(f"{f} (created)")
+                    else:
+                        file_status.append(f"{f} (modified)")
+
+                evidence = "File-existence verified: " + ", ".join(file_status)
+                status = "complete"
+            else:
+                # No matching files - mark as incomplete
+                evidence = "No file-existence evidence for this criterion"
+                status = "incomplete"
+
+            promises.append({
+                "criterion_id": criterion_id,
+                "criterion_text": criterion_text,
+                "status": status,
+                "evidence": evidence,
+            })
+
+        return promises
 
     # ========================================================================
     # Helper Methods (Error Handling, Summary Building)
@@ -3136,16 +3335,25 @@ class AutoBuildOrchestrator:
         feedback_lines = []
         for issue in issues[:3]:  # Limit to top 3 issues
             desc = issue.get("description", "")
-            suggestion = issue.get("suggestion", "")
-            test_output = issue.get("test_output", "")
+            missing = issue.get("missing_criteria", [])
 
-            if suggestion:
-                feedback_lines.append(f"- {desc}: {suggestion}")
-            elif test_output:
-                # Use test output as the actionable detail
-                feedback_lines.append(f"- {desc}:\n  {test_output}")
+            if missing:
+                feedback_lines.append(f"- {desc}:")
+                for criterion in missing[:5]:
+                    feedback_lines.append(f"  • {criterion[:100]}")
+                if len(missing) > 5:
+                    feedback_lines.append(f"  ({len(missing) - 5} more)")
             else:
-                feedback_lines.append(f"- {desc}")
+                suggestion = issue.get("suggestion", "")
+                test_output = issue.get("test_output", "")
+
+                if suggestion:
+                    feedback_lines.append(f"- {desc}: {suggestion}")
+                elif test_output:
+                    # Use test output as the actionable detail
+                    feedback_lines.append(f"- {desc}:\n  {test_output}")
+                else:
+                    feedback_lines.append(f"- {desc}")
 
         if len(issues) > 3:
             feedback_lines.append(f"... and {len(issues) - 3} more issues")
@@ -3155,7 +3363,7 @@ class AutoBuildOrchestrator:
     def _build_summary_details(
         self,
         turn_history: List[TurnRecord],
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "pre_loop_blocked", "design_extraction_failed"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "pre_loop_blocked", "design_extraction_failed"],
     ) -> str:
         """
         Build detailed summary text for final report.
@@ -3229,7 +3437,7 @@ class AutoBuildOrchestrator:
 
     def _build_error_message(
         self,
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "pre_loop_blocked", "design_extraction_failed"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "pre_loop_blocked", "design_extraction_failed"],
         turn_history: List[TurnRecord],
     ) -> str:
         """
@@ -3261,6 +3469,12 @@ class AutoBuildOrchestrator:
 
         elif final_decision == "design_extraction_failed":
             return "Phase 0 design extraction failed - MCP tools unavailable or design URL invalid"
+
+        elif final_decision == "cancelled":
+            return (
+                f"Task cancelled via cooperative cancellation after "
+                f"{len(turn_history)} turn(s)"
+            )
 
         elif final_decision == "error":
             error_turn = next(

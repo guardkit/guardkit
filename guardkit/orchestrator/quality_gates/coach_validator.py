@@ -931,6 +931,28 @@ class CoachValidator:
         """
         acceptance_criteria = task.get("acceptance_criteria", [])
 
+        # Fast-fail path for synthetic reports (TASK-ASF-006)
+        is_synthetic = task_work_results.get("_synthetic", False)
+        if is_synthetic:
+            logger.info(
+                "Synthetic report detected — using file-existence verification"
+            )
+            # Load promises (may be from file-existence generation)
+            completion_promises = self._load_completion_promises(
+                task_work_results, turn
+            )
+            if completion_promises:
+                return self._match_by_promises(
+                    acceptance_criteria, completion_promises
+                )
+            # No promises on synthetic report — all criteria unmet
+            logger.warning(
+                "Synthetic report has no completion_promises — "
+                "all criteria marked unmet"
+            )
+            return self._build_all_unmet(acceptance_criteria)
+
+        # Normal path: promises first, then text fallback
         # Strategy 1: ID-based matching via completion_promises (preferred)
         completion_promises = self._load_completion_promises(
             task_work_results, turn
@@ -1137,6 +1159,47 @@ class CoachValidator:
         )
 
         return validation
+
+    def _build_all_unmet(
+        self,
+        acceptance_criteria: List[str],
+    ) -> RequirementsValidation:
+        """
+        Build validation result with all criteria marked unmet (fast-fail).
+
+        Used for synthetic reports that have no completion_promises and cannot
+        provide evidence for criteria satisfaction (TASK-ASF-006).
+
+        Parameters
+        ----------
+        acceptance_criteria : List[str]
+            Acceptance criteria text from the task
+
+        Returns
+        -------
+        RequirementsValidation
+            Validation result with all criteria rejected
+        """
+        criteria_results = []
+        for i, criterion_text in enumerate(acceptance_criteria):
+            criterion_id = f"AC-{i+1:03d}"
+            criteria_results.append(CriterionResult(
+                criterion_id=criterion_id,
+                criterion_text=criterion_text,
+                result="rejected",
+                status="rejected",
+                evidence=(
+                    "Synthetic report — no file-existence promises available"
+                ),
+            ))
+
+        return RequirementsValidation(
+            criteria_total=len(acceptance_criteria),
+            criteria_met=0,
+            all_criteria_met=False,
+            missing=list(acceptance_criteria),
+            criteria_results=criteria_results,
+        )
 
     # ========================================================================
     # Helper Methods

@@ -2195,6 +2195,134 @@ class TestExtractFeedback:
         feedback = orchestrator._extract_feedback(coach_report)
         assert feedback == "Implementation looks good"
 
+    def test_extract_feedback_with_missing_criteria(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test _extract_feedback includes missing_criteria when present."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        coach_report = {
+            "issues": [
+                {
+                    "description": "Incomplete implementation",
+                    "missing_criteria": [
+                        "AC-001: OAuth flow works correctly",
+                        "AC-002: Token refresh handles expiry edge case",
+                        "AC-003: Rate limiting prevents abuse",
+                    ],
+                }
+            ]
+        }
+
+        feedback = orchestrator._extract_feedback(coach_report)
+        assert "- Incomplete implementation:" in feedback
+        assert "  • AC-001: OAuth flow works correctly" in feedback
+        assert "  • AC-002: Token refresh handles expiry edge case" in feedback
+        assert "  • AC-003: Rate limiting prevents abuse" in feedback
+
+    def test_extract_feedback_missing_criteria_truncates(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test _extract_feedback truncates long criteria to 100 chars."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        long_criterion = "A" * 150  # 150 characters
+        coach_report = {
+            "issues": [
+                {
+                    "description": "Missing criteria",
+                    "missing_criteria": [long_criterion],
+                }
+            ]
+        }
+
+        feedback = orchestrator._extract_feedback(coach_report)
+        # Check that the criterion is truncated to 100 chars
+        lines = feedback.split("\n")
+        criterion_line = lines[1]  # Second line should be the criterion
+        # Should be "  • " (4 chars) + 100 chars = 104 chars max
+        assert len(criterion_line) <= 104
+        assert criterion_line.startswith("  • ")
+        assert len(criterion_line) == 104  # Exactly 4 + 100
+
+    def test_extract_feedback_missing_criteria_overflow(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test _extract_feedback limits to 5 criteria with overflow message."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        coach_report = {
+            "issues": [
+                {
+                    "description": "Many missing criteria",
+                    "missing_criteria": [f"AC-{i:03d}: Criterion {i}" for i in range(10)],
+                }
+            ]
+        }
+
+        feedback = orchestrator._extract_feedback(coach_report)
+        assert "- Many missing criteria:" in feedback
+        assert "  • AC-000: Criterion 0" in feedback
+        assert "  • AC-004: Criterion 4" in feedback  # 5th criterion (index 4)
+        assert "  (5 more)" in feedback
+        assert "AC-005" not in feedback  # 6th criterion should not appear
+
+    def test_extract_feedback_prefers_missing_criteria_over_suggestion(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test _extract_feedback prefers missing_criteria when both present."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        coach_report = {
+            "issues": [
+                {
+                    "description": "Incomplete implementation",
+                    "missing_criteria": ["AC-001: OAuth flow"],
+                    "suggestion": "Implement OAuth flow",
+                }
+            ]
+        }
+
+        feedback = orchestrator._extract_feedback(coach_report)
+        assert "  • AC-001: OAuth flow" in feedback
+        assert "Implement OAuth flow" not in feedback
+
 
 # ============================================================================
 # Test Error Classification in _invoke_player_safely (TASK-AB-FIX-002)
@@ -3727,6 +3855,349 @@ class TestAcceptanceCriteriaWiring:
             call_kwargs = mock_execute.call_args[1]
             assert "acceptance_criteria" in call_kwargs
             assert call_kwargs["acceptance_criteria"] == criteria
+
+
+# ============================================================================
+# Cooperative Thread Cancellation Tests (TASK-ASF-007)
+# ============================================================================
+
+
+class TestCooperativeCancellation:
+    """Tests for cooperative thread cancellation via threading.Event."""
+
+    def test_cancellation_at_loop_top_returns_cancelled(
+        self,
+        mock_worktree,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+        mock_coach_validator,
+        mock_pre_loop_gates,
+    ):
+        """Test that _loop_phase returns 'cancelled' when event is pre-set."""
+        import threading
+
+        cancel_event = threading.Event()
+        cancel_event.set()  # Pre-set before loop starts
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test-repo"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+            pre_loop_gates=mock_pre_loop_gates,
+            cancellation_event=cancel_event,
+        )
+
+        # Mock checkpoint manager to avoid git dependency
+        mock_checkpoint_mgr = Mock()
+        orchestrator._checkpoint_manager = mock_checkpoint_mgr
+
+        with patch.object(orchestrator, "_capture_turn_state"):
+            with patch.object(orchestrator, "_record_honesty"):
+                with patch.object(orchestrator, "_display_criteria_progress"):
+                    turn_history, exit_reason = orchestrator._loop_phase(
+                        task_id="TASK-CANCEL-001",
+                        requirements="Test requirements",
+                        acceptance_criteria=["AC1"],
+                        worktree=mock_worktree,
+                    )
+
+        assert exit_reason == "cancelled"
+        assert len(turn_history) == 0  # No turns executed
+
+    def test_cancellation_after_first_turn(
+        self,
+        mock_worktree,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+        mock_coach_validator,
+        mock_pre_loop_gates,
+    ):
+        """Test that cancellation set during a turn causes exit after that turn."""
+        import threading
+
+        cancel_event = threading.Event()
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test-repo"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+            pre_loop_gates=mock_pre_loop_gates,
+            cancellation_event=cancel_event,
+        )
+
+        # Mock checkpoint manager
+        mock_checkpoint_mgr = Mock()
+        mock_checkpoint = Mock()
+        mock_checkpoint.commit_hash = "abc12345"
+        mock_checkpoint_mgr.create_checkpoint.return_value = mock_checkpoint
+        orchestrator._checkpoint_manager = mock_checkpoint_mgr
+
+        # Create a turn record that triggers feedback (not approval)
+        feedback_turn = TurnRecord(
+            turn=1,
+            player_result=make_player_result(),
+            coach_result=AgentInvocationResult(
+                task_id="TASK-CANCEL-001",
+                turn=1,
+                agent_type="coach",
+                success=True,
+                report={"decision": "feedback", "issues": [], "rationale": "needs work"},
+                duration_seconds=5.0,
+                error=None,
+            ),
+            decision="feedback",
+            feedback="Improve error handling",
+            timestamp="2026-02-15T00:00:00Z",
+        )
+
+        call_count = 0
+
+        def mock_execute_turn(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            # Set cancellation after first turn completes
+            cancel_event.set()
+            return feedback_turn
+
+        with patch.object(orchestrator, "_execute_turn", side_effect=mock_execute_turn):
+            with patch.object(orchestrator, "_capture_turn_state"):
+                with patch.object(orchestrator, "_record_honesty"):
+                    with patch.object(orchestrator, "_display_criteria_progress"):
+                        turn_history, exit_reason = orchestrator._loop_phase(
+                            task_id="TASK-CANCEL-001",
+                            requirements="Test requirements",
+                            acceptance_criteria=["AC1"],
+                            worktree=mock_worktree,
+                        )
+
+        assert exit_reason == "cancelled"
+        assert len(turn_history) == 1  # Only one turn executed
+        assert call_count == 1
+
+    def test_cancellation_between_player_and_coach(
+        self,
+        mock_worktree,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+        mock_coach_validator,
+        mock_pre_loop_gates,
+    ):
+        """Test cancellation between Player and Coach returns error TurnRecord."""
+        import threading
+
+        cancel_event = threading.Event()
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test-repo"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+            pre_loop_gates=mock_pre_loop_gates,
+            cancellation_event=cancel_event,
+        )
+
+        # Mock checkpoint manager
+        mock_checkpoint_mgr = Mock()
+        mock_checkpoint = Mock()
+        mock_checkpoint.commit_hash = "abc12345"
+        mock_checkpoint_mgr.create_checkpoint.return_value = mock_checkpoint
+        orchestrator._checkpoint_manager = mock_checkpoint_mgr
+
+        # Mock player to succeed, then set cancel event before Coach runs
+        player_result = make_player_result(task_id="TASK-CANCEL-002")
+
+        async def mock_invoke_player(*args, **kwargs):
+            # Set cancellation after Player completes
+            cancel_event.set()
+            return player_result
+
+        mock_agent_invoker.invoke_player = AsyncMock(side_effect=mock_invoke_player)
+
+        with patch.object(orchestrator, "_capture_turn_state"):
+            with patch.object(orchestrator, "_record_honesty"):
+                with patch.object(orchestrator, "_display_criteria_progress"):
+                    turn_history, exit_reason = orchestrator._loop_phase(
+                        task_id="TASK-CANCEL-002",
+                        requirements="Test requirements",
+                        acceptance_criteria=["AC1"],
+                        worktree=mock_worktree,
+                    )
+
+        # The turn should have completed with error decision, then loop exits as cancelled
+        assert exit_reason == "cancelled"
+        assert len(turn_history) == 1
+        # The TurnRecord from _execute_turn has decision="error" (between-phase cancel)
+        assert turn_history[0].decision == "error"
+        assert turn_history[0].coach_result is None  # Coach never ran
+
+    def test_normal_completion_with_unset_event(
+        self,
+        mock_worktree,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+        mock_coach_validator,
+        mock_pre_loop_gates,
+    ):
+        """Test normal completion works correctly when event exists but is not set."""
+        import threading
+
+        cancel_event = threading.Event()  # Created but NOT set
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test-repo"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+            pre_loop_gates=mock_pre_loop_gates,
+            cancellation_event=cancel_event,
+        )
+
+        # Mock checkpoint manager
+        mock_checkpoint_mgr = Mock()
+        mock_checkpoint = Mock()
+        mock_checkpoint.commit_hash = "abc12345"
+        mock_checkpoint_mgr.create_checkpoint.return_value = mock_checkpoint
+        orchestrator._checkpoint_manager = mock_checkpoint_mgr
+
+        # Create an approval turn record
+        approval_turn = TurnRecord(
+            turn=1,
+            player_result=make_player_result(),
+            coach_result=AgentInvocationResult(
+                task_id="TASK-AB-001",
+                turn=1,
+                agent_type="coach",
+                success=True,
+                report={"decision": "approve", "rationale": "Looks good"},
+                duration_seconds=5.0,
+                error=None,
+            ),
+            decision="approve",
+            feedback=None,
+            timestamp="2026-02-15T00:00:00Z",
+        )
+
+        with patch.object(orchestrator, "_execute_turn", return_value=approval_turn):
+            with patch.object(orchestrator, "_capture_turn_state"):
+                with patch.object(orchestrator, "_record_honesty"):
+                    with patch.object(orchestrator, "_display_criteria_progress"):
+                        turn_history, exit_reason = orchestrator._loop_phase(
+                            task_id="TASK-AB-001",
+                            requirements="Test requirements",
+                            acceptance_criteria=["AC1"],
+                            worktree=mock_worktree,
+                        )
+
+        assert exit_reason == "approved"
+        assert len(turn_history) == 1
+        assert not cancel_event.is_set()  # Event was never set
+
+    def test_backward_compat_no_cancellation_event(
+        self,
+        mock_worktree,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+        mock_coach_validator,
+        mock_pre_loop_gates,
+    ):
+        """Test that omitting cancellation_event preserves backward compatibility."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test-repo"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+            pre_loop_gates=mock_pre_loop_gates,
+            # No cancellation_event passed
+        )
+
+        assert orchestrator._cancellation_event is None
+
+        # Mock checkpoint manager
+        mock_checkpoint_mgr = Mock()
+        mock_checkpoint = Mock()
+        mock_checkpoint.commit_hash = "abc12345"
+        mock_checkpoint_mgr.create_checkpoint.return_value = mock_checkpoint
+        orchestrator._checkpoint_manager = mock_checkpoint_mgr
+
+        approval_turn = TurnRecord(
+            turn=1,
+            player_result=make_player_result(),
+            coach_result=AgentInvocationResult(
+                task_id="TASK-AB-001",
+                turn=1,
+                agent_type="coach",
+                success=True,
+                report={"decision": "approve", "rationale": "Looks good"},
+                duration_seconds=5.0,
+                error=None,
+            ),
+            decision="approve",
+            feedback=None,
+            timestamp="2026-02-15T00:00:00Z",
+        )
+
+        with patch.object(orchestrator, "_execute_turn", return_value=approval_turn):
+            with patch.object(orchestrator, "_capture_turn_state"):
+                with patch.object(orchestrator, "_record_honesty"):
+                    with patch.object(orchestrator, "_display_criteria_progress"):
+                        turn_history, exit_reason = orchestrator._loop_phase(
+                            task_id="TASK-AB-001",
+                            requirements="Test requirements",
+                            acceptance_criteria=["AC1"],
+                            worktree=mock_worktree,
+                        )
+
+        assert exit_reason == "approved"
+        assert len(turn_history) == 1
+
+    def test_cancelled_in_build_error_message(
+        self,
+        orchestrator_with_mocks,
+    ):
+        """Test that _build_error_message handles 'cancelled' decision."""
+        turn = TurnRecord(
+            turn=1,
+            player_result=make_player_result(),
+            coach_result=None,
+            decision="error",
+            feedback=None,
+            timestamp="2026-02-15T00:00:00Z",
+        )
+
+        msg = orchestrator_with_mocks._build_error_message(
+            final_decision="cancelled",
+            turn_history=[turn],
+        )
+
+        assert "cancelled" in msg.lower()
+        assert "1 turn" in msg
+
+    def test_cancelled_in_orchestration_result(self, mock_worktree):
+        """Test that OrchestrationResult accepts 'cancelled' as final_decision."""
+        result = OrchestrationResult(
+            task_id="TASK-CANCEL-003",
+            success=False,
+            total_turns=2,
+            final_decision="cancelled",
+            error="Task cancelled via cooperative cancellation after 2 turn(s)",
+            turn_history=[],
+            worktree=mock_worktree,
+        )
+
+        assert result.final_decision == "cancelled"
+        assert result.success is False
 
 
 # ============================================================================

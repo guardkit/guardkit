@@ -101,6 +101,10 @@ USE_TASK_WORK_DELEGATION = os.environ.get("GUARDKIT_USE_TASK_WORK_DELEGATION", "
 # need ~900-1200s. 1200s provides adequate headroom for most tasks.
 DEFAULT_SDK_TIMEOUT = int(os.environ.get("GUARDKIT_SDK_TIMEOUT", "1200"))
 
+# TASK-ASF-008: Maximum SDK timeout cap to prevent excessively long sessions
+# Even with high complexity + task-work mode, timeout should not exceed 1 hour
+MAX_SDK_TIMEOUT = 3600
+
 # TASK-REV-BB80: SDK max_turns for task-work invocation (separate from adversarial turns)
 # /task-work runs multiple phases internally (planning, review, implementation, testing)
 # and needs ~50 internal turns. This is NOT the same as orchestrator's max_turns (adversarial rounds).
@@ -643,6 +647,11 @@ class AgentInvoker:
         """
         start_time = time.time()
 
+        # TASK-ASF-008: Calculate dynamic SDK timeout based on task characteristics
+        effective_timeout = self._calculate_sdk_timeout(task_id)
+        original_timeout = self.sdk_timeout_seconds
+        self.sdk_timeout_seconds = effective_timeout
+
         # Use instance development_mode if mode not provided
         effective_mode = mode if mode is not None else self.development_mode
 
@@ -787,6 +796,9 @@ class AgentInvoker:
                 duration_seconds=duration,
                 error=f"Unexpected error: {str(e)}",
             )
+        finally:
+            # TASK-ASF-008: Restore original timeout after invocation
+            self.sdk_timeout_seconds = original_timeout
 
     async def invoke_coach(
         self,
@@ -2032,6 +2044,74 @@ Follow the decision format specified in your agent definition.
                 logger.warning(f"[{task_id}] Error loading task for mode detection: {e}")
 
             return "task-work"
+
+    def _calculate_sdk_timeout(self, task_id: str) -> int:
+        """Calculate dynamic SDK timeout based on task characteristics.
+
+        Adjusts the base timeout using:
+        - Implementation mode multiplier (task-work=1.5x, direct=1.0x)
+        - Complexity multiplier (1.0 + complexity/10.0, range 1.1x-2.0x)
+
+        If the user provided a CLI override (sdk_timeout_seconds differs from
+        DEFAULT_SDK_TIMEOUT), returns that value unchanged.
+
+        Args:
+            task_id: Task identifier (e.g., "TASK-001")
+
+        Returns:
+            Effective timeout in seconds, capped at MAX_SDK_TIMEOUT (3600s)
+        """
+        # Respect CLI override: if user explicitly set a timeout, don't recalculate
+        if self.sdk_timeout_seconds != DEFAULT_SDK_TIMEOUT:
+            logger.info(
+                f"[{task_id}] SDK timeout: {self.sdk_timeout_seconds}s "
+                f"(CLI override, skipping dynamic calculation)"
+            )
+            return self.sdk_timeout_seconds
+
+        base_timeout = self.sdk_timeout_seconds
+
+        try:
+            from guardkit.tasks.task_loader import TaskLoader
+
+            task_data = TaskLoader.load_task(task_id, self.worktree_path)
+            frontmatter = task_data.get("frontmatter", {})
+
+            mode = frontmatter.get("implementation_mode", "task-work")
+            complexity = frontmatter.get("complexity", 5)
+
+            # Clamp complexity to valid range
+            complexity = max(1, min(10, int(complexity)))
+
+        except Exception as e:
+            logger.debug(
+                f"[{task_id}] Could not load task for timeout calculation: {e}. "
+                "Using defaults (mode=task-work, complexity=5)"
+            )
+            mode = "task-work"
+            complexity = 5
+
+        # Mode multiplier
+        if mode == "task-work":
+            mode_multiplier = 1.5
+        else:
+            mode_multiplier = 1.0
+
+        # Complexity multiplier: 1.1x (complexity=1) to 2.0x (complexity=10)
+        complexity_multiplier = 1.0 + (complexity / 10.0)
+
+        effective_timeout = int(base_timeout * mode_multiplier * complexity_multiplier)
+
+        # Cap at maximum
+        effective_timeout = min(effective_timeout, MAX_SDK_TIMEOUT)
+
+        logger.info(
+            f"[{task_id}] SDK timeout: {effective_timeout}s "
+            f"(base={base_timeout}s, mode={mode} x{mode_multiplier}, "
+            f"complexity={complexity} x{complexity_multiplier:.1f})"
+        )
+
+        return effective_timeout
 
     async def _invoke_player_direct(
         self,

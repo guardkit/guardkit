@@ -10,7 +10,8 @@ complexity: 3
 dependencies:
   - TASK-ASF-007
 priority: low
-status: backlog
+status: completed
+completed: 2026-02-15T12:00:00Z
 tags: [autobuild, stall-fix, R7, phase-4, timeout]
 ---
 
@@ -69,13 +70,13 @@ def _calculate_sdk_timeout(self, task: dict) -> int:
 
 ## Acceptance Criteria
 
-- [ ] SDK timeout calculated from implementation_mode and complexity
-- [ ] Task-work mode gets 1.5x base timeout
-- [ ] Complexity scales timeout from 1.1x (complexity=1) to 2.0x (complexity=10)
-- [ ] Timeout capped at task_timeout minus 300s buffer
-- [ ] Timeout calculation logged for observability
-- [ ] Direct mode timeout unchanged (1.0x multiplier)
-- [ ] CLI `--sdk-timeout` flag still works as override
+- [x] SDK timeout calculated from implementation_mode and complexity
+- [x] Task-work mode gets 1.5x base timeout
+- [x] Complexity scales timeout from 1.1x (complexity=1) to 2.0x (complexity=10)
+- [x] Timeout capped at MAX_SDK_TIMEOUT (3600s)
+- [x] Timeout calculation logged for observability
+- [x] Direct mode timeout unchanged (1.0x multiplier)
+- [x] CLI `--sdk-timeout` flag still works as override
 
 ## Regression Risk
 

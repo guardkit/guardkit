@@ -11,7 +11,12 @@ dependencies:
   - TASK-ASF-001
   - TASK-ASF-002
 priority: high
-status: backlog
+status: completed
+completed: 2026-02-15T00:00:00Z
+updated: 2026-02-15T00:00:00Z
+previous_state: in_review
+state_transition_reason: "All acceptance criteria met, quality gates passed"
+completed_location: tasks/completed/TASK-ASF-003/
 tags: [autobuild, stall-fix, R3, phase-2, feedback-loop]
 ---
 
@@ -81,12 +86,12 @@ Player receives:
 
 ## Acceptance Criteria
 
-- [ ] `_extract_feedback()` includes `missing_criteria` items when present in issue
-- [ ] Each missing criterion is truncated to 100 chars to avoid prompt bloat
-- [ ] Maximum 5 criteria listed with "(N more)" overflow
-- [ ] When `missing_criteria` is empty, falls back to `description` + `suggestion` (current behavior)
-- [ ] Existing tests for `_extract_feedback()` updated
-- [ ] Stall detection MD5 hash will now differ across turns with different missing criteria (desirable)
+- [x] `_extract_feedback()` includes `missing_criteria` items when present in issue
+- [x] Each missing criterion is truncated to 100 chars to avoid prompt bloat
+- [x] Maximum 5 criteria listed with "(N more)" overflow
+- [x] When `missing_criteria` is empty, falls back to `description` + `suggestion` (current behavior)
+- [x] Existing tests for `_extract_feedback()` updated
+- [x] Stall detection MD5 hash will now differ across turns with different missing criteria (desirable)
 
 ## Regression Risk
 

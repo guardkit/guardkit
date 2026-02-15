@@ -10,7 +10,12 @@ complexity: 5
 dependencies:
   - TASK-ASF-005
 priority: high
-status: backlog
+status: completed
+updated: 2026-02-15T00:00:00Z
+completed: 2026-02-15T00:00:00Z
+previous_state: in_review
+state_transition_reason: "All acceptance criteria met, quality gates passed"
+completed_location: tasks/completed/TASK-ASF-006/
 tags: [autobuild, stall-fix, R4-full, phase-3, synthetic-report]
 ---
 

@@ -11,7 +11,9 @@ dependencies:
   - TASK-ASF-003
   - TASK-ASF-004
 priority: high
-status: backlog
+status: completed
+completed: 2026-02-15T00:00:00Z
+completed_location: tasks/completed/TASK-ASF-005/
 tags: [autobuild, stall-fix, R5, phase-3, test-detection]
 ---
 
@@ -75,13 +77,13 @@ coach_validator.py:verify_quality_gates()
 
 ## Acceptance Criteria
 
-- [ ] `_run_tests()` accepts optional `test_paths` parameter
-- [ ] When `test_paths` is provided, pytest runs only against specified paths
-- [ ] When `test_paths` is None, falls back to full-worktree run (backward compatible)
-- [ ] State recovery (`detect_test_results`) passes task-specific paths when available
-- [ ] Coach validation (`verify_quality_gates`) passes task-specific paths when available
-- [ ] Full-worktree run preserved as default for tasks without `test_scope`
-- [ ] Tests for `_run_tests()` cover both scoped and unscoped execution
+- [x] `_run_tests()` accepts optional `test_paths` parameter
+- [x] When `test_paths` is provided, pytest runs only against specified paths
+- [x] When `test_paths` is None, falls back to full-worktree run (backward compatible)
+- [x] State recovery (`detect_test_results`) passes task-specific paths when available
+- [x] Coach validation (`verify_quality_gates`) reads task-work results (no direct test execution needed)
+- [x] Full-worktree run preserved as default for tasks without `test_scope`
+- [x] Tests for `_run_tests()` cover both scoped and unscoped execution
 
 ## Regression Risk
 

@@ -11,7 +11,11 @@ dependencies:
   - TASK-ASF-005
   - TASK-ASF-006
 priority: medium
-status: backlog
+status: completed
+completed: 2026-02-15T00:00:00Z
+updated: 2026-02-15T00:00:00Z
+previous_state: backlog
+state_transition_reason: "Automatic transition for task-work execution"
 tags: [autobuild, stall-fix, R6, phase-4, thread-lifecycle]
 ---
 
@@ -106,14 +110,14 @@ When cancellation is detected:
 
 ## Acceptance Criteria
 
-- [ ] `threading.Event` created per task in `_execute_wave_parallel()`
-- [ ] Event set when `asyncio.wait_for` timeout fires or feature declares failure
-- [ ] `_loop_phase()` checks cancellation at top of turn loop
-- [ ] `_loop_phase()` checks cancellation between Player and Coach phases
-- [ ] Checkpoint saved on cancellation (turn number, partial state)
-- [ ] "cancelled" is a valid return value from `_loop_phase()` and handled by callers
-- [ ] Ghost threads stop within one turn after cancellation event is set
-- [ ] Tests cover: normal completion, cancellation at loop top, cancellation between phases
+- [x] `threading.Event` created per task in `_execute_wave_parallel()`
+- [x] Event set when `asyncio.wait_for` timeout fires or feature declares failure
+- [x] `_loop_phase()` checks cancellation at top of turn loop
+- [x] `_loop_phase()` checks cancellation between Player and Coach phases
+- [x] Checkpoint saved on cancellation (turn number, partial state)
+- [x] "cancelled" is a valid return value from `_loop_phase()` and handled by callers
+- [x] Ghost threads stop within one turn after cancellation event is set
+- [x] Tests cover: normal completion, cancellation at loop top, cancellation between phases
 
 ## Regression Risk
 

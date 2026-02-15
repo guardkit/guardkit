@@ -229,6 +229,49 @@ class TestCoachVerifier:
         assert "timed out" in result.output
 
     @patch("subprocess.run")
+    def test_run_tests_with_scoped_paths(self, mock_run: MagicMock, verifier: CoachVerifier):
+        """Test running tests with scoped test paths."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="3 passed",
+        )
+
+        result = verifier._run_tests(test_paths=["tests/seam/"])
+
+        # Should pass the test_paths to pytest
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0][0]
+        assert "pytest" in call_args
+        assert "--tb=no" in call_args
+        assert "-q" in call_args
+        assert "tests/seam/" in call_args
+
+        assert result.passed is True
+        assert result.test_count == 3
+
+    @patch("subprocess.run")
+    def test_run_tests_scoped_paths_no_caching(self, mock_run: MagicMock, verifier: CoachVerifier):
+        """Test that scoped test runs bypass cache."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="5 passed",
+        )
+
+        # First call with scoped path
+        result1 = verifier._run_tests(test_paths=["tests/unit/"])
+        # Second call with different scoped path
+        result2 = verifier._run_tests(test_paths=["tests/integration/"])
+
+        # Should run twice (no caching for scoped runs)
+        assert mock_run.call_count == 2
+
+        # Verify different paths were used
+        call1_args = mock_run.call_args_list[0][0][0]
+        call2_args = mock_run.call_args_list[1][0][0]
+        assert "tests/unit/" in call1_args
+        assert "tests/integration/" in call2_args
+
+    @patch("subprocess.run")
     def test_verify_test_results_match(
         self, mock_run: MagicMock, verifier: CoachVerifier
     ):

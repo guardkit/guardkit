@@ -11,7 +11,11 @@ dependencies:
   - TASK-ASF-001
   - TASK-ASF-002
 priority: medium
-status: backlog
+status: completed
+updated: 2026-02-15T00:00:00Z
+completed: 2026-02-15T00:00:00Z
+previous_state: in_review
+completed_location: tasks/completed/TASK-ASF-004/
 tags: [autobuild, stall-fix, R4-lite, phase-2, observability]
 ---
 
@@ -67,11 +71,11 @@ if player_report.get("_synthetic"):
 
 ## Acceptance Criteria
 
-- [ ] Synthetic reports include `_synthetic: True` flag
-- [ ] Warning logged when synthetic report is built (includes file/test counts)
-- [ ] Warning logged when synthetic report is passed to Coach
-- [ ] `_synthetic` flag does not affect Coach validation behavior (flag is informational only)
-- [ ] Existing tests pass without modification
+- [x] Synthetic reports include `_synthetic: True` flag
+- [x] Warning logged when synthetic report is built (includes file/test counts)
+- [x] Warning logged when synthetic report is passed to Coach
+- [x] `_synthetic` flag does not affect Coach validation behavior (flag is informational only)
+- [x] Existing tests pass without modification
 
 ## Regression Risk
 

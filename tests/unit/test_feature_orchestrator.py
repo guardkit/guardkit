@@ -2141,3 +2141,467 @@ class TestPreInitGraphiti:
         # pre_init must come before any wave execution
         assert call_order[0] == "pre_init"
         assert all(item.startswith("wave_") for item in call_order[1:])
+
+
+# ============================================================================
+# Pre-Flight FalkorDB Check Tests (TASK-ASF-002)
+# ============================================================================
+
+
+class TestPreflightCheck:
+    """Tests for _preflight_check() FalkorDB connectivity verification."""
+
+    def test_preflight_returns_true_when_context_disabled(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """Test that pre-flight check returns True when enable_context=False."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            enable_context=False,
+        )
+
+        result = orchestrator._preflight_check()
+
+        assert result is True
+        assert orchestrator.enable_context is False
+
+    def test_preflight_disables_context_when_client_none(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """Test that pre-flight check disables context when get_graphiti returns None."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            enable_context=True,
+        )
+
+        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
+            mock_get.return_value = None
+
+            result = orchestrator._preflight_check()
+
+            assert result is False
+            assert orchestrator.enable_context is False
+
+    def test_preflight_disables_context_when_client_not_enabled(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """Test that pre-flight check disables context when client.enabled is False."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            enable_context=True,
+        )
+
+        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
+            mock_client = MagicMock()
+            mock_client.enabled = False
+            mock_get.return_value = mock_client
+
+            result = orchestrator._preflight_check()
+
+            assert result is False
+            assert orchestrator.enable_context is False
+
+    def test_preflight_passes_when_health_check_succeeds(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """Test that pre-flight check passes when FalkorDB health check succeeds."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            enable_context=True,
+        )
+
+        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            # Create async mock for _check_health
+            mock_client._check_health = AsyncMock(return_value=True)
+            mock_get.return_value = mock_client
+
+            result = orchestrator._preflight_check()
+
+            assert result is True
+            assert orchestrator.enable_context is True
+
+    def test_preflight_fails_when_health_check_returns_false(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """Test that pre-flight check fails when health check returns False."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            enable_context=True,
+        )
+
+        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client._check_health = AsyncMock(return_value=False)
+            mock_get.return_value = mock_client
+
+            result = orchestrator._preflight_check()
+
+            assert result is False
+            assert orchestrator.enable_context is False
+
+    def test_preflight_handles_timeout(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """Test that pre-flight check handles 5-second timeout gracefully."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            enable_context=True,
+        )
+
+        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            # Simulate timeout
+            async def slow_health_check():
+                import asyncio
+                await asyncio.sleep(10)
+                return True
+            mock_client._check_health = slow_health_check
+            mock_get.return_value = mock_client
+
+            result = orchestrator._preflight_check()
+
+            assert result is False
+            assert orchestrator.enable_context is False
+
+    def test_preflight_handles_exception(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """Test that pre-flight check handles exceptions gracefully."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            enable_context=True,
+        )
+
+        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client._check_health = AsyncMock(side_effect=Exception("Connection failed"))
+            mock_get.return_value = mock_client
+
+            result = orchestrator._preflight_check()
+
+            assert result is False
+            assert orchestrator.enable_context is False
+
+    def test_preflight_logs_info_when_passed(
+        self, temp_repo, mock_worktree_manager, caplog
+    ):
+        """Test that pre-flight check logs INFO when health check passes."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            enable_context=True,
+        )
+
+        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client._check_health = AsyncMock(return_value=True)
+            mock_get.return_value = mock_client
+
+            import logging
+            with caplog.at_level(logging.INFO, logger="guardkit.orchestrator.feature_orchestrator"):
+                orchestrator._preflight_check()
+
+            assert any("FalkorDB pre-flight check passed" in msg for msg in caplog.messages)
+
+    def test_preflight_logs_warning_on_failure(
+        self, temp_repo, mock_worktree_manager, caplog
+    ):
+        """Test that pre-flight check logs WARNING when health check fails."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            enable_context=True,
+        )
+
+        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client._check_health = AsyncMock(return_value=False)
+            mock_get.return_value = mock_client
+
+            import logging
+            with caplog.at_level(logging.WARNING, logger="guardkit.orchestrator.feature_orchestrator"):
+                orchestrator._preflight_check()
+
+            assert any(
+                "FalkorDB health check failed" in msg for msg in caplog.messages
+            )
+
+    def test_wave_phase_calls_preflight_before_pre_init(
+        self, temp_repo, sample_feature, mock_worktree, mock_worktree_manager
+    ):
+        """Test that _wave_phase calls _preflight_check before _pre_init_graphiti."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+        )
+
+        call_order = []
+
+        def mock_preflight():
+            call_order.append("preflight")
+            return True
+
+        def mock_pre_init():
+            call_order.append("pre_init")
+
+        def mock_execute_wave(wave_number, task_ids, feature, worktree):
+            call_order.append(f"wave_{wave_number}")
+            return WaveExecutionResult(
+                wave_number=wave_number,
+                task_ids=task_ids,
+                results=[
+                    TaskExecutionResult(
+                        task_id=tid, success=True,
+                        total_turns=1, final_decision="approved"
+                    )
+                    for tid in task_ids
+                ],
+                all_succeeded=True,
+            )
+
+        with patch.object(orchestrator, '_preflight_check', side_effect=mock_preflight), \
+             patch.object(orchestrator, '_pre_init_graphiti', side_effect=mock_pre_init), \
+             patch.object(orchestrator, '_execute_wave', side_effect=mock_execute_wave), \
+             patch.object(orchestrator, '_dependencies_satisfied', return_value=True):
+            orchestrator._wave_phase(sample_feature, mock_worktree)
+
+        # Verify correct order: preflight -> pre_init -> waves
+        assert call_order[0] == "preflight"
+        assert call_order[1] == "pre_init"
+        assert all(item.startswith("wave_") for item in call_order[2:])
+
+    def test_pre_init_skipped_when_preflight_disables_context(
+        self, temp_repo, sample_feature, mock_worktree, mock_worktree_manager
+    ):
+        """Test that _pre_init_graphiti is no-op after pre-flight disables context."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            enable_context=True,
+        )
+
+        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client._check_health = AsyncMock(return_value=False)
+            mock_get.return_value = mock_client
+
+            # Pre-flight check should disable context
+            orchestrator._preflight_check()
+            assert orchestrator.enable_context is False
+
+            # Now pre_init_graphiti should be a no-op
+            mock_get.reset_mock()
+            orchestrator._pre_init_graphiti()
+
+            # Should not call get_graphiti again
+            mock_get.assert_not_called()
+
+
+# ============================================================================
+# Cooperative Thread Cancellation Tests (TASK-ASF-007)
+# ============================================================================
+
+
+class TestCooperativeCancellation:
+    """Tests for cooperative thread cancellation in FeatureOrchestrator."""
+
+    @pytest.mark.asyncio
+    async def test_cancellation_events_created_per_task(
+        self, temp_repo, parallel_feature, mock_worktree, mock_worktree_manager
+    ):
+        """Test that _execute_wave_parallel creates a cancellation event per task."""
+        import threading
+
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+        )
+
+        captured_events = {}
+
+        def mock_execute_task(task, feature, worktree, cancellation_event=None):
+            captured_events[task.id] = cancellation_event
+            return TaskExecutionResult(
+                task_id=task.id,
+                success=True,
+                total_turns=1,
+                final_decision="approved",
+            )
+
+        with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
+            results = await orchestrator._execute_wave_parallel(
+                1, ["TASK-P-001", "TASK-P-002"], parallel_feature, mock_worktree
+            )
+
+        # Verify both tasks received distinct cancellation events
+        assert len(captured_events) == 2
+        assert "TASK-P-001" in captured_events
+        assert "TASK-P-002" in captured_events
+        assert isinstance(captured_events["TASK-P-001"], threading.Event)
+        assert isinstance(captured_events["TASK-P-002"], threading.Event)
+        # Each task gets its own event
+        assert captured_events["TASK-P-001"] is not captured_events["TASK-P-002"]
+
+    @pytest.mark.asyncio
+    async def test_all_events_set_after_gather(
+        self, temp_repo, parallel_feature, mock_worktree, mock_worktree_manager
+    ):
+        """Test that all cancellation events are set in the finally block."""
+        import threading
+
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+        )
+
+        captured_events = {}
+
+        def mock_execute_task(task, feature, worktree, cancellation_event=None):
+            captured_events[task.id] = cancellation_event
+            return TaskExecutionResult(
+                task_id=task.id,
+                success=True,
+                total_turns=1,
+                final_decision="approved",
+            )
+
+        with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
+            await orchestrator._execute_wave_parallel(
+                1, ["TASK-P-001", "TASK-P-002"], parallel_feature, mock_worktree
+            )
+
+        # After gather completes, all events should be set (from finally block)
+        for task_id, event in captured_events.items():
+            assert event.is_set(), f"Event for {task_id} was not set after gather"
+
+    @pytest.mark.asyncio
+    async def test_events_set_even_on_exception(
+        self, temp_repo, parallel_feature, mock_worktree, mock_worktree_manager
+    ):
+        """Test that events are set even when a task raises an exception."""
+        import threading
+
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+        )
+
+        captured_events = {}
+
+        def mock_execute_task(task, feature, worktree, cancellation_event=None):
+            captured_events[task.id] = cancellation_event
+            if task.id == "TASK-P-001":
+                raise RuntimeError("Simulated failure")
+            return TaskExecutionResult(
+                task_id=task.id,
+                success=True,
+                total_turns=1,
+                final_decision="approved",
+            )
+
+        with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
+            await orchestrator._execute_wave_parallel(
+                1, ["TASK-P-001", "TASK-P-002"], parallel_feature, mock_worktree
+            )
+
+        # All events should still be set despite exception
+        for task_id, event in captured_events.items():
+            assert event.is_set(), f"Event for {task_id} was not set after exception"
+
+    @patch("guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator")
+    @patch("guardkit.orchestrator.feature_orchestrator.TaskLoader.load_task")
+    def test_cancellation_event_forwarded_to_autobuild(
+        self,
+        mock_load_task,
+        mock_ab_class,
+        temp_repo,
+        sample_feature,
+        mock_worktree,
+        mock_worktree_manager,
+    ):
+        """Test that _execute_task passes cancellation_event to AutoBuildOrchestrator."""
+        import threading
+
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+        )
+
+        # Setup mocks
+        mock_load_task.return_value = {
+            "requirements": "Test requirements",
+            "acceptance_criteria": ["AC1"],
+            "frontmatter": {"id": "TASK-T-001", "title": "Test"},
+            "file_path": "tasks/backlog/TASK-T-001.md",
+        }
+
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.total_turns = 1
+        mock_result.final_decision = "approved"
+        mock_result.error = None
+        mock_result.recovery_count = 0
+        mock_ab_class.return_value.orchestrate.return_value = mock_result
+
+        cancel_event = threading.Event()
+        task = sample_feature.tasks[0]
+        orchestrator._execute_task(task, sample_feature, mock_worktree, cancellation_event=cancel_event)
+
+        # Verify cancellation_event was forwarded to AutoBuildOrchestrator
+        call_kwargs = mock_ab_class.call_args[1]
+        assert call_kwargs["cancellation_event"] is cancel_event
+
+    @patch("guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator")
+    @patch("guardkit.orchestrator.feature_orchestrator.TaskLoader.load_task")
+    def test_execute_task_without_cancellation_event(
+        self,
+        mock_load_task,
+        mock_ab_class,
+        temp_repo,
+        sample_feature,
+        mock_worktree,
+        mock_worktree_manager,
+    ):
+        """Test that _execute_task works without cancellation_event (backward compat)."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+        )
+
+        mock_load_task.return_value = {
+            "requirements": "Test requirements",
+            "acceptance_criteria": ["AC1"],
+            "frontmatter": {"id": "TASK-T-001", "title": "Test"},
+            "file_path": "tasks/backlog/TASK-T-001.md",
+        }
+
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.total_turns = 1
+        mock_result.final_decision = "approved"
+        mock_result.error = None
+        mock_result.recovery_count = 0
+        mock_ab_class.return_value.orchestrate.return_value = mock_result
+
+        task = sample_feature.tasks[0]
+        # No cancellation_event passed
+        orchestrator._execute_task(task, sample_feature, mock_worktree)
+
+        # Verify cancellation_event defaults to None
+        call_kwargs = mock_ab_class.call_args[1]
+        assert call_kwargs["cancellation_event"] is None
