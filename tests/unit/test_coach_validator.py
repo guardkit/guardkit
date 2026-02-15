@@ -98,7 +98,7 @@ def make_task_work_results(
             "violations": violations,
             "file_count_match": True,
         },
-        "requirements_met": requirements_met or [
+        "requirements_met": requirements_met if requirements_met is not None else [
             "OAuth2 authentication flow",
             "Token generation",
             "Token refresh",
@@ -3263,8 +3263,8 @@ class TestCriteriaVerification:
     def test_criteria_results_populated_on_partial_match(self, tmp_worktree):
         """AC1: validate_requirements produces per-criterion results with partial match."""
         validator = CoachValidator(str(tmp_worktree))
-        task = make_task(["Feature A", "Feature B", "Feature C"])
-        results = make_task_work_results(requirements_met=["Feature A"])
+        task = make_task(["User authentication", "Database schema", "Payment processing"])
+        results = make_task_work_results(requirements_met=["User authentication"])
 
         validation = validator.validate_requirements(task, results)
 

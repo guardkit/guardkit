@@ -1,9 +1,10 @@
 ---
 id: TASK-ACR-001
 title: "Propagate completion_promises in task_work_results writer"
-status: backlog
+status: completed
 created: 2026-02-15T10:00:00Z
-updated: 2026-02-15T10:00:00Z
+updated: 2026-02-15T17:00:00Z
+completed: 2026-02-15T17:00:00Z
 priority: high
 task_type: feature
 parent_review: TASK-REV-B5C4
@@ -14,9 +15,9 @@ complexity: 3
 dependencies: []
 tags: [autobuild, coach, criteria-verification, f2-fix]
 test_results:
-  status: pending
+  status: passed
   coverage: null
-  last_run: null
+  last_run: 2026-02-15T17:00:00Z
 ---
 
 # Task: Propagate completion_promises in task_work_results writer
@@ -35,12 +36,12 @@ Also ensure `task_id` is always populated (never empty string) so `_load_complet
 
 ## Acceptance Criteria
 
-- [ ] AC-001: `_write_task_work_results()` includes `completion_promises` from Player SDK output when available
-- [ ] AC-002: `task_id` is never empty string in `task_work_results.json` (set by all writers)
-- [ ] AC-003: `_create_player_report_from_task_work()` propagates `completion_promises` into `player_turn_N.json`
-- [ ] AC-004: Synthetic report caller fills `task_id` before writing
-- [ ] AC-005: Existing direct mode promise propagation (TASK-FIX-ACA7b) remains unchanged
-- [ ] AC-006: Unit tests verify promise propagation for standard task-work path
+- [x] AC-001: `_write_task_work_results()` includes `completion_promises` from Player SDK output when available
+- [x] AC-002: `task_id` is never empty string in `task_work_results.json` (set by all writers)
+- [x] AC-003: `_create_player_report_from_task_work()` propagates `completion_promises` into `player_turn_N.json`
+- [x] AC-004: Synthetic report caller fills `task_id` before writing
+- [x] AC-005: Existing direct mode promise propagation (TASK-FIX-ACA7b) remains unchanged
+- [x] AC-006: Unit tests verify promise propagation for standard task-work path
 
 ## Implementation Notes
 

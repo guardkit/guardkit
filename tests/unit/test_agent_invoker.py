@@ -6976,3 +6976,188 @@ class TestFormatFeedbackForPrompt:
         result = invoker._format_feedback_for_prompt(feedback, turn=2)
 
         assert "Implementation needs work" in result
+
+
+# ============================================================================
+# TASK-ACR-001: Completion Promises Propagation Tests
+# ============================================================================
+
+
+class TestCompletionPromisesPropagation:
+    """Test completion_promises propagation through task_work_results and player reports."""
+
+    def test_write_task_work_results_propagates_completion_promises(self, worktree_path):
+        """Test _write_task_work_results includes completion_promises when present."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        task_id = "TASK-ACR-001"
+        
+        # Create result_data with completion_promises
+        result_data = {
+            "phases": {"implementation": True, "testing": True},
+            "tests_passed": 5,
+            "tests_failed": 0,
+            "coverage": 85.0,
+            "files_modified": ["src/main.py"],
+            "files_created": ["tests/test_main.py"],
+            "tests_written": ["tests/test_main.py"],
+            "completion_promises": [
+                {
+                    "criterion_id": "AC-001",
+                    "criterion_text": "Implement feature X",
+                    "status": "complete",
+                    "evidence": "File src/main.py created",
+                },
+                {
+                    "criterion_id": "AC-002",
+                    "criterion_text": "Add tests",
+                    "status": "complete",
+                    "evidence": "Tests written in tests/test_main.py",
+                },
+            ],
+        }
+        
+        # Call _write_task_work_results
+        results_file = invoker._write_task_work_results(task_id, result_data)
+        
+        # Read the output file
+        assert results_file.exists()
+        output_data = json.loads(results_file.read_text())
+        
+        # Verify completion_promises is in the output
+        assert "completion_promises" in output_data
+        assert len(output_data["completion_promises"]) == 2
+        assert output_data["completion_promises"][0]["criterion_id"] == "AC-001"
+        assert output_data["completion_promises"][1]["criterion_id"] == "AC-002"
+
+    def test_write_task_work_results_omits_empty_completion_promises(self, worktree_path):
+        """Test _write_task_work_results omits completion_promises when empty."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        task_id = "TASK-ACR-002"
+        
+        # Create result_data WITHOUT completion_promises
+        result_data = {
+            "phases": {"implementation": True, "testing": True},
+            "tests_passed": 5,
+            "tests_failed": 0,
+            "coverage": 85.0,
+            "files_modified": ["src/main.py"],
+            "files_created": ["tests/test_main.py"],
+            "tests_written": ["tests/test_main.py"],
+        }
+        
+        # Call _write_task_work_results
+        results_file = invoker._write_task_work_results(task_id, result_data)
+        
+        # Read the output file
+        assert results_file.exists()
+        output_data = json.loads(results_file.read_text())
+        
+        # Verify completion_promises is NOT in the output
+        assert "completion_promises" not in output_data
+
+    def test_create_player_report_from_task_work_propagates_completion_promises(self, worktree_path):
+        """Test _create_player_report_from_task_work propagates completion_promises."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        task_id = "TASK-ACR-003"
+        turn = 1
+        
+        # Create task_work_results.json with completion_promises
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        autobuild_dir.mkdir(parents=True, exist_ok=True)
+        
+        task_work_results = {
+            "task_id": task_id,
+            "quality_gates": {
+                "tests_passing": True,
+                "tests_passed": 5,
+                "tests_failed": 0,
+                "coverage": 85.0,
+                "all_passed": True,
+            },
+            "files_modified": ["src/auth.py"],
+            "files_created": ["tests/test_auth.py"],
+            "tests_written": ["tests/test_auth.py"],
+            "completion_promises": [
+                {
+                    "criterion_id": "AC-001",
+                    "criterion_text": "Implement auth",
+                    "status": "complete",
+                    "evidence": "File src/auth.py created",
+                },
+            ],
+        }
+        
+        task_work_results_file = autobuild_dir / "task_work_results.json"
+        task_work_results_file.write_text(json.dumps(task_work_results, indent=2))
+        
+        # Create TaskWorkResult
+        result = TaskWorkResult(
+            success=True,
+            output=task_work_results,
+            error=None,
+            exit_code=0,
+        )
+        
+        # Mock git detection to return empty (so we only test task_work propagation)
+        with patch.object(invoker, '_detect_git_changes', return_value=None):
+            # Call _create_player_report_from_task_work (returns None, writes to file)
+            invoker._create_player_report_from_task_work(task_id, turn, result)
+        
+        # Read the player report
+        report_file = autobuild_dir / f"player_turn_{turn}.json"
+        assert report_file.exists()
+        report_data = json.loads(report_file.read_text())
+        
+        # Verify completion_promises is in the player report
+        assert "completion_promises" in report_data
+        assert len(report_data["completion_promises"]) == 1
+        assert report_data["completion_promises"][0]["criterion_id"] == "AC-001"
+        assert report_data["completion_promises"][0]["status"] == "complete"
+
+    def test_create_player_report_without_completion_promises(self, worktree_path):
+        """Test _create_player_report_from_task_work when no completion_promises present."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        task_id = "TASK-ACR-004"
+        turn = 1
+        
+        # Create task_work_results.json WITHOUT completion_promises
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        autobuild_dir.mkdir(parents=True, exist_ok=True)
+        
+        task_work_results = {
+            "task_id": task_id,
+            "quality_gates": {
+                "tests_passing": True,
+                "tests_passed": 5,
+                "tests_failed": 0,
+                "coverage": 85.0,
+                "all_passed": True,
+            },
+            "files_modified": ["src/auth.py"],
+            "files_created": ["tests/test_auth.py"],
+            "tests_written": ["tests/test_auth.py"],
+        }
+        
+        task_work_results_file = autobuild_dir / "task_work_results.json"
+        task_work_results_file.write_text(json.dumps(task_work_results, indent=2))
+        
+        # Create TaskWorkResult
+        result = TaskWorkResult(
+            success=True,
+            output=task_work_results,
+            error=None,
+            exit_code=0,
+        )
+        
+        # Mock git detection to return empty
+        with patch.object(invoker, '_detect_git_changes', return_value=None):
+            # Call _create_player_report_from_task_work (returns None, writes to file)
+            invoker._create_player_report_from_task_work(task_id, turn, result)
+        
+        # Read the player report
+        report_file = autobuild_dir / f"player_turn_{turn}.json"
+        assert report_file.exists()
+        report_data = json.loads(report_file.read_text())
+        
+        # Verify completion_promises is NOT in the player report
+        assert "completion_promises" not in report_data

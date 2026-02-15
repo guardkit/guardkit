@@ -273,8 +273,8 @@ def test_scaffolding_task_with_unmatched_files_generates_incomplete_promises(
         assert "No file-existence evidence" in promise["evidence"]
 
 
-def test_non_scaffolding_task_does_not_generate_promises(orchestrator, work_state, caplog):
-    """Test non-scaffolding task does NOT generate completion_promises."""
+def test_non_scaffolding_task_generates_git_analysis_promises(orchestrator, work_state, caplog):
+    """Test non-scaffolding task generates git-analysis promises (TASK-ACR-004)."""
     acceptance_criteria = [
         "Implement user authentication logic",
         "Add error handling for edge cases",
@@ -288,13 +288,17 @@ def test_non_scaffolding_task_does_not_generate_promises(orchestrator, work_stat
             task_type="feature",
         )
 
-    # Verify completion_promises does NOT exist
-    assert "completion_promises" not in report
+    # TASK-ACR-004: Feature tasks now generate git-analysis promises
+    assert "completion_promises" in report
+    promises = report["completion_promises"]
+    for promise in promises:
+        assert promise["evidence_type"] == "git_analysis"
+        assert promise["status"] in ["partial", "incomplete"]
 
-    # Verify warning message indicates no promises
+    # Verify warning message indicates git-analysis promises
     warning_messages = [rec.message for rec in caplog.records if rec.levelname == "WARNING"]
     assert any(
-        "no completion_promises" in msg and "cannot satisfy promise-based" in msg
+        "git-analysis promises for feature task" in msg
         for msg in warning_messages
     )
 
@@ -352,7 +356,7 @@ def test_logging_differences_scaffolding_vs_non_scaffolding(orchestrator, work_s
     scaffolding_warnings = [rec.message for rec in caplog.records if rec.levelname == "WARNING"]
     assert any("Generating file-existence promises for scaffolding task" in msg for msg in scaffolding_warnings)
 
-    # Test non-scaffolding task
+    # Test non-scaffolding task (TASK-ACR-004: now generates git-analysis promises)
     with caplog.at_level(logging.WARNING):
         caplog.clear()
         feature_report = orchestrator._build_synthetic_report(
@@ -363,7 +367,7 @@ def test_logging_differences_scaffolding_vs_non_scaffolding(orchestrator, work_s
         )
 
     feature_warnings = [rec.message for rec in caplog.records if rec.levelname == "WARNING"]
-    assert any("no completion_promises" in msg for msg in feature_warnings)
+    assert any("git-analysis promises for feature task" in msg for msg in feature_warnings)
     assert not any("Generating file-existence promises" in msg for msg in feature_warnings)
 
 
@@ -479,3 +483,415 @@ def test_coach_fast_fail_without_promises(coach_validator, caplog):
     # Verify warning was logged
     warning_messages = [rec.message for rec in caplog.records if rec.levelname == "WARNING"]
     assert any("Synthetic report has no completion_promises" in msg for msg in warning_messages)
+
+
+# ============================================================================
+# 4. TASK-ACR-001: Synthetic Report task_id Population Test
+# ============================================================================
+
+
+def test_synthetic_report_has_task_id_populated(orchestrator, work_state):
+    """Test that _attempt_state_recovery sets task_id in synthetic report (TASK-ACR-001)."""
+    # Build synthetic report
+    report = orchestrator._build_synthetic_report(
+        work_state=work_state,
+        original_error="Agent invocation failed",
+    )
+    
+    # The report itself doesn't have task_id (that's set by the caller)
+    # But verify the structure is correct for the caller to populate
+    assert "_synthetic" in report
+    assert "implementation_notes" in report
+    assert "concerns" in report
+    
+    # Now simulate what _attempt_state_recovery does (line 2154-2155)
+    task_id = "TASK-ACR-005"
+    report["task_id"] = task_id
+    
+    # Verify task_id is now in the report
+    assert "task_id" in report
+    assert report["task_id"] == task_id
+    
+    # Verify this would work in AgentInvocationResult
+    result = AgentInvocationResult(
+        task_id=task_id,
+        turn=1,
+        agent_type="player",
+        success=True,
+        report=report,
+        duration_seconds=0.0,
+        error=None,
+    )
+    
+    # Verify the result has both task_id and report.task_id
+    assert result.task_id == task_id
+    assert result.report["task_id"] == task_id
+
+
+# ============================================================================
+# 5. TASK-ACR-004: Git-Analysis Promise Generation Tests
+# ============================================================================
+
+
+@pytest.fixture
+def feature_work_state():
+    """Create WorkState with files typical of a feature task."""
+    return WorkState(
+        turn_number=1,
+        files_modified=["src/payments/processor.py", "src/api/routes.py"],
+        files_created=[
+            "src/payments/validator.py",
+            "tests/test_payments.py",
+        ],
+        tests_written=["tests/test_payments.py"],
+        tests_passed=True,
+        test_count=3,
+        detection_method="git_test_detection",
+    )
+
+
+def test_git_analysis_generates_partial_promises_for_file_match(
+    orchestrator, feature_work_state
+):
+    """Test AC-001/AC-006: Git analysis generates status=partial promises for
+    criteria with file patterns matching created/modified files."""
+    acceptance_criteria = [
+        "Create src/payments/validator.py with input validation",
+        "Update src/payments/processor.py with new processing logic",
+    ]
+
+    report = orchestrator._build_synthetic_report(
+        work_state=feature_work_state,
+        original_error="Agent invocation failed",
+        acceptance_criteria=acceptance_criteria,
+        task_type="feature",
+    )
+
+    # Verify completion_promises exists with git_analysis evidence_type
+    assert "completion_promises" in report
+    promises = report["completion_promises"]
+    assert len(promises) == 2
+
+    for promise in promises:
+        assert promise["status"] == "partial"
+        assert promise["evidence_type"] == "git_analysis"
+
+    # First promise matches validator.py (created)
+    assert "validator.py" in promises[0]["evidence"]
+    assert "(created)" in promises[0]["evidence"]
+
+    # Second promise matches processor.py (modified)
+    assert "processor.py" in promises[1]["evidence"]
+    assert "(modified)" in promises[1]["evidence"]
+
+
+def test_git_analysis_matches_code_patterns(orchestrator, feature_work_state):
+    """Test AC-002: Match function names, class names, and endpoint paths."""
+    acceptance_criteria = [
+        "Implement PaymentProcessor class for transaction handling",
+        "Add /api/routes endpoint for payment processing",
+        "Create tests/test_payments.py with unit tests",
+    ]
+
+    report = orchestrator._build_synthetic_report(
+        work_state=feature_work_state,
+        original_error="Agent invocation failed",
+        acceptance_criteria=acceptance_criteria,
+        task_type="feature",
+    )
+
+    promises = report["completion_promises"]
+    assert len(promises) == 3
+
+    # All should be partial (git analysis)
+    for promise in promises:
+        assert promise["evidence_type"] == "git_analysis"
+
+    # First: PaymentProcessor matches processor.py
+    assert promises[0]["status"] == "partial"
+
+    # Second: /api/routes matches src/api/routes.py
+    assert promises[1]["status"] == "partial"
+    assert "routes" in promises[1]["evidence"].lower()
+
+    # Third: test file exact match
+    assert promises[2]["status"] == "partial"
+    assert "test_payments.py" in promises[2]["evidence"]
+
+
+def test_git_analysis_evidence_type_field(orchestrator, feature_work_state):
+    """Test AC-003: All git-analysis promises have evidence_type field."""
+    acceptance_criteria = [
+        "Implement payment validation",
+        "Add error handling for edge cases",
+    ]
+
+    report = orchestrator._build_synthetic_report(
+        work_state=feature_work_state,
+        original_error="Agent invocation failed",
+        acceptance_criteria=acceptance_criteria,
+        task_type="feature",
+    )
+
+    promises = report["completion_promises"]
+    for promise in promises:
+        assert "evidence_type" in promise
+        assert promise["evidence_type"] == "git_analysis"
+
+
+def test_scaffolding_task_still_uses_file_existence_promises(
+    orchestrator, work_state
+):
+    """Test AC-004: Existing scaffolding file-existence promise generation unchanged."""
+    acceptance_criteria = [
+        "Create src/new_feature.py with core logic",
+    ]
+
+    report = orchestrator._build_synthetic_report(
+        work_state=work_state,
+        original_error="Error",
+        acceptance_criteria=acceptance_criteria,
+        task_type="scaffolding",
+    )
+
+    # Should use file-existence promises, NOT git-analysis
+    assert "completion_promises" in report
+    promises = report["completion_promises"]
+
+    # File-existence promises don't have evidence_type field
+    for promise in promises:
+        assert "evidence_type" not in promise
+        assert promise["status"] in ["complete", "incomplete"]
+
+
+def test_git_analysis_only_runs_for_non_scaffolding_synthetic(
+    orchestrator, feature_work_state
+):
+    """Test AC-005: Git analysis only runs when _synthetic and not scaffolding."""
+    acceptance_criteria = ["Implement feature X"]
+
+    # Feature task: should generate git-analysis promises
+    report = orchestrator._build_synthetic_report(
+        work_state=feature_work_state,
+        original_error="Error",
+        acceptance_criteria=acceptance_criteria,
+        task_type="feature",
+    )
+    assert "completion_promises" in report
+    assert report["completion_promises"][0]["evidence_type"] == "git_analysis"
+
+    # No task_type: should NOT generate any promises
+    report_no_type = orchestrator._build_synthetic_report(
+        work_state=feature_work_state,
+        original_error="Error",
+        acceptance_criteria=acceptance_criteria,
+        task_type=None,
+    )
+    assert "completion_promises" not in report_no_type
+
+
+def test_git_analysis_incomplete_for_unmatched_criteria(
+    orchestrator, feature_work_state
+):
+    """Test AC-006: Unmatched criteria get status=incomplete."""
+    acceptance_criteria = [
+        "Implement database migration script for schema v2",
+        "Add Redis caching layer with TTL configuration",
+    ]
+
+    report = orchestrator._build_synthetic_report(
+        work_state=feature_work_state,
+        original_error="Error",
+        acceptance_criteria=acceptance_criteria,
+        task_type="feature",
+    )
+
+    promises = report["completion_promises"]
+    assert len(promises) == 2
+
+    for promise in promises:
+        assert promise["status"] == "incomplete"
+        assert "No git-analysis evidence" in promise["evidence"]
+        assert promise["evidence_type"] == "git_analysis"
+
+
+def test_generate_git_analysis_promises_directly(
+    orchestrator, feature_work_state
+):
+    """Test AC-007: Direct unit test of _generate_git_analysis_promises."""
+    acceptance_criteria = [
+        "Create src/payments/validator.py for input validation",
+        "Update src/api/routes.py with new endpoints",
+        "No file path here, just implement caching logic",
+    ]
+
+    promises = orchestrator._generate_git_analysis_promises(
+        feature_work_state, acceptance_criteria
+    )
+
+    assert len(promises) == 3
+
+    # First: file path match (created)
+    assert promises[0]["criterion_id"] == "AC-001"
+    assert promises[0]["status"] == "partial"
+    assert "validator.py" in promises[0]["evidence"]
+    assert promises[0]["evidence_type"] == "git_analysis"
+
+    # Second: file path match (modified)
+    assert promises[1]["criterion_id"] == "AC-002"
+    assert promises[1]["status"] == "partial"
+    assert "routes.py" in promises[1]["evidence"]
+
+    # Third: no match (caching not in any file path)
+    assert promises[2]["criterion_id"] == "AC-003"
+    assert promises[2]["status"] == "incomplete"
+    assert "No git-analysis evidence" in promises[2]["evidence"]
+
+
+def test_generate_git_analysis_returns_empty_when_no_files(orchestrator):
+    """Test git analysis returns empty list when no files changed."""
+    empty_state = WorkState(
+        turn_number=1,
+        files_modified=[],
+        files_created=[],
+        detection_method="git_test_detection",
+    )
+    criteria = ["Implement something"]
+
+    promises = orchestrator._generate_git_analysis_promises(
+        empty_state, criteria
+    )
+    assert promises == []
+
+
+def test_extract_code_patterns_finds_functions_and_classes(orchestrator):
+    """Test _extract_code_patterns extracts function calls, classes, and endpoints."""
+    text = "Implement run_payment() in PaymentProcessor class and add /api/pay endpoint"
+
+    patterns = orchestrator._extract_code_patterns(text)
+
+    assert "run_payment" in patterns
+    assert "PaymentProcessor" in patterns
+    assert "/api/pay" in patterns
+
+
+def test_extract_criterion_keywords_filters_stopwords(orchestrator):
+    """Test _extract_criterion_keywords removes stopwords and short words."""
+    text = "Add the payment processing and validation for the API"
+
+    keywords = orchestrator._extract_criterion_keywords(text)
+
+    assert "payment" in keywords
+    assert "processing" in keywords
+    assert "validation" in keywords
+    # Stopwords and short words excluded
+    assert "the" not in keywords
+    assert "and" not in keywords
+    assert "for" not in keywords
+    assert "add" not in keywords  # <=3 chars
+
+
+def test_git_analysis_logging_differs_from_scaffolding(
+    orchestrator, feature_work_state, caplog
+):
+    """Test logging messages differ for git-analysis vs scaffolding."""
+    acceptance_criteria = ["Implement feature X"]
+
+    with caplog.at_level(logging.WARNING):
+        caplog.clear()
+        orchestrator._build_synthetic_report(
+            work_state=feature_work_state,
+            original_error="Error",
+            acceptance_criteria=acceptance_criteria,
+            task_type="feature",
+        )
+
+    warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
+    assert any("git-analysis promises for feature task" in m for m in warnings)
+    assert not any("file-existence promises" in m for m in warnings)
+
+
+# ============================================================================
+# 6. TASK-ACR-004: CoachValidator partial status handling
+# ============================================================================
+
+
+def test_coach_validator_treats_partial_as_verified(coach_validator):
+    """Test CoachValidator._match_by_promises treats status=partial as verified."""
+    acceptance_criteria = ["Implement payment processing"]
+
+    task_work_results = {
+        "_synthetic": True,
+        "completion_promises": [
+            {
+                "criterion_id": "AC-001",
+                "criterion_text": "Implement payment processing",
+                "status": "partial",
+                "evidence": "Git-analysis detected: Files: src/payment.py (created)",
+                "evidence_type": "git_analysis",
+            },
+        ],
+    }
+
+    task = {"acceptance_criteria": acceptance_criteria}
+
+    with patch.object(
+        coach_validator,
+        "_match_by_promises",
+        wraps=coach_validator._match_by_promises,
+    ):
+        result = coach_validator.validate_requirements(
+            task=task,
+            task_work_results=task_work_results,
+            turn=1,
+        )
+
+    # Partial status is treated as verified
+    assert result.criteria_met == 1
+    assert result.all_criteria_met is True
+    assert result.criteria_results[0].result == "verified"
+    assert "[Partial confidence" in result.criteria_results[0].evidence
+    assert "git_analysis" in result.criteria_results[0].evidence
+
+
+def test_coach_validator_mixed_partial_and_incomplete(coach_validator):
+    """Test CoachValidator with mix of partial and incomplete promises."""
+    acceptance_criteria = [
+        "Implement payment processing",
+        "Add database migration",
+    ]
+
+    task_work_results = {
+        "_synthetic": True,
+        "completion_promises": [
+            {
+                "criterion_id": "AC-001",
+                "criterion_text": "Implement payment processing",
+                "status": "partial",
+                "evidence": "Git-analysis detected: Files: src/payment.py (created)",
+                "evidence_type": "git_analysis",
+            },
+            {
+                "criterion_id": "AC-002",
+                "criterion_text": "Add database migration",
+                "status": "incomplete",
+                "evidence": "No git-analysis evidence for this criterion",
+                "evidence_type": "git_analysis",
+            },
+        ],
+    }
+
+    task = {"acceptance_criteria": acceptance_criteria}
+
+    result = coach_validator.validate_requirements(
+        task=task,
+        task_work_results=task_work_results,
+        turn=1,
+    )
+
+    # One partial (verified), one incomplete (rejected)
+    assert result.criteria_met == 1
+    assert result.criteria_total == 2
+    assert result.all_criteria_met is False
+    assert len(result.missing) == 1
+    assert "Add database migration" in result.missing

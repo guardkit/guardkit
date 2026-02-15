@@ -1,0 +1,101 @@
+{
+  "task_id": "TASK-ACR-006",
+  "turn": 1,
+  "files_modified": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/guardkit/orchestrator/autobuild.py"
+  ],
+  "files_created": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_cleanup_thread_safe.py"
+  ],
+  "tests_written": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_cleanup_thread_safe.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "16 passed in 1.89s (all thread loader tests), 9 new tests specifically for three-branch cleanup",
+  "implementation_notes": "Implemented thread-safe Graphiti client cleanup with three-branch logic based on event loop state. The new implementation:\n\n1. Checks if stored loop is running → uses run_coroutine_threadsafe with 30s timeout\n2. Checks if stored loop is stopped but not closed → uses run_until_complete\n3. Falls back to asyncio.run if loop is closed\n\nThis prevents RuntimeError and 'Lock is bound to different event loop' errors by always executing cleanup on the correct event loop. Added comprehensive test coverage with 9 new tests verifying all branches and edge cases.\n\nThe fix maintains backward compatibility with TASK-ACR-005 (stored event loop references) while solving the cross-loop cleanup issue identified in the task requirements.",
+  "concerns": [],
+  "requirements_addressed": [
+    "Three-branch cleanup based on loop state",
+    "Uses stored event loop reference (AC-001)",
+    "run_coroutine_threadsafe for running loops (AC-002)",
+    "asyncio.run for closed loops (AC-003)",
+    "RuntimeError suppression (AC-004)",
+    "30s timeout for cleanup (AC-005)",
+    "Zero RuntimeError: no running event loop (AC-006)",
+    "Zero Lock is bound to different event loop errors (AC-007)"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Uses stored event loop reference for each thread's loader",
+      "status": "complete",
+      "evidence": "Implementation uses `stored_loop` from the tuple stored in `_thread_loaders[thread_id]` (line 2931: `for thread_id, (loader, stored_loop) in list(self._thread_loaders.items())`)",
+      "test_file": "/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_cleanup_thread_safe.py",
+      "implementation_files": [
+        "/Users/richardwoollcott/Projects/appmilla_github/guardkit/guardkit/orchestrator/autobuild.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "If original loop is still running, schedules close on it",
+      "status": "complete",
+      "evidence": "Implementation checks `stored_loop.is_running()` and uses `asyncio.run_coroutine_threadsafe(loader.graphiti.close(), stored_loop)` with `future.result(timeout=30)` (lines 2935-2940)",
+      "test_file": "/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_cleanup_thread_safe.py",
+      "implementation_files": [
+        "/Users/richardwoollcott/Projects/appmilla_github/guardkit/guardkit/orchestrator/autobuild.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "If original loop is closed, uses asyncio.run()",
+      "status": "complete",
+      "evidence": "Implementation has three branches: running loop, stopped-but-open loop, and closed loop. The closed loop branch (lines 2944-2946) uses `asyncio.run(loader.graphiti.close())` when `stored_loop.is_closed()` returns True",
+      "test_file": "/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_cleanup_thread_safe.py",
+      "implementation_files": [
+        "/Users/richardwoollcott/Projects/appmilla_github/guardkit/guardkit/orchestrator/autobuild.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Catches and suppresses RuntimeError",
+      "status": "complete",
+      "evidence": "Implementation has explicit `except RuntimeError as e:` block (lines 2948-2949) that logs at debug level and continues, preventing RuntimeError from propagating",
+      "test_file": "/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_cleanup_thread_safe.py",
+      "implementation_files": [
+        "/Users/richardwoollcott/Projects/appmilla_github/guardkit/guardkit/orchestrator/autobuild.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Cleanup has a timeout (30s)",
+      "status": "complete",
+      "evidence": "For running loops, implementation uses `future.result(timeout=30)` (line 2940) ensuring cleanup doesn't hang indefinitely",
+      "test_file": "/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_cleanup_thread_safe.py",
+      "implementation_files": [
+        "/Users/richardwoollcott/Projects/appmilla_github/guardkit/guardkit/orchestrator/autobuild.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Zero RuntimeError: no running event loop errors",
+      "status": "complete",
+      "evidence": "Three-branch logic ensures cleanup always runs on correct loop: running loops use run_coroutine_threadsafe (scheduled on worker thread), stopped loops use run_until_complete (direct execution), closed loops use asyncio.run (fresh loop). This eliminates 'no running event loop' errors.",
+      "test_file": "/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_cleanup_thread_safe.py",
+      "implementation_files": [
+        "/Users/richardwoollcott/Projects/appmilla_github/guardkit/guardkit/orchestrator/autobuild.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Zero Lock is bound to different event loop errors",
+      "status": "complete",
+      "evidence": "By using run_coroutine_threadsafe for running loops, cleanup executes on the original worker thread's event loop where the locks were created, preventing cross-loop lock errors. The stored_loop reference from TASK-ACR-005 enables this.",
+      "test_file": "/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_cleanup_thread_safe.py",
+      "implementation_files": [
+        "/Users/richardwoollcott/Projects/appmilla_github/guardkit/guardkit/orchestrator/autobuild.py"
+      ]
+    }
+  ]
+}

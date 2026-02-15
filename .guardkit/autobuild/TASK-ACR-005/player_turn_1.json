@@ -1,0 +1,78 @@
+{
+  "task_id": "TASK-ACR-005",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/autobuild.py"
+  ],
+  "files_created": [
+    "tests/unit/test_autobuild_thread_loaders.py"
+  ],
+  "tests_written": [
+    "tests/unit/test_autobuild_thread_loaders.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "7 passed in 2.20s",
+  "implementation_notes": "Modified `_thread_loaders` storage in AutoBuildOrchestrator to store tuples of (loader, event_loop) instead of just loader. This enables proper cleanup using the correct event loop that each Graphiti client was created on, fixing the cross-loop errors. All storage and retrieval locations updated:\n\n1. Type annotation changed from Dict[int, Optional[AutoBuildContextLoader]] to Dict[int, Tuple[Optional[AutoBuildContextLoader], asyncio.AbstractEventLoop]]\n\n2. `_get_thread_local_loader()` now stores (loader, loop) tuple on success and (None, loop) on failure\n\n3. Cache hit in `_get_thread_local_loader()` unpacks tuple and returns just the loader (maintaining return type compatibility)\n\n4. `_capture_turn_state()` unpacks tuple before accessing loader\n\n5. `_cleanup_thread_loaders()` unpacks tuple and uses stored loop directly instead of trying to get/create a new loop\n\nNo explicit thread lock added - GIL provides sufficient protection for dict operations in CPython (documented in AC-004 note).\n\nComprehensive test suite created with 7 tests covering:\n- Tuple storage format verification\n- Cache hit behavior\n- None case (failed init) still stores loop\n- Cleanup uses stored loop\n- Concurrent access from multiple threads",
+  "concerns": [],
+  "requirements_addressed": [
+    "AC-001: Type changed to Dict[int, Tuple[Optional[AutoBuildContextLoader], asyncio.AbstractEventLoop]]",
+    "AC-002: _get_thread_local_loader() stores current thread's event loop alongside loader",
+    "AC-003: All reads of _thread_loaders updated to unpack tuple",
+    "AC-004: Thread lock protection maintained (GIL-based, no explicit lock needed)",
+    "AC-005: Unit tests verify loop reference stored and retrievable per thread"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "_thread_loaders type changed from Dict[int, Optional[AutoBuildContextLoader]] to Dict[int, Tuple[Optional[AutoBuildContextLoader], asyncio.AbstractEventLoop]]",
+      "status": "complete",
+      "evidence": "Type annotation updated at line 610 with comment documenting TASK-ACR-005. Type now includes asyncio.AbstractEventLoop as second element of tuple.",
+      "test_file": "tests/unit/test_autobuild_thread_loaders.py",
+      "implementation_files": [
+        "guardkit/orchestrator/autobuild.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "_get_thread_local_loader() stores the current thread's event loop alongside the loader",
+      "status": "complete",
+      "evidence": "Modified three storage locations: success case (line 2883), failed init case (line 2887), and exception case (line 2891). All now store (loader_or_none, loop) tuple format.",
+      "test_file": "tests/unit/test_autobuild_thread_loaders.py",
+      "implementation_files": [
+        "guardkit/orchestrator/autobuild.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "All existing reads of _thread_loaders updated to unpack the tuple",
+      "status": "complete",
+      "evidence": "Updated two read locations: (1) cache hit in _get_thread_local_loader (lines 2872-2874) unpacks tuple and returns loader, (2) _capture_turn_state (lines 2638-2642) unpacks tuple before accessing loader, (3) _cleanup_thread_loaders (line 2906) uses tuple unpacking in for loop.",
+      "test_file": "tests/unit/test_autobuild_thread_loaders.py",
+      "implementation_files": [
+        "guardkit/orchestrator/autobuild.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Thread lock protection maintained for concurrent access",
+      "status": "complete",
+      "evidence": "No explicit thread lock exists in original code - GIL provides sufficient protection for dict get/set operations in CPython. Maintained this same protection level. No lock added. Documented in implementation_notes and verified with concurrent access test.",
+      "test_file": "tests/unit/test_autobuild_thread_loaders.py",
+      "implementation_files": [
+        "guardkit/orchestrator/autobuild.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Unit test verifies loop reference stored and retrievable per thread",
+      "status": "complete",
+      "evidence": "Created comprehensive test suite with 7 tests in test_autobuild_thread_loaders.py. Tests verify: tuple storage format, loop reference matches passed-in loop, cache hit behavior, None case stores loop, cleanup uses stored loop, concurrent thread access. All tests passing.",
+      "test_file": "tests/unit/test_autobuild_thread_loaders.py",
+      "implementation_files": [
+        "tests/unit/test_autobuild_thread_loaders.py"
+      ]
+    }
+  ]
+}

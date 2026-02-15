@@ -2971,12 +2971,11 @@ class TestTurnStateCapture:
         mock_agent_invoker,
         mock_progress_display,
     ):
-        """Test that _capture_turn_state uses loop.run_until_complete instead of create_task.
+        """Test that _capture_turn_state uses loop.run_until_complete with timeout.
 
-        TASK-FIX-GTP3: asyncio.create_task() requires a running event loop in the
-        current thread. Since _capture_turn_state is called from sync _loop_phase(),
-        there is no running loop between run_until_complete() calls. The fix uses
-        loop.run_until_complete() to properly await the coroutine.
+        TASK-ACR-007: When no stored loop is available, _capture_turn_state creates
+        a fresh event loop with asyncio.new_event_loop() and runs the capture with
+        a 30s timeout via asyncio.wait_for().
         """
         orchestrator = AutoBuildOrchestrator(
             repo_root=Path("/tmp/test"),
@@ -3003,41 +3002,35 @@ class TestTurnStateCapture:
         mock_graphiti.enabled = True
         mock_graphiti.add_episode = AsyncMock()
 
-        # Create an event loop for this test thread
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # No factory set, so no stored loop — code should create a fresh one
+        with patch(
+            "guardkit.orchestrator.autobuild.get_graphiti",
+            return_value=mock_graphiti,
+        ), patch(
+            "guardkit.orchestrator.autobuild.capture_turn_state",
+            new_callable=AsyncMock,
+        ) as mock_capture:
+            orchestrator._capture_turn_state(
+                turn_record=turn_record,
+                acceptance_criteria=["AC-001: Test criterion"],
+                task_id="TASK-TEST-001",
+            )
 
-        try:
-            with patch(
-                "guardkit.orchestrator.autobuild.get_graphiti",
-                return_value=mock_graphiti,
-            ), patch(
-                "guardkit.orchestrator.autobuild.capture_turn_state",
-                new_callable=AsyncMock,
-            ) as mock_capture:
-                orchestrator._capture_turn_state(
-                    turn_record=turn_record,
-                    acceptance_criteria=["AC-001: Test criterion"],
-                    task_id="TASK-TEST-001",
-                )
+            # Verify capture_turn_state was awaited (via run_until_complete)
+            mock_capture.assert_called_once()
+            args = mock_capture.call_args
+            assert args[0][0] is mock_graphiti  # First arg: graphiti client
 
-                # Verify capture_turn_state was awaited (via run_until_complete)
-                mock_capture.assert_called_once()
-                args = mock_capture.call_args
-                assert args[0][0] is mock_graphiti  # First arg: graphiti client
-        finally:
-            loop.close()
-
-    def test_capture_turn_state_skips_when_no_event_loop(
+    def test_capture_turn_state_handles_runtime_error_gracefully(
         self,
         mock_worktree_manager,
         mock_agent_invoker,
         mock_progress_display,
     ):
-        """Test that _capture_turn_state skips gracefully when no event loop available.
+        """Test that _capture_turn_state handles RuntimeError during capture gracefully.
 
-        TASK-FIX-GTP3: When asyncio.get_event_loop() raises RuntimeError (no loop
-        in thread), the method should log a debug message and continue without error.
+        TASK-ACR-007: When run_until_complete raises RuntimeError (e.g., loop already
+        running or closed), the method should log a debug message and continue.
         """
         orchestrator = AutoBuildOrchestrator(
             repo_root=Path("/tmp/test"),
@@ -3066,21 +3059,215 @@ class TestTurnStateCapture:
             "guardkit.orchestrator.autobuild.get_graphiti",
             return_value=mock_graphiti,
         ), patch(
-            "guardkit.orchestrator.autobuild.asyncio.get_event_loop",
-            side_effect=RuntimeError("no current event loop"),
-        ), patch(
             "guardkit.orchestrator.autobuild.capture_turn_state",
             new_callable=AsyncMock,
-        ) as mock_capture:
+            side_effect=RuntimeError("event loop is closed"),
+        ):
             # Should NOT raise - graceful degradation
             orchestrator._capture_turn_state(
                 turn_record=turn_record,
                 acceptance_criteria=["AC-001: Test criterion"],
                 task_id="TASK-TEST-001",
             )
+            # No assertion needed - test passes if no exception raised
 
-            # capture_turn_state should NOT have been called
-            mock_capture.assert_not_called()
+    def test_capture_turn_state_uses_stored_loop_from_thread_loaders(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test that _capture_turn_state uses the stored loop from _thread_loaders (TASK-ACR-007).
+
+        AC-001: When a stored loop is available and not closed, it should be used
+        instead of creating a new one.
+        """
+        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+
+        mock_thread_client = AsyncMock()
+        mock_thread_client.enabled = True
+
+        mock_loader = Mock()
+        mock_loader.graphiti = mock_thread_client
+
+        mock_factory = Mock(spec=GraphitiClientFactory)
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+            enable_context=True,
+        )
+        orchestrator._factory = mock_factory
+
+        # Store a real event loop in _thread_loaders
+        import threading
+        stored_loop = asyncio.new_event_loop()
+        orchestrator._thread_loaders[threading.get_ident()] = (mock_loader, stored_loop)
+
+        player_result = make_player_result()
+        coach_result = make_coach_result(decision="approve")
+        turn_record = TurnRecord(
+            turn=1,
+            player_result=player_result,
+            coach_result=coach_result,
+            decision="approve",
+            feedback=None,
+            timestamp="2025-01-29T10:00:00Z",
+        )
+
+        try:
+            with patch(
+                "guardkit.orchestrator.autobuild.capture_turn_state",
+                new_callable=AsyncMock,
+            ) as mock_capture, patch(
+                "guardkit.orchestrator.autobuild.asyncio.new_event_loop",
+            ) as mock_new_loop:
+                orchestrator._capture_turn_state(
+                    turn_record=turn_record,
+                    acceptance_criteria=["AC-001: Test criterion"],
+                    task_id="TASK-TEST-001",
+                )
+
+                # Stored loop should be used, NOT a new one created
+                mock_new_loop.assert_not_called()
+                # capture_turn_state should be called with the thread client
+                mock_capture.assert_called_once()
+                assert mock_capture.call_args[0][0] is mock_thread_client
+        finally:
+            stored_loop.close()
+
+    def test_capture_turn_state_creates_loop_when_stored_is_closed(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test _capture_turn_state creates a fresh loop when stored loop is closed (TASK-ACR-007).
+
+        AC-002: When the stored loop is closed (after worker cleanup), a fresh loop
+        should be created with asyncio.new_event_loop() scoped to the operation.
+        """
+        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+
+        mock_thread_client = AsyncMock()
+        mock_thread_client.enabled = True
+
+        mock_loader = Mock()
+        mock_loader.graphiti = mock_thread_client
+
+        mock_factory = Mock(spec=GraphitiClientFactory)
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+            enable_context=True,
+        )
+        orchestrator._factory = mock_factory
+
+        # Store a CLOSED event loop in _thread_loaders
+        import threading
+        closed_loop = asyncio.new_event_loop()
+        closed_loop.close()  # Simulate post-cleanup state
+        orchestrator._thread_loaders[threading.get_ident()] = (mock_loader, closed_loop)
+
+        player_result = make_player_result()
+        coach_result = make_coach_result(decision="approve")
+        turn_record = TurnRecord(
+            turn=1,
+            player_result=player_result,
+            coach_result=coach_result,
+            decision="approve",
+            feedback=None,
+            timestamp="2025-01-29T10:00:00Z",
+        )
+
+        with patch(
+            "guardkit.orchestrator.autobuild.capture_turn_state",
+            new_callable=AsyncMock,
+        ) as mock_capture:
+            orchestrator._capture_turn_state(
+                turn_record=turn_record,
+                acceptance_criteria=["AC-001: Test criterion"],
+                task_id="TASK-TEST-001",
+            )
+
+            # Should still succeed with a fresh loop
+            mock_capture.assert_called_once()
+            assert mock_capture.call_args[0][0] is mock_thread_client
+
+    def test_capture_turn_state_after_worker_loop_cleanup(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test turn state capture works after worker loop cleanup (TASK-ACR-007 AC-006).
+
+        Simulates the scenario where _cleanup_thread_loaders() has been called,
+        closing the stored loop. _capture_turn_state should detect the closed loop,
+        create a fresh one, and still capture successfully.
+        """
+        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+
+        mock_thread_client = AsyncMock()
+        mock_thread_client.enabled = True
+
+        mock_loader = Mock()
+        mock_loader.graphiti = mock_thread_client
+
+        mock_factory = Mock(spec=GraphitiClientFactory)
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+            enable_context=True,
+        )
+        orchestrator._factory = mock_factory
+
+        # Simulate: loader was created with a loop, then cleanup closed it
+        import threading
+        tid = threading.get_ident()
+        worker_loop = asyncio.new_event_loop()
+        orchestrator._thread_loaders[tid] = (mock_loader, worker_loop)
+
+        # Simulate _cleanup_thread_loaders closing the stored loop
+        worker_loop.close()
+        assert worker_loop.is_closed()
+
+        player_result = make_player_result()
+        coach_result = make_coach_result(decision="approve")
+        turn_record = TurnRecord(
+            turn=1,
+            player_result=player_result,
+            coach_result=coach_result,
+            decision="approve",
+            feedback=None,
+            timestamp="2025-01-29T10:00:00Z",
+        )
+
+        with patch(
+            "guardkit.orchestrator.autobuild.capture_turn_state",
+            new_callable=AsyncMock,
+        ) as mock_capture:
+            # Should NOT raise - creates a fresh loop as fallback
+            orchestrator._capture_turn_state(
+                turn_record=turn_record,
+                acceptance_criteria=["AC-001: Test criterion"],
+                task_id="TASK-TEST-001",
+            )
+
+            # Capture should succeed with a fresh loop
+            mock_capture.assert_called_once()
+            assert mock_capture.call_args[0][0] is mock_thread_client
 
 
 # ============================================================================
@@ -3303,30 +3490,44 @@ class TestPerThreadGraphiti:
         mock_loader = Mock()
         mock_loader.graphiti = mock_client
 
+        # TASK-ACR-005: Create a real event loop for the stored tuple
+        mock_loop = asyncio.new_event_loop()
+
         orch = AutoBuildOrchestrator(
             repo_root=Path.cwd(),
             max_turns=5,
             enable_context=False,
         )
-        orch._thread_loaders = {12345: mock_loader}
+        orch._thread_loaders = {12345: (mock_loader, mock_loop)}
 
-        orch._cleanup_thread_loaders()
+        try:
+            orch._cleanup_thread_loaders()
+        finally:
+            mock_loop.close()
 
         mock_client.close.assert_called_once()
         assert len(orch._thread_loaders) == 0
 
     def test_cleanup_thread_loaders_handles_none_loaders(self):
         """Test _cleanup_thread_loaders handles None loaders gracefully."""
+        # TASK-ACR-005: None loaders now stored as (None, loop) tuples
+        mock_loop1 = asyncio.new_event_loop()
+        mock_loop2 = asyncio.new_event_loop()
+
         orch = AutoBuildOrchestrator(
             repo_root=Path.cwd(),
             max_turns=5,
             enable_context=False,
         )
-        orch._thread_loaders = {12345: None, 67890: None}
+        orch._thread_loaders = {12345: (None, mock_loop1), 67890: (None, mock_loop2)}
 
-        # Should not raise
-        orch._cleanup_thread_loaders()
-        assert len(orch._thread_loaders) == 0
+        try:
+            # Should not raise
+            orch._cleanup_thread_loaders()
+            assert len(orch._thread_loaders) == 0
+        finally:
+            mock_loop1.close()
+            mock_loop2.close()
 
     def test_cleanup_thread_loaders_handles_close_error(self):
         """Test _cleanup_thread_loaders handles close() errors gracefully."""
@@ -3335,16 +3536,22 @@ class TestPerThreadGraphiti:
         mock_loader = Mock()
         mock_loader.graphiti = mock_client
 
+        # TASK-ACR-005: Use real event loop for stored tuple
+        mock_loop = asyncio.new_event_loop()
+
         orch = AutoBuildOrchestrator(
             repo_root=Path.cwd(),
             max_turns=5,
             enable_context=False,
         )
-        orch._thread_loaders = {12345: mock_loader}
+        orch._thread_loaders = {12345: (mock_loader, mock_loop)}
 
-        # Should not raise
-        orch._cleanup_thread_loaders()
-        assert len(orch._thread_loaders) == 0
+        try:
+            # Should not raise
+            orch._cleanup_thread_loaders()
+            assert len(orch._thread_loaders) == 0
+        finally:
+            mock_loop.close()
 
     def test_capture_turn_state_uses_thread_loaders_client(self):
         """Test _capture_turn_state retrieves client from _thread_loaders (TASK-FIX-FD02).
@@ -3370,9 +3577,10 @@ class TestPerThreadGraphiti:
             enable_context=True,
         )
         orch._factory = mock_factory
-        # Store loader in _thread_loaders for the current thread
+        # TASK-ACR-005: Store loader as (loader, loop) tuple in _thread_loaders
         import threading
-        orch._thread_loaders[threading.get_ident()] = mock_loader
+        mock_loop = asyncio.new_event_loop()
+        orch._thread_loaders[threading.get_ident()] = (mock_loader, mock_loop)
 
         player_result = make_player_result()
         coach_result = make_coach_result(decision="approve")
@@ -3385,20 +3593,23 @@ class TestPerThreadGraphiti:
             timestamp="2025-01-29T10:00:00Z",
         )
 
-        with patch(
-            "guardkit.orchestrator.autobuild.capture_turn_state",
-            new_callable=AsyncMock,
-        ) as mock_capture:
-            orch._capture_turn_state(
-                turn_record=turn_record,
-                acceptance_criteria=["AC-001: Test"],
-                task_id="TASK-TEST-001",
-            )
-            # Should NOT call get_thread_client (old dual-storage path)
-            mock_factory.get_thread_client.assert_not_called()
-            # capture_turn_state should be called with the loader's client
-            assert mock_capture.called
-            assert mock_capture.call_args[0][0] is mock_thread_client
+        try:
+            with patch(
+                "guardkit.orchestrator.autobuild.capture_turn_state",
+                new_callable=AsyncMock,
+            ) as mock_capture:
+                orch._capture_turn_state(
+                    turn_record=turn_record,
+                    acceptance_criteria=["AC-001: Test"],
+                    task_id="TASK-TEST-001",
+                )
+                # Should NOT call get_thread_client (old dual-storage path)
+                mock_factory.get_thread_client.assert_not_called()
+                # capture_turn_state should be called with the loader's client
+                assert mock_capture.called
+                assert mock_capture.call_args[0][0] is mock_thread_client
+        finally:
+            mock_loop.close()
 
     def test_capture_turn_state_falls_back_to_get_graphiti(self):
         """Test _capture_turn_state falls back to get_graphiti when factory is None."""
@@ -3527,7 +3738,9 @@ class TestPerThreadGraphiti:
         )
         orch._factory = mock_factory
         import threading
-        orch._thread_loaders[threading.get_ident()] = mock_loader
+        # TASK-ACR-005: Store as (loader, loop) tuple
+        mock_loop = asyncio.new_event_loop()
+        orch._thread_loaders[threading.get_ident()] = (mock_loader, mock_loop)
 
         player_result = make_player_result()
         coach_result = make_coach_result(decision="approve")
@@ -3543,21 +3756,24 @@ class TestPerThreadGraphiti:
         mock_graphiti = AsyncMock()
         mock_graphiti.enabled = True
 
-        with patch(
-            "guardkit.orchestrator.autobuild.get_graphiti",
-            return_value=mock_graphiti,
-        ), patch(
-            "guardkit.orchestrator.autobuild.capture_turn_state",
-            new_callable=AsyncMock,
-        ) as mock_capture:
-            orch._capture_turn_state(
-                turn_record=turn_record,
-                acceptance_criteria=["AC-001: Test"],
-                task_id="TASK-TEST-001",
-            )
-            # Should fall back to get_graphiti() since loader.graphiti is None
-            assert mock_capture.called
-            assert mock_capture.call_args[0][0] is mock_graphiti
+        try:
+            with patch(
+                "guardkit.orchestrator.autobuild.get_graphiti",
+                return_value=mock_graphiti,
+            ), patch(
+                "guardkit.orchestrator.autobuild.capture_turn_state",
+                new_callable=AsyncMock,
+            ) as mock_capture:
+                orch._capture_turn_state(
+                    turn_record=turn_record,
+                    acceptance_criteria=["AC-001: Test"],
+                    task_id="TASK-TEST-001",
+                )
+                # Should fall back to get_graphiti() since loader.graphiti is None
+                assert mock_capture.called
+                assert mock_capture.call_args[0][0] is mock_graphiti
+        finally:
+            mock_loop.close()
 
     def test_capture_turn_state_thread_loader_none_entry(self):
         """Test _capture_turn_state falls back when thread loader entry is None (TASK-FIX-FD02).
@@ -3576,8 +3792,9 @@ class TestPerThreadGraphiti:
         )
         orch._factory = mock_factory
         import threading
-        # Simulate failed loader init
-        orch._thread_loaders[threading.get_ident()] = None
+        # TASK-ACR-005: Simulate failed loader init - stored as (None, loop) tuple
+        mock_loop = asyncio.new_event_loop()
+        orch._thread_loaders[threading.get_ident()] = (None, mock_loop)
 
         player_result = make_player_result()
         coach_result = make_coach_result(decision="approve")
@@ -3593,21 +3810,24 @@ class TestPerThreadGraphiti:
         mock_graphiti = AsyncMock()
         mock_graphiti.enabled = True
 
-        with patch(
-            "guardkit.orchestrator.autobuild.get_graphiti",
-            return_value=mock_graphiti,
-        ), patch(
-            "guardkit.orchestrator.autobuild.capture_turn_state",
-            new_callable=AsyncMock,
-        ) as mock_capture:
-            orch._capture_turn_state(
-                turn_record=turn_record,
-                acceptance_criteria=["AC-001: Test"],
-                task_id="TASK-TEST-001",
-            )
-            # Should fall back to get_graphiti() since loader is None
-            assert mock_capture.called
-            assert mock_capture.call_args[0][0] is mock_graphiti
+        try:
+            with patch(
+                "guardkit.orchestrator.autobuild.get_graphiti",
+                return_value=mock_graphiti,
+            ), patch(
+                "guardkit.orchestrator.autobuild.capture_turn_state",
+                new_callable=AsyncMock,
+            ) as mock_capture:
+                orch._capture_turn_state(
+                    turn_record=turn_record,
+                    acceptance_criteria=["AC-001: Test"],
+                    task_id="TASK-TEST-001",
+                )
+                # Should fall back to get_graphiti() since loader is None
+                assert mock_capture.called
+                assert mock_capture.call_args[0][0] is mock_graphiti
+        finally:
+            mock_loop.close()
 
     def test_capture_turn_state_no_thread_loader_for_thread(self):
         """Test _capture_turn_state falls back when no loader exists for current thread (TASK-FIX-FD02).

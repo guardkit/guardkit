@@ -1489,6 +1489,11 @@ Follow the decision format specified in your agent definition.
                         f"Files actual: {plan_audit.get('files_actual', 0)}"
                     )
 
+                # Propagate completion_promises into player report (TASK-ACR-001)
+                completion_promises = task_work_data.get("completion_promises", [])
+                if completion_promises:
+                    report["completion_promises"] = completion_promises
+
                 logger.info(
                     f"Created Player report from task_work_results.json for {task_id} turn {turn}"
                 )
@@ -3700,6 +3705,11 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
 # Add code_review field if architectural review data was found
         if code_review:
             results["code_review"] = code_review
+
+        # Include completion_promises if present in result data (TASK-ACR-001)
+        completion_promises = result_data.get("completion_promises", [])
+        if completion_promises:
+            results["completion_promises"] = completion_promises
 
         # Merge design results if available (for implement-only mode)
         design_data = self._read_design_results(task_id)
