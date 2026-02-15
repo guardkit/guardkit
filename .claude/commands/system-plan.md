@@ -293,10 +293,191 @@ Architecture context will be passed to /feature-plan:
   • Affected components and dependencies
   • Relevant ADRs and constraints
 
+NOTE: Generated feature YAML MUST conform to the Feature YAML Schema
+      Contract defined below for /feature-build compatibility.
+
 Launching /feature-plan...
 
 [Execute /feature-plan "add real-time notifications" with architecture context]
 ```
+
+### Feature YAML Schema Contract
+
+When `/system-plan` chains to `/feature-plan`, the generated feature YAML file must conform to the `FeatureLoader` schema for `/feature-build` compatibility.
+
+**Authoritative Source**: `guardkit/orchestrator/feature_loader.py` — this schema documentation reflects the loader's requirements.
+
+#### Complete Schema Example
+
+```yaml
+# .guardkit/features/FEAT-A1B2.yaml
+id: FEAT-A1B2
+name: "OAuth2 Authentication"
+description: "Add OAuth2 authentication with multiple providers"
+created: "2026-01-06T10:30:00Z"
+status: planned
+complexity: 6
+estimated_tasks: 5
+
+tasks:
+  - id: TASK-OAUTH-001
+    name: "Create auth infrastructure"
+    file_path: "tasks/backlog/oauth-auth/TASK-OAUTH-001-create-auth-infrastructure.md"
+    complexity: 5
+    dependencies: []
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 60
+
+  - id: TASK-OAUTH-002
+    name: "Implement local JWT auth"
+    file_path: "tasks/backlog/oauth-auth/TASK-OAUTH-002-implement-jwt-auth.md"
+    complexity: 6
+    dependencies:
+      - TASK-OAUTH-001
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 90
+
+  - id: TASK-OAUTH-003
+    name: "Add database migrations"
+    file_path: "tasks/backlog/oauth-auth/TASK-OAUTH-003-database-migrations.md"
+    complexity: 4
+    dependencies:
+      - TASK-OAUTH-001
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 45
+
+  - id: TASK-OAUTH-004
+    name: "Implement social OAuth2"
+    file_path: "tasks/backlog/oauth-auth/TASK-OAUTH-004-social-oauth.md"
+    complexity: 7
+    dependencies:
+      - TASK-OAUTH-002
+      - TASK-OAUTH-003
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 120
+
+  - id: TASK-OAUTH-005
+    name: "Add auth tests"
+    file_path: "tasks/backlog/oauth-auth/TASK-OAUTH-005-auth-tests.md"
+    complexity: 3
+    dependencies:
+      - TASK-OAUTH-004
+    status: pending
+    implementation_mode: direct
+    estimated_minutes: 30
+
+orchestration:
+  parallel_groups:
+    - - TASK-OAUTH-001
+    - - TASK-OAUTH-002
+      - TASK-OAUTH-003
+    - - TASK-OAUTH-004
+    - - TASK-OAUTH-005
+  estimated_duration_minutes: 345
+  recommended_parallel: 2
+```
+
+#### Required Fields
+
+**Feature-level fields:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | ✅ Yes | Feature ID (e.g., "FEAT-A1B2") |
+| `name` | string | ✅ Yes | Human-readable feature name |
+| `tasks` | array | ✅ Yes | List of task objects |
+| `orchestration` | object | ✅ Yes | Execution configuration |
+| `description` | string | No | Feature description |
+| `created` | string | No | ISO 8601 timestamp |
+| `status` | string | No | Valid values: "planned", "in_progress", "completed", "failed", "paused" |
+| `complexity` | int | No | Aggregate complexity (1-10) |
+| `estimated_tasks` | int | No | Task count |
+
+**Task-level fields:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | ✅ Yes | Task ID (e.g., "TASK-OAUTH-001") |
+| `file_path` | string | ✅ Yes | **CRITICAL: Path to task markdown file** (relative to repo root) |
+| `name` | string | No | Task name (defaults to ID) |
+| `complexity` | int | No | Complexity score 1-10 (default: 5) |
+| `dependencies` | array | No | List of dependency task IDs |
+| `status` | string | No | Valid values: "pending", "in_progress", "completed", "failed", "skipped" |
+| `implementation_mode` | string | No | "direct", "task-work" |
+| `estimated_minutes` | int | No | Estimated duration (default: 30) |
+
+**Orchestration fields:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `parallel_groups` | array | ✅ Yes | **CRITICAL: Must be NESTED under orchestration:** (list of lists - each inner list is a wave) |
+| `estimated_duration_minutes` | int | No | Total estimated duration |
+| `recommended_parallel` | int | No | Max recommended parallel tasks |
+
+#### Critical Constraints
+
+**1. file_path is REQUIRED**
+
+The `file_path` field is mandatory for each task. Without it, `FeatureLoader` will fail to parse the feature file.
+
+```yaml
+# ✅ Correct - includes file_path
+tasks:
+  - id: TASK-001
+    name: "Task Name"
+    file_path: "tasks/backlog/feature-name/TASK-001-task-name.md"
+    status: pending
+
+# ❌ Wrong - missing file_path (will cause FeatureLoader error)
+tasks:
+  - id: TASK-001
+    name: "Task Name"
+    status: pending
+```
+
+**2. orchestration.parallel_groups Nesting**
+
+The `parallel_groups` field MUST be nested under `orchestration:` (NOT at top level).
+
+```yaml
+# ✅ Correct - nested under orchestration
+orchestration:
+  parallel_groups:
+    - - TASK-001
+    - - TASK-002
+
+# ❌ Wrong - at top level (will cause FeatureLoader error)
+parallel_groups:
+  - - TASK-001
+  - - TASK-002
+```
+
+**3. Valid status Values**
+
+Feature-level `status` values: "planned", "in_progress", "completed", "failed", "paused"
+
+Task-level `status` values: "pending", "in_progress", "completed", "failed", "skipped"
+
+**4. parallel_groups Format**
+
+The `parallel_groups` field is a **list of lists** where:
+- Each inner list represents a "wave" of tasks that can run in parallel
+- Waves execute sequentially (wave 1 completes before wave 2 starts)
+- Tasks within a wave can execute in parallel
+
+```yaml
+# Example: 4 waves with some parallel execution
+orchestration:
+  parallel_groups:
+    - - TASK-001           # Wave 1: Single task (foundation)
+    - - TASK-002           # Wave 2: Two tasks in parallel
+      - TASK-003
+    - - TASK-004           # Wave 3: Single task (depends on wave 2)
+    - - TASK-005           # Wave 4: Final task
+```
+
+**Note**: This replaces the older `execution_groups` format which is no longer supported.
 
 ### Phase 2: Output Generation
 

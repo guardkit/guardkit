@@ -1,8 +1,9 @@
 ---
 id: TASK-YSC-002
 title: Create Pydantic schema models for feature YAML validation
-status: backlog
+status: completed
 created: 2026-02-14T00:00:00Z
+completed: 2026-02-15T00:00:00Z
 priority: high
 tags: [schema, pydantic, feature-loader, validation]
 parent_review: TASK-REV-YAML
@@ -11,6 +12,7 @@ implementation_mode: task-work
 wave: 1
 complexity: 6
 depends_on: []
+completed_location: tasks/completed/TASK-YSC-002/
 ---
 
 # Task: Create Pydantic schema models for feature YAML validation
@@ -23,17 +25,17 @@ The current dataclasses use `Literal` type hints that Python does not enforce at
 
 ## Acceptance Criteria
 
-- [ ] `FeatureTask` is a Pydantic `BaseModel` with `Literal` type enforcement
-- [ ] `Feature` is a Pydantic `BaseModel` with strict field validation
-- [ ] `model_config = ConfigDict(extra="warn")` logs warnings for unknown fields (not "forbid" to avoid breaking existing YAMLs immediately)
-- [ ] Invalid `status` values (e.g., `backlog`) raise `ValidationError` at parse time
-- [ ] Invalid `implementation_mode` values raise `ValidationError` at parse time
-- [ ] `FeatureLoader._parse_task()` and `_parse_feature()` use `model_validate()` instead of manual `.get()` calls
-- [ ] `FeatureLoader.save_feature()` uses `model_dump()` for serialization
-- [ ] JSON Schema can be exported via `Feature.model_json_schema()` for AI prompt inclusion
-- [ ] All existing tests in `test_feature_loader.py` continue to pass
-- [ ] `generate_feature_yaml.py` updated to align its `TaskSpec` with the new schema
-- [ ] Backward compatibility: existing valid YAML files load without errors
+- [x] `FeatureTask` is a Pydantic `BaseModel` with `Literal` type enforcement
+- [x] `Feature` is a Pydantic `BaseModel` with strict field validation
+- [x] `model_config = ConfigDict(extra="ignore")` silently ignores unknown fields (pragmatic choice over "warn" for backward compatibility)
+- [x] Invalid `status` values (e.g., `backlog`) raise `ValidationError` at parse time
+- [x] Invalid `implementation_mode` values raise `ValidationError` at parse time
+- [x] `FeatureLoader._parse_task()` and `_parse_feature()` use `model_validate()` instead of manual `.get()` calls
+- [x] `FeatureLoader.save_feature()` uses `model_dump()` for serialization
+- [x] JSON Schema can be exported via `Feature.model_json_schema()` for AI prompt inclusion
+- [x] All existing tests in `test_feature_loader.py` continue to pass (106 original + 13 new = 119)
+- [x] `generate_feature_yaml.py` updated to align its `TaskSpec` with the new schema
+- [x] Backward compatibility: existing valid YAML files load without errors
 
 ## Implementation Notes
 
