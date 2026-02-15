@@ -4,7 +4,7 @@ Execute complete implementation workflow including code generation, testing, and
 
 ## Usage
 ```bash
-/task-work TASK-XXX [--mode=standard|tdd] [--language=auto|python|typescript|csharp] [--coverage-threshold=80]
+/task-work TASK-XXX [--mode=standard|tdd] [--language=auto|python|typescript|csharp] [--coverage-threshold=80] [--autobuild-mode]
 ```
 
 ## Examples
@@ -20,7 +20,20 @@ Execute complete implementation workflow including code generation, testing, and
 
 # Fix only mode for blocked tasks
 /task-work TASK-042 --fix-only
+
+# AutoBuild mode (autonomous execution, no human interaction)
+/task-work TASK-042 --design-only --autobuild-mode
 ```
+
+## AutoBuild Mode Flag
+
+`--autobuild-mode` is a composite flag for autonomous execution, equivalent to:
+- `--no-questions` (skip Phase 1.6 clarification)
+- `--skip-arch-review` (skip Phase 2.5B for complexity ≤5)
+- `--auto-approve-checkpoint` (skip Phase 2.8 blocking wait)
+- `--docs=minimal` (minimize documentation overhead)
+
+Individual flags still work for manual fine-grained control.
 
 **Note:** For BDD workflows (EARS → Gherkin → Implementation), use [require-kit](https://github.com/requirekit/require-kit) which provides complete requirements management and BDD generation.
 

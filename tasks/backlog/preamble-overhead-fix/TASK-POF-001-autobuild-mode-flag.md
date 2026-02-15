@@ -1,10 +1,11 @@
 ---
 id: TASK-POF-001
 title: Add --autobuild-mode composite flag to task-work
-status: backlog
+status: completed
 task_type: implementation
 created: 2026-02-15T14:00:00Z
-updated: 2026-02-15T14:00:00Z
+updated: 2026-02-15T15:00:00Z
+completed: 2026-02-15T15:00:00Z
 priority: high
 complexity: 2
 tags: [autobuild, preamble, performance, quick-win]
@@ -14,9 +15,11 @@ implementation_mode: direct
 wave: 1
 parallel_group: wave-1
 test_results:
-  status: pending
+  status: passed
   coverage: null
-  last_run: null
+  last_run: 2026-02-15T15:00:00Z
+  tests_passed: 68
+  tests_failed: 0
 ---
 
 # Task: Add --autobuild-mode Composite Flag
@@ -31,17 +34,18 @@ Add a `--autobuild-mode` flag to the task-work command that bundles optimization
 
 ## Acceptance Criteria
 
-- [ ] `--autobuild-mode` flag accepted by task-work command parsing (Step 0)
-- [ ] Flag expands to the four sub-flags listed above
-- [ ] Pre-loop `_build_design_prompt()` in `task_work_interface.py` uses `--autobuild-mode` instead of individual flags
-- [ ] Pre-loop `_build_design_prompt()` already passes `--auto-approve-checkpoint` - verify `--no-questions` and `--docs=minimal` are also consistently applied
-- [ ] Existing flag behavior unchanged when `--autobuild-mode` not specified
+- [x] `--autobuild-mode` flag accepted by task-work command parsing (Step 0)
+- [x] Flag expands to the four sub-flags listed above
+- [x] Pre-loop `_build_design_prompt()` in `task_work_interface.py` uses `--autobuild-mode` instead of individual flags
+- [x] Pre-loop `_build_design_prompt()` already passes `--auto-approve-checkpoint` - verify `--no-questions` and `--docs=minimal` are also consistently applied
+- [x] Existing flag behavior unchanged when `--autobuild-mode` not specified
 
-## Files to Modify
+## Files Modified
 
-1. `installer/core/commands/task-work.md` - Add flag documentation and Step 0 parsing
-2. `.claude/commands/task-work.md` - Add flag to project-level command spec
-3. `guardkit/orchestrator/quality_gates/task_work_interface.py` - Use `--autobuild-mode` in `_build_design_prompt()`
+1. `installer/core/commands/task-work.md` - Added flag documentation, Step 0 parsing, AutoBuild Mode section
+2. `.claude/commands/task-work.md` - Added flag to project-level command spec with usage examples
+3. `guardkit/orchestrator/quality_gates/task_work_interface.py` - `_build_design_prompt()` and `_build_task_work_args()` use `--autobuild-mode` composite flag
+4. `tests/unit/test_task_work_interface.py` - Added 8 tests in `TestAutobuildModeFlag` class
 
 ## Implementation Notes
 

@@ -102,7 +102,7 @@ ls *.csproj 2>/dev/null || ls package.json 2>/dev/null || ls requirements.txt 2>
 ## Command Syntax
 
 ```bash
-/task-work TASK-XXX [--mode=standard|tdd|bdd] [--intensity=minimal|light|standard|strict] [--design-only | --implement-only] [--docs=minimal|standard|comprehensive] [--no-questions | --with-questions | --defaults | --answers="1:Y 2:N 3:JWT"] [other-flags...]
+/task-work TASK-XXX [--mode=standard|tdd|bdd] [--intensity=minimal|light|standard|strict] [--design-only | --implement-only] [--docs=minimal|standard|comprehensive] [--no-questions | --with-questions | --defaults | --answers="1:Y 2:N 3:JWT"] [--autobuild-mode] [other-flags...]
 ```
 
 ## Available Flags
@@ -121,6 +121,29 @@ ls *.csproj 2>/dev/null || ls package.json 2>/dev/null || ls requirements.txt 2>
 | `--answers="..."` | Inline clarification answers for automation |
 | `--reclarify` | Re-run clarification (ignore saved decisions) |
 | `--no-library-context` | Skip Phase 2.1 library context gathering |
+| `--autobuild-mode` | Composite flag for autonomous execution (see below) |
+| `--auto-approve-checkpoint` | Auto-approve Phase 2.8 checkpoint (no human present) |
+| `--skip-arch-review` | Skip Phase 2.5B architectural review |
+
+## AutoBuild Mode (TASK-POF-001)
+
+The `--autobuild-mode` flag is a composite flag that bundles optimizations for autonomous (non-interactive) execution. It is equivalent to:
+
+- `--no-questions` - Skip Phase 1.6 clarification (no human present)
+- `--skip-arch-review` - Skip Phase 2.5B for complexity ≤5
+- `--auto-approve-checkpoint` - Skip Phase 2.8 blocking wait
+- `--docs=minimal` - Minimize documentation overhead
+
+**Usage**:
+```bash
+# AutoBuild uses this internally - equivalent to all four flags
+/task-work TASK-XXX --design-only --autobuild-mode
+
+# Individual flags still work for manual use
+/task-work TASK-XXX --design-only --no-questions --skip-arch-review --auto-approve-checkpoint --docs=minimal
+```
+
+**Note**: When `--autobuild-mode` is specified, individual sub-flags are ignored (the composite flag takes precedence). The individual flags remain available for manual fine-grained control.
 
 ## Documentation Level Control (NEW - TASK-036)
 
@@ -1175,14 +1198,27 @@ design_only = "--design-only" in user_input or "-d" in user_input
 implement_only = "--implement-only" in user_input or "-i" in user_input
 micro = "--micro" in user_input
 
-# Parse documentation level flag (TASK-036)
-docs_flag = None
-if "--docs=minimal" in user_input:
+# TASK-POF-001: Parse --autobuild-mode composite flag
+autobuild_mode = "--autobuild-mode" in user_input
+if autobuild_mode:
+    # Expand composite flag into sub-flags
+    no_questions = True
+    skip_arch_review = True
+    auto_approve_checkpoint = True
     docs_flag = "minimal"
-elif "--docs=standard" in user_input:
-    docs_flag = "standard"
-elif "--docs=comprehensive" in user_input:
-    docs_flag = "comprehensive"
+else:
+    no_questions = "--no-questions" in user_input
+    skip_arch_review = "--skip-arch-review" in user_input
+    auto_approve_checkpoint = "--auto-approve-checkpoint" in user_input
+
+    # Parse documentation level flag (TASK-036)
+    docs_flag = None
+    if "--docs=minimal" in user_input:
+        docs_flag = "minimal"
+    elif "--docs=standard" in user_input:
+        docs_flag = "standard"
+    elif "--docs=comprehensive" in user_input:
+        docs_flag = "comprehensive"
 
 # Parse mode flag (TASK-BDD-FIX1)
 mode = "standard"  # Default mode
@@ -1270,6 +1306,11 @@ elif micro:
 else:
     print("🔄 Workflow Mode: STANDARD (All phases)")
     print("   Complete workflow with complexity-based checkpoints\n")
+
+# TASK-POF-001: Display autobuild mode
+if autobuild_mode:
+    print("🤖 AutoBuild Mode: ON (--no-questions --skip-arch-review --auto-approve-checkpoint --docs=minimal)")
+    print("   Optimized for autonomous execution\n")
 
 # TASK-036: Display documentation level if explicitly set
 if docs_flag:

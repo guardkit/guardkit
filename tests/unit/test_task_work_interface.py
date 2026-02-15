@@ -222,66 +222,79 @@ class TestTaskWorkInterfaceInit:
 
 
 class TestBuildDesignPrompt:
-    """Test _build_design_prompt() method."""
+    """Test _build_design_prompt() returns inline protocol (TASK-POF-003)."""
 
-    def test_basic_prompt_includes_task_id(self, interface):
-        """Test basic prompt includes task ID and --design-only."""
+    def test_inline_protocol_includes_task_id(self, interface):
+        """Test inline protocol contains the task ID."""
         prompt = interface._build_design_prompt("TASK-001", {})
 
-        assert "/task-work TASK-001 --design-only" in prompt
+        assert "TASK-001" in prompt
 
-    def test_prompt_with_no_questions_flag(self, interface):
-        """Test --no-questions flag is added."""
-        prompt = interface._build_design_prompt("TASK-001", {"no_questions": True})
+    def test_inline_protocol_not_skill_invocation(self, interface):
+        """Test prompt is NOT a /task-work skill invocation."""
+        prompt = interface._build_design_prompt("TASK-001", {})
 
-        assert "--no-questions" in prompt
+        assert not prompt.startswith("/task-work")
 
-    def test_prompt_with_with_questions_flag(self, interface):
-        """Test --with-questions flag is added."""
-        prompt = interface._build_design_prompt("TASK-001", {"with_questions": True})
+    def test_inline_protocol_includes_phase_instructions(self, interface):
+        """Test protocol includes instructions for all design phases."""
+        prompt = interface._build_design_prompt("TASK-001", {})
 
-        assert "--with-questions" in prompt
+        assert "Phase 1.5" in prompt
+        assert "Phase 2:" in prompt or "Phase 2 " in prompt or "Implementation Planning" in prompt
+        assert "Phase 2.7" in prompt or "Complexity" in prompt
+        assert "Phase 2.8" in prompt or "checkpoint" in prompt.lower()
 
-    def test_prompt_with_defaults_flag(self, interface):
-        """Test --defaults flag is added."""
-        prompt = interface._build_design_prompt("TASK-001", {"defaults": True})
+    def test_inline_protocol_includes_plan_save_path(self, interface):
+        """Test protocol specifies the plan save path."""
+        prompt = interface._build_design_prompt("TASK-001", {})
 
-        assert "--defaults" in prompt
+        assert ".claude/task-plans/TASK-001-implementation-plan.md" in prompt
 
-    def test_prompt_with_answers_flag(self, interface):
-        """Test --answers flag is added with value."""
-        prompt = interface._build_design_prompt("TASK-001", {"answers": "1:Y 2:N"})
+    def test_inline_protocol_includes_output_markers(self, interface):
+        """Test protocol instructs agent to output parseable markers."""
+        prompt = interface._build_design_prompt("TASK-001", {})
 
-        assert '--answers="1:Y 2:N"' in prompt
+        assert "Plan saved to:" in prompt
+        assert "Complexity:" in prompt
+        assert "checkpoint approved" in prompt
 
-    def test_prompt_with_docs_flag(self, interface):
-        """Test --docs flag is added."""
-        prompt = interface._build_design_prompt("TASK-001", {"docs": "minimal"})
+    def test_inline_protocol_with_docs_level(self, interface):
+        """Test docs level is embedded in protocol."""
+        prompt = interface._build_design_prompt("TASK-001", {"docs": "comprehensive"})
 
-        assert "--docs=minimal" in prompt
+        assert "comprehensive" in prompt
 
-    def test_prompt_with_multiple_flags(self, interface):
-        """Test multiple flags are combined correctly."""
-        prompt = interface._build_design_prompt(
-            "TASK-001",
-            {"no_questions": True, "docs": "comprehensive"},
+    def test_inline_protocol_default_docs_minimal(self, interface):
+        """Test default docs level is minimal."""
+        prompt = interface._build_design_prompt("TASK-001", {})
+
+        assert "minimal" in prompt
+
+    def test_inline_protocol_skip_arch_review(self, interface):
+        """Test Phase 2.5B is omitted when skip_arch_review is set."""
+        prompt = interface._build_design_prompt("TASK-001", {"skip_arch_review": True})
+
+        assert "Phase 2.5B" not in prompt
+        assert "Architectural Review" not in prompt
+        assert "SOLID" not in prompt
+
+    def test_inline_protocol_includes_arch_review_by_default(self, interface):
+        """Test Phase 2.5B is included by default."""
+        prompt = interface._build_design_prompt("TASK-001", {})
+
+        assert "Phase 2.5B" in prompt or "Architectural Review" in prompt
+        assert "SOLID" in prompt
+        assert "DRY" in prompt
+        assert "YAGNI" in prompt
+
+    def test_inline_protocol_size_within_limit(self, interface):
+        """Test inline protocol is within 20KB limit."""
+        prompt = interface._build_design_prompt("TASK-001", {})
+
+        assert len(prompt.encode("utf-8")) <= 20480, (
+            f"Protocol size {len(prompt.encode('utf-8'))} exceeds 20KB limit"
         )
-
-        assert "--design-only" in prompt
-        assert "--no-questions" in prompt
-        assert "--docs=comprehensive" in prompt
-
-    def test_no_questions_takes_precedence_over_defaults(self, interface):
-        """Test no_questions and defaults are mutually exclusive (no_questions wins)."""
-        prompt = interface._build_design_prompt(
-            "TASK-001",
-            {"no_questions": True, "defaults": True},
-        )
-
-        # no_questions should be present, not defaults
-        assert "--no-questions" in prompt
-        # defaults is only added if no_questions and with_questions are False
-        # Since no_questions is True, defaults should not be added
 
 
 # ============================================================================
@@ -397,10 +410,10 @@ class TestExecuteDesignPhase:
     """Test execute_design_phase() method."""
 
     @pytest.mark.asyncio
-    async def test_invokes_sdk_with_correct_prompt(
+    async def test_invokes_sdk_with_inline_protocol(
         self, interface, mock_sdk_module, tmp_worktree
     ):
-        """Test SDK is invoked with correct prompt."""
+        """Test SDK is invoked with inline protocol containing task ID."""
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk_module}):
             with patch.object(interface, "_execute_via_sdk") as mock_execute:
                 mock_execute.return_value = {
@@ -416,8 +429,9 @@ class TestExecuteDesignPhase:
 
                 mock_execute.assert_called_once()
                 call_args = mock_execute.call_args[0][0]
-                assert "/task-work TASK-001 --design-only" in call_args
-                assert "--no-questions" in call_args
+                # TASK-POF-003: Prompt is now inline protocol, not skill invocation
+                assert "TASK-001" in call_args
+                assert not call_args.startswith("/task-work")
 
     @pytest.mark.asyncio
     async def test_returns_design_phase_result(self, interface):
@@ -865,53 +879,232 @@ class TestCreatedImplementationPlanPattern:
         assert result["plan_path"] == ".claude/task-plans/TASK-001-implementation-plan.md"
 
 
-class TestAutoApproveCheckpointFlag:
-    """Test that SDK prompt includes --auto-approve-checkpoint flag.
+class TestAutoApproveInInlineProtocol:
+    """Test that inline protocol includes auto-approve checkpoint behavior.
 
-    TASK-FB-FIX-019: These tests verify the flag is correctly added
-    to enable autonomous SDK execution without human checkpoint blocking.
+    TASK-POF-003: The inline protocol always auto-approves the checkpoint
+    (no human present in autobuild context). These tests verify this behavior
+    replaces the previous --auto-approve-checkpoint flag.
     """
 
-    def test_auto_approve_checkpoint_flag_in_basic_prompt(self, interface):
-        """Test that --auto-approve-checkpoint flag is included in SDK prompt."""
+    def test_checkpoint_auto_approved_in_protocol(self, interface):
+        """Test that the inline protocol includes auto-approve checkpoint."""
         prompt = interface._build_design_prompt("TASK-001", {})
 
-        assert "--auto-approve-checkpoint" in prompt
-        assert "--design-only" in prompt
+        assert "checkpoint approved" in prompt.lower() or "auto-approved" in prompt.lower()
 
-    def test_auto_approve_flag_position_after_design_only(self, interface):
-        """Test --auto-approve-checkpoint comes after --design-only."""
+    def test_design_approved_state_in_protocol(self, interface):
+        """Test that protocol includes DESIGN_APPROVED state output."""
         prompt = interface._build_design_prompt("TASK-001", {})
 
-        design_only_pos = prompt.find("--design-only")
-        auto_approve_pos = prompt.find("--auto-approve-checkpoint")
+        assert "DESIGN_APPROVED" in prompt
 
-        assert design_only_pos < auto_approve_pos, \
-            "--auto-approve-checkpoint should come after --design-only"
+    def test_auto_approve_with_all_option_combinations(self, interface):
+        """Test auto-approve is present regardless of other options."""
+        for opts in [{}, {"docs": "minimal"}, {"skip_arch_review": True}]:
+            prompt = interface._build_design_prompt("TASK-001", opts)
+            assert "checkpoint approved" in prompt.lower()
 
-    def test_auto_approve_with_other_flags(self, interface):
-        """Test auto-approve works correctly with other flags."""
+    def test_no_skill_flags_in_inline_protocol(self, interface):
+        """Test inline protocol does not contain /task-work flags."""
+        prompt = interface._build_design_prompt("TASK-001", {})
+
+        assert "--auto-approve-checkpoint" not in prompt
+        assert "--design-only" not in prompt
+        assert "/task-work" not in prompt
+
+
+# ============================================================================
+# Test TASK-POF-001: --autobuild-mode Composite Flag
+# ============================================================================
+
+
+class TestAutobuildModeInlineProtocol:
+    """Test autobuild_mode option in inline protocol and subprocess args.
+
+    TASK-POF-001: autobuild_mode bundles autonomous execution optimizations.
+    TASK-POF-003: Design prompt is now inline protocol, not /task-work skill invocation.
+    Subprocess args (_build_task_work_args) still use the flag-based approach.
+    """
+
+    def test_autobuild_mode_produces_inline_protocol(self, interface):
+        """Test autobuild_mode produces inline protocol, not skill invocation."""
+        prompt = interface._build_design_prompt("TASK-001", {"autobuild_mode": True})
+
+        assert "TASK-001" in prompt
+        assert not prompt.startswith("/task-work")
+
+    def test_autobuild_mode_protocol_includes_all_phases(self, interface):
+        """Test autobuild protocol includes required design phases."""
+        prompt = interface._build_design_prompt("TASK-001", {"autobuild_mode": True})
+
+        assert "Phase 1.5" in prompt
+        assert "Implementation Planning" in prompt
+        assert "Complexity" in prompt
+        assert "checkpoint approved" in prompt.lower()
+
+    def test_autobuild_mode_skip_arch_review_omits_phase(self, interface):
+        """Test skip_arch_review omits Phase 2.5B from protocol."""
         prompt = interface._build_design_prompt(
             "TASK-001",
-            {"no_questions": True, "docs": "minimal"}
+            {"autobuild_mode": True, "skip_arch_review": True},
         )
 
-        assert "--auto-approve-checkpoint" in prompt
-        assert "--no-questions" in prompt
-        assert "--docs=minimal" in prompt
+        assert "Phase 2.5B" not in prompt
+        assert "SOLID" not in prompt
 
-    def test_auto_approve_always_included_in_sdk_mode(self, interface):
-        """Test auto-approve is ALWAYS included (no conditional)."""
-        # Test with empty options
-        prompt1 = interface._build_design_prompt("TASK-001", {})
-        assert "--auto-approve-checkpoint" in prompt1
+    def test_non_autobuild_protocol_includes_arch_review(self, interface):
+        """Test non-autobuild protocol includes Phase 2.5B by default."""
+        prompt = interface._build_design_prompt("TASK-001", {})
 
-        # Test with various option combinations
-        prompt2 = interface._build_design_prompt("TASK-001", {"with_questions": True})
-        assert "--auto-approve-checkpoint" in prompt2
+        assert "SOLID" in prompt
+        assert "DRY" in prompt
+        assert "YAGNI" in prompt
 
-        prompt3 = interface._build_design_prompt("TASK-001", {"defaults": True})
-        assert "--auto-approve-checkpoint" in prompt3
+    def test_autobuild_mode_in_task_work_args(self, interface):
+        """Test --autobuild-mode is added to subprocess args (unchanged)."""
+        args = interface._build_task_work_args("TASK-001", {"autobuild_mode": True})
+
+        assert "--autobuild-mode" in args
+        assert "TASK-001" in args
+        assert "--design-only" in args
+
+    def test_autobuild_mode_replaces_individual_flags_in_args(self, interface):
+        """Test --autobuild-mode replaces individual sub-flags in args."""
+        args = interface._build_task_work_args("TASK-001", {"autobuild_mode": True})
+
+        assert "--no-questions" not in args
+        assert "--skip-arch-review" not in args
+        assert "--defaults" not in args
+
+    def test_without_autobuild_mode_uses_individual_flags_in_args(self, interface):
+        """Test individual flags still work in args when autobuild_mode is not set."""
+        args = interface._build_task_work_args(
+            "TASK-001",
+            {"no_questions": True, "docs": "minimal", "skip_arch_review": True},
+        )
+
+        assert "--autobuild-mode" not in args
+        assert "--no-questions" in args
+        assert "--docs=minimal" in args
+        assert "--skip-arch-review" in args
+
+
+# ============================================================================
+# Test TASK-POF-003: SDK Options for Inline Protocol
+# ============================================================================
+
+
+class TestSDKOptionsForInlineProtocol:
+    """Test that SDK options are configured for inline protocol execution.
+
+    TASK-POF-003: The SDK options should use setting_sources=["project"]
+    (not ["user", "project"]) and exclude Skill/Task tools since the
+    inline protocol does not invoke skills or subagents.
+    """
+
+    @pytest.mark.asyncio
+    async def test_sdk_uses_project_only_setting_sources(self, interface, tmp_worktree):
+        """Test setting_sources is ["project"], not ["user", "project"]."""
+        captured_options = {}
+
+        mock_module = MagicMock()
+        mock_module.CLINotFoundError = Exception
+        mock_module.ProcessError = Exception
+        mock_module.CLIJSONDecodeError = Exception
+        mock_module.AssistantMessage = MockAssistantMessage
+        mock_module.TextBlock = MockTextBlock
+        mock_module.ToolUseBlock = MockToolUseBlock
+        mock_module.ToolResultBlock = MockToolResultBlock
+        mock_module.ResultMessage = MockResultMessage
+
+        def capture_options(**kwargs):
+            captured_options.update(kwargs)
+            return MagicMock()
+
+        mock_module.ClaudeAgentOptions = capture_options
+
+        async def mock_query(*args, **kwargs):
+            yield MockAssistantMessage(content=[MockTextBlock("Complexity: 5/10")])
+            yield MockAssistantMessage(content=[MockTextBlock("Phase 2.8: checkpoint approved")])
+            yield MockResultMessage(num_turns=2)
+
+        mock_module.query = mock_query
+
+        with patch.dict("sys.modules", {"claude_agent_sdk": mock_module}):
+            await interface._execute_via_sdk("test prompt")
+
+        assert captured_options.get("setting_sources") == ["project"]
+
+    @pytest.mark.asyncio
+    async def test_sdk_excludes_skill_tool(self, interface, tmp_worktree):
+        """Test Skill tool is not in allowed_tools."""
+        captured_options = {}
+
+        mock_module = MagicMock()
+        mock_module.CLINotFoundError = Exception
+        mock_module.ProcessError = Exception
+        mock_module.CLIJSONDecodeError = Exception
+        mock_module.AssistantMessage = MockAssistantMessage
+        mock_module.TextBlock = MockTextBlock
+        mock_module.ToolUseBlock = MockToolUseBlock
+        mock_module.ToolResultBlock = MockToolResultBlock
+        mock_module.ResultMessage = MockResultMessage
+
+        def capture_options(**kwargs):
+            captured_options.update(kwargs)
+            return MagicMock()
+
+        mock_module.ClaudeAgentOptions = capture_options
+
+        async def mock_query(*args, **kwargs):
+            yield MockAssistantMessage(content=[MockTextBlock("Done")])
+            yield MockResultMessage(num_turns=1)
+
+        mock_module.query = mock_query
+
+        with patch.dict("sys.modules", {"claude_agent_sdk": mock_module}):
+            await interface._execute_via_sdk("test prompt")
+
+        allowed_tools = captured_options.get("allowed_tools", [])
+        assert "Skill" not in allowed_tools
+        assert "Task" not in allowed_tools
+        # Core tools should still be present
+        assert "Read" in allowed_tools
+        assert "Write" in allowed_tools
+        assert "Glob" in allowed_tools
+
+    @pytest.mark.asyncio
+    async def test_sdk_max_turns_reduced(self, interface, tmp_worktree):
+        """Test max_turns is reduced for simpler inline protocol."""
+        captured_options = {}
+
+        mock_module = MagicMock()
+        mock_module.CLINotFoundError = Exception
+        mock_module.ProcessError = Exception
+        mock_module.CLIJSONDecodeError = Exception
+        mock_module.AssistantMessage = MockAssistantMessage
+        mock_module.TextBlock = MockTextBlock
+        mock_module.ToolUseBlock = MockToolUseBlock
+        mock_module.ToolResultBlock = MockToolResultBlock
+        mock_module.ResultMessage = MockResultMessage
+
+        def capture_options(**kwargs):
+            captured_options.update(kwargs)
+            return MagicMock()
+
+        mock_module.ClaudeAgentOptions = capture_options
+
+        async def mock_query(*args, **kwargs):
+            yield MockAssistantMessage(content=[MockTextBlock("Done")])
+            yield MockResultMessage(num_turns=1)
+
+        mock_module.query = mock_query
+
+        with patch.dict("sys.modules", {"claude_agent_sdk": mock_module}):
+            await interface._execute_via_sdk("test prompt")
+
+        assert captured_options.get("max_turns") == 25
 
 
 # ============================================================================
