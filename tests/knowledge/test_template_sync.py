@@ -278,7 +278,7 @@ Test content.
 
         captured_body = None
 
-        async def capture_episode(name, episode_body, group_id):
+        async def capture_episode(name, episode_body, group_id, **kwargs):
             nonlocal captured_body
             if group_id == 'templates':
                 captured_body = episode_body
@@ -293,6 +293,7 @@ Test content.
 
             # Verify episode body contains expected fields
             assert captured_body is not None
+            # episode_body is still a string in graphiti_client.add_episode
             body_data = json.loads(captured_body)
             assert body_data['entity_type'] == 'template'
             assert body_data['name'] == 'test-template'
@@ -364,7 +365,7 @@ capabilities:
 
         captured_body = None
 
-        async def capture_episode(name, episode_body, group_id):
+        async def capture_episode(name, episode_body, group_id, **kwargs):
             nonlocal captured_body
             captured_body = episode_body
             return "episode_id"
@@ -395,7 +396,7 @@ description: Test agent
 
         captured_body = None
 
-        async def capture_episode(name, episode_body, group_id):
+        async def capture_episode(name, episode_body, group_id, **kwargs):
             nonlocal captured_body
             captured_body = episode_body
             return "episode_id"
@@ -462,7 +463,7 @@ Write tests for all public functions.
 
         captured_body = None
 
-        async def capture_episode(name, episode_body, group_id):
+        async def capture_episode(name, episode_body, group_id, **kwargs):
             nonlocal captured_body
             captured_body = episode_body
             return "episode_id"
@@ -695,7 +696,7 @@ Content here.
 
         captured_body = None
 
-        async def capture_episode(name, episode_body, group_id):
+        async def capture_episode(name, episode_body, group_id, **kwargs):
             nonlocal captured_body
             captured_body = episode_body
             return "episode_id"

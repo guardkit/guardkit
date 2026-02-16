@@ -238,7 +238,8 @@ class TestSpecDriftDetector:
         with pytest.raises(FileNotFoundError):
             detector._load_task("TASK-999")
 
-    def test_load_requirements(self, temp_workspace, sample_task, sample_requirements):
+    @patch('lib.spec_drift_detector.supports_requirements', return_value=True)
+    def test_load_requirements(self, mock_supports, temp_workspace, sample_task, sample_requirements):
         detector = SpecDriftDetector(temp_workspace)
         task_data = detector._load_task("TASK-042")
         requirements = detector._load_requirements(task_data)
@@ -392,8 +393,10 @@ class AuthService:
 
         assert percent == 50.0
 
+    @patch('lib.spec_drift_detector.supports_requirements', return_value=True)
     def test_full_drift_analysis(
         self,
+        mock_supports,
         temp_workspace,
         sample_task,
         sample_requirements,
@@ -413,7 +416,8 @@ class AuthService:
 class TestFormatDriftReport:
     """Test report formatting."""
 
-    def test_format_report_perfect(self):
+    @patch('lib.spec_drift_detector.supports_requirements', return_value=True)
+    def test_format_report_perfect(self, mock_supports):
         req1 = Requirement(
             "REQ-001",
             "The system shall do something",
@@ -437,7 +441,8 @@ class TestFormatDriftReport:
         assert "100/100" in output
         assert "EXCELLENT" in output
 
-    def test_format_report_with_issues(self):
+    @patch('lib.spec_drift_detector.supports_requirements', return_value=True)
+    def test_format_report_with_issues(self, mock_supports):
         req1 = Requirement(
             "REQ-001",
             "The system shall do something",

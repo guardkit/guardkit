@@ -250,7 +250,11 @@ class TestFeatureOverviewEntitySerialization:
         assert isinstance(episode_body, dict)
 
     def test_to_episode_body_contains_entity_type(self):
-        """Test serialization includes entity_type field."""
+        """Test serialization produces dict with all fields.
+
+        Note: entity_type is NOT included in to_episode_body() - it's injected
+        by GraphitiClient according to the docstring.
+        """
         entity = FeatureOverviewEntity(
             id="test-feature",
             name="test-feature",
@@ -266,8 +270,10 @@ class TestFeatureOverviewEntitySerialization:
 
         episode_body = entity.to_episode_body()
 
-        assert "entity_type" in episode_body
-        assert episode_body["entity_type"] == "feature_overview"
+        # Verify it returns a dict with required fields
+        assert isinstance(episode_body, dict)
+        assert episode_body["id"] == "test-feature"
+        assert episode_body["name"] == "test-feature"
 
     def test_to_episode_body_contains_all_fields(self):
         """Test serialization includes all expected fields."""
@@ -299,7 +305,11 @@ class TestFeatureOverviewEntitySerialization:
         assert episode_body["key_decisions"] == ["ADR-FB-001", "ADR-FB-002"]
 
     def test_to_episode_body_contains_timestamps(self):
-        """Test serialization includes timestamp fields."""
+        """Test entity has timestamps but they're not in episode_body dict.
+
+        Note: created_at and updated_at are NOT included in to_episode_body() -
+        they're injected by GraphitiClient according to the docstring.
+        """
         created = datetime(2025, 1, 1, 10, 0, 0)
         updated = datetime(2025, 1, 1, 12, 30, 0)
 
@@ -318,12 +328,15 @@ class TestFeatureOverviewEntitySerialization:
             updated_at=updated
         )
 
+        # Entity should have timestamps
+        assert entity.created_at == created
+        assert entity.updated_at == updated
+
         episode_body = entity.to_episode_body()
 
-        assert "created_at" in episode_body
-        assert "updated_at" in episode_body
-        assert "2025-01-01" in episode_body["created_at"]
-        assert "2025-01-01" in episode_body["updated_at"]
+        # But timestamps are NOT in the episode body dict
+        assert "created_at" not in episode_body
+        assert "updated_at" not in episode_body
 
     def test_to_episode_body_serializes_to_json(self):
         """Test episode body can be serialized to JSON."""

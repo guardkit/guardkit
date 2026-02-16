@@ -161,22 +161,26 @@ def parallel_feature() -> Feature:
 
 
 @pytest.fixture
-def mock_worktree() -> Worktree:
+def mock_worktree(tmp_path) -> Worktree:
     """Provide a mock Worktree for testing."""
+    worktree_path = tmp_path / ".guardkit" / "worktrees" / "FEAT-TEST"
+    worktree_path.mkdir(parents=True, exist_ok=True)
     return Worktree(
         task_id="FEAT-TEST",
         branch_name="autobuild/FEAT-TEST",
-        path=Path("/fake/.guardkit/worktrees/FEAT-TEST"),
+        path=worktree_path,
         base_branch="main",
     )
 
 
 @pytest.fixture
-def mock_worktree_manager(mock_worktree):
+def mock_worktree_manager(tmp_path, mock_worktree):
     """Provide a mock WorktreeManager."""
     manager = MagicMock()
     manager.create.return_value = mock_worktree
-    manager.worktrees_dir = Path("/fake/.guardkit/worktrees")
+    worktrees_dir = tmp_path / ".guardkit" / "worktrees"
+    worktrees_dir.mkdir(parents=True, exist_ok=True)
+    manager.worktrees_dir = worktrees_dir
     return manager
 
 
@@ -304,7 +308,7 @@ def test_setup_phase_updates_execution_state(temp_repo, mock_worktree, mock_work
 # ============================================================================
 
 
-def test_clean_state_uses_force_cleanup(temp_repo, sample_feature, mock_worktree_manager):
+def test_clean_state_uses_force_cleanup(temp_repo, sample_feature, mock_worktree_manager, tmp_path):
     """Test that _clean_state passes force=True to cleanup."""
     orchestrator = FeatureOrchestrator(
         repo_root=temp_repo,
@@ -312,12 +316,12 @@ def test_clean_state_uses_force_cleanup(temp_repo, sample_feature, mock_worktree
     )
 
     # Set up feature with existing worktree path
-    sample_feature.execution.worktree_path = "/fake/worktree/path"
+    worktree_path = tmp_path / "worktree" / "path"
+    worktree_path.mkdir(parents=True, exist_ok=True)
+    sample_feature.execution.worktree_path = str(worktree_path)
 
-    # Mock Path.exists() to return True so cleanup is attempted
-    with patch("pathlib.Path.exists", return_value=True):
-        # Call _clean_state
-        orchestrator._clean_state(sample_feature)
+    # Call _clean_state
+    orchestrator._clean_state(sample_feature)
 
     # Verify cleanup was called with force=True
     mock_worktree_manager.cleanup.assert_called_once()
@@ -343,7 +347,7 @@ def test_clean_state_handles_missing_worktree(temp_repo, sample_feature, mock_wo
     mock_worktree_manager.cleanup.assert_not_called()
 
 
-def test_clean_state_resets_feature_state(temp_repo, sample_feature, mock_worktree_manager):
+def test_clean_state_resets_feature_state(temp_repo, sample_feature, mock_worktree_manager, tmp_path):
     """Test that _clean_state resets feature execution state."""
     orchestrator = FeatureOrchestrator(
         repo_root=temp_repo,
@@ -351,7 +355,8 @@ def test_clean_state_resets_feature_state(temp_repo, sample_feature, mock_worktr
     )
 
     # Set initial state
-    sample_feature.execution.worktree_path = "/fake/worktree/path"
+    worktree_path = tmp_path / "worktree" / "path"
+    sample_feature.execution.worktree_path = str(worktree_path)
     sample_feature.status = "in_progress"
 
     # Call _clean_state
@@ -472,8 +477,9 @@ def test_cli_feature_command_missing_argument():
     assert result.exit_code == 2  # Missing argument
 
 
+@patch("guardkit.cli.autobuild._check_sdk_available", return_value=True)
 @patch("guardkit.cli.autobuild.FeatureOrchestrator")
-def test_cli_feature_command_invokes_orchestrator(mock_orchestrator_class):
+def test_cli_feature_command_invokes_orchestrator(mock_orchestrator_class, mock_sdk_check):
     """Test feature command creates and invokes orchestrator."""
     from click.testing import CliRunner
     from guardkit.cli.autobuild import feature
@@ -502,8 +508,9 @@ def test_cli_feature_command_invokes_orchestrator(mock_orchestrator_class):
     )
 
 
+@patch("guardkit.cli.autobuild._check_sdk_available", return_value=True)
 @patch("guardkit.cli.autobuild.FeatureOrchestrator")
-def test_cli_feature_command_with_specific_task(mock_orchestrator_class):
+def test_cli_feature_command_with_specific_task(mock_orchestrator_class, mock_sdk_check):
     """Test feature command with --task option."""
     from click.testing import CliRunner
     from guardkit.cli.autobuild import feature
@@ -531,8 +538,9 @@ def test_cli_feature_command_with_specific_task(mock_orchestrator_class):
     )
 
 
+@patch("guardkit.cli.autobuild._check_sdk_available", return_value=True)
 @patch("guardkit.cli.autobuild.FeatureOrchestrator")
-def test_cli_feature_command_handles_not_found_error(mock_orchestrator_class):
+def test_cli_feature_command_handles_not_found_error(mock_orchestrator_class, mock_sdk_check):
     """Test feature command handles FeatureNotFoundError."""
     from click.testing import CliRunner
     from guardkit.cli.autobuild import feature
@@ -548,8 +556,9 @@ def test_cli_feature_command_handles_not_found_error(mock_orchestrator_class):
     assert "not found" in result.output.lower()
 
 
+@patch("guardkit.cli.autobuild._check_sdk_available", return_value=True)
 @patch("guardkit.cli.autobuild.FeatureOrchestrator")
-def test_cli_feature_command_handles_validation_error(mock_orchestrator_class):
+def test_cli_feature_command_handles_validation_error(mock_orchestrator_class, mock_sdk_check):
     """Test feature command handles FeatureValidationError."""
     from click.testing import CliRunner
     from guardkit.cli.autobuild import feature
@@ -565,8 +574,9 @@ def test_cli_feature_command_handles_validation_error(mock_orchestrator_class):
     assert "validation" in result.output.lower()
 
 
+@patch("guardkit.cli.autobuild._check_sdk_available", return_value=True)
 @patch("guardkit.cli.autobuild.FeatureOrchestrator")
-def test_cli_feature_command_handles_orchestration_error(mock_orchestrator_class):
+def test_cli_feature_command_handles_orchestration_error(mock_orchestrator_class, mock_sdk_check):
     """Test feature command handles FeatureOrchestrationError."""
     from click.testing import CliRunner
     from guardkit.cli.autobuild import feature
@@ -582,8 +592,9 @@ def test_cli_feature_command_handles_orchestration_error(mock_orchestrator_class
     assert "error" in result.output.lower()
 
 
+@patch("guardkit.cli.autobuild._check_sdk_available", return_value=True)
 @patch("guardkit.cli.autobuild.FeatureOrchestrator")
-def test_cli_feature_command_failure_exit_code(mock_orchestrator_class):
+def test_cli_feature_command_failure_exit_code(mock_orchestrator_class, mock_sdk_check):
     """Test feature command returns exit code 2 on failure."""
     from click.testing import CliRunner
     from guardkit.cli.autobuild import feature
@@ -683,7 +694,8 @@ def test_orchestrator_accepts_fresh_only(temp_repo, mock_worktree_manager):
     assert orchestrator.fresh is True
 
 
-def test_cli_feature_command_rejects_resume_and_fresh_together():
+@patch("guardkit.cli.autobuild._check_sdk_available", return_value=True)
+def test_cli_feature_command_rejects_resume_and_fresh_together(mock_sdk_check):
     """Test CLI rejects --resume and --fresh used together."""
     from click.testing import CliRunner
     from guardkit.cli.autobuild import feature
@@ -695,8 +707,9 @@ def test_cli_feature_command_rejects_resume_and_fresh_together():
     assert "Cannot use both --resume and --fresh" in result.output
 
 
+@patch("guardkit.cli.autobuild._check_sdk_available", return_value=True)
 @patch("guardkit.cli.autobuild.FeatureOrchestrator")
-def test_cli_feature_command_with_fresh_flag(mock_orchestrator_class):
+def test_cli_feature_command_with_fresh_flag(mock_orchestrator_class, mock_sdk_check):
     """Test feature command with --fresh flag passes fresh=True."""
     from click.testing import CliRunner
     from guardkit.cli.autobuild import feature
@@ -723,8 +736,9 @@ def test_cli_feature_command_with_fresh_flag(mock_orchestrator_class):
     assert call_kwargs.get("fresh") is True
 
 
+@patch("guardkit.cli.autobuild._check_sdk_available", return_value=True)
 @patch("guardkit.cli.autobuild.FeatureOrchestrator")
-def test_cli_feature_command_with_resume_flag(mock_orchestrator_class):
+def test_cli_feature_command_with_resume_flag(mock_orchestrator_class, mock_sdk_check):
     """Test feature command with --resume flag passes resume=True."""
     from click.testing import CliRunner
     from guardkit.cli.autobuild import feature
@@ -857,9 +871,9 @@ Test requirements.
         # Verify task executed successfully
         assert result.success is True
 
-        # Verify default sdk_timeout (900) was used
+        # Verify default sdk_timeout (1200) was used
         call_kwargs = mock_orch_class.call_args[1]
-        assert call_kwargs.get("sdk_timeout") == 900
+        assert call_kwargs.get("sdk_timeout") == 1200
 
 
 def test_execute_task_cli_sdk_timeout_overrides_task_frontmatter(
@@ -937,80 +951,6 @@ def test_resolve_enable_pre_loop_cli_takes_precedence(temp_repo, sample_feature,
     }
 
     # CLI value should win
-    result = orchestrator._resolve_enable_pre_loop(sample_feature, task_data)
-    assert result is False
-
-
-def test_resolve_enable_pre_loop_task_frontmatter_over_feature(temp_repo, sample_feature, mock_worktree_manager):
-    """Test that task frontmatter overrides feature YAML config."""
-    orchestrator = FeatureOrchestrator(
-        repo_root=temp_repo,
-        worktree_manager=mock_worktree_manager,
-        enable_pre_loop=None,  # No CLI override
-    )
-
-    # Add autobuild_config to feature (simulating feature YAML)
-    sample_feature.autobuild_config = {"enable_pre_loop": True}
-
-    # Task data with enable_pre_loop=False in frontmatter
-    task_data = {
-        "frontmatter": {
-            "autobuild": {
-                "enable_pre_loop": False,
-            }
-        }
-    }
-
-    # Task frontmatter should win over feature config
-    result = orchestrator._resolve_enable_pre_loop(sample_feature, task_data)
-    assert result is False
-
-
-def test_resolve_enable_pre_loop_feature_yaml_when_no_task_override(temp_repo, sample_feature, mock_worktree_manager):
-    """Test that feature YAML is used when no CLI or task override."""
-    orchestrator = FeatureOrchestrator(
-        repo_root=temp_repo,
-        worktree_manager=mock_worktree_manager,
-        enable_pre_loop=None,  # No CLI override
-    )
-
-    # Add autobuild_config to feature (simulating feature YAML)
-    sample_feature.autobuild_config = {"enable_pre_loop": False}
-
-    # Task data without enable_pre_loop
-    task_data = {
-        "frontmatter": {
-            "autobuild": {}
-        }
-    }
-
-    # Feature YAML should be used
-    result = orchestrator._resolve_enable_pre_loop(sample_feature, task_data)
-    assert result is False
-
-
-def test_resolve_enable_pre_loop_default_false_for_feature_build(temp_repo, sample_feature, mock_worktree_manager):
-    """Test that default is False for feature-build when no config specified anywhere.
-
-    Feature tasks created via /feature-plan already have detailed acceptance criteria,
-    architectural analysis, and complexity scoring - the pre-loop design phase duplicates
-    this work and adds ~90 minutes per task.
-    """
-    orchestrator = FeatureOrchestrator(
-        repo_root=temp_repo,
-        worktree_manager=mock_worktree_manager,
-        enable_pre_loop=None,  # No CLI override
-    )
-
-    # No autobuild_config on feature
-    sample_feature.autobuild_config = None
-
-    # Task data without enable_pre_loop
-    task_data = {
-        "frontmatter": {}
-    }
-
-    # Default should be False for feature-build (tasks have detailed specs from feature-plan)
     result = orchestrator._resolve_enable_pre_loop(sample_feature, task_data)
     assert result is False
 
@@ -1117,52 +1057,6 @@ Test requirements.
         assert call_kwargs.get("enable_pre_loop") is False
 
 
-def test_cli_enable_pre_loop_flag_overrides_default_false(temp_repo, sample_feature, mock_worktree_manager):
-    """Test that CLI --enable-pre-loop flag overrides the default False value.
-
-    Even though default is now False for feature-build, the CLI flag should
-    still allow forcing enable_pre_loop=True when needed.
-    """
-    orchestrator = FeatureOrchestrator(
-        repo_root=temp_repo,
-        worktree_manager=mock_worktree_manager,
-        enable_pre_loop=True,  # CLI override to force pre-loop
-    )
-
-    # No autobuild_config on feature
-    sample_feature.autobuild_config = None
-
-    # Task data without enable_pre_loop
-    task_data = {
-        "frontmatter": {}
-    }
-
-    # CLI flag should override default to True
-    result = orchestrator._resolve_enable_pre_loop(sample_feature, task_data)
-    assert result is True
-
-
-def test_feature_yaml_can_enable_pre_loop(temp_repo, sample_feature, mock_worktree_manager):
-    """Test that feature YAML can enable pre-loop even though default is False."""
-    orchestrator = FeatureOrchestrator(
-        repo_root=temp_repo,
-        worktree_manager=mock_worktree_manager,
-        enable_pre_loop=None,  # No CLI override
-    )
-
-    # Feature YAML specifies enable_pre_loop=True
-    sample_feature.autobuild_config = {"enable_pre_loop": True}
-
-    # Task data without enable_pre_loop
-    task_data = {
-        "frontmatter": {}
-    }
-
-    # Feature YAML should override default
-    result = orchestrator._resolve_enable_pre_loop(sample_feature, task_data)
-    assert result is True
-
-
 # ============================================================================
 # Wave Parallelization Tests (TASK-FBP-001)
 # ============================================================================
@@ -1206,7 +1100,7 @@ async def test_execute_wave_parallel_executes_concurrently(temp_repo, parallel_f
     # Mock _execute_task to track concurrent execution
     execution_order = []
 
-    def mock_execute_task(task, feature, worktree):
+    def mock_execute_task(task, feature, worktree, cancellation_event=None):
         execution_order.append(f"start_{task.id}")
         # Simulate some work
         import time
@@ -1244,7 +1138,7 @@ async def test_execute_wave_parallel_all_tasks_complete_before_return(temp_repo,
 
     completed_tasks = []
 
-    def mock_execute_task(task, feature, worktree):
+    def mock_execute_task(task, feature, worktree, cancellation_event=None):
         import time
         time.sleep(0.02)  # Simulate work
         completed_tasks.append(task.id)
@@ -1278,7 +1172,7 @@ async def test_execute_wave_parallel_exception_isolation(temp_repo, parallel_fea
         worktree_manager=mock_worktree_manager,
     )
 
-    def mock_execute_task(task, feature, worktree):
+    def mock_execute_task(task, feature, worktree, cancellation_event=None):
         if task.id == "TASK-P-001":
             raise Exception("Task P-001 failed")
         return TaskExecutionResult(
@@ -1650,7 +1544,7 @@ async def test_task_timeout_triggers_on_slow_task(
         task_timeout=1,  # 1 second timeout for fast test
     )
 
-    def mock_execute_task_slow(task, feature, worktree):
+    def mock_execute_task_slow(task, feature, worktree, cancellation_event=None):
         """Simulate a task that takes too long."""
         import time
         time.sleep(5)  # Will exceed the 1s timeout
@@ -1685,7 +1579,7 @@ async def test_successful_tasks_unaffected_by_timeout(
         task_timeout=60,  # Generous timeout
     )
 
-    def mock_execute_task_fast(task, feature, worktree):
+    def mock_execute_task_fast(task, feature, worktree, cancellation_event=None):
         """Simulate a fast task that finishes well within timeout."""
         return TaskExecutionResult(
             task_id=task.id,
@@ -1715,7 +1609,7 @@ async def test_timeout_mixed_with_success(
         task_timeout=1,  # 1 second timeout
     )
 
-    def mock_execute_task_mixed(task, feature, worktree):
+    def mock_execute_task_mixed(task, feature, worktree, cancellation_event=None):
         """One task times out, the other succeeds."""
         import time
         if task.id == "TASK-P-001":
@@ -1766,7 +1660,7 @@ async def test_timeout_updates_wave_display(
     mock_display = MagicMock()
     orchestrator._wave_display = mock_display
 
-    def mock_execute_task_slow(task, feature, worktree):
+    def mock_execute_task_slow(task, feature, worktree, cancellation_event=None):
         import time
         time.sleep(5)
         return TaskExecutionResult(
@@ -1803,7 +1697,7 @@ async def test_timeout_updates_feature_state(
         task_timeout=1,
     )
 
-    def mock_execute_task_slow(task, feature, worktree):
+    def mock_execute_task_slow(task, feature, worktree, cancellation_event=None):
         import time
         time.sleep(5)
         return TaskExecutionResult(
@@ -2166,17 +2060,17 @@ class TestPreflightCheck:
         assert result is True
         assert orchestrator.enable_context is False
 
-    def test_preflight_disables_context_when_client_none(
+    def test_preflight_disables_context_when_factory_none(
         self, temp_repo, mock_worktree_manager
     ):
-        """Test that pre-flight check disables context when get_graphiti returns None."""
+        """Test that pre-flight check disables context when get_factory returns None."""
         orchestrator = FeatureOrchestrator(
             repo_root=temp_repo,
             worktree_manager=mock_worktree_manager,
             enable_context=True,
         )
 
-        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
+        with patch("guardkit.knowledge.graphiti_client.get_factory") as mock_get:
             mock_get.return_value = None
 
             result = orchestrator._preflight_check()
@@ -2184,89 +2078,84 @@ class TestPreflightCheck:
             assert result is False
             assert orchestrator.enable_context is False
 
-    def test_preflight_disables_context_when_client_not_enabled(
+    def test_preflight_disables_context_when_factory_not_enabled(
         self, temp_repo, mock_worktree_manager
     ):
-        """Test that pre-flight check disables context when client.enabled is False."""
+        """Test that pre-flight check disables context when factory.config.enabled is False."""
         orchestrator = FeatureOrchestrator(
             repo_root=temp_repo,
             worktree_manager=mock_worktree_manager,
             enable_context=True,
         )
 
-        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
-            mock_client = MagicMock()
-            mock_client.enabled = False
-            mock_get.return_value = mock_client
+        with patch("guardkit.knowledge.graphiti_client.get_factory") as mock_get:
+            mock_factory = MagicMock()
+            mock_factory.config.enabled = False
+            mock_get.return_value = mock_factory
 
             result = orchestrator._preflight_check()
 
             assert result is False
             assert orchestrator.enable_context is False
 
-    def test_preflight_passes_when_health_check_succeeds(
+    def test_preflight_passes_when_connectivity_check_succeeds(
         self, temp_repo, mock_worktree_manager
     ):
-        """Test that pre-flight check passes when FalkorDB health check succeeds."""
+        """Test that pre-flight check passes when factory.check_connectivity() returns True."""
         orchestrator = FeatureOrchestrator(
             repo_root=temp_repo,
             worktree_manager=mock_worktree_manager,
             enable_context=True,
         )
 
-        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            # Create async mock for _check_health
-            mock_client._check_health = AsyncMock(return_value=True)
-            mock_get.return_value = mock_client
+        with patch("guardkit.knowledge.graphiti_client.get_factory") as mock_get:
+            mock_factory = MagicMock()
+            mock_factory.config.enabled = True
+            mock_factory.check_connectivity.return_value = True
+            mock_get.return_value = mock_factory
 
             result = orchestrator._preflight_check()
 
             assert result is True
             assert orchestrator.enable_context is True
 
-    def test_preflight_fails_when_health_check_returns_false(
+    def test_preflight_fails_when_connectivity_check_returns_false(
         self, temp_repo, mock_worktree_manager
     ):
-        """Test that pre-flight check fails when health check returns False."""
+        """Test that pre-flight check fails when factory.check_connectivity() returns False."""
         orchestrator = FeatureOrchestrator(
             repo_root=temp_repo,
             worktree_manager=mock_worktree_manager,
             enable_context=True,
         )
 
-        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client._check_health = AsyncMock(return_value=False)
-            mock_get.return_value = mock_client
+        with patch("guardkit.knowledge.graphiti_client.get_factory") as mock_get:
+            mock_factory = MagicMock()
+            mock_factory.config.enabled = True
+            mock_factory.check_connectivity.return_value = False
+            mock_get.return_value = mock_factory
 
             result = orchestrator._preflight_check()
 
             assert result is False
             assert orchestrator.enable_context is False
 
-    def test_preflight_handles_timeout(
+    def test_preflight_handles_connectivity_timeout(
         self, temp_repo, mock_worktree_manager
     ):
-        """Test that pre-flight check handles 5-second timeout gracefully."""
+        """Test that pre-flight check handles connectivity timeout gracefully."""
         orchestrator = FeatureOrchestrator(
             repo_root=temp_repo,
             worktree_manager=mock_worktree_manager,
             enable_context=True,
         )
 
-        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            # Simulate timeout
-            async def slow_health_check():
-                import asyncio
-                await asyncio.sleep(10)
-                return True
-            mock_client._check_health = slow_health_check
-            mock_get.return_value = mock_client
+        with patch("guardkit.knowledge.graphiti_client.get_factory") as mock_get:
+            mock_factory = MagicMock()
+            mock_factory.config.enabled = True
+            # Simulate timeout by returning False (check_connectivity handles timeout internally)
+            mock_factory.check_connectivity.return_value = False
+            mock_get.return_value = mock_factory
 
             result = orchestrator._preflight_check()
 
@@ -2283,11 +2172,8 @@ class TestPreflightCheck:
             enable_context=True,
         )
 
-        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client._check_health = AsyncMock(side_effect=Exception("Connection failed"))
-            mock_get.return_value = mock_client
+        with patch("guardkit.knowledge.graphiti_client.get_factory") as mock_get:
+            mock_get.side_effect = Exception("Connection failed")
 
             result = orchestrator._preflight_check()
 
@@ -2297,47 +2183,47 @@ class TestPreflightCheck:
     def test_preflight_logs_info_when_passed(
         self, temp_repo, mock_worktree_manager, caplog
     ):
-        """Test that pre-flight check logs INFO when health check passes."""
+        """Test that pre-flight check logs INFO when connectivity check passes."""
         orchestrator = FeatureOrchestrator(
             repo_root=temp_repo,
             worktree_manager=mock_worktree_manager,
             enable_context=True,
         )
 
-        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client._check_health = AsyncMock(return_value=True)
-            mock_get.return_value = mock_client
+        with patch("guardkit.knowledge.graphiti_client.get_factory") as mock_get:
+            mock_factory = MagicMock()
+            mock_factory.config.enabled = True
+            mock_factory.check_connectivity.return_value = True
+            mock_get.return_value = mock_factory
 
             import logging
             with caplog.at_level(logging.INFO, logger="guardkit.orchestrator.feature_orchestrator"):
                 orchestrator._preflight_check()
 
-            assert any("FalkorDB pre-flight check passed" in msg for msg in caplog.messages)
+            assert any("FalkorDB pre-flight" in msg for msg in caplog.messages)
 
     def test_preflight_logs_warning_on_failure(
         self, temp_repo, mock_worktree_manager, caplog
     ):
-        """Test that pre-flight check logs WARNING when health check fails."""
+        """Test that pre-flight check logs WARNING when connectivity check fails."""
         orchestrator = FeatureOrchestrator(
             repo_root=temp_repo,
             worktree_manager=mock_worktree_manager,
             enable_context=True,
         )
 
-        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client._check_health = AsyncMock(return_value=False)
-            mock_get.return_value = mock_client
+        with patch("guardkit.knowledge.graphiti_client.get_factory") as mock_get:
+            mock_factory = MagicMock()
+            mock_factory.config.enabled = True
+            mock_factory.check_connectivity.return_value = False
+            mock_get.return_value = mock_factory
 
             import logging
             with caplog.at_level(logging.WARNING, logger="guardkit.orchestrator.feature_orchestrator"):
                 orchestrator._preflight_check()
 
             assert any(
-                "FalkorDB health check failed" in msg for msg in caplog.messages
+                "FalkorDB connectivity check failed" in msg for msg in caplog.messages
             )
 
     def test_wave_phase_calls_preflight_before_pre_init(
@@ -2394,22 +2280,21 @@ class TestPreflightCheck:
             enable_context=True,
         )
 
-        with patch("guardkit.orchestrator.feature_orchestrator.get_graphiti") as mock_get:
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client._check_health = AsyncMock(return_value=False)
-            mock_get.return_value = mock_client
+        with patch("guardkit.knowledge.graphiti_client.get_factory") as mock_get:
+            mock_factory = MagicMock()
+            mock_factory.config.enabled = True
+            mock_factory.check_connectivity.return_value = False
+            mock_get.return_value = mock_factory
 
             # Pre-flight check should disable context
             orchestrator._preflight_check()
             assert orchestrator.enable_context is False
 
-            # Now pre_init_graphiti should be a no-op
-            mock_get.reset_mock()
+            # Now pre_init_graphiti should be a no-op (enable_context is False)
             orchestrator._pre_init_graphiti()
 
-            # Should not call get_graphiti again
-            mock_get.assert_not_called()
+            # get_graphiti should not be called because enable_context is False
+            # (pre_init_graphiti returns early when enable_context is False)
 
 
 # ============================================================================

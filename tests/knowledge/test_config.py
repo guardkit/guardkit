@@ -97,9 +97,15 @@ class TestGraphitiSettings:
             GraphitiSettings(timeout=0.0)
 
     def test_settings_validation_invalid_host(self):
-        """Test settings validation fails with invalid host."""
-        with pytest.raises((ValueError, AssertionError)):
-            GraphitiSettings(host="")
+        """Test settings validation - host is deprecated, no longer validated.
+
+        The 'host' parameter is deprecated in favor of neo4j_uri.
+        Empty host no longer raises an error since validation moved to neo4j_uri.
+        """
+        # This should NOT raise - host is deprecated and not validated
+        settings = GraphitiSettings(host="")
+        # neo4j_uri is the validated parameter now
+        assert settings.neo4j_uri == "bolt://localhost:7687"  # default value
 
     def test_settings_type_validation(self):
         """Test settings type validation."""

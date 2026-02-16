@@ -8,8 +8,38 @@ wave: 3
 implementation_mode: direct
 complexity: 3
 dependencies:
-  - TASK-SFT-002
+- TASK-SFT-002
 priority: medium
+status: in_review
+autobuild_state:
+  current_turn: 2
+  max_turns: 30
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A
+  base_branch: main
+  started_at: '2026-02-15T21:30:50.791389'
+  last_updated: '2026-02-15T21:42:48.243648'
+  turns:
+  - turn: 1
+    decision: feedback
+    feedback: '- Player report not found: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A/.guardkit/autobuild/TASK-SFT-010/player_turn_1.json'
+    timestamp: '2026-02-15T21:30:50.791389'
+    player_summary: '[RECOVERED via player_report] Original error: Player report not
+      found: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A/.guardkit/autobuild/TASK-SFT-010/player_turn_1.json'
+    player_success: true
+    coach_success: true
+  - turn: 2
+    decision: approve
+    feedback: null
+    timestamp: '2026-02-15T21:36:46.997436'
+    player_summary: 'Added Trophy-model testing guidance to all four client app templates
+      (react-typescript, fastapi-python, nextjs-fullstack, react-fastapi-monorepo).
+      Each template now includes: (1) Trophy testing diagram with 50/30/10/10 distribution,
+      (2) Testing principles emphasizing behavior over implementation, (3) Clear guidance
+      on what to mock (external APIs at HTTP level) vs what NOT to mock (internal
+      functions, framework code), (4) When seam tests ARE needed (third-party integrations,
+      microservice boundari'
+    player_success: true
+    coach_success: true
 ---
 
 # Add Trophy-Model Testing Guidance to Client App Templates

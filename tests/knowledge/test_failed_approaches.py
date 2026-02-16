@@ -307,7 +307,11 @@ class TestFailedApproachEpisodeBody:
         assert isinstance(body, dict)
 
     def test_to_episode_body_contains_required_fields(self):
-        """Test episode body contains all required fields."""
+        """Test episode body contains all required fields.
+
+        Note: entity_type is NOT included in to_episode_body() - it's injected
+        by GraphitiClient according to the docstring.
+        """
         failure = FailedApproachEpisode(
             id="FAIL-TEST001",
             approach="Test approach",
@@ -320,7 +324,7 @@ class TestFailedApproachEpisodeBody:
 
         body = failure.to_episode_body()
 
-        assert body["entity_type"] == "failed_approach"
+        # Verify it returns a dict with required fields (no entity_type)
         assert body["id"] == "FAIL-TEST001"
         assert body["approach"] == "Test approach"
         assert body["symptom"] == "Test symptom"

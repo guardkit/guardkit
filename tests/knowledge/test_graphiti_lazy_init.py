@@ -174,20 +174,19 @@ class TestLazyInitGracefulDegradation:
         assert result is None
         assert graphiti_module._factory_init_attempted is True
 
-    def test_lazy_init_returns_none_when_initialize_fails(self):
+    def test_lazy_init_returns_pending_client_when_sync_context(self):
         """
-        Given client.initialize() returns False (Neo4j unavailable)
-        When _try_lazy_init is called
-        Then returns None.
+        TASK-GLF-003: In sync context, _try_lazy_init returns a client with
+        _pending_init=True. Initialization is deferred to the consumer's loop.
         """
         mock_client = MagicMock(spec=GraphitiClient)
-        mock_client.initialize = AsyncMock(return_value=False)
 
         with patch(CONFIG_PATCH, return_value=_make_settings()), \
              patch(CLIENT_PATCH, return_value=mock_client):
             result = _try_lazy_init()
 
-        assert result is None
+        assert result is mock_client
+        assert result._pending_init is True
 
     def test_lazy_init_returns_none_on_import_error(self):
         """
@@ -201,21 +200,23 @@ class TestLazyInitGracefulDegradation:
         assert result is None
         assert graphiti_module._factory_init_attempted is True
 
-    def test_lazy_init_returns_none_on_connection_error(self):
+    def test_lazy_init_defers_initialization_no_connection_attempt(self):
         """
-        Given client.initialize() raises an exception
-        When _try_lazy_init is called
-        Then returns None gracefully.
+        TASK-GLF-003: _try_lazy_init no longer calls initialize() in sync
+        context, so connection errors cannot occur during lazy init.
+        The client is returned with _pending_init=True.
         """
         mock_client = MagicMock(spec=GraphitiClient)
-        mock_client.initialize = AsyncMock(side_effect=ConnectionError("refused"))
 
         with patch(CONFIG_PATCH, return_value=_make_settings()), \
              patch(CLIENT_PATCH, return_value=mock_client):
             result = _try_lazy_init()
 
-        assert result is None
+        assert result is mock_client
+        assert result._pending_init is True
         assert graphiti_module._factory_init_attempted is True
+        # initialize is NOT called during lazy init
+        mock_client.initialize.assert_not_called()
 
 
 # ============================================================================
@@ -380,11 +381,11 @@ class TestInitGraphitiInteraction:
 class TestAsyncContextHandling:
     """Tests for async context detection in lazy-init."""
 
-    def test_lazy_init_in_sync_context_uses_asyncio_run(self):
+    def test_lazy_init_in_sync_context_defers_initialization(self):
         """
-        Given no running asyncio loop
-        When _try_lazy_init is called
-        Then uses asyncio.run() for initialization via factory.
+        TASK-GLF-003: In sync context, _try_lazy_init returns a client with
+        _pending_init=True. No event loop is created and initialize() is
+        NOT called (deferred to consumer's loop).
         """
         mock_client = MagicMock(spec=GraphitiClient)
         mock_client.initialize = AsyncMock(return_value=True)
@@ -394,7 +395,8 @@ class TestAsyncContextHandling:
             result = _try_lazy_init()
 
         assert result is mock_client
-        mock_client.initialize.assert_called_once()
+        assert result._pending_init is True
+        mock_client.initialize.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_lazy_init_in_async_context_defers_connection(self):

@@ -215,6 +215,7 @@ class GraphitiClient:
         self.config = config or GraphitiConfig()
         self._graphiti = None  # Will hold the Graphiti instance
         self._connected = False
+        self._pending_init: bool = False  # TASK-GLF-003: lazy init flag
         self._auto_detect_project = auto_detect_project
 
         # Circuit breaker state
@@ -393,6 +394,11 @@ class GraphitiClient:
             True if both enabled in config and successfully connected
         """
         return self.config.enabled and self._connected
+
+    @property
+    def is_initialized(self) -> bool:
+        """Whether the client has been initialized (connected to Neo4j/FalkorDB)."""
+        return self._connected and not self._pending_init
 
     @property
     def is_healthy(self) -> bool:
@@ -1622,25 +1628,15 @@ class GraphitiClientFactory:
             self._thread_local.client = client
             return client
         else:
-            coro = client.initialize()
-            try:
-                loop = asyncio.new_event_loop()
-                _suppress_httpx_cleanup_errors(loop)
-                try:
-                    success = loop.run_until_complete(coro)
-                finally:
-                    loop.close()
-                if success:
-                    self._thread_local.client = client
-                    logger.info("Graphiti factory: thread client initialized successfully")
-                    return client
-                else:
-                    logger.info("Graphiti factory: thread client init failed")
-                    return None
-            except Exception as e:
-                coro.close()  # Suppress RuntimeWarning by explicitly closing
-                logger.info(f"Graphiti factory: thread client init error: {e}")
-                return None
+            # TASK-GLF-003: Return uninitialized client — caller initializes on
+            # their own event loop to keep FalkorDB Lock objects affine.
+            client._pending_init = True
+            self._thread_local.client = client
+            logger.info(
+                "Graphiti factory: thread client created (pending init — "
+                "will initialize lazily on consumer's event loop)"
+            )
+            return client
 
     def set_thread_client(self, client: Optional[GraphitiClient]) -> None:
         """Explicitly set the client for the current thread.
@@ -1653,6 +1649,45 @@ class GraphitiClientFactory:
         """
         self._thread_local.client = client
         self._thread_local.init_attempted = True
+
+    def check_connectivity(self, timeout: float = 5.0) -> bool:
+        """Lightweight FalkorDB connectivity check via TCP socket.
+
+        Tests whether FalkorDB is reachable without creating a full
+        GraphitiClient, Graphiti driver, or asyncio.Lock objects.
+        Safe to call from synchronous code (e.g. _preflight_check).
+
+        Args:
+            timeout: TCP connection timeout in seconds (default: 5.0)
+
+        Returns:
+            True if FalkorDB responds to TCP connection, False otherwise.
+        """
+        if not self._config.enabled:
+            logger.info("Graphiti disabled in config, connectivity check skipped")
+            return False
+
+        import socket
+        try:
+            sock = socket.create_connection(
+                (self._config.falkordb_host, self._config.falkordb_port),
+                timeout=timeout,
+            )
+            sock.close()
+            logger.debug(
+                "FalkorDB connectivity check passed: %s:%d",
+                self._config.falkordb_host, self._config.falkordb_port,
+            )
+            return True
+        except (OSError, socket.timeout) as e:
+            logger.debug(
+                "FalkorDB connectivity check failed (%s:%d): %s",
+                self._config.falkordb_host, self._config.falkordb_port, e,
+            )
+            return False
+        except Exception as e:
+            logger.debug("FalkorDB connectivity check error: %s", e)
+            return False
 
 
 def get_current_project_name() -> str:

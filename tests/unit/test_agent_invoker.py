@@ -5560,6 +5560,276 @@ Task with deprecated manual mode - should be normalized to task-work.
         assert result_path == result_path_v2
 
 
+
+# ========================================================================
+# Direct Mode Synthetic Report Tests (TASK-GLF-004)
+# ========================================================================
+
+
+class TestDirectModeSyntheticReport:
+    """Test synthetic Player report generation for direct mode.
+
+    When SDK doesn't write player_turn_N.json in direct mode, the system
+    generates a synthetic report from git changes to avoid retries and
+    state recovery.
+
+    Coverage Target: >=85%
+    Test Count: 6 tests
+    """
+
+    def test_create_synthetic_report_schema_compliance(self, agent_invoker):
+        """AC-001: Synthetic report has all PLAYER_REPORT_SCHEMA fields with correct types."""
+        task_id = "TASK-SYNTH-001"
+        turn = 1
+
+        report = agent_invoker._create_synthetic_direct_mode_report(task_id, turn)
+
+        # Verify all required schema fields present
+        assert "task_id" in report
+        assert "turn" in report
+        assert "files_modified" in report
+        assert "files_created" in report
+        assert "tests_written" in report
+        assert "tests_run" in report
+        assert "tests_passed" in report
+        assert "implementation_notes" in report
+        assert "concerns" in report
+        assert "requirements_addressed" in report
+        assert "requirements_remaining" in report
+        assert "test_output_summary" in report
+
+        # Verify correct types
+        assert isinstance(report["task_id"], str)
+        assert isinstance(report["turn"], int)
+        assert isinstance(report["files_modified"], list)
+        assert isinstance(report["files_created"], list)
+        assert isinstance(report["tests_written"], list)
+        assert isinstance(report["tests_run"], bool)
+        assert isinstance(report["tests_passed"], bool)
+        assert isinstance(report["implementation_notes"], str)
+        assert isinstance(report["concerns"], list)
+        assert isinstance(report["requirements_addressed"], list)
+        assert isinstance(report["requirements_remaining"], list)
+        assert isinstance(report["test_output_summary"], str)
+
+        # Verify values
+        assert report["task_id"] == task_id
+        assert report["turn"] == turn
+        assert report["tests_run"] is False
+        assert report["tests_passed"] is False
+
+    def test_create_synthetic_report_with_git_changes(self, agent_invoker):
+        """AC-002: Synthetic report includes files from _detect_git_changes()."""
+        task_id = "TASK-SYNTH-002"
+        turn = 1
+
+        # Mock git detection to return files
+        git_changes = {
+            "modified": ["src/main.py", "src/utils.py"],
+            "created": ["tests/test_new.py", "docs/guide.md"]
+        }
+
+        with patch.object(agent_invoker, "_detect_git_changes", return_value=git_changes):
+            report = agent_invoker._create_synthetic_direct_mode_report(task_id, turn)
+
+        # Verify files are included and sorted
+        assert report["files_modified"] == ["src/main.py", "src/utils.py"]
+        assert report["files_created"] == ["docs/guide.md", "tests/test_new.py"]
+
+        # Verify implementation notes mention git detection
+        assert "git-detected" in report["implementation_notes"]
+        assert "2 modified" in report["implementation_notes"]
+        assert "2 created" in report["implementation_notes"]
+
+    def test_create_synthetic_report_identifies_test_files(self, agent_invoker):
+        """AC-003: Test file patterns correctly identified in tests_written."""
+        task_id = "TASK-SYNTH-003"
+        turn = 1
+
+        # Mock git changes with various test file patterns
+        git_changes = {
+            "modified": [
+                "src/app.py",
+                "test_module.py",  # test_ prefix
+                "unit_test.py",    # _test suffix
+                "tests/test_auth.py",  # tests/ prefix
+                "integration/test_api.py",  # not in tests/ but has test_
+            ],
+            "created": [
+                "conftest.py",  # not a test file
+                "tests/conftest.py",  # in tests/ but not a test
+                "tests/auth_test.py",  # _test.py suffix
+                "src/Test_Helper.py",  # capital T but has test_
+            ]
+        }
+
+        with patch.object(agent_invoker, "_detect_git_changes", return_value=git_changes):
+            report = agent_invoker._create_synthetic_direct_mode_report(task_id, turn)
+
+        # Verify test files identified (sorted)
+        expected_tests = sorted([
+            "test_module.py",
+            "unit_test.py",
+            "tests/test_auth.py",
+            "integration/test_api.py",
+            "tests/auth_test.py",
+            "src/Test_Helper.py",
+            "tests/conftest.py",  # included because starts with "tests/"
+        ])
+        assert report["tests_written"] == expected_tests
+
+        # Verify non-test files not in tests_written
+        assert "src/app.py" not in report["tests_written"]
+        # Note: conftest.py not in tests_written, but tests/conftest.py is (starts with "tests/")
+        assert "conftest.py" not in report["tests_written"]
+
+    def test_create_synthetic_report_handles_git_failure(self, agent_invoker):
+        """AC-004: Git detection failure produces minimal valid report."""
+        task_id = "TASK-SYNTH-004"
+        turn = 1
+
+        # Mock git detection to raise exception
+        with patch.object(
+            agent_invoker, "_detect_git_changes",
+            side_effect=Exception("Git command failed")
+        ):
+            report = agent_invoker._create_synthetic_direct_mode_report(task_id, turn)
+
+        # Verify report is valid with empty arrays
+        assert report["task_id"] == task_id
+        assert report["turn"] == turn
+        assert report["files_modified"] == []
+        assert report["files_created"] == []
+        assert report["tests_written"] == []
+
+        # Verify generic implementation note (not git-detected variant)
+        assert "Direct mode SDK invocation completed" in report["implementation_notes"]
+        assert "git-detected" not in report["implementation_notes"]
+
+    @pytest.mark.asyncio
+    async def test_direct_mode_creates_synthetic_when_report_missing(
+        self, agent_invoker, worktree_path
+    ):
+        """AC-005: _invoke_player_direct() creates synthetic report when SDK doesn't write file."""
+        task_id = "TASK-SYNTH-005"
+        turn = 1
+
+        # Create task file for direct mode
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+        task_file = tasks_dir / f"{task_id}-test.md"
+        task_file.write_text(f"""---
+id: {task_id}
+title: Test synthetic report
+status: backlog
+implementation_mode: direct
+---
+
+# Test Task
+
+## Acceptance Criteria
+- [ ] Files created
+""")
+
+        # Mock SDK invocation (doesn't write report)
+        # Mock git detection to return files
+        git_changes = {
+            "modified": ["README.md"],
+            "created": []
+        }
+
+        with patch.object(
+            agent_invoker, "_invoke_with_role", new_callable=AsyncMock
+        ) as mock_sdk, patch.object(
+            agent_invoker, "_detect_git_changes", return_value=git_changes
+        ):
+            # Call invoke_player which will trigger _invoke_player_direct
+            result = await agent_invoker.invoke_player(
+                task_id=task_id,
+                turn=turn,
+                requirements="Create documentation"
+            )
+
+        # Verify report was created synthetically
+        report_path = worktree_path / ".guardkit" / "autobuild" / task_id / f"player_turn_{turn}.json"
+        assert report_path.exists()
+
+        # Verify report content
+        report = json.loads(report_path.read_text())
+        assert report["task_id"] == task_id
+        assert report["turn"] == turn
+        assert "README.md" in report["files_modified"]
+
+        # Verify result shows success
+        assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_direct_mode_preserves_existing_sdk_report(
+        self, agent_invoker, worktree_path
+    ):
+        """AC-006: When SDK writes report, synthetic creation is skipped."""
+        task_id = "TASK-SYNTH-006"
+        turn = 1
+
+        # Create task file for direct mode
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+        task_file = tasks_dir / f"{task_id}-test.md"
+        task_file.write_text(f"""---
+id: {task_id}
+title: Test SDK report preservation
+status: backlog
+implementation_mode: direct
+---
+
+# Test Task
+
+## Acceptance Criteria
+- [ ] Implementation complete
+""")
+
+        # Create SDK-written report BEFORE invocation
+        sdk_report = {
+            "task_id": task_id,
+            "turn": turn,
+            "files_modified": ["sdk_modified.py"],
+            "files_created": ["sdk_created.py"],
+            "tests_written": ["tests/test_sdk.py"],
+            "tests_run": True,
+            "tests_passed": True,
+            "implementation_notes": "SDK-written report",
+            "concerns": [],
+            "requirements_addressed": ["Implemented via SDK"],
+            "requirements_remaining": []
+        }
+        create_report_file(worktree_path, task_id, turn, "player", sdk_report)
+
+        # Mock SDK invocation (report already exists)
+        with patch.object(
+            agent_invoker, "_invoke_with_role", new_callable=AsyncMock
+        ), patch.object(
+            agent_invoker, "_create_synthetic_direct_mode_report"
+        ) as mock_synthetic:
+            # Call invoke_player
+            result = await agent_invoker.invoke_player(
+                task_id=task_id,
+                turn=turn,
+                requirements="Implement feature"
+            )
+
+        # Verify synthetic report creation was NOT called
+        mock_synthetic.assert_not_called()
+
+        # Verify original SDK report preserved
+        report_path = worktree_path / ".guardkit" / "autobuild" / task_id / f"player_turn_{turn}.json"
+        report = json.loads(report_path.read_text())
+        assert report["implementation_notes"] == "SDK-written report"
+        assert report["files_modified"] == ["sdk_modified.py"]
+
+        # Verify result shows success
+        assert result.success is True
+
+
 # ============================================================================
 # Direct Mode Auto-Detection Tests (TASK-POF-002)
 # ============================================================================

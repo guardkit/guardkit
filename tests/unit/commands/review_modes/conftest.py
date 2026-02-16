@@ -13,8 +13,8 @@ sys.path.insert(0, str(lib_path))
 class MockAgentInvoker:
     """Mock agent invoker for testing (doesn't exit with code 42)."""
 
-    def invoke(self, agent_name: str, prompt: str, timeout_seconds: int = 120, context: Dict[str, Any] = None) -> str:
-        """Mock invoke that returns test data instead of exiting."""
+    def invoke(self, agent_name: str, prompt: str, timeout_seconds: int = 120, context: Dict[str, Any] = None, model: str = None) -> str:
+        """Mock invoke that returns test data instead of exiting (model parameter added for API compatibility)."""
         if agent_name == "architectural-reviewer":
             if context and context.get("analysis") == "design":
                 # For technical debt - design analysis

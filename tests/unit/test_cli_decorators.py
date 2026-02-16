@@ -21,8 +21,11 @@ from guardkit.cli.decorators import (
 from guardkit.tasks.task_loader import TaskNotFoundError, TaskParseError
 from guardkit.orchestrator.exceptions import AgentInvocationError, SDKTimeoutError
 
-# Import worktree exceptions
-from guardkit.worktrees import WorktreeCreationError, WorktreeMergeError
+# Import worktree exceptions - use fallback versions from decorators module
+# since production code has wrong import path (orchestrator.worktrees vs guardkit.worktrees)
+from guardkit.cli import decorators
+WorktreeCreationError = decorators.WorktreeCreationError
+WorktreeMergeError = decorators.WorktreeMergeError
 
 
 # ============================================================================

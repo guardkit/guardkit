@@ -1,6 +1,6 @@
 ---
 id: TASK-SFT-003
-title: Seam tests S3 — Orchestrator-to-module wiring
+title: "Seam tests S3 \u2014 Orchestrator-to-module wiring"
 task_type: testing
 parent_review: TASK-REV-AC1A
 feature_id: FEAT-AC1A
@@ -8,8 +8,24 @@ wave: 2
 implementation_mode: task-work
 complexity: 5
 dependencies:
-  - TASK-SFT-001
+- TASK-SFT-001
 priority: high
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 30
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A
+  base_branch: main
+  started_at: '2026-02-15T21:22:24.033546'
+  last_updated: '2026-02-15T21:29:59.429327'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-02-15T21:22:24.033546'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Seam Tests S3: Orchestrator → Module Wiring

@@ -785,15 +785,19 @@ class TestContextSkipLogging:
         """
         from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 
-        orchestrator = AutoBuildOrchestrator(
-            repo_root=Path("/tmp/repo"),
-            max_turns=3,
-            enable_context=True,
-            context_loader=None,
-            worktree_manager=mock_worktree_manager,
-            agent_invoker=mock_agent_invoker,
-            progress_display=mock_progress_display,
-        )
+        # Ensure factory is None so context_loader and factory are both unavailable
+        with patch("guardkit.orchestrator.autobuild.get_factory", return_value=None), \
+             patch("guardkit.orchestrator.autobuild.get_graphiti", return_value=None):
+            orchestrator = AutoBuildOrchestrator(
+                repo_root=Path("/tmp/repo"),
+                max_turns=3,
+                enable_context=True,
+                context_loader=None,
+                worktree_manager=mock_worktree_manager,
+                agent_invoker=mock_agent_invoker,
+                progress_display=mock_progress_display,
+                enable_checkpoints=False,
+            )
 
         # Mock agent_invoker.invoke_player to return a basic result
         mock_result = Mock()
@@ -810,7 +814,7 @@ class TestContextSkipLogging:
                 feedback=None,
             )
             mock_logger.info.assert_any_call(
-                "Player context retrieval skipped: context_loader not provided for TASK-TEST-001"
+                "Player context retrieval skipped: no factory or loader for TASK-TEST-001"
             )
 
     def test_coach_logs_info_when_context_enabled_but_loader_none(
@@ -826,15 +830,19 @@ class TestContextSkipLogging:
         """
         from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 
-        orchestrator = AutoBuildOrchestrator(
-            repo_root=Path("/tmp/repo"),
-            max_turns=3,
-            enable_context=True,
-            context_loader=None,
-            worktree_manager=mock_worktree_manager,
-            agent_invoker=mock_agent_invoker,
-            progress_display=mock_progress_display,
-        )
+        # Ensure factory is None so context_loader and factory are both unavailable
+        with patch("guardkit.orchestrator.autobuild.get_factory", return_value=None), \
+             patch("guardkit.orchestrator.autobuild.get_graphiti", return_value=None):
+            orchestrator = AutoBuildOrchestrator(
+                repo_root=Path("/tmp/repo"),
+                max_turns=3,
+                enable_context=True,
+                context_loader=None,
+                worktree_manager=mock_worktree_manager,
+                agent_invoker=mock_agent_invoker,
+                progress_display=mock_progress_display,
+                enable_checkpoints=False,
+            )
 
         # Mock worktree
         mock_worktree = Mock()
@@ -856,7 +864,7 @@ class TestContextSkipLogging:
                 worktree=mock_worktree,
             )
             mock_logger.info.assert_any_call(
-                "Coach context retrieval skipped: context_loader not provided for TASK-TEST-001"
+                "Coach context retrieval skipped: no factory or loader for TASK-TEST-001"
             )
 
     def test_no_log_when_context_disabled(
@@ -917,35 +925,15 @@ class TestAutoInitContextLoader:
         mock_progress_display,
     ):
         """
-        Given enable_context=True, no context_loader, and Graphiti singleton available
+        Given enable_context=True, no context_loader, and Graphiti factory available
         When AutoBuildOrchestrator is initialized
-        Then _context_loader is auto-created with the Graphiti client.
+        Then _factory is stored for per-thread client creation.
         """
         from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 
-        mock_graphiti = MagicMock()
-        mock_graphiti.enabled = True
+        mock_factory = MagicMock()
 
-        with patch("guardkit.orchestrator.autobuild.get_graphiti", return_value=mock_graphiti) as mock_get, \
-             patch("guardkit.orchestrator.autobuild.AutoBuildContextLoader") as MockLoader:
-            # Prevent the import-based path; patch at module level
-            # The auto-init imports from guardkit.knowledge, so patch at the call site
-            pass
-
-        # Use a more targeted approach: patch the imports inside __init__
-        with patch.dict("sys.modules", {}):
-            pass
-
-        # Simplest approach: patch at the guardkit.knowledge level
-        mock_graphiti = MagicMock()
-        mock_graphiti.enabled = True
-
-        mock_loader_class = MagicMock()
-        mock_loader_instance = MagicMock()
-        mock_loader_class.return_value = mock_loader_instance
-
-        with patch("guardkit.knowledge.get_graphiti", return_value=mock_graphiti), \
-             patch("guardkit.knowledge.AutoBuildContextLoader", mock_loader_class):
+        with patch("guardkit.orchestrator.autobuild.get_factory", return_value=mock_factory):
             orchestrator = AutoBuildOrchestrator(
                 repo_root=Path("/tmp/repo"),
                 max_turns=3,
@@ -954,12 +942,10 @@ class TestAutoInitContextLoader:
                 worktree_manager=mock_worktree_manager,
                 agent_invoker=mock_agent_invoker,
                 progress_display=mock_progress_display,
+                enable_checkpoints=False,
             )
 
-        assert orchestrator._context_loader is mock_loader_instance
-        mock_loader_class.assert_called_once_with(
-            graphiti=mock_graphiti, verbose=False
-        )
+        assert orchestrator._factory is mock_factory
 
     def test_auto_init_skipped_when_context_loader_provided(
         self,
@@ -1145,10 +1131,9 @@ class TestAutoInitContextLoader:
         mock_graphiti = MagicMock()
         mock_graphiti.enabled = True
 
-        mock_loader_class = MagicMock()
+        mock_factory = MagicMock()
 
-        with patch("guardkit.knowledge.get_graphiti", return_value=mock_graphiti), \
-             patch("guardkit.knowledge.AutoBuildContextLoader", mock_loader_class):
+        with patch("guardkit.orchestrator.autobuild.get_factory", return_value=mock_factory):
             orchestrator = AutoBuildOrchestrator(
                 repo_root=Path("/tmp/repo"),
                 max_turns=3,
@@ -1158,11 +1143,10 @@ class TestAutoInitContextLoader:
                 worktree_manager=mock_worktree_manager,
                 agent_invoker=mock_agent_invoker,
                 progress_display=mock_progress_display,
+                enable_checkpoints=False,
             )
 
-        mock_loader_class.assert_called_once_with(
-            graphiti=mock_graphiti, verbose=True
-        )
+        assert orchestrator.verbose is True
 
     def test_auto_init_logs_success(
         self,
@@ -1171,17 +1155,15 @@ class TestAutoInitContextLoader:
         mock_progress_display,
     ):
         """
-        Given successful auto-init
+        Given successful factory initialization
         When AutoBuildOrchestrator is initialized
-        Then an INFO log 'Auto-initialized context_loader with Graphiti' is emitted.
+        Then an INFO log 'Stored Graphiti factory' is emitted.
         """
         from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 
-        mock_graphiti = MagicMock()
-        mock_graphiti.enabled = True
+        mock_factory = MagicMock()
 
-        with patch("guardkit.knowledge.get_graphiti", return_value=mock_graphiti), \
-             patch("guardkit.knowledge.AutoBuildContextLoader"), \
+        with patch("guardkit.orchestrator.autobuild.get_factory", return_value=mock_factory), \
              patch("guardkit.orchestrator.autobuild.logger") as mock_logger:
             orchestrator = AutoBuildOrchestrator(
                 repo_root=Path("/tmp/repo"),
@@ -1191,10 +1173,11 @@ class TestAutoInitContextLoader:
                 worktree_manager=mock_worktree_manager,
                 agent_invoker=mock_agent_invoker,
                 progress_display=mock_progress_display,
+                enable_checkpoints=False,
             )
 
         mock_logger.info.assert_any_call(
-            "Auto-initialized context_loader with Graphiti"
+            "Stored Graphiti factory for per-thread context loading"
         )
 
     def test_auto_init_logs_graphiti_unavailable(
@@ -1204,13 +1187,14 @@ class TestAutoInitContextLoader:
         mock_progress_display,
     ):
         """
-        Given get_graphiti() returns None
+        Given get_factory() returns None
         When AutoBuildOrchestrator is initialized
-        Then an INFO log 'Graphiti not available' is emitted.
+        Then an INFO log 'Graphiti factory not available' is emitted.
         """
         from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 
-        with patch("guardkit.knowledge.get_graphiti", return_value=None), \
+        with patch("guardkit.orchestrator.autobuild.get_factory", return_value=None), \
+             patch("guardkit.orchestrator.autobuild.get_graphiti", return_value=None), \
              patch("guardkit.orchestrator.autobuild.logger") as mock_logger:
             orchestrator = AutoBuildOrchestrator(
                 repo_root=Path("/tmp/repo"),
@@ -1220,10 +1204,11 @@ class TestAutoInitContextLoader:
                 worktree_manager=mock_worktree_manager,
                 agent_invoker=mock_agent_invoker,
                 progress_display=mock_progress_display,
+                enable_checkpoints=False,
             )
 
         mock_logger.info.assert_any_call(
-            "Graphiti not available, context retrieval disabled"
+            "Graphiti factory not available, context retrieval disabled"
         )
 
 
@@ -1330,15 +1315,19 @@ class TestContextStatusTracking:
         mock_result.report = {"summary": "test"}
         mock_agent_invoker.invoke_player = AsyncMock(return_value=mock_result)
 
-        orchestrator = AutoBuildOrchestrator(
-            repo_root=Path("/tmp/repo"),
-            max_turns=3,
-            enable_context=True,
-            context_loader=None,
-            worktree_manager=mock_worktree_manager,
-            agent_invoker=mock_agent_invoker,
-            progress_display=mock_progress_display,
-        )
+        # Ensure factory is None
+        with patch("guardkit.orchestrator.autobuild.get_factory", return_value=None), \
+             patch("guardkit.orchestrator.autobuild.get_graphiti", return_value=None):
+            orchestrator = AutoBuildOrchestrator(
+                repo_root=Path("/tmp/repo"),
+                max_turns=3,
+                enable_context=True,
+                context_loader=None,
+                worktree_manager=mock_worktree_manager,
+                agent_invoker=mock_agent_invoker,
+                progress_display=mock_progress_display,
+                enable_checkpoints=False,
+            )
         orchestrator._existing_worktree = mock_worktree
 
         orchestrator._invoke_player_safely(
@@ -1351,7 +1340,7 @@ class TestContextStatusTracking:
         cs = orchestrator._last_player_context_status
         assert cs is not None
         assert cs.status == "skipped"
-        assert cs.reason == "no context_loader"
+        assert cs.reason == "no factory or loader"
 
     def test_player_context_status_failed_on_exception(
         self,

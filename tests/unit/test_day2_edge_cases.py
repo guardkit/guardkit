@@ -30,10 +30,11 @@ from error_messages import format_file_error, format_validation_error, format_ca
 # ============================================================================
 
 class TestFileWriteFailureHandling:
-    """Test file write failure handling in review_modes.py."""
+    """Test file write failure handling in review_modes.py - SKIPPED (FullReviewHandler removed)."""
 
     def test_move_to_backlog_handles_write_failure(self, capsys):
-        """Test _move_task_to_backlog handles write failures gracefully."""
+        """Test _move_task_to_backlog handles write failures gracefully - SKIPPED."""
+        pytest.skip("FullReviewHandler no longer exists in production code")
         # Import FullReviewHandler
         from review_modes import FullReviewHandler
         from complexity_models import ImplementationPlan, ComplexityScore
@@ -86,7 +87,8 @@ class TestFileWriteFailureHandling:
             assert "Read-only file system" in captured.out
 
     def test_move_to_backlog_handles_permission_error(self, capsys):
-        """Test _move_task_to_backlog handles permission errors gracefully."""
+        """Test _move_task_to_backlog handles permission errors gracefully - SKIPPED."""
+        pytest.skip("FullReviewHandler no longer exists in production code")
         from review_modes import FullReviewHandler
         from complexity_models import ImplementationPlan, ComplexityScore
 
@@ -132,7 +134,8 @@ class TestFileWriteFailureHandling:
             assert "Permission denied" in captured.out
 
     def test_move_to_backlog_continues_on_error(self):
-        """Test _move_task_to_backlog continues execution even on write failure."""
+        """Test _move_task_to_backlog continues execution even on write failure - SKIPPED."""
+        pytest.skip("FullReviewHandler no longer exists in production code")
         from review_modes import FullReviewHandler
         from complexity_models import ImplementationPlan, ComplexityScore
 

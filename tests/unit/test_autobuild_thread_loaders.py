@@ -46,6 +46,8 @@ def mock_graphiti_client():
     client.initialize = AsyncMock(side_effect=mock_initialize)
     client.close = AsyncMock()
     client.enabled = True
+    client._pending_init = False  # Not pending init
+    client.is_initialized = True  # Already initialized
 
     return client
 
@@ -70,6 +72,8 @@ def mock_factory(mock_graphiti_client):
     """Create a mock GraphitiClientFactory."""
     factory = Mock()
     factory.create_client.return_value = mock_graphiti_client
+    # get_thread_client should return the same client for the same thread
+    factory.get_thread_client.return_value = mock_graphiti_client
     return factory
 
 
@@ -78,6 +82,7 @@ def mock_factory_failed(mock_graphiti_client_failed):
     """Create a mock GraphitiClientFactory that creates failing clients."""
     factory = Mock()
     factory.create_client.return_value = mock_graphiti_client_failed
+    factory.get_thread_client.return_value = mock_graphiti_client_failed
     return factory
 
 
@@ -150,8 +155,9 @@ class TestLoaderStorageWithEventLoop:
         # Set the factory
         orchestrator._factory = mock_factory
 
-        # Create a known event loop
+        # Create a known event loop and set it as the running loop
         loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
         try:
             # Call _get_thread_local_loader with the loop
@@ -175,6 +181,7 @@ class TestLoaderStorageWithEventLoop:
                 "Stored loop should match the loop passed in"
         finally:
             loop.close()
+            asyncio.set_event_loop(None)
 
     def test_get_thread_local_loader_returns_correct_loader(
         self,
@@ -203,6 +210,7 @@ class TestLoaderStorageWithEventLoop:
 
         orchestrator._factory = mock_factory
         loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
         try:
             # First call to create and cache
@@ -217,6 +225,7 @@ class TestLoaderStorageWithEventLoop:
                 "Cached loader should not be None"
         finally:
             loop.close()
+            asyncio.set_event_loop(None)
 
 
 # ============================================================================
@@ -363,6 +372,7 @@ class TestCleanupUsesStoredLoop:
 
         orchestrator._factory = mock_factory
         loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
         try:
             # Create a loader (stores loader + loop)
@@ -396,6 +406,7 @@ class TestCleanupUsesStoredLoop:
                 "_thread_loaders should be empty after cleanup"
         finally:
             loop.close()
+            asyncio.set_event_loop(None)
 
     def test_cleanup_handles_none_loader_gracefully(
         self,

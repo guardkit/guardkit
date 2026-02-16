@@ -49,7 +49,7 @@ def sample_dos_finding():
 def sample_rate_limit_finding():
     """Create a rate limiting finding (should be excluded)."""
     return SecurityFinding(
-        check_id="missing-rate-limit",
+        check_id="missing-rate-limiting",
         severity="low",
         description="Missing rate limiting on API endpoint",
         file_path="api.py",
@@ -63,7 +63,7 @@ def sample_rate_limit_finding():
 def sample_resource_management_finding():
     """Create a resource management finding (should be excluded)."""
     return SecurityFinding(
-        check_id="resource-leak",
+        check_id="resource-management-leak",
         severity="medium",
         description="Memory leak in connection pool",
         file_path="db.py",

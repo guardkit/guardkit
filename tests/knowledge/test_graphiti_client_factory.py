@@ -10,7 +10,7 @@ harmless ``RuntimeError('Event loop is closed')`` from httpx
 ``AsyncClient.aclose()`` from producing noisy ERROR log lines.
 
 Coverage Target: >=85%
-Test Count: 21 tests
+Test Count: 28 tests
 """
 
 import asyncio
@@ -128,19 +128,24 @@ class TestThreadLocalClient:
         assert factory.get_thread_client() is None
 
     def test_init_attempted_once_per_thread(self):
-        """get_thread_client only attempts init once per thread."""
+        """get_thread_client only attempts init once per thread.
+
+        TASK-GLF-003: get_thread_client now returns a pending-init client
+        instead of eagerly initializing. The client is returned with
+        _pending_init=True, and the consumer initializes on their own loop.
+        """
         config = GraphitiConfig(enabled=True)
         factory = GraphitiClientFactory(config)
 
         mock_client = MagicMock(spec=GraphitiClient)
-        mock_client.initialize = AsyncMock(return_value=False)
 
         with patch.object(factory, 'create_client', return_value=mock_client):
-            r1 = factory.get_thread_client()  # Attempts init, fails
-            r2 = factory.get_thread_client()  # Skips, returns None
+            r1 = factory.get_thread_client()  # Creates client with _pending_init
+            r2 = factory.get_thread_client()  # Returns cached client
 
-        assert r1 is None
-        assert r2 is None
+        assert r1 is mock_client
+        assert r1._pending_init is True
+        assert r2 is r1  # Same cached client
 
 
 # ============================================================================
@@ -297,125 +302,92 @@ class TestGetFactory:
 # ============================================================================
 
 
-class TestUnawaitedCoroutineWarningFix:
-    """Tests for coro.close() in get_thread_client error path.
+class TestLazyInitPendingFlag:
+    """Tests for TASK-GLF-003 lazy-init behavior in get_thread_client.
 
-    When new_event_loop + run_until_complete fails (e.g., FD exhaustion
-    causing OSError during event loop creation), the coroutine object
-    must be explicitly closed to suppress RuntimeWarning.
+    get_thread_client no longer creates a temporary event loop for
+    initialization. Instead, it returns a client with _pending_init=True,
+    and the consumer initializes on their own event loop to keep
+    FalkorDB Lock objects affine.
     """
 
-    def test_no_runtime_warning_when_new_event_loop_raises_os_error(self):
-        """No RuntimeWarning emitted when new_event_loop raises OSError (FD exhaustion)."""
-        import warnings
-
+    def test_sync_context_returns_pending_init_client(self):
+        """In sync context (no running loop), client is returned with _pending_init=True."""
         config = GraphitiConfig(enabled=True)
         factory = GraphitiClientFactory(config)
 
         mock_client = MagicMock(spec=GraphitiClient)
-        async def mock_init():
-            return True
-
-        mock_client.initialize = mock_init
 
         with patch.object(factory, 'create_client', return_value=mock_client), \
-             patch('asyncio.get_running_loop', side_effect=RuntimeError), \
-             patch('asyncio.new_event_loop', side_effect=OSError("[Errno 24] Too many open files")):
+             patch('asyncio.get_running_loop', side_effect=RuntimeError):
 
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                result = factory.get_thread_client()
+            result = factory.get_thread_client()
 
-            assert result is None
-            runtime_warnings = [x for x in w if issubclass(x.category, RuntimeWarning)]
-            assert len(runtime_warnings) == 0
+        assert result is mock_client
+        assert result._pending_init is True
 
-    def test_no_runtime_warning_when_run_until_complete_raises(self):
-        """No RuntimeWarning emitted on Exception from run_until_complete."""
-        import warnings
-
+    def test_no_event_loop_created_in_sync_context(self):
+        """No temporary event loop is created during get_thread_client."""
         config = GraphitiConfig(enabled=True)
         factory = GraphitiClientFactory(config)
 
         mock_client = MagicMock(spec=GraphitiClient)
-        async def mock_init():
-            return True
-
-        mock_client.initialize = mock_init
-
-        mock_loop = MagicMock()
-        mock_loop.run_until_complete.side_effect = RuntimeError("connection refused")
 
         with patch.object(factory, 'create_client', return_value=mock_client), \
              patch('asyncio.get_running_loop', side_effect=RuntimeError), \
-             patch('asyncio.new_event_loop', return_value=mock_loop):
+             patch('asyncio.new_event_loop') as mock_new_loop:
 
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                result = factory.get_thread_client()
+            result = factory.get_thread_client()
 
-            assert result is None
-            runtime_warnings = [x for x in w if issubclass(x.category, RuntimeWarning)]
-            assert len(runtime_warnings) == 0
-            # Loop should be closed even on error
-            mock_loop.close.assert_called_once()
+        mock_new_loop.assert_not_called()
 
-    def test_successful_init_with_new_event_loop(self):
-        """Successful init with new_event_loop + run_until_complete works."""
+    def test_initialize_not_called_during_get_thread_client(self):
+        """client.initialize() is NOT called during get_thread_client (deferred)."""
         config = GraphitiConfig(enabled=True)
         factory = GraphitiClientFactory(config)
 
         mock_client = MagicMock(spec=GraphitiClient)
         mock_client.initialize = AsyncMock(return_value=True)
 
-        mock_loop = MagicMock()
-        mock_loop.run_until_complete.return_value = True
-
         with patch.object(factory, 'create_client', return_value=mock_client), \
-             patch('asyncio.get_running_loop', side_effect=RuntimeError), \
-             patch('asyncio.new_event_loop', return_value=mock_loop):
+             patch('asyncio.get_running_loop', side_effect=RuntimeError):
 
             result = factory.get_thread_client()
 
         assert result is mock_client
-        mock_loop.close.assert_called_once()
+        mock_client.initialize.assert_not_called()
 
-    def test_failed_init_returns_none_with_new_event_loop(self):
-        """run_until_complete returning False still returns None correctly."""
+    def test_async_context_defers_connection_no_pending_flag(self):
+        """In async context (running loop), client is deferred without _pending_init."""
         config = GraphitiConfig(enabled=True)
         factory = GraphitiClientFactory(config)
 
         mock_client = MagicMock(spec=GraphitiClient)
-        mock_client.initialize = AsyncMock(return_value=False)
-
         mock_loop = MagicMock()
-        mock_loop.run_until_complete.return_value = False
+        mock_loop.is_running.return_value = True
 
         with patch.object(factory, 'create_client', return_value=mock_client), \
-             patch('asyncio.get_running_loop', side_effect=RuntimeError), \
-             patch('asyncio.new_event_loop', return_value=mock_loop):
+             patch('asyncio.get_running_loop', return_value=mock_loop):
 
             result = factory.get_thread_client()
 
-        assert result is None
-        mock_loop.close.assert_called_once()
+        assert result is mock_client
+        # _pending_init is NOT set in the async path (uses existing deferred logic)
 
-    def test_loop_always_closed_even_on_success(self):
-        """Event loop is always closed after run_until_complete (success path)."""
+    def test_cached_client_returned_on_second_call(self):
+        """Second call returns cached client without creating a new one."""
         config = GraphitiConfig(enabled=True)
         factory = GraphitiClientFactory(config)
 
         mock_client = MagicMock(spec=GraphitiClient)
-        mock_loop = MagicMock()
-        mock_loop.run_until_complete.return_value = True
 
         with patch.object(factory, 'create_client', return_value=mock_client), \
-             patch('asyncio.get_running_loop', side_effect=RuntimeError), \
-             patch('asyncio.new_event_loop', return_value=mock_loop):
+             patch('asyncio.get_running_loop', side_effect=RuntimeError):
 
-            factory.get_thread_client()
+            r1 = factory.get_thread_client()
+            r2 = factory.get_thread_client()
 
-        mock_loop.close.assert_called_once()
+        assert r1 is r2 is mock_client
 
 
 # ============================================================================
@@ -540,20 +512,108 @@ class TestHttpxCleanupErrorSuppression:
         assert len(original_calls) == 1  # Still 1, not 2
         loop.close()
 
-    def test_handler_installed_during_get_thread_client(self):
-        """_suppress_httpx_cleanup_errors is called during get_thread_client init."""
+    def test_no_handler_installed_during_lazy_get_thread_client(self):
+        """TASK-GLF-003: _suppress_httpx_cleanup_errors is NOT called during
+        get_thread_client since no temporary event loop is created."""
         config = GraphitiConfig(enabled=True)
         factory = GraphitiClientFactory(config)
 
         mock_client = MagicMock(spec=GraphitiClient)
-        mock_loop = MagicMock()
-        mock_loop.run_until_complete.return_value = True
 
         with patch.object(factory, 'create_client', return_value=mock_client), \
              patch('asyncio.get_running_loop', side_effect=RuntimeError), \
-             patch('asyncio.new_event_loop', return_value=mock_loop), \
              patch('guardkit.knowledge.graphiti_client._suppress_httpx_cleanup_errors') as mock_suppress:
 
             factory.get_thread_client()
 
-        mock_suppress.assert_called_once_with(mock_loop)
+        mock_suppress.assert_not_called()
+
+
+# ============================================================================
+# 8. Connectivity Check Tests (TASK-GLF-005)
+# ============================================================================
+
+
+class TestConnectivityCheck:
+    """Tests for GraphitiClientFactory.check_connectivity().
+
+    Verifies the lightweight TCP socket connectivity check that avoids
+    full Graphiti client initialization (no FalkorDB Lock objects,
+    no asyncio event loops, no build_indices_and_constraints).
+    """
+
+    def test_disabled_config_returns_false(self):
+        """check_connectivity returns False when config disabled."""
+        config = GraphitiConfig(enabled=False)
+        factory = GraphitiClientFactory(config)
+        assert factory.check_connectivity() is False
+
+    def test_successful_connection_returns_true(self):
+        """check_connectivity returns True when TCP connect succeeds."""
+        config = GraphitiConfig(enabled=True)
+        factory = GraphitiClientFactory(config)
+
+        mock_sock = MagicMock()
+        with patch("socket.create_connection", return_value=mock_sock):
+            result = factory.check_connectivity()
+
+        assert result is True
+        mock_sock.close.assert_called_once()
+
+    def test_connection_refused_returns_false(self):
+        """check_connectivity returns False on ConnectionRefusedError."""
+        config = GraphitiConfig(enabled=True)
+        factory = GraphitiClientFactory(config)
+
+        with patch("socket.create_connection", side_effect=ConnectionRefusedError):
+            result = factory.check_connectivity()
+
+        assert result is False
+
+    def test_socket_timeout_returns_false(self):
+        """check_connectivity returns False on socket.timeout."""
+        import socket as socket_mod
+        config = GraphitiConfig(enabled=True)
+        factory = GraphitiClientFactory(config)
+
+        with patch("socket.create_connection", side_effect=socket_mod.timeout):
+            result = factory.check_connectivity()
+
+        assert result is False
+
+    def test_generic_exception_returns_false(self):
+        """check_connectivity returns False on unexpected exceptions."""
+        config = GraphitiConfig(enabled=True)
+        factory = GraphitiClientFactory(config)
+
+        with patch("socket.create_connection", side_effect=RuntimeError("unexpected")):
+            result = factory.check_connectivity()
+
+        assert result is False
+
+    def test_uses_config_host_and_port(self):
+        """check_connectivity uses falkordb_host and falkordb_port from config."""
+        config = GraphitiConfig(
+            enabled=True,
+            falkordb_host="myhost",
+            falkordb_port=9999,
+        )
+        factory = GraphitiClientFactory(config)
+
+        mock_sock = MagicMock()
+        with patch("socket.create_connection", return_value=mock_sock) as mock_connect:
+            factory.check_connectivity(timeout=3.0)
+
+        mock_connect.assert_called_once_with(("myhost", 9999), timeout=3.0)
+
+    def test_no_client_created_during_check(self):
+        """check_connectivity does NOT create a GraphitiClient."""
+        config = GraphitiConfig(enabled=True)
+        factory = GraphitiClientFactory(config)
+
+        mock_sock = MagicMock()
+        with patch("socket.create_connection", return_value=mock_sock), \
+             patch.object(factory, "create_client") as mock_create:
+            factory.check_connectivity()
+
+        mock_create.assert_not_called()

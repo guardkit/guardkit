@@ -609,6 +609,8 @@ class AutoBuildOrchestrator:
         self._factory: Optional[GraphitiClientFactory] = None
         # TASK-ACR-005: Store event loop reference with each loader for proper cleanup
         self._thread_loaders: Dict[int, Tuple[Optional[AutoBuildContextLoader], asyncio.AbstractEventLoop]] = {}
+        # TASK-GLF-002: Suppress Graphiti operations during shutdown
+        self._shutting_down: bool = False
 
         # Store factory reference for per-thread client creation (TASK-FIX-GTP2)
         # Replaces shared singleton pattern that caused cross-loop hangs in parallel mode
@@ -2758,6 +2760,11 @@ class AutoBuildOrchestrator:
         The capture is fire-and-forget with graceful degradation - if
         Graphiti is unavailable, execution continues without blocking.
         """
+        # TASK-GLF-002: Skip capture during shutdown to avoid noisy errors
+        if getattr(self, '_shutting_down', False):
+            logger.debug("Skipping turn state capture (shutting down)")
+            return
+
         try:
             # Use passed task_id or default to "unknown"
             current_task_id = task_id or "unknown"
@@ -2892,7 +2899,7 @@ class AutoBuildOrchestrator:
             if graphiti is None:
                 # Fallback to module-level get_graphiti() for non-factory usage
                 graphiti = get_graphiti()
-            if graphiti and graphiti.enabled:
+            if graphiti and graphiti.enabled and self.enable_context:
                 # TASK-ACR-007: Use stored loop from _thread_loaders or create a fresh one.
                 # Never call asyncio.get_event_loop() which is fragile in worker threads.
                 created_loop = False
@@ -3145,21 +3152,37 @@ class AutoBuildOrchestrator:
             loader, _stored_loop = self._thread_loaders[thread_id]
             return loader
 
-        # Create and initialize a per-thread client
+        # TASK-GLF-003: Get client from factory (may be pending-init) and
+        # initialize on the consumer's event loop so FalkorDB Locks are affine.
         try:
-            client = self._factory.create_client()
-            success = loop.run_until_complete(client.initialize())
-            if success:
-                loader = AutoBuildContextLoader(
-                    graphiti=client, verbose=self.verbose
-                )
-                self._thread_loaders[thread_id] = (loader, loop)
-                logger.info(f"Created per-thread context loader for thread {thread_id}")
-                return loader
-            else:
+            client = self._factory.get_thread_client()
+            if client is None:
                 self._thread_loaders[thread_id] = (None, loop)
-                logger.info(f"Per-thread Graphiti client init failed for thread {thread_id}")
+                logger.info(f"Per-thread Graphiti client not available for thread {thread_id}")
                 return None
+
+            # Lazy initialization: if pending, initialize on THIS loop
+            if getattr(client, '_pending_init', False):
+                success = loop.run_until_complete(client.initialize())
+                client._pending_init = False
+                if not success:
+                    self._thread_loaders[thread_id] = (None, loop)
+                    logger.info(f"Per-thread Graphiti client init failed for thread {thread_id}")
+                    return None
+            elif not client.is_initialized:
+                # Client exists but not initialized and not pending — try to init
+                success = loop.run_until_complete(client.initialize())
+                if not success:
+                    self._thread_loaders[thread_id] = (None, loop)
+                    logger.info(f"Per-thread Graphiti client init failed for thread {thread_id}")
+                    return None
+
+            loader = AutoBuildContextLoader(
+                graphiti=client, verbose=self.verbose
+            )
+            self._thread_loaders[thread_id] = (loader, loop)
+            logger.info(f"Created per-thread context loader for thread {thread_id}")
+            return loader
         except Exception as e:
             self._thread_loaders[thread_id] = (None, loop)
             logger.warning(f"Error creating per-thread context loader: {e}")
@@ -3174,7 +3197,9 @@ class AutoBuildOrchestrator:
         TASK-ACR-005: Uses stored event loop reference to avoid cross-loop errors.
         TASK-ACR-006: Three-branch cleanup based on loop state to prevent
         RuntimeError when locks are bound to different event loops.
+        TASK-GLF-002: Sets _shutting_down flag to suppress late Graphiti operations.
         """
+        self._shutting_down = True  # TASK-GLF-002: Prevent late Graphiti ops
         for thread_id, (loader, stored_loop) in list(self._thread_loaders.items()):
             if loader is None or loader.graphiti is None:
                 continue

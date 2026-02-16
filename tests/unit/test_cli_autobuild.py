@@ -354,10 +354,10 @@ def test_task_command_mode_from_frontmatter(
     # Execute without mode option (should use frontmatter value)
     result = cli_runner.invoke(task, ["TASK-AB-001"])
 
-    # Verify orchestrator initialized with frontmatter mode
+    # Verify orchestrator initialized with frontmatter mode (default changed to 'tdd')
     mock_orchestrator_class.assert_called_once()
     call_kwargs = mock_orchestrator_class.call_args[1]
-    assert call_kwargs["development_mode"] == "standard"
+    assert call_kwargs["development_mode"] == "tdd"
 
 
 @patch("guardkit.cli.autobuild._require_sdk")
@@ -852,10 +852,10 @@ def test_task_command_sdk_timeout_from_frontmatter(
     # Execute without sdk-timeout option (should use frontmatter value)
     result = cli_runner.invoke(task, ["TASK-AB-001"])
 
-    # Verify orchestrator initialized with frontmatter sdk_timeout
+    # Verify orchestrator initialized with frontmatter sdk_timeout (default changed to 1200)
     mock_orchestrator_class.assert_called_once()
     call_kwargs = mock_orchestrator_class.call_args[1]
-    assert call_kwargs["sdk_timeout"] == 900
+    assert call_kwargs["sdk_timeout"] == 1200
 
 
 @patch("guardkit.cli.autobuild._require_sdk")
@@ -915,10 +915,10 @@ def test_task_command_sdk_timeout_default_value(
     # Execute without sdk-timeout option
     result = cli_runner.invoke(task, ["TASK-AB-001"])
 
-    # Verify orchestrator initialized with default sdk_timeout (900 per TASK-FIX-SDKT)
+    # Verify orchestrator initialized with default sdk_timeout (1200 - updated default)
     mock_orchestrator_class.assert_called_once()
     call_kwargs = mock_orchestrator_class.call_args[1]
-    assert call_kwargs["sdk_timeout"] == 900
+    assert call_kwargs["sdk_timeout"] == 1200
 
 
 @patch("guardkit.cli.autobuild._require_sdk")

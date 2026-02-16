@@ -720,7 +720,7 @@ class TestDisplayPhase28CheckpointComprehensive:
 
         captured = capsys.readouterr()
         assert "[A]pprove  - Proceed with implementation" in captured.out
-        assert "[M]odify   - Adjust plan and regenerate" in captured.out
+        assert "[M]odify   - Adjust plan before implementation" in captured.out
         assert "[C]ancel   - Stop task execution" in captured.out
 
     def test_display_with_plan_path(self, capsys):

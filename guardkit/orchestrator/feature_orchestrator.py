@@ -944,51 +944,41 @@ The detailed specifications are in the task markdown file.
             return True  # Context already disabled, nothing to check
 
         try:
-            client = get_graphiti()
-            if client is None or not client.enabled:
-                logger.info("Graphiti client not available, disabling context loading")
+            # TASK-GLF-003: Use lightweight TCP ping instead of full Graphiti
+            # client initialization. Creating a temporary event loop for
+            # client.initialize() or _check_health() leaves FalkorDB asyncio.Lock
+            # objects bound to a dead loop, causing "Lock bound to different
+            # event loop" errors when the client is later used on the worker's loop.
+            from guardkit.knowledge.graphiti_client import get_factory
+            factory = get_factory()
+            if factory is None or not factory.config.enabled:
+                logger.info("Graphiti factory not available or disabled, disabling context loading")
                 console.print(
-                    "[yellow]⚠[/yellow] Graphiti client not available — "
+                    "[yellow]⚠[/yellow] Graphiti not available — "
                     "context loading disabled for this run"
                 )
                 self.enable_context = False
                 return False
 
-            # Quick health check with 5-second timeout
-            # Use a fresh event loop for the health check
-            loop = asyncio.new_event_loop()
-            try:
-                healthy = loop.run_until_complete(
-                    asyncio.wait_for(client._check_health(), timeout=5.0)
-                )
-            finally:
-                loop.close()
-
-            if not healthy:
+            # Delegate to factory's lightweight connectivity check
+            # (no FalkorDB Lock creation, no asyncio required)
+            if not factory.check_connectivity():
                 logger.warning(
-                    "FalkorDB health check failed — disabling Graphiti context for this run"
+                    "FalkorDB connectivity check failed (%s:%d) — "
+                    "disabling Graphiti context for this run",
+                    factory.config.falkordb_host, factory.config.falkordb_port,
                 )
                 console.print(
-                    "[yellow]⚠[/yellow] FalkorDB health check failed — "
+                    "[yellow]⚠[/yellow] FalkorDB not reachable — "
                     "disabling Graphiti context for this run"
                 )
                 self.enable_context = False
                 return False
 
-            logger.info("FalkorDB pre-flight check passed")
+            logger.info("FalkorDB pre-flight TCP check passed")
             console.print("[green]✓[/green] FalkorDB pre-flight check passed")
             return True
 
-        except asyncio.TimeoutError:
-            logger.warning(
-                "FalkorDB pre-flight check timed out (5s) — disabling Graphiti context for this run"
-            )
-            console.print(
-                "[yellow]⚠[/yellow] FalkorDB pre-flight check timed out (5s) — "
-                "disabling Graphiti context for this run"
-            )
-            self.enable_context = False
-            return False
         except Exception as e:
             logger.warning(
                 f"FalkorDB pre-flight check failed: {e} — disabling Graphiti context for this run"

@@ -1736,6 +1736,64 @@ Follow the decision format specified in your agent definition.
 
         return result
 
+    def _create_synthetic_direct_mode_report(
+        self,
+        task_id: str,
+        turn: int,
+    ) -> Dict[str, Any]:
+        """Create synthetic Player report from git changes for direct mode.
+
+        When SDK invocation completes but doesn't produce player_turn_N.json,
+        this method generates a valid report by detecting filesystem changes.
+        This prevents unnecessary retries and state recovery.
+
+        Args:
+            task_id: Task identifier
+            turn: Turn number (1-based)
+
+        Returns:
+            Dict conforming to PLAYER_REPORT_SCHEMA
+        """
+        report: Dict[str, Any] = {
+            "task_id": task_id,
+            "turn": turn,
+            "files_modified": [],
+            "files_created": [],
+            "tests_written": [],
+            "tests_run": False,
+            "tests_passed": False,
+            "test_output_summary": "",
+            "implementation_notes": "Direct mode SDK invocation completed (synthetic report)",
+            "concerns": [],
+            "requirements_addressed": [],
+            "requirements_remaining": [],
+        }
+
+        try:
+            git_changes = self._detect_git_changes()
+            if git_changes:
+                report["files_modified"] = sorted(git_changes.get("modified", []))
+                report["files_created"] = sorted(git_changes.get("created", []))
+
+                # Identify test files from all changes
+                all_files = report["files_modified"] + report["files_created"]
+                report["tests_written"] = sorted([
+                    f for f in all_files
+                    if "test_" in f.lower() or f.lower().endswith("_test.py")
+                    or "/tests/" in f or f.startswith("tests/")
+                ])
+
+                if all_files:
+                    report["implementation_notes"] = (
+                        f"Direct mode SDK invocation completed "
+                        f"(git-detected: {len(report['files_modified'])} modified, "
+                        f"{len(report['files_created'])} created)"
+                    )
+        except Exception as e:
+            logger.warning(f"Git change detection failed for synthetic report: {e}")
+
+        return report
+
     def _find_task_file(self, task_id: str) -> Optional[Path]:
         """Find task file in standard task directories.
 
@@ -2502,6 +2560,23 @@ Follow the decision format specified in your agent definition.
             # This mitigates race conditions where SDK subprocess writes report
             # but parent process doesn't see it immediately
             await asyncio.sleep(0.1)
+
+            # Check if SDK wrote the report; create synthetic if missing
+            # In direct mode, the SDK Player sometimes doesn't write
+            # player_turn_N.json, causing retries to fail and triggering
+            # unnecessary state recovery (wastes a turn)
+            report_path = self._get_report_path(task_id, turn, "player")
+            if not report_path.exists():
+                logger.info(
+                    f"SDK did not write player_turn_{turn}.json for {task_id}, "
+                    f"creating synthetic report from git detection"
+                )
+                synthetic_report = self._create_synthetic_direct_mode_report(
+                    task_id, turn
+                )
+                self._write_player_report_for_direct_mode(
+                    task_id, turn, synthetic_report, success=True
+                )
 
             # Load and validate Player report with retry logic
             # Handles filesystem buffering race condition where report file

@@ -300,8 +300,8 @@ class TestComponentStatusSeeding:
 
         await seed_component_status(mock_client)
 
-        # Should create 2 episodes
-        assert mock_client.add_episode.call_count == 2
+        # Should create 6 episodes (see seed_component_status.py docstring)
+        assert mock_client.add_episode.call_count == 6
 
 
 class TestIntegrationPointsSeeding:

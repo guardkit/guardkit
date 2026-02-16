@@ -337,27 +337,18 @@ class TestSeedFeatureBuildADRs:
 class TestCLICommand:
     """Test guardkit graphiti seed-adrs CLI command."""
 
-    @patch('guardkit.cli.graphiti._get_client_and_config')
-    @patch('guardkit.cli.graphiti._run_async')
-    def test_seed_adrs_command_exists(self, mock_run_async, mock_get_client):
+    def test_seed_adrs_command_exists(self):
         """Test that seed-adrs command is registered."""
         from guardkit.cli.graphiti import graphiti
 
         # Check command is registered
         assert 'seed-adrs' in [cmd.name for cmd in graphiti.commands.values()]
 
-    @patch('guardkit.cli.graphiti._get_client_and_config')
-    @patch('guardkit.cli.graphiti._run_async')
-    @patch('guardkit.cli.graphiti.seed_feature_build_adrs', new_callable=AsyncMock)
-    def test_seed_adrs_command_calls_seeding_function(self, mock_seed, mock_run_async, mock_get_client):
-        """Test seed-adrs command calls seed_feature_build_adrs."""
+    @patch('guardkit.cli.graphiti._cmd_seed_adrs', new_callable=AsyncMock)
+    def test_seed_adrs_command_calls_seeding_function(self, mock_cmd_seed_adrs):
+        """Test seed-adrs command calls _cmd_seed_adrs."""
         from click.testing import CliRunner
         from guardkit.cli.graphiti import graphiti
-
-        mock_client = AsyncMock()
-        mock_client.enabled = True
-        mock_get_client.return_value = (mock_client, Mock(enabled=True, host='localhost', port=8000))
-        mock_run_async.return_value = True
 
         runner = CliRunner()
         result = runner.invoke(graphiti, ['seed-adrs'])
@@ -365,17 +356,11 @@ class TestCLICommand:
         # Command should have attempted to seed
         assert result.exit_code == 0
 
-    @patch('guardkit.cli.graphiti._get_client_and_config')
-    @patch('guardkit.cli.graphiti._run_async')
-    def test_seed_adrs_command_force_flag_supported(self, mock_run_async, mock_get_client):
+    @patch('guardkit.cli.graphiti._cmd_seed_adrs', new_callable=AsyncMock)
+    def test_seed_adrs_command_force_flag_supported(self, mock_cmd_seed_adrs):
         """Test seed-adrs command supports --force flag."""
         from click.testing import CliRunner
         from guardkit.cli.graphiti import graphiti
-
-        mock_client = AsyncMock()
-        mock_client.enabled = True
-        mock_get_client.return_value = (mock_client, Mock(enabled=True, host='localhost', port=8000))
-        mock_run_async.return_value = True
 
         runner = CliRunner()
         result = runner.invoke(graphiti, ['seed-adrs', '--force'])
@@ -383,16 +368,11 @@ class TestCLICommand:
         # Should not error on force flag
         assert result.exit_code == 0
 
-    @patch('guardkit.cli.graphiti._get_client_and_config')
-    @patch('guardkit.cli.graphiti._run_async')
-    def test_seed_adrs_command_handles_disabled_graphiti(self, mock_run_async, mock_get_client):
+    @patch('guardkit.cli.graphiti._cmd_seed_adrs', new_callable=AsyncMock)
+    def test_seed_adrs_command_handles_disabled_graphiti(self, mock_cmd_seed_adrs):
         """Test seed-adrs command handles disabled Graphiti gracefully."""
         from click.testing import CliRunner
         from guardkit.cli.graphiti import graphiti
-
-        mock_client = AsyncMock()
-        mock_client.enabled = False
-        mock_get_client.return_value = (mock_client, Mock(enabled=False, host='localhost', port=8000))
 
         runner = CliRunner()
         result = runner.invoke(graphiti, ['seed-adrs'])

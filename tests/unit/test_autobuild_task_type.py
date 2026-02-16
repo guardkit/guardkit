@@ -118,6 +118,7 @@ def orchestrator_with_mocks(
         repo_root=Path("/tmp/repo"),
         max_turns=3,
         enable_pre_loop=False,  # Disable pre-loop for faster tests
+        enable_checkpoints=False,  # Disable checkpoints for tests (no git repo)
         worktree_manager=mock_worktree_manager,
         agent_invoker=mock_agent_invoker,
         progress_display=mock_progress_display,
@@ -493,10 +494,9 @@ class TestCoachValidatorReceivesTaskType:
             call_kwargs = mock_validator_instance.validate.call_args.kwargs
             task_dict = call_kwargs["task"]
 
-            # Currently acceptance_criteria is not passed from _execute_turn,
-            # so it defaults to [] in _invoke_coach_safely
+            # acceptance_criteria is now passed through from orchestrate()
             assert "acceptance_criteria" in task_dict
-            assert task_dict["acceptance_criteria"] == []  # Defaults to empty list
+            assert task_dict["acceptance_criteria"] == ["AC-001", "AC-002", "AC-003"]
 
 
 # ============================================================================

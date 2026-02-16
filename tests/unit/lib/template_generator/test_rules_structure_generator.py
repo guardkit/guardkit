@@ -305,7 +305,8 @@ def test_generate_guidance_rules_with_enhanced_content(mock_analysis, mock_agent
     # Should generate slim guidance, not full content
     assert len(guidance.encode('utf-8')) < 3000
     assert "## Boundaries" in guidance
-    assert "## See Also" in guidance
+    # Section title changed from "See Also" to "Full Documentation"
+    assert "Full Documentation" in guidance or "See Also" in guidance
     assert "agents/react-state-specialist.md" in guidance
 
 

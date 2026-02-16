@@ -7,15 +7,22 @@ from pathlib import Path
 global_path = Path(__file__).parent.parent / "installer" / "core"
 sys.path.insert(0, str(global_path))
 
+# Extend lib.__path__ so "from lib.X" resolves modules from both
+# installer/core/lib/ AND installer/core/commands/lib/
+import lib
+commands_lib_path = global_path / "commands" / "lib"
+if str(commands_lib_path) not in lib.__path__:
+    lib.__path__.append(str(commands_lib_path))
+
 # Also add lib directory for direct imports (for backward compatibility)
 lib_path = global_path / "lib"
 if str(lib_path) not in sys.path:
     sys.path.insert(0, str(lib_path))
 
 # Also add commands/lib for plan_modifier imports
-commands_lib_path = Path(__file__).parent.parent / "installer" / "core" / "commands" / "lib"
-if str(commands_lib_path) not in sys.path:
-    sys.path.insert(0, str(commands_lib_path))
+commands_lib_str = str(commands_lib_path)
+if commands_lib_str not in sys.path:
+    sys.path.insert(0, commands_lib_str)
 
 
 def normalize_path(path):

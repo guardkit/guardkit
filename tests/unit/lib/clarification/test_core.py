@@ -29,13 +29,13 @@ class TestQuestion:
             category="scope",
             text="How comprehensive should the implementation be?",
             options=["[M]inimal", "[S]tandard", "[C]omplete"],
-            default="S",
+            default="[S]tandard",
             rationale="Standard implementation is typical for most tasks",
         )
         assert q.id == "scope"
         assert q.category == "scope"
         assert q.text == "How comprehensive should the implementation be?"
-        assert q.default == "S"
+        assert q.default == "[S]tandard"
         assert len(q.options) == 3
         assert "[M]inimal" in q.options
 
@@ -46,55 +46,83 @@ class TestQuestion:
             category="test",
             text="Test question?",
             options=["[Y]es", "[N]o"],
+            default="[Y]es",
+            rationale="Yes is the safe default",
         )
         assert q.id == "test"
         assert q.category == "test"
-        assert q.default is None
-        assert q.rationale is None
+        assert q.default == "[Y]es"
+        assert q.rationale == "Yes is the safe default"
 
-    def test_question_serialization(self):
-        """Test question serialization to dict and back."""
+    def test_question_validation_default_in_options(self):
+        """Test that Question validates default is in options."""
+        # Valid: default in options
         q = Question(
             id="test",
             category="scope",
             text="Test question?",
             options=["[Y]es", "[N]o"],
-            default="Y",
+            default="[Y]es",
             rationale="Testing is important",
         )
-        data = q.to_dict()
+        assert q.default == "[Y]es"
 
-        # Verify dict structure
-        assert data["id"] == "test"
-        assert data["category"] == "scope"
-        assert data["text"] == "Test question?"
-        assert data["options"] == ["[Y]es", "[N]o"]
-        assert data["default"] == "Y"
-        assert data["rationale"] == "Testing is important"
+        # Invalid: default not in options
+        with pytest.raises(ValueError, match="Default .* must be in options"):
+            Question(
+                id="test",
+                category="scope",
+                text="Test question?",
+                options=["[Y]es", "[N]o"],
+                default="[M]aybe",
+                rationale="Testing is important",
+            )
 
-        # Verify deserialization
-        restored = Question.from_dict(data)
-        assert restored.id == q.id
-        assert restored.category == q.category
-        assert restored.text == q.text
-        assert restored.options == q.options
-        assert restored.default == q.default
-        assert restored.rationale == q.rationale
-
-    def test_question_serialization_partial(self):
-        """Test serialization with optional fields missing."""
+    def test_question_validation_empty_fields(self):
+        """Test that Question validates required fields are not empty."""
+        # Valid question
         q = Question(
             id="test",
             category="test",
             text="Test?",
             options=["A", "B"],
+            default="A",
+            rationale="A is default",
         )
-        data = q.to_dict()
-        restored = Question.from_dict(data)
+        assert q.id == "test"
 
-        assert restored.id == q.id
-        assert restored.default is None
-        assert restored.rationale is None
+        # Invalid: empty ID
+        with pytest.raises(ValueError, match="Question ID cannot be empty"):
+            Question(
+                id="",
+                category="test",
+                text="Test?",
+                options=["A", "B"],
+                default="A",
+                rationale="A is default",
+            )
+
+        # Invalid: empty text
+        with pytest.raises(ValueError, match="Question text cannot be empty"):
+            Question(
+                id="test",
+                category="test",
+                text="",
+                options=["A", "B"],
+                default="A",
+                rationale="A is default",
+            )
+
+        # Invalid: no options
+        with pytest.raises(ValueError, match="Question must have at least one option"):
+            Question(
+                id="test",
+                category="test",
+                text="Test?",
+                options=[],
+                default="A",
+                rationale="A is default",
+            )
 
 
 class TestDecision:
@@ -132,8 +160,8 @@ class TestDecision:
         assert d.default_used is False
         assert "explicitly chose" in d.rationale
 
-    def test_decision_serialization(self):
-        """Test decision serialization to dict and back."""
+    def test_decision_properties(self):
+        """Test Decision backward compatibility properties."""
         d = Decision(
             question_id="testing",
             category="quality",
@@ -143,24 +171,27 @@ class TestDecision:
             default_used=False,
             rationale="High-risk feature needs integration tests",
         )
-        data = d.to_dict()
 
-        # Verify dict structure
-        assert data["question_id"] == "testing"
-        assert data["category"] == "quality"
-        assert data["answer"] == "integration"
-        assert data["default_used"] is False
+        # Test backward compatibility properties
+        assert d.is_default == d.default_used
+        assert d.question == d.question_text
 
-        # Verify deserialization
-        restored = Decision.from_dict(data)
-        assert restored.question_id == d.question_id
-        assert restored.category == d.category
-        assert restored.answer == d.answer
-        assert restored.default_used == d.default_used
+        # Test with default_used=True
+        d2 = Decision(
+            question_id="scope",
+            category="scope",
+            question_text="How comprehensive?",
+            answer="standard",
+            answer_display="Standard",
+            default_used=True,
+            rationale="Default selected",
+        )
+        assert d2.is_default is True
+        assert d2.question == "How comprehensive?"
 
-    def test_decision_with_timestamp(self):
-        """Test decision timestamp handling."""
-        now = datetime.now()
+    def test_decision_confidence_validation(self):
+        """Test Decision validates confidence is 0-1."""
+        # Valid: confidence in range
         d = Decision(
             question_id="test",
             category="test",
@@ -169,14 +200,35 @@ class TestDecision:
             answer_display="Yes",
             default_used=False,
             rationale="Test",
-            timestamp=now,
+            confidence=0.8,
         )
-        assert d.timestamp == now
+        assert d.confidence == 0.8
 
-        # Serialize and restore
-        data = d.to_dict()
-        restored = Decision.from_dict(data)
-        assert restored.timestamp is not None
+        # Invalid: confidence > 1
+        with pytest.raises(ValueError, match="Confidence must be between 0 and 1"):
+            Decision(
+                question_id="test",
+                category="test",
+                question_text="Test?",
+                answer="yes",
+                answer_display="Yes",
+                default_used=False,
+                rationale="Test",
+                confidence=1.5,
+            )
+
+        # Invalid: confidence < 0
+        with pytest.raises(ValueError, match="Confidence must be between 0 and 1"):
+            Decision(
+                question_id="test",
+                category="test",
+                question_text="Test?",
+                answer="yes",
+                answer_display="Yes",
+                default_used=False,
+                rationale="Test",
+                confidence=-0.1,
+            )
 
 
 class TestClarificationContext:
@@ -211,27 +263,27 @@ This is a test task.
         ctx = ClarificationContext(
             context_type="implementation_planning",
             mode="full",
-            decisions=[
-                Decision(
-                    question_id="scope",
-                    category="scope",
-                    question_text="How comprehensive?",
-                    answer="standard",
-                    answer_display="Standard - With error handling",
-                    default_used=True,
-                    rationale="Default selected",
-                ),
-                Decision(
-                    question_id="testing",
-                    category="quality",
-                    question_text="What testing level?",
-                    answer="unit",
-                    answer_display="Unit tests only",
-                    default_used=False,
-                    rationale="User chose unit tests",
-                ),
-            ],
         )
+
+        # Add decisions
+        ctx.add_decision(Decision(
+            question_id="scope",
+            category="scope",
+            question_text="How comprehensive?",
+            answer="standard",
+            answer_display="Standard - With error handling",
+            default_used=True,
+            rationale="Default selected",
+        ))
+        ctx.add_decision(Decision(
+            question_id="testing",
+            category="quality",
+            question_text="What testing level?",
+            answer="unit",
+            answer_display="Unit tests only",
+            default_used=False,
+            rationale="User chose unit tests",
+        ))
 
         # Persist to frontmatter
         ctx.persist_to_frontmatter(temp_task_file)
@@ -276,7 +328,7 @@ title: Test task
 complexity: 5
 clarification:
   context: implementation_planning
-  timestamp: 2025-12-08T14:30:00
+  timestamp: '2025-12-08T14:30:00'
   mode: full
   decisions:
     - question_id: scope
@@ -309,19 +361,19 @@ This is a test task.
         assert ctx.mode == "full"
         assert len(ctx.decisions) == 2
 
-        # Verify first decision
-        scope_decision = ctx.decisions[0]
-        assert scope_decision.question_id == "scope"
-        assert scope_decision.category == "scope"
-        assert scope_decision.answer == "standard"
-        assert scope_decision.default_used is True
-
-        # Verify second decision
-        testing_decision = ctx.decisions[1]
+        # Decisions are ordered: explicit first, then defaults
+        # "testing" is explicit (default_used=false), "scope" is default (default_used=true)
+        testing_decision = ctx.decisions[0]
         assert testing_decision.question_id == "testing"
         assert testing_decision.category == "quality"
         assert testing_decision.answer == "unit"
         assert testing_decision.default_used is False
+
+        scope_decision = ctx.decisions[1]
+        assert scope_decision.question_id == "scope"
+        assert scope_decision.category == "scope"
+        assert scope_decision.answer == "standard"
+        assert scope_decision.default_used is True
 
     def test_load_from_frontmatter_no_clarification(self, temp_task_file):
         """Test loading from frontmatter when no clarification exists."""
@@ -345,6 +397,7 @@ id: TASK-test
 title: Test task
 clarification:
   context: implementation_planning
+  timestamp: '2025-12-08T14:30:00'
   mode: quick
   decisions: []
 ---
@@ -358,41 +411,43 @@ clarification:
         assert ctx.mode == "quick"
         assert len(ctx.decisions) == 0
 
-    def test_context_equality(self):
-        """Test ClarificationContext equality comparison."""
-        ctx1 = ClarificationContext(
+    def test_context_add_decision(self):
+        """Test adding decisions to ClarificationContext."""
+        ctx = ClarificationContext(
             context_type="implementation_planning",
             mode="full",
-            decisions=[
-                Decision(
-                    question_id="scope",
-                    category="scope",
-                    question_text="How comprehensive?",
-                    answer="standard",
-                    answer_display="Standard",
-                    default_used=True,
-                    rationale="Default",
-                )
-            ],
         )
 
-        ctx2 = ClarificationContext(
-            context_type="implementation_planning",
-            mode="full",
-            decisions=[
-                Decision(
-                    question_id="scope",
-                    category="scope",
-                    question_text="How comprehensive?",
-                    answer="standard",
-                    answer_display="Standard",
-                    default_used=True,
-                    rationale="Default",
-                )
-            ],
+        # Add explicit decision
+        explicit = Decision(
+            question_id="scope",
+            category="scope",
+            question_text="How comprehensive?",
+            answer="standard",
+            answer_display="Standard",
+            default_used=False,
+            rationale="User chose standard",
         )
+        ctx.add_decision(explicit)
 
-        assert ctx1 == ctx2
+        # Add default decision
+        default = Decision(
+            question_id="testing",
+            category="quality",
+            question_text="What testing level?",
+            answer="unit",
+            answer_display="Unit tests",
+            default_used=True,
+            rationale="Default selected",
+        )
+        ctx.add_decision(default)
+
+        # Verify decisions are categorized correctly
+        assert len(ctx.explicit_decisions) == 1
+        assert len(ctx.assumed_defaults) == 1
+        assert ctx.answered_count == 2
+        assert ctx.explicit_decisions[0] == explicit
+        assert ctx.assumed_defaults[0] == default
 
     def test_context_modes(self):
         """Test different clarification modes."""
@@ -400,7 +455,6 @@ clarification:
         ctx_skip = ClarificationContext(
             context_type="implementation_planning",
             mode="skip",
-            decisions=[],
         )
         assert ctx_skip.mode == "skip"
         assert len(ctx_skip.decisions) == 0
@@ -409,7 +463,6 @@ clarification:
         ctx_quick = ClarificationContext(
             context_type="implementation_planning",
             mode="quick",
-            decisions=[],
         )
         assert ctx_quick.mode == "quick"
 
@@ -417,7 +470,6 @@ clarification:
         ctx_full = ClarificationContext(
             context_type="implementation_planning",
             mode="full",
-            decisions=[],
         )
         assert ctx_full.mode == "full"
 
@@ -427,36 +479,32 @@ clarification:
         ctx1 = ClarificationContext(
             context_type="implementation_planning",
             mode="full",
-            decisions=[
-                Decision(
-                    question_id="scope",
-                    category="scope",
-                    question_text="How comprehensive?",
-                    answer="standard",
-                    answer_display="Standard",
-                    default_used=True,
-                    rationale="Default",
-                )
-            ],
         )
+        ctx1.add_decision(Decision(
+            question_id="scope",
+            category="scope",
+            question_text="How comprehensive?",
+            answer="standard",
+            answer_display="Standard",
+            default_used=True,
+            rationale="Default",
+        ))
         ctx1.persist_to_frontmatter(temp_task_file)
 
         # Second persist with updated context
         ctx2 = ClarificationContext(
             context_type="implementation_planning",
             mode="full",
-            decisions=[
-                Decision(
-                    question_id="scope",
-                    category="scope",
-                    question_text="How comprehensive?",
-                    answer="complete",
-                    answer_display="Complete",
-                    default_used=False,
-                    rationale="User updated",
-                )
-            ],
         )
+        ctx2.add_decision(Decision(
+            question_id="scope",
+            category="scope",
+            question_text="How comprehensive?",
+            answer="complete",
+            answer_display="Complete",
+            default_used=False,
+            rationale="User updated",
+        ))
         ctx2.persist_to_frontmatter(temp_task_file)
 
         # Load and verify latest persisted

@@ -132,10 +132,10 @@ class TestPreLoopQualityGates:
 
         result = asyncio.run(gates.execute("TASK-001", {"no_questions": True}))
 
-        # Verify delegation
+        # Verify delegation - execute adds skip_arch_review to options
         mock_task_work_interface.execute_design_phase.assert_called_once_with(
             "TASK-001",
-            {"no_questions": True},
+            {"no_questions": True, "skip_arch_review": False},
         )
 
         # Verify result type
@@ -1115,10 +1115,10 @@ class TestSdkTimeoutPropagation:
     """Test sdk_timeout propagation through PreLoopQualityGates."""
 
     def test_default_sdk_timeout_is_900(self, tmp_worktree):
-        """Test default sdk_timeout is 900 seconds (TASK-FIX-SDKT)."""
+        """Test default sdk_timeout is 1200 seconds (updated default)."""
         gates = PreLoopQualityGates(worktree_path=str(tmp_worktree))
 
-        assert gates.sdk_timeout == 900
+        assert gates.sdk_timeout == 1200
 
     def test_custom_sdk_timeout_stored(self, tmp_worktree):
         """Test custom sdk_timeout is stored in instance."""

@@ -467,7 +467,11 @@ class TestTurnStateEntitySerialization:
         assert isinstance(episode_body, dict)
 
     def test_to_episode_body_contains_entity_type(self):
-        """Test serialization includes entity_type field."""
+        """Test serialization produces dict with all fields.
+
+        Note: entity_type is NOT included in to_episode_body() - it's injected
+        by GraphitiClient according to the docstring.
+        """
         started = datetime(2025, 1, 29, 10, 0, 0)
         completed = datetime(2025, 1, 29, 10, 15, 0)
 
@@ -487,8 +491,10 @@ class TestTurnStateEntitySerialization:
 
         episode_body = entity.to_episode_body()
 
-        assert "entity_type" in episode_body
-        assert episode_body["entity_type"] == "turn_state"
+        # Verify it returns a dict with required fields
+        assert isinstance(episode_body, dict)
+        assert episode_body["id"] == "TURN-FEAT-GE-1"
+        assert episode_body["mode"] == "fresh_start"
 
     def test_to_episode_body_contains_all_required_fields(self):
         """Test serialization includes all required fields."""
@@ -891,7 +897,7 @@ class TestCaptureTurnState:
 
     @pytest.mark.asyncio
     async def test_capture_turn_state_uses_entity_body(self):
-        """Test capture uses entity.to_episode_body() for content."""
+        """Test capture uses entity.to_episode_body() for episode_body."""
         mock_client = AsyncMock()
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock(return_value="episode_123")
@@ -916,11 +922,11 @@ class TestCaptureTurnState:
         await capture_turn_state(mock_client, entity)
 
         call_args = mock_client.add_episode.call_args
-        content = call_args[1]["content"]
+        episode_body_json = call_args[1]["episode_body"]
 
-        # Content should contain serialized entity data
-        assert "TURN-FEAT-GE-1" in content
-        assert "implemented" in content
+        # episode_body should be a JSON string containing serialized entity data
+        assert "TURN-FEAT-GE-1" in episode_body_json
+        assert "implemented" in episode_body_json
 
 
 # ============================================================================
@@ -1470,8 +1476,8 @@ class TestIntegrationRoundTrip:
         """Test that multiple turns can be captured and queried."""
         captured_turns = []
 
-        async def mock_add_episode(name, content, group_id, source_description):
-            turn_data = {"name": name, "content": content, "group_id": group_id}
+        async def mock_add_episode(**kwargs):
+            turn_data = {"name": kwargs.get("name"), "episode_body": kwargs.get("episode_body"), "group_id": kwargs.get("group_id")}
             captured_turns.append(turn_data)
             return f"episode_{len(captured_turns)}"
 
@@ -1509,10 +1515,10 @@ class TestIntegrationRoundTrip:
         """Test that turn N can access context from turn N-1."""
         turns_storage = []
 
-        async def mock_add_episode(name, content, group_id, source_description):
+        async def mock_add_episode(**kwargs):
             turn_data = {
-                "name": name,
-                "content": content,
+                "name": kwargs.get("name"),
+                "episode_body": kwargs.get("episode_body"),
                 "parsed": {}  # Would be parsed in real implementation
             }
             turns_storage.append(turn_data)
@@ -1699,7 +1705,9 @@ class TestCreateTurnStateFromAutoBuild:
         # Should be serializable
         episode_body = entity.to_episode_body()
         assert isinstance(episode_body, dict)
-        assert episode_body["entity_type"] == "turn_state"
+        # entity_type is NOT in the dict - injected by GraphitiClient
+        assert "id" in episode_body
+        assert "mode" in episode_body
 
         # Should be JSON serializable
         json_str = json.dumps(episode_body)

@@ -313,11 +313,11 @@ class TestTaskOutcomeEpisodeSerialization:
 
         episode_body = outcome.to_episode_body()
 
-        assert isinstance(episode_body, str)
+        assert isinstance(episode_body, dict)
         assert len(episode_body) > 0
-        assert "OUT-a1b2c3d4" in episode_body
-        assert "TASK-1234" in episode_body
-        assert "Test Task" in episode_body
+        assert episode_body["id"] == "OUT-a1b2c3d4"
+        assert episode_body["task_id"] == "TASK-1234"
+        assert episode_body["task_title"] == "Test Task"
 
     def test_to_episode_body_contains_all_fields(self):
         """Test serialization includes all populated fields."""
@@ -348,20 +348,20 @@ class TestTaskOutcomeEpisodeSerialization:
 
         episode_body = outcome.to_episode_body()
 
-        # Check all fields are present
-        assert "OAuth2 Implementation" in episode_body
-        assert "Add OAuth2 with PKCE" in episode_body
-        assert "Used standard OAuth2 library" in episode_body
-        assert "Strategy Pattern" in episode_body
-        assert "CORS issues" in episode_body
-        assert "Validate redirect URIs" in episode_body
-        assert "15" in episode_body or "tests_written: 15" in episode_body
-        assert "92.5" in episode_body or "test_coverage: 92.5" in episode_body
-        assert "FEAT-AUTH" in episode_body
-        assert "ADR-001" in episode_body
+        # Check all fields are present in dict
+        assert episode_body["task_title"] == "OAuth2 Implementation"
+        assert episode_body["task_requirements"] == "Add OAuth2 with PKCE"
+        assert episode_body["approach_used"] == "Used standard OAuth2 library"
+        assert episode_body["patterns_used"] == ["Strategy Pattern"]
+        assert episode_body["problems_encountered"] == ["CORS issues"]
+        assert episode_body["lessons_learned"] == ["Validate redirect URIs"]
+        assert episode_body["tests_written"] == 15
+        assert episode_body["test_coverage"] == 92.5
+        assert episode_body["feature_id"] == "FEAT-AUTH"
+        assert episode_body["related_adr_ids"] == ["ADR-001"]
 
     def test_to_episode_body_format(self):
-        """Test episode body format is human-readable."""
+        """Test episode body format is dictionary."""
         outcome = TaskOutcome(
             id="OUT-a1b2c3d4",
             outcome_type=OutcomeType.TASK_COMPLETED,
@@ -374,10 +374,12 @@ class TestTaskOutcomeEpisodeSerialization:
 
         episode_body = outcome.to_episode_body()
 
-        # Should be structured text (not just JSON dump)
-        assert "\n" in episode_body  # Has line breaks
-        # Should contain field labels
-        assert any(label in episode_body.lower() for label in ["task", "outcome", "summary"])
+        # Should be structured dict
+        assert isinstance(episode_body, dict)
+        # Should contain expected keys
+        assert "task_id" in episode_body
+        assert "outcome_type" in episode_body
+        assert "summary" in episode_body
 
     def test_to_episode_body_handles_none_values(self):
         """Test serialization handles None values gracefully."""
@@ -399,9 +401,11 @@ class TestTaskOutcomeEpisodeSerialization:
 
         episode_body = outcome.to_episode_body()
 
-        # Should not crash and should produce valid output
-        assert isinstance(episode_body, str)
+        # Should not crash and should produce valid dict
+        assert isinstance(episode_body, dict)
         assert len(episode_body) > 0
+        assert episode_body["approach_used"] is None
+        assert episode_body["feature_id"] is None
 
     def test_to_episode_body_handles_empty_lists(self):
         """Test serialization handles empty lists."""
@@ -421,8 +425,10 @@ class TestTaskOutcomeEpisodeSerialization:
 
         episode_body = outcome.to_episode_body()
 
-        assert isinstance(episode_body, str)
+        assert isinstance(episode_body, dict)
         assert len(episode_body) > 0
+        assert episode_body["patterns_used"] == []
+        assert episode_body["related_adr_ids"] == []
 
     def test_to_episode_body_includes_timestamps(self):
         """Test serialization includes timestamp information."""
@@ -444,8 +450,10 @@ class TestTaskOutcomeEpisodeSerialization:
 
         episode_body = outcome.to_episode_body()
 
-        # Should include timestamp information
-        assert "2025" in episode_body or "150" in episode_body
+        # Should include timestamp information as ISO strings
+        assert "2025" in episode_body["started_at"]
+        assert "2025" in episode_body["completed_at"]
+        assert episode_body["duration_minutes"] == 150
 
     def test_to_episode_body_success_false(self):
         """Test serialization for failed outcomes."""
@@ -461,7 +469,8 @@ class TestTaskOutcomeEpisodeSerialization:
 
         episode_body = outcome.to_episode_body()
 
-        assert "failed" in episode_body.lower() or "success: false" in episode_body.lower()
+        assert episode_body["success"] is False
+        assert episode_body["outcome_type"] == "TASK_FAILED"
 
     def test_to_episode_body_special_characters(self):
         """Test serialization handles special characters."""
@@ -478,8 +487,10 @@ class TestTaskOutcomeEpisodeSerialization:
         episode_body = outcome.to_episode_body()
 
         # Should handle special characters without crashing
-        assert isinstance(episode_body, str)
+        assert isinstance(episode_body, dict)
         assert len(episode_body) > 0
+        assert '"' in episode_body["task_title"]
+        assert '<' in episode_body["task_requirements"]
 
 
 # ============================================================================

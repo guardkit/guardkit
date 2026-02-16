@@ -156,6 +156,7 @@ def orchestrator_with_mocks(
         agent_invoker=mock_agent_invoker,
         progress_display=mock_progress_display,
         pre_loop_gates=mock_pre_loop_gates,
+        enable_checkpoints=False,  # Disable checkpoints for tests (no git repo)
     )
 
 
@@ -639,11 +640,23 @@ class TestLoopPhase:
         mock_agent_invoker,
     ):
         """Test loop phase exits with max_turns_exceeded after 5 turns."""
-        # Mock all 5 turns with feedback (never approve)
+        # Mock all 5 turns with unique feedback to avoid stall detection
         mock_agent_invoker.invoke_player.return_value = make_player_result()
-        mock_agent_invoker.invoke_coach.return_value = make_coach_result(
-            decision="feedback"
-        )
+        turn_counter = [0]
+        def unique_coach(*args, **kwargs):
+            turn_counter[0] += 1
+            return make_coach_result(
+                decision="feedback",
+                turn=turn_counter[0],
+                issues=[{
+                    "type": "missing_requirement",
+                    "severity": "major",
+                    "description": f"Issue in turn {turn_counter[0]}",
+                    "requirement": "Security",
+                    "suggestion": f"Fix issue {turn_counter[0]}",
+                }],
+            )
+        mock_agent_invoker.invoke_coach.side_effect = unique_coach
 
         # Execute loop phase (max_turns=5)
         turn_history, final_decision = orchestrator_with_mocks._loop_phase(
@@ -1121,10 +1134,25 @@ class TestIntegration:
     ):
         """Test orchestration exits after max_turns."""
         # Mock all turns with feedback (never approve)
+        # Use unique feedback per turn to avoid stall detection triggering early
         mock_agent_invoker.invoke_player.return_value = make_player_result()
-        mock_agent_invoker.invoke_coach.return_value = make_coach_result(
-            decision="feedback"
-        )
+        turn_counter = [0]
+
+        async def unique_coach(*args, **kwargs):
+            turn_counter[0] += 1
+            return make_coach_result(
+                decision="feedback",
+                turn=turn_counter[0],
+                issues=[{
+                    "type": "missing_requirement",
+                    "severity": "major",
+                    "description": f"Issue in turn {turn_counter[0]}",
+                    "requirement": "Security",
+                    "suggestion": f"Fix issue {turn_counter[0]}",
+                }],
+            )
+
+        mock_agent_invoker.invoke_coach.side_effect = unique_coach
 
         # Execute orchestration
         result = orchestrator_with_mocks.orchestrate(
@@ -1591,6 +1619,7 @@ autobuild_state:
             agent_invoker=mock_agent_invoker,
             progress_display=mock_progress_display,
             pre_loop_gates=mock_pre_loop_gates,
+            enable_checkpoints=False,  # Disable git checkpoints (no git repo in test)
         )
 
         # Mock 2 turns: feedback then approve
@@ -1708,7 +1737,7 @@ class TestSdkTimeoutPropagationToPreLoop:
         mock_progress_display,
         mock_worktree,
     ):
-        """Test default sdk_timeout (900) is propagated to PreLoopQualityGates."""
+        """Test default sdk_timeout (1200) is propagated to PreLoopQualityGates."""
         with patch(
             "guardkit.orchestrator.autobuild.PreLoopQualityGates"
         ) as mock_gates_cls:
@@ -1734,7 +1763,7 @@ class TestSdkTimeoutPropagationToPreLoop:
             orchestrator = AutoBuildOrchestrator(
                 repo_root=Path("/tmp/test-repo"),
                 max_turns=5,
-                # No sdk_timeout specified - should use default 900
+                # No sdk_timeout specified - should use default 1200
                 worktree_manager=mock_worktree_manager,
                 agent_invoker=mock_agent_invoker,
                 progress_display=mock_progress_display,
@@ -1750,26 +1779,26 @@ class TestSdkTimeoutPropagationToPreLoop:
             mock_gates_cls.assert_called_once()
             call_kwargs = mock_gates_cls.call_args[1]
             assert "sdk_timeout" in call_kwargs
-            assert call_kwargs["sdk_timeout"] == 900
+            assert call_kwargs["sdk_timeout"] == 1200
 
     def test_sdk_timeout_stored_in_orchestrator(self):
         """Test sdk_timeout is stored correctly in orchestrator."""
         orchestrator = AutoBuildOrchestrator(
             repo_root=Path.cwd(),
             max_turns=5,
-            sdk_timeout=1200,
+            sdk_timeout=1800,
         )
 
-        assert orchestrator.sdk_timeout == 1200
+        assert orchestrator.sdk_timeout == 1800
 
     def test_sdk_timeout_default_value(self):
-        """Test sdk_timeout defaults to 900 if not specified."""
+        """Test sdk_timeout defaults to 1200 if not specified."""
         orchestrator = AutoBuildOrchestrator(
             repo_root=Path.cwd(),
             max_turns=5,
         )
 
-        assert orchestrator.sdk_timeout == 900
+        assert orchestrator.sdk_timeout == 1200
 
     def test_injected_pre_loop_gates_bypasses_creation(
         self,
@@ -2787,6 +2816,57 @@ class TestTurnStateCapture:
                 task_id="TASK-TEST-001",
             )
 
+    def test_capture_turn_state_respects_enable_context_false(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test that _capture_turn_state skips Graphiti ops when enable_context=False.
+
+        TASK-GLF-001: When health check fails and sets enable_context=False,
+        _capture_turn_state should skip all Graphiti operations instead of
+        producing unnecessary 'Episode creation request failed' warnings.
+        """
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+            enable_context=False,
+        )
+
+        player_result = make_player_result()
+        coach_result = make_coach_result(decision="approve")
+
+        turn_record = TurnRecord(
+            turn=1,
+            player_result=player_result,
+            coach_result=coach_result,
+            decision="approve",
+            feedback=None,
+            timestamp="2025-01-29T10:00:00Z",
+        )
+
+        # Mock an enabled Graphiti client — should still be skipped
+        mock_graphiti = AsyncMock()
+        mock_graphiti.enabled = True
+        mock_graphiti.add_episode = AsyncMock()
+
+        with patch(
+            "guardkit.orchestrator.autobuild.get_graphiti",
+            return_value=mock_graphiti,
+        ):
+            orchestrator._capture_turn_state(
+                turn_record=turn_record,
+                acceptance_criteria=["AC-001: Test criterion"],
+                task_id="TASK-TEST-001",
+            )
+
+        # Graphiti add_episode should NOT have been called
+        mock_graphiti.add_episode.assert_not_called()
+
     def test_capture_turn_state_handles_error_turn(
         self,
         mock_worktree_manager,
@@ -3375,9 +3455,10 @@ class TestPerThreadGraphiti:
         from guardkit.knowledge.graphiti_client import GraphitiClientFactory
 
         mock_client = AsyncMock()
+        mock_client._pending_init = True
         mock_client.initialize = AsyncMock(return_value=True)
         mock_factory = Mock(spec=GraphitiClientFactory)
-        mock_factory.create_client.return_value = mock_client
+        mock_factory.get_thread_client.return_value = mock_client
 
         orch = AutoBuildOrchestrator(
             repo_root=Path.cwd(),
@@ -3390,7 +3471,7 @@ class TestPerThreadGraphiti:
         try:
             loader = orch._get_thread_local_loader(loop)
             assert loader is not None
-            mock_factory.create_client.assert_called_once()
+            mock_factory.get_thread_client.assert_called_once()
             mock_client.initialize.assert_called_once()
             assert loader.graphiti is mock_client
         finally:
@@ -3401,9 +3482,10 @@ class TestPerThreadGraphiti:
         from guardkit.knowledge.graphiti_client import GraphitiClientFactory
 
         mock_client = AsyncMock()
+        mock_client._pending_init = True
         mock_client.initialize = AsyncMock(return_value=True)
         mock_factory = Mock(spec=GraphitiClientFactory)
-        mock_factory.create_client.return_value = mock_client
+        mock_factory.get_thread_client.return_value = mock_client
 
         orch = AutoBuildOrchestrator(
             repo_root=Path.cwd(),
@@ -3417,8 +3499,8 @@ class TestPerThreadGraphiti:
             loader1 = orch._get_thread_local_loader(loop)
             loader2 = orch._get_thread_local_loader(loop)
             assert loader1 is loader2
-            # create_client should only be called once (cached)
-            mock_factory.create_client.assert_called_once()
+            # get_thread_client should only be called once (cached)
+            mock_factory.get_thread_client.assert_called_once()
         finally:
             loop.close()
 
@@ -3427,9 +3509,10 @@ class TestPerThreadGraphiti:
         from guardkit.knowledge.graphiti_client import GraphitiClientFactory
 
         mock_client = AsyncMock()
+        mock_client._pending_init = True
         mock_client.initialize = AsyncMock(return_value=False)
         mock_factory = Mock(spec=GraphitiClientFactory)
-        mock_factory.create_client.return_value = mock_client
+        mock_factory.get_thread_client.return_value = mock_client
 
         orch = AutoBuildOrchestrator(
             repo_root=Path.cwd(),
@@ -3616,12 +3699,16 @@ class TestPerThreadGraphiti:
         mock_graphiti = AsyncMock()
         mock_graphiti.enabled = True
 
-        orch = AutoBuildOrchestrator(
-            repo_root=Path.cwd(),
-            max_turns=5,
-            enable_context=False,
-        )
-        # No factory set
+        with patch(
+            "guardkit.orchestrator.autobuild.get_factory",
+            return_value=None,
+        ):
+            orch = AutoBuildOrchestrator(
+                repo_root=Path.cwd(),
+                max_turns=5,
+                enable_context=True,
+            )
+        # No factory available
         assert orch._factory is None
 
         player_result = make_player_result()
