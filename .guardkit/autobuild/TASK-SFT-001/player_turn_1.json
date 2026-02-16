@@ -1,0 +1,91 @@
+{
+  "task_id": "TASK-SFT-001",
+  "turn": 1,
+  "files_modified": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A/pyproject.toml",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A/pytest.ini"
+  ],
+  "files_created": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A/.guardkit/autobuild/TASK-SFT-001/player_turn_1.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A/tests/fixtures/minimal-spec.md",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A/tests/seam/__init__.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A/tests/seam/conftest.py"
+  ],
+  "tests_written": [],
+  "tests_run": true,
+  "tests_passed": false,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation",
+  "concerns": [],
+  "requirements_addressed": [
+    "tests/seam/ directory exists with __init__.py",
+    "tests/seam/conftest.py provides shared fixtures",
+    "pytest.ini or pyproject.toml registers @pytest.mark.seam marker",
+    "tests/seam/ tests are discovered and run by pytest tests/seam/",
+    "Existing tests in tests/integration/ are NOT moved",
+    "tests/fixtures/minimal-spec.md fixture file created"
+  ],
+  "requirements_remaining": [],
+  "tests_passed_count": 0,
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "tests/seam/ directory exists with __init__.py",
+      "status": "complete",
+      "evidence": "Created tests/seam/__init__.py with module docstring describing seam test purpose",
+      "test_file": null,
+      "implementation_files": [
+        "tests/seam/__init__.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "tests/seam/conftest.py provides shared fixtures: graphiti_mock_client, cli_runner, tmp_task_dir, minimal_spec_fixture",
+      "status": "complete",
+      "evidence": "Created conftest.py with all four fixtures. graphiti_mock_client is an AsyncMock with .enabled=True and records upsert calls. cli_runner is a configured Click CliRunner. tmp_task_dir creates complete task directory structure. minimal_spec_fixture returns path to minimal-spec.md.",
+      "test_file": null,
+      "implementation_files": [
+        "tests/seam/conftest.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "pytest.ini or pyproject.toml registers @pytest.mark.seam marker",
+      "status": "complete",
+      "evidence": "Added seam marker to both pytest.ini and pyproject.toml [tool.pytest.ini_options] markers list. Verified with 'pytest --markers' showing '@pytest.mark.seam: Seam (technology boundary) integration tests'",
+      "test_file": null,
+      "implementation_files": [
+        "pytest.ini",
+        "pyproject.toml"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "tests/seam/ tests are discovered and run by pytest tests/seam/",
+      "status": "complete",
+      "evidence": "Ran 'pytest tests/seam/ -v' successfully. 0 items collected (scaffolding only, no test files per AC). Directory is discoverable and conftest.py pytest_configure registers the seam marker.",
+      "test_file": null,
+      "implementation_files": [
+        "tests/seam/conftest.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Existing tests in tests/integration/test_system_plan_seams.py and tests/integration/test_planning_module_seams.py are NOT moved",
+      "status": "complete",
+      "evidence": "Verified both files still exist at original locations: tests/integration/test_system_plan_seams.py (43991 bytes) and tests/integration/test_planning_module_seams.py (24081 bytes)",
+      "test_file": null,
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "tests/fixtures/minimal-spec.md fixture file created for system-plan seam tests",
+      "status": "complete",
+      "evidence": "Created tests/fixtures/minimal-spec.md with minimal valid architecture specification containing System Context, Components, Crosscutting Concerns, and Architecture Decisions sections",
+      "test_file": null,
+      "implementation_files": [
+        "tests/fixtures/minimal-spec.md"
+      ]
+    }
+  ]
+}

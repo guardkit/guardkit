@@ -3777,6 +3777,178 @@ class TestCompletionPromisesMatching:
 
 
 # ============================================================================
+# Test Seam Test Recommendation (TASK-SFT-009)
+# ============================================================================
+
+
+class TestSeamTestRecommendation:
+    """Test seam test recommendation feature in CoachValidator."""
+
+    def test_seam_test_check_skipped_for_scaffolding(self, tmp_worktree):
+        """Seam test check skipped when seam_tests_recommended=False."""
+        from guardkit.models.task_types import TaskType, get_profile
+
+        validator = CoachValidator(str(tmp_worktree))
+        profile = get_profile(TaskType.SCAFFOLDING)
+        task_work_results = {
+            "tests_written": ["tests/test_config.py"],
+        }
+
+        issues = validator._check_seam_test_recommendation(task_work_results, profile)
+
+        assert len(issues) == 0
+
+    def test_seam_test_check_skipped_for_documentation(self, tmp_worktree):
+        """Seam test check skipped for DOCUMENTATION task type."""
+        from guardkit.models.task_types import TaskType, get_profile
+
+        validator = CoachValidator(str(tmp_worktree))
+        profile = get_profile(TaskType.DOCUMENTATION)
+        task_work_results = {
+            "tests_written": [],
+        }
+
+        issues = validator._check_seam_test_recommendation(task_work_results, profile)
+
+        assert len(issues) == 0
+
+    def test_seam_test_check_runs_for_feature(self, tmp_worktree):
+        """Seam test check runs when seam_tests_recommended=True (FEATURE)."""
+        from guardkit.models.task_types import TaskType, get_profile
+
+        validator = CoachValidator(str(tmp_worktree))
+        profile = get_profile(TaskType.FEATURE)
+        task_work_results = {
+            "tests_written": ["tests/test_feature.py"],
+        }
+
+        issues = validator._check_seam_test_recommendation(task_work_results, profile)
+
+        # Should recommend seam tests since no seam/contract/boundary tests
+        assert len(issues) == 1
+        assert issues[0]["category"] == "seam_test_recommendation"
+        assert issues[0]["severity"] == "consider"
+
+    def test_seam_test_check_runs_for_refactor(self, tmp_worktree):
+        """Seam test check runs when seam_tests_recommended=True (REFACTOR)."""
+        from guardkit.models.task_types import TaskType, get_profile
+
+        validator = CoachValidator(str(tmp_worktree))
+        profile = get_profile(TaskType.REFACTOR)
+        task_work_results = {
+            "tests_written": ["tests/test_migration.py"],
+        }
+
+        issues = validator._check_seam_test_recommendation(task_work_results, profile)
+
+        # Should recommend seam tests since no seam/contract/boundary tests
+        assert len(issues) == 1
+        assert issues[0]["category"] == "seam_test_recommendation"
+
+    def test_no_warning_when_seam_tests_present(self, tmp_worktree):
+        """No warning when seam tests are detected in tests_written."""
+        from guardkit.models.task_types import TaskType, get_profile
+
+        validator = CoachValidator(str(tmp_worktree))
+        profile = get_profile(TaskType.FEATURE)
+        task_work_results = {
+            "tests_written": ["tests/test_seam_api.py", "tests/test_feature.py"],
+        }
+
+        issues = validator._check_seam_test_recommendation(task_work_results, profile)
+
+        # No warning - seam test detected
+        assert len(issues) == 0
+
+    def test_no_warning_with_contract_tests(self, tmp_worktree):
+        """No warning when contract tests are present."""
+        from guardkit.models.task_types import TaskType, get_profile
+
+        validator = CoachValidator(str(tmp_worktree))
+        profile = get_profile(TaskType.FEATURE)
+        task_work_results = {
+            "tests_written": ["tests/test_contract_validation.py"],
+        }
+
+        issues = validator._check_seam_test_recommendation(task_work_results, profile)
+
+        assert len(issues) == 0
+
+    def test_no_warning_with_boundary_tests(self, tmp_worktree):
+        """No warning when boundary tests are present."""
+        from guardkit.models.task_types import TaskType, get_profile
+
+        validator = CoachValidator(str(tmp_worktree))
+        profile = get_profile(TaskType.FEATURE)
+        task_work_results = {
+            "tests_written": ["tests/test_boundary_checks.py"],
+        }
+
+        issues = validator._check_seam_test_recommendation(task_work_results, profile)
+
+        assert len(issues) == 0
+
+    def test_no_warning_with_integration_tests(self, tmp_worktree):
+        """No warning when integration tests are present (pattern match)."""
+        from guardkit.models.task_types import TaskType, get_profile
+
+        validator = CoachValidator(str(tmp_worktree))
+        profile = get_profile(TaskType.FEATURE)
+        task_work_results = {
+            "tests_written": ["tests/test_integration_api.py"],
+        }
+
+        issues = validator._check_seam_test_recommendation(task_work_results, profile)
+
+        assert len(issues) == 0
+
+    def test_no_warning_when_no_tests_written(self, tmp_worktree):
+        """No warning when tests_written is empty (other gates handle this)."""
+        from guardkit.models.task_types import TaskType, get_profile
+
+        validator = CoachValidator(str(tmp_worktree))
+        profile = get_profile(TaskType.FEATURE)
+        task_work_results = {
+            "tests_written": [],
+        }
+
+        issues = validator._check_seam_test_recommendation(task_work_results, profile)
+
+        # No warning - empty tests_written triggers zero-test anomaly instead
+        assert len(issues) == 0
+
+    def test_seam_test_recommendation_is_non_blocking(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """Seam test recommendation does not block approval."""
+        # Write passing task-work results without seam tests
+        results = make_task_work_results()
+        results["tests_written"] = ["tests/test_feature.py"]
+        write_task_work_results(task_work_results_dir, results)
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="15 passed in 1.45s",
+                stderr="",
+            )
+
+            validator = CoachValidator(str(tmp_worktree))
+            result = validator.validate("TASK-001", 1, make_task())
+
+        # Should approve despite missing seam tests (soft gate)
+        assert result.decision == "approve"
+        # Should have recommendation in issues
+        seam_issues = [
+            i for i in result.issues if i["category"] == "seam_test_recommendation"
+        ]
+        assert len(seam_issues) == 1
+        assert seam_issues[0]["severity"] == "consider"
+
+
+# ============================================================================
 # Run Tests
 # ============================================================================
 

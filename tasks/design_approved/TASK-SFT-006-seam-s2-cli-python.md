@@ -1,15 +1,16 @@
 ---
-id: TASK-SFT-006
-title: Seam tests S2 — CLI-to-Python entry point wiring
-task_type: testing
-parent_review: TASK-REV-AC1A
-feature_id: FEAT-AC1A
-wave: 2
-implementation_mode: task-work
 complexity: 4
 dependencies:
-  - TASK-SFT-001
+- TASK-SFT-001
+feature_id: FEAT-AC1A
+id: TASK-SFT-006
+implementation_mode: task-work
+parent_review: TASK-REV-AC1A
 priority: medium
+status: design_approved
+task_type: testing
+title: Seam tests S2 — CLI-to-Python entry point wiring
+wave: 2
 ---
 
 # Seam Tests S2: CLI (Click) → Python Entry Points

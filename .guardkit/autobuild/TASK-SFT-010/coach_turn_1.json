@@ -1,0 +1,23 @@
+{
+  "task_id": "TASK-SFT-010",
+  "turn": 1,
+  "decision": "feedback",
+  "validation_results": {
+    "quality_gates": null,
+    "independent_tests": null,
+    "requirements": null
+  },
+  "criteria_verification": [],
+  "acceptance_criteria_verification": {
+    "criteria_results": []
+  },
+  "issues": [
+    {
+      "severity": "must_fix",
+      "category": "missing_results",
+      "description": "Player report not found: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A/.guardkit/autobuild/TASK-SFT-010/player_turn_1.json"
+    }
+  ],
+  "rationale": "Task-work quality gate results not found",
+  "context_used": null
+}

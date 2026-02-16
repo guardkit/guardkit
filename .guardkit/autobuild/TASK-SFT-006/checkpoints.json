@@ -1,0 +1,22 @@
+{
+  "task_id": "TASK-SFT-006",
+  "checkpoints": [
+    {
+      "turn": 1,
+      "commit_hash": "c0c7f7f355076d92c16a6a64c3ff08e005c60130",
+      "timestamp": "2026-02-15T21:27:11.707449",
+      "tests_passed": true,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 1 complete (tests: pass)"
+    },
+    {
+      "turn": 2,
+      "commit_hash": "b58ea5b35e3e4cf9b96a769b21092f6babe1128f",
+      "timestamp": "2026-02-15T21:30:50.732907",
+      "tests_passed": true,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 2 complete (tests: pass)"
+    }
+  ],
+  "last_updated": "2026-02-15T21:30:50.733107"
+}

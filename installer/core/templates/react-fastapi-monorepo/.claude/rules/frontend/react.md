@@ -219,7 +219,19 @@ class ErrorBoundary extends React.Component<Props, State> {
 }
 ```
 
-## Testing
+## Testing (Trophy Model)
+
+**Frontend follows Kent C. Dodds' Trophy testing model:**
+- **50% Feature/Integration**: User scenarios with MSW for API mocking
+- **30% Unit**: Complex business logic only
+- **10% E2E**: Critical journeys with Playwright
+- **10% Static**: TypeScript strict mode
+
+**Key Principle:** Mock APIs at HTTP boundary (MSW). DO NOT mock internal functions. Test user behavior, not implementation details.
+
+**When Seam Tests ARE Needed:**
+- Third-party integrations (Stripe, Auth0, analytics)
+- Microservice boundaries (rare in frontend)
 
 ### Component Tests
 ```typescript
@@ -260,6 +272,12 @@ test('fetches users', async () => {
   expect(result.current.data).toHaveLength(2)
 })
 ```
+
+**Testing Checklist:**
+- [ ] Feature test for every user story (with MSW)
+- [ ] Unit tests for complex calculations/validations
+- [ ] Contract tests for backend API integration
+- [ ] E2E tests for critical user journeys only
 
 ## Best Practices
 

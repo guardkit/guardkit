@@ -1,0 +1,95 @@
+{
+  "task_id": "TASK-SFT-011",
+  "timestamp": "2026-02-15T21:33:06.788188",
+  "completed": true,
+  "phases": {
+    "phase_3": {
+      "detected": true,
+      "text": "Implementation",
+      "completed": false
+    },
+    "phase_5": {
+      "detected": true,
+      "completed": true
+    }
+  },
+  "quality_gates": {
+    "tests_passing": true,
+    "tests_passed": 76,
+    "tests_failed": 0,
+    "coverage": null,
+    "coverage_met": null,
+    "all_passed": true
+  },
+  "files_modified": [
+    ".guardkit/autobuild/TASK-SFT-006/checkpoints.json",
+    "guardkit/models/task_types.py",
+    "guardkit/orchestrator/quality_gates/coach_validator.py",
+    "installer/core/templates/fastapi-python/.claude/rules/testing.md",
+    "installer/core/templates/react-typescript/.claude/rules/testing.md",
+    "tasks/backlog/TASK-SFT-009-quality-gate-update.md",
+    "tasks/backlog/TASK-SFT-011-migration.md",
+    "tests/seam/test_planning_module_seams.py",
+    "tests/seam/test_system_plan_seams.py",
+    "tests/unit/test_task_types.py"
+  ],
+  "files_created": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A/.guardkit/autobuild/TASK-SFT-011/player_turn_1.json"
+  ],
+  "tests_written": [],
+  "summary": "76 tests passed, all quality gates passed",
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "tests/integration/test_system_plan_seams.py moved to tests/seam/test_system_plan_seams.py",
+      "status": "complete",
+      "evidence": "Used git mv tests/integration/test_system_plan_seams.py tests/seam/test_system_plan_seams.py - git status shows rename tracked",
+      "test_file": "tests/seam/test_system_plan_seams.py",
+      "implementation_files": [
+        "tests/seam/test_system_plan_seams.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "tests/integration/test_planning_module_seams.py moved to tests/seam/test_planning_module_seams.py",
+      "status": "complete",
+      "evidence": "Used git mv tests/integration/test_planning_module_seams.py tests/seam/test_planning_module_seams.py - git status shows rename tracked",
+      "test_file": "tests/seam/test_planning_module_seams.py",
+      "implementation_files": [
+        "tests/seam/test_planning_module_seams.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "All imports updated to reflect new location",
+      "status": "complete",
+      "evidence": "Files use absolute imports (from guardkit.xxx import yyy), no relative imports. No update needed - imports work from new location.",
+      "test_file": null,
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "All tests still pass from new location: pytest tests/seam/ -v",
+      "status": "complete",
+      "evidence": "Ran pytest tests/seam/ -v - 172 passed. Both migrated files (76 tests combined) pass.",
+      "test_file": "tests/seam/",
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "No broken imports in other test files that may have referenced the moved files",
+      "status": "complete",
+      "evidence": "Grep search for test_system_plan_seams|test_planning_module_seams in tests/ returned no matches. No cross-references exist.",
+      "test_file": null,
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "tests/integration/ retains its non-seam integration tests",
+      "status": "complete",
+      "evidence": "ls tests/integration/*.py shows 50+ files remain including test_autobuild_*.py, test_feature_*.py, etc. Ran pytest tests/integration/test_system_plan_e2e.py tests/integration/test_feature_plan_pipeline.py - 35 tests passed.",
+      "test_file": "tests/integration/",
+      "implementation_files": []
+    }
+  ]
+}

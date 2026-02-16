@@ -1,0 +1,163 @@
+{
+  "task_id": "TASK-SFT-009",
+  "turn": 3,
+  "decision": "approve",
+  "validation_results": {
+    "quality_gates": {
+      "tests_passed": true,
+      "coverage_met": true,
+      "arch_review_passed": true,
+      "plan_audit_passed": true,
+      "all_gates_passed": true
+    },
+    "independent_tests": {
+      "tests_passed": true,
+      "test_command": "pytest /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A/tests/unit/test_task_types.py -v --tb=short",
+      "test_output_summary": "============================== 82 passed in 1.22s ==============================",
+      "duration_seconds": 1.5832560062408447
+    },
+    "requirements": {
+      "criteria_total": 8,
+      "criteria_met": 8,
+      "all_criteria_met": true,
+      "missing": []
+    }
+  },
+  "criteria_verification": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "`QualityGateProfile` in `guardkit/models/task_types.py` gets `seam_tests_recommended: bool` field",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Field seam_tests_recommended: bool = False added to QualityGateProfile dataclass at line 120, with docstring at lines 85-89",
+      "notes": "Field seam_tests_recommended: bool = False added to QualityGateProfile dataclass at line 120, with docstring at lines 85-89"
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "FEATURE and REFACTOR profiles set `seam_tests_recommended=True`",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "DEFAULT_PROFILES[TaskType.FEATURE] sets seam_tests_recommended=True at line 200, DEFAULT_PROFILES[TaskType.REFACTOR] sets seam_tests_recommended=True at line 243. Verified by test_feature_profile_seam_tests_recommended_true and test_refactor_profile_seam_tests_recommended_true",
+      "notes": "DEFAULT_PROFILES[TaskType.FEATURE] sets seam_tests_recommended=True at line 200, DEFAULT_PROFILES[TaskType.REFACTOR] sets seam_tests_recommended=True at line 243. Verified by test_feature_profile_seam_tests_recommended_true and test_refactor_profile_seam_tests_recommended_true"
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "SCAFFOLDING, DOCUMENTATION, TESTING profiles set `seam_tests_recommended=False`",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "These profiles use default value seam_tests_recommended=False. Verified by test_scaffolding_profile_seam_tests_recommended_false, test_documentation_profile_seam_tests_recommended_false, test_testing_profile_seam_tests_recommended_false",
+      "notes": "These profiles use default value seam_tests_recommended=False. Verified by test_scaffolding_profile_seam_tests_recommended_false, test_documentation_profile_seam_tests_recommended_false, test_testing_profile_seam_tests_recommended_false"
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Coach validation prompt (in `coach_validator.py`) includes seam test check when `seam_tests_recommended=True`",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Method _check_seam_test_recommendation (lines 1863-1918) detects seam/contract/boundary/integration test patterns and adds 'consider' severity issue when profile.seam_tests_recommended=True. Called from validate() at line 609-610. Verified by TestSeamTestRecommendation class in test_coach_validator.py (11 tests)",
+      "notes": "Method _check_seam_test_recommendation (lines 1863-1918) detects seam/contract/boundary/integration test patterns and adds 'consider' severity issue when profile.seam_tests_recommended=True. Called from validate() at line 609-610. Verified by TestSeamTestRecommendation class in test_coach_validator.py (11 tests)"
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Feature plan template (in `feature-plan.md`) includes seam test checklist item",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Added 'Seam Test Checklist' section with boundary type table and recommendations to installer/core/commands/feature-plan.md (implemented in turn 2)",
+      "notes": "Added 'Seam Test Checklist' section with boundary type table and recommendations to installer/core/commands/feature-plan.md (implemented in turn 2)"
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Architecture docs updated: `docs/architecture/quality-gate-pipeline.md` reflects new gate",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Added 'Seam Tests Recommended' column to Task Types table and new 'Seam Test Recommendation Gate' section (implemented in turn 2)",
+      "notes": "Added 'Seam Tests Recommended' column to Task Types table and new 'Seam Test Recommendation Gate' section (implemented in turn 2)"
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Cross-cutting concerns updated: `docs/architecture/crosscutting-concerns.md` adds XC-seam-testing",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Added XC-seam-testing section documenting the soft gate approach, affected components, and constraints (implemented in turn 2)",
+      "notes": "Added XC-seam-testing section documenting the soft gate approach, affected components, and constraints (implemented in turn 2)"
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "Existing tests pass (no regression)",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Fixed test pollution bug in test_profiles_are_immutable_after_creation that was mutating global DEFAULT_PROFILES without cleanup. All 276 tests now pass consistently. Test execution: pytest tests/unit/test_task_types.py tests/unit/test_coach_validator.py -> 276 passed",
+      "notes": "Fixed test pollution bug in test_profiles_are_immutable_after_creation that was mutating global DEFAULT_PROFILES without cleanup. All 276 tests now pass consistently. Test execution: pytest tests/unit/test_task_types.py tests/unit/test_coach_validator.py -> 276 passed"
+    }
+  ],
+  "acceptance_criteria_verification": {
+    "criteria_results": [
+      {
+        "criterion_id": "AC-001",
+        "criterion_text": "`QualityGateProfile` in `guardkit/models/task_types.py` gets `seam_tests_recommended: bool` field",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Field seam_tests_recommended: bool = False added to QualityGateProfile dataclass at line 120, with docstring at lines 85-89",
+        "notes": "Field seam_tests_recommended: bool = False added to QualityGateProfile dataclass at line 120, with docstring at lines 85-89"
+      },
+      {
+        "criterion_id": "AC-002",
+        "criterion_text": "FEATURE and REFACTOR profiles set `seam_tests_recommended=True`",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "DEFAULT_PROFILES[TaskType.FEATURE] sets seam_tests_recommended=True at line 200, DEFAULT_PROFILES[TaskType.REFACTOR] sets seam_tests_recommended=True at line 243. Verified by test_feature_profile_seam_tests_recommended_true and test_refactor_profile_seam_tests_recommended_true",
+        "notes": "DEFAULT_PROFILES[TaskType.FEATURE] sets seam_tests_recommended=True at line 200, DEFAULT_PROFILES[TaskType.REFACTOR] sets seam_tests_recommended=True at line 243. Verified by test_feature_profile_seam_tests_recommended_true and test_refactor_profile_seam_tests_recommended_true"
+      },
+      {
+        "criterion_id": "AC-003",
+        "criterion_text": "SCAFFOLDING, DOCUMENTATION, TESTING profiles set `seam_tests_recommended=False`",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "These profiles use default value seam_tests_recommended=False. Verified by test_scaffolding_profile_seam_tests_recommended_false, test_documentation_profile_seam_tests_recommended_false, test_testing_profile_seam_tests_recommended_false",
+        "notes": "These profiles use default value seam_tests_recommended=False. Verified by test_scaffolding_profile_seam_tests_recommended_false, test_documentation_profile_seam_tests_recommended_false, test_testing_profile_seam_tests_recommended_false"
+      },
+      {
+        "criterion_id": "AC-004",
+        "criterion_text": "Coach validation prompt (in `coach_validator.py`) includes seam test check when `seam_tests_recommended=True`",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Method _check_seam_test_recommendation (lines 1863-1918) detects seam/contract/boundary/integration test patterns and adds 'consider' severity issue when profile.seam_tests_recommended=True. Called from validate() at line 609-610. Verified by TestSeamTestRecommendation class in test_coach_validator.py (11 tests)",
+        "notes": "Method _check_seam_test_recommendation (lines 1863-1918) detects seam/contract/boundary/integration test patterns and adds 'consider' severity issue when profile.seam_tests_recommended=True. Called from validate() at line 609-610. Verified by TestSeamTestRecommendation class in test_coach_validator.py (11 tests)"
+      },
+      {
+        "criterion_id": "AC-005",
+        "criterion_text": "Feature plan template (in `feature-plan.md`) includes seam test checklist item",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Added 'Seam Test Checklist' section with boundary type table and recommendations to installer/core/commands/feature-plan.md (implemented in turn 2)",
+        "notes": "Added 'Seam Test Checklist' section with boundary type table and recommendations to installer/core/commands/feature-plan.md (implemented in turn 2)"
+      },
+      {
+        "criterion_id": "AC-006",
+        "criterion_text": "Architecture docs updated: `docs/architecture/quality-gate-pipeline.md` reflects new gate",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Added 'Seam Tests Recommended' column to Task Types table and new 'Seam Test Recommendation Gate' section (implemented in turn 2)",
+        "notes": "Added 'Seam Tests Recommended' column to Task Types table and new 'Seam Test Recommendation Gate' section (implemented in turn 2)"
+      },
+      {
+        "criterion_id": "AC-007",
+        "criterion_text": "Cross-cutting concerns updated: `docs/architecture/crosscutting-concerns.md` adds XC-seam-testing",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Added XC-seam-testing section documenting the soft gate approach, affected components, and constraints (implemented in turn 2)",
+        "notes": "Added XC-seam-testing section documenting the soft gate approach, affected components, and constraints (implemented in turn 2)"
+      },
+      {
+        "criterion_id": "AC-008",
+        "criterion_text": "Existing tests pass (no regression)",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Fixed test pollution bug in test_profiles_are_immutable_after_creation that was mutating global DEFAULT_PROFILES without cleanup. All 276 tests now pass consistently. Test execution: pytest tests/unit/test_task_types.py tests/unit/test_coach_validator.py -> 276 passed",
+        "notes": "Fixed test pollution bug in test_profiles_are_immutable_after_creation that was mutating global DEFAULT_PROFILES without cleanup. All 276 tests now pass consistently. Test execution: pytest tests/unit/test_task_types.py tests/unit/test_coach_validator.py -> 276 passed"
+      }
+    ]
+  },
+  "issues": [],
+  "rationale": "All quality gates passed. Independent verification confirmed. All acceptance criteria met.",
+  "context_used": null
+}

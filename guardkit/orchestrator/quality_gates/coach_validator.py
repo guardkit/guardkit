@@ -605,6 +605,14 @@ class CoachValidator:
                 context_used=context,
             )
 
+        # 5.5. Check for seam test recommendations (soft gate, non-blocking)
+        seam_test_issues = self._check_seam_test_recommendation(
+            task_work_results, profile
+        )
+
+        # Combine all non-blocking issues
+        all_issues = zero_test_issues + seam_test_issues
+
         # 6. All checks passed - approve
         logger.info(f"Coach approved {task_id} turn {turn}")
 
@@ -624,7 +632,7 @@ class CoachValidator:
             quality_gates=gates_status,
             independent_tests=test_result,
             requirements=requirements,
-            issues=zero_test_issues,
+            issues=all_issues,
             rationale=rationale,
             context_used=context,
         )
@@ -1847,6 +1855,63 @@ class CoachValidator:
                 "description": (
                     "Quality gates reported as passed but no tests were executed "
                     "(tests_passed=0, coverage=null). Player may not have run tests."
+                ),
+            }]
+
+        return []
+
+    def _check_seam_test_recommendation(
+        self,
+        task_work_results: Dict[str, Any],
+        profile: QualityGateProfile,
+    ) -> List[Dict[str, Any]]:
+        """
+        Check for missing seam tests when recommended for cross-boundary features.
+
+        This is a soft gate (warning only, not blocking) that notes when a task
+        type that typically crosses technology boundaries lacks seam tests.
+
+        Parameters
+        ----------
+        task_work_results : Dict[str, Any]
+            Task-work results containing tests_written and implementation details
+        profile : QualityGateProfile
+            Quality gate profile for task type
+
+        Returns
+        -------
+        List[Dict[str, Any]]
+            List containing a warning issue if seam tests are recommended but
+            not found, empty otherwise
+        """
+        # Only check if seam tests are recommended for this task type
+        if not profile.seam_tests_recommended:
+            return []
+
+        # Check if any seam tests were written
+        tests_written = task_work_results.get("tests_written", [])
+
+        # Look for seam test patterns in test files
+        seam_test_patterns = ["seam", "contract", "boundary", "integration"]
+        has_seam_tests = any(
+            any(pattern in test_file.lower() for pattern in seam_test_patterns)
+            for test_file in tests_written
+        )
+
+        if not has_seam_tests and tests_written:
+            # Tests exist but no seam tests detected
+            logger.info(
+                "Seam test recommendation: no seam/contract/boundary tests detected "
+                f"for cross-boundary feature. Tests written: {tests_written}"
+            )
+            return [{
+                "severity": "consider",
+                "category": "seam_test_recommendation",
+                "description": (
+                    "No seam tests detected for cross-boundary feature. "
+                    "Consider adding seam/contract/boundary tests to validate "
+                    "technology boundary interactions. This is a recommendation, "
+                    "not a blocking gate."
                 ),
             }]
 

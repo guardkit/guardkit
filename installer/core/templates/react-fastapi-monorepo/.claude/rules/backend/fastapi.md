@@ -337,7 +337,15 @@ async def value_error_handler(request: Request, exc: ValueError):
     )
 ```
 
-## Testing
+## Testing (Trophy Model)
+
+**Backend follows Kent C. Dodds' Trophy testing model:**
+- **50% Feature/Integration**: Test through TestClient (HTTP boundary)
+- **30% Unit**: Complex business logic (calculations, validators)
+- **10% E2E**: Critical API workflows
+- **10% Static**: Pydantic schemas, mypy
+
+**Key Principle:** Test through HTTP API with TestClient. DO NOT mock internal services. Mock external APIs at protocol level (WireMock, responses library). Focus on testing behavior, not implementation details.
 
 ```python
 # tests/test_users.py
@@ -366,6 +374,16 @@ def test_get_user():
     data = response.json()
     assert "email" in data
 ```
+
+**Testing Checklist:**
+- [ ] Feature test for every API endpoint (TestClient)
+- [ ] Unit tests for complex business logic only
+- [ ] Contract tests for third-party integrations (Stripe, SendGrid)
+- [ ] E2E tests for critical workflows only
+
+**When Seam Tests ARE Needed:**
+- Third-party API integrations (external services)
+- Microservice boundaries (when calling other services)
 
 ## Best Practices
 

@@ -1259,6 +1259,20 @@ The `task_type` field is **REQUIRED** for AutoBuild integration. Without it, Coa
 | "Refactor...", "Migrate...", "Upgrade..." | `refactor` |
 | All other implementation tasks | `feature` |
 
+**Seam Test Checklist**:
+
+When creating FEATURE or REFACTOR tasks that cross technology boundaries, include seam test guidance:
+
+| Boundary Type | Seam Test Recommendation |
+|--------------|-------------------------|
+| API endpoints | Contract tests validating request/response schemas |
+| Database operations | Boundary tests verifying data layer interactions |
+| External services | Mock-based seam tests for service integration points |
+| File I/O | Boundary tests for file system interactions |
+| Configuration loading | Contract tests for configuration parsing |
+
+This is a soft gate - Coach will note missing seam tests but won't block approval.
+
 **Example Detection**:
 - "Create project structure and pyproject.toml" → `task_type: scaffolding`
 - "Implement health endpoint" → `task_type: feature`

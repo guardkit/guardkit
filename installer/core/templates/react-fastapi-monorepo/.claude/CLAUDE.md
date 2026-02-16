@@ -176,6 +176,79 @@ SECRET_KEY=changethis123456789
 BACKEND_CORS_ORIGINS=["http://localhost:3000"]
 ```
 
+## Testing Strategy: Trophy Model
+
+This monorepo uses **Kent C. Dodds' Trophy testing model** for both frontend and backend apps:
+
+```
+    🏆  E2E (~10%)
+  ___________
+/             \
+| Feature/    |
+| Integration |  ← Primary focus (~50%)
+| Tests       |
+\____________/
+Unit Tests (~30%)
+__________
+Static (~10%)
+```
+
+### Testing Distribution
+
+**Frontend (React)**:
+- **50% Feature/Integration Tests**: Test user scenarios across components with MSW
+- **30% Unit Tests**: Complex calculations, validators, utilities only
+- **10% E2E Tests**: Critical user journeys (login, core workflows)
+- **10% Static Analysis**: TypeScript strict mode, ESLint
+
+**Backend (FastAPI)**:
+- **50% Feature/Integration Tests**: Test endpoints with TestClient across all layers
+- **30% Unit Tests**: Complex business logic only (calculations, parsers)
+- **10% E2E Tests**: Critical API workflows (auth, core processes)
+- **10% Static Analysis**: mypy strict mode, ruff linting
+
+### Testing Principles
+
+**✅ Test behavior, not implementation**
+- Frontend: Test user interactions, not component internals
+- Backend: Test API contracts, not internal function calls
+- Both: Focus on business outcomes
+
+**✅ What to mock:**
+- External APIs (at HTTP level via MSW/httpx.MockTransport)
+- Third-party services (payment gateways, email services)
+- Slow operations (file uploads, image processing)
+
+**❌ What NOT to mock:**
+- Frontend: Internal functions, React Query, Zustand state
+- Backend: Service/CRUD layers, Pydantic validation, database (use test DB)
+- Both: Framework routing, rendering, or request handling
+
+**✅ When seam tests ARE needed:**
+- Third-party integrations (Stripe, SendGrid, external APIs)
+- Microservice boundaries in distributed systems
+- Shared library packages in monorepo (test integration points)
+
+### Testing Requirements Checklist
+
+**Frontend**:
+- [ ] Feature/integration tests for every user story
+- [ ] Unit tests for complex business logic only
+- [ ] E2E tests for critical user journeys
+- [ ] TypeScript strict mode enabled
+
+**Backend**:
+- [ ] Feature/integration tests for every API endpoint
+- [ ] Unit tests for complex algorithms only
+- [ ] Contract tests for third-party integrations
+- [ ] mypy strict mode enabled
+
+**Shared Packages**:
+- [ ] Integration tests at package boundaries
+- [ ] Type generation validated with tests
+
+**See**: [ADR-SP-009](../../../docs/architecture/decisions/ADR-SP-009-honeycomb-testing-model.md) for architectural justification.
+
 ## Troubleshooting
 
 **Types not updating**: `pnpm generate-types` after backend changes

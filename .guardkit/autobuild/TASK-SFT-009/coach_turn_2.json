@@ -1,0 +1,169 @@
+{
+  "task_id": "TASK-SFT-009",
+  "turn": 2,
+  "decision": "feedback",
+  "validation_results": {
+    "quality_gates": {
+      "tests_passed": true,
+      "coverage_met": true,
+      "arch_review_passed": true,
+      "plan_audit_passed": true,
+      "all_gates_passed": true
+    },
+    "independent_tests": {
+      "tests_passed": true,
+      "test_command": "skipped",
+      "test_output_summary": "No task-specific tests found for TASK-SFT-009, skipping independent verification",
+      "duration_seconds": 0.0
+    },
+    "requirements": {
+      "criteria_total": 8,
+      "criteria_met": 8,
+      "all_criteria_met": true,
+      "missing": []
+    }
+  },
+  "criteria_verification": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "`QualityGateProfile` in `guardkit/models/task_types.py` gets `seam_tests_recommended: bool` field",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Added seam_tests_recommended: bool = False field to QualityGateProfile dataclass (line 120) with docstring explaining its purpose (lines 85-89)",
+      "notes": "Added seam_tests_recommended: bool = False field to QualityGateProfile dataclass (line 120) with docstring explaining its purpose (lines 85-89)"
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "FEATURE and REFACTOR profiles set `seam_tests_recommended=True`",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "DEFAULT_PROFILES for TaskType.FEATURE (line 200) and TaskType.REFACTOR (line 243) include seam_tests_recommended=True",
+      "notes": "DEFAULT_PROFILES for TaskType.FEATURE (line 200) and TaskType.REFACTOR (line 243) include seam_tests_recommended=True"
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "SCAFFOLDING, DOCUMENTATION, TESTING profiles set `seam_tests_recommended=False`",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "These profiles use the default value seam_tests_recommended=False; verified by tests TestSeamTestRecommendation in test_task_types.py",
+      "notes": "These profiles use the default value seam_tests_recommended=False; verified by tests TestSeamTestRecommendation in test_task_types.py"
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Coach validation prompt (in `coach_validator.py`) includes seam test check when `seam_tests_recommended=True`",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Added _check_seam_test_recommendation method in coach_validator.py that detects seam/contract/boundary/integration test patterns and adds 'consider' severity issue when profile.seam_tests_recommended is True",
+      "notes": "Added _check_seam_test_recommendation method in coach_validator.py that detects seam/contract/boundary/integration test patterns and adds 'consider' severity issue when profile.seam_tests_recommended is True"
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Feature plan template (in `feature-plan.md`) includes seam test checklist item",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Added 'Seam Test Checklist' section with boundary type table and recommendations to installer/core/commands/feature-plan.md",
+      "notes": "Added 'Seam Test Checklist' section with boundary type table and recommendations to installer/core/commands/feature-plan.md"
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Architecture docs updated: `docs/architecture/quality-gate-pipeline.md` reflects new gate",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Added 'Seam Tests Recommended' column to Task Types table and new 'Seam Test Recommendation Gate' section to docs/architecture/quality-gate-pipeline.md",
+      "notes": "Added 'Seam Tests Recommended' column to Task Types table and new 'Seam Test Recommendation Gate' section to docs/architecture/quality-gate-pipeline.md"
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Cross-cutting concerns updated: `docs/architecture/crosscutting-concerns.md` adds XC-seam-testing",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Added XC-seam-testing section documenting the soft gate approach, affected components, and constraints to docs/architecture/crosscutting-concerns.md",
+      "notes": "Added XC-seam-testing section documenting the soft gate approach, affected components, and constraints to docs/architecture/crosscutting-concerns.md"
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "Existing tests pass (no regression)",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Ran pytest on tests/unit/test_task_types.py and tests/unit/test_coach_validator.py - all 276 tests pass. The commit c1b4ec51 was marked 'tests: pass' by guardkit-checkpoint. Pre-existing failures in test_task_769d_*.py (189 failures) are infrastructure issues from commits 60a5dffc and 2c48cd94 unrelated to this task.",
+      "notes": "Ran pytest on tests/unit/test_task_types.py and tests/unit/test_coach_validator.py - all 276 tests pass. The commit c1b4ec51 was marked 'tests: pass' by guardkit-checkpoint. Pre-existing failures in test_task_769d_*.py (189 failures) are infrastructure issues from commits 60a5dffc and 2c48cd94 unrelated to this task."
+    }
+  ],
+  "acceptance_criteria_verification": {
+    "criteria_results": [
+      {
+        "criterion_id": "AC-001",
+        "criterion_text": "`QualityGateProfile` in `guardkit/models/task_types.py` gets `seam_tests_recommended: bool` field",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Added seam_tests_recommended: bool = False field to QualityGateProfile dataclass (line 120) with docstring explaining its purpose (lines 85-89)",
+        "notes": "Added seam_tests_recommended: bool = False field to QualityGateProfile dataclass (line 120) with docstring explaining its purpose (lines 85-89)"
+      },
+      {
+        "criterion_id": "AC-002",
+        "criterion_text": "FEATURE and REFACTOR profiles set `seam_tests_recommended=True`",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "DEFAULT_PROFILES for TaskType.FEATURE (line 200) and TaskType.REFACTOR (line 243) include seam_tests_recommended=True",
+        "notes": "DEFAULT_PROFILES for TaskType.FEATURE (line 200) and TaskType.REFACTOR (line 243) include seam_tests_recommended=True"
+      },
+      {
+        "criterion_id": "AC-003",
+        "criterion_text": "SCAFFOLDING, DOCUMENTATION, TESTING profiles set `seam_tests_recommended=False`",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "These profiles use the default value seam_tests_recommended=False; verified by tests TestSeamTestRecommendation in test_task_types.py",
+        "notes": "These profiles use the default value seam_tests_recommended=False; verified by tests TestSeamTestRecommendation in test_task_types.py"
+      },
+      {
+        "criterion_id": "AC-004",
+        "criterion_text": "Coach validation prompt (in `coach_validator.py`) includes seam test check when `seam_tests_recommended=True`",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Added _check_seam_test_recommendation method in coach_validator.py that detects seam/contract/boundary/integration test patterns and adds 'consider' severity issue when profile.seam_tests_recommended is True",
+        "notes": "Added _check_seam_test_recommendation method in coach_validator.py that detects seam/contract/boundary/integration test patterns and adds 'consider' severity issue when profile.seam_tests_recommended is True"
+      },
+      {
+        "criterion_id": "AC-005",
+        "criterion_text": "Feature plan template (in `feature-plan.md`) includes seam test checklist item",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Added 'Seam Test Checklist' section with boundary type table and recommendations to installer/core/commands/feature-plan.md",
+        "notes": "Added 'Seam Test Checklist' section with boundary type table and recommendations to installer/core/commands/feature-plan.md"
+      },
+      {
+        "criterion_id": "AC-006",
+        "criterion_text": "Architecture docs updated: `docs/architecture/quality-gate-pipeline.md` reflects new gate",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Added 'Seam Tests Recommended' column to Task Types table and new 'Seam Test Recommendation Gate' section to docs/architecture/quality-gate-pipeline.md",
+        "notes": "Added 'Seam Tests Recommended' column to Task Types table and new 'Seam Test Recommendation Gate' section to docs/architecture/quality-gate-pipeline.md"
+      },
+      {
+        "criterion_id": "AC-007",
+        "criterion_text": "Cross-cutting concerns updated: `docs/architecture/crosscutting-concerns.md` adds XC-seam-testing",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Added XC-seam-testing section documenting the soft gate approach, affected components, and constraints to docs/architecture/crosscutting-concerns.md",
+        "notes": "Added XC-seam-testing section documenting the soft gate approach, affected components, and constraints to docs/architecture/crosscutting-concerns.md"
+      },
+      {
+        "criterion_id": "AC-008",
+        "criterion_text": "Existing tests pass (no regression)",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Ran pytest on tests/unit/test_task_types.py and tests/unit/test_coach_validator.py - all 276 tests pass. The commit c1b4ec51 was marked 'tests: pass' by guardkit-checkpoint. Pre-existing failures in test_task_769d_*.py (189 failures) are infrastructure issues from commits 60a5dffc and 2c48cd94 unrelated to this task.",
+        "notes": "Ran pytest on tests/unit/test_task_types.py and tests/unit/test_coach_validator.py - all 276 tests pass. The commit c1b4ec51 was marked 'tests: pass' by guardkit-checkpoint. Pre-existing failures in test_task_769d_*.py (189 failures) are infrastructure issues from commits 60a5dffc and 2c48cd94 unrelated to this task."
+      }
+    ]
+  },
+  "issues": [
+    {
+      "severity": "error",
+      "category": "zero_test_anomaly",
+      "description": "No task-specific tests created and no task-specific tests found via independent verification. Project-wide test suite may pass but this task contributes zero test coverage."
+    }
+  ],
+  "rationale": "Zero-test anomaly detected: quality gates reported as passed but no tests were executed. Tests are required for this task type. Please write and run tests before resubmitting.",
+  "context_used": null
+}

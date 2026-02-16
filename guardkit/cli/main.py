@@ -27,6 +27,7 @@ from guardkit.cli.system_context import (
     impact_analysis,
     context_switch,
 )
+from guardkit.cli.task import task
 
 # Load .env files automatically
 # Priority: .env in current directory, then traverse up to find project root
@@ -126,6 +127,9 @@ cli.add_command(system_plan)
 cli.add_command(system_overview)
 cli.add_command(impact_analysis)
 cli.add_command(context_switch)
+
+# Add Task command group
+cli.add_command(task)
 
 
 # ============================================================================

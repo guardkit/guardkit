@@ -1,0 +1,9 @@
+{
+  "turn": 2,
+  "feedback_from_turn": 1,
+  "feedback_summary": "- Not all acceptance criteria met:\n  \u2022 Existing tests pass (no regression)",
+  "must_fix": [],
+  "should_fix": [],
+  "validation_results": {},
+  "raw_feedback": "- Not all acceptance criteria met:\n  \u2022 Existing tests pass (no regression)"
+}

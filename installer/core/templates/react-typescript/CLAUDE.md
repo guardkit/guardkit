@@ -231,6 +231,62 @@ const apiUrl = env.API_URL;
 - [Tailwind CSS Docs](https://tailwindcss.com/) - Styling
 - [Playwright Docs](https://playwright.dev/) - E2E testing
 
+## Testing Strategy: Trophy Model
+
+This template follows **Kent C. Dodds' Trophy testing model** for client applications:
+
+```
+    🏆  E2E (~10%)
+  ___________
+/             \
+| Feature/    |
+| Integration |  ← Primary focus (~50%)
+| Tests       |
+\____________/
+Unit Tests (~30%)
+__________
+Static (~10%)
+```
+
+### Testing Distribution
+
+- **50% Feature/Integration Tests**: Test user-meaningful scenarios across components
+- **30% Unit Tests**: Complex business logic only (calculations, validations, state machines)
+- **10% E2E Tests**: Critical user journeys (login, core workflows)
+- **10% Static Analysis**: TypeScript strict mode, ESLint
+
+### Testing Principles
+
+**✅ Test behavior, not implementation**
+- Focus on what users see and do
+- Avoid testing internal component state
+- Test from the user's perspective
+
+**✅ What to mock:**
+- External APIs (at HTTP level via MSW)
+- Third-party services (Stripe, Auth0, etc.)
+
+**❌ What NOT to mock:**
+- Internal functions and utilities
+- React components
+- State management (TanStack Query, Zustand)
+
+**✅ When seam tests ARE needed:**
+- Third-party integrations (Stripe checkout, external APIs)
+- Microservice boundaries in distributed systems
+- Platform tool development (NOT client apps)
+
+### Testing Requirements Checklist
+
+- [ ] Feature/integration tests for every user story
+- [ ] Unit tests for complex business logic only (calculations, validators, parsers)
+- [ ] Contract tests for third-party API integrations
+- [ ] E2E tests for critical user journeys only (not every feature)
+- [ ] TypeScript strict mode enabled
+- [ ] ESLint with recommended rules
+
+**See**: [ADR-SP-009](../../docs/architecture/decisions/ADR-SP-009-honeycomb-testing-model.md) for architectural justification.
+
 ## Notes
 
 - This template prioritizes scalability and maintainability

@@ -28,15 +28,26 @@
 
 ## Task Types and Quality Profiles
 
-| Task Type | Tests Required | Zero-Test Blocking | Coverage Required | Arch Review Required |
-|-----------|---------------|-------------------|-------------------|---------------------|
-| FEATURE | Yes | Yes | Yes | Yes |
-| REFACTOR | Yes | Yes | Yes | Yes |
-| TESTING | Yes | No | Yes | No |
-| DOCUMENTATION | No | No | No | No |
-| SCAFFOLDING | No | No | No | No |
-| INFRASTRUCTURE | Yes | No | No | No |
-| INTEGRATION | Yes | No | No | No |
+| Task Type | Tests Required | Zero-Test Blocking | Coverage Required | Arch Review Required | Seam Tests Recommended |
+|-----------|---------------|-------------------|-------------------|---------------------|----------------------|
+| FEATURE | Yes | Yes | Yes | Yes | Yes |
+| REFACTOR | Yes | Yes | Yes | Yes | Yes |
+| TESTING | Yes | No | Yes | No | No |
+| DOCUMENTATION | No | No | No | No | No |
+| SCAFFOLDING | No | No | No | No | No |
+| INFRASTRUCTURE | Yes | No | No | No | No |
+| INTEGRATION | Yes | No | No | No | No |
+
+## Seam Test Recommendation Gate
+
+A soft gate that recommends seam tests for FEATURE and REFACTOR tasks crossing technology boundaries:
+
+- **Gate Type**: Soft (recommendation only, non-blocking)
+- **Applicable Task Types**: FEATURE, REFACTOR
+- **Detection**: Checks `tests_written` for seam/contract/boundary/integration test patterns
+- **Action**: Adds "consider" severity issue if no seam tests detected
+
+This gate helps ensure cross-boundary features have appropriate integration testing without blocking delivery.
 
 ## Key Decision Points
 

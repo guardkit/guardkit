@@ -1,0 +1,105 @@
+{
+  "task_id": "TASK-SFT-009",
+  "turn": 1,
+  "files_modified": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A/docs/architecture/crosscutting-concerns.md",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A/docs/architecture/quality-gate-pipeline.md",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A/guardkit/models/task_types.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A/guardkit/orchestrator/quality_gates/coach_validator.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A/installer/core/commands/feature-plan.md",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A/tests/unit/test_coach_validator.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A/tests/unit/test_task_types.py"
+  ],
+  "files_created": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AC1A/.guardkit/autobuild/TASK-SFT-009/player_turn_1.json"
+  ],
+  "tests_written": [],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation",
+  "concerns": [],
+  "requirements_addressed": [
+    "AC-001: QualityGateProfile in guardkit/models/task_types.py gets seam_tests_recommended: bool field",
+    "AC-002: FEATURE and REFACTOR profiles set seam_tests_recommended=True",
+    "AC-003: SCAFFOLDING, DOCUMENTATION, TESTING profiles set seam_tests_recommended=False",
+    "AC-004: Coach validation prompt includes seam test check when seam_tests_recommended=True",
+    "AC-005: Feature plan template includes seam test checklist item",
+    "AC-006: Architecture docs updated: docs/architecture/quality-gate-pipeline.md reflects new gate",
+    "AC-007: Cross-cutting concerns updated: docs/architecture/crosscutting-concerns.md adds XC-seam-testing"
+  ],
+  "requirements_remaining": [],
+  "tests_passed_count": 92,
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "QualityGateProfile in guardkit/models/task_types.py gets seam_tests_recommended: bool field",
+      "status": "complete",
+      "evidence": "Added seam_tests_recommended: bool = False field to QualityGateProfile dataclass with docstring explaining its purpose",
+      "test_file": "tests/unit/test_task_types.py",
+      "implementation_files": [
+        "guardkit/models/task_types.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "FEATURE and REFACTOR profiles set seam_tests_recommended=True",
+      "status": "complete",
+      "evidence": "Updated DEFAULT_PROFILES for TaskType.FEATURE and TaskType.REFACTOR to include seam_tests_recommended=True",
+      "test_file": "tests/unit/test_task_types.py",
+      "implementation_files": [
+        "guardkit/models/task_types.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "SCAFFOLDING, DOCUMENTATION, TESTING profiles set seam_tests_recommended=False",
+      "status": "complete",
+      "evidence": "These profiles use the default value of seam_tests_recommended=False; verified with tests",
+      "test_file": "tests/unit/test_task_types.py",
+      "implementation_files": [
+        "guardkit/models/task_types.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Coach validation prompt (in coach_validator.py) includes seam test check when seam_tests_recommended=True",
+      "status": "complete",
+      "evidence": "Added _check_seam_test_recommendation method that detects seam/contract/boundary/integration test patterns and adds 'consider' severity issue; integrated into validate() flow at step 5.5",
+      "test_file": "tests/unit/test_coach_validator.py",
+      "implementation_files": [
+        "guardkit/orchestrator/quality_gates/coach_validator.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Feature plan template (in feature-plan.md) includes seam test checklist item",
+      "status": "complete",
+      "evidence": "Added 'Seam Test Checklist' section with boundary type table and recommendations",
+      "test_file": null,
+      "implementation_files": [
+        "installer/core/commands/feature-plan.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Architecture docs updated: docs/architecture/quality-gate-pipeline.md reflects new gate",
+      "status": "complete",
+      "evidence": "Added 'Seam Tests Recommended' column to Task Types table and new 'Seam Test Recommendation Gate' section",
+      "test_file": null,
+      "implementation_files": [
+        "docs/architecture/quality-gate-pipeline.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Cross-cutting concerns updated: docs/architecture/crosscutting-concerns.md adds XC-seam-testing",
+      "status": "complete",
+      "evidence": "Added XC-seam-testing section documenting the soft gate approach, affected components, and constraints",
+      "test_file": null,
+      "implementation_files": [
+        "docs/architecture/crosscutting-concerns.md"
+      ]
+    }
+  ]
+}

@@ -82,6 +82,11 @@ class QualityGateProfile:
             an error that blocks Coach approval instead of a warning.
             Enabled for: FEATURE, REFACTOR
             Disabled for: SCAFFOLDING, INFRASTRUCTURE, DOCUMENTATION, TESTING
+        seam_tests_recommended: Whether seam tests are recommended for this task type.
+            When True, Coach validation will note if cross-boundary features
+            lack seam tests (soft gate, not blocking in first iteration).
+            Enabled for: FEATURE, REFACTOR (tasks that cross technology boundaries)
+            Disabled for: SCAFFOLDING, DOCUMENTATION, TESTING, INFRASTRUCTURE, INTEGRATION
 
     Example:
         Feature task profile (maximum validation):
@@ -112,6 +117,7 @@ class QualityGateProfile:
     tests_required: bool
     plan_audit_required: bool
     zero_test_blocking: bool = False
+    seam_tests_recommended: bool = False
 
     def __post_init__(self) -> None:
         """Validate quality gate profile configuration.
@@ -191,6 +197,7 @@ DEFAULT_PROFILES: Dict[TaskType, QualityGateProfile] = {
         tests_required=True,
         plan_audit_required=True,
         zero_test_blocking=True,
+        seam_tests_recommended=True,
     ),
     TaskType.INFRASTRUCTURE: QualityGateProfile(
         arch_review_required=False,  # Infrastructure design is different paradigm
@@ -233,6 +240,7 @@ DEFAULT_PROFILES: Dict[TaskType, QualityGateProfile] = {
         tests_required=True,
         plan_audit_required=True,
         zero_test_blocking=True,
+        seam_tests_recommended=True,
     ),
 }
 

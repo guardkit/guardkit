@@ -1,0 +1,14 @@
+{
+  "task_id": "TASK-SFT-004",
+  "checkpoints": [
+    {
+      "turn": 1,
+      "commit_hash": "f15ca03e52e49044ef6b801ddd02e895de80c935",
+      "timestamp": "2026-02-15T21:27:19.380090",
+      "tests_passed": true,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 1 complete (tests: pass)"
+    }
+  ],
+  "last_updated": "2026-02-15T21:27:19.380316"
+}

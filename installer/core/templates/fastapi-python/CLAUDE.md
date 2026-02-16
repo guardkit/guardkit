@@ -185,6 +185,64 @@ For detailed code examples, patterns, and best practices, see the `.claude/rules
 - [pytest-asyncio](https://pytest-asyncio.readthedocs.io/)
 - [Original Best Practices Guide](https://github.com/zhanymkanov/fastapi-best-practices)
 
+## Testing Strategy: Trophy Model
+
+This template follows **Kent C. Dodds' Trophy testing model** for client applications:
+
+```
+    🏆  E2E (~10%)
+  ___________
+/             \
+| Feature/    |
+| Integration |  ← Primary focus (~50%)
+| Tests       |
+\____________/
+Unit Tests (~30%)
+__________
+Static (~10%)
+```
+
+### Testing Distribution
+
+- **50% Feature/Integration Tests**: Test API endpoints with TestClient across layers
+- **30% Unit Tests**: Complex business logic only (calculations, validators, parsers)
+- **10% E2E Tests**: Critical API workflows (auth flow, core business processes)
+- **10% Static Analysis**: mypy strict mode, ruff linting
+
+### Testing Principles
+
+**✅ Test behavior, not implementation**
+- Use FastAPI TestClient for endpoint tests
+- Test request → response flow through all layers
+- Verify business outcomes, not internal function calls
+
+**✅ What to mock:**
+- External APIs (at HTTP level via httpx.MockTransport or responses)
+- Third-party services (payment gateways, email services)
+- Slow operations (file uploads, heavy computations)
+
+**❌ What NOT to mock:**
+- Internal service/CRUD layer calls
+- Database operations (use test database)
+- Pydantic validation
+- FastAPI dependency injection
+
+**✅ When seam tests ARE needed:**
+- Third-party integrations (Stripe, SendGrid, AWS)
+- Microservice boundaries in distributed systems
+- Platform tool development (NOT client APIs)
+
+### Testing Requirements Checklist
+
+- [ ] Feature/integration tests for every user story (endpoint → DB → response)
+- [ ] Unit tests for complex business logic only (calculations, validators, parsers)
+- [ ] Contract tests for third-party API integrations
+- [ ] E2E tests for critical API workflows only (auth, core processes)
+- [ ] mypy strict mode enabled
+- [ ] ruff linting with recommended rules
+
+**See**: [ADR-SP-009](../../docs/architecture/decisions/ADR-SP-009-honeycomb-testing-model.md) for architectural justification.
+
 ## Agent Response Format
 
 When generating `.agent-response.json` files (checkpoint-resume pattern), use the format specification:

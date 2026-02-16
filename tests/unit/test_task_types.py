@@ -550,11 +550,17 @@ class TestProfileImmutabilityAndEquality:
     def test_profiles_are_immutable_after_creation(self):
         """Test that profiles are immutable (frozen dataclass behavior)."""
         profile = DEFAULT_PROFILES[TaskType.FEATURE]
+        original_value = profile.arch_review_threshold
         # Dataclasses are mutable by default; test attempts to modify
         # This documents the current behavior
-        profile.arch_review_threshold = 70
-        # Note: If frozen=True is added in future, this should raise FrozenInstanceError
-        assert profile.arch_review_threshold == 70  # Currently mutable
+        try:
+            profile.arch_review_threshold = 70
+            # Note: If frozen=True is added in future, this should raise FrozenInstanceError
+            assert profile.arch_review_threshold == 70  # Currently mutable
+        finally:
+            # IMPORTANT: Restore the original value to avoid test pollution
+            # This is a shared global object that other tests depend on
+            profile.arch_review_threshold = original_value
 
     def test_same_profile_type_configurations_are_equal(self):
         """Test that profiles created with same config are equal."""
@@ -642,7 +648,110 @@ class TestIntegration:
 
 
 # ============================================================================
-# 10. INTEGRATION Task Type Tests (TASK-FIX-93C1)
+# 10. Seam Test Recommendation Tests (TASK-SFT-009)
+# ============================================================================
+
+class TestSeamTestRecommendation:
+    """Test seam_tests_recommended field on QualityGateProfile."""
+
+    def test_seam_tests_recommended_field_exists(self):
+        """AC-001: QualityGateProfile has seam_tests_recommended field."""
+        profile = QualityGateProfile(
+            arch_review_required=True,
+            arch_review_threshold=60,
+            coverage_required=True,
+            coverage_threshold=80.0,
+            tests_required=True,
+            plan_audit_required=True,
+        )
+        # Field should exist with default value False
+        assert hasattr(profile, "seam_tests_recommended")
+        assert profile.seam_tests_recommended is False
+
+    def test_seam_tests_recommended_explicit_true(self):
+        """Test explicitly setting seam_tests_recommended=True."""
+        profile = QualityGateProfile(
+            arch_review_required=True,
+            arch_review_threshold=60,
+            coverage_required=True,
+            coverage_threshold=80.0,
+            tests_required=True,
+            plan_audit_required=True,
+            seam_tests_recommended=True,
+        )
+        assert profile.seam_tests_recommended is True
+
+    def test_seam_tests_recommended_explicit_false(self):
+        """Test explicitly setting seam_tests_recommended=False."""
+        profile = QualityGateProfile(
+            arch_review_required=True,
+            arch_review_threshold=60,
+            coverage_required=True,
+            coverage_threshold=80.0,
+            tests_required=True,
+            plan_audit_required=True,
+            seam_tests_recommended=False,
+        )
+        assert profile.seam_tests_recommended is False
+
+    def test_feature_profile_seam_tests_recommended_true(self):
+        """AC-002: FEATURE profile has seam_tests_recommended=True."""
+        profile = DEFAULT_PROFILES[TaskType.FEATURE]
+        assert profile.seam_tests_recommended is True
+
+    def test_refactor_profile_seam_tests_recommended_true(self):
+        """AC-002: REFACTOR profile has seam_tests_recommended=True."""
+        profile = DEFAULT_PROFILES[TaskType.REFACTOR]
+        assert profile.seam_tests_recommended is True
+
+    def test_scaffolding_profile_seam_tests_recommended_false(self):
+        """AC-003: SCAFFOLDING profile has seam_tests_recommended=False."""
+        profile = DEFAULT_PROFILES[TaskType.SCAFFOLDING]
+        assert profile.seam_tests_recommended is False
+
+    def test_documentation_profile_seam_tests_recommended_false(self):
+        """AC-003: DOCUMENTATION profile has seam_tests_recommended=False."""
+        profile = DEFAULT_PROFILES[TaskType.DOCUMENTATION]
+        assert profile.seam_tests_recommended is False
+
+    def test_testing_profile_seam_tests_recommended_false(self):
+        """AC-003: TESTING profile has seam_tests_recommended=False."""
+        profile = DEFAULT_PROFILES[TaskType.TESTING]
+        assert profile.seam_tests_recommended is False
+
+    def test_infrastructure_profile_seam_tests_recommended_false(self):
+        """INFRASTRUCTURE profile has seam_tests_recommended=False."""
+        profile = DEFAULT_PROFILES[TaskType.INFRASTRUCTURE]
+        assert profile.seam_tests_recommended is False
+
+    def test_integration_profile_seam_tests_recommended_false(self):
+        """INTEGRATION profile has seam_tests_recommended=False."""
+        profile = DEFAULT_PROFILES[TaskType.INTEGRATION]
+        assert profile.seam_tests_recommended is False
+
+    def test_get_profile_feature_has_seam_tests_recommended(self):
+        """Test get_profile for FEATURE returns profile with seam_tests_recommended=True."""
+        profile = get_profile(TaskType.FEATURE)
+        assert profile.seam_tests_recommended is True
+
+    def test_get_profile_scaffolding_has_seam_tests_not_recommended(self):
+        """Test get_profile for SCAFFOLDING returns profile with seam_tests_recommended=False."""
+        profile = get_profile(TaskType.SCAFFOLDING)
+        assert profile.seam_tests_recommended is False
+
+    def test_for_type_feature_has_seam_tests_recommended(self):
+        """Test QualityGateProfile.for_type(FEATURE) has seam_tests_recommended=True."""
+        profile = QualityGateProfile.for_type(TaskType.FEATURE)
+        assert profile.seam_tests_recommended is True
+
+    def test_for_type_refactor_has_seam_tests_recommended(self):
+        """Test QualityGateProfile.for_type(REFACTOR) has seam_tests_recommended=True."""
+        profile = QualityGateProfile.for_type(TaskType.REFACTOR)
+        assert profile.seam_tests_recommended is True
+
+
+# ============================================================================
+# 11. INTEGRATION Task Type Tests (TASK-FIX-93C1)
 # ============================================================================
 
 class TestIntegrationTaskType:

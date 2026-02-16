@@ -1,0 +1,163 @@
+{
+  "task_id": "TASK-SFT-004",
+  "turn": 1,
+  "decision": "approve",
+  "validation_results": {
+    "quality_gates": {
+      "tests_passed": true,
+      "coverage_met": true,
+      "arch_review_passed": true,
+      "plan_audit_passed": true,
+      "all_gates_passed": true
+    },
+    "independent_tests": {
+      "tests_passed": true,
+      "test_command": "skipped",
+      "test_output_summary": "Independent test verification skipped (tests_required=False)",
+      "duration_seconds": 0.0
+    },
+    "requirements": {
+      "criteria_total": 8,
+      "criteria_met": 8,
+      "all_criteria_met": true,
+      "missing": []
+    }
+  },
+  "criteria_verification": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "`tests/seam/test_autobuild_coach.py` created",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "File created at tests/seam/test_autobuild_coach.py with 15 test cases",
+      "notes": "File created at tests/seam/test_autobuild_coach.py with 15 test cases"
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Test: acceptance_criteria from task file reaches `CoachValidator.validate()` parameter",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "TestAcceptanceCriteriaFlow class with test_acceptance_criteria_reaches_coach_validator and test_empty_acceptance_criteria_handled_gracefully verifies criteria flow",
+      "notes": "TestAcceptanceCriteriaFlow class with test_acceptance_criteria_reaches_coach_validator and test_empty_acceptance_criteria_handled_gracefully verifies criteria flow"
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Test: CoachValidator receives real `QualityGateStatus` (not empty/default)",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "TestQualityGateStatusIntegrity class verifies QualityGateStatus objects contain real values with test_coach_receives_real_quality_gate_status and test_failing_quality_gates_detected",
+      "notes": "TestQualityGateStatusIntegrity class verifies QualityGateStatus objects contain real values with test_coach_receives_real_quality_gate_status and test_failing_quality_gates_detected"
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Test: Player task-work results file is actually read by Coach (not mocked away)",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "TestPlayerResultsFileReading class with test_task_work_results_file_is_read writes unique data to disk and verifies CoachValidator reads it without mocking the read operation",
+      "notes": "TestPlayerResultsFileReading class with test_task_work_results_file_is_read writes unique data to disk and verifies CoachValidator reads it without mocking the read operation"
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Test: Coach feedback is propagated back to the turn loop (not silently dropped)",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "TestCoachFeedbackPropagation class verifies feedback decision includes issues and rationale with test_feedback_decision_with_issues_propagates and test_approve_decision_includes_quality_data",
+      "notes": "TestCoachFeedbackPropagation class verifies feedback decision includes issues and rationale with test_feedback_decision_with_issues_propagates and test_approve_decision_includes_quality_data"
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Test: Zero-test anomaly detection fires when task has no test files",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "TestZeroTestAnomalyDetection class with test_zero_test_anomaly_detected_when_no_tests_written and test_no_anomaly_when_tests_exist verifies anomaly detection triggers appropriately",
+      "notes": "TestZeroTestAnomalyDetection class with test_zero_test_anomaly_detected_when_no_tests_written and test_no_anomaly_when_tests_exist verifies anomaly detection triggers appropriately"
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Tests use real `CoachValidator` instance with mocked agent invocation (mock the Claude API call, not the validator logic)",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "TestRealCoachValidatorIntegration class tests real CoachValidator via orchestrator._invoke_coach_safely with mocked subprocess for test execution, but real validation logic",
+      "notes": "TestRealCoachValidatorIntegration class tests real CoachValidator via orchestrator._invoke_coach_safely with mocked subprocess for test execution, but real validation logic"
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "All tests pass with `pytest tests/seam/test_autobuild_coach.py -v`",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "pytest tests/seam/test_autobuild_coach.py -v executed successfully: 15 passed in 1.20s",
+      "notes": "pytest tests/seam/test_autobuild_coach.py -v executed successfully: 15 passed in 1.20s"
+    }
+  ],
+  "acceptance_criteria_verification": {
+    "criteria_results": [
+      {
+        "criterion_id": "AC-001",
+        "criterion_text": "`tests/seam/test_autobuild_coach.py` created",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "File created at tests/seam/test_autobuild_coach.py with 15 test cases",
+        "notes": "File created at tests/seam/test_autobuild_coach.py with 15 test cases"
+      },
+      {
+        "criterion_id": "AC-002",
+        "criterion_text": "Test: acceptance_criteria from task file reaches `CoachValidator.validate()` parameter",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "TestAcceptanceCriteriaFlow class with test_acceptance_criteria_reaches_coach_validator and test_empty_acceptance_criteria_handled_gracefully verifies criteria flow",
+        "notes": "TestAcceptanceCriteriaFlow class with test_acceptance_criteria_reaches_coach_validator and test_empty_acceptance_criteria_handled_gracefully verifies criteria flow"
+      },
+      {
+        "criterion_id": "AC-003",
+        "criterion_text": "Test: CoachValidator receives real `QualityGateStatus` (not empty/default)",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "TestQualityGateStatusIntegrity class verifies QualityGateStatus objects contain real values with test_coach_receives_real_quality_gate_status and test_failing_quality_gates_detected",
+        "notes": "TestQualityGateStatusIntegrity class verifies QualityGateStatus objects contain real values with test_coach_receives_real_quality_gate_status and test_failing_quality_gates_detected"
+      },
+      {
+        "criterion_id": "AC-004",
+        "criterion_text": "Test: Player task-work results file is actually read by Coach (not mocked away)",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "TestPlayerResultsFileReading class with test_task_work_results_file_is_read writes unique data to disk and verifies CoachValidator reads it without mocking the read operation",
+        "notes": "TestPlayerResultsFileReading class with test_task_work_results_file_is_read writes unique data to disk and verifies CoachValidator reads it without mocking the read operation"
+      },
+      {
+        "criterion_id": "AC-005",
+        "criterion_text": "Test: Coach feedback is propagated back to the turn loop (not silently dropped)",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "TestCoachFeedbackPropagation class verifies feedback decision includes issues and rationale with test_feedback_decision_with_issues_propagates and test_approve_decision_includes_quality_data",
+        "notes": "TestCoachFeedbackPropagation class verifies feedback decision includes issues and rationale with test_feedback_decision_with_issues_propagates and test_approve_decision_includes_quality_data"
+      },
+      {
+        "criterion_id": "AC-006",
+        "criterion_text": "Test: Zero-test anomaly detection fires when task has no test files",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "TestZeroTestAnomalyDetection class with test_zero_test_anomaly_detected_when_no_tests_written and test_no_anomaly_when_tests_exist verifies anomaly detection triggers appropriately",
+        "notes": "TestZeroTestAnomalyDetection class with test_zero_test_anomaly_detected_when_no_tests_written and test_no_anomaly_when_tests_exist verifies anomaly detection triggers appropriately"
+      },
+      {
+        "criterion_id": "AC-007",
+        "criterion_text": "Tests use real `CoachValidator` instance with mocked agent invocation (mock the Claude API call, not the validator logic)",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "TestRealCoachValidatorIntegration class tests real CoachValidator via orchestrator._invoke_coach_safely with mocked subprocess for test execution, but real validation logic",
+        "notes": "TestRealCoachValidatorIntegration class tests real CoachValidator via orchestrator._invoke_coach_safely with mocked subprocess for test execution, but real validation logic"
+      },
+      {
+        "criterion_id": "AC-008",
+        "criterion_text": "All tests pass with `pytest tests/seam/test_autobuild_coach.py -v`",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "pytest tests/seam/test_autobuild_coach.py -v executed successfully: 15 passed in 1.20s",
+        "notes": "pytest tests/seam/test_autobuild_coach.py -v executed successfully: 15 passed in 1.20s"
+      }
+    ]
+  },
+  "issues": [],
+  "rationale": "All quality gates passed. Tests not required for this task type. All acceptance criteria met.",
+  "context_used": null
+}

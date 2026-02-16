@@ -1,6 +1,6 @@
 # Cross-Cutting Concerns
 
-> 7 shared concerns affecting multiple components
+> 8 shared concerns affecting multiple components
 
 ## XC-error-handling: Error Handling & Graceful Degradation
 
@@ -43,3 +43,9 @@
 - **Approach**: Custom exception handler suppresses closed-loop errors from httpx when FalkorDB connections are torn down. Prevents noisy stack traces on normal shutdown.
 - **Affected Components**: Knowledge Layer
 - **Constraints**: Only suppress known httpx closed-transport errors. Log unexpected exceptions normally.
+
+## XC-seam-testing: Seam Test Recommendations
+
+- **Approach**: Soft gate in Coach validation that recommends seam/contract/boundary tests for tasks crossing technology boundaries. Checks `tests_written` for seam test patterns (seam, contract, boundary, integration). Non-blocking - adds "consider" severity issue if no seam tests detected.
+- **Affected Components**: Quality Gates (CoachValidator), Feature Planning (/feature-plan)
+- **Constraints**: Only applies to FEATURE and REFACTOR task types where `seam_tests_recommended=True`. Does not block approval - purely informational. Detection is pattern-based on test file names, not content analysis.

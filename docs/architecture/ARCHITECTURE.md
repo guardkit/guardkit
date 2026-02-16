@@ -31,6 +31,7 @@ GuardKit is an AI-assisted software development tool with quality gates that pre
 | [ADR-SP-006](decisions/ADR-SP-006-adaptive-ceremony.md) | Adaptive Ceremony via Complexity Scoring | Accepted |
 | [ADR-SP-007](decisions/ADR-SP-007-markdown-authoritative.md) | Markdown Authoritative, Graphiti Queryable | Accepted |
 | [ADR-SP-008](decisions/ADR-SP-008-hash-based-task-ids.md) | Hash-Based Task IDs | Accepted |
+| [ADR-SP-009](decisions/ADR-SP-009-honeycomb-testing-model.md) | Honeycomb Testing Model for Seam-First Testing | Accepted |
 
 ## Component Diagram
 

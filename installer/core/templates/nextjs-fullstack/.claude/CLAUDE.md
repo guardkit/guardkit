@@ -126,6 +126,64 @@ This template includes specialized agents:
 3. **nextjs-fullstack-specialist** - Complete full-stack workflows
 4. **react-state-specialist** - React hooks and client state
 
+## Testing Strategy: Trophy Model
+
+This template follows **Kent C. Dodds' Trophy testing model** for client applications:
+
+```
+    🏆  E2E (~10%)
+  ___________
+/             \
+| Feature/    |
+| Integration |  ← Primary focus (~50%)
+| Tests       |
+\____________/
+Unit Tests (~30%)
+__________
+Static (~10%)
+```
+
+### Testing Distribution
+
+- **50% Feature/Integration Tests**: Test user scenarios across Server/Client Components
+- **30% Unit Tests**: Complex business logic only (calculations, validators, utilities)
+- **10% E2E Tests**: Critical user journeys (auth flow, core workflows)
+- **10% Static Analysis**: TypeScript strict mode, ESLint
+
+### Testing Principles
+
+**✅ Test behavior, not implementation**
+- Test Server Components with `render()` from Testing Library
+- Test Server Actions with direct function calls
+- Verify user-facing behavior and outcomes
+
+**✅ What to mock:**
+- External APIs (at HTTP level via MSW or fetch mocks)
+- Third-party services (payment, email, analytics)
+- Slow operations (file uploads, image processing)
+
+**❌ What NOT to mock:**
+- Prisma database calls (use test database)
+- Server Actions (test directly)
+- Next.js routing and rendering
+- React Server Components flow
+
+**✅ When seam tests ARE needed:**
+- Third-party integrations (Stripe, SendGrid, external APIs)
+- Microservice boundaries in distributed systems
+- Platform tool development (NOT client apps)
+
+### Testing Requirements Checklist
+
+- [ ] Feature/integration tests for every user story (component → action → DB)
+- [ ] Unit tests for complex business logic only (calculations, validators, parsers)
+- [ ] Contract tests for third-party API integrations
+- [ ] E2E tests for critical user journeys only (login, checkout, core workflows)
+- [ ] TypeScript strict mode enabled
+- [ ] ESLint with Next.js recommended rules
+
+**See**: [ADR-SP-009](../../../docs/architecture/decisions/ADR-SP-009-honeycomb-testing-model.md) for architectural justification.
+
 ## Quality Standards
 
 - **TypeScript**: Strict mode enabled

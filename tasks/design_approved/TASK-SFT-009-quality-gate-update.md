@@ -1,17 +1,18 @@
 ---
-id: TASK-SFT-009
-title: Update QualityGateProfile with seam test requirements
-task_type: feature
-parent_review: TASK-REV-AC1A
-feature_id: FEAT-AC1A
-wave: 3
-implementation_mode: task-work
 complexity: 4
 dependencies:
-  - TASK-SFT-003
-  - TASK-SFT-004
-  - TASK-SFT-005
+- TASK-SFT-003
+- TASK-SFT-004
+- TASK-SFT-005
+feature_id: FEAT-AC1A
+id: TASK-SFT-009
+implementation_mode: task-work
+parent_review: TASK-REV-AC1A
 priority: high
+status: design_approved
+task_type: feature
+title: Update QualityGateProfile with seam test requirements
+wave: 3
 ---
 
 # Update Quality Gates for Seam Test Requirements

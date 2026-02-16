@@ -1,0 +1,163 @@
+{
+  "task_id": "TASK-SFT-005",
+  "turn": 1,
+  "decision": "approve",
+  "validation_results": {
+    "quality_gates": {
+      "tests_passed": true,
+      "coverage_met": true,
+      "arch_review_passed": true,
+      "plan_audit_passed": true,
+      "all_gates_passed": true
+    },
+    "independent_tests": {
+      "tests_passed": true,
+      "test_command": "skipped",
+      "test_output_summary": "Independent test verification skipped (tests_required=False)",
+      "duration_seconds": 0.0
+    },
+    "requirements": {
+      "criteria_total": 8,
+      "criteria_met": 8,
+      "all_criteria_met": true,
+      "missing": []
+    }
+  },
+  "criteria_verification": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "`tests/seam/test_quality_gate_state.py` created",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "File created at tests/seam/test_quality_gate_state.py with 12 test cases",
+      "notes": "File created at tests/seam/test_quality_gate_state.py with 12 test cases"
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Test: Task with failing tests cannot transition from IN_PROGRESS to IN_REVIEW",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "test_failing_tests_blocks_in_progress_to_in_review creates task with tests_failed=3 and verifies CoachValidator.validate() returns decision='feedback' with test_failure issue",
+      "notes": "test_failing_tests_blocks_in_progress_to_in_review creates task with tests_failed=3 and verifies CoachValidator.validate() returns decision='feedback' with test_failure issue"
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Test: Task with zero tests and `zero_test_blocking=True` is blocked",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "test_zero_test_blocking_for_feature_type creates task with tests_passed=0, tests_failed=0, coverage=None and verifies CoachValidator returns feedback with zero_test_anomaly error (blocking)",
+      "notes": "test_zero_test_blocking_for_feature_type creates task with tests_passed=0, tests_failed=0, coverage=None and verifies CoachValidator returns feedback with zero_test_anomaly error (blocking)"
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Test: DOCUMENTATION task type with zero tests is NOT blocked (exempt)",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "test_documentation_type_not_blocked_with_zero_tests verifies DOCUMENTATION task type passes validation with zero tests because tests_required=False in profile",
+      "notes": "test_documentation_type_not_blocked_with_zero_tests verifies DOCUMENTATION task type passes validation with zero tests because tests_required=False in profile"
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Test: Coverage below threshold prevents completion for FEATURE type",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "test_coverage_below_threshold_blocks_feature_completion creates task with coverage=65.0 (below 80% threshold) and verifies CoachValidator returns feedback with coverage issue",
+      "notes": "test_coverage_below_threshold_blocks_feature_completion creates task with coverage=65.0 (below 80% threshold) and verifies CoachValidator returns feedback with coverage issue"
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Test: Architectural review score below 60 triggers checkpoint for FEATURE type",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "test_arch_review_below_threshold_triggers_checkpoint creates task with arch_score=45 (below 60 threshold) and verifies CoachValidator returns feedback with architectural issue",
+      "notes": "test_arch_review_below_threshold_triggers_checkpoint creates task with arch_score=45 (below 60 threshold) and verifies CoachValidator returns feedback with architectural issue"
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Tests create real task files on disk and verify state transitions",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "test_real_task_file_state_verification creates task file in backlog, uses TaskStateBridge to transition to design_approved, and verifies file moved to correct directory with updated frontmatter",
+      "notes": "test_real_task_file_state_verification creates task file in backlog, uses TaskStateBridge to transition to design_approved, and verifies file moved to correct directory with updated frontmatter"
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "All tests pass with `pytest tests/seam/test_quality_gate_state.py -v`",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Ran pytest tests/seam/test_quality_gate_state.py -v - all 12 tests passed with 0 failures",
+      "notes": "Ran pytest tests/seam/test_quality_gate_state.py -v - all 12 tests passed with 0 failures"
+    }
+  ],
+  "acceptance_criteria_verification": {
+    "criteria_results": [
+      {
+        "criterion_id": "AC-001",
+        "criterion_text": "`tests/seam/test_quality_gate_state.py` created",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "File created at tests/seam/test_quality_gate_state.py with 12 test cases",
+        "notes": "File created at tests/seam/test_quality_gate_state.py with 12 test cases"
+      },
+      {
+        "criterion_id": "AC-002",
+        "criterion_text": "Test: Task with failing tests cannot transition from IN_PROGRESS to IN_REVIEW",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "test_failing_tests_blocks_in_progress_to_in_review creates task with tests_failed=3 and verifies CoachValidator.validate() returns decision='feedback' with test_failure issue",
+        "notes": "test_failing_tests_blocks_in_progress_to_in_review creates task with tests_failed=3 and verifies CoachValidator.validate() returns decision='feedback' with test_failure issue"
+      },
+      {
+        "criterion_id": "AC-003",
+        "criterion_text": "Test: Task with zero tests and `zero_test_blocking=True` is blocked",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "test_zero_test_blocking_for_feature_type creates task with tests_passed=0, tests_failed=0, coverage=None and verifies CoachValidator returns feedback with zero_test_anomaly error (blocking)",
+        "notes": "test_zero_test_blocking_for_feature_type creates task with tests_passed=0, tests_failed=0, coverage=None and verifies CoachValidator returns feedback with zero_test_anomaly error (blocking)"
+      },
+      {
+        "criterion_id": "AC-004",
+        "criterion_text": "Test: DOCUMENTATION task type with zero tests is NOT blocked (exempt)",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "test_documentation_type_not_blocked_with_zero_tests verifies DOCUMENTATION task type passes validation with zero tests because tests_required=False in profile",
+        "notes": "test_documentation_type_not_blocked_with_zero_tests verifies DOCUMENTATION task type passes validation with zero tests because tests_required=False in profile"
+      },
+      {
+        "criterion_id": "AC-005",
+        "criterion_text": "Test: Coverage below threshold prevents completion for FEATURE type",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "test_coverage_below_threshold_blocks_feature_completion creates task with coverage=65.0 (below 80% threshold) and verifies CoachValidator returns feedback with coverage issue",
+        "notes": "test_coverage_below_threshold_blocks_feature_completion creates task with coverage=65.0 (below 80% threshold) and verifies CoachValidator returns feedback with coverage issue"
+      },
+      {
+        "criterion_id": "AC-006",
+        "criterion_text": "Test: Architectural review score below 60 triggers checkpoint for FEATURE type",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "test_arch_review_below_threshold_triggers_checkpoint creates task with arch_score=45 (below 60 threshold) and verifies CoachValidator returns feedback with architectural issue",
+        "notes": "test_arch_review_below_threshold_triggers_checkpoint creates task with arch_score=45 (below 60 threshold) and verifies CoachValidator returns feedback with architectural issue"
+      },
+      {
+        "criterion_id": "AC-007",
+        "criterion_text": "Tests create real task files on disk and verify state transitions",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "test_real_task_file_state_verification creates task file in backlog, uses TaskStateBridge to transition to design_approved, and verifies file moved to correct directory with updated frontmatter",
+        "notes": "test_real_task_file_state_verification creates task file in backlog, uses TaskStateBridge to transition to design_approved, and verifies file moved to correct directory with updated frontmatter"
+      },
+      {
+        "criterion_id": "AC-008",
+        "criterion_text": "All tests pass with `pytest tests/seam/test_quality_gate_state.py -v`",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Ran pytest tests/seam/test_quality_gate_state.py -v - all 12 tests passed with 0 failures",
+        "notes": "Ran pytest tests/seam/test_quality_gate_state.py -v - all 12 tests passed with 0 failures"
+      }
+    ]
+  },
+  "issues": [],
+  "rationale": "All quality gates passed. Tests not required for this task type. All acceptance criteria met.",
+  "context_used": null
+}
