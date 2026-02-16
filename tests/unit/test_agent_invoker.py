@@ -2803,13 +2803,17 @@ class TestCreatePlayerReportFromTaskWork:
         assert report_path.exists()
 
         report = json.loads(report_path.read_text())
-        # Output overrides git detection
+        # Output merges with git detection
+        # git detection returns: modified=["src/changed.py"], created=[]
+        # output has: files_created=["src/new_file.py"]
+        # Result: files_created should be ["src/new_file.py"], files_modified should be ["src/changed.py"]
         assert report["files_created"] == ["src/new_file.py"]
+        assert report["files_modified"] == ["src/changed.py"]
 
-    def test_output_overrides_file_data(
+    def test_output_merges_with_file_data(
         self, invoker_with_worktree, worktree_path, sample_task_work_results
     ):
-        """task_work_result.output takes precedence over task_work_results.json file data."""
+        """task_work_result.output merges (union) with task_work_results.json file data."""
         task_id = "TASK-004"
         turn = 1
 
@@ -2837,8 +2841,12 @@ class TestCreatePlayerReportFromTaskWork:
         report = json.loads(
             (autobuild_dir / f"player_turn_{turn}.json").read_text()
         )
-        # Output should override file data
-        assert report["files_modified"] == ["src/override.py"]
+        # Output should merge (union) with file data
+        # sample_task_work_results has: ["src/auth.py", "src/config.py"]
+        # output has: ["src/override.py"]
+        # merged result should be sorted union
+        assert set(report["files_modified"]) == {"src/auth.py", "src/config.py", "src/override.py"}
+        assert report["files_modified"] == sorted(report["files_modified"])
         assert report["tests_passed"] is False
         assert report["tests_run"] is True  # Set when tests_passed is in output
 
@@ -3350,6 +3358,111 @@ class TestCreatePlayerReportFromTaskWork:
         # Files should be sorted alphabetically
         assert report["files_modified"] == ["src/alpha.py", "src/middle.py", "src/zebra.py"]
         assert report["files_created"] == ["src/aardvark.py", "src/beta.py", "src/zoo.py"]
+
+    def test_tests_written_populated_when_tests_info_absent(
+        self, invoker_with_worktree, worktree_path
+    ):
+        """TASK-ABF-001: tests_written populated from file lists even when tests_info is absent."""
+        task_id = "TASK-ABF-001-A"
+        turn = 1
+
+        # task_work_results.json WITHOUT tests_info but WITH test files
+        task_work_data = {
+            "files_modified": ["src/auth.py"],
+            "files_created": ["tests/test_auth.py", "tests/test_config.py", "src/config.py"],
+            # No tests_info key at all
+        }
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        autobuild_dir.mkdir(parents=True)
+        (autobuild_dir / "task_work_results.json").write_text(
+            json.dumps(task_work_data)
+        )
+
+        task_work_result = TaskWorkResult(success=True, output={}, exit_code=0)
+
+        invoker_with_worktree._create_player_report_from_task_work(
+            task_id=task_id, turn=turn, task_work_result=task_work_result
+        )
+
+        report = json.loads(
+            (autobuild_dir / f"player_turn_{turn}.json").read_text()
+        )
+
+        # tests_written MUST be populated even without tests_info
+        assert "tests/test_auth.py" in report["tests_written"]
+        assert "tests/test_config.py" in report["tests_written"]
+        # Non-test files excluded
+        assert "src/auth.py" not in report["tests_written"]
+        assert "src/config.py" not in report["tests_written"]
+
+    def test_tests_written_empty_when_no_test_files_in_lists(
+        self, invoker_with_worktree, worktree_path
+    ):
+        """TASK-ABF-001: tests_written is [] when no test files exist in file lists."""
+        task_id = "TASK-ABF-001-B"
+        turn = 1
+
+        # task_work_results.json with NO test files and NO tests_info
+        task_work_data = {
+            "files_modified": ["src/auth.py", "src/config.py"],
+            "files_created": ["src/models.py"],
+            # No tests_info, no test files
+        }
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        autobuild_dir.mkdir(parents=True)
+        (autobuild_dir / "task_work_results.json").write_text(
+            json.dumps(task_work_data)
+        )
+
+        task_work_result = TaskWorkResult(success=True, output={}, exit_code=0)
+
+        invoker_with_worktree._create_player_report_from_task_work(
+            task_id=task_id, turn=turn, task_work_result=task_work_result
+        )
+
+        report = json.loads(
+            (autobuild_dir / f"player_turn_{turn}.json").read_text()
+        )
+
+        # tests_written must be empty list (not missing)
+        assert report["tests_written"] == []
+
+    def test_tests_written_detects_both_test_patterns(
+        self, invoker_with_worktree, worktree_path
+    ):
+        """TASK-ABF-001: tests_written matches both test_*.py and *_test.py patterns."""
+        task_id = "TASK-ABF-001-C"
+        turn = 1
+
+        task_work_data = {
+            "files_modified": [],
+            "files_created": [
+                "tests/test_login.py",       # test_ prefix
+                "tests/auth_test.py",         # _test.py suffix
+                "src/conftest.py",            # NOT a test file
+                "src/utils.py",               # NOT a test file
+            ],
+        }
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        autobuild_dir.mkdir(parents=True)
+        (autobuild_dir / "task_work_results.json").write_text(
+            json.dumps(task_work_data)
+        )
+
+        task_work_result = TaskWorkResult(success=True, output={}, exit_code=0)
+
+        invoker_with_worktree._create_player_report_from_task_work(
+            task_id=task_id, turn=turn, task_work_result=task_work_result
+        )
+
+        report = json.loads(
+            (autobuild_dir / f"player_turn_{turn}.json").read_text()
+        )
+
+        assert "tests/test_login.py" in report["tests_written"]
+        assert "tests/auth_test.py" in report["tests_written"]
+        assert "src/conftest.py" not in report["tests_written"]
+        assert "src/utils.py" not in report["tests_written"]
 
 
 class TestDetectGitChanges:

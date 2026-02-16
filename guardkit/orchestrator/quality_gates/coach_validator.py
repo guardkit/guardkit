@@ -582,7 +582,8 @@ class CoachValidator:
 
         # 5. Check for blocking zero-test anomaly before approval
         zero_test_issues = self._check_zero_test_anomaly(
-            task_work_results, profile, independent_tests=test_result
+            task_work_results, profile, independent_tests=test_result,
+            task_id=task_id,
         )
         has_blocking_zero_test = any(
             issue.get("severity") == "error" for issue in zero_test_issues
@@ -1541,6 +1542,63 @@ class CoachValidator:
         """
         return task_id.replace("-", "_").lower()
 
+    def _find_first_checkpoint_parent(self) -> Optional[str]:
+        """
+        Find the parent commit of the first checkpoint for cumulative diff.
+
+        Reads the checkpoints.json file to get the first checkpoint's commit hash,
+        then returns the parent commit hash (commit~1). This is used for cumulative
+        git diff to find test files created in earlier turns.
+
+        Returns
+        -------
+        Optional[str]
+            Parent commit hash, or None if checkpoints file not found or invalid
+        """
+        if not self.task_id:
+            return None
+
+        try:
+            checkpoints_file = (
+                self.worktree_path / ".guardkit" / "autobuild"
+                / self.task_id / "checkpoints.json"
+            )
+
+            if not checkpoints_file.exists():
+                logger.debug(f"No checkpoints file found at {checkpoints_file}")
+                return None
+
+            data = json.loads(checkpoints_file.read_text())
+            checkpoints = data.get("checkpoints", [])
+
+            if not checkpoints:
+                logger.debug("Checkpoints file exists but contains no checkpoints")
+                return None
+
+            first_commit = checkpoints[0].get("commit_hash")
+            if not first_commit:
+                logger.debug("First checkpoint has no commit_hash")
+                return None
+
+            # Get parent commit (commit~1)
+            result = subprocess.run(
+                ["git", "rev-parse", f"{first_commit}~1"],
+                cwd=str(self.worktree_path),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if result.returncode != 0:
+                logger.debug(f"Failed to get parent commit for {first_commit}")
+                return None
+
+            return result.stdout.strip()
+
+        except Exception as e:
+            logger.debug(f"Error finding first checkpoint parent: {e}")
+            return None
+
     def _detect_test_command(
         self,
         task_id: Optional[str] = None,
@@ -1608,6 +1666,39 @@ class CoachValidator:
                 f"No task-specific tests found for {task_id}, skipping independent verification. "
                 f"Glob pattern tried: {pattern}"
             )
+
+            # Tertiary fallback: cumulative git diff from task's first checkpoint
+            # to HEAD. This finds test files created in any previous turn that
+            # are now invisible because checkpoint commits moved HEAD forward.
+            # Safe for shared worktrees: only includes files changed during
+            # THIS task's checkpoint range.
+            try:
+                first_parent = self._find_first_checkpoint_parent()
+                if first_parent:
+                    diff_result = subprocess.run(
+                        ["git", "diff", "--name-only", first_parent, "HEAD"],
+                        cwd=str(self.worktree_path),
+                        capture_output=True, text=True, timeout=10,
+                    )
+                    if diff_result.returncode == 0:
+                        changed_files = diff_result.stdout.strip().split("\n")
+                        test_files = [
+                            f for f in changed_files
+                            if f.strip() and (
+                                (Path(f).name.startswith("test_") and f.endswith(".py"))
+                                or f.endswith("_test.py")
+                            ) and (self.worktree_path / f).exists()
+                        ]
+                        if test_files:
+                            files_str = " ".join(sorted(test_files))
+                            logger.info(
+                                f"Found test files via cumulative diff for "
+                                f"{task_id}: {len(test_files)} file(s)"
+                            )
+                            return f"pytest {files_str} -v --tb=short"
+            except Exception as e:
+                logger.debug(f"Cumulative diff fallback failed: {e}")
+
             return None
 
         # Fallback to original detection logic
@@ -1771,6 +1862,7 @@ class CoachValidator:
         task_work_results: Dict[str, Any],
         profile: QualityGateProfile,
         independent_tests: Optional["IndependentTestResult"] = None,
+        task_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Check for zero-test anomaly: all_passed=true with no tests actually executed.
@@ -1827,13 +1919,18 @@ class CoachValidator:
                 "and independent verification skipped (no task-specific test files found). "
                 "Project-wide test suite may pass but task contributes zero test coverage."
             )
+            task_prefix = self._task_id_to_pattern_prefix(task_id) if task_id else "<task_prefix>"
+            glob_pattern = f"tests/**/test_{task_prefix}*.py"
             return [{
                 "severity": severity,
                 "category": "zero_test_anomaly",
                 "description": (
-                    "No task-specific tests created and no task-specific tests found "
-                    "via independent verification. Project-wide test suite may pass "
-                    "but this task contributes zero test coverage."
+                    f"No task-specific tests found. Coach searched:\n"
+                    f"  1. task_work_results files_created/files_modified for test_*.py files\n"
+                    f"  2. Glob pattern: {glob_pattern}\n"
+                    f"Please ensure test files are listed in your task_work_results "
+                    f"files_created or files_modified arrays, OR name them "
+                    f"to match the pattern test_{task_prefix}*.py"
                 ),
             }]
 

@@ -1,0 +1,58 @@
+{
+  "task_id": "TASK-ABF-004",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/quality_gates/coach_validator.py",
+    "tests/unit/test_coach_validator.py"
+  ],
+  "files_created": [],
+  "tests_written": [
+    "tests/unit/test_coach_validator.py::TestCumulativeDiffFallback::test_cumulative_diff_finds_tests_across_checkpoints",
+    "tests/unit/test_coach_validator.py::TestCumulativeDiffFallback::test_cumulative_diff_excludes_pre_task_files",
+    "tests/unit/test_coach_validator.py::TestCumulativeDiffFallback::test_cumulative_diff_handles_no_checkpoints",
+    "tests/unit/test_coach_validator.py::TestCumulativeDiffFallback::test_cumulative_diff_handles_git_failure"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "199 passed in 1.93s (including 4 new tests)",
+  "implementation_notes": "Added cumulative git diff fallback for test detection in CoachValidator. This addresses the issue where test files created in earlier AutoBuild turns become invisible after checkpoint commits move HEAD forward.\n\nImplementation Details:\n\n1. Added `_find_first_checkpoint_parent()` helper method:\n   - Reads checkpoints.json from .guardkit/autobuild/{task_id}/\n   - Extracts the first checkpoint's commit hash\n   - Uses git rev-parse to get the parent commit (commit~1)\n   - Returns None on any error (graceful fallback)\n   - Uses logger.debug() for failures (not warnings, as this is normal)\n\n2. Added tertiary fallback in `_detect_test_command()`:\n   - Executes AFTER primary (task_work_results) and secondary (glob pattern) fail\n   - Runs git diff --name-only from first checkpoint's parent to HEAD\n   - Filters for Python test files (test_*.py or *_test.py)\n   - Only includes files that exist on disk (prevents false positives)\n   - Safe for shared worktrees (only includes THIS task's changes)\n\n3. Test Coverage:\n   - 4 new tests cover all scenarios:\n     * Finding tests across checkpoints (happy path)\n     * Excluding files that don't exist on disk\n     * Handling missing checkpoints gracefully\n     * Handling git command failures gracefully\n   - All tests use proper mocking of subprocess.run\n   - Tests follow existing patterns from test_coach_validator.py\n\nThe implementation is defensive and graceful - any failure in the cumulative diff fallback returns None, allowing the method to fall through to the final return None statement. This ensures backward compatibility and no disruption to existing behavior.",
+  "concerns": [],
+  "requirements_addressed": [
+    "Add _find_first_checkpoint_parent helper method",
+    "Add cumulative git diff fallback in _detect_test_command",
+    "Add comprehensive test coverage"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Add _find_first_checkpoint_parent helper method to CoachValidator",
+      "status": "complete",
+      "evidence": "Added method at line 1560 in coach_validator.py. Method reads checkpoints.json, extracts first checkpoint's commit hash, and uses git rev-parse to get parent commit. Returns None on any error with debug logging. Uses subprocess, json, Path, and logger (all already imported).",
+      "test_file": "tests/unit/test_coach_validator.py",
+      "implementation_files": [
+        "guardkit/orchestrator/quality_gates/coach_validator.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Add tertiary fallback in _detect_test_command method",
+      "status": "complete",
+      "evidence": "Added cumulative diff fallback after line 1611 (the 'No task-specific tests found' log message) and before the final return None. Uses _find_first_checkpoint_parent() to get starting commit, runs git diff --name-only, filters for test files, checks files exist on disk, and returns pytest command if files found. Includes detailed comments explaining why this is needed.",
+      "test_file": "tests/unit/test_coach_validator.py",
+      "implementation_files": [
+        "guardkit/orchestrator/quality_gates/coach_validator.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Add comprehensive test coverage for cumulative diff fallback",
+      "status": "complete",
+      "evidence": "Added TestCumulativeDiffFallback test class with 4 tests covering all scenarios: (1) finding tests across checkpoints, (2) excluding files that don't exist, (3) handling missing checkpoints, (4) handling git failures. All tests follow existing patterns using tmp_worktree fixture and subprocess mocking. Tests validate both the helper method and the complete fallback flow.",
+      "test_file": "tests/unit/test_coach_validator.py",
+      "implementation_files": [
+        "tests/unit/test_coach_validator.py"
+      ]
+    }
+  ]
+}

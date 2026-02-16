@@ -1476,7 +1476,7 @@ Follow the decision format specified in your agent definition.
                 report["files_modified"] = task_work_data.get("files_modified", [])
                 report["files_created"] = task_work_data.get("files_created", [])
 
-                # Extract test info
+                # Extract test info (conditional on tests_info existing)
                 tests_info = task_work_data.get("tests_info", {})
                 if tests_info:
                     report["tests_run"] = tests_info.get("tests_run", False)
@@ -1484,12 +1484,13 @@ Follow the decision format specified in your agent definition.
                     report["test_output_summary"] = tests_info.get(
                         "output_summary", ""
                     )
-                    # Extract test files as tests_written
-                    report["tests_written"] = [
-                        f
-                        for f in report["files_created"] + report["files_modified"]
-                        if "test" in f.lower() or f.endswith("_test.py")
-                    ]
+
+                # ALWAYS populate tests_written from file lists (unconditional)
+                all_files = report.get("files_created", []) + report.get("files_modified", [])
+                report["tests_written"] = [
+                    f for f in all_files
+                    if "test_" in Path(f).name.lower() or Path(f).name.lower().endswith("_test.py")
+                ]
 
                 # Extract implementation notes from plan audit if available
                 plan_audit = task_work_data.get("plan_audit", {})
@@ -1568,11 +1569,13 @@ Follow the decision format specified in your agent definition.
         # Also use task_work_result.output if available
         if task_work_result.output:
             output = task_work_result.output
-            # Override with output data if present (more recent than file)
+            # Merge with output data if present (union with git-enriched)
             if "files_modified" in output:
-                report["files_modified"] = output["files_modified"]
+                existing = set(report.get("files_modified", []))
+                report["files_modified"] = sorted(list(existing | set(output["files_modified"])))
             if "files_created" in output:
-                report["files_created"] = output["files_created"]
+                existing = set(report.get("files_created", []))
+                report["files_created"] = sorted(list(existing | set(output["files_created"])))
             if "tests_passed" in output:
                 tests_passed_value = output["tests_passed"]
                 # Convert count to boolean for PLAYER_REPORT_SCHEMA compliance

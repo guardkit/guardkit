@@ -2951,6 +2951,43 @@ class TestProjectWidePassBypass:
         assert issues[0]["category"] == "zero_test_anomaly"
         assert "task-specific tests" in issues[0]["description"]
 
+    def test_project_wide_pass_description_contains_glob_pattern(self, tmp_worktree):
+        """AC-ABF-003: Description includes glob pattern and actionable guidance."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.FEATURE)
+        task_work_results = {
+            "quality_gates": {
+                "tests_passed": 218,
+                "tests_failed": 0,
+                "coverage": 85.0,
+                "all_passed": True,
+            },
+            "tests_written": [],
+        }
+        independent_tests = IndependentTestResult(
+            tests_passed=True,
+            test_command="skipped",
+            test_output_summary="No task-specific tests found",
+            duration_seconds=0.0,
+        )
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(
+            task_work_results, profile, independent_tests=independent_tests,
+            task_id="TASK-FHA-002",
+        )
+
+        assert len(issues) == 1
+        desc = issues[0]["description"]
+        # AC: description includes the glob pattern that was tried
+        assert "tests/**/test_task_fha_002*.py" in desc
+        # AC: description suggests listing test files in task_work_results
+        assert "files_created" in desc
+        assert "files_modified" in desc
+        # AC: description suggests the naming convention
+        assert "test_task_fha_002" in desc
+
     def test_project_wide_pass_blocking_profile_returns_error(self, tmp_worktree):
         """AC-002: Blocking error for profiles with zero_test_blocking=True."""
         from guardkit.models.task_types import get_profile, TaskType
@@ -3946,6 +3983,136 @@ class TestSeamTestRecommendation:
         ]
         assert len(seam_issues) == 1
         assert seam_issues[0]["severity"] == "consider"
+
+
+# ============================================================================
+# Test Cumulative Diff Fallback (TASK-ABF-004)
+# ============================================================================
+
+
+class TestCumulativeDiffFallback:
+    """Test cumulative git diff fallback for test detection across checkpoints."""
+
+    def test_cumulative_diff_finds_tests_across_checkpoints(self, tmp_worktree):
+        """Cumulative diff finds test files created in earlier turns."""
+        # Set up checkpoints.json
+        checkpoints_dir = tmp_worktree / ".guardkit" / "autobuild" / "TASK-CD-001"
+        checkpoints_dir.mkdir(parents=True)
+        checkpoints_data = {
+            "checkpoints": [
+                {"commit_hash": "abc123", "turn": 1, "phase": "implementation"}
+            ]
+        }
+        (checkpoints_dir / "checkpoints.json").write_text(
+            json.dumps(checkpoints_data, indent=2)
+        )
+
+        # Create test files on disk
+        tests_dir = tmp_worktree / "tests"
+        tests_dir.mkdir(parents=True)
+        test_file = tests_dir / "test_oauth.py"
+        test_file.write_text("def test_oauth(): pass")
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-CD-001")
+
+        # Mock git commands
+        with patch("subprocess.run") as mock_run:
+            # First call: git rev-parse abc123~1 -> returns parent hash
+            # Second call: git diff --name-only parent HEAD -> returns test files
+            mock_run.side_effect = [
+                MagicMock(
+                    returncode=0,
+                    stdout="parent_hash_xyz",
+                    stderr="",
+                ),
+                MagicMock(
+                    returncode=0,
+                    stdout="tests/test_oauth.py\n",
+                    stderr="",
+                ),
+            ]
+
+            # Call with NO task_work_results (primary fails)
+            # and pattern that won't match (glob fails)
+            cmd = validator._detect_test_command(task_id="TASK-CD-001")
+
+            # Should find test via cumulative diff
+            assert cmd is not None
+            assert "pytest" in cmd
+            assert "tests/test_oauth.py" in cmd
+            assert "-v" in cmd
+            assert "--tb=short" in cmd
+
+    def test_cumulative_diff_excludes_pre_task_files(self, tmp_worktree):
+        """Cumulative diff excludes files that don't exist on disk."""
+        # Set up checkpoints.json
+        checkpoints_dir = tmp_worktree / ".guardkit" / "autobuild" / "TASK-CD-002"
+        checkpoints_dir.mkdir(parents=True)
+        checkpoints_data = {
+            "checkpoints": [
+                {"commit_hash": "def456", "turn": 1, "phase": "implementation"}
+            ]
+        }
+        (checkpoints_dir / "checkpoints.json").write_text(
+            json.dumps(checkpoints_data, indent=2)
+        )
+
+        # NOTE: test file is NOT created on disk
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-CD-002")
+
+        with patch("subprocess.run") as mock_run:
+            # Mock git to return test file that doesn't exist on disk
+            mock_run.side_effect = [
+                MagicMock(returncode=0, stdout="parent_hash_456", stderr=""),
+                MagicMock(returncode=0, stdout="tests/test_deleted.py\n", stderr=""),
+            ]
+
+            cmd = validator._detect_test_command(task_id="TASK-CD-002")
+
+            # Should return None because file doesn't exist
+            assert cmd is None
+
+    def test_cumulative_diff_handles_no_checkpoints(self, tmp_worktree):
+        """Cumulative diff gracefully handles missing checkpoints file."""
+        # NOTE: No checkpoints.json created
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-CD-003")
+
+        # No mocking needed - should fail gracefully
+        cmd = validator._detect_test_command(task_id="TASK-CD-003")
+
+        # Should return None (no checkpoints file)
+        assert cmd is None
+
+    def test_cumulative_diff_handles_git_failure(self, tmp_worktree):
+        """Cumulative diff gracefully handles git command failures."""
+        # Set up checkpoints.json
+        checkpoints_dir = tmp_worktree / ".guardkit" / "autobuild" / "TASK-CD-004"
+        checkpoints_dir.mkdir(parents=True)
+        checkpoints_data = {
+            "checkpoints": [
+                {"commit_hash": "ghi789", "turn": 1, "phase": "implementation"}
+            ]
+        }
+        (checkpoints_dir / "checkpoints.json").write_text(
+            json.dumps(checkpoints_data, indent=2)
+        )
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-CD-004")
+
+        with patch("subprocess.run") as mock_run:
+            # Mock git rev-parse to fail
+            mock_run.return_value = MagicMock(
+                returncode=128,
+                stdout="",
+                stderr="fatal: bad revision",
+            )
+
+            cmd = validator._detect_test_command(task_id="TASK-CD-004")
+
+            # Should return None (git command failed)
+            assert cmd is None
 
 
 # ============================================================================
