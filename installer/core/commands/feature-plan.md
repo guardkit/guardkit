@@ -1869,19 +1869,25 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
     ```bash
     # Build task arguments from subtasks
     # Format: --task "ID:NAME:COMPLEXITY:DEPS" for each subtask
-    # Note: Task file paths are derived automatically from --feature-slug.
-    # Do not include FILE_PATH in the --task argument.
+    # Note: --discover resolves file_path from actual files on disk (created in Step 9).
+    # This prevents mismatches between derived paths and actual filenames.
     # DEPS is comma-separated list of dependency task IDs (or empty)
 
     python3 ~/.agentecflow/bin/generate-feature-yaml \
         --name "{feature_name}" \
         --description "{review_findings_summary}" \
         --feature-slug "{feature_slug}" \
+        --discover \
         --task "TASK-001:First task name:5:" \
         --task "TASK-002:Second task name:6:TASK-001" \
         --task "TASK-003:Third task name:3:TASK-001,TASK-002" \
         --base-path "."
     ```
+
+    **IMPORTANT: Always pass `--discover`**. This flag resolves task `file_path` values
+    by finding actual files on disk (created in Step 9) instead of deriving paths from
+    task names. Without `--discover`, the YAML may contain paths that don't match the
+    actual filenames, causing `feature-build` to fail.
 
     **Task argument format:** `ID:NAME:COMPLEXITY:DEPS`
     - ID: The task ID (e.g., TASK-OAUTH-001)
@@ -1895,6 +1901,7 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
         --name "Implement OAuth2 authentication" \
         --description "Add OAuth2 authentication with multiple providers" \
         --feature-slug "oauth2" \
+        --discover \
         --task "TASK-OAUTH-001:Create auth infrastructure:5:" \
         --task "TASK-OAUTH-002:Implement local JWT auth:6:TASK-OAUTH-001" \
         --task "TASK-OAUTH-003:Add database migrations:4:TASK-OAUTH-001" \
@@ -2041,10 +2048,12 @@ Claude executes internally:
          --name "implement OAuth2" \
          --description "OAuth2 authentication implementation" \
          --feature-slug "oauth2" \
+         --discover \
          --task "TASK-OAUTH-001:Create auth infrastructure:5:" \
          --task "TASK-OAUTH-002:Implement local JWT auth:6:TASK-OAUTH-001" \
          ... (one --task arg per subtask)
      - Script outputs: FEAT-D6E7 and writes .guardkit/features/FEAT-D6E7.yaml
+     - --discover resolves file_path from actual files created in Step 7
      (Skip this step if --no-structured flag is set)
 
   9. Shows completion summary including:

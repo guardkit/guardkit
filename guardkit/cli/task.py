@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING
 
 import click
 
+from installer.core.lib.slug_utils import slugify_task_name
+
 if TYPE_CHECKING:
     from typing import Optional
 
@@ -87,7 +89,7 @@ def create_task(
     backlog_dir.mkdir(parents=True, exist_ok=True)
 
     # Generate filename
-    slug = _generate_slug(title)
+    slug = slugify_task_name(title)
     filename = f"{task_id}-{slug}.md"
     task_path = backlog_dir / filename
 
@@ -129,36 +131,6 @@ def _generate_task_id(title: str, prefix: Optional[str] = None) -> str:
         return f"TASK-{prefix.upper()}-{hash_value}"
     return f"TASK-{hash_value}"
 
-
-def _generate_slug(title: str) -> str:
-    """
-    Generate URL-friendly slug from title.
-
-    Parameters
-    ----------
-    title : str
-        Task title
-
-    Returns
-    -------
-    str
-        Lowercase slug with hyphens
-    """
-    # Convert to lowercase, replace non-alphanumeric with hyphens
-    slug = ""
-    for char in title.lower():
-        if char.isalnum():
-            slug += char
-        elif char in " -_":
-            slug += "-"
-
-    # Remove consecutive hyphens and trim
-    while "--" in slug:
-        slug = slug.replace("--", "-")
-    slug = slug.strip("-")
-
-    # Limit length
-    return slug[:50]
 
 
 def _generate_task_content(task_id: str, title: str, priority: str) -> str:

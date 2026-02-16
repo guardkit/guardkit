@@ -30,6 +30,7 @@ from generate_feature_yaml import (
     build_task_file_path,  # Helper function for path construction
     validate_task_paths,  # Post-creation path validation
     slugify_task_name,  # Re-exported from installer.core.lib.slug_utils
+    discover_task_file,  # Disk-based file discovery (TASK-REV-8976)
 )
 
 
@@ -789,6 +790,7 @@ class TestFeatureSlugValidation:
             "--task", "TASK-001:Create service:5:",
             "--feature-slug", "my-feature",
             "--base-path", str(tmp_path),
+            "--lenient",
             "--quiet",
         ]
 
@@ -813,6 +815,7 @@ class TestFeatureSlugValidation:
             "--task", "TASK-002:Add tests:3:TASK-001",
             "--feature-slug", "my-feature",
             "--base-path", str(tmp_path),
+            "--lenient",
             "--quiet",
         ]
 
@@ -828,3 +831,244 @@ class TestFeatureSlugValidation:
         for task in data["tasks"]:
             assert task["file_path"], f"Task {task['id']} has empty file_path"
             assert task["file_path"].startswith("tasks/backlog/my-feature/")
+
+
+# ============================================================================
+# 11. Discover Task File Tests (TASK-REV-8976)
+# ============================================================================
+
+class TestDiscoverTaskFile:
+    """Tests for disk-based task file discovery."""
+
+    def test_discover_single_match(self, tmp_path):
+        """Test discovery returns path when exactly one file matches."""
+        task_dir = tmp_path / "tasks" / "backlog" / "my-feature"
+        task_dir.mkdir(parents=True)
+        (task_dir / "TASK-001-create-auth-service.md").write_text("# Task")
+
+        result = discover_task_file(
+            "TASK-001", "my-feature",
+            base_path="tasks/backlog",
+            project_root=str(tmp_path),
+        )
+        assert result == "tasks/backlog/my-feature/TASK-001-create-auth-service.md"
+
+    def test_discover_no_match_returns_none(self, tmp_path):
+        """Test discovery returns None when no files match."""
+        task_dir = tmp_path / "tasks" / "backlog" / "my-feature"
+        task_dir.mkdir(parents=True)
+
+        result = discover_task_file(
+            "TASK-999", "my-feature",
+            base_path="tasks/backlog",
+            project_root=str(tmp_path),
+        )
+        assert result is None
+
+    def test_discover_multiple_matches_raises(self, tmp_path):
+        """Test discovery raises ValueError when multiple files match same ID."""
+        task_dir = tmp_path / "tasks" / "backlog" / "my-feature"
+        task_dir.mkdir(parents=True)
+        (task_dir / "TASK-001-version-a.md").write_text("# A")
+        (task_dir / "TASK-001-version-b.md").write_text("# B")
+
+        with pytest.raises(ValueError, match="Multiple files match TASK-001"):
+            discover_task_file(
+                "TASK-001", "my-feature",
+                base_path="tasks/backlog",
+                project_root=str(tmp_path),
+            )
+
+    def test_discover_handles_slug_in_base_path(self, tmp_path):
+        """Test discovery avoids path doubling when base_path includes feature slug."""
+        task_dir = tmp_path / "tasks" / "backlog" / "my-feature"
+        task_dir.mkdir(parents=True)
+        (task_dir / "TASK-001-some-task.md").write_text("# Task")
+
+        result = discover_task_file(
+            "TASK-001", "my-feature",
+            base_path="tasks/backlog/my-feature",
+            project_root=str(tmp_path),
+        )
+        assert result == "tasks/backlog/my-feature/TASK-001-some-task.md"
+        assert "my-feature/my-feature" not in result
+
+    def test_discover_without_feature_slug(self, tmp_path):
+        """Test discovery works without a feature slug (flat structure)."""
+        task_dir = tmp_path / "tasks" / "backlog"
+        task_dir.mkdir(parents=True)
+        (task_dir / "TASK-001-flat-task.md").write_text("# Task")
+
+        result = discover_task_file(
+            "TASK-001", "",
+            base_path="tasks/backlog",
+            project_root=str(tmp_path),
+        )
+        assert result == "tasks/backlog/TASK-001-flat-task.md"
+
+    def test_discover_returns_relative_path(self, tmp_path):
+        """Test that discovered path is relative to project root."""
+        task_dir = tmp_path / "tasks" / "backlog" / "oauth2"
+        task_dir.mkdir(parents=True)
+        (task_dir / "TASK-AUTH-001-setup-oauth.md").write_text("# Task")
+
+        result = discover_task_file(
+            "TASK-AUTH-001", "oauth2",
+            base_path="tasks/backlog",
+            project_root=str(tmp_path),
+        )
+        # Path should be relative, not absolute
+        assert not result.startswith("/")
+        assert result == "tasks/backlog/oauth2/TASK-AUTH-001-setup-oauth.md"
+
+    def test_discover_ignores_non_md_files(self, tmp_path):
+        """Test that discovery only matches .md files."""
+        task_dir = tmp_path / "tasks" / "backlog" / "my-feature"
+        task_dir.mkdir(parents=True)
+        (task_dir / "TASK-001-real-task.md").write_text("# Task")
+        (task_dir / "TASK-001-backup.txt").write_text("backup")
+
+        # The glob pattern is {task_id}*.md, so .txt should not match
+        result = discover_task_file(
+            "TASK-001", "my-feature",
+            base_path="tasks/backlog",
+            project_root=str(tmp_path),
+        )
+        assert result == "tasks/backlog/my-feature/TASK-001-real-task.md"
+
+    def test_discover_with_trailing_slash_on_base_path(self, tmp_path):
+        """Test discovery handles trailing slash on base_path."""
+        task_dir = tmp_path / "tasks" / "backlog" / "my-feature"
+        task_dir.mkdir(parents=True)
+        (task_dir / "TASK-001-some-task.md").write_text("# Task")
+
+        result = discover_task_file(
+            "TASK-001", "my-feature",
+            base_path="tasks/backlog/my-feature/",
+            project_root=str(tmp_path),
+        )
+        assert result is not None
+        assert "my-feature/my-feature" not in result
+
+
+# ============================================================================
+# 12. CLI --discover and --strict/--lenient Tests (TASK-REV-8976)
+# ============================================================================
+
+class TestDiscoverCLI:
+    """Tests for --discover CLI flag integration."""
+
+    def test_discover_flag_resolves_actual_files(self, tmp_path, capsys):
+        """Test --discover resolves file paths from disk instead of derivation."""
+        from generate_feature_yaml import main
+        import yaml
+
+        # Create task files with names different from what slugify would produce
+        task_dir = tmp_path / "tasks" / "backlog" / "my-feature"
+        task_dir.mkdir(parents=True)
+        (task_dir / "TASK-001-setup-auth.md").write_text("# Task 1")
+        (task_dir / "TASK-002-add-tests.md").write_text("# Task 2")
+
+        sys.argv = [
+            "generate_feature_yaml.py",
+            "--name", "Test Feature",
+            "--task", "TASK-001:Set up authentication service:5:",
+            "--task", "TASK-002:Add tests for auth:3:TASK-001",
+            "--feature-slug", "my-feature",
+            "--base-path", str(tmp_path),
+            "--discover",
+            "--quiet",
+        ]
+
+        main()
+
+        features_dir = tmp_path / ".guardkit" / "features"
+        yaml_files = list(features_dir.glob("FEAT-*.yaml"))
+        assert len(yaml_files) == 1
+
+        with open(yaml_files[0]) as f:
+            data = yaml.safe_load(f)
+
+        # Paths should be the actual files on disk, not derived
+        paths = {t["id"]: t["file_path"] for t in data["tasks"]}
+        assert paths["TASK-001"] == "tasks/backlog/my-feature/TASK-001-setup-auth.md"
+        assert paths["TASK-002"] == "tasks/backlog/my-feature/TASK-002-add-tests.md"
+
+    def test_strict_mode_is_default(self, tmp_path, capsys):
+        """Test that --strict is the default and exits on path validation errors."""
+        from generate_feature_yaml import main
+
+        # No task files on disk → path validation fails
+        sys.argv = [
+            "generate_feature_yaml.py",
+            "--name", "Test Feature",
+            "--task", "TASK-001:Create service:5:",
+            "--feature-slug", "my-feature",
+            "--base-path", str(tmp_path),
+            "--quiet",
+        ]
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "Path validation failed" in captured.err
+
+    def test_lenient_flag_downgrades_to_warnings(self, tmp_path, capsys):
+        """Test --lenient makes path validation non-fatal."""
+        from generate_feature_yaml import main
+
+        # No task files on disk → path validation would fail in strict mode
+        sys.argv = [
+            "generate_feature_yaml.py",
+            "--name", "Test Feature",
+            "--task", "TASK-001:Create service:5:",
+            "--feature-slug", "my-feature",
+            "--base-path", str(tmp_path),
+            "--lenient",
+            "--quiet",
+        ]
+
+        # Should NOT exit with error
+        main()
+
+        captured = capsys.readouterr()
+        assert "Path validation warnings" in captured.err
+
+    def test_discover_with_missing_files_falls_back(self, tmp_path, capsys):
+        """Test --discover falls back to derived path when file not found on disk."""
+        from generate_feature_yaml import main
+        import yaml
+
+        # Only create one of two task files
+        task_dir = tmp_path / "tasks" / "backlog" / "my-feature"
+        task_dir.mkdir(parents=True)
+        (task_dir / "TASK-001-actual-name.md").write_text("# Task 1")
+        # TASK-002 does NOT exist on disk
+
+        sys.argv = [
+            "generate_feature_yaml.py",
+            "--name", "Test Feature",
+            "--task", "TASK-001:Create service:5:",
+            "--task", "TASK-002:Add tests:3:TASK-001",
+            "--feature-slug", "my-feature",
+            "--base-path", str(tmp_path),
+            "--discover",
+            "--lenient",
+            "--quiet",
+        ]
+
+        main()
+
+        features_dir = tmp_path / ".guardkit" / "features"
+        yaml_files = list(features_dir.glob("FEAT-*.yaml"))
+
+        with open(yaml_files[0]) as f:
+            data = yaml.safe_load(f)
+
+        paths = {t["id"]: t["file_path"] for t in data["tasks"]}
+        # TASK-001: discovered from disk
+        assert paths["TASK-001"] == "tasks/backlog/my-feature/TASK-001-actual-name.md"
+        # TASK-002: fell back to derived path
+        assert paths["TASK-002"] == "tasks/backlog/my-feature/TASK-002-add-tests.md"

@@ -20,6 +20,7 @@ Example:
 """
 
 import argparse
+import glob as globmod
 import sys
 import json
 from pathlib import Path
@@ -174,6 +175,64 @@ def build_task_file_path(
         return f"{base_path}/{feature_slug}/{filename}"
     else:
         return f"{base_path}/{filename}"
+
+
+def discover_task_file(
+    task_id: str,
+    feature_slug: str,
+    base_path: str = "tasks/backlog",
+    project_root: str = ".",
+) -> Optional[str]:
+    """
+    Discover an actual task file on disk by globbing for the task ID prefix.
+
+    Instead of deriving the file path from the task name (which may not match
+    what Claude actually created), this function finds the real file on disk.
+
+    Args:
+        task_id: Task identifier (e.g., "TASK-HLTH-003")
+        feature_slug: Feature directory name (e.g., "fastapi-health-app")
+        base_path: Base tasks directory (default: "tasks/backlog")
+        project_root: Project root directory for resolving paths
+
+    Returns:
+        Relative path to the discovered file, or None if not found.
+
+    Raises:
+        ValueError: If multiple files match the same task ID prefix.
+
+    Examples:
+        >>> discover_task_file("TASK-001", "oauth2", project_root="/my/project")
+        'tasks/backlog/oauth2/TASK-001-create-auth-service.md'
+    """
+    # Build the search directory
+    if feature_slug:
+        stripped = base_path.rstrip('/')
+        if stripped.endswith(f"/{feature_slug}") or stripped == feature_slug:
+            search_dir = Path(project_root) / base_path
+        else:
+            search_dir = Path(project_root) / base_path / feature_slug
+    else:
+        search_dir = Path(project_root) / base_path
+
+    # Glob for files matching the task ID prefix
+    pattern = str(search_dir / f"{task_id}*.md")
+    matches = globmod.glob(pattern)
+
+    if len(matches) == 1:
+        # Return path relative to project root
+        abs_path = Path(matches[0])
+        try:
+            return str(abs_path.relative_to(Path(project_root)))
+        except ValueError:
+            return str(abs_path)
+    elif len(matches) > 1:
+        match_list = ", ".join(str(Path(m).name) for m in matches)
+        raise ValueError(
+            f"Multiple files match {task_id} in {search_dir}: {match_list}"
+        )
+    else:
+        return None
 
 
 def parse_task_string(
@@ -394,10 +453,28 @@ def main():
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="Make validation errors fatal (exit with error). Default: warn and continue."
+        default=True,
+        help="Make path validation errors fatal (default: True). Use --lenient to override."
+    )
+
+    parser.add_argument(
+        "--lenient",
+        action="store_true",
+        help="Make path validation errors non-fatal (overrides --strict default)."
+    )
+
+    parser.add_argument(
+        "--discover",
+        action="store_true",
+        help="Discover actual task files on disk instead of deriving paths from names. "
+             "Globs for {task_id}*.md in the feature directory."
     )
 
     args = parser.parse_args()
+
+    # --lenient overrides --strict default
+    if args.lenient:
+        args.strict = False
 
     # Parse tasks
     task_specs = []
@@ -461,6 +538,46 @@ def main():
         )
         sys.exit(1)
 
+    # Discover actual task files on disk if --discover is set (TASK-REV-8976)
+    if args.discover and args.feature_slug:
+        for task in task_specs:
+            try:
+                discovered = discover_task_file(
+                    task.id,
+                    args.feature_slug,
+                    base_path=args.task_base_path,
+                    project_root=args.base_path,
+                )
+                if discovered:
+                    if task.file_path and task.file_path != discovered:
+                        print(
+                            f"   [discover] {task.id}: derived path differs from disk, using disk path",
+                            file=sys.stderr,
+                        )
+                        print(
+                            f"     derived: {task.file_path}",
+                            file=sys.stderr,
+                        )
+                        print(
+                            f"     actual:  {discovered}",
+                            file=sys.stderr,
+                        )
+                    task.file_path = discovered
+                else:
+                    if not task.file_path:
+                        # No file found and no derived path - derive one as fallback
+                        task.file_path = build_task_file_path(
+                            task.id, args.feature_slug, args.task_base_path,
+                            task_name=task.name
+                        )
+                    print(
+                        f"   [discover] {task.id}: no file found on disk, using derived path: {task.file_path}",
+                        file=sys.stderr,
+                    )
+            except ValueError as e:
+                print(f"Error discovering task file: {e}", file=sys.stderr)
+                sys.exit(1)
+
     # Build parallel groups
     parallel_groups = build_parallel_groups(task_specs)
 
@@ -520,14 +637,28 @@ def main():
     base_dir = Path(args.base_path)
     path_errors = validate_task_paths(feature, base_dir)
     if path_errors:
-        print(f"\n⚠️  Path validation warnings ({len(path_errors)}):", file=sys.stderr)
-        for err in path_errors:
-            print(f"   {err}", file=sys.stderr)
-        print(
-            "\n   Task files may not exist yet if they will be created later.",
-            file=sys.stderr,
-        )
-        print()
+        if args.strict:
+            print(f"\n❌ Path validation failed ({len(path_errors)} errors):", file=sys.stderr)
+            for err in path_errors:
+                print(f"   {err}", file=sys.stderr)
+            print(
+                "\n   Use --discover to resolve paths from actual files on disk.",
+                file=sys.stderr,
+            )
+            print(
+                "   Use --lenient to downgrade to warnings.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        else:
+            print(f"\n⚠️  Path validation warnings ({len(path_errors)}):", file=sys.stderr)
+            for err in path_errors:
+                print(f"   {err}", file=sys.stderr)
+            print(
+                "\n   Task files may not exist yet if they will be created later.",
+                file=sys.stderr,
+            )
+            print()
 
     # Output summary
     if not args.quiet:
