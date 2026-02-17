@@ -1,9 +1,11 @@
 ---
 id: TASK-BOOT-6D85
 title: Wire _docker_available into task dict for conditional approval
-status: backlog
+status: completed
 created: 2026-02-17T00:00:00Z
 updated: 2026-02-17T00:00:00Z
+completed: 2026-02-17T00:00:00Z
+completed_location: tasks/completed/TASK-BOOT-6D85/
 priority: high
 tags: [autobuild, coach-validator, docker, conditional-approval]
 task_type: feature
@@ -14,9 +16,9 @@ wave: 2
 implementation_mode: task-work
 dependencies: []
 test_results:
-  status: pending
+  status: passed
   coverage: null
-  last_run: null
+  last_run: 2026-02-17T00:00:00Z
 ---
 
 # Task: Wire _docker_available into task dict for conditional approval
@@ -31,12 +33,12 @@ See: `.claude/reviews/TASK-REV-4D57-review-report.md` (Revision 3) — Finding 3
 
 ## Acceptance Criteria
 
-- [ ] `_invoke_coach_safely()` in `autobuild.py` includes `_docker_available: validator._is_docker_available()` in the task dict
-- [ ] `_is_docker_available()` is called once per Coach invocation (not per-turn)
-- [ ] When Docker is NOT available and all other conditions are met, conditional approval CAN fire
-- [ ] Unit test: mock Docker unavailable → verify `_docker_available=False` in task dict
-- [ ] Unit test: mock Docker available → verify `_docker_available=True` in task dict
-- [ ] Existing tests continue to pass
+- [x] `_invoke_coach_safely()` in `autobuild.py` includes `_docker_available: validator._is_docker_available()` in the task dict
+- [x] `_is_docker_available()` is called once per Coach invocation (not per-turn)
+- [x] When Docker is NOT available and all other conditions are met, conditional approval CAN fire
+- [x] Unit test: mock Docker unavailable → verify `_docker_available=False` in task dict
+- [x] Unit test: mock Docker available → verify `_docker_available=True` in task dict
+- [x] Existing tests continue to pass
 
 ## Key Files
 
