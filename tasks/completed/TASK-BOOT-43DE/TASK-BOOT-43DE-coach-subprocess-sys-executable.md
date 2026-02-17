@@ -1,9 +1,11 @@
 ---
 id: TASK-BOOT-43DE
 title: Coach test fallback to subprocess with sys.executable
-status: backlog
+status: completed
 created: 2026-02-17T00:00:00Z
 updated: 2026-02-17T00:00:00Z
+completed: 2026-02-17T00:00:00Z
+completed_location: tasks/completed/TASK-BOOT-43DE/
 priority: high
 tags: [autobuild, coach-validator, defence-in-depth]
 task_type: feature
@@ -14,9 +16,9 @@ wave: 2
 implementation_mode: task-work
 dependencies: []
 test_results:
-  status: pending
+  status: passed
   coverage: null
-  last_run: null
+  last_run: 2026-02-17T00:00:00Z
 ---
 
 # Task: Coach test fallback to subprocess with sys.executable
@@ -35,12 +37,12 @@ The SDK passes `os.environ` correctly. But the Bash tool inside the CLI spawns a
 
 ## Acceptance Criteria
 
-- [ ] `run_independent_tests()` in `coach_validator.py` uses `subprocess.run()` with `sys.executable -m pytest` for Python test execution
-- [ ] Non-Python test commands (e.g., `npm test`, `dotnet test`) continue to use the existing execution path
-- [ ] Test command construction uses `sys.executable` to eliminate PATH ambiguity
-- [ ] Subprocess inherits `os.environ` from the orchestrator process
-- [ ] Unit tests for subprocess test execution path
-- [ ] Existing Coach validation tests continue to pass
+- [x] `run_independent_tests()` in `coach_validator.py` uses `subprocess.run()` with `sys.executable -m pytest` for Python test execution
+- [x] Non-Python test commands (e.g., `npm test`, `dotnet test`) continue to use the existing execution path
+- [x] Test command construction uses `sys.executable` to eliminate PATH ambiguity
+- [x] Subprocess inherits `os.environ` from the orchestrator process
+- [x] Unit tests for subprocess test execution path
+- [x] Existing Coach validation tests continue to pass
 
 ## Key Files
 

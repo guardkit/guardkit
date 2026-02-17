@@ -3583,6 +3583,7 @@ class AutoBuildOrchestrator:
                     "acceptance_criteria": acceptance_criteria or [],
                     "task_type": task_type,
                     "requires_infrastructure": requires_infrastructure or [],
+                    "_docker_available": validator._is_docker_available(),
                 },
                 skip_arch_review=skip_arch_review,
                 context=context_prompt if context_prompt else None,
