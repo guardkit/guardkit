@@ -69,8 +69,29 @@ class TestClassifyTestFailure:
     def test_module_not_found_classified_as_infrastructure(
         self, coach_validator: CoachValidator
     ) -> None:
-        """ModuleNotFoundError in test output → infrastructure (ambiguous)."""
+        """ModuleNotFoundError for unknown lib in test output → infrastructure (ambiguous)."""
+        output = "ModuleNotFoundError: No module named 'requests'"
+        assert coach_validator._classify_test_failure(output) == ("infrastructure", "ambiguous")
+
+    def test_module_not_found_known_service_client_promoted_to_high(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        """ModuleNotFoundError for known service-client lib → infrastructure (high)."""
+        output = "ModuleNotFoundError: No module named 'sqlalchemy'"
+        assert coach_validator._classify_test_failure(output) == ("infrastructure", "high")
+
+    def test_module_not_found_redis_promoted_to_high(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        """ModuleNotFoundError for redis → infrastructure (high confidence)."""
         output = "ModuleNotFoundError: No module named 'redis'"
+        assert coach_validator._classify_test_failure(output) == ("infrastructure", "high")
+
+    def test_module_not_found_requests_remains_ambiguous(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        """ModuleNotFoundError for non-service-client lib stays ambiguous."""
+        output = "ModuleNotFoundError: No module named 'requests'"
         assert coach_validator._classify_test_failure(output) == ("infrastructure", "ambiguous")
 
     def test_operational_error_classified_as_infrastructure(

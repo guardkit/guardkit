@@ -33,6 +33,7 @@ Example:
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import time
@@ -391,6 +392,21 @@ class CoachValidator:
         "ModuleNotFoundError",
         "ImportError",
         "No module named",
+    ]
+
+    # Known service-client libraries whose absence indicates a missing dependency
+    # install (not a code defect). ModuleNotFoundError for these is promoted to
+    # high confidence.
+    _KNOWN_SERVICE_CLIENT_LIBS: List[str] = [
+        "psycopg2",
+        "asyncpg",
+        "pymongo",
+        "redis",
+        "psycopg",
+        "sqlalchemy",
+        "motor",
+        "aioredis",
+        "cassandra",
     ]
 
     def __init__(
@@ -2275,6 +2291,13 @@ class CoachValidator:
                     f" '{pattern}' → ('infrastructure', 'high')"
                 )
                 return ("infrastructure", "high")
+        # Promote ModuleNotFoundError to high confidence for known service-client libraries
+        if "modulenotfounderror" in output_lower and "no module named" in output_lower:
+            match = re.search(r"no module named '([^']+)'", test_output, re.IGNORECASE)
+            if match:
+                missing_module = match.group(1).split(".")[0]
+                if missing_module in self._KNOWN_SERVICE_CLIENT_LIBS:
+                    return ("infrastructure", "high")
         for pattern in self._INFRA_AMBIGUOUS:
             if pattern.lower() in output_lower:
                 logger.debug(

@@ -1,9 +1,10 @@
 ---
 id: TASK-BOOT-F9C4
 title: Promote known service-client library ModuleNotFoundErrors to high confidence
-status: backlog
+status: completed
 created: 2026-02-17T00:00:00Z
-updated: 2026-02-17T00:00:00Z
+updated: 2026-02-17T12:00:00Z
+completed: 2026-02-17T12:00:00Z
 priority: medium
 tags: [autobuild, coach-validator, classification, infrastructure]
 task_type: feature
@@ -14,9 +15,11 @@ wave: 3
 implementation_mode: task-work
 dependencies: []
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  tests_run: 27
+  tests_passed: 27
+  last_run: 2026-02-17T12:00:00Z
+completed_location: tasks/completed/TASK-BOOT-F9C4/
 ---
 
 # Task: Promote known service-client library ModuleNotFoundErrors to high confidence
@@ -35,12 +38,12 @@ The list is `_KNOWN_SERVICE_CLIENT_LIBS`, NOT `_INFRA_MODULES`. These are projec
 
 ## Acceptance Criteria
 
-- [ ] New class-level constant `_KNOWN_SERVICE_CLIENT_LIBS` in CoachValidator with: `psycopg2`, `asyncpg`, `pymongo`, `redis`, `psycopg`, `sqlalchemy`, `motor`, `aioredis`, `cassandra`
-- [ ] `_classify_test_failure()` promotes ambiguous `ModuleNotFoundError` to high confidence when the missing module matches a known service-client library
-- [ ] `ModuleNotFoundError: No module named 'requests'` still returns `("infrastructure", "ambiguous")`
-- [ ] `ModuleNotFoundError: No module named 'sqlalchemy'` returns `("infrastructure", "high")`
-- [ ] Unit tests for both promotion and non-promotion cases
-- [ ] Existing classification tests continue to pass
+- [x] New class-level constant `_KNOWN_SERVICE_CLIENT_LIBS` in CoachValidator with: `psycopg2`, `asyncpg`, `pymongo`, `redis`, `psycopg`, `sqlalchemy`, `motor`, `aioredis`, `cassandra`
+- [x] `_classify_test_failure()` promotes ambiguous `ModuleNotFoundError` to high confidence when the missing module matches a known service-client library
+- [x] `ModuleNotFoundError: No module named 'requests'` still returns `("infrastructure", "ambiguous")`
+- [x] `ModuleNotFoundError: No module named 'sqlalchemy'` returns `("infrastructure", "high")`
+- [x] Unit tests for both promotion and non-promotion cases
+- [x] Existing classification tests continue to pass
 
 ## Key Files
 
