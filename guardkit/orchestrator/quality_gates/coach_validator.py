@@ -1039,6 +1039,9 @@ class CoachValidator:
             if bash_is_error is True:
                 output_text = bash_output or "\n".join(collected_text) or "No output"
                 summary = self._summarize_test_output(output_text)
+                logger.debug(
+                    f"[{self.task_id}] _run_tests_via_sdk raw output (first 2000 chars): {output_text[:2000]}"
+                )
                 return IndependentTestResult(
                     tests_passed=False,
                     test_command=test_cmd,
@@ -1049,6 +1052,9 @@ class CoachValidator:
             elif bash_is_error is False:
                 output_text = bash_output or "\n".join(collected_text) or "No output"
                 summary = self._summarize_test_output(output_text)
+                logger.debug(
+                    f"[{self.task_id}] _run_tests_via_sdk raw output (first 2000 chars): {output_text[:2000]}"
+                )
                 return IndependentTestResult(
                     tests_passed=True,
                     test_command=test_cmd,
@@ -1060,6 +1066,9 @@ class CoachValidator:
                 # GAP-FIX #7: is_error is None — parse output text
                 output_text = bash_output or "\n".join(collected_text) or "No output"
                 summary = self._summarize_test_output(output_text)
+                logger.debug(
+                    f"[{self.task_id}] _run_tests_via_sdk raw output (first 2000 chars): {output_text[:2000]}"
+                )
                 # Heuristic: check for failure indicators in output
                 lower = output_text.lower()
                 has_failure = any(
@@ -2256,14 +2265,24 @@ class CoachValidator:
             ``("code", "n/a")`` otherwise
         """
         if not test_output:
+            logger.debug(f"[{self.task_id}] _classify_test_failure: no output → ('code', 'n/a')")
             return ("code", "n/a")
         output_lower = test_output.lower()
         for pattern in self._INFRA_HIGH_CONFIDENCE:
             if pattern.lower() in output_lower:
+                logger.debug(
+                    f"[{self.task_id}] _classify_test_failure: high-confidence pattern matched"
+                    f" '{pattern}' → ('infrastructure', 'high')"
+                )
                 return ("infrastructure", "high")
         for pattern in self._INFRA_AMBIGUOUS:
             if pattern.lower() in output_lower:
+                logger.debug(
+                    f"[{self.task_id}] _classify_test_failure: ambiguous pattern matched"
+                    f" '{pattern}' → ('infrastructure', 'ambiguous')"
+                )
                 return ("infrastructure", "ambiguous")
+        logger.debug(f"[{self.task_id}] _classify_test_failure: no pattern matched → ('code', 'n/a')")
         return ("code", "n/a")
 
     def _summarize_test_output(self, output: str, max_length: int = 1000) -> str:
