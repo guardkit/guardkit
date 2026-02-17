@@ -42,6 +42,7 @@ Task Schema:
   status: str               # pending/in_progress/completed/failed/skipped
   implementation_mode: str  # task-work/direct/manual
   estimated_minutes: int    # Default: 30
+  requires_infrastructure: list  # e.g., ["postgresql", "redis"]
 """
 
 FEATURE_SCHEMA = """
@@ -218,6 +219,8 @@ class FeatureTask(BaseModel):
         ISO timestamp when task started
     completed_at : Optional[str]
         ISO timestamp when task completed
+    requires_infrastructure : List[str]
+        Infrastructure services required (e.g., ["postgresql", "redis"])
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -230,6 +233,7 @@ class FeatureTask(BaseModel):
     status: Literal["pending", "in_progress", "completed", "failed", "skipped"] = "pending"
     implementation_mode: Literal["direct", "task-work", "manual"] = "task-work"
     estimated_minutes: int = 30
+    requires_infrastructure: List[str] = Field(default_factory=list)
     result: Optional[Dict[str, Any]] = None
     turns_completed: int = 0
     current_turn: int = 0

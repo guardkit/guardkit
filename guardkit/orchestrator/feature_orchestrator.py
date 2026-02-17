@@ -45,6 +45,11 @@ from guardkit.orchestrator.feature_loader import (
     FeatureNotFoundError,
     FeatureValidationError,
 )
+from guardkit.orchestrator.environment_bootstrap import (
+    ProjectEnvironmentDetector,
+    EnvironmentBootstrapper,
+    BootstrapResult,
+)
 from guardkit.tasks.task_loader import TaskLoader
 from guardkit.worktrees import WorktreeManager, Worktree, WorktreeCreationError
 from guardkit.cli.display import WaveProgressDisplay
@@ -599,6 +604,9 @@ class FeatureOrchestrator:
         # Copy task files to worktree
         self._copy_tasks_to_worktree(feature, worktree)
 
+        # Phase 1.5: Bootstrap environment (detect + install dependencies)
+        self._bootstrap_environment(worktree)
+
         # Update feature with worktree path and start time
         feature.status = "in_progress"
         feature.execution.started_at = datetime.now().isoformat()
@@ -741,6 +749,56 @@ class FeatureOrchestrator:
             logger.warning(
                 f"Failed to copy {error_count} task file(s) (see logs for details)"
             )
+
+    def _bootstrap_environment(self, worktree: Worktree) -> Optional[BootstrapResult]:
+        """
+        Detect and install project dependencies in the worktree.
+
+        Called after worktree creation (Phase 1.5) and between waves.
+        Non-blocking: failed installs log warnings but do not raise.
+
+        Parameters
+        ----------
+        worktree : Worktree
+            Shared worktree to scan and install into.
+
+        Returns
+        -------
+        Optional[BootstrapResult]
+            Bootstrap result, or None when no manifests were found or an
+            unexpected error occurred.
+        """
+        try:
+            detector = ProjectEnvironmentDetector(worktree.path)
+            manifests = detector.detect()
+
+            if not manifests:
+                logger.debug("No dependency manifests found in worktree")
+                return None
+
+            stacks = sorted(set(m.stack for m in manifests))
+            console.print(f"[cyan]\u2699[/cyan] Bootstrapping environment: {', '.join(stacks)}")
+
+            bootstrapper = EnvironmentBootstrapper(worktree.path)
+            result = bootstrapper.bootstrap(manifests)
+
+            if result.skipped:
+                console.print("[green]\u2713[/green] Environment already bootstrapped (hash match)")
+            elif result.installs_failed == 0:
+                console.print(
+                    f"[green]\u2713[/green] Environment bootstrapped: {', '.join(result.stacks_detected)}"
+                )
+            else:
+                console.print(
+                    f"[yellow]\u26a0[/yellow] Environment bootstrap partial: "
+                    f"{result.installs_attempted - result.installs_failed}/{result.installs_attempted} succeeded"
+                )
+
+            return result
+        except Exception as e:
+            logger.warning(f"Environment bootstrap failed: {e}")
+            console.print(f"[yellow]\u26a0[/yellow] Environment bootstrap failed: {e}")
+            return None
 
     def _create_stub_implementation_plan(
         self,
@@ -1059,6 +1117,11 @@ The detailed specifications are in the task markdown file.
         for wave_number, task_ids in enumerate(
             feature.orchestration.parallel_groups, 1
         ):
+            # Inter-wave bootstrap: re-detect and install new dependencies
+            # (e.g., Wave 1 may have created pyproject.toml that Wave 2 needs)
+            if wave_number > 1:
+                self._bootstrap_environment(worktree)
+
             # Check dependencies satisfied
             for task_id in task_ids:
                 task = FeatureLoader.find_task(feature, task_id)

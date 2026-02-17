@@ -1,9 +1,10 @@
 ---
 id: TASK-INFR-24DB
 title: Infrastructure-aware conditional approval fallback
-status: backlog
+status: completed
 created: 2026-02-17T00:00:00Z
 updated: 2026-02-17T00:00:00Z
+completed: 2026-02-17T00:00:00Z
 priority: medium
 tags: [autobuild, coach-validator, infrastructure, conditional-approval]
 task_type: feature
@@ -14,9 +15,11 @@ wave: 2
 implementation_mode: task-work
 dependencies: [TASK-INFR-6D4F, TASK-INFR-1670]
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  tests_total: 42
+  tests_passed: 42
+  tests_failed: 0
+  last_run: 2026-02-17T00:00:00Z
 ---
 
 # Task: Infrastructure-aware conditional approval fallback
@@ -29,14 +32,14 @@ This is the **fallback** for environments without Docker. The primary path (TASK
 
 ## Acceptance Criteria
 
-- [ ] `CoachValidationResult` dataclass has new field: `approved_without_independent_tests: bool = False`
-- [ ] When independent tests fail with `classification=("infrastructure", "high")` AND `requires_infrastructure` is declared AND all other gates pass AND Docker was unavailable → Coach returns `approve` with `approved_without_independent_tests=True`
-- [ ] When classification is `("infrastructure", "ambiguous")` → existing feedback behavior (no conditional approval)
-- [ ] When `requires_infrastructure` is NOT declared → existing feedback behavior (no conditional approval)
-- [ ] AutoBuild summary displays conditional approval distinctly: "APPROVED (infra-dependent, independent tests skipped)"
-- [ ] `coach_turn_N.json` output includes `approved_without_independent_tests` flag for audit trail
-- [ ] Conditional approval is logged at WARNING level for visibility
-- [ ] Unit tests for:
+- [x] `CoachValidationResult` dataclass has new field: `approved_without_independent_tests: bool = False`
+- [x] When independent tests fail with `classification=("infrastructure", "high")` AND `requires_infrastructure` is declared AND all other gates pass AND Docker was unavailable → Coach returns `approve` with `approved_without_independent_tests=True`
+- [x] When classification is `("infrastructure", "ambiguous")` → existing feedback behavior (no conditional approval)
+- [x] When `requires_infrastructure` is NOT declared → existing feedback behavior (no conditional approval)
+- [x] AutoBuild summary displays conditional approval distinctly: "APPROVED (infra-dependent, independent tests skipped)"
+- [x] `coach_turn_N.json` output includes `approved_without_independent_tests` flag for audit trail
+- [x] Conditional approval is logged at WARNING level for visibility
+- [x] Unit tests for:
   - High-confidence infra + declared deps + Docker unavailable → conditional approve
   - High-confidence infra + no declared deps → feedback (not approve)
   - Ambiguous infra + declared deps → feedback (not approve)

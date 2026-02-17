@@ -41,6 +41,12 @@ from guardkit.orchestrator.feature_orchestrator import (
     TaskExecutionResult,
     WaveExecutionResult,
 )
+from guardkit.orchestrator.environment_bootstrap import (
+    ProjectEnvironmentDetector,
+    EnvironmentBootstrapper,
+    BootstrapResult,
+    DetectedManifest,
+)
 from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.orchestrator.progress import ProgressDisplay
 from guardkit.orchestrator.protocol import OrchestratorProtocol
@@ -84,6 +90,11 @@ __all__ = [
     "FeatureOrchestrationResult",
     "TaskExecutionResult",
     "WaveExecutionResult",
+    # Environment bootstrap
+    "ProjectEnvironmentDetector",
+    "EnvironmentBootstrapper",
+    "BootstrapResult",
+    "DetectedManifest",
     # Paths
     "TaskArtifactPaths",
     # Protocol

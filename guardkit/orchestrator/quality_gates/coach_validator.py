@@ -32,12 +32,19 @@ Example:
 
 import json
 import logging
+import os
 import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
+from guardkit.orchestrator.docker_fixtures import (
+    get_container_name,
+    get_env_exports,
+    get_start_commands,
+    is_known_service,
+)
 from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.models.task_types import TaskType, QualityGateProfile, get_profile
 
@@ -255,6 +262,7 @@ class CoachValidationResult:
     issues: List[Dict[str, Any]] = field(default_factory=list)
     rationale: str = ""
     context_used: Optional[str] = None
+    approved_without_independent_tests: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -314,6 +322,7 @@ class CoachValidationResult:
             "issues": self.issues,
             "rationale": self.rationale,
             "context_used": self.context_used,
+            "approved_without_independent_tests": self.approved_without_independent_tests,
         }
 
 
@@ -358,8 +367,8 @@ class CoachValidator:
     # Default profile for backward compatibility
     DEFAULT_PROFILE = get_profile(TaskType.FEATURE)
 
-    # Infrastructure failure patterns for test output classification
-    _INFRA_FAILURE_PATTERNS: List[str] = [
+    # High-confidence infrastructure patterns (safe for conditional approval)
+    _INFRA_HIGH_CONFIDENCE: List[str] = [
         # Connection/network errors
         "ConnectionRefusedError",
         "ConnectionError",
@@ -374,7 +383,10 @@ class CoachValidator:
         "django.db.utils.OperationalError",
         "pymongo.errors.ServerSelectionTimeoutError",
         "redis.exceptions.ConnectionError",
-        # Missing dependencies
+    ]
+
+    # Ambiguous infrastructure patterns (feedback only, not conditional approval)
+    _INFRA_AMBIGUOUS: List[str] = [
         "ModuleNotFoundError",
         "ImportError",
         "No module named",
@@ -570,50 +582,76 @@ class CoachValidator:
             )
             logger.info(f"Independent test verification skipped for {task_id} (tests_required=False)")
         else:
-            test_result = self.run_independent_tests(task_work_results=task_work_results)
+            test_result = self.run_independent_tests(
+                task_work_results=task_work_results,
+                task=task,
+            )
 
+        conditional_approval = False
         if not test_result.tests_passed:
-            failure_class = self._classify_test_failure(test_result.raw_output)
+            failure_class, failure_confidence = self._classify_test_failure(test_result.raw_output)
             logger.warning(
                 f"Independent test verification failed for {task_id} "
-                f"(classification={failure_class})"
+                f"(classification={failure_class}, confidence={failure_confidence})"
             )
 
-            if failure_class == "infrastructure":
-                description = (
-                    "Tests failed due to infrastructure/environment issues "
-                    "(not code defects). Remediation options: "
-                    "(1) Add mock fixtures for external services, "
-                    "(2) Use SQLite for test database, "
-                    "(3) Mark integration tests with @pytest.mark.integration "
-                    "and exclude via -m 'not integration'"
+            # Conditional approval for high-confidence infrastructure failures
+            # when task declares requires_infrastructure and Docker is unavailable
+            requires_infra = task.get("requires_infrastructure", [])
+            docker_available = task.get("_docker_available", True)
+
+            conditional_approval = (
+                failure_class == "infrastructure"
+                and failure_confidence == "high"
+                and bool(requires_infra)
+                and not docker_available
+                and gates_status.all_gates_passed
+            )
+
+            if conditional_approval:
+                logger.warning(
+                    f"Conditional approval for {task_id}: infrastructure failure "
+                    f"with declared deps {requires_infra}, Docker unavailable. "
+                    f"Continuing to requirements check."
                 )
-                rationale = (
-                    "Tests failed due to infrastructure/environment issues, "
-                    "not code defects"
-                )
+                # Fall through to requirements check with conditional flag set
             else:
-                description = "Independent test verification failed"
-                rationale = (
-                    "Tests passed according to task-work but failed on "
-                    "independent verification"
-                )
+                if failure_class == "infrastructure":
+                    description = (
+                        "Tests failed due to infrastructure/environment issues "
+                        "(not code defects). Remediation options: "
+                        "(1) Add mock fixtures for external services, "
+                        "(2) Use SQLite for test database, "
+                        "(3) Mark integration tests with @pytest.mark.integration "
+                        "and exclude via -m 'not integration'"
+                    )
+                    rationale = (
+                        "Tests failed due to infrastructure/environment issues, "
+                        "not code defects"
+                    )
+                else:
+                    description = "Independent test verification failed"
+                    rationale = (
+                        "Tests passed according to task-work but failed on "
+                        "independent verification"
+                    )
 
-            return self._feedback_result(
-                task_id=task_id,
-                turn=turn,
-                quality_gates=gates_status,
-                independent_tests=test_result,
-                issues=[{
-                    "severity": "must_fix",
-                    "category": "test_verification",
-                    "description": description,
-                    "test_output": test_result.test_output_summary,
-                    "failure_classification": failure_class,
-                }],
-                rationale=rationale,
-                context_used=context,
-            )
+                return self._feedback_result(
+                    task_id=task_id,
+                    turn=turn,
+                    quality_gates=gates_status,
+                    independent_tests=test_result,
+                    issues=[{
+                        "severity": "must_fix",
+                        "category": "test_verification",
+                        "description": description,
+                        "test_output": test_result.test_output_summary,
+                        "failure_classification": failure_class,
+                        "failure_confidence": failure_confidence,
+                    }],
+                    rationale=rationale,
+                    context_used=context,
+                )
 
         # 4. Validate requirements satisfaction
         requirements = self.validate_requirements(task, task_work_results, turn=turn)
@@ -671,7 +709,13 @@ class CoachValidator:
         all_issues = zero_test_issues + seam_test_issues
 
         # 6. All checks passed - approve
-        logger.info(f"Coach approved {task_id} turn {turn}")
+        if conditional_approval:
+            logger.warning(
+                f"Coach conditionally approved {task_id} turn {turn}: "
+                f"infrastructure-dependent, independent tests skipped"
+            )
+        else:
+            logger.info(f"Coach approved {task_id} turn {turn}")
 
         # Build accurate rationale based on actual verification status
         rationale = self._build_approval_rationale(
@@ -680,6 +724,7 @@ class CoachValidator:
             task_work_results=task_work_results,
             profile=profile,
             context=context,
+            conditional_approval=conditional_approval,
         )
 
         return CoachValidationResult(
@@ -692,6 +737,7 @@ class CoachValidator:
             issues=all_issues,
             rationale=rationale,
             context_used=context,
+            approved_without_independent_tests=conditional_approval,
         )
 
     def read_quality_gate_results(self, task_id: str) -> Dict[str, Any]:
@@ -1050,6 +1096,7 @@ class CoachValidator:
     def run_independent_tests(
         self,
         task_work_results: Optional[Dict[str, Any]] = None,
+        task: Optional[Dict[str, Any]] = None,
     ) -> IndependentTestResult:
         """
         Run tests independently to verify Player's report.
@@ -1062,6 +1109,10 @@ class CoachValidator:
         task_work_results : Optional[Dict[str, Any]]
             Task-work results dict (already loaded in memory). Passed through
             to _detect_test_command for primary test file detection.
+        task : Optional[Dict[str, Any]]
+            Task data dict. When provided, ``requires_infrastructure`` is read
+            from task frontmatter and Docker containers are started before test
+            execution and stopped afterwards.
 
         Returns
         -------
@@ -1084,80 +1135,190 @@ class CoachValidator:
                 duration_seconds=0.0,
             )
 
-        # SDK-first dispatch (GAP-FIX #9): use asyncio bridge to call async SDK method
-        if self._coach_test_execution == "sdk":
-            logger.info(f"Running independent tests via SDK (environment parity): {test_cmd}")
-            try:
-                import asyncio
-                try:
-                    loop = asyncio.get_event_loop()
-                except RuntimeError:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                result = loop.run_until_complete(self._run_tests_via_sdk(test_cmd))
-                logger.info(
-                    f"SDK independent tests {'passed' if result.tests_passed else 'failed'} "
-                    f"in {result.duration_seconds:.1f}s"
-                )
-                return result
-            except Exception as e:
-                logger.warning(
-                    f"SDK test execution failed, falling back to subprocess: {e}"
-                )
-                # Fall through to subprocess path below
+        # Infrastructure lifecycle for tasks with requires_infrastructure
+        requires_infra: List[str] = []
+        if task is not None:
+            ri = task.get("requires_infrastructure")
+            if isinstance(ri, list):
+                requires_infra = ri
 
-        # Subprocess path (default for coach_test_execution="subprocess" or SDK fallback)
-        logger.info(f"Running independent tests via subprocess: {test_cmd}")
-        start_time = time.time()
+        infra_started = False
+        if requires_infra:
+            if self._is_docker_available():
+                self._start_infrastructure_containers(requires_infra)
+                infra_started = True
+            else:
+                logger.warning(
+                    "requires_infrastructure=%s declared but Docker is unavailable. "
+                    "Running tests without infrastructure — classification will "
+                    "determine appropriate fallback.",
+                    requires_infra,
+                )
 
         try:
+            # SDK-first dispatch (GAP-FIX #9): use asyncio bridge to call async SDK method
+            if self._coach_test_execution == "sdk":
+                logger.info(f"Running independent tests via SDK (environment parity): {test_cmd}")
+                try:
+                    import asyncio
+                    try:
+                        loop = asyncio.get_event_loop()
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                    result = loop.run_until_complete(self._run_tests_via_sdk(test_cmd))
+                    logger.info(
+                        f"SDK independent tests {'passed' if result.tests_passed else 'failed'} "
+                        f"in {result.duration_seconds:.1f}s"
+                    )
+                    return result
+                except Exception as e:
+                    logger.warning(
+                        f"SDK test execution failed, falling back to subprocess: {e}"
+                    )
+                    # Fall through to subprocess path below
+
+            # Subprocess path (default for coach_test_execution="subprocess" or SDK fallback)
+            logger.info(f"Running independent tests via subprocess: {test_cmd}")
+            start_time = time.time()
+
+            try:
+                result = subprocess.run(
+                    test_cmd,
+                    shell=True,
+                    cwd=str(self.worktree_path),
+                    capture_output=True,
+                    text=True,
+                    timeout=self.test_timeout,
+                )
+
+                duration = time.time() - start_time
+                tests_passed = result.returncode == 0
+
+                # Summarize output (truncate if too long)
+                output = result.stdout or result.stderr or "No output"
+                summary = self._summarize_test_output(output)
+
+                logger.info(
+                    f"Independent tests {'passed' if tests_passed else 'failed'} "
+                    f"in {duration:.1f}s"
+                )
+
+                return IndependentTestResult(
+                    tests_passed=tests_passed,
+                    test_command=test_cmd,
+                    test_output_summary=summary,
+                    duration_seconds=duration,
+                    raw_output=(result.stdout or "") + (result.stderr or ""),
+                )
+
+            except subprocess.TimeoutExpired:
+                duration = time.time() - start_time
+                logger.error(f"Test execution timed out after {self.test_timeout}s")
+                return IndependentTestResult(
+                    tests_passed=False,
+                    test_command=test_cmd,
+                    test_output_summary=f"Test execution timed out after {self.test_timeout}s",
+                    duration_seconds=duration,
+                )
+            except Exception as e:
+                duration = time.time() - start_time
+                logger.error(f"Test execution failed: {e}")
+                return IndependentTestResult(
+                    tests_passed=False,
+                    test_command=test_cmd,
+                    test_output_summary=f"Test execution failed: {e}",
+                    duration_seconds=duration,
+                )
+
+        finally:
+            if infra_started:
+                self._stop_infrastructure_containers(requires_infra)
+
+    def _is_docker_available(self) -> bool:
+        """Check if Docker daemon is reachable.
+
+        Runs ``docker info`` with a 5-second timeout. Returns True if the
+        command succeeds (exit code 0), False otherwise.
+        """
+        try:
             result = subprocess.run(
-                test_cmd,
-                shell=True,
-                cwd=str(self.worktree_path),
+                ["docker", "info"],
                 capture_output=True,
-                text=True,
-                timeout=self.test_timeout,
+                timeout=5,
             )
+            return result.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
 
-            duration = time.time() - start_time
-            tests_passed = result.returncode == 0
+    def _start_infrastructure_containers(self, services: List[str]) -> None:
+        """Start Docker containers for each declared infrastructure service.
 
-            # Summarize output (truncate if too long)
-            output = result.stdout or result.stderr or "No output"
-            summary = self._summarize_test_output(output)
+        Uses recipes from :mod:`guardkit.orchestrator.docker_fixtures`.
+        Unknown services are logged as warnings and skipped.
+        Environment variables (e.g., DATABASE_URL) are set in the current
+        process via :func:`os.environ`.
 
-            logger.info(
-                f"Independent tests {'passed' if tests_passed else 'failed'} "
-                f"in {duration:.1f}s"
-            )
+        Args:
+            services: List of service names (e.g., ``["postgresql", "redis"]``)
+        """
+        for service in services:
+            if not is_known_service(service):
+                logger.warning("Unknown infrastructure service %r, skipping.", service)
+                continue
+            logger.info("Starting Docker container for service: %s", service)
+            commands = get_start_commands(service)
+            for cmd in commands:
+                result = subprocess.run(
+                    cmd,
+                    shell=True,
+                    cwd=str(self.worktree_path),
+                    capture_output=True,
+                    text=True,
+                )
+                if result.returncode != 0 and "docker rm" not in cmd:
+                    logger.warning(
+                        "Docker setup command exited %d for service %r: %r\nstderr: %s",
+                        result.returncode,
+                        service,
+                        cmd,
+                        result.stderr,
+                    )
+            # Set environment variables for test execution
+            env_vars = get_env_exports(service)
+            for key, value in env_vars.items():
+                os.environ[key] = value
+                logger.info("Set %s=%s", key, value)
 
-            return IndependentTestResult(
-                tests_passed=tests_passed,
-                test_command=test_cmd,
-                test_output_summary=summary,
-                duration_seconds=duration,
-                raw_output=(result.stdout or "") + (result.stderr or ""),
-            )
+    def _stop_infrastructure_containers(self, services: List[str]) -> None:
+        """Tear down Docker containers for each declared infrastructure service.
 
-        except subprocess.TimeoutExpired:
-            duration = time.time() - start_time
-            logger.error(f"Test execution timed out after {self.test_timeout}s")
-            return IndependentTestResult(
-                tests_passed=False,
-                test_command=test_cmd,
-                test_output_summary=f"Test execution timed out after {self.test_timeout}s",
-                duration_seconds=duration,
-            )
-        except Exception as e:
-            duration = time.time() - start_time
-            logger.error(f"Test execution failed: {e}")
-            return IndependentTestResult(
-                tests_passed=False,
-                test_command=test_cmd,
-                test_output_summary=f"Test execution failed: {e}",
-                duration_seconds=duration,
-            )
+        Runs ``docker rm -f <container_name>`` for each known service.
+        Unknown services are silently skipped. Errors during teardown
+        are logged but do not raise.
+
+        Args:
+            services: List of service names (e.g., ``["postgresql", "redis"]``)
+        """
+        for service in services:
+            if not is_known_service(service):
+                continue
+            container_name = get_container_name(service)
+            logger.info("Stopping Docker container: %s", container_name)
+            try:
+                subprocess.run(
+                    ["docker", "rm", "-f", container_name],
+                    capture_output=True,
+                    cwd=str(self.worktree_path),
+                )
+            except Exception as e:
+                logger.warning(
+                    "Failed to stop container %s: %s", container_name, e
+                )
+            # Clean up environment variables
+            env_vars = get_env_exports(service)
+            for key in env_vars:
+                os.environ.pop(key, None)
 
     def validate_requirements(
         self,
@@ -2060,8 +2221,11 @@ class CoachValidator:
                 return filepath
         return filepath
 
-    def _classify_test_failure(self, test_output: Optional[str]) -> str:
-        """Classify a test failure as infrastructure or code.
+    def _classify_test_failure(self, test_output: Optional[str]) -> Tuple[str, str]:
+        """Classify a test failure as infrastructure or code with confidence.
+
+        Checks high-confidence patterns first. If any high-confidence pattern
+        matches, returns high confidence regardless of ambiguous matches.
 
         Parameters
         ----------
@@ -2070,17 +2234,21 @@ class CoachValidator:
 
         Returns
         -------
-        str
-            ``"infrastructure"`` if output matches known infra patterns,
-            ``"code"`` otherwise
+        Tuple[str, str]
+            ``("infrastructure", "high")`` if high-confidence pattern matches,
+            ``("infrastructure", "ambiguous")`` if only ambiguous pattern matches,
+            ``("code", "n/a")`` otherwise
         """
         if not test_output:
-            return "code"
+            return ("code", "n/a")
         output_lower = test_output.lower()
-        for pattern in self._INFRA_FAILURE_PATTERNS:
+        for pattern in self._INFRA_HIGH_CONFIDENCE:
             if pattern.lower() in output_lower:
-                return "infrastructure"
-        return "code"
+                return ("infrastructure", "high")
+        for pattern in self._INFRA_AMBIGUOUS:
+            if pattern.lower() in output_lower:
+                return ("infrastructure", "ambiguous")
+        return ("code", "n/a")
 
     def _summarize_test_output(self, output: str, max_length: int = 1000) -> str:
         """
@@ -2155,6 +2323,7 @@ class CoachValidator:
         task_work_results: Dict[str, Any],
         profile: QualityGateProfile,
         context: Optional[str] = None,
+        conditional_approval: bool = False,
     ) -> str:
         """
         Build an accurate rationale message for approval based on actual verification status.
@@ -2169,6 +2338,10 @@ class CoachValidator:
             Task-work results
         profile : QualityGateProfile
             Quality gate profile for task type
+        context : Optional[str]
+            Architecture context string if available
+        conditional_approval : bool
+            True if this approval is conditional due to infrastructure test failure
 
         Returns
         -------
@@ -2177,7 +2350,13 @@ class CoachValidator:
         """
         parts = ["All quality gates passed."]
 
-        if test_result.test_command == "skipped":
+        if conditional_approval:
+            parts.append(
+                "Independent tests failed due to high-confidence infrastructure dependency "
+                "(Docker unavailable). Task declares required infrastructure. "
+                "Conditionally approved — independent tests skipped."
+            )
+        elif test_result.test_command == "skipped":
             if not profile.tests_required:
                 parts.append("Tests not required for this task type.")
             else:

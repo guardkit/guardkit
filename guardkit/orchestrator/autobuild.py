@@ -735,17 +735,23 @@ class AutoBuildOrchestrator:
 
         pre_loop_result = None  # Initialize pre-loop result
 
-        # Load task data to extract task_type for CoachValidator
+        # Load task data to extract task_type and requires_infrastructure for CoachValidator
         task_type: Optional[str] = None
+        requires_infrastructure: Optional[List[str]] = None
         try:
             task_data = TaskLoader.load_task(task_id, repo_root=self.repo_root)
-            task_type = task_data.get("frontmatter", {}).get("task_type")
+            frontmatter = task_data.get("frontmatter", {})
+            task_type = frontmatter.get("task_type")
             if task_type:
                 logger.debug(f"Loaded task_type from task file: {task_type}")
+            ri = frontmatter.get("requires_infrastructure")
+            if isinstance(ri, list):
+                requires_infrastructure = ri
+                logger.debug(f"Loaded requires_infrastructure from task file: {ri}")
         except TaskNotFoundError:
             logger.debug(f"Task file not found for {task_id}, continuing with task_type=None")
         except Exception as e:
-            logger.debug(f"Failed to load task_type from task file: {e}, continuing with task_type=None")
+            logger.debug(f"Failed to load task metadata from task file: {e}, continuing with defaults")
 
         try:
             # Phase 1: Setup (or resume existing worktree)
@@ -827,6 +833,7 @@ class AutoBuildOrchestrator:
                 task_file_path=task_file_path,
                 implementation_plan=pre_loop_result.get("plan") if pre_loop_result else None,
                 task_type=task_type,
+                requires_infrastructure=requires_infrastructure,
             )
 
             # Phase 4: Finalize
@@ -1441,6 +1448,7 @@ class AutoBuildOrchestrator:
         task_file_path: Optional[Path] = None,
         implementation_plan: Optional[Dict[str, Any]] = None,
         task_type: Optional[str] = None,
+        requires_infrastructure: Optional[List[str]] = None,
     ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "design_extraction_failed"]]:
         """
         Phase 3: Execute Player↔Coach adversarial loop.
@@ -1470,6 +1478,8 @@ class AutoBuildOrchestrator:
             Path to task file for state persistence
         task_type : Optional[str], optional
             Task type from task frontmatter (e.g., "implementation", "refactor", "bugfix")
+        requires_infrastructure : Optional[List[str]], optional
+            Infrastructure services required (e.g., ["postgresql", "redis"])
 
         Returns
         -------
@@ -1534,6 +1544,7 @@ class AutoBuildOrchestrator:
                     task_type=task_type,
                     skip_arch_review=not self.enable_pre_loop,
                     acceptance_criteria=acceptance_criteria,
+                    requires_infrastructure=requires_infrastructure,
                 )
 
                 turn_history.append(turn_record)
@@ -1669,6 +1680,7 @@ class AutoBuildOrchestrator:
         task_type: Optional[str] = None,
         skip_arch_review: bool = False,
         acceptance_criteria: Optional[List[str]] = None,
+        requires_infrastructure: Optional[List[str]] = None,
     ) -> TurnRecord:
         """
         Execute single Player→Coach turn.
@@ -1701,6 +1713,8 @@ class AutoBuildOrchestrator:
             Optional feedback from previous turn
         task_type : Optional[str], optional
             Task type from task frontmatter (e.g., "implementation", "refactor", "bugfix")
+        requires_infrastructure : Optional[List[str]], optional
+            Infrastructure services required (e.g., ["postgresql", "redis"])
 
         Returns
         -------
@@ -1885,6 +1899,7 @@ class AutoBuildOrchestrator:
             acceptance_criteria=acceptance_criteria,
             task_type=task_type,
             skip_arch_review=skip_arch_review,
+            requires_infrastructure=requires_infrastructure,
         )
         # Snapshot context status after coach invocation (TASK-FIX-GCW5)
         coach_context_status = self._last_coach_context_status
@@ -3422,6 +3437,7 @@ class AutoBuildOrchestrator:
         acceptance_criteria: Optional[List[str]] = None,
         task_type: Optional[str] = None,
         skip_arch_review: bool = False,
+        requires_infrastructure: Optional[List[str]] = None,
     ) -> AgentInvocationResult:
         """
         Invoke Coach agent with comprehensive error handling.
@@ -3457,6 +3473,8 @@ class AutoBuildOrchestrator:
             If True, skip architectural review gate validation. Use when running
             in implement-only mode where Phase 2.5B (Architectural Review) was skipped.
             Default is False.
+        requires_infrastructure : Optional[List[str]], optional
+            Infrastructure services required (e.g., ["postgresql", "redis"])
 
         Returns
         -------
@@ -3564,6 +3582,7 @@ class AutoBuildOrchestrator:
                 task={
                     "acceptance_criteria": acceptance_criteria or [],
                     "task_type": task_type,
+                    "requires_infrastructure": requires_infrastructure or [],
                 },
                 skip_arch_review=skip_arch_review,
                 context=context_prompt if context_prompt else None,
@@ -3762,6 +3781,22 @@ class AutoBuildOrchestrator:
             Formatted summary details
         """
         if final_decision == "approved":
+            # Check if this was a conditional approval (infrastructure-dependent)
+            last_coach = turn_history[-1] if turn_history else None
+            coach_report = (
+                last_coach.coach_result.report
+                if last_coach and last_coach.coach_result
+                else None
+            )
+            if coach_report and coach_report.get("approved_without_independent_tests"):
+                return (
+                    f"APPROVED (infra-dependent, independent tests skipped) "
+                    f"after {len(turn_history)} turn(s).\n"
+                    f"Worktree preserved at: {self._worktree_manager.worktrees_dir}\n"
+                    f"Review and merge manually when ready.\n"
+                    f"Note: Independent tests were skipped due to infrastructure "
+                    f"dependencies without Docker."
+                )
             return (
                 f"Coach approved implementation after {len(turn_history)} turn(s).\n"
                 f"Worktree preserved at: {self._worktree_manager.worktrees_dir}\n"

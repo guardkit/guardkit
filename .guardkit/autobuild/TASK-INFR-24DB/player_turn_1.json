@@ -1,0 +1,98 @@
+{
+  "task_id": "TASK-INFR-24DB",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/quality_gates/coach_validator.py",
+    "guardkit/orchestrator/autobuild.py",
+    "tests/unit/test_coach_failure_classification.py"
+  ],
+  "files_created": [],
+  "tests_written": [
+    "tests/unit/test_coach_failure_classification.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "24 passed in 2.04s (test_coach_failure_classification.py); 18 passed in 92.73s (test_requires_infrastructure.py)",
+  "implementation_notes": "Implemented the conditional approval fallback for infrastructure-aware Coach decisions.\n\n1. CoachValidationResult.approved_without_independent_tests (bool=False): Added as new field to the dataclass and included in to_dict() so it appears in coach_turn_N.json audit trail.\n\n2. validate() conditional approval logic: Before the existing feedback paths inside 'if not test_result.tests_passed:', the code now checks for all four conditions required for conditional approval (high-confidence infrastructure classification, requires_infrastructure declared, Docker unavailable, all other gates passed). If all conditions met, sets conditional_approval=True and falls through to requirements and zero-test checks rather than returning feedback early. If not all conditions met, existing feedback paths are unchanged.\n\n3. _build_approval_rationale(): Added conditional_approval parameter. When True, includes a clear note that independent tests were skipped due to infrastructure dependency with Docker unavailable.\n\n4. Final approval block: Logs at WARNING level for conditional approval, passes conditional_approval into the result constructor as approved_without_independent_tests.\n\n5. autobuild._build_summary_details(): Checks coach_result.report.get('approved_without_independent_tests') on the last turn record. If True, displays 'APPROVED (infra-dependent, independent tests skipped)' message instead of the standard approval message.\n\n6. TestConditionalApproval test class (7 tests): Covers all AC scenarios - high-confidence+declared+Docker-unavailable approves, no declared deps returns feedback, ambiguous classification returns feedback, Docker available returns feedback, gates failed returns feedback early, to_dict includes the flag, normal approval has False flag. Fixed one test that used 'psycopg2' in ImportError output (which matches _INFRA_HIGH_CONFIDENCE) to use a non-high-confidence module name instead.",
+  "concerns": [
+    "_docker_available defaults to True in task.get('_docker_available', True), meaning conditional approval never fires unless explicitly set. This is intentional and safe — TASK-INFR-5922 will set this field when Docker detection is implemented.",
+    "The test_gates_failed_no_conditional_approval test asserts result.decision=='feedback' but does not assert approved_without_independent_tests is False because the method returns early from the gates check before the conditional_approval variable is ever set. This is correct behavior."
+  ],
+  "requirements_addressed": [
+    "AC-1: CoachValidationResult has approved_without_independent_tests: bool = False",
+    "AC-2: High-confidence infra + requires_infrastructure declared + Docker unavailable + all gates pass -> approve with approved_without_independent_tests=True",
+    "AC-3: Ambiguous classification -> existing feedback (no conditional approval)",
+    "AC-4: requires_infrastructure not declared -> existing feedback (no conditional approval)",
+    "AC-5: AutoBuild summary displays 'APPROVED (infra-dependent, independent tests skipped)'",
+    "AC-6: coach_turn_N.json includes approved_without_independent_tests flag",
+    "AC-7: Conditional approval logged at WARNING level",
+    "AC-8: Unit tests for all scenarios"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-1",
+      "criterion_text": "CoachValidationResult dataclass has new field: approved_without_independent_tests: bool = False",
+      "status": "complete",
+      "evidence": "Added 'approved_without_independent_tests: bool = False' to the CoachValidationResult dataclass fields in coach_validator.py",
+      "test_file": "tests/unit/test_coach_failure_classification.py",
+      "implementation_files": ["guardkit/orchestrator/quality_gates/coach_validator.py"]
+    },
+    {
+      "criterion_id": "AC-2",
+      "criterion_text": "When independent tests fail with classification=(infrastructure, high) AND requires_infrastructure declared AND all other gates pass AND Docker unavailable -> Coach returns approve with approved_without_independent_tests=True",
+      "status": "complete",
+      "evidence": "Implemented conditional_approval logic in validate() that checks all four conditions; falls through to requirements check when met; final approval sets approved_without_independent_tests=conditional_approval",
+      "test_file": "tests/unit/test_coach_failure_classification.py",
+      "implementation_files": ["guardkit/orchestrator/quality_gates/coach_validator.py"]
+    },
+    {
+      "criterion_id": "AC-3",
+      "criterion_text": "When classification is (infrastructure, ambiguous) -> existing feedback behavior (no conditional approval)",
+      "status": "complete",
+      "evidence": "conditional_approval requires failure_confidence == 'high'; ambiguous returns feedback via existing path. Test test_ambiguous_infra_declared_deps_returns_feedback verifies this.",
+      "test_file": "tests/unit/test_coach_failure_classification.py",
+      "implementation_files": ["guardkit/orchestrator/quality_gates/coach_validator.py"]
+    },
+    {
+      "criterion_id": "AC-4",
+      "criterion_text": "When requires_infrastructure is NOT declared -> existing feedback behavior (no conditional approval)",
+      "status": "complete",
+      "evidence": "conditional_approval requires bool(requires_infra) to be True; empty list fails this check. Test test_high_confidence_infra_no_declared_deps_returns_feedback verifies this.",
+      "test_file": "tests/unit/test_coach_failure_classification.py",
+      "implementation_files": ["guardkit/orchestrator/quality_gates/coach_validator.py"]
+    },
+    {
+      "criterion_id": "AC-5",
+      "criterion_text": "AutoBuild summary displays conditional approval distinctly: 'APPROVED (infra-dependent, independent tests skipped)'",
+      "status": "complete",
+      "evidence": "_build_summary_details() in autobuild.py now checks coach_result.report.get('approved_without_independent_tests') and returns the distinct message when True",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/autobuild.py"]
+    },
+    {
+      "criterion_id": "AC-6",
+      "criterion_text": "coach_turn_N.json output includes approved_without_independent_tests flag for audit trail",
+      "status": "complete",
+      "evidence": "Added 'approved_without_independent_tests': self.approved_without_independent_tests to CoachValidationResult.to_dict(). Test test_conditional_approval_in_to_dict verifies the key is present and True.",
+      "test_file": "tests/unit/test_coach_failure_classification.py",
+      "implementation_files": ["guardkit/orchestrator/quality_gates/coach_validator.py"]
+    },
+    {
+      "criterion_id": "AC-7",
+      "criterion_text": "Conditional approval is logged at WARNING level for visibility",
+      "status": "complete",
+      "evidence": "Two logger.warning() calls: one when conditional_approval conditions are met (before falling through), one in the approval block when conditional_approval is True",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/quality_gates/coach_validator.py"]
+    },
+    {
+      "criterion_id": "AC-8",
+      "criterion_text": "Unit tests for all scenarios listed in the task",
+      "status": "complete",
+      "evidence": "TestConditionalApproval class with 7 tests covering all scenarios: conditional approve, no declared deps, ambiguous, Docker available, gates failed, to_dict flag, normal approval flag=False. All 24 tests in the file pass.",
+      "test_file": "tests/unit/test_coach_failure_classification.py",
+      "implementation_files": ["tests/unit/test_coach_failure_classification.py"]
+    }
+  ]
+}

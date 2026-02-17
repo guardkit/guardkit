@@ -1,0 +1,130 @@
+{
+  "task_id": "TASK-BOOT-E3C0",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/__init__.py",
+    "guardkit/orchestrator/feature_orchestrator.py"
+  ],
+  "files_created": [
+    "guardkit/orchestrator/environment_bootstrap.py",
+    "tests/unit/test_environment_bootstrap.py"
+  ],
+  "tests_written": [
+    "tests/unit/test_environment_bootstrap.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "55 passed in 1.73s (plus 99 existing orchestrator tests passed, 1 skipped)",
+  "implementation_notes": "Created guardkit/orchestrator/environment_bootstrap.py with DetectedManifest, BootstrapResult dataclasses, ProjectEnvironmentDetector class (scans root + depth-1 subdirs, priority-ordered manifest detection with lock-file dedup per (directory, stack) pair), and EnvironmentBootstrapper class (SHA-256 content hash dedup, state persistence in .guardkit/bootstrap_state.json, subprocess.run with 300s timeout, never raises). Added _bootstrap_environment() method to FeatureOrchestrator with try/except catching all exceptions and logging warnings. Called _bootstrap_environment() in _create_new_worktree() after _copy_tasks_to_worktree() (Phase 1.5). Called it again in _wave_phase() at the start of each iteration when wave_number > 1 (inter-wave re-bootstrap). Exported all four public symbols from guardkit/orchestrator/__init__.py. Used sys.executable for all Python install commands per spec. Console output uses Rich markup with unicode escape sequences for icons (gear, checkmark, warning) to avoid emoji encoding issues.",
+  "concerns": [
+    "v1 only scans depth-1: monorepos with packages/backend/api/pyproject.toml are not detected (documented in module docstring as a known limitation)",
+    "Python installs go into the current interpreter (no venv creation), per the Open Design Decision in the task spec",
+    "poetry.lock uses pip install -e . rather than poetry install per the task spec — this matches the spec but may not correctly install all Poetry-managed deps; the spec was followed as written",
+    "cargo fetch is used for Rust (not cargo build/cargo check) — this matches the task implementation spec precisely"
+  ],
+  "requirements_addressed": [
+    "New module guardkit/orchestrator/environment_bootstrap.py with ProjectEnvironmentDetector class",
+    "Detector scans worktree root + depth-1 subdirs for dependency manifests (lock files first)",
+    "All 6 stacks supported: python (poetry.lock, pyproject.toml, requirements.txt), node (pnpm-lock.yaml, yarn.lock, package-lock.json, package.json), dotnet (*.csproj, *.sln), go (go.mod), rust (Cargo.toml), flutter (pubspec.yaml)",
+    "_bootstrap_environment() method added to FeatureOrchestrator, called in _create_new_worktree() (Phase 1.5)",
+    "_already_bootstrapped() equivalent: hash-based dedup via manifest content hash in .guardkit/bootstrap_state.json",
+    "Bootstrap is synchronous (must complete before agents run)",
+    "Failed bootstrap logs warning but does NOT block execution",
+    "Monorepo support: scans root AND depth-1 subdirectories (hidden dirs excluded)",
+    "Unit tests for detector (mock filesystem with various manifest combinations) — 28 tests",
+    "Unit tests for bootstrap state tracking (hash-based dedup) — 12 tests",
+    "Existing feature orchestrator tests continue to pass (99 passed, 1 skipped)",
+    "guardkit/orchestrator/__init__.py updated with all four new exports"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "New module guardkit/orchestrator/environment_bootstrap.py with ProjectEnvironmentDetector class",
+      "status": "complete",
+      "evidence": "Created guardkit/orchestrator/environment_bootstrap.py with ProjectEnvironmentDetector class containing __init__, detect, _scan_directory, and _scan_dirs methods",
+      "test_file": "tests/unit/test_environment_bootstrap.py",
+      "implementation_files": ["guardkit/orchestrator/environment_bootstrap.py"]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Detector scans worktree root for dependency manifests (lock files first, then manifest files)",
+      "status": "complete",
+      "evidence": "ProjectEnvironmentDetector._scan_directory implements priority-ordered detection with locked_stacks set ensuring lock files suppress non-lock manifests per (directory, stack) pair",
+      "test_file": "tests/unit/test_environment_bootstrap.py",
+      "implementation_files": ["guardkit/orchestrator/environment_bootstrap.py"]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Supported stacks: Python, Node, .NET, Go, Rust, Flutter",
+      "status": "complete",
+      "evidence": "All 12 manifest types across 6 stacks are detected and mapped to install commands. Tests in TestProjectEnvironmentDetectorPython, TestProjectEnvironmentDetectorNode, TestProjectEnvironmentDetectorOtherStacks cover all stacks.",
+      "test_file": "tests/unit/test_environment_bootstrap.py",
+      "implementation_files": ["guardkit/orchestrator/environment_bootstrap.py"]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "_bootstrap_environment() method added to FeatureOrchestrator (called in _setup_phase() after worktree creation — Phase 1.5)",
+      "status": "complete",
+      "evidence": "Added _bootstrap_environment() to FeatureOrchestrator. Called in _create_new_worktree() after _copy_tasks_to_worktree() (which is called by _setup_phase). Also called at wave_number > 1 in _wave_phase() for inter-wave re-bootstrap.",
+      "test_file": "tests/unit/test_environment_bootstrap.py",
+      "implementation_files": ["guardkit/orchestrator/feature_orchestrator.py"]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "_already_bootstrapped() check prevents redundant installs via manifest content hash tracking in .guardkit/bootstrap_state.json",
+      "status": "complete",
+      "evidence": "EnvironmentBootstrapper._compute_hash() computes SHA-256 of sorted manifest path+content. bootstrap() loads saved state and returns skipped=True when hash matches. State persisted at root/.guardkit/bootstrap_state.json.",
+      "test_file": "tests/unit/test_environment_bootstrap.py",
+      "implementation_files": ["guardkit/orchestrator/environment_bootstrap.py"]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Bootstrap is synchronous (must complete before agents run)",
+      "status": "complete",
+      "evidence": "_bootstrap_environment() is a regular synchronous method called directly in _create_new_worktree() before returning the (feature, worktree) tuple that is used by the wave phase. subprocess.run() (not asyncio.create_subprocess_exec) is used for install commands.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/environment_bootstrap.py", "guardkit/orchestrator/feature_orchestrator.py"]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Failed bootstrap logs warning but does NOT block execution (Player may handle it)",
+      "status": "complete",
+      "evidence": "_run_install() catches CalledProcessError, OSError, and TimeoutExpired — never raises. _bootstrap_environment() wraps everything in try/except Exception and returns None on any error. logger.warning() used throughout.",
+      "test_file": "tests/unit/test_environment_bootstrap.py",
+      "implementation_files": ["guardkit/orchestrator/environment_bootstrap.py", "guardkit/orchestrator/feature_orchestrator.py"]
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "Monorepo support: scans worktree root AND depth-1 subdirectories",
+      "status": "complete",
+      "evidence": "_scan_dirs() returns [root] + immediate non-hidden subdirectories. TestProjectEnvironmentDetectorMonorepo has 4 tests covering single subdir, multiple subdirs, hidden exclusion, and same-stack root+subdir.",
+      "test_file": "tests/unit/test_environment_bootstrap.py",
+      "implementation_files": ["guardkit/orchestrator/environment_bootstrap.py"]
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "Unit tests for detector (mock filesystem with various manifest combinations)",
+      "status": "complete",
+      "evidence": "28 tests across TestProjectEnvironmentDetectorScanDirs, TestProjectEnvironmentDetectorPython, TestProjectEnvironmentDetectorNode, TestProjectEnvironmentDetectorOtherStacks, TestProjectEnvironmentDetectorMonorepo. Uses tmp_path fixture for real filesystem operations (no mocking needed for file creation).",
+      "test_file": "tests/unit/test_environment_bootstrap.py",
+      "implementation_files": ["tests/unit/test_environment_bootstrap.py"]
+    },
+    {
+      "criterion_id": "AC-010",
+      "criterion_text": "Unit tests for bootstrap state tracking (hash-based dedup)",
+      "status": "complete",
+      "evidence": "TestEnvironmentBootstrapperComputeHash (4 tests), TestEnvironmentBootstrapperState (4 tests), TestEnvironmentBootstrapperBootstrap (8 tests) all cover hash dedup, state persistence, and skip-on-match behavior.",
+      "test_file": "tests/unit/test_environment_bootstrap.py",
+      "implementation_files": ["tests/unit/test_environment_bootstrap.py"]
+    },
+    {
+      "criterion_id": "AC-011",
+      "criterion_text": "Existing tests continue to pass",
+      "status": "complete",
+      "evidence": "Ran tests/unit/test_feature_orchestrator.py and tests/unit/test_feature_orchestrator_task_copy.py: 99 passed, 1 skipped. No regressions.",
+      "test_file": null,
+      "implementation_files": []
+    }
+  ]
+}

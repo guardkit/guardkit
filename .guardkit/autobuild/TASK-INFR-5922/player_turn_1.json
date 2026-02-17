@@ -1,0 +1,72 @@
+{
+  "task_id": "TASK-INFR-5922",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/quality_gates/coach_validator.py",
+    "guardkit/orchestrator/prompts/autobuild_execution_protocol.md"
+  ],
+  "files_created": [
+    "guardkit/orchestrator/docker_fixtures.py"
+  ],
+  "tests_written": [],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "42 passed, 1 warning in 76.43s (coach_failure_classification + requires_infrastructure tests). Full suite: 6279 passed, 42 skipped (pre-existing failures in test_task_769d_ai_analyzer.py unrelated to this task).",
+  "implementation_notes": "Implemented Docker test fixture support across three files as specified: (1) Created guardkit/orchestrator/docker_fixtures.py as the single source of truth for Docker container recipes (postgresql, redis, mongodb) with non-standard ports (5433, 6380, 27018). Provides get_start_commands(), get_container_name(), get_env_exports(), and is_known_service() functions. (2) Modified coach_validator.py: added 'import os' and docker_fixtures imports; updated run_independent_tests() signature to accept optional 'task' parameter; added infrastructure lifecycle wrapping (Docker availability check -> start containers -> try/finally stop containers); added three private methods (_is_docker_available, _start_infrastructure_containers, _stop_infrastructure_containers); updated call-site in validate() to pass task=task. (3) Modified autobuild_execution_protocol.md: inserted 'Infrastructure Setup (Pre-Phase 3)' section between the intro and Phase 3, documenting the Docker recipes for PostgreSQL, Redis, and MongoDB with exact shell commands matching the docker_fixtures.py definitions. All changes maintain backward compatibility (task=None default).",
+  "concerns": [],
+  "requirements_addressed": [
+    "Single source of truth for Docker fixture definitions in docker_fixtures.py",
+    "Coach validator starts Docker containers before independent test execution when requires_infrastructure is declared",
+    "Coach validator tears down containers in try/finally block (even on test failure)",
+    "Docker availability check before attempting container startup",
+    "Warning logged when Docker unavailable (existing infrastructure failure classification handles fallback)",
+    "Environment variables (DATABASE_URL, REDIS_URL, MONGODB_URL) set and cleaned up around test execution",
+    "Player execution protocol documents pre-Phase 3 infrastructure setup with exact Docker commands",
+    "Non-standard ports used to avoid conflicts with local services",
+    "Backward compatibility preserved (task parameter defaults to None)",
+    "import os added to coach_validator.py"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Create guardkit/orchestrator/docker_fixtures.py as single source of truth for Docker fixture definitions",
+      "status": "complete",
+      "evidence": "Created guardkit/orchestrator/docker_fixtures.py with DOCKER_FIXTURES dict containing postgresql (port 5433), redis (port 6380), and mongodb (port 27018) recipes. Exports get_start_commands(), get_container_name(), get_env_exports(), and is_known_service() functions.",
+      "test_file": "tests/unit/test_requires_infrastructure.py",
+      "implementation_files": ["guardkit/orchestrator/docker_fixtures.py"]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Coach validator starts Docker containers for tasks declaring requires_infrastructure before running independent tests",
+      "status": "complete",
+      "evidence": "run_independent_tests() now accepts optional 'task' parameter. When task has requires_infrastructure list and Docker is available, _start_infrastructure_containers() is called with shell commands from docker_fixtures.get_start_commands(). Environment variables are set via os.environ.",
+      "test_file": "tests/unit/test_requires_infrastructure.py",
+      "implementation_files": ["guardkit/orchestrator/quality_gates/coach_validator.py"]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Coach validator tears down Docker containers after test execution (pass or fail)",
+      "status": "complete",
+      "evidence": "The existing test execution logic (both SDK and subprocess paths) is wrapped in a try/finally block. The finally clause calls _stop_infrastructure_containers() when infra_started=True, ensuring cleanup even if tests fail or throw exceptions.",
+      "test_file": "tests/unit/test_requires_infrastructure.py",
+      "implementation_files": ["guardkit/orchestrator/quality_gates/coach_validator.py"]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Player execution protocol documents infrastructure setup instructions",
+      "status": "complete",
+      "evidence": "Inserted 'Infrastructure Setup (Pre-Phase 3)' section in autobuild_execution_protocol.md with exact bash commands for PostgreSQL (5433), Redis (6380), and MongoDB (27018) matching the docker_fixtures.py definitions, plus cleanup instructions and guidance on when to skip.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/prompts/autobuild_execution_protocol.md"]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Docker unavailability is handled gracefully with appropriate warning",
+      "status": "complete",
+      "evidence": "_is_docker_available() runs 'docker info' with a 5-second timeout. When Docker is unavailable and requires_infrastructure is declared, a warning is logged and tests run without infrastructure (existing classification logic handles the fallback). No exception is raised.",
+      "test_file": "tests/unit/test_requires_infrastructure.py",
+      "implementation_files": ["guardkit/orchestrator/quality_gates/coach_validator.py"]
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "task_id": "TASK-INFR-1670",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/quality_gates/coach_validator.py",
+    "tests/unit/test_coach_failure_classification.py"
+  ],
+  "files_created": [],
+  "tests_written": [
+    "tests/unit/test_coach_failure_classification.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "17 passed in 1.78s",
+  "implementation_notes": "Split the flat _INFRA_FAILURE_PATTERNS list into two tiered class attributes: _INFRA_HIGH_CONFIDENCE (connection/network errors and database drivers) and _INFRA_AMBIGUOUS (ModuleNotFoundError, ImportError, No module named). Updated _classify_test_failure to return a Tuple[str, str] checking high-confidence first, then ambiguous, with precedence rule ensuring high-confidence wins over ambiguous. Updated the caller to unpack the tuple and added failure_confidence field to the issues dict. Added Tuple to typing imports. Removed _INFRA_FAILURE_PATTERNS completely (no dead code left). Updated all 10 existing tests to use tuple format and added 3 new edge-case tests (mixed tiers, import-only, assertion-only). Fixed test_import_error_classified_as_infrastructure to avoid including 'psycopg2' in the test output (which is a high-confidence pattern), using 'my_missing_package' instead to correctly exercise the ambiguous path.",
+  "concerns": [],
+  "requirements_addressed": [
+    "Replace _INFRA_FAILURE_PATTERNS flat list with _INFRA_HIGH_CONFIDENCE and _INFRA_AMBIGUOUS tiered lists",
+    "Update _classify_test_failure to return Tuple[str, str] with precedence rule (high-confidence checked first)",
+    "Update caller to unpack tuple and include failure_confidence in issues dict",
+    "Add Tuple to typing imports",
+    "Remove old _INFRA_FAILURE_PATTERNS completely",
+    "Update all existing tests to tuple format",
+    "Add new edge-case tests for mixed-tier, import-only, and assertion-only scenarios",
+    "Add failure_confidence assertion in feedback path test"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Split _INFRA_FAILURE_PATTERNS into _INFRA_HIGH_CONFIDENCE and _INFRA_AMBIGUOUS tiered class attributes",
+      "status": "complete",
+      "evidence": "Replaced single _INFRA_FAILURE_PATTERNS list with two tiered lists: _INFRA_HIGH_CONFIDENCE (connection/network/database patterns) and _INFRA_AMBIGUOUS (ModuleNotFoundError, ImportError, No module named). Old attribute completely removed.",
+      "test_file": "tests/unit/test_coach_failure_classification.py",
+      "implementation_files": ["guardkit/orchestrator/quality_gates/coach_validator.py"]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "_classify_test_failure returns Tuple[str, str] with high-confidence precedence",
+      "status": "complete",
+      "evidence": "Method now returns ('infrastructure', 'high'), ('infrastructure', 'ambiguous'), or ('code', 'n/a'). High-confidence patterns checked first; if any match, returns high regardless of ambiguous matches.",
+      "test_file": "tests/unit/test_coach_failure_classification.py",
+      "implementation_files": ["guardkit/orchestrator/quality_gates/coach_validator.py"]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Caller unpacks tuple and includes failure_confidence in issues dict",
+      "status": "complete",
+      "evidence": "Updated caller at line ~576 to use 'failure_class, failure_confidence = self._classify_test_failure(...)'. Updated logger.warning to include confidence. Added failure_confidence field to issues dict.",
+      "test_file": "tests/unit/test_coach_failure_classification.py",
+      "implementation_files": ["guardkit/orchestrator/quality_gates/coach_validator.py"]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Tuple imported from typing",
+      "status": "complete",
+      "evidence": "Added Tuple to the existing 'from typing import Any, Dict, List, Literal, Optional, Tuple' import line.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/quality_gates/coach_validator.py"]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "All existing tests updated to tuple format with correct confidence levels",
+      "status": "complete",
+      "evidence": "All 10 existing classification tests updated: high-confidence patterns (ConnectionRefusedError, OperationalError, asyncpg, redis, case-insensitive) use ('infrastructure', 'high'); ambiguous patterns (ImportError, ModuleNotFoundError) use ('infrastructure', 'ambiguous'); code/empty/None use ('code', 'n/a').",
+      "test_file": "tests/unit/test_coach_failure_classification.py",
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "New edge-case tests added for mixed-tier, import-only, and assertion-only scenarios",
+      "status": "complete",
+      "evidence": "Added test_mixed_high_and_ambiguous_returns_high, test_import_error_only_returns_ambiguous, and test_assertion_error_only_returns_code as specified.",
+      "test_file": "tests/unit/test_coach_failure_classification.py",
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "failure_confidence field asserted in feedback path test",
+      "status": "complete",
+      "evidence": "Added 'assert issue[\"failure_confidence\"] == \"high\"' to test_infrastructure_failure_produces_actionable_feedback (ConnectionRefusedError is high-confidence).",
+      "test_file": "tests/unit/test_coach_failure_classification.py",
+      "implementation_files": []
+    }
+  ]
+}
