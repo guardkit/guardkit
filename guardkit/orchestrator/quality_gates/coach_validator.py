@@ -1699,6 +1699,35 @@ class CoachValidator:
             except Exception as e:
                 logger.debug(f"Cumulative diff fallback failed: {e}")
 
+            # Quaternary fallback: extract test files from completion_promises.
+            # When the Player references test files in completion_promises
+            # (e.g., pre-existing test files from scaffolding tasks), those
+            # files may not appear in files_created/files_modified or git diff
+            # because the Player didn't create or modify them this turn.
+            if task_work_results:
+                try:
+                    promises = task_work_results.get("completion_promises", [])
+                    promise_test_files = set()
+                    for promise in promises:
+                        test_file = promise.get("test_file")
+                        if test_file and isinstance(test_file, str):
+                            p = Path(test_file)
+                            if (
+                                (p.name.startswith("test_") and p.name.endswith(".py"))
+                                or p.name.endswith("_test.py")
+                            ) and (self.worktree_path / test_file).exists():
+                                promise_test_files.add(test_file)
+
+                    if promise_test_files:
+                        files_str = " ".join(sorted(promise_test_files))
+                        logger.info(
+                            f"Found test files via completion_promises for "
+                            f"{task_id}: {len(promise_test_files)} file(s)"
+                        )
+                        return f"pytest {files_str} -v --tb=short"
+                except Exception as e:
+                    logger.debug(f"Completion promises test extraction failed: {e}")
+
             return None
 
         # Fallback to original detection logic

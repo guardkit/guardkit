@@ -1487,10 +1487,25 @@ Follow the decision format specified in your agent definition.
 
                 # ALWAYS populate tests_written from file lists (unconditional)
                 all_files = report.get("files_created", []) + report.get("files_modified", [])
-                report["tests_written"] = [
+                tests_from_files = [
                     f for f in all_files
                     if "test_" in Path(f).name.lower() or Path(f).name.lower().endswith("_test.py")
                 ]
+
+                # Also extract test files from completion_promises.test_file
+                # This catches pre-existing test files (e.g., from scaffolding
+                # tasks) that the Player references but didn't create/modify.
+                tests_from_promises = set()
+                for promise in task_work_data.get("completion_promises", []):
+                    test_file = promise.get("test_file")
+                    if test_file and isinstance(test_file, str):
+                        p = Path(test_file)
+                        if (p.name.startswith("test_") and p.name.endswith(".py")) or p.name.endswith("_test.py"):
+                            tests_from_promises.add(test_file)
+
+                report["tests_written"] = sorted(
+                    list(set(tests_from_files) | tests_from_promises)
+                )
 
                 # Extract implementation notes from plan audit if available
                 plan_audit = task_work_data.get("plan_audit", {})
