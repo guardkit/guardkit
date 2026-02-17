@@ -34,6 +34,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -1183,14 +1184,29 @@ class CoachValidator:
             start_time = time.time()
 
             try:
-                result = subprocess.run(
-                    test_cmd,
-                    shell=True,
-                    cwd=str(self.worktree_path),
-                    capture_output=True,
-                    text=True,
-                    timeout=self.test_timeout,
-                )
+                # For Python/pytest commands, use sys.executable to eliminate PATH ambiguity.
+                # This ensures the same interpreter as the orchestrator process is used,
+                # avoiding discrepancies when the shell resolves `python3` via PATH.
+                if test_cmd.startswith("pytest"):
+                    parts = test_cmd.split()
+                    cmd = [sys.executable, "-m", "pytest"] + parts[1:]
+                    result = subprocess.run(
+                        cmd,
+                        cwd=str(self.worktree_path),
+                        capture_output=True,
+                        text=True,
+                        timeout=self.test_timeout,
+                        env=os.environ,
+                    )
+                else:
+                    result = subprocess.run(
+                        test_cmd,
+                        shell=True,
+                        cwd=str(self.worktree_path),
+                        capture_output=True,
+                        text=True,
+                        timeout=self.test_timeout,
+                    )
 
                 duration = time.time() - start_time
                 tests_passed = result.returncode == 0

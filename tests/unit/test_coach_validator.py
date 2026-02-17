@@ -1814,10 +1814,13 @@ class TestTaskSpecificTestDetection:
             validator = CoachValidator(str(tmp_worktree), task_id="TASK-ABC-001")
             result = validator.run_independent_tests()
 
-        # Verify task-specific test file was used
+        # Verify task-specific test file was used.
+        # pytest commands are now passed as a list (sys.executable -m pytest ...) so
+        # we check membership across the joined string.
         call_args = mock_run.call_args[0][0]
-        assert "test_task_abc_001.py" in call_args
-        assert "tests/ " not in call_args  # Full directory not used
+        call_args_str = " ".join(call_args) if isinstance(call_args, list) else call_args
+        assert "test_task_abc_001.py" in call_args_str
+        assert "tests/ " not in call_args_str  # Full directory not used
 
     def test_constructor_stores_task_id(self, tmp_worktree):
         """Test that CoachValidator stores task_id in constructor."""
