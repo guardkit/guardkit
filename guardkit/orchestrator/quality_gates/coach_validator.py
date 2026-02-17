@@ -147,12 +147,15 @@ class IndependentTestResult:
         Summary of test output
     duration_seconds : float
         Time taken to run tests
+    raw_output : Optional[str]
+        Full stdout+stderr from test execution, used for failure classification
     """
 
     tests_passed: bool
     test_command: str
     test_output_summary: str
     duration_seconds: float
+    raw_output: Optional[str] = None
 
 
 @dataclass
@@ -355,12 +358,35 @@ class CoachValidator:
     # Default profile for backward compatibility
     DEFAULT_PROFILE = get_profile(TaskType.FEATURE)
 
+    # Infrastructure failure patterns for test output classification
+    _INFRA_FAILURE_PATTERNS: List[str] = [
+        # Connection/network errors
+        "ConnectionRefusedError",
+        "ConnectionError",
+        "Connection refused",
+        "could not connect to server",
+        # Database drivers
+        "OperationalError",
+        "psycopg2",
+        "psycopg",
+        "asyncpg",
+        "sqlalchemy.exc.OperationalError",
+        "django.db.utils.OperationalError",
+        "pymongo.errors.ServerSelectionTimeoutError",
+        "redis.exceptions.ConnectionError",
+        # Missing dependencies
+        "ModuleNotFoundError",
+        "ImportError",
+        "No module named",
+    ]
+
     def __init__(
         self,
         worktree_path: str,
         test_command: Optional[str] = None,
         test_timeout: int = 300,
         task_id: Optional[str] = None,
+        coach_test_execution: str = "sdk",
     ):
         """
         Initialize CoachValidator.
@@ -377,11 +403,15 @@ class CoachValidator:
             Task identifier for task-specific test filtering in shared worktrees.
             When provided, test detection will first look for task-specific test
             files before falling back to running the full test suite.
+        coach_test_execution : str
+            Test execution mode: "sdk" (default) uses Claude Agent SDK via Bash
+            tool for environment parity; "subprocess" uses subprocess.run() directly.
         """
         self.worktree_path = Path(worktree_path)
         self.test_command = test_command
         self.test_timeout = test_timeout
         self.task_id = task_id
+        self._coach_test_execution = coach_test_execution
 
         logger.debug(f"CoachValidator initialized for worktree: {worktree_path}, task_id: {task_id}")
 
@@ -543,7 +573,32 @@ class CoachValidator:
             test_result = self.run_independent_tests(task_work_results=task_work_results)
 
         if not test_result.tests_passed:
-            logger.warning(f"Independent test verification failed for {task_id}")
+            failure_class = self._classify_test_failure(test_result.raw_output)
+            logger.warning(
+                f"Independent test verification failed for {task_id} "
+                f"(classification={failure_class})"
+            )
+
+            if failure_class == "infrastructure":
+                description = (
+                    "Tests failed due to infrastructure/environment issues "
+                    "(not code defects). Remediation options: "
+                    "(1) Add mock fixtures for external services, "
+                    "(2) Use SQLite for test database, "
+                    "(3) Mark integration tests with @pytest.mark.integration "
+                    "and exclude via -m 'not integration'"
+                )
+                rationale = (
+                    "Tests failed due to infrastructure/environment issues, "
+                    "not code defects"
+                )
+            else:
+                description = "Independent test verification failed"
+                rationale = (
+                    "Tests passed according to task-work but failed on "
+                    "independent verification"
+                )
+
             return self._feedback_result(
                 task_id=task_id,
                 turn=turn,
@@ -552,10 +607,11 @@ class CoachValidator:
                 issues=[{
                     "severity": "must_fix",
                     "category": "test_verification",
-                    "description": "Independent test verification failed",
+                    "description": description,
                     "test_output": test_result.test_output_summary,
+                    "failure_classification": failure_class,
                 }],
-                rationale="Tests passed according to task-work but failed on independent verification",
+                rationale=rationale,
                 context_used=context,
             )
 
@@ -825,6 +881,172 @@ class CoachValidator:
 
         return status
 
+    @staticmethod
+    def _extract_content_text(content) -> str:
+        """Extract text from ToolResultBlock.content (str | list[dict] | None)."""
+        if content is None:
+            return ""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, dict):
+                    parts.append(item.get("text", str(item)))
+                else:
+                    parts.append(str(item))
+            return "\n".join(parts)
+        return str(content)
+
+    async def _run_tests_via_sdk(self, test_cmd: str) -> IndependentTestResult:
+        """Run tests via Claude Agent SDK Bash tool for environment parity.
+
+        Uses the SDK to execute the test command inside a Claude Code session,
+        ensuring the same shell environment (PATH, conda/venv activation, etc.)
+        as the Player agent used during implementation.
+
+        Parameters
+        ----------
+        test_cmd : str
+            Shell command to run tests
+
+        Returns
+        -------
+        IndependentTestResult
+            Result of test execution via SDK
+        """
+        import asyncio
+        import time
+
+        try:
+            from claude_agent_sdk import (
+                query,
+                ClaudeAgentOptions,
+                AssistantMessage,
+                UserMessage,
+                ToolResultBlock,
+                CLINotFoundError,
+                ProcessError,
+                CLIJSONDecodeError,
+            )
+        except ImportError as e:
+            logger.warning(f"Claude Agent SDK not available for coach test execution: {e}")
+            raise
+
+        from guardkit.orchestrator.sdk_utils import check_assistant_message_error
+
+        start_time = time.time()
+        prompt = f"Run the following test command and report the output:\n\n```bash\n{test_cmd}\n```\n\nProvide the full test output."
+
+        try:
+            options = ClaudeAgentOptions(
+                cwd=str(self.worktree_path),
+                allowed_tools=["Bash"],
+                permission_mode="bypassPermissions",
+                max_turns=1,
+                model="claude-haiku-4-5-20251001",
+            )
+
+            collected_text: List[str] = []
+            bash_output: Optional[str] = None
+            bash_is_error: Optional[bool] = None
+
+            async with asyncio.timeout(self.test_timeout):
+                async for message in query(prompt=prompt, options=options):
+                    err = check_assistant_message_error(message)
+                    if err:
+                        duration = time.time() - start_time
+                        logger.error(f"SDK API error during coach test execution: {err}")
+                        return IndependentTestResult(
+                            tests_passed=False,
+                            test_command=test_cmd,
+                            test_output_summary=f"SDK API error: {err}",
+                            duration_seconds=duration,
+                            raw_output=f"SDK API error: {err}",
+                        )
+
+                    if isinstance(message, AssistantMessage):
+                        from claude_agent_sdk import TextBlock
+                        for block in message.content:
+                            if isinstance(block, TextBlock):
+                                collected_text.append(block.text)
+                    elif isinstance(message, UserMessage):
+                        # GAP-FIX #4: Extract Bash tool results from UserMessage
+                        if hasattr(message, 'content') and isinstance(message.content, list):
+                            for block in message.content:
+                                if isinstance(block, ToolResultBlock):
+                                    block_text = self._extract_content_text(block.content)
+                                    if block_text:
+                                        bash_output = block_text
+                                    # GAP-FIX #6/#7: Three-way is_error handling
+                                    is_err = getattr(block, 'is_error', None)
+                                    if is_err is True:
+                                        bash_is_error = True
+                                    elif is_err is False:
+                                        bash_is_error = False
+                                    # None: parse output text to determine pass/fail
+
+            duration = time.time() - start_time
+
+            # Determine pass/fail from bash_is_error and output
+            if bash_is_error is True:
+                output_text = bash_output or "\n".join(collected_text) or "No output"
+                summary = self._summarize_test_output(output_text)
+                return IndependentTestResult(
+                    tests_passed=False,
+                    test_command=test_cmd,
+                    test_output_summary=summary,
+                    duration_seconds=duration,
+                    raw_output=output_text,
+                )
+            elif bash_is_error is False:
+                output_text = bash_output or "\n".join(collected_text) or "No output"
+                summary = self._summarize_test_output(output_text)
+                return IndependentTestResult(
+                    tests_passed=True,
+                    test_command=test_cmd,
+                    test_output_summary=summary,
+                    duration_seconds=duration,
+                    raw_output=output_text,
+                )
+            else:
+                # GAP-FIX #7: is_error is None — parse output text
+                output_text = bash_output or "\n".join(collected_text) or "No output"
+                summary = self._summarize_test_output(output_text)
+                # Heuristic: check for failure indicators in output
+                lower = output_text.lower()
+                has_failure = any(
+                    indicator in lower
+                    for indicator in ["failed", "error", "errors", "failure"]
+                )
+                has_success = any(
+                    indicator in lower
+                    for indicator in ["passed", "ok", "success"]
+                )
+                tests_passed = has_success and not has_failure
+                return IndependentTestResult(
+                    tests_passed=tests_passed,
+                    test_command=test_cmd,
+                    test_output_summary=summary,
+                    duration_seconds=duration,
+                    raw_output=output_text,
+                )
+
+        except asyncio.TimeoutError:
+            duration = time.time() - start_time
+            logger.error(f"SDK coach test execution timed out after {self.test_timeout}s")
+            return IndependentTestResult(
+                tests_passed=False,
+                test_command=test_cmd,
+                test_output_summary=f"SDK test execution timed out after {self.test_timeout}s",
+                duration_seconds=duration,
+                raw_output=f"Timeout after {self.test_timeout}s",
+            )
+        except (CLINotFoundError, ProcessError, CLIJSONDecodeError, Exception) as e:
+            duration = time.time() - start_time
+            logger.error(f"SDK coach test execution failed: {e}")
+            raise
+
     def run_independent_tests(
         self,
         task_work_results: Optional[Dict[str, Any]] = None,
@@ -862,7 +1084,30 @@ class CoachValidator:
                 duration_seconds=0.0,
             )
 
-        logger.info(f"Running independent tests: {test_cmd}")
+        # SDK-first dispatch (GAP-FIX #9): use asyncio bridge to call async SDK method
+        if self._coach_test_execution == "sdk":
+            logger.info(f"Running independent tests via SDK (environment parity): {test_cmd}")
+            try:
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                result = loop.run_until_complete(self._run_tests_via_sdk(test_cmd))
+                logger.info(
+                    f"SDK independent tests {'passed' if result.tests_passed else 'failed'} "
+                    f"in {result.duration_seconds:.1f}s"
+                )
+                return result
+            except Exception as e:
+                logger.warning(
+                    f"SDK test execution failed, falling back to subprocess: {e}"
+                )
+                # Fall through to subprocess path below
+
+        # Subprocess path (default for coach_test_execution="subprocess" or SDK fallback)
+        logger.info(f"Running independent tests via subprocess: {test_cmd}")
         start_time = time.time()
 
         try:
@@ -892,6 +1137,7 @@ class CoachValidator:
                 test_command=test_cmd,
                 test_output_summary=summary,
                 duration_seconds=duration,
+                raw_output=(result.stdout or "") + (result.stderr or ""),
             )
 
         except subprocess.TimeoutExpired:
@@ -1775,15 +2021,16 @@ class CoachValidator:
         test_files = []
         for file_list_key in ("files_created", "files_modified"):
             for filepath in task_work_results.get(file_list_key, []):
-                basename = Path(filepath).name
+                normalized = self._normalize_to_relative(filepath)
+                basename = Path(normalized).name
                 if basename.startswith("test_") and basename.endswith(".py"):
-                    full_path = self.worktree_path / filepath
+                    full_path = self.worktree_path / normalized
                     if full_path.exists():
-                        test_files.append(filepath)
+                        test_files.append(str(normalized))
                 elif basename.endswith("_test.py"):
-                    full_path = self.worktree_path / filepath
+                    full_path = self.worktree_path / normalized
                     if full_path.exists():
-                        test_files.append(filepath)
+                        test_files.append(str(normalized))
 
         if not test_files:
             logger.debug("No test files found in task_work_results")
@@ -1799,7 +2046,43 @@ class CoachValidator:
         logger.debug(f"Test files (from task_work_results): {files_str}")
         return f"pytest {files_str} -v --tb=short"
 
-    def _summarize_test_output(self, output: str, max_length: int = 500) -> str:
+    def _normalize_to_relative(self, filepath: str) -> str:
+        """Normalize a filepath to be relative to the worktree.
+
+        Handles both absolute paths (strips worktree prefix) and
+        relative paths (returned as-is).
+        """
+        p = Path(filepath)
+        if p.is_absolute():
+            try:
+                return str(p.relative_to(self.worktree_path))
+            except ValueError:
+                return filepath
+        return filepath
+
+    def _classify_test_failure(self, test_output: Optional[str]) -> str:
+        """Classify a test failure as infrastructure or code.
+
+        Parameters
+        ----------
+        test_output : Optional[str]
+            Raw test stdout+stderr output
+
+        Returns
+        -------
+        str
+            ``"infrastructure"`` if output matches known infra patterns,
+            ``"code"`` otherwise
+        """
+        if not test_output:
+            return "code"
+        output_lower = test_output.lower()
+        for pattern in self._INFRA_FAILURE_PATTERNS:
+            if pattern.lower() in output_lower:
+                return "infrastructure"
+        return "code"
+
+    def _summarize_test_output(self, output: str, max_length: int = 1000) -> str:
         """
         Summarize test output for reporting.
 
@@ -1813,12 +2096,30 @@ class CoachValidator:
         Returns
         -------
         str
-            Summarized output
+            Summarized output including error context when present
         """
         # Extract last lines which usually contain summary
         lines = output.strip().split("\n")
 
-        # Look for common test summary patterns
+        # Error/traceback patterns to detect
+        error_patterns = [
+            "Error:", "ERRORS", "ImportError", "ModuleNotFoundError",
+            "ConnectionRefusedError", "OperationalError", "E   ",
+            "FileNotFoundError", "ConnectionError", "TypeError",
+            "ValueError", "AttributeError", "KeyError",
+        ]
+
+        # Scan forward for the FIRST error/traceback line
+        error_context_lines = []
+        for i, line in enumerate(lines):
+            if any(pat in line for pat in error_patterns):
+                # Capture 1 line before and 3 lines after the error line
+                start = max(0, i - 1)
+                end = min(len(lines), i + 4)
+                error_context_lines = lines[start:end]
+                break
+
+        # Look for common test summary patterns (last 20 lines, up to 5 lines)
         summary_lines = []
         for line in reversed(lines[-20:]):  # Check last 20 lines
             if any(keyword in line.lower() for keyword in [
@@ -1826,14 +2127,20 @@ class CoachValidator:
                 "success", "failure", "ok", "tests"
             ]):
                 summary_lines.insert(0, line.strip())
-                if len(summary_lines) >= 3:
+                if len(summary_lines) >= 5:
                     break
 
+        # Build combined output: error context + result summary
+        parts = []
+        if error_context_lines:
+            parts.append("Error detail:\n" + "\n".join(error_context_lines))
         if summary_lines:
-            summary = "\n".join(summary_lines)
-        else:
-            # Fallback to last few lines
-            summary = "\n".join(lines[-3:])
+            parts.append("Result:\n" + "\n".join(summary_lines))
+        elif not error_context_lines:
+            # Fallback to last few lines only when no error context and no summary
+            parts.append("\n".join(lines[-3:]))
+
+        summary = "\n".join(parts) if parts else "\n".join(lines[-3:])
 
         # Truncate if needed
         if len(summary) > max_length:

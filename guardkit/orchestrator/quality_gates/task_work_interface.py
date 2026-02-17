@@ -459,6 +459,8 @@ class TaskWorkInterface:
             logger.error(diagnosis)
             raise ImportError(diagnosis) from e
 
+        from guardkit.orchestrator.sdk_utils import check_assistant_message_error
+
         logger.info(f"Executing via SDK: {prompt}")
         logger.info(f"Working directory: {self.worktree_path}")
 
@@ -484,6 +486,9 @@ class TaskWorkInterface:
                         # TASK-FB-FIX-005: Properly iterate ContentBlocks instead of str()
                         # message.content is a list[ContentBlock], not a string
                         if isinstance(message, AssistantMessage):
+                            err = check_assistant_message_error(message)
+                            if err:
+                                raise DesignPhaseError(phase="design", error=f"SDK agent error: {err}")
                             for block in message.content:
                                 if isinstance(block, TextBlock):
                                     collected_output.append(block.text)

@@ -1,0 +1,56 @@
+{
+  "task_id": "TASK-PCTD-5208",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/quality_gates/coach_validator.py",
+    "guardkit/orchestrator/autobuild.py"
+  ],
+  "files_created": [
+    "tests/unit/test_quick_wins_pctd5208.py"
+  ],
+  "tests_written": [
+    "tests/unit/test_quick_wins_pctd5208.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "21 passed in 2.01s",
+  "implementation_notes": "R1: Enhanced _summarize_test_output() in coach_validator.py. Scans forward for first error/traceback line matching 12 error patterns, captures 1-before/3-after context window, prepends 'Error detail:' section before existing 'Result:' summary. Increased max_length default from 500 to 1000 and summary_lines cap from 3 to 5. When no error and no keyword match, falls back to last 3 lines.\n\nR2: Added _STALL_NORMALIZE_PATTERNS class-level constant to AutoBuildOrchestrator with 6 regex patterns covering test paths, line numbers, percentages, durations, test counts, and worktree paths. Added _normalize_feedback_for_stall() method that applies each pattern in sequence. Modified _is_feedback_stalled() hash computation to use normalized feedback text; raw feedback sent to Player is unchanged.\n\nR3: Added _normalize_to_relative() method to CoachValidator that converts absolute paths under worktree_path to relative paths via Path.relative_to(), leaving relative paths and out-of-tree absolute paths unchanged. Modified _detect_tests_from_results() loop to call _normalize_to_relative() on each filepath before basename extraction and existence check, so abs+rel duplicates of the same file collapse at the set() deduplication step.",
+  "concerns": [],
+  "requirements_addressed": [
+    "R1: _summarize_test_output includes error classification and first traceback frame",
+    "R1: max_length default increased from 500 to 1000",
+    "R1: summary_lines cap increased from 3 to 5",
+    "R2: _STALL_NORMALIZE_PATTERNS class-level constant added to AutoBuildOrchestrator",
+    "R2: _normalize_feedback_for_stall method applies all 6 patterns in sequence",
+    "R2: _is_feedback_stalled uses normalized text for hash, raw text unchanged for Player",
+    "R3: _normalize_to_relative method added to CoachValidator",
+    "R3: _detect_tests_from_results normalizes each filepath before deduplication"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "R1",
+      "criterion_text": "Enhance _summarize_test_output() with error context, increase limits to 10 lines / 1000 chars",
+      "status": "complete",
+      "evidence": "Modified _summarize_test_output in coach_validator.py: scans for first error pattern line (12 patterns), captures context window (1 before + 3 after), combines with existing keyword-matched summary (capped at 5 lines now), default max_length=1000. Falls back to last 3 lines only when no error and no keyword match.",
+      "test_file": "tests/unit/test_quick_wins_pctd5208.py",
+      "implementation_files": ["guardkit/orchestrator/quality_gates/coach_validator.py"]
+    },
+    {
+      "criterion_id": "R2",
+      "criterion_text": "Normalize feedback text for stall detection with regex patterns",
+      "status": "complete",
+      "evidence": "Added _STALL_NORMALIZE_PATTERNS (6 patterns) as class-level constant, added _normalize_feedback_for_stall() method, and updated _is_feedback_stalled() to hash normalized text. Raw feedback text sent to Player is not modified.",
+      "test_file": "tests/unit/test_quick_wins_pctd5208.py",
+      "implementation_files": ["guardkit/orchestrator/autobuild.py"]
+    },
+    {
+      "criterion_id": "R3",
+      "criterion_text": "Fix duplicate path deduplication in test detection by normalizing abs/rel paths",
+      "status": "complete",
+      "evidence": "Added _normalize_to_relative() method to CoachValidator. Modified _detect_tests_from_results() loop to normalize each filepath before basename/exists check. Absolute paths under worktree become relative, so set() deduplication eliminates mixed abs/rel duplicates.",
+      "test_file": "tests/unit/test_quick_wins_pctd5208.py",
+      "implementation_files": ["guardkit/orchestrator/quality_gates/coach_validator.py"]
+    }
+  ]
+}

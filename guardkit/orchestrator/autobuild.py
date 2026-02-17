@@ -461,6 +461,15 @@ class AutoBuildOrchestrator:
     ... )
     """
 
+    _STALL_NORMALIZE_PATTERNS = [
+        (re.compile(r'\S+\.py::\S+'), 'FILE::TEST'),
+        (re.compile(r'line \d+'), 'line N'),
+        (re.compile(r'\d+(\.\d+)?%'), 'N%'),
+        (re.compile(r'in \d+\.\d+s'), 'in Ns'),
+        (re.compile(r'\d+ (passed|failed|error|errors|skipped|warnings?)'), r'N \1'),
+        (re.compile(r'/\S+/worktrees/\S+/'), '/WORKTREE/'),
+    ]
+
     def __init__(
         self,
         repo_root: Path,
@@ -2616,6 +2625,29 @@ class AutoBuildOrchestrator:
             return True
         return False
 
+    def _normalize_feedback_for_stall(self, feedback: str) -> str:
+        """
+        Normalize feedback text for stall detection by stripping volatile details.
+
+        Applies regex substitutions to remove test-specific paths, line numbers,
+        percentages, durations, and counts that vary between turns but represent
+        the same underlying error category.
+
+        Parameters
+        ----------
+        feedback : str
+            Raw Coach feedback text
+
+        Returns
+        -------
+        str
+            Normalized feedback with volatile details replaced by placeholders
+        """
+        result = feedback
+        for pattern, replacement in self._STALL_NORMALIZE_PATTERNS:
+            result = pattern.sub(replacement, result)
+        return result
+
     def _is_feedback_stalled(
         self,
         feedback: str,
@@ -2647,8 +2679,9 @@ class AutoBuildOrchestrator:
         bool
             True if feedback stall detected, False otherwise
         """
+        normalized = self._normalize_feedback_for_stall(feedback)
         feedback_sig = hashlib.md5(
-            feedback.strip().lower().encode()
+            normalized.strip().lower().encode()
         ).hexdigest()[:8]
 
         self._feedback_history.append((feedback_sig, criteria_passed_count))
@@ -3518,7 +3551,13 @@ class AutoBuildOrchestrator:
             # In single-task mode: worktree.path = .guardkit/worktrees/TASK-001
             # In feature mode: worktree.path = .guardkit/worktrees/FEAT-ABC
             # CoachValidator will look for: worktree.path/.guardkit/autobuild/{task_id}/task_work_results.json
-            validator = CoachValidator(str(worktree.path), task_id=task_id)
+            coach_cfg = self._load_coach_config()
+            coach_test_execution = coach_cfg.get("test_execution", "sdk")
+            validator = CoachValidator(
+                str(worktree.path),
+                task_id=task_id,
+                coach_test_execution=coach_test_execution,
+            )
             validation_result = validator.validate(
                 task_id=task_id,
                 turn=turn,
@@ -3601,6 +3640,35 @@ class AutoBuildOrchestrator:
                     duration_seconds=time.time() - start_time,
                     error=f"Unexpected error: {str(sdk_error)}",
                 )
+
+    def _load_coach_config(self) -> Dict[str, Any]:
+        """
+        Load coach configuration from .guardkit/config.yaml.
+
+        Reads ``autobuild.coach`` section from the config file.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Coach configuration dict, or empty dict if file is missing or invalid.
+        """
+        config_path = self.repo_root / ".guardkit" / "config.yaml"
+        if not config_path.exists():
+            return {}
+
+        try:
+            with open(config_path) as f:
+                data = yaml.safe_load(f)
+            if not isinstance(data, dict):
+                return {}
+            autobuild_cfg = data.get("autobuild", {})
+            if not isinstance(autobuild_cfg, dict):
+                return {}
+            coach_cfg = autobuild_cfg.get("coach", {})
+            return coach_cfg if isinstance(coach_cfg, dict) else {}
+        except Exception as e:
+            logger.warning(f"Failed to load .guardkit/config.yaml: {e}")
+            return {}
 
     def _build_player_summary(self, report: Dict[str, Any]) -> str:
         """

@@ -1,9 +1,13 @@
 ---
 id: TASK-PCTD-5208
 title: "Quick wins: feedback enhancement, stall normalization, path deduplication"
-status: backlog
+status: completed
 created: 2026-02-17T00:00:00Z
-updated: 2026-02-17T00:00:00Z
+updated: 2026-02-17T13:00:00Z
+completed: 2026-02-17T13:00:00Z
+completed_location: tasks/completed/TASK-PCTD-5208/
+previous_state: in_review
+state_transition_reason: "All acceptance criteria verified - task complete"
 priority: high
 tags: [autobuild, coach-validator, stall-detection, feedback, quick-win]
 task_type: feature
@@ -14,9 +18,12 @@ wave: 1
 implementation_mode: task-work
 dependencies: []
 test_results:
-  status: pending
+  status: passed
   coverage: null
-  last_run: null
+  last_run: 2026-02-17T12:30:00Z
+  new_tests: 21
+  regression_tests: 244
+  failures: 0
 ---
 
 # Task: Quick wins — feedback enhancement, stall normalization, path deduplication
@@ -45,16 +52,16 @@ Add `_normalize_to_relative()` method that converts absolute paths to relative (
 
 ## Acceptance Criteria
 
-- [ ] `_summarize_test_output()` returns error type (e.g., "ImportError", "ConnectionRefusedError") and first traceback frame, up to 10 lines / 1000 chars
-- [ ] `_normalize_feedback_for_stall()` strips test paths, class names, line numbers, percentages, durations, and test counts
-- [ ] `_is_feedback_stalled()` uses normalized feedback for MD5 hash computation
-- [ ] `_normalize_to_relative()` converts absolute paths under worktree to relative
-- [ ] `_detect_tests_from_results()` uses normalized relative paths for deduplication
-- [ ] Unit tests for `_summarize_test_output()` with various pytest output formats
-- [ ] Unit tests for `_normalize_feedback_for_stall()` with identical-category/different-detail feedback
-- [ ] Unit tests for `_normalize_to_relative()` with abs/rel/external paths
-- [ ] Unit tests for `_detect_tests_from_results()` with mixed abs/rel duplicate paths
-- [ ] Stall detection regression test: replay TASK-DB-003 turn sequence and verify stall fires at Turn 5
+- [x] `_summarize_test_output()` returns error type (e.g., "ImportError", "ConnectionRefusedError") and first traceback frame, up to 10 lines / 1000 chars
+- [x] `_normalize_feedback_for_stall()` strips test paths, class names, line numbers, percentages, durations, and test counts
+- [x] `_is_feedback_stalled()` uses normalized feedback for MD5 hash computation
+- [x] `_normalize_to_relative()` converts absolute paths under worktree to relative
+- [x] `_detect_tests_from_results()` uses normalized relative paths for deduplication
+- [x] Unit tests for `_summarize_test_output()` with various pytest output formats
+- [x] Unit tests for `_normalize_feedback_for_stall()` with identical-category/different-detail feedback
+- [x] Unit tests for `_normalize_to_relative()` with abs/rel/external paths
+- [x] Unit tests for `_detect_tests_from_results()` with mixed abs/rel duplicate paths
+- [x] Stall detection regression test: replay TASK-DB-003 turn sequence and verify stall fires at Turn 5
 
 ## Key Files
 

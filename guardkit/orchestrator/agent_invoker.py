@@ -1357,6 +1357,7 @@ Follow the decision format specified in your agent definition.
                 CLINotFoundError,
                 ProcessError,
                 CLIJSONDecodeError,
+                AssistantMessage,
             )
         except ImportError as e:
             import sys
@@ -1371,6 +1372,8 @@ Follow the decision format specified in your agent definition.
                 f"  pip install guardkit-py[autobuild]"
             )
             raise AgentInvocationError(diagnosis) from e
+
+        from guardkit.orchestrator.sdk_utils import check_assistant_message_error
 
         try:
             options = ClaudeAgentOptions(
@@ -1394,6 +1397,11 @@ Follow the decision format specified in your agent definition.
                     f"{agent_type.capitalize()} invocation",
                 ):
                     async for message in query(prompt=prompt, options=options):
+                        err = check_assistant_message_error(message)
+                        if err:
+                            raise AgentInvocationError(
+                                f"Agent {agent_type} received API error: {err}"
+                            )
                         # Progress tracking handled by ProgressDisplay
                         # Agent writes report to JSON file, which is loaded after
                         # the query completes via _load_agent_report()
@@ -3362,6 +3370,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 error=diagnosis,
             )
 
+        from guardkit.orchestrator.sdk_utils import check_assistant_message_error
+
         try:
             options = ClaudeAgentOptions(
                 cwd=str(self.worktree_path),
@@ -3405,6 +3415,10 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                         # message.content is a list[ContentBlock], not a string
                         # Mirrors TASK-FB-FIX-005 pattern from task_work_interface.py
                         if isinstance(message, AssistantMessage):
+                            err = check_assistant_message_error(message)
+                            if err:
+                                logger.error(f"[{task_id}] SDK API error in stream: {err}")
+                                return TaskWorkResult(success=False, output={}, error=f"SDK agent error: {err}")
                             assistant_count += 1
                             for block in message.content:
                                 if isinstance(block, TextBlock):

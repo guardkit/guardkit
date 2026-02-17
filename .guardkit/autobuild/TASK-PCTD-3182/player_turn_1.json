@@ -1,0 +1,114 @@
+{
+  "task_id": "TASK-PCTD-3182",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/quality_gates/coach_validator.py",
+    "guardkit/orchestrator/autobuild.py",
+    "guardkit/orchestrator/agent_invoker.py",
+    "guardkit/orchestrator/quality_gates/task_work_interface.py"
+  ],
+  "files_created": [
+    "guardkit/orchestrator/sdk_utils.py"
+  ],
+  "tests_written": [],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "37 passed in 1.93s",
+  "implementation_notes": "Implemented all 5 changes per the approved implementation plan:\n\n1. Created guardkit/orchestrator/sdk_utils.py with check_assistant_message_error() shared utility for bug #472 defense.\n\n2. Modified CoachValidator.__init__() to accept coach_test_execution='sdk' parameter stored as self._coach_test_execution.\n\n3. Added CoachValidator._extract_content_text() static method to handle ToolResultBlock.content as str|list[dict]|None (GAP-FIX #5).\n\n4. Added CoachValidator._run_tests_via_sdk() async method that executes tests via Claude Agent SDK with Bash tool for environment parity. Handles UserMessage+ToolResultBlock output (GAP-FIX #4), three-way is_error handling (GAP-FIX #6/#7), bug #472 defense, and duration_seconds on all return paths (GAP-FIX #8).\n\n5. Modified CoachValidator.run_independent_tests() to dispatch to SDK path first when coach_test_execution=='sdk' using asyncio.get_event_loop() bridge (GAP-FIX #9), with subprocess fallback on exception.\n\n6. Added AutoBuildOrchestrator._load_coach_config() to read .guardkit/config.yaml autobuild.coach.test_execution.\n\n7. Updated _invoke_coach_safely() to load coach config and pass coach_test_execution to CoachValidator.\n\n8. Added bug #472 defense to agent_invoker._invoke_with_role(): imports AssistantMessage, calls check_assistant_message_error() in stream loop, raises AgentInvocationError on error.\n\n9. Added bug #472 defense to agent_invoker._invoke_task_work_implement(): calls check_assistant_message_error() before processing AssistantMessage content, returns TaskWorkResult with error on detection.\n\n10. Added bug #472 defense to task_work_interface._execute_via_sdk(): calls check_assistant_message_error() before iterating AssistantMessage content, raises DesignPhaseError on detection.\n\nAll SDK imports use claude_agent_sdk (NOT claude_code_sdk) and ClaudeAgentOptions (NOT ClaudeCodeOptions).",
+  "concerns": [],
+  "requirements_addressed": [
+    "Create shared SDK utility module (sdk_utils.py) with check_assistant_message_error()",
+    "Add coach_test_execution parameter to CoachValidator.__init__()",
+    "Add _extract_content_text() static method for ToolResultBlock.content handling",
+    "Add _run_tests_via_sdk() async method for SDK-based test execution",
+    "Modify run_independent_tests() with SDK-first dispatch and subprocess fallback",
+    "Add _load_coach_config() to AutoBuildOrchestrator",
+    "Update _invoke_coach_safely() to use config-driven coach_test_execution",
+    "Bug #472 defense in agent_invoker._invoke_with_role()",
+    "Bug #472 defense in agent_invoker._invoke_task_work_implement()",
+    "Bug #472 defense in task_work_interface._execute_via_sdk()"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Create shared SDK utility module sdk_utils.py with check_assistant_message_error()",
+      "status": "complete",
+      "evidence": "Created guardkit/orchestrator/sdk_utils.py with check_assistant_message_error() that checks hasattr(message, 'error') and returns str(message.error) if set, None otherwise.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/sdk_utils.py"]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "CoachValidator.__init__() accepts coach_test_execution parameter",
+      "status": "complete",
+      "evidence": "Added coach_test_execution: str = 'sdk' parameter after task_id, stored as self._coach_test_execution. Verified: CoachValidator('/tmp', coach_test_execution='sdk')._coach_test_execution == 'sdk'.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/quality_gates/coach_validator.py"]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "_extract_content_text() handles str|list[dict]|None content types",
+      "status": "complete",
+      "evidence": "Added static method _extract_content_text() before run_independent_tests. Handles None (returns ''), str (returns as-is), list[dict] (joins item.get('text', str(item))), and other types (str()).",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/quality_gates/coach_validator.py"]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "_run_tests_via_sdk() executes tests via SDK with environment parity",
+      "status": "complete",
+      "evidence": "Added async _run_tests_via_sdk() with ClaudeAgentOptions(allowed_tools=['Bash'], permission_mode='bypassPermissions', max_turns=1, model='claude-haiku-4-5-20251001'). Handles UserMessage+ToolResultBlock (GAP-FIX #4), three-way is_error logic (GAP-FIX #6/#7), bug #472 defense, and duration_seconds on all paths (GAP-FIX #8).",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/quality_gates/coach_validator.py"]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "run_independent_tests() dispatches to SDK first with subprocess fallback",
+      "status": "complete",
+      "evidence": "Modified run_independent_tests() to use asyncio.get_event_loop().run_until_complete(_run_tests_via_sdk()) when self._coach_test_execution == 'sdk' (GAP-FIX #9), falls back to subprocess on Exception.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/quality_gates/coach_validator.py"]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "_load_coach_config() reads .guardkit/config.yaml autobuild.coach section",
+      "status": "complete",
+      "evidence": "Added _load_coach_config() to AutoBuildOrchestrator. Reads self.repo_root/.guardkit/config.yaml, extracts autobuild.coach dict, returns {} if missing/invalid.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/autobuild.py"]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "_invoke_coach_safely() uses config-driven coach_test_execution",
+      "status": "complete",
+      "evidence": "Updated line ~3554 to call self._load_coach_config(), extract test_execution (default 'sdk'), and pass coach_test_execution to CoachValidator constructor.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/autobuild.py"]
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "Bug #472 defense in agent_invoker._invoke_with_role()",
+      "status": "complete",
+      "evidence": "Added AssistantMessage to import block, imported check_assistant_message_error from sdk_utils, added error check in async for loop that raises AgentInvocationError on detection.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/agent_invoker.py"]
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "Bug #472 defense in agent_invoker._invoke_task_work_implement()",
+      "status": "complete",
+      "evidence": "Added check_assistant_message_error import after SDK imports, added error check before processing AssistantMessage blocks, returns TaskWorkResult(success=False, error=...) on detection.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/agent_invoker.py"]
+    },
+    {
+      "criterion_id": "AC-010",
+      "criterion_text": "Bug #472 defense in task_work_interface._execute_via_sdk()",
+      "status": "complete",
+      "evidence": "Added check_assistant_message_error import after SDK imports, added error check before iterating AssistantMessage content, raises DesignPhaseError(phase='design', error='SDK agent error: ...') on detection.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/quality_gates/task_work_interface.py"]
+    }
+  ]
+}

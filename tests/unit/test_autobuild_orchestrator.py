@@ -1922,7 +1922,8 @@ class TestCoachValidatorPathConstruction:
             # Verify CoachValidator was instantiated with feature worktree path and task_id
             mock_validator_class.assert_called_once_with(
                 str(mock_worktree_feature_mode.path),
-                task_id="TASK-INFRA-001"
+                task_id="TASK-INFRA-001",
+                coach_test_execution="sdk",
             )
             # Should be FEAT-3DEB path, NOT TASK-INFRA-001 path
             call_arg = mock_validator_class.call_args[0][0]
@@ -1977,7 +1978,8 @@ class TestCoachValidatorPathConstruction:
             # Verify CoachValidator was instantiated with correct path and task_id
             mock_validator_class.assert_called_once_with(
                 str(mock_worktree_single_task_mode.path),
-                task_id="TASK-001"
+                task_id="TASK-001",
+                coach_test_execution="sdk",
             )
             call_arg = mock_validator_class.call_args[0][0]
             assert "TASK-001" in call_arg

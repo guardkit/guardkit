@@ -599,9 +599,11 @@ class TestSDKIntegration:
     async def test_sdk_invocation_calls_query(self, agent_invoker):
         """SDK invocation calls claude_agent_sdk.query() with correct options."""
         # Create async generator mock for query()
+        # Bug #472 defense: mock messages must explicitly set error=None
+        # to prevent check_assistant_message_error from triggering
         async def mock_query_gen(*args, **kwargs):
-            yield MagicMock(type="assistant")
-            yield MagicMock(type="result", subtype="success")
+            yield MagicMock(type="assistant", error=None)
+            yield MagicMock(type="result", subtype="success", error=None)
 
         # Create mock SDK module
         mock_sdk = MagicMock()
