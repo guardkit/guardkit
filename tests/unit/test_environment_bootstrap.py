@@ -21,6 +21,23 @@ from unittest.mock import MagicMock, Mock, call, patch
 
 import pytest
 
+# ---------------------------------------------------------------------------
+# TOML availability — used to gate tests that parse pyproject.toml
+# ---------------------------------------------------------------------------
+try:
+    import tomllib as _tomllib_probe  # noqa: F401
+
+    HAS_TOML = True
+except ImportError:
+    try:
+        import tomli as _tomllib_probe  # type: ignore[import] # noqa: F401
+
+        HAS_TOML = True
+    except ImportError:
+        HAS_TOML = False
+
+requires_toml = pytest.mark.skipif(not HAS_TOML, reason="tomllib/tomli not available")
+
 from guardkit.orchestrator.environment_bootstrap import (
     BootstrapResult,
     DetectedManifest,
@@ -754,3 +771,397 @@ class TestBootstrapEnvironmentOrchestrator:
         mock_run.assert_not_called()
         assert result is not None
         assert result.skipped is True
+
+
+# ============================================================================
+# 13. TestDetectedManifestIsProjectComplete
+# ============================================================================
+
+
+class TestDetectedManifestIsProjectComplete:
+    """Tests for DetectedManifest.is_project_complete() per stack."""
+
+    # Python / pyproject.toml
+
+    @requires_toml
+    def test_python_pyproject_flat_layout_complete(self, tmp_path: Path) -> None:
+        """is_project_complete() returns True when flat-layout source dir exists."""
+        pfile = tmp_path / "pyproject.toml"
+        pfile.write_text('[project]\nname = "my_app"\n')
+        (tmp_path / "my_app").mkdir()
+        m = make_manifest(pfile, stack="python")
+        assert m.is_project_complete() is True
+
+    @requires_toml
+    def test_python_pyproject_src_layout_complete(self, tmp_path: Path) -> None:
+        """is_project_complete() returns True when src-layout source dir exists."""
+        pfile = tmp_path / "pyproject.toml"
+        pfile.write_text('[project]\nname = "my_app"\n')
+        (tmp_path / "src" / "my_app").mkdir(parents=True)
+        m = make_manifest(pfile, stack="python")
+        assert m.is_project_complete() is True
+
+    @requires_toml
+    def test_python_pyproject_incomplete(self, tmp_path: Path) -> None:
+        """is_project_complete() returns False when source directory is absent."""
+        pfile = tmp_path / "pyproject.toml"
+        pfile.write_text('[project]\nname = "fastapi_health_app"\n')
+        # Source directory NOT created (greenfield)
+        m = make_manifest(pfile, stack="python")
+        assert m.is_project_complete() is False
+
+    @requires_toml
+    def test_python_pyproject_hyphenated_name_normalised(self, tmp_path: Path) -> None:
+        """Hyphens in project name are normalised to underscores for dir lookup."""
+        pfile = tmp_path / "pyproject.toml"
+        pfile.write_text('[project]\nname = "my-app"\n')
+        (tmp_path / "my_app").mkdir()  # PEP 427 normalised name
+        m = make_manifest(pfile, stack="python")
+        assert m.is_project_complete() is True
+
+    @requires_toml
+    def test_python_pyproject_no_name_returns_true(self, tmp_path: Path) -> None:
+        """is_project_complete() returns True when no project name is declared."""
+        pfile = tmp_path / "pyproject.toml"
+        pfile.write_text('[build-system]\nrequires = ["setuptools"]\n')
+        m = make_manifest(pfile, stack="python")
+        assert m.is_project_complete() is True
+
+    def test_python_requirements_txt_always_complete(self, tmp_path: Path) -> None:
+        """requirements.txt manifests are always considered complete."""
+        f = tmp_path / "requirements.txt"
+        f.write_text("requests\n")
+        m = make_manifest(
+            f,
+            stack="python",
+            install_command=[sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
+        )
+        assert m.is_project_complete() is True
+
+    def test_python_poetry_lock_always_complete(self, tmp_path: Path) -> None:
+        """poetry.lock manifests are always considered complete."""
+        f = tmp_path / "poetry.lock"
+        f.write_text("# lock\n")
+        m = make_manifest(f, stack="python", is_lock_file=True)
+        assert m.is_project_complete() is True
+
+    # Node / package.json
+
+    def test_node_package_json_main_exists_complete(self, tmp_path: Path) -> None:
+        """is_project_complete() returns True when main entry point file exists."""
+        pfile = tmp_path / "package.json"
+        pfile.write_text('{"name":"app","main":"index.js"}\n')
+        (tmp_path / "index.js").write_text("module.exports = {}\n")
+        m = make_manifest(pfile, stack="node", install_command=["npm", "install"])
+        assert m.is_project_complete() is True
+
+    def test_node_package_json_main_missing_incomplete(self, tmp_path: Path) -> None:
+        """is_project_complete() returns False when main entry point file is absent."""
+        pfile = tmp_path / "package.json"
+        pfile.write_text('{"name":"app","main":"index.js"}\n')
+        # index.js intentionally not created
+        m = make_manifest(pfile, stack="node", install_command=["npm", "install"])
+        assert m.is_project_complete() is False
+
+    def test_node_package_json_no_entry_returns_true(self, tmp_path: Path) -> None:
+        """is_project_complete() returns True when no entry point is declared."""
+        pfile = tmp_path / "package.json"
+        pfile.write_text('{"name":"app"}\n')
+        m = make_manifest(pfile, stack="node", install_command=["npm", "install"])
+        assert m.is_project_complete() is True
+
+    def test_node_lock_file_always_complete(self, tmp_path: Path) -> None:
+        """Node lock files are always considered complete."""
+        f = tmp_path / "pnpm-lock.yaml"
+        f.write_text("lockfileVersion: '6.0'\n")
+        m = make_manifest(
+            f,
+            stack="node",
+            is_lock_file=True,
+            install_command=["pnpm", "install", "--frozen-lockfile"],
+        )
+        assert m.is_project_complete() is True
+
+    # .NET / Go (always complete)
+
+    def test_dotnet_always_complete(self, tmp_path: Path) -> None:
+        """dotnet manifests are always considered complete."""
+        f = tmp_path / "App.csproj"
+        f.write_text("<Project/>\n")
+        m = make_manifest(f, stack="dotnet", install_command=["dotnet", "restore"])
+        assert m.is_project_complete() is True
+
+    def test_go_always_complete(self, tmp_path: Path) -> None:
+        """go.mod manifests are always considered complete."""
+        f = tmp_path / "go.mod"
+        f.write_text("module example.com/app\n")
+        m = make_manifest(f, stack="go", install_command=["go", "mod", "download"])
+        assert m.is_project_complete() is True
+
+    # Rust
+
+    def test_rust_src_dir_exists_complete(self, tmp_path: Path) -> None:
+        """Rust manifests are complete when src/ directory exists."""
+        f = tmp_path / "Cargo.toml"
+        f.write_text("[package]\nname='app'\n")
+        (tmp_path / "src").mkdir()
+        m = make_manifest(f, stack="rust", install_command=["cargo", "fetch"])
+        assert m.is_project_complete() is True
+
+    def test_rust_no_src_dir_incomplete(self, tmp_path: Path) -> None:
+        """Rust manifests are incomplete when src/ directory is absent."""
+        f = tmp_path / "Cargo.toml"
+        f.write_text("[package]\nname='app'\n")
+        m = make_manifest(f, stack="rust", install_command=["cargo", "fetch"])
+        assert m.is_project_complete() is False
+
+    # Flutter
+
+    def test_flutter_lib_dir_exists_complete(self, tmp_path: Path) -> None:
+        """Flutter manifests are complete when lib/ directory exists."""
+        f = tmp_path / "pubspec.yaml"
+        f.write_text("name: app\n")
+        (tmp_path / "lib").mkdir()
+        m = make_manifest(f, stack="flutter", install_command=["flutter", "pub", "get"])
+        assert m.is_project_complete() is True
+
+    def test_flutter_no_lib_dir_incomplete(self, tmp_path: Path) -> None:
+        """Flutter manifests are incomplete when lib/ directory is absent."""
+        f = tmp_path / "pubspec.yaml"
+        f.write_text("name: app\n")
+        m = make_manifest(f, stack="flutter", install_command=["flutter", "pub", "get"])
+        assert m.is_project_complete() is False
+
+
+# ============================================================================
+# 14. TestDetectedManifestGetDependencyInstallCommands
+# ============================================================================
+
+
+class TestDetectedManifestGetDependencyInstallCommands:
+    """Tests for DetectedManifest.get_dependency_install_commands() per stack."""
+
+    @requires_toml
+    def test_python_pyproject_with_deps_returns_pip_commands(self, tmp_path: Path) -> None:
+        """pyproject.toml with dependencies returns one pip install command per dep."""
+        pfile = tmp_path / "pyproject.toml"
+        pfile.write_text(
+            '[project]\nname = "app"\ndependencies = ["fastapi>=0.100", "sqlalchemy"]\n'
+        )
+        m = make_manifest(pfile, stack="python")
+        cmds = m.get_dependency_install_commands()
+        assert cmds is not None
+        assert len(cmds) == 2
+        for cmd in cmds:
+            assert cmd[0] == sys.executable
+            assert cmd[1:4] == ["-m", "pip", "install"]
+        dep_args = [cmd[4] for cmd in cmds]
+        assert "fastapi>=0.100" in dep_args
+        assert "sqlalchemy" in dep_args
+
+    @requires_toml
+    def test_python_pyproject_no_deps_returns_none(self, tmp_path: Path) -> None:
+        """pyproject.toml without dependencies section returns None."""
+        pfile = tmp_path / "pyproject.toml"
+        pfile.write_text('[project]\nname = "app"\n')
+        m = make_manifest(pfile, stack="python")
+        assert m.get_dependency_install_commands() is None
+
+    def test_python_requirements_txt_returns_none(self, tmp_path: Path) -> None:
+        """requirements.txt manifest returns None (not applicable for dep-only install)."""
+        f = tmp_path / "requirements.txt"
+        f.write_text("requests\n")
+        m = make_manifest(
+            f,
+            stack="python",
+            install_command=[sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
+        )
+        assert m.get_dependency_install_commands() is None
+
+    def test_node_package_json_with_deps_returns_npm_commands(self, tmp_path: Path) -> None:
+        """package.json with dependencies returns one npm install command per dep."""
+        pfile = tmp_path / "package.json"
+        pfile.write_text(
+            '{"name":"app","dependencies":{"express":"^4.0","lodash":"^4.0"}}\n'
+        )
+        m = make_manifest(pfile, stack="node", install_command=["npm", "install"])
+        cmds = m.get_dependency_install_commands()
+        assert cmds is not None
+        assert len(cmds) == 2
+        for cmd in cmds:
+            assert cmd[:2] == ["npm", "install"]
+        pkg_names = [cmd[2] for cmd in cmds]
+        assert "express" in pkg_names
+        assert "lodash" in pkg_names
+
+    def test_node_package_json_no_deps_returns_none(self, tmp_path: Path) -> None:
+        """package.json without a dependencies object returns None."""
+        pfile = tmp_path / "package.json"
+        pfile.write_text('{"name":"app"}\n')
+        m = make_manifest(pfile, stack="node", install_command=["npm", "install"])
+        assert m.get_dependency_install_commands() is None
+
+    def test_node_lock_file_returns_none(self, tmp_path: Path) -> None:
+        """Node lock files return None (not applicable for dep-only install)."""
+        f = tmp_path / "pnpm-lock.yaml"
+        f.write_text("lockfileVersion: '6.0'\n")
+        m = make_manifest(
+            f,
+            stack="node",
+            is_lock_file=True,
+            install_command=["pnpm", "install", "--frozen-lockfile"],
+        )
+        assert m.get_dependency_install_commands() is None
+
+    def test_dotnet_returns_dotnet_restore(self, tmp_path: Path) -> None:
+        """.NET manifest returns [['dotnet', 'restore']]."""
+        f = tmp_path / "App.csproj"
+        f.write_text("<Project/>\n")
+        m = make_manifest(f, stack="dotnet", install_command=["dotnet", "restore"])
+        assert m.get_dependency_install_commands() == [["dotnet", "restore"]]
+
+    def test_go_returns_go_mod_download(self, tmp_path: Path) -> None:
+        """Go manifest returns [['go', 'mod', 'download']]."""
+        f = tmp_path / "go.mod"
+        f.write_text("module example.com/app\n")
+        m = make_manifest(f, stack="go", install_command=["go", "mod", "download"])
+        assert m.get_dependency_install_commands() == [["go", "mod", "download"]]
+
+    def test_rust_returns_cargo_fetch(self, tmp_path: Path) -> None:
+        """Rust manifest returns [['cargo', 'fetch']]."""
+        f = tmp_path / "Cargo.toml"
+        f.write_text("[package]\nname='app'\n")
+        m = make_manifest(f, stack="rust", install_command=["cargo", "fetch"])
+        assert m.get_dependency_install_commands() == [["cargo", "fetch"]]
+
+    def test_flutter_returns_flutter_pub_get(self, tmp_path: Path) -> None:
+        """Flutter manifest returns [['flutter', 'pub', 'get']]."""
+        f = tmp_path / "pubspec.yaml"
+        f.write_text("name: app\n")
+        m = make_manifest(f, stack="flutter", install_command=["flutter", "pub", "get"])
+        assert m.get_dependency_install_commands() == [["flutter", "pub", "get"]]
+
+
+# ============================================================================
+# 15. TestEnvironmentBootstrapperIncompleteProject
+# ============================================================================
+
+
+class TestEnvironmentBootstrapperIncompleteProject:
+    """Tests for bootstrap() detection-first strategy with incomplete projects."""
+
+    @requires_toml
+    def test_incomplete_python_project_installs_deps_not_full_install(
+        self, tmp_path: Path
+    ) -> None:
+        """
+        Integration test: greenfield Python project installs deps, not full install.
+
+        When pyproject.toml has dependencies but the source directory is missing,
+        bootstrap() runs pip install per-dependency instead of pip install -e .
+        """
+        pfile = tmp_path / "pyproject.toml"
+        pfile.write_text(
+            '[project]\nname = "fastapi_health_app"\n'
+            'dependencies = ["fastapi>=0.100", "sqlalchemy>=2.0"]\n'
+        )
+        # Source directory intentionally NOT created (greenfield timing gap)
+        detector = ProjectEnvironmentDetector(root=tmp_path)
+        manifests = detector.detect()
+        assert len(manifests) == 1
+        assert manifests[0].is_project_complete() is False
+
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        mock_result = Mock(returncode=0, stdout="", stderr="")
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            result = bootstrapper.bootstrap(manifests)
+
+        # Two dep-install calls (one per dependency), not one full install
+        assert mock_run.call_count == 2
+        # Full editable install must NOT appear in any command
+        for call_obj in mock_run.call_args_list:
+            cmd = call_obj.args[0]
+            assert "-e" not in cmd, "Full editable install must not be run for incomplete project"
+        assert result.success is True
+        assert result.installs_attempted == 2
+        assert result.installs_failed == 0
+
+    def test_complete_python_project_uses_full_install_command(self, tmp_path: Path) -> None:
+        """A complete project (requirements.txt) uses the standard install_command."""
+        f = tmp_path / "requirements.txt"
+        f.write_text("flask\n")
+        detector = ProjectEnvironmentDetector(root=tmp_path)
+        manifests = detector.detect()
+        assert manifests[0].is_project_complete() is True
+
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        mock_result = Mock(returncode=0, stdout="", stderr="")
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            result = bootstrapper.bootstrap(manifests)
+
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args.args[0]
+        assert "requirements.txt" in cmd
+        assert result.success is True
+
+    @requires_toml
+    def test_incomplete_project_no_deps_skips_subprocess(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Incomplete project with no declared deps logs a warning and runs no installs."""
+        import logging
+
+        pfile = tmp_path / "pyproject.toml"
+        pfile.write_text('[project]\nname = "empty_app"\n')
+        # No source dir, no dependencies declared
+        detector = ProjectEnvironmentDetector(root=tmp_path)
+        manifests = detector.detect()
+        assert manifests[0].is_project_complete() is False
+
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        with patch("subprocess.run") as mock_run:
+            with caplog.at_level(
+                logging.WARNING,
+                logger="guardkit.orchestrator.environment_bootstrap",
+            ):
+                result = bootstrapper.bootstrap(manifests)
+
+        mock_run.assert_not_called()
+        assert result.installs_attempted == 0
+        assert result.success is True  # No failures
+
+    # _run_single_command tests
+
+    def test_run_single_command_success_returns_true(self, tmp_path: Path) -> None:
+        """_run_single_command returns True on exit code 0."""
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        mock_result = Mock(returncode=0, stdout="", stderr="")
+        with patch("subprocess.run", return_value=mock_result):
+            assert bootstrapper._run_single_command([sys.executable, "--version"], tmp_path) is True
+
+    def test_run_single_command_nonzero_exit_returns_false(self, tmp_path: Path) -> None:
+        """_run_single_command returns False on non-zero exit code."""
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        mock_result = Mock(returncode=1, stdout="", stderr="error")
+        with patch("subprocess.run", return_value=mock_result):
+            assert bootstrapper._run_single_command(["false"], tmp_path) is False
+
+    def test_run_single_command_oserror_returns_false(self, tmp_path: Path) -> None:
+        """_run_single_command returns False and does not raise on OSError."""
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        with patch("subprocess.run", side_effect=OSError("no such file")):
+            assert bootstrapper._run_single_command(["nonexistent"], tmp_path) is False
+
+    def test_run_single_command_timeout_returns_false(self, tmp_path: Path) -> None:
+        """_run_single_command returns False and does not raise on TimeoutExpired."""
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        with patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="pip install flask", timeout=300),
+        ):
+            assert (
+                bootstrapper._run_single_command(
+                    [sys.executable, "-m", "pip", "install", "flask"], tmp_path
+                )
+                is False
+            )
