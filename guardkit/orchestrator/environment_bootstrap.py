@@ -76,6 +76,169 @@ class DetectedManifest:
     is_lock_file: bool
     install_command: List[str]
 
+    # ---- Completeness detection ----------------------------------------
+
+    def is_project_complete(self) -> bool:
+        """
+        Return True if the project source tree is complete enough for a full install.
+
+        When False, use ``get_dependency_install_commands()`` to install declared
+        dependencies individually instead of running ``install_command``.
+
+        Per-stack logic:
+
+        - python / pyproject.toml: checks for a source directory that matches the
+          ``[project].name`` in a flat or ``src/`` layout.
+        - python / poetry.lock, requirements.txt: always True.
+        - node / package.json: checks that the ``main`` or ``module`` entry point
+          file exists.
+        - node / lock files: always True.
+        - dotnet, go: always True (restore/download work without source).
+        - rust: True when ``src/`` directory exists.
+        - flutter: True when ``lib/`` directory exists.
+        """
+        parent = self.path.parent
+
+        if self.stack == "python":
+            if self.path.name == "pyproject.toml":
+                return self._python_pyproject_is_complete(parent)
+            return True  # poetry.lock / requirements.txt: no source-dir concept
+
+        if self.stack == "node":
+            if self.path.name == "package.json":
+                return self._node_package_is_complete(parent)
+            return True  # lock files: assume complete
+
+        if self.stack == "rust":
+            return (parent / "src").is_dir()
+
+        if self.stack == "flutter":
+            return (parent / "lib").is_dir()
+
+        # dotnet, go: restore / download work without source
+        return True
+
+    def get_dependency_install_commands(self) -> Optional[List[List[str]]]:
+        """
+        Return per-dependency install commands for incomplete projects.
+
+        For stacks where the build tool works without source code (dotnet, go,
+        rust, flutter) the standard restore command is returned wrapped in a list.
+        For Python (pyproject.toml) and Node (package.json) the manifest is parsed
+        and one command per declared dependency is returned.
+
+        Returns ``None`` when no dependency-level install is applicable (e.g.
+        lock files, or manifests with no declared dependencies).
+        """
+        if self.stack == "python":
+            if self.path.name == "pyproject.toml":
+                return self._python_dep_commands()
+            return None  # poetry.lock / requirements.txt: not applicable
+
+        if self.stack == "node":
+            if self.path.name == "package.json":
+                return self._node_dep_commands()
+            return None  # lock files: not applicable
+
+        if self.stack == "dotnet":
+            return [["dotnet", "restore"]]
+
+        if self.stack == "go":
+            return [["go", "mod", "download"]]
+
+        if self.stack == "rust":
+            return [["cargo", "fetch"]]
+
+        if self.stack == "flutter":
+            return [["flutter", "pub", "get"]]
+
+        return None
+
+    # ---- Private helpers -----------------------------------------------
+
+    def _python_pyproject_is_complete(self, directory: Path) -> bool:
+        """Check whether the Python project source directory exists."""
+        try:
+            try:
+                import tomllib  # Python 3.11+
+            except ImportError:
+                import tomli as tomllib  # type: ignore[import,no-redef]
+            data = tomllib.loads(self.path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.debug(
+                "Could not parse %s for completeness check: %s", self.path, exc
+            )
+            return True  # Conservative: assume complete on parse failure
+
+        project_name: str = data.get("project", {}).get("name", "")
+        if not project_name:
+            return True  # No name declared; assume complete
+
+        # PEP 427: normalise hyphens to underscores for import name
+        import_name = project_name.replace("-", "_")
+
+        # Flat layout: {name}/ at project root
+        if (directory / import_name).is_dir():
+            return True
+        # src layout: src/{name}/
+        if (directory / "src" / import_name).is_dir():
+            return True
+
+        return False
+
+    def _node_package_is_complete(self, directory: Path) -> bool:
+        """Check whether the Node project's declared entry point exists."""
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.debug(
+                "Could not parse %s for completeness check: %s", self.path, exc
+            )
+            return True  # Conservative: assume complete on parse failure
+
+        entry: Optional[str] = data.get("main") or data.get("module")
+        if not entry:
+            return True  # No entry point declared; assume complete
+
+        return (directory / entry).exists()
+
+    def _python_dep_commands(self) -> Optional[List[List[str]]]:
+        """Parse [project.dependencies] from pyproject.toml for per-dep installs."""
+        try:
+            try:
+                import tomllib  # Python 3.11+
+            except ImportError:
+                import tomli as tomllib  # type: ignore[import,no-redef]
+            data = tomllib.loads(self.path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.warning(
+                "Could not parse %s for dependency extraction: %s", self.path, exc
+            )
+            return None
+
+        deps: List[str] = data.get("project", {}).get("dependencies", [])
+        if not deps:
+            return None
+
+        # Pass the full PEP 508 string to pip; pip handles version resolution.
+        return [[sys.executable, "-m", "pip", "install", dep] for dep in deps]
+
+    def _node_dep_commands(self) -> Optional[List[List[str]]]:
+        """Parse dependencies from package.json for per-dep installs."""
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.warning(
+                "Could not parse %s for dependency extraction: %s", self.path, exc
+            )
+            return None
+
+        deps: dict = data.get("dependencies", {})
+        if not deps:
+            return None
+
+        return [["npm", "install", name] for name in deps]
+
 
 @dataclass
 class BootstrapResult:
@@ -495,10 +658,27 @@ class EnvironmentBootstrapper:
         installs_failed = 0
 
         for manifest in manifests:
-            installs_attempted += 1
-            success = self._run_install(manifest)
-            if not success:
-                installs_failed += 1
+            if manifest.is_project_complete():
+                # Full project install (standard path)
+                installs_attempted += 1
+                success = self._run_install(manifest)
+                if not success:
+                    installs_failed += 1
+            else:
+                # Incomplete project: install declared dependencies individually
+                dep_commands = manifest.get_dependency_install_commands()
+                if dep_commands:
+                    for cmd in dep_commands:
+                        installs_attempted += 1
+                        success = self._run_single_command(cmd, manifest.path.parent)
+                        if not success:
+                            installs_failed += 1
+                else:
+                    logger.warning(
+                        "Incomplete project at %s (%s): no dependency install available",
+                        manifest.path,
+                        manifest.stack,
+                    )
 
         # Persist new state hash (even on partial failure)
         self._save_state(content_hash)
@@ -661,6 +841,59 @@ class EnvironmentBootstrapper:
                 manifest.stack,
                 manifest.path.name,
                 exc,
+            )
+            return False
+
+    def _run_single_command(self, cmd: List[str], cwd: Path) -> bool:
+        """
+        Run a single command in the given working directory.
+
+        Used for per-dependency installs when
+        ``DetectedManifest.is_project_complete()`` returns False.
+
+        Parameters
+        ----------
+        cmd : List[str]
+            argv list for the command to run.
+        cwd : Path
+            Working directory for the command.
+
+        Returns
+        -------
+        bool
+            True if the command succeeded (exit code 0), False otherwise.
+            Never raises — all errors are caught and logged.
+        """
+        logger.info("Running dep-install: %s", " ".join(cmd))
+        try:
+            proc = subprocess.run(
+                cmd,
+                cwd=str(cwd),
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            if proc.returncode == 0:
+                logger.debug("Command succeeded: %s", " ".join(cmd))
+                return True
+            logger.warning(
+                "Command failed (exit %d): %s\n%s",
+                proc.returncode,
+                " ".join(cmd),
+                proc.stderr or proc.stdout,
+            )
+            return False
+        except subprocess.CalledProcessError as exc:
+            logger.warning(
+                "Command raised CalledProcessError: %s: %s", " ".join(cmd), exc
+            )
+            return False
+        except OSError as exc:
+            logger.warning("Command raised OSError: %s: %s", " ".join(cmd), exc)
+            return False
+        except subprocess.TimeoutExpired as exc:
+            logger.warning(
+                "Command timed out (300s): %s: %s", " ".join(cmd), exc
             )
             return False
 
