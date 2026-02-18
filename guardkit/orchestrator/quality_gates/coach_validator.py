@@ -617,6 +617,16 @@ class CoachValidator:
             requires_infra = task.get("requires_infrastructure", [])
             docker_available = task.get("_docker_available", True)
 
+            logger.debug(
+                "conditional_approval check: failure_class=%s, confidence=%s, "
+                "requires_infra=%s, docker_available=%s, all_gates_passed=%s",
+                failure_class,
+                failure_confidence,
+                requires_infra,
+                docker_available,
+                gates_status.all_gates_passed,
+            )
+
             conditional_approval = (
                 failure_class == "infrastructure"
                 and failure_confidence == "high"

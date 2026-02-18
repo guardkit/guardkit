@@ -1,9 +1,11 @@
 ---
 id: TASK-BOOT-754A
 title: Structured diagnostic logging for bootstrap and conditional approval
-status: backlog
+status: completed
 created: 2026-02-18T00:00:00Z
-updated: 2026-02-18T00:00:00Z
+updated: 2026-02-18T12:00:00Z
+completed: 2026-02-18T12:00:00Z
+completed_location: tasks/completed/TASK-BOOT-754A/
 priority: high
 tags: [autobuild, environment-bootstrap, diagnostics, logging, coach-validator]
 task_type: feature

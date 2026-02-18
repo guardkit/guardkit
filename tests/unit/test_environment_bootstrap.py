@@ -13,6 +13,7 @@ Test Count: 45+ tests
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 import sys
 from pathlib import Path
@@ -550,6 +551,73 @@ class TestEnvironmentBootstrapperRunInstall:
             bootstrapper._run_install(m)
         call_kwargs = mock_run.call_args.kwargs
         assert call_kwargs["cwd"] == str(subdir)
+
+    def test_run_install_success_logs_stdout_at_debug(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """_run_install logs stdout at DEBUG level when install succeeds."""
+        f = tmp_path / "requirements.txt"
+        f.write_text("flask\n")
+        m = make_manifest(f)
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        mock_result = Mock(returncode=0, stdout="Successfully installed flask-3.0.0\n", stderr="")
+        with caplog.at_level(logging.DEBUG):
+            with patch("subprocess.run", return_value=mock_result):
+                result = bootstrapper._run_install(m)
+        assert result is True
+        assert "Install stdout:" in caplog.text
+        assert "Successfully installed flask-3.0.0" in caplog.text
+
+    def test_run_install_success_no_debug_log_when_stdout_empty(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """_run_install does not log stdout at DEBUG when stdout is empty."""
+        f = tmp_path / "requirements.txt"
+        f.write_text("flask\n")
+        m = make_manifest(f)
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        mock_result = Mock(returncode=0, stdout="", stderr="")
+        with caplog.at_level(logging.DEBUG):
+            with patch("subprocess.run", return_value=mock_result):
+                bootstrapper._run_install(m)
+        assert "Install stdout:" not in caplog.text
+
+    def test_run_install_failure_logs_both_stderr_and_stdout(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """_run_install logs both stderr and stdout at WARNING level on failure."""
+        f = tmp_path / "requirements.txt"
+        f.write_text("flask\n")
+        m = make_manifest(f)
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        mock_result = Mock(
+            returncode=1,
+            stdout="Partial output line\n",
+            stderr="ERROR: Could not find version\n",
+        )
+        with caplog.at_level(logging.WARNING):
+            with patch("subprocess.run", return_value=mock_result):
+                result = bootstrapper._run_install(m)
+        assert result is False
+        assert "stderr:" in caplog.text
+        assert "Could not find version" in caplog.text
+        assert "stdout:" in caplog.text
+        assert "Partial output line" in caplog.text
+
+    def test_run_install_failure_shows_empty_placeholder_when_no_output(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """_run_install shows '(empty)' placeholder when stderr/stdout are absent on failure."""
+        f = tmp_path / "requirements.txt"
+        f.write_text("flask\n")
+        m = make_manifest(f)
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        mock_result = Mock(returncode=1, stdout="", stderr="")
+        with caplog.at_level(logging.WARNING):
+            with patch("subprocess.run", return_value=mock_result):
+                bootstrapper._run_install(m)
+        assert "stderr: (empty)" in caplog.text
+        assert "stdout: (empty)" in caplog.text
 
 
 # ============================================================================
