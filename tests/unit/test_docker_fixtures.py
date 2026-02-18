@@ -141,7 +141,7 @@ class TestDockerFixturesModule:
         """get_env_exports('postgresql') returns dict with DATABASE_URL key."""
         exports = get_env_exports("postgresql")
         assert "DATABASE_URL" in exports
-        assert exports["DATABASE_URL"].startswith("postgresql://")
+        assert exports["DATABASE_URL"].startswith("postgresql+asyncpg://")
 
     def test_get_env_exports_redis_contains_redis_url(self) -> None:
         """get_env_exports('redis') returns dict with REDIS_URL key."""
@@ -300,7 +300,7 @@ class TestCoachValidatorDockerMethods:
                 os.environ.pop("DATABASE_URL", None)
                 validator._start_infrastructure_containers(["postgresql"])
                 assert "DATABASE_URL" in os.environ
-                assert os.environ["DATABASE_URL"].startswith("postgresql://")
+                assert os.environ["DATABASE_URL"].startswith("postgresql+asyncpg://")
                 # Clean up
                 os.environ.pop("DATABASE_URL", None)
 

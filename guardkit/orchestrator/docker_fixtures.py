@@ -27,7 +27,7 @@ DOCKER_FIXTURES: Dict[str, Dict[str, object]] = {
         "env_vars": {"POSTGRES_PASSWORD": "test"},
         "readiness_cmd": "docker exec guardkit-test-pg pg_isready",
         "readiness_type": "command",  # "command" = until loop, "sleep" = fixed wait
-        "env_export": {"DATABASE_URL": "postgresql://postgres:test@localhost:5433/test"},
+        "env_export": {"DATABASE_URL": "postgresql+asyncpg://postgres:test@localhost:5433/test"},
     },
     "redis": {
         "container_name": f"{CONTAINER_PREFIX}-redis",
