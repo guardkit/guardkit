@@ -4119,6 +4119,140 @@ class TestCumulativeDiffFallback:
 
 
 # ============================================================================
+# Test _classify_test_failure — psycopg2 misclassification fix (TASK-FIX-A7F1)
+# ============================================================================
+
+
+class TestClassifyTestFailurePsycopg2:
+    """Tests for the psycopg2 misclassification fix in _classify_test_failure.
+
+    Source: TASK-FIX-A7F1 — finding F2 from TASK-REV-7EB05.
+    """
+
+    def test_psycopg2_module_not_found_no_context_is_ambiguous(self, tmp_worktree):
+        """AC2: psycopg2 ModuleNotFoundError with no bootstrap context → ambiguous.
+
+        Previously classified as ("infrastructure", "high"), which gave the
+        Player wrong advice (mock fixtures / SQLite) instead of telling them to
+        remove the wrong import.
+        """
+        validator = CoachValidator(str(tmp_worktree))
+        output = (
+            "FAILED tests/test_db.py::test_connect\n"
+            "ModuleNotFoundError: No module named 'psycopg2'\n"
+        )
+
+        result = validator._classify_test_failure(output)
+
+        assert result == ("infrastructure", "ambiguous"), (
+            f"Expected ('infrastructure', 'ambiguous'), got {result!r}. "
+            "psycopg2 ModuleNotFoundError without bootstrap context should not "
+            "trigger conditional approval."
+        )
+
+    def test_psycopg2_module_not_found_with_bootstrap_context_is_code_error(
+        self, tmp_worktree
+    ):
+        """AC3: psycopg2 ModuleNotFoundError + bootstrap context → code error.
+
+        When the task declares infrastructure requirements (e.g. postgresql),
+        a missing psycopg2 import is a Player code-choice error — they should
+        be using asyncpg, not psycopg2.
+        """
+        validator = CoachValidator(str(tmp_worktree))
+        output = (
+            "FAILED tests/test_db.py::test_connect\n"
+            "ModuleNotFoundError: No module named 'psycopg2'\n"
+        )
+
+        result = validator._classify_test_failure(
+            output, requires_infrastructure=["postgresql"]
+        )
+
+        assert result == ("code", "high"), (
+            f"Expected ('code', 'high'), got {result!r}. "
+            "psycopg2 missing when bootstrap declares postgresql means the "
+            "Player chose the wrong driver."
+        )
+
+    def test_asyncpg_module_not_found_is_infrastructure_high(self, tmp_worktree):
+        """AC5: asyncpg ModuleNotFoundError → ('infrastructure', 'high').
+
+        asyncpg remains in _KNOWN_SERVICE_CLIENT_LIBS so its absence is
+        treated as a genuine infra/env issue regardless of bootstrap context.
+        """
+        validator = CoachValidator(str(tmp_worktree))
+        output = (
+            "FAILED tests/test_db.py::test_connect\n"
+            "ModuleNotFoundError: No module named 'asyncpg'\n"
+        )
+
+        result = validator._classify_test_failure(output)
+
+        assert result == ("infrastructure", "high"), (
+            f"Expected ('infrastructure', 'high'), got {result!r}. "
+            "asyncpg missing is a genuine infra dep issue."
+        )
+
+    def test_asyncpg_module_not_found_with_bootstrap_still_infrastructure(
+        self, tmp_worktree
+    ):
+        """AC5: asyncpg missing + bootstrap context → still infrastructure high.
+
+        asyncpg is the correct driver for the project (it's in
+        _KNOWN_SERVICE_CLIENT_LIBS), so bootstrap context does not change the
+        classification.
+        """
+        validator = CoachValidator(str(tmp_worktree))
+        output = (
+            "FAILED tests/test_db.py::test_connect\n"
+            "ModuleNotFoundError: No module named 'asyncpg'\n"
+        )
+
+        result = validator._classify_test_failure(
+            output, requires_infrastructure=["postgresql"]
+        )
+
+        assert result == ("infrastructure", "high"), (
+            f"Expected ('infrastructure', 'high'), got {result!r}. "
+            "asyncpg is the expected driver — bootstrap context should not "
+            "downgrade to code error."
+        )
+
+    def test_psycopg2_connection_error_still_infrastructure_high(
+        self, tmp_worktree
+    ):
+        """psycopg2 connection errors (not ModuleNotFoundError) remain high.
+
+        When psycopg2 IS installed but the DB is unreachable, the error
+        contains e.g. 'psycopg2.OperationalError' which should still be
+        classified as infrastructure/high via _INFRA_HIGH_CONFIDENCE.
+        """
+        validator = CoachValidator(str(tmp_worktree))
+        output = (
+            "psycopg2.OperationalError: could not connect to server: "
+            "Connection refused\n"
+        )
+
+        result = validator._classify_test_failure(output)
+
+        assert result == ("infrastructure", "high"), (
+            f"Expected ('infrastructure', 'high'), got {result!r}. "
+            "A psycopg2 connection error (DB unreachable) is a genuine "
+            "infrastructure failure."
+        )
+
+    def test_psycopg2_not_in_known_service_client_libs(self, tmp_worktree):
+        """AC1: psycopg2 is no longer in _KNOWN_SERVICE_CLIENT_LIBS."""
+        validator = CoachValidator(str(tmp_worktree))
+
+        assert "psycopg2" not in validator._KNOWN_SERVICE_CLIENT_LIBS, (
+            "psycopg2 must be removed from _KNOWN_SERVICE_CLIENT_LIBS to prevent "
+            "ModuleNotFoundError from being auto-promoted to high confidence."
+        )
+
+
+# ============================================================================
 # Run Tests
 # ============================================================================
 
