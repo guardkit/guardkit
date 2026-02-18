@@ -1,10 +1,12 @@
 ---
 id: TASK-FIX-70F3
 title: Accumulate known test files across autobuild turns
-status: backlog
+status: completed
 task_type: implementation
 created: 2026-02-18T16:00:00Z
-updated: 2026-02-18T16:00:00Z
+updated: 2026-02-18T17:30:00Z
+completed: 2026-02-18T17:30:00Z
+completed_location: tasks/completed/TASK-FIX-70F3/
 priority: normal
 tags: [autobuild, coach-validator, test-detection, shared-worktree]
 complexity: 4
@@ -16,9 +18,9 @@ related_tasks:
   - TASK-REV-7EB05
   - TASK-FIX-AE7E
 test_results:
-  status: pending
+  status: passed
   coverage: null
-  last_run: null
+  last_run: 2026-02-18T17:00:00Z
 ---
 
 # Task: Accumulate known test files across autobuild turns
@@ -35,12 +37,12 @@ The cumulative git diff fallback (tertiary) should find committed test files, bu
 
 ## Acceptance Criteria
 
-- [ ] Test files detected on turn 1 are remembered and used on subsequent turns for the same task
-- [ ] On turns 2+ where no new test files appear in `files_created`/`files_modified`, the accumulated set from prior turns is used as the test target
-- [ ] Accumulated test files are only valid if they still exist on disk (existence check before use)
-- [ ] Accumulation is per-task (does not bleed between tasks sharing a worktree)
-- [ ] Existing test detection priority order is preserved (current-turn detection takes precedence over accumulated)
-- [ ] New tests cover: turn 1 detects test file → turn 2 reuses it for independent verification
+- [x] Test files detected on turn 1 are remembered and used on subsequent turns for the same task
+- [x] On turns 2+ where no new test files appear in `files_created`/`files_modified`, the accumulated set from prior turns is used as the test target
+- [x] Accumulated test files are only valid if they still exist on disk (existence check before use)
+- [x] Accumulation is per-task (does not bleed between tasks sharing a worktree)
+- [x] Existing test detection priority order is preserved (current-turn detection takes precedence over accumulated)
+- [x] New tests cover: turn 1 detects test file → turn 2 reuses it for independent verification
 
 ## Implementation Notes
 
