@@ -606,6 +606,7 @@ class CoachValidator:
             test_result = self.run_independent_tests(
                 task_work_results=task_work_results,
                 task=task,
+                turn=turn,
             )
 
         conditional_approval = False
@@ -1140,6 +1141,7 @@ class CoachValidator:
         self,
         task_work_results: Optional[Dict[str, Any]] = None,
         task: Optional[Dict[str, Any]] = None,
+        turn: Optional[int] = None,
     ) -> IndependentTestResult:
         """
         Run tests independently to verify Player's report.
@@ -1156,6 +1158,10 @@ class CoachValidator:
             Task data dict. When provided, ``requires_infrastructure`` is read
             from task frontmatter and Docker containers are started before test
             execution and stopped afterwards.
+        turn : Optional[int]
+            Current turn number (1-based). When provided, enables the quinary
+            fallback in ``_detect_test_command`` that scans prior player turn
+            reports to find test files created in earlier turns.
 
         Returns
         -------
@@ -1175,7 +1181,7 @@ class CoachValidator:
 
         # Determine test command (pass task_id and results for task-specific filtering)
         test_cmd = self.test_command or self._detect_test_command(
-            self.task_id, task_work_results=task_work_results
+            self.task_id, task_work_results=task_work_results, turn=turn
         )
 
         # If test_cmd is None, it means task-specific filtering was requested
@@ -2098,14 +2104,18 @@ class CoachValidator:
         self,
         task_id: Optional[str] = None,
         task_work_results: Optional[Dict[str, Any]] = None,
+        turn: Optional[int] = None,
     ) -> Optional[str]:
         """
         Auto-detect the test command based on project files.
 
         When task_id is provided, attempts to find task-specific test files
-        using two sources in priority order:
+        using sources in priority order:
         1. Primary: Extract test files from task_work_results (already in memory)
-        2. Fallback: Task-ID glob pattern on disk
+        2. Secondary: Task-ID glob pattern on disk
+        3. Tertiary: Cumulative git diff from task's first checkpoint
+        4. Quaternary: Extract test files from completion_promises
+        5. Quinary: Scan prior player_turn_N.json reports for accumulated test files
 
         If no task-specific tests are found and task_id was provided,
         returns None to signal that independent verification should be skipped.
@@ -2123,6 +2133,13 @@ class CoachValidator:
             Task-work results dict (already loaded in memory). Used as
             primary source for test file detection via files_created
             and files_modified lists.
+        turn : Optional[int]
+            Current turn number (1-based). When provided, enables the quinary
+            fallback that scans prior player_turn_N.json files to find test
+            files accumulated from earlier turns. On iterative fix turns the
+            Player modifies source files without re-creating the test file, so
+            files_created/files_modified in the current results will not contain
+            the test file.
 
         Returns
         -------
@@ -2222,6 +2239,37 @@ class CoachValidator:
                         return f"pytest {files_str} -v --tb=short"
                 except Exception as e:
                     logger.debug(f"Completion promises test extraction failed: {e}")
+
+            # Quinary fallback: scan prior player_turn_N.json reports for
+            # accumulated test files (TASK-FIX-70F3).
+            # On iterative fix turns (turn >= 2), the Player modifies source
+            # files but does not re-create or re-modify the test file, so
+            # files_created/files_modified in the current results won't include
+            # it. Prior player reports *do* contain the test file in their
+            # files_created/files_modified, making them the reliable source of
+            # accumulated test file knowledge across turns.
+            # Accumulation is per-task (task_id required) to avoid bleeding
+            # between tasks sharing a worktree.
+            if turn and self.task_id:
+                for prev_turn in range(turn - 1, 0, -1):
+                    prev_path = TaskArtifactPaths.player_report_path(
+                        self.task_id, prev_turn, self.worktree_path
+                    )
+                    if prev_path.exists():
+                        try:
+                            prior_results = json.loads(prev_path.read_text())
+                            cmd = self._detect_tests_from_results(prior_results)
+                            if cmd:
+                                logger.info(
+                                    "Test files found via player_turn_%d.json for %s",
+                                    prev_turn,
+                                    self.task_id,
+                                )
+                                return cmd
+                        except Exception as e:
+                            logger.debug(
+                                f"Failed to read player_turn_{prev_turn}.json: {e}"
+                            )
 
             return None
 

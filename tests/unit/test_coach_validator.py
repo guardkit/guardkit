@@ -4119,6 +4119,276 @@ class TestCumulativeDiffFallback:
 
 
 # ============================================================================
+# Test Player Report Accumulation (TASK-FIX-70F3)
+# ============================================================================
+
+
+class TestPlayerReportAccumulation:
+    """Tests for quinary fallback: scan prior player_turn_N.json reports.
+
+    Source: TASK-FIX-70F3 — finding F5 from TASK-REV-7EB05.
+
+    On iterative fix turns (turn >= 2) the Player modifies source files but
+    does not re-create the test file, so files_created/files_modified in the
+    current task_work_results will not contain the test file.  The quinary
+    fallback scans prior player_turn_N.json files to recover the test file
+    list accumulated from earlier turns.
+    """
+
+    def _make_player_report(self, files_created=None, files_modified=None):
+        """Return a minimal player report dict."""
+        return {
+            "files_created": files_created or [],
+            "files_modified": files_modified or [],
+            "completion_promises": [],
+        }
+
+    def test_turn2_finds_test_from_turn1_player_report(self, tmp_worktree):
+        """AC: turn 2 reuses test file detected on turn 1 via player_turn_1.json."""
+        task_id = "TASK-PA-001"
+        player_dir = tmp_worktree / ".guardkit" / "autobuild" / task_id
+        player_dir.mkdir(parents=True)
+
+        # Test file was created on turn 1
+        tests_dir = tmp_worktree / "tests" / "users"
+        tests_dir.mkdir(parents=True)
+        test_file = tests_dir / "test_users.py"
+        test_file.write_text("def test_users(): pass")
+
+        # Write player_turn_1.json with the test file in files_created
+        report = self._make_player_report(files_created=["tests/users/test_users.py"])
+        (player_dir / "player_turn_1.json").write_text(json.dumps(report))
+
+        # Current turn 2: task_work_results has no test files (only source fix)
+        current_results = {
+            "files_created": [],
+            "files_modified": ["guardkit/users/service.py"],
+            "completion_promises": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id=task_id)
+        cmd = validator._detect_test_command(
+            task_id=task_id,
+            task_work_results=current_results,
+            turn=2,
+        )
+
+        assert cmd is not None, "Expected test command from prior player report"
+        assert "pytest" in cmd
+        assert "tests/users/test_users.py" in cmd
+
+    def test_turn1_does_not_scan_prior_reports(self, tmp_worktree):
+        """On turn 1 there are no prior reports to scan; quinary fallback is a no-op."""
+        task_id = "TASK-PA-002"
+        player_dir = tmp_worktree / ".guardkit" / "autobuild" / task_id
+        player_dir.mkdir(parents=True)
+
+        # Even if a stale player_turn_0.json existed, it should never be read
+        # (range(0, 0, -1) is empty).  No test files on disk either.
+        current_results = {
+            "files_created": [],
+            "files_modified": ["guardkit/users/service.py"],
+            "completion_promises": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id=task_id)
+        cmd = validator._detect_test_command(
+            task_id=task_id,
+            task_work_results=current_results,
+            turn=1,
+        )
+
+        # No test files anywhere → should return None
+        assert cmd is None
+
+    def test_accumulated_test_file_must_exist_on_disk(self, tmp_worktree):
+        """AC: accumulated test files are only used if they still exist on disk."""
+        task_id = "TASK-PA-003"
+        player_dir = tmp_worktree / ".guardkit" / "autobuild" / task_id
+        player_dir.mkdir(parents=True)
+
+        # Write player_turn_1.json referencing a file that no longer exists
+        report = self._make_player_report(
+            files_created=["tests/test_deleted.py"]
+        )
+        (player_dir / "player_turn_1.json").write_text(json.dumps(report))
+
+        # File is NOT present on disk
+        current_results = {
+            "files_created": [],
+            "files_modified": ["guardkit/models/user.py"],
+            "completion_promises": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id=task_id)
+        cmd = validator._detect_test_command(
+            task_id=task_id,
+            task_work_results=current_results,
+            turn=2,
+        )
+
+        assert cmd is None, "Should not reference deleted test files"
+
+    def test_accumulation_is_per_task(self, tmp_worktree):
+        """AC: accumulated test files from a different task are not used."""
+        # Create player report for TASK-PA-OTHER with a test file
+        other_task_id = "TASK-PA-OTHER"
+        other_dir = tmp_worktree / ".guardkit" / "autobuild" / other_task_id
+        other_dir.mkdir(parents=True)
+        tests_dir = tmp_worktree / "tests"
+        tests_dir.mkdir(parents=True)
+        other_test = tests_dir / "test_other.py"
+        other_test.write_text("def test_other(): pass")
+        report = self._make_player_report(files_created=["tests/test_other.py"])
+        (other_dir / "player_turn_1.json").write_text(json.dumps(report))
+
+        # Our task has no player report
+        our_task_id = "TASK-PA-004"
+        current_results = {
+            "files_created": [],
+            "files_modified": ["guardkit/models/user.py"],
+            "completion_promises": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id=our_task_id)
+        cmd = validator._detect_test_command(
+            task_id=our_task_id,
+            task_work_results=current_results,
+            turn=2,
+        )
+
+        # Should not find TASK-PA-OTHER's report; our task directory is empty
+        assert cmd is None
+
+    def test_turn_not_provided_quinary_skipped(self, tmp_worktree):
+        """When turn is not provided, quinary fallback is not attempted."""
+        task_id = "TASK-PA-005"
+        player_dir = tmp_worktree / ".guardkit" / "autobuild" / task_id
+        player_dir.mkdir(parents=True)
+
+        tests_dir = tmp_worktree / "tests"
+        tests_dir.mkdir(parents=True)
+        test_file = tests_dir / "test_feature.py"
+        test_file.write_text("def test_feature(): pass")
+
+        report = self._make_player_report(files_created=["tests/test_feature.py"])
+        (player_dir / "player_turn_1.json").write_text(json.dumps(report))
+
+        current_results = {
+            "files_created": [],
+            "files_modified": ["guardkit/feature.py"],
+            "completion_promises": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id=task_id)
+        # No `turn` argument → quinary fallback is skipped
+        cmd = validator._detect_test_command(
+            task_id=task_id,
+            task_work_results=current_results,
+        )
+
+        assert cmd is None
+
+    def test_scans_multiple_prior_turns_newest_first(self, tmp_worktree):
+        """Scans turns in descending order; uses the most recent report with tests."""
+        task_id = "TASK-PA-006"
+        player_dir = tmp_worktree / ".guardkit" / "autobuild" / task_id
+        player_dir.mkdir(parents=True)
+
+        tests_dir = tmp_worktree / "tests"
+        tests_dir.mkdir(parents=True)
+
+        # Turn 1: test file A
+        test_a = tests_dir / "test_feature_a.py"
+        test_a.write_text("def test_a(): pass")
+        report1 = self._make_player_report(files_created=["tests/test_feature_a.py"])
+        (player_dir / "player_turn_1.json").write_text(json.dumps(report1))
+
+        # Turn 2: no test files (fix turn), but turn 2 report exists
+        report2 = self._make_player_report(files_modified=["guardkit/feature.py"])
+        (player_dir / "player_turn_2.json").write_text(json.dumps(report2))
+
+        # Current is turn 3; no test in current results either
+        current_results = {
+            "files_created": [],
+            "files_modified": ["guardkit/feature.py"],
+            "completion_promises": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id=task_id)
+        cmd = validator._detect_test_command(
+            task_id=task_id,
+            task_work_results=current_results,
+            turn=3,
+        )
+
+        # Should fall through turn_2 (no tests there) and find test from turn_1
+        assert cmd is not None
+        assert "tests/test_feature_a.py" in cmd
+
+    def test_current_turn_results_take_priority_over_prior_reports(self, tmp_worktree):
+        """AC: existing test detection priority is preserved (current-turn wins)."""
+        task_id = "TASK-PA-007"
+        player_dir = tmp_worktree / ".guardkit" / "autobuild" / task_id
+        player_dir.mkdir(parents=True)
+
+        tests_dir = tmp_worktree / "tests"
+        tests_dir.mkdir(parents=True)
+
+        # Prior turn 1 report references test_old.py
+        test_old = tests_dir / "test_old.py"
+        test_old.write_text("def test_old(): pass")
+        report1 = self._make_player_report(files_created=["tests/test_old.py"])
+        (player_dir / "player_turn_1.json").write_text(json.dumps(report1))
+
+        # Current turn 2: task_work_results has test_new.py in files_created
+        test_new = tests_dir / "test_new.py"
+        test_new.write_text("def test_new(): pass")
+        current_results = {
+            "files_created": ["tests/test_new.py"],
+            "files_modified": [],
+            "completion_promises": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id=task_id)
+        cmd = validator._detect_test_command(
+            task_id=task_id,
+            task_work_results=current_results,
+            turn=2,
+        )
+
+        # Primary (current results) should win; test_old.py should NOT appear
+        assert cmd is not None
+        assert "tests/test_new.py" in cmd
+        assert "tests/test_old.py" not in cmd
+
+    def test_corrupted_player_report_skipped_gracefully(self, tmp_worktree):
+        """Corrupted player_turn_N.json is skipped without crashing."""
+        task_id = "TASK-PA-008"
+        player_dir = tmp_worktree / ".guardkit" / "autobuild" / task_id
+        player_dir.mkdir(parents=True)
+
+        # Write corrupt JSON
+        (player_dir / "player_turn_1.json").write_text("not valid json {")
+
+        current_results = {
+            "files_created": [],
+            "files_modified": ["guardkit/feature.py"],
+            "completion_promises": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id=task_id)
+        # Should not raise; should just return None
+        cmd = validator._detect_test_command(
+            task_id=task_id,
+            task_work_results=current_results,
+            turn=2,
+        )
+
+        assert cmd is None
+
+
+# ============================================================================
 # Test _classify_test_failure — psycopg2 misclassification fix (TASK-FIX-A7F1)
 # ============================================================================
 
