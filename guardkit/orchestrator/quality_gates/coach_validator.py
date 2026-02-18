@@ -397,8 +397,12 @@ class CoachValidator:
     # Known service-client libraries whose absence indicates a missing dependency
     # install (not a code defect). ModuleNotFoundError for these is promoted to
     # high confidence.
+    # NOTE: psycopg2 is intentionally excluded — projects using asyncpg may
+    # accidentally import psycopg2, which is a Player code-choice error, not an
+    # infrastructure failure.  Classifying it as ("infrastructure", "high") gave
+    # the Player wrong advice (mock fixtures / SQLite) instead of telling them to
+    # remove the wrong import.
     _KNOWN_SERVICE_CLIENT_LIBS: List[str] = [
-        "psycopg2",
         "asyncpg",
         "pymongo",
         "redis",
@@ -606,7 +610,10 @@ class CoachValidator:
 
         conditional_approval = False
         if not test_result.tests_passed:
-            failure_class, failure_confidence = self._classify_test_failure(test_result.raw_output)
+            failure_class, failure_confidence = self._classify_test_failure(
+                test_result.raw_output,
+                requires_infrastructure=task.get("requires_infrastructure") if task else None,
+            )
             logger.warning(
                 f"Independent test verification failed for {task_id} "
                 f"(classification={failure_class}, confidence={failure_confidence})"
@@ -2323,28 +2330,69 @@ class CoachValidator:
                 return filepath
         return filepath
 
-    def _classify_test_failure(self, test_output: Optional[str]) -> Tuple[str, str]:
+    def _classify_test_failure(
+        self,
+        test_output: Optional[str],
+        requires_infrastructure: Optional[List[str]] = None,
+    ) -> Tuple[str, str]:
         """Classify a test failure as infrastructure or code with confidence.
 
-        Checks high-confidence patterns first. If any high-confidence pattern
-        matches, returns high confidence regardless of ambiguous matches.
+        Checks ModuleNotFoundError first to prevent false high-confidence hits
+        from service-client library names appearing as substrings in
+        ``_INFRA_HIGH_CONFIDENCE`` (e.g. "No module named 'psycopg2'" would
+        otherwise match the "psycopg2" entry before we can determine whether
+        the import is a valid infra dep or a wrong library choice).
 
         Parameters
         ----------
         test_output : Optional[str]
             Raw test stdout+stderr output
+        requires_infrastructure : Optional[List[str]]
+            Infrastructure services declared by the task (e.g. ["postgresql"]).
+            When provided, a missing module that is *not* in
+            ``_KNOWN_SERVICE_CLIENT_LIBS`` is classified as a code error
+            (wrong library choice) rather than ambiguous.
 
         Returns
         -------
         Tuple[str, str]
             ``("infrastructure", "high")`` if high-confidence pattern matches,
             ``("infrastructure", "ambiguous")`` if only ambiguous pattern matches,
+            ``("code", "high")`` if bootstrap context reveals a wrong lib choice,
             ``("code", "n/a")`` otherwise
         """
         if not test_output:
             logger.debug(f"[{self.task_id}] _classify_test_failure: no output → ('code', 'n/a')")
             return ("code", "n/a")
         output_lower = test_output.lower()
+        # Check ModuleNotFoundError FIRST, before _INFRA_HIGH_CONFIDENCE patterns,
+        # to avoid service-client library names (e.g. "psycopg2") in the error
+        # message triggering a false high-confidence infrastructure classification.
+        if "modulenotfounderror" in output_lower and "no module named" in output_lower:
+            match = re.search(r"no module named '([^']+)'", test_output, re.IGNORECASE)
+            if match:
+                missing_module = match.group(1).split(".")[0]
+                if missing_module in self._KNOWN_SERVICE_CLIENT_LIBS:
+                    logger.debug(
+                        f"[{self.task_id}] _classify_test_failure: known service-client lib"
+                        f" '{missing_module}' missing → ('infrastructure', 'high')"
+                    )
+                    return ("infrastructure", "high")
+                # Module is not a known service-client lib.
+                # If the task declares infrastructure requirements, this is a
+                # code error (wrong library choice, e.g. psycopg2 instead of asyncpg).
+                if requires_infrastructure:
+                    logger.debug(
+                        f"[{self.task_id}] _classify_test_failure: unknown module"
+                        f" '{missing_module}' missing with bootstrap context"
+                        f" → ('code', 'high')"
+                    )
+                    return ("code", "high")
+                logger.debug(
+                    f"[{self.task_id}] _classify_test_failure: unknown module"
+                    f" '{missing_module}' missing (no context) → ('infrastructure', 'ambiguous')"
+                )
+                return ("infrastructure", "ambiguous")
         for pattern in self._INFRA_HIGH_CONFIDENCE:
             if pattern.lower() in output_lower:
                 logger.debug(
@@ -2352,13 +2400,6 @@ class CoachValidator:
                     f" '{pattern}' → ('infrastructure', 'high')"
                 )
                 return ("infrastructure", "high")
-        # Promote ModuleNotFoundError to high confidence for known service-client libraries
-        if "modulenotfounderror" in output_lower and "no module named" in output_lower:
-            match = re.search(r"no module named '([^']+)'", test_output, re.IGNORECASE)
-            if match:
-                missing_module = match.group(1).split(".")[0]
-                if missing_module in self._KNOWN_SERVICE_CLIENT_LIBS:
-                    return ("infrastructure", "high")
         for pattern in self._INFRA_AMBIGUOUS:
             if pattern.lower() in output_lower:
                 logger.debug(

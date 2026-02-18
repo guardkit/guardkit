@@ -1,10 +1,12 @@
 ---
 id: TASK-FIX-A7F1
 title: Fix psycopg2 misclassification as infrastructure failure
-status: backlog
+status: completed
 task_type: implementation
 created: 2026-02-18T16:00:00Z
-updated: 2026-02-18T16:00:00Z
+updated: 2026-02-18T16:30:00Z
+completed: 2026-02-18T16:45:00Z
+completed_location: tasks/completed/TASK-FIX-A7F1/
 priority: high
 tags: [autobuild, coach-validator, failure-classification, psycopg2]
 complexity: 4
@@ -17,9 +19,13 @@ related_tasks:
   - TASK-FIX-AE7E
   - TASK-FIX-4415
 test_results:
-  status: pending
+  status: passed
   coverage: null
-  last_run: null
+  last_run: 2026-02-18T16:45:00Z
+  tests_passed: 205
+  tests_failed: 0
+organized_files:
+  - TASK-FIX-A7F1.md
 ---
 
 # Task: Fix psycopg2 misclassification as infrastructure failure
@@ -34,11 +40,11 @@ The misclassification causes the Coach to give the Player feedback saying "infra
 
 ## Acceptance Criteria
 
-- [ ] `psycopg2` removed from `_KNOWN_SERVICE_CLIENT_LIBS` (or made context-aware)
-- [ ] `ModuleNotFoundError: No module named 'psycopg2'` classifies as `("infrastructure", "ambiguous")` when no context is available, not `("infrastructure", "high")`
-- [ ] When bootstrap dependency list is available and `psycopg2` is NOT in it, classification returns `("code", "high")` with context
-- [ ] Existing tests for `_classify_test_failure` still pass
-- [ ] New tests cover: psycopg2 not in bootstrap → code error; asyncpg not in bootstrap → infrastructure error
+- [x] `psycopg2` removed from `_KNOWN_SERVICE_CLIENT_LIBS` (or made context-aware)
+- [x] `ModuleNotFoundError: No module named 'psycopg2'` classifies as `("infrastructure", "ambiguous")` when no context is available, not `("infrastructure", "high")`
+- [x] When bootstrap dependency list is available and `psycopg2` is NOT in it, classification returns `("code", "high")` with context
+- [x] Existing tests for `_classify_test_failure` still pass
+- [x] New tests cover: psycopg2 not in bootstrap → code error; asyncpg not in bootstrap → infrastructure error
 
 ## Implementation Notes
 
@@ -67,3 +73,26 @@ _KNOWN_SERVICE_CLIENT_LIBS: List[str] = [
 Implement Option B now. Option A can follow in a separate task if needed.
 
 **Tests to update**: `tests/orchestrator/quality_gates/test_coach_validator.py` — any tests asserting `psycopg2` → `("infrastructure", "high")` should be updated to `("infrastructure", "ambiguous")`.
+
+## Completion Summary
+
+### What Was Fixed
+
+**Root cause discovered during implementation:** `psycopg2` appeared in *two* places that both caused false `("infrastructure", "high")` classification:
+1. `_KNOWN_SERVICE_CLIENT_LIBS` — directly promoted `ModuleNotFoundError` for psycopg2 to high
+2. `_INFRA_HIGH_CONFIDENCE` — substring "psycopg2" in `"No module named 'psycopg2'"` also matched, meaning the task notes' Option B (remove from `_KNOWN_SERVICE_CLIENT_LIBS` only) was insufficient
+
+### Changes Made
+
+**`guardkit/orchestrator/quality_gates/coach_validator.py`:**
+1. Removed `psycopg2` from `_KNOWN_SERVICE_CLIENT_LIBS` with explanatory comment
+2. Restructured `_classify_test_failure` to check `ModuleNotFoundError` **before** `_INFRA_HIGH_CONFIDENCE` — critical to prevent substring match on "psycopg2" in the high-confidence list
+3. Added optional `requires_infrastructure` parameter for bootstrap context check (AC3)
+4. Updated call site to pass `task.get("requires_infrastructure")` into `_classify_test_failure`
+
+**`tests/unit/test_coach_validator.py`:**
+5. Added `TestClassifyTestFailurePsycopg2` class (6 new tests, all passing)
+
+### Test Results
+- **205 passed, 0 failed** (full suite)
+- 6 new tests added, all green
