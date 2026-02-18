@@ -650,7 +650,19 @@ class CoachValidator:
                 )
                 # Fall through to requirements check with conditional flag set
             else:
-                if failure_class == "infrastructure":
+                # Check for psycopg2/asyncpg mismatch before falling back to
+                # generic infrastructure feedback (TASK-FIX-4415).
+                if self._is_psycopg2_asyncpg_mismatch(test_result.raw_output, task):
+                    description = (
+                        "ModuleNotFoundError for 'psycopg2' — this project uses "
+                        "asyncpg. Remove `import psycopg2` from your code and use "
+                        "asyncpg-compatible database patterns instead."
+                    )
+                    rationale = (
+                        "Tests failed because psycopg2 was imported in an asyncpg "
+                        "project"
+                    )
+                elif failure_class == "infrastructure":
                     description = (
                         "Tests failed due to infrastructure/environment issues "
                         "(not code defects). Remediation options: "
@@ -2409,6 +2421,49 @@ class CoachValidator:
                 return ("infrastructure", "ambiguous")
         logger.debug(f"[{self.task_id}] _classify_test_failure: no pattern matched → ('code', 'n/a')")
         return ("code", "n/a")
+
+    def _is_psycopg2_asyncpg_mismatch(
+        self,
+        test_output: Optional[str],
+        task: Optional[Dict] = None,
+    ) -> bool:
+        """Return True when psycopg2 is missing in an asyncpg project.
+
+        Identifies the case where the Player imported psycopg2 in a project
+        that uses asyncpg as the database driver.  The specific check avoids
+        false positives for projects that genuinely need psycopg2.
+
+        Parameters
+        ----------
+        test_output : Optional[str]
+            Raw test stdout+stderr output
+        task : Optional[Dict]
+            Task data dict. When provided, ``requires_infrastructure`` and
+            ``bootstrap_packages`` are checked for asyncpg signals.
+
+        Returns
+        -------
+        bool
+            True only when psycopg2 is the missing module AND asyncpg (or
+            sqlalchemy[asyncio]) is in the project's bootstrap packages.
+        """
+        if not test_output or not task:
+            return False
+        output_lower = test_output.lower()
+        if "modulenotfounderror" not in output_lower or "no module named" not in output_lower:
+            return False
+        match = re.search(r"no module named '([^']+)'", test_output, re.IGNORECASE)
+        if not match:
+            return False
+        missing_module = match.group(1).split(".")[0]
+        if missing_module != "psycopg2":
+            return False
+        # Check if the project declares asyncpg as a dependency
+        _ASYNCPG_SIGNALS = {"asyncpg", "sqlalchemy[asyncio]"}
+        bootstrap = set(task.get("requires_infrastructure") or []) | set(
+            task.get("bootstrap_packages") or []
+        )
+        return bool(bootstrap & _ASYNCPG_SIGNALS)
 
     def _summarize_test_output(self, output: str, max_length: int = 1000) -> str:
         """

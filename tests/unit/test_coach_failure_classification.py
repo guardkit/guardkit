@@ -145,10 +145,16 @@ class TestClassifyTestFailure:
     def test_mixed_high_and_ambiguous_returns_high(
         self, coach_validator: CoachValidator
     ) -> None:
-        """Mixed high-confidence + ambiguous patterns → high confidence wins."""
+        """Mixed high-confidence + ambiguous patterns → high confidence wins.
+
+        Uses sqlalchemy (a known service-client lib) as the missing module so
+        that ModuleNotFoundError still returns high.  psycopg2 is intentionally
+        NOT used here — after TASK-FIX-A7F1 it is no longer in
+        _KNOWN_SERVICE_CLIENT_LIBS and produces ambiguous, not high.
+        """
         output = (
             "ConnectionRefusedError: [Errno 111] Connection refused\n"
-            "ModuleNotFoundError: No module named 'psycopg2'"
+            "ModuleNotFoundError: No module named 'sqlalchemy'"
         )
         assert coach_validator._classify_test_failure(output) == ("infrastructure", "high")
 
@@ -172,7 +178,75 @@ class TestClassifyTestFailure:
 
 
 # ============================================================================
-# 2. IndependentTestResult raw_output field tests
+# 2. _is_psycopg2_asyncpg_mismatch unit tests (TASK-FIX-4415)
+# ============================================================================
+
+
+class TestIsPsycopg2AsyncpgMismatch:
+    """Unit tests for the _is_psycopg2_asyncpg_mismatch helper."""
+
+    PSYCOPG2_OUTPUT = (
+        "FAILED tests/test_db.py::test_connect\n"
+        "ModuleNotFoundError: No module named 'psycopg2'\n"
+    )
+
+    def test_returns_true_for_psycopg2_error_with_asyncpg_in_requires_infrastructure(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        assert coach_validator._is_psycopg2_asyncpg_mismatch(
+            self.PSYCOPG2_OUTPUT,
+            task={"requires_infrastructure": ["asyncpg"]},
+        ) is True
+
+    def test_returns_true_for_psycopg2_error_with_asyncpg_in_bootstrap_packages(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        assert coach_validator._is_psycopg2_asyncpg_mismatch(
+            self.PSYCOPG2_OUTPUT,
+            task={"bootstrap_packages": ["asyncpg"]},
+        ) is True
+
+    def test_returns_false_when_no_asyncpg_signal(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        assert coach_validator._is_psycopg2_asyncpg_mismatch(
+            self.PSYCOPG2_OUTPUT,
+            task={"requires_infrastructure": ["postgresql"]},
+        ) is False
+
+    def test_returns_false_when_task_is_none(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        assert coach_validator._is_psycopg2_asyncpg_mismatch(
+            self.PSYCOPG2_OUTPUT, task=None
+        ) is False
+
+    def test_returns_false_when_output_is_none(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        assert coach_validator._is_psycopg2_asyncpg_mismatch(
+            None, task={"requires_infrastructure": ["asyncpg"]}
+        ) is False
+
+    def test_returns_false_when_different_module_missing(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        output = "ModuleNotFoundError: No module named 'requests'\n"
+        assert coach_validator._is_psycopg2_asyncpg_mismatch(
+            output, task={"requires_infrastructure": ["asyncpg"]}
+        ) is False
+
+    def test_returns_true_for_sqlalchemy_asyncio_signal(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        assert coach_validator._is_psycopg2_asyncpg_mismatch(
+            self.PSYCOPG2_OUTPUT,
+            task={"requires_infrastructure": ["sqlalchemy[asyncio]"]},
+        ) is True
+
+
+# ============================================================================
+# 3. IndependentTestResult raw_output field tests
 # ============================================================================
 
 
@@ -325,6 +399,103 @@ class TestFeedbackPathClassification:
         assert issue["failure_classification"] == "code"
         assert issue["description"] == "Independent test verification failed"
         assert "infrastructure" not in result.rationale
+
+    def test_psycopg2_error_in_asyncpg_project_gives_specific_feedback(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        """psycopg2 missing in asyncpg project → specific, actionable feedback (TASK-FIX-4415).
+
+        When the task declares asyncpg as a dependency and psycopg2 is the
+        missing module, the Coach must give a specific message directing the
+        Player to remove the psycopg2 import.  The generic mock-fixtures /
+        SQLite remediation options must NOT appear.
+        """
+        task_work_results = self._make_task_work_results()
+        psycopg2_result = IndependentTestResult(
+            tests_passed=False,
+            test_command="pytest tests/ -v",
+            test_output_summary="1 failed - ModuleNotFoundError",
+            duration_seconds=1.5,
+            raw_output=(
+                "FAILED tests/test_db.py::test_connect\n"
+                "ModuleNotFoundError: No module named 'psycopg2'\n"
+                "1 failed in 0.45s"
+            ),
+        )
+
+        with (
+            patch.object(
+                coach_validator, "read_quality_gate_results",
+                return_value=task_work_results,
+            ),
+            patch.object(
+                coach_validator, "run_independent_tests",
+                return_value=psycopg2_result,
+            ),
+        ):
+            result = coach_validator.validate(
+                task_id="TASK-TEST-001",
+                turn=1,
+                task={
+                    "acceptance_criteria": ["AC-001: Feature works"],
+                    "requires_infrastructure": ["asyncpg"],
+                },
+            )
+
+        assert result.decision == "feedback"
+        assert len(result.issues) >= 1
+        issue = result.issues[0]
+        assert "psycopg2" in issue["description"]
+        assert "asyncpg" in issue["description"]
+        assert "Remove" in issue["description"]
+        assert "mock fixtures" not in issue["description"]
+        assert "SQLite" not in issue["description"]
+
+    def test_psycopg2_error_without_asyncpg_project_uses_generic_feedback(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        """psycopg2 missing with no asyncpg signal → generic infrastructure feedback (TASK-FIX-4415).
+
+        When the project does not declare asyncpg, a missing psycopg2 module
+        should NOT produce the asyncpg-specific message (AC4).
+        """
+        task_work_results = self._make_task_work_results()
+        psycopg2_result = IndependentTestResult(
+            tests_passed=False,
+            test_command="pytest tests/ -v",
+            test_output_summary="1 failed - ModuleNotFoundError",
+            duration_seconds=1.5,
+            raw_output=(
+                "FAILED tests/test_db.py::test_connect\n"
+                "ModuleNotFoundError: No module named 'psycopg2'\n"
+                "1 failed in 0.45s"
+            ),
+        )
+
+        with (
+            patch.object(
+                coach_validator, "read_quality_gate_results",
+                return_value=task_work_results,
+            ),
+            patch.object(
+                coach_validator, "run_independent_tests",
+                return_value=psycopg2_result,
+            ),
+        ):
+            result = coach_validator.validate(
+                task_id="TASK-TEST-001",
+                turn=1,
+                task={
+                    "acceptance_criteria": ["AC-001: Feature works"],
+                    # No asyncpg in requires_infrastructure
+                },
+            )
+
+        assert result.decision == "feedback"
+        assert len(result.issues) >= 1
+        issue = result.issues[0]
+        # Must NOT contain the asyncpg-specific message
+        assert "Remove `import psycopg2`" not in issue["description"]
 
 
 # ============================================================================
