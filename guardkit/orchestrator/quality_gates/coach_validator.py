@@ -1564,7 +1564,7 @@ class CoachValidator:
 
         # Try reading from Player report on disk
         if turn is not None:
-            task_id = task_work_results.get("task_id", "")
+            task_id = task_work_results.get("task_id", "") or self.task_id or ""
             if task_id:
                 try:
                     player_path = TaskArtifactPaths.player_report_path(
@@ -1581,6 +1581,27 @@ class CoachValidator:
                             return promises
                 except Exception as e:
                     logger.debug(f"Could not read Player report for promises: {e}")
+
+                # Scan backward through prior turns to recover promises (TASK-FIX-AE7E)
+                if turn > 1:
+                    for prev_turn in range(turn - 1, 0, -1):
+                        try:
+                            prev_path = TaskArtifactPaths.player_report_path(
+                                task_id, prev_turn, self.worktree_path
+                            )
+                            if prev_path.exists():
+                                prev_data = json.loads(prev_path.read_text())
+                                prev_promises = prev_data.get("completion_promises", [])
+                                if prev_promises:
+                                    logger.info(
+                                        "No completion_promises in current turn — "
+                                        "recovered from player_turn_%d.json (%d promises)",
+                                        prev_turn,
+                                        len(prev_promises),
+                                    )
+                                    return prev_promises
+                        except (json.JSONDecodeError, IOError):
+                            pass
 
         return []
 

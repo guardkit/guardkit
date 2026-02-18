@@ -355,6 +355,74 @@ class TestCountCriteriaPassed:
 
 
 # ============================================================================
+# Test criteria accumulation across turns (TASK-FIX-AE7E Fix 2)
+# ============================================================================
+
+
+class TestCriteriaAccumulationAcrossTurns:
+    """Test that orchestrator accumulates peak criteria count across feedback turns.
+
+    When the Player's turn 1 output verified criteria but subsequent turns show 0
+    verified criteria (because completion_promises are absent), the stall detector
+    should use the peak historical count — NOT the current turn's count — to
+    prevent false UNRECOVERABLE_STALL exits.
+    """
+
+    def test_max_criteria_initialised_to_zero(self):
+        """_max_criteria_passed starts at 0 on a fresh orchestrator."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+        )
+        assert orchestrator._max_criteria_passed == 0
+
+    def test_peak_count_preserved_when_subsequent_turn_drops_to_zero(self):
+        """Peak criteria from turn 1 prevents stall even when turn 2-4 show 0 criteria.
+
+        Scenario: turn 1 verified 6 criteria (promises present), turns 2-4
+        verify 0 criteria (promises absent). Without accumulation the stall
+        detector would fire on turn 4 (0 criteria × 3 identical feedback turns).
+        With accumulation, _max_criteria_passed stays 6, which extends the
+        stall threshold and avoids a false positive.
+        """
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=10,
+        )
+
+        feedback = "Tests are failing in auth module"
+
+        # Simulate: turn 1 counted 6 criteria → update peak
+        orchestrator._max_criteria_passed = max(6, orchestrator._max_criteria_passed)
+        # Turn 1 feedback (6 criteria peak, not a stall yet)
+        assert orchestrator._is_feedback_stalled(feedback, orchestrator._max_criteria_passed) is False
+
+        # Turns 2-4: current turn shows 0 criteria, but peak stays 6
+        for _ in range(3):
+            orchestrator._max_criteria_passed = max(0, orchestrator._max_criteria_passed)
+            result = orchestrator._is_feedback_stalled(feedback, orchestrator._max_criteria_passed)
+            # With partial-progress (6 > 0), extended threshold of 5 applies, so no stall yet
+            assert result is False, "Should not stall when prior-turn peak shows criteria progress"
+
+    def test_zero_peak_still_stalls_at_threshold(self):
+        """If no turn ever verified criteria, stall fires at normal threshold."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+        )
+
+        feedback = "Tests are failing"
+
+        # Three turns with 0 criteria — should stall
+        for i in range(2):
+            orchestrator._max_criteria_passed = max(0, orchestrator._max_criteria_passed)
+            assert orchestrator._is_feedback_stalled(feedback, orchestrator._max_criteria_passed) is False
+
+        orchestrator._max_criteria_passed = max(0, orchestrator._max_criteria_passed)
+        assert orchestrator._is_feedback_stalled(feedback, orchestrator._max_criteria_passed) is True
+
+
+# ============================================================================
 # Test No-Passing-Checkpoint Stall (Mechanism 1) in _loop_phase
 # ============================================================================
 

@@ -3752,6 +3752,73 @@ class TestCompletionPromisesMatching:
         # Should fall back to text matching
         assert validation.all_criteria_met is True
 
+    def test_promises_recovered_from_prior_turn_report(self, tmp_worktree):
+        """TASK-FIX-AE7E Fix 1: Falls back to prior player_turn_N.json when current turn has no promises."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature A", "Feature B"])
+        # Current turn (turn 3) has no promises
+        results = {"task_id": "TASK-001"}
+
+        player_dir = tmp_worktree / ".guardkit" / "autobuild" / "TASK-001"
+        player_dir.mkdir(parents=True, exist_ok=True)
+
+        # Turn 1 had the full set of promises
+        turn1_report = {
+            "completion_promises": [
+                {"criterion_id": "AC-001", "status": "complete", "evidence": "Done A"},
+                {"criterion_id": "AC-002", "status": "complete", "evidence": "Done B"},
+            ],
+        }
+        (player_dir / "player_turn_1.json").write_text(json.dumps(turn1_report))
+        # Turn 2 has no promises (iterative fix turn)
+        (player_dir / "player_turn_2.json").write_text(json.dumps({}))
+
+        # Turn 3 has no promises either — should recover from turn 1
+        validation = validator.validate_requirements(task, results, turn=3)
+
+        assert validation.all_criteria_met is True
+        assert validation.criteria_met == 2
+
+    def test_promises_fallback_logs_at_info(self, tmp_worktree, caplog):
+        """TASK-FIX-AE7E Fix 1: Backward scan logs INFO when promises are recovered."""
+        import logging
+
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature A"])
+        results = {"task_id": "TASK-001"}
+
+        player_dir = tmp_worktree / ".guardkit" / "autobuild" / "TASK-001"
+        player_dir.mkdir(parents=True, exist_ok=True)
+        (player_dir / "player_turn_1.json").write_text(
+            json.dumps({
+                "completion_promises": [
+                    {"criterion_id": "AC-001", "status": "complete", "evidence": "Done"},
+                ],
+            })
+        )
+
+        with caplog.at_level(logging.INFO):
+            validator.validate_requirements(task, results, turn=2)
+
+        assert any(
+            "recovered from player_turn_1.json" in r.message for r in caplog.records
+        )
+
+    def test_no_prior_reports_returns_empty_and_falls_back_to_text(self, tmp_worktree):
+        """TASK-FIX-AE7E Fix 1: No prior player reports — behaviour unchanged (text fallback)."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature A"])
+        results = {
+            "task_id": "TASK-001",
+            "requirements_met": ["Feature A"],
+        }
+
+        # No player turn files exist at all
+        validation = validator.validate_requirements(task, results, turn=3)
+
+        # Falls back to text matching — unchanged behaviour
+        assert validation.all_criteria_met is True
+
     def test_promise_id_format_matching(self, tmp_worktree):
         """AC-002: Criterion IDs are zero-padded (AC-001, AC-002, etc.)."""
         validator = CoachValidator(str(tmp_worktree))

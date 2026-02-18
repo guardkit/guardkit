@@ -604,6 +604,9 @@ class AutoBuildOrchestrator:
         self.recovery_count: int = 0  # Track number of state recovery attempts
         # Stall detection: track (feedback_signature, criteria_passed_count) per turn (TASK-AB-SD01)
         self._feedback_history: List[Tuple[str, int]] = []
+        # Accumulated peak criteria count across turns — criteria verified in turn N
+        # remain counted in turn N+1 to prevent false stall detection (TASK-FIX-AE7E)
+        self._max_criteria_passed: int = 0
 
         # Context retrieval settings (TASK-GR6-006)
         self.enable_context = enable_context
@@ -1658,7 +1661,9 @@ class AutoBuildOrchestrator:
                 # Check for repeated feedback stall (TASK-AB-SD01 Mechanism 2)
                 if turn_record.decision == "feedback" and turn_record.feedback:
                     criteria_passed = self._count_criteria_passed(turn_record)
-                    if self._is_feedback_stalled(turn_record.feedback, criteria_passed):
+                    # Accumulate peak: criteria verified in prior turns stay counted (TASK-FIX-AE7E)
+                    self._max_criteria_passed = max(criteria_passed, self._max_criteria_passed)
+                    if self._is_feedback_stalled(turn_record.feedback, self._max_criteria_passed):
                         logger.error(
                             f"Feedback stall detected for {task_id}: "
                             f"identical feedback with no criteria progress "
