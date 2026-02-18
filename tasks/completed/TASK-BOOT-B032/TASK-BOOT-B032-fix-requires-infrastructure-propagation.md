@@ -1,9 +1,11 @@
 ---
 id: TASK-BOOT-B032
 title: Fix requires_infrastructure propagation through orchestrate()
-status: backlog
+status: completed
 created: 2026-02-18T00:00:00Z
-updated: 2026-02-18T00:00:00Z
+updated: 2026-02-18T12:00:00Z
+completed: 2026-02-18T12:00:00Z
+completed_location: tasks/completed/TASK-BOOT-B032/
 priority: critical
 tags: [autobuild, environment-bootstrap, propagation-fix, root-cause-fix]
 task_type: feature
@@ -13,6 +15,8 @@ feature_id: FEAT-BOOT
 wave: 1
 implementation_mode: task-work
 dependencies: []
+organized_files:
+  - TASK-BOOT-B032-fix-requires-infrastructure-propagation.md
 ---
 
 # Task: Fix requires_infrastructure propagation through orchestrate()
@@ -44,13 +48,13 @@ R1 unblocks the Docker lifecycle path, but this path has never been exercised in
 
 ## Acceptance Criteria
 
-- [ ] `orchestrate()` method accepts `requires_infrastructure: Optional[List[str]] = None` parameter
-- [ ] Precedence logic: explicit parameter > frontmatter > empty list
-- [ ] `FeatureOrchestrator._execute_task()` passes `requires_infrastructure` from `FeatureTask` model to `orchestrate()`
-- [ ] `_invoke_coach_safely()` receives correct `requires_infrastructure` value in task dict
-- [ ] Existing single-task mode (no feature orchestrator) still works via frontmatter fallback
-- [ ] Unit tests verify propagation with and without explicit parameter
-- [ ] Unit tests verify frontmatter fallback when parameter is None
+- [x] `orchestrate()` method accepts `requires_infrastructure: Optional[List[str]] = None` parameter
+- [x] Precedence logic: explicit parameter > frontmatter > empty list
+- [x] `FeatureOrchestrator._execute_task()` passes `requires_infrastructure` from `FeatureTask` model to `orchestrate()`
+- [x] `_invoke_coach_safely()` receives correct `requires_infrastructure` value in task dict
+- [x] Existing single-task mode (no feature orchestrator) still works via frontmatter fallback
+- [x] Unit tests verify propagation with and without explicit parameter
+- [x] Unit tests verify frontmatter fallback when parameter is None
 
 ## Implementation Notes
 
@@ -89,13 +93,19 @@ result = task_orchestrator.orchestrate(
 )
 ```
 
-## Files to Modify
+## Files Modified
 
 | File | Changes |
 |------|---------|
-| `guardkit/orchestrator/autobuild.py` | Add `requires_infrastructure` param to `orchestrate()`, precedence logic |
-| `guardkit/orchestrator/feature_orchestrator.py` | Pass `requires_infrastructure` in `_execute_task()` call |
-| `tests/unit/test_requires_infra_propagation.py` | NEW: unit tests for propagation |
+| `guardkit/orchestrator/autobuild.py` | Added `requires_infrastructure` param to `orchestrate()`, precedence logic with `_ri_from_caller` |
+| `guardkit/orchestrator/feature_orchestrator.py` | Pass `requires_infrastructure=task.requires_infrastructure` in `_execute_task()` call |
+| `tests/unit/test_requires_infra_propagation.py` | NEW: 8 unit tests for propagation (all passing) |
+
+## Completion Summary
+
+- Tests: 8/8 new + 18/18 existing = 26/26 passing
+- All acceptance criteria met
+- State: IN_REVIEW → COMPLETED
 
 ## Source Review
 

@@ -1523,6 +1523,7 @@ The detailed specifications are in the task markdown file.
                 requirements=task_data["requirements"],
                 acceptance_criteria=task_data["acceptance_criteria"],
                 task_file_path=task_data.get("file_path"),
+                requires_infrastructure=task.requires_infrastructure,
             )
 
             status_icon = "[green]✓[/green]" if result.success else "[red]✗[/red]"

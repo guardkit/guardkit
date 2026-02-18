@@ -680,6 +680,7 @@ class AutoBuildOrchestrator:
         acceptance_criteria: List[str],
         base_branch: str = "main",
         task_file_path: Optional[Path] = None,
+        requires_infrastructure: Optional[List[str]] = None,
     ) -> OrchestrationResult:
         """
         Execute complete adversarial orchestration workflow.
@@ -706,6 +707,11 @@ class AutoBuildOrchestrator:
             Branch to create worktree from (default: "main")
         task_file_path : Optional[Path], optional
             Path to task file for state persistence (default: None)
+        requires_infrastructure : Optional[List[str]], optional
+            Infrastructure services required (e.g., ["postgresql", "redis"]).
+            When provided by the caller (e.g., FeatureOrchestrator), takes
+            precedence over any value in the task file frontmatter. When None,
+            falls back to frontmatter value (single-task mode).
 
         Returns
         -------
@@ -737,7 +743,8 @@ class AutoBuildOrchestrator:
 
         # Load task data to extract task_type and requires_infrastructure for CoachValidator
         task_type: Optional[str] = None
-        requires_infrastructure: Optional[List[str]] = None
+        _ri_from_caller = requires_infrastructure  # Preserve explicit parameter (may be None)
+        requires_infrastructure = None  # Reset; will be resolved via frontmatter then precedence
         try:
             task_data = TaskLoader.load_task(task_id, repo_root=self.repo_root)
             frontmatter = task_data.get("frontmatter", {})
@@ -752,6 +759,11 @@ class AutoBuildOrchestrator:
             logger.debug(f"Task file not found for {task_id}, continuing with task_type=None")
         except Exception as e:
             logger.debug(f"Failed to load task metadata from task file: {e}, continuing with defaults")
+
+        # Precedence: explicit parameter > frontmatter > None
+        if _ri_from_caller is not None:
+            requires_infrastructure = _ri_from_caller
+            logger.debug(f"Using requires_infrastructure from caller: {_ri_from_caller}")
 
         try:
             # Phase 1: Setup (or resume existing worktree)
