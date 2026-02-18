@@ -809,14 +809,17 @@ class EnvironmentBootstrapper:
                 logger.info(
                     "Install succeeded for %s (%s)", manifest.stack, manifest.path.name
                 )
+                if proc.stdout:
+                    logger.debug("Install stdout:\n%s", proc.stdout)
                 return True
             else:
                 logger.warning(
-                    "Install failed for %s (%s) with exit code %d:\n%s",
+                    "Install failed for %s (%s) with exit code %d:\nstderr: %s\nstdout: %s",
                     manifest.stack,
                     manifest.path.name,
                     proc.returncode,
-                    proc.stderr or proc.stdout,
+                    proc.stderr or "(empty)",
+                    proc.stdout or "(empty)",
                 )
                 return False
         except subprocess.CalledProcessError as exc:
