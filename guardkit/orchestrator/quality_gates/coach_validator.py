@@ -617,7 +617,7 @@ class CoachValidator:
             requires_infra = task.get("requires_infrastructure", [])
             docker_available = task.get("_docker_available", True)
 
-            logger.debug(
+            logger.info(
                 "conditional_approval check: failure_class=%s, confidence=%s, "
                 "requires_infra=%s, docker_available=%s, all_gates_passed=%s",
                 failure_class,
@@ -1155,6 +1155,17 @@ class CoachValidator:
         IndependentTestResult
             Result of independent test execution
         """
+        # Interpreter consistency diagnostic (TASK-REV-CB30 R7)
+        import shutil
+        which_pytest = shutil.which("pytest")
+        logger.info(
+            "Test execution environment: sys.executable=%s, "
+            "which pytest=%s, coach_test_execution=%s",
+            sys.executable,
+            which_pytest,
+            self._coach_test_execution,
+        )
+
         # Determine test command (pass task_id and results for task-specific filtering)
         test_cmd = self.test_command or self._detect_test_command(
             self.task_id, task_work_results=task_work_results
@@ -1192,8 +1203,20 @@ class CoachValidator:
                 )
 
         try:
+            # Force subprocess path for infrastructure-dependent tasks (TASK-REV-CB30 R5).
+            # The SDK path runs `pytest` via a Bash tool prompt, which resolves the
+            # pytest binary via PATH.  On machines with multiple Python installations
+            # (e.g. Framework Python + Homebrew Python on macOS), PATH may resolve to
+            # a different Python than the one the bootstrap installed packages into,
+            # causing ModuleNotFoundError at test collection time.
+            # The subprocess path uses sys.executable, bypassing PATH entirely.
+            use_sdk = (
+                self._coach_test_execution == "sdk"
+                and not requires_infra
+            )
+
             # SDK-first dispatch (GAP-FIX #9): use asyncio bridge to call async SDK method
-            if self._coach_test_execution == "sdk":
+            if use_sdk:
                 logger.info(f"Running independent tests via SDK (environment parity): {test_cmd}")
                 try:
                     import asyncio
@@ -1214,8 +1237,15 @@ class CoachValidator:
                     )
                     # Fall through to subprocess path below
 
-            # Subprocess path (default for coach_test_execution="subprocess" or SDK fallback)
-            logger.info(f"Running independent tests via subprocess: {test_cmd}")
+            # Subprocess path (default for coach_test_execution="subprocess", SDK fallback,
+            # or infrastructure-dependent tasks forced to subprocess by TASK-REV-CB30 R5)
+            if requires_infra and self._coach_test_execution == "sdk":
+                logger.info(
+                    f"Running independent tests via subprocess (infra-pinned, "
+                    f"sys.executable={sys.executable}): {test_cmd}"
+                )
+            else:
+                logger.info(f"Running independent tests via subprocess: {test_cmd}")
             start_time = time.time()
 
             try:
