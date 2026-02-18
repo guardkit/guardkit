@@ -1,9 +1,10 @@
 ---
 id: TASK-BOOT-0F53
 title: State-aware hash persistence with outcome tracking
-status: backlog
+status: completed
 created: 2026-02-18T00:00:00Z
 updated: 2026-02-18T00:00:00Z
+completed: 2026-02-18T00:00:00Z
 priority: medium
 tags: [autobuild, environment-bootstrap, cache, idempotency]
 task_type: feature

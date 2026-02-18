@@ -486,15 +486,17 @@ class TestEnvironmentBootstrapperState:
     def test_save_and_load_state_round_trip(self, tmp_path: Path) -> None:
         """State saved with _save_state can be reloaded with _load_state."""
         bootstrapper = EnvironmentBootstrapper(root=tmp_path)
-        bootstrapper._save_state("abc123")
+        bootstrapper._save_state("abc123", success=True)
         state = bootstrapper._load_state()
-        assert state == {"content_hash": "abc123"}
+        assert state["content_hash"] == "abc123"
+        assert state["success"] is True
+        assert "timestamp" in state
 
     def test_save_state_creates_parent_dirs(self, tmp_path: Path) -> None:
         """_save_state creates parent directories if they do not exist."""
         state_file = tmp_path / "deep" / "nested" / "state.json"
         bootstrapper = EnvironmentBootstrapper(root=tmp_path, state_file=state_file)
-        bootstrapper._save_state("deadbeef")
+        bootstrapper._save_state("deadbeef", success=True)
         assert state_file.exists()
 
     def test_load_state_returns_empty_on_corrupt_json(self, tmp_path: Path) -> None:
@@ -657,14 +659,14 @@ class TestEnvironmentBootstrapperBootstrap:
         assert result.manifests_found == []
 
     def test_bootstrap_skips_on_hash_match(self, tmp_path: Path) -> None:
-        """bootstrap() returns skipped=True when hash matches saved state."""
+        """bootstrap() returns skipped=True when hash matches saved state with success."""
         f = tmp_path / "requirements.txt"
         f.write_text("flask\n")
         m = make_manifest(f)
         bootstrapper = EnvironmentBootstrapper(root=tmp_path)
-        # Precompute and save the hash
+        # Precompute and save the hash with success=True
         h = bootstrapper._compute_hash([m])
-        bootstrapper._save_state(h)
+        bootstrapper._save_state(h, success=True)
         with patch("subprocess.run") as mock_run:
             result = bootstrapper.bootstrap([m])
         mock_run.assert_not_called()
@@ -700,7 +702,7 @@ class TestEnvironmentBootstrapperBootstrap:
         assert result.error is not None
 
     def test_bootstrap_saves_new_hash_after_install(self, tmp_path: Path) -> None:
-        """bootstrap() persists the new hash after running installs."""
+        """bootstrap() persists the new hash, success, and timestamp after running installs."""
         f = tmp_path / "requirements.txt"
         f.write_text("flask\n")
         m = make_manifest(f)
@@ -711,6 +713,8 @@ class TestEnvironmentBootstrapperBootstrap:
         state = bootstrapper._load_state()
         assert "content_hash" in state
         assert len(state["content_hash"]) == 64
+        assert state["success"] is True
+        assert "timestamp" in state
 
     def test_bootstrap_stacks_detected_sorted(self, tmp_path: Path) -> None:
         """stacks_detected is sorted alphabetically."""
@@ -830,7 +834,7 @@ class TestBootstrapEnvironmentOrchestrator:
         detector = ProjectEnvironmentDetector(root=tmp_path)
         manifests = detector.detect()
         h = bootstrapper._compute_hash(manifests)
-        bootstrapper._save_state(h)
+        bootstrapper._save_state(h, success=True)
 
         orchestrator = self._make_orchestrator(tmp_path)
         worktree = self._make_worktree(tmp_path)
@@ -1233,3 +1237,163 @@ class TestEnvironmentBootstrapperIncompleteProject:
                 )
                 is False
             )
+
+
+# ============================================================================
+# 16. TestEnvironmentBootstrapperRetryLogic (TASK-BOOT-0F53)
+# ============================================================================
+
+
+class TestEnvironmentBootstrapperRetryLogic:
+    """Tests for state-aware hash persistence and time-based retry logic."""
+
+    # --- _should_skip unit tests ---
+
+    def test_should_skip_no_state_returns_false(self, tmp_path: Path) -> None:
+        """_should_skip returns False when no state file exists."""
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        assert bootstrapper._should_skip("abc123") is False
+
+    def test_should_skip_different_hash_returns_false(self, tmp_path: Path) -> None:
+        """_should_skip returns False when saved hash differs from current hash."""
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        bootstrapper._save_state("old_hash", success=True)
+        assert bootstrapper._should_skip("new_hash") is False
+
+    def test_should_skip_same_hash_success_returns_true(self, tmp_path: Path) -> None:
+        """_should_skip returns True when hash matches and previous attempt succeeded."""
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        bootstrapper._save_state("abc123", success=True)
+        assert bootstrapper._should_skip("abc123") is True
+
+    def test_should_skip_same_hash_failure_within_cooldown_returns_true(
+        self, tmp_path: Path
+    ) -> None:
+        """_should_skip returns True when hash matches, failed, but within cooldown window."""
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path, retry_cooldown_seconds=3600)
+        bootstrapper._save_state("abc123", success=False)
+        assert bootstrapper._should_skip("abc123") is True
+
+    def test_should_skip_same_hash_failure_cooldown_expired_returns_false(
+        self, tmp_path: Path
+    ) -> None:
+        """_should_skip returns False when hash matches, failed, and cooldown has expired."""
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path, retry_cooldown_seconds=0)
+        bootstrapper._save_state("abc123", success=False)
+        assert bootstrapper._should_skip("abc123") is False
+
+    # --- _save_state format tests ---
+
+    def test_save_state_stores_success_true(self, tmp_path: Path) -> None:
+        """_save_state persists success=True in state file."""
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        bootstrapper._save_state("deadbeef", success=True)
+        state = bootstrapper._load_state()
+        assert state["content_hash"] == "deadbeef"
+        assert state["success"] is True
+        assert "timestamp" in state
+
+    def test_save_state_stores_success_false(self, tmp_path: Path) -> None:
+        """_save_state persists success=False in state file."""
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        bootstrapper._save_state("deadbeef", success=False)
+        state = bootstrapper._load_state()
+        assert state["success"] is False
+        assert "timestamp" in state
+
+    # --- bootstrap() integration tests ---
+
+    def test_bootstrap_skips_on_hash_match_previous_success(self, tmp_path: Path) -> None:
+        """bootstrap() skips install when hash matches and previous attempt was successful."""
+        f = tmp_path / "requirements.txt"
+        f.write_text("flask\n")
+        m = make_manifest(f)
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        h = bootstrapper._compute_hash([m])
+        bootstrapper._save_state(h, success=True)
+        with patch("subprocess.run") as mock_run:
+            result = bootstrapper.bootstrap([m])
+        mock_run.assert_not_called()
+        assert result.skipped is True
+        assert result.success is True
+
+    def test_bootstrap_retries_on_hash_match_previous_failure_cooldown_expired(
+        self, tmp_path: Path
+    ) -> None:
+        """bootstrap() retries install when hash matches, previous failed, cooldown expired."""
+        f = tmp_path / "requirements.txt"
+        f.write_text("flask\n")
+        m = make_manifest(f)
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path, retry_cooldown_seconds=0)
+        h = bootstrapper._compute_hash([m])
+        bootstrapper._save_state(h, success=False)
+        mock_result = Mock(returncode=0, stdout="", stderr="")
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            result = bootstrapper.bootstrap([m])
+        mock_run.assert_called_once()
+        assert result.skipped is False
+        assert result.success is True
+
+    def test_bootstrap_skips_on_hash_match_previous_failure_within_cooldown(
+        self, tmp_path: Path
+    ) -> None:
+        """bootstrap() skips install when hash matches, previous failed, within cooldown."""
+        f = tmp_path / "requirements.txt"
+        f.write_text("flask\n")
+        m = make_manifest(f)
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path, retry_cooldown_seconds=3600)
+        h = bootstrapper._compute_hash([m])
+        bootstrapper._save_state(h, success=False)
+        with patch("subprocess.run") as mock_run:
+            result = bootstrapper.bootstrap([m])
+        mock_run.assert_not_called()
+        assert result.skipped is True
+        assert result.success is True
+
+    def test_bootstrap_runs_on_hash_change_regardless_of_previous_success(
+        self, tmp_path: Path
+    ) -> None:
+        """bootstrap() runs install when hash differs even if previous attempt succeeded."""
+        f = tmp_path / "requirements.txt"
+        f.write_text("flask\n")
+        m = make_manifest(f)
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        # Save a different hash as successful
+        bootstrapper._save_state("different_hash_entirely", success=True)
+        mock_result = Mock(returncode=0, stdout="", stderr="")
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            result = bootstrapper.bootstrap([m])
+        mock_run.assert_called_once()
+        assert result.skipped is False
+
+    def test_bootstrap_stores_success_false_after_failed_install(
+        self, tmp_path: Path
+    ) -> None:
+        """bootstrap() persists success=False in state when install fails."""
+        f = tmp_path / "requirements.txt"
+        f.write_text("flask\n")
+        m = make_manifest(f)
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        mock_result = Mock(returncode=1, stdout="", stderr="error")
+        with patch("subprocess.run", return_value=mock_result):
+            bootstrapper.bootstrap([m])
+        state = bootstrapper._load_state()
+        assert state["success"] is False
+        assert "timestamp" in state
+
+    def test_bootstrap_backward_compatible_old_format_skips(self, tmp_path: Path) -> None:
+        """Old state format without 'success' field is treated as success (skips install)."""
+        f = tmp_path / "requirements.txt"
+        f.write_text("flask\n")
+        m = make_manifest(f)
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        h = bootstrapper._compute_hash([m])
+        # Write old format directly (no success or timestamp fields)
+        state_file = tmp_path / ".guardkit" / "bootstrap_state.json"
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_file.write_text(json.dumps({"content_hash": h}))
+        with patch("subprocess.run") as mock_run:
+            result = bootstrapper.bootstrap([m])
+        mock_run.assert_not_called()
+        assert result.skipped is True
+        assert result.success is True

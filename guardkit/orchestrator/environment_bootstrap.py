@@ -40,6 +40,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -590,6 +591,7 @@ class EnvironmentBootstrapper:
         self,
         root: Path,
         state_file: Optional[Path] = None,
+        retry_cooldown_seconds: int = 60,
     ) -> None:
         """
         Initialize the bootstrapper.
@@ -601,9 +603,13 @@ class EnvironmentBootstrapper:
         state_file : Optional[Path], optional
             Override path for the state JSON file.  Defaults to
             ``<root>/.guardkit/bootstrap_state.json``.
+        retry_cooldown_seconds : int, optional
+            Seconds to wait before retrying a previously failed install with
+            the same content hash.  Defaults to 60.
         """
         self._root = root
         self._state_file = state_file or (root / ".guardkit" / "bootstrap_state.json")
+        self._retry_cooldown_seconds = retry_cooldown_seconds
 
     def bootstrap(self, manifests: List[DetectedManifest]) -> BootstrapResult:
         """
@@ -638,10 +644,9 @@ class EnvironmentBootstrapper:
         stacks_detected = sorted(set(m.stack for m in manifests))
         manifests_found = [str(m.path) for m in manifests]
 
-        # Hash-based deduplication
+        # Hash-based deduplication with outcome awareness
         content_hash = self._compute_hash(manifests)
-        saved_state = self._load_state()
-        if saved_state.get("content_hash") == content_hash:
+        if self._should_skip(content_hash):
             logger.debug(
                 "Bootstrap skipped: hash %s matches saved state", content_hash[:8]
             )
@@ -680,11 +685,11 @@ class EnvironmentBootstrapper:
                         manifest.stack,
                     )
 
-        # Persist new state hash (even on partial failure)
-        self._save_state(content_hash)
-
         duration = time.monotonic() - start_time
         overall_success = installs_failed == 0
+
+        # Persist state hash with outcome so failed attempts can be retried
+        self._save_state(content_hash, success=overall_success)
 
         return BootstrapResult(
             success=overall_success,
@@ -731,6 +736,61 @@ class EnvironmentBootstrapper:
                 )
         return hasher.hexdigest()
 
+    def _should_skip(self, content_hash: str) -> bool:
+        """
+        Determine whether the bootstrap should be skipped for this content hash.
+
+        Skip logic:
+        - No saved state → run install.
+        - Hash differs → run install (content changed).
+        - Hash matches + previous success → skip (idempotent).
+        - Hash matches + previous failure → retry after cooldown expires.
+
+        Old state files without a ``success`` field are treated as successful
+        for backward compatibility.
+
+        Parameters
+        ----------
+        content_hash : str
+            Hex-encoded SHA-256 digest of the current manifests.
+
+        Returns
+        -------
+        bool
+            True if the bootstrap should be skipped, False if it should run.
+        """
+        saved = self._load_state()
+        if not saved:
+            return False
+
+        if saved.get("content_hash") != content_hash:
+            return False
+
+        # Hash matches — check outcome (default True for old-format backward compat)
+        if saved.get("success", True):
+            return True
+
+        # Previous attempt failed with the same hash — retry after cooldown
+        timestamp_str = saved.get("timestamp")
+        if timestamp_str:
+            try:
+                last_attempt = datetime.fromisoformat(timestamp_str)
+                elapsed = (datetime.now() - last_attempt).total_seconds()
+                if elapsed < self._retry_cooldown_seconds:
+                    logger.debug(
+                        "Bootstrap skipped: previous failure within cooldown "
+                        "(%.1fs / %ds)", elapsed, self._retry_cooldown_seconds
+                    )
+                    return True
+            except (ValueError, TypeError) as exc:
+                logger.debug("Could not parse state timestamp %r: %s", timestamp_str, exc)
+
+        logger.debug(
+            "Bootstrap retry: previous failure cooldown expired for hash %s",
+            content_hash[:8],
+        )
+        return False
+
     def _load_state(self) -> Dict[str, str]:
         """
         Load the saved bootstrap state.
@@ -751,19 +811,26 @@ class EnvironmentBootstrapper:
             logger.warning("Could not load bootstrap state from %s: %s", self._state_file, exc)
         return {}
 
-    def _save_state(self, content_hash: str) -> None:
+    def _save_state(self, content_hash: str, success: bool) -> None:
         """
-        Persist the content hash to the state file.
+        Persist the content hash, outcome, and timestamp to the state file.
 
         Parameters
         ----------
         content_hash : str
             Hex-encoded SHA-256 digest to save.
+        success : bool
+            True if the install succeeded, False if it failed.
         """
+        state = {
+            "content_hash": content_hash,
+            "success": success,
+            "timestamp": datetime.now().isoformat(),
+        }
         try:
             self._state_file.parent.mkdir(parents=True, exist_ok=True)
             self._state_file.write_text(
-                json.dumps({"content_hash": content_hash}, indent=2),
+                json.dumps(state, indent=2),
                 encoding="utf-8",
             )
             logger.debug("Saved bootstrap state to %s", self._state_file)
