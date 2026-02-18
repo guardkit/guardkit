@@ -1,9 +1,11 @@
 ---
 id: TASK-BOOT-99A5
 title: Integration test for cross-component requires_infrastructure propagation
-status: backlog
+status: completed
 created: 2026-02-18T00:00:00Z
-updated: 2026-02-18T00:00:00Z
+updated: 2026-02-18T12:00:00Z
+completed: 2026-02-18T12:00:00Z
+completed_location: tasks/completed/TASK-BOOT-99A5/
 priority: high
 tags: [autobuild, environment-bootstrap, integration-test, regression-prevention]
 task_type: feature
@@ -32,13 +34,13 @@ Existing Docker-related tests in `tests/unit/test_docker_fixtures.py` and `tests
 
 ## Acceptance Criteria
 
-- [ ] Integration test: `FeatureOrchestrator._execute_task()` passes `requires_infrastructure` to `orchestrate()` (validates R1/TASK-BOOT-B032)
-- [ ] Integration test: `AutoBuildOrchestrator` propagates `requires_infrastructure` to Coach task dict
-- [ ] Integration test: `CoachValidator` receives correct `requires_infrastructure` value and enters Docker lifecycle guard
-- [ ] Integration test: frontmatter fallback works when `requires_infrastructure` parameter is None (single-task mode)
-- [ ] Docker smoke test: `_is_docker_available()` returns a boolean (not mocked) to verify Docker reachability in test environment
-- [ ] All tests use generic service name (e.g., `["test-service"]`) — stack-agnostic
-- [ ] Tests are fast (mock external calls, only test data flow)
+- [x] Integration test: `FeatureOrchestrator._execute_task()` passes `requires_infrastructure` to `orchestrate()` (validates R1/TASK-BOOT-B032)
+- [x] Integration test: `AutoBuildOrchestrator` propagates `requires_infrastructure` to Coach task dict
+- [x] Integration test: `CoachValidator` receives correct `requires_infrastructure` value and enters Docker lifecycle guard
+- [x] Integration test: frontmatter fallback works when `requires_infrastructure` parameter is None (single-task mode)
+- [x] Docker smoke test: `_is_docker_available()` returns a boolean (not mocked) to verify Docker reachability in test environment
+- [x] All tests use generic service name (e.g., `["test-service"]`) — stack-agnostic
+- [x] Tests are fast (mock external calls, only test data flow)
 
 ## Implementation Notes
 
