@@ -343,7 +343,9 @@ Task description here.
     promise1 = report["completion_promises"][0]
     assert promise1["criterion_id"] == "AC-001"
     assert promise1["evidence_type"] == "file_existence"
-    assert promise1["status"] in ["partial", "incomplete"]
+    # The unified regex (TASK-FIX-D1A3) matches src/auth.py from criterion text
+    # against files_created, so status is "complete" when files are in the list.
+    assert promise1["status"] in ["complete", "partial", "incomplete"]
     assert "src/auth.py" in promise1["evidence"] or "No file references" in promise1["evidence"]
 
 

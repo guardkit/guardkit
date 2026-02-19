@@ -296,6 +296,27 @@ class TestParseTaskString:
         high = parse_task_string("TASK-002:Complex task:5:", feature_slug="test")
         assert high.implementation_mode == "task-work"
 
+    def test_parse_task_string_ac_count_overrides_low_complexity(self):
+        """Test that >=2 acceptance criteria forces task-work even with low complexity."""
+        task = parse_task_string(
+            "TASK-001:Simple task:2:", feature_slug="test",
+            acceptance_criteria_count=2,
+        )
+        assert task.implementation_mode == "task-work"
+
+    def test_parse_task_string_ac_count_lt_2_keeps_direct(self):
+        """Test that <2 acceptance criteria keeps direct mode for low complexity."""
+        task = parse_task_string(
+            "TASK-001:Simple task:2:", feature_slug="test",
+            acceptance_criteria_count=1,
+        )
+        assert task.implementation_mode == "direct"
+
+    def test_parse_task_string_ac_count_zero_default(self):
+        """Test that default ac_count=0 preserves existing behavior."""
+        task = parse_task_string("TASK-001:Simple task:2:", feature_slug="test")
+        assert task.implementation_mode == "direct"
+
     def test_parse_task_string_default_complexity(self):
         """Test default complexity when not provided."""
         task = parse_task_string("TASK-001:Test task::", feature_slug="test")

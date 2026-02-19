@@ -658,9 +658,9 @@ def test_scaffolding_task_still_uses_file_existence_promises(
     assert "completion_promises" in report
     promises = report["completion_promises"]
 
-    # File-existence promises don't have evidence_type field
+    # File-existence promises have evidence_type: "file_existence" (not git_analysis)
     for promise in promises:
-        assert "evidence_type" not in promise
+        assert promise["evidence_type"] == "file_existence"
         assert promise["status"] in ["complete", "incomplete"]
 
 

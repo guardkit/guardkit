@@ -238,7 +238,8 @@ def discover_task_file(
 def parse_task_string(
     task_str: str,
     feature_slug: str = "",
-    task_base_path: str = "tasks/backlog"
+    task_base_path: str = "tasks/backlog",
+    acceptance_criteria_count: int = 0,
 ) -> TaskSpec:
     """
     Parse a task string in format: ID:NAME:COMPLEXITY:DEPS
@@ -247,6 +248,8 @@ def parse_task_string(
         task_str: Task string in format "ID:NAME:COMPLEXITY:DEPS"
         feature_slug: Feature directory name for file path derivation (optional)
         task_base_path: Base path for task files (default: "tasks/backlog")
+        acceptance_criteria_count: Number of acceptance criteria (optional).
+            Tasks with >=2 AC default to task-work regardless of complexity.
 
     Returns:
         TaskSpec with all fields populated, including file_path if feature_slug provided
@@ -264,8 +267,8 @@ def parse_task_string(
 
     dependencies = [d.strip() for d in deps_str.split(",") if d.strip()]
 
-    # Determine implementation mode based on complexity
-    if complexity <= 3:
+    # Determine implementation mode based on complexity and acceptance criteria count
+    if complexity <= 3 and acceptance_criteria_count < 2:
         mode = "direct"
     else:
         mode = "task-work"
@@ -500,7 +503,8 @@ def main():
                 task_id = t.get("id", t.get("task_id", ""))
                 task_name = t.get("name", t.get("title", ""))
                 complexity = t.get("complexity", 5)
-                mode = "direct" if complexity <= 3 else "task-work"
+                ac_count = len(t.get("acceptance_criteria", []))
+                mode = "direct" if complexity <= 3 and ac_count < 2 else "task-work"
                 # Derive file_path using centralized helper (includes task name in filename)
                 file_path = ""
                 if args.feature_slug:

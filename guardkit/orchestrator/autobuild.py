@@ -2296,31 +2296,30 @@ class AutoBuildOrchestrator:
                 f"promise-based criteria matching."
             )
 
-        report = {
-            "task_id": "",  # Filled by caller
-            "turn": work_state.turn_number,
-            "files_modified": work_state.files_modified,
-            "files_created": work_state.files_created,
-            "tests_written": work_state.tests_written,
-            "tests_run": work_state.test_count > 0,
-            "tests_passed": work_state.tests_passed,
-            "test_output_summary": (
-                work_state.test_results.output_summary
-                if work_state.test_results
-                else ""
-            ),
-            "implementation_notes": (
+        # Delegate core report construction to shared builder (TASK-FIX-D1A3)
+        from guardkit.orchestrator.synthetic_report import (
+            build_synthetic_report as _shared_build_synthetic_report,
+        )
+
+        report = _shared_build_synthetic_report(
+            task_id="",  # Filled by caller
+            turn=work_state.turn_number,
+            files_modified=work_state.files_modified,
+            files_created=work_state.files_created,
+            tests_written=work_state.tests_written,
+            tests_passed=work_state.tests_passed,
+            test_count=work_state.test_count,
+            implementation_notes=(
                 f"[RECOVERED via {work_state.detection_method}] "
                 f"Original error: {original_error or 'Unknown'}"
             ),
-            "concerns": [
+            concerns=[
                 f"Player failed with error: {original_error or 'Unknown'}",
                 f"Work recovered via {work_state.detection_method}",
             ],
-            "requirements_addressed": [],  # Cannot determine from detection
-            "requirements_remaining": [],  # Cannot determine from detection
-            "_synthetic": True,  # TASK-ASF-004: Flag for observability
-            "_recovery_metadata": {
+            acceptance_criteria=acceptance_criteria if should_generate_file_promises else None,
+            task_type="scaffolding" if should_generate_file_promises else None,
+            recovery_metadata={
                 "detection_method": work_state.detection_method,
                 "git_insertions": (
                     work_state.git_changes.insertions
@@ -2334,22 +2333,14 @@ class AutoBuildOrchestrator:
                 ),
                 "timestamp": work_state.timestamp,
             },
-        }
+        )
 
-        # Generate file-existence promises for scaffolding tasks (TASK-ASF-006)
-        if should_generate_file_promises:
-            promises = self._generate_file_existence_promises(
-                work_state, acceptance_criteria
-            )
-            if promises:
-                report["completion_promises"] = promises
-                logger.info(
-                    f"Generated {len(promises)} file-existence promises "
-                    f"for scaffolding task synthetic report"
-                )
+        # Override test_output_summary from WorkState (shared builder defaults to "")
+        if work_state.test_results:
+            report["test_output_summary"] = work_state.test_results.output_summary
 
         # Generate git-analysis promises for non-scaffolding tasks (TASK-ACR-004)
-        elif should_generate_git_promises:
+        if should_generate_git_promises:
             git_promises = self._generate_git_analysis_promises(
                 work_state, acceptance_criteria
             )
@@ -2370,9 +2361,10 @@ class AutoBuildOrchestrator:
         """
         Generate file-existence promises for scaffolding tasks.
 
-        Extracts file path patterns from acceptance criteria and matches them
-        against detected files (created + modified). Used for synthetic reports
-        when task-work fails but git changes are detected.
+        Thin wrapper around the shared
+        ``guardkit.orchestrator.synthetic_report.generate_file_existence_promises``
+        function (TASK-FIX-D1A3). Preserves the existing method signature so
+        that all callers and tests remain unchanged.
 
         Parameters
         ----------
@@ -2384,57 +2376,18 @@ class AutoBuildOrchestrator:
         Returns
         -------
         List[Dict[str, Any]]
-            List of completion promise dicts with structure:
-            {
-                "criterion_id": "AC-001",
-                "criterion_text": "...",
-                "status": "complete" | "incomplete",
-                "evidence": "..."
-            }
+            List of completion promise dicts with ``evidence_type: "file_existence"``
+            on every promise (set by the shared function).
         """
-        # Combine detected files into a single set
-        detected_files = set(work_state.files_created + work_state.files_modified)
+        from guardkit.orchestrator.synthetic_report import (
+            generate_file_existence_promises,
+        )
 
-        promises = []
-        for i, criterion_text in enumerate(acceptance_criteria):
-            criterion_id = f"AC-{i+1:03d}"
-
-            # Extract potential file paths from criterion text
-            # Pattern matches: path/to/file.ext (1-5 char extensions)
-            file_patterns = re.findall(r'[\w./\-]+\.\w{1,5}', criterion_text)
-
-            # Check if any pattern matches (as suffix) any detected file
-            matched_files = []
-            for pattern in file_patterns:
-                for detected_file in detected_files:
-                    if detected_file.endswith(pattern) or pattern in detected_file:
-                        matched_files.append(detected_file)
-
-            # Build promise based on match result
-            if matched_files:
-                # Found matching files - mark as complete
-                file_status = []
-                for f in matched_files:
-                    if f in work_state.files_created:
-                        file_status.append(f"{f} (created)")
-                    else:
-                        file_status.append(f"{f} (modified)")
-
-                evidence = "File-existence verified: " + ", ".join(file_status)
-                status = "complete"
-            else:
-                # No matching files - mark as incomplete
-                evidence = "No file-existence evidence for this criterion"
-                status = "incomplete"
-
-            promises.append({
-                "criterion_id": criterion_id,
-                "criterion_text": criterion_text,
-                "status": status,
-                "evidence": evidence,
-            })
-
-        return promises
+        return generate_file_existence_promises(
+            files_created=work_state.files_created,
+            files_modified=work_state.files_modified,
+            acceptance_criteria=acceptance_criteria,
+        )
 
     # --- Git-analysis promise generation (TASK-ACR-004) ---
 

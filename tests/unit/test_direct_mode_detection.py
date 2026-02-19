@@ -570,8 +570,8 @@ complexity: 2
 # ============================================================================
 
 
-def test_combined_low_complexity_safe_content_returns_direct(worktree_path, agent_invoker):
-    """Test combined scenario: low complexity + safe content = direct."""
+def test_combined_low_complexity_safe_content_few_ac_returns_direct(worktree_path, agent_invoker):
+    """Test combined scenario: low complexity + safe content + <2 AC = direct."""
     create_task_file(
         worktree_path,
         "TASK-401",
@@ -590,8 +590,6 @@ Update the code examples in the user guide to reflect the latest changes.
 
 ## Acceptance Criteria
 - [ ] All code examples run without errors
-- [ ] Examples demonstrate current best practices
-- [ ] Screenshots are up-to-date
 """
     )
 
@@ -647,6 +645,98 @@ Refactor the reporting module to support multiple output formats.
     )
 
     mode = agent_invoker._get_implementation_mode("TASK-403")
+    assert mode == "task-work"
+
+
+# ============================================================================
+# 5b. Acceptance Criteria Count Tests (4 tests) - TASK-FIX-D1A4
+# ============================================================================
+
+
+def test_ac_count_gte_2_returns_task_work(worktree_path, agent_invoker):
+    """Test tasks with >=2 acceptance criteria return task-work even if low complexity."""
+    create_task_file(
+        worktree_path,
+        "TASK-410",
+        frontmatter_yaml="""
+task_id: TASK-410
+title: Simple Update
+complexity: 2
+""",
+        body="""
+## Description
+A simple update that has multiple acceptance criteria.
+
+## Acceptance Criteria
+- [ ] First criterion is met
+- [ ] Second criterion is met
+"""
+    )
+
+    mode = agent_invoker._get_implementation_mode("TASK-410")
+    assert mode == "task-work"
+
+
+def test_ac_count_lt_2_with_low_complexity_returns_direct(worktree_path, agent_invoker):
+    """Test tasks with <2 acceptance criteria and low complexity return direct."""
+    create_task_file(
+        worktree_path,
+        "TASK-411",
+        frontmatter_yaml="""
+task_id: TASK-411
+title: Simple Fix
+complexity: 2
+""",
+        body="""
+## Description
+A simple fix with one acceptance criterion.
+
+## Acceptance Criteria
+- [ ] The fix is applied
+"""
+    )
+
+    mode = agent_invoker._get_implementation_mode("TASK-411")
+    assert mode == "direct"
+
+
+def test_ac_count_zero_with_low_complexity_returns_direct(worktree_path, agent_invoker):
+    """Test tasks with no acceptance criteria and low complexity return direct."""
+    create_task_file(
+        worktree_path,
+        "TASK-412",
+        frontmatter_yaml="""
+task_id: TASK-412
+title: Simple Tweak
+complexity: 1
+""",
+        body="""
+## Description
+A simple tweak with no explicit acceptance criteria.
+"""
+    )
+
+    mode = agent_invoker._get_implementation_mode("TASK-412")
+    assert mode == "direct"
+
+
+def test_ac_count_in_frontmatter_gte_2_returns_task_work(worktree_path, agent_invoker):
+    """Test tasks with >=2 AC in frontmatter list return task-work."""
+    create_task_file(
+        worktree_path,
+        "TASK-413",
+        frontmatter_yaml="""
+task_id: TASK-413
+title: Simple Update
+complexity: 2
+acceptance_criteria:
+  - First criterion
+  - Second criterion
+""",
+        body="Simple update with AC in frontmatter."
+    )
+
+    mode = agent_invoker._get_implementation_mode("TASK-413")
     assert mode == "task-work"
 
 

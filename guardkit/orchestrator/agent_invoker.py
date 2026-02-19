@@ -1772,6 +1772,8 @@ Follow the decision format specified in your agent definition.
         self,
         task_id: str,
         turn: int,
+        acceptance_criteria: Optional[List[str]] = None,
+        task_type: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create synthetic Player report from git changes for direct mode.
 
@@ -1779,52 +1781,64 @@ Follow the decision format specified in your agent definition.
         this method generates a valid report by detecting filesystem changes.
         This prevents unnecessary retries and state recovery.
 
+        Delegates core report construction to
+        ``guardkit.orchestrator.synthetic_report.build_synthetic_report``
+        (TASK-FIX-D1A3). When ``task_type == "scaffolding"`` and
+        ``acceptance_criteria`` is provided, file-existence promises are
+        generated automatically.
+
         Args:
             task_id: Task identifier
             turn: Turn number (1-based)
+            acceptance_criteria: Optional acceptance criteria for promise generation
+            task_type: Optional task type (e.g. "scaffolding") for promise routing
 
         Returns:
-            Dict conforming to PLAYER_REPORT_SCHEMA
+            Dict conforming to PLAYER_REPORT_SCHEMA with ``_synthetic: True``
         """
-        report: Dict[str, Any] = {
-            "task_id": task_id,
-            "turn": turn,
-            "files_modified": [],
-            "files_created": [],
-            "tests_written": [],
-            "tests_run": False,
-            "tests_passed": False,
-            "test_output_summary": "",
-            "implementation_notes": "Direct mode SDK invocation completed (synthetic report)",
-            "concerns": [],
-            "requirements_addressed": [],
-            "requirements_remaining": [],
-        }
+        from guardkit.orchestrator.synthetic_report import build_synthetic_report
+
+        files_modified: List[str] = []
+        files_created: List[str] = []
+        tests_written: List[str] = []
+        implementation_notes = "Direct mode SDK invocation completed (synthetic report)"
 
         try:
             git_changes = self._detect_git_changes()
             if git_changes:
-                report["files_modified"] = sorted(git_changes.get("modified", []))
-                report["files_created"] = sorted(git_changes.get("created", []))
+                files_modified = sorted(git_changes.get("modified", []))
+                files_created = sorted(git_changes.get("created", []))
 
                 # Identify test files from all changes
-                all_files = report["files_modified"] + report["files_created"]
-                report["tests_written"] = sorted([
+                all_files = files_modified + files_created
+                tests_written = sorted([
                     f for f in all_files
                     if "test_" in f.lower() or f.lower().endswith("_test.py")
                     or "/tests/" in f or f.startswith("tests/")
                 ])
 
                 if all_files:
-                    report["implementation_notes"] = (
+                    implementation_notes = (
                         f"Direct mode SDK invocation completed "
-                        f"(git-detected: {len(report['files_modified'])} modified, "
-                        f"{len(report['files_created'])} created)"
+                        f"(git-detected: {len(files_modified)} modified, "
+                        f"{len(files_created)} created)"
                     )
         except Exception as e:
             logger.warning(f"Git change detection failed for synthetic report: {e}")
 
-        return report
+        return build_synthetic_report(
+            task_id=task_id,
+            turn=turn,
+            files_modified=files_modified,
+            files_created=files_created,
+            tests_written=tests_written,
+            tests_passed=False,
+            test_count=0,
+            implementation_notes=implementation_notes,
+            concerns=[],
+            acceptance_criteria=acceptance_criteria,
+            task_type=task_type,
+        )
 
     def _find_task_file(self, task_id: str) -> Optional[Path]:
         """Find task file in standard task directories.
@@ -1888,9 +1902,10 @@ Follow the decision format specified in your agent definition.
     ) -> list:
         """Generate completion promises from file existence checks.
 
-        For each acceptance criterion, check if files mentioned in the criterion
-        text exist in the worktree. Generate a promise with status "partial" if
-        the file exists, "incomplete" otherwise.
+        Thin wrapper around the shared
+        ``guardkit.orchestrator.synthetic_report.generate_file_existence_promises``
+        function (TASK-FIX-D1A3). The shared function now handles
+        ``evidence_type``, directory reference checks, and all regex passes.
 
         Args:
             task_id: Task identifier
@@ -1902,50 +1917,16 @@ Follow the decision format specified in your agent definition.
         Returns:
             List of promise dicts with criterion_id, status, evidence, evidence_type
         """
-        import re
+        from guardkit.orchestrator.synthetic_report import (
+            generate_file_existence_promises,
+        )
 
-        all_files = set(files_created) | set(files_modified)
-        promises = []
-
-        for i, criterion in enumerate(acceptance_criteria):
-            criterion_id = f"AC-{i + 1:03d}"
-
-            # Extract file paths from criterion text (backtick-quoted paths)
-            file_refs = re.findall(r'`([^`]+\.[a-zA-Z]+)`', criterion)
-            # Also check for directory references like `tests/seam/`
-            dir_refs = re.findall(r'`([^`]+/)`', criterion)
-
-            found_files = []
-            for ref in file_refs:
-                # Check against known file lists
-                if any(ref in f for f in all_files):
-                    found_files.append(ref)
-                # Check disk as fallback
-                elif (worktree_path / ref).exists():
-                    found_files.append(ref)
-
-            found_dirs = []
-            for ref in dir_refs:
-                if (worktree_path / ref).is_dir():
-                    found_dirs.append(ref)
-
-            if found_files or found_dirs:
-                evidence_items = found_files + found_dirs
-                promises.append({
-                    "criterion_id": criterion_id,
-                    "status": "partial",
-                    "evidence": f"File existence verified: {', '.join(evidence_items)}",
-                    "evidence_type": "file_existence",
-                })
-            else:
-                promises.append({
-                    "criterion_id": criterion_id,
-                    "status": "incomplete",
-                    "evidence": "No file references found or verified",
-                    "evidence_type": "file_existence",
-                })
-
-        return promises
+        return generate_file_existence_promises(
+            files_created=files_created,
+            files_modified=files_modified,
+            acceptance_criteria=acceptance_criteria,
+            worktree_path=worktree_path,
+        )
 
     def _load_agent_report(
         self,
@@ -2462,9 +2443,28 @@ Follow the decision format specified in your agent definition.
             )
             return "task-work"
 
+        # Check acceptance criteria count - tasks with >=2 AC need task-work
+        # for richer agent-written reports
+        import re
+        ac_list = frontmatter.get("acceptance_criteria", [])
+        if isinstance(ac_list, list) and len(ac_list) >= 2:
+            ac_count = len(ac_list)
+        else:
+            # Parse from markdown content (checkbox items under AC section)
+            ac_items = re.findall(r'^\s*-\s*\[[ x]\]', content, re.MULTILINE)
+            ac_count = len(ac_items)
+
+        if ac_count >= 2:
+            logger.debug(
+                f"[{task_id}] Task has {ac_count} acceptance criteria (>=2), "
+                "not eligible for auto-direct mode (task-work)"
+            )
+            return "task-work"
+
         logger.info(
             f"[{task_id}] Auto-detected direct mode "
-            f"(complexity={complexity}, no high-risk keywords)"
+            f"(complexity={complexity}, no high-risk keywords, "
+            f"ac_count={ac_count})"
         )
         return "direct"
 
@@ -2604,8 +2604,21 @@ Follow the decision format specified in your agent definition.
                     f"SDK did not write player_turn_{turn}.json for {task_id}, "
                     f"creating synthetic report from git detection"
                 )
+                # Load acceptance_criteria and task_type from task frontmatter
+                # so file-existence promises can be generated for scaffolding tasks
+                acceptance_criteria = None
+                task_type_meta = None
+                task_file = self._find_task_file(task_id)
+                if task_file:
+                    metadata = self._load_task_metadata(task_file)
+                    acceptance_criteria = metadata.get("acceptance_criteria")
+                    task_type_meta = metadata.get("task_type")
+
                 synthetic_report = self._create_synthetic_direct_mode_report(
-                    task_id, turn
+                    task_id,
+                    turn,
+                    acceptance_criteria=acceptance_criteria,
+                    task_type=task_type_meta,
                 )
                 self._write_player_report_for_direct_mode(
                     task_id, turn, synthetic_report, success=True
@@ -2799,6 +2812,10 @@ Follow the decision format specified in your agent definition.
         completion_promises = player_report.get("completion_promises", [])
         if completion_promises:
             results["completion_promises"] = completion_promises
+
+        # Propagate _synthetic flag from player_report (TASK-FIX-D1A3)
+        if player_report.get("_synthetic"):
+            results["_synthetic"] = True
 
         results_file.write_text(json.dumps(results, indent=2))
         logger.info(f"Wrote direct mode results to {results_file}")
