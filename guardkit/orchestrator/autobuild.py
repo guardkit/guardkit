@@ -744,8 +744,9 @@ class AutoBuildOrchestrator:
 
         pre_loop_result = None  # Initialize pre-loop result
 
-        # Load task data to extract task_type and requires_infrastructure for CoachValidator
+        # Load task data to extract task_type, requires_infrastructure, and consumer_context for CoachValidator
         task_type: Optional[str] = None
+        consumer_context: Optional[list] = None
         _ri_from_caller = requires_infrastructure  # Preserve explicit parameter (may be None)
         requires_infrastructure = None  # Reset; will be resolved via frontmatter then precedence
         try:
@@ -758,6 +759,9 @@ class AutoBuildOrchestrator:
             if isinstance(ri, list):
                 requires_infrastructure = ri
                 logger.debug(f"Loaded requires_infrastructure from task file: {ri}")
+            consumer_context = frontmatter.get("consumer_context")
+            if isinstance(consumer_context, list):
+                logger.debug(f"Loaded consumer_context from task file: {consumer_context}")
         except TaskNotFoundError:
             logger.debug(f"Task file not found for {task_id}, continuing with task_type=None")
         except Exception as e:
@@ -849,6 +853,7 @@ class AutoBuildOrchestrator:
                 implementation_plan=pre_loop_result.get("plan") if pre_loop_result else None,
                 task_type=task_type,
                 requires_infrastructure=requires_infrastructure,
+                consumer_context=consumer_context,
             )
 
             # Phase 4: Finalize
@@ -1464,6 +1469,7 @@ class AutoBuildOrchestrator:
         implementation_plan: Optional[Dict[str, Any]] = None,
         task_type: Optional[str] = None,
         requires_infrastructure: Optional[List[str]] = None,
+        consumer_context: Optional[list] = None,
     ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "design_extraction_failed"]]:
         """
         Phase 3: Execute Player↔Coach adversarial loop.
@@ -1495,6 +1501,8 @@ class AutoBuildOrchestrator:
             Task type from task frontmatter (e.g., "implementation", "refactor", "bugfix")
         requires_infrastructure : Optional[List[str]], optional
             Infrastructure services required (e.g., ["postgresql", "redis"])
+        consumer_context : Optional[list], optional
+            Consumer context metadata from task frontmatter for format validation
 
         Returns
         -------
@@ -1560,6 +1568,7 @@ class AutoBuildOrchestrator:
                     skip_arch_review=not self.enable_pre_loop,
                     acceptance_criteria=acceptance_criteria,
                     requires_infrastructure=requires_infrastructure,
+                    consumer_context=consumer_context,
                 )
 
                 turn_history.append(turn_record)
@@ -1698,6 +1707,7 @@ class AutoBuildOrchestrator:
         skip_arch_review: bool = False,
         acceptance_criteria: Optional[List[str]] = None,
         requires_infrastructure: Optional[List[str]] = None,
+        consumer_context: Optional[list] = None,
     ) -> TurnRecord:
         """
         Execute single Player→Coach turn.
@@ -1732,6 +1742,8 @@ class AutoBuildOrchestrator:
             Task type from task frontmatter (e.g., "implementation", "refactor", "bugfix")
         requires_infrastructure : Optional[List[str]], optional
             Infrastructure services required (e.g., ["postgresql", "redis"])
+        consumer_context : Optional[list], optional
+            Consumer context metadata from task frontmatter for format validation
 
         Returns
         -------
@@ -1917,6 +1929,7 @@ class AutoBuildOrchestrator:
             task_type=task_type,
             skip_arch_review=skip_arch_review,
             requires_infrastructure=requires_infrastructure,
+            consumer_context=consumer_context,
         )
         # Snapshot context status after coach invocation (TASK-FIX-GCW5)
         coach_context_status = self._last_coach_context_status
@@ -3455,6 +3468,7 @@ class AutoBuildOrchestrator:
         task_type: Optional[str] = None,
         skip_arch_review: bool = False,
         requires_infrastructure: Optional[List[str]] = None,
+        consumer_context: Optional[list] = None,
     ) -> AgentInvocationResult:
         """
         Invoke Coach agent with comprehensive error handling.
@@ -3492,6 +3506,8 @@ class AutoBuildOrchestrator:
             Default is False.
         requires_infrastructure : Optional[List[str]], optional
             Infrastructure services required (e.g., ["postgresql", "redis"])
+        consumer_context : Optional[list], optional
+            Consumer context metadata from task frontmatter for format validation
 
         Returns
         -------
@@ -3601,6 +3617,7 @@ class AutoBuildOrchestrator:
                     "task_type": task_type,
                     "requires_infrastructure": requires_infrastructure or [],
                     "_docker_available": validator._is_docker_available(),
+                    "consumer_context": consumer_context or [],
                 },
                 skip_arch_review=skip_arch_review,
                 context=context_prompt if context_prompt else None,

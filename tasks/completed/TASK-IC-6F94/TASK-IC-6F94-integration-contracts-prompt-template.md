@@ -1,9 +1,11 @@
 ---
 id: TASK-IC-6F94
 title: Add Integration Contracts section to feature-plan prompt template
-status: backlog
+status: completed
 created: 2026-02-18T00:00:00Z
-updated: 2026-02-18T00:00:00Z
+updated: 2026-02-19T00:00:00Z
+completed: 2026-02-19T00:00:00Z
+completed_location: tasks/completed/TASK-IC-6F94/
 priority: high
 task_type: feature
 parent_feature: TASK-FP-1B6D
@@ -69,12 +71,12 @@ This is a prompt hint only — no new output sections, no schema changes, no imp
 
 ## Acceptance Criteria
 
-- [ ] `installer/core/commands/feature-plan.md` contains a mandatory `§4: Integration Contracts` output section with the template above
-- [ ] The feature planner prompt includes the instruction to derive connection URL formats from the user's stated framework (not a hardcoded lookup)
-- [ ] `installer/core/commands/task-review.md` subtask generation instructions include the one-sentence cross-component boundary hint
-- [ ] **Machine-verifiable:** The string `§4: Integration Contracts` appears in `installer/core/commands/feature-plan.md`
-- [ ] **Machine-verifiable:** The string `cross-component boundaries` appears in `installer/core/commands/task-review.md`
-- [ ] `/feature-plan` output for a single-technology prompt (no cross-task data dependency) does NOT require an Integration Contracts section
+- [x] `installer/core/commands/feature-plan.md` contains a mandatory `§4: Integration Contracts` output section with the template above
+- [x] The feature planner prompt includes the instruction to derive connection URL formats from the user's stated framework (not a hardcoded lookup)
+- [x] `installer/core/commands/task-review.md` subtask generation instructions include the one-sentence cross-component boundary hint
+- [x] **Machine-verifiable:** The string `§4: Integration Contracts` appears in `installer/core/commands/feature-plan.md`
+- [x] **Machine-verifiable:** The string `cross-component boundaries` appears in `installer/core/commands/task-review.md`
+- [x] `/feature-plan` output for a single-technology prompt (no cross-task data dependency) does NOT require an Integration Contracts section
 
 ### Manual Verification (post-merge, not automatable by Coach)
 

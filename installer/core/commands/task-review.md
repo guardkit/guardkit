@@ -1042,6 +1042,7 @@ When you choose [I]mplement, the system automatically:
    - `parent_review`: Set to the review task ID (format: TASK-REV-{hash})
    - `feature_id`: Set to generated feature ID (format: FEAT-{hash})
    - All standard task fields (wave, implementation_mode, dependencies, etc.)
+   - When creating fix tasks that involve cross-component boundaries (e.g. integration tests, environment variable consumers, API contracts between services), include the expected interface format in the task description.
 8. **Generates IMPLEMENTATION-GUIDE.md** with wave breakdowns and execution strategy
 9. **Generates README.md** with problem statement, solution approach, and subtask summary
 10. **Displays execution plan** with next steps

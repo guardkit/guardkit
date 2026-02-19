@@ -138,10 +138,42 @@ class TestDockerFixturesModule:
     # ------------------------------------------------------------------
 
     def test_get_env_exports_postgresql_contains_database_url(self) -> None:
-        """get_env_exports('postgresql') returns dict with DATABASE_URL key."""
+        """get_env_exports('postgresql') returns dict with DATABASE_URL key using base URL."""
         exports = get_env_exports("postgresql")
         assert "DATABASE_URL" in exports
-        assert exports["DATABASE_URL"].startswith("postgresql+asyncpg://")
+        assert exports["DATABASE_URL"].startswith("postgresql://")
+
+    def test_get_env_exports_without_consumer_context_returns_base_url(self) -> None:
+        """get_env_exports without consumer_context returns plain postgresql:// base URL."""
+        exports = get_env_exports("postgresql")
+        assert exports["DATABASE_URL"] == "postgresql://postgres:test@localhost:5433/test"
+        # Must NOT contain asyncpg in base form
+        assert "+asyncpg" not in exports["DATABASE_URL"]
+
+    def test_get_env_exports_with_consumer_context_adapts_url(self) -> None:
+        """get_env_exports with consumer_context calls adapter.adapt_url for matching key."""
+
+        class AsyncpgAdapter:
+            def adapt_url(self, base_url: str) -> str:
+                return base_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+        adapter = AsyncpgAdapter()
+        exports = get_env_exports("postgresql", consumer_context={"DATABASE_URL": adapter})
+        assert exports["DATABASE_URL"] == "postgresql+asyncpg://postgres:test@localhost:5433/test"
+
+    def test_get_env_exports_consumer_context_unknown_key_ignored(self) -> None:
+        """get_env_exports silently ignores consumer_context keys not in the export dict."""
+
+        class DummyAdapter:
+            def adapt_url(self, base_url: str) -> str:
+                return "adapted://" + base_url
+
+        adapter = DummyAdapter()
+        # "NONEXISTENT_KEY" is not in postgresql env_export
+        exports = get_env_exports("postgresql", consumer_context={"NONEXISTENT_KEY": adapter})
+        # DATABASE_URL should be unchanged (base URL)
+        assert exports["DATABASE_URL"] == "postgresql://postgres:test@localhost:5433/test"
+        assert "NONEXISTENT_KEY" not in exports
 
     def test_get_env_exports_redis_contains_redis_url(self) -> None:
         """get_env_exports('redis') returns dict with REDIS_URL key."""
@@ -300,7 +332,7 @@ class TestCoachValidatorDockerMethods:
                 os.environ.pop("DATABASE_URL", None)
                 validator._start_infrastructure_containers(["postgresql"])
                 assert "DATABASE_URL" in os.environ
-                assert os.environ["DATABASE_URL"].startswith("postgresql+asyncpg://")
+                assert os.environ["DATABASE_URL"].startswith("postgresql://")
                 # Clean up
                 os.environ.pop("DATABASE_URL", None)
 

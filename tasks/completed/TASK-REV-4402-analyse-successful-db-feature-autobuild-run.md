@@ -1,7 +1,7 @@
 ---
 id: TASK-REV-4402
 title: Analyse successful FEAT-BA28 autobuild run for remaining issues
-status: review_complete
+status: completed
 created: 2026-02-18T23:00:00Z
 updated: 2026-02-19T00:00:00Z
 priority: high

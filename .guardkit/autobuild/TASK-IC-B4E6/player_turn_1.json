@@ -1,0 +1,91 @@
+{
+  "task_id": "TASK-IC-B4E6",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/docker_fixtures.py",
+    "tests/unit/test_docker_fixtures.py"
+  ],
+  "files_created": [],
+  "tests_written": [
+    "tests/unit/test_docker_fixtures.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "63 passed in 2.07s",
+  "implementation_notes": "Refactored docker_fixtures.py in three steps: (1) changed the postgresql env_export DATABASE_URL from postgresql+asyncpg:// to the base postgresql:// scheme, removing driver knowledge from the fixture definition; (2) added Optional to the typing imports; (3) expanded get_env_exports() to accept an optional consumer_context dict mapping env-var names to adapter objects — when provided, each matching key is passed through adapter.adapt_url(base_url) so the caller can inject the driver-specific scheme without touching the fixture. Call sites in coach_validator.py (lines 1399 and 1430) were left unchanged — they call get_env_exports(service) without consumer_context, which is correct because the base postgresql:// URL is valid for the validator's own subprocess test execution. Two existing test assertions updated from postgresql+asyncpg:// to postgresql://, and three new tests added covering adaptation, backward-compat no-context, and unknown-key-ignored cases.",
+  "concerns": [],
+  "requirements_addressed": [
+    "Change DOCKER_FIXTURES postgresql env_export to base URL format (postgresql://)",
+    "Add Optional import from typing",
+    "Add consumer_context parameter to get_env_exports()",
+    "When consumer_context provided and key matches, call adapter.adapt_url()",
+    "No framework-specific imports added (asyncpg/aiomysql/Motor/aioredis)",
+    "Redis and mongodb exports unchanged",
+    "Unknown service still raises KeyError",
+    "All existing callers (coach_validator.py) continue to work without change",
+    "Update test_get_env_exports_postgresql_contains_database_url assertion",
+    "Update test_start_infrastructure_containers_sets_env_vars assertion",
+    "Add test_get_env_exports_with_consumer_context_adapts_url",
+    "Add test_get_env_exports_without_consumer_context_returns_base_url",
+    "Add test_get_env_exports_consumer_context_unknown_key_ignored"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "get_env_exports('postgresql')['DATABASE_URL'] returns 'postgresql://postgres:test@localhost:5433/test'",
+      "status": "complete",
+      "evidence": "DOCKER_FIXTURES postgresql env_export updated to 'postgresql://postgres:test@localhost:5433/test'. test_get_env_exports_without_consumer_context_returns_base_url asserts exact value.",
+      "test_file": "tests/unit/test_docker_fixtures.py",
+      "implementation_files": ["guardkit/orchestrator/docker_fixtures.py"]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "get_env_exports('postgresql', consumer_context={'DATABASE_URL': adapter})['DATABASE_URL'] returns adapted URL (e.g. postgresql+asyncpg://...)",
+      "status": "complete",
+      "evidence": "get_env_exports() now iterates consumer_context and calls adapter.adapt_url(base_url) for matching keys. test_get_env_exports_with_consumer_context_adapts_url uses a local AsyncpgAdapter that replaces 'postgresql://' with 'postgresql+asyncpg://' and asserts the result.",
+      "test_file": "tests/unit/test_docker_fixtures.py",
+      "implementation_files": ["guardkit/orchestrator/docker_fixtures.py"]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "docker_fixtures.py has NO references to asyncpg/aiomysql/Motor/aioredis",
+      "status": "complete",
+      "evidence": "The asyncpg scheme was removed from the hardcoded URL in DOCKER_FIXTURES. No framework-specific imports were added. The file only imports from typing (Dict, List, Optional) and uses __future__ annotations.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/docker_fixtures.py"]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Redis and mongodb exports unchanged",
+      "status": "complete",
+      "evidence": "Only the postgresql env_export was modified. Redis (REDIS_URL: redis://localhost:6380) and mongodb (MONGODB_URL: mongodb://localhost:27018) are untouched. Existing tests test_get_env_exports_redis_contains_redis_url and test_get_env_exports_mongodb_contains_mongodb_url still pass.",
+      "test_file": "tests/unit/test_docker_fixtures.py",
+      "implementation_files": ["guardkit/orchestrator/docker_fixtures.py"]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Unknown service still raises KeyError",
+      "status": "complete",
+      "evidence": "get_env_exports() still does dict(DOCKER_FIXTURES[service.lower()][...]) as the first operation; an unknown service raises KeyError before consumer_context logic runs. Existing test test_get_start_commands_unknown_service_raises_key_error covers this behaviour.",
+      "test_file": "tests/unit/test_docker_fixtures.py",
+      "implementation_files": ["guardkit/orchestrator/docker_fixtures.py"]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "consumer_context is optional — all existing callers work without change",
+      "status": "complete",
+      "evidence": "consumer_context defaults to None; when None (or falsy) the adaptation block is skipped and the base dict is returned. Call sites in coach_validator.py at lines 1399 and 1430 were not modified and all 63 tests (including those that exercise _start_infrastructure_containers and _stop_infrastructure_containers) continue to pass.",
+      "test_file": "tests/unit/test_docker_fixtures.py",
+      "implementation_files": ["guardkit/orchestrator/docker_fixtures.py"]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "consumer_context key not in exports is silently ignored",
+      "status": "complete",
+      "evidence": "The adaptation loop does 'if key in exports' before calling adapt_url, so unknown keys are skipped. test_get_env_exports_consumer_context_unknown_key_ignored passes NONEXISTENT_KEY and verifies DATABASE_URL is unchanged and the unknown key is not added to exports.",
+      "test_file": "tests/unit/test_docker_fixtures.py",
+      "implementation_files": ["guardkit/orchestrator/docker_fixtures.py"]
+    }
+  ]
+}

@@ -12,7 +12,7 @@ Non-standard ports are used to avoid conflicts with local services:
 
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 # Container name prefix for test isolation
@@ -27,7 +27,7 @@ DOCKER_FIXTURES: Dict[str, Dict[str, object]] = {
         "env_vars": {"POSTGRES_PASSWORD": "test"},
         "readiness_cmd": "docker exec guardkit-test-pg pg_isready",
         "readiness_type": "command",  # "command" = until loop, "sleep" = fixed wait
-        "env_export": {"DATABASE_URL": "postgresql+asyncpg://postgres:test@localhost:5433/test"},
+        "env_export": {"DATABASE_URL": "postgresql://postgres:test@localhost:5433/test"},
     },
     "redis": {
         "container_name": f"{CONTAINER_PREFIX}-redis",
@@ -106,11 +106,21 @@ def get_container_name(service: str) -> str:
     return DOCKER_FIXTURES[service.lower()]["container_name"]
 
 
-def get_env_exports(service: str) -> Dict[str, str]:
+def get_env_exports(service: str, consumer_context: Optional[Dict] = None) -> Dict[str, str]:
     """Return environment variables to export after starting the service.
+
+    When ``consumer_context`` is provided, each key that has a matching entry
+    in the returned dict is passed through the adapter's ``adapt_url()`` method.
+    This allows consumers to upgrade a base URL (e.g. ``postgresql://``) to a
+    driver-specific scheme (e.g. ``postgresql+asyncpg://``) without baking
+    driver knowledge into the fixture definitions.
 
     Args:
         service: Infrastructure service name (e.g., "postgresql")
+        consumer_context: Optional mapping of env-var names to adapter objects.
+            Each adapter must expose an ``adapt_url(base_url: str) -> str``
+            method.  Keys not present in the returned exports are silently
+            ignored.
 
     Returns:
         Dict mapping env var names to values.
@@ -118,7 +128,12 @@ def get_env_exports(service: str) -> Dict[str, str]:
     Raises:
         KeyError: If service is not a known fixture.
     """
-    return dict(DOCKER_FIXTURES[service.lower()]["env_export"])
+    exports = dict(DOCKER_FIXTURES[service.lower()]["env_export"])
+    if consumer_context:
+        for key, adapter in consumer_context.items():
+            if key in exports:
+                exports[key] = adapter.adapt_url(exports[key])
+    return exports
 
 
 def is_known_service(service: str) -> bool:

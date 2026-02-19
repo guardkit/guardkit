@@ -1,14 +1,18 @@
 ---
 id: TASK-IC-B4E6
 title: Refactor docker_fixtures.py to consumer-aware URL generation
-status: backlog
+status: completed
 created: 2026-02-18T00:00:00Z
-updated: 2026-02-18T00:00:00Z
+updated: 2026-02-19T00:00:00Z
+completed: 2026-02-19T00:00:00Z
+completed_location: tasks/completed/TASK-IC-B4E6/
 priority: normal
 task_type: feature
 parent_feature: TASK-FP-1B6D
 parent_review: TASK-REV-0E07
 complexity: 4
+previous_state: in_review
+state_transition_reason: "All quality gates passed - completed"
 dependencies:
   - TASK-IC-DD44  # Child B must be complete — this refactor is only done after the contract system is proven
 related_tasks:
@@ -16,6 +20,8 @@ related_tasks:
   - TASK-IC-DD44  # Child B (direct prerequisite)
   - TASK-FP-1B6D  # Superseded parent task (do not work on)
 tags: [docker-fixtures, consumer-context, autobuild, python-template]
+organized_files:
+  - TASK-IC-B4E6-docker-fixtures-consumer-aware-url.md
 ---
 
 # Refactor docker_fixtures.py to Consumer-Aware URL Generation
@@ -104,15 +110,15 @@ def get_env_exports(
 
 ## Acceptance Criteria
 
-- [ ] `get_env_exports(service)` (no consumer_context) returns base URL format unchanged
-- [ ] `get_env_exports(service, consumer_context=ctx)` adapts the URL to the format specified by the consumer context
-- [ ] `docker_fixtures.py` contains no imports of or references to asyncpg, aiomysql, Motor, aioredis, or any other consumer framework
-- [ ] **Concrete verification:**
+- [x] `get_env_exports(service)` (no consumer_context) returns base URL format unchanged
+- [x] `get_env_exports(service, consumer_context=ctx)` adapts the URL to the format specified by the consumer context
+- [x] `docker_fixtures.py` contains no imports of or references to asyncpg, aiomysql, Motor, aioredis, or any other consumer framework
+- [x] **Concrete verification:**
   - `get_env_exports("postgresql")["DATABASE_URL"]` returns `"postgresql://postgres:test@localhost:5433/test"`
   - `get_env_exports("postgresql", consumer_context={"DATABASE_URL": AsyncpgUrlAdapter()})["DATABASE_URL"]` returns `"postgresql+asyncpg://postgres:test@localhost:5433/test"`
-- [ ] The existing `postgresql+asyncpg://` hardcoded value (from TASK-FIX-0C22) is replaced by the consumer-context mechanism — no regressions for projects that use asyncpg
-- [ ] Unit tests cover: no consumer_context (base URL), with consumer_context (adapted URL), unknown service (raises KeyError with clear message)
-- [ ] All existing call sites of `get_env_exports('postgresql')` in `coach_validator.py` and orchestrator code are updated to pass `consumer_context` when the task metadata has it available — otherwise the TASK-FIX-0C22 immediate fix is regressed
+- [x] The existing `postgresql+asyncpg://` hardcoded value (from TASK-FIX-0C22) is replaced by the consumer-context mechanism — no regressions for projects that use asyncpg
+- [x] Unit tests cover: no consumer_context (base URL), with consumer_context (adapted URL), unknown service (raises KeyError with clear message)
+- [x] All existing call sites of `get_env_exports('postgresql')` in `coach_validator.py` and orchestrator code are updated to pass `consumer_context` when the task metadata has it available — otherwise the TASK-FIX-0C22 immediate fix is regressed
 
 ## Constraints
 

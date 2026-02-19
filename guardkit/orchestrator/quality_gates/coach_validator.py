@@ -752,8 +752,13 @@ class CoachValidator:
             task_work_results, profile
         )
 
+        # 5.6. Validate consumer_context format constraints (soft gate, non-blocking)
+        consumer_context_issues = self._validate_consumer_context(
+            task, task_work_results
+        )
+
         # Combine all non-blocking issues
-        all_issues = zero_test_issues + seam_test_issues
+        all_issues = zero_test_issues + seam_test_issues + consumer_context_issues
 
         # 6. All checks passed - approve
         if conditional_approval:
@@ -2734,6 +2739,161 @@ class CoachValidator:
             }]
 
         return []
+
+    def _validate_consumer_context(
+        self,
+        task: Dict[str, Any],
+        task_work_results: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """
+        Validate that produced artifacts match consumer_context format constraints.
+
+        For each consumer_context entry, finds the artifact value in the worktree
+        (docker-compose files, .env files) and checks whether the value matches
+        the format_note constraint via string pattern matching.
+
+        This is framework-agnostic: the Coach does NOT know what asyncpg or
+        SQLAlchemy means. It only checks whether the artifact value string-matches
+        the format_note.
+
+        Parameters
+        ----------
+        task : Dict[str, Any]
+            Task data including optional consumer_context list
+        task_work_results : Dict[str, Any]
+            Results from task-work execution
+
+        Returns
+        -------
+        List[Dict[str, Any]]
+            List of warning issues for format mismatches (non-blocking)
+        """
+        consumer_context = task.get("consumer_context", [])
+        if not consumer_context:
+            return []
+
+        issues = []
+        for entry in consumer_context:
+            if not isinstance(entry, dict):
+                continue
+
+            artifact_name = entry.get("consumes", "")
+            format_note = entry.get("format_note", "")
+            consumer_task = entry.get("task", "")
+
+            if not artifact_name or not format_note:
+                continue
+
+            # Attempt to find the artifact value
+            artifact_value = self._find_artifact_value(artifact_name)
+
+            if artifact_value is None:
+                logger.debug(
+                    f"consumer_context: artifact '{artifact_name}' not found, "
+                    "skipping validation"
+                )
+                continue
+
+            # String pattern matching against format_note
+            if not self._format_note_matches(artifact_value, format_note):
+                issues.append({
+                    "severity": "consider",
+                    "category": "consumer_context_mismatch",
+                    "description": (
+                        f"Format mismatch for '{artifact_name}': "
+                        f"value '{artifact_value}' does not match format constraint "
+                        f"'{format_note}' (consumer: {consumer_task})"
+                    ),
+                })
+
+        return issues
+
+    def _find_artifact_value(self, artifact_name: str) -> Optional[str]:
+        """
+        Locate an artifact value by name in the worktree.
+
+        Searches for environment variable definitions in:
+        - docker-compose.yml / docker-compose.yaml
+        - .env files (.env, .env.test, .env.docker)
+
+        Parameters
+        ----------
+        artifact_name : str
+            Name of the artifact (e.g., "DATABASE_URL")
+
+        Returns
+        -------
+        Optional[str]
+            The artifact value if found, None otherwise
+        """
+        worktree = Path(self.worktree_path)
+
+        # Search docker-compose files
+        for compose_name in ["docker-compose.yml", "docker-compose.yaml"]:
+            compose_path = worktree / compose_name
+            if compose_path.exists():
+                try:
+                    content = compose_path.read_text()
+                    pattern = rf'{re.escape(artifact_name)}\s*[=:]\s*["\']?([^"\'\n#]+)'
+                    match = re.search(pattern, content)
+                    if match:
+                        return match.group(1).strip()
+                except OSError:
+                    continue
+
+        # Search .env files
+        for env_name in [".env", ".env.test", ".env.docker"]:
+            env_path = worktree / env_name
+            if env_path.exists():
+                try:
+                    content = env_path.read_text()
+                    pattern = rf'^{re.escape(artifact_name)}\s*=\s*(.+)$'
+                    match = re.search(pattern, content, re.MULTILINE)
+                    if match:
+                        return match.group(1).strip().strip("'\"")
+                except OSError:
+                    continue
+
+        return None
+
+    def _format_note_matches(self, artifact_value: str, format_note: str) -> bool:
+        """
+        Check if artifact value matches format_note constraint via string pattern matching.
+
+        Extracts identifiable tokens from format_note (URL patterns containing +,
+        ://, or dialect prefixes) and checks if they appear in the artifact value.
+
+        This is deliberately framework-agnostic — no knowledge of SQLAlchemy,
+        asyncpg, etc. is embedded. The format_note itself carries the specifics.
+
+        Parameters
+        ----------
+        artifact_value : str
+            The actual artifact value found
+        format_note : str
+            The format constraint from consumer_context
+
+        Returns
+        -------
+        bool
+            True if artifact value appears to match the format constraint
+        """
+        # Extract technical tokens from format_note
+        # Look for URL-like patterns: +asyncpg://, postgresql+asyncpg://, +asyncpg
+        url_patterns = re.findall(
+            r'[a-z]+\+[a-z]+://|[a-z]+://|\+[a-z]+', format_note.lower()
+        )
+        if url_patterns:
+            return any(
+                pattern in artifact_value.lower() for pattern in url_patterns
+            )
+
+        # Fallback: no recognisable pattern extracted — cannot validate, assume OK
+        logger.debug(
+            f"format_note '{format_note}' has no extractable URL pattern, "
+            "skipping match"
+        )
+        return True
 
     def _check_seam_test_recommendation(
         self,

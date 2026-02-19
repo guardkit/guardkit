@@ -1242,6 +1242,12 @@ parent_review: TASK-REV-a3f8  # Links back to review that recommended this
 feature_id: FEAT-a3f8          # Groups with related tasks in this feature
 wave: 1
 implementation_mode: direct
+consumer_context:              # ONLY when §4 Integration Contract exists for this task's input
+  - task: TASK-DB-001          # Producer task ID
+    consumes: DATABASE_URL     # Artifact name from §4 contract
+    framework: "SQLAlchemy async (create_async_engine)"  # Consumer framework from prompt
+    driver: "asyncpg"          # Driver/library
+    format_note: "URL must include +asyncpg dialect suffix for async engine"  # Format constraint
 ---
 ```
 
@@ -1653,6 +1659,46 @@ Do not allow features to proceed to implementation with disconnected read/write 
 - Generate diagrams from actual feature analysis, not placeholder content
 - Diagrams must render correctly in GitHub markdown preview
 
+### 4. §4: Integration Contracts (MANDATORY when cross-task data dependencies exist)
+
+Whenever the feature plan creates tasks where one task's output is consumed by another task's input, the IMPLEMENTATION-GUIDE.md MUST include a `§4: Integration Contracts` section. If all tasks are independent (no cross-task data flow), this section is not required.
+
+**Template:**
+
+````markdown
+## §4: Integration Contracts
+
+For each cross-task data dependency, specify:
+
+### Contract: {artifact_name}
+- **Producer task:** TASK-xxx
+- **Consumer task(s):** TASK-xxx, TASK-xxx
+- **Artifact type:** environment variable / config file / API endpoint / etc.
+- **Format constraint:** {What format must the artifact be in for the consumer to use it without modification?}
+- **Validation method:** {How should the Coach verify this contract is met?}
+
+⚠️ If any task produces an artifact consumed by another task and no integration
+contract is specified, add one. Unspecified cross-task contracts are the #1 source
+of integration-boundary bugs.
+````
+
+**Planner prompt instruction:**
+
+> Whenever the user request mentions both an infrastructure service AND a consuming framework (e.g. "PostgreSQL with SQLAlchemy async", "Redis with aioredis", "MongoDB with Motor", "MySQL with aiomysql"), you MUST generate an Integration Contract specifying the exact connection URL or interface format required by the consuming framework. The format must be derived from the user's stated framework — do not use a hardcoded lookup table.
+
+**Example:**
+
+````markdown
+## §4: Integration Contracts
+
+### Contract: DATABASE_URL
+- **Producer task:** TASK-DB-001 (Create PostgreSQL container)
+- **Consumer task(s):** TASK-API-002 (Implement SQLAlchemy async models)
+- **Artifact type:** environment variable
+- **Format constraint:** `postgresql+asyncpg://user:pass@host:port/dbname` (asyncpg dialect required by SQLAlchemy async)
+- **Validation method:** Coach verifies DATABASE_URL in docker-compose.yml uses `postgresql+asyncpg://` prefix
+````
+
 ---
 
 ## Output Format
@@ -1816,6 +1862,12 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
    implementation_mode: task-work
    complexity: 3
    dependencies: []
+   consumer_context:        # ← ONLY when this task consumes an artifact from a §4 Integration Contract
+     - task: TASK-XXX-000   # Producer task ID
+       consumes: ARTIFACT   # Artifact name from §4 contract
+       framework: "..."     # Consumer framework (from user's prompt)
+       driver: "..."        # Driver/library
+       format_note: "..."   # Format constraint from §4 contract
    ---
    ```
 
@@ -1837,6 +1889,59 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
    Without `task_type`, CoachValidator defaults to `feature` profile which requires architectural review.
    Scaffolding tasks have no code architecture to review, so they fail the 60-point threshold.
    Including `task_type: scaffolding` tells CoachValidator to skip architectural review for setup tasks.
+
+   **consumer_context Generation Rule:**
+
+   When a §4 Integration Contract has been generated (Step 9.5d), and a task is listed as a **consumer** in that contract, you MUST add a `consumer_context` block to that consumer task's YAML frontmatter. Each entry in the list corresponds to one Integration Contract where this task is a consumer.
+
+   The `consumer_context` fields map directly from the §4 contract:
+   - `task`: The producer task ID from the contract
+   - `consumes`: The artifact name (the contract heading, e.g., `DATABASE_URL`)
+   - `framework`: The consuming framework stated in the user's prompt
+   - `driver`: The driver/library name
+   - `format_note`: The format constraint text from the contract (verbatim)
+
+   Do NOT add `consumer_context` to tasks that are only producers. Do NOT add it when no §4 section was generated.
+
+   **Seam Test Stub Generation Rule:**
+
+   When a §4 Integration Contract exists AND a task is listed as a **consumer** in that contract, you MUST include a `## Seam Tests` section at the bottom of the consumer task markdown file body (below Acceptance Criteria, above Implementation Notes).
+
+   The section contains a pytest stub that validates the contract at the boundary:
+
+   ````markdown
+   ## Seam Tests
+
+   The following seam test validates the integration contract with the producer task. Implement this test to verify the boundary before integration.
+
+   ```python
+   """Seam test: verify {artifact_name} contract from {producer_task}."""
+   import pytest
+
+
+   @pytest.mark.seam
+   @pytest.mark.integration_contract("{artifact_name}")
+   def test_{artifact_name_snake}_format():
+       """Verify {artifact_name} matches the expected format.
+
+       Contract: {format_constraint_from_section_4}
+       Producer: {producer_task}
+       """
+       # Producer side: get the artifact value
+       value = ""  # e.g., os.environ.get("{artifact_name}")
+
+       # Consumer side: verify format matches contract
+       assert value, "{artifact_name} must not be empty"
+       # Format assertion derived from §4 contract constraint:
+       # e.g., assert "+asyncpg" in value, f"Expected asyncpg dialect, got: {value}"
+   ```
+   ````
+
+   Generate actual assertion content from the §4 format constraint — do not use a generic placeholder. For example, if the format constraint says "URL must include +asyncpg dialect suffix", the assertion should be `assert "+asyncpg" in value`.
+
+   Replace all `{template_variables}` in the stub with actual values from the §4 contract: `{artifact_name}` → e.g. `DATABASE_URL`, `{producer_task}` → e.g. `TASK-DB-001`, `{format_constraint_from_section_4}` → the actual format constraint text, and `{artifact_name_snake}` → the snake_case version of the artifact name (e.g. `database_url`).
+
+   This is prompt output only — no Python module is created. The stub is emitted directly into the consumer task markdown file.
 
 9.5. ✅ **Generate mandatory Mermaid diagrams in IMPLEMENTATION-GUIDE.md**
 
@@ -1860,6 +1965,12 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
    - This supplements (does not replace) the text-based wave output
 
    **Disconnection Rule**: If the data flow diagram shows ANY write path without a corresponding read, add a prominent warning in the IMPLEMENTATION-GUIDE.md. This is informational — warn prominently but allow [I]mplement to proceed if the user acknowledges.
+
+   **d) §4: Integration Contracts (if cross-task data dependencies exist)**:
+   - Generate a `§4: Integration Contracts` section listing every cross-task data dependency
+   - For each contract: specify producer task, consumer task(s), artifact type, format constraint, and validation method
+   - Whenever the user request mentions both an infrastructure service AND a consuming framework (e.g. "PostgreSQL with SQLAlchemy async"), derive the exact connection URL or interface format from the user's stated framework — do not use a hardcoded lookup table
+   - If no cross-task data dependencies exist, omit this section
 
 10. ✅ **Generate structured YAML feature file** (DEFAULT - unless --no-structured flag set):
 
@@ -1959,7 +2070,7 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
 3. Execute `/task-review` slash command
 4. Present the decision checkpoint
 5. If [I]mplement, invoke `clarification-questioner` again, then create structure
-6. Generate mandatory Mermaid diagrams in IMPLEMENTATION-GUIDE.md (data flow always, integration contract for complexity >= 5, task dependency graph for >= 3 tasks)
+6. Generate mandatory Mermaid diagrams in IMPLEMENTATION-GUIDE.md (data flow always, integration contract for complexity >= 5, task dependency graph for >= 3 tasks, §4: Integration Contracts for cross-task data dependencies)
 
 You are NOT supposed to do any analysis yourself. Let the agents and commands do their jobs.
 
