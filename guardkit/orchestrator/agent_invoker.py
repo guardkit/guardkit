@@ -1656,6 +1656,12 @@ Follow the decision format specified in your agent definition.
         if not report.get("completion_promises"):
             # Load task metadata to get acceptance_criteria
             task_file = self._find_task_file(task_id)
+            if task_file is None:
+                logger.warning(
+                    f"Fix 5: _find_task_file returned None for {task_id} — "
+                    f"completion_promises fallback unavailable. "
+                    f"Check that task directories are correctly configured."
+                )
             if task_file:
                 task_meta = self._load_task_metadata(task_file)
                 acceptance_criteria = task_meta.get("acceptance_criteria", [])
@@ -1832,6 +1838,7 @@ Follow the decision format specified in your agent definition.
         # Standard task directories
         task_dirs = [
             self.worktree_path / "tasks" / "backlog",
+            self.worktree_path / "tasks" / "design_approved",
             self.worktree_path / "tasks" / "in_progress",
             self.worktree_path / "tasks" / "in_review",
             self.worktree_path / "tasks" / "completed",

@@ -353,10 +353,22 @@ After completing implementation, write your report as JSON to:
 
 ### PLAYER_REPORT_SCHEMA
 
-Your report MUST be valid JSON with ALL of these fields:
+Your report MUST be valid JSON with ALL of these fields.
+
+> **CRITICAL**: You MUST populate `completion_promises` with one entry per acceptance criterion listed in the task file. Do NOT leave this array empty. An empty `completion_promises` array causes the Coach to use text-based fallback matching, which always fails — the autobuild run will stall after 3 turns. If you cannot determine whether a criterion is met, include it with `"status": "uncertain"` and explain in `"evidence"`.
 
 ```json
 {
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Full text of acceptance criterion",
+      "status": "complete",
+      "evidence": "What you did to satisfy this criterion",
+      "test_file": "tests/test_feature.py",
+      "implementation_files": ["src/feature.py"]
+    }
+  ],
   "task_id": "TASK-XXX",
   "turn": 1,
   "files_modified": ["list", "of", "modified", "files"],
@@ -368,17 +380,7 @@ Your report MUST be valid JSON with ALL of these fields:
   "implementation_notes": "What you implemented and why",
   "concerns": ["any", "concerns", "or", "blockers"],
   "requirements_addressed": ["requirements", "completed"],
-  "requirements_remaining": ["requirements", "still", "pending"],
-  "completion_promises": [
-    {
-      "criterion_id": "AC-001",
-      "criterion_text": "Full text of acceptance criterion",
-      "status": "complete",
-      "evidence": "What you did to satisfy this criterion",
-      "test_file": "tests/test_feature.py",
-      "implementation_files": ["src/feature.py"]
-    }
-  ]
+  "requirements_remaining": ["requirements", "still", "pending"]
 }
 ```
 
@@ -386,6 +388,7 @@ Your report MUST be valid JSON with ALL of these fields:
 
 | Field | Type | Required | Description |
 |---|---|---|---|
+| **completion_promises** | **array[object]** | **YES** | **Per-criterion verification (MUST NOT be empty)** |
 | task_id | string | YES | Task identifier |
 | turn | integer | YES | Current turn number |
 | files_modified | array[string] | YES | Files changed (existing) |
@@ -398,7 +401,6 @@ Your report MUST be valid JSON with ALL of these fields:
 | concerns | array[string] | YES | Blockers or risks (empty if none) |
 | requirements_addressed | array[string] | YES | Completed requirements |
 | requirements_remaining | array[string] | YES | Pending requirements |
-| completion_promises | array[object] | YES | Per-criterion verification |
 
 ### Completion Promise Schema
 
@@ -408,12 +410,21 @@ Each completion_promise maps to one acceptance criterion:
 |---|---|---|
 | criterion_id | string | e.g., "AC-001" |
 | criterion_text | string | Full criterion text |
-| status | string | "complete" or "incomplete" |
+| status | string | "complete", "incomplete", or "uncertain" |
 | evidence | string | What you did |
 | test_file | string or null | Validating test file |
 | implementation_files | array[string] | Files for this criterion |
 
 CRITICAL: The Coach verifies each completion_promise independently. Be specific in evidence fields.
+
+### Self-Check Before Writing Report
+
+Before writing your player report, verify:
+1. `completion_promises` has exactly one entry for each acceptance criterion ID (AC-001, AC-002, ...) listed in the task file
+2. No entry has an empty `evidence` field
+3. Each entry has a valid `status` ("complete", "incomplete", or "uncertain")
+
+If any acceptance criteria are missing from `completion_promises`, add them now before writing the file.
 
 ---
 

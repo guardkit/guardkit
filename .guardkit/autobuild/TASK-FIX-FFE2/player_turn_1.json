@@ -1,0 +1,40 @@
+{
+  "task_id": "TASK-FIX-FFE2",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/agent_invoker.py",
+    "tests/unit/test_agent_invoker.py"
+  ],
+  "files_created": [],
+  "tests_written": [
+    "tests/unit/test_agent_invoker.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "1 passed in 2.13s",
+  "implementation_notes": "Added 'design_approved' to the task_dirs list in _find_task_file (agent_invoker.py line ~1834), inserted after 'backlog' to match the task workflow state order. Added a corresponding test test__find_task_file__finds_task_in_design_approved to the unit test file following the existing fixture patterns.",
+  "concerns": [],
+  "requirements_addressed": [
+    "Add design_approved directory to _find_task_file search dirs",
+    "Add test verifying _find_task_file can locate a task in tasks/design_approved/"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Add design_approved after backlog in _find_task_file task_dirs list",
+      "status": "complete",
+      "evidence": "Inserted self.worktree_path / 'tasks' / 'design_approved' after the backlog entry in the task_dirs list at agent_invoker.py line ~1834.",
+      "test_file": "tests/unit/test_agent_invoker.py",
+      "implementation_files": ["guardkit/orchestrator/agent_invoker.py"]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Add test verifying _find_task_file finds task files in design_approved directory",
+      "status": "complete",
+      "evidence": "Added test__find_task_file__finds_task_in_design_approved which creates a task file in tasks/design_approved/ and asserts _find_task_file returns the correct path.",
+      "test_file": "tests/unit/test_agent_invoker.py",
+      "implementation_files": ["tests/unit/test_agent_invoker.py"]
+    }
+  ]
+}

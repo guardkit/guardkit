@@ -7546,3 +7546,17 @@ class TestCompletionPromisesPropagation:
         
         # Verify completion_promises is NOT in the player report
         assert "completion_promises" not in report_data
+
+
+# ==================== _find_task_file Tests ====================
+
+
+def test__find_task_file__finds_task_in_design_approved(worktree_path, agent_invoker):
+    """_find_task_file should find task files in design_approved directory."""
+    task_dir = worktree_path / "tasks" / "design_approved"
+    task_dir.mkdir(parents=True)
+    task_file = task_dir / "TASK-DB-001-setup-database-infrastructure.md"
+    task_file.write_text("---\nid: TASK-DB-001\n---\n")
+
+    result = agent_invoker._find_task_file("TASK-DB-001")
+    assert result == task_file
