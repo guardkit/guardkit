@@ -4879,7 +4879,7 @@ class TestFileCountConstraintValidation:
 
         # Warning should be logged for 3 files (exceeds limit of 2)
         assert "Documentation level constraint violated" in caplog.text
-        assert "created 3 files" in caplog.text
+        assert "created 3 user files" in caplog.text
         assert "max allowed 2" in caplog.text
         assert "minimal" in caplog.text
 
@@ -4912,7 +4912,7 @@ class TestFileCountConstraintValidation:
 
         # Warning should be logged for 4 files (exceeds limit of 2)
         assert "Documentation level constraint violated" in caplog.text
-        assert "created 4 files" in caplog.text
+        assert "created 4 user files" in caplog.text
 
     def test_validate_file_count_comprehensive_unlimited(self, agent_invoker, caplog):
         """Comprehensive level has no file limit."""
@@ -4992,7 +4992,86 @@ class TestFileCountConstraintValidation:
 
         # Check that ellipsis is added for truncated list
         assert "..." in caplog.text
-        assert "created 8 files" in caplog.text
+        assert "created 8 user files" in caplog.text
+
+    def test_autobuild_artifact_excluded_from_count(self, agent_invoker, caplog):
+        """AutoBuild player_turn_N.json artifacts are excluded from the file count."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
+
+        # 2 user files + 1 AutoBuild artifact — should NOT trigger warning
+        agent_invoker._validate_file_count_constraint(
+            task_id="TASK-001",
+            documentation_level="minimal",
+            files_created=[
+                "guardkit/orchestrator/agent_invoker.py",
+                "tests/unit/test_agent_invoker.py",
+                ".guardkit/autobuild/TASK-001/player_turn_1.json",
+            ],
+        )
+
+        assert "Documentation level constraint violated" not in caplog.text
+
+    def test_autobuild_artifact_with_leading_slash_excluded(self, agent_invoker, caplog):
+        """AutoBuild artifacts with absolute paths are also excluded."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
+
+        agent_invoker._validate_file_count_constraint(
+            task_id="TASK-002",
+            documentation_level="minimal",
+            files_created=[
+                "src/module.py",
+                "tests/test_module.py",
+                "/home/user/project/.guardkit/autobuild/TASK-002/player_turn_1.json",
+            ],
+        )
+
+        assert "Documentation level constraint violated" not in caplog.text
+
+    def test_only_artifact_files_no_warning(self, agent_invoker, caplog):
+        """A list consisting solely of AutoBuild artifacts never triggers a warning."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
+
+        agent_invoker._validate_file_count_constraint(
+            task_id="TASK-003",
+            documentation_level="minimal",
+            files_created=[
+                ".guardkit/autobuild/TASK-003/player_turn_1.json",
+                ".guardkit/autobuild/TASK-003/player_turn_2.json",
+                ".guardkit/autobuild/TASK-003/player_turn_3.json",
+            ],
+        )
+
+        assert "Documentation level constraint violated" not in caplog.text
+
+    def test_user_files_exceeding_limit_still_warned_despite_artifacts(
+        self, agent_invoker, caplog
+    ):
+        """Warning fires when user files exceed limit even if artifacts are present."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
+
+        agent_invoker._validate_file_count_constraint(
+            task_id="TASK-004",
+            documentation_level="minimal",
+            files_created=[
+                "src/a.py",
+                "src/b.py",
+                "src/c.py",  # 3 user files — exceeds limit of 2
+                ".guardkit/autobuild/TASK-004/player_turn_1.json",
+            ],
+        )
+
+        assert "Documentation level constraint violated" in caplog.text
+        assert "created 3 user files" in caplog.text
+        # Artifact path must NOT appear in the files preview
+        assert "player_turn_1.json" not in caplog.text
 
 
 # ==================== Tests for Direct Mode Routing (TASK-FB-2D8B) ====================

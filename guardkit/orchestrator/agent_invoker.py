@@ -4278,15 +4278,21 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         if max_files is None:
             return
 
-        actual_count = len(files_created)
+        # Exclude internal AutoBuild artifacts from the count
+        user_files = [
+            f for f in files_created
+            if ".guardkit/autobuild/" not in f
+        ]
+
+        actual_count = len(user_files)
 
         if actual_count > max_files:
             # Show first 5 files to avoid overly long log messages
-            files_preview = files_created[:5]
-            suffix = "..." if len(files_created) > 5 else ""
+            files_preview = user_files[:5]
+            suffix = "..." if len(user_files) > 5 else ""
             logger.warning(
                 f"[{task_id}] Documentation level constraint violated: "
-                f"created {actual_count} files, max allowed {max_files} "
+                f"created {actual_count} user files, max allowed {max_files} "
                 f"for {documentation_level} level. Files: {files_preview}{suffix}"
             )
 
