@@ -4510,6 +4510,163 @@ class TestCooperativeCancellation:
 
 
 # ============================================================================
+# TestPlayerSummaryTestsRequired (TASK-FIX-TS04)
+# ============================================================================
+
+
+class TestBuildPlayerSummary:
+    """Test _build_player_summary display variants for tests_required flag.
+
+    Acceptance criteria (TASK-FIX-TS04):
+    - Player summary shows 'tests not required' when tests_required=False and no tests written
+    - Tasks with tests_required=True and 0 tests still show '0 tests (failing)' correctly
+    - Tasks with passing tests show 'N tests (passing)' correctly
+    - Tasks with failing tests show 'N tests (failing)' correctly
+    """
+
+    @pytest.fixture
+    def orchestrator(self, mock_worktree_manager, mock_agent_invoker, mock_progress_display,
+                     mock_coach_validator, mock_pre_loop_gates):
+        return AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test-repo"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+            pre_loop_gates=mock_pre_loop_gates,
+            enable_checkpoints=False,
+        )
+
+    def test_tests_not_required_zero_tests_written(self, orchestrator):
+        """When tests_required=False and no tests written, show 'tests not required'."""
+        report = {"files_created": [], "files_modified": [], "tests_written": [], "tests_passed": False}
+
+        summary = orchestrator._build_player_summary(report, tests_required=False)
+
+        assert "tests not required" in summary
+        assert "failing" not in summary
+
+    def test_tests_required_zero_tests_shows_failing(self, orchestrator):
+        """When tests_required=True and 0 tests, show '0 tests (failing)'."""
+        report = {"files_created": [], "files_modified": [], "tests_written": [], "tests_passed": False}
+
+        summary = orchestrator._build_player_summary(report, tests_required=True)
+
+        assert "0 tests (failing)" in summary
+        assert "tests not required" not in summary
+
+    def test_passing_tests_shown_correctly(self, orchestrator):
+        """When tests pass, show 'N tests (passing)'."""
+        report = {
+            "files_created": ["src/foo.py"],
+            "files_modified": [],
+            "tests_written": ["tests/test_foo.py"],
+            "tests_passed": True,
+        }
+
+        summary = orchestrator._build_player_summary(report, tests_required=True)
+
+        assert "1 tests (passing)" in summary
+
+    def test_failing_tests_shown_correctly(self, orchestrator):
+        """When tests fail, show 'N tests (failing)'."""
+        report = {
+            "files_created": ["src/foo.py"],
+            "files_modified": [],
+            "tests_written": ["tests/test_foo.py", "tests/test_bar.py"],
+            "tests_passed": False,
+        }
+
+        summary = orchestrator._build_player_summary(report, tests_required=True)
+
+        assert "2 tests (failing)" in summary
+
+    def test_tests_not_required_with_tests_written_shows_normal(self, orchestrator):
+        """When tests_required=False but tests were written, show normal status."""
+        report = {
+            "files_created": [],
+            "files_modified": [],
+            "tests_written": ["tests/test_something.py"],
+            "tests_passed": True,
+        }
+
+        summary = orchestrator._build_player_summary(report, tests_required=False)
+
+        assert "1 tests (passing)" in summary
+        assert "tests not required" not in summary
+
+    def test_default_tests_required_true(self, orchestrator):
+        """Default tests_required=True preserves original behavior."""
+        report = {"files_created": [], "files_modified": [], "tests_written": [], "tests_passed": False}
+
+        summary = orchestrator._build_player_summary(report)
+
+        assert "0 tests (failing)" in summary
+
+    def test_files_counts_still_in_summary(self, orchestrator):
+        """File counts always appear in summary regardless of tests_required."""
+        report = {
+            "files_created": ["a.py", "b.py"],
+            "files_modified": ["c.py"],
+            "tests_written": [],
+            "tests_passed": False,
+        }
+
+        summary = orchestrator._build_player_summary(report, tests_required=False)
+
+        assert "2 files created" in summary
+        assert "1 modified" in summary
+        assert "tests not required" in summary
+
+
+class TestResolveTestsRequired:
+    """Test _resolve_tests_required task type resolution."""
+
+    @pytest.fixture
+    def orchestrator(self, mock_worktree_manager, mock_agent_invoker, mock_progress_display,
+                     mock_coach_validator, mock_pre_loop_gates):
+        return AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test-repo"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+            pre_loop_gates=mock_pre_loop_gates,
+            enable_checkpoints=False,
+        )
+
+    def test_feature_task_requires_tests(self, orchestrator):
+        assert orchestrator._resolve_tests_required("feature") is True
+
+    def test_documentation_task_does_not_require_tests(self, orchestrator):
+        assert orchestrator._resolve_tests_required("documentation") is False
+
+    def test_scaffolding_task_does_not_require_tests(self, orchestrator):
+        assert orchestrator._resolve_tests_required("scaffolding") is False
+
+    def test_testing_task_does_not_require_tests(self, orchestrator):
+        assert orchestrator._resolve_tests_required("testing") is False
+
+    def test_none_task_type_defaults_to_tests_required(self, orchestrator):
+        assert orchestrator._resolve_tests_required(None) is True
+
+    def test_unknown_task_type_defaults_to_tests_required(self, orchestrator):
+        assert orchestrator._resolve_tests_required("unknown-type") is True
+
+    def test_alias_implementation_maps_to_feature(self, orchestrator):
+        assert orchestrator._resolve_tests_required("implementation") is True
+
+    def test_alias_benchmark_maps_to_testing(self, orchestrator):
+        assert orchestrator._resolve_tests_required("benchmark") is False
+
+    def test_alias_research_maps_to_documentation(self, orchestrator):
+        assert orchestrator._resolve_tests_required("research") is False
+
+    def test_refactor_task_requires_tests(self, orchestrator):
+        assert orchestrator._resolve_tests_required("refactor") is True
+
+
+# ============================================================================
 # Run Tests
 # ============================================================================
 

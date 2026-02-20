@@ -598,10 +598,16 @@ class CoachValidator:
             test_result = IndependentTestResult(
                 tests_passed=True,
                 test_command="skipped",
-                test_output_summary="Independent test verification skipped (tests_required=False)",
+                test_output_summary=(
+                    f"Independent test verification skipped "
+                    f"(tests not required for {task_type.value} tasks)"
+                ),
                 duration_seconds=0.0,
             )
-            logger.info(f"Independent test verification skipped for {task_id} (tests_required=False)")
+            logger.info(
+                f"Independent test verification skipped for {task_id} "
+                f"(tests not required for {task_type.value} tasks)"
+            )
         else:
             test_result = self.run_independent_tests(
                 task_work_results=task_work_results,

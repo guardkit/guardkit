@@ -96,6 +96,9 @@ from guardkit.orchestrator.quality_gates import (
     CoachValidationResult,
 )
 
+# Import task type models for quality gate profile resolution
+from guardkit.models.task_types import TaskType, get_profile as get_quality_gate_profile
+
 # Import state detection for partial work recovery
 from guardkit.orchestrator.state_detection import (
     detect_git_changes,
@@ -1775,7 +1778,10 @@ class AutoBuildOrchestrator:
 
         # Display Player completion
         if player_result.success:
-            summary = self._build_player_summary(player_result.report)
+            summary = self._build_player_summary(
+                player_result.report,
+                tests_required=self._resolve_tests_required(task_type),
+            )
             self._progress_display.complete_turn("success", summary)
             # Show context status line if context was retrieved (TASK-FIX-GCW5)
             if player_context_status and player_context_status.status != "disabled":
@@ -1850,7 +1856,10 @@ class AutoBuildOrchestrator:
                 logger.info(
                     f"State recovery successful for {task_id} turn {turn}"
                 )
-                summary = self._build_player_summary(player_result.report)
+                summary = self._build_player_summary(
+                    player_result.report,
+                    tests_required=self._resolve_tests_required(task_type),
+                )
                 self._progress_display.complete_turn(
                     "success",
                     f"[RECOVERED] {summary}",
@@ -3677,7 +3686,9 @@ class AutoBuildOrchestrator:
             logger.warning(f"Failed to load .guardkit/config.yaml: {e}")
             return {}
 
-    def _build_player_summary(self, report: Dict[str, Any]) -> str:
+    def _build_player_summary(
+        self, report: Dict[str, Any], tests_required: bool = True
+    ) -> str:
         """
         Build summary string from Player report.
 
@@ -3685,6 +3696,10 @@ class AutoBuildOrchestrator:
         ----------
         report : Dict[str, Any]
             Player report JSON
+        tests_required : bool, optional
+            Whether tests are required for this task type. When False and no
+            tests were written, displays "tests not required" instead of
+            "0 tests (failing)". Defaults to True.
 
         Returns
         -------
@@ -3696,10 +3711,48 @@ class AutoBuildOrchestrator:
         tests_written = len(report.get("tests_written", []))
         tests_passed = report.get("tests_passed", False)
 
+        if not tests_required and tests_written == 0:
+            tests_str = "tests not required"
+        else:
+            tests_str = f"{tests_written} tests ({'passing' if tests_passed else 'failing'})"
+
         return (
             f"{files_created} files created, {files_modified} modified, "
-            f"{tests_written} tests ({'passing' if tests_passed else 'failing'})"
+            f"{tests_str}"
         )
+
+    def _resolve_tests_required(self, task_type: Optional[str]) -> bool:
+        """Return whether tests are required for the given task type string.
+
+        Resolves the task type string (including legacy aliases) to a
+        QualityGateProfile and returns its tests_required flag.
+
+        Parameters
+        ----------
+        task_type : Optional[str]
+            Task type string from task frontmatter (e.g., "feature", "documentation").
+            Supports legacy aliases used in coach_validator (e.g., "implementation").
+
+        Returns
+        -------
+        bool
+            True if tests are required (default for unknown/None task types),
+            False for task types with tests_required=False in their profile.
+        """
+        _ALIASES = {
+            "implementation": TaskType.FEATURE,
+            "bug-fix": TaskType.FEATURE,
+            "bug_fix": TaskType.FEATURE,
+            "benchmark": TaskType.TESTING,
+            "research": TaskType.DOCUMENTATION,
+        }
+        if not task_type:
+            return True  # Default FEATURE profile requires tests
+        try:
+            task_type_enum = _ALIASES.get(task_type) or TaskType(task_type)
+            return get_quality_gate_profile(task_type_enum).tests_required
+        except (ValueError, KeyError):
+            return True  # Default to requiring tests for unknown types
 
     def _extract_feedback(self, coach_report: Dict[str, Any]) -> str:
         """
