@@ -1,9 +1,11 @@
 ---
 id: TASK-FIX-PV01
 title: Fix file path validation and documentation constraint ordering
-status: backlog
+status: completed
 created: 2026-02-20T00:00:00Z
 updated: 2026-02-20T00:00:00Z
+completed: 2026-02-20T00:00:00Z
+completed_location: tasks/completed/TASK-FIX-PV01/
 priority: high
 tags: [autobuild, bugfix, file-detection, parser]
 task_type: feature
