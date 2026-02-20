@@ -538,7 +538,7 @@ class TestValidateFileCountConstraint:
         )
 
         assert "constraint violated" in caplog.text.lower()
-        assert "3 user files" in caplog.text
+        assert "3 files" in caplog.text
         assert "max allowed 2" in caplog.text
 
     def test_warning_includes_file_preview(self, agent_invoker, caplog):
