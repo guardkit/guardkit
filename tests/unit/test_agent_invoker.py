@@ -3753,6 +3753,66 @@ class TestTaskWorkStreamParser:
             "src/z_file.py",
         ]
 
+    # -------------- Path Validation Tests (TASK-FIX-PV01) --------------
+
+    def test_is_valid_file_path_rejects_no_separator_or_dot(self):
+        """_is_valid_file_path rejects strings with no '/', '\\\\' or '.'."""
+        assert TaskWorkStreamParser._is_valid_file_path("house") is False
+
+    def test_is_valid_file_path_rejects_double_star(self):
+        """_is_valid_file_path rejects '**' glob wildcard."""
+        assert TaskWorkStreamParser._is_valid_file_path("**") is False
+
+    def test_is_valid_file_path_rejects_single_star(self):
+        """_is_valid_file_path rejects '*' glob wildcard."""
+        assert TaskWorkStreamParser._is_valid_file_path("*") is False
+
+    def test_is_valid_file_path_rejects_star_prefix(self):
+        """_is_valid_file_path rejects strings starting with '*'."""
+        assert TaskWorkStreamParser._is_valid_file_path("*.py") is False
+
+    def test_is_valid_file_path_rejects_empty_string(self):
+        """_is_valid_file_path rejects empty string."""
+        assert TaskWorkStreamParser._is_valid_file_path("") is False
+
+    def test_is_valid_file_path_rejects_short_string(self):
+        """_is_valid_file_path rejects strings shorter than 3 chars (no room for valid path)."""
+        assert TaskWorkStreamParser._is_valid_file_path("a.") is False
+
+    def test_is_valid_file_path_accepts_path_with_dot(self):
+        """_is_valid_file_path accepts path containing a dot."""
+        assert TaskWorkStreamParser._is_valid_file_path("file.py") is True
+
+    def test_is_valid_file_path_accepts_path_with_slash(self):
+        """_is_valid_file_path accepts path containing a forward slash."""
+        assert TaskWorkStreamParser._is_valid_file_path("src/module") is True
+
+    def test_is_valid_file_path_accepts_full_relative_path(self):
+        """_is_valid_file_path accepts a typical relative file path."""
+        assert TaskWorkStreamParser._is_valid_file_path("src/auth/login.py") is True
+
+    def test_is_valid_file_path_accepts_absolute_path(self):
+        """_is_valid_file_path accepts an absolute file path."""
+        assert TaskWorkStreamParser._is_valid_file_path("/home/user/project/main.py") is True
+
+    def test_parse_message_rejects_non_path_in_created(self, parser):
+        """parse_message does not add natural language words to files_created."""
+        parser.parse_message("Created: house")
+        result = parser.to_result()
+        assert "files_created" not in result or "house" not in result.get("files_created", [])
+
+    def test_parse_message_rejects_glob_in_modified(self, parser):
+        """parse_message does not add '**' to files_modified."""
+        parser.parse_message("Modified: **")
+        result = parser.to_result()
+        assert "**" not in result.get("files_modified", [])
+
+    def test_parse_message_accepts_valid_path_in_created(self, parser):
+        """parse_message still accepts real file paths in files_created."""
+        parser.parse_message("Created: src/utils/helpers.py")
+        result = parser.to_result()
+        assert "src/utils/helpers.py" in result.get("files_created", [])
+
     # -------------- Incremental Parsing Tests --------------
 
     def test_incremental_parsing_accumulates(self, parser):
@@ -4590,6 +4650,47 @@ class TestWriteTaskWorkResults:
 
         parsed = json.loads(results_path.read_text())
         assert parsed["quality_gates"]["tests_passed"] == 15
+
+    # -------------- Path Filtering Tests (TASK-FIX-PV01) --------------
+
+    def test_write_filters_non_path_from_files_created(self, invoker, worktree_path):
+        """_write_task_work_results removes non-path strings from files_created."""
+        result_data = {
+            "files_created": ["src/module.py", "house", "**"],
+        }
+
+        results_path = invoker._write_task_work_results("TASK-001", result_data)
+
+        parsed = json.loads(results_path.read_text())
+        assert "src/module.py" in parsed["files_created"]
+        assert "house" not in parsed["files_created"]
+        assert "**" not in parsed["files_created"]
+
+    def test_write_filters_non_path_from_files_modified(self, invoker, worktree_path):
+        """_write_task_work_results removes non-path strings from files_modified."""
+        result_data = {
+            "files_modified": ["guardkit/core.py", "word", "*"],
+        }
+
+        results_path = invoker._write_task_work_results("TASK-001", result_data)
+
+        parsed = json.loads(results_path.read_text())
+        assert "guardkit/core.py" in parsed["files_modified"]
+        assert "word" not in parsed["files_modified"]
+        assert "*" not in parsed["files_modified"]
+
+    def test_write_filters_before_constraint_validation(self, invoker, worktree_path, caplog):
+        """Constraint check uses filtered file list, so spurious entries don't trigger warning."""
+        import logging
+        # 3 entries but only 1 is a real path — constraint (max 2) should not warn
+        result_data = {
+            "files_created": ["src/real.py", "house", "**"],
+        }
+
+        with caplog.at_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker"):
+            invoker._write_task_work_results("TASK-001", result_data, documentation_level="minimal")
+
+        assert "Documentation level constraint violated" not in caplog.text
 
 
 # ==================== Generate Summary Tests ====================

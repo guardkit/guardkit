@@ -184,8 +184,8 @@ class TaskWorkStreamParser:
     COVERAGE_PATTERN = re.compile(r"[Cc]overage[:\s]+(\d+(?:\.\d+)?)%")
     QUALITY_GATES_PASSED_PATTERN = re.compile(r"[Qq]uality\s+gates[:\s]*PASSED|all\s+quality\s+gates\s+passed", re.IGNORECASE)
     QUALITY_GATES_FAILED_PATTERN = re.compile(r"[Qq]uality\s+gates[:\s]*FAILED", re.IGNORECASE)
-    FILES_MODIFIED_PATTERN = re.compile(r"(?:Modified|Changed):\s*([^\s,]+)")
-    FILES_CREATED_PATTERN = re.compile(r"(?:Created|Added):\s*([^\s,]+)")
+    FILES_MODIFIED_PATTERN = re.compile(r"(?:Modified|Changed):\s*([^\s,]+(?:\.[a-zA-Z]+|/))")
+    FILES_CREATED_PATTERN = re.compile(r"(?:Created|Added):\s*([^\s,]+(?:\.[a-zA-Z]+|/))")
     # Architectural review score patterns
     ARCH_SCORE_PATTERN = re.compile(r"[Aa]rchitectural.*?[Ss]core[:\s]+(\d+)(?:/100)?", re.IGNORECASE)
     ARCH_SUBSCORES_PATTERN = re.compile(r"SOLID[:\s]+(\d+),?\s*DRY[:\s]+(\d+),?\s*YAGNI[:\s]+(\d+)", re.IGNORECASE)
@@ -256,6 +256,29 @@ class TaskWorkStreamParser:
         name = name.rsplit("\\", 1)[-1] if "\\" in name else name
         return name.startswith("test_") and name.endswith(".py") or name.endswith("_test.py")
 
+    @staticmethod
+    def _is_valid_file_path(path: str) -> bool:
+        """Validate that a string looks like a file path.
+
+        Rejects strings that are clearly not file paths, such as natural language
+        words (e.g. 'house') or glob wildcards (e.g. '**').  A valid path must
+        contain at least one of: a path separator (/ or \\) or a dot (.).
+
+        Args:
+            path: String to validate
+
+        Returns:
+            True if the string looks like a file path, False otherwise
+        """
+        if not path or len(path) < 3:
+            return False
+        if path in ("*", "**", "***"):
+            return False
+        if path.startswith("*"):
+            return False
+        # Must contain a path separator or file extension indicator
+        return "/" in path or "\\" in path or "." in path
+
     def _track_tool_call(self, tool_name: str, tool_args: Dict[str, Any]) -> None:
         """Track file operations from tool calls.
 
@@ -315,13 +338,13 @@ class TaskWorkStreamParser:
         # Track tool result messages (e.g., "File created successfully at: /path")
         for result_match in self.TOOL_RESULT_CREATED_PATTERN.finditer(message):
             file_path = result_match.group(1).strip()
-            if file_path:
+            if file_path and self._is_valid_file_path(file_path):
                 self._files_created.add(file_path)
                 logger.debug(f"Tool result tracked - file created: {file_path}")
 
         for result_match in self.TOOL_RESULT_MODIFIED_PATTERN.finditer(message):
             file_path = result_match.group(1).strip()
-            if file_path:
+            if file_path and self._is_valid_file_path(file_path):
                 self._files_modified.add(file_path)
                 logger.debug(f"Tool result tracked - file modified: {file_path}")
 
@@ -422,13 +445,15 @@ class TaskWorkStreamParser:
         # File modifications (use sets to avoid duplicates)
         for file_match in self.FILES_MODIFIED_PATTERN.finditer(message):
             file_path = file_match.group(1)
-            self._files_modified.add(file_path)
-            logger.debug(f"File modified: {file_path}")
+            if self._is_valid_file_path(file_path):
+                self._files_modified.add(file_path)
+                logger.debug(f"File modified: {file_path}")
 
         for file_match in self.FILES_CREATED_PATTERN.finditer(message):
             file_path = file_match.group(1)
-            self._files_created.add(file_path)
-            logger.debug(f"File created: {file_path}")
+            if self._is_valid_file_path(file_path):
+                self._files_created.add(file_path)
+                logger.debug(f"File created: {file_path}")
 
         # Architectural review scores
         arch_score_match = self._match_pattern(self.ARCH_SCORE_PATTERN, message)
@@ -1554,22 +1579,13 @@ Follow the decision format specified in your agent definition.
                 report["files_created"] = sorted(list(original_created | git_created))
 
                 # TASK-FIX-PIPELINE: Filter invalid entries (Fix 4)
-                # Git detection can produce spurious entries like "**" from glob patterns
-                def _is_valid_path(p: str) -> bool:
-                    """Filter out invalid file path entries."""
-                    if not p or not p.strip():
-                        return False
-                    if p in ("*", "**", "***"):
-                        return False
-                    if p.startswith("*"):
-                        return False
-                    return True
-
+                # TASK-FIX-PV01: Use centralised _is_valid_file_path which also
+                # rejects natural language words (e.g. 'house') that lack '/' or '.'.
                 report["files_modified"] = sorted(
-                    [p for p in report["files_modified"] if _is_valid_path(p)]
+                    [p for p in report["files_modified"] if TaskWorkStreamParser._is_valid_file_path(p)]
                 )
                 report["files_created"] = sorted(
-                    [p for p in report["files_created"] if _is_valid_path(p)]
+                    [p for p in report["files_created"] if TaskWorkStreamParser._is_valid_file_path(p)]
                 )
 
                 # Log when git detection adds files not in original report
@@ -4111,6 +4127,18 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             # Merge complexity score from pre-loop
             if "complexity_score" in design_data:
                 results["complexity_score"] = design_data["complexity_score"]
+
+        # Filter invalid path entries before validation (TASK-FIX-PV01)
+        # Ensures _validate_file_count_constraint sees only real file paths,
+        # not natural language fragments or glob wildcards captured by regexes.
+        results["files_created"] = [
+            f for f in results["files_created"]
+            if TaskWorkStreamParser._is_valid_file_path(f)
+        ]
+        results["files_modified"] = [
+            f for f in results["files_modified"]
+            if TaskWorkStreamParser._is_valid_file_path(f)
+        ]
 
         # Validate file count constraint for documentation level
         self._validate_file_count_constraint(
