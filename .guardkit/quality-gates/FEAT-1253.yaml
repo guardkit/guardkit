@@ -1,0 +1,49 @@
+feature_id: FEAT-1253
+feature_name: "Implement /feature-spec command (v1)"
+created: 2026-02-22T12:00:00Z
+
+quality_gates:
+  lint:
+    command: "ruff check guardkit/commands/feature_spec.py"
+    required: true
+    applies_to: [TASK-FS-002]
+
+  unit_tests:
+    command: "pytest tests/unit/commands/test_feature_spec.py -v --tb=short"
+    required: true
+    applies_to: [TASK-FS-002]
+
+  integration_tests:
+    command: "pytest tests/integration/test_feature_spec_e2e.py -v"
+    required: true
+    applies_to: [TASK-FS-003]
+
+  import_check:
+    command: "python -c \"from guardkit.commands.feature_spec import FeatureSpecCommand, FeatureSpecResult, detect_stack, scan_codebase; print('All imports OK')\""
+    required: true
+    applies_to: [TASK-FS-002]
+
+  command_definition_size:
+    command: "python -c \"import os; size = os.path.getsize('.claude/commands/feature-spec.md'); assert size > 5000, f'Too short ({size} bytes)'; print(f'OK: {size} bytes')\""
+    required: true
+    applies_to: [TASK-FS-001]
+
+  command_frontmatter:
+    command: "python -c \"import yaml; content = open('.claude/commands/feature-spec.md').read(); fm = content.split('---')[1]; data = yaml.safe_load(fm); assert 'name' in data; assert 'description' in data; print('Frontmatter OK')\""
+    required: true
+    applies_to: [TASK-FS-001]
+
+  command_methodology:
+    command: "python -c \"content = open('.claude/commands/feature-spec.md').read(); required = ['Propose', 'Review', 'Boundary', 'Assumption', 'domain language', '@smoke', 'Background']; [None for t in required if t.lower() not in content.lower()]; print('Methodology OK')\""
+    required: true
+    applies_to: [TASK-FS-001]
+
+  installer_copy:
+    command: "python -c \"import filecmp; assert filecmp.cmp('.claude/commands/feature-spec.md', 'installer/core/commands/feature-spec.md'), 'Files differ'; print('Installer copy matches')\""
+    required: true
+    applies_to: [TASK-FS-001]
+
+  documentation_size:
+    command: "python -c \"import os; size = os.path.getsize('docs/commands/feature-spec.md'); assert size > 2000, f'Too short ({size} bytes)'; print(f'OK: {size} bytes')\""
+    required: true
+    applies_to: [TASK-FS-003]

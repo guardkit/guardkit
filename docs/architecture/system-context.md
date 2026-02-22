@@ -32,17 +32,29 @@
 ```mermaid
 graph TB
     Dev[Developer] -->|CLI commands| GK[GuardKit CLI]
+    Dev -->|Loose description| FS[/feature-spec]
     PO[Product Owner] -->|Requirements artifacts| RK[RequireKit]
     RK -->|REQ, BDD, FEAT specs| GK
+    FS -->|.feature + summary + assumptions| GK
     GK -->|Subagent spawning| CC[Claude Code]
     GK -->|Knowledge read/write| FDB[(FalkorDB)]
     GK -->|Embeddings| OAI[OpenAI API]
     GK -.->|Optional| MCP[MCP Servers]
     GK -.->|Compatible| COND[Conductor.build]
     GK -.->|Metadata export| PM[PM Tools]
+
+    style FS fill:#ff9,stroke:#333
 ```
 
 ## Integrations
+
+### /feature-spec (Specification Pipeline)
+
+- **Direction**: Developer -> `/feature-spec` -> `/feature-plan` -> AutoBuild
+- **Artifacts**: `{name}.feature` (Gherkin), `{name}_assumptions.yaml` (assumptions manifest), `{name}_summary.md` (for `/feature-plan`)
+- **Methodology**: Propose-Review (Specification by Example) — AI proposes Gherkin scenarios, human curates (see [ADR-FS-003](decisions/ADR-FS-003-propose-review-methodology.md))
+- **Graphiti Seeding**: Individual scenarios seeded as distinct episodes to `feature_specs` group; assumptions seeded to `domain_knowledge` group
+- **Key Principle**: Purely additive — existing workflows work unchanged when no Gherkin spec exists
 
 ### RequireKit
 

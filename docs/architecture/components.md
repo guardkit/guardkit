@@ -9,7 +9,7 @@
 - **Key Entities**: Command, Flag, TaskID, FeatureID
 - **Dependencies**: Planning Engine, Task Management, AutoBuild Orchestrator, Knowledge Layer
 - **File Paths**: `guardkit/cli/`
-- **Commands Exposed**: task (create/work/complete/status/refine), feature (plan/build/complete), system (overview/plan), graphiti (search/capture/seed/add-context), agent (format/validate/enhance), template (create/validate), review, debug
+- **Commands Exposed**: task (create/work/complete/status/refine), feature (plan/build/complete/spec), system (overview/plan), graphiti (search/capture/seed/add-context), agent (format/validate/enhance), template (create/validate), review, debug
 
 ## COMP-planning-engine: Planning Engine
 
@@ -107,7 +107,8 @@ graph LR
 
 ## Key Data Flows
 
-1. **Feature Planning**: CLI -> Planning Engine -> Knowledge Layer (reads architecture context) -> Planning Engine (generates waves + tasks) -> Task Management (creates task files)
-2. **AutoBuild**: CLI -> Feature Orchestrator -> AutoBuild (per-task) -> Agent Invoker (spawns Player) -> Quality Gates (Coach validates) -> loop until approved or max turns
-3. **Knowledge Capture**: AutoBuild outcomes -> Knowledge Layer -> FalkorDB (temporal facts for future context)
-4. **Context Injection**: Knowledge Layer (searches Graphiti) -> Planning Engine or AutoBuild Coach (receives token-budgeted context)
+1. **Specification**: CLI -> `/feature-spec` (propose-review cycle) -> `.feature` + `_assumptions.yaml` + `_summary.md` -> Knowledge Layer (seeds scenarios + assumptions)
+2. **Feature Planning**: CLI -> Planning Engine -> Knowledge Layer (reads architecture context + feature specs) -> Planning Engine (generates waves + tasks) -> Task Management (creates task files)
+3. **AutoBuild**: CLI -> Feature Orchestrator -> AutoBuild (per-task) -> Agent Invoker (spawns Player) -> Quality Gates (Coach validates against Gherkin) -> loop until approved or max turns
+4. **Knowledge Capture**: AutoBuild outcomes -> Knowledge Layer -> FalkorDB (temporal facts for future context)
+5. **Context Injection**: Knowledge Layer (searches Graphiti) -> Planning Engine or AutoBuild Coach (receives token-budgeted context including Gherkin scenarios)
