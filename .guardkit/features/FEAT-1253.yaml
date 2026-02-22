@@ -1,0 +1,45 @@
+id: FEAT-1253
+name: Implement /feature-spec command (v1)
+description: 'BDD specification generator with propose-review methodology. v1 scope:
+  slash command definition, Python orchestration module, integration tests and documentation.'
+created: '2026-02-22T11:39:58.159887'
+status: planned
+complexity: 6
+estimated_tasks: 3
+tasks:
+- id: TASK-FS-001
+  name: Create feature-spec slash command definition
+  file_path: tasks/backlog/feature-spec-command/TASK-FS-001-create-feature-spec-slash-command.md
+  complexity: 6
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 113
+- id: TASK-FS-002
+  name: Create feature spec Python module
+  file_path: tasks/backlog/feature-spec-command/TASK-FS-002-create-feature-spec-python-module.md
+  complexity: 5
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-FS-003
+  name: Create integration tests and documentation
+  file_path: tasks/backlog/feature-spec-command/TASK-FS-003-create-integration-tests-and-docs.md
+  complexity: 4
+  dependencies:
+  - TASK-FS-001
+  - TASK-FS-002
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+orchestration:
+  parallel_groups:
+  - - TASK-FS-001
+    - TASK-FS-002
+  - - TASK-FS-003
+  estimated_duration_minutes: 238
+  recommended_parallel: 2
