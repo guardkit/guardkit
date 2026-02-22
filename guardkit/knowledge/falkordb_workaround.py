@@ -13,13 +13,18 @@ Contains two monkey-patches:
        - Issue: https://github.com/getzep/graphiti/issues/1161
        - PR: https://github.com/getzep/graphiti/pull/1170
 
-2. build_fulltext_query group_id filter removal
+2. build_fulltext_query group_id filter removal + character sanitization
    FalkorDB's RediSearch fulltext queries break when group_ids contain
    underscores (tokenized at index time) or when the search text is empty
    after stopword removal (produces invalid '()' syntax).
    Fix: Remove the @group_id filter from fulltext queries entirely.
    Group isolation is already handled by the multi-graph driver clone
    (workaround 1) and the Cypher WHERE clause.
+
+   Additionally, upstream sanitize() omits backticks, forward slashes,
+   pipes, and backslashes — these break RediSearch syntax when present
+   in entity names extracted from markdown documents (TASK-REV-661E).
+   Fix: Pre-sanitize these characters before delegating to upstream.
 
 Usage:
     Call apply_falkordb_workaround() once at startup, before creating any
@@ -221,22 +226,23 @@ _original_build_fulltext_query = None
 
 
 def apply_fulltext_query_workaround() -> bool:
-    """Patch FalkorDriver.build_fulltext_query to remove group_id from fulltext queries.
+    """Patch FalkorDriver.build_fulltext_query for two FalkorDB issues.
 
-    FalkorDB's multi-graph model means each group_id is a separate named graph.
-    The @handle_multiple_group_ids decorator already clones the driver to point
-    at the correct graph, and the Cypher WHERE clause filters by group_id too.
+    Issue 1: group_id filter in fulltext queries (original workaround)
+        FalkorDB's multi-graph model means each group_id is a separate named graph.
+        The @handle_multiple_group_ids decorator already clones the driver to point
+        at the correct graph, and the Cypher WHERE clause filters by group_id too.
+        The fulltext @group_id filter is therefore redundant AND broken:
+        - Underscores in group_ids are tokenized at index time
+        - Empty search text after stopword removal produces invalid '()' syntax
+        Fix: Always pass group_ids=None to skip the @group_id filter.
 
-    The fulltext @group_id filter is therefore redundant on FalkorDB, AND broken:
-    - Underscores in group_ids (product_knowledge) are tokenized at index time,
-      so they can't be matched as exact values in fulltext queries
-    - Even groups without underscores (patterns, agents) fail when the search
-      text is empty after stopword removal, producing invalid syntax like
-      '(@group_id:patterns) ()'
-
-    Fix: Always pass group_ids=None to the original build_fulltext_query so it
-    skips the @group_id filter entirely. Group isolation is already handled by
-    the driver clone + Cypher WHERE clause.
+    Issue 2: incomplete character sanitization (TASK-REV-661E)
+        Upstream sanitize() in graphiti-core v0.26.3 omits backticks, forward
+        slashes, pipes, and backslashes from its character stripping list.
+        Documents with markdown code references (e.g. `path/to/file.md`) produce
+        entity names containing these characters, which break RediSearch syntax.
+        Fix: Pre-sanitize these characters before delegating to upstream.
 
     Returns:
         True if patch applied (or already applied), False if FalkorDB driver unavailable.
@@ -254,10 +260,25 @@ def apply_fulltext_query_workaround() -> bool:
 
     _original_build_fulltext_query = FalkorDriver.build_fulltext_query
 
+    # Characters that upstream sanitize() misses but break RediSearch queries.
+    # Backticks and forward slashes appear in markdown code references (e.g.
+    # `claude/commands/feature-spec.md`) and survive into entity names that
+    # graphiti-core passes to build_fulltext_query during add_episode.
+    # See: TASK-REV-661E for full root-cause analysis.
+    _extra_sanitize = str.maketrans({
+        '`': ' ',
+        '/': ' ',
+        '\\': ' ',
+        '|': ' ',
+    })
+
     def build_fulltext_query_fixed(
         self, query: str, group_ids: list | None = None, max_query_length: int = 128
     ) -> str:
         """Fixed build_fulltext_query: drop group_id filter, handle empty queries."""
+        # Pre-sanitize characters that upstream sanitize() misses (TASK-REV-661E)
+        query = query.translate(_extra_sanitize)
+
         # Always pass group_ids=None to skip the broken @group_id fulltext filter.
         # Group isolation is handled by:
         #   1. handle_multiple_group_ids decorator cloning driver per group

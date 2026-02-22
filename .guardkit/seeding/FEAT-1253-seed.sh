@@ -10,14 +10,14 @@ set -euo pipefail
 echo "Seeding FEAT-1253 (/feature-spec command) to Graphiti..."
 
 # ADRs (created by /system-plan review)
-guardkit graphiti add-context docs/architecture/decisions/ADR-FS-001-gherkin-specification-format.md
-guardkit graphiti add-context docs/architecture/decisions/ADR-FS-002-stack-agnostic-scaffolding.md
-guardkit graphiti add-context docs/architecture/decisions/ADR-FS-003-propose-review-methodology.md
+guardkit-py graphiti add-context docs/architecture/decisions/ADR-FS-001-gherkin-specification-format.md
+guardkit-py graphiti add-context docs/architecture/decisions/ADR-FS-002-stack-agnostic-scaffolding.md
+guardkit-py graphiti add-context docs/architecture/decisions/ADR-FS-003-propose-review-methodology.md
 
 # Feature spec (source document)
-guardkit graphiti add-context docs/research/feature-spec/FEATURE-SPEC-feature-spec-command-v2.md
+guardkit-py graphiti add-context docs/research/feature-spec/FEATURE-SPEC-feature-spec-command-v2.md
 
 # Verify
-guardkit graphiti verify --verbose
+guardkit-py graphiti verify --verbose
 
 echo "Done. FEAT-1253 context seeded to Graphiti."

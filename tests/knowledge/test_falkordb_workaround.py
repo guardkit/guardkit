@@ -230,6 +230,91 @@ class TestPatchedDecoratorBehavior:
 
 
 # ---------------------------------------------------------------------------
+# Test: Fulltext query sanitization (TASK-REV-661E)
+# ---------------------------------------------------------------------------
+
+class TestFulltextQuerySanitization:
+    """Tests that build_fulltext_query_fixed pre-sanitizes characters missed by upstream."""
+
+    def _get_patched_build(self):
+        """Apply workaround and return the patched build_fulltext_query."""
+        from guardkit.knowledge.falkordb_workaround import apply_falkordb_workaround
+        apply_falkordb_workaround()
+        from graphiti_core.driver.falkordb_driver import FalkorDriver
+        driver = FalkorDriver.__new__(FalkorDriver)
+        return driver.build_fulltext_query
+
+    def test_backticks_stripped(self):
+        """Backticks in query text should be replaced with spaces."""
+        build = self._get_patched_build()
+        from graphiti_core.driver.falkordb_driver import FalkorDriver
+        driver = FalkorDriver.__new__(FalkorDriver)
+        result = driver.build_fulltext_query("`smoke` `regression`")
+        assert '`' not in result
+        # smoke and regression should still appear as search terms
+        assert 'smoke' in result
+        assert 'regression' in result
+
+    def test_forward_slashes_stripped(self):
+        """Forward slashes in query text should be replaced with spaces."""
+        from graphiti_core.driver.falkordb_driver import FalkorDriver
+        from guardkit.knowledge.falkordb_workaround import apply_falkordb_workaround
+        apply_falkordb_workaround()
+        driver = FalkorDriver.__new__(FalkorDriver)
+        result = driver.build_fulltext_query("claude/commands/feature")
+        assert '/' not in result
+        assert 'claude' in result
+        assert 'commands' in result
+        assert 'feature' in result
+
+    def test_pipes_stripped(self):
+        """Pipe characters in query text should be replaced with spaces."""
+        from graphiti_core.driver.falkordb_driver import FalkorDriver
+        from guardkit.knowledge.falkordb_workaround import apply_falkordb_workaround
+        apply_falkordb_workaround()
+        driver = FalkorDriver.__new__(FalkorDriver)
+        result = driver.build_fulltext_query("word1|word2")
+        # The pipe is stripped to space, so both words should survive
+        # (they become separate tokens joined by ' | ' in the query)
+        assert 'word1' in result
+        assert 'word2' in result
+
+    def test_backslashes_stripped(self):
+        """Backslashes in query text should be replaced with spaces."""
+        from graphiti_core.driver.falkordb_driver import FalkorDriver
+        from guardkit.knowledge.falkordb_workaround import apply_falkordb_workaround
+        apply_falkordb_workaround()
+        driver = FalkorDriver.__new__(FalkorDriver)
+        result = driver.build_fulltext_query("path\\to\\file")
+        assert '\\' not in result
+        assert 'path' in result
+        assert 'file' in result
+
+    def test_real_failing_query_from_seed_log(self):
+        """Reproduce the exact failing query from the TASK-REV-661E seed log."""
+        from graphiti_core.driver.falkordb_driver import FalkorDriver
+        from guardkit.knowledge.falkordb_workaround import apply_falkordb_workaround
+        apply_falkordb_workaround()
+        driver = FalkorDriver.__new__(FalkorDriver)
+        # This is the entity name that caused the first RediSearch error
+        result = driver.build_fulltext_query("Slash command `claude/commands/feature spec md`")
+        assert '`' not in result
+        assert '/' not in result
+        # Should produce a valid RediSearch query (no syntax-breaking chars)
+        assert 'Slash' in result or 'slash' in result.lower()
+
+    def test_empty_after_sanitization_returns_star(self):
+        """Query that becomes empty after sanitization should return '*'."""
+        from graphiti_core.driver.falkordb_driver import FalkorDriver
+        from guardkit.knowledge.falkordb_workaround import apply_falkordb_workaround
+        apply_falkordb_workaround()
+        driver = FalkorDriver.__new__(FalkorDriver)
+        # All characters are special + stopwords
+        result = driver.build_fulltext_query("`/|\\`")
+        assert result == '*'
+
+
+# ---------------------------------------------------------------------------
 # Test: Integration with _check_graphiti_core()
 # ---------------------------------------------------------------------------
 
