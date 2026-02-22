@@ -1,22 +1,32 @@
 ---
 id: TASK-FS-001
 title: "Create /feature-spec slash command definition"
-status: backlog
+status: completed
 task_type: feature
 parent_review: TASK-REV-F445
 feature_id: FEAT-FS01
 created: 2026-02-22T12:00:00Z
-updated: 2026-02-22T12:00:00Z
+updated: 2026-02-22T13:15:00Z
+completed: 2026-02-22T13:15:00Z
 priority: high
 tags: [feature-spec, slash-command, prompt-engineering, bdd, gherkin, methodology]
 complexity: 6
 wave: 1
 implementation_mode: task-work
 dependencies: []
+previous_state: in_review
+state_transition_reason: "Task completed - all acceptance criteria met, all quality gates passed"
+completed_location: tasks/completed/TASK-FS-001/
 test_results:
-  status: pending
+  status: passed
   coverage: null
-  last_run: null
+  last_run: 2026-02-22T13:00:00Z
+  details:
+    frontmatter: passed
+    size_check: "31318 bytes (>5000)"
+    methodology_sections: passed
+    file_match: passed
+    acceptance_criteria: "27/27 passed"
 ---
 
 # Task: Create /feature-spec slash command definition
@@ -94,24 +104,24 @@ Include frontmatter with `name`, `description`, `arguments`, `flags` fields. Thi
 
 ## Acceptance Criteria
 
-- [ ] File exists: `.claude/commands/feature-spec.md`
-- [ ] File exists: `installer/core/commands/feature-spec.md` (identical content)
-- [ ] File contains YAML frontmatter with: `name`, `description`, `arguments`, `flags`
-- [ ] File defines the Propose-Review methodology with all 6 phases
-- [ ] File includes Specification by Example categories: `@key-example`, `@boundary`, `@negative`, `@edge-case`
-- [ ] File includes `@smoke` and `@regression` cross-cutting tags
-- [ ] File instructs AI to generate `Background:` sections where applicable
-- [ ] File instructs AI to use `Scenario Outline` with `Examples` tables for parameterised cases
-- [ ] File includes propose-review interaction pattern (accept/reject/modify/add/defer per group)
-- [ ] File includes edge case expansion phase
-- [ ] File includes assumption resolution with confidence levels and "propose default" pattern
-- [ ] File includes instructions to use domain language (not implementation language)
-- [ ] File includes stack-agnostic codebase context reading instructions
-- [ ] File includes instruction to check for existing `.feature` files
-- [ ] File includes 2-3 worked examples
-- [ ] File specifies output file naming convention and structure
-- [ ] File size > 5000 bytes
-- [ ] Both files are identical (`filecmp.cmp()`)
+- [x] File exists: `.claude/commands/feature-spec.md`
+- [x] File exists: `installer/core/commands/feature-spec.md` (identical content)
+- [x] File contains YAML frontmatter with: `name`, `description`, `arguments`, `flags`
+- [x] File defines the Propose-Review methodology with all 6 phases
+- [x] File includes Specification by Example categories: `@key-example`, `@boundary`, `@negative`, `@edge-case`
+- [x] File includes `@smoke` and `@regression` cross-cutting tags
+- [x] File instructs AI to generate `Background:` sections where applicable
+- [x] File instructs AI to use `Scenario Outline` with `Examples` tables for parameterised cases
+- [x] File includes propose-review interaction pattern (accept/reject/modify/add/defer per group)
+- [x] File includes edge case expansion phase
+- [x] File includes assumption resolution with confidence levels and "propose default" pattern
+- [x] File includes instructions to use domain language (not implementation language)
+- [x] File includes stack-agnostic codebase context reading instructions
+- [x] File includes instruction to check for existing `.feature` files
+- [x] File includes 2-3 worked examples
+- [x] File specifies output file naming convention and structure
+- [x] File size > 5000 bytes
+- [x] Both files are identical (`filecmp.cmp()`)
 
 ## Coach Validation Commands
 

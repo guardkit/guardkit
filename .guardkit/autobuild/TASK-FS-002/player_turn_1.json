@@ -1,0 +1,112 @@
+{
+  "task_id": "TASK-FS-002",
+  "turn": 1,
+  "files_modified": [],
+  "files_created": [
+    "guardkit/commands/feature_spec.py",
+    "tests/unit/commands/test_feature_spec.py"
+  ],
+  "tests_written": [
+    "tests/unit/commands/test_feature_spec.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "72 passed in 0.16s",
+  "implementation_notes": "Implemented the feature_spec.py orchestration module following patterns from feature_plan_integration.py and seed_helpers.py. Key design decisions: (1) Module-level get_graphiti import with try/except fallback to None, enabling patch('guardkit.commands.feature_spec.get_graphiti') in tests without hitting module attribute errors. (2) detect_stack() uses priority ordering: pyproject.toml > requirements.txt/setup.py > go.mod > Cargo.toml > package.json > generic. (3) seed_to_graphiti() parses each scenario into individual episodes rather than seeding the whole file as one blob. (4) write_outputs() uses yaml.dump with default_flow_style=False, sort_keys=False as specified. (5) FeatureSpecCommand.execute() is a full pipeline: file merge, stack detection, codebase scan, file write, Graphiti seed. (6) All Graphiti calls wrapped in try/except with logger.warning(). Ruff check passes cleanly.",
+  "concerns": [],
+  "requirements_addressed": [
+    "detect_stack() priority-based detection (Python > TypeScript when both exist)",
+    "detect_stack() returns correct dict format with stack, bdd_runner, step_extension",
+    "scan_codebase() extracts modules, features, patterns",
+    "write_outputs() creates directory structure and all 3 files",
+    "seed_to_graphiti() seeds individual scenarios (not whole file) and is non-blocking",
+    "FeatureSpecCommand class with execute()",
+    "FeatureSpecResult dataclass",
+    "File input handling via from_files option",
+    "Import check for all public symbols",
+    "Lint-compatible code (ruff check passes)"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "detect_stack() priority-based detection (Python > TypeScript when both exist)",
+      "status": "complete",
+      "evidence": "detect_stack() checks pyproject.toml first, then requirements.txt/setup.py, then go.mod, Cargo.toml, package.json. Two tests verify Python priority over TypeScript: test_python_priority_over_typescript and test_requirements_txt_priority_over_package_json.",
+      "test_file": "tests/unit/commands/test_feature_spec.py",
+      "implementation_files": ["guardkit/commands/feature_spec.py"]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "detect_stack() returns correct dict format",
+      "status": "complete",
+      "evidence": "Returns dict with keys 'stack', 'bdd_runner', 'step_extension'. All 10 detect_stack tests verify the returned format for each stack type.",
+      "test_file": "tests/unit/commands/test_feature_spec.py",
+      "implementation_files": ["guardkit/commands/feature_spec.py"]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "scan_codebase() extracts modules, features, patterns",
+      "status": "complete",
+      "evidence": "scan_codebase() recursively finds __init__.py for module tree, .feature files, and detects architectural patterns (models, routes, services, repositories) from file stems. 7 tests cover all three outputs.",
+      "test_file": "tests/unit/commands/test_feature_spec.py",
+      "implementation_files": ["guardkit/commands/feature_spec.py"]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "write_outputs() creates directory structure and all 3 files",
+      "status": "complete",
+      "evidence": "write_outputs() creates {output_dir}/{feature_name}/{name}.feature, {name}_assumptions.yaml, {name}_summary.md. Uses mkdir(parents=True, exist_ok=True). 12 tests verify file creation, content, and directory structure.",
+      "test_file": "tests/unit/commands/test_feature_spec.py",
+      "implementation_files": ["guardkit/commands/feature_spec.py"]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "seed_to_graphiti() seeds individual scenarios (not whole file) and is non-blocking",
+      "status": "complete",
+      "evidence": "_parse_scenarios() splits feature content into individual scenario blocks. seed_to_graphiti() calls add_episode once per scenario to feature_specs group and once per assumption to domain_knowledge group. All calls wrapped in try/except with logger.warning(). 7 tests verify non-blocking behavior and individual scenario seeding.",
+      "test_file": "tests/unit/commands/test_feature_spec.py",
+      "implementation_files": ["guardkit/commands/feature_spec.py"]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "FeatureSpecCommand class with execute()",
+      "status": "complete",
+      "evidence": "FeatureSpecCommand.__init__(project_root: Path) and async execute(input_text, options) are fully implemented. execute() runs the full pipeline and returns FeatureSpecResult. 10 tests cover all aspects of execute().",
+      "test_file": "tests/unit/commands/test_feature_spec.py",
+      "implementation_files": ["guardkit/commands/feature_spec.py"]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "FeatureSpecResult dataclass",
+      "status": "complete",
+      "evidence": "FeatureSpecResult is a @dataclass with feature_file, assumptions_file, summary_file, scaffolding_files (default {}), scenarios_count (default 0), assumptions_count (default 0), stack (default 'generic'). 2 tests verify dataclass creation and field storage.",
+      "test_file": "tests/unit/commands/test_feature_spec.py",
+      "implementation_files": ["guardkit/commands/feature_spec.py"]
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "File input handling",
+      "status": "complete",
+      "evidence": "_read_input_files() reads .md and .txt files, concatenates with newlines, logs warnings for missing/unsupported files. execute() merges from_files content into input_text. 6 tests cover all _read_input_files() behaviors.",
+      "test_file": "tests/unit/commands/test_feature_spec.py",
+      "implementation_files": ["guardkit/commands/feature_spec.py"]
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "Import check",
+      "status": "complete",
+      "evidence": "All 6 public symbols (FeatureSpecCommand, FeatureSpecResult, detect_stack, scan_codebase, write_outputs, seed_to_graphiti) are importable from guardkit.commands.feature_spec. TestImports class has 6 dedicated import tests.",
+      "test_file": "tests/unit/commands/test_feature_spec.py",
+      "implementation_files": ["guardkit/commands/feature_spec.py"]
+    },
+    {
+      "criterion_id": "AC-010",
+      "criterion_text": "Lint-compatible code (ruff check passes)",
+      "status": "complete",
+      "evidence": "ruff check guardkit/commands/feature_spec.py returns 'All checks passed!' with no errors or warnings.",
+      "test_file": null,
+      "implementation_files": ["guardkit/commands/feature_spec.py"]
+    }
+  ]
+}

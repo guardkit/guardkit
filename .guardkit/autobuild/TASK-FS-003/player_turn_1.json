@@ -1,0 +1,114 @@
+{
+  "task_id": "TASK-FS-003",
+  "turn": 1,
+  "files_modified": [],
+  "files_created": [
+    "tests/integration/test_feature_spec_e2e.py",
+    "docs/commands/feature-spec.md"
+  ],
+  "tests_written": [
+    "tests/integration/test_feature_spec_e2e.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "47 passed in 1.74s",
+  "implementation_notes": "Created exactly the two required files. The integration test file has 47 tests across 6 class-based test suites covering stack detection priority, file output validity (UTF-8, YAML parse, Markdown sections), Gherkin quality (domain vs implementation language), Graphiti seeding behaviour (unavailable/disabled/failure resilience), input concatenation, and the full FeatureSpecCommand.execute() pipeline. All async tests use the @pytest.mark.asyncio decorator. The documentation is 11,602 bytes (well above the 2,000 byte minimum) with all 10 required sections. No existing files were modified.",
+  "concerns": [],
+  "requirements_addressed": [
+    "Integration test file tests/integration/test_feature_spec_e2e.py created",
+    "Module docstring with coverage target included",
+    "Class-based test organisation with @pytest.mark.integration marker",
+    "All required fixtures (python_project, typescript_project, polyglot_project, go_project, generic_project) defined",
+    "TestStackDetectionE2E: 8 tests covering all 5 stack types and priority rules",
+    "TestFileOutputE2E: 11 tests for directory structure, UTF-8, YAML validity, Markdown sections",
+    "TestGherkinQualityE2E: 5 tests verifying domain vs implementation language",
+    "TestGraphitiSeedingE2E: 5 tests for unavailable/disabled/failure-resilient seeding",
+    "TestInputHandlingE2E: 7 tests for concatenation, empty list, missing files, order",
+    "TestFullPipelineE2E: 11 tests for complete FeatureSpecCommand.execute() flow",
+    "All imports from guardkit.commands.feature_spec as specified",
+    "Documentation file docs/commands/feature-spec.md created (11,602 bytes)",
+    "All 10 required sections present in documentation",
+    "5+ usage examples included",
+    "Flag descriptions table included",
+    "Multi-stack support table included",
+    "Assumptions manifest YAML schema with all required fields included",
+    "Worked example showing propose-review cycle included",
+    "Migration from /generate-bdd section included",
+    "Integration with /feature-plan section included"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Create tests/integration/test_feature_spec_e2e.py with @pytest.mark.integration marker and class-based organisation",
+      "status": "complete",
+      "evidence": "Created with module docstring, 6 test classes, @pytest.mark.integration decorator on each class, 47 passing tests",
+      "test_file": "tests/integration/test_feature_spec_e2e.py",
+      "implementation_files": ["tests/integration/test_feature_spec_e2e.py"]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Required fixtures: python_project, typescript_project, polyglot_project, go_project, generic_project",
+      "status": "complete",
+      "evidence": "All 5 fixtures defined using tmp_path. Each creates the appropriate indicator file(s).",
+      "test_file": "tests/integration/test_feature_spec_e2e.py",
+      "implementation_files": ["tests/integration/test_feature_spec_e2e.py"]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "TestStackDetectionE2E: python, polyglot (python wins), typescript, go, generic scenarios",
+      "status": "complete",
+      "evidence": "8 tests cover all 5 stacks plus priority rules: requirements.txt beats package.json, setup.py beats go.mod, polyglot resolves to python",
+      "test_file": "tests/integration/test_feature_spec_e2e.py",
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "TestFileOutputE2E: directory structure, UTF-8, valid YAML, summary sections",
+      "status": "complete",
+      "evidence": "11 tests verify directory naming, utf-8 decode, yaml.safe_load succeeds, YAML entries, Scenarios/Assumptions headings, file extensions",
+      "test_file": "tests/integration/test_feature_spec_e2e.py",
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "TestGherkinQualityE2E: domain language does not contain implementation terms",
+      "status": "complete",
+      "evidence": "5 tests check that DOMAIN_LANGUAGE_GHERKIN contains no SQL, HTTP status codes, or implementation terms from the IMPLEMENTATION_TERMS list",
+      "test_file": "tests/integration/test_feature_spec_e2e.py",
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "TestGraphitiSeedingE2E: does not raise when unavailable, seeds per-scenario",
+      "status": "complete",
+      "evidence": "5 tests: unavailable (None return), disabled client, per-scenario add_episode calls (2 for 2-scenario feature), assumptions to domain_knowledge group, continues on episode failure",
+      "test_file": "tests/integration/test_feature_spec_e2e.py",
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "TestInputHandlingE2E: multiple files concatenated, empty list returns empty string",
+      "status": "complete",
+      "evidence": "7 tests cover concatenation, empty list, missing file skipped, unsupported extension skipped, single .md, single .txt, order preserved",
+      "test_file": "tests/integration/test_feature_spec_e2e.py",
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "TestFullPipelineE2E: FeatureSpecCommand.execute() with Python project produces correct FeatureSpecResult",
+      "status": "complete",
+      "evidence": "11 tests exercise the complete pipeline: result type, stack detection, file creation, scenario count, assumption count, output subdirectory, TypeScript variant, from_files merge, scaffolding empty in v1, default output dir, Graphiti call",
+      "test_file": "tests/integration/test_feature_spec_e2e.py",
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "Create docs/commands/feature-spec.md with all 10 required sections and >2000 bytes",
+      "status": "complete",
+      "evidence": "File is 11,602 bytes. All 10 sections present: Purpose, Propose-Review Methodology (6 phases), Usage Examples (5+), Flag Descriptions (table), Output Format, Multi-Stack Support (table), Assumptions Manifest Format (schema + fields table), Worked Example, Migration from /generate-bdd, Integration with /feature-plan",
+      "test_file": null,
+      "implementation_files": ["docs/commands/feature-spec.md"]
+    }
+  ]
+}
