@@ -477,21 +477,6 @@ install_python_package() {
         print_info "  # OR reinstall guardkit with: pip install guardkit-py[autobuild]"
     fi
 
-    # Check if guardkit-py CLI is available
-    if command -v guardkit-py &> /dev/null; then
-        print_success "guardkit-py CLI command is available"
-    else
-        # Try to find it via Python
-        set +e
-        local cli_path=$(python3 -c "import shutil; p=shutil.which('guardkit-py'); print(p if p else '')" 2>/dev/null)
-        set -e
-        if [ -n "$cli_path" ]; then
-            print_success "guardkit-py CLI found at: $cli_path"
-        else
-            print_warning "guardkit-py CLI not found in PATH"
-            print_info "You may need to restart your shell or add ~/.local/bin to PATH"
-        fi
-    fi
 }
 
 # Backup existing installation
@@ -1512,6 +1497,18 @@ EOF
     print_success "Installation validated successfully"
 }
 
+# Check CLI reachability after PATH has been configured by setup_shell_integration
+verify_cli_reachability() {
+    if command -v guardkit-py &> /dev/null; then
+        print_success "guardkit-py CLI is available in PATH"
+    elif [ -f "$HOME/.local/bin/guardkit-py" ]; then
+        # Binary exists but session PATH hasn't been updated yet
+        print_info "guardkit-py installed to ~/.local/bin — restart your shell or run: source ~/.bashrc"
+    else
+        print_warning "guardkit-py CLI not found — check your PATH includes ~/.local/bin and ~/.agentecflow/bin"
+    fi
+}
+
 # Final summary
 print_summary() {
     echo ""
@@ -1527,7 +1524,7 @@ print_summary() {
     echo -e "${BOLD}Installed Components:${NC}"
 
     # Count components
-    local agent_count=$(ls -1 "$INSTALL_DIR/agents/"*.md 2>/dev/null | wc -l)
+    local agent_count=$(find "$INSTALL_DIR/agents/" -name "*.md" 2>/dev/null | wc -l)
     local template_count=$(ls -1d "$INSTALL_DIR/templates"/*/ 2>/dev/null | wc -l)
     local command_count=$(ls -1 "$INSTALL_DIR/commands/"*.md 2>/dev/null | wc -l)
 
@@ -1561,6 +1558,12 @@ print_summary() {
                     ;;
                 react-fastapi-monorepo)
                     echo "  • $name - React + FastAPI monorepo with type safety (9.2/10)"
+                    ;;
+                fastmcp-python)
+                    echo "  • $name - FastMCP Python server with tool registration and async patterns"
+                    ;;
+                mcp-typescript)
+                    echo "  • $name - MCP TypeScript server with @modelcontextprotocol/sdk and Zod validation"
                     ;;
                 *)
                     echo "  • $name"
@@ -1886,6 +1889,9 @@ main() {
 
     # Validate installation
     validate_installation
+
+    # Check CLI reachability now that PATH has been configured
+    verify_cli_reachability
 
     # Print summary
     print_summary
