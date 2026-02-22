@@ -1254,7 +1254,19 @@ setup_shell_integration() {
 
     # Check if already configured correctly
     if grep -q "\.agentecflow/bin" "$shell_config" 2>/dev/null; then
-        print_info "Shell integration already configured"
+        # Also check PATH includes ~/.local/bin (needed for pip user installs on Linux)
+        if ! grep -q "\.local/bin" "$shell_config" 2>/dev/null; then
+            print_info "Updating shell integration to add ~/.local/bin to PATH..."
+            # Patch the existing PATH export line in-place (GNU sed and BSD sed)
+            sed -i 's|export PATH="\$HOME/\.agentecflow/bin:\$PATH"|export PATH="$HOME/.local/bin:$HOME/.agentecflow/bin:$PATH"|' \
+                "$shell_config" 2>/dev/null || \
+            sed -i '' 's|export PATH="\$HOME/\.agentecflow/bin:\$PATH"|export PATH="$HOME/.local/bin:$HOME/.agentecflow/bin:$PATH"|' \
+                "$shell_config" 2>/dev/null
+            print_success "Updated PATH in $shell_config to include ~/.local/bin"
+            print_info "Please restart your shell or run: source $shell_config"
+        else
+            print_info "Shell integration already configured"
+        fi
         return
     fi
 
@@ -1628,12 +1640,19 @@ setup_claude_integration() {
         print_info "Removed existing agents symlink"
     fi
 
-    # Create symlinks
-    ln -sf "$INSTALL_DIR/commands" "$HOME/.claude/commands"
-    ln -sf "$INSTALL_DIR/agents" "$HOME/.claude/agents"
+    # Create symlinks (guarded so failures produce a clear error rather than silent set -e exit)
+    if ! ln -sf "$INSTALL_DIR/commands" "$HOME/.claude/commands"; then
+        print_error "Failed to create ~/.claude/commands symlink"
+        return 1
+    fi
+    if ! ln -sf "$INSTALL_DIR/agents" "$HOME/.claude/agents"; then
+        print_error "Failed to create ~/.claude/agents symlink"
+        return 1
+    fi
 
-    # Verify symlinks
-    if [ -L "$HOME/.claude/commands" ] && [ -L "$HOME/.claude/agents" ]; then
+    # Verify symlinks exist AND targets resolve ([ -L ] alone passes for dangling symlinks)
+    if [ -L "$HOME/.claude/commands" ] && [ -e "$HOME/.claude/commands" ] && \
+       [ -L "$HOME/.claude/agents" ]   && [ -e "$HOME/.claude/agents" ]; then
         print_success "Claude Code integration configured successfully"
         print_info "  Commands: ~/.claude/commands → ~/.agentecflow/commands"
         print_info "  Agents: ~/.claude/agents → ~/.agentecflow/agents"
@@ -1699,13 +1718,13 @@ setup_python_bin_symlinks() {
 
         # Skip __init__.py files
         if [ "$script_file" = "__init__.py" ]; then
-            ((symlinks_skipped++))
+            symlinks_skipped=$((symlinks_skipped + 1))
             continue
         fi
 
         # Skip test files (files starting with test_)
         if [[ "$script_file" == test_* ]]; then
-            ((symlinks_skipped++))
+            symlinks_skipped=$((symlinks_skipped + 1))
             continue
         fi
 
@@ -1717,7 +1736,7 @@ setup_python_bin_symlinks() {
         # Check if script is readable
         if [ ! -r "$script_path" ]; then
             print_warning "Cannot read script: $script_path (skipping)"
-            ((errors++))
+            errors=$((errors + 1))
             continue
         fi
 
@@ -1729,7 +1748,7 @@ setup_python_bin_symlinks() {
                 print_warning "  Existing: $existing_target"
                 print_warning "  New: $script_path"
                 print_error "Cannot create symlink due to conflict"
-                ((errors++))
+                errors=$((errors + 1))
                 continue
             fi
         fi
@@ -1741,18 +1760,18 @@ setup_python_bin_symlinks() {
         if [ -L "$symlink_path" ]; then
             local current_target=$(readlink "$symlink_path")
             if [ "$current_target" = "$script_path" ]; then
-                ((symlinks_skipped++))
+                symlinks_skipped=$((symlinks_skipped + 1))
             else
                 ln -sf "$script_path" "$symlink_path"
-                ((symlinks_updated++))
+                symlinks_updated=$((symlinks_updated + 1))
                 print_info "  Updated: $symlink_name"
             fi
         elif [ -e "$symlink_path" ]; then
             print_error "Cannot create symlink: $symlink_path exists as regular file"
-            ((errors++))
+            errors=$((errors + 1))
         else
             ln -s "$script_path" "$symlink_path"
-            ((symlinks_created++))
+            symlinks_created=$((symlinks_created + 1))
             print_info "  Created: $symlink_name → $(basename $script_path)"
         fi
     done
