@@ -295,11 +295,25 @@ Move from Tier 1 to Tier 2+ for higher RPM limits. Requires spending threshold (
 
 6. **Optional: Keep OpenAI as fallback** — add provider switching for when GB10 is offline
 
-### Estimated subtasks if [I]mplement chosen
+### Embedding Model Selection
+
+| Model | Params | MTEB Mean | Dim | Max Tokens | NVFP4? | GB10 Fit |
+|-------|--------|-----------|-----|------------|--------|----------|
+| nomic-embed-text-v1.5 | 137M | 62.39 | 768 | 8192 | N/A (tiny) | Trivial |
+| nvidia/llama-nemotron-embed-1b-v2 | 1B | ~65* | 2048 | 8192 | Quantized variant exists | Easy |
+| nvidia/llama-embed-nemotron-8b | 7.5B | **69.46** (#1 MMTEB) | 4096 | 8192 | Quantized variant exists | ~16GB fp16 |
+
+\* Estimated from BEIR/NQ benchmarks; official MTEB not published.
+
+**Recommendation**: Start with **nomic-embed-text-v1.5** (proven quality parity with OpenAI, 137M params means negligible memory, proven on vLLM with `--task embed`). If quality is insufficient for Graphiti entity resolution, upgrade to **nvidia/llama-nemotron-embed-1b-v2** which is purpose-built for NVIDIA hardware and has a DGX Spark community track record. The 8B variant is overkill for this workload and would consume GPU memory better reserved for the LLM.
+
+Note: NVFP4 quantisation is designed for LLMs (billions of parameters). Embedding models at 137M–1B are small enough that FP16/BF16 is fine — the memory savings from FP4 are negligible at this scale. NVFP4 matters for the LLM side (Qwen3-Coder-30B), where it's already the planned deployment format per TASK-REV-55C3.
+
+### Implementation Subtasks
 
 | # | Task | Complexity | Mode |
 |---|------|-----------|------|
-| 1 | Launch vLLM embedding model instance on GB10 (port 8001) | Low | Direct (manual SSH) |
+| 1 | GB10 vLLM setup guide: embedding model instance with optimal config | Medium | task-work |
 | 2 | Extend GraphitiConfig for local inference provider settings | Medium | task-work |
 | 3 | Update GraphitiClient.initialize() to inject custom embedder/LLM | Medium | task-work |
 | 4 | Update `.guardkit/graphiti.yaml` schema and config loader | Low | task-work |

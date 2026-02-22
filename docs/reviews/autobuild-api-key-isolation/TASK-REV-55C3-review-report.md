@@ -155,18 +155,26 @@ This sets the variables **only for the guardkit process** without polluting the 
 
 ### Step-by-Step Setup
 
-#### 1. Start VLLM on Dell Pro Max
+#### 1. Start VLLM on Dell Pro Max GB10
 
 ```bash
-# On Dell Pro Max (assuming NVIDIA GPU)
-vllm serve Qwen/Qwen3-Coder-XXB \
-  --host 0.0.0.0 \
-  --port 8000 \
-  --served-model-name claude-sonnet-4-5-20250929 \
-  --enable-auto-tool-choice
+# On Dell Pro Max GB10 — using Docker Compose (see Appendix B for full config)
+docker compose up -d
+
+# Or direct Docker run:
+docker run -d --gpus all -p 8000:8000 --ipc=host \
+  -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
+  nvcr.io/nvidia/vllm:26.01-py3 \
+  vllm serve Qwen/Qwen3-Coder-Next-FP8 \
+    --host 0.0.0.0 --port 8000 \
+    --served-model-name claude-sonnet-4-5-20250929 \
+    --enable-auto-tool-choice --tool-call-parser qwen3_coder \
+    --gpu-memory-utilization 0.8 --max-model-len 65536 \
+    --attention-backend flashinfer --enable-prefix-caching \
+    --load-format fastsafetensors
 ```
 
-**Important**: `--served-model-name` should match the model name AutoBuild sends (default: `claude-sonnet-4-5-20250929`). This tricks the Claude Agent SDK into thinking it's talking to Anthropic.
+**Important**: `--served-model-name claude-sonnet-4-5-20250929` must match the model name AutoBuild sends (its default). This makes VLLM accept requests the Claude Agent SDK sends for that model name. See Appendix B for full GB10-specific configuration details.
 
 #### 2. Create Wrapper Script
 
@@ -288,10 +296,296 @@ This would set `os.environ["ANTHROPIC_BASE_URL"]` and `os.environ["ANTHROPIC_API
 | `VLLM_HOST` | Wrapper script: VLLM server hostname | `dell-pro-max` |
 | `VLLM_PORT` | Wrapper script: VLLM server port | `8000` |
 
+---
+
+## Appendix B: Production Setup — Dell Pro Max GB10 (DGX Spark Equivalent)
+
+### Your Hardware
+
+| Spec | Value |
+|------|-------|
+| **System** | Dell Pro Max with GB10 |
+| **Equivalent** | NVIDIA DGX Spark |
+| **Chip** | GB10 Grace Blackwell Superchip |
+| **GPU** | Blackwell (SM 12.1, 5th-gen Tensor Cores) |
+| **CPU** | MediaTek 20-core ARM (aarch64) |
+| **Memory** | 128GB unified (shared CPU/GPU via NVLink-C2C) |
+| **AI Performance** | 1 PFLOP FP4 |
+| **OS** | DGX OS (Ubuntu-based, ARM64) |
+| **CUDA** | 13.0+ |
+
+**Key advantage**: 128GB unified memory means the GPU and CPU share the same memory pool. No separate "VRAM" — the entire 128GB is available for model weights + KV cache.
+
+### Model Selection for GB10
+
+With 128GB unified memory, you can run larger models than typical discrete-GPU workstations:
+
+| Model | Quantization | Memory Usage | Perf (tok/s) | Recommended |
+|-------|-------------|-------------|--------------|-------------|
+| **Qwen3-Coder-Next (80B MoE)** | FP8 | ~92GB | ~43 tok/s | **Best balance** |
+| Qwen3-Coder-Next (80B MoE) | NVFP4 | ~50GB | ~35 tok/s | Good if running other workloads |
+| Qwen3-Coder-30B-A3B | FP8 | ~30GB | ~483 tok/s (batch 64) | Fastest, lower quality |
+| Qwen3-Coder-30B-A3B | BF16 | ~60GB | ~200+ tok/s | Good quality, fast |
+
+**Recommendation**: Start with **Qwen3-Coder-Next FP8** (80B MoE). It uses ~92GB of the 128GB, leaving room for KV cache, and runs at ~43 tok/s — fast enough for interactive AutoBuild sessions.
+
+### Docker Setup for GB10
+
+The GB10 uses ARM64 (aarch64) architecture with CUDA 13.0. You **must** use NVIDIA's DGX Spark-optimized vLLM container, not the standard x86 image.
+
+#### Pull the Optimized Container
+
+```bash
+# NVIDIA's official DGX Spark vLLM image (ARM64 + CUDA 13 + Blackwell)
+docker pull nvcr.io/nvidia/vllm:26.01-py3
+```
+
+#### Docker Compose (GB10-Optimized)
+
+```yaml
+# docker-compose.yml — Dell Pro Max GB10 / DGX Spark
+version: "3.8"
+
+services:
+  vllm-qwen3:
+    image: nvcr.io/nvidia/vllm:26.01-py3
+    container_name: vllm-qwen3-coder
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - huggingface-cache:/root/.cache/huggingface
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ipc: host
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    command: >
+      vllm serve Qwen/Qwen3-Coder-Next-FP8
+      --host 0.0.0.0
+      --port 8000
+      --served-model-name claude-sonnet-4-5-20250929
+      --enable-auto-tool-choice
+      --tool-call-parser qwen3_coder
+      --gpu-memory-utilization 0.8
+      --max-model-len 65536
+      --attention-backend flashinfer
+      --enable-prefix-caching
+      --load-format fastsafetensors
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s  # Model loading takes ~3-5 min on GB10
+
+volumes:
+  huggingface-cache:
+```
+
+### Server Commands for GB10
+
+#### Primary: Qwen3-Coder-Next FP8 (80B MoE, Best Quality)
+
+```bash
+docker run -it --gpus all -p 8000:8000 \
+  --ipc=host \
+  --ulimit memlock=-1 \
+  --ulimit stack=67108864 \
+  -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
+  nvcr.io/nvidia/vllm:26.01-py3 \
+  vllm serve Qwen/Qwen3-Coder-Next-FP8 \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --served-model-name claude-sonnet-4-5-20250929 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_coder \
+    --gpu-memory-utilization 0.8 \
+    --max-model-len 65536 \
+    --attention-backend flashinfer \
+    --enable-prefix-caching \
+    --load-format fastsafetensors
+```
+
+**Notes**:
+- `--gpu-memory-utilization 0.8`: Uses ~102GB of 128GB, leaving headroom for KV cache and system
+- `--attention-backend flashinfer`: Enables ~170K token context (vs ~60K with FLASH_ATTN)
+- `--enable-prefix-caching`: **Critical for coding workflows** — avoids reprocessing the entire prompt on follow-up turns (AutoBuild sends similar prompts across Player-Coach iterations)
+- `--load-format fastsafetensors`: Faster model loading
+
+#### Alternative: Qwen3-Coder-30B-A3B (Faster, Lower Quality)
+
+```bash
+docker run -it --gpus all -p 8000:8000 \
+  --ipc=host \
+  -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
+  nvcr.io/nvidia/vllm:26.01-py3 \
+  vllm serve Qwen/Qwen3-Coder-30B-A3B-Instruct \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --served-model-name claude-sonnet-4-5-20250929 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_coder \
+    --gpu-memory-utilization 0.5 \
+    --max-model-len 32768 \
+    --enable-prefix-caching
+```
+
+### Critical Configuration Notes
+
+1. **`--served-model-name claude-sonnet-4-5-20250929`**: Must match the model name the Claude Agent SDK sends. AutoBuild defaults to `claude-sonnet-4-5-20250929`. Without this, VLLM rejects requests for unknown model names.
+
+2. **`--tool-call-parser qwen3_coder`**: Required for tool calling. If you experience issues, try `--tool-call-parser qwen3_xml` as an alternative.
+
+3. **`--enable-auto-tool-choice`**: Enables the model to autonomously decide when to use tools (required for AutoBuild's Player-Coach protocol).
+
+4. **`--max-model-len`**: Controls context window. AutoBuild prompts can be large (10K-50K tokens). Start with 32768 and increase if needed. Note: larger context requires more VRAM for KV cache.
+
+5. **`--gpu-memory-utilization 0.9`**: Allocates 90% of GPU VRAM. Adjust down if you run other GPU workloads.
+
+### Health Checks & Monitoring
+
+| Endpoint | Purpose | Use For |
+|----------|---------|---------|
+| `GET /health` | Server process alive | Liveness probe |
+| `GET /v1/models` | Model loaded and ready | Readiness probe |
+| `GET /metrics` | Prometheus metrics | Monitoring dashboard |
+
+#### Test Server Health
+
+```bash
+# Basic health check
+curl http://dell-pro-max:8000/health
+
+# Verify model is loaded
+curl http://dell-pro-max:8000/v1/models
+
+# Test Anthropic Messages API endpoint
+curl http://dell-pro-max:8000/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: dummy-key" \
+  -H "anthropic-version: 2023-06-01" \
+  -d '{
+    "model": "claude-sonnet-4-5-20250929",
+    "max_tokens": 100,
+    "messages": [{"role": "user", "content": "Hello, are you working?"}]
+  }'
+```
+
+#### Prometheus Monitoring
+
+```yaml
+# prometheus.yml (add to existing config)
+scrape_configs:
+  - job_name: 'vllm-qwen3'
+    static_configs:
+      - targets: ['dell-pro-max:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+```
+
+Key metrics to monitor:
+- `vllm:num_requests_running` — active requests
+- `vllm:num_requests_waiting` — queued requests
+- `vllm:gpu_cache_usage_perc` — GPU KV cache utilization
+- `vllm:avg_generation_throughput_toks_per_s` — tokens/second
+
+### Complete Wrapper Script (Production)
+
+```bash
+#!/usr/bin/env bash
+# ~/.local/bin/autobuild-vllm
+# Production-ready wrapper for AutoBuild via local VLLM/Qwen3
+
+set -euo pipefail
+
+VLLM_HOST="${VLLM_HOST:-dell-pro-max}"
+VLLM_PORT="${VLLM_PORT:-8000}"
+VLLM_URL="http://${VLLM_HOST}:${VLLM_PORT}"
+
+# Pre-flight: check VLLM server is reachable
+if ! curl -sf "${VLLM_URL}/health" > /dev/null 2>&1; then
+    echo "ERROR: VLLM server at ${VLLM_URL} is not reachable"
+    echo ""
+    echo "Start it with:"
+    echo "  ssh ${VLLM_HOST} 'docker compose -f ~/vllm/docker-compose.yml up -d'"
+    echo ""
+    echo "Or check: curl ${VLLM_URL}/health"
+    exit 1
+fi
+
+# Pre-flight: check model is loaded
+if ! curl -sf "${VLLM_URL}/v1/models" > /dev/null 2>&1; then
+    echo "WARNING: VLLM server is running but model may still be loading..."
+    echo "Check: curl ${VLLM_URL}/v1/models"
+    echo "Proceeding anyway (SDK will retry)..."
+fi
+
+export ANTHROPIC_BASE_URL="${VLLM_URL}"
+export ANTHROPIC_API_KEY="vllm-local-key"
+
+echo "AutoBuild → VLLM/Qwen3 @ ${VLLM_URL}"
+echo "---"
+exec guardkit autobuild "$@"
+```
+
+### Troubleshooting
+
+| Issue | Cause | Fix |
+|-------|-------|-----|
+| `model not found` error | Model name mismatch | Ensure `--served-model-name` matches AutoBuild's `--model` flag |
+| Slow first request | Model loading | Wait for `/v1/models` to return before running AutoBuild |
+| OOM / GPU memory error | Model too large | Reduce `--max-model-len`, use quantized model, or lower `--gpu-memory-utilization` |
+| Tool calls not working | Missing parser flag | Add `--enable-auto-tool-choice --tool-call-parser qwen3_coder` |
+| Streaming errors | VLLM version mismatch | Upgrade to vLLM v0.10.0+ (v0.15.0+ for Qwen3-Coder-Next) |
+| `qwen3_coder` parser errors | Parser incompatibility | Try `--tool-call-parser qwen3_xml` instead |
+| **GB10-specific issues** | | |
+| `no kernel image available` | Wrong Docker image (x86) | Use `nvcr.io/nvidia/vllm:26.01-py3` (ARM64 + CUDA 13) |
+| `libcudart.so.12` errors | CUDA version mismatch | GB10 needs CUDA 13; use NVIDIA's pre-built DGX Spark container |
+| Very slow token generation | Missing attention backend | Add `--attention-backend flashinfer` for optimized GB10 inference |
+| Follow-up requests are slow | No prefix caching | Add `--enable-prefix-caching` (critical for iterative coding workflows) |
+
+### GB10-Specific Considerations
+
+1. **ARM64 Architecture**: The GB10 uses aarch64 (not x86_64). Standard Docker images won't work. Always use NVIDIA's DGX Spark-optimized container (`nvcr.io/nvidia/vllm:26.01-py3`).
+
+2. **CUDA 13.0**: The Blackwell GPU (SM 12.1) requires CUDA 13. The community vLLM containers compiled for CUDA 12 will fail with cryptic errors.
+
+3. **Unified Memory**: Unlike discrete GPUs, the 128GB is shared between CPU and GPU. `--gpu-memory-utilization 0.8` allocates ~102GB for the model, leaving ~26GB for the OS, KV cache overflow, and other processes.
+
+4. **Prefix Caching**: **Strongly recommended** for AutoBuild. Without it, each Player-Coach turn reprocesses the entire prompt from scratch (~10-50K tokens), which is painfully slow. With prefix caching, subsequent turns reuse cached attention keys/values.
+
+5. **Model Loading Time**: The 80B FP8 model takes ~3-5 minutes to load on GB10. The Docker Compose healthcheck uses `start_period: 300s` to account for this.
+
+6. **NVFP4 Quantization**: The GB10 supports NVIDIA's FP4 format natively via 5th-gen Tensor Cores. If you need more memory headroom (e.g., to run other workloads alongside VLLM), consider NVFP4 quantization (~50GB, ~35 tok/s).
+
+---
+
 ## Sources
 
 - [vLLM Claude Code Integration](https://docs.vllm.ai/en/latest/serving/integrations/claude_code/)
 - [Claude Code LLM Gateway Configuration](https://code.claude.com/docs/en/llm-gateway)
 - [Claude Code Settings Documentation](https://code.claude.com/docs/en/settings)
 - [Managing API Key Environment Variables in Claude Code](https://support.claude.com/en/articles/12304248-managing-api-key-environment-variables-in-claude-code)
+- [Qwen3-Coder vLLM Usage Guide](https://docs.vllm.ai/projects/recipes/en/latest/Qwen/Qwen3-Coder-480B-A35B.html)
+- [Qwen3-Coder 30B Hardware Requirements](https://www.arsturn.com/blog/running-qwen3-coder-30b-at-full-context-memory-requirements-performance-tips)
+- [Dell Pro Max with NVIDIA GPUs](https://www.dell.com/en-us/lp/nvidia-dell-pro-max)
+- [vLLM Docker Deployment](https://docs.vllm.ai/en/stable/deployment/docker/)
+- [vLLM Production Metrics](https://docs.vllm.ai/en/v0.7.0/serving/metrics.html)
 - [Qwen3 vLLM Deployment Guide](https://qwen3lm.com/qwen3-vllm-openai-api-deployment/)
+- [vLLM Tool Calling](https://docs.vllm.ai/en/latest/features/tool_calling/)
+- [NVIDIA DGX Spark vLLM Images](https://forums.developer.nvidia.com/t/new-pre-built-vllm-docker-images-for-nvidia-dgx-spark/357832/15)
+- [Running Qwen3-Coder-Next on DGX Spark](https://forums.developer.nvidia.com/t/how-to-run-qwen3-coder-next-on-spark/359571)
+- [vLLM for Inference on DGX Spark](https://build.nvidia.com/spark/vllm)
+- [Dell Pro Max with GB10](https://www.dell.com/en-us/blog/dell-pro-max-with-gb10-purpose-built-for-ai-developers/)
+- [DGX Spark Performance Guide](https://developer.nvidia.com/blog/how-nvidia-dgx-sparks-performance-enables-intensive-ai-tasks/)
+- [DGX Spark Setup Guide (GitHub)](https://github.com/natolambert/dgx-spark-setup)
