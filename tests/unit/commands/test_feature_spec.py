@@ -17,6 +17,7 @@ import pytest
 import yaml
 
 from guardkit.commands.feature_spec import (
+    SUPPORTED_EXTENSIONS,
     FeatureSpecCommand,
     FeatureSpecResult,
     _count_scenarios,
@@ -429,6 +430,21 @@ class TestWriteOutputs:
         paths = write_outputs(SAMPLE_FEATURE, [], "test", nested_output)
         assert paths["feature"].exists()
 
+    def test_summary_uses_provided_stack(self, output_dir):
+        """write_outputs passes provided stack to summary generator."""
+        stack = {"stack": "python", "bdd_runner": "pytest-bdd", "step_extension": ".py"}
+        paths = write_outputs(SAMPLE_FEATURE, [], "test", output_dir, stack=stack)
+        content = paths["summary"].read_text()
+        assert "**Stack:** python" in content
+        assert "**BDD Runner:** pytest-bdd" in content
+
+    def test_summary_defaults_to_generic_when_no_stack(self, output_dir):
+        """write_outputs defaults to generic stack when stack not provided."""
+        paths = write_outputs(SAMPLE_FEATURE, [], "test", output_dir)
+        content = paths["summary"].read_text()
+        assert "**Stack:** generic" in content
+        assert "**BDD Runner:** N/A" in content
+
 
 # ============================================================================
 # 5. seed_to_graphiti() Tests
@@ -636,17 +652,73 @@ class TestReadInputFiles:
         assert any("not found" in msg.lower() for msg in caplog.messages)
 
     def test_skips_unsupported_extensions(self, tmp_path, caplog):
-        """Skips files with unsupported extensions (.json, .py, etc.)."""
-        json_file = tmp_path / "data.json"
-        json_file.write_text('{"key": "value"}')
+        """Skips files with unsupported extensions (.py, .csv, etc.)."""
+        py_file = tmp_path / "script.py"
+        py_file.write_text("print('hello')")
         with caplog.at_level("WARNING"):
-            result = _read_input_files([json_file])
+            result = _read_input_files([py_file])
         assert result == ""
 
     def test_returns_empty_string_for_empty_list(self):
         """Returns empty string for empty file list."""
         result = _read_input_files([])
         assert result == ""
+
+    def test_reads_yaml_files(self, tmp_path):
+        """Reads and returns content from .yaml files."""
+        yaml_file = tmp_path / "config.yaml"
+        yaml_file.write_text("key: value\n")
+        result = _read_input_files([yaml_file])
+        assert "key: value" in result
+
+    def test_reads_yml_files(self, tmp_path):
+        """Reads and returns content from .yml files."""
+        yml_file = tmp_path / "config.yml"
+        yml_file.write_text("name: test\n")
+        result = _read_input_files([yml_file])
+        assert "name: test" in result
+
+    def test_reads_rst_files(self, tmp_path):
+        """Reads and returns content from .rst files."""
+        rst_file = tmp_path / "readme.rst"
+        rst_file.write_text("Title\n=====\nSome content\n")
+        result = _read_input_files([rst_file])
+        assert "Some content" in result
+
+    def test_reads_json_files(self, tmp_path):
+        """Reads and returns content from .json files."""
+        json_file = tmp_path / "data.json"
+        json_file.write_text('{"key": "value"}')
+        result = _read_input_files([json_file])
+        assert '"key": "value"' in result
+
+    def test_warning_includes_supported_extensions(self, tmp_path, caplog):
+        """Warning message for unsupported files lists supported extensions."""
+        csv_file = tmp_path / "data.csv"
+        csv_file.write_text("a,b,c\n")
+        with caplog.at_level("WARNING"):
+            _read_input_files([csv_file])
+        warning_msg = caplog.messages[0]
+        assert "Unsupported file extension" in warning_msg
+        assert ".csv" in warning_msg
+        assert "Supported extensions:" in warning_msg
+        # Verify at least some supported extensions are listed
+        for ext in (".md", ".txt", ".yaml", ".json"):
+            assert ext in warning_msg
+
+    def test_warning_distinguishes_missing_from_unsupported(self, tmp_path, caplog):
+        """Missing files get 'not found' warning, unsupported get 'Unsupported' warning."""
+        missing = tmp_path / "missing.md"
+        unsupported = tmp_path / "data.csv"
+        unsupported.write_text("a,b\n")
+        with caplog.at_level("WARNING"):
+            _read_input_files([missing, unsupported])
+        assert any("not found" in msg for msg in caplog.messages)
+        assert any("Unsupported" in msg for msg in caplog.messages)
+
+    def test_supported_extensions_constant(self):
+        """SUPPORTED_EXTENSIONS contains all expected extensions."""
+        assert SUPPORTED_EXTENSIONS == {".md", ".txt", ".yaml", ".yml", ".rst", ".json"}
 
 
 # ============================================================================
@@ -682,6 +754,32 @@ class TestFeatureSpecResult:
         assert result.scenarios_count == 3
         assert result.assumptions_count == 2
         assert result.stack == "python"
+
+    def test_new_fields_default_to_empty_lists(self, tmp_path):
+        """modules, existing_features, and patterns default to empty lists."""
+        result = FeatureSpecResult(
+            feature_file=tmp_path / "test.feature",
+            assumptions_file=tmp_path / "test_assumptions.yaml",
+            summary_file=tmp_path / "test_summary.md",
+        )
+        assert result.modules == []
+        assert result.existing_features == []
+        assert result.patterns == []
+
+    def test_new_fields_can_be_set(self, tmp_path):
+        """modules, existing_features, and patterns can be set explicitly."""
+        feature_path = tmp_path / "login.feature"
+        result = FeatureSpecResult(
+            feature_file=tmp_path / "test.feature",
+            assumptions_file=tmp_path / "test_assumptions.yaml",
+            summary_file=tmp_path / "test_summary.md",
+            modules=["myapp", "myapp.services"],
+            existing_features=[feature_path],
+            patterns=["services", "repositories"],
+        )
+        assert result.modules == ["myapp", "myapp.services"]
+        assert result.existing_features == [feature_path]
+        assert result.patterns == ["services", "repositories"]
 
 
 # ============================================================================
@@ -797,6 +895,62 @@ class TestFeatureSpecCommandExecute:
         """FeatureSpecCommand stores project_root."""
         cmd = FeatureSpecCommand(project_root=project_root)
         assert cmd.project_root == project_root
+
+    async def test_execute_passes_detected_stack_to_summary(self, project_root, output_dir):
+        """execute() passes detected stack to write_outputs so summary shows correct stack."""
+        # Create Python project signals
+        (project_root / "pyproject.toml").write_text("[build-system]\n")
+        with patch("guardkit.commands.feature_spec.seed_to_graphiti", new=AsyncMock()):
+            cmd = FeatureSpecCommand(project_root=project_root)
+            result = await cmd.execute(
+                input_text=SAMPLE_FEATURE,
+                options={"output_dir": output_dir},
+            )
+        summary_content = result.summary_file.read_text()
+        assert "**Stack:** python" in summary_content
+        assert "**BDD Runner:** pytest-bdd" in summary_content
+
+    async def test_execute_populates_modules_from_scan_codebase(self, project_root, output_dir):
+        """execute() populates result.modules from scan_codebase output."""
+        # Create a Python package so scan_codebase finds a module
+        pkg = project_root / "myapp"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("")
+        with patch("guardkit.commands.feature_spec.seed_to_graphiti", new=AsyncMock()):
+            cmd = FeatureSpecCommand(project_root=project_root)
+            result = await cmd.execute(
+                input_text=SAMPLE_FEATURE,
+                options={"output_dir": output_dir},
+            )
+        assert "myapp" in result.modules
+
+    async def test_execute_populates_existing_features_from_scan_codebase(
+        self, project_root, output_dir
+    ):
+        """execute() populates result.existing_features from scan_codebase output."""
+        # Create a pre-existing feature file in the project root
+        pre_existing = project_root / "login.feature"
+        pre_existing.write_text("Feature: Login\n")
+        with patch("guardkit.commands.feature_spec.seed_to_graphiti", new=AsyncMock()):
+            cmd = FeatureSpecCommand(project_root=project_root)
+            result = await cmd.execute(
+                input_text=SAMPLE_FEATURE,
+                options={"output_dir": output_dir},
+            )
+        feature_names = [p.name for p in result.existing_features]
+        assert "login.feature" in feature_names
+
+    async def test_execute_populates_patterns_from_scan_codebase(self, project_root, output_dir):
+        """execute() populates result.patterns from scan_codebase output."""
+        # Create a file with a name that triggers pattern detection
+        (project_root / "user_service.py").write_text("")
+        with patch("guardkit.commands.feature_spec.seed_to_graphiti", new=AsyncMock()):
+            cmd = FeatureSpecCommand(project_root=project_root)
+            result = await cmd.execute(
+                input_text=SAMPLE_FEATURE,
+                options={"output_dir": output_dir},
+            )
+        assert "services" in result.patterns
 
 
 # ============================================================================

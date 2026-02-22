@@ -178,7 +178,14 @@ installer/core/             # Global resources (agents, commands, templates)
 Flags: `--no-questions` | `--with-questions` | `--defaults` | `--answers="..."`
 See: `.claude/rules/clarifying-questions.md`
 
-## BDD Workflow
+## BDD / Specification Workflow
+
+```bash
+/feature-spec "description" [--from file.md] [--output dir/] [--auto] [--stack name] [--context file.md]
+```
+
+Generate BDD Gherkin specifications from natural language using Propose-Review methodology.
+See: [Feature Spec Command Reference](docs/commands/feature-spec.md)
 
 For agentic systems requiring formal behavior specs: `/task-work TASK-XXX --mode=bdd`
 Requires: [require-kit](https://github.com/requirekit/require-kit)

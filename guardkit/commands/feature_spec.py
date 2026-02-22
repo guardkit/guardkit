@@ -42,6 +42,9 @@ class FeatureSpecResult:
     scenarios_count: int = 0
     assumptions_count: int = 0
     stack: str = "generic"
+    modules: list[str] = field(default_factory=list)
+    existing_features: list[Path] = field(default_factory=list)
+    patterns: list[str] = field(default_factory=list)
 
 
 def detect_stack(root: Path) -> dict:
@@ -244,6 +247,7 @@ def write_outputs(
     assumptions: list[dict],
     source: str,
     output_dir: Path,
+    stack: dict | None = None,
 ) -> dict[str, Path]:
     """Write all output files.
 
@@ -257,6 +261,7 @@ def write_outputs(
         assumptions: List of assumption dicts.
         source: Source description for the assumptions YAML.
         output_dir: Base output directory (created if not exists).
+        stack: Stack dict from detect_stack(). Defaults to generic if not provided.
 
     Returns:
         Dict with keys "feature", "assumptions", "summary" mapping to
@@ -279,8 +284,8 @@ def write_outputs(
     with open(assumptions_path, "w") as f:
         yaml.dump(assumptions_data, f, default_flow_style=False, sort_keys=False)
 
-    # Write summary markdown (use generic stack as default in this helper)
-    stack_info: dict = {"stack": "generic", "bdd_runner": None}
+    # Write summary markdown
+    stack_info: dict = stack or {"stack": "generic", "bdd_runner": None}
     summary_content = _generate_summary_md(feature_name, feature_content, assumptions, stack_info)
     summary_path = feature_dir / f"{feature_name}_summary.md"
     summary_path.write_text(summary_content)
@@ -361,10 +366,14 @@ async def seed_to_graphiti(
             logger.warning(f"Failed to seed assumption: {e}")
 
 
+SUPPORTED_EXTENSIONS = {".md", ".txt", ".yaml", ".yml", ".rst", ".json"}
+
+
 def _read_input_files(file_paths: list) -> str:
     """Read and concatenate input files.
 
-    Supports .md and .txt files. Concatenates with newlines.
+    Supports .md, .txt, .yaml, .yml, .rst, and .json files.
+    Concatenates with newlines.
     Unsupported or missing files are logged as warnings and skipped.
 
     Args:
@@ -376,10 +385,16 @@ def _read_input_files(file_paths: list) -> str:
     contents = []
     for fp in file_paths:
         p = Path(fp)
-        if p.exists() and p.suffix in (".md", ".txt"):
-            contents.append(p.read_text())
+        if not p.exists():
+            logger.warning(f"Input file not found: {fp}")
+        elif p.suffix not in SUPPORTED_EXTENSIONS:
+            supported = ", ".join(sorted(SUPPORTED_EXTENSIONS))
+            logger.warning(
+                f"Unsupported file extension '{p.suffix}' for: {fp}. "
+                f"Supported extensions: {supported}"
+            )
         else:
-            logger.warning(f"Input file not found or unsupported: {fp}")
+            contents.append(p.read_text())
     return "\n".join(contents)
 
 
@@ -439,8 +454,8 @@ class FeatureSpecCommand:
         # Detect technology stack
         stack = detect_stack(self.project_root)
 
-        # Scan codebase for context (available for future extension)
-        scan_codebase(self.project_root, stack)
+        # Scan codebase for context
+        scan_result = scan_codebase(self.project_root, stack)
 
         # Determine output directory
         output_dir = Path(options.get("output_dir", self.project_root / "features"))
@@ -460,6 +475,7 @@ class FeatureSpecCommand:
             assumptions=assumptions,
             source=source,
             output_dir=output_dir,
+            stack=stack,
         )
 
         # Seed to Graphiti (non-blocking — failures are logged as warnings)
@@ -478,4 +494,7 @@ class FeatureSpecCommand:
             scenarios_count=_count_scenarios(input_text),
             assumptions_count=len(assumptions),
             stack=stack["stack"],
+            modules=scan_result["modules"],
+            existing_features=scan_result["existing_features"],
+            patterns=scan_result["patterns"],
         )
