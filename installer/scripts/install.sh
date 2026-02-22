@@ -425,7 +425,7 @@ install_python_package() {
     # Install with [autobuild] extras to include claude-agent-sdk
     # Try installing with --break-system-packages (PEP 668 compliance for Python 3.11+)
     set +e  # Temporarily allow errors
-    python3 -m pip install -e "$repo_root[autobuild]" --break-system-packages 2>&1
+    python3 -m pip install -e "$repo_root[autobuild]" --break-system-packages --no-warn-script-location 2>&1
     local install_status=$?
     set -e  # Re-enable exit on error
 
@@ -433,7 +433,7 @@ install_python_package() {
         # Fallback to --user install
         print_info "Retrying with --user flag..."
         set +e
-        python3 -m pip install -e "$repo_root[autobuild]" --user 2>&1
+        python3 -m pip install -e "$repo_root[autobuild]" --user --no-warn-script-location 2>&1
         install_status=$?
         set -e
 
@@ -1524,7 +1524,9 @@ print_summary() {
     echo -e "${BOLD}Installed Components:${NC}"
 
     # Count components
-    local agent_count=$(find "$INSTALL_DIR/agents/" -name "*.md" 2>/dev/null | wc -l)
+    local global_agent_count=$(find "$INSTALL_DIR/agents/" -name "*.md" 2>/dev/null | wc -l)
+    local stack_agent_count=$(find "$INSTALL_DIR/stack-agents/" -name "*.md" 2>/dev/null | wc -l)
+    local agent_count=$((global_agent_count + stack_agent_count))
     local template_count=$(ls -1d "$INSTALL_DIR/templates"/*/ 2>/dev/null | wc -l)
     local command_count=$(ls -1 "$INSTALL_DIR/commands/"*.md 2>/dev/null | wc -l)
 
