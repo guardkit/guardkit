@@ -171,7 +171,9 @@ check_prerequisites() {
     
     # Check for Node.js (optional but recommended)
     if ! command -v node &> /dev/null; then
-        print_warning "Node.js not found. Some features may be limited."
+        print_warning "Node.js not found. The following templates require Node.js:"
+        echo "    react-typescript, nextjs-fullstack, react-fastapi-monorepo"
+        echo "  Templates that work without Node.js: fastapi-python, default"
     else
         print_success "Node.js found: $(node --version)"
     fi
@@ -532,7 +534,7 @@ create_directories() {
     mkdir -p "$INSTALL_DIR/templates"/{default,react-typescript,fastapi-python,nextjs-fullstack,react-fastapi-monorepo}
     
     # Create versions structure
-    mkdir -p "$INSTALL_DIR/versions/$AGENTICFLOW_VERSION"
+    mkdir -p "$INSTALL_DIR/versions/$AGENTECFLOW_VERSION"
     
     # Create config directory
     mkdir -p "$CONFIG_DIR"
@@ -1261,7 +1263,7 @@ setup_shell_integration() {
         cat >> "$shell_config" << 'EOF'
 
 # GuardKit
-export PATH="$HOME/.agentecflow/bin:$PATH"
+export PATH="$HOME/.local/bin:$HOME/.agentecflow/bin:$PATH"
 export AGENTECFLOW_HOME="$HOME/.agentecflow"
 # Note: Config folder stays .agentecflow for methodology compatibility
 
@@ -1275,7 +1277,7 @@ EOF
         cat >> "$shell_config" << 'EOF'
 
 # GuardKit
-export PATH="$HOME/.agentecflow/bin:$PATH"
+export PATH="$HOME/.local/bin:$HOME/.agentecflow/bin:$PATH"
 export AGENTECFLOW_HOME="$HOME/.agentecflow"
 # Note: Config folder stays .agentecflow for methodology compatibility
 EOF
@@ -1291,7 +1293,7 @@ create_global_config() {
     
     cat > "$CONFIG_DIR/config.json" << EOF
 {
-  "version": "$AGENTICFLOW_VERSION",
+  "version": "$AGENTECFLOW_VERSION",
   "installation": {
     "home": "$INSTALL_DIR",
     "installed": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
@@ -1332,8 +1334,8 @@ install_completions() {
     print_info "Installing shell completions..."
 
     # Bash completion
-    cat > "$INSTALL_DIR/completions/agentecflow.bash" << 'EOF'
-# Bash completion for agentecflow and agentec-init
+    cat > "$INSTALL_DIR/completions/guardkit.bash" << 'EOF'
+# Bash completion for guardkit and guardkit-init
 
 # Helper function to list all available templates dynamically
 _list_all_templates() {
@@ -1376,7 +1378,7 @@ _list_all_templates() {
     echo "${templates[@]}"
 }
 
-_agentecflow() {
+_guardkit() {
     local cur prev opts
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
@@ -1384,11 +1386,11 @@ _agentecflow() {
     opts="init doctor version help"
 
     case "${prev}" in
-        agentecflow|af)
+        guardkit|gk)
             COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
             return 0
             ;;
-        init|agentec-init|ai)
+        init|guardkit-init|gki)
             local templates=$(_list_all_templates)
             COMPREPLY=( $(compgen -W "${templates}" -- ${cur}) )
             return 0
@@ -1396,17 +1398,17 @@ _agentecflow() {
     esac
 }
 
-_agentec_init() {
+_guardkit_init() {
     local cur templates
     cur="${COMP_WORDS[COMP_CWORD]}"
     templates=$(_list_all_templates)
     COMPREPLY=( $(compgen -W "${templates}" -- ${cur}) )
 }
 
-complete -F _agentecflow agentecflow
-complete -F _agentecflow af
-complete -F _agentec_init agentec-init
-complete -F _agentec_init ai
+complete -F _guardkit guardkit
+complete -F _guardkit gk
+complete -F _guardkit_init guardkit-init
+complete -F _guardkit_init gki
 EOF
     
     print_success "Shell completions installed"
@@ -1417,15 +1419,15 @@ create_version_management() {
     print_info "Setting up version management..."
     
     # Create version file
-    echo "$AGENTICFLOW_VERSION" > "$INSTALL_DIR/versions/current"
+    echo "$AGENTECFLOW_VERSION" > "$INSTALL_DIR/versions/current"
     
     # Create symlink to current version
-    ln -sf "$AGENTICFLOW_VERSION" "$INSTALL_DIR/versions/latest"
+    ln -sf "$AGENTECFLOW_VERSION" "$INSTALL_DIR/versions/latest"
     
     # Create version info file
-    cat > "$INSTALL_DIR/versions/$AGENTICFLOW_VERSION/info.json" << EOF
+    cat > "$INSTALL_DIR/versions/$AGENTECFLOW_VERSION/info.json" << EOF
 {
-  "version": "$AGENTICFLOW_VERSION",
+  "version": "$AGENTECFLOW_VERSION",
   "released": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
   "features": [
     "EARS requirements notation",
