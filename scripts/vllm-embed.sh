@@ -5,9 +5,14 @@
 # Designed for Graphiti seeding workloads (~215 embedding calls per add_episode).
 #
 # Usage:
-#   ./scripts/vllm-embed.sh                      # Default: nemotron-embed (Option B)
-#   ./scripts/vllm-embed.sh nomic                 # Option A: nomic-embed-text-v1.5
+#   ./scripts/vllm-embed.sh                      # Default: nomic-embed-text-v1.5
+#   ./scripts/vllm-embed.sh nemotron              # nvidia/llama-nemotron-embed-1b-v2
 #   ./scripts/vllm-embed.sh custom org/model      # Any custom embedding model
+#
+# NOTE: nemotron uses a custom bidirectional encoder architecture that falls back to
+# the Transformers backend in vLLM. The 26.01 container ships transformers==4.57.1,
+# but encoder model support requires transformers>=5.0.0.dev0. Use nomic until a
+# newer container with transformers 5.x is released.
 #
 # Environment variables (override defaults):
 #   VLLM_EMBED_PORT=8001        Server port
@@ -24,18 +29,19 @@ IMAGE="${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.01-py3}"
 CONTAINER_NAME="vllm-embedding"
 
 # --- Model selection ---
-MODEL_PRESET="${1:-nemotron}"
+MODEL_PRESET="${1:-nomic}"
 
 case "$MODEL_PRESET" in
-  nemotron|default|"")
+  nomic|default|"")
+    MODEL="nomic-ai/nomic-embed-text-v1.5"
+    EXTRA_ARGS="--runner pooling --trust-remote-code"
+    echo "Model: nomic-embed-text-v1.5 (137M, ~274MB, 8192 context)"
+    ;;
+  nemotron)
     MODEL="nvidia/llama-nemotron-embed-1b-v2"
     EXTRA_ARGS="--runner pooling --pooler-config {\"pooling_type\":\"MEAN\"} --trust-remote-code"
     echo "Model: nvidia/llama-nemotron-embed-1b-v2 (1B, ~2GB, Matryoshka embeddings)"
-    ;;
-  nomic)
-    MODEL="nomic-ai/nomic-embed-text-v1.5"
-    EXTRA_ARGS="--task embed"
-    echo "Model: nomic-embed-text-v1.5 (137M, ~274MB, 8192 context)"
+    echo "WARNING: Requires transformers>=5.0.0.dev0; container 26.01 has 4.57.1 — likely to fail."
     ;;
   custom)
     MODEL="${2:?Usage: $0 custom org/model-name}"
@@ -46,8 +52,8 @@ case "$MODEL_PRESET" in
     echo "Unknown preset: $MODEL_PRESET"
     echo ""
     echo "Available presets:"
-    echo "  nemotron  nvidia/llama-nemotron-embed-1b-v2 (default, best for NVIDIA hw)"
-    echo "  nomic     nomic-ai/nomic-embed-text-v1.5 (lightweight, proven quality)"
+    echo "  nomic     nomic-ai/nomic-embed-text-v1.5 (default, 137M, works with 26.01)"
+    echo "  nemotron  nvidia/llama-nemotron-embed-1b-v2 (1B, requires transformers 5.x)"
     echo "  custom    Any model: $0 custom org/model-name"
     exit 1
     ;;
