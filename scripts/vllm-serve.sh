@@ -105,7 +105,7 @@ docker run -d \
     --max-model-len "$MAX_LEN" \
     --attention-backend flashinfer \
     --enable-prefix-caching \
-    --load-format fastsafetensors
+    --load-format auto
 
 echo "Container started: $CONTAINER_NAME"
 echo ""
