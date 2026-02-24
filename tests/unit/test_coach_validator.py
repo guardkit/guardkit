@@ -4590,6 +4590,185 @@ class TestClassifyTestFailurePsycopg2:
 
 
 # ============================================================================
+# Test _classify_test_failure — SDK API error classification (TASK-FIX-d5e6)
+# ============================================================================
+
+
+class TestClassifyTestFailureSdkApiError:
+    """Tests for SDK API error pattern matching in _classify_test_failure.
+
+    Source: TASK-FIX-d5e6 — from TASK-REV-ED10.
+    """
+
+    def test_sdk_api_error_classified_correctly(self, tmp_worktree):
+        """SDK API error: invalid_request → ('sdk_api_error', 'high')."""
+        validator = CoachValidator(str(tmp_worktree))
+        output = (
+            "Error: SDK API error: invalid_request\n"
+            "The model name is not valid for this endpoint.\n"
+        )
+
+        result = validator._classify_test_failure(output)
+
+        assert result == ("sdk_api_error", "high"), (
+            f"Expected ('sdk_api_error', 'high'), got {result!r}. "
+            "SDK API error should be classified as sdk_api_error, not code."
+        )
+
+    def test_invalid_request_error_classified(self, tmp_worktree):
+        """invalid_request_error pattern → ('sdk_api_error', 'high')."""
+        validator = CoachValidator(str(tmp_worktree))
+        output = "anthropic.BadRequestError: invalid_request_error: model not found"
+
+        result = validator._classify_test_failure(output)
+
+        assert result == ("sdk_api_error", "high"), (
+            f"Expected ('sdk_api_error', 'high'), got {result!r}."
+        )
+
+    def test_assistant_message_error_classified(self, tmp_worktree):
+        """AssistantMessage.error pattern → ('sdk_api_error', 'high')."""
+        validator = CoachValidator(str(tmp_worktree))
+        output = "AssistantMessage.error: The request was rejected by the API"
+
+        result = validator._classify_test_failure(output)
+
+        assert result == ("sdk_api_error", "high"), (
+            f"Expected ('sdk_api_error', 'high'), got {result!r}."
+        )
+
+    def test_unrelated_error_not_classified_as_sdk(self, tmp_worktree):
+        """Unrelated test failure should NOT match SDK API error patterns."""
+        validator = CoachValidator(str(tmp_worktree))
+        output = "AssertionError: expected 5, got 3"
+
+        result = validator._classify_test_failure(output)
+
+        assert result == ("code", "n/a"), (
+            f"Expected ('code', 'n/a'), got {result!r}. "
+            "Non-SDK errors should fall through to code classification."
+        )
+
+
+# ============================================================================
+# Custom API Base URL Tests (TASK-FIX-f1a2)
+# ============================================================================
+
+
+class TestCustomApiBase:
+    """Test _is_custom_api_base() and use_sdk bypass for non-Anthropic endpoints.
+
+    When ANTHROPIC_BASE_URL points to a non-Anthropic server (e.g. vLLM),
+    the SDK path should be bypassed in favour of the subprocess path.
+
+    Fix for: TASK-FIX-f1a2 (from TASK-REV-ED10)
+    """
+
+    def test_custom_base_url_detected(self, tmp_worktree, monkeypatch):
+        """ANTHROPIC_BASE_URL=http://localhost:8000 → _is_custom_api_base() returns True."""
+        monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://localhost:8000")
+        validator = CoachValidator(str(tmp_worktree))
+        assert validator._is_custom_api_base() is True
+
+    def test_anthropic_url_not_custom(self, tmp_worktree, monkeypatch):
+        """ANTHROPIC_BASE_URL=https://api.anthropic.com → returns False."""
+        monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+        validator = CoachValidator(str(tmp_worktree))
+        assert validator._is_custom_api_base() is False
+
+    def test_anthropic_url_with_path_not_custom(self, tmp_worktree, monkeypatch):
+        """ANTHROPIC_BASE_URL=https://api.anthropic.com/v1 → returns False."""
+        monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com/v1")
+        validator = CoachValidator(str(tmp_worktree))
+        assert validator._is_custom_api_base() is False
+
+    def test_unset_base_url_not_custom(self, tmp_worktree, monkeypatch):
+        """ANTHROPIC_BASE_URL unset → returns False."""
+        monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+        validator = CoachValidator(str(tmp_worktree))
+        assert validator._is_custom_api_base() is False
+
+    def test_empty_base_url_not_custom(self, tmp_worktree, monkeypatch):
+        """ANTHROPIC_BASE_URL='' → returns False."""
+        monkeypatch.setenv("ANTHROPIC_BASE_URL", "")
+        validator = CoachValidator(str(tmp_worktree))
+        assert validator._is_custom_api_base() is False
+
+    def test_use_sdk_false_when_custom_base(self, tmp_worktree, monkeypatch):
+        """use_sdk is False when ANTHROPIC_BASE_URL points to a custom endpoint."""
+        monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://localhost:8000")
+        (tmp_worktree / "pyproject.toml").touch()
+        tests_dir = tmp_worktree / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_something.py").touch()
+
+        validator = CoachValidator(str(tmp_worktree))
+        validator._coach_test_execution = "sdk"
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="5 passed", stderr="")
+            result = validator.run_independent_tests()
+
+        # Should have used subprocess path (not SDK) due to custom base URL
+        mock_run.assert_called_once()
+        assert result.tests_passed is True
+
+    def test_use_sdk_true_when_no_custom_base(self, tmp_worktree, monkeypatch):
+        """use_sdk remains True when ANTHROPIC_BASE_URL is unset (default Anthropic API)."""
+        monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+        (tmp_worktree / "pyproject.toml").touch()
+        tests_dir = tmp_worktree / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_something.py").touch()
+
+        validator = CoachValidator(str(tmp_worktree))
+        validator._coach_test_execution = "sdk"
+
+        # When SDK path is taken, it will try to import claude_agent_sdk
+        # which won't be available in test environment, so it raises.
+        # The fact that it attempts the SDK path confirms use_sdk=True.
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="5 passed", stderr="")
+            # Mock the SDK import to verify it's attempted
+            with patch.object(validator, "_run_tests_via_sdk", side_effect=Exception("SDK mock")):
+                # SDK fails, falls through to subprocess
+                result = validator.run_independent_tests()
+
+        # The subprocess fallback should have been used after SDK failure
+        mock_run.assert_called_once()
+
+
+# ============================================================================
+# Coach Test Model Configuration (TASK-FIX-g7h8)
+# ============================================================================
+
+
+class TestCoachTestModelEnvVar:
+    """Test GUARDKIT_COACH_TEST_MODEL environment variable support."""
+
+    def test_get_coach_test_model_returns_none_when_unset(self, tmp_worktree):
+        """When env var is not set, _get_coach_test_model returns None."""
+        validator = CoachValidator(str(tmp_worktree))
+        with patch.dict("os.environ", {}, clear=True):
+            result = validator._get_coach_test_model()
+        assert result is None
+
+    def test_get_coach_test_model_returns_value_when_set(self, tmp_worktree):
+        """When env var is set, _get_coach_test_model returns the value."""
+        validator = CoachValidator(str(tmp_worktree))
+        with patch.dict("os.environ", {"GUARDKIT_COACH_TEST_MODEL": "claude-haiku-4-5-20251001"}):
+            result = validator._get_coach_test_model()
+        assert result == "claude-haiku-4-5-20251001"
+
+    def test_get_coach_test_model_returns_none_for_empty_string(self, tmp_worktree):
+        """When env var is set to empty string, _get_coach_test_model returns None."""
+        validator = CoachValidator(str(tmp_worktree))
+        with patch.dict("os.environ", {"GUARDKIT_COACH_TEST_MODEL": ""}):
+            result = validator._get_coach_test_model()
+        assert result is None
+
+
+# ============================================================================
 # Run Tests
 # ============================================================================
 

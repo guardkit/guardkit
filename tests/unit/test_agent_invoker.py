@@ -18,6 +18,9 @@ from guardkit.orchestrator.agent_invoker import (
     TASK_WORK_SDK_MAX_TURNS,
     USE_TASK_WORK_DELEGATION,
     async_heartbeat,
+    _install_sdk_cleanup_handler,
+    _SDK_CLEANUP_SUPPRESS_PATTERNS,
+    _patched_loops,
 )
 from guardkit.orchestrator.exceptions import (
     AgentInvocationError,
@@ -131,24 +134,21 @@ class TestAgentInvokerInit:
 
         assert invoker.worktree_path == worktree_path
         assert invoker.max_turns_per_agent == 30
-        assert invoker.player_model == "claude-sonnet-4-5-20250929"
-        assert invoker.coach_model == "claude-sonnet-4-5-20250929"
         assert invoker.sdk_timeout_seconds == DEFAULT_SDK_TIMEOUT
         assert invoker.development_mode == "tdd"  # Default is tdd
+        # Model selection is delegated to CLI default (no player_model/coach_model)
+        assert not hasattr(invoker, "player_model")
+        assert not hasattr(invoker, "coach_model")
 
     def test_init_with_custom_values(self, worktree_path):
         """AgentInvoker accepts custom configuration."""
         invoker = AgentInvoker(
             worktree_path=worktree_path,
             max_turns_per_agent=50,
-            player_model="claude-opus-4-5-20251101",
-            coach_model="claude-sonnet-4-5-20250929",
             sdk_timeout_seconds=120,
         )
 
         assert invoker.max_turns_per_agent == 50
-        assert invoker.player_model == "claude-opus-4-5-20251101"
-        assert invoker.coach_model == "claude-sonnet-4-5-20250929"
         assert invoker.sdk_timeout_seconds == 120
 
     def test_init_with_development_mode(self, worktree_path):
@@ -215,7 +215,8 @@ class TestPlayerInvocation:
                 "Glob",
             ]
             assert call_kwargs["permission_mode"] == "acceptEdits"
-            assert call_kwargs["model"] == agent_invoker.player_model
+            # Model is not passed — delegated to CLI default
+            assert "model" not in call_kwargs or call_kwargs["model"] is None
 
     @pytest.mark.asyncio
     async def test_invoke_player_with_feedback(
@@ -7661,3 +7662,110 @@ def test__find_task_file__finds_task_in_design_approved(worktree_path, agent_inv
 
     result = agent_invoker._find_task_file("TASK-DB-001")
     assert result == task_file
+
+
+# ==================== SDK Cleanup Handler Tests (TASK-FIX-k3l4) ====================
+
+
+class TestSdkCleanupHandler:
+    """Tests for _install_sdk_cleanup_handler - SDK async generator cleanup noise suppression."""
+
+    def setup_method(self):
+        """Clear _patched_loops before each test to ensure test isolation."""
+        _patched_loops.clear()
+
+    def _make_loop_with_handler(self):
+        """Create a new event loop, install the handler, and return (loop, recorded_calls)."""
+        loop = asyncio.new_event_loop()
+        recorded_calls = []
+
+        # Capture calls to default_exception_handler for pass-through verification
+        original_default = loop.default_exception_handler
+
+        def capturing_default(context):
+            recorded_calls.append(context)
+            # Don't call original to avoid actual logging noise in tests
+
+        loop.default_exception_handler = capturing_default
+        _install_sdk_cleanup_handler(loop)
+        return loop, recorded_calls
+
+    def test_sdk_cleanup_handler_suppresses_cancel_scope_error(self):
+        """Handler suppresses RuntimeError with 'Attempted to exit cancel scope' message."""
+        loop, recorded_calls = self._make_loop_with_handler()
+        try:
+            exc = RuntimeError("Attempted to exit cancel scope in a different task than it was entered in")
+            context = {
+                "message": "Task exception was never retrieved",
+                "exception": exc,
+                "future": None,
+            }
+            # Invoke the installed handler
+            loop.call_exception_handler(context)
+            # Should be suppressed - no call to default_exception_handler
+            assert recorded_calls == [], (
+                "Expected cancel scope error to be suppressed, but default handler was called"
+            )
+        finally:
+            loop.close()
+
+    def test_sdk_cleanup_handler_suppresses_process_error(self):
+        """Handler suppresses errors matching 'Command failed with exit code 1'."""
+        loop, recorded_calls = self._make_loop_with_handler()
+        try:
+            exc = RuntimeError("Command failed with exit code 1")
+            context = {
+                "message": "Task exception was never retrieved",
+                "exception": exc,
+                "future": None,
+            }
+            loop.call_exception_handler(context)
+            assert recorded_calls == [], (
+                "Expected process error to be suppressed, but default handler was called"
+            )
+        finally:
+            loop.close()
+
+    def test_sdk_cleanup_handler_passes_through_other_errors(self):
+        """Handler does NOT suppress unrelated asyncio errors - passes them to default handler."""
+        loop, recorded_calls = self._make_loop_with_handler()
+        try:
+            exc = RuntimeError("Some completely unrelated asyncio error")
+            context = {
+                "message": "Task exception was never retrieved",
+                "exception": exc,
+                "future": None,
+            }
+            loop.call_exception_handler(context)
+            # Should NOT be suppressed - default handler must be called
+            assert len(recorded_calls) == 1, (
+                f"Expected unrelated error to reach default handler, got {recorded_calls}"
+            )
+            assert recorded_calls[0] is context
+        finally:
+            loop.close()
+
+    def test_sdk_cleanup_handler_idempotent(self):
+        """Calling _install_sdk_cleanup_handler twice on same loop is safe and installs only once."""
+        loop = asyncio.new_event_loop()
+        handler_set_count = [0]
+        original_set_exception_handler = loop.set_exception_handler
+
+        def counting_set_handler(h):
+            handler_set_count[0] += 1
+            original_set_exception_handler(h)
+
+        loop.set_exception_handler = counting_set_handler
+        try:
+            _install_sdk_cleanup_handler(loop)
+            _install_sdk_cleanup_handler(loop)
+            _install_sdk_cleanup_handler(loop)
+
+            # set_exception_handler must only be called once (first call)
+            assert handler_set_count[0] == 1, (
+                f"set_exception_handler called {handler_set_count[0]} times; expected exactly 1"
+            )
+            # Loop id should be in _patched_loops
+            assert id(loop) in _patched_loops
+        finally:
+            loop.close()

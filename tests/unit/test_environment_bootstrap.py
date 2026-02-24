@@ -40,6 +40,7 @@ except ImportError:
 requires_toml = pytest.mark.skipif(not HAS_TOML, reason="tomllib/tomli not available")
 
 from guardkit.orchestrator.environment_bootstrap import (
+    PEP668_SENTINEL,
     BootstrapResult,
     DetectedManifest,
     EnvironmentBootstrapper,
@@ -1397,3 +1398,348 @@ class TestEnvironmentBootstrapperRetryLogic:
         mock_run.assert_not_called()
         assert result.skipped is True
         assert result.success is True
+
+
+# ============================================================================
+# PEP 668 Virtualenv Fallback Tests (TASK-FIX-b3c4)
+# ============================================================================
+
+
+class TestPep668Detection:
+    """Tests for _is_pep668_error sentinel detection."""
+
+    def test_is_pep668_error_with_sentinel(self, tmp_path: Path) -> None:
+        """_is_pep668_error returns True when stderr contains the sentinel."""
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        stderr = (
+            "error: externally-managed-environment\n\n"
+            "This environment is externally managed"
+        )
+        assert bootstrapper._is_pep668_error(stderr) is True
+
+    def test_is_pep668_error_without_sentinel(self, tmp_path: Path) -> None:
+        """_is_pep668_error returns False for other errors."""
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        assert bootstrapper._is_pep668_error("ModuleNotFoundError: No module named 'foo'") is False
+
+    def test_is_pep668_error_empty_string(self, tmp_path: Path) -> None:
+        """_is_pep668_error returns False for empty string."""
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        assert bootstrapper._is_pep668_error("") is False
+
+    def test_pep668_sentinel_constant(self) -> None:
+        """PEP668_SENTINEL matches expected value."""
+        assert PEP668_SENTINEL == "externally-managed-environment"
+
+
+class TestEnsureVenv:
+    """Tests for _ensure_venv virtualenv creation."""
+
+    def test_ensure_venv_creates_venv(self, tmp_path: Path) -> None:
+        """_ensure_venv creates a venv when none exists."""
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = Mock(returncode=0)
+            result = bootstrapper._ensure_venv()
+
+        expected_venv_dir = tmp_path / ".guardkit" / "venv"
+        mock_run.assert_called_once_with(
+            [sys.executable, "-m", "venv", str(expected_venv_dir)],
+            check=True,
+        )
+        assert result == expected_venv_dir / "bin" / "python"
+        assert bootstrapper._venv_python == result
+
+    def test_ensure_venv_reuses_existing(self, tmp_path: Path) -> None:
+        """_ensure_venv reuses an existing venv on disk without recreating."""
+        venv_dir = tmp_path / ".guardkit" / "venv"
+        venv_python = venv_dir / "bin" / "python"
+        venv_python.parent.mkdir(parents=True)
+        venv_python.write_text("#!/usr/bin/env python3\n")
+
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        with patch("subprocess.run") as mock_run:
+            result = bootstrapper._ensure_venv()
+
+        mock_run.assert_not_called()  # Should not re-create
+        assert result == venv_python
+
+    def test_ensure_venv_caches_result(self, tmp_path: Path) -> None:
+        """_ensure_venv caches the venv path and doesn't recreate on second call."""
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        fake_path = tmp_path / ".guardkit" / "venv" / "bin" / "python"
+        bootstrapper._venv_python = fake_path
+
+        result = bootstrapper._ensure_venv()
+        assert result == fake_path  # Returns cached value
+
+
+class TestPep668RunInstallFallback:
+    """Tests for PEP 668 fallback in _run_install."""
+
+    def test_run_install_pep668_creates_venv_and_retries(self, tmp_path: Path) -> None:
+        """On PEP 668 error, _run_install creates a venv and retries successfully."""
+        f = tmp_path / "pyproject.toml"
+        f.write_text("[project]\nname = 'test'\n")
+        m = make_manifest(f)
+
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+
+        pep668_stderr = "error: externally-managed-environment\n"
+        fail_result = Mock(returncode=1, stdout="", stderr=pep668_stderr)
+        success_result = Mock(returncode=0, stdout="ok", stderr="")
+
+        venv_python = tmp_path / ".guardkit" / "venv" / "bin" / "python"
+
+        with patch("subprocess.run") as mock_run:
+            # First call: pip install fails with PEP 668
+            # Second call: venv creation succeeds
+            # Third call: retry with venv succeeds
+            mock_run.side_effect = [fail_result, Mock(returncode=0), success_result]
+            result = bootstrapper._run_install(m)
+
+        assert result is True
+        assert bootstrapper._venv_python == venv_python
+        assert mock_run.call_count == 3
+
+    def test_run_install_pep668_retry_also_fails(self, tmp_path: Path) -> None:
+        """If PEP 668 retry also fails, _run_install returns False."""
+        f = tmp_path / "pyproject.toml"
+        f.write_text("[project]\nname = 'test'\n")
+        m = make_manifest(f)
+
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+
+        pep668_stderr = "error: externally-managed-environment\n"
+        fail_result = Mock(returncode=1, stdout="", stderr=pep668_stderr)
+        retry_fail = Mock(returncode=1, stdout="", stderr="permission denied")
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [fail_result, Mock(returncode=0), retry_fail]
+            result = bootstrapper._run_install(m)
+
+        assert result is False
+
+    def test_run_install_non_pep668_failure_no_venv(self, tmp_path: Path) -> None:
+        """Non-PEP-668 failures do not trigger venv creation."""
+        f = tmp_path / "pyproject.toml"
+        f.write_text("[project]\nname = 'test'\n")
+        m = make_manifest(f)
+
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+
+        fail_result = Mock(returncode=1, stdout="", stderr="some other error")
+
+        with patch("subprocess.run", return_value=fail_result):
+            result = bootstrapper._run_install(m)
+
+        assert result is False
+        assert bootstrapper._venv_python is None
+
+    def test_run_install_uses_existing_venv(self, tmp_path: Path) -> None:
+        """When _venv_python is already set, _run_install uses it without PEP 668 retry."""
+        f = tmp_path / "pyproject.toml"
+        f.write_text("[project]\nname = 'test'\n")
+        m = make_manifest(f)
+
+        venv_python = tmp_path / ".guardkit" / "venv" / "bin" / "python"
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        bootstrapper._venv_python = venv_python
+
+        success_result = Mock(returncode=0, stdout="ok", stderr="")
+
+        with patch("subprocess.run", return_value=success_result) as mock_run:
+            result = bootstrapper._run_install(m)
+
+        assert result is True
+        # Verify the command used the venv python
+        called_cmd = mock_run.call_args[0][0]
+        assert called_cmd[0] == str(venv_python)
+
+    def test_run_install_non_python_no_pep668_handling(self, tmp_path: Path) -> None:
+        """Non-Python installs do not trigger PEP 668 handling."""
+        f = tmp_path / "package.json"
+        f.write_text('{"name": "test"}')
+        m = make_manifest(f, stack="node", install_command=["npm", "install"])
+
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+
+        fail_result = Mock(returncode=1, stdout="", stderr="externally-managed-environment")
+
+        with patch("subprocess.run", return_value=fail_result):
+            result = bootstrapper._run_install(m)
+
+        assert result is False
+        assert bootstrapper._venv_python is None  # No venv created for non-python
+
+
+class TestPep668RunSingleCommandFallback:
+    """Tests for PEP 668 fallback in _run_single_command."""
+
+    def test_run_single_command_pep668_creates_venv_and_retries(
+        self, tmp_path: Path
+    ) -> None:
+        """On PEP 668 error, _run_single_command creates venv and retries."""
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        cmd = [sys.executable, "-m", "pip", "install", "requests"]
+
+        pep668_stderr = "error: externally-managed-environment\n"
+        fail_result = Mock(returncode=1, stdout="", stderr=pep668_stderr)
+        success_result = Mock(returncode=0, stdout="ok", stderr="")
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [fail_result, Mock(returncode=0), success_result]
+            result = bootstrapper._run_single_command(cmd, tmp_path)
+
+        assert result is True
+        assert bootstrapper._venv_python is not None
+
+    def test_run_single_command_non_python_no_pep668(self, tmp_path: Path) -> None:
+        """Non-Python commands do not trigger PEP 668 fallback."""
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        cmd = ["npm", "install", "express"]
+
+        fail_result = Mock(returncode=1, stdout="", stderr="externally-managed-environment")
+
+        with patch("subprocess.run", return_value=fail_result):
+            result = bootstrapper._run_single_command(cmd, tmp_path)
+
+        assert result is False
+        assert bootstrapper._venv_python is None
+
+    def test_run_single_command_uses_existing_venv(self, tmp_path: Path) -> None:
+        """When _venv_python is already set, _run_single_command uses it."""
+        venv_python = tmp_path / ".guardkit" / "venv" / "bin" / "python"
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        bootstrapper._venv_python = venv_python
+
+        cmd = [sys.executable, "-m", "pip", "install", "requests"]
+        success_result = Mock(returncode=0, stdout="ok", stderr="")
+
+        with patch("subprocess.run", return_value=success_result) as mock_run:
+            result = bootstrapper._run_single_command(cmd, tmp_path)
+
+        assert result is True
+        called_cmd = mock_run.call_args[0][0]
+        assert called_cmd[0] == str(venv_python)
+
+
+class TestPep668StatePersistence:
+    """Tests for venv_python persistence in state file."""
+
+    def test_state_includes_venv_python_after_creation(self, tmp_path: Path) -> None:
+        """State file includes venv_python path after venv is created."""
+        f = tmp_path / "requirements.txt"
+        f.write_text("flask\n")
+        m = make_manifest(f)
+
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+
+        pep668_stderr = "error: externally-managed-environment\n"
+        fail_result = Mock(returncode=1, stdout="", stderr=pep668_stderr)
+        success_result = Mock(returncode=0, stdout="ok", stderr="")
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [fail_result, Mock(returncode=0), success_result]
+            bootstrapper.bootstrap([m])
+
+        state = bootstrapper._load_state()
+        assert "venv_python" in state
+        expected_venv = str(tmp_path / ".guardkit" / "venv" / "bin" / "python")
+        assert state["venv_python"] == expected_venv
+
+    def test_state_no_venv_when_no_pep668(self, tmp_path: Path) -> None:
+        """State file does not include venv_python when no PEP 668 error."""
+        f = tmp_path / "requirements.txt"
+        f.write_text("flask\n")
+        m = make_manifest(f)
+
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        success_result = Mock(returncode=0, stdout="ok", stderr="")
+
+        with patch("subprocess.run", return_value=success_result):
+            bootstrapper.bootstrap([m])
+
+        state = bootstrapper._load_state()
+        assert "venv_python" not in state
+
+    def test_bootstrap_recovers_venv_from_state(self, tmp_path: Path) -> None:
+        """bootstrap() recovers venv_python from state on subsequent runs."""
+        f = tmp_path / "requirements.txt"
+        f.write_text("flask\n")
+        m = make_manifest(f)
+
+        # Create a fake venv on disk
+        venv_python = tmp_path / ".guardkit" / "venv" / "bin" / "python"
+        venv_python.parent.mkdir(parents=True)
+        venv_python.write_text("#!/usr/bin/env python3\n")
+
+        # Pre-seed state with venv_python and a different content hash
+        # so that the skip check fails and bootstrap actually runs
+        state_file = tmp_path / ".guardkit" / "bootstrap_state.json"
+        state_file.write_text(json.dumps({
+            "content_hash": "stale-hash",
+            "success": True,
+            "venv_python": str(venv_python),
+        }))
+
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        success_result = Mock(returncode=0, stdout="ok", stderr="")
+
+        with patch("subprocess.run", return_value=success_result) as mock_run:
+            result = bootstrapper.bootstrap([m])
+
+        # Should have used the venv python (recovered from state)
+        called_cmd = mock_run.call_args[0][0]
+        assert called_cmd[0] == str(venv_python)
+        assert result.venv_python == str(venv_python)
+
+    def test_bootstrap_skip_includes_venv_from_state(self, tmp_path: Path) -> None:
+        """When bootstrap skips (hash match), result includes venv_python from state."""
+        f = tmp_path / "requirements.txt"
+        f.write_text("flask\n")
+        m = make_manifest(f)
+
+        bootstrapper = EnvironmentBootstrapper(root=tmp_path)
+        content_hash = bootstrapper._compute_hash([m])
+
+        venv_path = str(tmp_path / ".guardkit" / "venv" / "bin" / "python")
+        state_file = tmp_path / ".guardkit" / "bootstrap_state.json"
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_file.write_text(json.dumps({
+            "content_hash": content_hash,
+            "success": True,
+            "venv_python": venv_path,
+        }))
+
+        with patch("subprocess.run") as mock_run:
+            result = bootstrapper.bootstrap([m])
+
+        mock_run.assert_not_called()
+        assert result.skipped is True
+        assert result.venv_python == venv_path
+
+
+class TestBootstrapResultVenvField:
+    """Tests for the venv_python field on BootstrapResult."""
+
+    def test_venv_python_defaults_to_none(self) -> None:
+        """BootstrapResult.venv_python defaults to None."""
+        result = BootstrapResult(
+            success=True,
+            skipped=False,
+            stacks_detected=["python"],
+            manifests_found=["/tmp/pyproject.toml"],
+        )
+        assert result.venv_python is None
+
+    def test_venv_python_can_be_set(self) -> None:
+        """BootstrapResult.venv_python can be set to a path string."""
+        result = BootstrapResult(
+            success=True,
+            skipped=False,
+            stacks_detected=["python"],
+            manifests_found=["/tmp/pyproject.toml"],
+            venv_python="/tmp/.guardkit/venv/bin/python",
+        )
+        assert result.venv_python == "/tmp/.guardkit/venv/bin/python"

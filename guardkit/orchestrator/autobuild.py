@@ -3127,11 +3127,14 @@ class AutoBuildOrchestrator:
                     icon = "x"
             elif promise:
                 if promise.status == CriterionStatus.COMPLETE:
-                    status = "CLAIMED"
+                    status = "PROMISED"
+                    icon = "~"
+                elif promise.status == CriterionStatus.PARTIAL:
+                    status = "PARTIAL"
                     icon = "?"
                 else:
-                    status = "INCOMPLETE"
-                    icon = "-"
+                    status = "PENDING"
+                    icon = " "
             else:
                 status = "PENDING"
                 icon = " "
@@ -3852,11 +3855,28 @@ class AutoBuildOrchestrator:
             )
 
         elif final_decision == "unrecoverable_stall":
+            # Check if the stall was caused by SDK API errors (TASK-FIX-d5e6)
+            recent_feedback = [
+                tr.feedback for tr in turn_history
+                if tr.feedback and tr.decision == "feedback"
+            ]
+            if recent_feedback and all(
+                "SDK API error" in fb for fb in recent_feedback[-3:]
+            ):
+                stall_hint = (
+                    "Stall caused by SDK API errors \u2014 check "
+                    "ANTHROPIC_BASE_URL configuration and SDK model name "
+                    "compatibility (see vllm-serve.sh SERVED_MODEL_NAME)."
+                )
+            else:
+                stall_hint = (
+                    "Review task_type classification and acceptance criteria."
+                )
             return (
                 f"Unrecoverable stall detected after {len(turn_history)} turn(s).\n"
                 f"AutoBuild cannot make forward progress.\n"
                 f"Worktree preserved for inspection.\n"
-                f"Suggested action: Review task_type classification and acceptance criteria."
+                f"Suggested action: {stall_hint}"
             )
 
         elif final_decision == "pre_loop_blocked":

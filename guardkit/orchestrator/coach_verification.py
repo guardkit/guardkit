@@ -275,27 +275,30 @@ class CoachVerifier:
             )
         except FileNotFoundError:
             logger.warning("pytest not found, trying python -m pytest")
-            try:
-                fallback_cmd = ["python", "-m", "pytest", "--tb=no", "-q"]
-                if test_paths:
-                    fallback_cmd.extend(test_paths)
-                result = subprocess.run(
-                    fallback_cmd,
-                    cwd=self.worktree_path,
-                    capture_output=True,
-                    text=True,
-                    timeout=120,
-                )
-                test_result = TestResult(
-                    passed=result.returncode == 0,
-                    test_count=self._parse_pytest_count(result.stdout),
-                    output=result.stdout,
-                )
-            except Exception as e:
-                logger.error(f"Failed to run tests: {e}")
-                test_result = TestResult(
-                    passed=False, test_count=0, output=str(e)
-                )
+            test_result = None
+            for python_cmd in ["python3", "python"]:
+                try:
+                    fallback_cmd = [python_cmd, "-m", "pytest", "--tb=no", "-q"]
+                    if test_paths:
+                        fallback_cmd.extend(test_paths)
+                    result = subprocess.run(
+                        fallback_cmd,
+                        cwd=self.worktree_path,
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                    )
+                    test_result = TestResult(
+                        passed=result.returncode == 0,
+                        test_count=self._parse_pytest_count(result.stdout),
+                        output=result.stdout,
+                    )
+                    break
+                except FileNotFoundError:
+                    continue
+            if test_result is None:
+                logger.error("Failed to run tests: neither python3 nor python found")
+                test_result = TestResult(passed=False, test_count=0, output="")
         except subprocess.TimeoutExpired:
             logger.error("Test execution timed out after 120s")
             test_result = TestResult(

@@ -111,6 +111,43 @@ MAX_SDK_TIMEOUT = 3600
 # and needs ~50 internal turns. This is NOT the same as orchestrator's max_turns (adversarial rounds).
 TASK_WORK_SDK_MAX_TURNS = 50
 
+# =========================================================================
+# SDK Async Generator Cleanup Noise Suppression (TASK-FIX-k3l4)
+# =========================================================================
+# When the SDK's query() async generator is closed between turns, AnyIO's
+# cancel scope tries to exit in a new asyncio task, producing RuntimeError
+# noise. This handler suppresses only those specific errors.
+
+_SDK_CLEANUP_SUPPRESS_PATTERNS = [
+    "Attempted to exit cancel scope in a different task",
+    "Command failed with exit code 1",
+]
+
+_patched_loops: set = set()
+
+
+def _install_sdk_cleanup_handler(loop: asyncio.AbstractEventLoop) -> None:
+    """Install targeted asyncio exception handler for SDK cleanup noise.
+
+    Idempotent - safe to call multiple times on the same loop.
+    Only suppresses known SDK async generator cleanup errors;
+    all other asyncio background task errors are passed through.
+    """
+    if id(loop) in _patched_loops:
+        return
+
+    def handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
+        msg = context.get("message", "")
+        exc = context.get("exception")
+        exc_msg = str(exc) if exc else ""
+        if any(p in msg or p in exc_msg for p in _SDK_CLEANUP_SUPPRESS_PATTERNS):
+            return  # suppress known SDK generator cleanup noise
+        loop.default_exception_handler(context)
+
+    loop.set_exception_handler(handler)
+    _patched_loops.add(id(loop))
+
+
 # Player report schema - required fields
 PLAYER_REPORT_SCHEMA = {
     "task_id": str,
@@ -603,19 +640,20 @@ class AgentInvoker:
         self,
         worktree_path: Path,
         max_turns_per_agent: int = 30,
-        player_model: str = "claude-sonnet-4-5-20250929",
-        coach_model: str = "claude-sonnet-4-5-20250929",
         sdk_timeout_seconds: int = DEFAULT_SDK_TIMEOUT,
         use_task_work_delegation: Optional[bool] = None,
         development_mode: str = "tdd",
     ):
         """Initialize AgentInvoker.
 
+        Model selection strategy: Both Player and Coach models are delegated
+        to the bundled Claude CLI default. The CLI default (currently
+        claude-sonnet-4-6) must match the vLLM SERVED_MODEL_NAME when using
+        local inference. See docs/guides/simple-local-autobuild.md for details.
+
         Args:
             worktree_path: Path to the isolated git worktree
             max_turns_per_agent: Maximum turns per agent invocation (default: 30)
-            player_model: Model to use for Player agent (default: claude-sonnet-4-5)
-            coach_model: Model to use for Coach agent (default: claude-sonnet-4-5)
             sdk_timeout_seconds: Timeout for SDK invocations (default: 1200s)
             use_task_work_delegation: If True, delegate Player to task-work instead of
                 direct SDK. Defaults to USE_TASK_WORK_DELEGATION env var.
@@ -624,8 +662,6 @@ class AgentInvoker:
         """
         self.worktree_path = Path(worktree_path)
         self.max_turns_per_agent = max_turns_per_agent
-        self.player_model = player_model
-        self.coach_model = coach_model
         self.sdk_timeout_seconds = sdk_timeout_seconds
         self._sdk_timeout_is_override = sdk_timeout_seconds != DEFAULT_SDK_TIMEOUT
         self.use_task_work_delegation = (
@@ -783,12 +819,12 @@ class AgentInvoker:
                 )
 
                 # Invoke SDK with Player permissions (Read, Write, Edit, Bash)
+                # Model selection delegated to CLI default
                 await self._invoke_with_role(
                     prompt=prompt,
                     agent_type="player",
                     allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
                     permission_mode="acceptEdits",
-                    model=self.player_model,
                 )
 
                 # Load and validate Player report
@@ -887,12 +923,12 @@ class AgentInvoker:
 
             # Invoke SDK with Coach permissions (Read, Bash only - no Write/Edit)
             # Coach uses bypassPermissions since it's read-only anyway
+            # Model selection delegated to CLI default
             await self._invoke_with_role(
                 prompt=prompt,
                 agent_type="coach",
                 allowed_tools=["Read", "Bash", "Grep", "Glob"],
                 permission_mode="bypassPermissions",
-                model=self.coach_model,
             )
 
             # Load and validate Coach decision
@@ -1357,7 +1393,7 @@ Follow the decision format specified in your agent definition.
         agent_type: Literal["player", "coach"],
         allowed_tools: list[str],
         permission_mode: Literal["acceptEdits", "bypassPermissions"],
-        model: str,
+        model: Optional[str] = None,
     ) -> None:
         """Low-level SDK invocation with role-based permissions.
 
@@ -1369,7 +1405,7 @@ Follow the decision format specified in your agent definition.
             agent_type: "player" or "coach"
             allowed_tools: List of allowed SDK tools
             permission_mode: "acceptEdits" (Player) or "bypassPermissions" (Coach)
-            model: Model identifier
+            model: Model identifier, or None to use CLI default
 
         Raises:
             AgentInvocationError: If SDK invocation fails
@@ -1401,21 +1437,24 @@ Follow the decision format specified in your agent definition.
         from guardkit.orchestrator.sdk_utils import check_assistant_message_error
 
         try:
-            options = ClaudeAgentOptions(
+            options_kwargs = dict(
                 cwd=str(self.worktree_path),
                 allowed_tools=allowed_tools,
                 permission_mode=permission_mode,
                 # TASK-REV-C4D7: Direct mode also needs ~50 internal turns
                 # (same as task-work delegation path fixed in TASK-REV-BB80)
                 max_turns=TASK_WORK_SDK_MAX_TURNS,
-                model=model,
                 setting_sources=["project"],  # Load CLAUDE.md from worktree
             )
+            if model is not None:
+                options_kwargs["model"] = model
+            options = ClaudeAgentOptions(**options_kwargs)
 
             # Extract task_id from prompt for heartbeat logging
             task_id_match = re.search(r"TASK-[A-Z0-9-]+", prompt)
             heartbeat_task_id = task_id_match.group(0) if task_id_match else "unknown"
 
+            _install_sdk_cleanup_handler(asyncio.get_running_loop())
             async with asyncio.timeout(self.sdk_timeout_seconds):
                 async with async_heartbeat(
                     heartbeat_task_id,
@@ -2597,12 +2636,12 @@ Follow the decision format specified in your agent definition.
             )
 
             # Invoke SDK with Player permissions (Read, Write, Edit, Bash)
+            # Model selection delegated to CLI default
             await self._invoke_with_role(
                 prompt=prompt,
                 agent_type="player",
                 allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
                 permission_mode="acceptEdits",
-                model=self.player_model,
             )
 
             # Add small delay to allow filesystem buffering to complete
@@ -3446,6 +3485,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             assistant_count = 0
             tool_count = 0
             result_count = 0
+            _install_sdk_cleanup_handler(asyncio.get_running_loop())
             async with asyncio.timeout(self.sdk_timeout_seconds):
                 async with async_heartbeat(task_id, "task-work implementation"):
                     async for message in query(prompt=prompt, options=options):

@@ -161,7 +161,9 @@ def generate_file_existence_promises(
 
         - ``criterion_id`` ("AC-NNN")
         - ``criterion_text`` (original criterion string)
-        - ``status`` ("complete" | "partial" | "incomplete")
+        - ``status`` ("complete" | "partial" | "incomplete") — callers **must**
+          handle all three values; ``CriterionStatus.PARTIAL`` represents a
+          file found on disk but absent from the git-change lists.
         - ``evidence`` (human-readable explanation)
         - ``evidence_type`` ("file_existence")
     """

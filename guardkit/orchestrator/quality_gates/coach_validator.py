@@ -387,6 +387,15 @@ class CoachValidator:
         "redis.exceptions.ConnectionError",
     ]
 
+    # SDK API error patterns — the LLM backend rejected the request (wrong model
+    # name, invalid parameters, rate limits, etc.).  These are NOT code defects.
+    _SDK_API_ERROR_PATTERNS: List[str] = [
+        "SDK API error",
+        "invalid_request",
+        "invalid_request_error",
+        "AssistantMessage.error",
+    ]
+
     # Ambiguous infrastructure patterns (feedback only, not conditional approval)
     _INFRA_AMBIGUOUS: List[str] = [
         "ModuleNotFoundError",
@@ -447,6 +456,16 @@ class CoachValidator:
         self._coach_test_execution = coach_test_execution
 
         logger.debug(f"CoachValidator initialized for worktree: {worktree_path}, task_id: {task_id}")
+
+    def _get_coach_test_model(self) -> Optional[str]:
+        """Return the model for Coach SDK test invocations, or None to use CLI default.
+
+        When set, GUARDKIT_COACH_TEST_MODEL allows operators to use a different
+        model for Coach test execution (e.g. claude-haiku-4-5-20251001 to reduce
+        cost on the real Anthropic API) while the CLI default works with vLLM.
+        """
+        import os
+        return os.environ.get("GUARDKIT_COACH_TEST_MODEL") or None
 
     def _resolve_task_type(self, task: Dict[str, Any]) -> TaskType:
         """
@@ -1043,13 +1062,17 @@ class CoachValidator:
         prompt = f"Run the following test command and report the output:\n\n```bash\n{test_cmd}\n```\n\nProvide the full test output."
 
         try:
-            options = ClaudeAgentOptions(
+            # Use GUARDKIT_COACH_TEST_MODEL env var if set, otherwise CLI default
+            model = self._get_coach_test_model()
+            options_kwargs = dict(
                 cwd=str(self.worktree_path),
                 allowed_tools=["Bash"],
                 permission_mode="bypassPermissions",
                 max_turns=1,
-                model="claude-haiku-4-5-20251001",
             )
+            if model is not None:
+                options_kwargs["model"] = model
+            options = ClaudeAgentOptions(**options_kwargs)
 
             collected_text: List[str] = []
             bash_output: Optional[str] = None
@@ -1160,6 +1183,11 @@ class CoachValidator:
             logger.error(f"SDK coach test execution failed: {e}")
             raise
 
+    def _is_custom_api_base(self) -> bool:
+        """Return True when ANTHROPIC_BASE_URL points to a non-Anthropic endpoint (e.g. vLLM)."""
+        base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
+        return bool(base_url) and "api.anthropic.com" not in base_url
+
     def run_independent_tests(
         self,
         task_work_results: Optional[Dict[str, Any]] = None,
@@ -1249,6 +1277,7 @@ class CoachValidator:
             use_sdk = (
                 self._coach_test_execution == "sdk"
                 and not requires_infra
+                and not self._is_custom_api_base()
             )
 
             # SDK-first dispatch (GAP-FIX #9): use asyncio bridge to call async SDK method
@@ -2464,6 +2493,16 @@ class CoachValidator:
                     f" '{missing_module}' missing (no context) → ('infrastructure', 'ambiguous')"
                 )
                 return ("infrastructure", "ambiguous")
+        # Check SDK API error patterns BEFORE general infra patterns.
+        # These indicate the LLM backend rejected the request (wrong model name,
+        # rate limits, etc.) — not a Player code defect.
+        for pattern in self._SDK_API_ERROR_PATTERNS:
+            if pattern.lower() in output_lower:
+                logger.debug(
+                    f"[{self.task_id}] _classify_test_failure: SDK API error pattern"
+                    f" matched '{pattern}' → ('sdk_api_error', 'high')"
+                )
+                return ("sdk_api_error", "high")
         for pattern in self._INFRA_HIGH_CONFIDENCE:
             if pattern.lower() in output_lower:
                 logger.debug(

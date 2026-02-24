@@ -1,0 +1,96 @@
+{
+  "task_id": "TASK-FIX-k3l4",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/agent_invoker.py",
+    "tests/unit/test_agent_invoker.py"
+  ],
+  "files_created": [],
+  "tests_written": [
+    "tests/unit/test_agent_invoker.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "402 passed in 15.82s (4 new tests for TASK-FIX-k3l4, 398 pre-existing)",
+  "implementation_notes": "Added targeted asyncio exception handler to suppress SDK async generator cleanup noise. Three changes made: (1) Added module-level _SDK_CLEANUP_SUPPRESS_PATTERNS list and _patched_loops set, plus the _install_sdk_cleanup_handler() function after the TASK_WORK_SDK_MAX_TURNS constant at line 112. (2) Called _install_sdk_cleanup_handler(asyncio.get_running_loop()) in _invoke_sdk_direct() just before async with asyncio.timeout(...) at the first SDK query location. (3) Called _install_sdk_cleanup_handler(asyncio.get_running_loop()) in the task-work SDK method just before async with asyncio.timeout(...) at the second SDK query location. The handler is idempotent via a module-level set tracking loop ids. Only the two specified patterns are suppressed; all other asyncio exceptions are passed through to the default handler.",
+  "concerns": [],
+  "requirements_addressed": [
+    "Module-level _SDK_CLEANUP_SUPPRESS_PATTERNS list with the two specified patterns",
+    "_patched_loops module-level set for idempotency tracking",
+    "_install_sdk_cleanup_handler(loop) function that is idempotent and targeted",
+    "Handler suppresses cancel scope pattern silently",
+    "Handler suppresses process error pattern silently",
+    "Handler delegates all other exceptions to loop.default_exception_handler",
+    "Handler installed at start of _invoke_sdk_direct before asyncio.timeout",
+    "Handler installed at start of task-work SDK method before asyncio.timeout",
+    "All 4 specified tests written and passing",
+    "All 398 pre-existing tests continue to pass"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Define module-level suppression patterns list with the two specified patterns",
+      "status": "complete",
+      "evidence": "Added _SDK_CLEANUP_SUPPRESS_PATTERNS = ['Attempted to exit cancel scope in a different task', 'Command failed with exit code 1'] after TASK_WORK_SDK_MAX_TURNS constant in agent_invoker.py",
+      "test_file": "tests/unit/test_agent_invoker.py",
+      "implementation_files": ["guardkit/orchestrator/agent_invoker.py"]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Create _install_sdk_cleanup_handler(loop) that is idempotent and installs targeted handler",
+      "status": "complete",
+      "evidence": "Implemented _install_sdk_cleanup_handler using _patched_loops set for idempotency. Handler checks message and exception string against _SDK_CLEANUP_SUPPRESS_PATTERNS, suppresses matches silently, and delegates non-matches to loop.default_exception_handler.",
+      "test_file": "tests/unit/test_agent_invoker.py",
+      "implementation_files": ["guardkit/orchestrator/agent_invoker.py"]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Call _install_sdk_cleanup_handler at start of _invoke_sdk_direct before asyncio.timeout",
+      "status": "complete",
+      "evidence": "Added _install_sdk_cleanup_handler(asyncio.get_running_loop()) just before the async with asyncio.timeout(self.sdk_timeout_seconds) line in the direct SDK invocation method.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/agent_invoker.py"]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Call _install_sdk_cleanup_handler at start of task-work SDK method before asyncio.timeout",
+      "status": "complete",
+      "evidence": "Added _install_sdk_cleanup_handler(asyncio.get_running_loop()) just before the async with asyncio.timeout(self.sdk_timeout_seconds) line in the task-work delegation SDK method.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/agent_invoker.py"]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "test_sdk_cleanup_handler_suppresses_cancel_scope_error - handler suppresses the cancel scope RuntimeError",
+      "status": "complete",
+      "evidence": "Test creates a loop, installs the handler, sends a context with RuntimeError('Attempted to exit cancel scope in a different task than it was entered in'), verifies default handler is NOT called.",
+      "test_file": "tests/unit/test_agent_invoker.py",
+      "implementation_files": ["guardkit/orchestrator/agent_invoker.py"]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "test_sdk_cleanup_handler_suppresses_process_error - handler suppresses 'Command failed with exit code 1'",
+      "status": "complete",
+      "evidence": "Test creates a loop, installs the handler, sends a context with RuntimeError('Command failed with exit code 1'), verifies default handler is NOT called.",
+      "test_file": "tests/unit/test_agent_invoker.py",
+      "implementation_files": ["guardkit/orchestrator/agent_invoker.py"]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "test_sdk_cleanup_handler_passes_through_other_errors - unrelated errors reach default handler",
+      "status": "complete",
+      "evidence": "Test creates a loop, installs the handler, sends an unrelated RuntimeError, verifies the default handler IS called with the exact context dict.",
+      "test_file": "tests/unit/test_agent_invoker.py",
+      "implementation_files": ["guardkit/orchestrator/agent_invoker.py"]
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "test_sdk_cleanup_handler_idempotent - calling install three times only installs once",
+      "status": "complete",
+      "evidence": "Test wraps loop.set_exception_handler with a counter, calls _install_sdk_cleanup_handler three times, asserts count == 1 and id(loop) in _patched_loops.",
+      "test_file": "tests/unit/test_agent_invoker.py",
+      "implementation_files": ["guardkit/orchestrator/agent_invoker.py"]
+    }
+  ]
+}

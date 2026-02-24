@@ -682,3 +682,113 @@ class TestProgressDisplayStallStatus:
         # If the type doesn't include 'unrecoverable_stall', mypy would catch it.
         status: FinalStatus = "unrecoverable_stall"
         assert status == "unrecoverable_stall"
+
+
+# ============================================================================
+# Test SDK API error stall hint message (TASK-FIX-d5e6)
+# ============================================================================
+
+
+class TestStallHintSdkApiError:
+    """Test that stall termination shows targeted SDK API error message."""
+
+    def _make_turn_record(self, turn: int, feedback: str) -> TurnRecord:
+        """Helper to create a TurnRecord with feedback."""
+        player_result = Mock(spec=AgentInvocationResult)
+        coach_result = Mock(spec=AgentInvocationResult)
+        return TurnRecord(
+            turn=turn,
+            player_result=player_result,
+            coach_result=coach_result,
+            decision="feedback",
+            feedback=feedback,
+            timestamp="2026-02-24T00:00:00Z",
+        )
+
+    def test_sdk_api_error_stall_shows_targeted_hint(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+        mock_pre_loop_gates,
+        mock_coach_validator,
+    ):
+        """When all recent feedback contains 'SDK API error', show targeted message."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+            pre_loop_gates=mock_pre_loop_gates,
+        )
+
+        turn_history = [
+            self._make_turn_record(1, "SDK API error: invalid_request — model not found"),
+            self._make_turn_record(2, "SDK API error: invalid_request — model not found"),
+            self._make_turn_record(3, "SDK API error: invalid_request — model not found"),
+        ]
+
+        message = orchestrator._build_summary_details(turn_history, "unrecoverable_stall")
+
+        assert "SDK API errors" in message
+        assert "ANTHROPIC_BASE_URL" in message
+        assert "SERVED_MODEL_NAME" in message
+
+    def test_non_sdk_stall_shows_generic_hint(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+        mock_pre_loop_gates,
+        mock_coach_validator,
+    ):
+        """When feedback is not SDK API errors, show generic stall hint."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+            pre_loop_gates=mock_pre_loop_gates,
+        )
+
+        turn_history = [
+            self._make_turn_record(1, "Tests are failing due to assertion errors"),
+            self._make_turn_record(2, "Tests are failing due to assertion errors"),
+            self._make_turn_record(3, "Tests are failing due to assertion errors"),
+        ]
+
+        message = orchestrator._build_summary_details(turn_history, "unrecoverable_stall")
+
+        assert "Review task_type classification" in message
+        assert "SDK API errors" not in message
+
+    def test_mixed_feedback_shows_generic_hint(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+        mock_pre_loop_gates,
+        mock_coach_validator,
+    ):
+        """When feedback is mixed (not all SDK API errors), show generic hint."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+            pre_loop_gates=mock_pre_loop_gates,
+        )
+
+        turn_history = [
+            self._make_turn_record(1, "SDK API error: invalid_request"),
+            self._make_turn_record(2, "Tests are failing due to assertion errors"),
+            self._make_turn_record(3, "SDK API error: invalid_request"),
+        ]
+
+        message = orchestrator._build_summary_details(turn_history, "unrecoverable_stall")
+
+        assert "Review task_type classification" in message
+        assert "SDK API errors" not in message

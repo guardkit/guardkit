@@ -46,6 +46,8 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+PEP668_SENTINEL = "externally-managed-environment"
+
 
 # ============================================================================
 # Data Models
@@ -274,6 +276,7 @@ class BootstrapResult:
     installs_failed: int = 0
     error: Optional[str] = None
     duration_seconds: float = 0.0
+    venv_python: Optional[str] = None
 
 
 # ============================================================================
@@ -610,6 +613,7 @@ class EnvironmentBootstrapper:
         self._root = root
         self._state_file = state_file or (root / ".guardkit" / "bootstrap_state.json")
         self._retry_cooldown_seconds = retry_cooldown_seconds
+        self._venv_python: Optional[Path] = None
 
     def bootstrap(self, manifests: List[DetectedManifest]) -> BootstrapResult:
         """
@@ -650,12 +654,24 @@ class EnvironmentBootstrapper:
             logger.debug(
                 "Bootstrap skipped: hash %s matches saved state", content_hash[:8]
             )
+            saved = self._load_state()
             return BootstrapResult(
                 success=True,
                 skipped=True,
                 stacks_detected=stacks_detected,
                 manifests_found=manifests_found,
+                venv_python=saved.get("venv_python"),
                 duration_seconds=time.monotonic() - start_time,
+            )
+
+        # Recover venv from previous run if available
+        saved = self._load_state()
+        saved_venv = saved.get("venv_python")
+        if saved_venv and Path(saved_venv).exists():
+            self._venv_python = Path(saved_venv)
+            logger.info(
+                "PEP 668: reusing virtualenv from previous run at %s",
+                self._venv_python,
             )
 
         # Run install commands
@@ -704,6 +720,7 @@ class EnvironmentBootstrapper:
                 else None
             ),
             duration_seconds=duration,
+            venv_python=str(self._venv_python) if self._venv_python else None,
         )
 
     def _compute_hash(self, manifests: List[DetectedManifest]) -> str:
@@ -822,11 +839,13 @@ class EnvironmentBootstrapper:
         success : bool
             True if the install succeeded, False if it failed.
         """
-        state = {
+        state: Dict[str, object] = {
             "content_hash": content_hash,
             "success": success,
             "timestamp": datetime.now().isoformat(),
         }
+        if self._venv_python:
+            state["venv_python"] = str(self._venv_python)
         try:
             self._state_file.parent.mkdir(parents=True, exist_ok=True)
             self._state_file.write_text(
@@ -837,6 +856,52 @@ class EnvironmentBootstrapper:
         except OSError as exc:
             logger.warning("Could not save bootstrap state to %s: %s", self._state_file, exc)
 
+    def _is_pep668_error(self, stderr: str) -> bool:
+        """
+        Return True if *stderr* contains the PEP 668 sentinel.
+
+        Parameters
+        ----------
+        stderr : str
+            Standard error output from a failed pip command.
+        """
+        return PEP668_SENTINEL in stderr
+
+    def _ensure_venv(self) -> Path:
+        """
+        Create a project-local virtualenv (if needed) and return the Python path.
+
+        The venv is created at ``<root>/.guardkit/venv/``.  If the venv
+        already exists on disk the existing Python is returned without
+        recreating it.  The result is cached in ``self._venv_python``.
+
+        Returns
+        -------
+        Path
+            Absolute path to the venv Python interpreter.
+        """
+        if self._venv_python is not None:
+            return self._venv_python
+
+        venv_dir = self._root / ".guardkit" / "venv"
+        venv_python = venv_dir / "bin" / "python"
+
+        if not venv_python.exists():
+            logger.info(
+                "PEP 668: falling back to virtualenv at %s", venv_dir
+            )
+            subprocess.run(
+                [sys.executable, "-m", "venv", str(venv_dir)],
+                check=True,
+            )
+        else:
+            logger.info(
+                "PEP 668: reusing existing virtualenv at %s", venv_dir
+            )
+
+        self._venv_python = venv_python
+        return self._venv_python
+
     def _run_install(self, manifest: DetectedManifest) -> bool:
         """
         Run the install command for a single manifest.
@@ -844,6 +909,10 @@ class EnvironmentBootstrapper:
         The command is executed with the manifest's parent directory as the
         working directory so that relative paths in install commands (e.g.
         ``-r requirements.txt``) resolve correctly.
+
+        On PEP 668 failure (``externally-managed-environment``), a project-
+        local virtualenv is created and the command is retried with the venv
+        Python.
 
         Parameters
         ----------
@@ -856,7 +925,13 @@ class EnvironmentBootstrapper:
             True if the command succeeded (exit code 0), False otherwise.
             Never raises — all errors are caught and logged.
         """
-        cmd = manifest.install_command
+        cmd = list(manifest.install_command)
+        is_python_cmd = cmd and cmd[0] == sys.executable
+
+        # If a venv was created (by a previous PEP 668 fallback), use it
+        if self._venv_python and is_python_cmd:
+            cmd[0] = str(self._venv_python)
+
         cwd = str(manifest.path.parent)
         logger.info(
             "Running install for %s (%s): %s",
@@ -879,16 +954,56 @@ class EnvironmentBootstrapper:
                 if proc.stdout:
                     logger.debug("Install stdout:\n%s", proc.stdout)
                 return True
-            else:
-                logger.warning(
-                    "Install failed for %s (%s) with exit code %d:\nstderr: %s\nstdout: %s",
+
+            # PEP 668 fallback: detect and retry with venv
+            if (
+                is_python_cmd
+                and not self._venv_python
+                and self._is_pep668_error(proc.stderr or "")
+            ):
+                venv_python = self._ensure_venv()
+                retry_cmd = list(manifest.install_command)
+                retry_cmd[0] = str(venv_python)
+                logger.info(
+                    "PEP 668: retrying install for %s (%s): %s",
                     manifest.stack,
                     manifest.path.name,
-                    proc.returncode,
-                    proc.stderr or "(empty)",
-                    proc.stdout or "(empty)",
+                    " ".join(retry_cmd),
+                )
+                retry_proc = subprocess.run(
+                    retry_cmd,
+                    cwd=cwd,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                )
+                if retry_proc.returncode == 0:
+                    logger.info(
+                        "PEP 668 retry succeeded for %s (%s)",
+                        manifest.stack,
+                        manifest.path.name,
+                    )
+                    return True
+                logger.warning(
+                    "PEP 668 retry failed for %s (%s) with exit code %d:\n"
+                    "stderr: %s\nstdout: %s",
+                    manifest.stack,
+                    manifest.path.name,
+                    retry_proc.returncode,
+                    retry_proc.stderr or "(empty)",
+                    retry_proc.stdout or "(empty)",
                 )
                 return False
+
+            logger.warning(
+                "Install failed for %s (%s) with exit code %d:\nstderr: %s\nstdout: %s",
+                manifest.stack,
+                manifest.path.name,
+                proc.returncode,
+                proc.stderr or "(empty)",
+                proc.stdout or "(empty)",
+            )
+            return False
         except subprocess.CalledProcessError as exc:
             logger.warning(
                 "Install raised CalledProcessError for %s (%s): %s",
@@ -921,6 +1036,9 @@ class EnvironmentBootstrapper:
         Used for per-dependency installs when
         ``DetectedManifest.is_project_complete()`` returns False.
 
+        On PEP 668 failure for Python pip commands, a project-local
+        virtualenv is created and the command is retried.
+
         Parameters
         ----------
         cmd : List[str]
@@ -934,36 +1052,76 @@ class EnvironmentBootstrapper:
             True if the command succeeded (exit code 0), False otherwise.
             Never raises — all errors are caught and logged.
         """
-        logger.info("Running dep-install: %s", " ".join(cmd))
+        run_cmd = list(cmd)
+        is_python_cmd = run_cmd and run_cmd[0] == sys.executable
+
+        # If a venv was created (by a previous PEP 668 fallback), use it
+        if self._venv_python and is_python_cmd:
+            run_cmd[0] = str(self._venv_python)
+
+        logger.info("Running dep-install: %s", " ".join(run_cmd))
         try:
             proc = subprocess.run(
-                cmd,
+                run_cmd,
                 cwd=str(cwd),
                 capture_output=True,
                 text=True,
                 timeout=300,
             )
             if proc.returncode == 0:
-                logger.debug("Command succeeded: %s", " ".join(cmd))
+                logger.debug("Command succeeded: %s", " ".join(run_cmd))
                 return True
+
+            # PEP 668 fallback: detect and retry with venv
+            if (
+                is_python_cmd
+                and not self._venv_python
+                and self._is_pep668_error(proc.stderr or "")
+            ):
+                venv_python = self._ensure_venv()
+                retry_cmd = list(cmd)
+                retry_cmd[0] = str(venv_python)
+                logger.info(
+                    "PEP 668: retrying dep-install: %s", " ".join(retry_cmd)
+                )
+                retry_proc = subprocess.run(
+                    retry_cmd,
+                    cwd=str(cwd),
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                )
+                if retry_proc.returncode == 0:
+                    logger.debug(
+                        "PEP 668 retry succeeded: %s", " ".join(retry_cmd)
+                    )
+                    return True
+                logger.warning(
+                    "PEP 668 retry failed (exit %d): %s\n%s",
+                    retry_proc.returncode,
+                    " ".join(retry_cmd),
+                    retry_proc.stderr or retry_proc.stdout,
+                )
+                return False
+
             logger.warning(
                 "Command failed (exit %d): %s\n%s",
                 proc.returncode,
-                " ".join(cmd),
+                " ".join(run_cmd),
                 proc.stderr or proc.stdout,
             )
             return False
         except subprocess.CalledProcessError as exc:
             logger.warning(
-                "Command raised CalledProcessError: %s: %s", " ".join(cmd), exc
+                "Command raised CalledProcessError: %s: %s", " ".join(run_cmd), exc
             )
             return False
         except OSError as exc:
-            logger.warning("Command raised OSError: %s: %s", " ".join(cmd), exc)
+            logger.warning("Command raised OSError: %s: %s", " ".join(run_cmd), exc)
             return False
         except subprocess.TimeoutExpired as exc:
             logger.warning(
-                "Command timed out (300s): %s: %s", " ".join(cmd), exc
+                "Command timed out (300s): %s: %s", " ".join(run_cmd), exc
             )
             return False
 
@@ -973,6 +1131,7 @@ class EnvironmentBootstrapper:
 # ============================================================================
 
 __all__ = [
+    "PEP668_SENTINEL",
     "DetectedManifest",
     "BootstrapResult",
     "ProjectEnvironmentDetector",

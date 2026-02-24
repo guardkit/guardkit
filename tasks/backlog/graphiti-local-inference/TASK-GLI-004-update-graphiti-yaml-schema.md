@@ -2,17 +2,29 @@
 id: TASK-GLI-004
 title: Update .guardkit/graphiti.yaml schema and config loader
 task_type: implementation
-status: backlog
-created: 2026-02-22T23:45:00Z
-updated: 2026-02-22T23:45:00Z
+status: in_progress
+created: 2026-02-22 23:45:00+00:00
+updated: 2026-02-22 23:45:00+00:00
 priority: medium
-tags: [graphiti, config, yaml]
+tags:
+- graphiti
+- config
+- yaml
 complexity: 2
 parent_review: TASK-REV-8B3A
 feature_id: FEAT-GLI
 wave: 1
 implementation_mode: task-work
-dependencies: [TASK-GLI-002]
+dependencies:
+- TASK-GLI-002
+autobuild_state:
+  current_turn: 0
+  max_turns: 5
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/TASK-GLI-004
+  base_branch: main
+  started_at: '2026-02-23T14:10:40.877302'
+  last_updated: '2026-02-23T14:10:40.877309'
+  turns: []
 ---
 
 # Task: Update .guardkit/graphiti.yaml Schema and Config Loader

@@ -18,10 +18,19 @@ set -euo pipefail
 # --- Configuration ---
 PORT="${VLLM_PORT:-8000}"
 GPU_UTIL="${VLLM_GPU_UTIL:-0.8}"
-MAX_LEN="${VLLM_MAX_LEN:-65536}"
+MAX_LEN="${VLLM_MAX_LEN:-131072}"
 IMAGE="${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.01-py3}"
 CONTAINER_NAME="vllm-qwen3-coder"
-SERVED_MODEL_NAME="claude-sonnet-4-5-20250929"
+
+# IMPORTANT: SERVED_MODEL_NAME must match the model ID used by the bundled claude CLI.
+# The Claude Agent SDK's bundled 'claude' binary sends requests using its own default model ID.
+# As of Claude Code Sonnet 4.6: the CLI default is "claude-sonnet-4-6".
+# If you upgrade guardkit-py or claude-agent-sdk and autobuild starts failing with 404,
+# check the new CLI default: ANTHROPIC_BASE_URL=http://localhost:8000 claude --version
+# then update SERVED_MODEL_NAME below to match.
+# See: docs/guides/simple-local-autobuild.md#model-alignment for full details.
+# History: misalignment caused TASK-REV-AB3D (Player 404) and TASK-REV-ED10 (Coach SDK error).
+SERVED_MODEL_NAME="claude-sonnet-4-6"
 
 # --- Model selection ---
 MODEL_PRESET="${1:-next}"
@@ -31,7 +40,7 @@ case "$MODEL_PRESET" in
     MODEL="Qwen/Qwen3-Coder-Next-FP8"
     TOOL_PARSER="qwen3_coder"
     GPU_UTIL="${VLLM_GPU_UTIL:-0.8}"
-    MAX_LEN="${VLLM_MAX_LEN:-65536}"
+    MAX_LEN="${VLLM_MAX_LEN:-131072}"
     echo "Model: Qwen3-Coder-Next FP8 (80B MoE, ~92GB, ~43 tok/s)"
     ;;
   30b)
@@ -45,7 +54,7 @@ case "$MODEL_PRESET" in
     MODEL="Qwen/Qwen3-Coder-Next-NVFP4"
     TOOL_PARSER="qwen3_coder"
     GPU_UTIL="${VLLM_GPU_UTIL:-0.5}"
-    MAX_LEN="${VLLM_MAX_LEN:-65536}"
+    MAX_LEN="${VLLM_MAX_LEN:-131072}"
     echo "Model: Qwen3-Coder-Next NVFP4 (80B MoE, ~50GB, ~35 tok/s)"
     ;;
   custom)

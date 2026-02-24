@@ -36,23 +36,25 @@ Example:
     ... )
 """
 
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class CriterionStatus(str, Enum):
     """Status of a completion promise for a criterion.
 
-    Simplified from 3 states to 2 per YAGNI principle.
-    Player either completed the criterion or not.
-
     Attributes:
         COMPLETE: Player claims to have satisfied this criterion
+        PARTIAL: File found on disk but not in git changes (synthetic report only)
         INCOMPLETE: Player has not yet satisfied this criterion
     """
 
     COMPLETE = "complete"
+    PARTIAL = "partial"
     INCOMPLETE = "incomplete"
 
 
@@ -143,10 +145,18 @@ class CompletionPromise:
             >>> promise.criterion_id
             'AC-001'
         """
+        raw_status = data.get("status", "incomplete")
+        try:
+            status = CriterionStatus(raw_status)
+        except ValueError:
+            logger.warning(
+                "Unknown CriterionStatus value %r, defaulting to INCOMPLETE", raw_status
+            )
+            status = CriterionStatus.INCOMPLETE
         return cls(
             criterion_id=data.get("criterion_id", ""),
             criterion_text=data.get("criterion_text", ""),
-            status=CriterionStatus(data.get("status", "incomplete")),
+            status=status,
             evidence=data.get("evidence", ""),
             test_file=data.get("test_file"),
             implementation_files=data.get("implementation_files", []),

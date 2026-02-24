@@ -42,11 +42,16 @@ class TestCriterionStatus:
         assert isinstance(CriterionStatus.COMPLETE, str)
         assert CriterionStatus.COMPLETE == "complete"
 
+    def test_partial_value(self):
+        """CriterionStatus.PARTIAL has correct value."""
+        assert CriterionStatus.PARTIAL.value == "partial"
+
     def test_all_values(self):
-        """CriterionStatus has exactly 2 values."""
+        """CriterionStatus has exactly 3 values."""
         values = [status.value for status in CriterionStatus]
-        assert len(values) == 2
+        assert len(values) == 3
         assert "complete" in values
+        assert "partial" in values
         assert "incomplete" in values
 
 
@@ -192,6 +197,45 @@ class TestCompletionPromise:
         assert promise.evidence == ""
         assert promise.test_file is None
         assert promise.implementation_files == []
+
+    def test_from_dict_partial_status(self):
+        """CompletionPromise.from_dict() accepts 'partial' status from synthetic report."""
+        data = {
+            "criterion_id": "AC-002",
+            "criterion_text": "File exists on disk",
+            "status": "partial",
+            "evidence": "File existence verified: src/foo.py",
+        }
+
+        promise = CompletionPromise.from_dict(data)
+
+        assert promise.status == CriterionStatus.PARTIAL
+
+    def test_from_dict_partial_roundtrip(self):
+        """CompletionPromise with PARTIAL status round-trips through to_dict/from_dict."""
+        original = CompletionPromise(
+            criterion_id="AC-003",
+            criterion_text="Disk-found file",
+            status=CriterionStatus.PARTIAL,
+            evidence="File existence verified: guardkit/foo.py",
+        )
+        restored = CompletionPromise.from_dict(original.to_dict())
+
+        assert restored.criterion_id == original.criterion_id
+        assert restored.status == CriterionStatus.PARTIAL
+
+    def test_from_dict_unknown_status_falls_back_to_incomplete(self):
+        """CompletionPromise.from_dict() falls back to INCOMPLETE for unknown status values."""
+        data = {
+            "criterion_id": "AC-004",
+            "criterion_text": "Unknown status criterion",
+            "status": "unknown_future_value",
+            "evidence": "Some evidence",
+        }
+
+        promise = CompletionPromise.from_dict(data)
+
+        assert promise.status == CriterionStatus.INCOMPLETE
 
     def test_roundtrip(self, sample_promise):
         """CompletionPromise round-trips through to_dict/from_dict."""
