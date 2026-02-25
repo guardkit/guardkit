@@ -2659,15 +2659,26 @@ Follow the decision format specified in your agent definition.
                     f"SDK did not write player_turn_{turn}.json for {task_id}, "
                     f"creating synthetic report from git detection"
                 )
-                # Load acceptance_criteria and task_type from task frontmatter
-                # so file-existence promises can be generated for scaffolding tasks
+                # Load acceptance_criteria from task markdown body (not just
+                # YAML frontmatter) so file-existence promises can be generated
+                # for scaffolding tasks.  TaskLoader parses both frontmatter
+                # and the ## Acceptance Criteria section in the body.
                 acceptance_criteria = None
                 task_type_meta = None
                 task_file = self._find_task_file(task_id)
                 if task_file:
-                    metadata = self._load_task_metadata(task_file)
-                    acceptance_criteria = metadata.get("acceptance_criteria")
-                    task_type_meta = metadata.get("task_type")
+                    try:
+                        from guardkit.tasks.task_loader import TaskLoader
+                        task_data = TaskLoader._parse_task_file(task_file, task_id)
+                        acceptance_criteria = task_data.get("acceptance_criteria") or None
+                        task_type_meta = task_data["frontmatter"].get("task_type")
+                    except Exception as e:
+                        logger.debug(
+                            f"Failed to parse task spec for synthetic promises: {e}"
+                        )
+                        # Fallback: still try YAML-only for task_type
+                        metadata = self._load_task_metadata(task_file)
+                        task_type_meta = metadata.get("task_type")
 
                 synthetic_report = self._create_synthetic_direct_mode_report(
                     task_id,
@@ -2853,6 +2864,9 @@ Follow the decision format specified in your agent definition.
             "files_modified": sorted(list(set(player_report.get("files_modified", [])))),
             "files_created": sorted(list(set(player_report.get("files_created", [])))),
             "tests_written": sorted(list(set(tests_written))),
+            "requirements_addressed": player_report.get("requirements_addressed", []),
+            "requirements_met": player_report.get("requirements_met",
+                player_report.get("requirements_addressed", [])),
             "summary": (
                 f"Direct mode implementation {'completed successfully' if success else 'failed'}"
                 + (f": {error}" if error else "")
@@ -2935,6 +2949,10 @@ Follow the decision format specified in your agent definition.
         completion_promises = player_report.get("completion_promises", [])
         if completion_promises:
             report["completion_promises"] = completion_promises
+
+        # Propagate _synthetic flag (mirrors _write_direct_mode_results pattern)
+        if player_report.get("_synthetic"):
+            report["_synthetic"] = True
 
         # Add error info if failed
         if not success and error:

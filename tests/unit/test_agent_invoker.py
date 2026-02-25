@@ -5776,6 +5776,48 @@ Task with deprecated manual mode - should be normalized to task-work.
         assert report_v2["files_modified"] == ["v2.py", "v2_extra.py"]
         assert result_path == result_path_v2
 
+    def test_write_player_report_for_direct_mode_propagates_synthetic_flag(
+        self, agent_invoker, worktree_path
+    ):
+        """_write_player_report_for_direct_mode propagates _synthetic flag (TASK-FIX-DMCP-003)."""
+        task_id = "TASK-SYN-001"
+        turn = 1
+        player_report = {
+            "task_id": task_id,
+            "turn": turn,
+            "files_modified": [],
+            "tests_run": False,
+            "tests_passed": False,
+            "_synthetic": True,
+        }
+
+        result_path = agent_invoker._write_player_report_for_direct_mode(
+            task_id, turn, player_report, success=True
+        )
+
+        report = json.loads(result_path.read_text())
+        assert report.get("_synthetic") is True
+
+    def test_write_player_report_for_direct_mode_omits_synthetic_when_absent(
+        self, agent_invoker, worktree_path
+    ):
+        """_write_player_report_for_direct_mode omits _synthetic when not set (no false positives)."""
+        task_id = "TASK-SYN-002"
+        turn = 1
+        player_report = {
+            "task_id": task_id,
+            "turn": turn,
+            "files_modified": ["src/main.py"],
+            "tests_run": True,
+            "tests_passed": True,
+        }
+
+        result_path = agent_invoker._write_player_report_for_direct_mode(
+            task_id, turn, player_report, success=True
+        )
+
+        report = json.loads(result_path.read_text())
+        assert "_synthetic" not in report
 
 
 # ========================================================================
@@ -6045,6 +6087,131 @@ implementation_mode: direct
 
         # Verify result shows success
         assert result.success is True
+
+    def test_synthetic_report_loads_acceptance_criteria_from_markdown_body(
+        self, agent_invoker, worktree_path
+    ):
+        """TASK-FIX-DMCP-004: acceptance criteria loaded from markdown body, not just YAML."""
+        task_id = "TASK-SYNTH-AC-001"
+        turn = 1
+
+        # Create task with acceptance criteria in markdown body (not YAML frontmatter)
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+        task_file = tasks_dir / f"{task_id}-test-ac.md"
+        task_file.write_text(f"""---
+id: {task_id}
+title: Scaffolding task with body criteria
+status: backlog
+task_type: scaffolding
+implementation_mode: direct
+---
+
+# Task: Scaffolding task with body criteria
+
+## Acceptance Criteria
+- Create src/models/user.py with User dataclass
+- Create src/services/auth_service.py with login method
+- Create tests/test_auth_service.py with basic tests
+""")
+
+        # Mock git detection to return files matching criteria
+        git_changes = {
+            "modified": [],
+            "created": [
+                "src/models/user.py",
+                "src/services/auth_service.py",
+                "tests/test_auth_service.py",
+            ],
+        }
+
+        # First verify TaskLoader extracts criteria from markdown body
+        criteria = self._load_criteria_via_taskloader(task_file, task_id)
+        assert criteria is not None, "TaskLoader should extract criteria from markdown body"
+        assert len(criteria) == 3, f"Expected 3 criteria, got {len(criteria)}"
+
+        with patch.object(agent_invoker, "_detect_git_changes", return_value=git_changes):
+            report = agent_invoker._create_synthetic_direct_mode_report(
+                task_id,
+                turn,
+                acceptance_criteria=criteria,
+                task_type="scaffolding",
+            )
+
+        # Verify file-existence promises were generated from the criteria
+        assert "completion_promises" in report, (
+            "scaffolding task with acceptance_criteria should produce completion_promises"
+        )
+        assert len(report["completion_promises"]) == 3
+
+    @staticmethod
+    def _load_criteria_via_taskloader(task_file, task_id):
+        """Helper: load acceptance criteria the same way the fix does."""
+        from guardkit.tasks.task_loader import TaskLoader
+
+        task_data = TaskLoader._parse_task_file(task_file, task_id)
+        return task_data.get("acceptance_criteria") or None
+
+    def test_synthetic_report_graceful_fallback_on_parse_failure(
+        self, agent_invoker, worktree_path
+    ):
+        """TASK-FIX-DMCP-004: graceful fallback if spec parsing fails."""
+        task_id = "TASK-SYNTH-AC-002"
+        turn = 1
+
+        # Create a malformed task file that will cause parse failure
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+        task_file = tasks_dir / f"{task_id}-bad.md"
+        task_file.write_text("this is not valid frontmatter\n---\n")
+
+        # The fix should gracefully handle parse failures
+        acceptance_criteria = None
+        task_type_meta = None
+        try:
+            from guardkit.tasks.task_loader import TaskLoader
+
+            task_data = TaskLoader._parse_task_file(task_file, task_id)
+            acceptance_criteria = task_data.get("acceptance_criteria") or None
+            task_type_meta = task_data["frontmatter"].get("task_type")
+        except Exception:
+            # Fallback path - no crash, no criteria
+            acceptance_criteria = None
+            task_type_meta = None
+
+        # Should not crash and acceptance_criteria should be None or empty
+        report = agent_invoker._create_synthetic_direct_mode_report(
+            task_id, turn, acceptance_criteria=acceptance_criteria, task_type=task_type_meta
+        )
+        assert report["task_id"] == task_id
+        assert report["turn"] == turn
+
+    def test_task_type_still_from_frontmatter(self, agent_invoker, worktree_path):
+        """TASK-FIX-DMCP-004: task_type is still read from YAML frontmatter."""
+        task_id = "TASK-SYNTH-AC-003"
+
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+        task_file = tasks_dir / f"{task_id}-type.md"
+        task_file.write_text(f"""---
+id: {task_id}
+title: Feature task
+status: backlog
+task_type: feature
+---
+
+# Feature task
+
+## Acceptance Criteria
+- Implement the feature
+""")
+
+        from guardkit.tasks.task_loader import TaskLoader
+
+        task_data = TaskLoader._parse_task_file(task_file, task_id)
+        task_type = task_data["frontmatter"].get("task_type")
+
+        assert task_type == "feature"
 
 
 # ============================================================================

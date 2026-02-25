@@ -583,7 +583,10 @@ class CoachValidator:
         task_work_results = self.read_quality_gate_results(task_id)
 
         if "error" in task_work_results:
-            logger.warning(f"Task-work results not found for {task_id}")
+            logger.warning(
+                f"Task-work results for {task_id} contain error: "
+                f"{task_work_results.get('error', 'unknown')}"
+            )
             return self._feedback_result(
                 task_id=task_id,
                 turn=turn,
@@ -1575,7 +1578,10 @@ class CoachValidator:
         else:
             # Strategy 2: Legacy text matching via requirements_met (fallback)
             strategy = "text"
-            requirements_met = task_work_results.get("requirements_met", [])
+            requirements_met = task_work_results.get(
+                "requirements_addressed",
+                task_work_results.get("requirements_met", []),
+            )
             validation = self._match_by_text(acceptance_criteria, requirements_met)
 
         # Diagnostic logging for 0/N results (TASK-ACR-003)
