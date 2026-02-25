@@ -6,9 +6,12 @@ Tests cover:
 - generate_file_existence_promises(): Regex matching, backtick matching,
   status classification (complete/partial/incomplete), evidence text,
   directory reference checks, and disk-check gating.
+- infer_requirements_from_files(): Content-based keyword matching,
+  conservative thresholds, size guards, binary file handling.
+- _extract_criterion_keywords(): Stopword filtering, short word removal.
 
 Coverage Target: >=90%
-Test Count: 18 tests
+Test Count: 28 tests
 """
 
 import logging
@@ -17,8 +20,10 @@ from pathlib import Path
 import pytest
 
 from guardkit.orchestrator.synthetic_report import (
+    _extract_criterion_keywords,
     build_synthetic_report,
     generate_file_existence_promises,
+    infer_requirements_from_files,
 )
 
 
@@ -351,3 +356,254 @@ class TestGenerateFileExistencePromises:
         assert len(promises) == 1
         # Without worktree_path, disk check is skipped; status must be incomplete
         assert promises[0]["status"] == "incomplete"
+
+
+# ===========================================================================
+# Section 3: _extract_criterion_keywords() Tests (TASK-FIX-ASPF-006)
+# ===========================================================================
+
+
+class TestExtractCriterionKeywords:
+    """Tests for _extract_criterion_keywords() helper."""
+
+    def test_extracts_meaningful_keywords(self):
+        """Keywords longer than 3 chars and not stopwords are returned."""
+        keywords = _extract_criterion_keywords(
+            "Settings class has log_level field"
+        )
+        assert "settings" in keywords
+        assert "class" in keywords
+        assert "log_level" in keywords
+        assert "field" in keywords
+
+    def test_filters_stopwords(self):
+        """Common stopwords are excluded from keywords."""
+        keywords = _extract_criterion_keywords(
+            "Create the new file with some implementation"
+        )
+        # "create", "the", "new", "file", "with", "some" are stopwords
+        assert "the" not in keywords
+        assert "with" not in keywords
+        assert "some" not in keywords
+        assert "implementation" in keywords
+
+    def test_filters_short_words(self):
+        """Words with 3 or fewer characters are excluded."""
+        keywords = _extract_criterion_keywords("Add an API for the UI")
+        assert "add" not in keywords
+        assert "api" not in keywords  # 3 chars
+        assert "for" not in keywords
+        assert "the" not in keywords
+
+    def test_returns_empty_for_only_stopwords(self):
+        """All-stopword text returns empty set."""
+        keywords = _extract_criterion_keywords("create a new file")
+        assert len(keywords) == 0
+
+
+# ===========================================================================
+# Section 4: infer_requirements_from_files() Tests (TASK-FIX-ASPF-006)
+# ===========================================================================
+
+
+class TestInferRequirementsFromFiles:
+    """Tests for infer_requirements_from_files() function."""
+
+    def test_returns_empty_without_worktree(self):
+        """worktree_path=None always returns empty list."""
+        result = infer_requirements_from_files(
+            acceptance_criteria=["Settings class has log_level field"],
+            files_created=["src/settings.py"],
+            files_modified=[],
+            worktree_path=None,
+        )
+        assert result == []
+
+    def test_returns_empty_with_no_files(self, tmp_path):
+        """No files to check returns empty list."""
+        result = infer_requirements_from_files(
+            acceptance_criteria=["Settings class has log_level field"],
+            files_created=[],
+            files_modified=[],
+            worktree_path=tmp_path,
+        )
+        assert result == []
+
+    def test_matches_keywords_in_file_content(self, tmp_path):
+        """Criterion keywords found in file contents are matched."""
+        # Create a file with matching content
+        src = tmp_path / "src" / "settings.py"
+        src.parent.mkdir(parents=True)
+        src.write_text(
+            'class Settings:\n    log_level: str = "INFO"\n'
+        )
+
+        result = infer_requirements_from_files(
+            acceptance_criteria=[
+                "Settings class has log_level field"
+            ],
+            files_created=["src/settings.py"],
+            files_modified=[],
+            worktree_path=tmp_path,
+        )
+        assert len(result) == 1
+        assert "Settings class has log_level field" in result
+
+    def test_no_match_for_irrelevant_content(self, tmp_path):
+        """Criterion keywords not found in any file returns empty."""
+        src = tmp_path / "src" / "main.py"
+        src.parent.mkdir(parents=True)
+        src.write_text("def main():\n    print('hello')\n")
+
+        result = infer_requirements_from_files(
+            acceptance_criteria=[
+                "Database migration script handles schema version upgrade"
+            ],
+            files_created=["src/main.py"],
+            files_modified=[],
+            worktree_path=tmp_path,
+        )
+        assert result == []
+
+    def test_skips_binary_files(self, tmp_path):
+        """Binary (non-UTF-8) files are silently skipped."""
+        binfile = tmp_path / "data.bin"
+        binfile.write_bytes(b"\x80\x81\x82\x83\x00\xff\xfe")
+
+        result = infer_requirements_from_files(
+            acceptance_criteria=[
+                "Settings class has log_level field"
+            ],
+            files_created=["data.bin"],
+            files_modified=[],
+            worktree_path=tmp_path,
+        )
+        assert result == []
+
+    def test_skips_large_files(self, tmp_path):
+        """Files exceeding _MAX_FILE_SIZE are skipped."""
+        largefile = tmp_path / "huge.py"
+        # Write 150KB of content (exceeds 100KB limit)
+        largefile.write_text("x = 'settings log_level class field'\n" * 5000)
+
+        result = infer_requirements_from_files(
+            acceptance_criteria=[
+                "Settings class has log_level field"
+            ],
+            files_created=["huge.py"],
+            files_modified=[],
+            worktree_path=tmp_path,
+        )
+        assert result == []
+
+    def test_conservative_threshold(self, tmp_path):
+        """Criterion with 4 keywords needs at least 2 matches (50%)."""
+        src = tmp_path / "src" / "partial.py"
+        src.parent.mkdir(parents=True)
+        # Only 1 of 4 keywords present (settings) — below 50%
+        src.write_text("value = 42\n")
+
+        result = infer_requirements_from_files(
+            acceptance_criteria=[
+                "Settings class has log_level field"
+            ],
+            files_created=["src/partial.py"],
+            files_modified=[],
+            worktree_path=tmp_path,
+        )
+        assert result == []
+
+    def test_criteria_with_few_keywords_skipped(self, tmp_path):
+        """Criteria with <2 meaningful keywords are skipped (too vague)."""
+        src = tmp_path / "src" / "app.py"
+        src.parent.mkdir(parents=True)
+        src.write_text("all the code\n")
+
+        result = infer_requirements_from_files(
+            acceptance_criteria=["Create a new file"],  # all stopwords
+            files_created=["src/app.py"],
+            files_modified=[],
+            worktree_path=tmp_path,
+        )
+        assert result == []
+
+    def test_handles_missing_files_gracefully(self, tmp_path):
+        """Missing files (OSError) are silently skipped."""
+        result = infer_requirements_from_files(
+            acceptance_criteria=[
+                "Settings class has log_level field"
+            ],
+            files_created=["nonexistent/file.py"],
+            files_modified=[],
+            worktree_path=tmp_path,
+        )
+        assert result == []
+
+
+# ===========================================================================
+# Section 5: build_synthetic_report() with worktree_path (TASK-FIX-ASPF-006)
+# ===========================================================================
+
+
+class TestBuildSyntheticReportWithWorktree:
+    """Tests for build_synthetic_report() requirements inference integration."""
+
+    def test_populates_requirements_addressed_from_inference(
+        self, base_report_kwargs, tmp_path
+    ):
+        """When worktree_path and criteria provided, requirements_addressed is populated."""
+        # Create file with matching content
+        src = tmp_path / "src" / "new_module.py"
+        src.parent.mkdir(parents=True)
+        src.write_text(
+            "class BaseModule:\n"
+            "    def process(self):\n"
+            "        return 'processed'\n"
+        )
+
+        report = build_synthetic_report(
+            **base_report_kwargs,
+            acceptance_criteria=[
+                "BaseModule class with process method implementation"
+            ],
+            worktree_path=tmp_path,
+        )
+        assert len(report["requirements_addressed"]) == 1
+
+    def test_requirements_addressed_empty_without_worktree(
+        self, base_report_kwargs
+    ):
+        """Without worktree_path, requirements_addressed remains []."""
+        report = build_synthetic_report(
+            **base_report_kwargs,
+            acceptance_criteria=["Some criterion text here for testing"],
+        )
+        assert report["requirements_addressed"] == []
+
+    def test_logs_inferred_requirements(
+        self, base_report_kwargs, tmp_path, caplog
+    ):
+        """INFO log emitted when requirements inferred."""
+        src = tmp_path / "src" / "new_module.py"
+        src.parent.mkdir(parents=True)
+        src.write_text(
+            "class BaseModule:\n    process = True\n"
+        )
+
+        with caplog.at_level(
+            logging.INFO, logger="guardkit.orchestrator.synthetic_report"
+        ):
+            build_synthetic_report(
+                **base_report_kwargs,
+                acceptance_criteria=[
+                    "BaseModule class with process method implementation"
+                ],
+                worktree_path=tmp_path,
+            )
+
+        inference_logs = [
+            r for r in caplog.records
+            if "requirements_addressed" in r.message
+            and "TASK-FIX-ASPF-006" in r.message
+        ]
+        assert len(inference_logs) == 1

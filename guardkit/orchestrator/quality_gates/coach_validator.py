@@ -1506,7 +1506,7 @@ class CoachValidator:
         """
         acceptance_criteria = task.get("acceptance_criteria", [])
 
-        # Fast-fail path for synthetic reports (TASK-ASF-006)
+        # Synthetic report path (TASK-ASF-006, TASK-FIX-ASPF-006)
         is_synthetic = task_work_results.get("_synthetic", False)
         if is_synthetic:
             logger.info(
@@ -1520,6 +1520,23 @@ class CoachValidator:
                 validation = self._match_by_promises(
                     acceptance_criteria, completion_promises
                 )
+                # Hybrid fallback for synthetic path (TASK-FIX-ASPF-006):
+                # If promises don't cover all criteria, try text matching
+                # against requirements_addressed (same logic as normal path).
+                if not validation.all_criteria_met:
+                    requirements_addressed = task_work_results.get(
+                        "requirements_addressed",
+                        task_work_results.get("requirements_met", []),
+                    )
+                    if requirements_addressed:
+                        validation = self._hybrid_fallback(
+                            validation, acceptance_criteria, requirements_addressed
+                        )
+                        logger.info(
+                            "Synthetic path: applied hybrid fallback with "
+                            "%d requirements_addressed entries",
+                            len(requirements_addressed),
+                        )
                 # Diagnostic logging for 0/N on synthetic path (TASK-ACR-003)
                 if validation.criteria_met == 0 and validation.criteria_total > 0:
                     logger.warning(
@@ -1531,10 +1548,27 @@ class CoachValidator:
                     logger.warning(
                         "  completion_promises: %s", completion_promises
                     )
-                    logger.warning("  matching_strategy: promises (synthetic)")
+                    logger.warning("  matching_strategy: promises+hybrid (synthetic)")
                     logger.warning("  _synthetic: True")
                 return validation
-            # No promises on synthetic report — all criteria unmet
+
+            # No promises on synthetic report — try text matching fallback
+            # before giving up (TASK-FIX-ASPF-006).
+            requirements_addressed = task_work_results.get(
+                "requirements_addressed",
+                task_work_results.get("requirements_met", []),
+            )
+            if requirements_addressed:
+                logger.info(
+                    "Synthetic report has no promises but has %d "
+                    "requirements_addressed — using text matching",
+                    len(requirements_addressed),
+                )
+                return self._match_by_text(
+                    acceptance_criteria, requirements_addressed
+                )
+
+            # No promises AND no requirements_addressed — all criteria unmet
             logger.warning(
                 "Synthetic report has no completion_promises — "
                 "all criteria marked unmet"

@@ -322,3 +322,117 @@ def generate_file_existence_promises(
         })
 
     return promises
+
+
+# ---------------------------------------------------------------------------
+# Requirements inference from file contents (TASK-FIX-ASPF-006)
+# ---------------------------------------------------------------------------
+
+
+def _extract_criterion_keywords(criterion_text: str) -> Set[str]:
+    """Extract meaningful keywords from criterion text for content matching.
+
+    Splits on non-alphanumeric characters, lowercases, filters stopwords
+    and short words (<=3 chars).
+
+    Parameters
+    ----------
+    criterion_text : str
+        Raw acceptance criterion text.
+
+    Returns
+    -------
+    Set[str]
+        Set of lowercase keyword strings.
+    """
+    words = re.split(r'[^a-zA-Z0-9_]+', criterion_text.lower())
+    return {
+        w for w in words
+        if len(w) > 3 and w not in _STOPWORDS
+    }
+
+
+def infer_requirements_from_files(
+    acceptance_criteria: List[str],
+    files_created: List[str],
+    files_modified: List[str],
+    worktree_path: Optional[Path] = None,
+) -> List[str]:
+    """Infer requirements_addressed by grepping file contents for criterion keywords.
+
+    For each acceptance criterion, extracts meaningful keywords and searches
+    the contents of created/modified files for matches.  A criterion is
+    considered addressed when at least ``_KEYWORD_THRESHOLD`` (50%) of its
+    keywords appear in the combined file contents.
+
+    Parameters
+    ----------
+    acceptance_criteria : List[str]
+        Acceptance criteria text strings to evaluate.
+    files_created : List[str]
+        Relative paths of files created by the Player.
+    files_modified : List[str]
+        Relative paths of files modified by the Player.
+    worktree_path : Optional[Path]
+        Absolute path to the worktree root.  Required for reading file
+        contents.  When ``None``, returns ``[]``.
+
+    Returns
+    -------
+    List[str]
+        Criterion text strings for which content-based evidence was found.
+        Suitable for populating ``requirements_addressed``.
+    """
+    if worktree_path is None:
+        return []
+
+    all_files = files_created + files_modified
+    if not all_files:
+        return []
+
+    # Read file contents (with size guards)
+    file_contents: Dict[str, str] = {}
+    total_bytes = 0
+    for rel_path in all_files:
+        abs_path = worktree_path / rel_path
+        try:
+            size = abs_path.stat().st_size
+            if size > _MAX_FILE_SIZE:
+                logger.debug("Skipping %s (size %d > %d)", rel_path, size, _MAX_FILE_SIZE)
+                continue
+            if total_bytes + size > _MAX_TOTAL_BYTES:
+                logger.debug(
+                    "Total byte cap reached (%d), stopping file reads", total_bytes
+                )
+                break
+            content = abs_path.read_text(encoding="utf-8")
+            file_contents[rel_path] = content.lower()
+            total_bytes += size
+        except (OSError, UnicodeDecodeError):
+            # Skip unreadable or binary files
+            continue
+
+    if not file_contents:
+        return []
+
+    # Combine all file contents for keyword searching
+    combined_content = "\n".join(file_contents.values())
+
+    addressed: List[str] = []
+    for criterion_text in acceptance_criteria:
+        keywords = _extract_criterion_keywords(criterion_text)
+        if len(keywords) < _MIN_KEYWORDS:
+            continue
+
+        matched = sum(1 for kw in keywords if kw in combined_content)
+        ratio = matched / len(keywords)
+
+        if ratio >= _KEYWORD_THRESHOLD:
+            addressed.append(criterion_text)
+            logger.debug(
+                "Criterion matched (%.0f%% keywords): %.80s",
+                ratio * 100,
+                criterion_text,
+            )
+
+    return addressed

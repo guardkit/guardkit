@@ -267,5 +267,5 @@ def test_diagnostic_logging_synthetic_with_incomplete_promises(
     assert "Criteria verification 0/3 - diagnostic dump:" in log_text
     assert "AC text: AC-001: OAuth2 authentication flow works correctly" in log_text
     assert "completion_promises:" in log_text
-    assert "matching_strategy: promises (synthetic)" in log_text
+    assert "matching_strategy: promises+hybrid (synthetic)" in log_text
     assert "_synthetic: True" in log_text

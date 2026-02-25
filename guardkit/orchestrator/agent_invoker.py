@@ -2066,6 +2066,7 @@ Follow the decision format specified in your agent definition.
             concerns=[],
             acceptance_criteria=acceptance_criteria,
             task_type=task_type,
+            worktree_path=self.worktree_path,
         )
 
     def _find_task_file(self, task_id: str) -> Optional[Path]:

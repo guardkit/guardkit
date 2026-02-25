@@ -1,10 +1,12 @@
 ---
 id: TASK-FIX-ASPF-006
 title: Enhance synthetic report with requirements inference
-status: in_progress
-updated: 2026-02-25T00:00:00Z
-previous_state: backlog
-state_transition_reason: "Automatic transition for task-work execution"
+status: completed
+updated: 2026-02-25T12:30:00Z
+completed: 2026-02-25T12:30:00Z
+previous_state: in_review
+state_transition_reason: "All acceptance criteria met, quality gates passed"
+completed_location: tasks/completed/TASK-FIX-ASPF-006/
 task_type: implementation
 created: 2026-02-24T23:00:00Z
 priority: medium

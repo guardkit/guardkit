@@ -895,3 +895,161 @@ def test_coach_validator_mixed_partial_and_incomplete(coach_validator):
     assert result.all_criteria_met is False
     assert len(result.missing) == 1
     assert "Add database migration" in result.missing
+
+
+# ============================================================================
+# 7. TASK-FIX-ASPF-006: Synthetic Path Hybrid Fallback Tests
+# ============================================================================
+
+
+def test_synthetic_hybrid_fallback_upgrades_unmatched_criteria(coach_validator):
+    """Synthetic report with promises + requirements_addressed: unmatched criteria
+    recovered via hybrid text matching fallback.
+
+    The hybrid fallback only upgrades criteria that have NO promise at all
+    (evidence contains 'No completion promise'). Criteria with explicit
+    'incomplete' promises are preserved as-is (conservative behavior)."""
+    acceptance_criteria = [
+        "Create src/file1.py",
+        "Implement authentication logic for user sessions",
+    ]
+
+    # Only AC-001 has a promise; AC-002 has no promise (Player wrote fewer
+    # promises than criteria, e.g. SDK turn exhaustion).
+    task_work_results = {
+        "_synthetic": True,
+        "completion_promises": [
+            {
+                "criterion_id": "AC-001",
+                "criterion_text": "Create src/file1.py",
+                "status": "complete",
+                "evidence": "File-existence verified: src/file1.py (created)",
+            },
+        ],
+        # requirements_addressed populated by infer_requirements_from_files
+        "requirements_addressed": [
+            "Implement authentication logic for user sessions",
+        ],
+    }
+
+    task = {"acceptance_criteria": acceptance_criteria}
+
+    result = coach_validator.validate_requirements(
+        task=task,
+        task_work_results=task_work_results,
+        turn=1,
+    )
+
+    # Both criteria should now be met (AC-001 via promises, AC-002 via hybrid)
+    assert result.criteria_met == 2
+    assert result.all_criteria_met is True
+
+
+def test_synthetic_no_promises_with_requirements_uses_text_matching(
+    coach_validator, caplog
+):
+    """Synthetic report with no promises but populated requirements_addressed
+    uses _match_by_text() instead of _build_all_unmet()."""
+    acceptance_criteria = [
+        "Implement authentication logic for user sessions",
+        "Add error handling for edge cases",
+    ]
+
+    task_work_results = {
+        "_synthetic": True,
+        # No completion_promises
+        "requirements_addressed": [
+            "Implement authentication logic for user sessions",
+            "Add error handling for edge cases",
+        ],
+    }
+
+    task = {"acceptance_criteria": acceptance_criteria}
+
+    with caplog.at_level(logging.INFO):
+        result = coach_validator.validate_requirements(
+            task=task,
+            task_work_results=task_work_results,
+            turn=1,
+        )
+
+    # Both criteria should be met via text matching
+    assert result.criteria_met == 2
+    assert result.all_criteria_met is True
+
+    # Verify text matching path was taken
+    info_messages = [r.message for r in caplog.records if r.levelname == "INFO"]
+    assert any(
+        "requirements_addressed" in msg and "text matching" in msg
+        for msg in info_messages
+    )
+
+
+def test_synthetic_hybrid_fallback_preserves_promise_verified(coach_validator):
+    """Promise-verified criteria are not overridden by text matching results."""
+    acceptance_criteria = [
+        "Create src/auth.py for authentication",
+    ]
+
+    task_work_results = {
+        "_synthetic": True,
+        "completion_promises": [
+            {
+                "criterion_id": "AC-001",
+                "criterion_text": "Create src/auth.py for authentication",
+                "status": "complete",
+                "evidence": "File-existence verified: src/auth.py (created)",
+            },
+        ],
+        "requirements_addressed": [
+            "Create src/auth.py for authentication",
+        ],
+    }
+
+    task = {"acceptance_criteria": acceptance_criteria}
+
+    result = coach_validator.validate_requirements(
+        task=task,
+        task_work_results=task_work_results,
+        turn=1,
+    )
+
+    assert result.criteria_met == 1
+    assert result.all_criteria_met is True
+    # Evidence should be from promise matching, not text matching
+    assert "File-existence" in result.criteria_results[0].evidence
+
+
+def test_synthetic_hybrid_fallback_with_empty_requirements(
+    coach_validator, caplog
+):
+    """Empty requirements_addressed on synthetic path still falls through
+    to _build_all_unmet()."""
+    acceptance_criteria = [
+        "Implement authentication logic",
+        "Add error handling",
+    ]
+
+    task_work_results = {
+        "_synthetic": True,
+        # No promises AND empty requirements_addressed
+        "requirements_addressed": [],
+    }
+
+    task = {"acceptance_criteria": acceptance_criteria}
+
+    with caplog.at_level(logging.WARNING):
+        result = coach_validator.validate_requirements(
+            task=task,
+            task_work_results=task_work_results,
+            turn=1,
+        )
+
+    # All criteria unmet (same as before TASK-FIX-ASPF-006)
+    assert result.criteria_met == 0
+    assert result.all_criteria_met is False
+    assert len(result.missing) == 2
+
+    # Verify the warning about no promises was logged
+    warning_messages = [r.message for r in caplog.records if r.levelname == "WARNING"]
+    assert any("no completion_promises" in msg for msg in warning_messages)

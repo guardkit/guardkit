@@ -2222,6 +2222,7 @@ class AutoBuildOrchestrator:
                 original_error,
                 acceptance_criteria=acceptance_criteria,
                 task_type=task_type,
+                worktree_path=worktree.path,
             )
 
             # Ensure task_id is populated in report (TASK-ACR-001)
@@ -2248,6 +2249,7 @@ class AutoBuildOrchestrator:
         original_error: Optional[str],
         acceptance_criteria: Optional[List[str]] = None,
         task_type: Optional[str] = None,
+        worktree_path: Optional[Path] = None,
     ) -> Dict[str, Any]:
         """
         Build synthetic Player report from detected work state.
@@ -2268,6 +2270,9 @@ class AutoBuildOrchestrator:
             Acceptance criteria from task (for promise generation)
         task_type : Optional[str]
             Task type from frontmatter (e.g., "scaffolding", "feature")
+        worktree_path : Optional[Path]
+            Worktree root path for content-based requirements inference
+            (TASK-FIX-ASPF-006).
 
         Returns
         -------
@@ -2349,6 +2354,7 @@ class AutoBuildOrchestrator:
                 ),
                 "timestamp": work_state.timestamp,
             },
+            worktree_path=worktree_path,
         )
 
         # Override test_output_summary from WorkState (shared builder defaults to "")
