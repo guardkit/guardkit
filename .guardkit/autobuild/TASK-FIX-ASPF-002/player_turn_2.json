@@ -1,0 +1,56 @@
+{
+  "task_id": "TASK-FIX-ASPF-002",
+  "turn": 2,
+  "files_modified": [
+    "tests/unit/test_autobuild_orchestrator.py"
+  ],
+  "files_created": [],
+  "tests_written": [
+    "tests/unit/test_autobuild_orchestrator.py::TestUnrecoverableErrors::test_execute_turn_writes_recovered_data_to_disk"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "135 passed in 3.30s",
+  "implementation_notes": "Added test_execute_turn_writes_recovered_data_to_disk to the TestUnrecoverableErrors class in tests/unit/test_autobuild_orchestrator.py. The test follows the same fixture and pattern as the existing test_execute_turn_uses_state_recovery_for_recoverable test. It: (1) mocks the Player to return a recoverable error (success=False, unrecoverable=False), (2) mocks _attempt_state_recovery to return a successful recovered result, (3) mocks the Coach (invoke_coach) to return an approval so the turn completes, then (4) asserts that mock_agent_invoker._write_direct_mode_results was called exactly once with task_id='TASK-AB-001', the recovered report, and success=True. All 135 existing tests continue to pass with no regressions.",
+  "concerns": [],
+  "requirements_addressed": [
+    "New test verifying _write_direct_mode_results is called when state recovery succeeds",
+    "Verified call uses correct arguments: task_id, recovered report, success=True",
+    "All existing tests pass with no regressions (135 total)"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "When state recovery succeeds, _write_direct_mode_results is called on the agent invoker with the recovered report data",
+      "status": "complete",
+      "evidence": "Test asserts mock_agent_invoker._write_direct_mode_results.assert_called_once_with('TASK-AB-001', recovered_result.report, success=True)",
+      "test_file": "tests/unit/test_autobuild_orchestrator.py",
+      "implementation_files": ["tests/unit/test_autobuild_orchestrator.py"]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "_write_direct_mode_results is called with success=True",
+      "status": "complete",
+      "evidence": "The assert_called_once_with call includes success=True as a keyword argument",
+      "test_file": "tests/unit/test_autobuild_orchestrator.py",
+      "implementation_files": ["tests/unit/test_autobuild_orchestrator.py"]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "_write_direct_mode_results is called with the task_id and the recovered report",
+      "status": "complete",
+      "evidence": "The assert_called_once_with call verifies positional args: task_id='TASK-AB-001' and recovered_result.report",
+      "test_file": "tests/unit/test_autobuild_orchestrator.py",
+      "implementation_files": ["tests/unit/test_autobuild_orchestrator.py"]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "No regressions in existing tests",
+      "status": "complete",
+      "evidence": "All 135 tests pass (134 pre-existing + 1 new). Run: python3 -m pytest tests/unit/test_autobuild_orchestrator.py -v --tb=short",
+      "test_file": "tests/unit/test_autobuild_orchestrator.py",
+      "implementation_files": []
+    }
+  ]
+}

@@ -1,20 +1,52 @@
 """Shared synthetic report builder for autobuild and direct mode.
 
-This module provides two public functions that unify the divergent synthetic
+This module provides public functions that unify the divergent synthetic
 report implementations in autobuild.py and agent_invoker.py (TASK-FIX-D1A3).
 
 Public API
 ----------
 build_synthetic_report : Build a synthetic Player report dict.
 generate_file_existence_promises : Extract file promises from acceptance criteria.
+infer_requirements_from_files : Infer requirements_addressed from file contents.
 """
 
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, FrozenSet, List, Optional, Set
 
 logger = logging.getLogger("guardkit.orchestrator.synthetic_report")
+
+# Maximum file size (bytes) to read for content-based inference.
+_MAX_FILE_SIZE = 100_000  # 100 KB
+
+# Maximum total bytes to read across all files.
+_MAX_TOTAL_BYTES = 1_000_000  # 1 MB
+
+# Minimum keyword count in a criterion for inference to be attempted.
+_MIN_KEYWORDS = 2
+
+# Fraction of criterion keywords that must appear in file content.
+_KEYWORD_THRESHOLD = 0.5  # 50%
+
+# Stopwords filtered out of criterion text before keyword extraction.
+_STOPWORDS: FrozenSet[str] = frozenset({
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "shall",
+    "should", "may", "might", "must", "can", "could", "and", "but", "or",
+    "nor", "not", "so", "yet", "for", "with", "from", "into", "onto",
+    "upon", "about", "after", "before", "above", "below", "between",
+    "through", "during", "without", "within", "along", "across",
+    "that", "this", "these", "those", "each", "every", "all", "both",
+    "few", "more", "most", "other", "some", "such", "only", "own",
+    "same", "than", "too", "very", "just", "also", "then", "once",
+    "here", "there", "when", "where", "why", "how", "what", "which",
+    "who", "whom", "its", "of", "to", "in", "on", "at", "by", "as",
+    "if", "no", "up",
+    # Task-specific stopwords
+    "create", "add", "update", "implement", "ensure", "verify",
+    "should", "must", "file", "new",
+})
 
 
 def build_synthetic_report(
@@ -30,6 +62,7 @@ def build_synthetic_report(
     acceptance_criteria: Optional[List[str]] = None,
     task_type: Optional[str] = None,
     recovery_metadata: Optional[Dict[str, Any]] = None,
+    worktree_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Build a synthetic Player report from detected work state.
 
@@ -69,6 +102,12 @@ def build_synthetic_report(
     recovery_metadata : Optional[Dict[str, Any]]
         Optional recovery metadata to include in the report. Provided by the
         autobuild recovery path; omitted by direct mode.
+    worktree_path : Optional[Path]
+        Absolute path to the worktree root for content-based requirements
+        inference (TASK-FIX-ASPF-006). When provided along with
+        ``acceptance_criteria``, the builder will attempt to infer
+        ``requirements_addressed`` by grepping file contents for criterion
+        keywords. When ``None``, ``requirements_addressed`` remains ``[]``.
 
     Returns
     -------
@@ -111,6 +150,22 @@ def build_synthetic_report(
                 "Generated %d file-existence promises "
                 "for scaffolding task synthetic report",
                 len(promises),
+            )
+
+    # Infer requirements_addressed from file contents (TASK-FIX-ASPF-006).
+    if acceptance_criteria and worktree_path is not None:
+        inferred = infer_requirements_from_files(
+            acceptance_criteria=acceptance_criteria,
+            files_created=files_created,
+            files_modified=files_modified,
+            worktree_path=worktree_path,
+        )
+        if inferred:
+            report["requirements_addressed"] = inferred
+            logger.info(
+                "Inferred %d requirements_addressed from file content "
+                "analysis (TASK-FIX-ASPF-006)",
+                len(inferred),
             )
 
     return report

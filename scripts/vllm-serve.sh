@@ -11,7 +11,7 @@
 # Environment variables (override defaults):
 #   VLLM_PORT=8000          Server port
 #   VLLM_GPU_UTIL=0.8       GPU memory utilization (0.0-1.0)
-#   VLLM_MAX_LEN=262144      Max context length
+#   VLLM_MAX_LEN=262144     Max context length (Qwen3-Coder-Next supports 256K natively)
 #   VLLM_IMAGE=nvcr.io/nvidia/vllm:26.01-py3  Docker image
 #   HF_TOKEN=...            Hugging Face token (for gated models)
 #
@@ -72,8 +72,8 @@ case "$MODEL_PRESET" in
     MODEL="Qwen/Qwen3-Coder-Next-NVFP4"
     TOOL_PARSER="qwen3_coder"
     GPU_UTIL="${VLLM_GPU_UTIL:-0.5}"
-    MAX_LEN="${VLLM_MAX_LEN:-131072}"
-    echo "═══ Qwen3-Coder-Next NVFP4 (80B MoE, ~50GB, ~35 tok/s) ═══"
+    MAX_LEN="${VLLM_MAX_LEN:-262144}"
+    echo "Model: Qwen3-Coder-Next NVFP4 (80B MoE, ~50GB, ~35 tok/s)"
     ;;
 
   # --- MiniMax M2.5 presets (Claude API backup / spec-writing) ---

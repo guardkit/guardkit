@@ -5,6 +5,8 @@ import json
 import logging
 import os
 import re
+import signal
+import threading
 import time
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
@@ -109,7 +111,9 @@ MAX_SDK_TIMEOUT = 3600
 # TASK-REV-BB80: SDK max_turns for task-work invocation (separate from adversarial turns)
 # /task-work runs multiple phases internally (planning, review, implementation, testing)
 # and needs ~50 internal turns. This is NOT the same as orchestrator's max_turns (adversarial rounds).
-TASK_WORK_SDK_MAX_TURNS = 50
+# TASK-FIX-ASPF-005: Increased from 50 to 100 — with --fresh, Player needs ~35-50 turns
+# for scaffolding + file modifications + tests + report writing. 50 left no headroom.
+TASK_WORK_SDK_MAX_TURNS = 100
 
 # =========================================================================
 # SDK Async Generator Cleanup Noise Suppression (TASK-FIX-k3l4)
@@ -643,6 +647,7 @@ class AgentInvoker:
         sdk_timeout_seconds: int = DEFAULT_SDK_TIMEOUT,
         use_task_work_delegation: Optional[bool] = None,
         development_mode: str = "tdd",
+        cancellation_event: Optional[threading.Event] = None,
     ):
         """Initialize AgentInvoker.
 
@@ -659,6 +664,10 @@ class AgentInvoker:
                 direct SDK. Defaults to USE_TASK_WORK_DELEGATION env var.
             development_mode: Development mode for implementation (default: "tdd").
                 Valid values: "standard", "tdd", "bdd"
+            cancellation_event: Cooperative cancellation signal from FeatureOrchestrator
+                (default: None). When set, _invoke_with_role() monitors the event and
+                terminates the SDK subprocess if cancellation is requested.
+                (TASK-FIX-ASPF-004)
         """
         self.worktree_path = Path(worktree_path)
         self.max_turns_per_agent = max_turns_per_agent
@@ -669,6 +678,144 @@ class AgentInvoker:
             else USE_TASK_WORK_DELEGATION
         )
         self.development_mode = development_mode
+        self._cancellation_event: Optional[threading.Event] = cancellation_event
+
+    # =========================================================================
+    # Cancellation Support (TASK-FIX-ASPF-004)
+    # =========================================================================
+
+    def cancel(self) -> None:
+        """Cancel any in-progress SDK invocation.
+
+        Sets the cancellation event (if present) and terminates any child
+        ``claude`` processes spawned by the SDK. This bridges the gap between
+        asyncio cancellation (which only cancels the wrapper) and the actual
+        OS subprocess that the SDK spawns.
+
+        Safe to call from any thread.
+        """
+        if self._cancellation_event:
+            self._cancellation_event.set()
+        self._kill_child_claude_processes()
+
+    def _kill_child_claude_processes(self) -> None:
+        """Find and SIGTERM child ``claude`` CLI processes.
+
+        Uses ``/proc/{pid}/status`` on Linux to walk the process tree from
+        the current PID, looking for children whose ``Name:`` field contains
+        ``claude`` or ``node`` (the Claude CLI runs as a Node.js process).
+
+        Handles:
+        - ``ProcessLookupError`` for processes that exit between enumeration
+          and signal delivery.
+        - ``PermissionError`` for processes we cannot signal.
+        - Non-Linux platforms where ``/proc`` is unavailable (logs warning).
+        """
+        my_pid = os.getpid()
+        proc_path = Path("/proc")
+
+        if not proc_path.exists():
+            logger.warning(
+                "TASK-FIX-ASPF-004: /proc not available on this platform, "
+                "cannot kill child claude processes"
+            )
+            return
+
+        killed = []
+        try:
+            for entry in proc_path.iterdir():
+                if not entry.name.isdigit():
+                    continue
+                pid = int(entry.name)
+                if pid == my_pid:
+                    continue
+
+                status_file = entry / "status"
+                try:
+                    status_text = status_file.read_text()
+                except (OSError, PermissionError):
+                    continue
+
+                # Check if this process is a child of our process tree
+                ppid_line = None
+                name_line = None
+                for line in status_text.splitlines():
+                    if line.startswith("PPid:"):
+                        ppid_line = line.split(":", 1)[1].strip()
+                    if line.startswith("Name:"):
+                        name_line = line.split(":", 1)[1].strip()
+
+                if ppid_line is None or name_line is None:
+                    continue
+
+                # Walk up the process tree to see if this is a descendant
+                # of our process. Check both direct children and grandchildren
+                # (SDK spawns node which spawns claude).
+                if not self._is_descendant_of(pid, my_pid):
+                    continue
+
+                # Match claude or node processes (Claude CLI runs as node)
+                if "claude" in name_line.lower() or "node" in name_line.lower():
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                        killed.append((pid, name_line))
+                        logger.info(
+                            f"TASK-FIX-ASPF-004: Sent SIGTERM to child process "
+                            f"pid={pid} name={name_line}"
+                        )
+                    except ProcessLookupError:
+                        logger.debug(
+                            f"TASK-FIX-ASPF-004: Process pid={pid} already exited"
+                        )
+                    except PermissionError:
+                        logger.warning(
+                            f"TASK-FIX-ASPF-004: Permission denied sending SIGTERM "
+                            f"to pid={pid} name={name_line}"
+                        )
+        except OSError as e:
+            logger.warning(f"TASK-FIX-ASPF-004: Error scanning /proc: {e}")
+
+        if killed:
+            logger.info(
+                f"TASK-FIX-ASPF-004: Terminated {len(killed)} child process(es): "
+                f"{[(pid, name) for pid, name in killed]}"
+            )
+        else:
+            logger.debug("TASK-FIX-ASPF-004: No child claude processes found to kill")
+
+    @staticmethod
+    def _is_descendant_of(pid: int, ancestor_pid: int, max_depth: int = 10) -> bool:
+        """Check if ``pid`` is a descendant of ``ancestor_pid`` via /proc.
+
+        Walks the PPid chain up to ``max_depth`` levels to avoid infinite
+        loops from corrupted /proc data.
+
+        Args:
+            pid: Process ID to check.
+            ancestor_pid: Potential ancestor process ID.
+            max_depth: Maximum depth to walk up the tree (default: 10).
+
+        Returns:
+            True if ``pid`` is a descendant of ``ancestor_pid``.
+        """
+        current = pid
+        for _ in range(max_depth):
+            try:
+                status_text = Path(f"/proc/{current}/status").read_text()
+            except (OSError, PermissionError):
+                return False
+            for line in status_text.splitlines():
+                if line.startswith("PPid:"):
+                    ppid = int(line.split(":", 1)[1].strip())
+                    if ppid == ancestor_pid:
+                        return True
+                    if ppid <= 1:
+                        return False  # Reached init/systemd
+                    current = ppid
+                    break
+            else:
+                return False  # No PPid line found
+        return False
 
     async def invoke_player(
         self,
@@ -1454,22 +1601,48 @@ Follow the decision format specified in your agent definition.
             task_id_match = re.search(r"TASK-[A-Z0-9-]+", prompt)
             heartbeat_task_id = task_id_match.group(0) if task_id_match else "unknown"
 
+            # TASK-FIX-ASPF-004: Monitor cancellation event and kill SDK
+            # subprocess when the feature-level timeout fires. Without this,
+            # asyncio.wait_for only cancels the asyncio wrapper while the
+            # underlying OS subprocess continues running.
+            async def _cancel_monitor() -> None:
+                """Poll cancellation event and kill subprocess if set."""
+                while True:
+                    await asyncio.sleep(2)
+                    if self._cancellation_event and self._cancellation_event.is_set():
+                        logger.info(
+                            f"TASK-FIX-ASPF-004: Cancellation event detected during "
+                            f"{agent_type} invocation, terminating SDK subprocess"
+                        )
+                        self._kill_child_claude_processes()
+                        return
+
+            monitor: Optional[asyncio.Task] = None
+            if self._cancellation_event:
+                monitor = asyncio.create_task(_cancel_monitor())
+
             _install_sdk_cleanup_handler(asyncio.get_running_loop())
-            async with asyncio.timeout(self.sdk_timeout_seconds):
-                async with async_heartbeat(
-                    heartbeat_task_id,
-                    f"{agent_type.capitalize()} invocation",
-                ):
-                    async for message in query(prompt=prompt, options=options):
-                        err = check_assistant_message_error(message)
-                        if err:
-                            raise AgentInvocationError(
-                                f"Agent {agent_type} received API error: {err}"
-                            )
-                        # Progress tracking handled by ProgressDisplay
-                        # Agent writes report to JSON file, which is loaded after
-                        # the query completes via _load_agent_report()
-                        pass
+            try:
+                async with asyncio.timeout(self.sdk_timeout_seconds):
+                    async with async_heartbeat(
+                        heartbeat_task_id,
+                        f"{agent_type.capitalize()} invocation",
+                    ):
+                        async for message in query(prompt=prompt, options=options):
+                            err = check_assistant_message_error(message)
+                            if err:
+                                raise AgentInvocationError(
+                                    f"Agent {agent_type} received API error: {err}"
+                                )
+                            # Progress tracking handled by ProgressDisplay
+                            # Agent writes report to JSON file, which is loaded after
+                            # the query completes via _load_agent_report()
+                            pass
+            finally:
+                if monitor and not monitor.done():
+                    monitor.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await monitor
 
         except asyncio.TimeoutError:
             raise SDKTimeoutError(
@@ -2653,6 +2826,7 @@ Follow the decision format specified in your agent definition.
             # In direct mode, the SDK Player sometimes doesn't write
             # player_turn_N.json, causing retries to fail and triggering
             # unnecessary state recovery (wastes a turn)
+            used_synthetic = False
             report_path = self._get_report_path(task_id, turn, "player")
             if not report_path.exists():
                 logger.info(
@@ -2689,6 +2863,7 @@ Follow the decision format specified in your agent definition.
                 self._write_player_report_for_direct_mode(
                     task_id, turn, synthetic_report, success=True
                 )
+                used_synthetic = True
 
             # Load and validate Player report with retry logic
             # Handles filesystem buffering race condition where report file
@@ -2708,7 +2883,9 @@ Follow the decision format specified in your agent definition.
 
             # Write player_turn_N.json for orchestrator state tracking
             # This harmonizes direct mode with task-work delegation path
-            self._write_player_report_for_direct_mode(task_id, turn, report, success=True)
+            # Skip if synthetic path already wrote the report (avoid double-write)
+            if not used_synthetic:
+                self._write_player_report_for_direct_mode(task_id, turn, report, success=True)
 
             duration = time.time() - start_time
 

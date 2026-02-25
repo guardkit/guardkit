@@ -931,6 +931,56 @@ class TestUnrecoverableErrors:
             assert turn_record.decision == "error"
             assert turn_record.coach_result is None
 
+    def test_execute_turn_writes_recovered_data_to_disk(
+        self,
+        orchestrator_with_mocks,
+        mock_worktree,
+        mock_agent_invoker,
+    ):
+        """Test that recovered data is written to disk so the Coach can read it.
+
+        When state recovery succeeds (TASK-FIX-ASPF-002), the orchestrator
+        should call _write_direct_mode_results on the agent invoker with:
+        - The task_id
+        - The recovered player report
+        - success=True
+        """
+        # Mock Player with recoverable error (missing report)
+        player_result = make_player_result(
+            success=False,
+            error="Player report not found at /path/to/report.json",
+        )
+        player_result.report["unrecoverable"] = False
+
+        mock_agent_invoker.invoke_player.return_value = player_result
+
+        # Build a successful recovered player result
+        recovered_result = make_player_result(success=True)
+
+        # Mock Coach to approve so the turn completes successfully
+        mock_agent_invoker.invoke_coach.return_value = make_coach_result(
+            decision="approve"
+        )
+
+        with patch.object(
+            orchestrator_with_mocks,
+            "_attempt_state_recovery",
+            return_value=recovered_result,
+        ):
+            # Execute turn
+            orchestrator_with_mocks._execute_turn(
+                turn=1,
+                task_id="TASK-AB-001",
+                requirements="Test requirements",
+                worktree=mock_worktree,
+                previous_feedback=None,
+            )
+
+        # Verify _write_direct_mode_results was called with correct arguments
+        mock_agent_invoker._write_direct_mode_results.assert_called_once_with(
+            "TASK-AB-001", recovered_result.report, success=True
+        )
+
 
 # ============================================================================
 # Test Finalize Phase
@@ -4664,6 +4714,284 @@ class TestResolveTestsRequired:
 
     def test_refactor_task_requires_tests(self, orchestrator):
         assert orchestrator._resolve_tests_required("refactor") is True
+
+
+# ============================================================================
+# TASK-FIX-ASPF-004: SDK Subprocess Cancellation Tests
+# ============================================================================
+
+
+class TestAgentInvokerCancellation:
+    """Tests for AgentInvoker cancellation support (TASK-FIX-ASPF-004).
+
+    Verifies that when a feature-level timeout fires, the SDK subprocess
+    is properly terminated rather than leaving orphan processes.
+    """
+
+    def test_cancel_sets_event_and_kills_children(self):
+        """cancel() should set the event and call _kill_child_claude_processes."""
+        import threading
+        from guardkit.orchestrator.agent_invoker import AgentInvoker
+
+        event = threading.Event()
+        invoker = AgentInvoker(
+            worktree_path=Path("/tmp/test"),
+            cancellation_event=event,
+        )
+
+        with patch.object(invoker, "_kill_child_claude_processes") as mock_kill:
+            invoker.cancel()
+            assert event.is_set(), "cancel() should set the cancellation event"
+            mock_kill.assert_called_once()
+
+    def test_cancel_without_event_still_kills(self):
+        """cancel() with no event should still attempt to kill children."""
+        from guardkit.orchestrator.agent_invoker import AgentInvoker
+
+        invoker = AgentInvoker(
+            worktree_path=Path("/tmp/test"),
+            cancellation_event=None,
+        )
+
+        with patch.object(invoker, "_kill_child_claude_processes") as mock_kill:
+            invoker.cancel()
+            mock_kill.assert_called_once()
+
+    def test_kill_child_claude_processes_no_proc(self):
+        """_kill_child_claude_processes gracefully handles missing /proc."""
+        from guardkit.orchestrator.agent_invoker import AgentInvoker
+
+        invoker = AgentInvoker(worktree_path=Path("/tmp/test"))
+
+        with patch("guardkit.orchestrator.agent_invoker.Path") as mock_path_cls:
+            # Simulate non-Linux where /proc doesn't exist
+            mock_proc = MagicMock()
+            mock_proc.exists.return_value = False
+            mock_path_cls.return_value = mock_proc
+            # Also need Path("/proc") to return our mock
+            mock_path_cls.side_effect = lambda p: mock_proc if p == "/proc" else Path(p)
+
+            # Should not raise - just logs a warning
+            invoker._kill_child_claude_processes()
+
+    def test_kill_child_claude_processes_finds_and_kills(self, tmp_path):
+        """_kill_child_claude_processes sends SIGTERM to matching children."""
+        import os
+        import signal
+        from guardkit.orchestrator.agent_invoker import AgentInvoker
+
+        invoker = AgentInvoker(worktree_path=Path("/tmp/test"))
+
+        my_pid = os.getpid()
+
+        # Mock _is_descendant_of to return True for our fake pids
+        with patch.object(AgentInvoker, "_is_descendant_of", return_value=True), \
+             patch("guardkit.orchestrator.agent_invoker.os.getpid", return_value=my_pid), \
+             patch("guardkit.orchestrator.agent_invoker.os.kill") as mock_kill:
+
+            # Create a fake /proc structure
+            fake_proc = tmp_path / "proc"
+            fake_proc.mkdir()
+
+            # Create a fake claude process entry
+            proc_entry = fake_proc / "12345"
+            proc_entry.mkdir()
+            status_file = proc_entry / "status"
+            status_file.write_text(
+                f"Name:\tclaude\n"
+                f"PPid:\t{my_pid}\n"
+            )
+
+            # Create a fake non-matching process
+            proc_entry2 = fake_proc / "12346"
+            proc_entry2.mkdir()
+            status_file2 = proc_entry2 / "status"
+            status_file2.write_text(
+                f"Name:\tbash\n"
+                f"PPid:\t{my_pid}\n"
+            )
+
+            with patch("guardkit.orchestrator.agent_invoker.Path") as mock_path_cls:
+                # Route Path("/proc") to our fake proc, everything else normal
+                def path_router(p):
+                    if p == "/proc":
+                        return fake_proc
+                    return Path(p)
+                mock_path_cls.side_effect = path_router
+
+                invoker._kill_child_claude_processes()
+
+            # Should have killed the claude process but not bash
+            mock_kill.assert_called_once_with(12345, signal.SIGTERM)
+
+    def test_kill_child_handles_process_lookup_error(self, tmp_path):
+        """_kill_child_claude_processes handles ProcessLookupError gracefully."""
+        import os
+        import signal
+        from guardkit.orchestrator.agent_invoker import AgentInvoker
+
+        invoker = AgentInvoker(worktree_path=Path("/tmp/test"))
+        my_pid = os.getpid()
+
+        with patch.object(AgentInvoker, "_is_descendant_of", return_value=True), \
+             patch("guardkit.orchestrator.agent_invoker.os.getpid", return_value=my_pid), \
+             patch("guardkit.orchestrator.agent_invoker.os.kill", side_effect=ProcessLookupError):
+
+            fake_proc = tmp_path / "proc"
+            fake_proc.mkdir()
+            proc_entry = fake_proc / "99999"
+            proc_entry.mkdir()
+            (proc_entry / "status").write_text(
+                f"Name:\tnode\nPPid:\t{my_pid}\n"
+            )
+
+            with patch("guardkit.orchestrator.agent_invoker.Path") as mock_path_cls:
+                mock_path_cls.side_effect = lambda p: fake_proc if p == "/proc" else Path(p)
+                # Should not raise
+                invoker._kill_child_claude_processes()
+
+    def test_is_descendant_of_direct_child(self, tmp_path):
+        """_is_descendant_of returns True for direct children."""
+        from guardkit.orchestrator.agent_invoker import AgentInvoker
+
+        fake_proc = tmp_path / "proc"
+        fake_proc.mkdir()
+
+        # PID 100 is child of PID 50
+        entry = fake_proc / "100"
+        entry.mkdir()
+        (entry / "status").write_text("Name:\tclaude\nPPid:\t50\n")
+
+        with patch("guardkit.orchestrator.agent_invoker.Path") as mock_path_cls:
+            mock_path_cls.side_effect = lambda p: fake_proc / p.split("/")[-1] if p.startswith("/proc/") else Path(p)
+            # Need to mock Path(f"/proc/{current}/status")
+            def path_side_effect(p):
+                if "/proc/" in str(p) and "/status" in str(p):
+                    pid = str(p).split("/")[2]
+                    return fake_proc / pid / "status"
+                if str(p).startswith("/proc/"):
+                    pid = str(p).split("/")[2]
+                    return fake_proc / pid
+                return Path(p)
+
+            with patch("guardkit.orchestrator.agent_invoker.Path", side_effect=path_side_effect):
+                result = AgentInvoker._is_descendant_of(100, 50)
+
+        # Direct test using tmp_path structure
+        assert result is True
+
+    def test_is_descendant_of_not_related(self, tmp_path):
+        """_is_descendant_of returns False for unrelated processes."""
+        from guardkit.orchestrator.agent_invoker import AgentInvoker
+
+        fake_proc = tmp_path / "proc"
+        fake_proc.mkdir()
+
+        # PID 100 is child of PID 1 (init), not of PID 50
+        entry = fake_proc / "100"
+        entry.mkdir()
+        (entry / "status").write_text("Name:\tclaude\nPPid:\t1\n")
+
+        with patch("guardkit.orchestrator.agent_invoker.Path") as mock_path_cls:
+            def path_side_effect(p):
+                if "/proc/" in str(p):
+                    parts = str(p).replace("/proc/", "").split("/")
+                    result_path = fake_proc
+                    for part in parts:
+                        result_path = result_path / part
+                    return result_path
+                return Path(p)
+
+            mock_path_cls.side_effect = path_side_effect
+            result = AgentInvoker._is_descendant_of(100, 50)
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_cancel_monitor_triggers_on_event(self):
+        """The cancel monitor coroutine should kill processes when event is set."""
+        import threading
+        from guardkit.orchestrator.agent_invoker import AgentInvoker
+
+        event = threading.Event()
+        invoker = AgentInvoker(
+            worktree_path=Path("/tmp/test"),
+            cancellation_event=event,
+        )
+
+        with patch.object(invoker, "_kill_child_claude_processes") as mock_kill:
+            # Define the monitor coroutine inline (same logic as in _invoke_with_role)
+            async def _cancel_monitor():
+                while True:
+                    await asyncio.sleep(0.1)  # Use short sleep for test
+                    if invoker._cancellation_event and invoker._cancellation_event.is_set():
+                        invoker._kill_child_claude_processes()
+                        return
+
+            monitor = asyncio.create_task(_cancel_monitor())
+
+            # Set the event after a brief delay
+            await asyncio.sleep(0.05)
+            event.set()
+
+            # Wait for monitor to notice and return
+            await asyncio.wait_for(monitor, timeout=5.0)
+
+            mock_kill.assert_called_once()
+
+    def test_cancellation_event_stored_on_init(self):
+        """AgentInvoker should store the cancellation_event on init."""
+        import threading
+        from guardkit.orchestrator.agent_invoker import AgentInvoker
+
+        event = threading.Event()
+        invoker = AgentInvoker(
+            worktree_path=Path("/tmp/test"),
+            cancellation_event=event,
+        )
+        assert invoker._cancellation_event is event
+
+    def test_cancellation_event_default_none(self):
+        """AgentInvoker should default cancellation_event to None."""
+        from guardkit.orchestrator.agent_invoker import AgentInvoker
+
+        invoker = AgentInvoker(worktree_path=Path("/tmp/test"))
+        assert invoker._cancellation_event is None
+
+
+class TestAutoBuildPassesCancellationEvent:
+    """Tests that AutoBuildOrchestrator passes cancellation_event to AgentInvoker."""
+
+    def test_cancellation_event_passed_to_agent_invoker(
+        self,
+        mock_worktree_manager,
+        mock_worktree,
+        mock_progress_display,
+        mock_coach_validator,
+        mock_pre_loop_gates,
+    ):
+        """AutoBuildOrchestrator should pass cancellation_event to AgentInvoker."""
+        import threading
+
+        event = threading.Event()
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test-repo"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            progress_display=mock_progress_display,
+            pre_loop_gates=mock_pre_loop_gates,
+            enable_checkpoints=False,
+            cancellation_event=event,
+        )
+
+        # Trigger setup phase to create the AgentInvoker
+        with patch.object(orchestrator, "_worktree_manager", mock_worktree_manager):
+            mock_worktree_manager.create.return_value = mock_worktree
+            worktree = orchestrator._setup_phase("TASK-TEST-001", "main")
+
+        # Verify the AgentInvoker got the cancellation event
+        assert orchestrator._agent_invoker is not None
+        assert orchestrator._agent_invoker._cancellation_event is event
 
 
 # ============================================================================

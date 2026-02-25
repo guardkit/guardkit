@@ -978,6 +978,7 @@ class AutoBuildOrchestrator:
                         development_mode=self.development_mode,
                         sdk_timeout_seconds=self.sdk_timeout,
                         use_task_work_delegation=True,
+                        cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
                     )
 
                 return worktree
@@ -998,6 +999,7 @@ class AutoBuildOrchestrator:
                     development_mode=self.development_mode,
                     sdk_timeout_seconds=self.sdk_timeout,
                     use_task_work_delegation=True,
+                    cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
                 )
 
             return worktree
@@ -1853,6 +1855,11 @@ class AutoBuildOrchestrator:
             if recovered_player_result:
                 # State recovery succeeded - continue with recovered data
                 player_result = recovered_player_result
+                # Write recovered data to disk so Coach reads it (TASK-FIX-ASPF-002)
+                if self._agent_invoker is not None:
+                    self._agent_invoker._write_direct_mode_results(
+                        task_id, player_result.report, success=True
+                    )
                 logger.info(
                     f"State recovery successful for {task_id} turn {turn}"
                 )
@@ -4046,6 +4053,7 @@ class AutoBuildOrchestrator:
                     development_mode=self.development_mode,
                     sdk_timeout_seconds=self.sdk_timeout,
                     use_task_work_delegation=True,
+                    cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
                 )
 
             # Calculate next turn

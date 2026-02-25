@@ -1,0 +1,28 @@
+{
+  "task_id": "TASK-FIX-ASPF-002",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/autobuild.py"
+  ],
+  "files_created": [],
+  "tests_written": [],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "407 passed in 15.81s",
+  "implementation_notes": "Added 4 lines to autobuild.py after 'player_result = recovered_player_result' (line 1855) to write the recovered data to disk via self._agent_invoker._write_direct_mode_results(). Guarded with 'if self._agent_invoker is not None' to handle the lazy-init case. This ensures the Coach validator reads the correct synthetic data from task_work_results.json instead of the stale error data left by the exception handler.",
+  "concerns": [],
+  "requirements_addressed": [
+    "After state recovery succeeds, write recovered player_result data to task_work_results.json on disk so Coach validator reads it instead of stale error data"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "State recovery must write task_work_results.json to disk after recovery succeeds",
+      "status": "complete",
+      "evidence": "Added call to self._agent_invoker._write_direct_mode_results(task_id, player_result.report, success=True) immediately after player_result = recovered_player_result in the state recovery success branch of _execute_turn(). Guarded with None check on _agent_invoker.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/autobuild.py"]
+    }
+  ]
+}
