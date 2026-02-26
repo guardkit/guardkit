@@ -64,8 +64,14 @@ async def seed_patterns(client) -> None:
             "id": "player_coach_adversarial",
             "name": "Player-Coach Adversarial Pattern",
             "category": "agent_orchestration",
-            "description": "Adversarial cooperation where Player implements and Coach validates.",
-            "benefits": ["Quality assurance", "Iterative improvement", "Trust but verify"],
+            "description": "Adversarial cooperation where Player implements and Coach validates, with structured Promise and Honesty Verification.",
+            "benefits": [
+                "Quality assurance",
+                "Iterative improvement",
+                "Trust but verify",
+                "Structured criteria tracking via criteria_verification",
+                "Honesty enforcement via CoachVerifier pre-validation"
+            ],
             "templates_using": ["guardkit-default"]
         })
     ]

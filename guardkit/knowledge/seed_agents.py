@@ -69,7 +69,13 @@ async def seed_agents(client) -> None:
             "id": "autobuild-coach",
             "name": "AutoBuild Coach Agent",
             "role": "Validates Player implementations in Player-Coach pattern",
-            "capabilities": ["Implementation validation", "Independent test execution", "Acceptance criteria verification"],
+            "capabilities": [
+                "Implementation validation",
+                "Independent test execution",
+                "Acceptance criteria verification",
+                "Promise Verification (criteria_verification with criterion_id tracking)",
+                "Honesty Verification (pre-validated by CoachVerifier, honesty_score 0.0-1.0)"
+            ],
             "critical_note": "Coach has READ-ONLY access, validates but cannot modify"
         }),
         ("agent_pattern_suggester", {

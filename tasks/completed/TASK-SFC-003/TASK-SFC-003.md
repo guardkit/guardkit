@@ -2,9 +2,11 @@
 id: TASK-SFC-003
 title: Update seed_agents.py and seed_patterns.py with Coach capabilities
 task_type: implementation
-status: backlog
+status: completed
 created: 2026-02-23T14:00:00Z
-updated: 2026-02-23T14:00:00Z
+updated: 2026-02-26T00:00:00Z
+completed: 2026-02-26T00:00:00Z
+completed_location: tasks/completed/TASK-SFC-003/
 priority: high
 tags: [graphiti, seeding, autobuild-coach, seed-agents, seed-patterns]
 complexity: 2
