@@ -1537,6 +1537,21 @@ class CoachValidator:
                             "%d requirements_addressed entries",
                             len(requirements_addressed),
                         )
+                # Always log criteria verification at DEBUG level (TASK-FIX-54F6)
+                logger.debug(
+                    "Criteria verification %d/%d (synthetic) - completion_promises: %s",
+                    validation.criteria_met,
+                    validation.criteria_total,
+                    completion_promises,
+                )
+                for cr in validation.criteria_results:
+                    logger.debug(
+                        "  %s [%s]: %.80s - %s",
+                        cr.criterion_id,
+                        cr.result,
+                        cr.criterion_text,
+                        cr.evidence,
+                    )
                 # Diagnostic logging for 0/N on synthetic path (TASK-ACR-003)
                 if validation.criteria_met == 0 and validation.criteria_total > 0:
                     logger.warning(
@@ -1617,6 +1632,31 @@ class CoachValidator:
                 task_work_results.get("requirements_met", []),
             )
             validation = self._match_by_text(acceptance_criteria, requirements_met)
+
+        # Always log criteria verification at DEBUG level (TASK-FIX-54F6)
+        logger.debug(
+            "Criteria verification %d/%d - matching_strategy: %s",
+            validation.criteria_met,
+            validation.criteria_total,
+            strategy,
+        )
+        logger.debug(
+            "  requirements_met: %s",
+            task_work_results.get(
+                "requirements_addressed",
+                task_work_results.get("requirements_met", []),
+            ),
+        )
+        if completion_promises:
+            logger.debug("  completion_promises: %s", completion_promises)
+        for cr in validation.criteria_results:
+            logger.debug(
+                "  %s [%s]: %.80s - %s",
+                cr.criterion_id,
+                cr.result,
+                cr.criterion_text,
+                cr.evidence,
+            )
 
         # Diagnostic logging for 0/N results (TASK-ACR-003)
         if validation.criteria_met == 0 and validation.criteria_total > 0:
@@ -1773,6 +1813,17 @@ class CoachValidator:
                 else:
                     evidence = f"No completion promise for {criterion_id}"
                 missing.append(criterion_text)
+
+            # Log per-criterion matching result at DEBUG level (TASK-FIX-54F6)
+            if result_str == "verified" and promise:
+                promise_status = promise.get("status", "unknown")
+                confidence = 1.0 if promise_status == "complete" else 0.8
+                logger.debug(
+                    "%s: Matched via promises (status: %s, confidence: %.2f)",
+                    criterion_id,
+                    promise_status,
+                    confidence,
+                )
 
             criteria_results.append(CriterionResult(
                 criterion_id=criterion_id,

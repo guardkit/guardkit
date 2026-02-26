@@ -269,3 +269,112 @@ def test_diagnostic_logging_synthetic_with_incomplete_promises(
     assert "completion_promises:" in log_text
     assert "matching_strategy: promises+hybrid (synthetic)" in log_text
     assert "_synthetic: True" in log_text
+
+
+def test_debug_logging_partial_match_promises(
+    coach_validator: CoachValidator,
+    task_with_criteria: Dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """
+    Test DEBUG-level logging when partial criteria are met via promises (TASK-FIX-54F6).
+
+    Scenario: 2/3 criteria complete -> partial match.
+    Expected: DEBUG-level log with requirements_met, completion_promises,
+              matching strategy, and per-criterion results.
+    """
+    # Arrange
+    task_work_results = {
+        "completion_promises": [
+            {
+                "criterion_id": "AC-001",
+                "criterion_text": "OAuth2 authentication flow works correctly",
+                "status": "complete",
+                "evidence": "Implemented in oauth.py",
+            },
+            {
+                "criterion_id": "AC-002",
+                "criterion_text": "Token refresh handles expiry edge case",
+                "status": "complete",
+                "evidence": "Implemented in tokens.py",
+            },
+            {
+                "criterion_id": "AC-003",
+                "criterion_text": "Rate limiting prevents abuse",
+                "status": "incomplete",
+                "evidence": "Not implemented yet",
+            },
+        ],
+        "_synthetic": False,
+    }
+
+    # Act
+    with caplog.at_level(logging.DEBUG):
+        result = coach_validator.validate_requirements(
+            task_with_criteria, task_work_results, turn=None
+        )
+
+    # Assert
+    assert result.criteria_met == 2
+    assert result.criteria_total == 3
+
+    # Verify DEBUG-level diagnostic logging (TASK-FIX-54F6)
+    log_text = caplog.text
+    # Overall criteria verification line
+    assert "Criteria verification 2/3 - matching_strategy: promises" in log_text
+    # Completion promises logged
+    assert "completion_promises:" in log_text
+    # Per-criterion results logged
+    assert "AC-001 [verified]:" in log_text
+    assert "AC-002 [verified]:" in log_text
+    assert "AC-003 [rejected]:" in log_text
+    # Per-criterion matching strategy logged for verified criteria
+    assert "AC-001: Matched via promises (status: complete, confidence: 1.00)" in log_text
+    assert "AC-002: Matched via promises (status: complete, confidence: 1.00)" in log_text
+
+    # Verify NO WARNING-level 0/N dump (since criteria_met > 0)
+    assert "Criteria verification 0/" not in log_text
+
+
+def test_debug_logging_partial_match_text_strategy(
+    coach_validator: CoachValidator,
+    task_with_criteria: Dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """
+    Test DEBUG-level logging when partial criteria are met via text matching (TASK-FIX-54F6).
+
+    Scenario: No promises, 1/3 criteria match via text -> partial match.
+    Expected: DEBUG-level log with requirements_met and per-criterion results.
+    """
+    # Arrange
+    task_work_results = {
+        "requirements_met": [
+            "OAuth2 authentication flow works correctly",
+        ],
+        "_synthetic": False,
+    }
+
+    # Act
+    with caplog.at_level(logging.DEBUG):
+        result = coach_validator.validate_requirements(
+            task_with_criteria, task_work_results, turn=None
+        )
+
+    # Assert
+    assert result.criteria_met == 1
+    assert result.criteria_total == 3
+
+    # Verify DEBUG-level diagnostic logging (TASK-FIX-54F6)
+    log_text = caplog.text
+    # Overall criteria verification line
+    assert "Criteria verification 1/3 - matching_strategy: text" in log_text
+    # Requirements met logged
+    assert "requirements_met:" in log_text
+    # Per-criterion results logged
+    assert "AC-001 [verified]:" in log_text
+    assert "AC-002 [rejected]:" in log_text
+    assert "AC-003 [rejected]:" in log_text
+
+    # Verify NO WARNING-level 0/N dump (since criteria_met > 0)
+    assert "Criteria verification 0/" not in log_text

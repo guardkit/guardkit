@@ -71,22 +71,43 @@ need the backup.
 # SSH into GB10
 ssh promaxgb10-41b1
 
+# Install the huggingface CLI and fast transfer library
+pip install huggingface_hub hf_transfer --break-system-packages 2>/dev/null
+
 # Pre-download the NVFP4 model (~70GB)
 # This caches in ~/.cache/huggingface so vLLM finds it instantly on launch
-pip install huggingface_hub hf_transfer --break-system-packages 2>/dev/null
-HF_HUB_ENABLE_HF_TRANSFER=1 huggingface-cli download \
-  lukealonso/MiniMax-M2.5-REAP-139B-A10B-NVFP4 \
-  --local-dir-use-symlinks auto
+HF_HUB_ENABLE_HF_TRANSFER=1 python3 -c "
+from huggingface_hub import snapshot_download
+snapshot_download('lukealonso/MiniMax-M2.5-REAP-139B-A10B-NVFP4')
+"
 ```
+
+> **Troubleshooting the download:**
+>
+> - **`huggingface-cli: command not found`** — On Ubuntu, user-local pip installs
+>   (`Defaulting to user installation...`) often fail to create the CLI binary in
+>   `~/.local/bin/`. The `python3 -c "from huggingface_hub import snapshot_download; ..."`
+>   approach above bypasses this entirely.
+>
+> - **`PermissionError: [Errno 13]` on `~/.cache/huggingface/`** — The cache directory
+>   is owned by root, usually from a previous `sudo` operation. Fix with:
+>   ```bash
+>   sudo chown -R $(whoami):$(whoami) ~/.cache/huggingface
+>   ```
+>   Then re-run the download (without sudo).
 
 ### Option B: GGUF for llama.cpp (quick backup)
 
 ```bash
 # Pre-download the GGUF model (~101GB, split into 4 shards)
-HF_HUB_ENABLE_HF_TRANSFER=1 huggingface-cli download \
-  unsloth/MiniMax-M2.5-GGUF \
-  --include "*UD-Q3_K_XL*" \
-  --local-dir ~/models/MiniMax-M2.5-GGUF
+HF_HUB_ENABLE_HF_TRANSFER=1 python3 -c "
+from huggingface_hub import snapshot_download
+snapshot_download(
+    'unsloth/MiniMax-M2.5-GGUF',
+    allow_patterns='*UD-Q3_K_XL*',
+    local_dir='$HOME/models/MiniMax-M2.5-GGUF'
+)
+"
 ```
 
 ### Option C: Both (belt and braces)
@@ -209,12 +230,27 @@ echo "AutoBuild → ${VLLM_URL} → ${CURRENT_MODEL}"
 | Preset | Model | Tok/s (gen) | Tok/s (prefill) | Context | Best For |
 |--------|-------|-------------|-----------------|---------|----------|
 | `next` (default) | Qwen3-Coder-Next FP8 | 30-43 | ~2,384 | 256K | AutoBuild implementation |
-| `minimax` | MiniMax M2.5 NVFP4 | 17-30* | ~3,342 | 131K | Spec writing, planning, backup |
+| `minimax` | MiniMax M2.5 NVFP4 | 17-30* | ~3,342 | 60K** | Spec writing, planning, backup |
 | `minimax-gguf` | MiniMax M2.5 GGUF Q3 | ~20 | ~26** | 16-32K | Quick emergency backup |
 | `minimax-awq` | MiniMax M2.5 AWQ 4-bit | ~15 | ~1,089 | 65K | Stable fallback |
 
 \* 17 tok/s with standard vLLM, ~30 tok/s expected with Avarok NVFP4-optimised image
-\*\* llama.cpp prefill is per-request, not batched — lower throughput but adequate for single-user
+\*\* Reduced from 131K to 60K due to KV cache memory constraints at 0.85 GPU util (see Memory section)
+\*\*\* llama.cpp prefill is per-request, not batched — lower throughput but adequate for single-user
+
+### Memory / Context Limit
+
+The NVFP4 model weights consume ~78 GiB at 0.85 GPU utilisation, leaving ~14.9 GiB for the
+KV cache. The original default of `max_model_len=131072` requires ~31 GiB of KV cache — more
+than is available — causing vLLM to fail with:
+
+```
+ValueError: To serve at least one request with the models's max seq len (131072),
+31.00 GiB KV cache is needed, which is larger than the available KV cache memory (14.91 GiB).
+```
+
+**Fix applied**: The `minimax` preset now defaults to `max_model_len=60000` (~60K tokens),
+which fits comfortably. Override if needed: `VLLM_MAX_LEN=63000 ./vllm-serve.sh minimax`
 
 ### Benchmark Quality Comparison
 
@@ -303,11 +339,64 @@ These are the key threads and tools from the DGX Spark developer community:
 
 ---
 
+## Using MiniMax with Claude Code CLI
+
+You can point Claude Code at the local MiniMax model using environment variables. This is
+useful for testing the model interactively or for coding sessions when the Anthropic API
+is unavailable.
+
+### Quick Launch
+
+```bash
+ANTHROPIC_BASE_URL=http://localhost:8000 ANTHROPIC_API_KEY=vllm-local claude
+```
+
+### Convenience Alias
+
+Add to `~/.bashrc` for easy switching:
+
+```bash
+alias claude-local="ANTHROPIC_BASE_URL=http://localhost:8000 ANTHROPIC_API_KEY=vllm-local claude"
+```
+
+Then use `claude` for normal Anthropic API and `claude-local` for the local model.
+
+### Important Notes
+
+- **Do NOT include `/v1` in the base URL** — Claude Code appends it automatically.
+  Use `http://localhost:8000`, not `http://localhost:8000/v1`.
+
+- **Auth conflict warning**: If you're logged into Claude.ai, you'll see a warning about
+  both a token and API key being set. This is just a warning — the env vars take precedence
+  and the local model works fine. No need to log out.
+
+- **If you do log out** (`/logout` in Claude Code), you'll be forced through the login flow
+  to get back to the Anthropic API. Choose option 1 (Claude account with subscription) and
+  complete the browser login. Avoid option 2 (Console account) as it triggers an OAuth browser
+  flow that may fail on headless/remote machines.
+
+### Limitations of Local Model via Claude Code
+
+The local vLLM model supports all **local tools** that Claude Code executes on your machine:
+- File reading, editing, writing
+- Bash command execution
+- Code search (grep, glob)
+- All local tool use
+
+It does **NOT** support Anthropic server-side features:
+- Web search
+- Web fetch
+- Any capability that depends on Anthropic's backend infrastructure
+
+For tasks requiring web access, use the normal `claude` command (Anthropic API).
+
+---
+
 ## What This Doesn't Change
 
 Your existing setup is **completely unaffected**:
 
-- **Claude Code sessions** (VS Code, `claude` CLI) → still use Anthropic cloud API
+- **Claude Code sessions** (VS Code, `claude` CLI) → still use Anthropic cloud API by default
 - **Claude Desktop** → still uses Anthropic cloud API
 - **AutoBuild default** (`./vllm-serve.sh` or `./vllm-serve.sh next`) → still Qwen3-Coder-Next
 - **autobuild-vllm wrapper** → works with any model serving on port 8000

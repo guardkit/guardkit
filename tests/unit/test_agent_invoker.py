@@ -1407,9 +1407,10 @@ class TestInvokeTaskWorkImplement:
             # TASK-POF-004: Skill removed - inline protocol doesn't need skill loading
             assert "Skill" not in options_kwargs["allowed_tools"]
             assert options_kwargs["permission_mode"] == "acceptEdits"
-            # TASK-REV-BB80: Uses dedicated TASK_WORK_SDK_MAX_TURNS constant (50)
+            # TASK-REV-BB80: Uses dedicated TASK_WORK_SDK_MAX_TURNS constant
             # NOT max_turns_per_agent, because task-work needs many internal turns
-            assert options_kwargs["max_turns"] == 50
+            # TASK-FIX-ASPF-005: Increased from 50 to 100 for scaffolding headroom
+            assert options_kwargs["max_turns"] == 100
             # TASK-POF-004: Changed from ["user", "project"] to ["project"]
             # Inline protocol eliminates need for user setting_sources
             assert options_kwargs["setting_sources"] == ["project"]
@@ -6212,6 +6213,193 @@ task_type: feature
         task_type = task_data["frontmatter"].get("task_type")
 
         assert task_type == "feature"
+
+
+# ============================================================================
+# Direct Mode Acceptance Criteria in Prompt (TASK-INV-0A11)
+# ============================================================================
+
+
+class TestDirectModeAcceptanceCriteriaInPrompt:
+    """Test that _invoke_player_direct passes acceptance criteria to the prompt.
+
+    TASK-INV-0A11 found that direct mode did not pass structured acceptance
+    criteria to _build_player_prompt(), causing vLLM models to produce generic
+    summaries instead of structured completion_promises on Turn 1.
+    """
+
+    @pytest.mark.asyncio
+    async def test_direct_mode_includes_acceptance_criteria_in_prompt(
+        self, agent_invoker, worktree_path
+    ):
+        """Prompt built by _invoke_player_direct includes AC IDs and completion_promises example."""
+        task_id = "TASK-DMPROMPT-001"
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+
+        task_file = tasks_dir / f"{task_id}.md"
+        task_file.write_text("""---
+id: TASK-DMPROMPT-001
+title: Add config setting
+status: backlog
+complexity: 2
+implementation_mode: direct
+---
+
+# Add Config Setting
+
+## Acceptance Criteria
+
+- Config setting added to settings module
+- Default value is documented
+""")
+
+        # Capture the prompt passed to _invoke_with_role
+        captured_prompt = {}
+
+        async def mock_invoke_with_role(prompt, **kwargs):
+            captured_prompt["prompt"] = prompt
+
+        # Mock _invoke_with_role to capture prompt, and mock report loading
+        from unittest.mock import patch, AsyncMock
+
+        mock_report = {
+            "task_id": task_id,
+            "turn": 1,
+            "files_modified": [],
+            "files_created": ["src/config.py"],
+            "tests_written": [],
+            "tests_run": False,
+            "tests_passed": False,
+            "test_output_summary": "",
+            "implementation_notes": "Added config",
+            "concerns": [],
+            "requirements_addressed": [],
+            "requirements_remaining": [],
+        }
+
+        with patch.object(
+            agent_invoker, "_invoke_with_role", side_effect=mock_invoke_with_role
+        ), patch.object(
+            agent_invoker, "_load_agent_report", return_value=mock_report
+        ), patch.object(
+            agent_invoker, "_validate_player_report"
+        ), patch.object(
+            agent_invoker, "_retry_with_backoff",
+            side_effect=lambda fn, *a, **kw: fn(*a),
+        ):
+            # Need report file to exist for the non-synthetic path
+            report_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+            report_dir.mkdir(parents=True, exist_ok=True)
+            report_path = report_dir / "player_turn_1.json"
+            import json
+            report_path.write_text(json.dumps(mock_report))
+
+            await agent_invoker._invoke_player_direct(
+                task_id=task_id,
+                turn=1,
+                requirements="Add config setting to the settings module.",
+                feedback=None,
+            )
+
+        prompt = captured_prompt.get("prompt", "")
+
+        # Verify structured criteria section is present
+        assert "## Acceptance Criteria" in prompt, (
+            "Direct mode prompt must include structured acceptance criteria section"
+        )
+        assert "AC-001" in prompt, (
+            "Direct mode prompt must include AC-001 criterion ID"
+        )
+        assert "AC-002" in prompt, (
+            "Direct mode prompt must include AC-002 criterion ID"
+        )
+
+        # Verify completion_promises example is present
+        assert "completion_promises" in prompt, (
+            "Direct mode prompt must include completion_promises JSON example"
+        )
+        assert "criterion_id" in prompt, (
+            "Direct mode prompt must show criterion_id field in example"
+        )
+
+    @pytest.mark.asyncio
+    async def test_direct_mode_graceful_when_no_criteria(
+        self, agent_invoker, worktree_path
+    ):
+        """Prompt works correctly when task has no acceptance criteria."""
+        task_id = "TASK-DMPROMPT-002"
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+
+        task_file = tasks_dir / f"{task_id}.md"
+        task_file.write_text("""---
+id: TASK-DMPROMPT-002
+title: Fix typo
+status: backlog
+complexity: 1
+implementation_mode: direct
+---
+
+# Fix Typo
+
+Fix the typo in README.md.
+""")
+
+        captured_prompt = {}
+
+        async def mock_invoke_with_role(prompt, **kwargs):
+            captured_prompt["prompt"] = prompt
+
+        from unittest.mock import patch
+
+        mock_report = {
+            "task_id": task_id,
+            "turn": 1,
+            "files_modified": ["README.md"],
+            "files_created": [],
+            "tests_written": [],
+            "tests_run": False,
+            "tests_passed": False,
+            "test_output_summary": "",
+            "implementation_notes": "Fixed typo",
+            "concerns": [],
+            "requirements_addressed": [],
+            "requirements_remaining": [],
+        }
+
+        with patch.object(
+            agent_invoker, "_invoke_with_role", side_effect=mock_invoke_with_role
+        ), patch.object(
+            agent_invoker, "_load_agent_report", return_value=mock_report
+        ), patch.object(
+            agent_invoker, "_validate_player_report"
+        ), patch.object(
+            agent_invoker, "_retry_with_backoff",
+            side_effect=lambda fn, *a, **kw: fn(*a),
+        ):
+            report_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+            report_dir.mkdir(parents=True, exist_ok=True)
+            report_path = report_dir / "player_turn_1.json"
+            import json
+            report_path.write_text(json.dumps(mock_report))
+
+            await agent_invoker._invoke_player_direct(
+                task_id=task_id,
+                turn=1,
+                requirements="Fix the typo in README.md.",
+                feedback=None,
+            )
+
+        prompt = captured_prompt.get("prompt", "")
+
+        # Should still produce a valid prompt without crashing
+        assert "Player agent" in prompt
+        assert task_id in prompt
+        # Should NOT have structured criteria section (no criteria exist)
+        # Note: "AC-001" appears in the generic instruction example text,
+        # but the structured "## Acceptance Criteria" section should be absent
+        assert "## Acceptance Criteria" not in prompt
 
 
 # ============================================================================

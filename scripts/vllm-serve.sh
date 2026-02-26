@@ -81,7 +81,7 @@ case "$MODEL_PRESET" in
     MODEL="lukealonso/MiniMax-M2.5-REAP-139B-A10B-NVFP4"
     TOOL_PARSER="minimax_m2"
     GPU_UTIL="${VLLM_GPU_UTIL:-0.85}"
-    MAX_LEN="${VLLM_MAX_LEN:-131072}"
+    MAX_LEN="${VLLM_MAX_LEN:-60000}"
     # NVFP4-specific env vars from DGX Spark community (mjpansa, Feb 2026)
     # See: https://forums.developer.nvidia.com/t/minimax-2-5-reap-nvfp4-on-single-dgx-spark/361248
     EXTRA_ENV="-e CUDA_DEVICE_ORDER=PCI_BUS_ID \

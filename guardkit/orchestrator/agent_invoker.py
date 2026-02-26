@@ -2804,9 +2804,17 @@ Follow the decision format specified in your agent definition.
         try:
             logger.info(f"Invoking Player via direct SDK for {task_id} (turn {turn})")
 
+            # Extract structured acceptance criteria so the prompt includes
+            # AC IDs and completion_promises examples.  Without this, vLLM
+            # models produce generic summaries that fail Coach text matching
+            # on Turn 1 (see TASK-INV-0A11).
+            acceptance_criteria = self.extract_acceptance_criteria(task_id) or None
+
             # Build prompt for Player
             prompt = self._build_player_prompt(
-                task_id, turn, requirements, feedback, context=context
+                task_id, turn, requirements, feedback,
+                acceptance_criteria=acceptance_criteria,
+                context=context,
             )
 
             # Invoke SDK with Player permissions (Read, Write, Edit, Bash)
