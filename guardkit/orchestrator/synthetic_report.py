@@ -10,6 +10,7 @@ generate_file_existence_promises : Extract file promises from acceptance criteri
 infer_requirements_from_files : Infer requirements_addressed from file contents.
 """
 
+import fnmatch as _fnmatch
 import logging
 import re
 from pathlib import Path
@@ -238,21 +239,46 @@ def generate_file_existence_promises(
         # Secondary pass: backtick-quoted paths from agent_invoker style
         secondary_patterns = re.findall(r'`([^`]+\.[a-zA-Z]+)`', criterion_text)
 
+        # Tertiary pass: double-quoted file paths ("src/config.py")
+        double_quoted_patterns = re.findall(r'"([^"]+\.[a-zA-Z]+)"', criterion_text)
+
+        # Quaternary pass: single-quoted file paths ('src/config.py')
+        single_quoted_patterns = re.findall(r"'([^']+\.[a-zA-Z]+)'", criterion_text)
+
+        # Quinary pass: glob-like patterns in backticks (`alembic/versions/*.py`)
+        glob_patterns = re.findall(r'`([^`]*\*[^`]*)`', criterion_text)
+
         # Deduplicate while preserving order
         all_patterns: List[str] = []
         seen: set = set()
-        for p in primary_patterns + secondary_patterns:
+        for p in (
+            primary_patterns
+            + secondary_patterns
+            + double_quoted_patterns
+            + single_quoted_patterns
+            + glob_patterns
+        ):
             if p not in seen:
                 all_patterns.append(p)
                 seen.add(p)
 
         # Match patterns against known file lists
         matched_in_lists: List[str] = []
+        match_confidence = 1.0  # direct file name match
+
         for pattern in all_patterns:
-            for known_file in all_files_list:
-                if known_file.endswith(pattern) or pattern in known_file:
-                    if known_file not in matched_in_lists:
-                        matched_in_lists.append(known_file)
+            if "*" in pattern:
+                # Glob pattern matching
+                for known_file in all_files_list:
+                    if _fnmatch.fnmatch(known_file, pattern):
+                        if known_file not in matched_in_lists:
+                            matched_in_lists.append(known_file)
+                            match_confidence = min(match_confidence, 0.7)
+            else:
+                for known_file in all_files_list:
+                    if known_file.endswith(pattern) or pattern in known_file:
+                        if known_file not in matched_in_lists:
+                            matched_in_lists.append(known_file)
 
         if matched_in_lists:
             # Files found in created/modified lists -- status: complete
@@ -268,13 +294,54 @@ def generate_file_existence_promises(
                 "status": status,
                 "evidence": evidence,
                 "evidence_type": "file_existence",
+                "confidence": match_confidence,
             })
             continue
+
+        # Directory-structure matching: "Create X directory/folder"
+        dir_creation_matches = re.findall(
+            r'[Cc]reate\s+(?:the\s+)?(?:a\s+)?[`"\']?(\S+?)[`"\']?'
+            r'\s+(?:directory|folder|dir)\b',
+            criterion_text,
+        )
+        dir_structure_matches = re.findall(
+            r'[`"\']?(\S+?)[`"\']?\s+directory\s+structure',
+            criterion_text,
+        )
+        dir_names = dir_creation_matches + dir_structure_matches
+        if dir_names:
+            dir_matched: List[str] = []
+            for dname in dir_names:
+                dname = dname.strip("/")
+                for known_file in all_files_list:
+                    if known_file.startswith(dname + "/") or ("/" + dname + "/") in known_file:
+                        if known_file not in dir_matched:
+                            dir_matched.append(known_file)
+            if dir_matched:
+                file_status_parts = []
+                for f in dir_matched:
+                    action = "created" if f in created_set else "modified"
+                    file_status_parts.append(f"{f} ({action})")
+                evidence = (
+                    "Directory-structure verified: "
+                    + ", ".join(file_status_parts)
+                )
+                promises.append({
+                    "criterion_id": criterion_id,
+                    "criterion_text": criterion_text,
+                    "status": "complete",
+                    "evidence": evidence,
+                    "evidence_type": "file_existence",
+                    "confidence": 0.6,
+                })
+                continue
 
         # Disk check for file patterns when worktree_path is provided
         if worktree_path is not None:
             disk_found: List[str] = []
             for pattern in all_patterns:
+                if "*" in pattern:
+                    continue  # skip glob patterns for disk check
                 candidate = worktree_path / pattern
                 if candidate.exists():
                     disk_found.append(pattern)
@@ -287,6 +354,7 @@ def generate_file_existence_promises(
                     "status": "partial",
                     "evidence": evidence,
                     "evidence_type": "file_existence",
+                    "confidence": 0.5,
                 })
                 continue
 
@@ -309,6 +377,7 @@ def generate_file_existence_promises(
                         "status": "partial",
                         "evidence": evidence,
                         "evidence_type": "file_existence",
+                        "confidence": 0.5,
                     })
                     continue
 
@@ -319,6 +388,7 @@ def generate_file_existence_promises(
             "status": "incomplete",
             "evidence": "No file-existence evidence for this criterion",
             "evidence_type": "file_existence",
+            "confidence": 0.0,
         })
 
     return promises

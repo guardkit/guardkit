@@ -703,3 +703,189 @@ class TestEdgeCases:
         result = validator._match_by_text(acceptance_criteria, requirements_met)
 
         assert result.criteria_met == 1
+
+
+# ============================================================================
+# TASK-FIX-VL07: Semantic Matching Strategy Tests
+# ============================================================================
+
+
+class TestSemanticMatching:
+    """Tests for configurable matching strategy (TASK-FIX-VL07 Part A)."""
+
+    @pytest.fixture
+    def text_validator(self):
+        """Create a CoachValidator with explicit text matching strategy."""
+        return CoachValidator("/tmp/test", matching_strategy="text")
+
+    @pytest.fixture
+    def semantic_validator(self):
+        """Create a CoachValidator with explicit semantic matching strategy."""
+        return CoachValidator("/tmp/test", matching_strategy="semantic")
+
+    @pytest.fixture
+    def auto_validator(self):
+        """Create a CoachValidator with auto matching strategy."""
+        return CoachValidator("/tmp/test", matching_strategy="auto")
+
+    def test_semantic_mode_uses_lower_threshold(self, semantic_validator):
+        """50% keyword overlap matches in semantic mode but not in text mode."""
+        # 3 common out of 6 total = 50% Jaccard
+        acceptance_criteria = ["database migration rollback system"]
+        requirements_met = ["database migration validation checks"]
+        # AC keywords: {database, migration, rollback, system} = 4
+        # Met keywords: {database, migration, validation, checks} = 4
+        # Intersection: {database, migration} = 2
+        # Union: {database, migration, rollback, system, validation, checks} = 6
+        # Jaccard: 2/6 = 33% -- below 50%, but with fuzzy matching...
+        # Actually let's construct a proper 50% example
+        acceptance_criteria = ["implement authentication gateway system handler"]
+        requirements_met = ["implement authentication gateway routing handler"]
+        # AC: {implement, authentication, gateway, system, handler} = 5
+        # Met: {implement, authentication, gateway, routing, handler} = 5
+        # Intersection: {implement, authentication, gateway, handler} = 4
+        # Union: {implement, authentication, gateway, system, handler, routing} = 6
+        # Jaccard: 4/6 = 66.7% -- above 50%, below 70%
+
+        result = semantic_validator._match_by_text(acceptance_criteria, requirements_met)
+        assert result.criteria_met == 1
+        assert result.all_criteria_met is True
+
+    def test_text_mode_rejects_same_overlap(self, text_validator):
+        """Same 66% overlap rejected in text mode (needs 70%)."""
+        acceptance_criteria = ["implement authentication gateway system handler"]
+        requirements_met = ["implement authentication gateway routing handler"]
+        # Jaccard: 4/6 = 66.7% -- below 70% threshold
+
+        result = text_validator._match_by_text(acceptance_criteria, requirements_met)
+        assert result.criteria_met == 0
+        assert result.all_criteria_met is False
+
+    def test_auto_mode_resolves_to_text_for_anthropic(self, auto_validator, monkeypatch):
+        """Auto mode resolves to text when no custom API base is set."""
+        monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+        assert auto_validator._resolve_matching_strategy() == "text"
+
+    def test_auto_mode_resolves_to_semantic_for_custom_api(self, auto_validator, monkeypatch):
+        """Auto mode resolves to semantic when ANTHROPIC_BASE_URL is localhost."""
+        monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://localhost:8000/v1")
+        assert auto_validator._resolve_matching_strategy() == "semantic"
+
+    def test_auto_mode_resolves_to_text_for_anthropic_url(self, auto_validator, monkeypatch):
+        """Auto mode resolves to text when ANTHROPIC_BASE_URL is Anthropic."""
+        monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com/v1")
+        assert auto_validator._resolve_matching_strategy() == "text"
+
+    def test_env_var_override_semantic(self, monkeypatch):
+        """GUARDKIT_MATCHING_STRATEGY env var overrides auto."""
+        monkeypatch.setenv("GUARDKIT_MATCHING_STRATEGY", "semantic")
+        v = CoachValidator("/tmp/test")
+        assert v._matching_strategy == "semantic"
+
+    def test_env_var_override_text(self, monkeypatch):
+        """GUARDKIT_MATCHING_STRATEGY env var overrides auto."""
+        monkeypatch.setenv("GUARDKIT_MATCHING_STRATEGY", "text")
+        v = CoachValidator("/tmp/test")
+        assert v._matching_strategy == "text"
+
+    def test_env_var_invalid_falls_back_to_auto(self, monkeypatch):
+        """Invalid GUARDKIT_MATCHING_STRATEGY falls back to auto."""
+        monkeypatch.setenv("GUARDKIT_MATCHING_STRATEGY", "invalid")
+        v = CoachValidator("/tmp/test")
+        assert v._matching_strategy == "auto"
+
+    def test_constructor_arg_overrides_env_var(self, monkeypatch):
+        """Constructor matching_strategy arg takes precedence over env var."""
+        monkeypatch.setenv("GUARDKIT_MATCHING_STRATEGY", "semantic")
+        v = CoachValidator("/tmp/test", matching_strategy="text")
+        assert v._matching_strategy == "text"
+
+    def test_explicit_text_mode_unchanged_behavior(self, text_validator):
+        """Explicit text mode preserves original 70% threshold behavior."""
+        # 71.4% overlap -- should pass in text mode
+        acceptance_criteria = ["database migration rollback transaction logging audit"]
+        requirements_met = ["database migration rollback transaction logging validation"]
+        # Jaccard: 5/7 = 71.4%
+
+        result = text_validator._match_by_text(acceptance_criteria, requirements_met)
+        assert result.criteria_met == 1
+
+    def test_explicit_text_mode_rejects_below_70(self, text_validator):
+        """Explicit text mode rejects below 70%."""
+        acceptance_criteria = ["implement user authentication system"]
+        requirements_met = ["create admin dashboard interface"]
+        # Jaccard: 0/8 = 0%
+
+        result = text_validator._match_by_text(acceptance_criteria, requirements_met)
+        assert result.criteria_met == 0
+
+
+class TestFuzzyKeywordPrefixMatching:
+    """Tests for semantic fuzzy keyword prefix matching (TASK-FIX-VL07 Part A)."""
+
+    def test_fuzzy_prefix_matching_implement_vs_implementation(self):
+        """'implement' and 'implementation' match via prefix in semantic mode."""
+        intersection = CoachValidator._fuzzy_keyword_intersection(
+            {"implement", "database", "schema"},
+            {"implementation", "database", "design"},
+        )
+        # "implement" and "implementation" share prefix >= 5 chars
+        # "database" is exact match
+        assert "implement" in intersection
+        assert "database" in intersection
+
+    def test_fuzzy_prefix_matching_configur_prefix(self):
+        """'configure' and 'configuration' match via prefix."""
+        intersection = CoachValidator._fuzzy_keyword_intersection(
+            {"configure", "system"},
+            {"configuration", "system"},
+        )
+        assert "configure" in intersection
+        assert "system" in intersection
+
+    def test_fuzzy_no_match_for_short_words(self):
+        """Short words (<5 chars) don't get fuzzy matched."""
+        intersection = CoachValidator._fuzzy_keyword_intersection(
+            {"auth", "system"},
+            {"auto", "system"},
+        )
+        # "auth" and "auto" are both < 5 chars, no fuzzy match
+        assert "auth" not in intersection
+        assert "system" in intersection
+
+    def test_fuzzy_no_false_positive_different_prefixes(self):
+        """Different prefixes don't falsely match."""
+        intersection = CoachValidator._fuzzy_keyword_intersection(
+            {"database", "payment"},
+            {"dashboard", "processing"},
+        )
+        # "database" and "dashboard" share "da" prefix but "datab" != "dashb"
+        # so no fuzzy match for these
+        assert "database" not in intersection
+        assert "payment" not in intersection
+
+    def test_semantic_mode_uses_fuzzy_intersection(self):
+        """Semantic mode end-to-end: fuzzy prefix matching boosts Jaccard."""
+        validator = CoachValidator("/tmp/test", matching_strategy="semantic")
+        # AC: "implement authentication configuration"
+        # Met: "implementation authentication configuring"
+        # Without fuzzy: intersection={authentication}, union=5, J=1/5=20% -> rejected
+        # With fuzzy: "implement"~"implementation", "configuration"~"configuring"
+        #   intersection={authentication, implement, configuration}=3, union=5, J=3/5=60% -> above 50%
+        acceptance_criteria = ["implement authentication configuration"]
+        requirements_met = ["implementation authentication configuring"]
+
+        result = validator._match_by_text(acceptance_criteria, requirements_met)
+        assert result.criteria_met == 1
+        assert result.all_criteria_met is True
+
+    def test_text_mode_does_not_use_fuzzy_intersection(self):
+        """Text mode: same input rejected without fuzzy prefix matching."""
+        validator = CoachValidator("/tmp/test", matching_strategy="text")
+        acceptance_criteria = ["implement authentication configuration"]
+        requirements_met = ["implementation authentication configuring"]
+
+        result = validator._match_by_text(acceptance_criteria, requirements_met)
+        # Without fuzzy: intersection={authentication}, union=5, J=1/5=20% -> rejected
+        assert result.criteria_met == 0
+        assert result.all_criteria_met is False

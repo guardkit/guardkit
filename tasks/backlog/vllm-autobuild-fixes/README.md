@@ -1,45 +1,44 @@
-# vLLM Autobuild Fixes
+# vLLM AutoBuild Fixes (FEAT-VL01)
 
-**Feature ID**: FEAT-7a2e
-**Parent Review**: [TASK-REV-ED10](../../review_complete/TASK-REV-ED10-analyse-vllm-coach-sdk-failures-gb10-autobuild.md)
-**Status**: Backlog — ready to implement
-**Created**: 2026-02-23
+## Problem Statement
 
----
+AutoBuild feature FEAT-947C (PostgreSQL Database Integration) fails when running via vLLM with Qwen3 on Dell GB10 local hardware. 2/8 tasks succeed, 2 fail with 0% criteria verification, and 4 remaining are cancelled by `stop_on_failure`.
 
-## Problem
+## Root Causes
 
-AutoBuild against a local vLLM server on the GB10 machine fails with `UNRECOVERABLE_STALL` at
-Wave 2. The root cause is a model name mismatch in the Coach Validator: it hardcodes
-`model="claude-haiku-4-5-20251001"` in its SDK call, but vLLM only serves `claude-sonnet-4-6`.
-Every Coach turn returns `invalid_request` in ~0.8s and the stall detector fires after 3 turns.
+Three verified root causes identified through deep code tracing:
 
-A secondary issue (independent of the stall) is that the environment bootstrap fails on Debian/Ubuntu
-(PEP 668 protection on system Python) with 0/6 packages installed.
+1. **Path Mismatch (Bug #1)**: Qwen3 writes `player_turn_N.json` to repo root instead of worktree for some tasks. Fix 2 recovery only checks the worktree path, so completion promises are never recovered.
 
-These issues were analysed in TASK-REV-ED10 (revised) with high-confidence root cause identification.
+2. **Two-Parser Divergence (Bug #2)**: Fix 5 uses `_load_task_metadata()` (YAML frontmatter only) instead of `TaskLoader` (frontmatter + markdown body). Feature task ACs are in the markdown body, so Fix 5 always gets empty acceptance criteria and never generates synthetic promises.
 
-## Solution
+3. **Git Race Condition (Bug #3)**: Parallel Wave 2+ tasks share a single worktree with no git synchronisation. `git diff HEAD` runs without locks, causing non-deterministic file attribution.
 
-Six targeted tasks address all identified issues:
+## Solution Approach
 
-| Task | Recommendation | Priority | Effort | Files |
-|------|---------------|----------|--------|-------|
-| [TASK-FIX-f1a2](TASK-FIX-f1a2-coach-sdk-model-fix.md) | R1+R2: Coach SDK model fix + base URL bypass | **Critical** | Low | coach_validator.py |
-| [TASK-FIX-b3c4](TASK-FIX-b3c4-bootstrap-venv-fallback.md) | R3: Bootstrap venv fallback for PEP 668 | High | Medium | environment_bootstrap.py |
-| [TASK-FIX-d5e6](TASK-FIX-d5e6-failure-classification.md) | R4: SDK error classification + stall message | Medium | Low | coach_validator.py, autobuild.py |
-| [TASK-FIX-g7h8](TASK-FIX-g7h8-align-model-fields.md) | R5: Align model fields + env var config | Medium | Low | agent_invoker.py, coach_validator.py |
-| [TASK-DOC-i1j2](TASK-DOC-i1j2-vllm-serve-docs.md) | R6: Document SERVED_MODEL_NAME alignment | Low | Minimal | vllm-serve.sh, docs/ |
-| [TASK-FIX-k3l4](TASK-FIX-k3l4-asyncio-cancel-scope.md) | R7: Suppress asyncio cancel scope noise | Low | Minimal | agent_invoker.py |
+7 fixes organised into 3 sequential waves, addressing bugs from most critical to defence-in-depth:
 
-## Quick Win
+| Wave | Tasks | Focus |
+|------|-------|-------|
+| 1 | VL01, VL02, VL03 | Critical bug fixes (path recovery, TaskLoader, absolute paths) |
+| 2 | VL04, VL05 | Parallel safety + timeout scaling |
+| 3 | VL06, VL07 | Defence-in-depth (baseline commit, semantic matching) |
 
-**TASK-FIX-f1a2 alone unblocks GB10.** It is a 1-line removal (plus ~10 lines for the base URL
-bypass helper). All other tasks improve robustness and observability but are not required to
-get autobuild working against vLLM.
+## Tasks
 
-## Execution Order
+| ID | Title | Priority | Complexity | Wave |
+|----|-------|----------|------------|------|
+| TASK-FIX-VL01 | Path-hardened player report recovery | High | 2 | 1 |
+| TASK-FIX-VL02 | Fix 5 - Use TaskLoader for AC extraction | High | 2 | 1 |
+| TASK-FIX-VL03 | Absolute paths in execution protocol | High | 2 | 1 |
+| TASK-FIX-VL04 | Git operation threading lock | Medium | 3 | 2 |
+| TASK-FIX-VL05 | Timeout scaling for local backends | High | 3 | 2 |
+| TASK-FIX-VL06 | Per-task baseline commit hash | Low | 4 | 3 |
+| TASK-FIX-VL07 | Semantic matching + enhanced synthetic promises | Medium | 5 | 3 |
 
-See [IMPLEMENTATION-GUIDE.md](IMPLEMENTATION-GUIDE.md) for the full 3-wave execution strategy.
+## Parent Review
 
-Wave 1 tasks (TASK-FIX-f1a2 + TASK-FIX-b3c4) can be worked in parallel.
+- **Review Task**: TASK-REV-8A94
+- **Review Report**: `.claude/reviews/TASK-REV-8A94-review-report.md`
+- **Failing Output**: `docs/reviews/gb10_local_autobuild/db_feature_1.md`
+- **Successful Reference**: `docs/reviews/autobuild-fixes/db_finally_succeds.md`

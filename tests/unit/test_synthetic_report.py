@@ -607,3 +607,170 @@ class TestBuildSyntheticReportWithWorktree:
             and "TASK-FIX-ASPF-006" in r.message
         ]
         assert len(inference_logs) == 1
+
+
+# ===========================================================================
+# Section 6: Enhanced File Matching Tests (TASK-FIX-VL07 Part B)
+# ===========================================================================
+
+
+class TestEnhancedFileExistencePromises:
+    """Tests for enhanced regex, directory, and glob matching (TASK-FIX-VL07)."""
+
+    def test_directory_creation_pattern_matching(self):
+        """'Create models directory' matches files under models/."""
+        criteria = ["Create models directory with base classes"]
+        promises = generate_file_existence_promises(
+            files_created=["models/__init__.py", "models/user.py"],
+            files_modified=[],
+            acceptance_criteria=criteria,
+        )
+
+        assert len(promises) == 1
+        assert promises[0]["status"] == "complete"
+        assert "models/" in promises[0]["evidence"] or "models" in promises[0]["evidence"]
+        assert promises[0]["confidence"] == 0.6
+
+    def test_directory_creation_with_the_article(self):
+        """'Create the tests directory' matches files under tests/."""
+        criteria = ["Create the tests directory for unit tests"]
+        promises = generate_file_existence_promises(
+            files_created=["tests/test_main.py"],
+            files_modified=[],
+            acceptance_criteria=criteria,
+        )
+
+        assert len(promises) == 1
+        assert promises[0]["status"] == "complete"
+
+    def test_directory_structure_pattern(self):
+        """'X directory structure' pattern matches files under X/."""
+        criteria = ["Set up src directory structure"]
+        promises = generate_file_existence_promises(
+            files_created=["src/__init__.py", "src/main.py"],
+            files_modified=[],
+            acceptance_criteria=criteria,
+        )
+
+        assert len(promises) == 1
+        assert promises[0]["status"] == "complete"
+
+    def test_glob_pattern_matching(self):
+        """Backtick glob pattern `alembic/versions/*.py` matches files."""
+        criteria = ["Create `alembic/versions/*.py` migration files"]
+        promises = generate_file_existence_promises(
+            files_created=["alembic/versions/001_init.py"],
+            files_modified=[],
+            acceptance_criteria=criteria,
+        )
+
+        assert len(promises) == 1
+        assert promises[0]["status"] == "complete"
+        assert promises[0]["confidence"] == 0.7
+
+    def test_glob_pattern_no_match(self):
+        """Glob pattern with no matching files yields incomplete."""
+        criteria = ["Create `alembic/versions/*.py` migration files"]
+        promises = generate_file_existence_promises(
+            files_created=["src/main.py"],
+            files_modified=[],
+            acceptance_criteria=criteria,
+        )
+
+        assert len(promises) == 1
+        assert promises[0]["status"] == "incomplete"
+
+    def test_double_quoted_path_matching(self):
+        """Double-quoted file path extracted and matched."""
+        criteria = ['Ensure "src/config.py" is created with defaults']
+        promises = generate_file_existence_promises(
+            files_created=["src/config.py"],
+            files_modified=[],
+            acceptance_criteria=criteria,
+        )
+
+        assert len(promises) == 1
+        assert promises[0]["status"] == "complete"
+
+    def test_single_quoted_path_matching(self):
+        """Single-quoted file path extracted and matched."""
+        criteria = ["Ensure 'src/config.py' is created with defaults"]
+        promises = generate_file_existence_promises(
+            files_created=["src/config.py"],
+            files_modified=[],
+            acceptance_criteria=criteria,
+        )
+
+        assert len(promises) == 1
+        assert promises[0]["status"] == "complete"
+
+    def test_confidence_scoring_direct_match(self):
+        """Direct file match has confidence 1.0."""
+        criteria = ["Create src/models/user.py with user model"]
+        promises = generate_file_existence_promises(
+            files_created=["src/models/user.py"],
+            files_modified=[],
+            acceptance_criteria=criteria,
+        )
+
+        assert len(promises) == 1
+        assert promises[0]["confidence"] == 1.0
+
+    def test_confidence_scoring_incomplete(self):
+        """No match has confidence 0.0."""
+        criteria = ["Create src/missing.py with nothing"]
+        promises = generate_file_existence_promises(
+            files_created=[],
+            files_modified=[],
+            acceptance_criteria=criteria,
+        )
+
+        assert len(promises) == 1
+        assert promises[0]["confidence"] == 0.0
+
+    def test_confidence_scoring_partial_disk_match(self, tmp_path):
+        """Partial disk match has confidence 0.5."""
+        target_file = tmp_path / "src" / "legacy.py"
+        target_file.parent.mkdir(parents=True)
+        target_file.write_text("# legacy code")
+
+        criteria = ["Verify src/legacy.py exists in the project"]
+        promises = generate_file_existence_promises(
+            files_created=[],
+            files_modified=[],
+            acceptance_criteria=criteria,
+            worktree_path=tmp_path,
+        )
+
+        assert len(promises) == 1
+        assert promises[0]["status"] == "partial"
+        assert promises[0]["confidence"] == 0.5
+
+    def test_backward_compatibility_no_confidence_breakage(self):
+        """Existing callers that don't access 'confidence' key still work."""
+        criteria = ["Create src/found.py"]
+        promises = generate_file_existence_promises(
+            files_created=["src/found.py"],
+            files_modified=[],
+            acceptance_criteria=criteria,
+        )
+
+        assert len(promises) == 1
+        # Access only pre-existing keys — these must still work
+        assert promises[0]["criterion_id"] == "AC-001"
+        assert promises[0]["status"] == "complete"
+        assert promises[0]["evidence_type"] == "file_existence"
+        # 'confidence' is present but not required by existing callers
+        assert "confidence" in promises[0]
+
+    def test_directory_no_match_when_no_files(self):
+        """Directory pattern with no files under it yields incomplete."""
+        criteria = ["Create models directory with base classes"]
+        promises = generate_file_existence_promises(
+            files_created=["src/main.py"],
+            files_modified=[],
+            acceptance_criteria=criteria,
+        )
+
+        assert len(promises) == 1
+        assert promises[0]["status"] == "incomplete"

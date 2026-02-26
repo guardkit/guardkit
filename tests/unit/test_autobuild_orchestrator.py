@@ -1974,6 +1974,7 @@ class TestCoachValidatorPathConstruction:
                 str(mock_worktree_feature_mode.path),
                 task_id="TASK-INFRA-001",
                 coach_test_execution="sdk",
+                matching_strategy="auto",
             )
             # Should be FEAT-3DEB path, NOT TASK-INFRA-001 path
             call_arg = mock_validator_class.call_args[0][0]
@@ -2030,6 +2031,7 @@ class TestCoachValidatorPathConstruction:
                 str(mock_worktree_single_task_mode.path),
                 task_id="TASK-001",
                 coach_test_execution="sdk",
+                matching_strategy="auto",
             )
             call_arg = mock_validator_class.call_args[0][0]
             assert "TASK-001" in call_arg

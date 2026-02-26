@@ -429,6 +429,7 @@ class CoachValidator:
         test_timeout: int = 300,
         task_id: Optional[str] = None,
         coach_test_execution: str = "sdk",
+        matching_strategy: str = "auto",
     ):
         """
         Initialize CoachValidator.
@@ -448,12 +449,34 @@ class CoachValidator:
         coach_test_execution : str
             Test execution mode: "sdk" (default) uses Claude Agent SDK via Bash
             tool for environment parity; "subprocess" uses subprocess.run() directly.
+        matching_strategy : str
+            Text matching strategy for acceptance criteria verification.
+            ``"text"``: strict Jaccard threshold (70%), ``"semantic"``: lower
+            threshold (50%) with fuzzy keyword prefix matching for local/vLLM
+            backends, ``"auto"`` (default): resolves to ``"semantic"`` when
+            ``ANTHROPIC_BASE_URL`` points to a non-Anthropic endpoint, otherwise
+            ``"text"``.  Can also be set via ``GUARDKIT_MATCHING_STRATEGY`` env var.
         """
         self.worktree_path = Path(worktree_path)
         self.test_command = test_command
         self.test_timeout = test_timeout
         self.task_id = task_id
         self._coach_test_execution = coach_test_execution
+        # Resolve matching strategy: constructor arg > env var > "auto"
+        _VALID_STRATEGIES = ("auto", "text", "semantic")
+        env_strategy = os.environ.get("GUARDKIT_MATCHING_STRATEGY", "").lower()
+        if matching_strategy not in _VALID_STRATEGIES:
+            logger.warning(
+                "Unrecognised matching_strategy %r, falling back to 'auto'",
+                matching_strategy,
+            )
+            matching_strategy = "auto"
+        if matching_strategy != "auto":
+            self._matching_strategy = matching_strategy
+        elif env_strategy in ("text", "semantic"):
+            self._matching_strategy = env_strategy
+        else:
+            self._matching_strategy = "auto"
 
         logger.debug(f"CoachValidator initialized for worktree: {worktree_path}, task_id: {task_id}")
 
@@ -1190,6 +1213,24 @@ class CoachValidator:
         """Return True when ANTHROPIC_BASE_URL points to a non-Anthropic endpoint (e.g. vLLM)."""
         base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
         return bool(base_url) and "api.anthropic.com" not in base_url
+
+    def _resolve_matching_strategy(self) -> str:
+        """Resolve effective matching strategy to ``'text'`` or ``'semantic'``.
+
+        When configured as ``'auto'``, returns ``'semantic'`` if
+        ``ANTHROPIC_BASE_URL`` points to a non-Anthropic endpoint (e.g. vLLM),
+        otherwise ``'text'``.
+        """
+        if self._matching_strategy == "auto":
+            is_custom = self._is_custom_api_base()
+            effective = "semantic" if is_custom else "text"
+            logger.info(
+                "Matching strategy auto-resolved to '%s' (custom_api=%s)",
+                effective,
+                is_custom,
+            )
+            return effective
+        return self._matching_strategy
 
     def run_independent_tests(
         self,
@@ -1947,6 +1988,39 @@ class CoachValidator:
         """
         return re.sub(r'[`"\'\u201c\u201d]', '', text)
 
+    @staticmethod
+    def _fuzzy_keyword_intersection(
+        criterion_keywords: set,
+        met_keywords: set,
+    ) -> set:
+        """Compute keyword intersection with prefix-based fuzzy matching.
+
+        In addition to exact keyword matches, counts two keywords as matching
+        when one is a prefix of the other and both are at least 5 characters
+        long.  This handles stemming-like cases (e.g. ``"implement"`` vs
+        ``"implementation"``) without an external NLP library.
+
+        Returns the augmented intersection set (superset of exact intersection).
+        """
+        intersection = set(criterion_keywords & met_keywords)
+        unmatched_criterion = criterion_keywords - intersection
+        unmatched_met = met_keywords - intersection
+
+        for ck in list(unmatched_criterion):
+            if len(ck) < 5:
+                continue
+            for mk in list(unmatched_met):
+                if len(mk) < 5:
+                    continue
+                # Match when they share a 5-char prefix (handles stemming
+                # variants like "implement" / "implementation")
+                if ck.startswith(mk[:5]) or mk.startswith(ck[:5]):
+                    intersection.add(ck)
+                    unmatched_met = unmatched_met - {mk}
+                    break
+
+        return intersection
+
     def _match_by_text(
         self,
         acceptance_criteria: List[str],
@@ -1961,7 +2035,11 @@ class CoachValidator:
         Uses three matching strategies in order:
         1. Exact match (normalized text)
         2. Substring containment
-        3. Keyword overlap (>=70% similarity)
+        3. Keyword overlap (threshold depends on matching strategy)
+
+        The Jaccard threshold is 70 % in ``text`` mode and 50 % in
+        ``semantic`` mode.  Semantic mode additionally uses fuzzy prefix
+        matching via :meth:`_fuzzy_keyword_intersection`.
 
         Parameters
         ----------
@@ -1975,6 +2053,9 @@ class CoachValidator:
         RequirementsValidation
             Structured validation result
         """
+        effective_strategy = self._resolve_matching_strategy()
+        keyword_threshold = 0.50 if effective_strategy == "semantic" else 0.70
+
         # Strip prefixes and normalize requirements_met
         stripped_met = [self._strip_criterion_prefix(r) for r in requirements_met]
         stripped_met = [self._strip_markdown_formatting(r) for r in stripped_met]
@@ -2030,8 +2111,14 @@ class CoachValidator:
                             if not met_keywords:
                                 continue
 
-                            # Calculate Jaccard similarity
-                            intersection = criterion_keywords & met_keywords
+                            # Calculate Jaccard similarity (with fuzzy prefix
+                            # matching in semantic mode)
+                            if effective_strategy == "semantic":
+                                intersection = self._fuzzy_keyword_intersection(
+                                    criterion_keywords, met_keywords,
+                                )
+                            else:
+                                intersection = criterion_keywords & met_keywords
                             union = criterion_keywords | met_keywords
 
                             if union:
@@ -2040,8 +2127,7 @@ class CoachValidator:
                                     best_match_score = score
                                     best_match_text = met_text
 
-                        # Accept if similarity >= 70%
-                        if best_match_score >= 0.70:
+                        if best_match_score >= keyword_threshold:
                             result_str = "verified"
                             evidence = f"Keyword overlap match ({best_match_score:.0%} similarity) with '{best_match_text}'"
                             strategy = "keyword"

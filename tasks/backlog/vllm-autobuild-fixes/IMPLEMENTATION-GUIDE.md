@@ -1,116 +1,121 @@
-# Implementation Guide: vLLM Autobuild Fixes
+# Implementation Guide: vLLM AutoBuild Fixes (FEAT-VL01)
 
-**Feature ID**: FEAT-7a2e
-**Parent Review**: TASK-REV-ED10
-**Priority**: Wave 1 tasks are critical — they unblock GB10 local autobuild
+## Execution Strategy: Sequential (3 Waves)
 
----
-
-## Background
-
-Two autobuild feature runs on the GB10 machine (FEAT-EC3C) failed due to a chain of infrastructure
-issues. TASK-REV-AB3D fixed the first (Player model name mismatch in `vllm-serve.sh`). TASK-REV-ED10
-analysed the remaining failures in the second run and produced 7 recommendations (R1–R7). This
-feature implements those recommendations.
-
-The most critical fix (R1) is a **1-line change**: remove `model="claude-haiku-4-5-20251001"` from
-the Coach Validator's `ClaudeAgentOptions`. This change alone unblocks GB10 local autobuild.
+All tasks executed sequentially within each wave. Wave N+1 starts only after all Wave N tasks pass.
 
 ---
 
-## Wave 1 — Critical (run in parallel, unblocks GB10)
+## Wave 1: Critical Bug Fixes (3 tasks)
 
-These two tasks can be executed in parallel as they modify different files.
+**Goal**: Fix the two verified bugs that cause 0% criteria verification, and prevent recurrence.
 
-### TASK-FIX-f1a2 — Coach SDK model fix + base URL bypass
+### TASK-FIX-VL01: Path-hardened player report recovery
+- **File**: `guardkit/orchestrator/agent_invoker.py` (lines 1844-1879)
+- **Change**: Add repo-root fallback path check in Fix 2 recovery block
+- **Risk**: Low — additive change, existing worktree-path check is preserved
+- **Test**: Unit test with player report at repo root vs worktree path
+- **Run**: `/task-work TASK-FIX-VL01`
 
-**Why first**: This is the root cause of UNRECOVERABLE_STALL on GB10. Without this fix, every
-Coach turn fails with `invalid_request` because vLLM doesn't know the Haiku model ID.
+### TASK-FIX-VL02: Fix 5 - Use TaskLoader for AC extraction
+- **File**: `guardkit/orchestrator/agent_invoker.py` (lines 1884-1896)
+- **Change**: Replace `_load_task_metadata()` with `TaskLoader.load_task()` in Fix 5
+- **Risk**: Low — TaskLoader is the canonical parser already used elsewhere
+- **Test**: Unit test with AC in markdown body (not YAML frontmatter)
+- **Run**: `/task-work TASK-FIX-VL02`
 
-**Files**: `guardkit/orchestrator/quality_gates/coach_validator.py`
-**Effort**: ~15 lines (remove 1 line + add ~10 lines for the base URL bypass helper)
-**Risk**: Low. No-model Player path is already proven to work against vLLM.
+### TASK-FIX-VL03: Absolute paths in execution protocol
+- **Files**: `guardkit/orchestrator/prompts/autobuild_execution_protocol.md`, `guardkit/orchestrator/agent_invoker.py` (~line 3322)
+- **Change**: Add `{worktree_path}` placeholder, substitute with absolute path
+- **Risk**: Low — prevents path ambiguity for all models
+- **Test**: Verify substitution produces absolute path; verify Anthropic models unaffected
+- **Run**: `/task-work TASK-FIX-VL03`
 
-### TASK-FIX-b3c4 — Bootstrap virtualenv fallback
-
-**Why first**: The bootstrap failure (0/6 installs) is an independent issue that will affect any
-Debian/Ubuntu host. While it wasn't the proximate stall cause in FEAT-EC3C, it will block any
-test execution path that relies on the bootstrapped packages.
-
-**Files**: `guardkit/orchestrator/environment_bootstrap.py`
-**Effort**: ~40-60 lines (new PEP 668 detection + venv creation + state persistence)
-**Risk**: Low. Fallback only activates on PEP 668 failure; existing paths unchanged.
-
----
-
-## Wave 2 — Secondary improvements (run in parallel after Wave 1)
-
-These tasks improve observability and code hygiene. They both touch `coach_validator.py` in
-different sections — review for conflicts if running truly in parallel.
-
-### TASK-FIX-d5e6 — Failure classification + stall message
-
-**Files**: `guardkit/orchestrator/quality_gates/coach_validator.py`,
-           `guardkit/orchestrator/autobuild.py`
-**Effort**: ~20 lines
-**Dependency**: TASK-FIX-f1a2 merged first (to avoid conflicting changes in coach_validator.py)
-
-### TASK-FIX-g7h8 — Align model fields + env var support
-
-**Files**: `guardkit/orchestrator/agent_invoker.py`,
-           `guardkit/orchestrator/quality_gates/coach_validator.py`
-**Effort**: ~20 lines (remove fields + add env var helper)
-**Dependency**: TASK-FIX-f1a2 merged first
-
----
-
-## Wave 3 — Documentation and maintenance (run in parallel, minimal risk)
-
-### TASK-DOC-i1j2 — vLLM serve docs
-
-**Files**: `scripts/vllm-serve.sh`, `docs/guides/simple-local-autobuild.md`
-**Effort**: ~20 lines of comments/docs
-**Dependency**: None — can run any time
-
-### TASK-FIX-k3l4 — asyncio cancel scope noise
-
-**Files**: `guardkit/orchestrator/agent_invoker.py`, `pyproject.toml`
-**Effort**: ~15 lines (check SDK version first; if no upstream fix, add targeted handler)
-**Dependency**: None — fully independent
-
----
-
-## Execution Strategy
-
-```
-Wave 1 (parallel):  TASK-FIX-f1a2   TASK-FIX-b3c4
-                          ↓                ↓
-Wave 2 (parallel):  TASK-FIX-d5e6   TASK-FIX-g7h8
-                          ↓                ↓
-Wave 3 (parallel):  TASK-DOC-i1j2   TASK-FIX-k3l4
+### Wave 1 Validation
+```bash
+pytest tests/ -v -k "player_report or taskloader or protocol" --cov=guardkit/orchestrator
 ```
 
-To unblock GB10 immediately, implement only TASK-FIX-f1a2. Then run:
+---
+
+## Wave 2: Parallel Safety + Performance (2 tasks)
+
+**Goal**: Prevent git race conditions and make timeouts workable for local inference.
+
+### TASK-FIX-VL04: Git operation threading lock
+- **File**: `guardkit/orchestrator/agent_invoker.py` (class-level + `_detect_git_changes()`)
+- **Change**: Add `threading.RLock()` class-level lock around git operations
+- **Risk**: Low — serialises only git commands, tasks still run concurrently
+- **Dependency**: None (can run in parallel with VL05 if desired)
+- **Run**: `/task-work TASK-FIX-VL04`
+
+### TASK-FIX-VL05: Timeout scaling for local backends
+- **Files**: `guardkit/orchestrator/feature_orchestrator.py`, `guardkit/orchestrator/agent_invoker.py`
+- **Change**: Auto-detect localhost backend, apply 4x timeout multiplier
+- **Risk**: Low — only affects timeout values, default multiplier is 1.0
+- **Dependency**: None
+- **Run**: `/task-work TASK-FIX-VL05`
+
+### Wave 2 Validation
+```bash
+pytest tests/ -v -k "git_lock or timeout" --cov=guardkit/orchestrator
+```
+
+---
+
+## Wave 3: Defence-in-Depth (2 tasks)
+
+**Goal**: Improve accuracy of parallel git detection and support local model paraphrasing.
+
+### TASK-FIX-VL06: Per-task baseline commit hash
+- **File**: `guardkit/orchestrator/agent_invoker.py`
+- **Change**: Record `git rev-parse HEAD` before task start, use as diff baseline
+- **Risk**: Medium — changes git detection reference point
+- **Dependency**: TASK-FIX-VL04 (needs git lock in place)
+- **Run**: `/task-work TASK-FIX-VL06`
+
+### TASK-FIX-VL07: Semantic matching + enhanced synthetic promises
+- **Files**: `guardkit/orchestrator/quality_gates/coach_validator.py`, `guardkit/orchestrator/synthetic_report.py`, `guardkit/orchestrator/feature_orchestrator.py`
+- **Change**: Configurable matching strategy (text/semantic/auto) + improved file regex patterns
+- **Risk**: Medium — changes validation behaviour when semantic mode enabled
+- **Dependency**: TASK-FIX-VL02 (Fix 5 must work correctly first)
+- **Run**: `/task-work TASK-FIX-VL07`
+
+### Wave 3 Validation
+```bash
+pytest tests/ -v -k "baseline_commit or semantic or synthetic" --cov=guardkit/orchestrator
+```
+
+---
+
+## Full Regression
+
+After all waves complete:
 
 ```bash
-ANTHROPIC_BASE_URL=http://localhost:8000 ANTHROPIC_API_KEY=vllm-local \
-  guardkit autobuild task TASK-GLI-004 --verbose
+pytest tests/ -v --cov=guardkit --cov-report=term --cov-report=json
 ```
 
-The Coach should no longer stall after Wave 1.
+## Key Files Summary
 
----
+| File | Tasks Touching It |
+|------|-------------------|
+| `guardkit/orchestrator/agent_invoker.py` | VL01, VL02, VL03, VL04, VL05, VL06 |
+| `guardkit/orchestrator/feature_orchestrator.py` | VL05, VL07 |
+| `guardkit/orchestrator/quality_gates/coach_validator.py` | VL07 |
+| `guardkit/orchestrator/synthetic_report.py` | VL07 |
+| `guardkit/orchestrator/prompts/autobuild_execution_protocol.md` | VL03 |
 
-## Verification
+## Architecture Guardrails
 
-After TASK-FIX-f1a2 is deployed, verify with a full autobuild run. The following should no longer
-appear in the logs:
+**Do NOT**:
+- Remove or bypass Fix 2, Fix 3, or Fix 5 — they are load-bearing recovery mechanisms
+- Change `TaskArtifactPaths` path construction — it is the canonical path builder
+- Remove the diagnostic dump in coach_validator — it is essential for debugging
+- Change the promise-based → hybrid → text matching pipeline order
 
-```
-SDK API error: invalid_request
-Feedback stall: identical feedback (sig=...) for 3 turns with 0 criteria passing
-UNRECOVERABLE_STALL
-```
-
-Instead you should see the Coach run pytest successfully via subprocess (when
-`ANTHROPIC_BASE_URL=http://localhost:8000` is set) and return actual test results.
+**Do**:
+- Preserve existing behaviour when `matching_strategy=text` (default)
+- Use `TaskLoader` as the canonical task parser (not `_load_task_metadata()`)
+- Keep all git operations within the `_git_lock` context manager (after VL04)
+- Log all fallback activations for observability

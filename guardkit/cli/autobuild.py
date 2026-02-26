@@ -204,6 +204,17 @@ def autobuild():
     default=True,
     help="Enable/disable Graphiti context retrieval (default: enabled)",
 )
+@click.option(
+    "--timeout-multiplier",
+    "timeout_multiplier",
+    default=None,
+    type=float,
+    help=(
+        "Timeout multiplier for all autobuild timeouts (default: auto-detect). "
+        "Auto-detects 4.0 for localhost/vLLM backends. "
+        "Override via GUARDKIT_TIMEOUT_MULTIPLIER env var."
+    ),
+)
 @click.pass_context
 @handle_cli_errors
 def task(
@@ -221,6 +232,7 @@ def task(
     no_rollback: bool,
     ablation_mode: bool,
     enable_context: bool,
+    timeout_multiplier: Optional[float],
 ):
     """
     Execute AutoBuild orchestration for a task.
@@ -337,11 +349,29 @@ def task(
         console.print("[bold red]" + "="*80 + "[/bold red]")
         console.print()
 
+    # TASK-FIX-VL05: Resolve timeout multiplier
+    from guardkit.orchestrator.agent_invoker import detect_timeout_multiplier
+
+    effective_timeout_multiplier = timeout_multiplier
+    if effective_timeout_multiplier is None:
+        effective_timeout_multiplier = detect_timeout_multiplier()
+    if effective_timeout_multiplier is not None and effective_timeout_multiplier < 0.1:
+        raise click.BadParameter(
+            "Timeout multiplier must be at least 0.1",
+            param_hint="'--timeout-multiplier'",
+        )
+    logger.info(f"Timeout multiplier: {effective_timeout_multiplier}x")
+
     # Display startup banner
     resume_text = " [yellow](Resuming)[/yellow]" if resume else ""
     mode_display = effective_mode.upper()
     pre_loop_display = "[red]OFF[/red]" if no_pre_loop else "[green]ON[/green]"
     ablation_display = "[red]ENABLED[/red]" if ablation_mode else "[green]DISABLED[/green]"
+    multiplier_display = (
+        f"\nTimeout Multiplier: [yellow]{effective_timeout_multiplier}x[/yellow]"
+        if effective_timeout_multiplier != 1.0
+        else ""
+    )
     if not ctx_obj.get("quiet", False):
         console.print(
             Panel(
@@ -352,7 +382,7 @@ def task(
                 f"Mode: [magenta]{mode_display}[/magenta]\n"
                 f"Pre-Loop: {pre_loop_display}\n"
                 f"Ablation: {ablation_display}\n"
-                f"SDK Timeout: {effective_sdk_timeout}s{resume_text}",
+                f"SDK Timeout: {effective_sdk_timeout}s{multiplier_display}{resume_text}",
                 title="GuardKit AutoBuild",
                 border_style="blue",
             )
@@ -369,7 +399,8 @@ def task(
         f"skip_arch_review={effective_skip_arch_review}, "
         f"enable_checkpoints={enable_checkpoints}, "
         f"rollback_on_pollution={rollback_on_pollution}, "
-        f"ablation_mode={ablation_mode})"
+        f"ablation_mode={ablation_mode}, "
+        f"timeout_multiplier={effective_timeout_multiplier})"
     )
     orchestrator = AutoBuildOrchestrator(
         repo_root=Path.cwd(),
@@ -383,6 +414,7 @@ def task(
         rollback_on_pollution=rollback_on_pollution,
         ablation_mode=ablation_mode,
         enable_context=enable_context,
+        timeout_multiplier=effective_timeout_multiplier,
     )
 
     # Phase 3: Execute orchestration
@@ -535,6 +567,17 @@ def status(ctx, task_id: str, verbose: bool):
     help="Per-task timeout in seconds for wave execution (default: 2400 = 40 min)",
     show_default=True,
 )
+@click.option(
+    "--timeout-multiplier",
+    "timeout_multiplier",
+    default=None,
+    type=float,
+    help=(
+        "Timeout multiplier for all autobuild timeouts (default: auto-detect). "
+        "Auto-detects 4.0 for localhost/vLLM backends. "
+        "Override via GUARDKIT_TIMEOUT_MULTIPLIER env var."
+    ),
+)
 @click.pass_context
 @handle_cli_errors
 def feature(
@@ -550,6 +593,7 @@ def feature(
     enable_pre_loop: Optional[bool],
     enable_context: bool,
     task_timeout: int,
+    timeout_multiplier: Optional[float],
 ):
     """
     Execute AutoBuild for all tasks in a feature.
@@ -615,7 +659,8 @@ def feature(
     logger.info(
         f"Starting feature orchestration: {feature_id} "
         f"(max_turns={max_turns}, stop_on_failure={stop_on_failure}, resume={resume}, fresh={fresh}, "
-        f"sdk_timeout={sdk_timeout}, enable_pre_loop={enable_pre_loop})"
+        f"sdk_timeout={sdk_timeout}, enable_pre_loop={enable_pre_loop}, "
+        f"timeout_multiplier={timeout_multiplier})"
     )
 
     try:
@@ -632,6 +677,7 @@ def feature(
             enable_pre_loop=enable_pre_loop,
             enable_context=enable_context,
             task_timeout=task_timeout,
+            timeout_multiplier=timeout_multiplier,
         )
 
         # Execute feature orchestration

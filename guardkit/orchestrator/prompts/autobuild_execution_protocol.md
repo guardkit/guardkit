@@ -349,7 +349,9 @@ If no plan exists (e.g., micro-task mode), skip this phase.
 ## Player Report Format
 
 After completing implementation, write your report as JSON to:
-`.guardkit/autobuild/{task_id}/player_turn_{turn}.json`
+`{worktree_path}/.guardkit/autobuild/{task_id}/player_turn_{turn}.json`
+
+<!-- Fallback (relative path): .guardkit/autobuild/{task_id}/player_turn_{turn}.json -->
 
 ### PLAYER_REPORT_SCHEMA
 

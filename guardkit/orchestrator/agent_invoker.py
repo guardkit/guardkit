@@ -108,6 +108,37 @@ DEFAULT_SDK_TIMEOUT = int(os.environ.get("GUARDKIT_SDK_TIMEOUT", "1200"))
 # Even with high complexity + task-work mode, timeout should not exceed 1 hour
 MAX_SDK_TIMEOUT = 3600
 
+
+def detect_timeout_multiplier() -> float:
+    """Detect appropriate timeout multiplier from backend URL.
+
+    When ANTHROPIC_BASE_URL points to localhost or 127.0.0.1 (e.g. local vLLM),
+    returns 4.0 since local inference is ~4x slower than Anthropic API.
+
+    Override via GUARDKIT_TIMEOUT_MULTIPLIER environment variable.
+
+    Returns:
+        Timeout multiplier (default: 1.0 for Anthropic API, 4.0 for local).
+    """
+    # Explicit override takes priority
+    explicit = os.environ.get("GUARDKIT_TIMEOUT_MULTIPLIER")
+    if explicit:
+        try:
+            value = float(explicit)
+            return max(0.1, value)
+        except ValueError:
+            logger.warning(
+                f"Invalid GUARDKIT_TIMEOUT_MULTIPLIER value '{explicit}', "
+                "falling back to auto-detection"
+            )
+
+    # Auto-detect from backend URL
+    base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
+    if "localhost" in base_url or "127.0.0.1" in base_url:
+        return 4.0
+    return 1.0
+
+
 # TASK-REV-BB80: SDK max_turns for task-work invocation (separate from adversarial turns)
 # /task-work runs multiple phases internally (planning, review, implementation, testing)
 # and needs ~50 internal turns. This is NOT the same as orchestrator's max_turns (adversarial rounds).
@@ -640,6 +671,9 @@ class AgentInvoker:
         >>> assert result.report["tests_passed"]
     """
 
+    # Class-level lock to serialise git operations across parallel tasks (TASK-FIX-VL04)
+    _git_lock = threading.RLock()
+
     def __init__(
         self,
         worktree_path: Path,
@@ -648,6 +682,7 @@ class AgentInvoker:
         use_task_work_delegation: Optional[bool] = None,
         development_mode: str = "tdd",
         cancellation_event: Optional[threading.Event] = None,
+        timeout_multiplier: Optional[float] = None,
     ):
         """Initialize AgentInvoker.
 
@@ -668,17 +703,55 @@ class AgentInvoker:
                 (default: None). When set, _invoke_with_role() monitors the event and
                 terminates the SDK subprocess if cancellation is requested.
                 (TASK-FIX-ASPF-004)
+            timeout_multiplier: Multiplier for all timeout values (default: auto-detect).
+                When None, auto-detects from ANTHROPIC_BASE_URL (4.0 for localhost).
+                (TASK-FIX-VL05)
         """
         self.worktree_path = Path(worktree_path)
         self.max_turns_per_agent = max_turns_per_agent
         self.sdk_timeout_seconds = sdk_timeout_seconds
         self._sdk_timeout_is_override = sdk_timeout_seconds != DEFAULT_SDK_TIMEOUT
+        self.timeout_multiplier = (
+            timeout_multiplier if timeout_multiplier is not None
+            else detect_timeout_multiplier()
+        )
         self.use_task_work_delegation = (
             use_task_work_delegation if use_task_work_delegation is not None
             else USE_TASK_WORK_DELEGATION
         )
         self.development_mode = development_mode
         self._cancellation_event: Optional[threading.Event] = cancellation_event
+        self._baseline_commit: Optional[str] = None
+
+        if self.timeout_multiplier != 1.0:
+            logger.info(
+                f"Timeout multiplier: {self.timeout_multiplier}x "
+                f"(sdk_timeout base={self.sdk_timeout_seconds}s → "
+                f"effective max={int(MAX_SDK_TIMEOUT * self.timeout_multiplier)}s)"
+            )
+
+    # =========================================================================
+    # Path Resolution Helpers (TASK-FIX-VL01)
+    # =========================================================================
+
+    def _resolve_repo_root(self) -> Optional[Path]:
+        """Resolve the main repository root from the worktree path.
+
+        In a git worktree setup, worktrees are located at:
+            {repo_root}/.guardkit/worktrees/{task_or_feature_id}/
+
+        If the current worktree_path follows this convention, the repo root
+        is derived by stripping the ``.guardkit/worktrees/...`` suffix.
+
+        Returns ``None`` when worktree_path IS the repo root (no fallback
+        needed) or when the path doesn't match the worktree convention.
+        """
+        worktree_str = str(self.worktree_path)
+        marker = os.sep + ".guardkit" + os.sep + "worktrees" + os.sep
+        idx = worktree_str.find(marker)
+        if idx >= 0:
+            return Path(worktree_str[:idx])
+        return None
 
     # =========================================================================
     # Cancellation Support (TASK-FIX-ASPF-004)
@@ -867,6 +940,11 @@ class AgentInvoker:
             SDKTimeoutError: If invocation exceeds timeout
         """
         start_time = time.time()
+
+        # TASK-FIX-VL06: Record baseline commit before SDK invocation
+        # to prevent cross-task file attribution in parallel waves
+        if self._baseline_commit is None:
+            self._record_baseline()
 
         # TASK-ASF-008: Calculate dynamic SDK timeout based on task characteristics
         effective_timeout = self._calculate_sdk_timeout(task_id)
@@ -1250,7 +1328,7 @@ Turn: {turn}
 ## Report Format
 
 After implementing, write your report to:
-.guardkit/autobuild/{task_id}/player_turn_{turn}.json
+{self.worktree_path}/.guardkit/autobuild/{task_id}/player_turn_{turn}.json
 
 Your report MUST be valid JSON with these fields:
 {{
@@ -1440,7 +1518,7 @@ Turn: {turn}
 ## Decision Format
 
 Write your decision to:
-.guardkit/autobuild/{task_id}/coach_turn_{turn}.json
+{self.worktree_path}/.guardkit/autobuild/{task_id}/coach_turn_{turn}.json
 
 Your decision MUST be valid JSON with these fields:
 
@@ -1845,68 +1923,109 @@ Follow the decision format specified in your agent definition.
         # The execution protocol instructs the SDK agent to write player_turn_N.json
         # directly. If the agent did so before this method runs, preserve the
         # agent's completion_promises and requirements_addressed.
-        if not report.get("completion_promises") and player_report_path.exists():
-            try:
-                with open(player_report_path, "r") as f:
-                    agent_written = json.load(f)
+        #
+        # TASK-FIX-VL01: When the SDK agent (e.g. Qwen3/vLLM) writes to the
+        # repo root instead of the worktree, the file won't be at
+        # player_report_path. Search both locations with worktree first.
+        candidate_paths = [player_report_path]
+        repo_root = self._resolve_repo_root()
+        if repo_root is not None:
+            repo_root_fallback = TaskArtifactPaths.player_report_path(
+                task_id, turn, repo_root
+            )
+            if repo_root_fallback != player_report_path:
+                candidate_paths.append(repo_root_fallback)
 
-                # Recover completion_promises from agent-written report
-                agent_promises = agent_written.get("completion_promises", [])
-                if agent_promises:
-                    report["completion_promises"] = agent_promises
-                    logger.info(
-                        f"Recovered {len(agent_promises)} completion_promises "
-                        f"from agent-written player report for {task_id}"
-                    )
+        for candidate in candidate_paths:
+            if not report.get("completion_promises") and candidate.exists():
+                try:
+                    with open(candidate, "r") as f:
+                        agent_written = json.load(f)
 
-                # Recover requirements_addressed if ours is empty
-                if not report["requirements_addressed"]:
-                    agent_reqs = agent_written.get("requirements_addressed", [])
-                    if agent_reqs:
-                        report["requirements_addressed"] = agent_reqs
+                    # Recover completion_promises from agent-written report
+                    agent_promises = agent_written.get("completion_promises", [])
+                    if agent_promises:
+                        report["completion_promises"] = agent_promises
                         logger.info(
-                            f"Recovered {len(agent_reqs)} requirements_addressed "
+                            f"Recovered {len(agent_promises)} completion_promises "
                             f"from agent-written player report for {task_id}"
                         )
 
-                # Recover requirements_remaining if ours is empty
-                if not report["requirements_remaining"]:
-                    agent_remaining = agent_written.get("requirements_remaining", [])
-                    if agent_remaining:
-                        report["requirements_remaining"] = agent_remaining
+                    # Recover requirements_addressed if ours is empty
+                    if not report["requirements_addressed"]:
+                        agent_reqs = agent_written.get("requirements_addressed", [])
+                        if agent_reqs:
+                            report["requirements_addressed"] = agent_reqs
+                            logger.info(
+                                f"Recovered {len(agent_reqs)} requirements_addressed "
+                                f"from agent-written player report for {task_id}"
+                            )
 
-            except (json.JSONDecodeError, IOError) as e:
-                logger.debug(f"No agent-written player report to recover from: {e}")
+                    # Recover requirements_remaining if ours is empty
+                    if not report["requirements_remaining"]:
+                        agent_remaining = agent_written.get("requirements_remaining", [])
+                        if agent_remaining:
+                            report["requirements_remaining"] = agent_remaining
+
+                    if candidate != player_report_path:
+                        logger.warning(
+                            f"Recovered player report from repo root fallback: "
+                            f"{candidate} (worktree path was {player_report_path})"
+                        )
+                    break
+
+                except (json.JSONDecodeError, IOError) as e:
+                    logger.debug(
+                        f"Could not recover player report from {candidate}: {e}"
+                    )
 
         # TASK-FIX-PIPELINE: File-existence verification fallback (Fix 5)
         # When no completion_promises exist after Fix 2 recovery, generate
         # synthetic promises by checking files against acceptance criteria.
+        # TASK-FIX-VL02: Use TaskLoader to extract AC from markdown body,
+        # not just YAML frontmatter (_load_task_metadata only reads frontmatter).
         if not report.get("completion_promises"):
-            # Load task metadata to get acceptance_criteria
-            task_file = self._find_task_file(task_id)
-            if task_file is None:
-                logger.warning(
-                    f"Fix 5: _find_task_file returned None for {task_id} — "
-                    f"completion_promises fallback unavailable. "
-                    f"Check that task directories are correctly configured."
+            acceptance_criteria = []
+            try:
+                from guardkit.tasks.task_loader import TaskLoader
+
+                task_data = TaskLoader.load_task(
+                    task_id, repo_root=self.worktree_path
                 )
-            if task_file:
-                task_meta = self._load_task_metadata(task_file)
-                acceptance_criteria = task_meta.get("acceptance_criteria", [])
-                if acceptance_criteria:
-                    synthetic_promises = self._generate_file_existence_promises(
-                        task_id=task_id,
-                        files_created=report.get("files_created", []),
-                        files_modified=report.get("files_modified", []),
-                        acceptance_criteria=acceptance_criteria,
-                        worktree_path=self.worktree_path,
+                acceptance_criteria = task_data.get("acceptance_criteria", [])
+            except Exception as e:
+                logger.debug(
+                    f"Fix 5: TaskLoader.load_task failed for {task_id}: {e}"
+                )
+                # Fallback to _load_task_metadata (YAML frontmatter only)
+                task_file = self._find_task_file(task_id)
+                if task_file is None:
+                    logger.warning(
+                        f"Fix 5: _find_task_file returned None for {task_id} — "
+                        f"completion_promises fallback unavailable. "
+                        f"Check that task directories are correctly configured."
                     )
-                    if synthetic_promises:
-                        report["completion_promises"] = synthetic_promises
-                        logger.info(
-                            f"Generated {len(synthetic_promises)} file-existence promises "
-                            f"for {task_id} (agent did not produce promises)"
-                        )
+                if task_file:
+                    task_meta = self._load_task_metadata(task_file)
+                    acceptance_criteria = task_meta.get(
+                        "acceptance_criteria", []
+                    )
+            # Generate synthetic promises (outside try/except so it runs
+            # regardless of whether TaskLoader or fallback provided AC).
+            if acceptance_criteria:
+                synthetic_promises = self._generate_file_existence_promises(
+                    task_id=task_id,
+                    files_created=report.get("files_created", []),
+                    files_modified=report.get("files_modified", []),
+                    acceptance_criteria=acceptance_criteria,
+                    worktree_path=self.worktree_path,
+                )
+                if synthetic_promises:
+                    report["completion_promises"] = synthetic_promises
+                    logger.info(
+                        f"Generated {len(synthetic_promises)} file-existence promises "
+                        f"for {task_id} (agent did not produce promises)"
+                    )
 
         # Write Player report
         with open(player_report_path, "w") as f:
@@ -1952,8 +2071,41 @@ Follow the decision format specified in your agent definition.
             except (json.JSONDecodeError, IOError) as e:
                 logger.warning(f"Failed to update task_work_results.json: {e}")
 
+    def _record_baseline(self) -> None:
+        """Record git HEAD hash before task execution starts (TASK-FIX-VL06).
+
+        In parallel wave execution, HEAD moves as tasks commit changes.
+        Recording a per-task baseline ensures _detect_git_changes() compares
+        against the correct starting point, preventing cross-task file
+        attribution.
+        """
+        import subprocess
+
+        with self._git_lock:
+            try:
+                proc = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=str(self.worktree_path),
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if proc.returncode == 0:
+                    self._baseline_commit = proc.stdout.strip()
+                    logger.info(f"Recorded baseline commit: {self._baseline_commit[:8]}")
+            except subprocess.TimeoutExpired:
+                logger.warning("git rev-parse HEAD timed out, falling back to HEAD")
+            except Exception as e:
+                logger.warning(f"Failed to record baseline commit: {e}")
+
     def _detect_git_changes(self) -> Dict[str, list]:
         """Detect git changes in worktree.
+
+        Acquires class-level _git_lock to prevent interleaved git operations
+        when multiple AgentInvoker instances run in parallel (wave execution).
+
+        Uses per-task _baseline_commit (TASK-FIX-VL06) when available,
+        falling back to HEAD for backward compatibility.
 
         Returns:
             Dict with "modified" and "created" file lists
@@ -1962,37 +2114,39 @@ Follow the decision format specified in your agent definition.
 
         result = {"modified": [], "created": []}
 
-        try:
-            # Get modified files (tracked)
-            proc = subprocess.run(
-                ["git", "diff", "--name-only", "HEAD"],
-                cwd=str(self.worktree_path),
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            if proc.returncode == 0:
-                result["modified"] = [
-                    f.strip() for f in proc.stdout.strip().split("\n") if f.strip()
-                ]
+        with self._git_lock:
+            try:
+                # Get modified files (tracked) - use baseline commit if available (TASK-FIX-VL06)
+                diff_ref = self._baseline_commit or "HEAD"
+                proc = subprocess.run(
+                    ["git", "diff", "--name-only", diff_ref],
+                    cwd=str(self.worktree_path),
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if proc.returncode == 0:
+                    result["modified"] = [
+                        f.strip() for f in proc.stdout.strip().split("\n") if f.strip()
+                    ]
 
-            # Get untracked files (new)
-            proc = subprocess.run(
-                ["git", "ls-files", "--others", "--exclude-standard"],
-                cwd=str(self.worktree_path),
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            if proc.returncode == 0:
-                result["created"] = [
-                    f.strip() for f in proc.stdout.strip().split("\n") if f.strip()
-                ]
+                # Get untracked files (new)
+                proc = subprocess.run(
+                    ["git", "ls-files", "--others", "--exclude-standard"],
+                    cwd=str(self.worktree_path),
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if proc.returncode == 0:
+                    result["created"] = [
+                        f.strip() for f in proc.stdout.strip().split("\n") if f.strip()
+                    ]
 
-        except subprocess.TimeoutExpired:
-            logger.warning("Git command timed out")
-        except Exception as e:
-            logger.warning(f"Git change detection failed: {e}")
+            except subprocess.TimeoutExpired:
+                logger.warning("Git command timed out")
+            except Exception as e:
+                logger.warning(f"Git change detection failed: {e}")
 
         return result
 
@@ -2754,13 +2908,19 @@ Follow the decision format specified in your agent definition.
 
         effective_timeout = int(base_timeout * mode_multiplier * complexity_multiplier)
 
-        # Cap at maximum
-        effective_timeout = min(effective_timeout, MAX_SDK_TIMEOUT)
+        # TASK-FIX-VL05: Apply local backend timeout multiplier
+        if self.timeout_multiplier != 1.0:
+            effective_timeout = int(effective_timeout * self.timeout_multiplier)
+
+        # Cap at maximum (also scaled by multiplier for local backends)
+        max_timeout = int(MAX_SDK_TIMEOUT * self.timeout_multiplier)
+        effective_timeout = min(effective_timeout, max_timeout)
 
         logger.info(
             f"[{task_id}] SDK timeout: {effective_timeout}s "
             f"(base={base_timeout}s, mode={mode} x{mode_multiplier}, "
-            f"complexity={complexity} x{complexity_multiplier:.1f})"
+            f"complexity={complexity} x{complexity_multiplier:.1f}"
+            f"{f', backend x{self.timeout_multiplier}' if self.timeout_multiplier != 1.0 else ''})"
         )
 
         return effective_timeout
@@ -3323,6 +3483,7 @@ Follow the decision format specified in your agent definition.
         # Substitute placeholders in protocol
         protocol_content = protocol_content.replace("{task_id}", task_id)
         protocol_content = protocol_content.replace("{turn}", str(turn))
+        protocol_content = protocol_content.replace("{worktree_path}", str(self.worktree_path))
 
         # --- Section 7: Implementation plan locations ---
         plan_paths = TaskArtifactPaths.implementation_plan_paths(

@@ -4,6 +4,7 @@ from guardkit.orchestrator.agent_invoker import (
     AgentInvoker,
     AgentInvocationResult,
     TaskWorkStreamParser,
+    detect_timeout_multiplier,
 )
 from guardkit.orchestrator.autobuild import (
     AutoBuildOrchestrator,
@@ -76,6 +77,7 @@ __all__ = [
     "AgentInvoker",
     "AgentInvocationResult",
     "TaskWorkStreamParser",
+    "detect_timeout_multiplier",
     # AutoBuild orchestration
     "AutoBuildOrchestrator",
     "OrchestrationResult",

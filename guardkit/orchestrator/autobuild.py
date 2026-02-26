@@ -497,6 +497,7 @@ class AutoBuildOrchestrator:
         context_loader: Optional[AutoBuildContextLoader] = None,
         feature_id: Optional[str] = None,
         cancellation_event: Optional[threading.Event] = None,
+        timeout_multiplier: Optional[float] = None,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -593,6 +594,7 @@ class AutoBuildOrchestrator:
         self.pre_loop_options = pre_loop_options or {}
         self.development_mode = development_mode
         self.sdk_timeout = sdk_timeout
+        self.timeout_multiplier = timeout_multiplier
         self.skip_arch_review = skip_arch_review
         self.enable_perspective_reset = enable_perspective_reset
         self.enable_checkpoints = enable_checkpoints
@@ -979,6 +981,7 @@ class AutoBuildOrchestrator:
                         sdk_timeout_seconds=self.sdk_timeout,
                         use_task_work_delegation=True,
                         cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
+                        timeout_multiplier=self.timeout_multiplier,  # TASK-FIX-VL05
                     )
 
                 return worktree
@@ -3582,10 +3585,12 @@ class AutoBuildOrchestrator:
             # CoachValidator will look for: worktree.path/.guardkit/autobuild/{task_id}/task_work_results.json
             coach_cfg = self._load_coach_config()
             coach_test_execution = coach_cfg.get("test_execution", "sdk")
+            matching_strategy = coach_cfg.get("matching_strategy", "auto")
             validator = CoachValidator(
                 str(worktree.path),
                 task_id=task_id,
                 coach_test_execution=coach_test_execution,
+                matching_strategy=matching_strategy,
             )
             validation_result = validator.validate(
                 task_id=task_id,

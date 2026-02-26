@@ -236,6 +236,7 @@ class FeatureOrchestrator:
         enable_pre_loop: Optional[bool] = None,
         enable_context: bool = True,
         task_timeout: int = 2400,
+        timeout_multiplier: Optional[float] = None,
     ):
         """
         Initialize FeatureOrchestrator.
@@ -270,6 +271,11 @@ class FeatureOrchestrator:
         task_timeout : int, optional
             Per-task timeout in seconds for wave execution (default: 2400, i.e. 40 min).
             Prevents any single task from blocking an entire wave indefinitely.
+        timeout_multiplier : Optional[float], optional
+            Multiplier for all timeout values (default: auto-detect).
+            When None, auto-detects from ANTHROPIC_BASE_URL (4.0 for localhost).
+            Scales task_timeout and is passed through to AgentInvoker for SDK timeouts.
+            (TASK-FIX-VL05)
 
         Raises
         ------
@@ -282,6 +288,14 @@ class FeatureOrchestrator:
         if resume and fresh:
             raise ValueError("Cannot use both --resume and --fresh flags together")
 
+        # TASK-FIX-VL05: Detect and apply timeout multiplier for local backends
+        from guardkit.orchestrator.agent_invoker import detect_timeout_multiplier
+
+        self.timeout_multiplier = (
+            timeout_multiplier if timeout_multiplier is not None
+            else detect_timeout_multiplier()
+        )
+
         self.repo_root = Path(repo_root).resolve()
         self.max_turns = max_turns
         self.stop_on_failure = stop_on_failure
@@ -292,7 +306,7 @@ class FeatureOrchestrator:
         self.sdk_timeout = sdk_timeout
         self.enable_pre_loop = enable_pre_loop
         self.enable_context = enable_context
-        self.task_timeout = task_timeout
+        self.task_timeout = int(task_timeout * self.timeout_multiplier)
         self.features_dir = features_dir or self.repo_root / ".guardkit" / "features"
 
         # Raise file descriptor limit for parallel task execution
@@ -311,6 +325,7 @@ class FeatureOrchestrator:
             f"max_turns={self.max_turns}, stop_on_failure={self.stop_on_failure}, "
             f"resume={self.resume}, fresh={self.fresh}, enable_pre_loop={self.enable_pre_loop}, "
             f"enable_context={self.enable_context}, task_timeout={self.task_timeout}s"
+            f"{f', timeout_multiplier={self.timeout_multiplier}x' if self.timeout_multiplier != 1.0 else ''}"
         )
 
     def _raise_fd_limit(self, target: int = 4096) -> None:
@@ -1515,6 +1530,7 @@ The detailed specifications are in the task markdown file.
                 enable_context=self.enable_context,
                 feature_id=feature.id,
                 cancellation_event=cancellation_event,  # Cooperative cancellation (TASK-ASF-007)
+                timeout_multiplier=self.timeout_multiplier,  # TASK-FIX-VL05
             )
 
             # Execute task orchestration

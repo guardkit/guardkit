@@ -482,7 +482,7 @@ class TestCoachInvocation:
 class TestPromptBuilding:
     """Test prompt construction."""
 
-    def test_build_player_prompt_first_turn(self, agent_invoker):
+    def test_build_player_prompt_first_turn(self, agent_invoker, worktree_path):
         """Player prompt for turn 1 has no feedback section."""
         prompt = agent_invoker._build_player_prompt(
             task_id="TASK-001",
@@ -495,7 +495,8 @@ class TestPromptBuilding:
         assert "Turn: 1" in prompt
         assert "Implement OAuth2 authentication" in prompt
         assert "Coach Feedback" not in prompt
-        assert ".guardkit/autobuild/TASK-001/player_turn_1.json" in prompt
+        # Verify absolute path with worktree_path prefix
+        assert f"{worktree_path}/.guardkit/autobuild/TASK-001/player_turn_1.json" in prompt
 
     def test_build_player_prompt_with_feedback(self, agent_invoker):
         """Player prompt includes feedback from previous turn."""
@@ -512,7 +513,7 @@ class TestPromptBuilding:
         assert feedback in prompt
         assert "Please address all feedback points" in prompt
 
-    def test_build_coach_prompt(self, agent_invoker, sample_player_report):
+    def test_build_coach_prompt(self, agent_invoker, worktree_path, sample_player_report):
         """Coach prompt includes requirements and Player report."""
         prompt = agent_invoker._build_coach_prompt(
             task_id="TASK-001",
@@ -525,7 +526,8 @@ class TestPromptBuilding:
         assert "Turn: 1" in prompt
         assert "Implement OAuth2 authentication" in prompt
         assert "Player's Report" in prompt
-        assert ".guardkit/autobuild/TASK-001/coach_turn_1.json" in prompt
+        # Verify absolute path with worktree_path prefix
+        assert f"{worktree_path}/.guardkit/autobuild/TASK-001/coach_turn_1.json" in prompt
         # Verify Player report is included as JSON
         assert '"task_id": "TASK-001"' in prompt
         assert '"tests_passed": true' in prompt
@@ -8124,3 +8126,241 @@ class TestSdkCleanupHandler:
             assert id(loop) in _patched_loops
         finally:
             loop.close()
+
+
+class TestGitOperationThreadingLock:
+    """Tests for TASK-FIX-VL04: git operation threading lock."""
+
+    def test_git_lock_is_class_level_rlock(self, worktree_path):
+        """Verify _git_lock is a class-level threading.RLock shared across instances."""
+        import threading
+
+        # Verify class attribute exists and is RLock
+        assert hasattr(AgentInvoker, '_git_lock')
+        assert isinstance(AgentInvoker._git_lock, type(threading.RLock()))
+
+        # Verify shared across instances
+        inv1 = AgentInvoker(worktree_path=worktree_path)
+        inv2 = AgentInvoker(worktree_path=worktree_path)
+        assert inv1._git_lock is inv2._git_lock
+
+    def test_detect_git_changes_acquires_lock(self, agent_invoker):
+        """Verify _detect_git_changes acquires _git_lock before running git commands."""
+        lock_acquired = False
+        original_lock = AgentInvoker._git_lock
+
+        class TrackingRLock:
+            """RLock wrapper that records acquire/release calls."""
+            def __init__(self):
+                self.was_used_as_context_manager = False
+            def __enter__(self):
+                nonlocal lock_acquired
+                lock_acquired = True
+                self.was_used_as_context_manager = True
+                return self
+            def __exit__(self, *args):
+                pass
+
+        tracking_lock = TrackingRLock()
+        AgentInvoker._git_lock = tracking_lock
+        try:
+            with patch("subprocess.run") as mock_run:
+                mock_proc = Mock()
+                mock_proc.returncode = 0
+                mock_proc.stdout = "file1.py\nfile2.py"
+                mock_run.return_value = mock_proc
+
+                result = agent_invoker._detect_git_changes()
+
+            assert tracking_lock.was_used_as_context_manager, (
+                "_detect_git_changes must acquire _git_lock"
+            )
+            assert lock_acquired
+        finally:
+            AgentInvoker._git_lock = original_lock
+
+    def test_detect_git_changes_releases_lock_on_exception(self, agent_invoker):
+        """Verify lock is released even if git commands raise exceptions."""
+        original_lock = AgentInvoker._git_lock
+        tracking_lock_released = False
+
+        class TrackingRLock:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                nonlocal tracking_lock_released
+                tracking_lock_released = True
+                return False  # Don't suppress exception
+
+        AgentInvoker._git_lock = TrackingRLock()
+        try:
+            with patch("subprocess.run", side_effect=OSError("simulated failure")):
+                # Should not raise - method has internal exception handling
+                result = agent_invoker._detect_git_changes()
+
+            assert tracking_lock_released, "Lock must be released on exception"
+            assert result == {"modified": [], "created": []} or isinstance(result, dict)
+        finally:
+            AgentInvoker._git_lock = original_lock
+
+
+# ==================== Baseline Commit Tests (TASK-FIX-VL06) ====================
+
+
+class TestBaselineCommit:
+    """Test per-task baseline commit recording for accurate git detection."""
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance."""
+        return AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=60,
+        )
+
+    def test_baseline_commit_initially_none(self, invoker):
+        """_baseline_commit is None before _record_baseline is called."""
+        assert invoker._baseline_commit is None
+
+    def test_record_baseline_stores_commit_hash(self, invoker):
+        """_record_baseline stores the git HEAD commit hash."""
+        fake_hash = "abc123def456789"
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = Mock(returncode=0, stdout=f"{fake_hash}\n")
+            invoker._record_baseline()
+
+        assert invoker._baseline_commit == fake_hash
+
+    def test_record_baseline_strips_whitespace(self, invoker):
+        """_record_baseline strips trailing newlines from git output."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = Mock(returncode=0, stdout="  abc123  \n")
+            invoker._record_baseline()
+
+        assert invoker._baseline_commit == "abc123"
+
+    def test_record_baseline_handles_git_failure(self, invoker):
+        """_record_baseline leaves _baseline_commit as None when git fails."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = Mock(returncode=128, stdout="")
+            invoker._record_baseline()
+
+        assert invoker._baseline_commit is None
+
+    def test_record_baseline_handles_timeout(self, invoker):
+        """_record_baseline handles subprocess timeout gracefully."""
+        import subprocess
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.TimeoutExpired(cmd="git", timeout=30)
+            invoker._record_baseline()
+
+        assert invoker._baseline_commit is None
+
+    def test_record_baseline_handles_exception(self, invoker):
+        """_record_baseline handles unexpected exceptions gracefully."""
+        with patch("subprocess.run", side_effect=OSError("git not found")):
+            invoker._record_baseline()
+
+        assert invoker._baseline_commit is None
+
+    def test_record_baseline_acquires_git_lock(self, invoker):
+        """_record_baseline acquires _git_lock before running git."""
+        original_lock = AgentInvoker._git_lock
+        lock_used = False
+
+        class TrackingRLock:
+            def __enter__(self):
+                nonlocal lock_used
+                lock_used = True
+                return self
+            def __exit__(self, *args):
+                pass
+
+        AgentInvoker._git_lock = TrackingRLock()
+        try:
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = Mock(returncode=0, stdout="abc123\n")
+                invoker._record_baseline()
+
+            assert lock_used, "_record_baseline must acquire _git_lock"
+        finally:
+            AgentInvoker._git_lock = original_lock
+
+    def test_detect_git_changes_uses_baseline_commit(self, invoker):
+        """_detect_git_changes uses _baseline_commit instead of HEAD when set."""
+        invoker._baseline_commit = "abc123def456"
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = Mock(returncode=0, stdout="")
+            invoker._detect_git_changes()
+
+        # First call should be git diff with baseline commit, not HEAD
+        calls = mock_run.call_args_list
+        assert len(calls) >= 1
+        diff_cmd = calls[0][0][0]  # First positional arg (the command list)
+        assert "abc123def456" in diff_cmd, (
+            f"Expected baseline commit in git diff command, got: {diff_cmd}"
+        )
+        assert "HEAD" not in diff_cmd, (
+            f"Should not use HEAD when baseline commit is set, got: {diff_cmd}"
+        )
+
+    def test_detect_git_changes_falls_back_to_head(self, invoker):
+        """_detect_git_changes falls back to HEAD when no baseline commit."""
+        assert invoker._baseline_commit is None
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = Mock(returncode=0, stdout="")
+            invoker._detect_git_changes()
+
+        calls = mock_run.call_args_list
+        assert len(calls) >= 1
+        diff_cmd = calls[0][0][0]
+        assert "HEAD" in diff_cmd, (
+            f"Expected HEAD fallback in git diff command, got: {diff_cmd}"
+        )
+
+    def test_parallel_tasks_use_independent_baselines(self, worktree_path):
+        """Two invokers record independent baseline commits (no cross-contamination)."""
+        inv1 = AgentInvoker(worktree_path=worktree_path, sdk_timeout_seconds=60)
+        inv2 = AgentInvoker(worktree_path=worktree_path, sdk_timeout_seconds=60)
+
+        with patch("subprocess.run") as mock_run:
+            # Task A records baseline at commit aaa
+            mock_run.return_value = Mock(returncode=0, stdout="aaa111\n")
+            inv1._record_baseline()
+
+            # Task B records baseline at commit bbb (HEAD moved)
+            mock_run.return_value = Mock(returncode=0, stdout="bbb222\n")
+            inv2._record_baseline()
+
+        assert inv1._baseline_commit == "aaa111"
+        assert inv2._baseline_commit == "bbb222"
+        assert inv1._baseline_commit != inv2._baseline_commit
+
+    def test_baseline_prevents_cross_task_file_attribution(self, worktree_path):
+        """Baseline commit prevents Task B from seeing Task A's committed files."""
+        inv_a = AgentInvoker(worktree_path=worktree_path, sdk_timeout_seconds=60)
+        inv_b = AgentInvoker(worktree_path=worktree_path, sdk_timeout_seconds=60)
+
+        # Both record their baselines at the same initial HEAD
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = Mock(returncode=0, stdout="initial_commit\n")
+            inv_a._record_baseline()
+            inv_b._record_baseline()
+
+        # Both should use "initial_commit" for git diff, not HEAD
+        # This means even if HEAD moves due to Task A's commit,
+        # Task B still diffs against the original baseline
+        assert inv_a._baseline_commit == "initial_commit"
+        assert inv_b._baseline_commit == "initial_commit"
+
+        # Verify git diff uses the baseline, not HEAD
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = Mock(returncode=0, stdout="taskB_file.py\n")
+            result = inv_b._detect_git_changes()
+
+        diff_cmd = mock_run.call_args_list[0][0][0]
+        assert "initial_commit" in diff_cmd
+        assert "HEAD" not in diff_cmd
