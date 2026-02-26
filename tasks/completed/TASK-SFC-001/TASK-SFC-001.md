@@ -2,9 +2,11 @@
 id: TASK-SFC-001
 title: Add /feature-spec episode and update workflow episodes in seed_command_workflows.py
 task_type: implementation
-status: backlog
+status: completed
 created: 2026-02-23T14:00:00Z
-updated: 2026-02-23T14:00:00Z
+updated: 2026-02-26T00:00:00Z
+completed: 2026-02-26T00:00:00Z
+completed_location: tasks/completed/TASK-SFC-001/
 priority: high
 tags: [graphiti, seeding, feature-spec, seed-command-workflows]
 complexity: 3
