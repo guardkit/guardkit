@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 async def seed_command_workflows(client) -> None:
     """Seed knowledge about command workflows and how they connect.
 
-    Creates 19 episodes covering all major commands and their workflows.
+    Creates 20 episodes covering all major commands and their workflows.
 
     Args:
         client: GraphitiClient instance
@@ -36,7 +36,8 @@ async def seed_command_workflows(client) -> None:
             "alternative_flows": [
                 "Feature flow: /feature-plan -> /feature-build -> /task-complete (bulk)",
                 "Review flow: /task-create task_type:review -> /task-review -> /task-complete",
-                "Design-first: /task-work --design-only -> approve -> /task-work --implement-only"
+                "Design-first: /task-work --design-only -> approve -> /task-work --implement-only",
+                "Spec-first flow: /feature-spec -> /feature-plan --context summary.md -> /feature-build"
             ]
         }),
         ("command_task_create", {
@@ -106,12 +107,41 @@ async def seed_command_workflows(client) -> None:
             ],
             "key_principle": "Player delegates to /task-work, does NOT implement directly"
         }),
+        ("command_feature_spec", {
+            "entity_type": "command",
+            "name": "/feature-spec",
+            "purpose": "Generate BDD Gherkin specifications using Propose-Review methodology",
+            "syntax": '/feature-spec "description" [--from file] [--output dir] [--auto] [--stack name] [--context file]',
+            "methodology": "Specification by Example (Gojko Adzic) - AI proposes, human curates",
+            "phases": [
+                "Phase 1: Context Gathering (stack detection, codebase scan, Graphiti context)",
+                "Phase 2: Initial Proposal (grouped: @key-example, @boundary, @negative, @edge-case)",
+                "Phase 3: Human Curation (Accept/Reject/Modify/Add/Defer per group)",
+                "Phase 4: Edge Case Expansion (security, concurrency, data integrity - optional)",
+                "Phase 5: Assumption Resolution (confidence levels: high/medium/low)",
+                "Phase 6: Output Generation (.feature, _assumptions.yaml, _summary.md)"
+            ],
+            "outputs": {
+                "feature_file": "{name}.feature - Gherkin scenarios in domain language",
+                "assumptions_manifest": "{name}_assumptions.yaml - structured assumptions with confidence levels",
+                "summary": "{name}_summary.md - feature summary for /feature-plan consumption"
+            },
+            "key_principles": [
+                "AI proposes concrete examples, human curates (not elicitation/interrogation)",
+                "Scenarios use domain language, not implementation language",
+                "Every inferred value is an explicit assumption with confidence level",
+                "Purely additive - does not modify existing files"
+            ],
+            "integration": "/feature-plan --context features/{name}/{name}_summary.md",
+            "tags": ["@key-example", "@boundary", "@negative", "@edge-case", "@smoke", "@regression"]
+        }),
         ("workflow_feature_to_build", {
             "entity_type": "workflow",
             "name": "Feature Planning to Build Flow",
             "description": "Complete flow from feature idea to implemented code",
             "steps": [
-                "1. /feature-plan 'add OAuth2 authentication'",
+                "0. (Optional) /feature-spec 'description' -> generates Gherkin + assumptions + summary",
+                "1. /feature-plan 'description' [--context features/{name}/{name}_summary.md]",
                 "2. /feature-build FEAT-A1B2",
                 "3. Review worktree: cd .guardkit/worktrees/FEAT-A1B2 && git diff main",
                 "4. Merge: git checkout main && git merge autobuild/FEAT-A1B2",
@@ -121,7 +151,8 @@ async def seed_command_workflows(client) -> None:
                 "Zero manual task creation",
                 "Automatic dependency ordering",
                 "Parallel execution where possible",
-                "Human review before merge"
+                "Human review before merge",
+                "Gherkin-driven specifications when /feature-spec is used upstream"
             ]
         }),
         ("command_task_review", {
