@@ -1840,6 +1840,11 @@ class CoachValidator:
                 if cleaned[i:i+2] == ". " or cleaned[i:i+2] == ") ":
                     cleaned = cleaned[i+2:].strip()
 
+        # Strip AC-NNN: prefixes (e.g., "AC-001: Some text")
+        ac_match = re.match(r'^AC-\d+:\s*', cleaned)
+        if ac_match:
+            cleaned = cleaned[ac_match.end():].strip()
+
         return cleaned
 
     @staticmethod
@@ -1865,7 +1870,7 @@ class CoachValidator:
             Set of extracted keywords
         """
         # Split on whitespace and lowercase
-        words = text.lower().split()
+        words = [w for w in re.split(r'[^a-zA-Z0-9_]+', text.lower()) if w]
 
         # Filter and extract keywords
         keywords = set()
@@ -1881,6 +1886,15 @@ class CoachValidator:
                 keywords.add(word)
 
         return keywords
+
+    @staticmethod
+    def _strip_markdown_formatting(text: str) -> str:
+        """Strip backticks and quotes from text for comparison.
+
+        Strips: ` (backtick), " (double quote), ' (single quote), \u201c \u201d (smart quotes)
+        Does NOT strip: _ (underscore) — significant in identifiers like log_level
+        """
+        return re.sub(r'[`"\'\u201c\u201d]', '', text)
 
     def _match_by_text(
         self,
@@ -1912,6 +1926,7 @@ class CoachValidator:
         """
         # Strip prefixes and normalize requirements_met
         stripped_met = [self._strip_criterion_prefix(r) for r in requirements_met]
+        stripped_met = [self._strip_markdown_formatting(r) for r in stripped_met]
         normalized_met = {r.lower().strip() for r in stripped_met}
 
         criteria_results: List[CriterionResult] = []
@@ -1922,6 +1937,7 @@ class CoachValidator:
 
             # Strip prefix from criterion
             stripped_criterion = self._strip_criterion_prefix(criterion_text)
+            stripped_criterion = self._strip_markdown_formatting(stripped_criterion)
             normalized = stripped_criterion.lower().strip()
 
             result_str = "rejected"
@@ -2059,11 +2075,16 @@ class CoachValidator:
                 merged_results.append(promise_cr)
             elif (
                 text_cr.result == "verified"
-                and "No completion promise" in promise_cr.evidence
+                and promise_cr.result == "rejected"
+                and (
+                    "No completion promise" in promise_cr.evidence
+                    or "Promise status: incomplete" in promise_cr.evidence
+                )
             ):
-                # Only upgrade criteria that had NO promise at all.
-                # If the Player explicitly marked a criterion as "incomplete",
-                # trust that over a text match.
+                # Upgrade criteria where promise evidence is unreliable:
+                # - No promise written at all ("No completion promise")
+                # - File-existence promise incomplete ("Promise status: incomplete")
+                # Text matching against actual file content is more trustworthy.
                 upgraded_count += 1
                 merged_results.append(CriterionResult(
                     criterion_id=text_cr.criterion_id,

@@ -104,6 +104,27 @@ class TestStripCriterionPrefix:
         result = CoachValidator._strip_criterion_prefix("   ")
         assert result == ""
 
+    def test_strip_ac_prefix_basic(self):
+        """Strip 'AC-001: ' prefix."""
+        result = CoachValidator._strip_criterion_prefix("AC-001: Settings class has log_level field")
+        assert result == "Settings class has log_level field"
+
+    def test_strip_ac_prefix_multi_digit(self):
+        """Strip 'AC-123: ' prefix with multi-digit number."""
+        result = CoachValidator._strip_criterion_prefix("AC-123: Some acceptance criterion text")
+        assert result == "Some acceptance criterion text"
+
+    def test_strip_ac_prefix_with_checkbox(self):
+        """Strip checkbox AND AC prefix when combined."""
+        result = CoachValidator._strip_criterion_prefix("- [ ] AC-001: Settings class has log_level field")
+        assert result == "Settings class has log_level field"
+        # Note: checkbox is stripped first, then AC prefix is stripped in second pass
+
+    def test_strip_ac_prefix_no_space_after_colon(self):
+        """Strip AC prefix even without space after colon."""
+        result = CoachValidator._strip_criterion_prefix("AC-001:Settings class")
+        assert result == "Settings class"
+
 
 # ============================================================================
 # AC-003 Helper: Extract Keywords
@@ -163,6 +184,23 @@ class TestExtractKeywords:
         result = CoachValidator._extract_keywords("The System should Process user DATA")
         # "The" (stopword), "System", "should" (stopword), "Process", "user", "DATA"
         assert result == {"system", "process", "user", "data"}
+
+    def test_extract_keywords_strips_backticks(self):
+        """Verify backtick-delimited text produces clean keywords."""
+        result = CoachValidator._extract_keywords('`Settings` class has `log_level` field')
+        assert 'settings' in result
+        assert 'log_level' in result
+        assert '`settings`' not in result
+        assert '`log_level`' not in result
+
+    def test_extract_keywords_strips_quotes(self):
+        """Verify quoted text produces clean keywords."""
+        result = CoachValidator._extract_keywords('default value "INFO" for setting')
+        assert 'info' in result
+        assert '"info"' not in result
+        assert 'default' in result
+        assert 'value' in result
+        assert 'setting' in result
 
 
 # ============================================================================

@@ -3671,11 +3671,14 @@ class TestCompletionPromisesMatching:
         assert "OAuth2 handler" in cr.evidence
 
     def test_promises_preferred_over_requirements_met(self, tmp_worktree):
-        """AC-002: completion_promises takes priority over requirements_met."""
+        """AC-002: completion_promises verified takes priority; incomplete upgraded by text."""
         validator = CoachValidator(str(tmp_worktree))
         task = make_task(["Feature A", "Feature B"])
         results = {
-            # Both strategies present — promises should win
+            # Both strategies present — verified promises always win,
+            # but incomplete promises can be upgraded via text fallback
+            # (TASK-FIX-TM02: text matching against actual code is more
+            # reliable than Player-declared "incomplete")
             "completion_promises": [
                 {"criterion_id": "AC-001", "status": "complete", "evidence": "Done"},
                 {"criterion_id": "AC-002", "status": "incomplete"},
@@ -3685,10 +3688,13 @@ class TestCompletionPromisesMatching:
 
         validation = validator.validate_requirements(task, results)
 
-        # Promises say AC-002 incomplete, so it should be rejected
-        # even though requirements_met has "Feature B"
-        assert validation.criteria_met == 1
-        assert validation.criteria_results[1].status == "rejected"
+        # AC-001: verified by promise (kept as-is)
+        assert validation.criteria_results[0].status == "verified"
+        # AC-002: promise said "incomplete" but text matching found "Feature B"
+        # → hybrid fallback upgrades via text (TASK-FIX-TM02)
+        assert validation.criteria_met == 2
+        assert validation.criteria_results[1].status == "verified"
+        assert "[Text fallback]" in validation.criteria_results[1].evidence
 
     def test_falls_back_to_text_when_no_promises(self, tmp_worktree):
         """AC-005: Falls back to requirements_met text matching when no promises."""
@@ -4774,3 +4780,47 @@ class TestCoachTestModelEnvVar:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
+
+
+# ============================================================================
+# Test _strip_markdown_formatting and _match_by_text (TASK-FIX-TM03)
+# ============================================================================
+
+
+class TestStripMarkdownFormatting:
+    """Test CoachValidator._strip_markdown_formatting static method."""
+
+    def test_strip_markdown_formatting_backticks(self):
+        """Verify backticks are stripped from text."""
+        result = CoachValidator._strip_markdown_formatting('`Settings` class')
+        assert result == 'Settings class'
+
+    def test_strip_markdown_formatting_quotes(self):
+        """Verify double quotes are stripped from text."""
+        result = CoachValidator._strip_markdown_formatting('default "INFO"')
+        assert result == 'default INFO'
+
+    def test_strip_markdown_formatting_preserves_underscores(self):
+        """Verify underscores are preserved (significant in identifiers)."""
+        result = CoachValidator._strip_markdown_formatting('log_level')
+        assert result == 'log_level'
+
+    def test_strip_markdown_formatting_smart_quotes(self):
+        """Verify smart quotes (Unicode left/right) are stripped."""
+        result = CoachValidator._strip_markdown_formatting('value \u201ctest\u201d')
+        assert result == 'value test'
+
+    def test_match_by_text_with_formatting_differences(self, tmp_worktree):
+        """Integration: AC with backticks/quotes matches requirements_met without them."""
+        validator = CoachValidator(str(tmp_worktree))
+        acceptance_criteria = [
+            '`Settings` class has `log_level` field with default "INFO"'
+        ]
+        requirements_met = [
+            'Settings class has log_level field with default INFO'
+        ]
+
+        validation = validator._match_by_text(acceptance_criteria, requirements_met)
+
+        assert len(validation.criteria_results) == 1
+        assert validation.criteria_results[0].result == 'verified'

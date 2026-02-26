@@ -336,6 +336,119 @@ class TestHybridMatchingFallback:
         assert result.criteria_results[1].result == "verified"
         assert result.all_criteria_met is True
 
+    def test_hybrid_fallback_upgrades_file_existence_incomplete(self, tmp_path):
+        """Verify file-existence incomplete promises allow text upgrade."""
+        validator = self._make_validator(tmp_path)
+
+        promise_validation = RequirementsValidation(
+            criteria_total=2,
+            criteria_met=1,
+            all_criteria_met=False,
+            missing=["Structured logging output"],
+            criteria_results=[
+                CriterionResult(
+                    criterion_id="AC-001",
+                    criterion_text="Create logging module",
+                    result="verified",
+                    status="verified",
+                    evidence="Player completed AC-001",
+                ),
+                CriterionResult(
+                    criterion_id="AC-002",
+                    criterion_text="Structured logging output",
+                    result="rejected",
+                    status="rejected",
+                    evidence="Promise status: incomplete",
+                ),
+            ],
+        )
+
+        requirements_addressed = [
+            "Created logging module",
+            "Structured logging output implemented with JSON format",
+        ]
+
+        result = validator._hybrid_fallback(
+            promise_validation,
+            ["Create logging module", "Structured logging output"],
+            requirements_addressed,
+        )
+
+        assert result.criteria_met == 2
+        assert result.all_criteria_met is True
+        assert len(result.missing) == 0
+        assert result.criteria_results[0].evidence == "Player completed AC-001"
+        assert "[Text fallback]" in result.criteria_results[1].evidence
+
+    def test_hybrid_fallback_upgrades_no_completion_promise(self, tmp_path):
+        """Verify original 'No completion promise' upgrade still works."""
+        validator = self._make_validator(tmp_path)
+
+        promise_validation = RequirementsValidation(
+            criteria_total=1,
+            criteria_met=0,
+            all_criteria_met=False,
+            missing=["Add unit tests"],
+            criteria_results=[
+                CriterionResult(
+                    criterion_id="AC-001",
+                    criterion_text="Add unit tests",
+                    result="rejected",
+                    status="rejected",
+                    evidence="No completion promise for AC-001",
+                ),
+            ],
+        )
+
+        requirements_addressed = [
+            "Add unit tests for all public methods",
+        ]
+
+        result = validator._hybrid_fallback(
+            promise_validation,
+            ["Add unit tests"],
+            requirements_addressed,
+        )
+
+        assert result.criteria_met == 1
+        assert result.all_criteria_met is True
+        assert "[Text fallback]" in result.criteria_results[0].evidence
+
+    def test_hybrid_fallback_does_not_upgrade_explicit_reject(self, tmp_path):
+        """Verify explicit player rejection is NOT overridden by text."""
+        validator = self._make_validator(tmp_path)
+
+        promise_validation = RequirementsValidation(
+            criteria_total=1,
+            criteria_met=0,
+            all_criteria_met=False,
+            missing=["Implement caching"],
+            criteria_results=[
+                CriterionResult(
+                    criterion_id="AC-001",
+                    criterion_text="Implement caching",
+                    result="rejected",
+                    status="rejected",
+                    evidence="Player explicitly stated: not implementing caching",
+                ),
+            ],
+        )
+
+        requirements_addressed = [
+            "Implement caching layer with Redis",
+        ]
+
+        result = validator._hybrid_fallback(
+            promise_validation,
+            ["Implement caching"],
+            requirements_addressed,
+        )
+
+        # Should remain rejected — evidence doesn't match upgrade conditions
+        assert result.criteria_met == 0
+        assert result.all_criteria_met is False
+        assert "Implement caching" in result.missing
+
 
 # ============================================================================
 # Fix 3: Stall Detector Partial Progress

@@ -1,0 +1,69 @@
+{
+  "task_id": "TASK-FIX-TM02",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/quality_gates/coach_validator.py",
+    "tests/unit/test_run3_stall_fixes.py"
+  ],
+  "files_created": [],
+  "tests_written": [
+    "tests/unit/test_run3_stall_fixes.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "18 passed in 2.12s",
+  "implementation_notes": "Change 1: Widened the upgrade condition in _hybrid_fallback() at lines 2060-2071 of coach_validator.py. The original condition only checked 'No completion promise' in promise_cr.evidence. The new condition explicitly requires promise_cr.result == 'rejected' AND checks for either 'No completion promise' OR 'Promise status: incomplete' in the evidence. This allows file-existence promises that a Player marked as incomplete to be upgraded by text matching against requirements_addressed. Change 2: Added 3 new tests to TestHybridMatchingFallback in test_run3_stall_fixes.py. test_hybrid_fallback_upgrades_file_existence_incomplete confirms the new 'Promise status: incomplete' path is upgraded. test_hybrid_fallback_upgrades_no_completion_promise confirms the original 'No completion promise' path still works. test_hybrid_fallback_does_not_upgrade_explicit_reject confirms that arbitrary rejection evidence (e.g., 'Player explicitly stated: not implementing caching') is NOT upgraded even when text matching would succeed.",
+  "concerns": [],
+  "requirements_addressed": [
+    "Widen _hybrid_fallback() upgrade condition to also match 'Promise status: incomplete' evidence",
+    "Preserve existing 'No completion promise' upgrade behaviour",
+    "Add explicit promise_cr.result == 'rejected' guard to the condition",
+    "Update inline comment to describe both upgrade triggers",
+    "Add test: file-existence incomplete promises allow text upgrade",
+    "Add test: original No-completion-promise upgrade still works",
+    "Add test: explicit player rejection is NOT overridden by text"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Modify _hybrid_fallback() upgrade condition to also cover 'Promise status: incomplete'",
+      "status": "complete",
+      "evidence": "Updated elif condition at lines 2060-2071 in coach_validator.py to add promise_cr.result == 'rejected' guard and OR clause for 'Promise status: incomplete'. Updated inline comment to describe both triggers.",
+      "test_file": "tests/unit/test_run3_stall_fixes.py",
+      "implementation_files": [
+        "guardkit/orchestrator/quality_gates/coach_validator.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Add test: file-existence incomplete promises allow text upgrade",
+      "status": "complete",
+      "evidence": "Added test_hybrid_fallback_upgrades_file_existence_incomplete to TestHybridMatchingFallback. Asserts criteria_met==2, all_criteria_met==True, and '[Text fallback]' in AC-002 evidence.",
+      "test_file": "tests/unit/test_run3_stall_fixes.py",
+      "implementation_files": [
+        "tests/unit/test_run3_stall_fixes.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Add test: original 'No completion promise' upgrade still works",
+      "status": "complete",
+      "evidence": "Added test_hybrid_fallback_upgrades_no_completion_promise to TestHybridMatchingFallback. Asserts criteria_met==1, all_criteria_met==True, and '[Text fallback]' in evidence.",
+      "test_file": "tests/unit/test_run3_stall_fixes.py",
+      "implementation_files": [
+        "tests/unit/test_run3_stall_fixes.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Add test: explicit player rejection is NOT overridden by text",
+      "status": "complete",
+      "evidence": "Added test_hybrid_fallback_does_not_upgrade_explicit_reject to TestHybridMatchingFallback. Asserts criteria_met==0, all_criteria_met==False, and criterion remains in missing list.",
+      "test_file": "tests/unit/test_run3_stall_fixes.py",
+      "implementation_files": [
+        "tests/unit/test_run3_stall_fixes.py"
+      ]
+    }
+  ]
+}
