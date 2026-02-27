@@ -8,12 +8,11 @@ seeding.py (orchestrator) and individual seed modules.
 
 import json
 import logging
-from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
 # Version for tracking seeding updates
-SEEDING_VERSION = "1.0.0"
+SEEDING_VERSION = "1.1.0"
 
 
 async def _add_episodes(
