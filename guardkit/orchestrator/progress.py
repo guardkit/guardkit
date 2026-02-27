@@ -417,6 +417,7 @@ class ProgressDisplay:
             "approved": "green",
             "max_turns_exceeded": "yellow",
             "unrecoverable_stall": "red",
+            "cancelled": "yellow",
             "error": "red"
         }
         color = status_colors.get(final_status, "white")

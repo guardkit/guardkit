@@ -3912,6 +3912,13 @@ class AutoBuildOrchestrator:
                 f"Suggested action: Verify MCP tools are configured in claude_desktop_config.json."
             )
 
+        elif final_decision == "cancelled":
+            return (
+                f"Task timed out (cancelled) after {len(turn_history)} turn(s).\n"
+                f"Worktree preserved for inspection.\n"
+                f"Review partial implementation and resume manually if needed."
+            )
+
         else:  # error
             error_turn = next(
                 (t for t in reversed(turn_history) if t.decision == "error"), None
