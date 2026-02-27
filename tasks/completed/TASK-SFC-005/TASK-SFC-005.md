@@ -2,9 +2,10 @@
 id: TASK-SFC-005
 title: Update COACH_CONSTRAINTS fact with new must_do items
 task_type: implementation
-status: backlog
+status: completed
 created: 2026-02-23T14:00:00Z
-updated: 2026-02-23T14:00:00Z
+updated: 2026-02-27T00:00:00Z
+completed: 2026-02-27T00:00:00Z
 priority: medium
 tags: [graphiti, seeding, autobuild-coach, role-constraints]
 complexity: 1
@@ -13,6 +14,7 @@ feature_id: FEAT-SFC
 wave: 2
 implementation_mode: task-work
 dependencies: [TASK-SFC-002]
+completed_location: tasks/completed/TASK-SFC-005/
 ---
 
 # Task: Update COACH_CONSTRAINTS Fact with New Capabilities
@@ -63,13 +65,13 @@ Add to the `good_examples` list:
 
 ## Acceptance Criteria
 
-- [ ] `COACH_CONSTRAINTS.must_do` includes "Create criteria_verification entry for each completion_promise"
-- [ ] `COACH_CONSTRAINTS.must_do` includes "Factor Honesty Verification results (honesty_score) into decisions"
-- [ ] A good_example referencing criteria_verification is added
-- [ ] `ruff check guardkit/knowledge/facts/role_constraint.py` passes
+- [x] `COACH_CONSTRAINTS.must_do` includes "Create criteria_verification entry for each completion_promise"
+- [x] `COACH_CONSTRAINTS.must_do` includes "Factor Honesty Verification results (honesty_score) into decisions"
+- [x] A good_example referencing criteria_verification is added
+- [x] `ruff check guardkit/knowledge/facts/role_constraint.py` passes
 
-## Files to Modify
+## Files Modified
 
 | File | Action |
 |------|--------|
-| `guardkit/knowledge/facts/role_constraint.py` | Modify (update COACH_CONSTRAINTS) |
+| `guardkit/knowledge/facts/role_constraint.py` | Modified (updated COACH_CONSTRAINTS) |

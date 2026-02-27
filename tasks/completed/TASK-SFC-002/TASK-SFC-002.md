@@ -2,9 +2,10 @@
 id: TASK-SFC-002
 title: Update seed_feature_build_architecture.py with Coach and Assumptions Manifest changes
 task_type: implementation
-status: backlog
+status: completed
 created: 2026-02-23T14:00:00Z
-updated: 2026-02-23T14:00:00Z
+updated: 2026-02-26T00:00:00Z
+completed: 2026-02-26T00:00:00Z
 priority: high
 tags: [graphiti, seeding, autobuild-coach, assumptions-manifest, promise-verification, honesty-verification]
 complexity: 3
@@ -13,6 +14,8 @@ feature_id: FEAT-SFC
 wave: 1
 implementation_mode: task-work
 dependencies: []
+completed_location: tasks/completed/TASK-SFC-002/
+organized_files: [TASK-SFC-002.md]
 ---
 
 # Task: Update Feature Build Architecture Seed with Coach and Assumptions Changes
@@ -101,16 +104,16 @@ Change "Creates 7 episodes" to "Creates 8 episodes".
 
 ## Acceptance Criteria
 
-- [ ] `feature_build_coach_agent` episode includes `promise_verification` section
-- [ ] `feature_build_coach_agent` episode includes `honesty_verification` section with score thresholds
-- [ ] `feature_build_coach_agent` `validation_approach` includes criteria_verification, honesty, Gherkin, and Assumptions items
-- [ ] New `feature_build_assumptions_flow` episode exists with complete pipeline flow
-- [ ] `feature_build_assumptions_flow` includes gating rules by confidence level
-- [ ] Module docstring updated to reflect 8 episodes
-- [ ] `ruff check guardkit/knowledge/seed_feature_build_architecture.py` passes
+- [x] `feature_build_coach_agent` episode includes `promise_verification` section
+- [x] `feature_build_coach_agent` episode includes `honesty_verification` section with score thresholds
+- [x] `feature_build_coach_agent` `validation_approach` includes criteria_verification, honesty, Gherkin, and Assumptions items
+- [x] New `feature_build_assumptions_flow` episode exists with complete pipeline flow
+- [x] `feature_build_assumptions_flow` includes gating rules by confidence level
+- [x] Module docstring updated to reflect 8 episodes
+- [x] `ruff check guardkit/knowledge/seed_feature_build_architecture.py` passes
 
-## Files to Modify
+## Files Modified
 
 | File | Action |
 |------|--------|
-| `guardkit/knowledge/seed_feature_build_architecture.py` | Modify (update 1 episode, add 1 episode, update docstring) |
+| `guardkit/knowledge/seed_feature_build_architecture.py` | Updated coach episode + added assumptions episode + updated docstring |

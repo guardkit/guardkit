@@ -2,9 +2,11 @@
 id: TASK-SFC-006
 title: Bump SEEDING_VERSION to force re-seed
 task_type: implementation
-status: backlog
+status: completed
 created: 2026-02-23T14:00:00Z
-updated: 2026-02-23T14:00:00Z
+updated: 2026-02-27T00:00:00Z
+completed: 2026-02-27T00:00:00Z
+completed_location: tasks/completed/TASK-SFC-006/
 priority: medium
 tags: [graphiti, seeding, version]
 complexity: 1
@@ -38,8 +40,8 @@ Find the current value and increment the minor version. For example, if currentl
 
 ## Acceptance Criteria
 
-- [ ] `SEEDING_VERSION` in `seed_helpers.py` is incremented
-- [ ] `ruff check guardkit/knowledge/seed_helpers.py` passes
+- [x] `SEEDING_VERSION` in `seed_helpers.py` is incremented
+- [x] `ruff check guardkit/knowledge/seed_helpers.py` passes
 
 ## Files to Modify
 
