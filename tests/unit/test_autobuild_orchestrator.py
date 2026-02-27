@@ -4560,6 +4560,34 @@ class TestCooperativeCancellation:
         assert result.final_decision == "cancelled"
         assert result.success is False
 
+    def test_cancelled_in_build_summary_details(
+        self,
+        orchestrator_with_mocks,
+    ):
+        """Test that _build_summary_details handles 'cancelled' decision (TASK-FIX-CDF8).
+
+        Previously, cancelled tasks fell through to the 'error' else branch and
+        displayed 'Critical error: None'. This test ensures a meaningful message
+        is shown instead.
+        """
+        turn = TurnRecord(
+            turn=1,
+            player_result=make_player_result(),
+            coach_result=None,
+            decision="feedback",
+            feedback=None,
+            timestamp="2026-02-27T00:00:00Z",
+        )
+
+        details = orchestrator_with_mocks._build_summary_details(
+            turn_history=[turn],
+            final_decision="cancelled",
+        )
+
+        assert "timed out" in details.lower() or "cancelled" in details.lower()
+        assert "1 turn" in details
+        assert "Critical error" not in details
+
 
 # ============================================================================
 # TestPlayerSummaryTestsRequired (TASK-FIX-TS04)

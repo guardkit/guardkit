@@ -11,6 +11,7 @@ Example:
 """
 
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -578,6 +579,17 @@ def status(ctx, task_id: str, verbose: bool):
         "Override via GUARDKIT_TIMEOUT_MULTIPLIER env var."
     ),
 )
+@click.option(
+    "--max-parallel",
+    "max_parallel",
+    default=None,
+    type=int,
+    help=(
+        "Max parallel tasks per wave (default: auto-detect). "
+        "Defaults to 2 for local backends (timeout_multiplier > 1.0), "
+        "unlimited otherwise. Override via GUARDKIT_MAX_PARALLEL_TASKS env var."
+    ),
+)
 @click.pass_context
 @handle_cli_errors
 def feature(
@@ -594,6 +606,7 @@ def feature(
     enable_context: bool,
     task_timeout: int,
     timeout_multiplier: Optional[float],
+    max_parallel: Optional[int],
 ):
     """
     Execute AutoBuild for all tasks in a feature.
@@ -656,11 +669,39 @@ def feature(
             param_hint="'--sdk-timeout'",
         )
 
+    # Resolve max_parallel: env var > CLI flag > auto-detect
+    env_max_parallel = os.environ.get("GUARDKIT_MAX_PARALLEL_TASKS")
+    if env_max_parallel is not None:
+        try:
+            max_parallel = int(env_max_parallel)
+            if max_parallel < 1:
+                raise click.BadParameter(
+                    "GUARDKIT_MAX_PARALLEL_TASKS must be >= 1",
+                    param_hint="'GUARDKIT_MAX_PARALLEL_TASKS'",
+                )
+        except ValueError:
+            raise click.BadParameter(
+                f"Invalid GUARDKIT_MAX_PARALLEL_TASKS value: {env_max_parallel!r}",
+                param_hint="'GUARDKIT_MAX_PARALLEL_TASKS'",
+            )
+    elif max_parallel is None:
+        # Auto-detect: default to 2 for local backends
+        from guardkit.orchestrator.agent_invoker import detect_timeout_multiplier
+        detected_multiplier = timeout_multiplier if timeout_multiplier is not None else detect_timeout_multiplier()
+        if detected_multiplier > 1.0:
+            max_parallel = 2
+
+    if max_parallel is not None and max_parallel < 1:
+        raise click.BadParameter(
+            "max-parallel must be >= 1",
+            param_hint="'--max-parallel'",
+        )
+
     logger.info(
         f"Starting feature orchestration: {feature_id} "
         f"(max_turns={max_turns}, stop_on_failure={stop_on_failure}, resume={resume}, fresh={fresh}, "
         f"sdk_timeout={sdk_timeout}, enable_pre_loop={enable_pre_loop}, "
-        f"timeout_multiplier={timeout_multiplier})"
+        f"timeout_multiplier={timeout_multiplier}, max_parallel={max_parallel})"
     )
 
     try:
@@ -678,6 +719,7 @@ def feature(
             enable_context=enable_context,
             task_timeout=task_timeout,
             timeout_multiplier=timeout_multiplier,
+            max_parallel=max_parallel,
         )
 
         # Execute feature orchestration

@@ -26,7 +26,7 @@ Usage:
 import logging
 import warnings
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import wraps
 from typing import Dict, List, Literal, Optional, Any
 
@@ -34,6 +34,12 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich import box
+
+
+def _get_iso_timestamp() -> str:
+    """Return UTC time as ISO 8601 with milliseconds (avoids circular import)."""
+    now = datetime.now(timezone.utc)
+    return now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -73,6 +79,9 @@ class WaveTaskStatus:
     details: str = ""
     turns: int = 0
     decision: str = ""
+    sdk_turns_used: Optional[int] = None          # TASK-VPR-003: SDK turns from last invocation
+    sdk_max_turns: Optional[int] = None            # TASK-VPR-003: SDK turn ceiling
+    sdk_ceiling_hit: bool = False                  # TASK-VPR-003: Whether ceiling was hit
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
@@ -162,17 +171,18 @@ class WaveProgressDisplay:
         # Build wave header
         parallel_indicator = f"[dim](parallel: {len(task_ids)})[/dim]" if len(task_ids) > 1 else ""
         task_list = ", ".join(task_ids)
+        ts = _get_iso_timestamp()
 
         # Display wave separator and header
         self.console.print()
         self.console.print("━" * 60)
         self.console.print(
-            f"  [bold cyan]Wave {wave_number}/{self.total_waves}[/bold cyan]: "
+            f"  [{ts}] [bold cyan]Wave {wave_number}/{self.total_waves}[/bold cyan]: "
             f"{task_list} {parallel_indicator}"
         )
         self.console.print("━" * 60)
 
-        logger.info(f"Started wave {wave_number}: {task_ids}")
+        logger.info(f"[{ts}] Started wave {wave_number}: {task_ids}")
 
     @_handle_display_error
     def update_task_status(
@@ -182,6 +192,9 @@ class WaveProgressDisplay:
         details: str = "",
         turns: int = 0,
         decision: str = "",
+        sdk_turns_used: Optional[int] = None,     # TASK-VPR-003
+        sdk_max_turns: Optional[int] = None,       # TASK-VPR-003
+        sdk_ceiling_hit: bool = False,             # TASK-VPR-003
     ) -> None:
         """
         Update task status within current wave.
@@ -192,6 +205,9 @@ class WaveProgressDisplay:
             details: Status details (e.g., "Turn 1/5: Player Implementation")
             turns: Number of turns executed
             decision: Final decision (e.g., "approve", "feedback")
+            sdk_turns_used: SDK turns used in last invocation (TASK-VPR-003)
+            sdk_max_turns: SDK turn ceiling (TASK-VPR-003)
+            sdk_ceiling_hit: Whether SDK ceiling was hit (TASK-VPR-003)
         """
         # Update status record
         if task_id in self.task_statuses:
@@ -201,6 +217,9 @@ class WaveProgressDisplay:
                 details=details,
                 turns=turns,
                 decision=decision,
+                sdk_turns_used=sdk_turns_used,
+                sdk_max_turns=sdk_max_turns,
+                sdk_ceiling_hit=sdk_ceiling_hit,
             )
 
         # Display status update
@@ -214,15 +233,20 @@ class WaveProgressDisplay:
         }
         icon = status_icons.get(status, "•")
 
-        # Build display message
+        # Build display message; add timestamp for completion events
         if status == "in_progress":
             message = f"  {icon} {task_id}: {details}"
         elif status in ("success", "failed"):
+            ts = _get_iso_timestamp()
             turns_text = f"({turns} turn{'s' if turns != 1 else ''})" if turns > 0 else ""
             decision_text = f"[dim]{decision}[/dim]" if decision else ""
-            message = f"  {icon} {task_id}: {status.upper()} {turns_text} {decision_text}"
+            message = f"  [{ts}] {icon} {task_id}: {status.upper()} {turns_text} {decision_text}"
         elif status == "skipped":
-            message = f"  {icon} {task_id}: SKIPPED - {details}"
+            ts = _get_iso_timestamp()
+            message = f"  [{ts}] {icon} {task_id}: SKIPPED - {details}"
+        elif status == "timeout":
+            ts = _get_iso_timestamp()
+            message = f"  [{ts}] {icon} {task_id}: {details}"
         else:
             message = f"  {icon} {task_id}: {details}"
 
@@ -275,15 +299,16 @@ class WaveProgressDisplay:
         if skipped > 0:
             summary_parts.append(f"{skipped} skipped")
         summary = ", ".join(summary_parts)
+        ts = _get_iso_timestamp()
 
         self.console.print()
-        self.console.print(f"  Wave {wave_number} {status_icon} {status_text}: {summary}")
+        self.console.print(f"  [{ts}] Wave {wave_number} {status_icon} {status_text}: {summary}")
 
         # Show verbose table if enabled
         if self.verbose and self.current_wave_tasks:
             self._display_wave_task_table()
 
-        logger.info(f"Wave {wave_number} complete: passed={passed}, failed={failed}")
+        logger.info(f"[{ts}] Wave {wave_number} complete: passed={passed}, failed={failed}")
 
     def _display_wave_task_table(self) -> None:
         """Display detailed task table for verbose mode."""
@@ -395,6 +420,38 @@ class WaveProgressDisplay:
                 self.console.print(f"  State recoveries: {total_recovered}/{total_tasks_executed} ({recovered_pct:.0f}%)")
             self.console.print()
 
+        # TASK-VPR-003: SDK Turn Ceiling Monitoring
+        total_sdk_invocations = 0
+        total_ceiling_hits = 0
+
+        for task_id, ts in self.task_statuses.items():
+            if ts.sdk_turns_used is not None:
+                total_sdk_invocations += 1
+                if ts.sdk_ceiling_hit:
+                    total_ceiling_hits += 1
+
+        if total_sdk_invocations > 0:
+            ceiling_hit_rate = (total_ceiling_hits / total_sdk_invocations) * 100
+
+            self.console.print("[bold]SDK Turn Ceiling:[/bold]")
+            self.console.print(f"  Invocations: {total_sdk_invocations}")
+            self.console.print(
+                f"  Ceiling hits: {total_ceiling_hits}/{total_sdk_invocations} "
+                f"({ceiling_hit_rate:.0f}%)"
+            )
+
+            # TASK-VPR-003: Emit warning when ceiling hit rate exceeds 60%
+            if ceiling_hit_rate > 60:
+                self.console.print(
+                    f"  [bold yellow]WARNING: SDK turn ceiling hit rate "
+                    f"({ceiling_hit_rate:.0f}%) exceeds 60% threshold.[/bold yellow]"
+                )
+                self.console.print(
+                    "  [dim]Consider increasing GUARDKIT_SDK_MAX_TURNS or "
+                    "splitting tasks into smaller units.[/dim]"
+                )
+            self.console.print()
+
         # Task summary table (verbose mode)
         if self.verbose and self.task_statuses:
             self._display_all_tasks_table()
@@ -465,6 +522,7 @@ class WaveProgressDisplay:
         table.add_column("Status", width=10)
         table.add_column("Turns", width=8, justify="center")
         table.add_column("Decision", width=15)
+        table.add_column("SDK Turns", width=12, justify="center")  # TASK-VPR-003
 
         for task_id, ts in self.task_statuses.items():
             status_style = {
@@ -474,11 +532,22 @@ class WaveProgressDisplay:
                 "timeout": "red",
             }.get(ts.status, "dim")
 
+            # TASK-VPR-003: Format SDK turns column
+            if ts.sdk_turns_used is not None:
+                sdk_text = str(ts.sdk_turns_used)
+                if ts.sdk_max_turns is not None:
+                    sdk_text = f"{ts.sdk_turns_used}/{ts.sdk_max_turns}"
+                if ts.sdk_ceiling_hit:
+                    sdk_text = f"[red]{sdk_text} HIT[/red]"
+            else:
+                sdk_text = "-"
+
             table.add_row(
                 ts.task_id,
                 f"[{status_style}]{ts.status.upper()}[/{status_style}]",
                 str(ts.turns) if ts.turns > 0 else "-",
                 ts.decision or "-",
+                sdk_text,
             )
 
         self.console.print(table)

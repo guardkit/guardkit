@@ -2118,6 +2118,48 @@ acceptance_criteria:
         assert len(result) == 1
         assert result[0]["text"] == "Criterion from feature directory"
 
+    def test_extract_finds_design_approved_directory(self, invoker, worktree_path):
+        """Find task files in design_approved directory (previously missing)."""
+        design_dir = worktree_path / "tasks" / "design_approved"
+        design_dir.mkdir(parents=True)
+
+        task_content = """---
+id: TASK-007
+title: Design Approved Task
+acceptance_criteria:
+  - Criterion from design_approved directory
+---
+"""
+        task_file = design_dir / "TASK-007.md"
+        task_file.write_text(task_content)
+
+        result = invoker.extract_acceptance_criteria("TASK-007")
+
+        assert len(result) == 1
+        assert result[0]["text"] == "Criterion from design_approved directory"
+
+    def test_extract_finds_slug_suffixed_filename(self, invoker, worktree_path):
+        """Find task files with slug-suffixed names (e.g., TASK-DB-005-create-migration.md)."""
+        backlog_dir = worktree_path / "tasks" / "backlog"
+        backlog_dir.mkdir(parents=True)
+
+        task_content = """---
+id: TASK-DB-005
+title: Create Initial Migration
+acceptance_criteria:
+  - Migration creates schema correctly
+  - Rollback works without data loss
+---
+"""
+        task_file = backlog_dir / "TASK-DB-005-create-initial-migration.md"
+        task_file.write_text(task_content)
+
+        result = invoker.extract_acceptance_criteria("TASK-DB-005")
+
+        assert len(result) == 2
+        assert result[0]["text"] == "Migration creates schema correctly"
+        assert result[1]["text"] == "Rollback works without data loss"
+
 
 class TestParseCriteriaFromBody:
     """Test _parse_criteria_from_body method."""

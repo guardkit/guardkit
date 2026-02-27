@@ -108,6 +108,13 @@ DEFAULT_SDK_TIMEOUT = int(os.environ.get("GUARDKIT_SDK_TIMEOUT", "1200"))
 # Even with high complexity + task-work mode, timeout should not exceed 1 hour
 MAX_SDK_TIMEOUT = 3600
 
+# TASK-FIX-46F2: Retry constants for transient SDK stream errors.
+# During autobuild, vLLM SSE streams can be interrupted under GPU contention
+# with "SDK API error in stream: unknown". A single retry with backoff avoids
+# the expensive state-recovery → re-implementation path.
+MAX_SDK_STREAM_RETRIES = 1
+SDK_STREAM_RETRY_BACKOFF = 30  # seconds
+
 
 def detect_timeout_multiplier() -> float:
     """Detect appropriate timeout multiplier from backend URL.
@@ -144,7 +151,10 @@ def detect_timeout_multiplier() -> float:
 # and needs ~50 internal turns. This is NOT the same as orchestrator's max_turns (adversarial rounds).
 # TASK-FIX-ASPF-005: Increased from 50 to 100 — with --fresh, Player needs ~35-50 turns
 # for scaffolding + file modifications + tests + report writing. 50 left no headroom.
-TASK_WORK_SDK_MAX_TURNS = 100
+# TASK-FIX-7718: Env var override + auto-reduction for local backends
+_SDK_MAX_TURNS_EXPLICIT = os.environ.get("GUARDKIT_SDK_MAX_TURNS")
+TASK_WORK_SDK_MAX_TURNS = int(_SDK_MAX_TURNS_EXPLICIT) if _SDK_MAX_TURNS_EXPLICIT is not None else 100
+_SDK_MAX_TURNS_IS_OVERRIDE = _SDK_MAX_TURNS_EXPLICIT is not None
 
 # =========================================================================
 # SDK Async Generator Cleanup Noise Suppression (TASK-FIX-k3l4)
@@ -641,6 +651,9 @@ class AgentInvocationResult:
     report: Dict[str, Any]
     duration_seconds: float
     error: Optional[str] = None
+    sdk_turns_used: Optional[int] = None      # TASK-VPR-003: Actual SDK turns from ResultMessage
+    sdk_max_turns: Optional[int] = None        # TASK-VPR-003: Effective SDK turn ceiling
+    sdk_ceiling_hit: bool = False              # TASK-VPR-003: Whether ceiling was hit
 
 
 class AgentInvoker:
@@ -729,6 +742,18 @@ class AgentInvoker:
                 f"(sdk_timeout base={self.sdk_timeout_seconds}s → "
                 f"effective max={int(MAX_SDK_TIMEOUT * self.timeout_multiplier)}s)"
             )
+
+        # TASK-FIX-7718: Auto-reduce SDK max turns for local backends
+        if not _SDK_MAX_TURNS_IS_OVERRIDE and self.timeout_multiplier > 1.0:
+            self._effective_sdk_max_turns = min(TASK_WORK_SDK_MAX_TURNS, 50)
+            logger.info(
+                "SDK max turns reduced to %d for local backend "
+                "(timeout_multiplier=%.1f)",
+                self._effective_sdk_max_turns,
+                self.timeout_multiplier,
+            )
+        else:
+            self._effective_sdk_max_turns = TASK_WORK_SDK_MAX_TURNS
 
     # =========================================================================
     # Path Resolution Helpers (TASK-FIX-VL01)
@@ -1015,6 +1040,12 @@ class AgentInvoker:
                     report = self._load_agent_report(task_id, turn, "player")
                     self._validate_player_report(report)
 
+                    # TASK-VPR-003: Extract SDK turn data from TaskWorkResult
+                    from guardkit.orchestrator.sdk_ceiling import detect_ceiling_hit
+                    _sdk_turns_used = result.sdk_turns_used
+                    _sdk_max_turns = result.sdk_max_turns
+                    _sdk_ceiling_hit = detect_ceiling_hit(_sdk_turns_used, _sdk_max_turns)
+
                     return AgentInvocationResult(
                         task_id=task_id,
                         turn=turn,
@@ -1022,6 +1053,9 @@ class AgentInvoker:
                         success=True,
                         report=report,
                         duration_seconds=duration,
+                        sdk_turns_used=_sdk_turns_used,
+                        sdk_max_turns=_sdk_max_turns,
+                        sdk_ceiling_hit=_sdk_ceiling_hit,
                     )
                 else:
                     return AgentInvocationResult(
@@ -1668,7 +1702,8 @@ Follow the decision format specified in your agent definition.
                 permission_mode=permission_mode,
                 # TASK-REV-C4D7: Direct mode also needs ~50 internal turns
                 # (same as task-work delegation path fixed in TASK-REV-BB80)
-                max_turns=TASK_WORK_SDK_MAX_TURNS,
+                # TASK-FIX-7718: Use effective turns (auto-reduced for local backends)
+                max_turns=self._effective_sdk_max_turns,
                 setting_sources=["project"],  # Load CLAUDE.md from worktree
             )
             if model is not None:
@@ -1787,6 +1822,10 @@ Follow the decision format specified in your agent definition.
             "concerns": [],
             "requirements_addressed": [],
             "requirements_remaining": [],
+            # TASK-VPR-003: SDK turn ceiling data
+            "sdk_turns_used": None,
+            "sdk_max_turns": None,
+            "sdk_ceiling_hit": False,
         }
 
         # Try to read task_work_results.json for richer data
@@ -1843,6 +1882,13 @@ Follow the decision format specified in your agent definition.
                 completion_promises = task_work_data.get("completion_promises", [])
                 if completion_promises:
                     report["completion_promises"] = completion_promises
+
+                # TASK-VPR-003: Extract SDK turn ceiling data
+                sdk_turns = task_work_data.get("sdk_turns", {})
+                if sdk_turns:
+                    report["sdk_turns_used"] = sdk_turns.get("turns_used")
+                    report["sdk_max_turns"] = sdk_turns.get("max_turns")
+                    report["sdk_ceiling_hit"] = sdk_turns.get("ceiling_hit", False)
 
                 logger.info(
                     f"Created Player report from task_work_results.json for {task_id} turn {turn}"
@@ -3825,7 +3871,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 # TASK-REV-BB80: Use dedicated constant, NOT self.max_turns_per_agent
                 # max_turns_per_agent is for adversarial turns (default: 5)
                 # task-work needs ~50 internal turns for all phases
-                max_turns=TASK_WORK_SDK_MAX_TURNS,
+                # TASK-FIX-7718: Use effective turns (auto-reduced for local backends)
+                max_turns=self._effective_sdk_max_turns,
                 # TASK-POF-004: Use "project" only - inline protocol replaces
                 # skill invocation, no need to load user commands (~839KB savings)
                 setting_sources=["project"],
@@ -3841,65 +3888,107 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             logger.info(f"[{task_id}] SDK timeout: {self.sdk_timeout_seconds}s")
             logger.debug(f"[{task_id}] Prompt (first 500 chars): {prompt[:500]}...")
 
-            collected_output: List[str] = []
-            # TASK-FIX-STUB-C: Create parser before stream loop so ToolUseBlock
-            # file operations can be tracked during processing (not just after)
-            parser = TaskWorkStreamParser()
-            # TASK-FBSDK-011: Track message statistics
-            message_count = 0
-            assistant_count = 0
-            tool_count = 0
-            result_count = 0
             _install_sdk_cleanup_handler(asyncio.get_running_loop())
-            async with asyncio.timeout(self.sdk_timeout_seconds):
-                async with async_heartbeat(task_id, "task-work implementation"):
-                    async for message in query(prompt=prompt, options=options):
-                        # TASK-FBSDK-011: Track message counts
-                        message_count += 1
-                        # TASK-FB-FIX-013: Properly iterate ContentBlocks instead of str()
-                        # message.content is a list[ContentBlock], not a string
-                        # Mirrors TASK-FB-FIX-005 pattern from task_work_interface.py
-                        if isinstance(message, AssistantMessage):
-                            err = check_assistant_message_error(message)
-                            if err:
-                                logger.error(f"[{task_id}] SDK API error in stream: {err}")
-                                return TaskWorkResult(success=False, output={}, error=f"SDK agent error: {err}")
-                            assistant_count += 1
-                            for block in message.content:
-                                if isinstance(block, TextBlock):
-                                    collected_output.append(block.text)
-                                    # Log progress for debugging
-                                    if "Phase" in block.text or "test" in block.text.lower():
-                                        logger.debug(f"SDK progress: {block.text[:100]}...")
-                                elif isinstance(block, ToolUseBlock):
-                                    tool_count += 1
-                                    logger.debug(f"Tool invoked: {block.name}")
-                                    # TASK-FIX-STUB-C: Track file operations from
-                                    # Write/Edit tools to populate files_created/
-                                    # files_modified in task_work_results.json
-                                    if block.name in ("Write", "Edit"):
-                                        tool_input = getattr(block, "input", {})
-                                        if isinstance(tool_input, dict):
-                                            # TASK-FIX-PIPELINE: Log actual SDK key names (Fix 1)
-                                            logger.info(
-                                                f"[{task_id}] ToolUseBlock {block.name} input keys: "
-                                                f"{list(tool_input.keys())}"
-                                            )
-                                            parser._track_tool_call(
-                                                block.name, tool_input
-                                            )
-                                        else:
-                                            logger.warning(
-                                                f"[{task_id}] ToolUseBlock {block.name} input is "
-                                                f"{type(tool_input).__name__}, not dict: {str(tool_input)[:200]}"
-                                            )
-                                elif isinstance(block, ToolResultBlock):
-                                    # Extract content from tool results if present
-                                    if block.content:
-                                        collected_output.append(str(block.content))
-                        elif isinstance(message, ResultMessage):
-                            result_count += 1
-                            logger.info(f"SDK completed: turns={message.num_turns}")
+            # TASK-FIX-46F2: Retry loop for transient SDK stream errors.
+            # Under GPU contention, vLLM SSE streams can be interrupted with
+            # "unknown" errors. A single retry avoids expensive state-recovery.
+            _sdk_stream_error: Optional[str] = None
+            for _sdk_attempt in range(MAX_SDK_STREAM_RETRIES + 1):
+                collected_output: List[str] = []
+                # TASK-FIX-STUB-C: Create parser before stream loop so ToolUseBlock
+                # file operations can be tracked during processing (not just after)
+                parser = TaskWorkStreamParser()
+                # TASK-FBSDK-011: Track message statistics
+                message_count = 0
+                assistant_count = 0
+                tool_count = 0
+                result_count = 0
+                _sdk_stream_error = None
+                # TASK-VPR-003: Track SDK turns from ResultMessage
+                sdk_turns_used = None
+                async with asyncio.timeout(self.sdk_timeout_seconds):
+                    async with async_heartbeat(task_id, "task-work implementation"):
+                        async for message in query(prompt=prompt, options=options):
+                            # TASK-FBSDK-011: Track message counts
+                            message_count += 1
+                            # TASK-FB-FIX-013: Properly iterate ContentBlocks instead of str()
+                            # message.content is a list[ContentBlock], not a string
+                            # Mirrors TASK-FB-FIX-005 pattern from task_work_interface.py
+                            if isinstance(message, AssistantMessage):
+                                err = check_assistant_message_error(message)
+                                if err:
+                                    # TASK-FIX-46F2: Retry on transient "unknown" errors
+                                    if (
+                                        _sdk_attempt < MAX_SDK_STREAM_RETRIES
+                                        and "unknown" in str(err).lower()
+                                    ):
+                                        logger.warning(
+                                            "[%s] SDK stream error (attempt %d/%d), "
+                                            "retrying in %ds: %s",
+                                            task_id,
+                                            _sdk_attempt + 1,
+                                            MAX_SDK_STREAM_RETRIES + 1,
+                                            SDK_STREAM_RETRY_BACKOFF,
+                                            err,
+                                        )
+                                        _sdk_stream_error = err
+                                        break  # Break message loop to retry
+                                    logger.error(f"[{task_id}] SDK API error in stream: {err}")
+                                    return TaskWorkResult(success=False, output={}, error=f"SDK agent error: {err}")
+                                assistant_count += 1
+                                for block in message.content:
+                                    if isinstance(block, TextBlock):
+                                        collected_output.append(block.text)
+                                        # Log progress for debugging
+                                        if "Phase" in block.text or "test" in block.text.lower():
+                                            logger.debug(f"SDK progress: {block.text[:100]}...")
+                                    elif isinstance(block, ToolUseBlock):
+                                        tool_count += 1
+                                        logger.debug(f"Tool invoked: {block.name}")
+                                        # TASK-FIX-STUB-C: Track file operations from
+                                        # Write/Edit tools to populate files_created/
+                                        # files_modified in task_work_results.json
+                                        if block.name in ("Write", "Edit"):
+                                            tool_input = getattr(block, "input", {})
+                                            if isinstance(tool_input, dict):
+                                                # TASK-FIX-PIPELINE: Log actual SDK key names (Fix 1)
+                                                logger.info(
+                                                    f"[{task_id}] ToolUseBlock {block.name} input keys: "
+                                                    f"{list(tool_input.keys())}"
+                                                )
+                                                parser._track_tool_call(
+                                                    block.name, tool_input
+                                                )
+                                            else:
+                                                logger.warning(
+                                                    f"[{task_id}] ToolUseBlock {block.name} input is "
+                                                    f"{type(tool_input).__name__}, not dict: {str(tool_input)[:200]}"
+                                                )
+                                    elif isinstance(block, ToolResultBlock):
+                                        # Extract content from tool results if present
+                                        if block.content:
+                                            collected_output.append(str(block.content))
+                            elif isinstance(message, ResultMessage):
+                                result_count += 1
+                                # TASK-VPR-003: Capture SDK turns from ResultMessage
+                                sdk_turns_used = message.num_turns
+                                logger.info(f"SDK completed: turns={message.num_turns}")
+
+                if _sdk_stream_error is None:
+                    break  # Stream completed successfully, exit retry loop
+                # TASK-FIX-46F2: Backoff before retry
+                await asyncio.sleep(SDK_STREAM_RETRY_BACKOFF)
+
+            # TASK-FIX-46F2: If retries exhausted with transient error, fall through
+            if _sdk_stream_error is not None:
+                logger.error(
+                    f"[{task_id}] SDK API error in stream after "
+                    f"{MAX_SDK_STREAM_RETRIES + 1} attempts: {_sdk_stream_error}"
+                )
+                return TaskWorkResult(
+                    success=False, output={},
+                    error=f"SDK agent error: {_sdk_stream_error}",
+                )
 
             # TASK-FBSDK-011: Log message processing summary
             logger.info(
@@ -3915,6 +4004,11 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             parser.parse_message(output_text)
             parsed_result = parser.to_result()
 
+            # TASK-VPR-003: Inject SDK turn metrics into parsed result
+            # These flow through to task_work_results.json for Coach and reporting
+            parsed_result["sdk_turns_used"] = sdk_turns_used
+            parsed_result["sdk_max_turns"] = self._effective_sdk_max_turns
+
             # Write task_work_results.json for Coach validation
             self._write_task_work_results(task_id, parsed_result, documentation_level)
 
@@ -3922,6 +4016,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             return TaskWorkResult(
                 success=True,
                 output=parsed_result,
+                sdk_turns_used=sdk_turns_used,
+                sdk_max_turns=self._effective_sdk_max_turns,
             )
 
         except asyncio.TimeoutError:
@@ -4105,28 +4201,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         """
         import yaml
 
-        # Look for task file in various locations
-        task_file = None
-        possible_paths = [
-            self.worktree_path / "tasks" / "in_progress" / f"{task_id}.md",
-            self.worktree_path / "tasks" / "backlog" / f"{task_id}.md",
-            self.worktree_path / "tasks" / "in_review" / f"{task_id}.md",
-        ]
-
-        # Also check for subdirectories (e.g., tasks/in_progress/feature-name/TASK-001.md)
-        for status_dir in ["in_progress", "backlog", "in_review"]:
-            status_path = self.worktree_path / "tasks" / status_dir
-            if status_path.exists():
-                for subdir in status_path.iterdir():
-                    if subdir.is_dir():
-                        possible_task = subdir / f"{task_id}.md"
-                        if possible_task.exists():
-                            possible_paths.insert(0, possible_task)
-
-        for path in possible_paths:
-            if path.exists():
-                task_file = path
-                break
+        task_file = self._find_task_file(task_id)
 
         if not task_file:
             logger.warning(f"Task file not found for {task_id}")
@@ -4511,6 +4586,19 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             "files_created": sorted(list(set(result_data.get("files_created", [])))),
             "tests_written": sorted(list(set(result_data.get("tests_written", [])))),
             "summary": self._generate_summary(result_data),
+        }
+
+        # TASK-VPR-003: Add SDK turn ceiling data to results
+        sdk_turns_used_val = result_data.get("sdk_turns_used")
+        sdk_max_turns_val = result_data.get("sdk_max_turns")
+        results["sdk_turns"] = {
+            "turns_used": sdk_turns_used_val,
+            "max_turns": sdk_max_turns_val,
+            "ceiling_hit": (
+                sdk_turns_used_val is not None
+                and sdk_max_turns_val is not None
+                and sdk_turns_used_val >= sdk_max_turns_val
+            ),
         }
 
 # Add code_review field if architectural review data was found
