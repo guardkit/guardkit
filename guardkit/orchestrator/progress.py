@@ -32,7 +32,7 @@ Usage:
 import logging
 import warnings
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Literal, Optional
 from functools import wraps
 
@@ -48,6 +48,30 @@ logger = logging.getLogger(__name__)
 # Type aliases
 TurnStatus = Literal["in_progress", "success", "feedback", "error"]
 FinalStatus = Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "design_extraction_failed"]
+
+
+def get_iso_timestamp() -> str:
+    """
+    Return the current UTC time as an ISO 8601 timestamp with milliseconds.
+
+    Format: ``2026-02-27T14:30:00.000Z``
+
+    Returns
+    -------
+    str
+        UTC timestamp string formatted as ``YYYY-MM-DDTHH:MM:SS.mmmZ``
+
+    Examples
+    --------
+    >>> ts = get_iso_timestamp()
+    >>> ts.endswith('Z')
+    True
+    >>> len(ts) == 24  # e.g. "2026-02-27T14:30:00.000Z"
+    True
+    """
+    now = datetime.now(timezone.utc)
+    # strftime gives microseconds (%f); take only first 3 digits for milliseconds
+    return now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"
 
 
 def _handle_display_error(func):
@@ -203,7 +227,8 @@ class ProgressDisplay:
 
         # Start progress and add task
         self._progress.start()
-        description = f"Turn {turn}/{self.max_turns}: {phase}"
+        ts = get_iso_timestamp()
+        description = f"[{ts}] Turn {turn}/{self.max_turns}: {phase}"
         self._task_id = self._progress.add_task(
             description,
             total=100,
@@ -220,7 +245,7 @@ class ProgressDisplay:
             "error": None
         })
 
-        logger.info(f"Started turn {turn}: {phase}")
+        logger.info(f"[{ts}] Started turn {turn}: {phase}")
 
     @_handle_display_error
     def update_turn(self, message: str, progress: Optional[int] = None) -> None:
@@ -298,8 +323,9 @@ class ProgressDisplay:
         }
         color = status_colors.get(status, "white")
 
-        # Display completion message
-        message = f"[{color}]{icon}[/{color}] {summary}"
+        # Display completion message with ISO 8601 timestamp
+        ts = get_iso_timestamp()
+        message = f"[{color}]{icon}[/{color}] [{ts}] {summary}"
         if error:
             message += f"\n   [red]Error: {error}[/red]"
 
@@ -317,7 +343,7 @@ class ProgressDisplay:
         # Cleanup progress
         self._cleanup()
 
-        logger.info(f"Completed turn {self.current_turn}: {status} - {summary}")
+        logger.info(f"[{ts}] Completed turn {self.current_turn}: {status} - {summary}")
 
     @_handle_display_error
     def handle_error(self, error_message: str, turn: Optional[int] = None) -> None:
@@ -611,4 +637,5 @@ __all__ = [
     "TurnStatus",
     "FinalStatus",
     "format_context_status",
+    "get_iso_timestamp",
 ]

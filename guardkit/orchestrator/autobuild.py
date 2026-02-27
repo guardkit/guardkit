@@ -342,6 +342,9 @@ class TurnRecord:
     design_compliance: Optional[Dict[str, Any]] = None
     player_context_status: Optional[ContextStatus] = None
     coach_context_status: Optional[ContextStatus] = None
+    sdk_turns_used: Optional[int] = None      # TASK-VPR-003: Actual SDK turns from ResultMessage
+    sdk_max_turns: Optional[int] = None        # TASK-VPR-003: Effective SDK turn ceiling
+    sdk_ceiling_hit: bool = False              # TASK-VPR-003: Whether ceiling was hit
 
 
 @dataclass
@@ -1816,6 +1819,9 @@ class AutoBuildOrchestrator:
                     feedback=None,
                     timestamp=timestamp,
                     player_context_status=player_context_status,
+                    sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
+                    sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
+                    sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
                 )
 
             # Distinguish between missing report and actual failure
@@ -1887,6 +1893,9 @@ class AutoBuildOrchestrator:
                     feedback=None,
                     timestamp=timestamp,
                     player_context_status=player_context_status,
+                    sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
+                    sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
+                    sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
                 )
 
         # Warn if passing synthetic report to Coach (TASK-ASF-004)
@@ -1914,6 +1923,9 @@ class AutoBuildOrchestrator:
                 feedback=None,
                 timestamp=timestamp,
                 player_context_status=player_context_status,
+                sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
+                sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
+                sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
             )
 
         # ===== Coach Phase =====
@@ -1933,6 +1945,9 @@ class AutoBuildOrchestrator:
                 feedback=None,
                 timestamp=timestamp,
                 player_context_status=player_context_status,
+                sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
+                sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
+                sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
             )
 
         self._progress_display.start_turn(turn, "Coach Validation")
@@ -1969,6 +1984,9 @@ class AutoBuildOrchestrator:
                 timestamp=timestamp,
                 player_context_status=player_context_status,
                 coach_context_status=coach_context_status,
+                sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
+                sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
+                sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
             )
 
         # Extract decision and feedback
@@ -1994,6 +2012,9 @@ class AutoBuildOrchestrator:
                 timestamp=timestamp,
                 player_context_status=player_context_status,
                 coach_context_status=coach_context_status,
+                sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
+                sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
+                sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
             )
 
         else:  # feedback
@@ -2020,6 +2041,9 @@ class AutoBuildOrchestrator:
                 timestamp=timestamp,
                 player_context_status=player_context_status,
                 coach_context_status=coach_context_status,
+                sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
+                sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
+                sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
             )
 
     def _finalize_phase(

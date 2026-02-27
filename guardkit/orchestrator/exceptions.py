@@ -24,6 +24,8 @@ class TaskWorkResult:
     output: Dict[str, Any]
     error: Optional[str] = None
     exit_code: int = 0
+    sdk_turns_used: Optional[int] = None  # TASK-VPR-003: Actual SDK turns from ResultMessage
+    sdk_max_turns: Optional[int] = None   # TASK-VPR-003: Effective SDK turn ceiling
 
 
 # ============================================================================

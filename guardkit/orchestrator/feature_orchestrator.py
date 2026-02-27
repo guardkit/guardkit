@@ -27,7 +27,7 @@ import logging
 import resource
 import shutil
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
@@ -90,6 +90,9 @@ class TaskExecutionResult:
     final_decision: str
     error: Optional[str] = None
     recovery_count: int = 0  # Number of state recovery attempts
+    sdk_ceiling_hits: int = 0                                       # TASK-VPR-003
+    sdk_total_invocations: int = 0                                  # TASK-VPR-003
+    sdk_turns_per_invocation: List[int] = field(default_factory=list)  # TASK-VPR-003
 
 
 @dataclass
@@ -237,6 +240,7 @@ class FeatureOrchestrator:
         enable_context: bool = True,
         task_timeout: int = 2400,
         timeout_multiplier: Optional[float] = None,
+        max_parallel: Optional[int] = None,
     ):
         """
         Initialize FeatureOrchestrator.
@@ -276,6 +280,10 @@ class FeatureOrchestrator:
             When None, auto-detects from ANTHROPIC_BASE_URL (4.0 for localhost).
             Scales task_timeout and is passed through to AgentInvoker for SDK timeouts.
             (TASK-FIX-VL05)
+        max_parallel : Optional[int], optional
+            Maximum number of parallel tasks per wave (default: None = unlimited).
+            When set, uses an asyncio.Semaphore to limit concurrent task execution
+            within each wave. Useful for local/vLLM backends with limited resources.
 
         Raises
         ------
@@ -307,6 +315,7 @@ class FeatureOrchestrator:
         self.enable_pre_loop = enable_pre_loop
         self.enable_context = enable_context
         self.task_timeout = int(task_timeout * self.timeout_multiplier)
+        self.max_parallel = max_parallel
         self.features_dir = features_dir or self.repo_root / ".guardkit" / "features"
 
         # Raise file descriptor limit for parallel task execution
@@ -326,6 +335,7 @@ class FeatureOrchestrator:
             f"resume={self.resume}, fresh={self.fresh}, enable_pre_loop={self.enable_pre_loop}, "
             f"enable_context={self.enable_context}, task_timeout={self.task_timeout}s"
             f"{f', timeout_multiplier={self.timeout_multiplier}x' if self.timeout_multiplier != 1.0 else ''}"
+            f"{f', max_parallel={self.max_parallel}' if self.max_parallel is not None else ''}"
         )
 
     def _raise_fd_limit(self, target: int = 4096) -> None:
@@ -1299,8 +1309,19 @@ The detailed specifications are in the task markdown file.
             )
             task_id_mapping.append(task_id)
 
-        # Execute all tasks in parallel if any
+        # Execute all tasks in parallel if any, respecting max_parallel limit
         if tasks_to_execute:
+            # Apply max_parallel semaphore if configured
+            if self.max_parallel is not None and self.max_parallel > 0:
+                semaphore = asyncio.Semaphore(self.max_parallel)
+                original_tasks = tasks_to_execute
+                tasks_to_execute = []
+                for coro in original_tasks:
+                    async def bounded(c=coro):
+                        async with semaphore:
+                            return await c
+                    tasks_to_execute.append(bounded())
+
             try:
                 parallel_results = await asyncio.gather(*tasks_to_execute, return_exceptions=True)
             finally:
@@ -1356,9 +1377,18 @@ The detailed specifications are in the task markdown file.
                     # Update task status in display
                     if self._wave_display:
                         status = "success" if result.success else "failed"
+                        # TASK-VPR-003: Pass SDK turn data to display
+                        _sdk_turns = result.sdk_turns_per_invocation[-1] if result.sdk_turns_per_invocation else None
+                        _sdk_max = None
+                        _sdk_hit = False
+                        if result.sdk_turns_per_invocation:
+                            # Use last invocation's data for display
+                            _sdk_hit = result.sdk_ceiling_hits > 0
                         self._wave_display.update_task_status(
                             task_id, status, result.final_decision,
-                            turns=result.total_turns, decision=result.final_decision
+                            turns=result.total_turns, decision=result.final_decision,
+                            sdk_turns_used=_sdk_turns,
+                            sdk_ceiling_hit=_sdk_hit,
                         )
 
                     # Update feature with result
@@ -1548,6 +1578,20 @@ The detailed specifications are in the task markdown file.
                 f"({result.total_turns} turns)"
             )
 
+            # TASK-VPR-003: Compute SDK ceiling metrics from turn history
+            sdk_ceiling_hits = sum(
+                1 for tr in result.turn_history
+                if tr.sdk_ceiling_hit
+            )
+            sdk_total_invocations = len([
+                tr for tr in result.turn_history
+                if tr.player_result and tr.player_result.success
+            ])
+            sdk_turns_list = [
+                tr.sdk_turns_used for tr in result.turn_history
+                if tr.sdk_turns_used is not None
+            ]
+
             return TaskExecutionResult(
                 task_id=task.id,
                 success=result.success,
@@ -1555,6 +1599,9 @@ The detailed specifications are in the task markdown file.
                 final_decision=result.final_decision,
                 error=result.error,
                 recovery_count=result.recovery_count,
+                sdk_ceiling_hits=sdk_ceiling_hits,
+                sdk_total_invocations=sdk_total_invocations,
+                sdk_turns_per_invocation=sdk_turns_list,
             )
 
         except Exception as e:

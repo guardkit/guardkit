@@ -651,6 +651,9 @@ class AgentInvocationResult:
     report: Dict[str, Any]
     duration_seconds: float
     error: Optional[str] = None
+    sdk_turns_used: Optional[int] = None      # TASK-VPR-003: Actual SDK turns from ResultMessage
+    sdk_max_turns: Optional[int] = None        # TASK-VPR-003: Effective SDK turn ceiling
+    sdk_ceiling_hit: bool = False              # TASK-VPR-003: Whether ceiling was hit
 
 
 class AgentInvoker:
@@ -1037,6 +1040,12 @@ class AgentInvoker:
                     report = self._load_agent_report(task_id, turn, "player")
                     self._validate_player_report(report)
 
+                    # TASK-VPR-003: Extract SDK turn data from TaskWorkResult
+                    from guardkit.orchestrator.sdk_ceiling import detect_ceiling_hit
+                    _sdk_turns_used = result.sdk_turns_used
+                    _sdk_max_turns = result.sdk_max_turns
+                    _sdk_ceiling_hit = detect_ceiling_hit(_sdk_turns_used, _sdk_max_turns)
+
                     return AgentInvocationResult(
                         task_id=task_id,
                         turn=turn,
@@ -1044,6 +1053,9 @@ class AgentInvoker:
                         success=True,
                         report=report,
                         duration_seconds=duration,
+                        sdk_turns_used=_sdk_turns_used,
+                        sdk_max_turns=_sdk_max_turns,
+                        sdk_ceiling_hit=_sdk_ceiling_hit,
                     )
                 else:
                     return AgentInvocationResult(
@@ -1810,6 +1822,10 @@ Follow the decision format specified in your agent definition.
             "concerns": [],
             "requirements_addressed": [],
             "requirements_remaining": [],
+            # TASK-VPR-003: SDK turn ceiling data
+            "sdk_turns_used": None,
+            "sdk_max_turns": None,
+            "sdk_ceiling_hit": False,
         }
 
         # Try to read task_work_results.json for richer data
@@ -1866,6 +1882,13 @@ Follow the decision format specified in your agent definition.
                 completion_promises = task_work_data.get("completion_promises", [])
                 if completion_promises:
                     report["completion_promises"] = completion_promises
+
+                # TASK-VPR-003: Extract SDK turn ceiling data
+                sdk_turns = task_work_data.get("sdk_turns", {})
+                if sdk_turns:
+                    report["sdk_turns_used"] = sdk_turns.get("turns_used")
+                    report["sdk_max_turns"] = sdk_turns.get("max_turns")
+                    report["sdk_ceiling_hit"] = sdk_turns.get("ceiling_hit", False)
 
                 logger.info(
                     f"Created Player report from task_work_results.json for {task_id} turn {turn}"
@@ -3881,6 +3904,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 tool_count = 0
                 result_count = 0
                 _sdk_stream_error = None
+                # TASK-VPR-003: Track SDK turns from ResultMessage
+                sdk_turns_used = None
                 async with asyncio.timeout(self.sdk_timeout_seconds):
                     async with async_heartbeat(task_id, "task-work implementation"):
                         async for message in query(prompt=prompt, options=options):
@@ -3945,6 +3970,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                             collected_output.append(str(block.content))
                             elif isinstance(message, ResultMessage):
                                 result_count += 1
+                                # TASK-VPR-003: Capture SDK turns from ResultMessage
+                                sdk_turns_used = message.num_turns
                                 logger.info(f"SDK completed: turns={message.num_turns}")
 
                 if _sdk_stream_error is None:
@@ -3977,6 +4004,11 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             parser.parse_message(output_text)
             parsed_result = parser.to_result()
 
+            # TASK-VPR-003: Inject SDK turn metrics into parsed result
+            # These flow through to task_work_results.json for Coach and reporting
+            parsed_result["sdk_turns_used"] = sdk_turns_used
+            parsed_result["sdk_max_turns"] = self._effective_sdk_max_turns
+
             # Write task_work_results.json for Coach validation
             self._write_task_work_results(task_id, parsed_result, documentation_level)
 
@@ -3984,6 +4016,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             return TaskWorkResult(
                 success=True,
                 output=parsed_result,
+                sdk_turns_used=sdk_turns_used,
+                sdk_max_turns=self._effective_sdk_max_turns,
             )
 
         except asyncio.TimeoutError:
@@ -4552,6 +4586,19 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             "files_created": sorted(list(set(result_data.get("files_created", [])))),
             "tests_written": sorted(list(set(result_data.get("tests_written", [])))),
             "summary": self._generate_summary(result_data),
+        }
+
+        # TASK-VPR-003: Add SDK turn ceiling data to results
+        sdk_turns_used_val = result_data.get("sdk_turns_used")
+        sdk_max_turns_val = result_data.get("sdk_max_turns")
+        results["sdk_turns"] = {
+            "turns_used": sdk_turns_used_val,
+            "max_turns": sdk_max_turns_val,
+            "ceiling_hit": (
+                sdk_turns_used_val is not None
+                and sdk_max_turns_val is not None
+                and sdk_turns_used_val >= sdk_max_turns_val
+            ),
         }
 
 # Add code_review field if architectural review data was found
