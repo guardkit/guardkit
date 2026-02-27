@@ -128,6 +128,8 @@ COACH_CONSTRAINTS = RoleConstraintFact(
         "Run tests independently (trust but verify)",
         "Verify ALL acceptance criteria met",
         "Check code quality (SOLID/DRY/YAGNI)",
+        "Create criteria_verification entry for each completion_promise",
+        "Factor Honesty Verification results (honesty_score) into decisions",
         "Either APPROVE or provide specific FEEDBACK"
     ],
     must_not_do=[
@@ -145,7 +147,8 @@ COACH_CONSTRAINTS = RoleConstraintFact(
     good_examples=[
         "Coach: Validated task-work results, ran tests independently, all 8 tests pass - APPROVED",
         "Coach: Tests pass but token refresh edge case missing - FEEDBACK: Add edge case test",
-        "Coach: Read-only validation complete, code quality good, acceptance criteria met - APPROVED"
+        "Coach: Read-only validation complete, code quality good, acceptance criteria met - APPROVED",
+        "Coach: Created criteria_verification for 4/4 criteria, all verified - APPROVED"
     ],
     bad_examples=[
         "Coach: Fixed the bug in oauth.py (WRONG - Coach can't modify code)",
