@@ -2,9 +2,10 @@
 id: TASK-SFC-004
 title: Add feature-spec integration point to seed_integration_points.py
 task_type: implementation
-status: backlog
+status: completed
 created: 2026-02-23T14:00:00Z
-updated: 2026-02-23T14:00:00Z
+updated: 2026-02-27T00:00:00Z
+completed: 2026-02-27T00:00:00Z
 priority: medium
 tags: [graphiti, seeding, feature-spec, integration-points]
 complexity: 2
@@ -13,6 +14,7 @@ feature_id: FEAT-SFC
 wave: 2
 implementation_mode: task-work
 dependencies: [TASK-SFC-001]
+completed_location: tasks/completed/TASK-SFC-004/
 ---
 
 # Task: Add Feature-Spec Integration Point to seed_integration_points.py
@@ -54,14 +56,14 @@ Change "Creates 2 episodes" to "Creates 3 episodes".
 
 ## Acceptance Criteria
 
-- [ ] New `integration_feature_spec_to_plan` episode exists
-- [ ] Episode documents all 3 output files and their consumers
-- [ ] Episode specifies the correct `--context` pattern for `/feature-plan`
-- [ ] Module docstring updated to 3 episodes
-- [ ] `ruff check guardkit/knowledge/seed_integration_points.py` passes
+- [x] New `integration_feature_spec_to_plan` episode exists
+- [x] Episode documents all 3 output files and their consumers
+- [x] Episode specifies the correct `--context` pattern for `/feature-plan`
+- [x] Module docstring updated to 3 episodes
+- [x] `ruff check guardkit/knowledge/seed_integration_points.py` passes
 
-## Files to Modify
+## Files Modified
 
 | File | Action |
 |------|--------|
-| `guardkit/knowledge/seed_integration_points.py` | Modify (add 1 episode, update docstring) |
+| `guardkit/knowledge/seed_integration_points.py` | Modified (added 1 episode, updated docstring) |
