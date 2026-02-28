@@ -2,9 +2,11 @@
 id: TASK-GLI-002
 title: Extend GraphitiConfig for local inference provider settings
 task_type: implementation
-status: backlog
+status: in_review
 created: 2026-02-22T23:45:00Z
-updated: 2026-02-22T23:45:00Z
+updated: 2026-02-27T00:00:00Z
+previous_state: in_progress
+state_transition_reason: "All quality gates passed - task-work complete"
 priority: high
 tags: [graphiti, config, vllm, embeddings]
 complexity: 4

@@ -34,8 +34,19 @@ falkordb_port: 6379
 # Connection settings
 timeout: 30.0
 
-# OpenAI embedding model for semantic search
-# Requires OPENAI_API_KEY environment variable
+# LLM provider for Graphiti entity extraction
+# Options: openai (default), vllm, ollama
+llm_provider: vllm
+llm_base_url: http://promaxgb10-41b1:8000/v1
+llm_model: Qwen/Qwen3-Coder-30B-A3B
+
+# Embedding provider for Graphiti vector search
+# Options: openai (default), vllm, ollama
+embedding_provider: vllm
+embedding_base_url: http://promaxgb10-41b1:8001/v1
+
+# Embedding model for semantic search
+# Supported by openai, vllm, and ollama providers
 embedding_model: text-embedding-3-small
 
 # Group IDs for organizing knowledge

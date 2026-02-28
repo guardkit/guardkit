@@ -2,9 +2,11 @@
 id: TASK-GLI-001
 title: GB10 vLLM setup guide — embedding model instance with optimal config
 task_type: implementation
-status: backlog
+status: in_review
 created: 2026-02-22T23:45:00Z
-updated: 2026-02-27T00:00:00Z
+updated: 2026-02-27T12:00:00Z
+previous_state: in_progress
+state_transition_reason: "Guide complete, benchmark results pending GB10 hardware execution"
 priority: high
 tags: [vllm, embeddings, gb10, infrastructure, graphiti]
 complexity: 4
