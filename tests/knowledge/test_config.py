@@ -474,3 +474,238 @@ host: null
 
         # Should construct safe path
         assert str(config_path).endswith(".guardkit/graphiti.yaml")
+
+
+class TestLocalInferenceProviderSettings:
+    """Test new local inference provider fields (llm_provider, embedding_provider, etc.)."""
+
+    def test_default_llm_provider_is_openai(self):
+        """Test that llm_provider defaults to 'openai' for backward compatibility."""
+        settings = GraphitiSettings()
+        assert settings.llm_provider == "openai"
+
+    def test_default_embedding_provider_is_openai(self):
+        """Test that embedding_provider defaults to 'openai' for backward compatibility."""
+        settings = GraphitiSettings()
+        assert settings.embedding_provider == "openai"
+
+    def test_default_llm_base_url_is_none(self):
+        """Test that llm_base_url defaults to None."""
+        settings = GraphitiSettings()
+        assert settings.llm_base_url is None
+
+    def test_default_llm_model_is_none(self):
+        """Test that llm_model defaults to None."""
+        settings = GraphitiSettings()
+        assert settings.llm_model is None
+
+    def test_default_embedding_base_url_is_none(self):
+        """Test that embedding_base_url defaults to None."""
+        settings = GraphitiSettings()
+        assert settings.embedding_base_url is None
+
+    def test_vllm_provider_accepted(self):
+        """Test that 'vllm' is accepted as a valid llm_provider."""
+        settings = GraphitiSettings(llm_provider="vllm")
+        assert settings.llm_provider == "vllm"
+
+    def test_ollama_provider_accepted(self):
+        """Test that 'ollama' is accepted as a valid llm_provider."""
+        settings = GraphitiSettings(llm_provider="ollama")
+        assert settings.llm_provider == "ollama"
+
+    def test_invalid_llm_provider_raises_value_error(self):
+        """Test that an invalid llm_provider raises ValueError."""
+        with pytest.raises(ValueError, match="llm_provider must be one of"):
+            GraphitiSettings(llm_provider="bedrock")
+
+    def test_invalid_embedding_provider_raises_value_error(self):
+        """Test that an invalid embedding_provider raises ValueError."""
+        with pytest.raises(ValueError, match="embedding_provider must be one of"):
+            GraphitiSettings(embedding_provider="huggingface")
+
+    def test_vllm_embedding_provider_accepted(self):
+        """Test that 'vllm' is accepted as a valid embedding_provider."""
+        settings = GraphitiSettings(embedding_provider="vllm")
+        assert settings.embedding_provider == "vllm"
+
+    def test_ollama_embedding_provider_accepted(self):
+        """Test that 'ollama' is accepted as a valid embedding_provider."""
+        settings = GraphitiSettings(embedding_provider="ollama")
+        assert settings.embedding_provider == "ollama"
+
+    def test_llm_base_url_set_correctly(self):
+        """Test setting llm_base_url to a URL string."""
+        settings = GraphitiSettings(
+            llm_provider="vllm",
+            llm_base_url="http://host:8000/v1",
+        )
+        assert settings.llm_base_url == "http://host:8000/v1"
+
+    def test_llm_model_set_correctly(self):
+        """Test setting llm_model to a model name string."""
+        settings = GraphitiSettings(
+            llm_provider="vllm",
+            llm_model="Qwen/Qwen3-Coder-30B-A3B",
+        )
+        assert settings.llm_model == "Qwen/Qwen3-Coder-30B-A3B"
+
+    def test_embedding_base_url_set_correctly(self):
+        """Test setting embedding_base_url to a URL string."""
+        settings = GraphitiSettings(
+            embedding_provider="vllm",
+            embedding_base_url="http://host:8001/v1",
+        )
+        assert settings.embedding_base_url == "http://host:8001/v1"
+
+    def test_full_vllm_configuration(self):
+        """Test a complete vllm configuration for both LLM and embedding."""
+        settings = GraphitiSettings(
+            llm_provider="vllm",
+            llm_base_url="http://promaxgb10-41b1:8000/v1",
+            llm_model="Qwen/Qwen3-Coder-30B-A3B",
+            embedding_provider="vllm",
+            embedding_base_url="http://promaxgb10-41b1:8001/v1",
+        )
+        assert settings.llm_provider == "vllm"
+        assert settings.llm_base_url == "http://promaxgb10-41b1:8000/v1"
+        assert settings.llm_model == "Qwen/Qwen3-Coder-30B-A3B"
+        assert settings.embedding_provider == "vllm"
+        assert settings.embedding_base_url == "http://promaxgb10-41b1:8001/v1"
+
+    def test_yaml_without_new_fields_defaults_to_openai(self):
+        """Test that YAML files without new fields default to openai providers."""
+        yaml_content = """
+enabled: true
+host: localhost
+port: 8000
+"""
+        with patch('builtins.open', mock_open(read_data=yaml_content)):
+            with patch('pathlib.Path.exists', return_value=True):
+                config = load_graphiti_config()
+
+        assert config.llm_provider == "openai"
+        assert config.embedding_provider == "openai"
+        assert config.llm_base_url is None
+        assert config.llm_model is None
+        assert config.embedding_base_url is None
+
+    def test_yaml_with_vllm_provider_fields(self):
+        """Test loading YAML with all new provider fields set to vllm."""
+        yaml_content = """
+enabled: true
+llm_provider: vllm
+llm_base_url: http://promaxgb10-41b1:8000/v1
+llm_model: Qwen/Qwen3-Coder-30B-A3B
+embedding_provider: vllm
+embedding_base_url: http://promaxgb10-41b1:8001/v1
+"""
+        with patch('builtins.open', mock_open(read_data=yaml_content)):
+            with patch('pathlib.Path.exists', return_value=True):
+                config = load_graphiti_config()
+
+        assert config.llm_provider == "vllm"
+        assert config.llm_base_url == "http://promaxgb10-41b1:8000/v1"
+        assert config.llm_model == "Qwen/Qwen3-Coder-30B-A3B"
+        assert config.embedding_provider == "vllm"
+        assert config.embedding_base_url == "http://promaxgb10-41b1:8001/v1"
+
+    def test_yaml_empty_string_base_url_treated_as_none(self):
+        """Test that empty string llm_base_url in YAML is treated as None."""
+        yaml_content = """
+llm_base_url: ""
+embedding_base_url: ""
+llm_model: ""
+"""
+        with patch('builtins.open', mock_open(read_data=yaml_content)):
+            with patch('pathlib.Path.exists', return_value=True):
+                config = load_graphiti_config()
+
+        # Empty strings in YAML come through as "" not None before coercion check
+        # The field_types loop skips None values but not empty strings - empty string
+        # is treated as None for optional fields
+        assert config.llm_base_url is None
+        assert config.embedding_base_url is None
+        assert config.llm_model is None
+
+    def test_env_override_llm_provider(self):
+        """Test LLM_PROVIDER environment variable overrides config."""
+        with patch.dict(os.environ, {"LLM_PROVIDER": "vllm"}):
+            with patch('pathlib.Path.exists', return_value=False):
+                config = load_graphiti_config()
+
+        assert config.llm_provider == "vllm"
+
+    def test_env_override_llm_base_url(self):
+        """Test LLM_BASE_URL environment variable overrides config."""
+        with patch.dict(os.environ, {"LLM_BASE_URL": "http://myserver:8000/v1"}):
+            with patch('pathlib.Path.exists', return_value=False):
+                config = load_graphiti_config()
+
+        assert config.llm_base_url == "http://myserver:8000/v1"
+
+    def test_env_override_llm_model(self):
+        """Test LLM_MODEL environment variable overrides config."""
+        with patch.dict(os.environ, {"LLM_MODEL": "meta-llama/Llama-3-8B"}):
+            with patch('pathlib.Path.exists', return_value=False):
+                config = load_graphiti_config()
+
+        assert config.llm_model == "meta-llama/Llama-3-8B"
+
+    def test_env_override_embedding_provider(self):
+        """Test EMBEDDING_PROVIDER environment variable overrides config."""
+        with patch.dict(os.environ, {"EMBEDDING_PROVIDER": "ollama"}):
+            with patch('pathlib.Path.exists', return_value=False):
+                config = load_graphiti_config()
+
+        assert config.embedding_provider == "ollama"
+
+    def test_env_override_embedding_base_url(self):
+        """Test EMBEDDING_BASE_URL environment variable overrides config."""
+        with patch.dict(os.environ, {"EMBEDDING_BASE_URL": "http://myserver:8001/v1"}):
+            with patch('pathlib.Path.exists', return_value=False):
+                config = load_graphiti_config()
+
+        assert config.embedding_base_url == "http://myserver:8001/v1"
+
+    def test_env_override_empty_string_optional_treated_as_none(self):
+        """Test that empty string env vars for Optional fields are treated as None."""
+        with patch.dict(os.environ, {
+            "LLM_BASE_URL": "",
+            "LLM_MODEL": "",
+            "EMBEDDING_BASE_URL": "",
+        }):
+            with patch('pathlib.Path.exists', return_value=False):
+                config = load_graphiti_config()
+
+        assert config.llm_base_url is None
+        assert config.llm_model is None
+        assert config.embedding_base_url is None
+
+    def test_env_overrides_take_priority_over_yaml(self):
+        """Test that env vars take priority over YAML values."""
+        yaml_content = """
+llm_provider: openai
+embedding_provider: openai
+"""
+        with patch.dict(os.environ, {
+            "LLM_PROVIDER": "vllm",
+            "EMBEDDING_PROVIDER": "ollama",
+        }):
+            with patch('builtins.open', mock_open(read_data=yaml_content)):
+                with patch('pathlib.Path.exists', return_value=True):
+                    config = load_graphiti_config()
+
+        assert config.llm_provider == "vllm"
+        assert config.embedding_provider == "ollama"
+
+    def test_file_not_found_uses_default_providers(self):
+        """Test defaults when config file does not exist."""
+        with patch('pathlib.Path.exists', return_value=False):
+            config = load_graphiti_config()
+
+        assert config.llm_provider == "openai"
+        assert config.embedding_provider == "openai"
+        assert config.llm_base_url is None
+        assert config.llm_model is None
+        assert config.embedding_base_url is None

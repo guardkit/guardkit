@@ -95,6 +95,9 @@ def normalize_project_id(name: str) -> str:
     return result[:50]
 
 
+VALID_PROVIDERS = ("openai", "vllm", "ollama")
+
+
 @dataclass(frozen=True)
 class GraphitiConfig:
     """Configuration for Graphiti connection via graphiti-core.
@@ -114,11 +117,21 @@ class GraphitiConfig:
         falkordb_port: FalkorDB port for connection
         host: Deprecated - use neo4j_uri instead (kept for backwards compatibility)
         port: Deprecated - use neo4j_uri instead (kept for backwards compatibility)
+        llm_provider: LLM provider for entity extraction ('openai', 'vllm', 'ollama')
+        llm_base_url: LLM provider base URL (required for vllm/ollama)
+        llm_model: LLM model name (e.g., 'Qwen/Qwen3-Coder-30B-A3B')
+        embedding_provider: Embedding provider ('openai', 'vllm', 'ollama')
+        embedding_base_url: Embedding provider base URL (required for vllm/ollama)
+        embedding_model: Embedding model name (e.g., 'text-embedding-3-small')
 
     Raises:
         ValueError: If timeout is not positive
         ValueError: If project_id is invalid (>50 chars or invalid characters)
         ValueError: If graph_store is not 'neo4j' or 'falkordb'
+        ValueError: If llm_provider is not one of VALID_PROVIDERS
+        ValueError: If embedding_provider is not one of VALID_PROVIDERS
+        ValueError: If llm_base_url is missing when llm_provider is 'vllm' or 'ollama'
+        ValueError: If embedding_base_url is missing when embedding_provider is 'vllm' or 'ollama'
 
     Example:
         config = GraphitiConfig(
@@ -142,6 +155,13 @@ class GraphitiConfig:
     # Deprecated fields for backwards compatibility
     host: str = "localhost"
     port: int = 8000
+    # LLM and embedding provider configuration
+    llm_provider: str = "openai"           # "openai" | "vllm" | "ollama"
+    llm_base_url: Optional[str] = None     # e.g., "http://host:8000/v1"
+    llm_model: Optional[str] = None        # e.g., "Qwen/Qwen3-Coder-30B-A3B"
+    embedding_provider: str = "openai"     # "openai" | "vllm" | "ollama"
+    embedding_base_url: Optional[str] = None  # e.g., "http://host:8001/v1"
+    embedding_model: str = "text-embedding-3-small"
 
     def __post_init__(self):
         """Validate and normalize configuration values."""
@@ -149,6 +169,14 @@ class GraphitiConfig:
             raise ValueError(f"timeout must be positive, got {self.timeout}")
         if self.graph_store not in ("neo4j", "falkordb"):
             raise ValueError(f"graph_store must be 'neo4j' or 'falkordb', got '{self.graph_store}'")
+        if self.llm_provider not in VALID_PROVIDERS:
+            raise ValueError(f"llm_provider must be one of {VALID_PROVIDERS}, got '{self.llm_provider}'")
+        if self.embedding_provider not in VALID_PROVIDERS:
+            raise ValueError(f"embedding_provider must be one of {VALID_PROVIDERS}, got '{self.embedding_provider}'")
+        if self.llm_provider in ("vllm", "ollama") and not self.llm_base_url:
+            raise ValueError(f"llm_base_url is required when llm_provider is '{self.llm_provider}'")
+        if self.embedding_provider in ("vllm", "ollama") and not self.embedding_base_url:
+            raise ValueError(f"embedding_base_url is required when embedding_provider is '{self.embedding_provider}'")
 
         # Validate and normalize project_id if provided
         if self.project_id is not None:
@@ -497,28 +525,34 @@ class GraphitiClient:
 
         Performs initialization checks:
         1. Checks if config is enabled
-        2. Checks for OPENAI_API_KEY environment variable
+        2. Checks for OPENAI_API_KEY (only when using OpenAI providers)
         3. Checks if graphiti-core is available
-        4. Attempts to establish connection and build indices
+        4. Attempts to establish connection and build indices (with timeout)
 
         Returns:
             True if initialization successful, False otherwise.
             Returns False and logs warning if:
             - Config disabled
-            - OPENAI_API_KEY not set
+            - OPENAI_API_KEY not set (when using OpenAI providers)
             - graphiti-core not installed
             - Connection fails
             - Timeout occurs
         """
+        import asyncio
+
         # Check if disabled in config
         if not self.config.enabled:
             logger.warning("Graphiti disabled in configuration")
             self._connected = False
             return False
 
-        # Check for OPENAI_API_KEY
-        if not os.environ.get("OPENAI_API_KEY"):
-            logger.warning("OPENAI_API_KEY not set, Graphiti requires OpenAI for embeddings")
+        # Check for OPENAI_API_KEY only when using OpenAI providers
+        uses_openai = (
+            self.config.llm_provider == "openai"
+            or self.config.embedding_provider == "openai"
+        )
+        if uses_openai and not os.environ.get("OPENAI_API_KEY"):
+            logger.warning("OPENAI_API_KEY not set, required when using OpenAI providers")
             self._connected = False
             return False
 
@@ -528,7 +562,7 @@ class GraphitiClient:
             self._connected = False
             return False
 
-        # Try to establish connection
+        # Try to establish connection with timeout
         try:
             from graphiti_core import Graphiti
 
@@ -557,8 +591,13 @@ class GraphitiClient:
                     self.config.neo4j_password,
                 )
 
-            # Build indices and constraints (safe to call multiple times)
-            await self._graphiti.build_indices_and_constraints()
+            # Build indices and constraints with timeout to prevent infinite
+            # retry loops when the database is unreachable (the Neo4j driver
+            # retries with exponential backoff for ~10 minutes by default)
+            await asyncio.wait_for(
+                self._graphiti.build_indices_and_constraints(),
+                timeout=self.config.timeout,
+            )
 
             self._connected = True
             if self.config.graph_store == "falkordb":
@@ -570,6 +609,20 @@ class GraphitiClient:
                 logger.info(f"Connected to Neo4j via graphiti-core at {self.config.neo4j_uri}")
             return True
 
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"Graphiti connection timed out after {self.config.timeout}s. "
+                f"Is the database running?"
+            )
+            self._connected = False
+            # Clean up the partially-created Graphiti instance
+            if self._graphiti:
+                try:
+                    await self._graphiti.close()
+                except Exception:
+                    pass
+                self._graphiti = None
+            return False
         except TimeoutError as e:
             logger.warning(f"Graphiti connection timeout: {e}")
             self._connected = False
@@ -1779,6 +1832,12 @@ def _try_lazy_init() -> Optional[GraphitiClient]:
             graph_store=settings.graph_store,
             falkordb_host=settings.falkordb_host,
             falkordb_port=settings.falkordb_port,
+            llm_provider=settings.llm_provider,
+            llm_base_url=settings.llm_base_url,
+            llm_model=settings.llm_model,
+            embedding_provider=settings.embedding_provider,
+            embedding_base_url=settings.embedding_base_url,
+            embedding_model=settings.embedding_model,
         )
 
         _factory = GraphitiClientFactory(config)

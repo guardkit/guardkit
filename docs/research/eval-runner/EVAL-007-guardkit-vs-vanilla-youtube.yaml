@@ -1,0 +1,87 @@
+eval_id: EVAL-007
+title: "GuardKit vs Vanilla — YouTube channel stats endpoint"
+version: "1.0"
+type: guardkit_vs_vanilla
+priority: high
+tags: [guardkit-vs-vanilla, youtube-mcp, fastapi, comparison]
+
+setup:
+  workspace_template: guardkit-project        # GuardKit arm starting point
+  vanilla_workspace_template: plain-project   # Vanilla arm — same codebase, no GuardKit config
+  timeout_minutes: 90                         # 45 min per arm
+  max_turns_per_arm: 100
+
+# The shared input — resolved once and written to input.txt in both workspaces
+input:
+  source: text
+  text: |
+    Title: Add YouTube channel statistics endpoint
+
+    Description:
+    We need to expose YouTube channel metrics through our API so the Ship's Computer
+    dashboard can display them. The endpoint should aggregate subscriber count,
+    total view count, and video count for a given YouTube channel ID.
+    
+    The YouTube data comes from the YouTube Data API v3. We already have an API key
+    configured in the environment as YOUTUBE_API_KEY.
+
+    Acceptance criteria:
+    - GET /youtube/channel/{channel_id}/stats returns 200 with
+      {subscribers: int, views: int, videos: int}
+    - Returns 404 if the channel_id is not found on YouTube
+    - Returns 503 with a Retry-After header if the YouTube API is unavailable
+    - Responses are cached for 1 hour (don't hammer the YouTube API)
+    - An integration test exists against a known public channel
+
+# Scoring criteria — all scored as DELTAS (GuardKit vs Vanilla)
+criteria:
+  - id: c1
+    description: >
+      GuardKit arm surfaced explicit assumptions that vanilla arm made silently.
+      (e.g. error response body format, cache backend choice, auth requirements)
+    weight: 0.25
+    check_type: llm_judge
+
+  - id: c2
+    description: "GuardKit arm produced higher or equal test coverage than vanilla"
+    weight: 0.20
+    check_type: deterministic
+
+  - id: c3
+    description: "GuardKit arm code has fewer lint violations than vanilla"
+    weight: 0.20
+    check_type: deterministic
+
+  - id: c4
+    description: >
+      GuardKit arm output has clearer architectural rationale — explicit decisions
+      visible in ADRs, design comments, system-plan output, or CLAUDE.md updates.
+    weight: 0.20
+    check_type: llm_judge
+
+  - id: c5
+    description: "Both arms produced a runnable result (not just scaffolding or stubs)"
+    weight: 0.15
+    check_type: deterministic
+
+pass_threshold: 0.65
+escalate_threshold: 0.40
+
+judge_context: |
+  This is a GuardKit vs Vanilla comparison eval. Score each criterion as a DELTA:
+    1.0 = GuardKit clearly better
+    0.5 = Roughly equal / tie
+    0.0 = Vanilla equal or better
+  
+  For c1 (assumption surfacing):
+    Look for assumptions.md in the GuardKit workspace — count entries.
+    Look at vanilla SUMMARY.md for "silent assumptions" listed by the eval agent.
+    Score based on whether GuardKit explicitly surfaced decisions that vanilla made silently.
+  
+  For c4 (architectural rationale):
+    Look for: system-plan output files, ADR files, design comments in code,
+    CLAUDE.md updates documenting decisions, feature-spec output with rationale.
+    Vanilla will typically just implement without documenting why.
+  
+  A tie on c5 (both runnable) = 0.5 — this criterion rewards GuardKit only if
+  vanilla fails to produce a runnable result while GuardKit succeeds, or vice versa.

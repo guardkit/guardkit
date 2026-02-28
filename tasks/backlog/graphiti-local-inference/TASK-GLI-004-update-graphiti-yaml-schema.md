@@ -41,7 +41,7 @@ Update the `.guardkit/graphiti.yaml` file with new local inference provider fiel
 
 ## Acceptance Criteria
 
-- [ ] Add new fields to `.guardkit/graphiti.yaml` with comments:
+- [x] Add new fields to `.guardkit/graphiti.yaml` with comments:
   ```yaml
   # LLM provider for Graphiti entity extraction
   # Options: openai (default), vllm, ollama
@@ -55,9 +55,9 @@ Update the `.guardkit/graphiti.yaml` file with new local inference provider fiel
   embedding_base_url: http://promaxgb10-41b1:8001/v1
   embedding_model: nomic-ai/nomic-embed-text-v1.5
   ```
-- [ ] Update `load_graphiti_config()` to read new fields with defaults
-- [ ] Ensure backward compatibility: YAML files without new fields default to "openai"
-- [ ] Update `.guardkit/graphiti.yaml` comments to document the new options
+- [x] Update `load_graphiti_config()` to read new fields with defaults
+- [x] Ensure backward compatibility: YAML files without new fields default to "openai"
+- [x] Update `.guardkit/graphiti.yaml` comments to document the new options
 
 ## Key Files
 

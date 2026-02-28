@@ -19,6 +19,7 @@ import asyncio
 import json
 import logging
 import os
+import warnings
 from pathlib import Path
 from typing import Optional
 
@@ -53,6 +54,19 @@ console = Console()
 logger = logging.getLogger(__name__)
 
 
+def _run_async(coro) -> None:
+    """Run an async coroutine, suppressing harmless cleanup warnings.
+
+    When asyncio.wait_for() cancels a timed-out Neo4j driver connection,
+    the driver's internal coroutines may be garbage-collected without being
+    awaited, producing noisy 'coroutine was never awaited' RuntimeWarnings.
+    These are harmless and suppressed here.
+    """
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="coroutine.*was never awaited")
+        asyncio.run(coro)
+
+
 def _get_client_and_config() -> tuple[GraphitiClient, GraphitiSettings]:
     """Create and return Graphiti client and configuration.
 
@@ -70,6 +84,12 @@ def _get_client_and_config() -> tuple[GraphitiClient, GraphitiSettings]:
         graph_store=settings.graph_store,
         falkordb_host=settings.falkordb_host,
         falkordb_port=settings.falkordb_port,
+        llm_provider=settings.llm_provider,
+        llm_base_url=settings.llm_base_url,
+        llm_model=settings.llm_model,
+        embedding_provider=settings.embedding_provider,
+        embedding_base_url=settings.embedding_base_url,
+        embedding_model=settings.embedding_model,
     )
     client = GraphitiClient(config)
     return client, settings
@@ -417,7 +437,7 @@ def seed(force: bool):
 
     Use --force to re-seed even if seeding has already been completed.
     """
-    asyncio.run(_cmd_seed(force))
+    _run_async(_cmd_seed(force))
 
 
 @graphiti.command()
@@ -435,7 +455,7 @@ def status(verbose: bool):
 
     Use --verbose to show all groups even if empty.
     """
-    asyncio.run(_cmd_status(verbose))
+    _run_async(_cmd_status(verbose))
 
 
 @graphiti.command()
@@ -453,7 +473,7 @@ def verify(verbose: bool):
 
     Use --verbose to see detailed query results.
     """
-    asyncio.run(_cmd_verify(verbose))
+    _run_async(_cmd_verify(verbose))
 
 
 @graphiti.command("seed-adrs")
@@ -477,7 +497,7 @@ def seed_adrs(force: bool):
 
     Use --force to re-seed even if ADRs have already been seeded.
     """
-    asyncio.run(_cmd_seed_adrs(force))
+    _run_async(_cmd_seed_adrs(force))
 
 
 @graphiti.command("add-context")
@@ -550,7 +570,7 @@ def add_context(path: str, parser_type: Optional[str], force: bool, dry_run: boo
     if verbose and quiet:
         raise click.UsageError("Options --verbose and --quiet are mutually exclusive")
 
-    asyncio.run(_cmd_add_context(path, parser_type, force, dry_run, pattern, verbose, quiet, delay))
+    _run_async(_cmd_add_context(path, parser_type, force, dry_run, pattern, verbose, quiet, delay))
 
 
 async def _cmd_add_context(
@@ -1058,7 +1078,7 @@ def capture(interactive: bool, focus: Optional[str], max_questions: int):
         console.print("Example: guardkit graphiti capture --interactive")
         return
 
-    asyncio.run(_cmd_capture(focus, max_questions))
+    _run_async(_cmd_capture(focus, max_questions))
 
 
 @graphiti.command()
@@ -1114,7 +1134,7 @@ def clear(confirm: bool, system_only: bool, project_only: bool, dry_run: bool, f
         - {project}__feature_specs
         - {project}__project_decisions
     """
-    asyncio.run(_cmd_clear(confirm, system_only, project_only, dry_run, force))
+    _run_async(_cmd_clear(confirm, system_only, project_only, dry_run, force))
 
 
 async def _cmd_show(knowledge_id: str) -> None:
@@ -1429,7 +1449,7 @@ def show(knowledge_id: str):
         guardkit graphiti show no-graphql-constraint
         guardkit graphiti show testing-guide
     """
-    asyncio.run(_cmd_show(knowledge_id))
+    _run_async(_cmd_show(knowledge_id))
 
 
 @graphiti.command("search")
@@ -1463,7 +1483,7 @@ def search(query: str, group: Optional[str], limit: int):
         guardkit graphiti search "walking skeleton" --limit 5
         guardkit graphiti search "JWT" -g architecture_decisions -n 3
     """
-    asyncio.run(_cmd_search(query, group, limit))
+    _run_async(_cmd_search(query, group, limit))
 
 
 async def _cmd_list(category: str) -> None:
@@ -1590,4 +1610,4 @@ def list_knowledge(category: str):
         guardkit graphiti list adrs
         guardkit graphiti list all
     """
-    asyncio.run(_cmd_list(category))
+    _run_async(_cmd_list(category))

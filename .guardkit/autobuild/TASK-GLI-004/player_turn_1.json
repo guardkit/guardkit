@@ -1,0 +1,81 @@
+{
+  "task_id": "TASK-GLI-004",
+  "turn": 1,
+  "files_modified": [
+    ".guardkit/graphiti.yaml",
+    "guardkit/knowledge/config.py",
+    "tests/knowledge/test_config.py"
+  ],
+  "files_created": [],
+  "tests_written": [
+    "tests/knowledge/test_config.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "57 passed in 1.81s (31 pre-existing + 26 new for local inference provider fields)",
+  "implementation_notes": "Added 5 new fields to GraphitiSettings dataclass: llm_provider (str, default 'openai'), llm_base_url (Optional[str], default None), llm_model (Optional[str], default None), embedding_provider (str, default 'openai'), embedding_base_url (Optional[str], default None). Validation in __post_init__ checks llm_provider and embedding_provider are one of ('openai', 'vllm', 'ollama') and type-checks all new fields. load_graphiti_config() updated with defaults, field_types for YAML loading, and env_overrides for 5 new env vars (LLM_PROVIDER, LLM_BASE_URL, LLM_MODEL, EMBEDDING_PROVIDER, EMBEDDING_BASE_URL). Empty string is treated as None for all Optional fields (llm_base_url, llm_model, embedding_base_url) in both YAML and env var paths. The graphiti.yaml updated to add new fields before group_ids with descriptive comments; embedding_model comment updated to mention provider support.",
+  "concerns": [],
+  "requirements_addressed": [
+    "Added llm_provider, llm_base_url, llm_model, embedding_provider, embedding_base_url fields to GraphitiSettings",
+    "Provider validation: must be one of 'openai', 'vllm', 'ollama'",
+    "Type validation for all new fields",
+    "load_graphiti_config() reads new fields from YAML with type coercion",
+    "load_graphiti_config() supports env var overrides: LLM_PROVIDER, LLM_BASE_URL, LLM_MODEL, EMBEDDING_PROVIDER, EMBEDDING_BASE_URL",
+    "Empty string treated as None for Optional fields (llm_base_url, llm_model, embedding_base_url)",
+    "Backward compatibility: YAML files without new fields default to 'openai' providers and None for URLs/models",
+    "All 31 pre-existing tests continue to pass",
+    "Updated .guardkit/graphiti.yaml with new provider fields and descriptive comments",
+    "Updated module docstring to document new environment variables"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Update .guardkit/graphiti.yaml to add llm_provider, llm_base_url, llm_model, embedding_provider, embedding_base_url fields before group_ids",
+      "status": "complete",
+      "evidence": "Added all 5 fields with descriptive comments and correct values (llm_provider: vllm, llm_base_url: http://promaxgb10-41b1:8000/v1, llm_model: Qwen/Qwen3-Coder-30B-A3B, embedding_provider: vllm, embedding_base_url: http://promaxgb10-41b1:8001/v1). Kept embedding_model in place with updated comment.",
+      "test_file": null,
+      "implementation_files": [".guardkit/graphiti.yaml"]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Add new fields to GraphitiSettings dataclass with sensible defaults",
+      "status": "complete",
+      "evidence": "Added llm_provider='openai', llm_base_url=None, llm_model=None, embedding_provider='openai', embedding_base_url=None to GraphitiSettings. All defaults preserve backward compatibility.",
+      "test_file": "tests/knowledge/test_config.py",
+      "implementation_files": ["guardkit/knowledge/config.py"]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Add validation in __post_init__ for llm_provider and embedding_provider (must be openai/vllm/ollama) and type checks",
+      "status": "complete",
+      "evidence": "Added type checks for all 5 new fields and value validation ensuring llm_provider and embedding_provider are in ('openai', 'vllm', 'ollama'). Invalid values raise ValueError with descriptive messages.",
+      "test_file": "tests/knowledge/test_config.py",
+      "implementation_files": ["guardkit/knowledge/config.py"]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Update load_graphiti_config() to read new fields from YAML and env vars",
+      "status": "complete",
+      "evidence": "Added all 5 fields to config_data defaults, field_types dict (for YAML loading with type coercion), and env_overrides dict (LLM_PROVIDER, LLM_BASE_URL, LLM_MODEL, EMBEDDING_PROVIDER, EMBEDDING_BASE_URL). Empty string treated as None for llm_base_url, llm_model, embedding_base_url in both YAML and env paths.",
+      "test_file": "tests/knowledge/test_config.py",
+      "implementation_files": ["guardkit/knowledge/config.py"]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Backward compatibility: YAML without new fields defaults to openai and None",
+      "status": "complete",
+      "evidence": "Defaults in config_data are 'openai' for providers and None for Optional URL/model fields. Existing tests all continue to pass (31 tests). New test test_yaml_without_new_fields_defaults_to_openai explicitly verifies this.",
+      "test_file": "tests/knowledge/test_config.py",
+      "implementation_files": ["guardkit/knowledge/config.py"]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Update module docstring to document new environment variables",
+      "status": "complete",
+      "evidence": "Added LLM_PROVIDER, LLM_BASE_URL, LLM_MODEL, EMBEDDING_PROVIDER, EMBEDDING_BASE_URL to the module docstring environment variables section.",
+      "test_file": null,
+      "implementation_files": ["guardkit/knowledge/config.py"]
+    }
+  ]
+}

@@ -98,6 +98,95 @@ class TestGraphitiConfig:
         assert config.host == "localhost"
         assert config.port == 8000
 
+    def test_config_default_provider_values(self):
+        """Test default provider configuration values."""
+        config = GraphitiConfig()
+
+        assert config.llm_provider == "openai"
+        assert config.llm_base_url is None
+        assert config.llm_model is None
+        assert config.embedding_provider == "openai"
+        assert config.embedding_base_url is None
+        assert config.embedding_model == "text-embedding-3-small"
+
+    def test_config_vllm_provider_valid(self):
+        """Test vllm provider with required base_url is accepted."""
+        config = GraphitiConfig(
+            llm_provider="vllm",
+            llm_base_url="http://host:8000/v1",
+            llm_model="Qwen/Qwen3-Coder-30B-A3B",
+        )
+
+        assert config.llm_provider == "vllm"
+        assert config.llm_base_url == "http://host:8000/v1"
+        assert config.llm_model == "Qwen/Qwen3-Coder-30B-A3B"
+
+    def test_config_ollama_embedding_provider_valid(self):
+        """Test ollama embedding provider with required base_url is accepted."""
+        config = GraphitiConfig(
+            embedding_provider="ollama",
+            embedding_base_url="http://host:11434/v1",
+            embedding_model="nomic-embed-text",
+        )
+
+        assert config.embedding_provider == "ollama"
+        assert config.embedding_base_url == "http://host:11434/v1"
+        assert config.embedding_model == "nomic-embed-text"
+
+    def test_config_invalid_llm_provider(self):
+        """Test invalid llm_provider raises ValueError."""
+        with pytest.raises(ValueError, match="llm_provider must be one of"):
+            GraphitiConfig(llm_provider="bedrock")
+
+    def test_config_invalid_embedding_provider(self):
+        """Test invalid embedding_provider raises ValueError."""
+        with pytest.raises(ValueError, match="embedding_provider must be one of"):
+            GraphitiConfig(embedding_provider="azure")
+
+    def test_config_vllm_missing_base_url(self):
+        """Test vllm provider without base_url raises ValueError."""
+        with pytest.raises(ValueError, match="llm_base_url is required"):
+            GraphitiConfig(llm_provider="vllm")
+
+    def test_config_ollama_missing_embedding_base_url(self):
+        """Test ollama embedding provider without base_url raises ValueError."""
+        with pytest.raises(ValueError, match="embedding_base_url is required"):
+            GraphitiConfig(embedding_provider="ollama")
+
+    def test_config_provider_fields_immutable(self):
+        """Test that new provider fields are immutable (frozen dataclass)."""
+        config = GraphitiConfig()
+
+        with pytest.raises(AttributeError):
+            config.llm_provider = "vllm"
+        with pytest.raises(AttributeError):
+            config.embedding_provider = "vllm"
+        with pytest.raises(AttributeError):
+            config.embedding_model = "other-model"
+
+    def test_config_both_providers_local(self):
+        """Test both LLM and embedding providers set to local inference."""
+        config = GraphitiConfig(
+            llm_provider="vllm",
+            llm_base_url="http://host:8000/v1",
+            llm_model="Qwen/Qwen3-Coder-30B-A3B",
+            embedding_provider="vllm",
+            embedding_base_url="http://host:8001/v1",
+            embedding_model="BAAI/bge-m3",
+        )
+
+        assert config.llm_provider == "vllm"
+        assert config.embedding_provider == "vllm"
+        assert config.llm_base_url == "http://host:8000/v1"
+        assert config.embedding_base_url == "http://host:8001/v1"
+
+    def test_config_openai_provider_no_base_url_required(self):
+        """Test openai provider does not require base_url."""
+        config = GraphitiConfig(llm_provider="openai")
+
+        assert config.llm_provider == "openai"
+        assert config.llm_base_url is None
+
 
 class TestGraphitiClientInitialization:
     """Test GraphitiClient initialization and basic properties."""
