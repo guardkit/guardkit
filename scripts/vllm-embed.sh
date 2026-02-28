@@ -34,12 +34,12 @@ MODEL_PRESET="${1:-nomic}"
 case "$MODEL_PRESET" in
   nomic|default|"")
     MODEL="nomic-ai/nomic-embed-text-v1.5"
-    EXTRA_ARGS="--runner pooling --trust-remote-code --served-model-name $(basename "$MODEL")"
+    EXTRA_ARGS="--runner pooling --trust-remote-code --served-model-name $(basename "$MODEL") $MODEL"
     echo "Model: nomic-embed-text-v1.5 (137M, ~274MB, 8192 context)"
     ;;
   nemotron)
     MODEL="nvidia/llama-nemotron-embed-1b-v2"
-    EXTRA_ARGS="--runner pooling --pooler-config {\"pooling_type\":\"MEAN\"} --trust-remote-code --served-model-name $(basename "$MODEL")"
+    EXTRA_ARGS="--runner pooling --pooler-config {\"pooling_type\":\"MEAN\"} --trust-remote-code --served-model-name $(basename "$MODEL") $MODEL"
     echo "Model: nvidia/llama-nemotron-embed-1b-v2 (1B, ~2GB, Matryoshka embeddings)"
     echo "WARNING: Requires transformers>=5.0.0.dev0; container 26.01 has 4.57.1 — likely to fail."
     ;;
@@ -77,14 +77,19 @@ echo "========================================"
 echo ""
 
 # Pre-flight GPU memory check
+# Note: GB10/Grace Hopper unified memory reports [N/A] for memory queries
 if command -v nvidia-smi &>/dev/null; then
-  FREE_MEM_MIB=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits | head -1)
-  TOTAL_MEM_MIB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
-  REQUESTED_MIB=$(echo "$TOTAL_MEM_MIB * $GPU_UTIL" | bc | cut -d. -f1)
-  if [ "$FREE_MEM_MIB" -lt "$REQUESTED_MIB" ] 2>/dev/null; then
-    echo "WARNING: Only ${FREE_MEM_MIB} MiB free, but requesting ${REQUESTED_MIB} MiB (${GPU_UTIL} of ${TOTAL_MEM_MIB} MiB)"
-    echo "  The LLM server may be using most GPU memory."
-    echo "  Try: VLLM_EMBED_GPU_UTIL=0.02 $0 $*"
+  FREE_MEM_MIB=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits | head -1 | tr -d ' ')
+  TOTAL_MEM_MIB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1 | tr -d ' ')
+  if [[ "$FREE_MEM_MIB" =~ ^[0-9]+$ ]] && [[ "$TOTAL_MEM_MIB" =~ ^[0-9]+$ ]]; then
+    REQUESTED_MIB=$(echo "$TOTAL_MEM_MIB * $GPU_UTIL" | bc | cut -d. -f1)
+    if [ "$FREE_MEM_MIB" -lt "$REQUESTED_MIB" ] 2>/dev/null; then
+      echo "WARNING: Only ${FREE_MEM_MIB} MiB free, but requesting ${REQUESTED_MIB} MiB (${GPU_UTIL} of ${TOTAL_MEM_MIB} MiB)"
+      echo "  The LLM server may be using most GPU memory."
+      echo "  Try: VLLM_EMBED_GPU_UTIL=0.02 $0 $*"
+    fi
+  else
+    echo "Note: GPU memory query not supported (unified memory). Skipping pre-flight check."
   fi
 fi
 
