@@ -2,11 +2,13 @@
 id: TASK-GLI-002
 title: Extend GraphitiConfig for local inference provider settings
 task_type: implementation
-status: in_review
+status: completed
 created: 2026-02-22T23:45:00Z
-updated: 2026-02-27T00:00:00Z
-previous_state: in_progress
-state_transition_reason: "All quality gates passed - task-work complete"
+updated: 2026-02-28T00:00:00Z
+completed: 2026-02-28T00:00:00Z
+previous_state: in_review
+state_transition_reason: "All acceptance criteria verified - task complete"
+completed_location: tasks/completed/TASK-GLI-002/
 priority: high
 tags: [graphiti, config, vllm, embeddings]
 complexity: 4
@@ -32,18 +34,18 @@ Add fields to `GraphitiConfig` (frozen dataclass) and `load_graphiti_config()` t
 
 ## Acceptance Criteria
 
-- [ ] Add new fields to `GraphitiConfig`:
+- [x] Add new fields to `GraphitiConfig`:
   - `llm_provider: str = "openai"` — "openai" | "vllm" | "ollama"
   - `llm_base_url: Optional[str] = None` — e.g., "http://promaxgb10-41b1:8000/v1"
   - `llm_model: Optional[str] = None` — e.g., "Qwen/Qwen3-Coder-30B-A3B"
   - `embedding_provider: str = "openai"` — "openai" | "vllm" | "ollama"
   - `embedding_base_url: Optional[str] = None` — e.g., "http://promaxgb10-41b1:8001/v1"
   - `embedding_model: str = "text-embedding-3-small"` — model name (already exists, just ensure it's used)
-- [ ] Validate provider values in `__post_init__`
-- [ ] Update `load_graphiti_config()` in `config.py` to read new YAML fields
-- [ ] Support environment variable overrides: `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_MODEL`, `EMBEDDING_PROVIDER`, `EMBEDDING_BASE_URL`
-- [ ] Backward compatible: existing configs without new fields default to OpenAI
-- [ ] Tests: unit tests for new config fields, validation, env var overrides
+- [x] Validate provider values in `__post_init__`
+- [x] Update `load_graphiti_config()` in `config.py` to read new YAML fields
+- [x] Support environment variable overrides: `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_MODEL`, `EMBEDDING_PROVIDER`, `EMBEDDING_BASE_URL`
+- [x] Backward compatible: existing configs without new fields default to OpenAI
+- [x] Tests: unit tests for new config fields, validation, env var overrides
 
 ## Key Files
 

@@ -16,7 +16,7 @@
 #
 # Environment variables (override defaults):
 #   VLLM_EMBED_PORT=8001        Server port
-#   VLLM_EMBED_GPU_UTIL=0.15    GPU memory utilization (0.0-1.0)
+#   VLLM_EMBED_GPU_UTIL=0.03    GPU memory utilization (0.0-1.0)
 #   VLLM_IMAGE=nvcr.io/nvidia/vllm:26.01-py3  Docker image
 #   HF_TOKEN=...                Hugging Face token (for gated models)
 
@@ -24,7 +24,7 @@ set -euo pipefail
 
 # --- Configuration ---
 PORT="${VLLM_EMBED_PORT:-8001}"
-GPU_UTIL="${VLLM_EMBED_GPU_UTIL:-0.15}"
+GPU_UTIL="${VLLM_EMBED_GPU_UTIL:-0.03}"
 IMAGE="${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.01-py3}"
 CONTAINER_NAME="vllm-embedding"
 
@@ -34,12 +34,12 @@ MODEL_PRESET="${1:-nomic}"
 case "$MODEL_PRESET" in
   nomic|default|"")
     MODEL="nomic-ai/nomic-embed-text-v1.5"
-    EXTRA_ARGS="--runner pooling --trust-remote-code"
+    EXTRA_ARGS="--runner pooling --trust-remote-code --served-model-name $(basename "$MODEL")"
     echo "Model: nomic-embed-text-v1.5 (137M, ~274MB, 8192 context)"
     ;;
   nemotron)
     MODEL="nvidia/llama-nemotron-embed-1b-v2"
-    EXTRA_ARGS="--runner pooling --pooler-config {\"pooling_type\":\"MEAN\"} --trust-remote-code"
+    EXTRA_ARGS="--runner pooling --pooler-config {\"pooling_type\":\"MEAN\"} --trust-remote-code --served-model-name $(basename "$MODEL")"
     echo "Model: nvidia/llama-nemotron-embed-1b-v2 (1B, ~2GB, Matryoshka embeddings)"
     echo "WARNING: Requires transformers>=5.0.0.dev0; container 26.01 has 4.57.1 — likely to fail."
     ;;
@@ -76,6 +76,18 @@ echo "  GPU util: $GPU_UTIL"
 echo "========================================"
 echo ""
 
+# Pre-flight GPU memory check
+if command -v nvidia-smi &>/dev/null; then
+  FREE_MEM_MIB=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits | head -1)
+  TOTAL_MEM_MIB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
+  REQUESTED_MIB=$(echo "$TOTAL_MEM_MIB * $GPU_UTIL" | bc | cut -d. -f1)
+  if [ "$FREE_MEM_MIB" -lt "$REQUESTED_MIB" ] 2>/dev/null; then
+    echo "WARNING: Only ${FREE_MEM_MIB} MiB free, but requesting ${REQUESTED_MIB} MiB (${GPU_UTIL} of ${TOTAL_MEM_MIB} MiB)"
+    echo "  The LLM server may be using most GPU memory."
+    echo "  Try: VLLM_EMBED_GPU_UTIL=0.02 $0 $*"
+  fi
+fi
+
 docker run -d \
   --name "$CONTAINER_NAME" \
   --gpus all \
@@ -101,7 +113,7 @@ echo "  Logs:   docker logs -f $CONTAINER_NAME"
 echo "  Health: curl http://localhost:${PORT}/health"
 echo "  Models: curl http://localhost:${PORT}/v1/models"
 echo ""
-echo "Test embeddings:"
+echo "Test embeddings (both short and full model names work via --served-model-name):"
 echo "  curl http://localhost:${PORT}/v1/embeddings \\"
 echo "    -H 'Content-Type: application/json' \\"
 echo "    -d '{\"model\": \"$(basename "$MODEL")\", \"input\": \"Hello world\"}'"

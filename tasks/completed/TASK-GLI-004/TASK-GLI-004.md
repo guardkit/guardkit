@@ -2,9 +2,11 @@
 id: TASK-GLI-004
 title: Update .guardkit/graphiti.yaml schema and config loader
 task_type: implementation
-status: in_progress
+status: completed
 created: 2026-02-22 23:45:00+00:00
-updated: 2026-02-22 23:45:00+00:00
+updated: 2026-02-28T00:00:00Z
+completed: 2026-02-28T00:00:00Z
+completed_location: tasks/completed/TASK-GLI-004/
 priority: medium
 tags:
 - graphiti
