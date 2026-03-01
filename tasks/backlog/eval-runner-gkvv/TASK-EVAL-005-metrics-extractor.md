@@ -1,18 +1,51 @@
 ---
 id: TASK-EVAL-005
-title: "Implement MetricsExtractor for evidence file parsing"
+title: Implement MetricsExtractor for evidence file parsing
 task_type: feature
 parent_review: TASK-REV-EAE8
 feature_id: FEAT-GKVV
-status: pending
-created: 2026-03-01T00:00:00Z
+status: in_review
+created: 2026-03-01 00:00:00+00:00
 priority: high
-tags: [eval-runner, metrics, evidence]
+tags:
+- eval-runner
+- metrics
+- evidence
 complexity: 3
 wave: 2
 implementation_mode: task-work
 dependencies:
-  - TASK-EVAL-001
+- TASK-EVAL-001
+autobuild_state:
+  current_turn: 2
+  max_turns: 30
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-4296
+  base_branch: main
+  started_at: '2026-03-01T14:35:18.896171'
+  last_updated: '2026-03-01T14:49:11.926147'
+  turns:
+  - turn: 1
+    decision: feedback
+    feedback: "- Independent test verification failed:\n  Error detail:\ntests/eval/test_eval_agent_invoker.py::TestSDKInvocation::test_sdk_options_include_max_turns\
+      \ FAILED [ 26%]\ntests/eval/test_eval_agent_invoker.py::TestEvalAgentError::test_eval_agent_error_is_exception\
+      \ PASSED [ 27%]\ntests/eval/test_eval_agent_invoker.py::TestEvalAgentError::test_eval_agent_error_preserves_cause\
+      \ PASSED [ 28%]\ntests/eval/test_input_resolver.py::TestTextSource::test_text_source_returns_text_directly\
+      \ PASSED [ 30%]\ntests/eval/test_input_resolver.py::TestTextSource::test_text_source_preserves_multiline\
+      \ PASSED [ 31%]\nResult:\nFAILED tests/eval/test_eval_agent_invoker.py::TestHeartbeatAndCleanup::test_cleanup_handler_installed\
+      \ - AttributeError: <module 'guardkit.eval.agent_invoker' from '/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-4296/guardkit/eval/agent_invoker.py'>\
+      \ does not have the attribute '_import_sdk'\nFAILED tests/eval/test_eval_agent_invoker.py::TestSDKInvocation::test_invoke_calls_sdk_query\
+      \ - AttributeError: <modu..."
+    timestamp: '2026-03-01T14:35:18.896171'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
+  - turn: 2
+    decision: approve
+    feedback: null
+    timestamp: '2026-03-01T14:42:02.387913'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Implement MetricsExtractor for Evidence File Parsing

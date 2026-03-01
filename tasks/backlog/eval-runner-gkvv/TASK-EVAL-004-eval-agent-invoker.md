@@ -1,18 +1,36 @@
 ---
 id: TASK-EVAL-004
-title: "Implement EvalAgentInvoker mirroring agent_invoker.py patterns"
+title: Implement EvalAgentInvoker mirroring agent_invoker.py patterns
 task_type: feature
 parent_review: TASK-REV-EAE8
 feature_id: FEAT-GKVV
-status: pending
-created: 2026-03-01T00:00:00Z
+status: in_review
+created: 2026-03-01 00:00:00+00:00
 priority: high
-tags: [eval-runner, agent-invoker, sdk]
+tags:
+- eval-runner
+- agent-invoker
+- sdk
 complexity: 5
 wave: 2
 implementation_mode: task-work
 dependencies:
-  - TASK-EVAL-002
+- TASK-EVAL-002
+autobuild_state:
+  current_turn: 1
+  max_turns: 30
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-4296
+  base_branch: main
+  started_at: '2026-03-01T14:35:18.894249'
+  last_updated: '2026-03-01T14:50:48.619940'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-03-01T14:35:18.894249'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Implement EvalAgentInvoker Mirroring agent_invoker.py Patterns

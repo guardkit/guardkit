@@ -1,18 +1,37 @@
 ---
 id: TASK-EVAL-008
-title: "Create CLI command, workspace templates, and EVAL-007 brief"
+title: Create CLI command, workspace templates, and EVAL-007 brief
 task_type: scaffolding
 parent_review: TASK-REV-EAE8
 feature_id: FEAT-GKVV
-status: pending
-created: 2026-03-01T00:00:00Z
+status: in_review
+created: 2026-03-01 00:00:00+00:00
 priority: high
-tags: [eval-runner, cli, templates, brief]
+tags:
+- eval-runner
+- cli
+- templates
+- brief
 complexity: 4
 wave: 4
 implementation_mode: task-work
 dependencies:
-  - TASK-EVAL-007
+- TASK-EVAL-007
+autobuild_state:
+  current_turn: 1
+  max_turns: 30
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-4296
+  base_branch: main
+  started_at: '2026-03-01T15:24:05.319993'
+  last_updated: '2026-03-01T15:32:13.454121'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-03-01T15:24:05.319993'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Create CLI Command, Workspace Templates, and EVAL-007 Brief

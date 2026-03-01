@@ -4,7 +4,7 @@ description: Standalone A/B comparison pipeline that measures whether GuardKit p
   measurably better results than plain Claude Code. Phase A of phased hybrid approach
   (CLI first, NATS later).
 created: '2026-03-01T14:12:22.874546'
-status: planned
+status: failed
 complexity: 6
 estimated_tasks: 10
 tasks:
@@ -13,49 +13,89 @@ tasks:
   file_path: tasks/backlog/eval-runner-gkvv/TASK-EVAL-001-eval-schemas.md
   complexity: 3
   dependencies: []
-  status: pending
-  description: ''
+  status: completed
   implementation_mode: direct
   estimated_minutes: 33
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-03-01T14:28:53.965725'
+  completed_at: '2026-03-01T14:35:14.960697'
 - id: TASK-EVAL-002
   name: Workspace Fork Support
   file_path: tasks/backlog/eval-runner-gkvv/TASK-EVAL-002-eval-workspace-fork.md
   complexity: 4
   dependencies: []
-  status: pending
-  description: ''
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 50
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-03-01T14:28:53.969714'
+  completed_at: '2026-03-01T14:35:14.964367'
 - id: TASK-EVAL-003
   name: InputResolver (text, file, linear_ticket)
   file_path: tasks/backlog/eval-runner-gkvv/TASK-EVAL-003-input-resolver.md
   complexity: 3
   dependencies:
   - TASK-EVAL-001
-  status: pending
-  description: ''
+  status: completed
   implementation_mode: direct
   estimated_minutes: 33
+  requires_infrastructure: []
+  result:
+    total_turns: 2
+    final_decision: approved
+    error: null
+  turns_completed: 2
+  current_turn: 0
+  started_at: '2026-03-01T14:35:18.869703'
+  completed_at: '2026-03-01T14:50:48.621457'
 - id: TASK-EVAL-004
   name: EvalAgentInvoker
   file_path: tasks/backlog/eval-runner-gkvv/TASK-EVAL-004-eval-agent-invoker.md
   complexity: 5
   dependencies:
   - TASK-EVAL-002
-  status: pending
-  description: ''
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 75
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-03-01T14:35:18.874210'
+  completed_at: '2026-03-01T14:50:48.625168'
 - id: TASK-EVAL-005
   name: MetricsExtractor
   file_path: tasks/backlog/eval-runner-gkvv/TASK-EVAL-005-metrics-extractor.md
   complexity: 3
   dependencies:
   - TASK-EVAL-001
-  status: pending
-  description: ''
+  status: completed
   implementation_mode: direct
   estimated_minutes: 33
+  requires_infrastructure: []
+  result:
+    total_turns: 2
+    final_decision: approved
+    error: null
+  turns_completed: 2
+  current_turn: 0
+  started_at: '2026-03-01T14:35:18.878821'
+  completed_at: '2026-03-01T14:50:48.628791'
 - id: TASK-EVAL-006
   name: EvalJudge (deterministic + LLM)
   file_path: tasks/backlog/eval-runner-gkvv/TASK-EVAL-006-eval-judge.md
@@ -63,10 +103,18 @@ tasks:
   dependencies:
   - TASK-EVAL-001
   - TASK-EVAL-005
-  status: pending
-  description: ''
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 113
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-03-01T14:50:52.632857'
+  completed_at: '2026-03-01T15:08:08.352356'
 - id: TASK-EVAL-007
   name: GuardKitVsVanillaRunner
   file_path: tasks/backlog/eval-runner-gkvv/TASK-EVAL-007-gkvv-runner.md
@@ -77,20 +125,36 @@ tasks:
   - TASK-EVAL-004
   - TASK-EVAL-005
   - TASK-EVAL-006
-  status: pending
-  description: ''
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 113
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-03-01T15:08:12.353996'
+  completed_at: '2026-03-01T15:24:01.234617'
 - id: TASK-EVAL-008
   name: CLI + Templates + Brief
   file_path: tasks/backlog/eval-runner-gkvv/TASK-EVAL-008-cli-templates-brief.md
   complexity: 4
   dependencies:
   - TASK-EVAL-007
-  status: pending
-  description: ''
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 50
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-03-01T15:24:05.305223'
+  completed_at: '2026-03-01T15:39:19.201637'
 - id: TASK-EVAL-009
   name: Graphiti Storage
   file_path: tasks/backlog/eval-runner-gkvv/TASK-EVAL-009-graphiti-storage.md
@@ -98,10 +162,19 @@ tasks:
   dependencies:
   - TASK-EVAL-001
   - TASK-EVAL-007
-  status: pending
-  description: ''
+  status: failed
   implementation_mode: task-work
   estimated_minutes: 50
+  requires_infrastructure: []
+  result:
+    total_turns: 3
+    final_decision: unrecoverable_stall
+    error: Unrecoverable stall detected after 3 turn(s). AutoBuild cannot make forward
+      progress.
+  turns_completed: 3
+  current_turn: 0
+  started_at: '2026-03-01T15:24:05.309504'
+  completed_at: '2026-03-01T15:39:19.206122'
 - id: TASK-EVAL-010
   name: Integration Tests
   file_path: tasks/backlog/eval-runner-gkvv/TASK-EVAL-010-integration-tests.md
@@ -111,9 +184,14 @@ tasks:
   - TASK-EVAL-008
   - TASK-EVAL-009
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 75
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 orchestration:
   parallel_groups:
   - - TASK-EVAL-001
@@ -128,3 +206,19 @@ orchestration:
   - - TASK-EVAL-010
   estimated_duration_minutes: 625
   recommended_parallel: 3
+execution:
+  started_at: '2026-03-01T14:28:53.956618'
+  completed_at: '2026-03-01T15:39:19.211703'
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-4296
+  total_turns: 13
+  tasks_completed: 8
+  tasks_failed: 1
+  current_wave: 5
+  completed_waves:
+  - 1
+  - 2
+  - 3
+  - 4
+  last_updated: '2026-03-01T15:39:19.206129'
+  archived_at: null
+  archived_to: null
