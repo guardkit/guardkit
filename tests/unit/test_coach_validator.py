@@ -5123,10 +5123,15 @@ class TestInfrastructureFeedbackDetail:
         error_detail_content = description[error_detail_start:]
         assert len(error_detail_content) <= 500
 
-    def test_collection_error_feedback_includes_test_command(
+    def test_collection_error_with_all_gates_passed_conditionally_approves(
         self, tmp_worktree, task_work_results_dir
     ):
-        """collection_error failure class also gets test command and error detail."""
+        """collection_error + all gates passed → conditional approval (TASK-FIX-1D70).
+
+        Collection errors in independent verification are the Coach's test-scope
+        problem, not a Player code defect.  When all Player quality gates passed,
+        the task is conditionally approved with a warning rationale.
+        """
         self._make_results(task_work_results_dir)
         cmd = "pytest tests/test_feature.py -v"
         error_summary = "ERRORS during collection\nImportError: cannot import name 'X'"
@@ -5147,9 +5152,6 @@ class TestInfrastructureFeedbackDetail:
             ):
                 result = validator.validate("TASK-001", 1, make_task())
 
-        assert result.decision == "feedback"
-        issue = next(
-            i for i in result.issues if i["category"] == "test_verification"
-        )
-        assert f"Test command: {cmd}" in issue["description"]
-        assert "Error detail:" in issue["description"]
+        assert result.decision == "approve"
+        assert result.approved_without_independent_tests is True
+        assert "collection" in result.rationale.lower()

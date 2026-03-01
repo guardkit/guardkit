@@ -663,6 +663,7 @@ class CoachValidator:
             )
 
         conditional_approval = False
+        failure_class = None
         if not test_result.tests_passed:
             failure_class, failure_confidence = self._classify_test_failure(
                 test_result.raw_output,
@@ -694,14 +695,24 @@ class CoachValidator:
                 and bool(requires_infra)
                 and not docker_available
                 and gates_status.all_gates_passed
+            ) or (
+                failure_class == "collection_error"
+                and gates_status.all_gates_passed
             )
 
             if conditional_approval:
-                logger.warning(
-                    f"Conditional approval for {task_id}: infrastructure failure "
-                    f"with declared deps {requires_infra}, Docker unavailable. "
-                    f"Continuing to requirements check."
-                )
+                if failure_class == "collection_error":
+                    logger.warning(
+                        f"Conditional approval for {task_id}: test collection errors in "
+                        f"independent verification, all Player gates passed. "
+                        f"Continuing to requirements check."
+                    )
+                else:
+                    logger.warning(
+                        f"Conditional approval for {task_id}: infrastructure failure "
+                        f"with declared deps {requires_infra}, Docker unavailable. "
+                        f"Continuing to requirements check."
+                    )
                 # Fall through to requirements check with conditional flag set
             else:
                 # Check for psycopg2/asyncpg mismatch before falling back to
@@ -824,10 +835,16 @@ class CoachValidator:
 
         # 6. All checks passed - approve
         if conditional_approval:
-            logger.warning(
-                f"Coach conditionally approved {task_id} turn {turn}: "
-                f"infrastructure-dependent, independent tests skipped"
-            )
+            if failure_class == "collection_error":
+                logger.warning(
+                    f"Coach conditionally approved {task_id} turn {turn}: "
+                    f"test collection errors in independent verification, all gates passed"
+                )
+            else:
+                logger.warning(
+                    f"Coach conditionally approved {task_id} turn {turn}: "
+                    f"infrastructure-dependent, independent tests skipped"
+                )
         else:
             logger.info(f"Coach approved {task_id} turn {turn}")
 
@@ -839,6 +856,7 @@ class CoachValidator:
             profile=profile,
             context=context,
             conditional_approval=conditional_approval,
+            failure_class=failure_class,
         )
 
         return CoachValidationResult(
@@ -2727,6 +2745,17 @@ class CoachValidator:
             logger.debug(f"[{self.task_id}] _classify_test_failure: no output → ('code', 'n/a')")
             return ("code", "n/a")
         output_lower = test_output.lower()
+        # Check for pytest collection errors FIRST (exit code 2).
+        # These occur when pytest cannot import a test file, before any test runs.
+        # Must run before ModuleNotFoundError check to avoid misclassification.
+        _COLLECTION_ERROR_PATTERNS = ("errors during collection", "error collecting")
+        for pattern in _COLLECTION_ERROR_PATTERNS:
+            if pattern in output_lower:
+                logger.debug(
+                    f"[{self.task_id}] _classify_test_failure: collection error pattern"
+                    f" matched '{pattern}' → ('collection_error', 'high')"
+                )
+                return ("collection_error", "high")
         # Check ModuleNotFoundError FIRST, before _INFRA_HIGH_CONFIDENCE patterns,
         # to avoid service-client library names (e.g. "psycopg2") in the error
         # message triggering a false high-confidence infrastructure classification.
@@ -2899,6 +2928,7 @@ class CoachValidator:
         profile: QualityGateProfile,
         context: Optional[str] = None,
         conditional_approval: bool = False,
+        failure_class: Optional[str] = None,
     ) -> str:
         """
         Build an accurate rationale message for approval based on actual verification status.
@@ -2916,7 +2946,9 @@ class CoachValidator:
         context : Optional[str]
             Architecture context string if available
         conditional_approval : bool
-            True if this approval is conditional due to infrastructure test failure
+            True if this approval is conditional due to infrastructure or collection error
+        failure_class : Optional[str]
+            Classification of the test failure when conditional_approval is True
 
         Returns
         -------
@@ -2926,11 +2958,17 @@ class CoachValidator:
         parts = ["All quality gates passed."]
 
         if conditional_approval:
-            parts.append(
-                "Independent tests failed due to high-confidence infrastructure dependency "
-                "(Docker unavailable). Task declares required infrastructure. "
-                "Conditionally approved — independent tests skipped."
-            )
+            if failure_class == "collection_error":
+                parts.append(
+                    "Conditionally approved — test collection errors in independent verification. "
+                    "All Player quality gates passed."
+                )
+            else:
+                parts.append(
+                    "Independent tests failed due to high-confidence infrastructure dependency "
+                    "(Docker unavailable). Task declares required infrastructure. "
+                    "Conditionally approved — independent tests skipped."
+                )
         elif test_result.test_command == "skipped":
             if not profile.tests_required:
                 parts.append("Tests not required for this task type.")
