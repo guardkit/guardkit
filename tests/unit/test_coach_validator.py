@@ -4982,3 +4982,174 @@ class TestStripMarkdownFormatting:
 
         assert len(validation.criteria_results) == 1
         assert validation.criteria_results[0].result == 'verified'
+
+
+# ============================================================================
+# Test infrastructure feedback detail (TASK-FIX-3A01)
+# ============================================================================
+
+
+class TestInfrastructureFeedbackDetail:
+    """Tests for TASK-FIX-3A01: test command and error detail in feedback.
+
+    Verifies that infrastructure/collection_error feedback includes the
+    actual test command and error detail to give the Player actionable
+    information.
+    """
+
+    def _make_results(self, task_work_results_dir):
+        results = make_task_work_results()
+        write_task_work_results(task_work_results_dir, results)
+
+    # Infrastructure raw_output pattern that triggers ("infrastructure", "high")
+    _INFRA_RAW = "ConnectionRefusedError: [Errno 111] Connection refused"
+    _UNSET = object()
+
+    def _make_infra_result(self, cmd, summary=_UNSET, raw=None):
+        """Create an IndependentTestResult for an infrastructure failure.
+
+        summary defaults to _INFRA_RAW when not provided. Pass summary=None
+        or summary="" to test the empty/None summary path explicitly.
+        """
+        actual_summary = self._INFRA_RAW if summary is self._UNSET else summary
+        return IndependentTestResult(
+            tests_passed=False,
+            test_command=cmd,
+            test_output_summary=actual_summary,
+            duration_seconds=0.5,
+            raw_output=raw if raw is not None else self._INFRA_RAW,
+        )
+
+    def test_feedback_includes_test_command(
+        self, tmp_worktree, task_work_results_dir
+    ):
+        """Feedback description includes the test command that was run."""
+        self._make_results(task_work_results_dir)
+        cmd = "pytest tests/test_feature.py -v"
+
+        validator = CoachValidator(str(tmp_worktree), test_command=cmd)
+        with patch.object(validator, "run_independent_tests") as mock_run:
+            mock_run.return_value = self._make_infra_result(cmd)
+            result = validator.validate("TASK-001", 1, make_task())
+
+        assert result.decision == "feedback"
+        issue = next(
+            i for i in result.issues if i["category"] == "test_verification"
+        )
+        assert f"Test command: {cmd}" in issue["description"]
+
+    def test_feedback_includes_error_detail_with_label(
+        self, tmp_worktree, task_work_results_dir
+    ):
+        """Feedback description includes error detail formatted with 'Error detail:' label."""
+        self._make_results(task_work_results_dir)
+        cmd = "pytest tests/ -v"
+        error_summary = "ConnectionRefusedError: [Errno 111] Connection refused"
+
+        validator = CoachValidator(str(tmp_worktree), test_command=cmd)
+        with patch.object(validator, "run_independent_tests") as mock_run:
+            mock_run.return_value = self._make_infra_result(cmd, summary=error_summary)
+            result = validator.validate("TASK-001", 1, make_task())
+
+        assert result.decision == "feedback"
+        issue = next(
+            i for i in result.issues if i["category"] == "test_verification"
+        )
+        assert "Error detail:" in issue["description"]
+        assert error_summary in issue["description"]
+
+    def test_feedback_without_error_detail_when_summary_empty(
+        self, tmp_worktree, task_work_results_dir
+    ):
+        """Feedback works without error detail when test_output_summary is empty."""
+        self._make_results(task_work_results_dir)
+        cmd = "pytest tests/ -v"
+
+        validator = CoachValidator(str(tmp_worktree), test_command=cmd)
+        with patch.object(validator, "run_independent_tests") as mock_run:
+            mock_run.return_value = self._make_infra_result(cmd, summary="")
+            result = validator.validate("TASK-001", 1, make_task())
+
+        assert result.decision == "feedback"
+        issue = next(
+            i for i in result.issues if i["category"] == "test_verification"
+        )
+        # Test command is still present; "Error detail:" label is absent
+        assert f"Test command: {cmd}" in issue["description"]
+        assert "Error detail:" not in issue["description"]
+
+    def test_feedback_without_error_detail_when_summary_none(
+        self, tmp_worktree, task_work_results_dir
+    ):
+        """Feedback works without error detail when test_output_summary is None."""
+        self._make_results(task_work_results_dir)
+        cmd = "pytest tests/ -v"
+
+        validator = CoachValidator(str(tmp_worktree), test_command=cmd)
+        with patch.object(validator, "run_independent_tests") as mock_run:
+            mock_run.return_value = self._make_infra_result(cmd, summary=None)
+            result = validator.validate("TASK-001", 1, make_task())
+
+        assert result.decision == "feedback"
+        issue = next(
+            i for i in result.issues if i["category"] == "test_verification"
+        )
+        assert f"Test command: {cmd}" in issue["description"]
+        assert "Error detail:" not in issue["description"]
+
+    def test_feedback_truncates_long_error_detail(
+        self, tmp_worktree, task_work_results_dir
+    ):
+        """Error detail longer than 500 chars is truncated with ellipsis."""
+        self._make_results(task_work_results_dir)
+        cmd = "pytest tests/ -v"
+        long_summary = "ConnectionRefusedError: " + "x" * 600
+
+        validator = CoachValidator(str(tmp_worktree), test_command=cmd)
+        with patch.object(validator, "run_independent_tests") as mock_run:
+            mock_run.return_value = self._make_infra_result(cmd, summary=long_summary)
+            result = validator.validate("TASK-001", 1, make_task())
+
+        assert result.decision == "feedback"
+        issue = next(
+            i for i in result.issues if i["category"] == "test_verification"
+        )
+        description = issue["description"]
+        # Error detail should be present but truncated
+        assert "Error detail:" in description
+        assert description.endswith("...")
+        # The error detail portion must not exceed 500 chars
+        error_detail_start = description.index("Error detail: ") + len("Error detail: ")
+        error_detail_content = description[error_detail_start:]
+        assert len(error_detail_content) <= 500
+
+    def test_collection_error_feedback_includes_test_command(
+        self, tmp_worktree, task_work_results_dir
+    ):
+        """collection_error failure class also gets test command and error detail."""
+        self._make_results(task_work_results_dir)
+        cmd = "pytest tests/test_feature.py -v"
+        error_summary = "ERRORS during collection\nImportError: cannot import name 'X'"
+
+        validator = CoachValidator(str(tmp_worktree), test_command=cmd)
+        with patch.object(validator, "run_independent_tests") as mock_run:
+            mock_run.return_value = IndependentTestResult(
+                tests_passed=False,
+                test_command=cmd,
+                test_output_summary=error_summary,
+                duration_seconds=0.5,
+                raw_output=error_summary,
+            )
+            # Patch _classify_test_failure to return collection_error
+            with patch.object(
+                validator, "_classify_test_failure",
+                return_value=("collection_error", "high"),
+            ):
+                result = validator.validate("TASK-001", 1, make_task())
+
+        assert result.decision == "feedback"
+        issue = next(
+            i for i in result.issues if i["category"] == "test_verification"
+        )
+        assert f"Test command: {cmd}" in issue["description"]
+        assert "Error detail:" in issue["description"]

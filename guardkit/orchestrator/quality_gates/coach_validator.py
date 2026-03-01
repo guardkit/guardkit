@@ -716,14 +716,23 @@ class CoachValidator:
                         "Tests failed because psycopg2 was imported in an asyncpg "
                         "project"
                     )
-                elif failure_class == "infrastructure":
-                    description = (
+                elif failure_class in ("infrastructure", "collection_error"):
+                    error_output = (test_result.test_output_summary or "").strip()
+                    if len(error_output) > 500:
+                        error_output = error_output[:497] + "..."
+                    base = (
                         "Tests failed due to infrastructure/environment issues "
-                        "(not code defects). Remediation options: "
+                        f"(not code defects). Test command: {test_result.test_command}. "
+                        "Remediation options: "
                         "(1) Add mock fixtures for external services, "
                         "(2) Use SQLite for test database, "
                         "(3) Mark integration tests with @pytest.mark.integration "
-                        "and exclude via -m 'not integration'"
+                        "and exclude via -m 'not integration'."
+                    )
+                    description = (
+                        f"{base} Error detail: {error_output}"
+                        if error_output
+                        else base
                     )
                     rationale = (
                         "Tests failed due to infrastructure/environment issues, "
