@@ -2654,7 +2654,6 @@ class CoachValidator:
         Returns
         -------
         Tuple[str, str]
-            ``("collection_error", "high")`` if pytest collection error detected,
             ``("infrastructure", "high")`` if high-confidence pattern matches,
             ``("infrastructure", "ambiguous")`` if only ambiguous pattern matches,
             ``("code", "high")`` if bootstrap context reveals a wrong lib choice,
@@ -2664,18 +2663,7 @@ class CoachValidator:
             logger.debug(f"[{self.task_id}] _classify_test_failure: no output → ('code', 'n/a')")
             return ("code", "n/a")
         output_lower = test_output.lower()
-        # Check for pytest collection errors FIRST (exit code 2), before any other
-        # pattern matching.  A collection error means pytest could not even import
-        # a test file, which is a distinct failure mode from a runtime test failure.
-        _COLLECTION_ERROR_PATTERNS = ("errors during collection", "error collecting")
-        for pattern in _COLLECTION_ERROR_PATTERNS:
-            if pattern in output_lower:
-                logger.debug(
-                    f"[{self.task_id}] _classify_test_failure: collection error pattern"
-                    f" matched '{pattern}' → ('collection_error', 'high')"
-                )
-                return ("collection_error", "high")
-        # Check ModuleNotFoundError FIRST (before _INFRA_HIGH_CONFIDENCE patterns),
+        # Check ModuleNotFoundError FIRST, before _INFRA_HIGH_CONFIDENCE patterns,
         # to avoid service-client library names (e.g. "psycopg2") in the error
         # message triggering a false high-confidence infrastructure classification.
         if "modulenotfounderror" in output_lower and "no module named" in output_lower:
