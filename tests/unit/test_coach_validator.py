@@ -2243,6 +2243,164 @@ class TestPrimaryTestDetection:
 
 
 # ============================================================================
+# collect_ignore_glob filtering (TASK-FIX-7F48)
+# ============================================================================
+
+
+class TestCollectIgnoreGlobFiltering:
+    """Tests for _load_collect_ignore_glob and collect_ignore_glob filtering in _detect_tests_from_results."""
+
+    def _make_conftest(self, worktree: Path, patterns: list) -> None:
+        patterns_repr = ", ".join(f'"{p}"' for p in patterns)
+        (worktree / "conftest.py").write_text(
+            f'collect_ignore_glob = [{patterns_repr}]\n'
+        )
+
+    def test_load_collect_ignore_glob_returns_patterns(self, tmp_worktree):
+        """Patterns are extracted from root conftest.py."""
+        self._make_conftest(
+            tmp_worktree,
+            ["guardkit/eval/workspaces/*/tests/*", "templates/*/tests/*"],
+        )
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FIX-7F48")
+        patterns = validator._load_collect_ignore_glob()
+        assert patterns == [
+            "guardkit/eval/workspaces/*/tests/*",
+            "templates/*/tests/*",
+        ]
+
+    def test_load_collect_ignore_glob_no_conftest(self, tmp_worktree):
+        """Returns empty list when conftest.py does not exist."""
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FIX-7F48")
+        assert validator._load_collect_ignore_glob() == []
+
+    def test_load_collect_ignore_glob_no_assignment(self, tmp_worktree):
+        """Returns empty list when conftest.py has no collect_ignore_glob."""
+        (tmp_worktree / "conftest.py").write_text(
+            "import sys\ncollect_ignore = ['some_file.py']\n"
+        )
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FIX-7F48")
+        assert validator._load_collect_ignore_glob() == []
+
+    def test_load_collect_ignore_glob_empty_list(self, tmp_worktree):
+        """Returns empty list when collect_ignore_glob is assigned an empty list."""
+        (tmp_worktree / "conftest.py").write_text("collect_ignore_glob = []\n")
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FIX-7F48")
+        assert validator._load_collect_ignore_glob() == []
+
+    def test_load_collect_ignore_glob_bad_syntax(self, tmp_worktree):
+        """Returns empty list (no crash) when conftest.py has a syntax error."""
+        (tmp_worktree / "conftest.py").write_text("collect_ignore_glob = [unterminated\n")
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FIX-7F48")
+        assert validator._load_collect_ignore_glob() == []
+
+    def test_detect_tests_filters_excluded_paths(self, tmp_worktree):
+        """Test files matching collect_ignore_glob are excluded from pytest command."""
+        # Set up conftest with exclusion patterns
+        self._make_conftest(
+            tmp_worktree,
+            ["guardkit/eval/workspaces/*/tests/*", "templates/*/tests/*"],
+        )
+        # Create two test files: one legitimate, one matching exclusion
+        legit_dir = tmp_worktree / "tests" / "unit"
+        legit_dir.mkdir(parents=True)
+        (legit_dir / "test_feature.py").write_text("def test_x(): pass")
+
+        workspace_dir = tmp_worktree / "guardkit" / "eval" / "workspaces" / "TASK-001" / "tests"
+        workspace_dir.mkdir(parents=True)
+        (workspace_dir / "test_workspace.py").write_text("def test_y(): pass")
+
+        task_work_results = {
+            "files_created": [
+                "tests/unit/test_feature.py",
+                "guardkit/eval/workspaces/TASK-001/tests/test_workspace.py",
+            ],
+            "files_modified": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FIX-7F48")
+        result = validator._detect_tests_from_results(task_work_results)
+
+        assert result is not None
+        assert "test_feature.py" in result
+        assert "test_workspace.py" not in result
+
+    def test_detect_tests_no_filtering_without_conftest(self, tmp_worktree):
+        """Without conftest.py all matching test files are included."""
+        workspace_dir = tmp_worktree / "guardkit" / "eval" / "workspaces" / "TASK-001" / "tests"
+        workspace_dir.mkdir(parents=True)
+        (workspace_dir / "test_workspace.py").write_text("def test_y(): pass")
+
+        task_work_results = {
+            "files_created": [
+                "guardkit/eval/workspaces/TASK-001/tests/test_workspace.py",
+            ],
+            "files_modified": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FIX-7F48")
+        result = validator._detect_tests_from_results(task_work_results)
+
+        assert result is not None
+        assert "test_workspace.py" in result
+
+    def test_detect_tests_no_filtering_with_empty_patterns(self, tmp_worktree):
+        """Empty collect_ignore_glob means no files are filtered."""
+        (tmp_worktree / "conftest.py").write_text("collect_ignore_glob = []\n")
+        test_dir = tmp_worktree / "tests"
+        test_dir.mkdir(parents=True)
+        (test_dir / "test_something.py").write_text("def test_a(): pass")
+
+        task_work_results = {
+            "files_created": ["tests/test_something.py"],
+            "files_modified": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FIX-7F48")
+        result = validator._detect_tests_from_results(task_work_results)
+
+        assert result is not None
+        assert "test_something.py" in result
+
+    def test_detect_tests_returns_none_when_all_excluded(self, tmp_worktree):
+        """Returns None when all test files are excluded by collect_ignore_glob."""
+        self._make_conftest(tmp_worktree, ["guardkit/eval/workspaces/*/tests/*"])
+        workspace_dir = tmp_worktree / "guardkit" / "eval" / "workspaces" / "X" / "tests"
+        workspace_dir.mkdir(parents=True)
+        (workspace_dir / "test_only.py").write_text("def test_z(): pass")
+
+        task_work_results = {
+            "files_created": ["guardkit/eval/workspaces/X/tests/test_only.py"],
+            "files_modified": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FIX-7F48")
+        result = validator._detect_tests_from_results(task_work_results)
+
+        assert result is None
+
+    def test_detect_tests_normalises_absolute_paths_before_matching(self, tmp_worktree):
+        """Absolute paths are normalised to relative before fnmatch pattern matching."""
+        self._make_conftest(tmp_worktree, ["guardkit/eval/workspaces/*/tests/*"])
+        workspace_dir = tmp_worktree / "guardkit" / "eval" / "workspaces" / "ABS" / "tests"
+        workspace_dir.mkdir(parents=True)
+        (workspace_dir / "test_abs.py").write_text("def test_abs(): pass")
+
+        # Pass as absolute path (as the Player would emit)
+        abs_path = str(workspace_dir / "test_abs.py")
+        task_work_results = {
+            "files_created": [abs_path],
+            "files_modified": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FIX-7F48")
+        result = validator._detect_tests_from_results(task_work_results)
+
+        # Absolute path normalised → matches pattern → excluded
+        assert result is None
+
+
+# ============================================================================
 # Approval Rationale and Zero-Test Anomaly (TASK-FIX-QGVZ + TASK-FIX-ITDF)
 # ============================================================================
 

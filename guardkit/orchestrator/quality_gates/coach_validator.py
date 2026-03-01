@@ -30,6 +30,8 @@ Example:
     ...     print("Coach approved implementation")
 """
 
+import ast
+import fnmatch
 import json
 import logging
 import os
@@ -2566,6 +2568,40 @@ class CoachValidator:
         logger.warning("Could not detect project type, defaulting to pytest")
         return "pytest tests/ -v --tb=short"
 
+    def _load_collect_ignore_glob(self) -> List[str]:
+        """Load ``collect_ignore_glob`` patterns from the root ``conftest.py``.
+
+        Uses AST parsing so the file is never executed. Returns an empty list
+        when the file does not exist, contains no ``collect_ignore_glob``
+        assignment, or cannot be parsed.
+
+        Returns
+        -------
+        List[str]
+            Glob patterns identical to those pytest would use for exclusion.
+        """
+        conftest = self.worktree_path / "conftest.py"
+        if not conftest.exists():
+            return []
+        try:
+            tree = ast.parse(conftest.read_text(encoding="utf-8"))
+        except (SyntaxError, OSError):
+            logger.debug("Could not parse conftest.py; skipping collect_ignore_glob")
+            return []
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign):
+                continue
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "collect_ignore_glob":
+                    if isinstance(node.value, ast.List):
+                        patterns = []
+                        for elt in node.value.elts:
+                            if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                                patterns.append(elt.value)
+                        return patterns
+        return []
+
     def _detect_tests_from_results(
         self, task_work_results: Dict[str, Any]
     ) -> Optional[str]:
@@ -2574,7 +2610,10 @@ class CoachValidator:
 
         Extracts test files (matching ``test_*.py`` or ``*_test.py``) from
         the files_created/files_modified lists in task_work_results. Only
-        returns files that actually exist in the worktree.
+        returns files that actually exist in the worktree. Files matching
+        any ``collect_ignore_glob`` pattern from the root ``conftest.py``
+        are excluded so they are not passed as explicit pytest arguments
+        (which would bypass pytest's automatic exclusion).
 
         Parameters
         ----------
@@ -2586,22 +2625,38 @@ class CoachValidator:
         Optional[str]
             pytest command targeting discovered test files, or None
         """
+        ignore_patterns = self._load_collect_ignore_glob()
+
         test_files = []
         for file_list_key in ("files_created", "files_modified"):
             for filepath in task_work_results.get(file_list_key, []):
                 normalized = self._normalize_to_relative(filepath)
                 basename = Path(normalized).name
-                if basename.startswith("test_") and basename.endswith(".py"):
-                    full_path = self.worktree_path / normalized
-                    if full_path.exists():
-                        test_files.append(str(normalized))
-                elif basename.endswith("_test.py"):
+                if (basename.startswith("test_") and basename.endswith(".py")) or basename.endswith("_test.py"):
                     full_path = self.worktree_path / normalized
                     if full_path.exists():
                         test_files.append(str(normalized))
 
         if not test_files:
             logger.debug("No test files found in task_work_results")
+            return None
+
+        # Filter files matching collect_ignore_glob patterns (fnmatch, same as pytest)
+        if ignore_patterns:
+            filtered = []
+            for tf in test_files:
+                matched = any(fnmatch.fnmatch(tf, pat) for pat in ignore_patterns)
+                if matched:
+                    pattern = next(pat for pat in ignore_patterns if fnmatch.fnmatch(tf, pat))
+                    logger.debug(
+                        f"Excluding test file '{tf}' (matches collect_ignore_glob pattern '{pattern}')"
+                    )
+                else:
+                    filtered.append(tf)
+            test_files = filtered
+
+        if not test_files:
+            logger.debug("All detected test files were excluded by collect_ignore_glob")
             return None
 
         # Deduplicate and build command

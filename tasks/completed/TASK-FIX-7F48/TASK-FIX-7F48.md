@@ -4,9 +4,11 @@ title: Filter collect_ignore_glob paths from Coach test discovery
 task_type: feature
 parent_review: TASK-REV-0E44
 feature_id: FEAT-CTD
-status: backlog
+status: completed
 created: 2026-03-01T00:00:00+00:00
-updated: 2026-03-01T00:00:00+00:00
+updated: 2026-03-01T12:00:00+00:00
+completed: 2026-03-01T12:00:00+00:00
+completed_location: tasks/completed/TASK-FIX-7F48/
 priority: critical
 tags:
   - autobuild
