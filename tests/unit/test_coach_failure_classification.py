@@ -726,3 +726,155 @@ class TestConditionalApproval:
 
         assert result.decision == "approve"
         assert result.approved_without_independent_tests is False
+
+
+# ============================================================================
+# 5. Collection error conditional approval tests (TASK-FIX-1D70)
+# ============================================================================
+
+
+class TestCollectionErrorConditionalApproval:
+    """Tests for collection_error conditional approval path (TASK-FIX-1D70)."""
+
+    def _make_task_work_results(self) -> Dict[str, Any]:
+        """Create minimal task_work_results that pass quality gates."""
+        return {
+            "quality_gates": {
+                "all_passed": True,
+                "tests_passed": 10,
+                "tests_failed": 0,
+                "coverage": 85.0,
+                "branch_coverage": 80.0,
+            },
+            "code_review": {"score": 80},
+            "plan_audit": {"violations": 0},
+            "requirements_met": ["AC-001: Feature works"],
+            "completion_promises": [
+                {
+                    "criterion_id": "AC-001",
+                    "criterion_text": "Feature works",
+                    "status": "complete",
+                    "evidence": "Tests pass",
+                },
+            ],
+        }
+
+    def _make_collection_error_result(self) -> IndependentTestResult:
+        """Create a failed test result simulating a pytest collection error."""
+        return IndependentTestResult(
+            tests_passed=False,
+            test_command="pytest tests/ -v",
+            test_output_summary="2 errors during collection",
+            duration_seconds=0.5,
+            raw_output=(
+                "ImportError while importing test module 'tests/test_feature.py'.\n"
+                "Interrupted: 2 errors during collection\n"
+                "short test summary info\n"
+                "ERROR tests/test_feature.py"
+            ),
+        )
+
+    def test_collection_error_with_all_gates_passed_approves(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        """collection_error + all gates passed -> conditional approve."""
+        task_work_results = self._make_task_work_results()
+        collection_result = self._make_collection_error_result()
+
+        with (
+            patch.object(coach_validator, "read_quality_gate_results", return_value=task_work_results),
+            patch.object(coach_validator, "run_independent_tests", return_value=collection_result),
+        ):
+            result = coach_validator.validate(
+                task_id="TASK-TEST-001",
+                turn=1,
+                task={
+                    "acceptance_criteria": ["AC-001: Feature works"],
+                },
+            )
+
+        assert result.decision == "approve"
+        assert result.approved_without_independent_tests is True
+        assert "collection" in result.rationale.lower()
+
+    def test_collection_error_rationale_contains_expected_text(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        """collection_error conditional approval rationale matches expected text."""
+        task_work_results = self._make_task_work_results()
+        collection_result = self._make_collection_error_result()
+
+        with (
+            patch.object(coach_validator, "read_quality_gate_results", return_value=task_work_results),
+            patch.object(coach_validator, "run_independent_tests", return_value=collection_result),
+        ):
+            result = coach_validator.validate(
+                task_id="TASK-TEST-001",
+                turn=1,
+                task={
+                    "acceptance_criteria": ["AC-001: Feature works"],
+                },
+            )
+
+        assert "Conditionally approved — test collection errors in independent verification" in result.rationale
+
+    def test_collection_error_with_failed_gate_returns_feedback(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        """collection_error + gates NOT all passed -> feedback (not approved)."""
+        task_work_results = self._make_task_work_results()
+        task_work_results["quality_gates"]["all_passed"] = False
+        task_work_results["quality_gates"]["coverage"] = 50.0
+        collection_result = self._make_collection_error_result()
+
+        with (
+            patch.object(coach_validator, "read_quality_gate_results", return_value=task_work_results),
+            patch.object(coach_validator, "run_independent_tests", return_value=collection_result),
+        ):
+            result = coach_validator.validate(
+                task_id="TASK-TEST-001",
+                turn=1,
+                task={
+                    "acceptance_criteria": ["AC-001: Feature works"],
+                },
+            )
+
+        # Gates failed means feedback before reaching independent test check
+        assert result.decision == "feedback"
+        assert result.approved_without_independent_tests is False
+
+    def test_infrastructure_approval_path_unchanged(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        """Existing infrastructure approval path continues to work (no regression)."""
+        task_work_results = self._make_task_work_results()
+        infra_result = IndependentTestResult(
+            tests_passed=False,
+            test_command="pytest tests/ -v",
+            test_output_summary="1 failed - ConnectionRefusedError",
+            duration_seconds=3.0,
+            raw_output=(
+                "FAILED tests/test_db.py::test_create_user\n"
+                "E   ConnectionRefusedError: [Errno 111] Connection refused\n"
+                "1 failed in 2.31s"
+            ),
+        )
+
+        with (
+            patch.object(coach_validator, "read_quality_gate_results", return_value=task_work_results),
+            patch.object(coach_validator, "run_independent_tests", return_value=infra_result),
+        ):
+            result = coach_validator.validate(
+                task_id="TASK-TEST-001",
+                turn=1,
+                task={
+                    "acceptance_criteria": ["AC-001: Feature works"],
+                    "requires_infrastructure": ["postgresql"],
+                    "_docker_available": False,
+                },
+            )
+
+        assert result.decision == "approve"
+        assert result.approved_without_independent_tests is True
+        assert "infrastructure" in result.rationale.lower()
+        assert "collection" not in result.rationale.lower()
