@@ -1,41 +1,50 @@
-# {{ ddr.id }}: {{ ddr.title }}
+# {{ decision.entity_id }}: {{ decision.title }}
 
-> Status: {{ ddr.status }}
-> Date: {{ ddr.date }}
+> Status: {{ decision.status }}
+> Date: {{ date }}
 
 ## Context
 
-{{ ddr.context }}
+{{ decision.context }}
 
 ## Decision
 
-{{ ddr.decision }}
+{{ decision.decision }}
 
 ## Rationale
 
-{{ ddr.rationale }}
+{{ decision.rationale }}
 
-{% if ddr.alternatives_considered %}
-## Alternatives Considered
-
-{% for alt in ddr.alternatives_considered %}
-### {{ alt.name }}
-
-- **Pros:** {{ alt.pros }}
-- **Cons:** {{ alt.cons }}
-
-{% endfor %}
-{% endif %}
 ## Consequences
 
-{% for consequence in ddr.consequences %}
+{% for consequence in decision.consequences %}
 - {{ consequence }}
 {% endfor %}
 
-{% if ddr.related_api_contracts %}
-## Related API Contracts
+{% if decision.alternatives_considered %}
+## Alternatives Considered
 
-{% for contract in ddr.related_api_contracts %}
-- {{ contract }}
+{% for alt in decision.alternatives_considered %}
+- {{ alt }}
 {% endfor %}
+{% endif %}
+
+{% if decision.related_components %}
+## Related Components
+
+{% for comp in decision.related_components %}
+- {{ comp }}
+{% endfor %}
+{% endif %}
+
+{% if decision.supersedes %}
+## Supersedes
+
+{{ decision.supersedes }}
+{% endif %}
+
+{% if decision.superseded_by %}
+## Superseded By
+
+{{ decision.superseded_by }}
 {% endif %}
