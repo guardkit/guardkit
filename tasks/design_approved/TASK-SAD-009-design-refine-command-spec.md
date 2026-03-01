@@ -1,16 +1,17 @@
 ---
-id: TASK-SAD-009
-title: "Write /design-refine command specification"
-task_type: feature
-parent_review: TASK-REV-AEE1
-feature_id: FEAT-SAD
-wave: 3
-implementation_mode: task-work
 complexity: 6
 dependencies:
-  - TASK-SAD-001
-  - TASK-SAD-005
-  - TASK-SAD-007
+- TASK-SAD-001
+- TASK-SAD-005
+- TASK-SAD-007
+feature_id: FEAT-SAD
+id: TASK-SAD-009
+implementation_mode: task-work
+parent_review: TASK-REV-AEE1
+status: design_approved
+task_type: feature
+title: Write /design-refine command specification
+wave: 3
 ---
 
 # Task: Write /design-refine command specification

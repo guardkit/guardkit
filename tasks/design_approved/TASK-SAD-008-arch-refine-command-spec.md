@@ -1,16 +1,17 @@
 ---
-id: TASK-SAD-008
-title: "Write /arch-refine command specification"
-task_type: feature
-parent_review: TASK-REV-AEE1
-feature_id: FEAT-SAD
-wave: 3
-implementation_mode: task-work
 complexity: 7
 dependencies:
-  - TASK-SAD-001
-  - TASK-SAD-002
-  - TASK-SAD-006
+- TASK-SAD-001
+- TASK-SAD-002
+- TASK-SAD-006
+feature_id: FEAT-SAD
+id: TASK-SAD-008
+implementation_mode: task-work
+parent_review: TASK-REV-AEE1
+status: design_approved
+task_type: feature
+title: Write /arch-refine command specification
+wave: 3
 ---
 
 # Task: Write /arch-refine command specification
