@@ -4,7 +4,7 @@ title: Implement Graphiti storage for comparison eval results
 task_type: feature
 parent_review: TASK-REV-EAE8
 feature_id: FEAT-GKVV
-status: blocked
+status: completed
 created: 2026-03-01 00:00:00+00:00
 priority: high
 tags:
