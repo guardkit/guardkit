@@ -302,14 +302,14 @@ class TestEpisodeGeneration:
         assert "Feature Overview" in overview_episode.content
 
     def test_overview_episode_has_correct_group_id(self, parser):
-        """Overview episode uses feature slug as group_id."""
+        """Overview episode uses fixed feature_specs group_id."""
         result = parser.parse(
             VALID_FEATURE_SPEC,
             "FEATURE-SPEC-graphiti-refinement.md",
         )
         assert result.success is True
         overview_episode = result.episodes[0]
-        assert "graphiti-refinement-mvp" in overview_episode.group_id
+        assert overview_episode.group_id == "feature_specs"
 
     def test_extracts_tasks_from_phase_tables(self, parser):
         """parse extracts individual tasks from phase tables."""

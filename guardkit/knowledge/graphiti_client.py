@@ -455,6 +455,43 @@ class GraphitiClient:
                 self._consecutive_failures,
             )
 
+    def _build_embedder(self):
+        """Build OpenAI-compatible embedder for non-OpenAI providers.
+
+        Returns:
+            An OpenAIEmbedder configured for the local inference endpoint,
+            or None if the embedding provider is "openai" (use Graphiti defaults).
+        """
+        if self.config.embedding_provider == "openai":
+            return None
+        from graphiti_core.embedder import OpenAIEmbedder, OpenAIEmbedderConfig
+        return OpenAIEmbedder(
+            config=OpenAIEmbedderConfig(
+                base_url=self.config.embedding_base_url,
+                embedding_model=self.config.embedding_model,
+                api_key="local-key",  # Local inference ignores API key; placeholder required
+            )
+        )
+
+    def _build_llm_client(self):
+        """Build OpenAI-compatible LLM client for non-OpenAI providers.
+
+        Returns:
+            An OpenAIGenericClient configured for the local inference endpoint,
+            or None if the LLM provider is "openai" (use Graphiti defaults).
+        """
+        if self.config.llm_provider == "openai":
+            return None
+        from graphiti_core.llm_client.openai_generic_client import OpenAIGenericClient
+        from graphiti_core.llm_client import LLMConfig
+        return OpenAIGenericClient(
+            config=LLMConfig(
+                base_url=self.config.llm_base_url,
+                model=self.config.llm_model,
+                api_key="local-key",  # Local inference ignores API key; placeholder required
+            )
+        )
+
     async def _check_connection(self) -> bool:
         """Check if connection to the graph database can be established.
 
@@ -566,6 +603,16 @@ class GraphitiClient:
         try:
             from graphiti_core import Graphiti
 
+            # Build optional embedder/LLM client for non-OpenAI providers
+            # (vllm and ollama use the OpenAI-compatible protocol)
+            embedder = self._build_embedder()
+            llm_client = self._build_llm_client()
+            extra_kwargs = {}
+            if embedder is not None:
+                extra_kwargs["embedder"] = embedder
+            if llm_client is not None:
+                extra_kwargs["llm_client"] = llm_client
+
             if self.config.graph_store == "falkordb":
                 try:
                     from graphiti_core.driver.falkordb_driver import FalkorDriver
@@ -583,12 +630,13 @@ class GraphitiClient:
                     username=self.config.neo4j_user if self.config.neo4j_user != "neo4j" else None,
                     password=self.config.neo4j_password if self.config.neo4j_password != "password123" else None,
                 )
-                self._graphiti = Graphiti(graph_driver=driver)
+                self._graphiti = Graphiti(graph_driver=driver, **extra_kwargs)
             else:
                 self._graphiti = Graphiti(
                     self.config.neo4j_uri,
                     self.config.neo4j_user,
                     self.config.neo4j_password,
+                    **extra_kwargs,
                 )
 
             # Build indices and constraints with timeout to prevent infinite

@@ -3,7 +3,9 @@ id: TASK-VEF-004
 title: Fix served-model-name and pre-flight bc calculation in vllm-embed.sh
 status: completed
 created: 2026-02-28T15:00:00Z
-updated: 2026-02-28T18:30:00Z
+updated: 2026-03-01T12:00:00Z
+completed: 2026-03-01T12:00:00Z
+completed_location: tasks/completed/TASK-VEF-004/
 priority: high
 tags: [vllm, embedding, fix]
 parent_review: TASK-REV-36CC

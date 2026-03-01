@@ -23,11 +23,11 @@ MacBook Pro ──Tailscale──> Dell ProMax GB10 (128GB, Blackwell GPU)
 
 | # | Task ID | Title | Wave | Status |
 |---|---------|-------|------|--------|
-| 1 | TASK-GLI-001 | GB10 vLLM setup guide (embedding model + optimal config) | 1 | Backlog |
+| 1 | TASK-GLI-001 | GB10 vLLM setup guide (embedding model + optimal config) | 1 | **Completed** |
 | 2 | TASK-GLI-002 | Extend GraphitiConfig for local inference provider settings | 1 | Backlog |
 | 3 | TASK-GLI-003 | Update GraphitiClient.initialize() to inject custom embedder/LLM | 2 | Backlog |
 | 4 | TASK-GLI-004 | Update .guardkit/graphiti.yaml schema and config loader | 1 | Backlog |
-| 5 | TASK-GLI-005 | Test seeding feature-spec v2 document | 3 | Backlog |
+| 5 | TASK-GLI-005 | Re-seed ALL Graphiti content via local vLLM | 3 | Backlog |
 
 ## Execution Strategy
 

@@ -428,6 +428,30 @@ guardkit graphiti seed --force
 # Note: Force re-seeding clears previous system context
 ```
 
+### FalkorDB: Search with No Group Returns 0 Results
+
+**Symptom**: Programmatic search with `group_ids=None` returns empty results on FalkorDB.
+
+**Cause**: FalkorDB stores each group as a **separate graph**. Unlike Neo4j, omitting `group_ids` does not search across all graphs — it searches the default graph (which is typically empty).
+
+**Solution**: Always pass explicit group_ids when searching on FalkorDB:
+```python
+# Wrong (returns 0 on FalkorDB)
+results = await client.search("query", group_ids=None)
+
+# Correct (search specific groups)
+results = await client.search("query", group_ids=["product_knowledge"])
+
+# Correct (search all system groups)
+all_groups = ["product_knowledge", "command_workflows", "quality_gate_phases", ...]
+results = await client.search("query", group_ids=all_groups)
+```
+
+Via CLI, always use `--group`:
+```bash
+guardkit graphiti search "query" --group product_knowledge
+```
+
 ---
 
 ## Performance Characteristics

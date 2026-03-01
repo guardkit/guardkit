@@ -120,7 +120,7 @@ class FeatureSpecParser(BaseParser):
 
         # Create slugified identifiers
         feature_slug = self._slugify(feature_name)
-        group_id = feature_slug
+        group_id = "feature_specs"
         entity_type = "feature-spec"
 
         # Extract feature overview

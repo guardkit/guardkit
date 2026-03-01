@@ -404,11 +404,25 @@ results = await client.search(
 
 #### Global Search
 
+> **FalkorDB limitation**: On FalkorDB, `group_ids=None` searches only the default graph (typically empty), **not** all graphs. You must pass explicit group_ids to search across multiple groups. This differs from Neo4j where `group_ids=None` searches all groups.
+
 ```python
-# Search all groups (no filtering)
+# Neo4j: searches all groups
+# FalkorDB: searches default graph only (returns 0 results)
 results = await client.search(
     query="architecture",
-    group_ids=None  # None = search all groups
+    group_ids=None
+)
+
+# FalkorDB: explicitly list all groups to search
+results = await client.search(
+    query="architecture",
+    group_ids=[
+        "project_architecture",   # Project group (prefixed)
+        "architecture_decisions",  # System group
+        "feature_build_architecture",
+        "guardkit_patterns",
+    ]
 )
 ```
 

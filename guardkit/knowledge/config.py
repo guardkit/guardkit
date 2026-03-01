@@ -351,6 +351,7 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
         'llm_model': None,
         'embedding_provider': 'openai',
         'embedding_base_url': None,
+        'embedding_model': 'text-embedding-3-small',
         'host': 'localhost',  # Deprecated
         'port': 8000,  # Deprecated
     }
@@ -378,6 +379,7 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
                     'llm_model': str,
                     'embedding_provider': str,
                     'embedding_base_url': str,
+                    'embedding_model': str,
                     'host': str,
                     'port': int,
                 }
@@ -422,6 +424,7 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
         'LLM_MODEL': ('llm_model', str),
         'EMBEDDING_PROVIDER': ('embedding_provider', str),
         'EMBEDDING_BASE_URL': ('embedding_base_url', str),
+        'EMBEDDING_MODEL': ('embedding_model', str),
         # Deprecated env vars (kept for backwards compatibility)
         'GRAPHITI_HOST': ('host', str),
         'GRAPHITI_PORT': ('port', int),

@@ -2,9 +2,10 @@
 id: TASK-GLI-003
 title: Update GraphitiClient.initialize() to inject custom embedder/LLM
 task_type: implementation
-status: backlog
+status: completed
 created: 2026-02-22T23:45:00Z
-updated: 2026-02-22T23:45:00Z
+updated: 2026-02-28T00:00:00Z
+completed: 2026-02-28T00:00:00Z
 priority: high
 tags: [graphiti, vllm, embeddings, llm-client]
 complexity: 5
@@ -13,6 +14,7 @@ feature_id: FEAT-GLI
 wave: 2
 implementation_mode: task-work
 dependencies: [TASK-GLI-002]
+completed_location: tasks/completed/TASK-GLI-003/
 ---
 
 # Task: Update GraphitiClient.initialize() to Inject Custom Embedder/LLM
@@ -32,18 +34,18 @@ Modify `GraphitiClient.initialize()` to pass custom `embedder` and `llm_client` 
 
 ## Acceptance Criteria
 
-- [ ] When `config.llm_provider != "openai"`:
+- [x] When `config.llm_provider != "openai"`:
   - Create `OpenAIGenericClient` with `base_url=config.llm_base_url`, `model=config.llm_model`, `api_key="local-key"`
   - Pass as `llm_client` kwarg to `Graphiti()`
-- [ ] When `config.embedding_provider != "openai"`:
+- [x] When `config.embedding_provider != "openai"`:
   - Create `OpenAIEmbedder` with `base_url=config.embedding_base_url`, `embedding_model=config.embedding_model`, `api_key="local-key"`
   - Pass as `embedder` kwarg to `Graphiti()`
-- [ ] When provider is "openai", maintain current behavior (no kwargs, Graphiti uses defaults)
-- [ ] When local provider, skip `OPENAI_API_KEY` check (line 520) — local inference doesn't need it
+- [x] When provider is "openai", maintain current behavior (no kwargs, Graphiti uses defaults)
+- [x] When local provider, skip `OPENAI_API_KEY` check (line 520) — local inference doesn't need it
   - But still require `OPENAI_API_KEY` if either provider is "openai"
-- [ ] Update `GraphitiClientFactory.create_client()` and `create_and_init_client()` to propagate new config
-- [ ] Tests: unit tests with mocked Graphiti constructor verifying correct embedder/llm_client injection
-- [ ] Tests: verify backward compatibility — existing "openai" config works unchanged
+- [x] Update `GraphitiClientFactory.create_client()` and `create_and_init_client()` to propagate new config
+- [x] Tests: unit tests with mocked Graphiti constructor verifying correct embedder/llm_client injection
+- [x] Tests: verify backward compatibility — existing "openai" config works unchanged
 
 ## Implementation Notes
 

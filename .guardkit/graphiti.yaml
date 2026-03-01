@@ -38,7 +38,7 @@ timeout: 30.0
 # Options: openai (default), vllm, ollama
 llm_provider: vllm
 llm_base_url: http://promaxgb10-41b1:8000/v1
-llm_model: Qwen/Qwen3-Coder-30B-A3B
+llm_model: claude-sonnet-4-6
 
 # Embedding provider for Graphiti vector search
 # Options: openai (default), vllm, ollama
