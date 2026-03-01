@@ -1,20 +1,39 @@
 ---
 id: TASK-EVAL-010
-title: "Implement integration tests covering BDD smoke scenarios"
+title: Implement integration tests covering BDD smoke scenarios
 task_type: testing
 parent_review: TASK-REV-EAE8
 feature_id: FEAT-GKVV
-status: pending
-created: 2026-03-01T00:00:00Z
+status: in_review
+created: 2026-03-01 00:00:00+00:00
 priority: high
-tags: [eval-runner, testing, bdd, integration]
+tags:
+- eval-runner
+- testing
+- bdd
+- integration
 complexity: 5
 wave: 4
 implementation_mode: task-work
 dependencies:
-  - TASK-EVAL-007
-  - TASK-EVAL-008
-  - TASK-EVAL-009
+- TASK-EVAL-007
+- TASK-EVAL-008
+- TASK-EVAL-009
+autobuild_state:
+  current_turn: 1
+  max_turns: 5
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-4296
+  base_branch: main
+  started_at: '2026-03-01T17:07:12.995590'
+  last_updated: '2026-03-01T17:16:46.056634'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-03-01T17:07:12.995590'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Implement Integration Tests Covering BDD Smoke Scenarios
