@@ -1,0 +1,115 @@
+{
+  "task_id": "TASK-SAD-002",
+  "timestamp": "2026-03-01T20:09:04.926647",
+  "completed": true,
+  "phases": {
+    "phase_3": {
+      "detected": true,
+      "text": "Implementation",
+      "completed": true
+    }
+  },
+  "quality_gates": {
+    "tests_passing": true,
+    "tests_passed": 66,
+    "tests_failed": 0,
+    "coverage": 99.0,
+    "coverage_met": true,
+    "all_passed": true
+  },
+  "files_modified": [
+    "tasks/backlog/system-arch-design-commands/TASK-SAD-002-update-architecture-decision-dataclass.md"
+  ],
+  "files_created": [
+    ".guardkit/autobuild/TASK-SAD-002/player_turn_1.json",
+    ".guardkit/autobuild/TASK-SAD-002/task_work_results.json",
+    ".guardkit/autobuild/TASK-SAD-002/work_state_turn_1.json",
+    ".guardkit/autobuild/TASK-SAD-003/checkpoints.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/.guardkit/autobuild/TASK-SAD-002/player_turn_1.json"
+  ],
+  "tests_written": [],
+  "summary": "66 tests passed, 99.0% coverage, all quality gates passed",
+  "sdk_turns": {
+    "turns_used": 20,
+    "max_turns": 100,
+    "ceiling_hit": false
+  },
+  "code_review": {
+    "score": 95,
+    "solid": 95,
+    "dry": 100,
+    "yagni": 100
+  },
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Add `alternatives_considered: List[str] = field(default_factory=list)` field",
+      "status": "complete",
+      "evidence": "Field exists at line 87 of architecture_context.py: `alternatives_considered: List[str] = field(default_factory=list)`. Verified by tests test_alternatives_considered_default_empty (defaults to []), test_alternatives_considered_with_values (accepts ['Option A', 'Option B', 'Option C']), and test_mutable_defaults_alternatives_considered (no shared state between instances).",
+      "test_file": "tests/unit/knowledge/test_architecture_entities.py",
+      "implementation_files": [
+        "guardkit/knowledge/entities/architecture_context.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Add `superseded_by: Optional[str] = None` field",
+      "status": "complete",
+      "evidence": "Field exists at line 88 of architecture_context.py: `superseded_by: Optional[str] = None`. Verified by tests test_superseded_by_default_none (defaults to None) and test_superseded_by_with_value (accepts 'ADR-SP-005').",
+      "test_file": "tests/unit/knowledge/test_architecture_entities.py",
+      "implementation_files": [
+        "guardkit/knowledge/entities/architecture_context.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Add `supersedes: Optional[str] = None` field",
+      "status": "complete",
+      "evidence": "Field exists at line 89 of architecture_context.py: `supersedes: Optional[str] = None`. Verified by tests test_supersedes_default_none (defaults to None) and test_supersedes_with_value (accepts 'ADR-SP-001').",
+      "test_file": "tests/unit/knowledge/test_architecture_entities.py",
+      "implementation_files": [
+        "guardkit/knowledge/entities/architecture_context.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Parametrise prefix: `prefix: str = \"SP\"` with `entity_id` property using `f\"ADR-{self.prefix}-{self.number:03d}\"`",
+      "status": "complete",
+      "evidence": "Field `prefix: str = 'SP'` at line 90. Property `entity_id` at line 107 returns `f'ADR-{self.prefix}-{self.number:03d}'`. Verified by 4 tests: test_prefix_default_sp (default 'SP'), test_prefix_parametrised_arch ('ARCH' -> 'ADR-ARCH-001'), test_prefix_parametrised_fs ('FS' -> 'ADR-FS-003'), test_entity_id_default_prefix_backwards_compatible (default produces 'ADR-SP-042').",
+      "test_file": "tests/unit/knowledge/test_architecture_entities.py",
+      "implementation_files": [
+        "guardkit/knowledge/entities/architecture_context.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Update `to_episode_body()` to include new fields (conditional: only include if non-empty)",
+      "status": "complete",
+      "evidence": "to_episode_body() at lines 123-141 conditionally includes: alternatives_considered (if truthy/non-empty), superseded_by (if not None), supersedes (if not None). Verified by 8 tests: include/exclude for each new field (test_to_episode_body_includes_alternatives_when_nonempty, test_to_episode_body_excludes_alternatives_when_empty, test_to_episode_body_includes_superseded_by_when_set, test_to_episode_body_excludes_superseded_by_when_none, test_to_episode_body_includes_supersedes_when_set, test_to_episode_body_excludes_supersedes_when_none), plus combined (test_to_episode_body_all_new_fields_populated) and backwards-compat (test_to_episode_body_backwards_compatible_no_new_fields).",
+      "test_file": "tests/unit/knowledge/test_architecture_entities.py",
+      "implementation_files": [
+        "guardkit/knowledge/entities/architecture_context.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "All existing tests pass (backwards compatible \u2014 default prefix remains \"SP\")",
+      "status": "complete",
+      "evidence": "All 66 tests in test_architecture_entities.py pass (pytest run confirmed). All 8 pre-existing TestArchitectureDecision tests pass unchanged. Default prefix is 'SP', entity_id format ADR-SP-NNN is unchanged for default usage. test_to_episode_body_backwards_compatible_no_new_fields confirms only original 7 keys present when new fields are default.",
+      "test_file": "tests/unit/knowledge/test_architecture_entities.py",
+      "implementation_files": [
+        "guardkit/knowledge/entities/architecture_context.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Unit tests for new fields and prefix parametrisation",
+      "status": "complete",
+      "evidence": "19 new unit tests added in TestArchitectureDecision class (lines 459-715): alternatives_considered (3 tests: default, values, mutable default safety), superseded_by (2 tests: default, value), supersedes (2 tests: default, value), prefix parametrisation (4 tests: default SP, ARCH, FS, backwards compat), to_episode_body conditional inclusion (8 tests: include/exclude for each new field, combined test, backwards compat). All 19 pass.",
+      "test_file": "tests/unit/knowledge/test_architecture_entities.py",
+      "implementation_files": [
+        "guardkit/knowledge/entities/architecture_context.py"
+      ]
+    }
+  ]
+}
