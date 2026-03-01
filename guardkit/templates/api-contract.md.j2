@@ -1,27 +1,83 @@
-# {{ contract.entity_id }}: {{ contract.bounded_context }} API Contract
+# {{ bounded_context }} API Contract
 
-> Protocol: {{ contract.protocol }}
-> Version: {{ contract.version }}
+> Protocol: {{ protocol }}
+> Version: {{ version }}
 > Date: {{ date }}
 
 ## Overview
 
-API contract for the **{{ contract.bounded_context }}** bounded context.
+API contract for the **{{ bounded_context }}** bounded context.
 
-{% if contract.consumer_types %}
+{% if base_url is defined and base_url %}
+**Base URL:** `{{ base_url }}`
+{% endif %}
+
+{% if consumer_types %}
 ## Consumer Types
 
-{% for consumer in contract.consumer_types %}
+{% for consumer in consumer_types %}
+{% if consumer is mapping %}
+- **{{ consumer.name }}**: {{ consumer.description }}
+{% else %}
 - {{ consumer }}
+{% endif %}
 {% endfor %}
 {% endif %}
 
-{% if contract.endpoints %}
+{% if authentication is defined and authentication %}
+## Authentication
+
+**Type:** {{ authentication.type }}
+
+{{ authentication.description }}
+{% endif %}
+
+{% if endpoints %}
 ## Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-{% for endpoint in contract.endpoints %}
-| {{ endpoint.method }} | `{{ endpoint.path }}` | {{ endpoint.description }} |
+| Method | Path | Summary | Auth Required |
+|--------|------|---------|---------------|
+{% for endpoint in endpoints %}
+| {{ endpoint.method }} | `{{ endpoint.path }}` | {{ endpoint.summary | default(endpoint.description | default("")) }} | {{ "Yes" if endpoint.auth_required else "No" }} |
+{% endfor %}
+{% endif %}
+
+{% if request_schemas is defined and request_schemas %}
+## Request Schemas
+
+{% for schema in request_schemas %}
+### {{ schema.name }}
+
+| Field | Type | Required |
+|-------|------|----------|
+{% for f in schema.fields %}
+| {{ f.name }} | {{ f.type }} | {{ "Yes" if f.required else "No" }} |
+{% endfor %}
+
+{% endfor %}
+{% endif %}
+
+{% if response_schemas is defined and response_schemas %}
+## Response Schemas
+
+{% for schema in response_schemas %}
+### {{ schema.name }}
+
+| Field | Type | Required |
+|-------|------|----------|
+{% for f in schema.fields %}
+| {{ f.name }} | {{ f.type }} | {{ "Yes" if f.required else "No" }} |
+{% endfor %}
+
+{% endfor %}
+{% endif %}
+
+{% if error_codes is defined and error_codes %}
+## Error Codes
+
+| Code | Meaning |
+|------|---------|
+{% for error in error_codes %}
+| {{ error.code }} | {{ error.meaning }} |
 {% endfor %}
 {% endif %}

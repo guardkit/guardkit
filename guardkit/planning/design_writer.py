@@ -157,7 +157,26 @@ class DesignWriter:
 
         current_date = datetime.now().strftime("%Y-%m-%d")
         template = self.env.get_template("ddr.md.j2")
-        content = template.render(decision=decision, date=current_date)
+
+        # Build ddr dict matching template expectations
+        ddr_data: Dict = {
+            "id": decision.entity_id,
+            "title": decision.title,
+            "status": decision.status,
+            "date": current_date,
+            "context": decision.context,
+            "decision": decision.decision,
+            "rationale": decision.rationale,
+            "consequences": list(decision.consequences),
+            "alternatives_considered": list(decision.alternatives_considered),
+            "related_components": list(decision.related_components),
+        }
+        if decision.supersedes is not None:
+            ddr_data["supersedes"] = decision.supersedes
+        if decision.superseded_by is not None:
+            ddr_data["superseded_by"] = decision.superseded_by
+
+        content = template.render(ddr=ddr_data)
 
         filename = f"{decision.entity_id}.md"
         (decisions_path / filename).write_text(content)
@@ -188,7 +207,14 @@ class DesignWriter:
 
         current_date = datetime.now().strftime("%Y-%m-%d")
         template = self.env.get_template("api-contract.md.j2")
-        content = template.render(contract=contract, date=current_date)
+        content = template.render(
+            bounded_context=contract.bounded_context,
+            protocol=contract.protocol,
+            version=contract.version,
+            date=current_date,
+            consumer_types=contract.consumer_types,
+            endpoints=contract.endpoints,
+        )
 
         filename = f"{contract.entity_id}.md"
         (contracts_path / filename).write_text(content)
@@ -295,7 +321,8 @@ class DesignWriter:
         current_date = datetime.now().strftime("%Y-%m-%d")
         template = self.env.get_template("component-l3.md.j2")
         content = template.render(
-            container=container,
+            container_name=container,
+            container_technology="",
             components=components,
             date=current_date,
         )

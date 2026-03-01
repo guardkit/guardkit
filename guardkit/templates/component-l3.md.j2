@@ -1,21 +1,37 @@
-# {{ container }}: Component Diagram (C4 Level 3)
+# {{ container_name }}: Component Diagram (C4 Level 3)
 
+> Technology: {{ container_technology }}
 > Date: {{ date }}
+
+## Component Diagram
+
+```mermaid
+C4Component
+title Component Diagram for {{ container_name }}
+
+{% for comp in components %}
+Component({{ comp.id }}, "{{ comp.name }}", "{{ comp.technology }}", "{{ comp.description }}")
+{% endfor %}
+
+{% if relationships %}
+{% for rel in relationships %}
+Rel({{ rel.from }}, {{ rel.to }}, "{{ rel.label }}")
+{% endfor %}
+{% endif %}
+```
 
 ## Components
 
-```mermaid
-graph TB
-    subgraph {{ container }}
-    {% for comp in components %}
-    C{{ loop.index }}["{{ comp.name }}"]
-    {% endfor %}
-    end
-```
-
+| Component | Technology | Description |
+|-----------|-----------|-------------|
 {% for comp in components %}
-### {{ comp.name }}
-
-{{ comp.description }}
-
+| {{ comp.name }} | {{ comp.technology }} | {{ comp.description }} |
 {% endfor %}
+
+{% if relationships %}
+## Relationships
+
+{% for rel in relationships %}
+- **{{ rel.from }}** → **{{ rel.to }}**: {{ rel.label }}
+{% endfor %}
+{% endif %}

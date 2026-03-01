@@ -1,50 +1,66 @@
-# {{ decision.entity_id }}: {{ decision.title }}
+# {{ ddr.id }}: {{ ddr.title }}
 
-> Status: {{ decision.status }}
-> Date: {{ date }}
+> Status: {{ ddr.status }}
+> Date: {{ ddr.date }}
 
 ## Context
 
-{{ decision.context }}
+{{ ddr.context }}
 
 ## Decision
 
-{{ decision.decision }}
+{{ ddr.decision }}
 
 ## Rationale
 
-{{ decision.rationale }}
+{{ ddr.rationale }}
 
-## Consequences
-
-{% for consequence in decision.consequences %}
-- {{ consequence }}
-{% endfor %}
-
-{% if decision.alternatives_considered %}
+{% if ddr.alternatives_considered %}
 ## Alternatives Considered
 
-{% for alt in decision.alternatives_considered %}
+{% for alt in ddr.alternatives_considered %}
+{% if alt is mapping %}
+### {{ alt.name }}
+
+- **Pros:** {{ alt.pros }}
+- **Cons:** {{ alt.cons }}
+
+{% else %}
 - {{ alt }}
+{% endif %}
 {% endfor %}
 {% endif %}
 
-{% if decision.related_components %}
+## Consequences
+
+{% for consequence in ddr.consequences %}
+- {{ consequence }}
+{% endfor %}
+
+{% if ddr.related_api_contracts is defined and ddr.related_api_contracts %}
+## Related API Contracts
+
+{% for contract in ddr.related_api_contracts %}
+- {{ contract }}
+{% endfor %}
+{% endif %}
+
+{% if ddr.related_components is defined and ddr.related_components %}
 ## Related Components
 
-{% for comp in decision.related_components %}
+{% for comp in ddr.related_components %}
 - {{ comp }}
 {% endfor %}
 {% endif %}
 
-{% if decision.supersedes %}
+{% if ddr.supersedes is defined and ddr.supersedes %}
 ## Supersedes
 
-{{ decision.supersedes }}
+{{ ddr.supersedes }}
 {% endif %}
 
-{% if decision.superseded_by %}
+{% if ddr.superseded_by is defined and ddr.superseded_by %}
 ## Superseded By
 
-{{ decision.superseded_by }}
+{{ ddr.superseded_by }}
 {% endif %}
