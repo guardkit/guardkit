@@ -1,0 +1,133 @@
+{
+  "task_id": "TASK-SAD-004",
+  "turn": 1,
+  "files_modified": [
+    ".guardkit/bootstrap_state.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/guardkit/templates/adr.md.j2",
+    "guardkit/templates/adr.md.j2",
+    "tasks/backlog/TASK-SAD-004-update-adr-template-and-create-new-templates.md",
+    "tasks/backlog/TASK-SAD-005-create-system-design-graphiti-and-design-writer.md"
+  ],
+  "files_created": [
+    ".claude/task-plans/TASK-SAD-004-implementation-plan.md",
+    ".claude/task-plans/TASK-SAD-005-implementation-plan.md",
+    ".guardkit/autobuild/TASK-SAD-002/checkpoints.json",
+    ".guardkit/autobuild/TASK-SAD-004/player_turn_1.json",
+    ".guardkit/autobuild/TASK-SAD-004/task_work_results.json",
+    ".guardkit/autobuild/TASK-SAD-004/turn_context.json",
+    ".guardkit/autobuild/TASK-SAD-005/turn_context.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/.guardkit/autobuild/TASK-SAD-004/player_turn_1.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/guardkit/templates/api-contract.md.j2",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/guardkit/templates/component-l3.md.j2",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/guardkit/templates/container.md.j2",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/guardkit/templates/ddr.md.j2",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/tests/unit/planning/test_sad004_template_rendering.py",
+    "guardkit/planning/graphiti_design.py",
+    "guardkit/templates/api-contract.md.j2",
+    "guardkit/templates/component-l3.md.j2",
+    "guardkit/templates/container.md.j2",
+    "guardkit/templates/ddr.md.j2",
+    "tasks/design_approved/TASK-SAD-004-update-adr-template-and-create-new-templates.md",
+    "tasks/design_approved/TASK-SAD-005-create-system-design-graphiti-and-design-writer.md",
+    "tests/unit/planning/test_graphiti_design_and_writer.py",
+    "tests/unit/planning/test_sad004_template_rendering.py"
+  ],
+  "tests_written": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/tests/unit/planning/test_sad004_template_rendering.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation",
+  "concerns": [],
+  "requirements_addressed": [
+    "Update adr.md.j2 with conditional Alternatives Considered section",
+    "Create container.md.j2 with C4 Level 2 native Mermaid syntax",
+    "Create component-l3.md.j2 with C4 Level 3 native Mermaid syntax",
+    "Create api-contract.md.j2 with multi-protocol support and all required sections",
+    "Create ddr.md.j2 with all required sections (parallel to ADR)",
+    "All templates render correctly with sample data",
+    "Unit tests for all template rendering"
+  ],
+  "requirements_remaining": [],
+  "sdk_turns_used": 40,
+  "sdk_max_turns": 100,
+  "sdk_ceiling_hit": false,
+  "tests_passed_count": 75,
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Update guardkit/templates/adr.md.j2: Add 'Alternatives Considered' section (conditional: only rendered if alternatives_considered is non-empty). Backwards compatible with existing ADRs that don't have this field.",
+      "status": "complete",
+      "evidence": "Added conditional {% if adr.alternatives_considered %} block between Decision and Consequences sections in adr.md.j2. Verified with test_adr_renders_alternatives_when_present (shows section when populated), test_adr_omits_alternatives_when_empty (omits when empty), test_adr_backwards_compatible_existing_sections (existing sections unchanged), and test_adr_alternatives_section_position (correct ordering). All 34 existing architecture_writer tests still pass.",
+      "test_file": "tests/unit/planning/test_sad004_template_rendering.py",
+      "implementation_files": [
+        "guardkit/templates/adr.md.j2"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Create guardkit/templates/container.md.j2: C4 Level 2 Container diagram using native C4 Mermaid syntax (C4Container, Container, ContainerDb, System_Ext, Rel). Shows containers (services, datastores, frontends) and their runtime communication. Inputs: containers list, external systems, relationships.",
+      "status": "complete",
+      "evidence": "Created container.md.j2 using native C4Container Mermaid syntax. Template renders Container() for services/frontends, ContainerDb() for datastores, System_Ext() for external systems, and Rel() for relationships with technology labels. Verified by 8 tests: test_container_template_exists, test_container_renders_with_sample_data, test_container_uses_c4_mermaid_syntax, test_container_has_container_elements, test_container_has_database_elements, test_container_has_external_systems, test_container_has_relationships, test_container_shows_runtime_communication.",
+      "test_file": "tests/unit/planning/test_sad004_template_rendering.py",
+      "implementation_files": [
+        "guardkit/templates/container.md.j2"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Create guardkit/templates/component-l3.md.j2: C4 Level 3 Component diagram using native C4Component Mermaid syntax. Per-container component breakdown. Triggered when container has >3 internal components OR explicitly requested (ASSUM-012). Inputs: container name, components list, internal relationships.",
+      "status": "complete",
+      "evidence": "Created component-l3.md.j2 using native C4Component Mermaid syntax with Component() and Rel() directives. Template accepts container_name, container_technology, components list, and relationships. The triggering logic (>3 components or explicit request) is a caller concern, not template concern. Verified by 6 tests: test_component_l3_template_exists, test_component_l3_renders_with_sample_data, test_component_l3_uses_c4_component_syntax, test_component_l3_has_component_elements, test_component_l3_has_relationships, test_component_l3_is_per_container.",
+      "test_file": "tests/unit/planning/test_sad004_template_rendering.py",
+      "implementation_files": [
+        "guardkit/templates/component-l3.md.j2"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Create guardkit/templates/api-contract.md.j2: Per-bounded-context API contract document. Sections: consumer types, endpoints table, request/response schemas, authentication, error codes. Multi-protocol support (REST, GraphQL, MCP tool definitions, A2A task schemas).",
+      "status": "complete",
+      "evidence": "Created api-contract.md.j2 with all required sections: Consumer Types table, Endpoints table (method/path/summary/auth), Request Schemas (field/type/required), Response Schemas, Authentication (type + description), Error Codes table. Protocol is shown in the header. All sections are conditional for flexibility. Verified by 8 tests: test_api_contract_template_exists, test_api_contract_renders_with_sample_data, test_api_contract_has_consumer_types, test_api_contract_has_endpoints_table, test_api_contract_has_request_response_schemas, test_api_contract_has_authentication, test_api_contract_has_error_codes, test_api_contract_shows_protocol.",
+      "test_file": "tests/unit/planning/test_sad004_template_rendering.py",
+      "implementation_files": [
+        "guardkit/templates/api-contract.md.j2"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Create guardkit/templates/ddr.md.j2: Design Decision Record template (parallel to ADR template). Sections: Status, Date, Context, Decision, Rationale, Alternatives Considered, Consequences, Related API Contracts.",
+      "status": "complete",
+      "evidence": "Created ddr.md.j2 with all required sections: header with id/title, Status, Date, Context, Decision, Rationale, Alternatives Considered (with name/pros/cons per alternative), Consequences, and Related API Contracts. Alternatives and API Contracts sections are conditional. Verified by 11 tests: test_ddr_template_exists, test_ddr_renders_with_sample_data, test_ddr_has_status_section, test_ddr_has_date, test_ddr_has_context_section, test_ddr_has_decision_section, test_ddr_has_rationale_section, test_ddr_has_alternatives_considered, test_ddr_has_consequences, test_ddr_has_related_api_contracts, test_ddr_omits_api_contracts_when_empty.",
+      "test_file": "tests/unit/planning/test_sad004_template_rendering.py",
+      "implementation_files": [
+        "guardkit/templates/ddr.md.j2"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "All templates render correctly with sample data.",
+      "status": "complete",
+      "evidence": "All 41 tests pass. Each template has dedicated render tests with comprehensive sample data (container_context, component_l3_context, api_contract_context, ddr_context fixtures). All templates render without errors and produce correct output.",
+      "test_file": "tests/unit/planning/test_sad004_template_rendering.py",
+      "implementation_files": [
+        "guardkit/templates/adr.md.j2",
+        "guardkit/templates/container.md.j2",
+        "guardkit/templates/component-l3.md.j2",
+        "guardkit/templates/api-contract.md.j2",
+        "guardkit/templates/ddr.md.j2"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Unit tests for template rendering (each template tested with sample context).",
+      "status": "complete",
+      "evidence": "Created tests/unit/planning/test_sad004_template_rendering.py with 41 tests organized in 6 test classes: TestADRTemplateAlternativesConsidered (4 tests), TestContainerTemplate (8 tests), TestComponentL3Template (6 tests), TestAPIContractTemplate (8 tests), TestDDRTemplate (11 tests), TestArchitectureWriterNewTemplates (4 integration tests). All pass. Existing 34 architecture_writer tests also pass (no regressions).",
+      "test_file": "tests/unit/planning/test_sad004_template_rendering.py",
+      "implementation_files": [
+        "tests/unit/planning/test_sad004_template_rendering.py"
+      ]
+    }
+  ]
+}

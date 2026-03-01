@@ -1,14 +1,15 @@
 ---
-id: TASK-SAD-005
-title: "Create SystemDesignGraphiti service class and DesignWriter"
-task_type: feature
-parent_review: TASK-REV-AEE1
-feature_id: FEAT-SAD
-wave: 2
-implementation_mode: task-work
 complexity: 6
 dependencies:
-  - TASK-SAD-003
+- TASK-SAD-003
+feature_id: FEAT-SAD
+id: TASK-SAD-005
+implementation_mode: task-work
+parent_review: TASK-REV-AEE1
+status: design_approved
+task_type: feature
+title: Create SystemDesignGraphiti service class and DesignWriter
+wave: 2
 ---
 
 # Task: Create SystemDesignGraphiti service class and DesignWriter

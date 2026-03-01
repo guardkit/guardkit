@@ -1,15 +1,16 @@
 ---
-id: TASK-SAD-004
-title: "Update ADR template and create container, component-l3, api-contract, DDR templates"
-task_type: feature
-parent_review: TASK-REV-AEE1
-feature_id: FEAT-SAD
-wave: 2
-implementation_mode: task-work
 complexity: 5
 dependencies:
-  - TASK-SAD-002
-  - TASK-SAD-003
+- TASK-SAD-002
+- TASK-SAD-003
+feature_id: FEAT-SAD
+id: TASK-SAD-004
+implementation_mode: task-work
+parent_review: TASK-REV-AEE1
+status: design_approved
+task_type: feature
+title: Update ADR template and create container, component-l3, api-contract, DDR templates
+wave: 2
 ---
 
 # Task: Update ADR template and create container, component-l3, api-contract, DDR templates

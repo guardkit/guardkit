@@ -1,0 +1,33 @@
+# Component Diagram: {{ container_name }}
+
+> C4 Level 3 — Generated on {{ date }}
+> Parent Container: {{ container_name }} ({{ container_technology }})
+
+## Component Diagram
+
+```mermaid
+C4Component
+title Component Diagram for {{ container_name }}
+
+{% for comp in components %}
+Component({{ comp.id }}, "{{ comp.name }}", "{{ comp.technology }}", "{{ comp.description }}")
+{% endfor %}
+
+{% for rel in relationships %}
+Rel({{ rel.from }}, {{ rel.to }}, "{{ rel.label }}")
+{% endfor %}
+```
+
+## Components
+
+| Component | Technology | Description |
+|-----------|-----------|-------------|
+{% for comp in components %}
+| {{ comp.name }} | {{ comp.technology }} | {{ comp.description }} |
+{% endfor %}
+
+## Internal Relationships
+
+{% for rel in relationships %}
+- **{{ rel.from }}** → **{{ rel.to }}**: {{ rel.label }}
+{% endfor %}

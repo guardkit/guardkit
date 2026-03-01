@@ -1,0 +1,50 @@
+# Container Diagram: {{ system_name }}
+
+> C4 Level 2 — Generated on {{ date }}
+
+## Container Diagram
+
+```mermaid
+C4Container
+title Container Diagram for {{ system_name }}
+
+{% for c in containers %}
+{% if c.type == "container_db" %}
+ContainerDb({{ c.id }}, "{{ c.name }}", "{{ c.technology }}", "{{ c.description }}")
+{% else %}
+Container({{ c.id }}, "{{ c.name }}", "{{ c.technology }}", "{{ c.description }}")
+{% endif %}
+{% endfor %}
+
+{% for ext in external_systems %}
+System_Ext({{ ext.id }}, "{{ ext.name }}", "{{ ext.description }}")
+{% endfor %}
+
+{% for rel in relationships %}
+Rel({{ rel.from }}, {{ rel.to }}, "{{ rel.label }}", "{{ rel.technology }}")
+{% endfor %}
+```
+
+## Containers
+
+| Container | Technology | Description |
+|-----------|-----------|-------------|
+{% for c in containers %}
+| {{ c.name }} | {{ c.technology }} | {{ c.description }} |
+{% endfor %}
+
+{% if external_systems %}
+## External Systems
+
+| System | Description |
+|--------|-------------|
+{% for ext in external_systems %}
+| {{ ext.name }} | {{ ext.description }} |
+{% endfor %}
+{% endif %}
+
+## Relationships
+
+{% for rel in relationships %}
+- **{{ rel.from }}** → **{{ rel.to }}**: {{ rel.label }} ({{ rel.technology }})
+{% endfor %}

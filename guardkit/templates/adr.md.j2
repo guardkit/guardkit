@@ -11,6 +11,13 @@
 
 {{ adr.decision }}
 
+{% if adr.alternatives_considered %}
+## Alternatives Considered
+
+{% for alt in adr.alternatives_considered %}
+- {{ alt }}
+{% endfor %}
+{% endif %}
 ## Consequences
 
 {% for consequence in adr.consequences %}

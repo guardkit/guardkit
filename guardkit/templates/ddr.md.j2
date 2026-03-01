@@ -1,0 +1,41 @@
+# {{ ddr.id }}: {{ ddr.title }}
+
+> Status: {{ ddr.status }}
+> Date: {{ ddr.date }}
+
+## Context
+
+{{ ddr.context }}
+
+## Decision
+
+{{ ddr.decision }}
+
+## Rationale
+
+{{ ddr.rationale }}
+
+{% if ddr.alternatives_considered %}
+## Alternatives Considered
+
+{% for alt in ddr.alternatives_considered %}
+### {{ alt.name }}
+
+- **Pros:** {{ alt.pros }}
+- **Cons:** {{ alt.cons }}
+
+{% endfor %}
+{% endif %}
+## Consequences
+
+{% for consequence in ddr.consequences %}
+- {{ consequence }}
+{% endfor %}
+
+{% if ddr.related_api_contracts %}
+## Related API Contracts
+
+{% for contract in ddr.related_api_contracts %}
+- {{ contract }}
+{% endfor %}
+{% endif %}

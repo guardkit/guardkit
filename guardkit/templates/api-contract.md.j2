@@ -1,0 +1,70 @@
+# API Contract: {{ bounded_context }}
+
+> Version: {{ version }} | Protocol: {{ protocol }}
+> Generated on {{ date }}
+
+{% if consumer_types %}
+## Consumer Types
+
+| Consumer | Description |
+|----------|-------------|
+{% for consumer in consumer_types %}
+| {{ consumer.name }} | {{ consumer.description }} |
+{% endfor %}
+{% endif %}
+
+## Endpoints
+
+| Method | Path | Summary | Auth Required |
+|--------|------|---------|---------------|
+{% for ep in endpoints %}
+| {{ ep.method }} | `{{ ep.path }}` | {{ ep.summary }} | {{ "Yes" if ep.auth_required else "No" }} |
+{% endfor %}
+
+{% if request_schemas %}
+## Request Schemas
+
+{% for schema in request_schemas %}
+### {{ schema.name }}
+
+| Field | Type | Required |
+|-------|------|----------|
+{% for field in schema.fields %}
+| `{{ field.name }}` | {{ field.type }} | {{ "Yes" if field.required else "No" }} |
+{% endfor %}
+
+{% endfor %}
+{% endif %}
+
+{% if response_schemas %}
+## Response Schemas
+
+{% for schema in response_schemas %}
+### {{ schema.name }}
+
+| Field | Type | Required |
+|-------|------|----------|
+{% for field in schema.fields %}
+| `{{ field.name }}` | {{ field.type }} | {{ "Yes" if field.required else "No" }} |
+{% endfor %}
+
+{% endfor %}
+{% endif %}
+
+{% if authentication %}
+## Authentication
+
+**Type:** {{ authentication.type }}
+
+{{ authentication.description }}
+{% endif %}
+
+{% if error_codes %}
+## Error Codes
+
+| Code | Meaning |
+|------|---------|
+{% for err in error_codes %}
+| {{ err.code }} | {{ err.meaning }} |
+{% endfor %}
+{% endif %}
