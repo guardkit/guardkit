@@ -1,0 +1,133 @@
+{
+  "task_id": "TASK-SAD-001",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/knowledge/entities/__init__.py",
+    "guardkit/knowledge/entities/architecture_context.py",
+    "tests/unit/knowledge/test_architecture_entities.py"
+  ],
+  "files_created": [
+    ".claude/task-plans/TASK-SAD-001-implementation-plan.md",
+    ".claude/task-plans/TASK-SAD-002-implementation-plan.md",
+    ".claude/task-plans/TASK-SAD-003-implementation-plan.md",
+    ".guardkit/autobuild/TASK-SAD-001/player_turn_1.json",
+    ".guardkit/autobuild/TASK-SAD-001/task_work_results.json",
+    ".guardkit/autobuild/TASK-SAD-001/turn_context.json",
+    ".guardkit/autobuild/TASK-SAD-002/turn_context.json",
+    ".guardkit/autobuild/TASK-SAD-003/turn_context.json",
+    ".guardkit/bootstrap_state.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/.guardkit/autobuild/TASK-SAD-001/player_turn_1.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/docs/architecture/decisions/ADR-ARCH-001-temporal-superseding-mechanism.md",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/tests/knowledge/test_temporal_superseding.py",
+    "docs/architecture/decisions/ADR-ARCH-001-temporal-superseding-mechanism.md",
+    "guardkit/knowledge/entities/api_contract.py",
+    "guardkit/knowledge/entities/data_model.py",
+    "guardkit/knowledge/entities/design_decision.py",
+    "tasks/backlog/TASK-SAD-004-update-adr-template-and-create-new-templates.md",
+    "tasks/backlog/TASK-SAD-005-create-system-design-graphiti-and-design-writer.md",
+    "tasks/backlog/TASK-SAD-006-system-arch-command-spec.md",
+    "tasks/backlog/TASK-SAD-007-system-design-command-spec.md",
+    "tasks/backlog/TASK-SAD-008-arch-refine-command-spec.md",
+    "tasks/backlog/TASK-SAD-009-design-refine-command-spec.md",
+    "tasks/backlog/TASK-SAD-010-integration-testing-and-pipeline-validation.md",
+    "tasks/design_approved/TASK-SAD-001-temporal-superseding-spike.md",
+    "tasks/design_approved/TASK-SAD-002-update-architecture-decision-dataclass.md",
+    "tasks/design_approved/TASK-SAD-003-create-design-entity-dataclasses.md",
+    "tests/knowledge/test_temporal_superseding.py",
+    "tests/unit/knowledge/test_design_entities.py"
+  ],
+  "tests_written": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/tests/knowledge/test_temporal_superseding.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation",
+  "concerns": [],
+  "requirements_addressed": [
+    "Write pytest test calling upsert_episode() twice with same entity_id and different content",
+    "Verify old content retrievability via semantic search (confirmed: preserved)",
+    "Verify old content retrievability via entity_id metadata search (confirmed: first match returned)",
+    "Document findings: Graphiti preserves old episodes, does not overwrite",
+    "Validate Option A soft superseding via existing metadata infrastructure",
+    "Write recommendation ADR confirming soft superseding mechanism",
+    "Results documented in ADR-ARCH-001-temporal-superseding-mechanism.md"
+  ],
+  "requirements_remaining": [],
+  "sdk_turns_used": 27,
+  "sdk_max_turns": 100,
+  "sdk_ceiling_hit": false,
+  "tests_passed_count": 17,
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Write a pytest test that calls upsert_episode() twice with the same entity_id and different content",
+      "status": "complete",
+      "evidence": "TestUpsertTwiceSameEntityId class contains 3 tests: test_first_upsert_creates_episode (verifies first call returns action='created'), test_second_upsert_with_different_content_updates (verifies second call with changed content returns action='updated' with previous_uuid), test_second_upsert_same_content_skips (verifies identical content returns action='skipped'). TestTemporalSupersedingRecommendation::test_full_superseding_flow provides end-to-end coverage of the complete create\u2192update\u2192verify flow.",
+      "test_file": "tests/knowledge/test_temporal_superseding.py",
+      "implementation_files": [
+        "tests/knowledge/test_temporal_superseding.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Verify whether the old content is still retrievable via semantic search",
+      "status": "complete",
+      "evidence": "TestOldContentRetrievability class contains 4 tests verifying old content retrievability. test_old_episode_remains_in_graph_after_update confirms both old and new episodes are returned by search(). test_old_content_retrievable_via_semantic_search confirms old content matching a query is returned. Finding: Old content IS retrievable via semantic search because upsert_episode() creates new episodes without deleting old ones.",
+      "test_file": "tests/knowledge/test_temporal_superseding.py",
+      "implementation_files": [
+        "tests/knowledge/test_temporal_superseding.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Verify whether the old content is retrievable via entity_id metadata search",
+      "status": "complete",
+      "evidence": "TestOldContentRetrievability::test_entity_id_search_finds_latest_version and test_entity_id_metadata_search_returns_first_match verify entity_id metadata search behavior. Finding: episode_exists() returns the FIRST entity_id match from semantic search results. When multiple episodes share the same entity_id, which version is returned depends on semantic ranking \u2014 this is non-deterministic for retrieving a specific version.",
+      "test_file": "tests/knowledge/test_temporal_superseding.py",
+      "implementation_files": [
+        "tests/knowledge/test_temporal_superseding.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Document findings: does Graphiti preserve old episodes or overwrite them?",
+      "status": "complete",
+      "evidence": "TestGraphitiPreservationBehavior class documents findings via 3 tests with detailed docstrings. Key finding: Graphiti PRESERVES old episodes. upsert_episode() creates a new episode via add_episode() without calling any delete API. test_upsert_creates_new_without_deleting_old explicitly verifies no deletion occurs. test_upsert_preserves_original_created_at verifies created_at is preserved. test_upsert_sets_updated_at_on_update verifies updated_at is set on updates.",
+      "test_file": "tests/knowledge/test_temporal_superseding.py",
+      "implementation_files": [
+        "tests/knowledge/test_temporal_superseding.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "If overwriting: implement Option A (create new episode with next ADR number, set status=superseded on original)",
+      "status": "complete",
+      "evidence": "Finding: Graphiti does NOT overwrite \u2014 it preserves old episodes. Therefore Option A's full invalidation mechanism is not strictly needed. However, TestOptionASoftSuperseding validates that the existing infrastructure (UpsertResult.previous_uuid, EpisodeMetadata.entity_id, source_hash) already provides soft superseding capabilities. 5 tests verify: lineage tracking via previous_uuid, entity_id support in metadata, source_hash deduplication, and graceful degradation.",
+      "test_file": "tests/knowledge/test_temporal_superseding.py",
+      "implementation_files": [
+        "tests/knowledge/test_temporal_superseding.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Write a recommendation doc confirming the chosen temporal superseding mechanism",
+      "status": "complete",
+      "evidence": "ADR-ARCH-001-temporal-superseding-mechanism.md documents the recommendation: Use Option A (soft superseding via data-level encoding). The ADR details investigation findings, decision rationale, consequences (positive and negative), and mitigations. The recommendation is validated by TestTemporalSupersedingRecommendation class with a full end-to-end test.",
+      "test_file": "tests/knowledge/test_temporal_superseding.py",
+      "implementation_files": [
+        "docs/architecture/decisions/ADR-ARCH-001-temporal-superseding-mechanism.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Results documented in docs/architecture/decisions/ADR-ARCH-001-temporal-superseding-mechanism.md",
+      "status": "complete",
+      "evidence": "ADR created at docs/architecture/decisions/ADR-ARCH-001-temporal-superseding-mechanism.md following existing ADR format (ADR-SP-002 as template). Contains Context, Options Evaluated, Investigation Findings (4 sections), Decision, Consequences, and Verification sections.",
+      "test_file": null,
+      "implementation_files": [
+        "docs/architecture/decisions/ADR-ARCH-001-temporal-superseding-mechanism.md"
+      ]
+    }
+  ]
+}

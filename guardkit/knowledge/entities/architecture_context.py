@@ -58,6 +58,10 @@ class ArchitectureDecision:
         decision: What was decided
         consequences: List of consequences (positive and negative)
         related_components: Components affected by this decision
+        alternatives_considered: Alternative options that were evaluated
+        superseded_by: Entity ID of the ADR that supersedes this one
+        supersedes: Entity ID of the ADR that this one supersedes
+        prefix: ADR prefix for entity_id (default "SP" for /system-plan)
 
     Example:
         adr = ArchitectureDecision(
@@ -68,6 +72,8 @@ class ArchitectureDecision:
             decision="Implement event sourcing",
             consequences=["Full history", "Complex replay"],
             related_components=["Order Management"],
+            alternatives_considered=["Simple CRUD", "Change Data Capture"],
+            prefix="ARCH",
         )
     """
 
@@ -78,18 +84,27 @@ class ArchitectureDecision:
     decision: str
     consequences: List[str] = field(default_factory=list)
     related_components: List[str] = field(default_factory=list)
+    alternatives_considered: List[str] = field(default_factory=list)
+    superseded_by: Optional[str] = None
+    supersedes: Optional[str] = None
+    prefix: str = "SP"
 
     @property
     def entity_id(self) -> str:
-        """Generate stable entity ID in format: ADR-SP-{NNN}.
+        """Generate stable entity ID in format: ADR-{prefix}-{NNN}.
 
-        The entity ID is deterministic - same number always produces
-        the same ID regardless of other field values.
+        The entity ID is deterministic - same number and prefix always
+        produces the same ID regardless of other field values.
+
+        The prefix is configurable to support different commands:
+        - "SP" (default): /system-plan → ADR-SP-001
+        - "ARCH": /system-arch → ADR-ARCH-001
+        - "FS": /feature-spec → ADR-FS-001
 
         Returns:
-            Entity ID string (e.g., "ADR-SP-001", "ADR-SP-042")
+            Entity ID string (e.g., "ADR-SP-001", "ADR-ARCH-042")
         """
-        return f"ADR-SP-{self.number:03d}"
+        return f"ADR-{self.prefix}-{self.number:03d}"
 
     def to_episode_body(self) -> dict:
         """Convert to Graphiti episode body.
@@ -98,10 +113,14 @@ class ArchitectureDecision:
         in Graphiti as an episode body. Returns only domain data;
         metadata fields are injected by GraphitiClient.
 
+        New fields (alternatives_considered, superseded_by, supersedes)
+        are only included when non-empty/non-None to maintain backwards
+        compatibility with existing seeded data.
+
         Returns:
             Dictionary containing ADR fields (no _metadata).
         """
-        return {
+        body: dict = {
             "number": self.number,
             "title": self.title,
             "status": self.status,
@@ -110,6 +129,16 @@ class ArchitectureDecision:
             "consequences": self.consequences,
             "related_components": self.related_components,
         }
+
+        # Conditionally include new fields only when non-empty
+        if self.alternatives_considered:
+            body["alternatives_considered"] = self.alternatives_considered
+        if self.superseded_by is not None:
+            body["superseded_by"] = self.superseded_by
+        if self.supersedes is not None:
+            body["supersedes"] = self.supersedes
+
+        return body
 
 
 @dataclass
