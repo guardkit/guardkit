@@ -4,7 +4,7 @@ description: Four new GuardKit commands (/system-arch, /system-design, /arch-ref
   /design-refine) that establish and evolve system-level architecture and design decisions
   upstream of /system-plan
 created: '2026-03-01T14:24:17.139417'
-status: planned
+status: failed
 complexity: 8
 estimated_tasks: 10
 tasks:
@@ -13,28 +13,52 @@ tasks:
   file_path: tasks/backlog/system-arch-design-commands/TASK-SAD-001-temporal-superseding-spike.md
   complexity: 4
   dependencies: []
-  status: pending
-  description: ''
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 50
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-03-01T17:38:40.184008'
+  completed_at: '2026-03-01T18:25:04.611207'
 - id: TASK-SAD-002
   name: Update ArchitectureDecision dataclass
   file_path: tasks/backlog/system-arch-design-commands/TASK-SAD-002-update-architecture-decision-dataclass.md
   complexity: 3
   dependencies: []
-  status: pending
-  description: ''
+  status: failed
   implementation_mode: direct
   estimated_minutes: 33
+  requires_infrastructure: []
+  result:
+    total_turns: 0
+    final_decision: timeout
+    error: Task TASK-SAD-002 timed out after 2400s (40 min)
+  turns_completed: 0
+  current_turn: 0
+  started_at: '2026-03-01T17:38:40.188045'
+  completed_at: '2026-03-01T18:25:04.629330'
 - id: TASK-SAD-003
   name: Create design entity dataclasses
   file_path: tasks/backlog/system-arch-design-commands/TASK-SAD-003-create-design-entity-dataclasses.md
   complexity: 5
   dependencies: []
-  status: pending
-  description: ''
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 75
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-03-01T17:38:40.191808'
+  completed_at: '2026-03-01T18:25:04.640979'
 - id: TASK-SAD-004
   name: Update ADR template and create new templates
   file_path: tasks/backlog/system-arch-design-commands/TASK-SAD-004-update-adr-template-and-create-new-templates.md
@@ -43,9 +67,14 @@ tasks:
   - TASK-SAD-002
   - TASK-SAD-003
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 75
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 - id: TASK-SAD-005
   name: Create SystemDesignGraphiti and DesignWriter
   file_path: tasks/backlog/system-arch-design-commands/TASK-SAD-005-create-system-design-graphiti-and-design-writer.md
@@ -53,9 +82,14 @@ tasks:
   dependencies:
   - TASK-SAD-003
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 113
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 - id: TASK-SAD-006
   name: Write system-arch command spec
   file_path: tasks/backlog/system-arch-design-commands/TASK-SAD-006-system-arch-command-spec.md
@@ -64,9 +98,14 @@ tasks:
   - TASK-SAD-002
   - TASK-SAD-004
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 256
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 - id: TASK-SAD-007
   name: Write system-design command spec
   file_path: tasks/backlog/system-arch-design-commands/TASK-SAD-007-system-design-command-spec.md
@@ -76,9 +115,14 @@ tasks:
   - TASK-SAD-004
   - TASK-SAD-005
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 256
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 - id: TASK-SAD-008
   name: Write arch-refine command spec
   file_path: tasks/backlog/system-arch-design-commands/TASK-SAD-008-arch-refine-command-spec.md
@@ -88,9 +132,14 @@ tasks:
   - TASK-SAD-002
   - TASK-SAD-006
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 170
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 - id: TASK-SAD-009
   name: Write design-refine command spec
   file_path: tasks/backlog/system-arch-design-commands/TASK-SAD-009-design-refine-command-spec.md
@@ -100,9 +149,14 @@ tasks:
   - TASK-SAD-005
   - TASK-SAD-007
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 113
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 - id: TASK-SAD-010
   name: Integration testing and pipeline validation
   file_path: tasks/backlog/system-arch-design-commands/TASK-SAD-010-integration-testing-and-pipeline-validation.md
@@ -113,9 +167,14 @@ tasks:
   - TASK-SAD-008
   - TASK-SAD-009
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 75
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 orchestration:
   parallel_groups:
   - - TASK-SAD-001
@@ -130,3 +189,15 @@ orchestration:
   - - TASK-SAD-010
   estimated_duration_minutes: 1216
   recommended_parallel: 3
+execution:
+  started_at: '2026-03-01T17:38:40.174543'
+  completed_at: '2026-03-01T18:35:24.154772'
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5
+  total_turns: 2
+  tasks_completed: 2
+  tasks_failed: 1
+  current_wave: 1
+  completed_waves: []
+  last_updated: '2026-03-01T18:25:04.640990'
+  archived_at: null
+  archived_to: null

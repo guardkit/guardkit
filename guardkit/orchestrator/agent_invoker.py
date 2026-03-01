@@ -813,10 +813,7 @@ class AgentInvoker:
         proc_path = Path("/proc")
 
         if not proc_path.exists():
-            logger.warning(
-                "TASK-FIX-ASPF-004: /proc not available on this platform, "
-                "cannot kill child claude processes"
-            )
+            self._kill_child_processes_fallback(my_pid)
             return
 
         killed = []
@@ -914,6 +911,146 @@ class AgentInvoker:
             else:
                 return False  # No PPid line found
         return False
+
+    def _kill_child_processes_fallback(self, my_pid: int) -> None:
+        """Kill child claude processes on non-Linux platforms.
+
+        Tries ``psutil`` first (optional dependency), then falls back to
+        ``pgrep`` + ``ps`` which are available on macOS and most BSDs.
+        """
+        try:
+            import psutil
+            self._kill_child_processes_psutil(my_pid, psutil)
+        except ImportError:
+            logger.debug(
+                "TASK-FIX-DFCB: psutil not available, falling back to pgrep"
+            )
+            self._kill_child_processes_pgrep(my_pid)
+
+    def _kill_child_processes_psutil(self, my_pid: int, psutil_mod: Any) -> None:
+        """Kill child claude/node processes using psutil.
+
+        Args:
+            my_pid: Current process ID.
+            psutil_mod: The ``psutil`` module (passed to avoid top-level import).
+        """
+        killed: list = []
+        try:
+            parent = psutil_mod.Process(my_pid)
+            for child in parent.children(recursive=True):
+                try:
+                    name = child.name().lower()
+                    if "claude" not in name and "node" not in name:
+                        continue
+                    child.terminate()
+                    killed.append((child.pid, child.name()))
+                    logger.info(
+                        f"TASK-FIX-DFCB: Sent SIGTERM to child process "
+                        f"pid={child.pid} name={child.name()} (via psutil)"
+                    )
+                except (psutil_mod.NoSuchProcess, psutil_mod.AccessDenied) as exc:
+                    logger.debug(
+                        f"TASK-FIX-DFCB: Could not signal process: {exc}"
+                    )
+        except (psutil_mod.NoSuchProcess, psutil_mod.AccessDenied) as exc:
+            logger.warning(
+                f"TASK-FIX-DFCB: Error accessing process tree via psutil: {exc}"
+            )
+
+        if killed:
+            logger.info(
+                f"TASK-FIX-DFCB: Terminated {len(killed)} child process(es) "
+                f"via psutil: {killed}"
+            )
+        else:
+            logger.debug(
+                "TASK-FIX-DFCB: No child claude processes found (psutil)"
+            )
+
+    def _kill_child_processes_pgrep(self, my_pid: int) -> None:
+        """Kill child claude/node processes using ``pgrep`` and ``ps``.
+
+        Fallback for macOS/BSD when ``psutil`` is not installed.
+        Uses ``pgrep -P <pid>`` to find children and grandchildren,
+        then ``ps -p <pid> -o comm=`` to check process names.
+        """
+        import subprocess as sp
+
+        killed: list = []
+        try:
+            # Find direct children
+            result = sp.run(
+                ["pgrep", "-P", str(my_pid)],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode != 0:
+                logger.debug(
+                    "TASK-FIX-DFCB: pgrep found no child processes"
+                )
+                return
+
+            child_pids = [
+                int(p) for p in result.stdout.strip().splitlines() if p.strip()
+            ]
+
+            # Also collect grandchildren (SDK -> node -> claude)
+            all_pids: set = set(child_pids)
+            for cpid in child_pids:
+                gc_result = sp.run(
+                    ["pgrep", "-P", str(cpid)],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if gc_result.returncode == 0:
+                    for line in gc_result.stdout.strip().splitlines():
+                        if line.strip():
+                            all_pids.add(int(line.strip()))
+
+            # Check each process name and kill claude/node matches
+            for pid in all_pids:
+                try:
+                    ps_result = sp.run(
+                        ["ps", "-p", str(pid), "-o", "comm="],
+                        capture_output=True, text=True, timeout=5,
+                    )
+                    if ps_result.returncode != 0:
+                        continue
+                    name = ps_result.stdout.strip().lower()
+                    if "claude" not in name and "node" not in name:
+                        continue
+                    os.kill(pid, signal.SIGTERM)
+                    killed.append((pid, name))
+                    logger.info(
+                        f"TASK-FIX-DFCB: Sent SIGTERM to child process "
+                        f"pid={pid} name={name} (via pgrep)"
+                    )
+                except ProcessLookupError:
+                    logger.debug(
+                        f"TASK-FIX-DFCB: Process pid={pid} already exited"
+                    )
+                except PermissionError:
+                    logger.warning(
+                        f"TASK-FIX-DFCB: Permission denied sending SIGTERM "
+                        f"to pid={pid}"
+                    )
+        except FileNotFoundError:
+            logger.warning(
+                "TASK-FIX-DFCB: pgrep not found on this platform, "
+                "cannot kill child claude processes"
+            )
+        except sp.TimeoutExpired:
+            logger.warning("TASK-FIX-DFCB: pgrep timed out")
+        except OSError as exc:
+            logger.warning(f"TASK-FIX-DFCB: Error running pgrep: {exc}")
+
+        if killed:
+            logger.info(
+                f"TASK-FIX-DFCB: Terminated {len(killed)} child process(es) "
+                f"via pgrep: {killed}"
+            )
+        else:
+            logger.debug(
+                "TASK-FIX-DFCB: No child claude processes found (pgrep)"
+            )
 
     async def invoke_player(
         self,
@@ -1678,6 +1815,7 @@ Follow the decision format specified in your agent definition.
                 ProcessError,
                 CLIJSONDecodeError,
                 AssistantMessage,
+                ResultMessage,
             )
         except ImportError as e:
             import sys
@@ -1750,7 +1888,8 @@ Follow the decision format specified in your agent definition.
                             # Progress tracking handled by ProgressDisplay
                             # Agent writes report to JSON file, which is loaded after
                             # the query completes via _load_agent_report()
-                            pass
+                            if isinstance(message, ResultMessage):
+                                break
             finally:
                 if monitor and not monitor.done():
                     monitor.cancel()
@@ -3972,7 +4111,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                 result_count += 1
                                 # TASK-VPR-003: Capture SDK turns from ResultMessage
                                 sdk_turns_used = message.num_turns
-                                logger.info(f"SDK completed: turns={message.num_turns}")
+                                logger.info(f"[{task_id}] SDK completed: turns={message.num_turns}")
+                                break
 
                 if _sdk_stream_error is None:
                     break  # Stream completed successfully, exit retry loop

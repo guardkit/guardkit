@@ -424,6 +424,21 @@ class TestDetectTestResults:
         assert result.tests_run is False
         assert result.error == "pytest failed"
 
+    @patch("guardkit.orchestrator.coach_verification.CoachVerifier")
+    def test_state_recovery_uses_extended_timeout(self, mock_verifier_class: MagicMock, tmp_path: Path):
+        """Test that detect_test_results passes timeout=300 for state recovery."""
+        mock_verifier = MagicMock()
+        mock_verifier._run_tests.return_value = MagicMock(
+            passed=True,
+            test_count=5,
+            output="5 passed in 1.2s",
+        )
+        mock_verifier_class.return_value = mock_verifier
+
+        detect_test_results(tmp_path, task_id="TASK-001", turn=1)
+
+        mock_verifier._run_tests.assert_called_once_with(test_paths=None, timeout=300)
+
     def test_coach_verifier_import_error(self, tmp_path: Path):
         """Test handling import error for CoachVerifier."""
         # Simulate import error by making the module raise an error

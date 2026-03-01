@@ -1,0 +1,56 @@
+{
+  "task_id": "TASK-FIX-1206",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/agent_invoker.py",
+    "tests/unit/test_agent_invoker.py"
+  ],
+  "files_created": [],
+  "tests_written": [],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "425 passed in 16.69s (tests/unit/test_agent_invoker.py)",
+  "implementation_notes": "Made three targeted changes: (1) Added ResultMessage to the import block in _invoke_with_role() at line 1681. (2) Replaced the trailing pass in the _invoke_with_role() async for loop with an isinstance(message, ResultMessage) check and break — the loop now exits immediately on ResultMessage instead of waiting for the stream to close. (3) Added break after the logger.info line in the _invoke_task_work_implement() ResultMessage branch at line 3978. Also updated the existing test mock in tests/unit/test_agent_invoker.py::TestSDKIntegration::test_sdk_invocation_calls_query to supply ResultMessage and AssistantMessage as real dynamically-created types (matching how CLINotFoundError etc. are already mocked), and updated the second yielded message to be an instance of MockResultMessage so the isinstance check works and the break fires correctly.",
+  "concerns": [],
+  "requirements_addressed": [
+    "_invoke_task_work_implement(): break added after ResultMessage logging",
+    "_invoke_with_role(): ResultMessage imported and isinstance check with break added",
+    "_invoke_player_direct(): covered by _invoke_with_role() fix",
+    "All existing tests pass with no regressions"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "_invoke_task_work_implement(): Add break after ResultMessage logging",
+      "status": "complete",
+      "evidence": "Added break on line 3978, immediately after logger.info(f'SDK completed: turns={message.num_turns}'). The break exits the async for loop without waiting for the stream to close.",
+      "test_file": "tests/unit/test_agent_invoker.py",
+      "implementation_files": ["guardkit/orchestrator/agent_invoker.py"]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "_invoke_with_role(): Import ResultMessage, check isinstance, and break",
+      "status": "complete",
+      "evidence": "ResultMessage added to the from claude_agent_sdk import block at line 1681. The trailing pass replaced with: if isinstance(message, ResultMessage): break at lines 1754-1755.",
+      "test_file": "tests/unit/test_agent_invoker.py",
+      "implementation_files": ["guardkit/orchestrator/agent_invoker.py"]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "_invoke_player_direct(): Covered by _invoke_with_role() fix",
+      "status": "complete",
+      "evidence": "_invoke_player_direct() delegates to _invoke_with_role(), so the break added to _invoke_with_role() covers this path automatically. No additional changes needed.",
+      "test_file": null,
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "All existing tests pass (no regressions)",
+      "status": "complete",
+      "evidence": "Ran tests/unit/test_agent_invoker.py: 425 passed in 16.69s. The one pre-existing failure (test_sdk_invocation_calls_query) was caused by the mock not providing ResultMessage as a real type, which made isinstance() raise TypeError. Fixed by adding ResultMessage and AssistantMessage as dynamically-created types in the mock, matching the existing pattern for CLINotFoundError/ProcessError/CLIJSONDecodeError.",
+      "test_file": "tests/unit/test_agent_invoker.py",
+      "implementation_files": ["tests/unit/test_agent_invoker.py"]
+    }
+  ]
+}

@@ -360,8 +360,10 @@ def detect_test_results(
         from guardkit.orchestrator.coach_verification import CoachVerifier
 
         # Create verifier and run tests
+        # Use extended timeout (300s) for state recovery contexts where
+        # parallel tasks sharing a worktree can cause slower execution
         verifier = CoachVerifier(worktree_path)
-        test_result = verifier._run_tests(test_paths=test_paths)
+        test_result = verifier._run_tests(test_paths=test_paths, timeout=300)
 
         # Parse results
         passed_count = test_result.test_count if test_result.passed else 0

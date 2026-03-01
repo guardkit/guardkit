@@ -376,7 +376,7 @@ class MultiLayeredStateTracker(StateTracker):
         test_count = (
             test_results.test_count
             if test_results and test_results.tests_run
-            else 0
+            else player_report.get("test_count", 0)
         )
 
         return WorkState(

@@ -1,0 +1,55 @@
+{
+  "task_id": "TASK-FIX-DFCB",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/agent_invoker.py"
+  ],
+  "files_created": [],
+  "tests_written": [],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "425 passed in 16.52s",
+  "implementation_notes": "Made four targeted changes to agent_invoker.py:\n1. Replaced the warning+return block in _kill_child_claude_processes() (line 815) with a call to self._kill_child_processes_fallback(my_pid).\n2. Added _kill_child_processes_fallback() after _is_descendant_of() (line 915): tries psutil first via ImportError guard, falls back to pgrep.\n3. Added _kill_child_processes_psutil() (line 930): uses psutil_mod passed as argument to avoid top-level import, walks parent.children(recursive=True), filters by name containing 'claude' or 'node', calls child.terminate().\n4. Added _kill_child_processes_pgrep() (line 970): uses pgrep -P to enumerate direct children and one level of grandchildren, then ps -p to check names, sends SIGTERM via os.kill(). Handles FileNotFoundError (pgrep absent), TimeoutExpired, OSError, ProcessLookupError, and PermissionError.\nAll existing Linux /proc code (lines 819-879) is unchanged. The Any type was already imported at line 15. subprocess is re-imported locally inside _kill_child_processes_pgrep as specified.",
+  "concerns": [],
+  "requirements_addressed": [
+    "_kill_child_claude_processes() terminates child Claude CLI processes on macOS",
+    "_kill_child_claude_processes() continues to work on Linux",
+    "No new hard dependency added (psutil optional, with fallback)",
+    "The existing Linux /proc-based path is preserved as the primary approach"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "_kill_child_claude_processes() terminates child Claude CLI processes on macOS",
+      "status": "complete",
+      "evidence": "Non-Linux branch now calls _kill_child_processes_fallback(my_pid) instead of logging a warning and returning. The fallback tries psutil first, then pgrep+ps, both of which are available on macOS. Both paths send SIGTERM to child processes whose names contain 'claude' or 'node'.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/agent_invoker.py"]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "_kill_child_claude_processes() continues to work on Linux",
+      "status": "complete",
+      "evidence": "The existing /proc-based path (lines 819-879) is completely unchanged. The only modification to _kill_child_claude_processes() itself is replacing the 5-line warning+return block with a 2-line fallback call that only executes when /proc does not exist.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/agent_invoker.py"]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "No new hard dependency added (psutil optional, with fallback)",
+      "status": "complete",
+      "evidence": "psutil is imported inside _kill_child_processes_fallback() with a try/except ImportError that falls back to _kill_child_processes_pgrep(). It is never imported at the module level. pgrep and ps are standard macOS/BSD utilities requiring no installation.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/agent_invoker.py"]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "The existing Linux /proc-based path is preserved as the primary approach",
+      "status": "complete",
+      "evidence": "The /proc path remains the first branch executed in _kill_child_claude_processes(). It runs unconditionally on Linux where /proc exists. The new fallback methods are only reached when /proc is absent.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/agent_invoker.py"]
+    }
+  ]
+}

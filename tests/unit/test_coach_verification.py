@@ -229,6 +229,45 @@ class TestCoachVerifier:
         assert "timed out" in result.output
 
     @patch("subprocess.run")
+    def test_run_tests_default_timeout(self, mock_run: MagicMock, verifier: CoachVerifier):
+        """Test that default timeout is 120s."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="5 passed",
+        )
+
+        verifier._run_tests()
+
+        mock_run.assert_called_once()
+        assert mock_run.call_args[1]["timeout"] == 120
+
+    @patch("subprocess.run")
+    def test_run_tests_custom_timeout(self, mock_run: MagicMock, verifier: CoachVerifier):
+        """Test that custom timeout is passed through to subprocess.run."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="5 passed",
+        )
+
+        verifier._run_tests(timeout=300)
+
+        mock_run.assert_called_once()
+        assert mock_run.call_args[1]["timeout"] == 300
+
+    @patch("subprocess.run")
+    def test_run_tests_custom_timeout_fallback_path(self, mock_run: MagicMock, verifier: CoachVerifier):
+        """Test that custom timeout is used in the fallback path too."""
+        mock_run.side_effect = [
+            FileNotFoundError("pytest"),  # Primary path fails
+            MagicMock(returncode=0, stdout="5 passed"),  # Fallback succeeds
+        ]
+
+        verifier._run_tests(timeout=300)
+
+        # Second call should use the custom timeout
+        assert mock_run.call_args_list[1][1]["timeout"] == 300
+
+    @patch("subprocess.run")
     def test_run_tests_with_scoped_paths(self, mock_run: MagicMock, verifier: CoachVerifier):
         """Test running tests with scoped test paths."""
         mock_run.return_value = MagicMock(

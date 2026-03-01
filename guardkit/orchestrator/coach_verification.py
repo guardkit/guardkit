@@ -236,7 +236,7 @@ class CoachVerifier:
 
         return discrepancies
 
-    def _run_tests(self, test_paths: list[str] | None = None) -> TestResult:
+    def _run_tests(self, test_paths: list[str] | None = None, timeout: int = 120) -> TestResult:
         """Run tests in worktree and return result.
 
         Uses caching to avoid running tests multiple times in the same
@@ -246,6 +246,9 @@ class CoachVerifier:
             test_paths: Optional list of test file/directory paths to scope
                 the test run. When provided, pytest runs only against these
                 paths instead of the entire worktree.
+            timeout: Timeout in seconds for test execution. Default 120.
+                Use higher values (e.g. 300) for state recovery contexts
+                where parallel load may cause slower execution.
 
         Returns:
             TestResult with execution results
@@ -266,7 +269,7 @@ class CoachVerifier:
                 cwd=self.worktree_path,
                 capture_output=True,
                 text=True,
-                timeout=120,
+                timeout=timeout,
             )
             test_result = TestResult(
                 passed=result.returncode == 0,
@@ -286,7 +289,7 @@ class CoachVerifier:
                         cwd=self.worktree_path,
                         capture_output=True,
                         text=True,
-                        timeout=120,
+                        timeout=timeout,
                     )
                     test_result = TestResult(
                         passed=result.returncode == 0,
@@ -300,7 +303,7 @@ class CoachVerifier:
                 logger.error("Failed to run tests: neither python3 nor python found")
                 test_result = TestResult(passed=False, test_count=0, output="")
         except subprocess.TimeoutExpired:
-            logger.error("Test execution timed out after 120s")
+            logger.error(f"Test execution timed out after {timeout}s")
             test_result = TestResult(
                 passed=False, test_count=0, output="Test execution timed out"
             )

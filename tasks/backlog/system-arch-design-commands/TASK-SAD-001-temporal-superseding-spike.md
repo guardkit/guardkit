@@ -1,6 +1,6 @@
 ---
 id: TASK-SAD-001
-title: "Temporal superseding spike — verify Graphiti upsert behaviour"
+title: "Temporal superseding spike \u2014 verify Graphiti upsert behaviour"
 task_type: feature
 parent_review: TASK-REV-AEE1
 feature_id: FEAT-SAD
@@ -8,6 +8,22 @@ wave: 1
 implementation_mode: task-work
 complexity: 4
 dependencies: []
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 30
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5
+  base_branch: main
+  started_at: '2026-03-01T17:38:40.215022'
+  last_updated: '2026-03-01T17:43:50.626223'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-03-01T17:38:40.215022'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Temporal superseding spike — verify Graphiti upsert behaviour

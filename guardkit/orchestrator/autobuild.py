@@ -1859,6 +1859,7 @@ class AutoBuildOrchestrator:
                 original_error=player_result.error,
                 acceptance_criteria=acceptance_criteria,
                 task_type=task_type,
+                player_report=player_result.report,
             )
 
             if recovered_player_result:
@@ -2162,6 +2163,7 @@ class AutoBuildOrchestrator:
         original_error: Optional[str],
         acceptance_criteria: Optional[List[str]] = None,
         task_type: Optional[str] = None,
+        player_report: Optional[dict] = None,
     ) -> Optional[AgentInvocationResult]:
         """
         Attempt to recover work state when Player fails.
@@ -2191,6 +2193,8 @@ class AutoBuildOrchestrator:
             Acceptance criteria from task (for promise generation)
         task_type : Optional[str]
             Task type from frontmatter (e.g., "scaffolding", "feature")
+        player_report : Optional[dict]
+            Player report dict, used to extract tests_written for scoped test runs
 
         Returns
         -------
@@ -2210,15 +2214,22 @@ class AutoBuildOrchestrator:
             from guardkit.tasks.task_loader import TaskLoader
 
             test_paths = None
-            try:
-                task_data = TaskLoader.load_task(task_id, repo_root=self.repo_root)
-                test_scope = task_data.get("frontmatter", {}).get("test_scope")
-                if test_scope:
-                    test_paths = [test_scope]
-                    logger.debug(f"Using task-specific test scope: {test_scope}")
-            except Exception as e:
-                logger.debug(f"Could not load task for test_scope extraction: {e}")
-                # Continue with full-worktree run (backward compatible)
+
+            # Prefer player report test files when available
+            if player_report and player_report.get("tests_written"):
+                test_paths = player_report["tests_written"]
+                logger.debug(f"Using player report test paths: {test_paths}")
+
+            if test_paths is None:
+                try:
+                    task_data = TaskLoader.load_task(task_id, repo_root=self.repo_root)
+                    test_scope = task_data.get("frontmatter", {}).get("test_scope")
+                    if test_scope:
+                        test_paths = [test_scope]
+                        logger.debug(f"Using task-specific test scope: {test_scope}")
+                except Exception as e:
+                    logger.debug(f"Could not load task for test_scope extraction: {e}")
+                    # Continue with full-worktree run (backward compatible)
 
             # Use MultiLayeredStateTracker for cascade detection
             state_tracker = MultiLayeredStateTracker(

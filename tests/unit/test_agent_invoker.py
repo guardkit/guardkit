@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import signal
 from pathlib import Path
 from typing import Dict, Any
 from unittest.mock import AsyncMock, Mock, patch, MagicMock
@@ -601,12 +602,16 @@ class TestSDKIntegration:
     @pytest.mark.asyncio
     async def test_sdk_invocation_calls_query(self, agent_invoker):
         """SDK invocation calls claude_agent_sdk.query() with correct options."""
+        # Create real types for SDK message classes so isinstance() works
+        MockResultMessage = type("ResultMessage", (), {})
+        mock_result_msg = MockResultMessage()
+
         # Create async generator mock for query()
         # Bug #472 defense: mock messages must explicitly set error=None
         # to prevent check_assistant_message_error from triggering
         async def mock_query_gen(*args, **kwargs):
             yield MagicMock(type="assistant", error=None)
-            yield MagicMock(type="result", subtype="success", error=None)
+            yield mock_result_msg
 
         # Create mock SDK module
         mock_sdk = MagicMock()
@@ -615,6 +620,8 @@ class TestSDKIntegration:
         mock_sdk.CLINotFoundError = type("CLINotFoundError", (Exception,), {})
         mock_sdk.ProcessError = type("ProcessError", (Exception,), {})
         mock_sdk.CLIJSONDecodeError = type("CLIJSONDecodeError", (Exception,), {})
+        mock_sdk.AssistantMessage = type("AssistantMessage", (), {})
+        mock_sdk.ResultMessage = MockResultMessage
 
         import sys
         with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
@@ -8406,3 +8413,190 @@ class TestBaselineCommit:
         diff_cmd = mock_run.call_args_list[0][0][0]
         assert "initial_commit" in diff_cmd
         assert "HEAD" not in diff_cmd
+
+
+# ==================== Cross-Platform Subprocess Cleanup Tests (TASK-FIX-DFCB) ====================
+
+
+class TestKillChildClaudeProcesses:
+    """Test _kill_child_claude_processes and its platform-specific helpers."""
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance."""
+        return AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=60,
+        )
+
+    def test_linux_path_used_when_proc_exists(self, invoker):
+        """On Linux (/proc exists), the original /proc-based path runs."""
+        with patch.object(Path, "exists", return_value=True), \
+             patch.object(Path, "iterdir", return_value=iter([])):
+            # Should NOT call fallback
+            with patch.object(invoker, "_kill_child_processes_fallback") as mock_fb:
+                invoker._kill_child_claude_processes()
+                mock_fb.assert_not_called()
+
+    def test_fallback_called_when_proc_missing(self, invoker):
+        """On macOS (/proc missing), the fallback path is invoked."""
+        with patch.object(Path, "exists", return_value=False), \
+             patch("os.getpid", return_value=12345), \
+             patch.object(invoker, "_kill_child_processes_fallback") as mock_fb:
+            invoker._kill_child_claude_processes()
+            mock_fb.assert_called_once_with(12345)
+
+    def test_fallback_uses_psutil_when_available(self, invoker):
+        """Fallback prefers psutil when importable."""
+        fake_psutil = MagicMock()
+        with patch("builtins.__import__", side_effect=lambda name, *a, **kw: fake_psutil if name == "psutil" else __import__(name, *a, **kw)):
+            with patch.object(invoker, "_kill_child_processes_psutil") as mock_ps:
+                invoker._kill_child_processes_fallback(100)
+                mock_ps.assert_called_once_with(100, fake_psutil)
+
+    def test_fallback_uses_pgrep_when_psutil_missing(self, invoker):
+        """Fallback falls through to pgrep when psutil is not installed."""
+        original_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
+
+        def import_no_psutil(name, *args, **kwargs):
+            if name == "psutil":
+                raise ImportError("No module named 'psutil'")
+            return original_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=import_no_psutil):
+            with patch.object(invoker, "_kill_child_processes_pgrep") as mock_pg:
+                invoker._kill_child_processes_fallback(100)
+                mock_pg.assert_called_once_with(100)
+
+    def test_psutil_kills_claude_child(self, invoker):
+        """psutil path terminates child processes named 'claude' or 'node'."""
+        mock_psutil = MagicMock()
+        mock_child_claude = MagicMock()
+        mock_child_claude.name.return_value = "claude"
+        mock_child_claude.pid = 42
+
+        mock_child_other = MagicMock()
+        mock_child_other.name.return_value = "python"
+        mock_child_other.pid = 43
+
+        mock_parent = MagicMock()
+        mock_parent.children.return_value = [mock_child_claude, mock_child_other]
+        mock_psutil.Process.return_value = mock_parent
+
+        invoker._kill_child_processes_psutil(100, mock_psutil)
+
+        mock_child_claude.terminate.assert_called_once()
+        mock_child_other.terminate.assert_not_called()
+
+    def test_psutil_kills_node_child(self, invoker):
+        """psutil path also terminates 'node' processes."""
+        mock_psutil = MagicMock()
+        mock_child = MagicMock()
+        mock_child.name.return_value = "node"
+        mock_child.pid = 44
+
+        mock_parent = MagicMock()
+        mock_parent.children.return_value = [mock_child]
+        mock_psutil.Process.return_value = mock_parent
+
+        invoker._kill_child_processes_psutil(100, mock_psutil)
+
+        mock_child.terminate.assert_called_once()
+
+    def test_psutil_handles_no_such_process(self, invoker):
+        """psutil path handles NoSuchProcess gracefully."""
+        mock_psutil = MagicMock()
+        mock_psutil.NoSuchProcess = type("NoSuchProcess", (Exception,), {})
+        mock_psutil.AccessDenied = type("AccessDenied", (Exception,), {})
+
+        mock_child = MagicMock()
+        mock_child.name.return_value = "claude"
+        mock_child.pid = 45
+        mock_child.terminate.side_effect = mock_psutil.NoSuchProcess("gone")
+
+        mock_parent = MagicMock()
+        mock_parent.children.return_value = [mock_child]
+        mock_psutil.Process.return_value = mock_parent
+
+        # Should not raise
+        invoker._kill_child_processes_psutil(100, mock_psutil)
+
+    def test_psutil_handles_access_denied_on_parent(self, invoker):
+        """psutil path handles AccessDenied on the parent process."""
+        mock_psutil = MagicMock()
+        mock_psutil.NoSuchProcess = type("NoSuchProcess", (Exception,), {})
+        mock_psutil.AccessDenied = type("AccessDenied", (Exception,), {})
+        mock_psutil.Process.side_effect = mock_psutil.AccessDenied("denied")
+
+        # Should not raise
+        invoker._kill_child_processes_psutil(100, mock_psutil)
+
+    def test_pgrep_kills_matching_processes(self, invoker):
+        """pgrep path finds and kills claude/node child processes."""
+        with patch("subprocess.run") as mock_run, \
+             patch("os.kill") as mock_kill:
+            # pgrep -P <pid> returns child PIDs
+            pgrep_result = Mock(returncode=0, stdout="200\n201\n")
+            # pgrep for grandchildren returns none
+            pgrep_gc_200 = Mock(returncode=1, stdout="")
+            pgrep_gc_201 = Mock(returncode=1, stdout="")
+            # ps -p 200 -o comm= returns "node"
+            ps_200 = Mock(returncode=0, stdout="node\n")
+            # ps -p 201 -o comm= returns "python"
+            ps_201 = Mock(returncode=0, stdout="python\n")
+
+            mock_run.side_effect = [pgrep_result, pgrep_gc_200, pgrep_gc_201, ps_200, ps_201]
+
+            invoker._kill_child_processes_pgrep(100)
+
+            mock_kill.assert_called_once_with(200, signal.SIGTERM)
+
+    def test_pgrep_includes_grandchildren(self, invoker):
+        """pgrep path also checks grandchildren (SDK → node → claude)."""
+        with patch("subprocess.run") as mock_run, \
+             patch("os.kill") as mock_kill:
+            pgrep_children = Mock(returncode=0, stdout="300\n")
+            pgrep_grandchildren = Mock(returncode=0, stdout="301\n")
+            ps_300 = Mock(returncode=0, stdout="bash\n")
+            ps_301 = Mock(returncode=0, stdout="claude\n")
+
+            mock_run.side_effect = [pgrep_children, pgrep_grandchildren, ps_300, ps_301]
+
+            invoker._kill_child_processes_pgrep(100)
+
+            mock_kill.assert_called_once_with(301, signal.SIGTERM)
+
+    def test_pgrep_no_children(self, invoker):
+        """pgrep path handles no child processes gracefully."""
+        with patch("subprocess.run") as mock_run, \
+             patch("os.kill") as mock_kill:
+            mock_run.return_value = Mock(returncode=1, stdout="")
+
+            invoker._kill_child_processes_pgrep(100)
+
+            mock_kill.assert_not_called()
+
+    def test_pgrep_handles_missing_pgrep(self, invoker):
+        """pgrep path handles FileNotFoundError when pgrep is not installed."""
+        with patch("subprocess.run", side_effect=FileNotFoundError("pgrep")):
+            # Should not raise
+            invoker._kill_child_processes_pgrep(100)
+
+    def test_pgrep_handles_timeout(self, invoker):
+        """pgrep path handles subprocess timeout."""
+        import subprocess as sp
+        with patch("subprocess.run", side_effect=sp.TimeoutExpired("pgrep", 5)):
+            # Should not raise
+            invoker._kill_child_processes_pgrep(100)
+
+    def test_pgrep_handles_process_lookup_error(self, invoker):
+        """pgrep path handles ProcessLookupError when process exits mid-kill."""
+        with patch("subprocess.run") as mock_run, \
+             patch("os.kill", side_effect=ProcessLookupError("no such process")):
+            pgrep_result = Mock(returncode=0, stdout="400\n")
+            pgrep_gc = Mock(returncode=1, stdout="")
+            ps_400 = Mock(returncode=0, stdout="claude\n")
+            mock_run.side_effect = [pgrep_result, pgrep_gc, ps_400]
+
+            # Should not raise
+            invoker._kill_child_processes_pgrep(100)

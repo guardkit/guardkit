@@ -715,8 +715,8 @@ class TestStateTrackerIntegration:
         mock_git_changes: MagicMock,
         tmp_path: Path,
     ):
-        """Test fallback when tests don't run (uses Player report value)."""
-        # Create Player report
+        """Test fallback when tests don't run (uses Player report values)."""
+        # Create Player report with test data
         tracker = MultiLayeredStateTracker(
             task_id="TASK-001",
             worktree_path=tmp_path,
@@ -728,7 +728,8 @@ class TestStateTrackerIntegration:
             "task_id": "TASK-001",
             "turn": 1,
             "files_modified": ["src/main.py"],
-            "tests_passed": True,  # Player claims tests passed
+            "tests_passed": True,
+            "test_count": 66,
         }
         report_path.write_text(json.dumps(report_data))
 
@@ -742,9 +743,87 @@ class TestStateTrackerIntegration:
 
         state = tracker.capture_state(turn=1)
 
-        # Falls back to Player report value when tests don't run
+        # Falls back to Player report values when tests don't run
         assert state.tests_passed is True  # From Player report
-        assert state.test_count == 0  # From test detection
+        assert state.test_count == 66  # From Player report (was bug: returned 0)
+
+    @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
+    @patch("guardkit.orchestrator.state_tracker.detect_test_results")
+    def test_coach_verifier_results_preferred_when_tests_run(
+        self,
+        mock_test_results: MagicMock,
+        mock_git_changes: MagicMock,
+        tmp_path: Path,
+    ):
+        """Test that CoachVerifier results are preferred over player report when tests run."""
+        # Create Player report with test data
+        tracker = MultiLayeredStateTracker(
+            task_id="TASK-001",
+            worktree_path=tmp_path,
+        )
+        report_dir = tmp_path / ".guardkit" / "autobuild" / "TASK-001"
+        report_dir.mkdir(parents=True)
+        report_path = report_dir / "player_turn_1.json"
+        report_data = {
+            "task_id": "TASK-001",
+            "turn": 1,
+            "files_modified": ["src/main.py"],
+            "tests_passed": True,
+            "test_count": 66,
+        }
+        report_path.write_text(json.dumps(report_data))
+
+        # CoachVerifier succeeds with its own results
+        mock_git_changes.return_value = None
+        mock_test_results.return_value = TestResultsSummary(
+            tests_run=True,
+            tests_passed=True,
+            test_count=42,
+            passed_count=42,
+        )
+
+        state = tracker.capture_state(turn=1)
+
+        # CoachVerifier results preferred over player report
+        assert state.tests_passed is True  # From CoachVerifier
+        assert state.test_count == 42  # From CoachVerifier (not 66 from player report)
+
+    @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
+    @patch("guardkit.orchestrator.state_tracker.detect_test_results")
+    def test_player_report_fallback_no_test_count_key(
+        self,
+        mock_test_results: MagicMock,
+        mock_git_changes: MagicMock,
+        tmp_path: Path,
+    ):
+        """Test fallback to 0 when player report has no test_count key."""
+        tracker = MultiLayeredStateTracker(
+            task_id="TASK-001",
+            worktree_path=tmp_path,
+        )
+        report_dir = tmp_path / ".guardkit" / "autobuild" / "TASK-001"
+        report_dir.mkdir(parents=True)
+        report_path = report_dir / "player_turn_1.json"
+        report_data = {
+            "task_id": "TASK-001",
+            "turn": 1,
+            "files_modified": ["src/main.py"],
+            # No test_count or tests_passed keys
+        }
+        report_path.write_text(json.dumps(report_data))
+
+        mock_git_changes.return_value = None
+        mock_test_results.return_value = TestResultsSummary(
+            tests_run=False,
+            tests_passed=False,
+            test_count=0,
+        )
+
+        state = tracker.capture_state(turn=1)
+
+        # Falls back to defaults when player report lacks keys
+        assert state.tests_passed is False  # Default from .get()
+        assert state.test_count == 0  # Default from .get()
 
 
 # ============================================================================
