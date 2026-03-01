@@ -2243,6 +2243,164 @@ class TestPrimaryTestDetection:
 
 
 # ============================================================================
+# collect_ignore_glob filtering (TASK-FIX-7F48)
+# ============================================================================
+
+
+class TestCollectIgnoreGlobFiltering:
+    """Tests for _load_collect_ignore_glob and collect_ignore_glob filtering in _detect_tests_from_results."""
+
+    def _make_conftest(self, worktree: Path, patterns: list) -> None:
+        patterns_repr = ", ".join(f'"{p}"' for p in patterns)
+        (worktree / "conftest.py").write_text(
+            f'collect_ignore_glob = [{patterns_repr}]\n'
+        )
+
+    def test_load_collect_ignore_glob_returns_patterns(self, tmp_worktree):
+        """Patterns are extracted from root conftest.py."""
+        self._make_conftest(
+            tmp_worktree,
+            ["guardkit/eval/workspaces/*/tests/*", "templates/*/tests/*"],
+        )
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FIX-7F48")
+        patterns = validator._load_collect_ignore_glob()
+        assert patterns == [
+            "guardkit/eval/workspaces/*/tests/*",
+            "templates/*/tests/*",
+        ]
+
+    def test_load_collect_ignore_glob_no_conftest(self, tmp_worktree):
+        """Returns empty list when conftest.py does not exist."""
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FIX-7F48")
+        assert validator._load_collect_ignore_glob() == []
+
+    def test_load_collect_ignore_glob_no_assignment(self, tmp_worktree):
+        """Returns empty list when conftest.py has no collect_ignore_glob."""
+        (tmp_worktree / "conftest.py").write_text(
+            "import sys\ncollect_ignore = ['some_file.py']\n"
+        )
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FIX-7F48")
+        assert validator._load_collect_ignore_glob() == []
+
+    def test_load_collect_ignore_glob_empty_list(self, tmp_worktree):
+        """Returns empty list when collect_ignore_glob is assigned an empty list."""
+        (tmp_worktree / "conftest.py").write_text("collect_ignore_glob = []\n")
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FIX-7F48")
+        assert validator._load_collect_ignore_glob() == []
+
+    def test_load_collect_ignore_glob_bad_syntax(self, tmp_worktree):
+        """Returns empty list (no crash) when conftest.py has a syntax error."""
+        (tmp_worktree / "conftest.py").write_text("collect_ignore_glob = [unterminated\n")
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FIX-7F48")
+        assert validator._load_collect_ignore_glob() == []
+
+    def test_detect_tests_filters_excluded_paths(self, tmp_worktree):
+        """Test files matching collect_ignore_glob are excluded from pytest command."""
+        # Set up conftest with exclusion patterns
+        self._make_conftest(
+            tmp_worktree,
+            ["guardkit/eval/workspaces/*/tests/*", "templates/*/tests/*"],
+        )
+        # Create two test files: one legitimate, one matching exclusion
+        legit_dir = tmp_worktree / "tests" / "unit"
+        legit_dir.mkdir(parents=True)
+        (legit_dir / "test_feature.py").write_text("def test_x(): pass")
+
+        workspace_dir = tmp_worktree / "guardkit" / "eval" / "workspaces" / "TASK-001" / "tests"
+        workspace_dir.mkdir(parents=True)
+        (workspace_dir / "test_workspace.py").write_text("def test_y(): pass")
+
+        task_work_results = {
+            "files_created": [
+                "tests/unit/test_feature.py",
+                "guardkit/eval/workspaces/TASK-001/tests/test_workspace.py",
+            ],
+            "files_modified": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FIX-7F48")
+        result = validator._detect_tests_from_results(task_work_results)
+
+        assert result is not None
+        assert "test_feature.py" in result
+        assert "test_workspace.py" not in result
+
+    def test_detect_tests_no_filtering_without_conftest(self, tmp_worktree):
+        """Without conftest.py all matching test files are included."""
+        workspace_dir = tmp_worktree / "guardkit" / "eval" / "workspaces" / "TASK-001" / "tests"
+        workspace_dir.mkdir(parents=True)
+        (workspace_dir / "test_workspace.py").write_text("def test_y(): pass")
+
+        task_work_results = {
+            "files_created": [
+                "guardkit/eval/workspaces/TASK-001/tests/test_workspace.py",
+            ],
+            "files_modified": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FIX-7F48")
+        result = validator._detect_tests_from_results(task_work_results)
+
+        assert result is not None
+        assert "test_workspace.py" in result
+
+    def test_detect_tests_no_filtering_with_empty_patterns(self, tmp_worktree):
+        """Empty collect_ignore_glob means no files are filtered."""
+        (tmp_worktree / "conftest.py").write_text("collect_ignore_glob = []\n")
+        test_dir = tmp_worktree / "tests"
+        test_dir.mkdir(parents=True)
+        (test_dir / "test_something.py").write_text("def test_a(): pass")
+
+        task_work_results = {
+            "files_created": ["tests/test_something.py"],
+            "files_modified": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FIX-7F48")
+        result = validator._detect_tests_from_results(task_work_results)
+
+        assert result is not None
+        assert "test_something.py" in result
+
+    def test_detect_tests_returns_none_when_all_excluded(self, tmp_worktree):
+        """Returns None when all test files are excluded by collect_ignore_glob."""
+        self._make_conftest(tmp_worktree, ["guardkit/eval/workspaces/*/tests/*"])
+        workspace_dir = tmp_worktree / "guardkit" / "eval" / "workspaces" / "X" / "tests"
+        workspace_dir.mkdir(parents=True)
+        (workspace_dir / "test_only.py").write_text("def test_z(): pass")
+
+        task_work_results = {
+            "files_created": ["guardkit/eval/workspaces/X/tests/test_only.py"],
+            "files_modified": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FIX-7F48")
+        result = validator._detect_tests_from_results(task_work_results)
+
+        assert result is None
+
+    def test_detect_tests_normalises_absolute_paths_before_matching(self, tmp_worktree):
+        """Absolute paths are normalised to relative before fnmatch pattern matching."""
+        self._make_conftest(tmp_worktree, ["guardkit/eval/workspaces/*/tests/*"])
+        workspace_dir = tmp_worktree / "guardkit" / "eval" / "workspaces" / "ABS" / "tests"
+        workspace_dir.mkdir(parents=True)
+        (workspace_dir / "test_abs.py").write_text("def test_abs(): pass")
+
+        # Pass as absolute path (as the Player would emit)
+        abs_path = str(workspace_dir / "test_abs.py")
+        task_work_results = {
+            "files_created": [abs_path],
+            "files_modified": [],
+        }
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FIX-7F48")
+        result = validator._detect_tests_from_results(task_work_results)
+
+        # Absolute path normalised → matches pattern → excluded
+        assert result is None
+
+
+# ============================================================================
 # Approval Rationale and Zero-Test Anomaly (TASK-FIX-QGVZ + TASK-FIX-ITDF)
 # ============================================================================
 
@@ -4824,3 +4982,174 @@ class TestStripMarkdownFormatting:
 
         assert len(validation.criteria_results) == 1
         assert validation.criteria_results[0].result == 'verified'
+
+
+# ============================================================================
+# Test infrastructure feedback detail (TASK-FIX-3A01)
+# ============================================================================
+
+
+class TestInfrastructureFeedbackDetail:
+    """Tests for TASK-FIX-3A01: test command and error detail in feedback.
+
+    Verifies that infrastructure/collection_error feedback includes the
+    actual test command and error detail to give the Player actionable
+    information.
+    """
+
+    def _make_results(self, task_work_results_dir):
+        results = make_task_work_results()
+        write_task_work_results(task_work_results_dir, results)
+
+    # Infrastructure raw_output pattern that triggers ("infrastructure", "high")
+    _INFRA_RAW = "ConnectionRefusedError: [Errno 111] Connection refused"
+    _UNSET = object()
+
+    def _make_infra_result(self, cmd, summary=_UNSET, raw=None):
+        """Create an IndependentTestResult for an infrastructure failure.
+
+        summary defaults to _INFRA_RAW when not provided. Pass summary=None
+        or summary="" to test the empty/None summary path explicitly.
+        """
+        actual_summary = self._INFRA_RAW if summary is self._UNSET else summary
+        return IndependentTestResult(
+            tests_passed=False,
+            test_command=cmd,
+            test_output_summary=actual_summary,
+            duration_seconds=0.5,
+            raw_output=raw if raw is not None else self._INFRA_RAW,
+        )
+
+    def test_feedback_includes_test_command(
+        self, tmp_worktree, task_work_results_dir
+    ):
+        """Feedback description includes the test command that was run."""
+        self._make_results(task_work_results_dir)
+        cmd = "pytest tests/test_feature.py -v"
+
+        validator = CoachValidator(str(tmp_worktree), test_command=cmd)
+        with patch.object(validator, "run_independent_tests") as mock_run:
+            mock_run.return_value = self._make_infra_result(cmd)
+            result = validator.validate("TASK-001", 1, make_task())
+
+        assert result.decision == "feedback"
+        issue = next(
+            i for i in result.issues if i["category"] == "test_verification"
+        )
+        assert f"Test command: {cmd}" in issue["description"]
+
+    def test_feedback_includes_error_detail_with_label(
+        self, tmp_worktree, task_work_results_dir
+    ):
+        """Feedback description includes error detail formatted with 'Error detail:' label."""
+        self._make_results(task_work_results_dir)
+        cmd = "pytest tests/ -v"
+        error_summary = "ConnectionRefusedError: [Errno 111] Connection refused"
+
+        validator = CoachValidator(str(tmp_worktree), test_command=cmd)
+        with patch.object(validator, "run_independent_tests") as mock_run:
+            mock_run.return_value = self._make_infra_result(cmd, summary=error_summary)
+            result = validator.validate("TASK-001", 1, make_task())
+
+        assert result.decision == "feedback"
+        issue = next(
+            i for i in result.issues if i["category"] == "test_verification"
+        )
+        assert "Error detail:" in issue["description"]
+        assert error_summary in issue["description"]
+
+    def test_feedback_without_error_detail_when_summary_empty(
+        self, tmp_worktree, task_work_results_dir
+    ):
+        """Feedback works without error detail when test_output_summary is empty."""
+        self._make_results(task_work_results_dir)
+        cmd = "pytest tests/ -v"
+
+        validator = CoachValidator(str(tmp_worktree), test_command=cmd)
+        with patch.object(validator, "run_independent_tests") as mock_run:
+            mock_run.return_value = self._make_infra_result(cmd, summary="")
+            result = validator.validate("TASK-001", 1, make_task())
+
+        assert result.decision == "feedback"
+        issue = next(
+            i for i in result.issues if i["category"] == "test_verification"
+        )
+        # Test command is still present; "Error detail:" label is absent
+        assert f"Test command: {cmd}" in issue["description"]
+        assert "Error detail:" not in issue["description"]
+
+    def test_feedback_without_error_detail_when_summary_none(
+        self, tmp_worktree, task_work_results_dir
+    ):
+        """Feedback works without error detail when test_output_summary is None."""
+        self._make_results(task_work_results_dir)
+        cmd = "pytest tests/ -v"
+
+        validator = CoachValidator(str(tmp_worktree), test_command=cmd)
+        with patch.object(validator, "run_independent_tests") as mock_run:
+            mock_run.return_value = self._make_infra_result(cmd, summary=None)
+            result = validator.validate("TASK-001", 1, make_task())
+
+        assert result.decision == "feedback"
+        issue = next(
+            i for i in result.issues if i["category"] == "test_verification"
+        )
+        assert f"Test command: {cmd}" in issue["description"]
+        assert "Error detail:" not in issue["description"]
+
+    def test_feedback_truncates_long_error_detail(
+        self, tmp_worktree, task_work_results_dir
+    ):
+        """Error detail longer than 500 chars is truncated with ellipsis."""
+        self._make_results(task_work_results_dir)
+        cmd = "pytest tests/ -v"
+        long_summary = "ConnectionRefusedError: " + "x" * 600
+
+        validator = CoachValidator(str(tmp_worktree), test_command=cmd)
+        with patch.object(validator, "run_independent_tests") as mock_run:
+            mock_run.return_value = self._make_infra_result(cmd, summary=long_summary)
+            result = validator.validate("TASK-001", 1, make_task())
+
+        assert result.decision == "feedback"
+        issue = next(
+            i for i in result.issues if i["category"] == "test_verification"
+        )
+        description = issue["description"]
+        # Error detail should be present but truncated
+        assert "Error detail:" in description
+        assert description.endswith("...")
+        # The error detail portion must not exceed 500 chars
+        error_detail_start = description.index("Error detail: ") + len("Error detail: ")
+        error_detail_content = description[error_detail_start:]
+        assert len(error_detail_content) <= 500
+
+    def test_collection_error_feedback_includes_test_command(
+        self, tmp_worktree, task_work_results_dir
+    ):
+        """collection_error failure class also gets test command and error detail."""
+        self._make_results(task_work_results_dir)
+        cmd = "pytest tests/test_feature.py -v"
+        error_summary = "ERRORS during collection\nImportError: cannot import name 'X'"
+
+        validator = CoachValidator(str(tmp_worktree), test_command=cmd)
+        with patch.object(validator, "run_independent_tests") as mock_run:
+            mock_run.return_value = IndependentTestResult(
+                tests_passed=False,
+                test_command=cmd,
+                test_output_summary=error_summary,
+                duration_seconds=0.5,
+                raw_output=error_summary,
+            )
+            # Patch _classify_test_failure to return collection_error
+            with patch.object(
+                validator, "_classify_test_failure",
+                return_value=("collection_error", "high"),
+            ):
+                result = validator.validate("TASK-001", 1, make_task())
+
+        assert result.decision == "feedback"
+        issue = next(
+            i for i in result.issues if i["category"] == "test_verification"
+        )
+        assert f"Test command: {cmd}" in issue["description"]
+        assert "Error detail:" in issue["description"]

@@ -4,9 +4,11 @@ title: Include test command and error detail in Coach feedback to Player
 task_type: feature
 parent_review: TASK-REV-0E44
 feature_id: FEAT-CTD
-status: backlog
+status: completed
 created: 2026-03-01T00:00:00+00:00
-updated: 2026-03-01T00:00:00+00:00
+updated: 2026-03-01T12:00:00+00:00
+completed: 2026-03-01T12:00:00+00:00
+completed_location: tasks/completed/TASK-FIX-3A01/
 priority: medium
 tags:
   - autobuild
@@ -29,12 +31,12 @@ This is a developer experience improvement from the TASK-REV-0E44 review. Includ
 
 ## Acceptance Criteria
 
-- [ ] Feedback for infrastructure/collection_error failures includes the test command that was run
-- [ ] Feedback includes the error detail from `test_result.test_output_summary`
-- [ ] Error detail is formatted with a clear label (e.g., `Error detail:`)
-- [ ] When `test_output_summary` is empty/None, feedback works without error detail (backward compatible)
-- [ ] Feedback text does not exceed reasonable length (truncate output if > 500 chars)
-- [ ] Unit tests cover: feedback with error detail, feedback without error detail, truncation
+- [x] Feedback for infrastructure/collection_error failures includes the test command that was run
+- [x] Feedback includes the error detail from `test_result.test_output_summary`
+- [x] Error detail is formatted with a clear label (e.g., `Error detail:`)
+- [x] When `test_output_summary` is empty/None, feedback works without error detail (backward compatible)
+- [x] Feedback text does not exceed reasonable length (truncate output if > 500 chars)
+- [x] Unit tests cover: feedback with error detail, feedback without error detail, truncation
 
 ## Technical Context
 
@@ -53,8 +55,12 @@ Minimal. Only changes feedback text content, no logic changes. Verify feedback s
 
 ## Implementation Notes
 
-[Space for implementation details]
+Changed `elif failure_class == "infrastructure":` to `elif failure_class in ("infrastructure", "collection_error"):` for forward compatibility. Added `test_result.test_command` and (truncated) `test_result.test_output_summary` to the description string. When `test_output_summary` is None/empty, the "Error detail:" section is omitted entirely.
+
+Files changed:
+- `guardkit/orchestrator/quality_gates/coach_validator.py` — lines 717-729, feedback construction
+- `tests/unit/test_coach_validator.py` — 6 new tests in `TestInfrastructureFeedbackDetail`
 
 ## Test Execution Log
 
-[Automatically populated by /task-work]
+241 passed in 2.01s (all existing + 6 new tests)
