@@ -1,0 +1,199 @@
+{
+  "task_id": "TASK-SAD-006",
+  "turn": 1,
+  "files_modified": [
+    ".guardkit/autobuild/TASK-SAD-005/checkpoints.json",
+    ".guardkit/bootstrap_state.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/tests/unit/commands/test_system_arch_command_spec.py",
+    "tasks/backlog/TASK-SAD-006-system-arch-command-spec.md",
+    "tasks/backlog/TASK-SAD-007-system-design-command-spec.md"
+  ],
+  "files_created": [
+    ".claude/task-plans/TASK-SAD-006-implementation-plan.md",
+    ".claude/task-plans/TASK-SAD-007-implementation-plan.md",
+    ".guardkit/autobuild/TASK-SAD-006/player_turn_1.json",
+    ".guardkit/autobuild/TASK-SAD-006/task_work_results.json",
+    ".guardkit/autobuild/TASK-SAD-006/turn_context.json",
+    ".guardkit/autobuild/TASK-SAD-007/turn_context.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/.guardkit/autobuild/TASK-SAD-006/player_turn_1.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/installer/core/commands/system-arch.md",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/tests/unit/commands/test_system_arch_command_spec.py",
+    "installer/core/commands/system-arch.md",
+    "installer/core/commands/system-design.md",
+    "tasks/design_approved/TASK-SAD-006-system-arch-command-spec.md",
+    "tasks/design_approved/TASK-SAD-007-system-design-command-spec.md",
+    "tests/unit/commands/test_system_arch_command_spec.py",
+    "tests/unit/commands/test_system_design_spec.py"
+  ],
+  "tests_written": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/tests/unit/commands/test_system_arch_command_spec.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation",
+  "concerns": [],
+  "requirements_addressed": [
+    "AC-001: Command spec follows system-plan.md and feature-plan.md patterns",
+    "AC-002: 6-category interactive question flow with checkpoints",
+    "AC-003: Setup mode auto-detection from Graphiti context",
+    "AC-004: Mandatory C4 diagram output with review gates",
+    "AC-005: All mandatory output artefacts documented",
+    "AC-006: Graphiti seeding to project_architecture and project_decisions",
+    "AC-007: Graceful degradation when Graphiti unavailable",
+    "AC-008: Partial session handling with skip support",
+    "AC-009: Empty answer handling with placeholder",
+    "AC-010: ADR numbering scanning docs/architecture/decisions/",
+    "AC-011: Diagram splitting at 30-node threshold",
+    "AC-012: Security sanitisation of ADR rationale",
+    "AC-013: Execution protocol with step-by-step instructions",
+    "AC-014: Error handling section for all error scenarios"
+  ],
+  "requirements_remaining": [],
+  "sdk_turns_used": 40,
+  "sdk_max_turns": 100,
+  "sdk_ceiling_hit": false,
+  "tests_passed_count": 58,
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Command spec follows the pattern established by system-plan.md and feature-plan.md",
+      "status": "complete",
+      "evidence": "The spec at installer/core/commands/system-arch.md follows the same structural pattern as system-plan.md: title heading, Command Syntax section with bash block, Available Flags table, Execution Flow section with phases, Error Handling section, Examples section, and CRITICAL EXECUTION INSTRUCTIONS FOR CLAUDE section. Verified by TestStructuralPattern (9 tests).",
+      "test_file": "tests/unit/commands/test_system_arch_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/system-arch.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "6-category interactive question flow with [C]ontinue / [R]evise / [S]kip / [A]DR? checkpoints: Domain & Structural Pattern, Bounded Contexts / Module Structure, Technology & Infrastructure, Multi-Consumer API Strategy, Cross-Cutting Concerns, Constraints & NFRs",
+      "status": "complete",
+      "evidence": "All 6 categories documented in Phase 1 of the Execution Flow. Each category has detailed questions, checkpoint display with [C]ontinue / [R]evise / [S]kip / [A]DR? pattern, and Graphiti persistence after each checkpoint. Category 1 includes trade-offs for each structural pattern. Verified by TestInteractiveQuestionFlow (3 tests) and TestMultiConsumerAPIStrategy (3 tests).",
+      "test_file": "tests/unit/commands/test_system_arch_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/system-arch.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Setup mode auto-detection: if no architecture context in Graphiti, enters setup mode",
+      "status": "complete",
+      "evidence": "Mode Auto-Detection section documents the logic: if Graphiti has no architecture context, detected_mode = 'setup'. Phase 0 shows the auto-detection code. Step 3 of execution instructions implements it. Verified by TestSetupModeAutoDetection (3 tests).",
+      "test_file": "tests/unit/commands/test_system_arch_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/system-arch.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Mandatory C4 diagram output with review gates: C4 Level 1 (System Context) using system-context.md.j2, C4 Level 2 (Container) using container.md.j2, both require explicit user approval",
+      "status": "complete",
+      "evidence": "Phase 2 'C4 Diagram Generation (Mandatory Review Gate)' documents both diagrams with Mermaid examples, references system-context.md.j2 and container.md.j2, and includes explicit approval checkpoints ([A]pprove / [R]evise / [C]ancel) for each diagram. Step 5 of execution instructions enforces 'do not proceed without approval'. Verified by TestC4DiagramOutput (6 tests).",
+      "test_file": "tests/unit/commands/test_system_arch_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/system-arch.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Mandatory output artefacts: Domain model document, ADRs (ADR-ARCH-NNN prefix), Assumptions manifest (YAML), Architecture summary for /system-plan, C4 Context and Container diagrams (Mermaid)",
+      "status": "complete",
+      "evidence": "Phase 3 'Output Generation' lists all 6 mandatory artefacts in a table: domain-model.md, ADR-ARCH-NNN-{slug}.md, system-context.md (C4 L1), container.md (C4 L2), assumptions.yaml, and ARCHITECTURE.md (summary/index). YAML format shown for assumptions manifest. ADR-ARCH prefix used consistently. Verified by TestMandatoryOutputArtefacts (6 tests).",
+      "test_file": "tests/unit/commands/test_system_arch_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/system-arch.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Graphiti seeding: all artefacts seeded into project_architecture and project_decisions groups",
+      "status": "complete",
+      "evidence": "Phase 4 'Graphiti Seeding' documents group assignments: system context/components/concerns go to project_architecture, ADRs go to project_decisions. Code examples show upsert_entity with group_ids parameter. Verified by TestGraphitiSeeding (2 tests).",
+      "test_file": "tests/unit/commands/test_system_arch_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/system-arch.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Graceful degradation: if Graphiti unavailable, warn and generate markdown artefacts only",
+      "status": "complete",
+      "evidence": "Error Handling section 'Graphiti Unavailable' shows warning message, offers choice to continue without persistence, and states markdown artefacts will still be generated. Also documented in Mode Auto-Detection section. Verified by TestGracefulDegradation (2 tests).",
+      "test_file": "tests/unit/commands/test_system_arch_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/system-arch.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "Partial session handling: if user skips categories, persist completed categories, inform which were skipped",
+      "status": "complete",
+      "evidence": "Error Handling section 'Cancelled / Partial Session' documents the [S]kip behavior: persists completed categories, reports completed vs skipped count, generates partial artefacts, and advises running /system-arch again. Verified by TestPartialSessionHandling (2 tests).",
+      "test_file": "tests/unit/commands/test_system_arch_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/system-arch.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "Empty answer handling: use placeholder, warn, continue",
+      "status": "complete",
+      "evidence": "Error Handling section 'Empty Answers' shows placeholder '[To be defined]' used for empty answers, warns user, and continues session without blocking. Verified by TestEmptyAnswerHandling (2 tests).",
+      "test_file": "tests/unit/commands/test_system_arch_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/system-arch.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-010",
+      "criterion_text": "ADR numbering: scan docs/architecture/decisions/ for next available number",
+      "status": "complete",
+      "evidence": "Phase 3 includes get_next_adr_number() function that scans docs/architecture/decisions/ for existing ADR-ARCH-*.md files and returns the next available number. Verified by TestADRNumbering (2 tests).",
+      "test_file": "tests/unit/commands/test_system_arch_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/system-arch.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-011",
+      "criterion_text": "Diagram splitting: warn if >30 nodes, suggest manual split at review gate",
+      "status": "complete",
+      "evidence": "Phase 2 documents the 30-node threshold with WARNING display, suggested sub-diagram splits, and [S]plit / [K]eep choice at the review gate. Format rules section also states 'Keep diagrams under 30 nodes (split into sub-diagrams if larger)'. Verified by TestDiagramSplitting (2 tests).",
+      "test_file": "tests/unit/commands/test_system_arch_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/system-arch.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-012",
+      "criterion_text": "Security: sanitise ADR rationale text before Graphiti seeding",
+      "status": "complete",
+      "evidence": "Phase 4 includes sanitise_for_graphiti() function that removes HTML/script tags, control characters, and escapes Cypher injection patterns. ADR Inline Capture section references sanitisation. What NOT to Do section explicitly states 'Seed unsanitised free-text content to Graphiti'. Verified by TestSecurity (1 test).",
+      "test_file": "tests/unit/commands/test_system_arch_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/system-arch.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-013",
+      "criterion_text": "Execution protocol section with step-by-step Claude instructions",
+      "status": "complete",
+      "evidence": "CRITICAL EXECUTION INSTRUCTIONS FOR CLAUDE section contains 8 numbered steps: Parse Arguments, Initialize Graphiti, Auto-Detect Mode, Execute Interactive Session, Generate C4 Diagrams, Generate Output Artefacts, Seed to Graphiti, Display Summary. Also includes What NOT to Do list and Example Execution Trace. Verified by TestExecutionProtocol (2 tests).",
+      "test_file": "tests/unit/commands/test_system_arch_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/system-arch.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-014",
+      "criterion_text": "Error handling section (no description, invalid pattern choice, etc.)",
+      "status": "complete",
+      "evidence": "Error Handling section covers 7 error scenarios: No Description Provided, Graphiti Unavailable, Empty Answers, Invalid Structural Pattern Choice, Cancelled/Partial Session, Graphiti Connection Drop Mid-Session, and --no-questions Flag. Each with code examples and user-facing messages. Verified by TestErrorHandling (2 tests).",
+      "test_file": "tests/unit/commands/test_system_arch_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/system-arch.md"
+      ]
+    }
+  ]
+}

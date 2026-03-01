@@ -1,15 +1,16 @@
 ---
-id: TASK-SAD-006
-title: "Write /system-arch command specification"
-task_type: feature
-parent_review: TASK-REV-AEE1
-feature_id: FEAT-SAD
-wave: 3
-implementation_mode: task-work
 complexity: 8
 dependencies:
-  - TASK-SAD-002
-  - TASK-SAD-004
+- TASK-SAD-002
+- TASK-SAD-004
+feature_id: FEAT-SAD
+id: TASK-SAD-006
+implementation_mode: task-work
+parent_review: TASK-REV-AEE1
+status: design_approved
+task_type: feature
+title: Write /system-arch command specification
+wave: 3
 ---
 
 # Task: Write /system-arch command specification
