@@ -1,8 +1,10 @@
 ---
 id: TASK-VEF-003
 title: End-to-end verification of vLLM embedding + FalkorDB pipeline
-status: backlog
+status: completed
 created: 2026-02-28T12:00:00Z
+updated: 2026-03-01T00:00:00Z
+completed: 2026-03-01T00:00:00Z
 priority: high
 tags: [vllm, embedding, falkordb, verification]
 parent_review: TASK-CC3E
@@ -13,6 +15,7 @@ complexity: 2
 depends_on:
   - TASK-VEF-001
   - TASK-VEF-002
+completed_location: tasks/completed/TASK-VEF-003/
 ---
 
 # Task: End-to-end verification of vLLM embedding + FalkorDB pipeline
@@ -81,11 +84,11 @@ guardkit graphiti capture --interactive --max-questions 1
 
 ## Acceptance Criteria
 
-- [ ] vLLM embedding server starts alongside LLM server (no GPU memory error)
-- [ ] Embedding API responds to both short and full model names
-- [ ] FalkorDB connects via Tailscale to Synology NAS
-- [ ] Graphiti capture works end-to-end (embedding + storage)
-- [ ] Pre-flight GPU check displays correct memory information
+- [x] vLLM embedding server starts alongside LLM server (no GPU memory error)
+- [x] Embedding API responds to both short and full model names
+- [x] FalkorDB connects via Tailscale to Synology NAS
+- [x] Graphiti capture works end-to-end (embedding + storage)
+- [x] Pre-flight GPU check displays correct memory information
 
 ## Infrastructure Required
 

@@ -18,7 +18,7 @@ Three targeted fixes addressing configuration and scripting gaps identified in t
 |------|-------|------|------|------------|--------|
 | TASK-VEF-001 | Fix vllm-embed.sh (GPU, model name, pre-flight) | 1 | task-work | 3 | Done |
 | TASK-VEF-002 | Fix graphiti.yaml embedding model name | 1 | direct | 1 | Done |
-| TASK-VEF-003 | End-to-end verification | 2 | manual | 2 | Partial (steps 1-2 only) |
+| TASK-VEF-003 | End-to-end verification | 2 | manual | 2 | Done |
 | TASK-VEF-004 | Fix served-model-name + bc sanitization | 3 | task-work | 2 | Done |
 | TASK-VEF-005 | Re-run complete verification (all 4 steps) | 4 | manual | 2 | Done |
 
