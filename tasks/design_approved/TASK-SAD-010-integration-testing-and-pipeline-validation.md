@@ -1,17 +1,18 @@
 ---
-id: TASK-SAD-010
-title: "Integration testing and full pipeline validation"
-task_type: testing
-parent_review: TASK-REV-AEE1
-feature_id: FEAT-SAD
-wave: 4
-implementation_mode: task-work
 complexity: 5
 dependencies:
-  - TASK-SAD-006
-  - TASK-SAD-007
-  - TASK-SAD-008
-  - TASK-SAD-009
+- TASK-SAD-006
+- TASK-SAD-007
+- TASK-SAD-008
+- TASK-SAD-009
+feature_id: FEAT-SAD
+id: TASK-SAD-010
+implementation_mode: task-work
+parent_review: TASK-REV-AEE1
+status: design_approved
+task_type: testing
+title: Integration testing and full pipeline validation
+wave: 4
 ---
 
 # Task: Integration testing and full pipeline validation
