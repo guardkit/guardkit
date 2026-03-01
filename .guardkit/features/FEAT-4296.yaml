@@ -1,0 +1,130 @@
+id: FEAT-4296
+name: Eval Runner GuardKit vs Vanilla Pipeline
+description: Standalone A/B comparison pipeline that measures whether GuardKit produces
+  measurably better results than plain Claude Code. Phase A of phased hybrid approach
+  (CLI first, NATS later).
+created: '2026-03-01T14:12:22.874546'
+status: planned
+complexity: 6
+estimated_tasks: 10
+tasks:
+- id: TASK-EVAL-001
+  name: Eval Schemas (EvalBrief, EvalResult, InputSource)
+  file_path: tasks/backlog/eval-runner-gkvv/TASK-EVAL-001-eval-schemas.md
+  complexity: 3
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+- id: TASK-EVAL-002
+  name: Workspace Fork Support
+  file_path: tasks/backlog/eval-runner-gkvv/TASK-EVAL-002-eval-workspace-fork.md
+  complexity: 4
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-EVAL-003
+  name: InputResolver (text, file, linear_ticket)
+  file_path: tasks/backlog/eval-runner-gkvv/TASK-EVAL-003-input-resolver.md
+  complexity: 3
+  dependencies:
+  - TASK-EVAL-001
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+- id: TASK-EVAL-004
+  name: EvalAgentInvoker
+  file_path: tasks/backlog/eval-runner-gkvv/TASK-EVAL-004-eval-agent-invoker.md
+  complexity: 5
+  dependencies:
+  - TASK-EVAL-002
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-EVAL-005
+  name: MetricsExtractor
+  file_path: tasks/backlog/eval-runner-gkvv/TASK-EVAL-005-metrics-extractor.md
+  complexity: 3
+  dependencies:
+  - TASK-EVAL-001
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+- id: TASK-EVAL-006
+  name: EvalJudge (deterministic + LLM)
+  file_path: tasks/backlog/eval-runner-gkvv/TASK-EVAL-006-eval-judge.md
+  complexity: 6
+  dependencies:
+  - TASK-EVAL-001
+  - TASK-EVAL-005
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 113
+- id: TASK-EVAL-007
+  name: GuardKitVsVanillaRunner
+  file_path: tasks/backlog/eval-runner-gkvv/TASK-EVAL-007-gkvv-runner.md
+  complexity: 6
+  dependencies:
+  - TASK-EVAL-002
+  - TASK-EVAL-003
+  - TASK-EVAL-004
+  - TASK-EVAL-005
+  - TASK-EVAL-006
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 113
+- id: TASK-EVAL-008
+  name: CLI + Templates + Brief
+  file_path: tasks/backlog/eval-runner-gkvv/TASK-EVAL-008-cli-templates-brief.md
+  complexity: 4
+  dependencies:
+  - TASK-EVAL-007
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-EVAL-009
+  name: Graphiti Storage
+  file_path: tasks/backlog/eval-runner-gkvv/TASK-EVAL-009-graphiti-storage.md
+  complexity: 4
+  dependencies:
+  - TASK-EVAL-001
+  - TASK-EVAL-007
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-EVAL-010
+  name: Integration Tests
+  file_path: tasks/backlog/eval-runner-gkvv/TASK-EVAL-010-integration-tests.md
+  complexity: 5
+  dependencies:
+  - TASK-EVAL-007
+  - TASK-EVAL-008
+  - TASK-EVAL-009
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+orchestration:
+  parallel_groups:
+  - - TASK-EVAL-001
+    - TASK-EVAL-002
+  - - TASK-EVAL-003
+    - TASK-EVAL-004
+    - TASK-EVAL-005
+  - - TASK-EVAL-006
+  - - TASK-EVAL-007
+  - - TASK-EVAL-008
+    - TASK-EVAL-009
+  - - TASK-EVAL-010
+  estimated_duration_minutes: 625
+  recommended_parallel: 3
