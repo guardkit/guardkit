@@ -1,0 +1,170 @@
+{
+  "task_id": "TASK-SAD-009",
+  "timestamp": "2026-03-01T20:48:21.293297",
+  "completed": true,
+  "phases": {
+    "phase_3": {
+      "detected": true,
+      "text": "Implementation",
+      "completed": false
+    },
+    "phase_4": {
+      "detected": true,
+      "completed": true
+    }
+  },
+  "quality_gates": {
+    "tests_passing": true,
+    "tests_passed": 55,
+    "tests_failed": 0,
+    "coverage": 100.0,
+    "coverage_met": true,
+    "all_passed": true
+  },
+  "files_modified": [
+    ".claude/task-plans/TASK-SAD-008-implementation-plan.md",
+    ".claude/task-plans/TASK-SAD-009-implementation-plan.md",
+    ".guardkit/autobuild/TASK-SAD-007/checkpoints.json",
+    ".guardkit/autobuild/TASK-SAD-008/coach_turn_1.json",
+    ".guardkit/autobuild/TASK-SAD-008/player_turn_1.json",
+    ".guardkit/autobuild/TASK-SAD-008/task_work_results.json",
+    ".guardkit/autobuild/TASK-SAD-008/turn_context.json",
+    ".guardkit/autobuild/TASK-SAD-009/turn_context.json",
+    ".guardkit/bootstrap_state.json",
+    "installer/core/commands/arch-refine.md",
+    "installer/core/commands/design-refine.md",
+    "tasks/design_approved/TASK-SAD-008-arch-refine-command-spec.md",
+    "tasks/design_approved/TASK-SAD-009-design-refine-command-spec.md",
+    "tests/unit/commands/test_arch_refine_command_spec.py",
+    "tests/unit/commands/test_design_refine_spec.py"
+  ],
+  "files_created": [
+    ".guardkit/autobuild/TASK-SAD-008/checkpoints.json",
+    ".guardkit/autobuild/TASK-SAD-009/player_turn_1.json",
+    ".guardkit/autobuild/TASK-SAD-009/task_work_results.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/.guardkit/autobuild/TASK-SAD-009/player_turn_1.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/installer/core/commands/design-refine.md",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/tests/unit/commands/test_design_refine_spec.py"
+  ],
+  "tests_written": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/tests/unit/commands/test_design_refine_spec.py"
+  ],
+  "summary": "55 tests passed, 100.0% coverage, all quality gates passed",
+  "sdk_turns": {
+    "turns_used": 29,
+    "max_turns": 100,
+    "ceiling_hit": false
+  },
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Disambiguation flow (identical pattern to /arch-refine): Semantic search via SystemDesignGraphiti.search_design_context() on user input, present top 3-5 matches grouped by relevance, require explicit confirmation before any changes applied",
+      "status": "complete",
+      "evidence": "Spec Phase 1 documents the full disambiguation flow: search_design_context() call with num_results=5, results grouped by type (DDRs, API Contracts, Data Models) with relevance scores, explicit user selection required before proceeding. Includes re-search and cancel options. Tests: TestDisambiguationFlow (5 tests) all pass.",
+      "test_file": "tests/unit/commands/test_design_refine_spec.py",
+      "implementation_files": [
+        "installer/core/commands/design-refine.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Temporal superseding for DDRs: Same mechanism as ADR superseding, set existing DDR status to 'superseded', create new DDR with supersedes reference, prior DDR remains queryable",
+      "status": "complete",
+      "evidence": "Spec Phase 2A documents full DDR temporal superseding: existing DDR status set to 'superseded', new DDR created with supersedes field referencing old entity_id, scan_next_ddr_number() used for numbering, prior DDR remains queryable via search_design_context(). Both DDRs upserted to Graphiti. Tests: TestTemporalSuperseding (5 tests) all pass.",
+      "test_file": "tests/unit/commands/test_design_refine_spec.py",
+      "implementation_files": [
+        "installer/core/commands/design-refine.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "API contract update flow: Present current contract, proposed changes, and diff, regenerate OpenAPI spec section for affected bounded context, validate updated OpenAPI spec",
+      "status": "complete",
+      "evidence": "Spec Phase 2B documents full API contract update flow: presents current contract with endpoints listed, captures proposed changes with change type selection (Add/Modify/Remove/Schema), displays diff between current and proposed, regenerates OpenAPI spec section via regenerate_openapi_section(), validates with openapi-spec-validator. Tests: TestAPIContractUpdateFlow (5 tests) all pass.",
+      "test_file": "tests/unit/commands/test_design_refine_spec.py",
+      "implementation_files": [
+        "installer/core/commands/design-refine.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Feature spec staleness detection: Query feature_specs group for scenarios referencing changed API contracts or domain entities, flag affected feature specs as potentially stale, offer choice to re-run /feature-spec or accept delta",
+      "status": "complete",
+      "evidence": "Spec Phase 4 documents feature spec staleness detection: queries feature_specs Graphiti group for scenarios referencing changed entity_ids, flags results as potentially stale, offers 3 choices: [R]e-run /feature-spec, [A]ccept delta, [S]kip. Tests: TestFeatureSpecStaleness (4 tests) all pass.",
+      "test_file": "tests/unit/commands/test_design_refine_spec.py",
+      "implementation_files": [
+        "installer/core/commands/design-refine.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "C4 L3 diagram re-review gate: Revised Component diagrams generated and presented for mandatory approval",
+      "status": "complete",
+      "evidence": "Spec Phase 6 documents C4 L3 re-review gate: generates revised Component diagrams using DesignWriter.write_component_diagram(), presents each diagram for mandatory approval with [A]pprove / [R]evise / [R]eject interaction, cannot proceed without approval. Tests: TestC4L3ReviewGate (4 tests) all pass.",
+      "test_file": "tests/unit/commands/test_design_refine_spec.py",
+      "implementation_files": [
+        "installer/core/commands/design-refine.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Staleness flagging on downstream Graphiti nodes",
+      "status": "complete",
+      "evidence": "Spec Phase 5 documents downstream staleness flagging: searches for downstream Graphiti nodes referencing changed entities via search_design_context(), flags affected nodes as potentially stale, reports summary with counts of changed artefacts and affected downstream nodes. Tests: TestDownstreamStaleness (2 tests) all pass.",
+      "test_file": "tests/unit/commands/test_design_refine_spec.py",
+      "implementation_files": [
+        "installer/core/commands/design-refine.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Graphiti integration: update project_design and api_contracts groups",
+      "status": "complete",
+      "evidence": "Spec Phase 7 documents Graphiti persistence: upserts changed DDRs via upsert_design_decision() to project_design group, upserts changed contracts via upsert_api_contract() to api_contracts group, upserts changed data models via upsert_data_model() to project_design group. Uses get_graphiti() for client initialization. Tests: TestGraphitiIntegration (4 tests) all pass.",
+      "test_file": "tests/unit/commands/test_design_refine_spec.py",
+      "implementation_files": [
+        "installer/core/commands/design-refine.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "Graceful degradation when Graphiti unavailable",
+      "status": "complete",
+      "evidence": "Spec Graceful Degradation section documents full fallback: WARNING message displayed, continues without persistence using markdown artefacts only, lists limitations (local file scanning, staleness detection skipped), offers user choice to continue or cancel. Partial failure handling also documented. Tests: TestGracefulDegradation (3 tests) all pass.",
+      "test_file": "tests/unit/commands/test_design_refine_spec.py",
+      "implementation_files": [
+        "installer/core/commands/design-refine.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "Contradiction detection: flag if proposed design change contradicts existing ADRs",
+      "status": "complete",
+      "evidence": "Spec Phase 3 documents contradiction detection: queries project_decisions Graphiti group for existing ADRs via get_relevant_context_for_topic(), compares proposed changes against ADR constraints, flags contradictions with specific details, offers resolution options: [R]evise change, [S]upersede ADR, [A]ccept risk. Tests: TestContradictionDetection (4 tests) all pass.",
+      "test_file": "tests/unit/commands/test_design_refine_spec.py",
+      "implementation_files": [
+        "installer/core/commands/design-refine.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-010",
+      "criterion_text": "Execution protocol section",
+      "status": "complete",
+      "evidence": "Spec has CRITICAL EXECUTION INSTRUCTIONS FOR CLAUDE section with 10 numbered steps (Step 1 through Step 10), detailed What NOT to Do list with 12 prohibited actions, and a complete Example Execution Trace showing the full flow. Tests: TestExecutionProtocol (3 tests) all pass.",
+      "test_file": "tests/unit/commands/test_design_refine_spec.py",
+      "implementation_files": [
+        "installer/core/commands/design-refine.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-011",
+      "criterion_text": "Error handling section",
+      "status": "complete",
+      "evidence": "Spec has comprehensive Error Handling section covering: no design context, no description provided, no matches found, --no-questions flag rejection, Graphiti connection drop mid-session, cancelled/partial session, OpenAPI validation failure with retry loop. Tests: TestErrorHandling (4 tests) all pass.",
+      "test_file": "tests/unit/commands/test_design_refine_spec.py",
+      "implementation_files": [
+        "installer/core/commands/design-refine.md"
+      ]
+    }
+  ]
+}

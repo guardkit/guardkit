@@ -1,0 +1,164 @@
+{
+  "task_id": "TASK-SAD-008",
+  "timestamp": "2026-03-01T20:46:08.617563",
+  "completed": true,
+  "phases": {
+    "phase_3": {
+      "detected": true,
+      "text": "Implementation",
+      "completed": false
+    },
+    "phase_4": {
+      "detected": true,
+      "completed": true
+    }
+  },
+  "quality_gates": {
+    "tests_passing": true,
+    "tests_passed": 58,
+    "tests_failed": 0,
+    "coverage": null,
+    "coverage_met": null,
+    "all_passed": true
+  },
+  "files_modified": [
+    ".guardkit/bootstrap_state.json",
+    "tasks/backlog/TASK-SAD-008-arch-refine-command-spec.md",
+    "tasks/backlog/TASK-SAD-009-design-refine-command-spec.md"
+  ],
+  "files_created": [
+    ".claude/task-plans/TASK-SAD-008-implementation-plan.md",
+    ".claude/task-plans/TASK-SAD-009-implementation-plan.md",
+    ".guardkit/autobuild/TASK-SAD-007/checkpoints.json",
+    ".guardkit/autobuild/TASK-SAD-008/player_turn_1.json",
+    ".guardkit/autobuild/TASK-SAD-008/task_work_results.json",
+    ".guardkit/autobuild/TASK-SAD-008/turn_context.json",
+    ".guardkit/autobuild/TASK-SAD-009/turn_context.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/.guardkit/autobuild/TASK-SAD-008/player_turn_1.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/installer/core/commands/arch-refine.md",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/tests/unit/commands/test_arch_refine_command_spec.py",
+    "installer/core/commands/arch-refine.md",
+    "installer/core/commands/design-refine.md",
+    "tasks/design_approved/TASK-SAD-008-arch-refine-command-spec.md",
+    "tasks/design_approved/TASK-SAD-009-design-refine-command-spec.md",
+    "tests/unit/commands/test_arch_refine_command_spec.py",
+    "tests/unit/commands/test_design_refine_spec.py"
+  ],
+  "tests_written": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/tests/unit/commands/test_arch_refine_command_spec.py"
+  ],
+  "summary": "58 tests passed, all quality gates passed",
+  "sdk_turns": {
+    "turns_used": 27,
+    "max_turns": 100,
+    "ceiling_hit": false
+  },
+  "code_review": {
+    "score": 85,
+    "solid": 18,
+    "dry": 20,
+    "yagni": 20
+  },
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Disambiguation flow: Semantic search via get_relevant_context_for_topic() on user's natural language input; Present top 3-5 matches grouped by relevance (ASSUM-002); Require explicit confirmation before any changes applied; Handle ambiguous queries safely (cap results, require confirmation)",
+      "status": "complete",
+      "evidence": "Phase 1 of the spec documents the full disambiguation flow: Step 1 uses get_relevant_context_for_topic() for semantic search, Step 2 presents top 3-5 matches capped per ASSUM-002 with relevance percentages, Step 3 requires explicit [Y/N/C] confirmation before proceeding. Ambiguous query handling is documented with result capping and specific error message for no matches. Tests: TestDisambiguationFlow (5 tests) validates all aspects.",
+      "test_file": "tests/unit/commands/test_arch_refine_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/arch-refine.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Temporal superseding (based on spike results from TASK-SAD-001): If Option A confirmed: set existing ADR status to superseded, create new ADR with supersedes reference; Prior ADR remains queryable in Graphiti with its history; New ADR gets next available number in sequence",
+      "status": "complete",
+      "evidence": "Phase 3 'Temporal Superseding' documents Option A implementation from TASK-SAD-001 spike. Code examples show: setting existing_adr.superseded_by and status='superseded', creating new ADR with supersedes field (from TASK-SAD-002), using get_next_adr_number() to assign next available number, and upsert_episode() which preserves old episodes. Explicitly states 'Prior ADR remains queryable in Graphiti \u2014 both versions coexist'. Tests: TestTemporalSuperseding (6 tests) validates all properties.",
+      "test_file": "tests/unit/commands/test_arch_refine_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/arch-refine.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Impact analysis: Show which downstream artefacts are affected (feature specs, C4 diagrams, API contracts); Flag feature specs that reference stale contracts; Present impact scope for user approval before applying changes",
+      "status": "complete",
+      "evidence": "Phase 4 'Impact Analysis' documents querying downstream artefacts by entity_id reference across project_design and feature_specs groups. Impact display shows feature specs, C4 diagrams, and API contracts as affected artefact types with specific examples. Staleness flagging is documented. Impact scope is presented with [A]pprove/[R]evise/[C]ancel gate for user approval before applying. Tests: TestImpactAnalysis (6 tests) validates all aspects.",
+      "test_file": "tests/unit/commands/test_arch_refine_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/arch-refine.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "C4 diagram re-review gate: Revised L1/L2 diagrams generated and presented for mandatory approval",
+      "status": "complete",
+      "evidence": "Phase 6 'C4 Diagram Re-Review Gate (Mandatory)' documents regeneration of C4 Level 1 (System Context) and Level 2 (Container) diagrams with Mermaid examples showing changes highlighted. Mandatory approval gates with [A]pprove/[R]evise/[C]ancel for each diagram. Explicitly states 'The user cannot skip this review gate'. Tests: TestC4DiagramReReviewGate (4 tests) validates L1/L2, mandatory approval, Mermaid format.",
+      "test_file": "tests/unit/commands/test_arch_refine_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/arch-refine.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Staleness flagging: Affected downstream Graphiti nodes tagged with stale: true metadata; /system-design detects and reports stale decisions on next run",
+      "status": "complete",
+      "evidence": "Phase 5 'Staleness Flagging' documents tagging affected nodes with metadata={'stale': True, 'stale_reason': ...}. Includes code example using arch_sp.update_entity_metadata(). Documents that /system-design detects stale: true nodes and presents them with specific example output showing 'STALE DECISIONS DETECTED'. Tests: TestStalenessFlagging (2 tests) validates both stale metadata and /system-design detection.",
+      "test_file": "tests/unit/commands/test_arch_refine_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/arch-refine.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Graphiti integration: Upsert superseded and new episodes; Update group: project_decisions",
+      "status": "complete",
+      "evidence": "Phase 8 'Graphiti Seeding' documents upserting both superseded and new episodes using arch_sp.upsert_episode() with group_ids=['project_decisions']. Also documents updating project_architecture group when structure changes. Phase 3 shows the upsert_episode calls for both old and new ADRs. Tests: TestGraphitiIntegration (3 tests) validates upsert, project_decisions group, and project_architecture group.",
+      "test_file": "tests/unit/commands/test_arch_refine_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/arch-refine.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Graceful degradation when Graphiti unavailable",
+      "status": "complete",
+      "evidence": "Error Handling section 'Graphiti Unavailable' documents full graceful degradation: WARNING message, explanation of limitations (no persistence, no staleness flagging, limited impact analysis), instructions to enable Graphiti, and [Y/n] prompt to continue. Prerequisite gate also falls back to local file scanning. Example 3 shows the full Graphiti-unavailable workflow. Tests: TestGracefulDegradation (3 tests) validates unavailable handling, markdown generation, and user warning.",
+      "test_file": "tests/unit/commands/test_arch_refine_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/arch-refine.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "Security: adversarial semantic search queries capped at 3-5 results with confirmation gate",
+      "status": "complete",
+      "evidence": "Phase 1 Step 1 caps results with `matches = matches[:5]` and references ASSUM-002. Step 2 presents capped results. Step 3 requires explicit confirmation. The 'What NOT to Do' section states 'DO NOT return more than 5 disambiguation results (cap per ASSUM-002)'. Sanitisation is documented in Phase 8 using sanitise_for_graphiti(). Tests: TestSecurity (3 tests) validates capping, confirmation gate, and sanitisation.",
+      "test_file": "tests/unit/commands/test_arch_refine_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/arch-refine.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "Execution protocol section",
+      "status": "complete",
+      "evidence": "CRITICAL EXECUTION INSTRUCTIONS FOR CLAUDE section contains 10 numbered steps (Step 1 through Step 10), 'What NOT to Do' list with 10 specific prohibitions, Message Constants with 3 constant strings, and a detailed Example Execution Trace showing all 16 execution steps. Tests: TestExecutionProtocol (3 tests) validates numbered steps, DO NOT section, and execution trace.",
+      "test_file": "tests/unit/commands/test_arch_refine_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/arch-refine.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-010",
+      "criterion_text": "Error handling section",
+      "status": "complete",
+      "evidence": "Error Handling section contains 6 documented error scenarios: No Architecture Context, No Matching ADR Found, Graphiti Unavailable, Graphiti Connection Drop Mid-Session, --no-questions Flag, No Query Provided. Each has Python code examples with specific error messages and recovery actions. Tests: TestErrorHandling (3 tests) validates architecture context error, no match error, and connection error.",
+      "test_file": "tests/unit/commands/test_arch_refine_command_spec.py",
+      "implementation_files": [
+        "installer/core/commands/arch-refine.md"
+      ]
+    }
+  ]
+}

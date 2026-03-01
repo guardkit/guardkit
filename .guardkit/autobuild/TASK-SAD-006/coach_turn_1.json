@@ -1,0 +1,266 @@
+{
+  "task_id": "TASK-SAD-006",
+  "turn": 1,
+  "decision": "approve",
+  "validation_results": {
+    "quality_gates": {
+      "tests_passed": true,
+      "coverage_met": true,
+      "arch_review_passed": true,
+      "plan_audit_passed": true,
+      "all_gates_passed": true
+    },
+    "independent_tests": {
+      "tests_passed": true,
+      "test_command": "pytest tests/unit/commands/test_system_arch_command_spec.py tests/unit/commands/test_system_design_spec.py -v --tb=short",
+      "test_output_summary": "Result:\ntests/unit/commands/test_system_arch_command_spec.py::TestStructuralPattern::test_has_examples_section PASSED [  6%]\ntests/unit/commands/test_system_arch_command_spec.py::TestStructuralPattern::test_has_critical_execution_instructions PASSED [  7%]\ntests/unit/commands/test_system_arch_command_spec.py::TestStructuralPattern::test_command_syntax_has_bash_block PASSED [  8%]\ntests/unit/commands/test_system_arch_command_spec.py::TestInteractiveQuestionFlow::test_has_six_categories PASSED [  8%]\ntests/unit/commands/test_system_arch_command_spec.py::TestInteractiveQuestionFlow::test_checkpoint_pattern_documented PASSED [  9%]",
+      "duration_seconds": 9.588888168334961
+    },
+    "requirements": {
+      "criteria_total": 14,
+      "criteria_met": 14,
+      "all_criteria_met": true,
+      "missing": []
+    }
+  },
+  "criteria_verification": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Command spec follows the pattern established by `system-plan.md` and `feature-plan.md`",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "The spec at installer/core/commands/system-arch.md follows the same structural pattern as system-plan.md: title heading, Command Syntax section with bash block, Available Flags table, Execution Flow section with phases, Error Handling section, Examples section, and CRITICAL EXECUTION INSTRUCTIONS FOR CLAUDE section. Verified by TestStructuralPattern (9 tests).",
+      "notes": "The spec at installer/core/commands/system-arch.md follows the same structural pattern as system-plan.md: title heading, Command Syntax section with bash block, Available Flags table, Execution Flow section with phases, Error Handling section, Examples section, and CRITICAL EXECUTION INSTRUCTIONS FOR CLAUDE section. Verified by TestStructuralPattern (9 tests)."
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "6-category interactive question flow with `[C]ontinue / [R]evise / [S]kip / [A]DR?` checkpoints:",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "All 6 categories documented in Phase 1 of the Execution Flow. Each category has detailed questions, checkpoint display with [C]ontinue / [R]evise / [S]kip / [A]DR? pattern, and Graphiti persistence after each checkpoint. Category 1 includes trade-offs for each structural pattern. Verified by TestInteractiveQuestionFlow (3 tests) and TestMultiConsumerAPIStrategy (3 tests).",
+      "notes": "All 6 categories documented in Phase 1 of the Execution Flow. Each category has detailed questions, checkpoint display with [C]ontinue / [R]evise / [S]kip / [A]DR? pattern, and Graphiti persistence after each checkpoint. Category 1 includes trade-offs for each structural pattern. Verified by TestInteractiveQuestionFlow (3 tests) and TestMultiConsumerAPIStrategy (3 tests)."
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Setup mode auto-detection: if no architecture context in Graphiti, enters setup mode",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Mode Auto-Detection section documents the logic: if Graphiti has no architecture context, detected_mode = 'setup'. Phase 0 shows the auto-detection code. Step 3 of execution instructions implements it. Verified by TestSetupModeAutoDetection (3 tests).",
+      "notes": "Mode Auto-Detection section documents the logic: if Graphiti has no architecture context, detected_mode = 'setup'. Phase 0 shows the auto-detection code. Step 3 of execution instructions implements it. Verified by TestSetupModeAutoDetection (3 tests)."
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Mandatory C4 diagram output with review gates:",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Phase 2 'C4 Diagram Generation (Mandatory Review Gate)' documents both diagrams with Mermaid examples, references system-context.md.j2 and container.md.j2, and includes explicit approval checkpoints ([A]pprove / [R]evise / [C]ancel) for each diagram. Step 5 of execution instructions enforces 'do not proceed without approval'. Verified by TestC4DiagramOutput (6 tests).",
+      "notes": "Phase 2 'C4 Diagram Generation (Mandatory Review Gate)' documents both diagrams with Mermaid examples, references system-context.md.j2 and container.md.j2, and includes explicit approval checkpoints ([A]pprove / [R]evise / [C]ancel) for each diagram. Step 5 of execution instructions enforces 'do not proceed without approval'. Verified by TestC4DiagramOutput (6 tests)."
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Mandatory output artefacts:",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Phase 3 'Output Generation' lists all 6 mandatory artefacts in a table: domain-model.md, ADR-ARCH-NNN-{slug}.md, system-context.md (C4 L1), container.md (C4 L2), assumptions.yaml, and ARCHITECTURE.md (summary/index). YAML format shown for assumptions manifest. ADR-ARCH prefix used consistently. Verified by TestMandatoryOutputArtefacts (6 tests).",
+      "notes": "Phase 3 'Output Generation' lists all 6 mandatory artefacts in a table: domain-model.md, ADR-ARCH-NNN-{slug}.md, system-context.md (C4 L1), container.md (C4 L2), assumptions.yaml, and ARCHITECTURE.md (summary/index). YAML format shown for assumptions manifest. ADR-ARCH prefix used consistently. Verified by TestMandatoryOutputArtefacts (6 tests)."
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Graphiti seeding: all artefacts seeded into `project_architecture` and `project_decisions` groups",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Phase 4 'Graphiti Seeding' documents group assignments: system context/components/concerns go to project_architecture, ADRs go to project_decisions. Code examples show upsert_entity with group_ids parameter. Verified by TestGraphitiSeeding (2 tests).",
+      "notes": "Phase 4 'Graphiti Seeding' documents group assignments: system context/components/concerns go to project_architecture, ADRs go to project_decisions. Code examples show upsert_entity with group_ids parameter. Verified by TestGraphitiSeeding (2 tests)."
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Graceful degradation: if Graphiti unavailable, warn and generate markdown artefacts only",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Error Handling section 'Graphiti Unavailable' shows warning message, offers choice to continue without persistence, and states markdown artefacts will still be generated. Also documented in Mode Auto-Detection section. Verified by TestGracefulDegradation (2 tests).",
+      "notes": "Error Handling section 'Graphiti Unavailable' shows warning message, offers choice to continue without persistence, and states markdown artefacts will still be generated. Also documented in Mode Auto-Detection section. Verified by TestGracefulDegradation (2 tests)."
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "Partial session handling: if user skips categories, persist completed categories, inform which were skipped",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Error Handling section 'Cancelled / Partial Session' documents the [S]kip behavior: persists completed categories, reports completed vs skipped count, generates partial artefacts, and advises running /system-arch again. Verified by TestPartialSessionHandling (2 tests).",
+      "notes": "Error Handling section 'Cancelled / Partial Session' documents the [S]kip behavior: persists completed categories, reports completed vs skipped count, generates partial artefacts, and advises running /system-arch again. Verified by TestPartialSessionHandling (2 tests)."
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "Empty answer handling: use placeholder, warn, continue",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Error Handling section 'Empty Answers' shows placeholder '[To be defined]' used for empty answers, warns user, and continues session without blocking. Verified by TestEmptyAnswerHandling (2 tests).",
+      "notes": "Error Handling section 'Empty Answers' shows placeholder '[To be defined]' used for empty answers, warns user, and continues session without blocking. Verified by TestEmptyAnswerHandling (2 tests)."
+    },
+    {
+      "criterion_id": "AC-010",
+      "criterion_text": "ADR numbering: scan `docs/architecture/decisions/` for next available number",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Phase 3 includes get_next_adr_number() function that scans docs/architecture/decisions/ for existing ADR-ARCH-*.md files and returns the next available number. Verified by TestADRNumbering (2 tests).",
+      "notes": "Phase 3 includes get_next_adr_number() function that scans docs/architecture/decisions/ for existing ADR-ARCH-*.md files and returns the next available number. Verified by TestADRNumbering (2 tests)."
+    },
+    {
+      "criterion_id": "AC-011",
+      "criterion_text": "Diagram splitting: warn if >30 nodes, suggest manual split at review gate",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Phase 2 documents the 30-node threshold with WARNING display, suggested sub-diagram splits, and [S]plit / [K]eep choice at the review gate. Format rules section also states 'Keep diagrams under 30 nodes (split into sub-diagrams if larger)'. Verified by TestDiagramSplitting (2 tests).",
+      "notes": "Phase 2 documents the 30-node threshold with WARNING display, suggested sub-diagram splits, and [S]plit / [K]eep choice at the review gate. Format rules section also states 'Keep diagrams under 30 nodes (split into sub-diagrams if larger)'. Verified by TestDiagramSplitting (2 tests)."
+    },
+    {
+      "criterion_id": "AC-012",
+      "criterion_text": "Security: sanitise ADR rationale text before Graphiti seeding",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Phase 4 includes sanitise_for_graphiti() function that removes HTML/script tags, control characters, and escapes Cypher injection patterns. ADR Inline Capture section references sanitisation. What NOT to Do section explicitly states 'Seed unsanitised free-text content to Graphiti'. Verified by TestSecurity (1 test).",
+      "notes": "Phase 4 includes sanitise_for_graphiti() function that removes HTML/script tags, control characters, and escapes Cypher injection patterns. ADR Inline Capture section references sanitisation. What NOT to Do section explicitly states 'Seed unsanitised free-text content to Graphiti'. Verified by TestSecurity (1 test)."
+    },
+    {
+      "criterion_id": "AC-013",
+      "criterion_text": "Execution protocol section with step-by-step Claude instructions",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "CRITICAL EXECUTION INSTRUCTIONS FOR CLAUDE section contains 8 numbered steps: Parse Arguments, Initialize Graphiti, Auto-Detect Mode, Execute Interactive Session, Generate C4 Diagrams, Generate Output Artefacts, Seed to Graphiti, Display Summary. Also includes What NOT to Do list and Example Execution Trace. Verified by TestExecutionProtocol (2 tests).",
+      "notes": "CRITICAL EXECUTION INSTRUCTIONS FOR CLAUDE section contains 8 numbered steps: Parse Arguments, Initialize Graphiti, Auto-Detect Mode, Execute Interactive Session, Generate C4 Diagrams, Generate Output Artefacts, Seed to Graphiti, Display Summary. Also includes What NOT to Do list and Example Execution Trace. Verified by TestExecutionProtocol (2 tests)."
+    },
+    {
+      "criterion_id": "AC-014",
+      "criterion_text": "Error handling section (no description, invalid pattern choice, etc.)",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Error Handling section covers 7 error scenarios: No Description Provided, Graphiti Unavailable, Empty Answers, Invalid Structural Pattern Choice, Cancelled/Partial Session, Graphiti Connection Drop Mid-Session, and --no-questions Flag. Each with code examples and user-facing messages. Verified by TestErrorHandling (2 tests).",
+      "notes": "Error Handling section covers 7 error scenarios: No Description Provided, Graphiti Unavailable, Empty Answers, Invalid Structural Pattern Choice, Cancelled/Partial Session, Graphiti Connection Drop Mid-Session, and --no-questions Flag. Each with code examples and user-facing messages. Verified by TestErrorHandling (2 tests)."
+    }
+  ],
+  "acceptance_criteria_verification": {
+    "criteria_results": [
+      {
+        "criterion_id": "AC-001",
+        "criterion_text": "Command spec follows the pattern established by `system-plan.md` and `feature-plan.md`",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "The spec at installer/core/commands/system-arch.md follows the same structural pattern as system-plan.md: title heading, Command Syntax section with bash block, Available Flags table, Execution Flow section with phases, Error Handling section, Examples section, and CRITICAL EXECUTION INSTRUCTIONS FOR CLAUDE section. Verified by TestStructuralPattern (9 tests).",
+        "notes": "The spec at installer/core/commands/system-arch.md follows the same structural pattern as system-plan.md: title heading, Command Syntax section with bash block, Available Flags table, Execution Flow section with phases, Error Handling section, Examples section, and CRITICAL EXECUTION INSTRUCTIONS FOR CLAUDE section. Verified by TestStructuralPattern (9 tests)."
+      },
+      {
+        "criterion_id": "AC-002",
+        "criterion_text": "6-category interactive question flow with `[C]ontinue / [R]evise / [S]kip / [A]DR?` checkpoints:",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "All 6 categories documented in Phase 1 of the Execution Flow. Each category has detailed questions, checkpoint display with [C]ontinue / [R]evise / [S]kip / [A]DR? pattern, and Graphiti persistence after each checkpoint. Category 1 includes trade-offs for each structural pattern. Verified by TestInteractiveQuestionFlow (3 tests) and TestMultiConsumerAPIStrategy (3 tests).",
+        "notes": "All 6 categories documented in Phase 1 of the Execution Flow. Each category has detailed questions, checkpoint display with [C]ontinue / [R]evise / [S]kip / [A]DR? pattern, and Graphiti persistence after each checkpoint. Category 1 includes trade-offs for each structural pattern. Verified by TestInteractiveQuestionFlow (3 tests) and TestMultiConsumerAPIStrategy (3 tests)."
+      },
+      {
+        "criterion_id": "AC-003",
+        "criterion_text": "Setup mode auto-detection: if no architecture context in Graphiti, enters setup mode",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Mode Auto-Detection section documents the logic: if Graphiti has no architecture context, detected_mode = 'setup'. Phase 0 shows the auto-detection code. Step 3 of execution instructions implements it. Verified by TestSetupModeAutoDetection (3 tests).",
+        "notes": "Mode Auto-Detection section documents the logic: if Graphiti has no architecture context, detected_mode = 'setup'. Phase 0 shows the auto-detection code. Step 3 of execution instructions implements it. Verified by TestSetupModeAutoDetection (3 tests)."
+      },
+      {
+        "criterion_id": "AC-004",
+        "criterion_text": "Mandatory C4 diagram output with review gates:",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Phase 2 'C4 Diagram Generation (Mandatory Review Gate)' documents both diagrams with Mermaid examples, references system-context.md.j2 and container.md.j2, and includes explicit approval checkpoints ([A]pprove / [R]evise / [C]ancel) for each diagram. Step 5 of execution instructions enforces 'do not proceed without approval'. Verified by TestC4DiagramOutput (6 tests).",
+        "notes": "Phase 2 'C4 Diagram Generation (Mandatory Review Gate)' documents both diagrams with Mermaid examples, references system-context.md.j2 and container.md.j2, and includes explicit approval checkpoints ([A]pprove / [R]evise / [C]ancel) for each diagram. Step 5 of execution instructions enforces 'do not proceed without approval'. Verified by TestC4DiagramOutput (6 tests)."
+      },
+      {
+        "criterion_id": "AC-005",
+        "criterion_text": "Mandatory output artefacts:",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Phase 3 'Output Generation' lists all 6 mandatory artefacts in a table: domain-model.md, ADR-ARCH-NNN-{slug}.md, system-context.md (C4 L1), container.md (C4 L2), assumptions.yaml, and ARCHITECTURE.md (summary/index). YAML format shown for assumptions manifest. ADR-ARCH prefix used consistently. Verified by TestMandatoryOutputArtefacts (6 tests).",
+        "notes": "Phase 3 'Output Generation' lists all 6 mandatory artefacts in a table: domain-model.md, ADR-ARCH-NNN-{slug}.md, system-context.md (C4 L1), container.md (C4 L2), assumptions.yaml, and ARCHITECTURE.md (summary/index). YAML format shown for assumptions manifest. ADR-ARCH prefix used consistently. Verified by TestMandatoryOutputArtefacts (6 tests)."
+      },
+      {
+        "criterion_id": "AC-006",
+        "criterion_text": "Graphiti seeding: all artefacts seeded into `project_architecture` and `project_decisions` groups",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Phase 4 'Graphiti Seeding' documents group assignments: system context/components/concerns go to project_architecture, ADRs go to project_decisions. Code examples show upsert_entity with group_ids parameter. Verified by TestGraphitiSeeding (2 tests).",
+        "notes": "Phase 4 'Graphiti Seeding' documents group assignments: system context/components/concerns go to project_architecture, ADRs go to project_decisions. Code examples show upsert_entity with group_ids parameter. Verified by TestGraphitiSeeding (2 tests)."
+      },
+      {
+        "criterion_id": "AC-007",
+        "criterion_text": "Graceful degradation: if Graphiti unavailable, warn and generate markdown artefacts only",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Error Handling section 'Graphiti Unavailable' shows warning message, offers choice to continue without persistence, and states markdown artefacts will still be generated. Also documented in Mode Auto-Detection section. Verified by TestGracefulDegradation (2 tests).",
+        "notes": "Error Handling section 'Graphiti Unavailable' shows warning message, offers choice to continue without persistence, and states markdown artefacts will still be generated. Also documented in Mode Auto-Detection section. Verified by TestGracefulDegradation (2 tests)."
+      },
+      {
+        "criterion_id": "AC-008",
+        "criterion_text": "Partial session handling: if user skips categories, persist completed categories, inform which were skipped",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Error Handling section 'Cancelled / Partial Session' documents the [S]kip behavior: persists completed categories, reports completed vs skipped count, generates partial artefacts, and advises running /system-arch again. Verified by TestPartialSessionHandling (2 tests).",
+        "notes": "Error Handling section 'Cancelled / Partial Session' documents the [S]kip behavior: persists completed categories, reports completed vs skipped count, generates partial artefacts, and advises running /system-arch again. Verified by TestPartialSessionHandling (2 tests)."
+      },
+      {
+        "criterion_id": "AC-009",
+        "criterion_text": "Empty answer handling: use placeholder, warn, continue",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Error Handling section 'Empty Answers' shows placeholder '[To be defined]' used for empty answers, warns user, and continues session without blocking. Verified by TestEmptyAnswerHandling (2 tests).",
+        "notes": "Error Handling section 'Empty Answers' shows placeholder '[To be defined]' used for empty answers, warns user, and continues session without blocking. Verified by TestEmptyAnswerHandling (2 tests)."
+      },
+      {
+        "criterion_id": "AC-010",
+        "criterion_text": "ADR numbering: scan `docs/architecture/decisions/` for next available number",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Phase 3 includes get_next_adr_number() function that scans docs/architecture/decisions/ for existing ADR-ARCH-*.md files and returns the next available number. Verified by TestADRNumbering (2 tests).",
+        "notes": "Phase 3 includes get_next_adr_number() function that scans docs/architecture/decisions/ for existing ADR-ARCH-*.md files and returns the next available number. Verified by TestADRNumbering (2 tests)."
+      },
+      {
+        "criterion_id": "AC-011",
+        "criterion_text": "Diagram splitting: warn if >30 nodes, suggest manual split at review gate",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Phase 2 documents the 30-node threshold with WARNING display, suggested sub-diagram splits, and [S]plit / [K]eep choice at the review gate. Format rules section also states 'Keep diagrams under 30 nodes (split into sub-diagrams if larger)'. Verified by TestDiagramSplitting (2 tests).",
+        "notes": "Phase 2 documents the 30-node threshold with WARNING display, suggested sub-diagram splits, and [S]plit / [K]eep choice at the review gate. Format rules section also states 'Keep diagrams under 30 nodes (split into sub-diagrams if larger)'. Verified by TestDiagramSplitting (2 tests)."
+      },
+      {
+        "criterion_id": "AC-012",
+        "criterion_text": "Security: sanitise ADR rationale text before Graphiti seeding",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Phase 4 includes sanitise_for_graphiti() function that removes HTML/script tags, control characters, and escapes Cypher injection patterns. ADR Inline Capture section references sanitisation. What NOT to Do section explicitly states 'Seed unsanitised free-text content to Graphiti'. Verified by TestSecurity (1 test).",
+        "notes": "Phase 4 includes sanitise_for_graphiti() function that removes HTML/script tags, control characters, and escapes Cypher injection patterns. ADR Inline Capture section references sanitisation. What NOT to Do section explicitly states 'Seed unsanitised free-text content to Graphiti'. Verified by TestSecurity (1 test)."
+      },
+      {
+        "criterion_id": "AC-013",
+        "criterion_text": "Execution protocol section with step-by-step Claude instructions",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "CRITICAL EXECUTION INSTRUCTIONS FOR CLAUDE section contains 8 numbered steps: Parse Arguments, Initialize Graphiti, Auto-Detect Mode, Execute Interactive Session, Generate C4 Diagrams, Generate Output Artefacts, Seed to Graphiti, Display Summary. Also includes What NOT to Do list and Example Execution Trace. Verified by TestExecutionProtocol (2 tests).",
+        "notes": "CRITICAL EXECUTION INSTRUCTIONS FOR CLAUDE section contains 8 numbered steps: Parse Arguments, Initialize Graphiti, Auto-Detect Mode, Execute Interactive Session, Generate C4 Diagrams, Generate Output Artefacts, Seed to Graphiti, Display Summary. Also includes What NOT to Do list and Example Execution Trace. Verified by TestExecutionProtocol (2 tests)."
+      },
+      {
+        "criterion_id": "AC-014",
+        "criterion_text": "Error handling section (no description, invalid pattern choice, etc.)",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Error Handling section covers 7 error scenarios: No Description Provided, Graphiti Unavailable, Empty Answers, Invalid Structural Pattern Choice, Cancelled/Partial Session, Graphiti Connection Drop Mid-Session, and --no-questions Flag. Each with code examples and user-facing messages. Verified by TestErrorHandling (2 tests).",
+        "notes": "Error Handling section covers 7 error scenarios: No Description Provided, Graphiti Unavailable, Empty Answers, Invalid Structural Pattern Choice, Cancelled/Partial Session, Graphiti Connection Drop Mid-Session, and --no-questions Flag. Each with code examples and user-facing messages. Verified by TestErrorHandling (2 tests)."
+      }
+    ]
+  },
+  "issues": [
+    {
+      "severity": "consider",
+      "category": "seam_test_recommendation",
+      "description": "No seam tests detected for cross-boundary feature. Consider adding seam/contract/boundary tests to validate technology boundary interactions. This is a recommendation, not a blocking gate."
+    }
+  ],
+  "rationale": "All quality gates passed. Independent verification confirmed. All acceptance criteria met.",
+  "context_used": null,
+  "approved_without_independent_tests": false
+}

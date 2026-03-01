@@ -456,6 +456,264 @@ class TestArchitectureDecision:
             )
             assert adr.status == status
 
+    # --- New tests for TASK-SAD-002 ---
+
+    def test_alternatives_considered_default_empty(self):
+        """Test alternatives_considered defaults to empty list."""
+        adr = ArchitectureDecision(
+            number=1,
+            title="Test",
+            status="accepted",
+            context="ctx",
+            decision="dec",
+        )
+        assert adr.alternatives_considered == []
+
+    def test_alternatives_considered_with_values(self):
+        """Test alternatives_considered can be populated."""
+        adr = ArchitectureDecision(
+            number=1,
+            title="Test",
+            status="accepted",
+            context="ctx",
+            decision="dec",
+            alternatives_considered=["Option A", "Option B", "Option C"],
+        )
+        assert adr.alternatives_considered == ["Option A", "Option B", "Option C"]
+        assert len(adr.alternatives_considered) == 3
+
+    def test_superseded_by_default_none(self):
+        """Test superseded_by defaults to None."""
+        adr = ArchitectureDecision(
+            number=1,
+            title="Test",
+            status="accepted",
+            context="ctx",
+            decision="dec",
+        )
+        assert adr.superseded_by is None
+
+    def test_superseded_by_with_value(self):
+        """Test superseded_by can reference another ADR."""
+        adr = ArchitectureDecision(
+            number=1,
+            title="Test",
+            status="superseded",
+            context="ctx",
+            decision="dec",
+            superseded_by="ADR-SP-005",
+        )
+        assert adr.superseded_by == "ADR-SP-005"
+
+    def test_supersedes_default_none(self):
+        """Test supersedes defaults to None."""
+        adr = ArchitectureDecision(
+            number=1,
+            title="Test",
+            status="accepted",
+            context="ctx",
+            decision="dec",
+        )
+        assert adr.supersedes is None
+
+    def test_supersedes_with_value(self):
+        """Test supersedes can reference another ADR."""
+        adr = ArchitectureDecision(
+            number=5,
+            title="Use CQRS Instead",
+            status="accepted",
+            context="ctx",
+            decision="dec",
+            supersedes="ADR-SP-001",
+        )
+        assert adr.supersedes == "ADR-SP-001"
+
+    def test_prefix_default_sp(self):
+        """Test prefix defaults to 'SP' for backwards compatibility."""
+        adr = ArchitectureDecision(
+            number=1,
+            title="Test",
+            status="accepted",
+            context="ctx",
+            decision="dec",
+        )
+        assert adr.prefix == "SP"
+
+    def test_prefix_parametrised_arch(self):
+        """Test prefix can be set to 'ARCH' for /system-arch."""
+        adr = ArchitectureDecision(
+            number=1,
+            title="Test",
+            status="accepted",
+            context="ctx",
+            decision="dec",
+            prefix="ARCH",
+        )
+        assert adr.prefix == "ARCH"
+        assert adr.entity_id == "ADR-ARCH-001"
+
+    def test_prefix_parametrised_fs(self):
+        """Test prefix can be set to 'FS' for /feature-spec."""
+        adr = ArchitectureDecision(
+            number=3,
+            title="Test",
+            status="accepted",
+            context="ctx",
+            decision="dec",
+            prefix="FS",
+        )
+        assert adr.prefix == "FS"
+        assert adr.entity_id == "ADR-FS-003"
+
+    def test_entity_id_default_prefix_backwards_compatible(self):
+        """Test entity_id uses default 'SP' prefix, matching existing format."""
+        adr = ArchitectureDecision(
+            number=42,
+            title="Test",
+            status="accepted",
+            context="ctx",
+            decision="dec",
+        )
+        # Default must remain ADR-SP-042 for backwards compatibility
+        assert adr.entity_id == "ADR-SP-042"
+
+    def test_to_episode_body_includes_alternatives_when_nonempty(self):
+        """Test to_episode_body includes alternatives_considered when non-empty."""
+        adr = ArchitectureDecision(
+            number=1,
+            title="Test",
+            status="accepted",
+            context="ctx",
+            decision="dec",
+            alternatives_considered=["Option A", "Option B"],
+        )
+        body = adr.to_episode_body()
+        assert "alternatives_considered" in body
+        assert body["alternatives_considered"] == ["Option A", "Option B"]
+
+    def test_to_episode_body_excludes_alternatives_when_empty(self):
+        """Test to_episode_body excludes alternatives_considered when empty."""
+        adr = ArchitectureDecision(
+            number=1,
+            title="Test",
+            status="accepted",
+            context="ctx",
+            decision="dec",
+            alternatives_considered=[],
+        )
+        body = adr.to_episode_body()
+        assert "alternatives_considered" not in body
+
+    def test_to_episode_body_includes_superseded_by_when_set(self):
+        """Test to_episode_body includes superseded_by when not None."""
+        adr = ArchitectureDecision(
+            number=1,
+            title="Test",
+            status="superseded",
+            context="ctx",
+            decision="dec",
+            superseded_by="ADR-SP-005",
+        )
+        body = adr.to_episode_body()
+        assert "superseded_by" in body
+        assert body["superseded_by"] == "ADR-SP-005"
+
+    def test_to_episode_body_excludes_superseded_by_when_none(self):
+        """Test to_episode_body excludes superseded_by when None."""
+        adr = ArchitectureDecision(
+            number=1,
+            title="Test",
+            status="accepted",
+            context="ctx",
+            decision="dec",
+        )
+        body = adr.to_episode_body()
+        assert "superseded_by" not in body
+
+    def test_to_episode_body_includes_supersedes_when_set(self):
+        """Test to_episode_body includes supersedes when not None."""
+        adr = ArchitectureDecision(
+            number=5,
+            title="Test",
+            status="accepted",
+            context="ctx",
+            decision="dec",
+            supersedes="ADR-SP-001",
+        )
+        body = adr.to_episode_body()
+        assert "supersedes" in body
+        assert body["supersedes"] == "ADR-SP-001"
+
+    def test_to_episode_body_excludes_supersedes_when_none(self):
+        """Test to_episode_body excludes supersedes when None."""
+        adr = ArchitectureDecision(
+            number=1,
+            title="Test",
+            status="accepted",
+            context="ctx",
+            decision="dec",
+        )
+        body = adr.to_episode_body()
+        assert "supersedes" not in body
+
+    def test_to_episode_body_all_new_fields_populated(self):
+        """Test to_episode_body with all new fields populated."""
+        adr = ArchitectureDecision(
+            number=5,
+            title="Use CQRS",
+            status="accepted",
+            context="Need separation of reads/writes",
+            decision="Implement CQRS",
+            consequences=["Better read performance"],
+            related_components=["Order Management"],
+            alternatives_considered=["Event Sourcing only", "Simple CRUD"],
+            superseded_by=None,
+            supersedes="ADR-SP-001",
+            prefix="ARCH",
+        )
+        body = adr.to_episode_body()
+
+        # Core fields always present
+        assert body["number"] == 5
+        assert body["title"] == "Use CQRS"
+        assert body["status"] == "accepted"
+        assert body["decision"] == "Implement CQRS"
+
+        # New fields conditionally present
+        assert body["alternatives_considered"] == ["Event Sourcing only", "Simple CRUD"]
+        assert body["supersedes"] == "ADR-SP-001"
+        assert "superseded_by" not in body  # None → excluded
+
+    def test_to_episode_body_backwards_compatible_no_new_fields(self):
+        """Test to_episode_body remains backwards compatible with existing data."""
+        adr = ArchitectureDecision(
+            number=1,
+            title="Use Event Sourcing",
+            status="accepted",
+            context="Need audit trail",
+            decision="Event sourcing pattern",
+            consequences=["Full history"],
+            related_components=["Order Management"],
+        )
+        body = adr.to_episode_body()
+
+        # Only original fields present
+        assert set(body.keys()) == {
+            "number", "title", "status", "context",
+            "decision", "consequences", "related_components",
+        }
+
+    def test_mutable_defaults_alternatives_considered(self):
+        """Test alternatives_considered mutable default doesn't share state."""
+        adr1 = ArchitectureDecision(
+            number=1, title="T1", status="accepted", context="c", decision="d",
+        )
+        adr2 = ArchitectureDecision(
+            number=2, title="T2", status="accepted", context="c", decision="d",
+        )
+        adr1.alternatives_considered.append("Modified")
+        assert len(adr2.alternatives_considered) == 0
+
 
 # =========================================================================
 # 5. ARCHITECTURECONTEXT TESTS (10 tests)

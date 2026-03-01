@@ -18,6 +18,9 @@ Public API:
     CrosscuttingConcernDef: Dataclass for crosscutting concerns (TASK-SP-001)
     ArchitectureDecision: Dataclass for architecture decision records (TASK-SP-001)
     ArchitectureContext: Dataclass for aggregated architecture context (TASK-SP-001)
+    DesignDecision: Dataclass for design decision records (TASK-SAD-003)
+    ApiContract: Dataclass for API contract definitions (TASK-SAD-003)
+    DataModel: Dataclass for data model definitions (TASK-SAD-003)
 """
 
 from guardkit.knowledge.entities.outcome import (
@@ -56,6 +59,18 @@ from guardkit.knowledge.entities.architecture_context import (
     ArchitectureContext,
 )
 
+from guardkit.knowledge.entities.design_decision import (
+    DesignDecision,
+)
+
+from guardkit.knowledge.entities.api_contract import (
+    ApiContract,
+)
+
+from guardkit.knowledge.entities.data_model import (
+    DataModel,
+)
+
 __all__ = [
     "OutcomeType",
     "TaskOutcome",
@@ -69,4 +84,7 @@ __all__ = [
     "CrosscuttingConcernDef",
     "ArchitectureDecision",
     "ArchitectureContext",
+    "DesignDecision",
+    "ApiContract",
+    "DataModel",
 ]

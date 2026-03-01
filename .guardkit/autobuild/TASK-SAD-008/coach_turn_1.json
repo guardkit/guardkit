@@ -1,0 +1,202 @@
+{
+  "task_id": "TASK-SAD-008",
+  "turn": 1,
+  "decision": "approve",
+  "validation_results": {
+    "quality_gates": {
+      "tests_passed": true,
+      "coverage_met": true,
+      "arch_review_passed": true,
+      "plan_audit_passed": true,
+      "all_gates_passed": true
+    },
+    "independent_tests": {
+      "tests_passed": true,
+      "test_command": "pytest tests/unit/commands/test_arch_refine_command_spec.py tests/unit/commands/test_design_refine_spec.py -v --tb=short",
+      "test_output_summary": "Result:\ntests/unit/commands/test_arch_refine_command_spec.py::TestStructuralPattern::test_has_examples_section PASSED [  6%]\ntests/unit/commands/test_arch_refine_command_spec.py::TestStructuralPattern::test_has_critical_execution_instructions PASSED [  7%]\ntests/unit/commands/test_arch_refine_command_spec.py::TestStructuralPattern::test_command_syntax_has_bash_block PASSED [  7%]\ntests/unit/commands/test_arch_refine_command_spec.py::TestStructuralPattern::test_has_related_commands_section PASSED [  8%]\ntests/unit/commands/test_arch_refine_command_spec.py::TestDisambiguationFlow::test_semantic_search_documented PASSED [  9%]",
+      "duration_seconds": 11.503006935119629
+    },
+    "requirements": {
+      "criteria_total": 10,
+      "criteria_met": 10,
+      "all_criteria_met": true,
+      "missing": []
+    }
+  },
+  "criteria_verification": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Disambiguation flow:",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Phase 1 of the spec documents the full disambiguation flow: Step 1 uses get_relevant_context_for_topic() for semantic search, Step 2 presents top 3-5 matches capped per ASSUM-002 with relevance percentages, Step 3 requires explicit [Y/N/C] confirmation before proceeding. Ambiguous query handling is documented with result capping and specific error message for no matches. Tests: TestDisambiguationFlow (5 tests) validates all aspects.",
+      "notes": "Phase 1 of the spec documents the full disambiguation flow: Step 1 uses get_relevant_context_for_topic() for semantic search, Step 2 presents top 3-5 matches capped per ASSUM-002 with relevance percentages, Step 3 requires explicit [Y/N/C] confirmation before proceeding. Ambiguous query handling is documented with result capping and specific error message for no matches. Tests: TestDisambiguationFlow (5 tests) validates all aspects."
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Temporal superseding (based on spike results from TASK-SAD-001):",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Phase 3 'Temporal Superseding' documents Option A implementation from TASK-SAD-001 spike. Code examples show: setting existing_adr.superseded_by and status='superseded', creating new ADR with supersedes field (from TASK-SAD-002), using get_next_adr_number() to assign next available number, and upsert_episode() which preserves old episodes. Explicitly states 'Prior ADR remains queryable in Graphiti \u2014 both versions coexist'. Tests: TestTemporalSuperseding (6 tests) validates all properties.",
+      "notes": "Phase 3 'Temporal Superseding' documents Option A implementation from TASK-SAD-001 spike. Code examples show: setting existing_adr.superseded_by and status='superseded', creating new ADR with supersedes field (from TASK-SAD-002), using get_next_adr_number() to assign next available number, and upsert_episode() which preserves old episodes. Explicitly states 'Prior ADR remains queryable in Graphiti \u2014 both versions coexist'. Tests: TestTemporalSuperseding (6 tests) validates all properties."
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Impact analysis:",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Phase 4 'Impact Analysis' documents querying downstream artefacts by entity_id reference across project_design and feature_specs groups. Impact display shows feature specs, C4 diagrams, and API contracts as affected artefact types with specific examples. Staleness flagging is documented. Impact scope is presented with [A]pprove/[R]evise/[C]ancel gate for user approval before applying. Tests: TestImpactAnalysis (6 tests) validates all aspects.",
+      "notes": "Phase 4 'Impact Analysis' documents querying downstream artefacts by entity_id reference across project_design and feature_specs groups. Impact display shows feature specs, C4 diagrams, and API contracts as affected artefact types with specific examples. Staleness flagging is documented. Impact scope is presented with [A]pprove/[R]evise/[C]ancel gate for user approval before applying. Tests: TestImpactAnalysis (6 tests) validates all aspects."
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "C4 diagram re-review gate:",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Phase 6 'C4 Diagram Re-Review Gate (Mandatory)' documents regeneration of C4 Level 1 (System Context) and Level 2 (Container) diagrams with Mermaid examples showing changes highlighted. Mandatory approval gates with [A]pprove/[R]evise/[C]ancel for each diagram. Explicitly states 'The user cannot skip this review gate'. Tests: TestC4DiagramReReviewGate (4 tests) validates L1/L2, mandatory approval, Mermaid format.",
+      "notes": "Phase 6 'C4 Diagram Re-Review Gate (Mandatory)' documents regeneration of C4 Level 1 (System Context) and Level 2 (Container) diagrams with Mermaid examples showing changes highlighted. Mandatory approval gates with [A]pprove/[R]evise/[C]ancel for each diagram. Explicitly states 'The user cannot skip this review gate'. Tests: TestC4DiagramReReviewGate (4 tests) validates L1/L2, mandatory approval, Mermaid format."
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Staleness flagging:",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Phase 5 'Staleness Flagging' documents tagging affected nodes with metadata={'stale': True, 'stale_reason': ...}. Includes code example using arch_sp.update_entity_metadata(). Documents that /system-design detects stale: true nodes and presents them with specific example output showing 'STALE DECISIONS DETECTED'. Tests: TestStalenessFlagging (2 tests) validates both stale metadata and /system-design detection.",
+      "notes": "Phase 5 'Staleness Flagging' documents tagging affected nodes with metadata={'stale': True, 'stale_reason': ...}. Includes code example using arch_sp.update_entity_metadata(). Documents that /system-design detects stale: true nodes and presents them with specific example output showing 'STALE DECISIONS DETECTED'. Tests: TestStalenessFlagging (2 tests) validates both stale metadata and /system-design detection."
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Graphiti integration:",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Phase 8 'Graphiti Seeding' documents upserting both superseded and new episodes using arch_sp.upsert_episode() with group_ids=['project_decisions']. Also documents updating project_architecture group when structure changes. Phase 3 shows the upsert_episode calls for both old and new ADRs. Tests: TestGraphitiIntegration (3 tests) validates upsert, project_decisions group, and project_architecture group.",
+      "notes": "Phase 8 'Graphiti Seeding' documents upserting both superseded and new episodes using arch_sp.upsert_episode() with group_ids=['project_decisions']. Also documents updating project_architecture group when structure changes. Phase 3 shows the upsert_episode calls for both old and new ADRs. Tests: TestGraphitiIntegration (3 tests) validates upsert, project_decisions group, and project_architecture group."
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Graceful degradation when Graphiti unavailable",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Error Handling section 'Graphiti Unavailable' documents full graceful degradation: WARNING message, explanation of limitations (no persistence, no staleness flagging, limited impact analysis), instructions to enable Graphiti, and [Y/n] prompt to continue. Prerequisite gate also falls back to local file scanning. Example 3 shows the full Graphiti-unavailable workflow. Tests: TestGracefulDegradation (3 tests) validates unavailable handling, markdown generation, and user warning.",
+      "notes": "Error Handling section 'Graphiti Unavailable' documents full graceful degradation: WARNING message, explanation of limitations (no persistence, no staleness flagging, limited impact analysis), instructions to enable Graphiti, and [Y/n] prompt to continue. Prerequisite gate also falls back to local file scanning. Example 3 shows the full Graphiti-unavailable workflow. Tests: TestGracefulDegradation (3 tests) validates unavailable handling, markdown generation, and user warning."
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "Security: adversarial semantic search queries capped at 3-5 results with confirmation gate",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Phase 1 Step 1 caps results with `matches = matches[:5]` and references ASSUM-002. Step 2 presents capped results. Step 3 requires explicit confirmation. The 'What NOT to Do' section states 'DO NOT return more than 5 disambiguation results (cap per ASSUM-002)'. Sanitisation is documented in Phase 8 using sanitise_for_graphiti(). Tests: TestSecurity (3 tests) validates capping, confirmation gate, and sanitisation.",
+      "notes": "Phase 1 Step 1 caps results with `matches = matches[:5]` and references ASSUM-002. Step 2 presents capped results. Step 3 requires explicit confirmation. The 'What NOT to Do' section states 'DO NOT return more than 5 disambiguation results (cap per ASSUM-002)'. Sanitisation is documented in Phase 8 using sanitise_for_graphiti(). Tests: TestSecurity (3 tests) validates capping, confirmation gate, and sanitisation."
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "Execution protocol section",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "CRITICAL EXECUTION INSTRUCTIONS FOR CLAUDE section contains 10 numbered steps (Step 1 through Step 10), 'What NOT to Do' list with 10 specific prohibitions, Message Constants with 3 constant strings, and a detailed Example Execution Trace showing all 16 execution steps. Tests: TestExecutionProtocol (3 tests) validates numbered steps, DO NOT section, and execution trace.",
+      "notes": "CRITICAL EXECUTION INSTRUCTIONS FOR CLAUDE section contains 10 numbered steps (Step 1 through Step 10), 'What NOT to Do' list with 10 specific prohibitions, Message Constants with 3 constant strings, and a detailed Example Execution Trace showing all 16 execution steps. Tests: TestExecutionProtocol (3 tests) validates numbered steps, DO NOT section, and execution trace."
+    },
+    {
+      "criterion_id": "AC-010",
+      "criterion_text": "Error handling section",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Error Handling section contains 6 documented error scenarios: No Architecture Context, No Matching ADR Found, Graphiti Unavailable, Graphiti Connection Drop Mid-Session, --no-questions Flag, No Query Provided. Each has Python code examples with specific error messages and recovery actions. Tests: TestErrorHandling (3 tests) validates architecture context error, no match error, and connection error.",
+      "notes": "Error Handling section contains 6 documented error scenarios: No Architecture Context, No Matching ADR Found, Graphiti Unavailable, Graphiti Connection Drop Mid-Session, --no-questions Flag, No Query Provided. Each has Python code examples with specific error messages and recovery actions. Tests: TestErrorHandling (3 tests) validates architecture context error, no match error, and connection error."
+    }
+  ],
+  "acceptance_criteria_verification": {
+    "criteria_results": [
+      {
+        "criterion_id": "AC-001",
+        "criterion_text": "Disambiguation flow:",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Phase 1 of the spec documents the full disambiguation flow: Step 1 uses get_relevant_context_for_topic() for semantic search, Step 2 presents top 3-5 matches capped per ASSUM-002 with relevance percentages, Step 3 requires explicit [Y/N/C] confirmation before proceeding. Ambiguous query handling is documented with result capping and specific error message for no matches. Tests: TestDisambiguationFlow (5 tests) validates all aspects.",
+        "notes": "Phase 1 of the spec documents the full disambiguation flow: Step 1 uses get_relevant_context_for_topic() for semantic search, Step 2 presents top 3-5 matches capped per ASSUM-002 with relevance percentages, Step 3 requires explicit [Y/N/C] confirmation before proceeding. Ambiguous query handling is documented with result capping and specific error message for no matches. Tests: TestDisambiguationFlow (5 tests) validates all aspects."
+      },
+      {
+        "criterion_id": "AC-002",
+        "criterion_text": "Temporal superseding (based on spike results from TASK-SAD-001):",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Phase 3 'Temporal Superseding' documents Option A implementation from TASK-SAD-001 spike. Code examples show: setting existing_adr.superseded_by and status='superseded', creating new ADR with supersedes field (from TASK-SAD-002), using get_next_adr_number() to assign next available number, and upsert_episode() which preserves old episodes. Explicitly states 'Prior ADR remains queryable in Graphiti \u2014 both versions coexist'. Tests: TestTemporalSuperseding (6 tests) validates all properties.",
+        "notes": "Phase 3 'Temporal Superseding' documents Option A implementation from TASK-SAD-001 spike. Code examples show: setting existing_adr.superseded_by and status='superseded', creating new ADR with supersedes field (from TASK-SAD-002), using get_next_adr_number() to assign next available number, and upsert_episode() which preserves old episodes. Explicitly states 'Prior ADR remains queryable in Graphiti \u2014 both versions coexist'. Tests: TestTemporalSuperseding (6 tests) validates all properties."
+      },
+      {
+        "criterion_id": "AC-003",
+        "criterion_text": "Impact analysis:",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Phase 4 'Impact Analysis' documents querying downstream artefacts by entity_id reference across project_design and feature_specs groups. Impact display shows feature specs, C4 diagrams, and API contracts as affected artefact types with specific examples. Staleness flagging is documented. Impact scope is presented with [A]pprove/[R]evise/[C]ancel gate for user approval before applying. Tests: TestImpactAnalysis (6 tests) validates all aspects.",
+        "notes": "Phase 4 'Impact Analysis' documents querying downstream artefacts by entity_id reference across project_design and feature_specs groups. Impact display shows feature specs, C4 diagrams, and API contracts as affected artefact types with specific examples. Staleness flagging is documented. Impact scope is presented with [A]pprove/[R]evise/[C]ancel gate for user approval before applying. Tests: TestImpactAnalysis (6 tests) validates all aspects."
+      },
+      {
+        "criterion_id": "AC-004",
+        "criterion_text": "C4 diagram re-review gate:",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Phase 6 'C4 Diagram Re-Review Gate (Mandatory)' documents regeneration of C4 Level 1 (System Context) and Level 2 (Container) diagrams with Mermaid examples showing changes highlighted. Mandatory approval gates with [A]pprove/[R]evise/[C]ancel for each diagram. Explicitly states 'The user cannot skip this review gate'. Tests: TestC4DiagramReReviewGate (4 tests) validates L1/L2, mandatory approval, Mermaid format.",
+        "notes": "Phase 6 'C4 Diagram Re-Review Gate (Mandatory)' documents regeneration of C4 Level 1 (System Context) and Level 2 (Container) diagrams with Mermaid examples showing changes highlighted. Mandatory approval gates with [A]pprove/[R]evise/[C]ancel for each diagram. Explicitly states 'The user cannot skip this review gate'. Tests: TestC4DiagramReReviewGate (4 tests) validates L1/L2, mandatory approval, Mermaid format."
+      },
+      {
+        "criterion_id": "AC-005",
+        "criterion_text": "Staleness flagging:",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Phase 5 'Staleness Flagging' documents tagging affected nodes with metadata={'stale': True, 'stale_reason': ...}. Includes code example using arch_sp.update_entity_metadata(). Documents that /system-design detects stale: true nodes and presents them with specific example output showing 'STALE DECISIONS DETECTED'. Tests: TestStalenessFlagging (2 tests) validates both stale metadata and /system-design detection.",
+        "notes": "Phase 5 'Staleness Flagging' documents tagging affected nodes with metadata={'stale': True, 'stale_reason': ...}. Includes code example using arch_sp.update_entity_metadata(). Documents that /system-design detects stale: true nodes and presents them with specific example output showing 'STALE DECISIONS DETECTED'. Tests: TestStalenessFlagging (2 tests) validates both stale metadata and /system-design detection."
+      },
+      {
+        "criterion_id": "AC-006",
+        "criterion_text": "Graphiti integration:",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Phase 8 'Graphiti Seeding' documents upserting both superseded and new episodes using arch_sp.upsert_episode() with group_ids=['project_decisions']. Also documents updating project_architecture group when structure changes. Phase 3 shows the upsert_episode calls for both old and new ADRs. Tests: TestGraphitiIntegration (3 tests) validates upsert, project_decisions group, and project_architecture group.",
+        "notes": "Phase 8 'Graphiti Seeding' documents upserting both superseded and new episodes using arch_sp.upsert_episode() with group_ids=['project_decisions']. Also documents updating project_architecture group when structure changes. Phase 3 shows the upsert_episode calls for both old and new ADRs. Tests: TestGraphitiIntegration (3 tests) validates upsert, project_decisions group, and project_architecture group."
+      },
+      {
+        "criterion_id": "AC-007",
+        "criterion_text": "Graceful degradation when Graphiti unavailable",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Error Handling section 'Graphiti Unavailable' documents full graceful degradation: WARNING message, explanation of limitations (no persistence, no staleness flagging, limited impact analysis), instructions to enable Graphiti, and [Y/n] prompt to continue. Prerequisite gate also falls back to local file scanning. Example 3 shows the full Graphiti-unavailable workflow. Tests: TestGracefulDegradation (3 tests) validates unavailable handling, markdown generation, and user warning.",
+        "notes": "Error Handling section 'Graphiti Unavailable' documents full graceful degradation: WARNING message, explanation of limitations (no persistence, no staleness flagging, limited impact analysis), instructions to enable Graphiti, and [Y/n] prompt to continue. Prerequisite gate also falls back to local file scanning. Example 3 shows the full Graphiti-unavailable workflow. Tests: TestGracefulDegradation (3 tests) validates unavailable handling, markdown generation, and user warning."
+      },
+      {
+        "criterion_id": "AC-008",
+        "criterion_text": "Security: adversarial semantic search queries capped at 3-5 results with confirmation gate",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Phase 1 Step 1 caps results with `matches = matches[:5]` and references ASSUM-002. Step 2 presents capped results. Step 3 requires explicit confirmation. The 'What NOT to Do' section states 'DO NOT return more than 5 disambiguation results (cap per ASSUM-002)'. Sanitisation is documented in Phase 8 using sanitise_for_graphiti(). Tests: TestSecurity (3 tests) validates capping, confirmation gate, and sanitisation.",
+        "notes": "Phase 1 Step 1 caps results with `matches = matches[:5]` and references ASSUM-002. Step 2 presents capped results. Step 3 requires explicit confirmation. The 'What NOT to Do' section states 'DO NOT return more than 5 disambiguation results (cap per ASSUM-002)'. Sanitisation is documented in Phase 8 using sanitise_for_graphiti(). Tests: TestSecurity (3 tests) validates capping, confirmation gate, and sanitisation."
+      },
+      {
+        "criterion_id": "AC-009",
+        "criterion_text": "Execution protocol section",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "CRITICAL EXECUTION INSTRUCTIONS FOR CLAUDE section contains 10 numbered steps (Step 1 through Step 10), 'What NOT to Do' list with 10 specific prohibitions, Message Constants with 3 constant strings, and a detailed Example Execution Trace showing all 16 execution steps. Tests: TestExecutionProtocol (3 tests) validates numbered steps, DO NOT section, and execution trace.",
+        "notes": "CRITICAL EXECUTION INSTRUCTIONS FOR CLAUDE section contains 10 numbered steps (Step 1 through Step 10), 'What NOT to Do' list with 10 specific prohibitions, Message Constants with 3 constant strings, and a detailed Example Execution Trace showing all 16 execution steps. Tests: TestExecutionProtocol (3 tests) validates numbered steps, DO NOT section, and execution trace."
+      },
+      {
+        "criterion_id": "AC-010",
+        "criterion_text": "Error handling section",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Error Handling section contains 6 documented error scenarios: No Architecture Context, No Matching ADR Found, Graphiti Unavailable, Graphiti Connection Drop Mid-Session, --no-questions Flag, No Query Provided. Each has Python code examples with specific error messages and recovery actions. Tests: TestErrorHandling (3 tests) validates architecture context error, no match error, and connection error.",
+        "notes": "Error Handling section contains 6 documented error scenarios: No Architecture Context, No Matching ADR Found, Graphiti Unavailable, Graphiti Connection Drop Mid-Session, --no-questions Flag, No Query Provided. Each has Python code examples with specific error messages and recovery actions. Tests: TestErrorHandling (3 tests) validates architecture context error, no match error, and connection error."
+      }
+    ]
+  },
+  "issues": [
+    {
+      "severity": "consider",
+      "category": "seam_test_recommendation",
+      "description": "No seam tests detected for cross-boundary feature. Consider adding seam/contract/boundary tests to validate technology boundary interactions. This is a recommendation, not a blocking gate."
+    }
+  ],
+  "rationale": "All quality gates passed. Independent verification confirmed. All acceptance criteria met.",
+  "context_used": null,
+  "approved_without_independent_tests": false
+}

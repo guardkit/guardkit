@@ -1,0 +1,131 @@
+{
+  "task_id": "TASK-SAD-003",
+  "turn": 1,
+  "files_modified": [
+    ".claude/task-plans/TASK-SAD-001-implementation-plan.md",
+    ".claude/task-plans/TASK-SAD-002-implementation-plan.md",
+    ".claude/task-plans/TASK-SAD-003-implementation-plan.md",
+    ".guardkit/autobuild/TASK-SAD-001/coach_turn_1.json",
+    ".guardkit/autobuild/TASK-SAD-001/player_turn_1.json",
+    ".guardkit/autobuild/TASK-SAD-001/task_work_results.json",
+    ".guardkit/autobuild/TASK-SAD-001/turn_context.json",
+    ".guardkit/autobuild/TASK-SAD-002/turn_context.json",
+    ".guardkit/autobuild/TASK-SAD-003/turn_context.json",
+    ".guardkit/bootstrap_state.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/guardkit/knowledge/entities/__init__.py",
+    "docs/architecture/decisions/ADR-ARCH-001-temporal-superseding-mechanism.md",
+    "guardkit/knowledge/entities/__init__.py",
+    "guardkit/knowledge/entities/api_contract.py",
+    "guardkit/knowledge/entities/architecture_context.py",
+    "guardkit/knowledge/entities/data_model.py",
+    "guardkit/knowledge/entities/design_decision.py",
+    "tasks/backlog/TASK-SAD-004-update-adr-template-and-create-new-templates.md",
+    "tasks/backlog/TASK-SAD-005-create-system-design-graphiti-and-design-writer.md",
+    "tasks/backlog/TASK-SAD-006-system-arch-command-spec.md",
+    "tasks/backlog/TASK-SAD-007-system-design-command-spec.md",
+    "tasks/backlog/TASK-SAD-008-arch-refine-command-spec.md",
+    "tasks/backlog/TASK-SAD-009-design-refine-command-spec.md",
+    "tasks/backlog/TASK-SAD-010-integration-testing-and-pipeline-validation.md",
+    "tasks/design_approved/TASK-SAD-001-temporal-superseding-spike.md",
+    "tasks/design_approved/TASK-SAD-002-update-architecture-decision-dataclass.md",
+    "tasks/design_approved/TASK-SAD-003-create-design-entity-dataclasses.md",
+    "tests/knowledge/test_temporal_superseding.py",
+    "tests/unit/knowledge/test_architecture_entities.py",
+    "tests/unit/knowledge/test_design_entities.py"
+  ],
+  "files_created": [
+    ".guardkit/autobuild/TASK-SAD-001/checkpoints.json",
+    ".guardkit/autobuild/TASK-SAD-003/player_turn_1.json",
+    ".guardkit/autobuild/TASK-SAD-003/task_work_results.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/.guardkit/autobuild/TASK-SAD-003/player_turn_1.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/guardkit/knowledge/entities/api_contract.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/guardkit/knowledge/entities/data_model.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/guardkit/knowledge/entities/design_decision.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/tests/unit/knowledge/test_design_entities.py"
+  ],
+  "tests_written": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E4F5/tests/unit/knowledge/test_design_entities.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation",
+  "concerns": [],
+  "requirements_addressed": [
+    "Create DesignDecision dataclass with all specified fields, entity_id, to_episode_body",
+    "Create ApiContract dataclass with all specified fields, entity_id, to_episode_body",
+    "Create DataModel dataclass with all specified fields, entity_id, to_episode_body",
+    "All entities follow frozen dataclass pattern with entity_id and to_episode_body",
+    "Unit tests for each entity class covering creation, entity_id, serialisation",
+    "Register entities in __init__.py"
+  ],
+  "requirements_remaining": [],
+  "sdk_turns_used": 34,
+  "sdk_max_turns": 100,
+  "sdk_ceiling_hit": false,
+  "tests_passed_count": 40,
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Create guardkit/knowledge/entities/design_decision.py with DesignDecision dataclass - Fields: number, title, context, decision, rationale, alternatives_considered, consequences, related_components, status, superseded_by, supersedes - entity_id property: DDR-{NNN:03d} - to_episode_body() method",
+      "status": "complete",
+      "evidence": "Created design_decision.py with frozen DesignDecision dataclass containing all specified fields (number, title, context, decision, rationale, alternatives_considered, consequences, related_components, status, superseded_by, supersedes). entity_id property returns DDR-{NNN:03d} format. to_episode_body() returns domain data with conditional inclusion of optional fields (alternatives_considered excluded when empty, superseded_by/supersedes excluded when None). 16 tests verify all aspects.",
+      "test_file": "tests/unit/knowledge/test_design_entities.py",
+      "implementation_files": [
+        "guardkit/knowledge/entities/design_decision.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Create guardkit/knowledge/entities/api_contract.py with ApiContract dataclass - Fields: bounded_context, consumer_types (list), endpoints (list of dicts), protocol (REST/GraphQL/MCP/A2A/ACP), version - entity_id property: API-{bounded_context_slug} - to_episode_body() method",
+      "status": "complete",
+      "evidence": "Created api_contract.py with frozen ApiContract dataclass containing all specified fields (bounded_context, consumer_types, endpoints, protocol, version). entity_id property uses _slugify() to generate API-{bounded_context_slug} format. to_episode_body() returns all domain data. Supports all 5 protocols (REST, GraphQL, MCP, A2A, ACP). 12 tests verify all aspects including slug truncation and special character handling.",
+      "test_file": "tests/unit/knowledge/test_design_entities.py",
+      "implementation_files": [
+        "guardkit/knowledge/entities/api_contract.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Create guardkit/knowledge/entities/data_model.py with DataModel dataclass - Fields: entities (list of dicts with name, attributes, relationships), invariants, bounded_context - entity_id property: DM-{bounded_context_slug} - to_episode_body() method",
+      "status": "complete",
+      "evidence": "Created data_model.py with frozen DataModel dataclass containing all specified fields (bounded_context, entities as list of dicts with name/attributes/relationships, invariants). entity_id property uses _slugify() to generate DM-{bounded_context_slug} format. to_episode_body() returns all domain data. 12 tests verify all aspects.",
+      "test_file": "tests/unit/knowledge/test_design_entities.py",
+      "implementation_files": [
+        "guardkit/knowledge/entities/data_model.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "All three entities follow the established pattern (frozen dataclass, entity_id property, to_episode_body)",
+      "status": "complete",
+      "evidence": "All three entities use @dataclass(frozen=True), have entity_id as @property, implement to_episode_body() returning domain-only dicts (no _metadata per ADR-GBF-001). Pattern matches ArchitectureDecision, ComponentDef, SystemContextDef, CrosscuttingConcernDef. Tests explicitly verify frozen behavior (test_frozen_dataclass), entity_id format, and episode body structure with no metadata.",
+      "test_file": "tests/unit/knowledge/test_design_entities.py",
+      "implementation_files": [
+        "guardkit/knowledge/entities/design_decision.py",
+        "guardkit/knowledge/entities/api_contract.py",
+        "guardkit/knowledge/entities/data_model.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Unit tests for each entity class (creation, entity_id, serialisation)",
+      "status": "complete",
+      "evidence": "Created test_design_entities.py with 40 tests across 3 test classes (TestDesignDecision: 16 tests, TestApiContract: 12 tests, TestDataModel: 12 tests). Tests cover: creation/instantiation, entity_id format/padding/determinism/truncation, to_episode_body structure/no-metadata/JSON-serializable, optional field defaults, mutable default isolation, frozen immutability, special character handling, and edge cases. 100% line coverage on all 3 source files.",
+      "test_file": "tests/unit/knowledge/test_design_entities.py",
+      "implementation_files": [
+        "tests/unit/knowledge/test_design_entities.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Register entities in guardkit/knowledge/entities/__init__.py",
+      "status": "complete",
+      "evidence": "Updated __init__.py to import DesignDecision, ApiContract, and DataModel from their respective modules and added them to __all__ list. Updated module docstring to include new entities. All imports verified working via test execution.",
+      "test_file": "tests/unit/knowledge/test_design_entities.py",
+      "implementation_files": [
+        "guardkit/knowledge/entities/__init__.py"
+      ]
+    }
+  ]
+}

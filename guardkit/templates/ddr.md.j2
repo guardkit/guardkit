@@ -1,0 +1,66 @@
+# {{ ddr.id }}: {{ ddr.title }}
+
+> Status: {{ ddr.status }}
+> Date: {{ ddr.date }}
+
+## Context
+
+{{ ddr.context }}
+
+## Decision
+
+{{ ddr.decision }}
+
+## Rationale
+
+{{ ddr.rationale }}
+
+{% if ddr.alternatives_considered %}
+## Alternatives Considered
+
+{% for alt in ddr.alternatives_considered %}
+{% if alt is mapping %}
+### {{ alt.name }}
+
+- **Pros:** {{ alt.pros }}
+- **Cons:** {{ alt.cons }}
+
+{% else %}
+- {{ alt }}
+{% endif %}
+{% endfor %}
+{% endif %}
+
+## Consequences
+
+{% for consequence in ddr.consequences %}
+- {{ consequence }}
+{% endfor %}
+
+{% if ddr.related_api_contracts is defined and ddr.related_api_contracts %}
+## Related API Contracts
+
+{% for contract in ddr.related_api_contracts %}
+- {{ contract }}
+{% endfor %}
+{% endif %}
+
+{% if ddr.related_components is defined and ddr.related_components %}
+## Related Components
+
+{% for comp in ddr.related_components %}
+- {{ comp }}
+{% endfor %}
+{% endif %}
+
+{% if ddr.supersedes is defined and ddr.supersedes %}
+## Supersedes
+
+{{ ddr.supersedes }}
+{% endif %}
+
+{% if ddr.superseded_by is defined and ddr.superseded_by %}
+## Superseded By
+
+{{ ddr.superseded_by }}
+{% endif %}
