@@ -4,9 +4,10 @@ title: Add collection_error classification to Coach test failure classifier
 task_type: feature
 parent_review: TASK-REV-0E44
 feature_id: FEAT-CTD
-status: backlog
+status: completed
 created: 2026-03-01T00:00:00+00:00
 updated: 2026-03-01T00:00:00+00:00
+completed: 2026-03-01T00:00:00+00:00
 priority: high
 tags:
   - autobuild
@@ -29,12 +30,12 @@ This is Seam Failure 2 from the TASK-REV-0E44 review. Adding a specific `"collec
 
 ## Acceptance Criteria
 
-- [ ] New classification `("collection_error", "high")` returned when pytest output contains `"errors during collection"` or `"error collecting"`
-- [ ] Collection error detection runs BEFORE the generic `ModuleNotFoundError` check
-- [ ] Classification is logged at DEBUG level with the matched pattern
-- [ ] Normal test execution failures (assertions, exceptions) are NOT classified as collection errors
-- [ ] Mixed output (some collection errors + some test results) is correctly classified as collection error
-- [ ] Unit tests cover: collection error output, normal failure output, mixed output, empty output
+- [x] New classification `("collection_error", "high")` returned when pytest output contains `"errors during collection"` or `"error collecting"`
+- [x] Collection error detection runs BEFORE the generic `ModuleNotFoundError` check
+- [x] Classification is logged at DEBUG level with the matched pattern
+- [x] Normal test execution failures (assertions, exceptions) are NOT classified as collection errors
+- [x] Mixed output (some collection errors + some test results) is correctly classified as collection error
+- [x] Unit tests cover: collection error output, normal failure output, mixed output, empty output
 
 ## Technical Context
 
@@ -58,8 +59,16 @@ This is Seam Failure 2 from the TASK-REV-0E44 review. Adding a specific `"collec
 
 ## Implementation Notes
 
-[Space for implementation details]
+Added `collection_error` classification to `_classify_test_failure()` in `coach_validator.py`.
+Detection patterns `"errors during collection"` and `"error collecting"` checked before the
+`ModuleNotFoundError` branch. Returns `("collection_error", "high")` with DEBUG logging.
+
+6 new unit tests added to `tests/unit/test_coach_failure_classification.py`.
+All 42 tests pass.
 
 ## Test Execution Log
 
-[Automatically populated by /task-work]
+- Tests run: 42
+- Passed: 42
+- Failed: 0
+- New tests added: 6

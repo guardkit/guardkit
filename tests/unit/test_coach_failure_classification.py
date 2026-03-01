@@ -176,6 +176,73 @@ class TestClassifyTestFailure:
         )
         assert coach_validator._classify_test_failure(output) == ("code", "n/a")
 
+    # ------------------------------------------------------------------
+    # collection_error tests (TASK-FIX-DF44)
+    # ------------------------------------------------------------------
+
+    def test_errors_during_collection_classified_as_collection_error(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        """'errors during collection' in output → collection_error (high)."""
+        output = (
+            "E   ModuleNotFoundError: No module named 'tests'\n"
+            "Interrupted: 2 errors during collection\n"
+            "short test summary info\n"
+            "ERROR tests/test_foo.py\n"
+        )
+        assert coach_validator._classify_test_failure(output) == ("collection_error", "high")
+
+    def test_error_collecting_classified_as_collection_error(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        """'error collecting' in output → collection_error (high)."""
+        output = (
+            "ERRORS\n"
+            "error collecting tests/test_bar.py\n"
+            "ImportError: cannot import name 'foo'\n"
+        )
+        assert coach_validator._classify_test_failure(output) == ("collection_error", "high")
+
+    def test_normal_failure_output_not_classified_as_collection_error(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        """Standard assertion failure is NOT classified as collection error."""
+        output = (
+            "FAILED tests/test_calc.py::test_add\n"
+            "E   AssertionError: assert 4 == 5\n"
+            "1 failed in 0.12s"
+        )
+        assert coach_validator._classify_test_failure(output) != ("collection_error", "high")
+
+    def test_mixed_collection_and_test_results_classified_as_collection_error(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        """Mixed output containing collection errors takes collection_error precedence."""
+        output = (
+            "FAILED tests/test_calc.py::test_add\n"
+            "E   AssertionError: assert 4 == 5\n"
+            "1 failed, 1 error\n"
+            "Interrupted: 1 errors during collection\n"
+        )
+        assert coach_validator._classify_test_failure(output) == ("collection_error", "high")
+
+    def test_collection_error_detection_is_case_insensitive(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        """Collection error pattern matching is case-insensitive."""
+        output = "INTERRUPTED: 2 ERRORS DURING COLLECTION\n"
+        assert coach_validator._classify_test_failure(output) == ("collection_error", "high")
+
+    def test_collection_error_before_module_not_found(
+        self, coach_validator: CoachValidator
+    ) -> None:
+        """collection_error wins over ModuleNotFoundError when both patterns appear."""
+        output = (
+            "ModuleNotFoundError: No module named 'tests'\n"
+            "Interrupted: 2 errors during collection\n"
+        )
+        assert coach_validator._classify_test_failure(output) == ("collection_error", "high")
+
 
 # ============================================================================
 # 2. _is_psycopg2_asyncpg_mismatch unit tests (TASK-FIX-4415)
