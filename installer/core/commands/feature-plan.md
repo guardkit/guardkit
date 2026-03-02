@@ -2119,7 +2119,14 @@ Claude executes internally:
        c) Task Dependency graph (if >= 3 tasks)
      - Check Disconnection Rule: warn if write paths lack read paths
 
-  8. Shows completion summary
+  8. Generate structured feature file (if --no-structured not set)
+     - Execute generate-feature-yaml script to produce FEAT-XXXX.yaml
+
+  8.5. Run pre-flight validation: guardkit feature validate FEAT-XXXX
+     - Report any intra-wave deps, invalid task_type, missing files inline
+     - Non-blocking: continue to step 9 regardless
+
+  9. Shows completion summary
 ```
 
 ### Example Execution Trace (Default with Structured Output)
@@ -2167,9 +2174,25 @@ Claude executes internally:
      - --discover resolves file_path from actual files created in Step 7
      (Skip this step if --no-structured flag is set)
 
+  8.5. Run pre-flight validation on the generated feature YAML (always run when structured output was generated):
+     - Execute: guardkit feature validate FEAT-D6E7
+     - This calls FeatureLoader.validate_feature() to check:
+       * Task file existence and path format
+       * Orchestration completeness (all tasks in waves, no orphans)
+       * Dependency validity (no unknown task IDs)
+       * Intra-wave dependency conflicts (tasks in same wave cannot depend on each other)
+       * task_type validity in each task file's frontmatter
+     - If validation errors are found: display them inline with a clear header:
+       ⚠️  Feature validation errors (fix before running feature-build):
+         • Wave 1: TASK-OAUTH-002 depends on TASK-OAUTH-001 but both are in the same parallel group.
+         • Task TASK-OAUTH-003 has invalid task_type: 'enhancement'. Valid values: ...
+     - Continue regardless of errors (non-blocking - user may fix manually)
+     - Only skip this step if --no-structured flag is set (no YAML generated)
+
   9. Shows completion summary including:
      📁 Feature file: .guardkit/features/FEAT-D6E7.yaml
      ⚡ AutoBuild ready: /feature-build FEAT-D6E7
+     (If validation errors found in 8.5, append a reminder to fix them before running feature-build)
 ```
 
 This is a **coordination command** - it orchestrates existing commands rather than implementing new logic. Follow the execution flow exactly as specified.

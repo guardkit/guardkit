@@ -15,7 +15,7 @@ for each task type during the task workflow execution.
 
 from enum import Enum
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, Optional, Set
 
 
 class TaskType(Enum):
@@ -243,6 +243,22 @@ DEFAULT_PROFILES: Dict[TaskType, QualityGateProfile] = {
         seam_tests_recommended=True,
     ),
 }
+
+
+# Canonical alias table for legacy task_type values.
+# Canonical location: guardkit/models/task_types.py
+# Also referenced from coach_validator for backward compatibility.
+TASK_TYPE_ALIASES: Dict[str, TaskType] = {
+    "implementation": TaskType.FEATURE,
+    "bug-fix": TaskType.FEATURE,
+    "bug_fix": TaskType.FEATURE,
+    "benchmark": TaskType.TESTING,
+    "research": TaskType.DOCUMENTATION,
+    "enhancement": TaskType.FEATURE,
+}
+
+# Combined set of all valid task_type strings (enum values + aliases)
+VALID_TASK_TYPES: Set[str] = {t.value for t in TaskType} | set(TASK_TYPE_ALIASES.keys())
 
 
 def get_profile(

@@ -12,7 +12,9 @@ autobuild:
   enabled: true
   max_turns: 5
   mode: tdd
-status: backlog
+status: completed
+completed: 2026-03-02T00:00:00Z
+completed_location: tasks/completed/TASK-ABFIX-007/
 priority: medium
 tags: [autobuild, cli, validation, feature-loader]
 ---
@@ -52,8 +54,8 @@ From TASK-REV-A17A Finding 4, Recommendations 4a and 4b:
 
 ## Acceptance Criteria
 
-- [ ] `guardkit feature validate FEAT-XXX` runs without creating worktrees
-- [ ] Reports intra-wave dependency errors
-- [ ] Reports invalid task_type errors (requires TASK-ABFIX-002)
-- [ ] Returns correct exit codes
-- [ ] All existing tests pass
+- [x] `guardkit feature validate FEAT-XXX` runs without creating worktrees
+- [x] Reports intra-wave dependency errors
+- [x] Reports invalid task_type errors (requires TASK-ABFIX-002)
+- [x] Returns correct exit codes
+- [x] All existing tests pass

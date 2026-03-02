@@ -29,50 +29,50 @@ tasks:
   requires_infrastructure: []
 - id: TASK-ABFIX-003
   name: Add configuration error flag and fast-exit for config errors
-  file_path: tasks/backlog/autobuild-orchestrator-fixes/TASK-ABFIX-003-config-error-fast-exit.md
+  file_path: tasks/completed/TASK-ABFIX-003/TASK-ABFIX-003-config-error-fast-exit.md
   complexity: 5
   dependencies: []
-  status: backlog
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 60
   requires_infrastructure: []
 - id: TASK-ABFIX-004
   name: Implement per-turn timeout budgeting with Coach grace period
-  file_path: tasks/backlog/autobuild-orchestrator-fixes/TASK-ABFIX-004-per-turn-timeout-budget.md
+  file_path: tasks/completed/TASK-ABFIX-004/TASK-ABFIX-004-per-turn-timeout-budget.md
   complexity: 6
   dependencies:
   - TASK-ABFIX-001
-  status: backlog
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 90
   requires_infrastructure: []
 - id: TASK-ABFIX-005
   name: Isolate Coach independent tests from parallel worktree contention
-  file_path: tasks/backlog/autobuild-orchestrator-fixes/TASK-ABFIX-005-parallel-wave-coach-test-isolation.md
+  file_path: tasks/completed/TASK-ABFIX-005/TASK-ABFIX-005-parallel-wave-coach-test-isolation.md
   complexity: 6
   dependencies:
   - TASK-ABFIX-001
-  status: backlog
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 90
   requires_infrastructure: []
 - id: TASK-ABFIX-006
   name: Reconcile timeout vs cancelled logging
-  file_path: tasks/backlog/autobuild-orchestrator-fixes/TASK-ABFIX-006-timeout-logging-reconciliation.md
+  file_path: tasks/completed/TASK-ABFIX-006/TASK-ABFIX-006-timeout-logging-reconciliation.md
   complexity: 3
   dependencies:
   - TASK-ABFIX-004
-  status: backlog
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 30
   requires_infrastructure: []
 - id: TASK-ABFIX-007
   name: Add guardkit feature validate pre-flight CLI command
-  file_path: tasks/backlog/autobuild-orchestrator-fixes/TASK-ABFIX-007-feature-validate-cli.md
+  file_path: tasks/completed/TASK-ABFIX-007/TASK-ABFIX-007-feature-validate-cli.md
   complexity: 4
   dependencies:
   - TASK-ABFIX-002
-  status: backlog
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 45
   requires_infrastructure: []

@@ -399,3 +399,187 @@ class TestYmlExtension:
         result = runner.invoke(feature, ["validate", "FEAT-YML"])
         assert result.exit_code == 0
         assert "is valid" in result.output
+
+
+# ============================================================================
+# Intra-Wave Dependency Tests (structural errors - exit code 1)
+# ============================================================================
+
+
+class TestIntraWaveDependencies:
+    """Test detection of intra-wave (same parallel group) dependency errors."""
+
+    def test_validate_intra_wave_dependency(self, runner, tmp_path, monkeypatch):
+        """Tasks in same wave with dependency between them causes structural error."""
+        monkeypatch.chdir(tmp_path)
+        features_dir = tmp_path / ".guardkit" / "features"
+        features_dir.mkdir(parents=True)
+
+        tasks_dir = tmp_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True)
+        (tasks_dir / "TASK-A.md").write_text("# Task A")
+        (tasks_dir / "TASK-B.md").write_text("# Task B")
+
+        # Both tasks in same wave, but B depends on A
+        feature_data = {
+            "id": "FEAT-WAVE",
+            "name": "Wave Conflict Feature",
+            "status": "planned",
+            "tasks": [
+                {
+                    "id": "TASK-A",
+                    "name": "Task A",
+                    "file_path": "tasks/backlog/TASK-A.md",
+                },
+                {
+                    "id": "TASK-B",
+                    "name": "Task B",
+                    "file_path": "tasks/backlog/TASK-B.md",
+                    "dependencies": ["TASK-A"],
+                },
+            ],
+            "orchestration": {
+                "parallel_groups": [["TASK-A", "TASK-B"]],  # both in wave 1
+            },
+        }
+        with open(features_dir / "FEAT-WAVE.yaml", "w") as f:
+            yaml.dump(feature_data, f)
+
+        result = runner.invoke(feature, ["validate", "FEAT-WAVE"])
+        assert result.exit_code == 1
+        assert "TASK-B" in result.output
+        assert "TASK-A" in result.output
+        # Should mention wave or parallel group conflict
+        assert "same parallel group" in result.output or "wave" in result.output.lower()
+
+    def test_validate_intra_wave_dependency_json(self, runner, tmp_path, monkeypatch):
+        """Intra-wave dependency with --json outputs error in JSON format."""
+        monkeypatch.chdir(tmp_path)
+        features_dir = tmp_path / ".guardkit" / "features"
+        features_dir.mkdir(parents=True)
+
+        tasks_dir = tmp_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True)
+        (tasks_dir / "TASK-A.md").write_text("# Task A")
+        (tasks_dir / "TASK-B.md").write_text("# Task B")
+
+        feature_data = {
+            "id": "FEAT-WAVE",
+            "name": "Wave Conflict Feature",
+            "status": "planned",
+            "tasks": [
+                {"id": "TASK-A", "name": "A", "file_path": "tasks/backlog/TASK-A.md"},
+                {
+                    "id": "TASK-B",
+                    "name": "B",
+                    "file_path": "tasks/backlog/TASK-B.md",
+                    "dependencies": ["TASK-A"],
+                },
+            ],
+            "orchestration": {"parallel_groups": [["TASK-A", "TASK-B"]]},
+        }
+        with open(features_dir / "FEAT-WAVE.yaml", "w") as f:
+            yaml.dump(feature_data, f)
+
+        result = runner.invoke(feature, ["validate", "FEAT-WAVE", "--json"])
+        assert result.exit_code == 1
+        data = json.loads(result.output)
+        assert data["valid"] is False
+        assert len(data["structural_errors"]) > 0
+
+
+# ============================================================================
+# Task Type Validation Tests (structural errors - exit code 1)
+# ============================================================================
+
+
+class TestTaskTypeValidation:
+    """Test detection of invalid task_type in task file frontmatter."""
+
+    def _make_feature_dir(self, tmp_path, task_type_value):
+        """Helper to create a feature dir with a task of given task_type."""
+        features_dir = tmp_path / ".guardkit" / "features"
+        features_dir.mkdir(parents=True)
+
+        tasks_dir = tmp_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True)
+        task_content = f"---\nid: TASK-TT\ntask_type: {task_type_value}\n---\n# Task TT"
+        (tasks_dir / "TASK-TT.md").write_text(task_content)
+
+        feature_data = {
+            "id": "FEAT-TT",
+            "name": "Task Type Feature",
+            "status": "planned",
+            "tasks": [
+                {
+                    "id": "TASK-TT",
+                    "name": "Task TT",
+                    "file_path": "tasks/backlog/TASK-TT.md",
+                }
+            ],
+            "orchestration": {"parallel_groups": [["TASK-TT"]]},
+        }
+        with open(features_dir / "FEAT-TT.yaml", "w") as f:
+            yaml.dump(feature_data, f)
+
+    def test_validate_invalid_task_type(self, runner, tmp_path, monkeypatch):
+        """Task with invalid task_type in frontmatter causes structural error."""
+        monkeypatch.chdir(tmp_path)
+        self._make_feature_dir(tmp_path, "invalid_type")
+        result = runner.invoke(feature, ["validate", "FEAT-TT"])
+        assert result.exit_code == 1
+        assert "invalid_type" in result.output
+        assert "TASK-TT" in result.output
+
+    def test_validate_valid_task_type(self, runner, tmp_path, monkeypatch):
+        """Task with valid task_type passes validation."""
+        monkeypatch.chdir(tmp_path)
+        self._make_feature_dir(tmp_path, "feature")
+        result = runner.invoke(feature, ["validate", "FEAT-TT"])
+        assert result.exit_code == 0
+        assert "is valid" in result.output
+
+    def test_validate_task_type_alias(self, runner, tmp_path, monkeypatch):
+        """Task with valid task_type alias (e.g. 'enhancement') passes validation."""
+        monkeypatch.chdir(tmp_path)
+        self._make_feature_dir(tmp_path, "enhancement")
+        result = runner.invoke(feature, ["validate", "FEAT-TT"])
+        assert result.exit_code == 0
+        assert "is valid" in result.output
+
+    def test_validate_invalid_task_type_json(self, runner, tmp_path, monkeypatch):
+        """Invalid task_type with --json outputs error in JSON format."""
+        monkeypatch.chdir(tmp_path)
+        self._make_feature_dir(tmp_path, "bogus_type")
+        result = runner.invoke(feature, ["validate", "FEAT-TT", "--json"])
+        assert result.exit_code == 1
+        data = json.loads(result.output)
+        assert data["valid"] is False
+        assert any("bogus_type" in e for e in data["structural_errors"])
+
+    def test_validate_missing_task_type_passes(self, runner, tmp_path, monkeypatch):
+        """Task without task_type in frontmatter passes (defaults to feature)."""
+        monkeypatch.chdir(tmp_path)
+        features_dir = tmp_path / ".guardkit" / "features"
+        features_dir.mkdir(parents=True)
+
+        tasks_dir = tmp_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True)
+        # No task_type in frontmatter
+        (tasks_dir / "TASK-NT.md").write_text("---\nid: TASK-NT\n---\n# Task NT")
+
+        feature_data = {
+            "id": "FEAT-NT",
+            "name": "No Task Type",
+            "status": "planned",
+            "tasks": [
+                {"id": "TASK-NT", "name": "NT", "file_path": "tasks/backlog/TASK-NT.md"}
+            ],
+            "orchestration": {"parallel_groups": [["TASK-NT"]]},
+        }
+        with open(features_dir / "FEAT-NT.yaml", "w") as f:
+            yaml.dump(feature_data, f)
+
+        result = runner.invoke(feature, ["validate", "FEAT-NT"])
+        assert result.exit_code == 0
+        assert "is valid" in result.output

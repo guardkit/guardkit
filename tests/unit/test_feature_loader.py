@@ -2101,3 +2101,136 @@ def test_save_feature_validates_before_write(temp_features_dir, sample_feature_y
     invalid_data["status"] = "bogus"
     errors = FeatureLoader.validate_yaml(invalid_data)
     assert len(errors) >= 1
+
+
+# ============================================================================
+# Task Type Validation Tests (via _validate_task_type_in_file and validate_feature)
+# ============================================================================
+
+
+class TestValidateTaskTypeInFile:
+    """Tests for FeatureLoader._validate_task_type_in_file static method."""
+
+    def test_valid_task_type_enum_value(self, tmp_path):
+        """Valid TaskType enum value passes validation."""
+        task_file = tmp_path / "TASK-OK.md"
+        task_file.write_text("---\nid: TASK-OK\ntask_type: feature\n---\n# Task")
+        result = FeatureLoader._validate_task_type_in_file("TASK-OK", task_file)
+        assert result is None
+
+    def test_valid_task_type_alias(self, tmp_path):
+        """Valid task_type alias passes validation."""
+        task_file = tmp_path / "TASK-ALIAS.md"
+        task_file.write_text("---\nid: TASK-ALIAS\ntask_type: enhancement\n---\n# Task")
+        result = FeatureLoader._validate_task_type_in_file("TASK-ALIAS", task_file)
+        assert result is None
+
+    def test_valid_task_type_bug_fix_alias(self, tmp_path):
+        """Legacy bug-fix alias passes validation."""
+        task_file = tmp_path / "TASK-BF.md"
+        task_file.write_text("---\nid: TASK-BF\ntask_type: bug-fix\n---\n# Task")
+        result = FeatureLoader._validate_task_type_in_file("TASK-BF", task_file)
+        assert result is None
+
+    def test_invalid_task_type_returns_error(self, tmp_path):
+        """Invalid task_type value returns descriptive error message."""
+        task_file = tmp_path / "TASK-BAD.md"
+        task_file.write_text("---\nid: TASK-BAD\ntask_type: bogus_type\n---\n# Task")
+        result = FeatureLoader._validate_task_type_in_file("TASK-BAD", task_file)
+        assert result is not None
+        assert "TASK-BAD" in result
+        assert "bogus_type" in result
+        assert "feature" in result  # valid values listed
+
+    def test_missing_task_type_returns_none(self, tmp_path):
+        """Missing task_type in frontmatter returns None (defaults to feature)."""
+        task_file = tmp_path / "TASK-NT.md"
+        task_file.write_text("---\nid: TASK-NT\n---\n# Task")
+        result = FeatureLoader._validate_task_type_in_file("TASK-NT", task_file)
+        assert result is None
+
+    def test_no_frontmatter_returns_none(self, tmp_path):
+        """File without frontmatter returns None."""
+        task_file = tmp_path / "TASK-NF.md"
+        task_file.write_text("# Task NF\nNo frontmatter here.")
+        result = FeatureLoader._validate_task_type_in_file("TASK-NF", task_file)
+        assert result is None
+
+    def test_all_valid_enum_values_pass(self, tmp_path):
+        """All TaskType enum values are accepted."""
+        from guardkit.models.task_types import TaskType
+
+        for task_type in TaskType:
+            task_file = tmp_path / f"TASK-{task_type.value.upper()}.md"
+            task_file.write_text(
+                f"---\nid: TASK-{task_type.value.upper()}\ntask_type: {task_type.value}\n---\n# Task"
+            )
+            result = FeatureLoader._validate_task_type_in_file(
+                f"TASK-{task_type.value.upper()}", task_file
+            )
+            assert result is None, f"Expected None for valid type '{task_type.value}', got: {result}"
+
+    def test_error_message_lists_valid_values(self, tmp_path):
+        """Error message includes list of valid values and aliases."""
+        task_file = tmp_path / "TASK-ERR.md"
+        task_file.write_text("---\nid: TASK-ERR\ntask_type: notatype\n---\n# Task")
+        result = FeatureLoader._validate_task_type_in_file("TASK-ERR", task_file)
+        assert result is not None
+        # Should mention valid values
+        assert "feature" in result
+        assert "scaffolding" in result
+        # Should mention valid aliases
+        assert "enhancement" in result or "bug-fix" in result
+
+
+class TestValidateFeatureTaskType:
+    """Integration tests: task_type validation surfaced via validate_feature()."""
+
+    def test_validate_feature_catches_invalid_task_type(self, tmp_path):
+        """validate_feature() reports invalid task_type from task file."""
+        tasks_dir = tmp_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True)
+        task_file = tasks_dir / "TASK-BAD.md"
+        task_file.write_text("---\nid: TASK-BAD\ntask_type: nonsense_type\n---\n# Task")
+
+        feature = Feature(
+            id="FEAT-TT",
+            name="Task Type Test",
+            tasks=[
+                FeatureTask(
+                    id="TASK-BAD",
+                    name="Bad Type Task",
+                    file_path=Path("tasks/backlog/TASK-BAD.md"),
+                )
+            ],
+            orchestration=FeatureOrchestration(parallel_groups=[["TASK-BAD"]]),
+        )
+
+        errors = FeatureLoader.validate_feature(feature, repo_root=tmp_path)
+        task_type_errors = [e for e in errors if "nonsense_type" in e]
+        assert len(task_type_errors) == 1
+        assert "TASK-BAD" in task_type_errors[0]
+
+    def test_validate_feature_passes_valid_task_type(self, tmp_path):
+        """validate_feature() accepts valid task_type values in task files."""
+        tasks_dir = tmp_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True)
+        task_file = tasks_dir / "TASK-GOOD.md"
+        task_file.write_text("---\nid: TASK-GOOD\ntask_type: scaffolding\n---\n# Task")
+
+        feature = Feature(
+            id="FEAT-TT",
+            name="Task Type Test",
+            tasks=[
+                FeatureTask(
+                    id="TASK-GOOD",
+                    name="Good Type Task",
+                    file_path=Path("tasks/backlog/TASK-GOOD.md"),
+                )
+            ],
+            orchestration=FeatureOrchestration(parallel_groups=[["TASK-GOOD"]]),
+        )
+
+        errors = FeatureLoader.validate_feature(feature, repo_root=tmp_path)
+        task_type_errors = [e for e in errors if "invalid task_type" in e]
+        assert task_type_errors == []

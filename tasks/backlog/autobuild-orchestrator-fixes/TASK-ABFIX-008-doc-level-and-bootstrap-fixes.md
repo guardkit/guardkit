@@ -12,9 +12,7 @@ autobuild:
   enabled: true
   max_turns: 3
   mode: tdd
-status: completed
-completed: 2026-03-02T00:00:00Z
-completed_location: tasks/completed/TASK-ABFIX-008/
+status: backlog
 priority: low
 tags: [autobuild, orchestrator, documentation-level, bootstrap]
 ---
@@ -54,8 +52,8 @@ From TASK-REV-A17A Finding 5 (Recs 5a, 5b) and Finding 6 (Recs 6a, 6b):
 
 ## Acceptance Criteria
 
-- [x] `.guardkit/` files excluded from documentation level file count
-- [x] `tests/fixtures/` excluded from environment bootstrap scanning
-- [x] Optional `.guardkit/bootstrap-ignore` file supported
-- [x] No .NET restore errors from test fixture projects during bootstrap
-- [x] All existing tests pass
+- [ ] `.guardkit/` files excluded from documentation level file count
+- [ ] `tests/fixtures/` excluded from environment bootstrap scanning
+- [ ] Optional `.guardkit/bootstrap-ignore` file supported
+- [ ] No .NET restore errors from test fixture projects during bootstrap
+- [ ] All existing tests pass

@@ -25,6 +25,8 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator, ValidationError
 import yaml
 
+from guardkit.models.task_types import TaskType, TASK_TYPE_ALIASES
+
 logger = logging.getLogger(__name__)
 
 
@@ -723,6 +725,16 @@ class FeatureLoader:
         wave_errors = FeatureLoader.validate_parallel_groups(feature)
         errors.extend(wave_errors)
 
+        # Validate task_type in task file frontmatter (fail-fast on invalid values)
+        for task in feature.tasks:
+            task_file = repo_root / task.file_path
+            if task_file.exists() and task_file.is_file():
+                task_type_error = FeatureLoader._validate_task_type_in_file(
+                    task.id, task_file
+                )
+                if task_type_error:
+                    errors.append(task_type_error)
+
         return errors
 
     @staticmethod
@@ -771,6 +783,75 @@ class FeatureLoader:
                     return path
 
         return None
+
+    @staticmethod
+    def _validate_task_type_in_file(task_id: str, task_file: Path) -> Optional[str]:
+        """
+        Validate task_type in a task file's YAML frontmatter.
+
+        Reads the frontmatter from the task file and checks that the task_type
+        field (if present) is a valid TaskType enum value or alias.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (for error messages)
+        task_file : Path
+            Path to the task markdown file
+
+        Returns
+        -------
+        Optional[str]
+            Error message string if invalid, None if valid or no task_type set
+        """
+        try:
+            content = task_file.read_text(encoding="utf-8")
+        except OSError:
+            return None  # Cannot read file - structural validator handles this
+
+        # Must start with YAML frontmatter delimiter
+        if not content.startswith("---"):
+            return None
+
+        # Find the closing --- delimiter
+        try:
+            end_idx = content.index("---", 3)
+        except ValueError:
+            return None  # No closing delimiter - not valid frontmatter
+
+        frontmatter_str = content[3:end_idx]
+        try:
+            frontmatter = yaml.safe_load(frontmatter_str)
+        except yaml.YAMLError:
+            return None  # YAML parse error - not our concern here
+
+        if not isinstance(frontmatter, dict):
+            return None
+
+        task_type_str = frontmatter.get("task_type")
+        if task_type_str is None:
+            return None  # Missing task_type defaults to feature - acceptable
+
+        # Check TaskType enum values first
+        try:
+            TaskType(task_type_str)
+            return None  # Valid enum value
+        except ValueError:
+            pass
+
+        # Check aliases
+        if task_type_str in TASK_TYPE_ALIASES:
+            return None  # Valid alias
+
+        # Invalid value - build actionable error message
+        valid_values = ", ".join(t.value for t in TaskType)
+        valid_aliases = ", ".join(sorted(TASK_TYPE_ALIASES.keys()))
+        return (
+            f"Task {task_id} has invalid task_type: '{task_type_str}'. "
+            f"Valid values: {valid_values}. "
+            f"Valid aliases: {valid_aliases}. "
+            f"Fix: Update task_type in {task_file}"
+        )
 
     @staticmethod
     def validate_parallel_groups(feature: Feature) -> List[str]:
@@ -1133,4 +1214,7 @@ __all__ = [
     "TASK_SCHEMA",
     "FEATURE_SCHEMA",
     "ORCHESTRATION_SCHEMA",
+    # Re-exported for convenience
+    "TaskType",
+    "TASK_TYPE_ALIASES",
 ]
