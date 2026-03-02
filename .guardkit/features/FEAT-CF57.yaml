@@ -173,7 +173,7 @@ orchestration:
     - TASK-INST-006
     - TASK-INST-008
   - - TASK-INST-005b
-    - TASK-INST-005c
+  - - TASK-INST-005c
   - - TASK-INST-009
   estimated_duration_minutes: 754
   recommended_parallel: 5
