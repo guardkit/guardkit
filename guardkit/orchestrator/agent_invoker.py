@@ -35,8 +35,10 @@ from guardkit.orchestrator.instrumentation.llm_instrumentation import (
     detect_provider,
     extract_token_usage,
     measure_latency,
+    sanitise_tool_name,
 )
-from guardkit.orchestrator.instrumentation.schemas import LLMCallEvent
+from guardkit.orchestrator.instrumentation.redaction import SecretRedactor
+from guardkit.orchestrator.instrumentation.schemas import LLMCallEvent, ToolExecEvent
 from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.orchestrator.prompts import load_protocol
 from guardkit.orchestrator.coach_verification import (
@@ -2049,6 +2051,109 @@ Follow the decision format specified in your agent definition.
             logger.warning(
                 "Failed to construct LLM call event: %s. "
                 "Instrumentation skipped for this call.",
+                build_exc,
+            )
+
+    # TASK-INST-005c: Shared SecretRedactor instance (lazy-initialised)
+    _tool_exec_redactor: Optional["SecretRedactor"] = None
+
+    # TASK-INST-005c: Tools that emit tool.exec events (Bash-type only)
+    _TOOL_EXEC_EVENT_TOOLS = frozenset({"Bash"})
+
+    def _emit_tool_exec_event(
+        self,
+        tool_name: str,
+        cmd: str,
+        exit_code: int,
+        latency_ms: float,
+        stdout_tail: str,
+        stderr_tail: str,
+        task_id: str,
+    ) -> None:
+        """Construct and fire-and-forget a ToolExecEvent.
+
+        Only emits events for Bash-type tool invocations (tools with shell
+        command semantics). Non-Bash tools (Write, Edit, Glob, etc.) are
+        silently ignored.
+
+        Secret redaction is applied to cmd, stdout_tail, and stderr_tail
+        before event construction. Tool names are sanitised against shell
+        metacharacters. stdout_tail and stderr_tail are truncated to the
+        last 500 characters.
+
+        Emission is non-blocking via asyncio.create_task(). If the emitter
+        raises, the error is logged as a warning but never propagated to
+        the caller. (TASK-INST-005c)
+
+        Args:
+            tool_name: Name of the tool invoked (e.g., "Bash").
+            cmd: Command string executed by the tool.
+            exit_code: Process exit code.
+            latency_ms: Execution latency in milliseconds.
+            stdout_tail: Tail of stdout output.
+            stderr_tail: Tail of stderr output.
+            task_id: Task identifier.
+        """
+        # AC-005: Only emit for Bash-type tools
+        if tool_name not in self._TOOL_EXEC_EVENT_TOOLS:
+            return
+
+        try:
+            # Lazy-initialise the shared redactor
+            if self._tool_exec_redactor is None:
+                self._tool_exec_redactor = SecretRedactor()
+
+            redactor = self._tool_exec_redactor
+
+            # AC-006: Truncate output to last 500 chars
+            stdout_truncated = stdout_tail[-500:] if len(stdout_tail) > 500 else stdout_tail
+            stderr_truncated = stderr_tail[-500:] if len(stderr_tail) > 500 else stderr_tail
+
+            # Read run_id from instance or generate a session-level default
+            run_id = getattr(self, "_run_id", None) or f"run-{id(self)}"
+
+            # Read current attempt from instance or default to 1
+            attempt = getattr(self, "_current_attempt", None) or 1
+
+            # Read current agent role or default to "player"
+            agent_role = getattr(self, "_current_agent_role", None) or "player"
+
+            event = ToolExecEvent(
+                run_id=run_id,
+                task_id=task_id,
+                agent_role=agent_role,
+                attempt=attempt,
+                timestamp=datetime.now().isoformat(),
+                tool_name=sanitise_tool_name(tool_name),
+                cmd=redactor.redact(cmd),
+                exit_code=exit_code,
+                latency_ms=latency_ms,
+                stdout_tail=redactor.redact(stdout_truncated),
+                stderr_tail=redactor.redact(stderr_truncated),
+            )
+
+            async def _safe_emit() -> None:
+                """Emit event, swallowing any errors."""
+                try:
+                    await self._emitter.emit(event)
+                except Exception as emit_exc:
+                    logger.warning(
+                        "Tool exec event emission failed: %s. "
+                        "Event will not be delivered but tool execution is unaffected.",
+                        emit_exc,
+                    )
+
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(_safe_emit())
+            except RuntimeError:
+                # No running event loop — skip emission silently
+                logger.debug("No running event loop for tool exec event emission")
+        except Exception as build_exc:
+            # Event construction failure must never block the tool execution path
+            logger.warning(
+                "Failed to construct tool exec event: %s. "
+                "Instrumentation skipped for this tool call.",
                 build_exc,
             )
 

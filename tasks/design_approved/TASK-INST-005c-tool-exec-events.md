@@ -1,33 +1,35 @@
 ---
-id: TASK-INST-005c
-title: "Emit tool execution events with secret redaction"
-task_type: feature
-parent_review: TASK-REV-2FE2
-feature_id: FEAT-INST
-wave: 3
-implementation_mode: task-work
-complexity: 3
-dependencies:
-  - TASK-INST-001
-  - TASK-INST-002
-  - TASK-INST-003
-  - TASK-INST-005a
-  - TASK-INST-005b
 autobuild:
   enabled: true
   max_turns: 5
   mode: tdd
+complexity: 3
 consumer_context:
-  - task: TASK-INST-002
-    consumes: EVENT_EMITTER
-    framework: "EventEmitter protocol (async)"
-    driver: "guardkit.orchestrator.instrumentation.emitter"
-    format_note: "Reuse self._emitter already injected by TASK-INST-005b"
-  - task: TASK-INST-003
-    consumes: REDACTION_PIPELINE
-    framework: "redact_secrets() function"
-    driver: "guardkit.orchestrator.instrumentation.redaction"
-    format_note: "Call redact_secrets(text) on cmd, stdout_tail, stderr_tail before constructing ToolExecEvent"
+- consumes: EVENT_EMITTER
+  driver: guardkit.orchestrator.instrumentation.emitter
+  format_note: Reuse self._emitter already injected by TASK-INST-005b
+  framework: EventEmitter protocol (async)
+  task: TASK-INST-002
+- consumes: REDACTION_PIPELINE
+  driver: guardkit.orchestrator.instrumentation.redaction
+  format_note: Call redact_secrets(text) on cmd, stdout_tail, stderr_tail before constructing
+    ToolExecEvent
+  framework: redact_secrets() function
+  task: TASK-INST-003
+dependencies:
+- TASK-INST-001
+- TASK-INST-002
+- TASK-INST-003
+- TASK-INST-005a
+- TASK-INST-005b
+feature_id: FEAT-INST
+id: TASK-INST-005c
+implementation_mode: task-work
+parent_review: TASK-REV-2FE2
+status: design_approved
+task_type: feature
+title: Emit tool execution events with secret redaction
+wave: 3
 ---
 
 # Task: Emit Tool Execution Events with Secret Redaction
