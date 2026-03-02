@@ -3,7 +3,7 @@ name: AutoBuild Instrumentation and Context Reduction
 description: Structured observability for AutoBuild pipeline with event schemas, role-specific
   digests, prompt profile tagging, adaptive concurrency, and NATS/JSONL backends
 created: '2026-03-02T10:11:46.545384'
-status: planned
+status: failed
 complexity: 6
 estimated_tasks: 14
 tasks:
@@ -12,40 +12,72 @@ tasks:
   file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-001-event-schema-models.md
   complexity: 4
   dependencies: []
-  status: pending
-  description: ''
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 50
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-03-02T13:29:04.259389'
+  completed_at: '2026-03-02T13:35:59.790896'
 - id: TASK-INST-002
   name: Implement EventEmitter protocol and backends
   file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-002-event-emitter-backends.md
   complexity: 5
   dependencies:
   - TASK-INST-001
-  status: pending
-  description: ''
+  status: failed
   implementation_mode: task-work
   estimated_minutes: 75
+  requires_infrastructure: []
+  result:
+    total_turns: 0
+    final_decision: timeout
+    error: Task TASK-INST-002 timed out after 2400s (40 min)
+  turns_completed: 0
+  current_turn: 0
+  started_at: '2026-03-02T13:36:04.639559'
+  completed_at: '2026-03-02T14:16:04.736932'
 - id: TASK-INST-003
   name: Implement secret redaction pipeline
   file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-003-secret-redaction-pipeline.md
   complexity: 4
   dependencies:
   - TASK-INST-001
-  status: pending
-  description: ''
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 50
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-03-02T13:36:04.645502'
+  completed_at: '2026-03-02T14:16:04.743047'
 - id: TASK-INST-007
   name: Implement role-specific digest system
   file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-007-role-specific-digests.md
   complexity: 5
   dependencies:
   - TASK-INST-001
-  status: pending
-  description: ''
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 75
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-03-02T13:36:04.651310'
+  completed_at: '2026-03-02T14:16:04.748738'
 - id: TASK-INST-004
   name: Instrument AutoBuild orchestrator with lifecycle events
   file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-004-instrument-orchestrator.md
@@ -54,9 +86,14 @@ tasks:
   - TASK-INST-001
   - TASK-INST-002
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 75
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 - id: TASK-INST-005a
   name: Create LLM instrumentation helper module
   file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-005a-llm-instrumentation-helpers.md
@@ -65,9 +102,14 @@ tasks:
   - TASK-INST-001
   - TASK-INST-002
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 33
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 - id: TASK-INST-005b
   name: Emit LLM call events from _invoke_with_role
   file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-005b-llm-call-events.md
@@ -77,9 +119,14 @@ tasks:
   - TASK-INST-002
   - TASK-INST-005a
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 50
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 - id: TASK-INST-005c
   name: Emit tool execution events with secret redaction
   file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-005c-tool-exec-events.md
@@ -91,9 +138,14 @@ tasks:
   - TASK-INST-005a
   - TASK-INST-005b
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 33
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 - id: TASK-INST-006
   name: Instrument Graphiti context loader
   file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-006-instrument-graphiti-loader.md
@@ -102,9 +154,14 @@ tasks:
   - TASK-INST-001
   - TASK-INST-002
   status: pending
-  description: ''
   implementation_mode: direct
   estimated_minutes: 33
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 - id: TASK-INST-008
   name: Implement adaptive concurrency controller
   file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-008-adaptive-concurrency.md
@@ -113,9 +170,14 @@ tasks:
   - TASK-INST-001
   - TASK-INST-002
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 75
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 - id: TASK-INST-009
   name: Integration tests for instrumentation pipeline
   file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-009-integration-tests.md
@@ -127,38 +189,68 @@ tasks:
   - TASK-INST-007
   - TASK-INST-008
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 50
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 - id: TASK-INST-010
   name: Reconcile guardkit init and agentic_init template application paths
   file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-010-reconcile-init-paths.md
   complexity: 4
   dependencies: []
-  status: pending
-  description: ''
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 50
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-03-02T13:29:04.290312'
+  completed_at: '2026-03-02T13:35:59.796852'
 - id: TASK-INST-011
   name: Wire sync_template_to_graphiti into guardkit init pipeline
   file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-011-wire-template-graphiti-sync.md
   complexity: 3
   dependencies:
   - TASK-INST-010
-  status: pending
-  description: ''
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 33
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-03-02T13:36:04.656899'
+  completed_at: '2026-03-02T14:16:04.754220'
 - id: TASK-INST-012
   name: Enrich system seeding with actual template markdown content
   file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-012-enrich-system-seeding.md
   complexity: 5
   dependencies:
   - TASK-INST-010
-  status: pending
-  description: ''
+  status: failed
   implementation_mode: task-work
   estimated_minutes: 75
+  requires_infrastructure: []
+  result:
+    total_turns: 3
+    final_decision: unrecoverable_stall
+    error: Unrecoverable stall detected after 3 turn(s). AutoBuild cannot make forward
+      progress.
+  turns_completed: 3
+  current_turn: 0
+  started_at: '2026-03-02T13:36:04.662830'
+  completed_at: '2026-03-02T14:16:04.759560'
 orchestration:
   parallel_groups:
   - - TASK-INST-001
@@ -177,3 +269,16 @@ orchestration:
   - - TASK-INST-009
   estimated_duration_minutes: 754
   recommended_parallel: 5
+execution:
+  started_at: '2026-03-02T13:29:04.242311'
+  completed_at: '2026-03-02T14:20:05.225358'
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57
+  total_turns: 8
+  tasks_completed: 5
+  tasks_failed: 2
+  current_wave: 2
+  completed_waves:
+  - 1
+  last_updated: '2026-03-02T14:16:04.759565'
+  archived_at: null
+  archived_to: null

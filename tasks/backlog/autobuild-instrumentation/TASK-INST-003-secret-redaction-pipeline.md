@@ -1,6 +1,6 @@
 ---
 id: TASK-INST-003
-title: "Implement secret redaction pipeline"
+title: Implement secret redaction pipeline
 task_type: feature
 parent_review: TASK-REV-2FE2
 feature_id: FEAT-INST
@@ -8,11 +8,27 @@ wave: 2
 implementation_mode: task-work
 complexity: 4
 dependencies:
-  - TASK-INST-001
+- TASK-INST-001
 autobuild:
   enabled: true
   max_turns: 5
   mode: tdd
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 30
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57
+  base_branch: main
+  started_at: '2026-03-02T13:36:04.686773'
+  last_updated: '2026-03-02T13:42:04.725015'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-03-02T13:36:04.686773'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Implement Secret Redaction Pipeline

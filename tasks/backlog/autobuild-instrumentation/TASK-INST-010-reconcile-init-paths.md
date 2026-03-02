@@ -1,6 +1,6 @@
 ---
 id: TASK-INST-010
-title: "Reconcile guardkit init and agentic_init template application paths"
+title: Reconcile guardkit init and agentic_init template application paths
 task_type: refactor
 parent_review: TASK-REV-2FE2
 feature_id: FEAT-INST
@@ -12,6 +12,22 @@ autobuild:
   enabled: true
   max_turns: 5
   mode: standard
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 30
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57
+  base_branch: main
+  started_at: '2026-03-02T13:29:04.316134'
+  last_updated: '2026-03-02T13:35:59.788650'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-03-02T13:29:04.316134'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Reconcile guardkit init and agentic_init Template Application Paths
