@@ -1975,6 +1975,7 @@ class TestCoachValidatorPathConstruction:
                 task_id="TASK-INFRA-001",
                 coach_test_execution="sdk",
                 matching_strategy="auto",
+                wave_size=1,
             )
             # Should be FEAT-3DEB path, NOT TASK-INFRA-001 path
             call_arg = mock_validator_class.call_args[0][0]
@@ -2032,6 +2033,7 @@ class TestCoachValidatorPathConstruction:
                 task_id="TASK-001",
                 coach_test_execution="sdk",
                 matching_strategy="auto",
+                wave_size=1,
             )
             call_arg = mock_validator_class.call_args[0][0]
             assert "TASK-001" in call_arg

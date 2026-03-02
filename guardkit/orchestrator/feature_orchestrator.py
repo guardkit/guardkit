@@ -1229,6 +1229,7 @@ The detailed specifications are in the task markdown file.
         tasks_to_execute = []
         task_id_mapping = []  # Track which task_id corresponds to which async task
         cancellation_events: Dict[str, threading.Event] = {}  # Per-task cancellation (TASK-ASF-007)
+        timeout_events: Dict[str, threading.Event] = {}  # Per-task feature-level timeout (TASK-ABFIX-006)
 
         # Track wave start time for per-task budget propagation (TASK-ABFIX-004)
         wave_start_time = time.monotonic()
@@ -1297,9 +1298,11 @@ The detailed specifications are in the task markdown file.
             else:
                 console.print(f"  [cyan]▶[/cyan] Executing {task_id}: {task.name}")
 
-            # Create per-task cancellation event (TASK-ASF-007)
+            # Create per-task cancellation and timeout events (TASK-ASF-007, TASK-ABFIX-006)
             cancel_event = threading.Event()
+            timeout_event = threading.Event()
             cancellation_events[task_id] = cancel_event
+            timeout_events[task_id] = timeout_event
 
             # Add to parallel execution queue, wrapped with per-task timeout.
             # Compute remaining budget at the moment this task is queued (TASK-ABFIX-004).
@@ -1311,6 +1314,7 @@ The detailed specifications are in the task markdown file.
                     asyncio.to_thread(
                         self._execute_task, task, feature, worktree,
                         cancellation_event=cancel_event,
+                        timeout_event=timeout_event,
                         time_budget_seconds=task_budget,
                         wave_size=len(task_ids),
                     ),
@@ -1332,9 +1336,17 @@ The detailed specifications are in the task markdown file.
                             return await c
                     tasks_to_execute.append(bounded())
 
+            parallel_results = None
             try:
                 parallel_results = await asyncio.gather(*tasks_to_execute, return_exceptions=True)
             finally:
+                # Set timeout_event for tasks that timed out BEFORE general cancellation (TASK-ABFIX-006).
+                # This lets AutoBuildOrchestrator._loop_phase distinguish "timeout" from "cancelled".
+                if parallel_results is not None:
+                    for tid, res in zip(task_id_mapping, parallel_results):
+                        if isinstance(res, asyncio.TimeoutError) and tid in timeout_events:
+                            timeout_events[tid].set()
+
                 # Signal ALL threads to stop after gather completes (TASK-ASF-007)
                 # Safe: completed threads have already exited; timed-out threads
                 # will see the event at their next cancellation checkpoint.
@@ -1344,9 +1356,14 @@ The detailed specifications are in the task markdown file.
             # Process results and handle exceptions
             for task_id, result in zip(task_id_mapping, parallel_results):
                 if isinstance(result, asyncio.TimeoutError):
+                    sdk_timeout = self.sdk_timeout or 1200
                     timeout_msg = (
                         f"Task {task_id} timed out after {self.task_timeout}s "
                         f"({self.task_timeout // 60} min)"
+                    )
+                    logger.warning(
+                        f"TIMEOUT (feature-level): task_timeout={self.task_timeout}s expired "
+                        f"for {task_id}. SDK timeout budget was {sdk_timeout}s per invocation."
                     )
                     logger.warning(timeout_msg)
                     error_result = TaskExecutionResult(
@@ -1517,6 +1534,7 @@ The detailed specifications are in the task markdown file.
         feature: Feature,
         worktree: Worktree,
         cancellation_event: Optional[threading.Event] = None,
+        timeout_event: Optional[threading.Event] = None,
         time_budget_seconds: Optional[float] = None,
         wave_size: int = 1,
     ) -> TaskExecutionResult:
@@ -1534,6 +1552,9 @@ The detailed specifications are in the task markdown file.
         cancellation_event : Optional[threading.Event], optional
             Cooperative cancellation signal (default: None).
             When set, AutoBuildOrchestrator exits cleanly at next checkpoint.
+        timeout_event : Optional[threading.Event], optional
+            Feature-level timeout signal (default: None).
+            When set, AutoBuildOrchestrator exits with "timeout" decision (TASK-ABFIX-006).
         wave_size : int, optional
             Number of tasks executing in parallel in the current wave (default: 1).
             Passed to AutoBuildOrchestrator for Coach test isolation (TASK-ABFIX-005).
@@ -1575,6 +1596,8 @@ The detailed specifications are in the task markdown file.
                 enable_context=self.enable_context,
                 feature_id=feature.id,
                 cancellation_event=cancellation_event,  # Cooperative cancellation (TASK-ASF-007)
+                timeout_event=timeout_event,  # Feature-level timeout signal (TASK-ABFIX-006)
+                task_timeout=self.task_timeout,  # Feature task budget for SDK timeout logging (TASK-ABFIX-006)
                 timeout_multiplier=self.timeout_multiplier,  # TASK-FIX-VL05
                 wave_size=wave_size,  # Parallel wave context for Coach isolation (TASK-ABFIX-005)
             )

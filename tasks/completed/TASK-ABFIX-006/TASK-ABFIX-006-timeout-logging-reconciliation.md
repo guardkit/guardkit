@@ -12,7 +12,9 @@ autobuild:
   enabled: true
   max_turns: 3
   mode: tdd
-status: backlog
+status: completed
+completed: 2026-03-02T00:00:00Z
+completed_location: tasks/completed/TASK-ABFIX-006/
 priority: medium
 tags: [autobuild, orchestrator, logging, observability]
 ---
@@ -50,7 +52,7 @@ From TASK-REV-A17A Finding 1, Recommendation 1c; Finding 7, Recommendation 7b:
 
 ## Acceptance Criteria
 
-- [ ] Feature-level timeout reports as "timeout" consistently (not "cancelled")
-- [ ] Cancellation reports as "cancelled" consistently (not "timeout")
-- [ ] Timeout events log which layer fired and remaining budget on the other layer
-- [ ] All existing tests pass
+- [x] Feature-level timeout reports as "timeout" consistently (not "cancelled")
+- [x] Cancellation reports as "cancelled" consistently (not "timeout")
+- [x] Timeout events log which layer fired and remaining budget on the other layer
+- [x] All existing tests pass (246/246)

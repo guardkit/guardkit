@@ -404,7 +404,7 @@ class OrchestrationResult:
     task_id: str
     success: bool
     total_turns: int
-    final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "configuration_error", "pre_loop_blocked", "rate_limited", "design_extraction_failed"]
+    final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "rate_limited", "design_extraction_failed"]
     turn_history: List[TurnRecord]
     worktree: Worktree
     error: Optional[str] = None
@@ -517,6 +517,8 @@ class AutoBuildOrchestrator:
         context_loader: Optional[AutoBuildContextLoader] = None,
         feature_id: Optional[str] = None,
         cancellation_event: Optional[threading.Event] = None,
+        timeout_event: Optional[threading.Event] = None,
+        task_timeout: Optional[int] = None,
         timeout_multiplier: Optional[float] = None,
         wave_size: int = 1,
     ):
@@ -584,6 +586,13 @@ class AutoBuildOrchestrator:
         cancellation_event : Optional[threading.Event], optional
             Cooperative cancellation signal from FeatureOrchestrator (default: None).
             When set, _loop_phase() exits cleanly at the next checkpoint.
+        timeout_event : Optional[threading.Event], optional
+            Feature-level timeout signal from FeatureOrchestrator (default: None).
+            When set, _loop_phase() exits with "timeout" instead of "cancelled".
+            Takes priority over cancellation_event (TASK-ABFIX-006).
+        task_timeout : Optional[int], optional
+            Per-task timeout in seconds from FeatureOrchestrator (default: None).
+            Used for SDK-level timeout logging to show remaining feature budget.
         wave_size : int, optional
             Number of tasks executing in parallel in the current wave (default: 1).
             Passed through to CoachValidator to enable test isolation and lenient
@@ -644,6 +653,8 @@ class AutoBuildOrchestrator:
         self._context_loader = context_loader  # For DI/testing only; thread-local loaders used at runtime
         self._feature_id: Optional[str] = feature_id  # Passed from FeatureOrchestrator or set during orchestration
         self._cancellation_event: Optional[threading.Event] = cancellation_event  # Cooperative cancellation (TASK-ASF-007)
+        self._timeout_event: Optional[threading.Event] = timeout_event  # Feature-level timeout signal (TASK-ABFIX-006)
+        self._task_timeout: Optional[int] = task_timeout  # Feature task budget in seconds (TASK-ABFIX-006)
         self.wave_size: int = max(1, int(wave_size))  # Parallel wave context (TASK-ABFIX-005)
         # Per-turn context status tracking for progress display (TASK-FIX-GCW5)
         self._last_player_context_status: Optional[ContextStatus] = None
@@ -1507,7 +1518,7 @@ class AutoBuildOrchestrator:
         requires_infrastructure: Optional[List[str]] = None,
         consumer_context: Optional[list] = None,
         time_budget_seconds: Optional[float] = None,
-    ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "configuration_error", "design_extraction_failed", "timeout_budget_exhausted"]]:
+    ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "timeout", "configuration_error", "design_extraction_failed", "timeout_budget_exhausted"]]:
         """
         Phase 3: Execute Player↔Coach adversarial loop.
 
@@ -1560,6 +1571,10 @@ class AutoBuildOrchestrator:
         """
         logger.info(f"Phase 2 (Loop): Starting adversarial turns for {task_id} from turn {start_turn}")
 
+        # Track loop start time for SDK-level timeout remaining budget (TASK-ABFIX-006)
+        import time as _time
+        loop_start = _time.monotonic()
+
         # Use existing turn history if resuming
         turn_history: List[TurnRecord] = list(self._turn_history)
         previous_feedback: Optional[str] = self._get_last_feedback() if self.resume else None
@@ -1581,10 +1596,18 @@ class AutoBuildOrchestrator:
         with self._progress_display:
             for turn in range(start_turn, self.max_turns + 1):
                 # Cooperative cancellation check at TOP of loop (TASK-ASF-007)
+                # Check timeout_event first — feature-level timeout takes priority (TASK-ABFIX-006)
+                if self._timeout_event and self._timeout_event.is_set():
+                    logger.info(
+                        f"[{task_id}] TIMEOUT (feature-level): task_timeout={self._task_timeout}s expired "
+                        f"at turn {turn} (before Player phase). "
+                        f"SDK timeout budget was {self.sdk_timeout}s per invocation."
+                    )
+                    return turn_history, "timeout"
                 if self._cancellation_event and self._cancellation_event.is_set():
                     logger.info(
-                        f"Cancellation requested for {task_id} at turn {turn} "
-                        f"(before Player phase)"
+                        f"[{task_id}] CANCELLED: cancellation_event set by wave coordinator "
+                        f"(stop_on_failure) at turn {turn} (before Player phase)."
                     )
                     return turn_history, "cancelled"
 
@@ -1627,6 +1650,40 @@ class AutoBuildOrchestrator:
 
                 turn_history.append(turn_record)
                 self._turn_history = turn_history  # Keep internal copy for state
+
+                # Cooperative cancellation check after turn (TASK-ASF-007)
+                # If event was set during _execute_turn (between Player/Coach),
+                # the turn returns "error" — convert to "cancelled"/"timeout" exit
+                # Check timeout_event first — feature-level timeout takes priority (TASK-ABFIX-006)
+                if self._timeout_event and self._timeout_event.is_set():
+                    logger.info(
+                        f"[{task_id}] TIMEOUT (feature-level): task_timeout={self._task_timeout}s expired "
+                        f"after turn {turn}. "
+                        f"SDK timeout budget was {self.sdk_timeout}s per invocation."
+                    )
+                    return turn_history, "timeout"
+                if self._cancellation_event and self._cancellation_event.is_set():
+                    logger.info(
+                        f"[{task_id}] CANCELLED: cancellation_event set by wave coordinator "
+                        f"(stop_on_failure) after turn {turn}."
+                    )
+                    return turn_history, "cancelled"
+
+                # Detect SDK-level timeout and log layer attribution (TASK-ABFIX-006)
+                if (
+                    turn_record.player_result
+                    and turn_record.player_result.error
+                    and "SDK timeout" in turn_record.player_result.error
+                    and self._task_timeout
+                ):
+                    elapsed = int(_time.monotonic() - loop_start)
+                    remaining = max(0, self._task_timeout - elapsed)
+                    logger.info(
+                        f"[{task_id}] TIMEOUT (SDK-level): sdk_timeout={self.sdk_timeout}s expired "
+                        f"during turn {turn}. Feature task had {remaining}s remaining of its "
+                        f"{self._task_timeout}s budget."
+                    )
+
 
                 # Capture turn state for cross-turn learning (TASK-GE-002)
                 self._capture_turn_state(turn_record, acceptance_criteria, task_id=task_id)
@@ -3951,7 +4008,7 @@ class AutoBuildOrchestrator:
     def _build_summary_details(
         self,
         turn_history: List[TurnRecord],
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "configuration_error", "pre_loop_blocked", "design_extraction_failed"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "design_extraction_failed"],
     ) -> str:
         """
         Build detailed summary text for final report.
@@ -4050,9 +4107,18 @@ class AutoBuildOrchestrator:
                 f"Suggested action: Verify MCP tools are configured in claude_desktop_config.json."
             )
 
+        elif final_decision == "timeout":
+            task_timeout_str = f"{self._task_timeout}s" if self._task_timeout else "feature budget"
+            return (
+                f"Task timed out (feature-level timeout) after {len(turn_history)} turn(s).\n"
+                f"Feature timeout: {task_timeout_str}. SDK timeout budget: {self.sdk_timeout}s per invocation.\n"
+                f"Worktree preserved for inspection.\n"
+                f"Review partial implementation and resume manually if needed."
+            )
+
         elif final_decision == "cancelled":
             return (
-                f"Task timed out (cancelled) after {len(turn_history)} turn(s).\n"
+                f"Task cancelled via cooperative cancellation (stop_on_failure) after {len(turn_history)} turn(s).\n"
                 f"Worktree preserved for inspection.\n"
                 f"Review partial implementation and resume manually if needed."
             )
@@ -4077,7 +4143,7 @@ class AutoBuildOrchestrator:
 
     def _build_error_message(
         self,
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "configuration_error", "pre_loop_blocked", "design_extraction_failed"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "design_extraction_failed"],
         turn_history: List[TurnRecord],
     ) -> str:
         """
@@ -4121,9 +4187,16 @@ class AutoBuildOrchestrator:
         elif final_decision == "design_extraction_failed":
             return "Phase 0 design extraction failed - MCP tools unavailable or design URL invalid"
 
+        elif final_decision == "timeout":
+            task_timeout_str = f"{self._task_timeout}s" if self._task_timeout else "feature budget"
+            return (
+                f"Task timed out (feature-level) after {len(turn_history)} turn(s). "
+                f"Feature timeout: {task_timeout_str}, SDK timeout: {self.sdk_timeout}s per invocation."
+            )
+
         elif final_decision == "cancelled":
             return (
-                f"Task cancelled via cooperative cancellation after "
+                f"Task cancelled via cooperative cancellation (stop_on_failure) after "
                 f"{len(turn_history)} turn(s)"
             )
 

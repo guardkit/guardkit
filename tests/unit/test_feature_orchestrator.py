@@ -1100,7 +1100,7 @@ async def test_execute_wave_parallel_executes_concurrently(temp_repo, parallel_f
     # Mock _execute_task to track concurrent execution
     execution_order = []
 
-    def mock_execute_task(task, feature, worktree, cancellation_event=None):
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
         execution_order.append(f"start_{task.id}")
         # Simulate some work
         import time
@@ -1138,7 +1138,7 @@ async def test_execute_wave_parallel_all_tasks_complete_before_return(temp_repo,
 
     completed_tasks = []
 
-    def mock_execute_task(task, feature, worktree, cancellation_event=None):
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
         import time
         time.sleep(0.02)  # Simulate work
         completed_tasks.append(task.id)
@@ -1172,7 +1172,7 @@ async def test_execute_wave_parallel_exception_isolation(temp_repo, parallel_fea
         worktree_manager=mock_worktree_manager,
     )
 
-    def mock_execute_task(task, feature, worktree, cancellation_event=None):
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
         if task.id == "TASK-P-001":
             raise Exception("Task P-001 failed")
         return TaskExecutionResult(
@@ -1544,7 +1544,7 @@ async def test_task_timeout_triggers_on_slow_task(
         task_timeout=1,  # 1 second timeout for fast test
     )
 
-    def mock_execute_task_slow(task, feature, worktree, cancellation_event=None):
+    def mock_execute_task_slow(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
         """Simulate a task that takes too long."""
         import time
         time.sleep(5)  # Will exceed the 1s timeout
@@ -1579,7 +1579,7 @@ async def test_successful_tasks_unaffected_by_timeout(
         task_timeout=60,  # Generous timeout
     )
 
-    def mock_execute_task_fast(task, feature, worktree, cancellation_event=None):
+    def mock_execute_task_fast(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
         """Simulate a fast task that finishes well within timeout."""
         return TaskExecutionResult(
             task_id=task.id,
@@ -1609,7 +1609,7 @@ async def test_timeout_mixed_with_success(
         task_timeout=1,  # 1 second timeout
     )
 
-    def mock_execute_task_mixed(task, feature, worktree, cancellation_event=None):
+    def mock_execute_task_mixed(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
         """One task times out, the other succeeds."""
         import time
         if task.id == "TASK-P-001":
@@ -1660,7 +1660,7 @@ async def test_timeout_updates_wave_display(
     mock_display = MagicMock()
     orchestrator._wave_display = mock_display
 
-    def mock_execute_task_slow(task, feature, worktree, cancellation_event=None):
+    def mock_execute_task_slow(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
         import time
         time.sleep(5)
         return TaskExecutionResult(
@@ -1697,7 +1697,7 @@ async def test_timeout_updates_feature_state(
         task_timeout=1,
     )
 
-    def mock_execute_task_slow(task, feature, worktree, cancellation_event=None):
+    def mock_execute_task_slow(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
         import time
         time.sleep(5)
         return TaskExecutionResult(
@@ -2319,7 +2319,7 @@ class TestCooperativeCancellation:
 
         captured_events = {}
 
-        def mock_execute_task(task, feature, worktree, cancellation_event=None):
+        def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
             captured_events[task.id] = cancellation_event
             return TaskExecutionResult(
                 task_id=task.id,
@@ -2356,7 +2356,7 @@ class TestCooperativeCancellation:
 
         captured_events = {}
 
-        def mock_execute_task(task, feature, worktree, cancellation_event=None):
+        def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
             captured_events[task.id] = cancellation_event
             return TaskExecutionResult(
                 task_id=task.id,
@@ -2388,7 +2388,7 @@ class TestCooperativeCancellation:
 
         captured_events = {}
 
-        def mock_execute_task(task, feature, worktree, cancellation_event=None):
+        def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
             captured_events[task.id] = cancellation_event
             if task.id == "TASK-P-001":
                 raise RuntimeError("Simulated failure")
