@@ -1297,12 +1297,15 @@ The detailed specifications are in the task markdown file.
             cancel_event = threading.Event()
             cancellation_events[task_id] = cancel_event
 
-            # Add to parallel execution queue, wrapped with per-task timeout
+            # Add to parallel execution queue, wrapped with per-task timeout.
+            # wave_size = total tasks in the wave (including already-filtered ones)
+            # used by Coach to enable isolation and lenient classification (TASK-ABFIX-005).
             tasks_to_execute.append(
                 asyncio.wait_for(
                     asyncio.to_thread(
                         self._execute_task, task, feature, worktree,
                         cancellation_event=cancel_event,
+                        wave_size=len(task_ids),
                     ),
                     timeout=self.task_timeout,
                 )
@@ -1507,6 +1510,7 @@ The detailed specifications are in the task markdown file.
         feature: Feature,
         worktree: Worktree,
         cancellation_event: Optional[threading.Event] = None,
+        wave_size: int = 1,
     ) -> TaskExecutionResult:
         """
         Execute single task using AutoBuildOrchestrator with shared worktree.
@@ -1522,6 +1526,9 @@ The detailed specifications are in the task markdown file.
         cancellation_event : Optional[threading.Event], optional
             Cooperative cancellation signal (default: None).
             When set, AutoBuildOrchestrator exits cleanly at next checkpoint.
+        wave_size : int, optional
+            Number of tasks executing in parallel in the current wave (default: 1).
+            Passed to AutoBuildOrchestrator for Coach test isolation (TASK-ABFIX-005).
 
         Returns
         -------
@@ -1561,6 +1568,7 @@ The detailed specifications are in the task markdown file.
                 feature_id=feature.id,
                 cancellation_event=cancellation_event,  # Cooperative cancellation (TASK-ASF-007)
                 timeout_multiplier=self.timeout_multiplier,  # TASK-FIX-VL05
+                wave_size=wave_size,  # Parallel wave context for Coach isolation (TASK-ABFIX-005)
             )
 
             # Execute task orchestration

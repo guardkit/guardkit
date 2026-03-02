@@ -502,6 +502,7 @@ class AutoBuildOrchestrator:
         feature_id: Optional[str] = None,
         cancellation_event: Optional[threading.Event] = None,
         timeout_multiplier: Optional[float] = None,
+        wave_size: int = 1,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -567,6 +568,10 @@ class AutoBuildOrchestrator:
         cancellation_event : Optional[threading.Event], optional
             Cooperative cancellation signal from FeatureOrchestrator (default: None).
             When set, _loop_phase() exits cleanly at the next checkpoint.
+        wave_size : int, optional
+            Number of tasks executing in parallel in the current wave (default: 1).
+            Passed through to CoachValidator to enable test isolation and lenient
+            failure classification in parallel waves (TASK-ABFIX-005).
 
         Raises
         ------
@@ -623,6 +628,7 @@ class AutoBuildOrchestrator:
         self._context_loader = context_loader  # For DI/testing only; thread-local loaders used at runtime
         self._feature_id: Optional[str] = feature_id  # Passed from FeatureOrchestrator or set during orchestration
         self._cancellation_event: Optional[threading.Event] = cancellation_event  # Cooperative cancellation (TASK-ASF-007)
+        self.wave_size: int = max(1, int(wave_size))  # Parallel wave context (TASK-ABFIX-005)
         # Per-turn context status tracking for progress display (TASK-FIX-GCW5)
         self._last_player_context_status: Optional[ContextStatus] = None
         self._last_coach_context_status: Optional[ContextStatus] = None
@@ -1988,6 +1994,7 @@ class AutoBuildOrchestrator:
             skip_arch_review=skip_arch_review,
             requires_infrastructure=requires_infrastructure,
             consumer_context=consumer_context,
+            wave_size=self.wave_size,
         )
         # Snapshot context status after coach invocation (TASK-FIX-GCW5)
         coach_context_status = self._last_coach_context_status
@@ -3510,6 +3517,7 @@ class AutoBuildOrchestrator:
         skip_arch_review: bool = False,
         requires_infrastructure: Optional[List[str]] = None,
         consumer_context: Optional[list] = None,
+        wave_size: int = 1,
     ) -> AgentInvocationResult:
         """
         Invoke Coach agent with comprehensive error handling.
@@ -3549,6 +3557,9 @@ class AutoBuildOrchestrator:
             Infrastructure services required (e.g., ["postgresql", "redis"])
         consumer_context : Optional[list], optional
             Consumer context metadata from task frontmatter for format validation
+        wave_size : int, optional
+            Number of tasks executing in parallel in the current wave (default: 1).
+            Passed to CoachValidator to enable test isolation (TASK-ABFIX-005).
 
         Returns
         -------
@@ -3651,6 +3662,7 @@ class AutoBuildOrchestrator:
                 task_id=task_id,
                 coach_test_execution=coach_test_execution,
                 matching_strategy=matching_strategy,
+                wave_size=wave_size,
             )
             validation_result = validator.validate(
                 task_id=task_id,

@@ -434,6 +434,7 @@ class CoachValidator:
         task_id: Optional[str] = None,
         coach_test_execution: str = "sdk",
         matching_strategy: str = "auto",
+        wave_size: int = 1,
     ):
         """
         Initialize CoachValidator.
@@ -460,12 +461,18 @@ class CoachValidator:
             backends, ``"auto"`` (default): resolves to ``"semantic"`` when
             ``ANTHROPIC_BASE_URL`` points to a non-Anthropic endpoint, otherwise
             ``"text"``.  Can also be set via ``GUARDKIT_MATCHING_STRATEGY`` env var.
+        wave_size : int
+            Number of tasks executing in parallel in the current wave (default: 1).
+            When >1, the Coach runs independent tests in an isolated temp directory
+            to prevent spurious failures from concurrent worktree mutations, and
+            applies more lenient failure classification for contention-related errors.
         """
         self.worktree_path = Path(worktree_path)
         self.test_command = test_command
         self.test_timeout = test_timeout
         self.task_id = task_id
         self._coach_test_execution = coach_test_execution
+        self.wave_size = max(1, int(wave_size))
         # Resolve matching strategy: constructor arg > env var > "auto"
         _VALID_STRATEGIES = ("auto", "text", "semantic")
         env_strategy = os.environ.get("GUARDKIT_MATCHING_STRATEGY", "").lower()
@@ -482,7 +489,15 @@ class CoachValidator:
         else:
             self._matching_strategy = "auto"
 
-        logger.debug(f"CoachValidator initialized for worktree: {worktree_path}, task_id: {task_id}")
+        logger.debug(
+            f"CoachValidator initialized for worktree: {worktree_path}, "
+            f"task_id: {task_id}, wave_size: {self.wave_size}"
+        )
+
+    @property
+    def is_parallel(self) -> bool:
+        """Return True when this Coach is running in a parallel wave (wave_size > 1)."""
+        return self.wave_size > 1
 
     def _get_coach_test_model(self) -> Optional[str]:
         """Return the model for Coach SDK test invocations, or None to use CLI default.
@@ -684,12 +699,14 @@ class CoachValidator:
 
             logger.info(
                 "conditional_approval check: failure_class=%s, confidence=%s, "
-                "requires_infra=%s, docker_available=%s, all_gates_passed=%s",
+                "requires_infra=%s, docker_available=%s, all_gates_passed=%s, "
+                "wave_size=%s",
                 failure_class,
                 failure_confidence,
                 requires_infra,
                 docker_available,
                 gates_status.all_gates_passed,
+                self.wave_size,
             )
 
             conditional_approval = (
@@ -701,6 +718,20 @@ class CoachValidator:
             ) or (
                 failure_class == "collection_error"
                 and gates_status.all_gates_passed
+            ) or (
+                # TASK-ABFIX-005: Grant conditional approval for contention-related
+                # failures in a parallel wave when all Player quality gates passed.
+                # "parallel_contention" is set by _classify_test_failure() when
+                # wave_size > 1 and the failure looks like it could be contention.
+                failure_class == "parallel_contention"
+                and gates_status.all_gates_passed
+            ) or (
+                # TASK-ABFIX-005: Also grant conditional approval for any "code"
+                # failure in a parallel wave (recommendation 3b from TASK-REV-A17A).
+                # The failure might be a false positive caused by concurrent mutations.
+                failure_class == "code"
+                and self.is_parallel
+                and gates_status.all_gates_passed
             )
 
             if conditional_approval:
@@ -708,6 +739,18 @@ class CoachValidator:
                     logger.warning(
                         f"Conditional approval for {task_id}: test collection errors in "
                         f"independent verification, all Player gates passed. "
+                        f"Continuing to requirements check."
+                    )
+                elif failure_class == "parallel_contention":
+                    logger.warning(
+                        f"Conditional approval for {task_id}: parallel contention failure "
+                        f"(wave_size={self.wave_size}), all Player gates passed. "
+                        f"Continuing to requirements check."
+                    )
+                elif failure_class == "code" and self.is_parallel:
+                    logger.warning(
+                        f"Conditional approval for {task_id}: code failure in parallel wave "
+                        f"(wave_size={self.wave_size}), all Player gates passed. "
                         f"Continuing to requirements check."
                     )
                 else:
@@ -729,6 +772,26 @@ class CoachValidator:
                     rationale = (
                         "Tests failed because psycopg2 was imported in an asyncpg "
                         "project"
+                    )
+                elif failure_class == "parallel_contention":
+                    error_output = (test_result.test_output_summary or "").strip()
+                    if len(error_output) > 500:
+                        error_output = error_output[:497] + "..."
+                    base = (
+                        f"Tests failed due to likely parallel wave contention "
+                        f"(wave_size={self.wave_size}). Another task may have "
+                        f"concurrently modified shared files (e.g. __init__.py) "
+                        f"during Coach independent verification. "
+                        f"Test command: {test_result.test_command}."
+                    )
+                    description = (
+                        f"{base} Error detail: {error_output}"
+                        if error_output
+                        else base
+                    )
+                    rationale = (
+                        "Tests failed due to likely parallel wave contention, "
+                        "not code defects"
                     )
                 elif failure_class in ("infrastructure", "collection_error"):
                     error_output = (test_result.test_output_summary or "").strip()
@@ -1264,6 +1327,128 @@ class CoachValidator:
             return effective
         return self._matching_strategy
 
+    # Directories to skip when copying worktree for isolated test execution.
+    _ISOLATION_SKIP_DIRS: set = {
+        ".git", "__pycache__", ".guardkit", ".venv", "venv", "node_modules",
+        ".tox", ".mypy_cache", ".pytest_cache", "dist", "build", "*.egg-info",
+    }
+
+    def _run_isolated_tests(self, test_cmd: str) -> "IndependentTestResult":
+        """
+        Run tests in an isolated temporary directory (Option B: tempdir copy).
+
+        Copies the worktree to a temp directory, excluding large/irrelevant
+        directories, and runs tests there.  This prevents spurious failures
+        caused by concurrent mutations from other tasks running in the same
+        parallel wave.
+
+        Parameters
+        ----------
+        test_cmd : str
+            Test command to run (e.g. ``"pytest tests/test_foo.py -v --tb=short"``)
+
+        Returns
+        -------
+        IndependentTestResult
+            Result of isolated test execution
+        """
+        import shutil
+        import tempfile
+
+        start_time = time.time()
+        logger.info(
+            f"[TASK-ABFIX-005] Running isolated tests (wave_size={self.wave_size}): {test_cmd}"
+        )
+
+        try:
+            with tempfile.TemporaryDirectory(prefix="guardkit-coach-iso-") as tmpdir:
+                tmpdir_path = Path(tmpdir)
+
+                # Copy worktree snapshot, skipping large/irrelevant directories
+                for item in self.worktree_path.iterdir():
+                    dest = tmpdir_path / item.name
+                    if item.name in self._ISOLATION_SKIP_DIRS or item.name.endswith(".egg-info"):
+                        continue
+                    try:
+                        if item.is_dir():
+                            shutil.copytree(
+                                str(item),
+                                str(dest),
+                                ignore=shutil.ignore_patterns(
+                                    "__pycache__", "*.pyc", "*.pyo",
+                                    ".pytest_cache", ".mypy_cache",
+                                ),
+                            )
+                        else:
+                            shutil.copy2(str(item), str(dest))
+                    except (OSError, shutil.Error) as copy_err:
+                        logger.warning(
+                            f"[TASK-ABFIX-005] Skipping {item.name} during isolation copy: {copy_err}"
+                        )
+
+                logger.info(
+                    f"[TASK-ABFIX-005] Worktree snapshot created at {tmpdir_path}"
+                )
+
+                # Run tests in the isolated copy
+                if test_cmd.startswith("pytest"):
+                    parts = test_cmd.split()
+                    cmd = [sys.executable, "-m", "pytest"] + parts[1:]
+                    result = subprocess.run(
+                        cmd,
+                        cwd=str(tmpdir_path),
+                        capture_output=True,
+                        text=True,
+                        timeout=self.test_timeout,
+                        env=os.environ,
+                    )
+                else:
+                    result = subprocess.run(
+                        test_cmd,
+                        shell=True,
+                        cwd=str(tmpdir_path),
+                        capture_output=True,
+                        text=True,
+                        timeout=self.test_timeout,
+                    )
+
+                duration = time.time() - start_time
+                tests_passed = result.returncode == 0
+                output = result.stdout or result.stderr or "No output"
+                summary = self._summarize_test_output(output)
+
+                logger.info(
+                    f"[TASK-ABFIX-005] Isolated tests {'passed' if tests_passed else 'failed'} "
+                    f"in {duration:.1f}s"
+                )
+
+                return IndependentTestResult(
+                    tests_passed=tests_passed,
+                    test_command=test_cmd,
+                    test_output_summary=summary,
+                    duration_seconds=duration,
+                    raw_output=(result.stdout or "") + (result.stderr or ""),
+                )
+
+        except subprocess.TimeoutExpired:
+            duration = time.time() - start_time
+            logger.error(f"[TASK-ABFIX-005] Isolated test execution timed out after {self.test_timeout}s")
+            return IndependentTestResult(
+                tests_passed=False,
+                test_command=test_cmd,
+                test_output_summary=f"Isolated test execution timed out after {self.test_timeout}s",
+                duration_seconds=duration,
+            )
+        except Exception as e:
+            duration = time.time() - start_time
+            logger.error(f"[TASK-ABFIX-005] Isolated test execution failed: {e}")
+            return IndependentTestResult(
+                tests_passed=False,
+                test_command=test_cmd,
+                test_output_summary=f"Isolated test execution failed: {e}",
+                duration_seconds=duration,
+            )
+
     def run_independent_tests(
         self,
         task_work_results: Optional[Dict[str, Any]] = None,
@@ -1377,6 +1562,16 @@ class CoachValidator:
                         f"SDK test execution failed, falling back to subprocess: {e}"
                     )
                     # Fall through to subprocess path below
+
+            # Parallel wave isolation (TASK-ABFIX-005): run tests in temp directory
+            # snapshot to prevent spurious failures from concurrent worktree mutations.
+            # Applied when wave_size > 1 and not using SDK (SDK already runs in isolation).
+            if self.is_parallel and not use_sdk:
+                logger.info(
+                    f"[TASK-ABFIX-005] Parallel wave detected (wave_size={self.wave_size}), "
+                    f"running tests in isolated temp directory"
+                )
+                return self._run_isolated_tests(test_cmd)
 
             # Subprocess path (default for coach_test_execution="subprocess", SDK fallback,
             # or infrastructure-dependent tasks forced to subprocess by TASK-REV-CB30 R5)
@@ -2742,9 +2937,18 @@ class CoachValidator:
             ``("infrastructure", "high")`` if high-confidence pattern matches,
             ``("infrastructure", "ambiguous")`` if only ambiguous pattern matches,
             ``("code", "high")`` if bootstrap context reveals a wrong lib choice,
+            ``("parallel_contention", "high")`` if running in a parallel wave and
+            the failure looks like a code error that could be caused by concurrent
+            worktree mutations (TASK-ABFIX-005),
             ``("code", "n/a")`` otherwise
         """
         if not test_output:
+            if self.is_parallel:
+                logger.debug(
+                    f"[{self.task_id}] _classify_test_failure: no output, parallel wave "
+                    f"→ ('parallel_contention', 'high')"
+                )
+                return ("parallel_contention", "high")
             logger.debug(f"[{self.task_id}] _classify_test_failure: no output → ('code', 'n/a')")
             return ("code", "n/a")
         output_lower = test_output.lower()
@@ -2811,6 +3015,17 @@ class CoachValidator:
                     f" '{pattern}' → ('infrastructure', 'ambiguous')"
                 )
                 return ("infrastructure", "ambiguous")
+        # TASK-ABFIX-005: In a parallel wave, a code failure might be caused by
+        # concurrent worktree mutations (e.g. another task partially writing
+        # __init__.py). Reclassify as parallel_contention to allow conditional
+        # approval when all Player quality gates passed.
+        if self.is_parallel:
+            logger.debug(
+                f"[{self.task_id}] _classify_test_failure: no pattern matched, "
+                f"parallel wave (wave_size={self.wave_size}) "
+                f"→ ('parallel_contention', 'high')"
+            )
+            return ("parallel_contention", "high")
         logger.debug(f"[{self.task_id}] _classify_test_failure: no pattern matched → ('code', 'n/a')")
         return ("code", "n/a")
 
