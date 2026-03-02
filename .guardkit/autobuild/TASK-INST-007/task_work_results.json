@@ -1,6 +1,26 @@
 {
   "task_id": "TASK-INST-007",
-  "turn": 1,
+  "timestamp": "2026-03-02T22:05:31.018972",
+  "completed": true,
+  "phases": {
+    "phase_3": {
+      "detected": true,
+      "text": "Implementation (TDD Mode)",
+      "completed": false
+    },
+    "phase_5": {
+      "detected": true,
+      "completed": true
+    }
+  },
+  "quality_gates": {
+    "tests_passing": true,
+    "tests_passed": 45,
+    "tests_failed": 0,
+    "coverage": 95.0,
+    "coverage_met": true,
+    "all_passed": true
+  },
   "files_modified": [
     ".claude/task-plans/TASK-INST-002-implementation-plan.md",
     ".claude/task-plans/TASK-INST-003-implementation-plan.md",
@@ -71,29 +91,18 @@
   "tests_written": [
     "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/orchestrator/instrumentation/test_digests.py"
   ],
-  "tests_run": true,
-  "tests_passed": true,
-  "test_output_summary": "",
-  "implementation_notes": "Implementation via task-work delegation",
-  "concerns": [],
-  "requirements_addressed": [
-    "Four digest files created (player, coach, resolver, router)",
-    "Each digest under 700 tokens",
-    "DigestValidator accepts exactly 700 tokens, warns at 701+",
-    "Missing digest file produces clear error (no silent fallback)",
-    "DigestLoader returns correct digest for each role",
-    "Prompt profile switching supports all four profiles",
-    "Phase 1: full rules bundle injected alongside digest",
-    "No two digests are identical",
-    "Token counting implemented (word-based fallback)",
-    "Digest content is stack-agnostic",
-    "Unit tests cover validation boundaries (700/701), loading, profiles"
-  ],
-  "requirements_remaining": [],
-  "sdk_turns_used": 44,
-  "sdk_max_turns": 100,
-  "sdk_ceiling_hit": false,
-  "tests_passed_count": 45,
+  "summary": "45 tests passed, 95.0% coverage, all quality gates passed",
+  "sdk_turns": {
+    "turns_used": 44,
+    "max_turns": 100,
+    "ceiling_hit": false
+  },
+  "code_review": {
+    "score": 85,
+    "solid": 90,
+    "dry": 85,
+    "yagni": 80
+  },
   "completion_promises": [
     {
       "criterion_id": "AC-001",
