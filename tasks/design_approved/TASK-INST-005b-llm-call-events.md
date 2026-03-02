@@ -1,26 +1,27 @@
 ---
-id: TASK-INST-005b
-title: "Emit LLM call events from _invoke_with_role"
-task_type: feature
-parent_review: TASK-REV-2FE2
-feature_id: FEAT-INST
-wave: 3
-implementation_mode: task-work
-complexity: 4
-dependencies:
-  - TASK-INST-001
-  - TASK-INST-002
-  - TASK-INST-005a
 autobuild:
   enabled: true
   max_turns: 5
   mode: tdd
+complexity: 4
 consumer_context:
-  - task: TASK-INST-002
-    consumes: EVENT_EMITTER
-    framework: "EventEmitter protocol (async)"
-    driver: "guardkit.orchestrator.instrumentation.emitter"
-    format_note: "EventEmitter injected via constructor; call await emitter.emit(event)"
+- consumes: EVENT_EMITTER
+  driver: guardkit.orchestrator.instrumentation.emitter
+  format_note: EventEmitter injected via constructor; call await emitter.emit(event)
+  framework: EventEmitter protocol (async)
+  task: TASK-INST-002
+dependencies:
+- TASK-INST-001
+- TASK-INST-002
+- TASK-INST-005a
+feature_id: FEAT-INST
+id: TASK-INST-005b
+implementation_mode: task-work
+parent_review: TASK-REV-2FE2
+status: design_approved
+task_type: feature
+title: Emit LLM call events from _invoke_with_role
+wave: 3
 ---
 
 # Task: Emit LLM Call Events from _invoke_with_role

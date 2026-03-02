@@ -1,0 +1,148 @@
+{
+  "task_id": "TASK-INST-005b",
+  "timestamp": "2026-03-02T23:04:40.232358",
+  "completed": true,
+  "phases": {
+    "phase_3": {
+      "detected": true,
+      "text": "Implementation (TDD Mode - RED Phase)",
+      "completed": false
+    },
+    "phase_4": {
+      "detected": true,
+      "completed": true
+    }
+  },
+  "quality_gates": {
+    "tests_passing": true,
+    "tests_passed": 605,
+    "tests_failed": 0,
+    "coverage": 100.0,
+    "coverage_met": true,
+    "all_passed": true
+  },
+  "files_modified": [
+    ".guardkit/bootstrap_state.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/guardkit/orchestrator/agent_invoker.py",
+    "guardkit/orchestrator/agent_invoker.py",
+    "tasks/backlog/TASK-INST-005b-llm-call-events.md"
+  ],
+  "files_created": [
+    ".claude/task-plans/TASK-INST-005b-implementation-plan.md",
+    ".guardkit/autobuild/TASK-INST-004/checkpoints.json",
+    ".guardkit/autobuild/TASK-INST-005b/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-005b/task_work_results.json",
+    ".guardkit/autobuild/TASK-INST-005b/turn_context.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/.guardkit/autobuild/TASK-INST-005b/player_turn_1.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/orchestrator/instrumentation/test_llm_call_events.py",
+    "tasks/design_approved/TASK-INST-005b-llm-call-events.md",
+    "tests/orchestrator/instrumentation/test_llm_call_events.py"
+  ],
+  "tests_written": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/orchestrator/instrumentation/test_llm_call_events.py"
+  ],
+  "summary": "605 tests passed, 100.0% coverage, all quality gates passed",
+  "sdk_turns": {
+    "turns_used": 69,
+    "max_turns": 100,
+    "ceiling_hit": false
+  },
+  "code_review": {
+    "score": 88,
+    "solid": 95,
+    "dry": 90,
+    "yagni": 90
+  },
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "llm.call event emitted for every successful SDK invocation",
+      "status": "complete",
+      "evidence": "Implemented _emit_llm_call_event() method called in the finally block of _invoke_with_role(). On success path, status='ok' and error_type=None. Test: test_emits_event_on_successful_call verifies event emission with NullEmitter(capture=True).",
+      "test_file": "tests/orchestrator/instrumentation/test_llm_call_events.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "llm.call event emitted for failed SDK invocations (timeout, API error)",
+      "status": "complete",
+      "evidence": "Error path sets call_status='error' and captures the exception. Event is emitted in finally block regardless of success/failure. Tests: test_emits_event_on_timeout (verifies timeout error emission with error_type='timeout') and test_emits_event_on_process_error (verifies ProcessError emission).",
+      "test_file": "tests/orchestrator/instrumentation/test_llm_call_events.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Event includes all required fields: run_id, task_id, agent_role, provider, model, tokens, latency, prompt_profile, status",
+      "status": "complete",
+      "evidence": "LLMCallEvent constructed with all required fields in _emit_llm_call_event(). run_id from self._run_id or instance ID fallback, task_id extracted from prompt, agent_role from method param, provider from detect_provider(), model from param, tokens from extract_token_usage(), latency from measure_latency(), prompt_profile from self._prompt_profile or default, status from call tracking. Test: test_event_includes_all_required_fields asserts all fields.",
+      "test_file": "tests/orchestrator/instrumentation/test_llm_call_events.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Event emission is non-blocking (asyncio.create_task)",
+      "status": "complete",
+      "evidence": "Event emission uses asyncio.get_running_loop().create_task(_safe_emit()) \u2014 fire-and-forget pattern. _invoke_with_role returns immediately without waiting for emission. Test: test_emission_does_not_block_caller verifies method returns before emission completes.",
+      "test_file": "tests/orchestrator/instrumentation/test_llm_call_events.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Emission failure does not propagate to caller",
+      "status": "complete",
+      "evidence": "The _safe_emit() async wrapper catches all exceptions from emitter.emit() and logs a warning. The outer _emit_llm_call_event() also catches event construction failures. Test: test_emission_failure_does_not_propagate uses a failing emitter (raises RuntimeError) and verifies _invoke_with_role completes without error.",
+      "test_file": "tests/orchestrator/instrumentation/test_llm_call_events.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "NullEmitter default preserves existing behaviour (no event emission when emitter not injected)",
+      "status": "complete",
+      "evidence": "AgentInvoker.__init__() defaults emitter parameter to NullEmitter() when None. NullEmitter drops events silently. Tests: test_default_emitter_is_null_emitter verifies default type, test_no_events_captured_without_injected_emitter verifies zero events captured.",
+      "test_file": "tests/orchestrator/instrumentation/test_llm_call_events.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Multiple calls in same turn produce distinct events",
+      "status": "complete",
+      "evidence": "Each _invoke_with_role() call produces exactly one LLMCallEvent with its own timestamp from datetime.now().isoformat(). Test: test_two_calls_produce_two_events makes two invocations (player + coach) and verifies 2 distinct events with different agent_roles.",
+      "test_file": "tests/orchestrator/instrumentation/test_llm_call_events.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "Existing tests in test_agent_invoker.py still pass (zero regression)",
+      "status": "complete",
+      "evidence": "All 552 existing agent_invoker tests pass. The emitter parameter defaults to NullEmitter() so all existing callers are unaffected. Ran: pytest tests/unit/test_agent_invoker*.py \u2014 552 passed, 0 failed.",
+      "test_file": "tests/unit/test_agent_invoker.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "New tests cover: successful emission, error emission, non-blocking behaviour, NullEmitter default",
+      "status": "complete",
+      "evidence": "13 new tests in test_llm_call_events.py covering: TestSuccessfulEmission (2 tests), TestErrorEmission (2 tests), TestNonBlockingEmission (1 test), TestEmissionFailureSafe (1 test), TestNullEmitterDefault (2 tests), TestMultipleCallsDistinctEvents (1 test), TestLatencyTracking (2 tests), TestPromptProfile (1 test). All pass.",
+      "test_file": "tests/orchestrator/instrumentation/test_llm_call_events.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    }
+  ]
+}
