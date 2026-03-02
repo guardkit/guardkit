@@ -1,0 +1,155 @@
+{
+  "task_id": "TASK-INST-006",
+  "turn": 2,
+  "decision": "approve",
+  "validation_results": {
+    "quality_gates": {
+      "tests_passed": true,
+      "coverage_met": true,
+      "arch_review_passed": true,
+      "plan_audit_passed": true,
+      "all_gates_passed": true
+    },
+    "independent_tests": {
+      "tests_passed": true,
+      "test_command": "pytest tests/orchestrator/instrumentation/test_concurrency.py tests/orchestrator/instrumentation/test_graphiti_events.py tests/orchestrator/instrumentation/test_llm_instrumentation.py tests/orchestrator/instrumentation/test_orchestrator_events.py -v --tb=short",
+      "test_output_summary": "Result:\ntests/orchestrator/instrumentation/test_concurrency.py::TestRateLimitReduction::test_rate_limit_count_many_triggers_reduction PASSED [  3%]\ntests/orchestrator/instrumentation/test_concurrency.py::TestRateLimitReduction::test_rate_limit_reduction_rounds_down PASSED [  4%]\ntests/orchestrator/instrumentation/test_concurrency.py::TestRateLimitReduction::test_rate_limit_on_already_reduced_workers PASSED [  4%]\ntests/orchestrator/instrumentation/test_concurrency.py::TestRateLimitReduction::test_rate_limit_reason_includes_count PASSED [  5%]\ntests/orchestrator/instrumentation/test_concurrency.py::TestLatencyReduction::test_latency_above_2x_baseline_triggers_reduction PASSED [  6%]",
+      "duration_seconds": 10.357725381851196
+    },
+    "requirements": {
+      "criteria_total": 7,
+      "criteria_met": 7,
+      "all_criteria_met": true,
+      "missing": []
+    }
+  },
+  "criteria_verification": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "graphiti.query event emitted for every context retrieval",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "load_critical_context routes all internal queries through _instrumented_load() which calls _emit_graphiti_event() after every query. Tests TestGraphitiQueryEventEmission (2 tests) verify events are emitted per query and match search call count. TestFeatureBuildCommandBranch verifies the feature-build branch also emits events (5 total = 4 base + 1 feature-build).",
+      "notes": "load_critical_context routes all internal queries through _instrumented_load() which calls _emit_graphiti_event() after every query. Tests TestGraphitiQueryEventEmission (2 tests) verify events are emitted per query and match search call count. TestFeatureBuildCommandBranch verifies the feature-build branch also emits events (5 total = 4 base + 1 feature-build)."
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "query_type correctly identifies the retrieval type",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "load_critical_context queries use query_type='context_loader'. load_critical_adrs uses query_type='adr_lookup'. Tests TestQueryTypeIdentification (2 tests) verify both types. TestLoadCriticalAdrs.test_successful_adr_retrieval also verifies query_type='adr_lookup'.",
+      "notes": "load_critical_context queries use query_type='context_loader'. load_critical_adrs uses query_type='adr_lookup'. Tests TestQueryTypeIdentification (2 tests) verify both types. TestLoadCriticalAdrs.test_successful_adr_retrieval also verifies query_type='adr_lookup'."
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "tokens_injected estimated for retrieved context",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "_estimate_tokens() uses character-count heuristic (~4 chars/token). Called in _instrumented_load() and load_critical_adrs(). Tests TestTokensInjected (2 tests) verify positive for results, zero for empty. TestEstimateTokens (3 tests) directly tests the helper. TestLoadCriticalAdrs.test_successful_adr_retrieval verifies tokens_injected > 0.",
+      "notes": "_estimate_tokens() uses character-count heuristic (~4 chars/token). Called in _instrumented_load() and load_critical_adrs(). Tests TestTokensInjected (2 tests) verify positive for results, zero for empty. TestEstimateTokens (3 tests) directly tests the helper. TestLoadCriticalAdrs.test_successful_adr_retrieval verifies tokens_injected > 0."
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Graphiti unavailability emits error event and falls back gracefully",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "_instrumented_load() catches exceptions, emits event with status='error', and returns empty list. Tests TestGraphitiUnavailability (3 tests) verify error events for ConnectionError/TimeoutError and None graphiti. TestLoadCriticalAdrs.test_search_exception_emits_error_event verifies ADR error events.",
+      "notes": "_instrumented_load() catches exceptions, emits event with status='error', and returns empty list. Tests TestGraphitiUnavailability (3 tests) verify error events for ConnectionError/TimeoutError and None graphiti. TestLoadCriticalAdrs.test_search_exception_emits_error_event verifies ADR error events."
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Warning logged on Graphiti fallback",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "_instrumented_load() logs 'Graphiti fallback: {fn_name} failed ({exc}), continuing with digest-only context' at WARNING level. TestWarningLogging.test_warning_logged_on_search_failure uses caplog to verify. TestLoadCriticalAdrs.test_adr_warning_logged_on_error verifies ADR warning.",
+      "notes": "_instrumented_load() logs 'Graphiti fallback: {fn_name} failed ({exc}), continuing with digest-only context' at WARNING level. TestWarningLogging.test_warning_logged_on_search_failure uses caplog to verify. TestLoadCriticalAdrs.test_adr_warning_logged_on_error verifies ADR warning."
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Run continues with digest-only context when Graphiti unavailable",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "When Graphiti is None or disabled, load_critical_context returns _create_empty_context(). When search fails, _instrumented_load returns []. Tests TestDigestOnlyFallback (2 tests) verify continuation. TestLoadCriticalAdrs (None, disabled, error) and TestLoadFeatureOverview (None, disabled, error) all verify graceful fallback.",
+      "notes": "When Graphiti is None or disabled, load_critical_context returns _create_empty_context(). When search fails, _instrumented_load returns []. Tests TestDigestOnlyFallback (2 tests) verify continuation. TestLoadCriticalAdrs (None, disabled, error) and TestLoadFeatureOverview (None, disabled, error) all verify graceful fallback."
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Unit tests cover successful queries, error paths, and fallback",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "53 tests covering: successful queries (TestGraphitiQueryEventEmission, TestQueryTypeIdentification, TestTokensInjected, TestLatencyTracking, TestItemsReturnedCount, TestEventFieldsComplete, TestFeatureBuildCommandBranch, TestLoadCriticalAdrs success, TestLoadFeatureOverview success), error paths (TestGraphitiUnavailability with ConnectionError/TimeoutError/RuntimeError, TestLoadCriticalAdrs error, TestLoadFeatureOverview error, TestLoadRoleContext error), and fallback (TestDigestOnlyFallback, TestWarningLogging). Also covers helper functions (TestFilterValidResults, TestEstimateTokens, TestEmitGraphitiEventNoop), load_failed_approaches, load_role_context (all paths), and CriticalContext dataclass. Coverage: 98%.",
+      "notes": "53 tests covering: successful queries (TestGraphitiQueryEventEmission, TestQueryTypeIdentification, TestTokensInjected, TestLatencyTracking, TestItemsReturnedCount, TestEventFieldsComplete, TestFeatureBuildCommandBranch, TestLoadCriticalAdrs success, TestLoadFeatureOverview success), error paths (TestGraphitiUnavailability with ConnectionError/TimeoutError/RuntimeError, TestLoadCriticalAdrs error, TestLoadFeatureOverview error, TestLoadRoleContext error), and fallback (TestDigestOnlyFallback, TestWarningLogging). Also covers helper functions (TestFilterValidResults, TestEstimateTokens, TestEmitGraphitiEventNoop), load_failed_approaches, load_role_context (all paths), and CriticalContext dataclass. Coverage: 98%."
+    }
+  ],
+  "acceptance_criteria_verification": {
+    "criteria_results": [
+      {
+        "criterion_id": "AC-001",
+        "criterion_text": "graphiti.query event emitted for every context retrieval",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "load_critical_context routes all internal queries through _instrumented_load() which calls _emit_graphiti_event() after every query. Tests TestGraphitiQueryEventEmission (2 tests) verify events are emitted per query and match search call count. TestFeatureBuildCommandBranch verifies the feature-build branch also emits events (5 total = 4 base + 1 feature-build).",
+        "notes": "load_critical_context routes all internal queries through _instrumented_load() which calls _emit_graphiti_event() after every query. Tests TestGraphitiQueryEventEmission (2 tests) verify events are emitted per query and match search call count. TestFeatureBuildCommandBranch verifies the feature-build branch also emits events (5 total = 4 base + 1 feature-build)."
+      },
+      {
+        "criterion_id": "AC-002",
+        "criterion_text": "query_type correctly identifies the retrieval type",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "load_critical_context queries use query_type='context_loader'. load_critical_adrs uses query_type='adr_lookup'. Tests TestQueryTypeIdentification (2 tests) verify both types. TestLoadCriticalAdrs.test_successful_adr_retrieval also verifies query_type='adr_lookup'.",
+        "notes": "load_critical_context queries use query_type='context_loader'. load_critical_adrs uses query_type='adr_lookup'. Tests TestQueryTypeIdentification (2 tests) verify both types. TestLoadCriticalAdrs.test_successful_adr_retrieval also verifies query_type='adr_lookup'."
+      },
+      {
+        "criterion_id": "AC-003",
+        "criterion_text": "tokens_injected estimated for retrieved context",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "_estimate_tokens() uses character-count heuristic (~4 chars/token). Called in _instrumented_load() and load_critical_adrs(). Tests TestTokensInjected (2 tests) verify positive for results, zero for empty. TestEstimateTokens (3 tests) directly tests the helper. TestLoadCriticalAdrs.test_successful_adr_retrieval verifies tokens_injected > 0.",
+        "notes": "_estimate_tokens() uses character-count heuristic (~4 chars/token). Called in _instrumented_load() and load_critical_adrs(). Tests TestTokensInjected (2 tests) verify positive for results, zero for empty. TestEstimateTokens (3 tests) directly tests the helper. TestLoadCriticalAdrs.test_successful_adr_retrieval verifies tokens_injected > 0."
+      },
+      {
+        "criterion_id": "AC-004",
+        "criterion_text": "Graphiti unavailability emits error event and falls back gracefully",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "_instrumented_load() catches exceptions, emits event with status='error', and returns empty list. Tests TestGraphitiUnavailability (3 tests) verify error events for ConnectionError/TimeoutError and None graphiti. TestLoadCriticalAdrs.test_search_exception_emits_error_event verifies ADR error events.",
+        "notes": "_instrumented_load() catches exceptions, emits event with status='error', and returns empty list. Tests TestGraphitiUnavailability (3 tests) verify error events for ConnectionError/TimeoutError and None graphiti. TestLoadCriticalAdrs.test_search_exception_emits_error_event verifies ADR error events."
+      },
+      {
+        "criterion_id": "AC-005",
+        "criterion_text": "Warning logged on Graphiti fallback",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "_instrumented_load() logs 'Graphiti fallback: {fn_name} failed ({exc}), continuing with digest-only context' at WARNING level. TestWarningLogging.test_warning_logged_on_search_failure uses caplog to verify. TestLoadCriticalAdrs.test_adr_warning_logged_on_error verifies ADR warning.",
+        "notes": "_instrumented_load() logs 'Graphiti fallback: {fn_name} failed ({exc}), continuing with digest-only context' at WARNING level. TestWarningLogging.test_warning_logged_on_search_failure uses caplog to verify. TestLoadCriticalAdrs.test_adr_warning_logged_on_error verifies ADR warning."
+      },
+      {
+        "criterion_id": "AC-006",
+        "criterion_text": "Run continues with digest-only context when Graphiti unavailable",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "When Graphiti is None or disabled, load_critical_context returns _create_empty_context(). When search fails, _instrumented_load returns []. Tests TestDigestOnlyFallback (2 tests) verify continuation. TestLoadCriticalAdrs (None, disabled, error) and TestLoadFeatureOverview (None, disabled, error) all verify graceful fallback.",
+        "notes": "When Graphiti is None or disabled, load_critical_context returns _create_empty_context(). When search fails, _instrumented_load returns []. Tests TestDigestOnlyFallback (2 tests) verify continuation. TestLoadCriticalAdrs (None, disabled, error) and TestLoadFeatureOverview (None, disabled, error) all verify graceful fallback."
+      },
+      {
+        "criterion_id": "AC-007",
+        "criterion_text": "Unit tests cover successful queries, error paths, and fallback",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "53 tests covering: successful queries (TestGraphitiQueryEventEmission, TestQueryTypeIdentification, TestTokensInjected, TestLatencyTracking, TestItemsReturnedCount, TestEventFieldsComplete, TestFeatureBuildCommandBranch, TestLoadCriticalAdrs success, TestLoadFeatureOverview success), error paths (TestGraphitiUnavailability with ConnectionError/TimeoutError/RuntimeError, TestLoadCriticalAdrs error, TestLoadFeatureOverview error, TestLoadRoleContext error), and fallback (TestDigestOnlyFallback, TestWarningLogging). Also covers helper functions (TestFilterValidResults, TestEstimateTokens, TestEmitGraphitiEventNoop), load_failed_approaches, load_role_context (all paths), and CriticalContext dataclass. Coverage: 98%.",
+        "notes": "53 tests covering: successful queries (TestGraphitiQueryEventEmission, TestQueryTypeIdentification, TestTokensInjected, TestLatencyTracking, TestItemsReturnedCount, TestEventFieldsComplete, TestFeatureBuildCommandBranch, TestLoadCriticalAdrs success, TestLoadFeatureOverview success), error paths (TestGraphitiUnavailability with ConnectionError/TimeoutError/RuntimeError, TestLoadCriticalAdrs error, TestLoadFeatureOverview error, TestLoadRoleContext error), and fallback (TestDigestOnlyFallback, TestWarningLogging). Also covers helper functions (TestFilterValidResults, TestEstimateTokens, TestEmitGraphitiEventNoop), load_failed_approaches, load_role_context (all paths), and CriticalContext dataclass. Coverage: 98%."
+      }
+    ]
+  },
+  "issues": [
+    {
+      "severity": "consider",
+      "category": "seam_test_recommendation",
+      "description": "No seam tests detected for cross-boundary feature. Consider adding seam/contract/boundary tests to validate technology boundary interactions. This is a recommendation, not a blocking gate."
+    }
+  ],
+  "rationale": "All quality gates passed. Independent verification confirmed. All acceptance criteria met.",
+  "context_used": null,
+  "approved_without_independent_tests": false,
+  "is_configuration_error": false
+}

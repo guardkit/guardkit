@@ -1,22 +1,6 @@
 {
   "task_id": "TASK-INST-006",
-  "timestamp": "2026-03-02T22:39:45.468759",
-  "completed": true,
-  "phases": {
-    "phase_3": {
-      "detected": true,
-      "text": "Implementation",
-      "completed": true
-    }
-  },
-  "quality_gates": {
-    "tests_passing": true,
-    "tests_passed": 53,
-    "tests_failed": 0,
-    "coverage": 98.0,
-    "coverage_met": true,
-    "all_passed": true
-  },
+  "turn": 2,
   "files_modified": [
     ".claude/task-plans/TASK-INST-004-implementation-plan.md",
     ".claude/task-plans/TASK-INST-005a-implementation-plan.md",
@@ -64,18 +48,25 @@
   "tests_written": [
     "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/orchestrator/instrumentation/test_graphiti_events.py"
   ],
-  "summary": "53 tests passed, 98.0% coverage, all quality gates passed",
-  "sdk_turns": {
-    "turns_used": 33,
-    "max_turns": 100,
-    "ceiling_hit": false
-  },
-  "code_review": {
-    "score": 85,
-    "solid": 90,
-    "dry": 85,
-    "yagni": 80
-  },
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation",
+  "concerns": [],
+  "requirements_addressed": [
+    "graphiti.query event emitted for every context retrieval",
+    "query_type correctly identifies the retrieval type",
+    "tokens_injected estimated for retrieved context",
+    "Graphiti unavailability emits error event and falls back gracefully",
+    "Warning logged on Graphiti fallback",
+    "Run continues with digest-only context when Graphiti unavailable",
+    "Unit tests cover successful queries, error paths, and fallback"
+  ],
+  "requirements_remaining": [],
+  "sdk_turns_used": 33,
+  "sdk_max_turns": 100,
+  "sdk_ceiling_hit": false,
+  "tests_passed_count": 53,
   "completion_promises": [
     {
       "criterion_id": "AC-001",
