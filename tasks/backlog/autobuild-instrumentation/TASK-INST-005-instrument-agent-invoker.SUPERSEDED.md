@@ -34,11 +34,21 @@ consumer_context:
 
 Add structured event emission to AgentInvoker for every LLM call and tool execution. This is the highest-value instrumentation point as it captures token usage, latency, and prompt profiles.
 
+### Architecture Note
+
+The Player agent uses an **inline prompt builder pattern** (TASK-ACO-002), NOT subprocess delegation to `/task-work`. The method `_build_autobuild_implementation_prompt()` loads `autobuild_execution_protocol.md` and injects task context directly into the SDK prompt. The Coach uses `_build_coach_prompt()`. Both invoke the Claude Agent SDK via `claude_agent_sdk.query()`.
+
+Key instrumentation points:
+- `_invoke_task_work_implement()` — Player SDK invocation (wraps `query()`)
+- `_invoke_with_role()` — Generic SDK invocation (used by Coach, legacy Player)
+- `_build_autobuild_implementation_prompt()` — Player prompt assembly (where `prompt_profile` is determined)
+- `_build_coach_prompt()` — Coach prompt assembly
+
 ## Requirements
 
 ### LLM Call Events
 
-1. Emit `llm.call` event for every SDK invocation in `_invoke_with_role()`:
+1. Emit `llm.call` event around SDK `query()` calls in `_invoke_task_work_implement()` and `_invoke_with_role()`:
    - `provider`: Detect from base URL (anthropic/openai/local-vllm)
    - `model`: From SDK response or configuration
    - `input_tokens`, `output_tokens`: From SDK usage response

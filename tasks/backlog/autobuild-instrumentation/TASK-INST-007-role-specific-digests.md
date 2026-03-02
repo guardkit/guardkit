@@ -23,6 +23,10 @@ Create the role-specific digest system that replaces the full always-on rules bu
 
 ## Requirements
 
+### Stack-Agnostic Requirement
+
+Digest content MUST be technology-agnostic. AutoBuild runs against any project stack (Python, TypeScript, .NET, Go, Rust, etc.). Digests must NOT reference specific tools (e.g., "run pytest"), test frameworks, or language idioms. Use generic terms like "run tests", "verify compilation", "check coverage". Stack-specific details are handled by task-work's stack specialist, not the digest.
+
 ### Digest Files
 
 Create four role-specific digest files under `.guardkit/digests/`:
@@ -63,6 +67,15 @@ Create four role-specific digest files under `.guardkit/digests/`:
 - Select digest based on `agent_role` parameter
 - Return digest content as string for injection into system prompt
 
+### Integration with Prompt Builder Pattern
+
+The Player's prompt is assembled in `_build_autobuild_implementation_prompt()` which loads `autobuild_execution_protocol.md` via `load_protocol()`. The DigestLoader should integrate at this assembly point:
+- Player: Digest injected as a preamble section in `_build_autobuild_implementation_prompt()`
+- Coach: Digest injected as a preamble section in `_build_coach_prompt()`
+- Resolver/Router: Digest injected in their respective prompt builders (when implemented)
+
+The `prompt_profile` is determined at assembly time based on which context sources are included (digest only, digest + Graphiti context section, digest + rules bundle, etc.).
+
 ### Prompt Profile Switching
 
 Support four profiles:
@@ -89,6 +102,7 @@ Support four profiles:
 - [ ] Phase 1: full rules bundle injected alongside digest
 - [ ] No two digests are identical
 - [ ] Token counting implemented (tiktoken or word-based fallback)
+- [ ] Digest content is stack-agnostic (no Python/Node/.NET-specific references)
 - [ ] Unit tests cover validation boundaries (700/701), loading, profiles
 
 ## File Location

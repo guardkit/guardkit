@@ -18,7 +18,9 @@ AutoBuild performance on local inference (GB10 / vLLM / Qwen3-Coder-Next) is hea
 
 Protocol-based EventEmitter injected into existing AutoBuild components. CompositeBackend fans out to JSONL (always-on) and optional NATS. Non-blocking async emission.
 
-## Tasks (9 total, 4 waves)
+## Tasks (14 total, 6 waves)
+
+### Demand Side: Instrumentation and Context Consumption
 
 | Wave | Task | Description | Complexity |
 |------|------|-------------|-----------|
@@ -27,10 +29,20 @@ Protocol-based EventEmitter injected into existing AutoBuild components. Composi
 | 2 | TASK-INST-003 | Secret redaction pipeline | 4 |
 | 2 | TASK-INST-007 | Role-specific digest system | 5 |
 | 3 | TASK-INST-004 | Instrument orchestrator (lifecycle events) | 5 |
-| 3 | TASK-INST-005 | Instrument agent invoker (LLM + tool events) | 6 |
+| 3 | TASK-INST-005a | LLM instrumentation helper module (pure functions) | 3 |
 | 3 | TASK-INST-006 | Instrument Graphiti loader | 3 |
 | 3 | TASK-INST-008 | Adaptive concurrency controller | 5 |
-| 4 | TASK-INST-009 | Integration tests | 4 |
+| 4 | TASK-INST-005b | Emit LLM call events from _invoke_with_role | 4 |
+| 4 | TASK-INST-005c | Emit tool execution events with secret redaction | 3 |
+| 5 | TASK-INST-009 | Integration tests | 4 |
+
+### Supply Side: Graphiti Content Pipeline
+
+| Wave | Task | Description | Complexity |
+|------|------|-------------|-----------|
+| 1 | TASK-INST-010 | Reconcile guardkit init and agentic_init paths | 4 |
+| 2 | TASK-INST-011 | Wire sync_template_to_graphiti into init | 3 |
+| 2 | TASK-INST-012 | Enrich system seeding with actual template content | 5 |
 
 **Aggregate Complexity**: 8/10
 **Testing**: Full TDD

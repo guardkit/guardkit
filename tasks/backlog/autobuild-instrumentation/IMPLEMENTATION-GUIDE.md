@@ -160,55 +160,76 @@ graph TD
     T1 --> T3["TASK-INST-003\nSecret Redaction\n(complexity: 4)"]
     T1 --> T7["TASK-INST-007\nRole-Specific Digests\n(complexity: 5)"]
     T2 --> T4["TASK-INST-004\nInstrument Orchestrator\n(complexity: 5)"]
-    T2 --> T5["TASK-INST-005\nInstrument Agent Invoker\n(complexity: 6)"]
+    T2 --> T5a["TASK-INST-005a\nLLM Instrumentation Helpers\n(complexity: 3)"]
+    T5a --> T5b["TASK-INST-005b\nLLM Call Events\n(complexity: 4)"]
+    T5b --> T5c["TASK-INST-005c\nTool Exec Events\n(complexity: 3)"]
+    T3 --> T5c
     T2 --> T6["TASK-INST-006\nInstrument Graphiti Loader\n(complexity: 3)"]
     T2 --> T8["TASK-INST-008\nAdaptive Concurrency\n(complexity: 5)"]
-    T3 --> T5
     T4 --> T9["TASK-INST-009\nIntegration Tests\n(complexity: 4)"]
-    T5 --> T9
+    T5c --> T9
     T6 --> T9
     T7 --> T9
     T8 --> T9
+
+    T10["TASK-INST-010\nReconcile Init Paths\n(complexity: 4)"] --> T11["TASK-INST-011\nWire Graphiti Sync\n(complexity: 3)"]
+    T10 --> T12["TASK-INST-012\nEnrich System Seeding\n(complexity: 5)"]
+    T11 --> T9
+    T12 --> T9
 
     style T2 fill:#cfc,stroke:#090
     style T3 fill:#cfc,stroke:#090
     style T7 fill:#cfc,stroke:#090
     style T4 fill:#cfc,stroke:#090
-    style T5 fill:#cfc,stroke:#090
+    style T5a fill:#cfc,stroke:#090
     style T6 fill:#cfc,stroke:#090
     style T8 fill:#cfc,stroke:#090
+    style T5b fill:#ffc,stroke:#990
+    style T5c fill:#ffc,stroke:#990
+    style T10 fill:#fcf,stroke:#909
+    style T11 fill:#fcf,stroke:#909
+    style T12 fill:#fcf,stroke:#909
 ```
 
-_Tasks with green background can run in parallel within their wave._
+_Green = parallel within wave. Yellow = agent_invoker subtasks (sequential). Pink = supply-side (Graphiti content pipeline)._
 
 ---
 
 ## Execution Strategy
 
-### Wave 1: Foundation (1 task)
-| Task | Name | Complexity | Mode |
-|------|------|-----------|------|
-| TASK-INST-001 | Event Schema Models | 4 | task-work (TDD) |
+### Wave 1: Foundation (2 tasks in parallel)
+| Task | Name | Complexity | Mode | Track |
+|------|------|-----------|------|-------|
+| TASK-INST-001 | Event Schema Models | 4 | task-work (TDD) | Demand |
+| TASK-INST-010 | Reconcile Init Paths | 4 | task-work | Supply |
 
-### Wave 2: Core Infrastructure (3 tasks, parallel)
-| Task | Name | Complexity | Mode |
-|------|------|-----------|------|
-| TASK-INST-002 | Event Emitter Backends | 5 | task-work (TDD) |
-| TASK-INST-003 | Secret Redaction Pipeline | 4 | task-work (TDD) |
-| TASK-INST-007 | Role-Specific Digests | 5 | task-work (TDD) |
+### Wave 2: Core Infrastructure (5 tasks, parallel)
+| Task | Name | Complexity | Mode | Track |
+|------|------|-----------|------|-------|
+| TASK-INST-002 | Event Emitter Backends | 5 | task-work (TDD) | Demand |
+| TASK-INST-003 | Secret Redaction Pipeline | 4 | task-work (TDD) | Demand |
+| TASK-INST-007 | Role-Specific Digests | 5 | task-work (TDD) | Demand |
+| TASK-INST-011 | Wire Template Graphiti Sync | 3 | task-work (TDD) | Supply |
+| TASK-INST-012 | Enrich System Seeding | 5 | task-work (TDD) | Supply |
 
-### Wave 3: Instrumentation (4 tasks, parallel)
-| Task | Name | Complexity | Mode |
-|------|------|-----------|------|
-| TASK-INST-004 | Instrument Orchestrator | 5 | task-work (TDD) |
-| TASK-INST-005 | Instrument Agent Invoker | 6 | task-work (TDD) |
-| TASK-INST-006 | Instrument Graphiti Loader | 3 | task-work (TDD) |
-| TASK-INST-008 | Adaptive Concurrency | 5 | task-work (TDD) |
+### Wave 3: Instrumentation + Helpers (4 tasks, parallel)
+| Task | Name | Complexity | Mode | Track |
+|------|------|-----------|------|-------|
+| TASK-INST-004 | Instrument Orchestrator | 5 | task-work (TDD) | Demand |
+| TASK-INST-005a | LLM Instrumentation Helpers | 3 | task-work (TDD) | Demand |
+| TASK-INST-006 | Instrument Graphiti Loader | 3 | task-work (TDD) | Demand |
+| TASK-INST-008 | Adaptive Concurrency | 5 | task-work (TDD) | Demand |
 
-### Wave 4: Verification (1 task)
-| Task | Name | Complexity | Mode |
-|------|------|-----------|------|
-| TASK-INST-009 | Integration Tests | 4 | task-work (TDD) |
+### Wave 4: Agent Invoker Integration (2 tasks, sequential)
+| Task | Name | Complexity | Mode | Track |
+|------|------|-----------|------|-------|
+| TASK-INST-005b | LLM Call Events | 4 | task-work (TDD) | Demand |
+| TASK-INST-005c | Tool Exec Events | 3 | task-work (TDD) | Demand |
+
+### Wave 5: Verification (1 task)
+| Task | Name | Complexity | Mode | Track |
+|------|------|-----------|------|-------|
+| TASK-INST-009 | Integration Tests | 4 | task-work (TDD) | Both |
 
 ---
 
@@ -246,6 +267,30 @@ The EventEmitter is injected via constructor into existing components rather tha
 - Phase 1: digest + full rules bundle (baseline measurement)
 - Phase 2+: digest + Graphiti (reduced prefill)
 
+## Supply-Side: Graphiti Content Pipeline
+
+The demand-side tasks (TASK-INST-001 through TASK-INST-009) define how AutoBuild consumes context. The supply-side tasks ensure Graphiti actually contains the rich template content needed for the `digest+graphiti` profile to work.
+
+### TASK-INST-010: Reconcile Init Paths
+
+**Problem**: `guardkit init` creates empty dirs; `agentic_init` copies files but doesn't seed Graphiti.
+**Solution**: Enhance `apply_template()` to copy template agents, rules, CLAUDE.md, and manifest.json.
+**Files**: `guardkit/cli/init.py`
+
+### TASK-INST-011: Wire Template Graphiti Sync
+
+**Problem**: `sync_template_to_graphiti()` exists in `template_sync.py` but is never called (dead code).
+**Solution**: Call it from `_cmd_init()` after template files are copied. Enhance to sync full content.
+**Files**: `guardkit/cli/init.py`, `guardkit/knowledge/template_sync.py`
+
+### TASK-INST-012: Enrich System Seeding
+
+**Problem**: `seed_templates.py`, `seed_agents.py`, `seed_rules.py` contain hardcoded metadata descriptions instead of actual template content.
+**Solution**: Read actual `.md` files from `installer/core/templates/` during system seeding.
+**Files**: `guardkit/knowledge/seed_templates.py`, `seed_agents.py`, `seed_rules.py`
+
+---
+
 ## Key Files
 
 | Component | Location |
@@ -259,3 +304,6 @@ The EventEmitter is injected via constructor into existing components rather tha
 | LLM helpers | `guardkit/orchestrator/instrumentation/llm_instrumentation.py` |
 | Digest files | `.guardkit/digests/{player,coach,resolver,router}.md` |
 | Event output | `.guardkit/autobuild/{task_id}/events.jsonl` |
+| Init command | `guardkit/cli/init.py` |
+| Template sync | `guardkit/knowledge/template_sync.py` |
+| System seeding | `guardkit/knowledge/seed_templates.py`, `seed_agents.py`, `seed_rules.py` |

@@ -5,7 +5,7 @@ description: Structured observability for AutoBuild pipeline with event schemas,
 created: '2026-03-02T10:11:46.545384'
 status: planned
 complexity: 6
-estimated_tasks: 9
+estimated_tasks: 14
 tasks:
 - id: TASK-INST-001
   name: Define event schema Pydantic models
@@ -57,18 +57,43 @@ tasks:
   description: ''
   implementation_mode: task-work
   estimated_minutes: 75
-- id: TASK-INST-005
-  name: Instrument Agent Invoker with LLM and tool events
-  file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-005-instrument-agent-invoker.md
-  complexity: 6
+- id: TASK-INST-005a
+  name: Create LLM instrumentation helper module
+  file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-005a-llm-instrumentation-helpers.md
+  complexity: 3
+  dependencies:
+  - TASK-INST-001
+  - TASK-INST-002
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 33
+- id: TASK-INST-005b
+  name: Emit LLM call events from _invoke_with_role
+  file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-005b-llm-call-events.md
+  complexity: 4
+  dependencies:
+  - TASK-INST-001
+  - TASK-INST-002
+  - TASK-INST-005a
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-INST-005c
+  name: Emit tool execution events with secret redaction
+  file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-005c-tool-exec-events.md
+  complexity: 3
   dependencies:
   - TASK-INST-001
   - TASK-INST-002
   - TASK-INST-003
+  - TASK-INST-005a
+  - TASK-INST-005b
   status: pending
   description: ''
   implementation_mode: task-work
-  estimated_minutes: 113
+  estimated_minutes: 33
 - id: TASK-INST-006
   name: Instrument Graphiti context loader
   file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-006-instrument-graphiti-loader.md
@@ -97,7 +122,7 @@ tasks:
   complexity: 4
   dependencies:
   - TASK-INST-004
-  - TASK-INST-005
+  - TASK-INST-005c
   - TASK-INST-006
   - TASK-INST-007
   - TASK-INST-008
@@ -105,16 +130,50 @@ tasks:
   description: ''
   implementation_mode: task-work
   estimated_minutes: 50
+- id: TASK-INST-010
+  name: Reconcile guardkit init and agentic_init template application paths
+  file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-010-reconcile-init-paths.md
+  complexity: 4
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-INST-011
+  name: Wire sync_template_to_graphiti into guardkit init pipeline
+  file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-011-wire-template-graphiti-sync.md
+  complexity: 3
+  dependencies:
+  - TASK-INST-010
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 33
+- id: TASK-INST-012
+  name: Enrich system seeding with actual template markdown content
+  file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-012-enrich-system-seeding.md
+  complexity: 5
+  dependencies:
+  - TASK-INST-010
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
 orchestration:
   parallel_groups:
   - - TASK-INST-001
+    - TASK-INST-010
   - - TASK-INST-002
     - TASK-INST-003
     - TASK-INST-007
+    - TASK-INST-011
+    - TASK-INST-012
   - - TASK-INST-004
-    - TASK-INST-005
+    - TASK-INST-005a
     - TASK-INST-006
     - TASK-INST-008
+  - - TASK-INST-005b
+    - TASK-INST-005c
   - - TASK-INST-009
-  estimated_duration_minutes: 596
-  recommended_parallel: 4
+  estimated_duration_minutes: 754
+  recommended_parallel: 5
