@@ -1,0 +1,68 @@
+{
+  "task_id": "TASK-FIX-8595",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/autobuild.py"
+  ],
+  "files_created": [
+    "tests/unit/test_state_recovery_scoping.py"
+  ],
+  "tests_written": [
+    "tests/unit/test_state_recovery_scoping.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "4 passed in 1.68s (new tests), 502 passed in 15.12s (all relevant unit tests)",
+  "implementation_notes": "Modified _attempt_state_recovery to accept an optional player_report dict parameter. Added logic before the existing test_scope fallback block: when player_report has a non-empty tests_written list, those paths are used directly as test_paths passed to capture_state. The existing test_scope extraction from task frontmatter is now wrapped in 'if test_paths is None:' so it only runs when the player report does not supply test paths. Updated the single call site at line ~1855 to pass player_result.report as player_report=player_result.report. Created focused unit test file tests/unit/test_state_recovery_scoping.py with 4 tests covering all specified scenarios.",
+  "concerns": [],
+  "requirements_addressed": [
+    "When player report has tests_written list, use those paths for CoachVerifier test run",
+    "Fall back to full worktree run when player report is unavailable or has no tests_written",
+    "All existing tests pass",
+    "Unit test: Verify test_paths are extracted from player report when available",
+    "Unit test: Verify fallback to None (full run) when player report lacks tests_written"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "When player report has tests_written list, use those paths for CoachVerifier test run",
+      "status": "complete",
+      "evidence": "Added 'if player_report and player_report.get(\"tests_written\"): test_paths = player_report[\"tests_written\"]' before the test_scope fallback block in _attempt_state_recovery. The call site now passes player_result.report as player_report parameter.",
+      "test_file": "tests/unit/test_state_recovery_scoping.py",
+      "implementation_files": ["guardkit/orchestrator/autobuild.py"]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Fall back to full worktree run when player report is unavailable or has no tests_written",
+      "status": "complete",
+      "evidence": "Wrapped the existing test_scope extraction in 'if test_paths is None:' so it only runs as a fallback. When test_scope is also absent, test_paths remains None which triggers a full worktree run in MultiLayeredStateTracker.",
+      "test_file": "tests/unit/test_state_recovery_scoping.py",
+      "implementation_files": ["guardkit/orchestrator/autobuild.py"]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "All existing tests pass",
+      "status": "complete",
+      "evidence": "Ran 502 tests across test_state_recovery_scoping.py, test_state_tracker.py, and test_agent_invoker.py - all pass. State recovery tests in test_autobuild_orchestrator.py also pass (2 selected, 2 passed).",
+      "test_file": null,
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Unit test: Verify test_paths are extracted from player report when available",
+      "status": "complete",
+      "evidence": "test_player_report_tests_written_used_as_test_paths verifies that capture_state is called with the exact paths from player_report[\"tests_written\"].",
+      "test_file": "tests/unit/test_state_recovery_scoping.py",
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Unit test: Verify fallback to None (full run) when player report lacks tests_written",
+      "status": "complete",
+      "evidence": "Three fallback tests: test_player_report_none_falls_back_to_task_frontmatter, test_player_report_without_tests_written_falls_back, and test_player_report_with_empty_tests_written_falls_back. All verify that test_paths falls back to the task frontmatter test_scope value.",
+      "test_file": "tests/unit/test_state_recovery_scoping.py",
+      "implementation_files": []
+    }
+  ]
+}

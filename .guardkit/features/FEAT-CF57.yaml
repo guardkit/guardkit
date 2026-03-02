@@ -1,0 +1,120 @@
+id: FEAT-CF57
+name: AutoBuild Instrumentation and Context Reduction
+description: Structured observability for AutoBuild pipeline with event schemas, role-specific
+  digests, prompt profile tagging, adaptive concurrency, and NATS/JSONL backends
+created: '2026-03-02T10:11:46.545384'
+status: planned
+complexity: 6
+estimated_tasks: 9
+tasks:
+- id: TASK-INST-001
+  name: Define event schema Pydantic models
+  file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-001-event-schema-models.md
+  complexity: 4
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-INST-002
+  name: Implement EventEmitter protocol and backends
+  file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-002-event-emitter-backends.md
+  complexity: 5
+  dependencies:
+  - TASK-INST-001
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-INST-003
+  name: Implement secret redaction pipeline
+  file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-003-secret-redaction-pipeline.md
+  complexity: 4
+  dependencies:
+  - TASK-INST-001
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-INST-007
+  name: Implement role-specific digest system
+  file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-007-role-specific-digests.md
+  complexity: 5
+  dependencies:
+  - TASK-INST-001
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-INST-004
+  name: Instrument AutoBuild orchestrator with lifecycle events
+  file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-004-instrument-orchestrator.md
+  complexity: 5
+  dependencies:
+  - TASK-INST-001
+  - TASK-INST-002
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-INST-005
+  name: Instrument Agent Invoker with LLM and tool events
+  file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-005-instrument-agent-invoker.md
+  complexity: 6
+  dependencies:
+  - TASK-INST-001
+  - TASK-INST-002
+  - TASK-INST-003
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 113
+- id: TASK-INST-006
+  name: Instrument Graphiti context loader
+  file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-006-instrument-graphiti-loader.md
+  complexity: 3
+  dependencies:
+  - TASK-INST-001
+  - TASK-INST-002
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+- id: TASK-INST-008
+  name: Implement adaptive concurrency controller
+  file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-008-adaptive-concurrency.md
+  complexity: 5
+  dependencies:
+  - TASK-INST-001
+  - TASK-INST-002
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-INST-009
+  name: Integration tests for instrumentation pipeline
+  file_path: tasks/backlog/autobuild-instrumentation/TASK-INST-009-integration-tests.md
+  complexity: 4
+  dependencies:
+  - TASK-INST-004
+  - TASK-INST-005
+  - TASK-INST-006
+  - TASK-INST-007
+  - TASK-INST-008
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+orchestration:
+  parallel_groups:
+  - - TASK-INST-001
+  - - TASK-INST-002
+    - TASK-INST-003
+    - TASK-INST-007
+  - - TASK-INST-004
+    - TASK-INST-005
+    - TASK-INST-006
+    - TASK-INST-008
+  - - TASK-INST-009
+  estimated_duration_minutes: 596
+  recommended_parallel: 4
