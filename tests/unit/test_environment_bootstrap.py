@@ -45,6 +45,7 @@ from guardkit.orchestrator.environment_bootstrap import (
     DetectedManifest,
     EnvironmentBootstrapper,
     ProjectEnvironmentDetector,
+    _DEFAULT_BOOTSTRAP_SKIP_DIRS,
 )
 
 
@@ -183,6 +184,120 @@ class TestProjectEnvironmentDetectorScanDirs:
         detector = ProjectEnvironmentDetector(root=tmp_path / "nonexistent")
         dirs = detector._scan_dirs()
         assert dirs == [tmp_path / "nonexistent"]
+
+    def test_scan_dirs_excludes_tests_fixtures_by_default(
+        self, tmp_path: Path
+    ) -> None:
+        """_scan_dirs skips 'fixtures' when it lives inside a 'tests' directory.
+
+        TASK-ABFIX-008: EOL test fixture projects (e.g. MAUI sample apps)
+        must not be bootstrapped every wave.  The default skip list contains
+        "tests/fixtures"; this test verifies it is honoured via the
+        absolute-path-suffix matching strategy when root == tests/.
+        """
+        # Create root = tmp_path/tests so that fixtures/ is depth-1 from root
+        tests_dir = tmp_path / "tests"
+        tests_dir.mkdir()
+        fixtures_dir = tests_dir / "fixtures"
+        fixtures_dir.mkdir()
+        (fixtures_dir / "SampleApp.csproj").write_text("<Project />")
+
+        # A normal sibling directory that should still be included
+        unit_dir = tests_dir / "unit"
+        unit_dir.mkdir()
+
+        detector = ProjectEnvironmentDetector(root=tests_dir)
+        dirs = detector._scan_dirs()
+
+        assert fixtures_dir not in dirs, "tests/fixtures should be excluded by default"
+        assert unit_dir in dirs, "tests/unit should still be scanned"
+
+    def test_scan_dirs_excludes_tests_fixtures_manifest_not_detected(
+        self, tmp_path: Path
+    ) -> None:
+        """Manifests inside tests/fixtures are not detected when root == tests/."""
+        tests_dir = tmp_path / "tests"
+        tests_dir.mkdir()
+        fixtures_dir = tests_dir / "fixtures"
+        fixtures_dir.mkdir()
+        (fixtures_dir / "SampleApp.csproj").write_text("<Project />")
+
+        detector = ProjectEnvironmentDetector(root=tests_dir)
+        manifests = detector.detect()
+
+        stacks = [m.stack for m in manifests]
+        assert "dotnet" not in stacks, "dotnet manifest inside fixtures/ must be suppressed"
+
+    def test_bootstrap_ignore_file_excludes_matching_dirs(
+        self, tmp_path: Path
+    ) -> None:
+        """Directories matching patterns in .guardkit/bootstrap-ignore are excluded.
+
+        TASK-ABFIX-008: Support a .guardkit/bootstrap-ignore file with
+        gitignore-syntax patterns so users can exclude project-specific
+        directories (e.g. vendor, build, third-party).
+        """
+        (tmp_path / ".guardkit").mkdir()
+        (tmp_path / ".guardkit" / "bootstrap-ignore").write_text(
+            "# bootstrap ignore\n"
+            "vendor\n"
+            "build\n"
+        )
+
+        vendor_dir = tmp_path / "vendor"
+        vendor_dir.mkdir()
+        (vendor_dir / "requirements.txt").write_text("flask\n")
+
+        build_dir = tmp_path / "build"
+        build_dir.mkdir()
+        (build_dir / "pyproject.toml").write_text("[project]\nname='build'\n")
+
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        (src_dir / "requirements.txt").write_text("django\n")
+
+        detector = ProjectEnvironmentDetector(root=tmp_path)
+        dirs = detector._scan_dirs()
+
+        assert vendor_dir not in dirs, "vendor/ should be excluded via bootstrap-ignore"
+        assert build_dir not in dirs, "build/ should be excluded via bootstrap-ignore"
+        assert src_dir in dirs, "src/ should still be scanned"
+
+    def test_bootstrap_ignore_skips_blank_lines_and_comments(
+        self, tmp_path: Path
+    ) -> None:
+        """bootstrap-ignore strips blank lines and # comments."""
+        (tmp_path / ".guardkit").mkdir()
+        (tmp_path / ".guardkit" / "bootstrap-ignore").write_text(
+            "# This is a comment\n"
+            "\n"
+            "vendor\n"
+            "# Another comment\n"
+        )
+
+        vendor_dir = tmp_path / "vendor"
+        vendor_dir.mkdir()
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+
+        detector = ProjectEnvironmentDetector(root=tmp_path)
+        dirs = detector._scan_dirs()
+
+        assert vendor_dir not in dirs
+        assert src_dir in dirs
+
+    def test_bootstrap_ignore_missing_file_uses_defaults(
+        self, tmp_path: Path
+    ) -> None:
+        """When .guardkit/bootstrap-ignore is absent, defaults still apply."""
+        # No .guardkit dir at all — should not raise
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+
+        detector = ProjectEnvironmentDetector(root=tmp_path)
+        dirs = detector._scan_dirs()
+
+        assert src_dir in dirs
 
 
 # ============================================================================

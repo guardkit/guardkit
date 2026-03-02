@@ -4965,12 +4965,20 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         if max_files is None:
             return
 
-        actual_count = len(files_created)
+        # Exclude .guardkit/ internal artifacts from file count (TASK-ABFIX-008).
+        # Files written to .guardkit/ are orchestration state (player reports,
+        # coach decisions, etc.), not user-visible output, so they must not
+        # trigger documentation-level warnings.
+        billable_files = [
+            f for f in files_created
+            if ".guardkit" not in Path(f).parts
+        ]
+        actual_count = len(billable_files)
 
         if actual_count > max_files:
             # Show first 5 files to avoid overly long log messages
-            files_preview = files_created[:5]
-            suffix = "..." if len(files_created) > 5 else ""
+            files_preview = billable_files[:5]
+            suffix = "..." if len(billable_files) > 5 else ""
             logger.warning(
                 f"[{task_id}] Documentation level constraint violated: "
                 f"created {actual_count} files, max allowed {max_files} "

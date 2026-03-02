@@ -33,6 +33,7 @@ Example:
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import logging
@@ -47,6 +48,17 @@ from typing import Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 PEP668_SENTINEL = "externally-managed-environment"
+
+# Directories to skip during bootstrap scanning by default.
+# These are commonly used for test fixtures or generated artifacts that
+# should not trigger dependency installation.  Paths use forward-slash
+# notation and are matched as path suffixes (e.g. "tests/fixtures" also
+# matches an absolute path ending in …/tests/fixtures).
+_DEFAULT_BOOTSTRAP_SKIP_DIRS: frozenset = frozenset(
+    {
+        "tests/fixtures",  # EOL test fixture projects (TASK-ABFIX-008)
+    }
+)
 
 
 # ============================================================================
@@ -342,6 +354,83 @@ class ProjectEnvironmentDetector:
             Absolute path to the worktree root directory.
         """
         self._root = root
+        self._ignore_patterns: List[str] = self._load_bootstrap_ignore()
+
+    def _load_bootstrap_ignore(self) -> List[str]:
+        """Load bootstrap ignore patterns from defaults and the ignore file.
+
+        Reads ``.guardkit/bootstrap-ignore`` at the worktree root (if it
+        exists) and merges the lines with ``_DEFAULT_BOOTSTRAP_SKIP_DIRS``.
+        Blank lines and ``#``-prefixed comment lines are ignored.
+
+        Returns
+        -------
+        List[str]
+            Combined list of gitignore-syntax patterns to skip during scanning.
+        """
+        patterns: List[str] = list(_DEFAULT_BOOTSTRAP_SKIP_DIRS)
+        ignore_file = self._root / ".guardkit" / "bootstrap-ignore"
+        if ignore_file.exists():
+            try:
+                for line in ignore_file.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        patterns.append(line)
+            except OSError as exc:
+                logger.warning(
+                    "Could not read .guardkit/bootstrap-ignore: %s", exc
+                )
+        return patterns
+
+    def _is_ignored(self, entry: Path) -> bool:
+        """Return True if *entry* matches any bootstrap ignore pattern.
+
+        Matching is attempted in three ways for each pattern:
+
+        1. **Name match** — ``fnmatch(entry.name, pattern)`` (simple globs
+           like ``*.tmp`` or bare names like ``vendor``).
+        2. **Relative-path match** — ``fnmatch(rel, pattern)`` where *rel* is
+           the path of *entry* relative to the scan root (handles patterns
+           like ``build/artifacts``).
+        3. **Absolute-path suffix match** — for multi-component patterns like
+           ``tests/fixtures``, checks whether the tail of *entry*'s absolute
+           path components equals the pattern components.  This ensures the
+           pattern works regardless of how deep the worktree root sits.
+
+        Parameters
+        ----------
+        entry : Path
+            Absolute path of the directory candidate.
+
+        Returns
+        -------
+        bool
+            ``True`` if the directory should be excluded from scanning.
+        """
+        for pattern in self._ignore_patterns:
+            # 1. Name match (e.g. "vendor", "*.tmp")
+            if fnmatch.fnmatch(entry.name, pattern):
+                return True
+
+            # 2. Relative-path match (e.g. "build/artifacts")
+            try:
+                rel = str(entry.relative_to(self._root))
+                if fnmatch.fnmatch(rel, pattern):
+                    return True
+            except ValueError:
+                pass
+
+            # 3. Absolute-path suffix match for compound patterns
+            pattern_parts = tuple(pattern.replace("\\", "/").split("/"))
+            if len(pattern_parts) > 1:
+                entry_parts = entry.parts
+                if (
+                    len(entry_parts) >= len(pattern_parts)
+                    and entry_parts[-len(pattern_parts) :] == pattern_parts
+                ):
+                    return True
+
+        return False
 
     def detect(self) -> List[DetectedManifest]:
         """
@@ -368,16 +457,22 @@ class ProjectEnvironmentDetector:
         """
         Return directories to scan: root plus immediate non-hidden subdirs.
 
+        Hidden directories (names starting with ``"."``) and directories
+        matching bootstrap ignore patterns (defaults from
+        ``_DEFAULT_BOOTSTRAP_SKIP_DIRS`` plus any entries in
+        ``.guardkit/bootstrap-ignore``) are excluded.
+
         Returns
         -------
         List[Path]
-            [root] + immediate subdirectories (hidden dirs excluded).
+            [root] + filtered immediate subdirectories.
         """
         dirs: List[Path] = [self._root]
         try:
             for entry in sorted(self._root.iterdir()):
                 if entry.is_dir() and not entry.name.startswith("."):
-                    dirs.append(entry)
+                    if not self._is_ignored(entry):
+                        dirs.append(entry)
         except OSError as exc:
             logger.warning("Could not list subdirectories of %s: %s", self._root, exc)
         return dirs
