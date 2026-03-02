@@ -47,6 +47,7 @@ import logging
 import re
 import sys
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -142,6 +143,21 @@ from guardkit.orchestrator.mcp_design_extractor import (
 
 # Setup logging
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Timeout Budget Constants (TASK-ABFIX-004)
+# ============================================================================
+
+# Minimum wall-clock budget (seconds) required before starting a new turn.
+# If the remaining task budget falls below this, _loop_phase exits gracefully
+# with "timeout_budget_exhausted" instead of waiting for asyncio.TimeoutError.
+MIN_TURN_BUDGET_SECONDS: int = 600
+
+# Budget (seconds) granted to Coach when Player succeeds near the timeout
+# boundary (i.e., when the cancellation event is set but Player returned
+# success=True).  Ensures Coach always gets a fair window to validate.
+COACH_GRACE_PERIOD_SECONDS: int = 120
 
 
 # ============================================================================
@@ -693,6 +709,7 @@ class AutoBuildOrchestrator:
         base_branch: str = "main",
         task_file_path: Optional[Path] = None,
         requires_infrastructure: Optional[List[str]] = None,
+        time_budget_seconds: Optional[float] = None,
     ) -> OrchestrationResult:
         """
         Execute complete adversarial orchestration workflow.
@@ -863,6 +880,7 @@ class AutoBuildOrchestrator:
                 task_type=task_type,
                 requires_infrastructure=requires_infrastructure,
                 consumer_context=consumer_context,
+                time_budget_seconds=time_budget_seconds,
             )
 
             # Phase 4: Finalize
@@ -1482,7 +1500,8 @@ class AutoBuildOrchestrator:
         task_type: Optional[str] = None,
         requires_infrastructure: Optional[List[str]] = None,
         consumer_context: Optional[list] = None,
-    ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "configuration_error", "design_extraction_failed"]]:
+        time_budget_seconds: Optional[float] = None,
+    ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "configuration_error", "design_extraction_failed", "timeout_budget_exhausted"]]:
         """
         Phase 3: Execute Player↔Coach adversarial loop.
 
@@ -1550,6 +1569,9 @@ class AutoBuildOrchestrator:
                 f"(rollback_on_pollution={self.rollback_on_pollution})"
             )
 
+        # Track loop start time for per-turn budget (TASK-ABFIX-004)
+        loop_start_time: Optional[float] = time.monotonic() if time_budget_seconds is not None else None
+
         with self._progress_display:
             for turn in range(start_turn, self.max_turns + 1):
                 # Cooperative cancellation check at TOP of loop (TASK-ASF-007)
@@ -1559,6 +1581,19 @@ class AutoBuildOrchestrator:
                         f"(before Player phase)"
                     )
                     return turn_history, "cancelled"
+
+                # Per-turn budget check (TASK-ABFIX-004)
+                if time_budget_seconds is not None and loop_start_time is not None:
+                    elapsed = time.monotonic() - loop_start_time
+                    remaining_budget: Optional[float] = time_budget_seconds - elapsed
+                    if remaining_budget < MIN_TURN_BUDGET_SECONDS:
+                        logger.info(
+                            f"Timeout budget exhausted for {task_id} at turn {turn}: "
+                            f"remaining={remaining_budget:.1f}s < min={MIN_TURN_BUDGET_SECONDS}s"
+                        )
+                        return turn_history, "timeout_budget_exhausted"
+                else:
+                    remaining_budget = None
 
                 logger.info(f"Executing turn {turn}/{self.max_turns}")
 
@@ -1581,19 +1616,11 @@ class AutoBuildOrchestrator:
                     acceptance_criteria=acceptance_criteria,
                     requires_infrastructure=requires_infrastructure,
                     consumer_context=consumer_context,
+                    remaining_budget=remaining_budget,
                 )
 
                 turn_history.append(turn_record)
                 self._turn_history = turn_history  # Keep internal copy for state
-
-                # Cooperative cancellation check after turn (TASK-ASF-007)
-                # If event was set during _execute_turn (between Player/Coach),
-                # the turn returns "error" — convert to "cancelled" exit
-                if self._cancellation_event and self._cancellation_event.is_set():
-                    logger.info(
-                        f"Cancellation detected after turn {turn} for {task_id}"
-                    )
-                    return turn_history, "cancelled"
 
                 # Capture turn state for cross-turn learning (TASK-GE-002)
                 self._capture_turn_state(turn_record, acceptance_criteria, task_id=task_id)
@@ -1608,8 +1635,8 @@ class AutoBuildOrchestrator:
                 if task_file_path:
                     self._save_state(task_file_path, worktree, "in_progress")
 
-                # Check decision BEFORE stall detection (TASK-FIX-CKPT)
-                # Coach approval takes precedence over stall detection
+                # Check approval BEFORE cancellation (TASK-ABFIX-004)
+                # Coach approval during grace period must propagate even if cancellation is set
                 if turn_record.decision == "approve":
                     logger.info(f"Coach approved on turn {turn}")
                     # Still create checkpoint for approved turn (record-keeping)
@@ -1627,13 +1654,21 @@ class AutoBuildOrchestrator:
                         )
                     return turn_history, "approved"
 
-                elif turn_record.decision == "error":
+                # Cooperative cancellation check after turn (TASK-ASF-007)
+                # Placed after approve check so Coach-approved grace period turns propagate
+                if self._cancellation_event and self._cancellation_event.is_set():
+                    logger.info(
+                        f"Cancellation detected after turn {turn} for {task_id}"
+                    )
+                    return turn_history, "cancelled"
+
+                if turn_record.decision == "error":
                     logger.error(f"Critical error on turn {turn}")
                     return turn_history, "error"
 
                 # Fast-exit on configuration errors (TASK-ABFIX-003)
                 # The Player cannot fix task frontmatter — retrying is futile.
-                elif turn_record.is_configuration_error:
+                if turn_record.is_configuration_error:
                     config_issue = next(
                         (i for i in (turn_record.coach_result.report.get("issues", []) if turn_record.coach_result else [])
                          if i.get("category") == "invalid_task_type"),
@@ -1742,6 +1777,7 @@ class AutoBuildOrchestrator:
         acceptance_criteria: Optional[List[str]] = None,
         requires_infrastructure: Optional[List[str]] = None,
         consumer_context: Optional[list] = None,
+        remaining_budget: Optional[float] = None,
     ) -> TurnRecord:
         """
         Execute single Player→Coach turn.
@@ -1930,27 +1966,42 @@ class AutoBuildOrchestrator:
             )
 
         # Cooperative cancellation check BETWEEN Player and Coach (TASK-ASF-007)
+        # If Player succeeded, grant Coach a grace period instead of aborting (TASK-ABFIX-004)
         if self._cancellation_event and self._cancellation_event.is_set():
-            logger.info(
-                f"Cancellation detected for {task_id} between Player and Coach "
-                f"at turn {turn}"
-            )
-            self._progress_display.complete_turn(
-                "warning",
-                "Cancelled between Player and Coach phases",
-            )
-            return TurnRecord(
-                turn=turn,
-                player_result=player_result,
-                coach_result=None,
-                decision="error",
-                feedback=None,
-                timestamp=timestamp,
-                player_context_status=player_context_status,
-                sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
-                sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
-                sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
-            )
+            if player_result.success:
+                # Player succeeded near the timeout boundary — grant Coach a grace period
+                # so the successful implementation can still be validated and approved
+                logger.info(
+                    f"Cancellation detected for {task_id} between Player and Coach "
+                    f"at turn {turn}, but Player succeeded — granting Coach grace period "
+                    f"({COACH_GRACE_PERIOD_SECONDS}s)"
+                )
+                coach_remaining_budget: Optional[float] = float(COACH_GRACE_PERIOD_SECONDS)
+            else:
+                # Player failed: no benefit in invoking Coach, honour cancellation
+                logger.info(
+                    f"Cancellation detected for {task_id} between Player and Coach "
+                    f"at turn {turn} (Player failed)"
+                )
+                self._progress_display.complete_turn(
+                    "warning",
+                    "Cancelled between Player and Coach phases",
+                )
+                return TurnRecord(
+                    turn=turn,
+                    player_result=player_result,
+                    coach_result=None,
+                    decision="error",
+                    feedback=None,
+                    timestamp=timestamp,
+                    player_context_status=player_context_status,
+                    sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
+                    sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
+                    sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
+                )
+        else:
+            # No cancellation: pass the caller-provided remaining budget to Coach
+            coach_remaining_budget = remaining_budget
 
         # ===== Coach Phase =====
 
@@ -1988,6 +2039,7 @@ class AutoBuildOrchestrator:
             skip_arch_review=skip_arch_review,
             requires_infrastructure=requires_infrastructure,
             consumer_context=consumer_context,
+            remaining_budget=coach_remaining_budget,
         )
         # Snapshot context status after coach invocation (TASK-FIX-GCW5)
         coach_context_status = self._last_coach_context_status
@@ -3510,6 +3562,7 @@ class AutoBuildOrchestrator:
         skip_arch_review: bool = False,
         requires_infrastructure: Optional[List[str]] = None,
         consumer_context: Optional[list] = None,
+        remaining_budget: Optional[float] = None,
     ) -> AgentInvocationResult:
         """
         Invoke Coach agent with comprehensive error handling.
@@ -3710,6 +3763,7 @@ class AutoBuildOrchestrator:
                         turn=turn,
                         requirements=requirements,
                         player_report=player_report,
+                        remaining_budget=remaining_budget,
                     )
                 )
                 return result
