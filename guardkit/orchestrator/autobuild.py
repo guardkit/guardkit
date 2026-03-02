@@ -871,6 +871,8 @@ class AutoBuildOrchestrator:
                     # Check if checkpoint was rejected
                     if not pre_loop_result.get("checkpoint_passed", True):
                         logger.warning(f"Pre-loop checkpoint rejected for {task_id}")
+                        # Emit task.failed for pre-loop rejection (TASK-INST-004)
+                        self._emit_task_failed(task_id, "pre_loop_blocked")
                         # Finalize with rejection
                         self._finalize_phase(
                             worktree=worktree,
@@ -903,6 +905,8 @@ class AutoBuildOrchestrator:
 
                 except (QualityGateBlocked, CheckpointRejectedError) as e:
                     logger.error(f"Pre-loop quality gate blocked: {e}")
+                    # Emit task.failed for quality gate block (TASK-INST-004)
+                    self._emit_task_failed(task_id, "pre_loop_blocked")
                     # Finalize with error
                     self._finalize_phase(
                         worktree=worktree,
@@ -2300,6 +2304,12 @@ class AutoBuildOrchestrator:
             details=details,
         )
 
+        # Flush emitter to ensure all events are persisted (TASK-INST-004)
+        try:
+            asyncio.run(self._emitter.flush())
+        except Exception as exc:
+            logger.warning("Failed to flush emitter during finalize: %s", exc)
+
         # Clean up per-thread Graphiti clients (TASK-FIX-GTP2)
         self._cleanup_thread_loaders()
 
@@ -3506,6 +3516,99 @@ class AutoBuildOrchestrator:
             except Exception as e:
                 logger.warning(f"Error closing per-thread Graphiti client for thread {thread_id}: {e}")
         self._thread_loaders.clear()
+
+    # ========================================================================
+    # Instrumentation Helpers (TASK-INST-004)
+    # ========================================================================
+
+    def _emit_task_started(self, task_id: str) -> None:
+        """Emit task.started lifecycle event.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier being started.
+        """
+        event = TaskStartedEvent(
+            run_id=f"run-{task_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            task_id=task_id,
+            agent_role="player",
+            attempt=1,
+            timestamp=datetime.now().isoformat(),
+        )
+        try:
+            asyncio.run(self._emitter.emit(event))
+        except Exception as exc:
+            logger.warning("Failed to emit task.started event: %s", exc)
+
+    def _emit_task_completed(
+        self,
+        task_id: str,
+        turn_history: List["TurnRecord"],
+    ) -> None:
+        """Emit task.completed lifecycle event on successful orchestration.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier that completed.
+        turn_history : List[TurnRecord]
+            Complete turn history for extracting metrics.
+        """
+        # Determine verification status from last turn decision
+        verification_status = "approved"
+        if turn_history:
+            last_turn = turn_history[-1]
+            verification_status = getattr(last_turn, "decision", "approved") or "approved"
+
+        # Build diff_stats summary from turn history
+        diff_stats = f"+{len(turn_history)} turns"
+
+        # Use default prompt profile
+        prompt_profile = "digest+rules_bundle"
+
+        event = TaskCompletedEvent(
+            run_id=f"run-{task_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            task_id=task_id,
+            agent_role="player",
+            attempt=1,
+            timestamp=datetime.now().isoformat(),
+            turn_count=len(turn_history),
+            diff_stats=diff_stats,
+            verification_status=verification_status,
+            prompt_profile=prompt_profile,
+        )
+        try:
+            asyncio.run(self._emitter.emit(event))
+        except Exception as exc:
+            logger.warning("Failed to emit task.completed event: %s", exc)
+
+    def _emit_task_failed(self, task_id: str, final_decision: str) -> None:
+        """Emit task.failed lifecycle event on orchestration failure.
+
+        Maps the final_decision to a FailureCategory using FAILURE_CATEGORY_MAP.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier that failed.
+        final_decision : str
+            The exit condition / final decision string.
+        """
+        failure_category = FAILURE_CATEGORY_MAP.get(final_decision, "other")
+
+        event = TaskFailedEvent(
+            run_id=f"run-{task_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            task_id=task_id,
+            agent_role="player",
+            attempt=1,
+            timestamp=datetime.now().isoformat(),
+            failure_category=failure_category,
+        )
+        try:
+            asyncio.run(self._emitter.emit(event))
+        except Exception as exc:
+            logger.warning("Failed to emit task.failed event: %s", exc)
 
     def _invoke_player_safely(
         self,
