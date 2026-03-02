@@ -99,6 +99,7 @@ class TestAutoBuildOrchestratorEmitterInjection:
             repo_root=repo_root,
             max_turns=3,
             emitter=capturing_emitter,
+            worktree_manager=MagicMock(),
         )
         assert orchestrator._emitter is capturing_emitter
 
@@ -109,6 +110,7 @@ class TestAutoBuildOrchestratorEmitterInjection:
         orchestrator = AutoBuildOrchestrator(
             repo_root=repo_root,
             max_turns=3,
+            worktree_manager=MagicMock(),
         )
         assert isinstance(orchestrator._emitter, NullEmitter)
 
