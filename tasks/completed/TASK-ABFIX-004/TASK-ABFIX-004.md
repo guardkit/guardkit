@@ -12,7 +12,9 @@ autobuild:
   enabled: true
   max_turns: 5
   mode: tdd
-status: backlog
+status: completed
+completed: 2026-03-02T00:00:00Z
+completed_location: tasks/completed/TASK-ABFIX-004/
 priority: critical
 tags: [autobuild, orchestrator, timeout, feature-orchestrator]
 ---

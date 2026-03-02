@@ -1281,6 +1281,7 @@ class AgentInvoker:
         turn: int,
         requirements: str,
         player_report: Dict[str, Any],
+        remaining_budget: Optional[float] = None,
     ) -> AgentInvocationResult:
         """Invoke Coach agent via Claude Agents SDK with honesty verification.
 
@@ -1296,6 +1297,10 @@ class AgentInvoker:
             turn: Current turn number
             requirements: Original task requirements
             player_report: Player's report from current turn
+            remaining_budget: Optional remaining wall-clock budget in seconds.
+                When provided, sdk_timeout_seconds is capped at this value for
+                this invocation then restored. Used to honour per-turn budgets
+                and Coach grace periods. (TASK-ABFIX-004)
 
         Returns:
             AgentInvocationResult with Coach's decision
@@ -1307,6 +1312,11 @@ class AgentInvoker:
             SDKTimeoutError: If invocation exceeds timeout
         """
         start_time = time.time()
+
+        # TASK-ABFIX-004: Cap SDK timeout at remaining budget (mirrors invoke_player pattern)
+        effective_timeout = self._calculate_sdk_timeout(task_id, remaining_budget=remaining_budget)
+        original_timeout = self.sdk_timeout_seconds
+        self.sdk_timeout_seconds = effective_timeout
 
         try:
             # Verify Player claims before invoking Coach
@@ -1382,6 +1392,9 @@ class AgentInvoker:
                 duration_seconds=duration,
                 error=f"Unexpected error: {str(e)}",
             )
+        finally:
+            # TASK-ABFIX-004: Restore original timeout after invocation
+            self.sdk_timeout_seconds = original_timeout
 
     def _build_player_prompt(
         self,
@@ -3036,7 +3049,11 @@ Follow the decision format specified in your agent definition.
         )
         return "direct"
 
-    def _calculate_sdk_timeout(self, task_id: str) -> int:
+    def _calculate_sdk_timeout(
+        self,
+        task_id: str,
+        remaining_budget: Optional[float] = None,
+    ) -> int:
         """Calculate dynamic SDK timeout based on task characteristics.
 
         Adjusts the base timeout using:
@@ -3048,6 +3065,10 @@ Follow the decision format specified in your agent definition.
 
         Args:
             task_id: Task identifier (e.g., "TASK-001")
+            remaining_budget: Optional remaining wall-clock budget in seconds.
+                When provided, the effective timeout is capped at this value so
+                the SDK call does not exceed the overall task budget. CLI overrides
+                take precedence and are never capped. (TASK-ABFIX-004)
 
         Returns:
             Effective timeout in seconds, capped at MAX_SDK_TIMEOUT (3600s)
@@ -3101,11 +3122,16 @@ Follow the decision format specified in your agent definition.
         max_timeout = int(MAX_SDK_TIMEOUT * self.timeout_multiplier)
         effective_timeout = min(effective_timeout, max_timeout)
 
+        # Cap at remaining task budget when provided (TASK-ABFIX-004)
+        if remaining_budget is not None:
+            effective_timeout = min(effective_timeout, int(remaining_budget))
+
         logger.info(
             f"[{task_id}] SDK timeout: {effective_timeout}s "
             f"(base={base_timeout}s, mode={mode} x{mode_multiplier}, "
             f"complexity={complexity} x{complexity_multiplier:.1f}"
-            f"{f', backend x{self.timeout_multiplier}' if self.timeout_multiplier != 1.0 else ''})"
+            f"{f', backend x{self.timeout_multiplier}' if self.timeout_multiplier != 1.0 else ''}"
+            f"{f', budget_cap={int(remaining_budget)}s' if remaining_budget is not None else ''})"
         )
 
         return effective_timeout

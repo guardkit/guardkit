@@ -27,6 +27,7 @@ import logging
 import resource
 import shutil
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -1229,6 +1230,9 @@ The detailed specifications are in the task markdown file.
         task_id_mapping = []  # Track which task_id corresponds to which async task
         cancellation_events: Dict[str, threading.Event] = {}  # Per-task cancellation (TASK-ASF-007)
 
+        # Track wave start time for per-task budget propagation (TASK-ABFIX-004)
+        wave_start_time = time.monotonic()
+
         for task_id in task_ids:
             task = FeatureLoader.find_task(feature, task_id)
             if not task:
@@ -1298,11 +1302,15 @@ The detailed specifications are in the task markdown file.
             cancellation_events[task_id] = cancel_event
 
             # Add to parallel execution queue, wrapped with per-task timeout
+            # Compute remaining budget at the moment this task is queued (TASK-ABFIX-004)
+            elapsed_at_queue = time.monotonic() - wave_start_time
+            task_budget = max(0.0, self.task_timeout - elapsed_at_queue)
             tasks_to_execute.append(
                 asyncio.wait_for(
                     asyncio.to_thread(
                         self._execute_task, task, feature, worktree,
                         cancellation_event=cancel_event,
+                        time_budget_seconds=task_budget,
                     ),
                     timeout=self.task_timeout,
                 )
@@ -1507,6 +1515,7 @@ The detailed specifications are in the task markdown file.
         feature: Feature,
         worktree: Worktree,
         cancellation_event: Optional[threading.Event] = None,
+        time_budget_seconds: Optional[float] = None,
     ) -> TaskExecutionResult:
         """
         Execute single task using AutoBuildOrchestrator with shared worktree.
@@ -1570,6 +1579,7 @@ The detailed specifications are in the task markdown file.
                 acceptance_criteria=task_data["acceptance_criteria"],
                 task_file_path=task_data.get("file_path"),
                 requires_infrastructure=task.requires_infrastructure,
+                time_budget_seconds=time_budget_seconds,
             )
 
             status_icon = "[green]✓[/green]" if result.success else "[red]✗[/red]"

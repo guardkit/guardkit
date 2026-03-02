@@ -4350,7 +4350,13 @@ class TestCooperativeCancellation:
         mock_coach_validator,
         mock_pre_loop_gates,
     ):
-        """Test cancellation between Player and Coach returns error TurnRecord."""
+        """Test that when Player succeeds and cancellation fires, Coach gets a grace period.
+
+        TASK-ABFIX-004: The grace period behaviour means Coach is still invoked when
+        Player succeeded, even if the cancellation event is set. The loop then exits
+        as 'cancelled' because cancellation is checked after the turn (and Coach
+        returned 'feedback', not 'approve').
+        """
         import threading
 
         cancel_event = threading.Event()
@@ -4380,7 +4386,11 @@ class TestCooperativeCancellation:
             cancel_event.set()
             return player_result
 
+        # Coach returns "feedback" so the loop does NOT approve and post-turn
+        # cancellation check fires, exiting as "cancelled".
+        coach_result = make_coach_result(task_id="TASK-CANCEL-002", decision="feedback")
         mock_agent_invoker.invoke_player = AsyncMock(side_effect=mock_invoke_player)
+        mock_agent_invoker.invoke_coach = AsyncMock(return_value=coach_result)
 
         with patch.object(orchestrator, "_capture_turn_state"):
             with patch.object(orchestrator, "_record_honesty"):
@@ -4392,12 +4402,12 @@ class TestCooperativeCancellation:
                         worktree=mock_worktree,
                     )
 
-        # The turn should have completed with error decision, then loop exits as cancelled
+        # Loop exits as cancelled (post-turn check, after Coach gave feedback)
         assert exit_reason == "cancelled"
         assert len(turn_history) == 1
-        # The TurnRecord from _execute_turn has decision="error" (between-phase cancel)
-        assert turn_history[0].decision == "error"
-        assert turn_history[0].coach_result is None  # Coach never ran
+        # TASK-ABFIX-004: Coach WAS invoked under grace period (Player succeeded)
+        assert turn_history[0].decision == "feedback"
+        assert turn_history[0].coach_result is not None  # Coach ran
 
     def test_normal_completion_with_unset_event(
         self,
