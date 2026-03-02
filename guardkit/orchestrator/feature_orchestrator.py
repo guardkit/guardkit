@@ -1301,8 +1301,9 @@ The detailed specifications are in the task markdown file.
             cancel_event = threading.Event()
             cancellation_events[task_id] = cancel_event
 
-            # Add to parallel execution queue, wrapped with per-task timeout
-            # Compute remaining budget at the moment this task is queued (TASK-ABFIX-004)
+            # Add to parallel execution queue, wrapped with per-task timeout.
+            # Compute remaining budget at the moment this task is queued (TASK-ABFIX-004).
+            # wave_size = total tasks in the wave, used by Coach for isolation (TASK-ABFIX-005).
             elapsed_at_queue = time.monotonic() - wave_start_time
             task_budget = max(0.0, self.task_timeout - elapsed_at_queue)
             tasks_to_execute.append(
@@ -1311,6 +1312,7 @@ The detailed specifications are in the task markdown file.
                         self._execute_task, task, feature, worktree,
                         cancellation_event=cancel_event,
                         time_budget_seconds=task_budget,
+                        wave_size=len(task_ids),
                     ),
                     timeout=self.task_timeout,
                 )
@@ -1516,6 +1518,7 @@ The detailed specifications are in the task markdown file.
         worktree: Worktree,
         cancellation_event: Optional[threading.Event] = None,
         time_budget_seconds: Optional[float] = None,
+        wave_size: int = 1,
     ) -> TaskExecutionResult:
         """
         Execute single task using AutoBuildOrchestrator with shared worktree.
@@ -1531,6 +1534,9 @@ The detailed specifications are in the task markdown file.
         cancellation_event : Optional[threading.Event], optional
             Cooperative cancellation signal (default: None).
             When set, AutoBuildOrchestrator exits cleanly at next checkpoint.
+        wave_size : int, optional
+            Number of tasks executing in parallel in the current wave (default: 1).
+            Passed to AutoBuildOrchestrator for Coach test isolation (TASK-ABFIX-005).
 
         Returns
         -------
@@ -1570,6 +1576,7 @@ The detailed specifications are in the task markdown file.
                 feature_id=feature.id,
                 cancellation_event=cancellation_event,  # Cooperative cancellation (TASK-ASF-007)
                 timeout_multiplier=self.timeout_multiplier,  # TASK-FIX-VL05
+                wave_size=wave_size,  # Parallel wave context for Coach isolation (TASK-ABFIX-005)
             )
 
             # Execute task orchestration

@@ -12,7 +12,9 @@ autobuild:
   enabled: true
   max_turns: 5
   mode: tdd
-status: backlog
+status: completed
+completed: 2026-03-02T00:00:00Z
+completed_location: tasks/completed/TASK-ABFIX-005/
 priority: high
 tags: [autobuild, orchestrator, coach, worktree, parallel]
 ---
@@ -59,9 +61,9 @@ From TASK-REV-A17A Finding 3, Recommendations 3a, 3b, 3c:
 
 ## Acceptance Criteria
 
-- [ ] Coach independent tests are isolated from parallel task mutations
-- [ ] `code` failures in parallel waves get conditional approval when all gates passed
-- [ ] `parallel_contention` classification exists and is used appropriately
-- [ ] Serial task execution is NOT affected
-- [ ] All existing tests pass
-- [ ] New tests cover parallel isolation and conditional approval
+- [x] Coach independent tests are isolated from parallel task mutations
+- [x] `code` failures in parallel waves get conditional approval when all gates passed
+- [x] `parallel_contention` classification exists and is used appropriately
+- [x] Serial task execution is NOT affected
+- [x] All existing tests pass
+- [x] New tests cover parallel isolation and conditional approval
