@@ -25,10 +25,13 @@ Example:
 Coverage Target: >=85%
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
+import shutil
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import click
 from rich.console import Console
@@ -40,6 +43,219 @@ from guardkit.knowledge.project_seeding import seed_project_knowledge
 
 console = Console()
 logger = logging.getLogger(__name__)
+
+# Directories that should NOT be copied from templates (code scaffold concerns)
+_SKIP_DIRS = {"templates", "config", "docker"}
+
+
+def _get_templates_base_dir() -> Path:
+    """Return the base directory containing installed templates.
+
+    Uses __file__-relative path to locate installer/core/templates/
+    from the guardkit package installation.
+
+    Returns:
+        Path to the templates base directory.
+    """
+    # guardkit/cli/init.py -> guardkit/ -> project root -> installer/core/templates/
+    package_root = Path(__file__).resolve().parent.parent.parent
+    return package_root / "installer" / "core" / "templates"
+
+
+def _get_user_templates_dir() -> Path:
+    """Return the user-level templates directory (~/.guardkit/templates/).
+
+    Returns:
+        Path to the user templates directory.
+    """
+    return Path.home() / ".guardkit" / "templates"
+
+
+def _resolve_template_source_dir(template_name: str) -> Optional[Path]:
+    """Resolve the source directory for a template.
+
+    Checks installed package templates first, then falls back to
+    user-installed templates at ~/.guardkit/templates/.
+
+    Args:
+        template_name: Name of the template to resolve.
+
+    Returns:
+        Path to the template source directory, or None if not found.
+    """
+    # Check package-installed templates
+    pkg_templates = _get_templates_base_dir()
+    pkg_candidate = pkg_templates / template_name
+    if pkg_candidate.is_dir():
+        return pkg_candidate
+
+    # Fallback: user-installed templates
+    user_templates = _get_user_templates_dir()
+    user_candidate = user_templates / template_name
+    if user_candidate.is_dir():
+        return user_candidate
+
+    return None
+
+
+def _copy_file_if_not_exists(
+    src: Path, dest: Path, label: str = ""
+) -> bool:
+    """Copy a file from src to dest if dest does not already exist.
+
+    Args:
+        src: Source file path.
+        dest: Destination file path.
+        label: Human-readable label for logging.
+
+    Returns:
+        True if file was copied, False if skipped (already exists).
+    """
+    if dest.exists():
+        logger.info(f"Skipping {label or dest.name}: already exists at {dest}")
+        return False
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dest)
+    logger.info(f"Copied {label or src.name} → {dest}")
+    return True
+
+
+def _copy_agents(template_dir: Path, target_dir: Path) -> List[str]:
+    """Copy agent .md files from template to target .claude/agents/.
+
+    Checks both {template}/agents/ and {template}/.claude/agents/ locations.
+    Skips .gitkeep and non-.md files.
+
+    Args:
+        template_dir: Template source directory.
+        target_dir: Project target directory.
+
+    Returns:
+        List of copied agent filenames.
+    """
+    copied: List[str] = []
+    agents_target = target_dir / ".claude" / "agents"
+
+    # Check both possible agent locations
+    agent_dirs: List[Path] = []
+    dotclaude_agents = template_dir / ".claude" / "agents"
+    top_agents = template_dir / "agents"
+
+    if dotclaude_agents.is_dir():
+        agent_dirs.append(dotclaude_agents)
+    if top_agents.is_dir():
+        agent_dirs.append(top_agents)
+
+    for agents_dir in agent_dirs:
+        for agent_file in sorted(agents_dir.iterdir()):
+            if not agent_file.is_file():
+                continue
+            if agent_file.suffix != ".md":
+                continue
+            if agent_file.name.startswith("."):
+                continue
+
+            if _copy_file_if_not_exists(
+                agent_file,
+                agents_target / agent_file.name,
+                label=f"agent {agent_file.name}",
+            ):
+                copied.append(agent_file.name)
+
+    return copied
+
+
+def _copy_rules(template_dir: Path, target_dir: Path) -> List[str]:
+    """Copy rules from template .claude/rules/ preserving directory structure.
+
+    Args:
+        template_dir: Template source directory.
+        target_dir: Project target directory.
+
+    Returns:
+        List of copied rule file relative paths.
+    """
+    copied: List[str] = []
+    rules_src = template_dir / ".claude" / "rules"
+    rules_target = target_dir / ".claude" / "rules"
+
+    if not rules_src.is_dir():
+        return copied
+
+    for rule_file in sorted(rules_src.rglob("*.md")):
+        rel_path = rule_file.relative_to(rules_src)
+        dest = rules_target / rel_path
+
+        if _copy_file_if_not_exists(
+            rule_file,
+            dest,
+            label=f"rule {rel_path}",
+        ):
+            copied.append(str(rel_path))
+
+    return copied
+
+
+def _copy_claude_md(template_dir: Path, target_dir: Path) -> List[str]:
+    """Copy CLAUDE.md files from template to target.
+
+    Handles both root CLAUDE.md and .claude/CLAUDE.md.
+    If both exist in the template, both are copied.
+    Skips if target already has the file.
+
+    Args:
+        template_dir: Template source directory.
+        target_dir: Project target directory.
+
+    Returns:
+        List of copied CLAUDE.md paths (relative to target).
+    """
+    copied: List[str] = []
+
+    # Check root CLAUDE.md
+    root_src = template_dir / "CLAUDE.md"
+    if root_src.is_file():
+        if _copy_file_if_not_exists(
+            root_src,
+            target_dir / "CLAUDE.md",
+            label="root CLAUDE.md",
+        ):
+            copied.append("CLAUDE.md")
+
+    # Check .claude/CLAUDE.md
+    dotclaude_src = template_dir / ".claude" / "CLAUDE.md"
+    if dotclaude_src.is_file():
+        if _copy_file_if_not_exists(
+            dotclaude_src,
+            target_dir / ".claude" / "CLAUDE.md",
+            label=".claude/CLAUDE.md",
+        ):
+            copied.append(".claude/CLAUDE.md")
+
+    return copied
+
+
+def _copy_manifest(template_dir: Path, target_dir: Path) -> bool:
+    """Copy manifest.json from template to target .claude/manifest.json.
+
+    Args:
+        template_dir: Template source directory.
+        target_dir: Project target directory.
+
+    Returns:
+        True if manifest was copied, False if skipped or not present.
+    """
+    manifest_src = template_dir / "manifest.json"
+    if not manifest_src.is_file():
+        logger.info("No manifest.json in template, skipping")
+        return False
+
+    return _copy_file_if_not_exists(
+        manifest_src,
+        target_dir / ".claude" / "manifest.json",
+        label="manifest.json",
+    )
 
 
 def write_graphiti_config(project_name: str, target_dir: Path) -> bool:
@@ -99,7 +315,14 @@ def write_graphiti_config(project_name: str, target_dir: Path) -> bool:
 def apply_template(template_name: str, target_dir: Optional[Path] = None) -> bool:
     """Apply a template to the target directory.
 
-    Creates the basic GuardKit directory structure and copies template files.
+    Creates the basic GuardKit directory structure and copies template-specific
+    content including agents, rules, CLAUDE.md, and manifest.json.
+
+    Handles structural variations across templates:
+    - Agents may be in agents/ or .claude/agents/
+    - CLAUDE.md may be at root, .claude/, or both
+    - manifest.json may or may not be present
+    - Code scaffold directories (templates/, config/, docker/) are NOT copied
 
     Args:
         template_name: Name of the template to apply.
@@ -110,7 +333,7 @@ def apply_template(template_name: str, target_dir: Optional[Path] = None) -> boo
     """
     target_dir = target_dir or Path.cwd()
 
-    # Create basic GuardKit structure
+    # Step 1: Create basic GuardKit directory structure (always)
     directories = [
         target_dir / ".claude",
         target_dir / ".claude" / "commands",
@@ -127,6 +350,33 @@ def apply_template(template_name: str, target_dir: Optional[Path] = None) -> boo
 
     for directory in directories:
         directory.mkdir(parents=True, exist_ok=True)
+
+    # Step 2: Resolve template source directory
+    template_dir = _resolve_template_source_dir(template_name)
+
+    if template_dir is None:
+        logger.warning(
+            f"Template '{template_name}' not found in installed or user templates. "
+            f"Created basic scaffold only."
+        )
+        return True
+
+    # Step 3: Copy template content
+    agents_copied = _copy_agents(template_dir, target_dir)
+    if agents_copied:
+        logger.info(f"Copied {len(agents_copied)} agent(s): {', '.join(agents_copied)}")
+
+    rules_copied = _copy_rules(template_dir, target_dir)
+    if rules_copied:
+        logger.info(f"Copied {len(rules_copied)} rule(s)")
+
+    claude_copied = _copy_claude_md(template_dir, target_dir)
+    if claude_copied:
+        logger.info(f"Copied CLAUDE.md: {', '.join(claude_copied)}")
+
+    manifest_copied = _copy_manifest(template_dir, target_dir)
+    if manifest_copied:
+        logger.info("Copied manifest.json")
 
     logger.info(f"Applied template '{template_name}' to {target_dir}")
     return True
