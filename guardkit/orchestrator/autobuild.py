@@ -345,6 +345,7 @@ class TurnRecord:
     sdk_turns_used: Optional[int] = None      # TASK-VPR-003: Actual SDK turns from ResultMessage
     sdk_max_turns: Optional[int] = None        # TASK-VPR-003: Effective SDK turn ceiling
     sdk_ceiling_hit: bool = False              # TASK-VPR-003: Whether ceiling was hit
+    is_configuration_error: bool = False       # TASK-ABFIX-003: True when Coach flagged a config error (e.g. invalid task_type)
 
 
 @dataclass
@@ -387,7 +388,7 @@ class OrchestrationResult:
     task_id: str
     success: bool
     total_turns: int
-    final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "pre_loop_blocked", "rate_limited", "design_extraction_failed"]
+    final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "configuration_error", "pre_loop_blocked", "rate_limited", "design_extraction_failed"]
     turn_history: List[TurnRecord]
     worktree: Worktree
     error: Optional[str] = None
@@ -1481,7 +1482,7 @@ class AutoBuildOrchestrator:
         task_type: Optional[str] = None,
         requires_infrastructure: Optional[List[str]] = None,
         consumer_context: Optional[list] = None,
-    ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "design_extraction_failed"]]:
+    ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "configuration_error", "design_extraction_failed"]]:
         """
         Phase 3: Execute Player↔Coach adversarial loop.
 
@@ -1630,7 +1631,29 @@ class AutoBuildOrchestrator:
                     logger.error(f"Critical error on turn {turn}")
                     return turn_history, "error"
 
+                # Fast-exit on configuration errors (TASK-ABFIX-003)
+                # The Player cannot fix task frontmatter — retrying is futile.
+                elif turn_record.is_configuration_error:
+                    config_issue = next(
+                        (i for i in (turn_record.coach_result.report.get("issues", []) if turn_record.coach_result else [])
+                         if i.get("category") == "invalid_task_type"),
+                        None,
+                    )
+                    error_detail = config_issue["description"] if config_issue else turn_record.feedback or "unknown configuration error"
+                    logger.error(
+                        f"Configuration error for {task_id}: {error_detail}. "
+                        f"This is a task file issue — the Player cannot fix it."
+                    )
+                    self._progress_display.console.print(
+                        f"\n[bold red]ERROR: Configuration error for {task_id}:[/bold red]\n"
+                        f"  {error_detail}\n"
+                        f"  [yellow]This is a task file configuration issue — the Player cannot fix it.[/yellow]\n"
+                        f"  [green]Fix the task_type in the task .md file and retry.[/green]\n"
+                    )
+                    return turn_history, "configuration_error"
+
                 # Create checkpoint after turn completes (if enabled)
+                # Skip checkpoint for configuration errors — tests were never run (TASK-ABFIX-003)
                 if self.enable_checkpoints and self._checkpoint_manager:
                     tests_passed = self._extract_tests_passed(turn_record)
                     test_count = self._extract_test_count(turn_record)
@@ -2020,6 +2043,7 @@ class AutoBuildOrchestrator:
 
         else:  # feedback
             feedback_text = self._extract_feedback(coach_result.report)
+            is_config_error = coach_result.report.get("is_configuration_error", False)
             summary = (
                 f"Feedback: {feedback_text[:80]}..."
                 if len(feedback_text) > 80
@@ -2045,12 +2069,13 @@ class AutoBuildOrchestrator:
                 sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
                 sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
                 sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
+                is_configuration_error=is_config_error,
             )
 
     def _finalize_phase(
         self,
         worktree: Worktree,
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "pre_loop_blocked", "design_extraction_failed"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "configuration_error", "pre_loop_blocked", "design_extraction_failed"],
         turn_history: List[TurnRecord],
     ) -> None:
         """
@@ -3860,7 +3885,7 @@ class AutoBuildOrchestrator:
     def _build_summary_details(
         self,
         turn_history: List[TurnRecord],
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "pre_loop_blocked", "design_extraction_failed"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "configuration_error", "pre_loop_blocked", "design_extraction_failed"],
     ) -> str:
         """
         Build detailed summary text for final report.
@@ -3932,6 +3957,18 @@ class AutoBuildOrchestrator:
                 f"Suggested action: {stall_hint}"
             )
 
+        elif final_decision == "configuration_error":
+            config_turn = next(
+                (t for t in reversed(turn_history) if t.is_configuration_error), None
+            )
+            detail = config_turn.feedback if config_turn and config_turn.feedback else "unknown configuration error"
+            return (
+                f"Configuration error detected — loop exited immediately.\n"
+                f"Detail: {detail}\n"
+                f"Action: Fix the task_type in the task .md file and retry.\n"
+                f"Worktree preserved for inspection."
+            )
+
         elif final_decision == "pre_loop_blocked":
             return (
                 f"Pre-loop quality gates blocked execution.\n"
@@ -3974,7 +4011,7 @@ class AutoBuildOrchestrator:
 
     def _build_error_message(
         self,
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "pre_loop_blocked", "design_extraction_failed"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "configuration_error", "pre_loop_blocked", "design_extraction_failed"],
         turn_history: List[TurnRecord],
     ) -> str:
         """
@@ -4000,6 +4037,17 @@ class AutoBuildOrchestrator:
                 f"Unrecoverable stall detected after {len(turn_history)} turn(s). "
                 f"AutoBuild cannot make forward progress."
             )
+
+        elif final_decision == "configuration_error":
+            config_turn = next(
+                (t for t in reversed(turn_history) if t.is_configuration_error), None
+            )
+            if config_turn and config_turn.feedback:
+                return (
+                    f"Configuration error: {config_turn.feedback}. "
+                    f"Fix the task_type in the task .md file and retry."
+                )
+            return "Configuration error in task file — fix task_type and retry"
 
         elif final_decision == "pre_loop_blocked":
             return "Pre-loop quality gates blocked execution"
