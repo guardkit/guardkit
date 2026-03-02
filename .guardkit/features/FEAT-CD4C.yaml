@@ -20,10 +20,10 @@ tasks:
   requires_infrastructure: []
 - id: TASK-ABFIX-002
   name: Validate task_type during feature loading (fail-fast)
-  file_path: tasks/backlog/autobuild-orchestrator-fixes/TASK-ABFIX-002-validate-task-type-at-feature-load.md
+  file_path: tasks/completed/TASK-ABFIX-002/TASK-ABFIX-002-validate-task-type-at-feature-load.md
   complexity: 4
   dependencies: []
-  status: backlog
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 45
   requires_infrastructure: []
