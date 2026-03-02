@@ -41,6 +41,12 @@ class TestTaskTypeAliasResolution:
         result = validator._resolve_task_type(task)
         assert result == TaskType.TESTING
 
+    def test_alias_enhancement_to_feature(self, validator):
+        """Test 'enhancement' alias maps to FEATURE (fixes TASK-INST-012 stall)."""
+        task = {"task_type": "enhancement"}
+        result = validator._resolve_task_type(task)
+        assert result == TaskType.FEATURE
+
     def test_alias_implementation_to_feature(self, validator):
         """Test 'implementation' alias maps to FEATURE (161 task files use this)."""
         task = {"task_type": "implementation"}
@@ -98,6 +104,7 @@ class TestTaskTypeAliasResolution:
         """Test all aliases in TASK_TYPE_ALIASES mapping work correctly."""
         expected_mappings = {
             "implementation": TaskType.FEATURE,
+            "enhancement": TaskType.FEATURE,
             "bug-fix": TaskType.FEATURE,
             "bug_fix": TaskType.FEATURE,
             "benchmark": TaskType.TESTING,

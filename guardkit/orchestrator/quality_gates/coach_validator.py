@@ -68,6 +68,7 @@ logger = logging.getLogger(__name__)
 # See: TASK-REV-FMT2 for analysis of legacy values in codebase
 TASK_TYPE_ALIASES: Dict[str, TaskType] = {
     "implementation": TaskType.FEATURE,
+    "enhancement": TaskType.FEATURE,
     "bug-fix": TaskType.FEATURE,
     "bug_fix": TaskType.FEATURE,
     "benchmark": TaskType.TESTING,
