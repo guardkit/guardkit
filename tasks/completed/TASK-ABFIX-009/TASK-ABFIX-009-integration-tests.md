@@ -13,11 +13,8 @@ autobuild:
   max_turns: 5
   mode: tdd
 status: completed
-completed: 2026-03-02T19:50:00Z
-previous_state: in_progress
 priority: high
 tags: [autobuild, orchestrator, testing, integration]
-completed_location: tasks/completed/TASK-ABFIX-009/
 ---
 
 # Task: Integration tests for timeout, config error, and parallel wave scenarios
@@ -52,29 +49,17 @@ Cross-cutting requirement from TASK-REV-A17A findings 1-3, 7. The review identif
    - Verify Coach is still invoked with grace period
    - Verify cancellation vs timeout distinction in final decision
 
-## Files Created
+## Files to Create
 
-- `tests/integration/test_timeout_budget.py` (6 tests)
-- `tests/integration/test_config_error_fast_exit.py` (5 tests)
-- `tests/integration/test_parallel_wave_isolation.py` (7 tests)
-- `tests/integration/test_cancellation_timing.py` (5 tests)
+- `tests/integration/test_timeout_budget.py`
+- `tests/integration/test_config_error_fast_exit.py`
+- `tests/integration/test_parallel_wave_isolation.py`
+- `tests/integration/test_cancellation_timing.py`
 
 ## Acceptance Criteria
 
-- [x] All 4 integration test files created with meaningful scenarios
-- [x] Tests exercise actual integration seams (not just unit mocks)
-- [x] Tests verify the specific failure modes from TASK-REV-A17A findings
-- [x] All tests pass (23/23)
-- [x] Coverage for the new code paths >=80%
-
-## Completion Notes
-
-### Production Code Fix
-A bug was discovered and fixed in `guardkit/orchestrator/autobuild.py` during integration testing: the post-turn cancellation check (line ~1654) fired BEFORE the approval check (line ~1701), preventing approved decisions during Coach grace period from propagating. Fixed by adding `if turn_record.decision != "approve":` guard around the post-turn cancellation check.
-
-### Test Fix Summary (across 3 sessions)
-- **CoachValidator graceful handling**: 6 tests needed `patch.object(CoachValidator, 'validate', side_effect=Exception(...))` to force SDK fallback path
-- **Stall detection vs budget exhaustion**: Adjusted budget/sleep timing to prevent 3-turn stall detection before budget could exhaust
-- **Post-turn cancellation ordering**: Production code fix to allow approval propagation during grace period
-- **Method name correction**: `_check_requirements` → `validate_requirements`
-- **Missing verify_quality_gates patch**: Mock data structure didn't match expected format; patched directly
+- [ ] All 4 integration test files created with meaningful scenarios
+- [ ] Tests exercise actual integration seams (not just unit mocks)
+- [ ] Tests verify the specific failure modes from TASK-REV-A17A findings
+- [ ] All tests pass
+- [ ] Coverage for the new code paths >=80%

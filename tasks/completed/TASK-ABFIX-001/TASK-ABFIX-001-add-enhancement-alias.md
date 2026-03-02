@@ -12,7 +12,7 @@ autobuild:
   enabled: true
   max_turns: 3
   mode: tdd
-status: backlog
+status: completed
 priority: critical
 tags: [autobuild, orchestrator, task-type, fix]
 ---

@@ -8,12 +8,16 @@ Coverage Target: >=90%
 Test Count: 42+ tests
 """
 
+import logging
+
 import pytest
 from guardkit.models.task_types import (
     TaskType,
     QualityGateProfile,
     DEFAULT_PROFILES,
+    TASK_TYPE_ALIASES,
     get_profile,
+    normalise_task_type,
 )
 
 
@@ -830,3 +834,58 @@ class TestIntegrationTaskType:
         assert profile.zero_test_blocking is False
         # Plan audit ensures integration is complete
         assert profile.plan_audit_required is True
+
+
+# ============================================================================
+# 12. normalise_task_type() Tests (TASK-FIX-7534)
+# ============================================================================
+
+class TestNormaliseTaskType:
+    """Test normalise_task_type() function."""
+
+    @pytest.mark.parametrize("canonical", [t.value for t in TaskType])
+    def test_canonical_values_pass_through(self, canonical):
+        """Test that canonical enum values are returned unchanged."""
+        assert normalise_task_type(canonical) == canonical
+
+    @pytest.mark.parametrize(
+        "alias,expected",
+        [
+            ("implementation", "feature"),
+            ("bug-fix", "feature"),
+            ("bug_fix", "feature"),
+            ("enhancement", "feature"),
+            ("benchmark", "testing"),
+            ("research", "documentation"),
+        ],
+    )
+    def test_known_aliases_resolve(self, alias, expected):
+        """Test that known aliases are resolved to canonical values."""
+        assert normalise_task_type(alias) == expected
+
+    def test_all_aliases_covered(self):
+        """Verify test covers every entry in TASK_TYPE_ALIASES."""
+        for alias, task_type in TASK_TYPE_ALIASES.items():
+            assert normalise_task_type(alias) == task_type.value
+
+    def test_unknown_value_defaults_to_feature(self):
+        """Test that unknown task_type defaults to 'feature'."""
+        assert normalise_task_type("banana") == "feature"
+
+    def test_unknown_value_logs_warning(self, caplog):
+        """Test that unknown task_type logs a warning."""
+        with caplog.at_level(logging.WARNING, logger="guardkit.models.task_types"):
+            normalise_task_type("banana")
+        assert "Unknown task_type 'banana'" in caplog.text
+
+    def test_alias_logs_info(self, caplog):
+        """Test that alias resolution logs an info message."""
+        with caplog.at_level(logging.INFO, logger="guardkit.models.task_types"):
+            normalise_task_type("enhancement")
+        assert "Normalised task_type 'enhancement' -> 'feature'" in caplog.text
+
+    def test_canonical_value_does_not_log(self, caplog):
+        """Test that canonical values do not produce log messages."""
+        with caplog.at_level(logging.DEBUG, logger="guardkit.models.task_types"):
+            normalise_task_type("feature")
+        assert caplog.text == ""

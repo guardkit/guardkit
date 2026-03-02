@@ -30,6 +30,8 @@ Why: Production-ready APIs need auth - adds /auth/login, /auth/refresh, JWT midd
 5. Rate Limiting & Request Throttling
 
 /feature-plan "Add rate limiting middleware with configurable limits per endpoint, Redis-backed distributed rate limiting, and rate limit headers in responses"
+
+
 Why: API protection - adds X-RateLimit headers, per-client throttling, and optional Redis backend for distributed deployments.
 
 My Recommendations (Pick 2-3)

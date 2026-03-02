@@ -8,6 +8,7 @@ from guardkit.models.task_types import (
     QualityGateProfile,
     DEFAULT_PROFILES,
     get_profile,
+    normalise_task_type,
 )
 
 __all__ = [
@@ -15,4 +16,5 @@ __all__ = [
     "QualityGateProfile",
     "DEFAULT_PROFILES",
     "get_profile",
+    "normalise_task_type",
 ]

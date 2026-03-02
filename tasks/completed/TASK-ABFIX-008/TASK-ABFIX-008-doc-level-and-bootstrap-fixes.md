@@ -12,7 +12,7 @@ autobuild:
   enabled: true
   max_turns: 3
   mode: tdd
-status: backlog
+status: completed
 priority: low
 tags: [autobuild, orchestrator, documentation-level, bootstrap]
 ---

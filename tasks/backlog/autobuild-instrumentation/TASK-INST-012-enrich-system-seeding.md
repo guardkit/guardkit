@@ -1,7 +1,7 @@
 ---
 id: TASK-INST-012
 title: Enrich system seeding with actual template markdown content
-task_type: enhancement
+task_type: feature
 parent_review: TASK-REV-2FE2
 feature_id: FEAT-INST
 wave: 2
@@ -13,42 +13,7 @@ autobuild:
   enabled: true
   max_turns: 5
   mode: tdd
-status: blocked
-autobuild_state:
-  current_turn: 3
-  max_turns: 30
-  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57
-  base_branch: main
-  started_at: '2026-03-02T13:36:04.696578'
-  last_updated: '2026-03-02T13:50:14.471887'
-  turns:
-  - turn: 1
-    decision: feedback
-    feedback: '- Invalid task_type value: enhancement. Must be one of: scaffolding,
-      feature, infrastructure, integration, documentation, testing, refactor or valid
-      alias: implementation, bug-fix, bug_fix, benchmark, research'
-    timestamp: '2026-03-02T13:36:04.696578'
-    player_summary: Implementation via task-work delegation
-    player_success: true
-    coach_success: true
-  - turn: 2
-    decision: feedback
-    feedback: '- Invalid task_type value: enhancement. Must be one of: scaffolding,
-      feature, infrastructure, integration, documentation, testing, refactor or valid
-      alias: implementation, bug-fix, bug_fix, benchmark, research'
-    timestamp: '2026-03-02T13:44:45.052579'
-    player_summary: Implementation via task-work delegation
-    player_success: true
-    coach_success: true
-  - turn: 3
-    decision: feedback
-    feedback: '- Invalid task_type value: enhancement. Must be one of: scaffolding,
-      feature, infrastructure, integration, documentation, testing, refactor or valid
-      alias: implementation, bug-fix, bug_fix, benchmark, research'
-    timestamp: '2026-03-02T13:47:24.654530'
-    player_summary: Implementation via task-work delegation
-    player_success: true
-    coach_success: true
+status: backlog
 ---
 
 # Task: Enrich System Seeding with Actual Template Markdown Content

@@ -4,26 +4,26 @@ description: Fix critical failure modes identified in TASK-REV-A17A analysis —
   timeout inversion, task_type validation gap, parallel worktree contention, and
   cancellation timing issues across 8 orchestrator modules
 created: '2026-03-02T16:00:00.000000'
-status: planned
+status: completed
 complexity: 6
 estimated_tasks: 8
 parent_review: TASK-REV-A17A
 tasks:
 - id: TASK-ABFIX-001
   name: Add enhancement as task_type alias for feature
-  file_path: tasks/backlog/autobuild-orchestrator-fixes/TASK-ABFIX-001-add-enhancement-alias.md
+  file_path: tasks/completed/TASK-ABFIX-001/TASK-ABFIX-001-add-enhancement-alias.md
   complexity: 2
   dependencies: []
-  status: backlog
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 20
   requires_infrastructure: []
 - id: TASK-ABFIX-002
   name: Validate task_type during feature loading (fail-fast)
-  file_path: tasks/backlog/autobuild-orchestrator-fixes/TASK-ABFIX-002-validate-task-type-at-feature-load.md
+  file_path: tasks/completed/TASK-ABFIX-002/TASK-ABFIX-002-validate-task-type-at-feature-load.md
   complexity: 4
   dependencies: []
-  status: backlog
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 45
   requires_infrastructure: []
@@ -78,22 +78,22 @@ tasks:
   requires_infrastructure: []
 - id: TASK-ABFIX-008
   name: Fix documentation level false positives and bootstrap fixture exclusion
-  file_path: tasks/backlog/autobuild-orchestrator-fixes/TASK-ABFIX-008-doc-level-and-bootstrap-fixes.md
+  file_path: tasks/completed/TASK-ABFIX-008/TASK-ABFIX-008-doc-level-and-bootstrap-fixes.md
   complexity: 3
   dependencies: []
-  status: backlog
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 30
   requires_infrastructure: []
 - id: TASK-ABFIX-009
   name: Integration tests for timeout, config error, and parallel wave scenarios
-  file_path: tasks/backlog/autobuild-orchestrator-fixes/TASK-ABFIX-009-integration-tests.md
+  file_path: tasks/completed/TASK-ABFIX-009/TASK-ABFIX-009-integration-tests.md
   complexity: 6
   dependencies:
   - TASK-ABFIX-003
   - TASK-ABFIX-004
   - TASK-ABFIX-005
-  status: backlog
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 90
   requires_infrastructure: []

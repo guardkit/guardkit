@@ -10,6 +10,7 @@ Coverage Target: >=85%
 from dataclasses import dataclass
 from typing import Optional
 
+from guardkit.models.task_types import normalise_task_type
 from guardkit.planning.spec_parser import TaskDefinition
 from guardkit.planning.target_mode import TargetConfig, TargetMode
 
@@ -189,7 +190,7 @@ def _build_frontmatter(enriched_task: EnrichedTask, task_id: str) -> str:
         f"feature_id: {enriched_task.feature_id}",
         f"complexity: {task.complexity}",
         f"complexity_score: {task.complexity_score}",
-        f"type: {task.task_type}",
+        f"type: {normalise_task_type(task.task_type)}",
     ]
 
     # Add lists (handle empty lists)

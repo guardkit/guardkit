@@ -13,9 +13,12 @@ The quality gate profiles determine which validation checks are required
 for each task type during the task workflow execution.
 """
 
+import logging
 from enum import Enum
 from dataclasses import dataclass
 from typing import Dict, Optional, Set
+
+logger = logging.getLogger(__name__)
 
 
 class TaskType(Enum):
@@ -259,6 +262,32 @@ TASK_TYPE_ALIASES: Dict[str, TaskType] = {
 
 # Combined set of all valid task_type strings (enum values + aliases)
 VALID_TASK_TYPES: Set[str] = {t.value for t in TaskType} | set(TASK_TYPE_ALIASES.keys())
+
+
+def normalise_task_type(raw_type: str) -> str:
+    """Normalise a task_type string to its canonical enum value.
+
+    Resolves aliases (e.g. 'enhancement' -> 'feature') and falls back
+    to 'feature' with a warning for unknown values.
+
+    Args:
+        raw_type: Raw task type string, possibly an alias or unknown value.
+
+    Returns:
+        Canonical task type string from TaskType enum values.
+    """
+    # Already canonical?
+    try:
+        return TaskType(raw_type).value
+    except ValueError:
+        pass
+    # Known alias?
+    if raw_type in TASK_TYPE_ALIASES:
+        logger.info("Normalised task_type '%s' -> '%s'", raw_type, TASK_TYPE_ALIASES[raw_type].value)
+        return TASK_TYPE_ALIASES[raw_type].value
+    # Unknown - default to feature with warning
+    logger.warning("Unknown task_type '%s', defaulting to 'feature'", raw_type)
+    return TaskType.FEATURE.value
 
 
 def get_profile(

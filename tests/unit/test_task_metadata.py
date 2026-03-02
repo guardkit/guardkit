@@ -440,7 +440,7 @@ class TestRenderTaskMarkdown:
         assert frontmatter["feature_id"] == "FEAT-FP-002"
         assert frontmatter["complexity"] == "medium"
         assert frontmatter["complexity_score"] == 5
-        assert frontmatter["type"] == "implementation"
+        assert frontmatter["type"] == "feature"  # "implementation" normalised to "feature"
         assert frontmatter["domain_tags"] == ["api", "users", "database"]
         assert frontmatter["files_to_create"] == [
             "src/api/users.py",
@@ -865,3 +865,81 @@ class TestEdgeCases:
         assert "Criterion 49" in markdown
         assert "tag-0" in markdown
         assert "tag-19" in markdown
+
+
+# Test: task_type Normalisation in Frontmatter (TASK-FIX-7534)
+class TestTaskTypeNormalisationInFrontmatter:
+    """Test that task_type values are normalised in rendered frontmatter."""
+
+    def _make_task(self, task_type: str) -> TaskDefinition:
+        """Create a TaskDefinition with the given task_type."""
+        return TaskDefinition(
+            name="TASK-NORM-001: Normalisation test",
+            complexity="low",
+            complexity_score=2,
+            task_type=task_type,
+            domain_tags=["test"],
+            files_to_create=["src/main.py"],
+            files_to_modify=[],
+            files_not_to_touch=[],
+            dependencies=[],
+            inputs="Test input",
+            outputs="Test output",
+            relevant_decisions=[],
+            acceptance_criteria=["Test passes"],
+            implementation_notes="",
+            player_constraints=[],
+            coach_validation_commands=[],
+        )
+
+    def _get_frontmatter_type(self, markdown: str) -> str:
+        """Extract the 'type' field from rendered YAML frontmatter."""
+        parts = markdown.split("---\n", 2)
+        frontmatter = yaml.safe_load(parts[1])
+        return frontmatter["type"]
+
+    def test_canonical_value_preserved(self, target_config_interactive):
+        """Test that canonical task_type is preserved in frontmatter."""
+        task = self._make_task("feature")
+        enriched = enrich_task(task, target_config_interactive, "FEAT-TEST")
+        markdown = render_task_markdown(enriched)
+        assert self._get_frontmatter_type(markdown) == "feature"
+
+    def test_alias_normalised_in_frontmatter(self, target_config_interactive):
+        """Test that alias 'enhancement' is normalised to 'feature' in frontmatter."""
+        task = self._make_task("enhancement")
+        enriched = enrich_task(task, target_config_interactive, "FEAT-TEST")
+        markdown = render_task_markdown(enriched)
+        assert self._get_frontmatter_type(markdown) == "feature"
+
+    def test_implementation_alias_normalised(self, target_config_interactive):
+        """Test that 'implementation' is normalised to 'feature' in frontmatter."""
+        task = self._make_task("implementation")
+        enriched = enrich_task(task, target_config_interactive, "FEAT-TEST")
+        markdown = render_task_markdown(enriched)
+        assert self._get_frontmatter_type(markdown) == "feature"
+
+    def test_unknown_value_defaults_to_feature(self, target_config_interactive):
+        """Test that unknown task_type defaults to 'feature' in frontmatter."""
+        task = self._make_task("configuration")
+        enriched = enrich_task(task, target_config_interactive, "FEAT-TEST")
+        markdown = render_task_markdown(enriched)
+        assert self._get_frontmatter_type(markdown) == "feature"
+
+    @pytest.mark.parametrize(
+        "alias,expected",
+        [
+            ("bug-fix", "feature"),
+            ("bug_fix", "feature"),
+            ("benchmark", "testing"),
+            ("research", "documentation"),
+        ],
+    )
+    def test_all_aliases_normalised_in_frontmatter(
+        self, target_config_interactive, alias, expected
+    ):
+        """Test all known aliases are normalised correctly in frontmatter."""
+        task = self._make_task(alias)
+        enriched = enrich_task(task, target_config_interactive, "FEAT-TEST")
+        markdown = render_task_markdown(enriched)
+        assert self._get_frontmatter_type(markdown) == expected

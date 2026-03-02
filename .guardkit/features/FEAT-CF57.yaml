@@ -30,15 +30,25 @@ tasks:
   complexity: 5
   dependencies:
   - TASK-INST-001
-  status: failed
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 75
   requires_infrastructure: []
   result:
-    total_turns: 0
-    final_decision: timeout
-    error: Task TASK-INST-002 timed out after 2400s (40 min)
-  turns_completed: 0
+    total_turns: 2
+    final_decision: manually_approved
+    error: null
+    manual_approval_reason: "Task timed out at feature-level (2400s wall-clock from\
+      \ wave start, pre-ABFIX-004 fix) during turn 2 Player execution. The artifact\
+      \ at guardkit/orchestrator/instrumentation/emitter.py was verified complete\
+      \ via manual code review: EventEmitter protocol, JSONLFileBackend, NATSBackend\
+      \ (optional, requires external nc client \u2014 no NATS dependency in default\
+      \ path), CompositeBackend fan-out, and NullEmitter are all present and correct.\
+      \ Turn 1 Coach feedback was a pre-existing red-phase test failure from TASK-INST-012\
+      \ (test_missing_manifest_handled_gracefully) unrelated to the emitter implementation.\
+      \ Root cause of timeout was dual-layer timeout inversion fixed by FEAT-CD4C\
+      \ TASK-ABFIX-004.\n"
+  turns_completed: 2
   current_turn: 0
   started_at: '2026-03-02T13:36:04.639559'
   completed_at: '2026-03-02T14:16:04.736932'
@@ -243,14 +253,16 @@ tasks:
   estimated_minutes: 75
   requires_infrastructure: []
   result:
-    total_turns: 3
-    final_decision: unrecoverable_stall
-    error: Unrecoverable stall detected after 3 turn(s). AutoBuild cannot make forward
-      progress.
-  turns_completed: 3
+    total_turns: 1
+    final_decision: configuration_error
+    error: 'Configuration error: - Invalid task_type value: enhancement. Must be one
+      of: scaffolding, feature, infrastructure, integration, documentation, testing,
+      refactor or valid alias: implementation, bug-fix, bug_fix, benchmark, research.
+      Fix the task_type in the task .md file and retry.'
+  turns_completed: 1
   current_turn: 0
-  started_at: '2026-03-02T13:36:04.662830'
-  completed_at: '2026-03-02T14:16:04.759560'
+  started_at: '2026-03-02T20:12:08.601789'
+  completed_at: '2026-03-02T20:17:33.187683'
 orchestration:
   parallel_groups:
   - - TASK-INST-001
@@ -271,14 +283,15 @@ orchestration:
   recommended_parallel: 5
 execution:
   started_at: '2026-03-02T13:29:04.242311'
-  completed_at: '2026-03-02T14:20:05.225358'
+  completed_at: '2026-03-02T20:17:33.195458'
   worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57
   total_turns: 8
-  tasks_completed: 5
-  tasks_failed: 2
+  tasks_completed: 6
+  tasks_failed: 1
   current_wave: 2
   completed_waves:
   - 1
-  last_updated: '2026-03-02T14:16:04.759565'
+  - 2
+  last_updated: '2026-03-02T20:17:33.187700'
   archived_at: null
   archived_to: null
