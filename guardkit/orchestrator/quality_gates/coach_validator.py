@@ -50,7 +50,7 @@ from guardkit.orchestrator.docker_fixtures import (
     is_known_service,
 )
 from guardkit.orchestrator.paths import TaskArtifactPaths
-from guardkit.models.task_types import TaskType, QualityGateProfile, get_profile
+from guardkit.models.task_types import TaskType, QualityGateProfile, get_profile, TASK_TYPE_ALIASES
 
 # Optional coach context integration (TASK-SC-009)
 try:
@@ -63,16 +63,6 @@ except ImportError:
     get_graphiti = None
 
 logger = logging.getLogger(__name__)
-
-# Task type aliases for backward compatibility with legacy task_type values
-# See: TASK-REV-FMT2 for analysis of legacy values in codebase
-TASK_TYPE_ALIASES: Dict[str, TaskType] = {
-    "implementation": TaskType.FEATURE,
-    "bug-fix": TaskType.FEATURE,
-    "bug_fix": TaskType.FEATURE,
-    "benchmark": TaskType.TESTING,
-    "research": TaskType.DOCUMENTATION,
-}
 
 # Stopwords for keyword extraction in fuzzy text matching
 STOPWORDS = {
