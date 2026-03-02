@@ -1654,20 +1654,22 @@ class AutoBuildOrchestrator:
                 # Cooperative cancellation check after turn (TASK-ASF-007)
                 # If event was set during _execute_turn (between Player/Coach),
                 # the turn returns "error" — convert to "cancelled"/"timeout" exit
+                # Skip if Coach approved during grace period — approval takes priority (TASK-ABFIX-004)
                 # Check timeout_event first — feature-level timeout takes priority (TASK-ABFIX-006)
-                if self._timeout_event and self._timeout_event.is_set():
-                    logger.info(
-                        f"[{task_id}] TIMEOUT (feature-level): task_timeout={self._task_timeout}s expired "
-                        f"after turn {turn}. "
-                        f"SDK timeout budget was {self.sdk_timeout}s per invocation."
-                    )
-                    return turn_history, "timeout"
-                if self._cancellation_event and self._cancellation_event.is_set():
-                    logger.info(
-                        f"[{task_id}] CANCELLED: cancellation_event set by wave coordinator "
-                        f"(stop_on_failure) after turn {turn}."
-                    )
-                    return turn_history, "cancelled"
+                if turn_record.decision != "approve":
+                    if self._timeout_event and self._timeout_event.is_set():
+                        logger.info(
+                            f"[{task_id}] TIMEOUT (feature-level): task_timeout={self._task_timeout}s expired "
+                            f"after turn {turn}. "
+                            f"SDK timeout budget was {self.sdk_timeout}s per invocation."
+                        )
+                        return turn_history, "timeout"
+                    if self._cancellation_event and self._cancellation_event.is_set():
+                        logger.info(
+                            f"[{task_id}] CANCELLED: cancellation_event set by wave coordinator "
+                            f"(stop_on_failure) after turn {turn}."
+                        )
+                        return turn_history, "cancelled"
 
                 # Detect SDK-level timeout and log layer attribution (TASK-ABFIX-006)
                 if (
