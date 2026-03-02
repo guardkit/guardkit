@@ -15,7 +15,7 @@ for each task type during the task workflow execution.
 
 from enum import Enum
 from dataclasses import dataclass
-from typing import Dict, Optional, Set
+from typing import Dict, Optional
 
 
 class TaskType(Enum):
@@ -285,42 +285,3 @@ def get_profile(
         # Default to FEATURE profile for backward compatibility
         return DEFAULT_PROFILES[TaskType.FEATURE]
     return DEFAULT_PROFILES[task_type]
-
-
-# Aliases for backward compatibility with legacy task_type values in task files.
-# Keys are legacy string values; values are the canonical TaskType they map to.
-TASK_TYPE_ALIASES: Dict[str, TaskType] = {
-    "implementation": TaskType.FEATURE,
-    "enhancement": TaskType.FEATURE,
-    "bug-fix": TaskType.FEATURE,
-    "bug_fix": TaskType.FEATURE,
-    "benchmark": TaskType.TESTING,
-    "research": TaskType.DOCUMENTATION,
-}
-
-# All valid task_type strings: canonical enum values + aliases
-VALID_TASK_TYPES: Set[str] = {t.value for t in TaskType} | set(TASK_TYPE_ALIASES.keys())
-
-
-def is_valid_task_type(value: str) -> bool:
-    """Return True if *value* is a valid task_type (enum value or alias).
-
-    Parameters
-    ----------
-    value : str
-        The task_type string to check.
-
-    Returns
-    -------
-    bool
-        True if *value* is a canonical TaskType value or a recognised alias.
-
-    Example:
-        >>> is_valid_task_type("feature")
-        True
-        >>> is_valid_task_type("enhancement")
-        True
-        >>> is_valid_task_type("banana")
-        False
-    """
-    return value in VALID_TASK_TYPES

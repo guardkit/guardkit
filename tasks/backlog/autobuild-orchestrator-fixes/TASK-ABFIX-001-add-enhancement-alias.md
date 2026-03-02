@@ -12,8 +12,7 @@ autobuild:
   enabled: true
   max_turns: 3
   mode: tdd
-status: completed
-completed: 2026-03-02T00:00:00Z
+status: backlog
 priority: critical
 tags: [autobuild, orchestrator, task-type, fix]
 ---
@@ -44,7 +43,7 @@ From TASK-REV-A17A Finding 2, Recommendation 2a:
 
 ## Acceptance Criteria
 
-- [x] `enhancement` resolves to `TaskType.FEATURE` via alias
-- [x] Coach validator does not return `invalid_task_type` feedback for `enhancement`
-- [x] All existing tests pass
-- [x] New tests cover the alias resolution
+- [ ] `enhancement` resolves to `TaskType.FEATURE` via alias
+- [ ] Coach validator does not return `invalid_task_type` feedback for `enhancement`
+- [ ] All existing tests pass
+- [ ] New tests cover the alias resolution

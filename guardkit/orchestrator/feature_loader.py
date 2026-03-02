@@ -25,8 +25,6 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator, ValidationError
 import yaml
 
-from guardkit.models.task_types import VALID_TASK_TYPES, is_valid_task_type
-
 logger = logging.getLogger(__name__)
 
 
@@ -67,45 +65,6 @@ Orchestration Schema:
 # ============================================================================
 # Error Message Helpers
 # ============================================================================
-
-
-def _parse_frontmatter(file_path: Path) -> Optional[Dict[str, Any]]:
-    """
-    Parse YAML frontmatter from a Markdown task file.
-
-    Returns the parsed frontmatter dict, or None if the file has no
-    frontmatter block or if parsing fails.
-
-    Parameters
-    ----------
-    file_path : Path
-        Path to the Markdown file.
-
-    Returns
-    -------
-    Optional[Dict[str, Any]]
-        Parsed frontmatter dictionary, or None when absent or unparseable.
-    """
-    try:
-        content = file_path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-
-    # Frontmatter must start on the very first line
-    if not content.startswith("---"):
-        return None
-
-    # Find closing delimiter
-    end_idx = content.find("\n---", 3)
-    if end_idx == -1:
-        return None
-
-    yaml_block = content[3:end_idx].strip()
-    try:
-        data = yaml.safe_load(yaml_block)
-        return data if isinstance(data, dict) else None
-    except yaml.YAMLError:
-        return None
 
 
 def _find_similar_ids(target: str, candidates: set, max_distance: int = 2) -> List[str]:
@@ -725,17 +684,6 @@ class FeatureLoader:
                 )
             elif not task_file.exists():
                 errors.append(f"Task file not found: {task.id} at {task.file_path}")
-            else:
-                # File exists — validate task_type in frontmatter
-                frontmatter = _parse_frontmatter(task_file)
-                if frontmatter is not None:
-                    task_type_value = frontmatter.get("task_type")
-                    if task_type_value is not None and not is_valid_task_type(str(task_type_value)):
-                        valid_options = sorted(VALID_TASK_TYPES)
-                        errors.append(
-                            f"Task {task.id} has invalid task_type '{task_type_value}'. "
-                            f"Valid values: {', '.join(valid_options)}"
-                        )
 
         # Check orchestration has all tasks
         all_task_ids = {t.id for t in feature.tasks}
