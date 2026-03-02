@@ -1,0 +1,194 @@
+{
+  "task_id": "TASK-INST-012",
+  "turn": 1,
+  "files_modified": [
+    ".claude/task-plans/TASK-INST-002-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-003-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-007-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-011-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-012-implementation-plan.md",
+    ".guardkit/autobuild/TASK-INST-002/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-003/checkpoints.json",
+    ".guardkit/autobuild/TASK-INST-003/coach_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-003/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-003/task_work_results.json",
+    ".guardkit/autobuild/TASK-INST-003/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-007/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-010/checkpoints.json",
+    ".guardkit/autobuild/TASK-INST-011/coach_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-011/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-011/task_work_results.json",
+    ".guardkit/autobuild/TASK-INST-011/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-012/turn_context.json",
+    ".guardkit/bootstrap_state.json",
+    ".guardkit/digests/coach.md",
+    ".guardkit/digests/player.md",
+    ".guardkit/digests/resolver.md",
+    ".guardkit/digests/router.md",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/guardkit/knowledge/seed_helpers.py",
+    "guardkit/cli/init.py",
+    "guardkit/knowledge/seed_agents.py",
+    "guardkit/knowledge/seed_helpers.py",
+    "guardkit/knowledge/seed_rules.py",
+    "guardkit/knowledge/seed_templates.py",
+    "guardkit/knowledge/template_sync.py",
+    "guardkit/orchestrator/instrumentation/__init__.py",
+    "guardkit/orchestrator/instrumentation/digests.py",
+    "guardkit/orchestrator/instrumentation/emitter.py",
+    "guardkit/orchestrator/instrumentation/prompt_profile.py",
+    "guardkit/orchestrator/instrumentation/redaction.py",
+    "tasks/design_approved/TASK-INST-002-event-emitter-backends.md",
+    "tasks/design_approved/TASK-INST-003-secret-redaction-pipeline.md",
+    "tasks/design_approved/TASK-INST-007-role-specific-digests.md",
+    "tasks/design_approved/TASK-INST-011-wire-template-graphiti-sync.md",
+    "tasks/design_approved/TASK-INST-012-enrich-system-seeding.md",
+    "tests/cli/test_init.py",
+    "tests/knowledge/test_seed_enrichment.py",
+    "tests/knowledge/test_template_sync.py",
+    "tests/orchestrator/instrumentation/test_digests.py",
+    "tests/orchestrator/instrumentation/test_emitter.py",
+    "tests/orchestrator/instrumentation/test_redaction.py"
+  ],
+  "files_created": [
+    ".guardkit/autobuild/TASK-INST-011/checkpoints.json",
+    ".guardkit/autobuild/TASK-INST-012/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-012/task_work_results.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/.guardkit/autobuild/TASK-INST-012/player_turn_1.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/guardkit/knowledge/seed_agents.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/guardkit/knowledge/seed_rules.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/guardkit/knowledge/seed_templates.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/knowledge/test_seed_enrichment.py"
+  ],
+  "tests_written": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/knowledge/test_seed_enrichment.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation",
+  "concerns": [],
+  "requirements_addressed": [
+    "Read actual manifest.json from template directories",
+    "Read actual agent .md files with full body text",
+    "Read actual rule .md files with full content",
+    "Content chunking for files over 10KB",
+    "SEEDING_VERSION bumped to 1.2.0",
+    "Graceful handling of missing files",
+    "group_id conventions preserved",
+    "Check both agents/ and .claude/agents/ directories",
+    "Skip -ext.md supplementary files",
+    "All 7 templates discoverable",
+    "Rules organized by template"
+  ],
+  "requirements_remaining": [],
+  "sdk_turns_used": 60,
+  "sdk_max_turns": 100,
+  "sdk_ceiling_hit": false,
+  "tests_passed_count": 29,
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "seed_templates.py reads actual manifest.json from each template directory",
+      "status": "complete",
+      "evidence": "Rewrote seed_templates.py to discover template directories via _discover_templates() and read manifest.json from each. _build_template_episode() extracts rich data (frameworks, patterns, layers, tags, etc.) from actual manifest content. Test test_seed_templates_reads_manifest_json verifies actual manifest data is in episodes.",
+      "test_file": "tests/knowledge/test_seed_enrichment.py",
+      "implementation_files": [
+        "guardkit/knowledge/seed_templates.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "seed_agents.py reads actual agent .md files from each template",
+      "status": "complete",
+      "evidence": "Rewrote seed_agents.py to discover and read actual .md files from agents/ and .claude/agents/ directories across all templates. _discover_agent_files() finds files, _read_agent_content() reads them. Test test_seed_agents_reads_actual_md_files and test_seed_agents_checks_both_agent_directories verify discovery from both paths. 18 agent files discovered.",
+      "test_file": "tests/knowledge/test_seed_enrichment.py",
+      "implementation_files": [
+        "guardkit/knowledge/seed_agents.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "seed_rules.py reads actual rule .md files from each template",
+      "status": "complete",
+      "evidence": "Rewrote seed_rules.py to recursively discover and read .md files from .claude/rules/ directories. _discover_rule_files() uses rglob for nested rules (e.g., api/routing.md). Test test_seed_rules_reads_actual_md_files verifies discovery across templates.",
+      "test_file": "tests/knowledge/test_seed_enrichment.py",
+      "implementation_files": [
+        "guardkit/knowledge/seed_rules.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Agent content includes full body text (not just frontmatter metadata)",
+      "status": "complete",
+      "evidence": "seed_agents.py _read_agent_content() parses YAML frontmatter and extracts body separately. _build_agent_episode() includes full body text in 'content' field. Test test_seed_agents_includes_full_body_text verifies body content like 'Role' and 'Boundaries' sections are present.",
+      "test_file": "tests/knowledge/test_seed_enrichment.py",
+      "implementation_files": [
+        "guardkit/knowledge/seed_agents.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Rule content includes full text (not just topic headings)",
+      "status": "complete",
+      "evidence": "seed_rules.py reads full file content and includes it in 'content' field of episodes. Test test_seed_rules_includes_full_text verifies episode body is >100 chars with actual content, not just headings.",
+      "test_file": "tests/knowledge/test_seed_enrichment.py",
+      "implementation_files": [
+        "guardkit/knowledge/seed_rules.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Content chunking applied for files over 10KB",
+      "status": "complete",
+      "evidence": "seed_rules.py _build_rule_episodes() checks file_size > _CHUNK_THRESHOLD (10KB) and splits by ## headers using _chunk_by_sections(). Several rule files are >10KB (e.g., fastmcp security.md at ~11KB, react-fastapi-monorepo backend/fastapi.md at ~11KB). Test test_large_rule_files_are_chunked verifies >10 episodes are produced from chunking.",
+      "test_file": "tests/knowledge/test_seed_enrichment.py",
+      "implementation_files": [
+        "guardkit/knowledge/seed_rules.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "SEEDING_VERSION bumped to 1.2.0",
+      "status": "complete",
+      "evidence": "Changed SEEDING_VERSION from '1.1.0' to '1.2.0' in seed_helpers.py. Test test_seeding_version_is_1_2_0 verifies the value. Existing test test_metadata_version_matches_seeding_version also passes with new version.",
+      "test_file": "tests/knowledge/test_seed_enrichment.py",
+      "implementation_files": [
+        "guardkit/knowledge/seed_helpers.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "Missing template files handled gracefully (warning, not error)",
+      "status": "complete",
+      "evidence": "All three modules handle missing files gracefully: _discover_templates() logs debug for missing manifest.json, _read_agent_content() returns None for unreadable files, _read_rule_content() returns None with warning. Tests: test_missing_manifest_handled_gracefully, test_missing_agents_dir_handled_gracefully, test_missing_rules_dir_handled_gracefully, test_unreadable_file_handled_gracefully.",
+      "test_file": "tests/knowledge/test_seed_enrichment.py",
+      "implementation_files": [
+        "guardkit/knowledge/seed_templates.py",
+        "guardkit/knowledge/seed_agents.py",
+        "guardkit/knowledge/seed_rules.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "Existing group_id conventions maintained",
+      "status": "complete",
+      "evidence": "All three seed functions pass group_id to _add_episodes exactly as before: 'templates', 'agents', 'rules'. Tests: test_seed_templates_preserves_group_id, test_seed_agents_preserves_group_id, test_seed_rules_preserves_group_id verify all episodes use correct group_id.",
+      "test_file": "tests/knowledge/test_seed_enrichment.py",
+      "implementation_files": [
+        "guardkit/knowledge/seed_templates.py",
+        "guardkit/knowledge/seed_agents.py",
+        "guardkit/knowledge/seed_rules.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-010",
+      "criterion_text": "Unit tests cover: template discovery, content extraction, chunking, missing files",
+      "status": "complete",
+      "evidence": "29 tests across 7 test classes: TestSeedingVersion (1), TestTemplateDiscovery (4), TestAgentContent (5), TestRuleContent (4), TestContentChunking (2), TestMissingFileHandling (4), TestBackwardCompatibility (9). All pass. Coverage: seed_templates 88%, seed_agents 86%, seed_rules 82%.",
+      "test_file": "tests/knowledge/test_seed_enrichment.py",
+      "implementation_files": [
+        "tests/knowledge/test_seed_enrichment.py"
+      ]
+    }
+  ]
+}
