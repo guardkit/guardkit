@@ -268,6 +268,7 @@ class CoachValidationResult:
     rationale: str = ""
     context_used: Optional[str] = None
     approved_without_independent_tests: bool = False
+    is_configuration_error: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -328,6 +329,7 @@ class CoachValidationResult:
             "rationale": self.rationale,
             "context_used": self.context_used,
             "approved_without_independent_tests": self.approved_without_independent_tests,
+            "is_configuration_error": self.is_configuration_error,
         }
 
 
@@ -603,6 +605,7 @@ class CoachValidator:
                 }],
                 rationale=f"Invalid task type: {e}",
                 context_used=context,
+                is_configuration_error=True,
             )
 
         # 1. Read task-work quality gate results
@@ -3308,6 +3311,7 @@ class CoachValidator:
         independent_tests: Optional[IndependentTestResult] = None,
         requirements: Optional[RequirementsValidation] = None,
         context_used: Optional[str] = None,
+        is_configuration_error: bool = False,
     ) -> CoachValidationResult:
         """
         Create a feedback result.
@@ -3344,6 +3348,7 @@ class CoachValidator:
             issues=issues,
             rationale=rationale,
             context_used=context_used,
+            is_configuration_error=is_configuration_error,
         )
 
     def _feedback_from_gates(
