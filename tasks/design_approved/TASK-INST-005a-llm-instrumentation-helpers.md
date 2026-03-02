@@ -1,19 +1,20 @@
 ---
-id: TASK-INST-005a
-title: "Create LLM instrumentation helper module"
-task_type: scaffolding
-parent_review: TASK-REV-2FE2
-feature_id: FEAT-INST
-wave: 3
-implementation_mode: task-work
-complexity: 3
-dependencies:
-  - TASK-INST-001
-  - TASK-INST-002
 autobuild:
   enabled: true
   max_turns: 5
   mode: tdd
+complexity: 3
+dependencies:
+- TASK-INST-001
+- TASK-INST-002
+feature_id: FEAT-INST
+id: TASK-INST-005a
+implementation_mode: task-work
+parent_review: TASK-REV-2FE2
+status: design_approved
+task_type: scaffolding
+title: Create LLM instrumentation helper module
+wave: 3
 ---
 
 # Task: Create LLM Instrumentation Helper Module

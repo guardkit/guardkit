@@ -141,6 +141,15 @@ from guardkit.orchestrator.mcp_design_extractor import (
     MCPUnavailableError,
 )
 
+# Import instrumentation (TASK-INST-004)
+from guardkit.orchestrator.instrumentation.emitter import NullEmitter
+from guardkit.orchestrator.instrumentation.schemas import (
+    TaskStartedEvent,
+    TaskCompletedEvent,
+    TaskFailedEvent,
+    FailureCategory,
+)
+
 # Setup logging
 logger = logging.getLogger(__name__)
 
@@ -171,6 +180,25 @@ UNRECOVERABLE_ERRORS = (
     StateValidationError,
     RateLimitExceededError,  # NEW: Stop immediately on rate limit
 )
+
+
+# ============================================================================
+# Failure Category Mapping (TASK-INST-004)
+# ============================================================================
+
+FAILURE_CATEGORY_MAP: Dict[str, str] = {
+    "max_turns_exceeded": "other",
+    "error": "other",
+    "timeout": "timeout",
+    "timeout_budget_exhausted": "timeout",
+    "rate_limited": "rate_limit",
+    "cancelled": "other",
+    "configuration_error": "env_failure",
+    "pre_loop_blocked": "other",
+    "unrecoverable_stall": "other",
+    "design_extraction_failed": "other",
+}
+"""Map final_decision strings to FailureCategory controlled vocabulary values."""
 
 
 # ============================================================================
@@ -521,6 +549,7 @@ class AutoBuildOrchestrator:
         task_timeout: Optional[int] = None,
         timeout_multiplier: Optional[float] = None,
         wave_size: int = 1,
+        emitter: Optional[Any] = None,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -597,6 +626,10 @@ class AutoBuildOrchestrator:
             Number of tasks executing in parallel in the current wave (default: 1).
             Passed through to CoachValidator to enable test isolation and lenient
             failure classification in parallel waves (TASK-ABFIX-005).
+        emitter : Optional[EventEmitter], optional
+            EventEmitter for lifecycle event instrumentation (default: NullEmitter).
+            When provided, lifecycle events (task.started, task.completed,
+            task.failed) are emitted during orchestration (TASK-INST-004).
 
         Raises
         ------
@@ -634,6 +667,7 @@ class AutoBuildOrchestrator:
         self.enable_checkpoints = enable_checkpoints
         self.rollback_on_pollution = rollback_on_pollution
         self.ablation_mode = ablation_mode
+        self._emitter = emitter if emitter is not None else NullEmitter()  # TASK-INST-004
         self._existing_worktree = existing_worktree  # For feature mode (TASK-FBC-001)
         # Hardcoded reset turns per architectural review (TASK-BRF-001): [3, 5]
         self.perspective_reset_turns: List[int] = [3, 5] if enable_perspective_reset else []
@@ -785,6 +819,9 @@ class AutoBuildOrchestrator:
         """
         logger.info(f"Starting orchestration for {task_id} (resume={self.resume})")
 
+        # Emit task.started lifecycle event (TASK-INST-004)
+        self._emit_task_started(task_id)
+
         pre_loop_result = None  # Initialize pre-loop result
 
         # Load task data to extract task_type, requires_infrastructure, and consumer_context for CoachValidator
@@ -929,6 +966,12 @@ class AutoBuildOrchestrator:
                 recovery_count=self.recovery_count,
             )
 
+            # Emit lifecycle event based on outcome (TASK-INST-004)
+            if success:
+                self._emit_task_completed(task_id, turn_history)
+            else:
+                self._emit_task_failed(task_id, final_decision)
+
             logger.info(
                 f"Orchestration complete: {task_id}, decision={final_decision}, "
                 f"turns={len(turn_history)}"
@@ -938,6 +981,8 @@ class AutoBuildOrchestrator:
 
         except RateLimitExceededError as e:
             logger.error(f"Rate limit exceeded for {task_id}: {e}")
+            # Emit task.failed with rate_limit category (TASK-INST-004)
+            self._emit_task_failed(task_id, "rate_limited")
             return OrchestrationResult(
                 task_id=task_id,
                 success=False,
