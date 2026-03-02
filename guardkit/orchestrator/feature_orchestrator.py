@@ -232,6 +232,7 @@ class FeatureOrchestrator:
         stop_on_failure: bool = True,
         resume: bool = False,
         fresh: bool = False,
+        refresh: bool = False,
         verbose: bool = False,
         features_dir: Optional[Path] = None,
         worktree_manager: Optional[WorktreeManager] = None,
@@ -258,6 +259,10 @@ class FeatureOrchestrator:
             Resume from saved state (default: False)
         fresh : bool, optional
             Start fresh, ignoring saved state (default: False)
+        refresh : bool, optional
+            Rebase worktree onto latest base branch before resuming
+            (default: False). Implies resume=True. Mutually exclusive
+            with fresh.
         verbose : bool, optional
             Show detailed output (default: False)
         features_dir : Optional[Path], optional
@@ -297,6 +302,13 @@ class FeatureOrchestrator:
         if resume and fresh:
             raise ValueError("Cannot use both --resume and --fresh flags together")
 
+        if refresh and fresh:
+            raise ValueError("Cannot use both --refresh and --fresh flags together")
+
+        # --refresh implies --resume
+        if refresh:
+            resume = True
+
         # TASK-FIX-VL05: Detect and apply timeout multiplier for local backends
         from guardkit.orchestrator.agent_invoker import detect_timeout_multiplier
 
@@ -310,6 +322,7 @@ class FeatureOrchestrator:
         self.stop_on_failure = stop_on_failure
         self.resume = resume
         self.fresh = fresh
+        self.refresh = refresh
         self.verbose = verbose
         self.quiet = quiet
         self.sdk_timeout = sdk_timeout
@@ -333,7 +346,8 @@ class FeatureOrchestrator:
         logger.info(
             f"FeatureOrchestrator initialized: repo={self.repo_root}, "
             f"max_turns={self.max_turns}, stop_on_failure={self.stop_on_failure}, "
-            f"resume={self.resume}, fresh={self.fresh}, enable_pre_loop={self.enable_pre_loop}, "
+            f"resume={self.resume}, fresh={self.fresh}, refresh={self.refresh}, "
+            f"enable_pre_loop={self.enable_pre_loop}, "
             f"enable_context={self.enable_context}, task_timeout={self.task_timeout}s"
             f"{f', timeout_multiplier={self.timeout_multiplier}x' if self.timeout_multiplier != 1.0 else ''}"
             f"{f', max_parallel={self.max_parallel}' if self.max_parallel is not None else ''}"
@@ -476,6 +490,7 @@ class FeatureOrchestrator:
         # Display setup banner
         mode_text = (
             "[yellow]Fresh Start[/yellow]" if self.fresh else
+            "[yellow]Refreshing & Resuming[/yellow]" if self.refresh else
             "[yellow]Resuming[/yellow]" if self.resume else
             "Starting"
         )
@@ -560,6 +575,11 @@ class FeatureOrchestrator:
                             path=worktree_path,
                             base_branch=base_branch,
                         )
+
+                        # Refresh worktree if --refresh flag is set
+                        if self.refresh:
+                            self._refresh_worktree(worktree, base_branch)
+
                         return feature, worktree
 
                 # Worktree not found, create new but keep state
@@ -582,6 +602,11 @@ class FeatureOrchestrator:
                                 path=worktree_path,
                                 base_branch=base_branch,
                             )
+
+                            # Refresh worktree if user chose update+resume
+                            if self.refresh:
+                                self._refresh_worktree(worktree, base_branch)
+
                             return feature, worktree
                     return self._create_new_worktree(feature, feature_id, base_branch)
                 else:
@@ -641,6 +666,96 @@ class FeatureOrchestrator:
         FeatureLoader.save_feature(feature, self.repo_root)
 
         return feature, worktree
+
+    def _refresh_worktree(
+        self,
+        worktree: Worktree,
+        base_branch: str = "main",
+    ) -> None:
+        """
+        Refresh worktree by rebasing onto the latest base branch.
+
+        Fetches the latest changes from origin and rebases the worktree's
+        branch on top of origin/{base_branch}. If conflicts occur, the
+        rebase is aborted and an error is raised.
+
+        Parameters
+        ----------
+        worktree : Worktree
+            Worktree to refresh
+        base_branch : str, optional
+            Remote branch to rebase onto (default: "main")
+
+        Raises
+        ------
+        FeatureOrchestrationError
+            If fetch fails or rebase has conflicts
+        """
+        import subprocess
+
+        worktree_path = worktree.path
+
+        # Step 1: Fetch latest from origin
+        console.print(f"[cyan]↓[/cyan] Fetching latest {base_branch} from origin...")
+        try:
+            subprocess.run(
+                ["git", "fetch", "origin", base_branch],
+                cwd=worktree_path,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            console.print(f"[green]✓[/green] Fetched origin/{base_branch}")
+        except subprocess.CalledProcessError as e:
+            raise FeatureOrchestrationError(
+                f"Failed to fetch origin/{base_branch}: "
+                f"{e.stderr.strip() if e.stderr else str(e)}"
+            )
+
+        # Step 2: Rebase onto origin/base_branch
+        console.print(f"[cyan]↻[/cyan] Rebasing onto origin/{base_branch}...")
+        try:
+            subprocess.run(
+                ["git", "rebase", f"origin/{base_branch}"],
+                cwd=worktree_path,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            console.print(
+                f"[green]✓[/green] Successfully rebased onto origin/{base_branch}"
+            )
+        except subprocess.CalledProcessError:
+            # Rebase failed (likely conflicts) -- abort to restore clean state
+            console.print(
+                "[red]✗[/red] Rebase conflicts detected, aborting rebase..."
+            )
+            try:
+                subprocess.run(
+                    ["git", "rebase", "--abort"],
+                    cwd=worktree_path,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                console.print(
+                    "[green]✓[/green] Rebase aborted -- worktree restored to pre-refresh state"
+                )
+            except subprocess.CalledProcessError:
+                console.print(
+                    "[yellow]⚠[/yellow] Rebase abort failed -- "
+                    "worktree may be in inconsistent state"
+                )
+
+            raise FeatureOrchestrationError(
+                f"Rebase onto origin/{base_branch} failed due to conflicts. "
+                f"The worktree has been restored to its previous state.\n"
+                f"To resolve manually:\n"
+                f"  cd {worktree_path}\n"
+                f"  git rebase origin/{base_branch}\n"
+                f"  # resolve conflicts\n"
+                f"  git rebase --continue"
+            )
 
     def _copy_tasks_to_worktree(
         self,
@@ -959,14 +1074,21 @@ The detailed specifications are in the task markdown file.
 
         console.print("\nOptions:")
         console.print("  [R]esume - Continue from where you left off")
+        console.print("  [U]pdate - Rebase on latest main, then resume")
         console.print("  [F]resh  - Start over from the beginning")
         console.print()
 
         try:
             import sys
             if sys.stdin.isatty():
-                choice = input("Your choice [R/f]: ").strip().lower() or "r"
-                return choice != "f"
+                choice = input("Your choice [R/u/f]: ").strip().lower() or "r"
+                if choice == "f":
+                    return False
+                elif choice == "u":
+                    self.refresh = True
+                    return True
+                else:
+                    return True
             else:
                 # Non-interactive mode, default to resume
                 console.print("[dim]Non-interactive mode, defaulting to resume[/dim]")

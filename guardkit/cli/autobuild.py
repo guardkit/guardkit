@@ -526,6 +526,11 @@ def status(ctx, task_id: str, verbose: bool):
     help="Start fresh, ignoring any saved state",
 )
 @click.option(
+    "--refresh",
+    is_flag=True,
+    help="Rebase worktree onto latest main before resuming (implies --resume)",
+)
+@click.option(
     "--task",
     "specific_task",
     default=None,
@@ -599,6 +604,7 @@ def feature(
     stop_on_failure: bool,
     resume: bool,
     fresh: bool,
+    refresh: bool,
     specific_task: Optional[str],
     verbose: bool,
     sdk_timeout: Optional[int],
@@ -622,14 +628,16 @@ def feature(
         guardkit autobuild feature FEAT-A1B2 --no-stop-on-failure
         guardkit autobuild feature FEAT-A1B2 --task TASK-AUTH-002
         guardkit autobuild feature FEAT-A1B2 --resume
+        guardkit autobuild feature FEAT-A1B2 --refresh
         guardkit autobuild feature FEAT-A1B2 --fresh
 
     \b
     Resume Behavior:
-        - If incomplete state detected and no flags: prompts user to resume or start fresh
+        - If incomplete state detected and no flags: prompts user to resume, update, or start fresh
         - --resume: skip prompt, resume from last saved state
+        - --refresh: rebase worktree onto latest main, then resume (implies --resume)
         - --fresh: skip prompt, start from scratch (clears previous state)
-        - Cannot use both --resume and --fresh together
+        - Cannot use both --resume/--refresh and --fresh together
 
     \b
     Workflow:
@@ -658,8 +666,16 @@ def feature(
     if resume and fresh:
         console.print("[red]Error: Cannot use both --resume and --fresh flags together[/red]")
         console.print("\nChoose one:")
-        console.print("  --resume  Resume from last saved state")
-        console.print("  --fresh   Start from scratch, ignoring saved state")
+        console.print("  --resume   Resume from last saved state")
+        console.print("  --refresh  Rebase on latest main and resume")
+        console.print("  --fresh    Start from scratch, ignoring saved state")
+        sys.exit(3)
+
+    if refresh and fresh:
+        console.print("[red]Error: Cannot use both --refresh and --fresh flags together[/red]")
+        console.print("\nChoose one:")
+        console.print("  --refresh  Rebase on latest main and resume")
+        console.print("  --fresh    Start from scratch, ignoring saved state")
         sys.exit(3)
 
     # Validate SDK timeout if provided
@@ -699,7 +715,8 @@ def feature(
 
     logger.info(
         f"Starting feature orchestration: {feature_id} "
-        f"(max_turns={max_turns}, stop_on_failure={stop_on_failure}, resume={resume}, fresh={fresh}, "
+        f"(max_turns={max_turns}, stop_on_failure={stop_on_failure}, "
+        f"resume={resume}, fresh={fresh}, refresh={refresh}, "
         f"sdk_timeout={sdk_timeout}, enable_pre_loop={enable_pre_loop}, "
         f"timeout_multiplier={timeout_multiplier}, max_parallel={max_parallel})"
     )
@@ -712,6 +729,7 @@ def feature(
             stop_on_failure=stop_on_failure,
             resume=resume,
             fresh=fresh,
+            refresh=refresh,
             verbose=verbose,
             quiet=ctx_obj.get("quiet", False),
             sdk_timeout=sdk_timeout,
