@@ -1,34 +1,34 @@
 ---
-id: TASK-INST-011
-title: Wire sync_template_to_graphiti into guardkit init pipeline
-task_type: integration
-parent_review: TASK-REV-2FE2
-feature_id: FEAT-INST
-wave: 1
-implementation_mode: task-work
-complexity: 3
-dependencies:
-- TASK-INST-010
 autobuild:
   enabled: true
   max_turns: 5
   mode: tdd
-status: in_review
 autobuild_state:
-  current_turn: 1
-  max_turns: 30
-  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57
   base_branch: main
-  started_at: '2026-03-02T13:36:04.697497'
+  current_turn: 1
   last_updated: '2026-03-02T13:41:58.239972'
+  max_turns: 30
+  started_at: '2026-03-02T13:36:04.697497'
   turns:
-  - turn: 1
+  - coach_success: true
     decision: approve
     feedback: null
-    timestamp: '2026-03-02T13:36:04.697497'
-    player_summary: Implementation via task-work delegation
     player_success: true
-    coach_success: true
+    player_summary: Implementation via task-work delegation
+    timestamp: '2026-03-02T13:36:04.697497'
+    turn: 1
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57
+complexity: 3
+dependencies:
+- TASK-INST-010
+feature_id: FEAT-INST
+id: TASK-INST-011
+implementation_mode: task-work
+parent_review: TASK-REV-2FE2
+status: design_approved
+task_type: integration
+title: Wire sync_template_to_graphiti into guardkit init pipeline
+wave: 1
 ---
 
 # Task: Wire sync_template_to_graphiti into guardkit init Pipeline

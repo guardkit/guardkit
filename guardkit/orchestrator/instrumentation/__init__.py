@@ -1,1 +1,1 @@
-"""AutoBuild instrumentation event schemas."""
+"""AutoBuild instrumentation event schemas and digest system."""

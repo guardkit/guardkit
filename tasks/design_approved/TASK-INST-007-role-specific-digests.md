@@ -1,34 +1,34 @@
 ---
-id: TASK-INST-007
-title: Implement role-specific digest system
-task_type: feature
-parent_review: TASK-REV-2FE2
-feature_id: FEAT-INST
-wave: 2
-implementation_mode: task-work
-complexity: 5
-dependencies:
-- TASK-INST-001
 autobuild:
   enabled: true
   max_turns: 5
   mode: tdd
-status: in_review
 autobuild_state:
-  current_turn: 1
-  max_turns: 30
-  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57
   base_branch: main
-  started_at: '2026-03-02T13:36:04.692385'
+  current_turn: 1
   last_updated: '2026-03-02T13:47:50.465823'
+  max_turns: 30
+  started_at: '2026-03-02T13:36:04.692385'
   turns:
-  - turn: 1
+  - coach_success: true
     decision: approve
     feedback: null
-    timestamp: '2026-03-02T13:36:04.692385'
-    player_summary: Implementation via task-work delegation
     player_success: true
-    coach_success: true
+    player_summary: Implementation via task-work delegation
+    timestamp: '2026-03-02T13:36:04.692385'
+    turn: 1
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57
+complexity: 5
+dependencies:
+- TASK-INST-001
+feature_id: FEAT-INST
+id: TASK-INST-007
+implementation_mode: task-work
+parent_review: TASK-REV-2FE2
+status: design_approved
+task_type: feature
+title: Implement role-specific digest system
+wave: 2
 ---
 
 # Task: Implement Role-Specific Digest System

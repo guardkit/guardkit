@@ -1318,6 +1318,127 @@ class TestApplyTemplateNoArgs:
         assert (target / ".guardkit").exists()
 
 
+# ============================================================================
+# 9. TASK-INST-011: Template Sync Wiring Tests
+# ============================================================================
+
+
+class TestInitCallsTemplateSyncToGraphiti:
+    """Test that guardkit init calls sync_template_to_graphiti."""
+
+    def test_init_calls_sync_template_when_graphiti_available(self, tmp_path, monkeypatch):
+        """AC: guardkit init fastapi-python calls sync_template_to_graphiti when Graphiti available."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
+             patch('guardkit.cli.init.sync_template_to_graphiti', new_callable=AsyncMock) as mock_sync, \
+             patch('guardkit.cli.init._resolve_template_source_dir') as mock_resolve:
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True)
+            mock_resolve.return_value = tmp_path / "fake-template"
+            mock_sync.return_value = True
+
+            result = runner.invoke(cli, ["init", "fastapi-python"])
+
+            assert result.exit_code == 0
+            mock_sync.assert_called_once()
+
+    def test_init_skip_graphiti_skips_template_sync(self, tmp_path, monkeypatch):
+        """AC: --skip-graphiti flag skips template sync."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
+             patch('guardkit.cli.init.sync_template_to_graphiti', new_callable=AsyncMock) as mock_sync:
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+
+            result = runner.invoke(cli, ["init", "--skip-graphiti"])
+
+            assert result.exit_code == 0
+            mock_sync.assert_not_called()
+
+    def test_init_graphiti_unavailable_skips_template_sync(self, tmp_path, monkeypatch):
+        """AC: Graphiti unavailable: template files still copied, sync skipped with warning."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        with patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
+             patch('guardkit.cli.init.sync_template_to_graphiti', new_callable=AsyncMock) as mock_sync:
+
+            mock_client = MagicMock()
+            mock_client.enabled = False
+            mock_client.initialize = AsyncMock(return_value=False)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+
+            result = runner.invoke(cli, ["init"])
+
+            assert result.exit_code == 0
+            # Template sync should NOT be called when Graphiti is unavailable
+            mock_sync.assert_not_called()
+
+    def test_init_template_sync_failure_does_not_block(self, tmp_path, monkeypatch):
+        """AC: Template sync failure doesn't block init (graceful degradation)."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
+             patch('guardkit.cli.init.sync_template_to_graphiti', new_callable=AsyncMock) as mock_sync, \
+             patch('guardkit.cli.init._resolve_template_source_dir') as mock_resolve:
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True)
+            mock_resolve.return_value = tmp_path / "fake-template"
+            # Sync fails
+            mock_sync.return_value = False
+
+            result = runner.invoke(cli, ["init", "fastapi-python"])
+
+            # Init should still succeed
+            assert result.exit_code == 0
+
+    def test_init_template_not_found_skips_sync(self, tmp_path, monkeypatch):
+        """AC: Template not found: sync skipped gracefully."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
+             patch('guardkit.cli.init.sync_template_to_graphiti', new_callable=AsyncMock) as mock_sync, \
+             patch('guardkit.cli.init._resolve_template_source_dir', return_value=None):
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True)
+
+            result = runner.invoke(cli, ["init", "nonexistent"])
+
+            assert result.exit_code == 0
+            # Should not call sync when template is not found
+            mock_sync.assert_not_called()
+
+
 class TestResolveTemplateSourceDir:
     """Test template source resolution."""
 

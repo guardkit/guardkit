@@ -40,6 +40,7 @@ from rich.prompt import Confirm, Prompt
 from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
 from guardkit.knowledge.graphiti_client import GraphitiClient, GraphitiConfig, normalize_project_id
 from guardkit.knowledge.project_seeding import seed_project_knowledge
+from guardkit.knowledge.template_sync import sync_template_to_graphiti
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -548,6 +549,22 @@ async def _cmd_init(
                         console.print(f"    {status} {component_result.component}: {component_result.message}")
                 else:
                     console.print("  [yellow]Warning: Some seeding components failed[/yellow]")
+
+                # Step 2.5: Sync template content to Graphiti
+                template_source = _resolve_template_source_dir(template)
+                if template_source is not None:
+                    console.print("\n[bold]Step 2.5: Syncing template content to Graphiti...[/bold]")
+                    try:
+                        sync_result = await sync_template_to_graphiti(template_source)
+                        if sync_result:
+                            console.print("  [green]Template content synced to Graphiti[/green]")
+                        else:
+                            console.print("  [yellow]Warning: Template sync returned incomplete results[/yellow]")
+                    except Exception as e:
+                        console.print(f"  [yellow]Warning: Template sync error: {e}[/yellow]")
+                        logger.debug(f"Template sync error: {e}", exc_info=True)
+                else:
+                    logger.info(f"Template source not found for '{template}', skipping template sync")
 
         except Exception as e:
             console.print(f"  [yellow]Warning: Graphiti seeding error: {e}[/yellow]")

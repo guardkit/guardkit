@@ -12,7 +12,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Version for tracking seeding updates
-SEEDING_VERSION = "1.1.0"
+SEEDING_VERSION = "1.2.0"
 
 
 async def _add_episodes(

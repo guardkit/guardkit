@@ -1,0 +1,151 @@
+{
+  "task_id": "TASK-INST-003",
+  "turn": 1,
+  "files_modified": [
+    ".guardkit/bootstrap_state.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/orchestrator/instrumentation/test_redaction.py",
+    "guardkit/cli/init.py",
+    "guardkit/knowledge/seed_agents.py",
+    "guardkit/knowledge/seed_helpers.py",
+    "guardkit/knowledge/seed_rules.py",
+    "guardkit/knowledge/seed_templates.py",
+    "guardkit/knowledge/template_sync.py",
+    "guardkit/orchestrator/instrumentation/__init__.py",
+    "tasks/backlog/TASK-INST-002-event-emitter-backends.md",
+    "tasks/backlog/TASK-INST-003-secret-redaction-pipeline.md",
+    "tasks/backlog/TASK-INST-007-role-specific-digests.md",
+    "tasks/backlog/TASK-INST-011-wire-template-graphiti-sync.md",
+    "tasks/backlog/TASK-INST-012-enrich-system-seeding.md",
+    "tests/cli/test_init.py",
+    "tests/knowledge/test_template_sync.py"
+  ],
+  "files_created": [
+    ".claude/task-plans/TASK-INST-002-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-003-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-007-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-011-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-012-implementation-plan.md",
+    ".guardkit/autobuild/TASK-INST-002/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-003/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-003/task_work_results.json",
+    ".guardkit/autobuild/TASK-INST-003/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-007/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-010/checkpoints.json",
+    ".guardkit/autobuild/TASK-INST-011/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-012/turn_context.json",
+    ".guardkit/digests/coach.md",
+    ".guardkit/digests/player.md",
+    ".guardkit/digests/resolver.md",
+    ".guardkit/digests/router.md",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/.guardkit/autobuild/TASK-INST-003/player_turn_1.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/guardkit/orchestrator/instrumentation/redaction.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/orchestrator/instrumentation/test_redaction.py",
+    "guardkit/orchestrator/instrumentation/digests.py",
+    "guardkit/orchestrator/instrumentation/emitter.py",
+    "guardkit/orchestrator/instrumentation/prompt_profile.py",
+    "guardkit/orchestrator/instrumentation/redaction.py",
+    "tasks/design_approved/TASK-INST-002-event-emitter-backends.md",
+    "tasks/design_approved/TASK-INST-003-secret-redaction-pipeline.md",
+    "tasks/design_approved/TASK-INST-007-role-specific-digests.md",
+    "tasks/design_approved/TASK-INST-011-wire-template-graphiti-sync.md",
+    "tasks/design_approved/TASK-INST-012-enrich-system-seeding.md",
+    "tests/knowledge/test_seed_enrichment.py",
+    "tests/orchestrator/instrumentation/test_digests.py",
+    "tests/orchestrator/instrumentation/test_emitter.py",
+    "tests/orchestrator/instrumentation/test_redaction.py"
+  ],
+  "tests_written": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/orchestrator/instrumentation/test_redaction.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation",
+  "concerns": [],
+  "requirements_addressed": [
+    "Standard secret patterns detected and replaced with [REDACTED]",
+    "cmd, stdout_tail, stderr_tail all redacted before event emission",
+    "Tool names sanitised against shell metacharacters",
+    "Non-secret content preserved unchanged",
+    "Redaction patterns configurable via list",
+    "No secret values appear in emitted events",
+    "Unit tests cover all standard patterns plus edge cases"
+  ],
+  "requirements_remaining": [],
+  "sdk_turns_used": 34,
+  "sdk_max_turns": 100,
+  "sdk_ceiling_hit": false,
+  "tests_passed_count": 48,
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Standard secret patterns detected and replaced with [REDACTED]",
+      "status": "complete",
+      "evidence": "Implemented DEFAULT_REDACTION_PATTERNS list with 7 regex patterns covering: OpenAI sk- keys, AWS AKIA keys, GitHub ghp_/ghs_ tokens, Bearer JWT tokens, PASSWORD/PASS/SECRET env vars, token=/api_key= patterns, and URL-embedded credentials. SecretRedactor.redact() applies all patterns. Tests: TestAPIKeyRedaction (4 tests), TestBearerTokenRedaction (2 tests), TestPasswordRedaction (3 tests), TestGenericTokenRedaction (2 tests), TestURLCredentialRedaction (2 tests).",
+      "test_file": "tests/orchestrator/instrumentation/test_redaction.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/redaction.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "cmd, stdout_tail, stderr_tail all redacted before event emission",
+      "status": "complete",
+      "evidence": "redact_tool_exec_event() creates a new ToolExecEvent with redactor.redact() applied to cmd, stdout_tail, and stderr_tail fields. Tests: test_cmd_field_redacted, test_stdout_tail_redacted, test_stderr_tail_redacted, test_all_three_fields_redacted_simultaneously all verify secrets are removed from each field.",
+      "test_file": "tests/orchestrator/instrumentation/test_redaction.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/redaction.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Tool names sanitised against shell metacharacters",
+      "status": "complete",
+      "evidence": "sanitise_tool_name() strips all shell metacharacters (; | & $ ` > < ( )) from tool names. redact_tool_exec_event() applies it to event.tool_name. Tests: TestSanitiseToolName class with 10 tests covering each metacharacter individually and all at once, plus test_tool_name_sanitised in integration tests.",
+      "test_file": "tests/orchestrator/instrumentation/test_redaction.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/redaction.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Non-secret content preserved unchanged",
+      "status": "complete",
+      "evidence": "TestContentPreservation class with 5 tests: plain text unchanged, empty string preserved, normal test output preserved, mixed content only secrets redacted (surrounding text verified intact), multiline non-secret lines unmodified. Also test_non_redacted_fields_preserved verifies non-text event fields (run_id, task_id, exit_code, latency_ms, attempt) are preserved.",
+      "test_file": "tests/orchestrator/instrumentation/test_redaction.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/redaction.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Redaction patterns configurable via list",
+      "status": "complete",
+      "evidence": "SecretRedactor accepts optional patterns parameter. Tests: test_custom_patterns (custom pattern list), test_empty_patterns_list (no redaction), test_add_custom_pattern (project-specific), test_extend_default_patterns (defaults + custom combined), test_custom_patterns_via_redactor (custom redactor passed to redact_tool_exec_event).",
+      "test_file": "tests/orchestrator/instrumentation/test_redaction.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/redaction.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "No secret values appear in emitted events (validated by test)",
+      "status": "complete",
+      "evidence": "test_no_secrets_emitted_comprehensive creates a ToolExecEvent with 4 different secret types across cmd, stdout_tail, and stderr_tail. After redaction, model_dump() is called and the entire stringified dict is scanned to verify none of the secret values leak through. Also test_returns_new_event_not_mutated_original verifies original event is not mutated.",
+      "test_file": "tests/orchestrator/instrumentation/test_redaction.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/redaction.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Unit tests cover all standard patterns plus edge cases",
+      "status": "complete",
+      "evidence": "48 tests total covering: all 7 default patterns (13 pattern tests), tool name sanitisation (10 tests), content preservation (5 tests), event integration (8 tests), configurable patterns (3 tests), edge cases (5 tests: multiple secrets, repeated patterns, very long strings, unicode, newlines). Coverage: 97% on redaction.py (51/51 statements, 1 branch miss on defensive None guard).",
+      "test_file": "tests/orchestrator/instrumentation/test_redaction.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/redaction.py"
+      ]
+    }
+  ]
+}

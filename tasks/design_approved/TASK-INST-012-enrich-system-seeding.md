@@ -1,19 +1,19 @@
 ---
-id: TASK-INST-012
-title: Enrich system seeding with actual template markdown content
-task_type: feature
-parent_review: TASK-REV-2FE2
-feature_id: FEAT-INST
-wave: 2
-implementation_mode: task-work
-complexity: 5
-dependencies:
-- TASK-INST-010
 autobuild:
   enabled: true
   max_turns: 5
   mode: tdd
-status: backlog
+complexity: 5
+dependencies:
+- TASK-INST-010
+feature_id: FEAT-INST
+id: TASK-INST-012
+implementation_mode: task-work
+parent_review: TASK-REV-2FE2
+status: design_approved
+task_type: feature
+title: Enrich system seeding with actual template markdown content
+wave: 2
 ---
 
 # Task: Enrich System Seeding with Actual Template Markdown Content
