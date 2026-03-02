@@ -1,0 +1,189 @@
+{
+  "task_id": "TASK-INST-010",
+  "timestamp": "2026-03-02T21:57:50.698999",
+  "completed": true,
+  "phases": {
+    "phase_3": {
+      "detected": true,
+      "text": "Implementation (TDD Mode)",
+      "completed": false
+    },
+    "phase_4": {
+      "detected": true,
+      "completed": true
+    }
+  },
+  "quality_gates": {
+    "tests_passing": true,
+    "tests_passed": 60,
+    "tests_failed": 0,
+    "coverage": 88.0,
+    "coverage_met": true,
+    "all_passed": true
+  },
+  "files_modified": [
+    ".claude/task-plans/TASK-INST-001-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-010-implementation-plan.md",
+    ".guardkit/autobuild/TASK-INST-001/coach_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-001/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-001/task_work_results.json",
+    ".guardkit/autobuild/TASK-INST-001/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-010/turn_context.json",
+    ".guardkit/bootstrap_state.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/guardkit/cli/init.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/cli/test_init.py",
+    "guardkit/cli/init.py",
+    "guardkit/orchestrator/instrumentation/__init__.py",
+    "guardkit/orchestrator/instrumentation/schemas.py",
+    "tasks/backlog/TASK-INST-002-event-emitter-backends.md",
+    "tasks/backlog/TASK-INST-003-secret-redaction-pipeline.md",
+    "tasks/backlog/TASK-INST-004-instrument-orchestrator.md",
+    "tasks/backlog/TASK-INST-005a-llm-instrumentation-helpers.md",
+    "tasks/backlog/TASK-INST-005b-llm-call-events.md",
+    "tasks/backlog/TASK-INST-005c-tool-exec-events.md",
+    "tasks/backlog/TASK-INST-006-instrument-graphiti-loader.md",
+    "tasks/backlog/TASK-INST-007-role-specific-digests.md",
+    "tasks/backlog/TASK-INST-008-adaptive-concurrency.md",
+    "tasks/backlog/TASK-INST-009-integration-tests.md",
+    "tasks/backlog/TASK-INST-011-wire-template-graphiti-sync.md",
+    "tasks/backlog/TASK-INST-012-enrich-system-seeding.md",
+    "tasks/design_approved/TASK-INST-001-event-schema-models.md",
+    "tasks/design_approved/TASK-INST-010-reconcile-init-paths.md",
+    "tests/cli/test_init.py",
+    "tests/orchestrator/instrumentation/__init__.py",
+    "tests/orchestrator/instrumentation/test_schemas.py"
+  ],
+  "files_created": [
+    ".guardkit/autobuild/TASK-INST-001/checkpoints.json",
+    ".guardkit/autobuild/TASK-INST-010/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-010/task_work_results.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/.guardkit/autobuild/TASK-INST-010/player_turn_1.json"
+  ],
+  "tests_written": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/cli/test_init.py"
+  ],
+  "summary": "60 tests passed, 88.0% coverage, all quality gates passed",
+  "sdk_turns": {
+    "turns_used": 38,
+    "max_turns": 100,
+    "ceiling_hit": false
+  },
+  "code_review": {
+    "score": 85,
+    "solid": 90,
+    "dry": 85,
+    "yagni": 80
+  },
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "guardkit init fastapi-python copies agents from agents/ to .claude/agents/",
+      "status": "complete",
+      "evidence": "Implemented _copy_agents() which checks {template}/agents/ directory, filters for .md files (skipping .gitkeep), and copies to {target}/.claude/agents/. Test test_copies_agents_from_agents_dir verifies this with fastapi-python template structure.",
+      "test_file": "tests/cli/test_init.py",
+      "implementation_files": [
+        "guardkit/cli/init.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "guardkit init fastmcp-python copies agents from .claude/agents/ to .claude/agents/",
+      "status": "complete",
+      "evidence": "Implemented _copy_agents() which also checks {template}/.claude/agents/ directory. Test test_copies_agents_from_dotclaude_agents_dir verifies this with fastmcp-python template structure.",
+      "test_file": "tests/cli/test_init.py",
+      "implementation_files": [
+        "guardkit/cli/init.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "guardkit init fastapi-python copies rules from template to .claude/rules/",
+      "status": "complete",
+      "evidence": "Implemented _copy_rules() which recursively copies .claude/rules/**/*.md preserving directory structure. Test test_copies_rules_with_subdirectories verifies rules and subdirectory (guidance/testing.md) are copied.",
+      "test_file": "tests/cli/test_init.py",
+      "implementation_files": [
+        "guardkit/cli/init.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "guardkit init fastapi-python copies CLAUDE.md from template to project root",
+      "status": "complete",
+      "evidence": "Implemented _copy_claude_md() which checks both root and .claude/ CLAUDE.md locations, copying whichever exists. Test test_copies_root_claude_md and test_copies_both_claude_md_when_both_exist verify this.",
+      "test_file": "tests/cli/test_init.py",
+      "implementation_files": [
+        "guardkit/cli/init.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "guardkit init default works without manifest.json (skip with info, not error)",
+      "status": "complete",
+      "evidence": "Implemented _copy_manifest() which returns False gracefully when manifest.json is not present, logging an info message. Test test_skips_manifest_when_missing verifies no error is raised and no manifest.json appears in target.",
+      "test_file": "tests/cli/test_init.py",
+      "implementation_files": [
+        "guardkit/cli/init.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "guardkit init copies manifest.json to .claude/manifest.json when present",
+      "status": "complete",
+      "evidence": "Implemented _copy_manifest() which copies manifest.json from template root to {target}/.claude/manifest.json. Test test_copies_manifest_json_when_present verifies content is copied correctly.",
+      "test_file": "tests/cli/test_init.py",
+      "implementation_files": [
+        "guardkit/cli/init.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Existing files in target directory are NOT overwritten (skip with warning)",
+      "status": "complete",
+      "evidence": "All copy operations use _copy_file_if_not_exists() which checks dest.exists() before copying and logs a skip message. Test test_does_not_overwrite_existing_files verifies existing agent and CLAUDE.md files are preserved.",
+      "test_file": "tests/cli/test_init.py",
+      "implementation_files": [
+        "guardkit/cli/init.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "Template not found produces a warning, not an error",
+      "status": "complete",
+      "evidence": "apply_template() calls _resolve_template_source_dir() which returns None if template not found. apply_template logs a warning and returns True (success with scaffold only). Test test_template_not_found_warns_not_errors verifies this.",
+      "test_file": "tests/cli/test_init.py",
+      "implementation_files": [
+        "guardkit/cli/init.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "guardkit init with no args still creates basic scaffold",
+      "status": "complete",
+      "evidence": "apply_template() always creates the basic directory structure (.claude/, tasks/, .guardkit/) before attempting template content copy. Test test_no_args_creates_basic_scaffold verifies all expected directories exist.",
+      "test_file": "tests/cli/test_init.py",
+      "implementation_files": [
+        "guardkit/cli/init.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-010",
+      "criterion_text": "Template source resolved from installed package location",
+      "status": "complete",
+      "evidence": "Implemented _get_templates_base_dir() using __file__-relative path to locate installer/core/templates/, and _resolve_template_source_dir() which checks package location first then falls back to ~/.guardkit/templates/. Test test_resolves_from_package_location verifies this.",
+      "test_file": "tests/cli/test_init.py",
+      "implementation_files": [
+        "guardkit/cli/init.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-011",
+      "criterion_text": "Unit tests cover: all 7 templates, template not found, file conflict, agent location variants",
+      "status": "complete",
+      "evidence": "TestApplyTemplateAllTemplates uses @pytest.mark.parametrize to test all 7 templates (default, fastapi-python, fastmcp-python, mcp-typescript, nextjs-fullstack, react-fastapi-monorepo, react-typescript). Additional dedicated test classes cover template not found (TestApplyTemplateNotFound), file conflict (TestApplyTemplateConflictHandling), and agent location variants (TestApplyTemplateCopiesAgents with agents/ and .claude/agents/).",
+      "test_file": "tests/cli/test_init.py",
+      "implementation_files": [
+        "guardkit/cli/init.py"
+      ]
+    }
+  ]
+}
