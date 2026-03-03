@@ -287,6 +287,30 @@ group_ids:
   - architecture_decisions # ADRs and design rationale
 ```
 
+#### Alternative LLM Providers (vLLM, Ollama)
+
+You can use vLLM or Ollama instead of OpenAI. When using alternative providers, `OPENAI_API_KEY` is **not required** — GuardKit injects custom LLM/embedding clients that bypass the OpenAI constructor.
+
+```yaml
+# .guardkit/graphiti.yaml - vLLM example
+llm_provider: vllm
+llm_base_url: http://your-vllm-host:8000/v1
+llm_model: your-model-name
+
+embedding_provider: vllm
+embedding_base_url: http://your-vllm-host:8001/v1
+embedding_model: your-embedding-model
+```
+
+#### Group ID Scoping
+
+Knowledge groups have two scopes. See [Project Namespaces](../guides/graphiti-project-namespaces.md) for details.
+
+- **System groups** (shared, unprefixed): `role_constraints`, `quality_gate_configs`, `implementation_modes`, `guardkit_templates`, `guardkit_patterns`
+- **Project groups** (auto-prefixed with `{project_id}__`): `project_overview`, `project_architecture`, `feature_specs`, `project_decisions`, `project_constraints`, `domain_knowledge`
+
+When querying, use unprefixed group names — the client applies the correct prefix automatically.
+
 **Configuration Priority** (highest to lowest):
 1. Environment variables (`GRAPHITI_ENABLED`, `GRAPHITI_HOST`, etc.)
 2. YAML configuration file (`.guardkit/graphiti.yaml`)

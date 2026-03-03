@@ -1942,14 +1942,14 @@ class TestCopyGraphitiFlagCLI:
             mock_client_class.return_value = mock_client
             mock_seed.return_value = MagicMock(success=True)
 
-            result = runner.invoke(cli, ["init", "--copy-graphiti", "auto"])
+            result = runner.invoke(cli, ["init", "--copy-graphiti"])
 
             assert result.exit_code == 0
             mock_find.assert_called_once_with("auto")
             mock_copy.assert_called_once()
 
     def test_copy_graphiti_explicit_path_copies_config(self, tmp_path, monkeypatch):
-        """--copy-graphiti /path copies config from that explicit path."""
+        """--copy-graphiti-from /path copies config from that explicit path."""
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
@@ -1970,7 +1970,7 @@ class TestCopyGraphitiFlagCLI:
             mock_client_class.return_value = mock_client
             mock_seed.return_value = MagicMock(success=True)
 
-            result = runner.invoke(cli, ["init", "--copy-graphiti", str(source_dir)])
+            result = runner.invoke(cli, ["init", "--copy-graphiti-from", str(source_dir)])
 
             assert result.exit_code == 0
             mock_find.assert_called_once_with(str(source_dir))
@@ -1994,7 +1994,7 @@ class TestCopyGraphitiFlagCLI:
             mock_client_class.return_value = mock_client
             mock_seed.return_value = MagicMock(success=True)
 
-            result = runner.invoke(cli, ["init", "--copy-graphiti", "auto"])
+            result = runner.invoke(cli, ["init", "--copy-graphiti"])
 
             assert result.exit_code == 0
             # copy_graphiti_config should NOT have been called
@@ -2023,7 +2023,7 @@ class TestCopyGraphitiFlagCLI:
             mock_client_class.return_value = mock_client
             mock_seed.return_value = MagicMock(success=True)
 
-            result = runner.invoke(cli, ["init", "--copy-graphiti", "auto"])
+            result = runner.invoke(cli, ["init", "--copy-graphiti"])
 
             assert result.exit_code == 0
             # Fallback should have been called
@@ -2083,7 +2083,7 @@ class TestCopyGraphitiFlagCLI:
             mock_client_class.return_value = mock_client
             mock_seed.return_value = MagicMock(success=True)
 
-            result = runner.invoke(cli, ["init", "--copy-graphiti", str(source_project)])
+            result = runner.invoke(cli, ["init", "--copy-graphiti-from", str(source_project)])
 
         assert result.exit_code == 0
 
@@ -2101,3 +2101,90 @@ class TestCopyGraphitiFlagCLI:
         assert written["graph_store"] == "falkordb"
         assert written["llm_provider"] == "vllm"
         assert written["llm_model"] == "claude-sonnet-4-6"
+
+
+# ============================================================================
+# Logger Suppression Tests (TASK-IGR-001)
+# ============================================================================
+
+
+class TestLoggerSuppression:
+    """Test that noisy third-party loggers are suppressed during init."""
+
+    def test_httpx_logger_suppressed_in_non_verbose_mode(self, tmp_path, monkeypatch):
+        """httpx INFO logs should be suppressed when verbose is False."""
+        import logging
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+
+        with patch("guardkit.cli.init.apply_template", return_value=True):
+            runner.invoke(cli, ["init", "--skip-graphiti"])
+
+        assert logging.getLogger("httpx").level >= logging.WARNING
+
+    def test_httpcore_logger_suppressed_in_non_verbose_mode(self, tmp_path, monkeypatch):
+        """httpcore INFO logs should be suppressed when verbose is False."""
+        import logging
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+
+        with patch("guardkit.cli.init.apply_template", return_value=True):
+            runner.invoke(cli, ["init", "--skip-graphiti"])
+
+        assert logging.getLogger("httpcore").level >= logging.WARNING
+
+    def test_falkordb_logger_suppressed_in_non_verbose_mode(self, tmp_path, monkeypatch):
+        """graphiti_core.driver.falkordb_driver INFO logs should be suppressed."""
+        import logging
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+
+        with patch("guardkit.cli.init.apply_template", return_value=True):
+            runner.invoke(cli, ["init", "--skip-graphiti"])
+
+        assert logging.getLogger("graphiti_core.driver.falkordb_driver").level >= logging.WARNING
+
+    def test_verbose_flag_preserves_log_levels(self, tmp_path, monkeypatch):
+        """With --verbose, third-party loggers should NOT be suppressed."""
+        import logging
+
+        # Reset loggers to default (NOTSET = 0) before test
+        logging.getLogger("httpx").setLevel(logging.NOTSET)
+        logging.getLogger("httpcore").setLevel(logging.NOTSET)
+        logging.getLogger("graphiti_core.driver.falkordb_driver").setLevel(logging.NOTSET)
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+
+        with patch("guardkit.cli.init.apply_template", return_value=True):
+            runner.invoke(cli, ["init", "--skip-graphiti", "--verbose"])
+
+        # Loggers should remain at their default level (NOTSET = 0, allows all)
+        assert logging.getLogger("httpx").level < logging.WARNING
+        assert logging.getLogger("httpcore").level < logging.WARNING
+        assert logging.getLogger("graphiti_core.driver.falkordb_driver").level < logging.WARNING
+
+    def test_warning_and_error_logs_still_visible(self, tmp_path, monkeypatch):
+        """WARNING and ERROR level logs should pass through even when suppressed."""
+        import logging
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+
+        with patch("guardkit.cli.init.apply_template", return_value=True):
+            runner.invoke(cli, ["init", "--skip-graphiti"])
+
+        # Level is WARNING, so WARNING and above pass through
+        httpx_logger = logging.getLogger("httpx")
+        assert httpx_logger.isEnabledFor(logging.WARNING)
+        assert httpx_logger.isEnabledFor(logging.ERROR)
+        assert not httpx_logger.isEnabledFor(logging.INFO)
+
+    def test_verbose_flag_in_help(self):
+        """The --verbose / -v flag should appear in help output."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["init", "--help"])
+        assert "--verbose" in result.output or "-v" in result.output

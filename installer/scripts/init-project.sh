@@ -23,7 +23,9 @@ else
 fi
 
 PROJECT_DIR="$(pwd)"
-TEMPLATE="${1:-default}"
+TEMPLATE=""
+PROJECT_NAME=""
+COPY_GRAPHITI=""
 
 # Color codes
 RED='\033[0;31m'
@@ -56,6 +58,74 @@ print_warning() {
 
 print_info() {
     echo -e "${BLUE}ℹ $1${NC}"
+}
+
+# Normalize project name to a valid project_id
+# Matches guardkit.knowledge.graphiti_client.normalize_project_id()
+normalize_project_id() {
+    local name="$1"
+    # Lowercase, replace non-alphanumeric (except hyphens) with hyphens
+    local normalized
+    normalized=$(echo "$name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')
+    # Truncate to 50 chars
+    echo "${normalized:0:50}"
+}
+
+# Find source graphiti.yaml by walking up from parent of cwd
+find_source_graphiti_config() {
+    local start_dir="$1"
+    local current_dir="$start_dir"
+    local max_depth=10
+    local depth=0
+
+    while [ "$depth" -lt "$max_depth" ]; do
+        if [ -f "$current_dir/.guardkit/graphiti.yaml" ]; then
+            echo "$current_dir/.guardkit/graphiti.yaml"
+            return 0
+        fi
+        if [ "$current_dir" = "/" ]; then
+            return 1
+        fi
+        current_dir="$(dirname "$current_dir")"
+        depth=$((depth + 1))
+    done
+    return 1
+}
+
+# Copy graphiti config from source, replacing project_id
+copy_graphiti_config() {
+    local source_file="$1"
+    local target_dir="$2"
+    local new_project_id="$3"
+    local target_file="$target_dir/.guardkit/graphiti.yaml"
+
+    mkdir -p "$target_dir/.guardkit"
+
+    if [ ! -f "$source_file" ]; then
+        print_warning "Source graphiti.yaml not found: $source_file"
+        return 1
+    fi
+
+    # Copy the file, then replace the project_id line
+    cp "$source_file" "$target_file"
+    # Replace the project_id value (handles both quoted and unquoted YAML)
+    sed -i '' "s/^project_id:.*$/project_id: $new_project_id/" "$target_file"
+
+    print_success "Copied Graphiti config from $source_file"
+    print_success "Set project_id: $new_project_id"
+    return 0
+}
+
+# Write minimal graphiti.yaml with just project_id
+write_graphiti_config() {
+    local target_dir="$1"
+    local project_id="$2"
+    local target_file="$target_dir/.guardkit/graphiti.yaml"
+
+    mkdir -p "$target_dir/.guardkit"
+    echo "project_id: $project_id" > "$target_file"
+
+    print_success "Written project_id to .guardkit/graphiti.yaml"
 }
 
 # Show available templates
@@ -202,17 +272,36 @@ copy_template_files() {
     fi
     
     # Copy template agents first (take precedence)
+    # Skip -ext.md files - they stay in ~/.agentecflow/ for on-demand loading
+    # (progressive disclosure: core files load always, extended files load on-demand)
+    local template_agent_count=0
     if [ -d "$template_dir/agents" ] && [ "$(ls -A $template_dir/agents 2>/dev/null)" ]; then
-        cp -r "$template_dir/agents/"* .claude/agents/ 2>/dev/null || true
-        print_success "Copied template-specific agents"
+        for agent_file in "$template_dir/agents"/*.md; do
+            if [ -f "$agent_file" ]; then
+                local agent_name=$(basename "$agent_file")
+                # Skip extended files (-ext.md)
+                case "$agent_name" in
+                    *-ext.md) continue ;;
+                esac
+                cp "$agent_file" ".claude/agents/$agent_name"
+                ((template_agent_count++))
+            fi
+        done
+        if [ $template_agent_count -gt 0 ]; then
+            print_success "Copied $template_agent_count template-specific agent(s)"
+        fi
     fi
 
-    # Copy global agents (skip if file exists from template)
+    # Copy global agents (skip if file exists from template, skip -ext.md)
     local global_agent_count=0
     if [ -d "$AGENTECFLOW_HOME/agents" ] && [ "$(ls -A $AGENTECFLOW_HOME/agents 2>/dev/null)" ]; then
         for agent_file in "$AGENTECFLOW_HOME/agents"/*.md; do
             if [ -f "$agent_file" ]; then
                 local agent_name=$(basename "$agent_file")
+                # Skip extended files (-ext.md)
+                case "$agent_name" in
+                    *-ext.md) continue ;;
+                esac
                 # Only copy if file doesn't already exist (template takes precedence)
                 if [ ! -f ".claude/agents/$agent_name" ]; then
                     cp "$agent_file" ".claude/agents/$agent_name"
@@ -303,7 +392,12 @@ verify_rules_structure() {
 create_config() {
     print_info "Creating project configuration..."
 
-    local project_name=$(basename "$PROJECT_DIR")
+    local project_name
+    if [ -n "$PROJECT_NAME" ]; then
+        project_name="$PROJECT_NAME"
+    else
+        project_name=$(basename "$PROJECT_DIR")
+    fi
     local detected_type=$(detect_project_type)
 
     # Use ~ for portability instead of absolute path
@@ -556,17 +650,69 @@ print_next_steps() {
 
 # Main function
 main() {
-    # Handle arguments
-    case "$1" in
-        -h|--help|help)
-            show_templates
-            exit 0
-            ;;
-        -i|--interactive)
+    local interactive=false
+
+    # Parse arguments - support flags mixed with positional args
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help|help)
+                show_templates
+                echo ""
+                echo "Options:"
+                echo "  -n, --project-name NAME    Override project name (defaults to directory name)"
+                echo "  --copy-graphiti [PATH]     Copy Graphiti config from existing project"
+                echo "                             Without PATH: auto-discovers from parent directories"
+                echo "                             With PATH: copies from specified project directory"
+                echo "  -i, --interactive          Interactive setup mode"
+                echo "  -h, --help                 Show this help message"
+                exit 0
+                ;;
+            -i|--interactive)
+                interactive=true
+                shift
+                ;;
+            -n|--project-name)
+                if [ -z "$2" ] || [[ "$2" == -* ]]; then
+                    print_error "--project-name requires a value"
+                    exit 1
+                fi
+                PROJECT_NAME="$2"
+                shift 2
+                ;;
+            --copy-graphiti)
+                # --copy-graphiti with optional path argument
+                if [ -n "$2" ] && [[ "$2" != -* ]]; then
+                    COPY_GRAPHITI="$2"
+                    shift 2
+                else
+                    COPY_GRAPHITI="auto"
+                    shift
+                fi
+                ;;
+            -*)
+                print_error "Unknown option: $1"
+                echo "Run 'guardkit init --help' for usage"
+                exit 1
+                ;;
+            *)
+                # Positional argument = template name
+                if [ -z "$TEMPLATE" ]; then
+                    TEMPLATE="$1"
+                else
+                    print_error "Unexpected argument: $1"
+                    exit 1
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    # Default template if not specified
+    if [ -z "$TEMPLATE" ]; then
+        if [ "$interactive" = true ]; then
             select_template_interactive
-            ;;
-        "")
-            # No template specified, try to auto-detect or go interactive
+        else
+            # Try to auto-detect or go interactive
             local detected=$(detect_project_type)
             if [ "$detected" != "unknown" ]; then
                 print_info "Detected project type: $detected"
@@ -585,12 +731,12 @@ main() {
             else
                 select_template_interactive
             fi
-            ;;
-        *)
-            TEMPLATE="$1"
-            ;;
-    esac
-    
+        fi
+    fi
+
+    # Default TEMPLATE fallback
+    TEMPLATE="${TEMPLATE:-default}"
+
     print_header
     print_info "Using GuardKit from: $AGENTECFLOW_HOME"
     check_existing
@@ -599,6 +745,45 @@ main() {
     verify_rules_structure "$AGENTECFLOW_HOME/templates/$TEMPLATE"
     create_config
     create_initial_files
+
+    # Handle Graphiti config (after structure is created)
+    local project_id
+    if [ -n "$PROJECT_NAME" ]; then
+        project_id=$(normalize_project_id "$PROJECT_NAME")
+    else
+        project_id=$(normalize_project_id "$(basename "$PROJECT_DIR")")
+    fi
+
+    if [ -n "$COPY_GRAPHITI" ]; then
+        local source_config=""
+        if [ "$COPY_GRAPHITI" = "auto" ]; then
+            # Auto-discover: walk up from parent of cwd
+            local parent_dir
+            parent_dir="$(cd "$PROJECT_DIR/.." 2>/dev/null && pwd)"
+            source_config=$(find_source_graphiti_config "$parent_dir" 2>/dev/null || true)
+        else
+            # Explicit path provided
+            local explicit_path
+            explicit_path=$(eval echo "$COPY_GRAPHITI")  # expand ~
+            if [ -f "$explicit_path/.guardkit/graphiti.yaml" ]; then
+                source_config="$explicit_path/.guardkit/graphiti.yaml"
+            elif [ -f "$explicit_path" ]; then
+                # Maybe they pointed directly at the file
+                source_config="$explicit_path"
+            fi
+        fi
+
+        if [ -n "$source_config" ]; then
+            copy_graphiti_config "$source_config" "$PROJECT_DIR" "$project_id"
+        else
+            print_warning "No source graphiti.yaml found, writing project_id only"
+            write_graphiti_config "$PROJECT_DIR" "$project_id"
+        fi
+    else
+        # Default: write minimal graphiti config with project_id
+        write_graphiti_config "$PROJECT_DIR" "$project_id"
+    fi
+
     print_next_steps
 }
 

@@ -933,9 +933,32 @@ detect_project_context() {
 
 case "$1" in
     init)
-        shift
-        export CLAUDE_HOME="$AGENTECFLOW_HOME"
-        exec "$AGENTECFLOW_HOME/bin/guardkit-init" "$@"
+        # Try guardkit-py first (has Graphiti seeding), fall back to shell script
+        GUARDKIT_PY=""
+        if command -v guardkit-py &> /dev/null; then
+            GUARDKIT_PY="$(command -v guardkit-py)"
+        elif [ -x "/Library/Frameworks/Python.framework/Versions/Current/bin/guardkit-py" ]; then
+            GUARDKIT_PY="/Library/Frameworks/Python.framework/Versions/Current/bin/guardkit-py"
+        elif [ -x "$HOME/.local/bin/guardkit-py" ]; then
+            GUARDKIT_PY="$HOME/.local/bin/guardkit-py"
+        elif [ -x "/usr/local/bin/guardkit-py" ]; then
+            GUARDKIT_PY="/usr/local/bin/guardkit-py"
+        else
+            GUARDKIT_PY=$(python3 -c "import shutil; p=shutil.which('guardkit-py'); print(p if p else '')" 2>/dev/null)
+        fi
+
+        if [ -n "$GUARDKIT_PY" ] && [ -x "$GUARDKIT_PY" ]; then
+            shift  # Remove 'init' from args
+            exec "$GUARDKIT_PY" init "$@"
+        else
+            # Fall back to shell script (no Graphiti seeding)
+            echo -e "${YELLOW}Note: guardkit-py not found, using shell init (no Graphiti seeding)${NC}"
+            echo -e "${YELLOW}Install with: pip install guardkit-py${NC}"
+            echo ""
+            shift
+            export CLAUDE_HOME="$AGENTECFLOW_HOME"
+            exec "$AGENTECFLOW_HOME/bin/guardkit-init" "$@"
+        fi
         ;;
     autobuild)
         # Find guardkit-py CLI - resolve to full path for reliable -x test

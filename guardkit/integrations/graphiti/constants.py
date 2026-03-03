@@ -3,9 +3,19 @@
 This module defines constants and enumerations used across
 the Graphiti integration, including source types for episode metadata,
 project group definitions, and system group definitions.
+
+Group definitions are imported from guardkit._group_defs (single source
+of truth) and re-exported here for the public integrations API.
 """
 
 from enum import Enum
+
+from guardkit._group_defs import (
+    PROJECT_GROUPS,
+    SYSTEM_GROUPS,
+    PROJECT_GROUP_NAMES,
+    SYSTEM_GROUP_IDS,
+)
 
 
 class SourceType(str, Enum):
@@ -23,19 +33,10 @@ class SourceType(str, Enum):
     AUTO_CAPTURED = "auto_captured"
 
 
-# Project-specific group IDs with descriptions
-PROJECT_GROUPS = {
-    "project_overview": "High-level project purpose and goals",
-    "project_architecture": "System architecture and patterns",
-    "feature_specs": "Feature specifications and requirements",
-    "project_decisions": "Architecture Decision Records (ADRs)",
-    "project_constraints": "Constraints and limitations",
-    "domain_knowledge": "Domain terminology and concepts",
-}
-
-# System-level group IDs with descriptions
-SYSTEM_GROUPS = {
-    "role_constraints": "Player/Coach role boundaries",
-    "quality_gate_configs": "Task-type specific quality thresholds",
-    "implementation_modes": "Direct vs task-work patterns",
-}
+__all__ = [
+    "SourceType",
+    "PROJECT_GROUPS",
+    "SYSTEM_GROUPS",
+    "PROJECT_GROUP_NAMES",
+    "SYSTEM_GROUP_IDS",
+]

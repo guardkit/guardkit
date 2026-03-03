@@ -30,6 +30,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
+import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -38,9 +39,9 @@ from rich.console import Console
 from rich.prompt import Confirm, Prompt
 
 from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
-from guardkit.knowledge.config import _find_project_root
+from guardkit.knowledge.config import _find_project_root, load_graphiti_config
 from guardkit.knowledge.graphiti_client import GraphitiClient, GraphitiConfig, normalize_project_id
-from guardkit.knowledge.project_seeding import seed_project_knowledge
+from guardkit.knowledge.project_seeding import estimate_episode_count, seed_project_knowledge
 from guardkit.knowledge.template_sync import sync_template_to_graphiti
 
 console = Console()
@@ -48,6 +49,52 @@ logger = logging.getLogger(__name__)
 
 # Directories that should NOT be copied from templates (code scaffold concerns)
 _SKIP_DIRS = {"templates", "config", "docker"}
+
+
+class _ProgressClient:
+    """Wraps a GraphitiClient to display per-episode progress during seeding.
+
+    Intercepts ``add_episode`` calls to print elapsed time and N/M counters
+    to the console. All other attribute access delegates to the wrapped client.
+    """
+
+    def __init__(self, client, total: int, console_obj):
+        self._client = client
+        self._total = total
+        self._console = console_obj
+        self._current = 0
+
+    async def add_episode(self, *args, **kwargs):
+        self._current += 1
+        self._console.print(
+            f"  Seeding episode {self._current}/{self._total}...",
+            end="",
+        )
+        start = time.monotonic()
+        try:
+            result = await self._client.add_episode(*args, **kwargs)
+            elapsed = time.monotonic() - start
+            self._console.print(f" done ({elapsed:.1f}s)")
+            return result
+        except Exception as e:
+            elapsed = time.monotonic() - start
+            self._console.print(
+                f" [yellow]warning ({elapsed:.1f}s): {e}[/yellow]"
+            )
+            raise
+
+    async def initialize(self):
+        return await self._client.initialize()
+
+    async def close(self):
+        return await self._client.close()
+
+    @property
+    def enabled(self):
+        return self._client.enabled
+
+    def __getattr__(self, name):
+        return getattr(self._client, name)
 
 
 def _get_templates_base_dir() -> Path:
@@ -156,6 +203,10 @@ def _copy_agents(template_dir: Path, target_dir: Path) -> List[str]:
             if agent_file.suffix != ".md":
                 continue
             if agent_file.name.startswith("."):
+                continue
+            # Skip extended files (-ext.md) - they stay in ~/.agentecflow/
+            # for on-demand loading (progressive disclosure pattern)
+            if agent_file.name.endswith("-ext.md"):
                 continue
 
             if _copy_file_if_not_exists(
@@ -554,6 +605,7 @@ async def _cmd_init(
     project_name: Optional[str],
     interactive: bool = False,
     copy_graphiti: Optional[str] = None,
+    verbose: bool = False,
 ) -> int:
     """Async implementation of init command.
 
@@ -564,10 +616,17 @@ async def _cmd_init(
         interactive: If True, run interactive setup mode.
         copy_graphiti: If set, copy graphiti config from an existing project.
             Use "auto" for auto-discovery or an explicit directory path.
+        verbose: If True, show all log output including third-party DEBUG/INFO.
 
     Returns:
         Exit code (0 for success).
     """
+    # Suppress noisy third-party loggers (same pattern as graphiti.py:598-599)
+    if not verbose:
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
+        logging.getLogger("graphiti_core.driver.falkordb_driver").setLevel(logging.WARNING)
+
     project_dir = Path.cwd()
     project_name = project_name or project_dir.name
 
@@ -631,38 +690,75 @@ async def _cmd_init(
     else:
         console.print("\n[bold]Step 2: Seeding project knowledge to Graphiti...[/bold]")
 
-        # Initialize Graphiti client
+        # Initialize Graphiti client from .guardkit/graphiti.yaml
         client = None
         try:
-            config = GraphitiConfig(project_id=project_name)
+            settings = load_graphiti_config()
+            config = GraphitiConfig(
+                enabled=settings.enabled,
+                neo4j_uri=settings.neo4j_uri,
+                neo4j_user=settings.neo4j_user,
+                neo4j_password=settings.neo4j_password,
+                timeout=settings.timeout,
+                project_id=project_name,
+                graph_store=settings.graph_store,
+                falkordb_host=settings.falkordb_host,
+                falkordb_port=settings.falkordb_port,
+                host=settings.host,
+                port=settings.port,
+                llm_provider=settings.llm_provider,
+                llm_base_url=settings.llm_base_url,
+                llm_model=settings.llm_model,
+                embedding_provider=settings.embedding_provider,
+                embedding_base_url=settings.embedding_base_url,
+                embedding_model=settings.embedding_model,
+            )
             client = GraphitiClient(config)
             initialized = await client.initialize()
 
             if not initialized or not client.enabled:
                 console.print("  [yellow]Warning: Graphiti unavailable, skipping seeding[/yellow]")
             else:
-                # Seed project knowledge
-                result = await seed_project_knowledge(
-                    project_name=project_name,
-                    client=client,
+                # Estimate total episodes for progress display
+                total_episodes = estimate_episode_count(
+                    skip_overview=False,
                     project_dir=project_dir,
                     project_overview_episode=project_overview_episode,
                 )
 
+                # Wrap client with progress proxy
+                progress_client = _ProgressClient(client, total_episodes, console)
+
+                # Seed project knowledge with progress
+                seed_start = time.monotonic()
+                result = await seed_project_knowledge(
+                    project_name=project_name,
+                    client=progress_client,
+                    project_dir=project_dir,
+                    project_overview_episode=project_overview_episode,
+                )
+                seed_elapsed = time.monotonic() - seed_start
+
                 if result.success:
-                    console.print("  [green]Project knowledge seeded successfully[/green]")
+                    console.print(
+                        f"  [green]Project knowledge seeded successfully"
+                        f" ({seed_elapsed:.1f}s total)[/green]"
+                    )
                     for component_result in result.results:
                         status = "[green]OK[/green]" if component_result.success else "[yellow]WARN[/yellow]"
                         console.print(f"    {status} {component_result.component}: {component_result.message}")
                 else:
-                    console.print("  [yellow]Warning: Some seeding components failed[/yellow]")
+                    console.print(
+                        f"  [yellow]Warning: Some seeding components failed"
+                        f" ({seed_elapsed:.1f}s total)[/yellow]"
+                    )
 
                 # Step 2.5: Sync template content to Graphiti
                 template_source = _resolve_template_source_dir(template)
                 if template_source is not None:
                     console.print("\n[bold]Step 2.5: Syncing template content to Graphiti...[/bold]")
                     try:
-                        sync_result = await sync_template_to_graphiti(template_source)
+                        sync_result = await sync_template_to_graphiti(template_source, client=client)
                         if sync_result:
                             console.print("  [green]Template content synced to Graphiti[/green]")
                         else:
@@ -714,19 +810,30 @@ async def _cmd_init(
 )
 @click.option(
     "--copy-graphiti",
+    is_flag=True,
+    default=False,
+    help="Auto-discover and copy Graphiti config from a parent directory project.",
+)
+@click.option(
+    "--copy-graphiti-from",
     default=None,
-    help=(
-        "Copy Graphiti config from an existing project. "
-        "Use 'auto' for auto-discovery (walks up from parent of cwd), "
-        "or provide an explicit path: --copy-graphiti /path/to/project"
-    ),
+    type=click.Path(exists=True, file_okay=False, resolve_path=True),
+    help="Copy Graphiti config from an explicit project path.",
+)
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Show all log output including third-party DEBUG/INFO messages.",
 )
 def init(
     template: str,
     skip_graphiti: bool,
     project_name: Optional[str],
     interactive: bool,
-    copy_graphiti: Optional[str],
+    copy_graphiti: bool,
+    copy_graphiti_from: Optional[str],
+    verbose: bool,
 ):
     """Initialize GuardKit in the current directory.
 
@@ -735,8 +842,18 @@ def init(
     TEMPLATE is the name of the template to apply (default: 'default').
     Available templates: default, fastapi-python, react-typescript, nextjs-fullstack.
     """
+    # Merge the two options into a single value for _cmd_init
+    copy_graphiti_value: Optional[str] = None
+    if copy_graphiti_from:
+        copy_graphiti_value = copy_graphiti_from
+    elif copy_graphiti:
+        copy_graphiti_value = "auto"
+
     exit_code = asyncio.run(
-        _cmd_init(template, skip_graphiti, project_name, interactive, copy_graphiti)
+        _cmd_init(
+            template, skip_graphiti, project_name, interactive,
+            copy_graphiti_value, verbose,
+        )
     )
     if exit_code != 0:
         raise SystemExit(exit_code)

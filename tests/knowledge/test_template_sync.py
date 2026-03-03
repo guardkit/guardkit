@@ -1045,7 +1045,121 @@ class TestAgentDirectoryResolution:
 
 
 # ============================================================================
-# 11. Integration Tests (2 tests - marked for selective running)
+# 11. TASK-IGR-003: Reuse Connected Client Tests
+# ============================================================================
+
+class TestReuseConnectedClient:
+    """Test that sync functions accept and propagate an optional client parameter."""
+
+    @pytest.mark.asyncio
+    async def test_sync_template_uses_passed_client(self, tmp_path):
+        """sync_template_to_graphiti uses the passed client instead of get_graphiti()."""
+        template_path = tmp_path / "test-template"
+        template_path.mkdir()
+        manifest = {"name": "test-template", "language": "Python"}
+        (template_path / "manifest.json").write_text(json.dumps(manifest))
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
+
+        # Pass client directly — get_graphiti should NOT be called
+        with patch('guardkit.knowledge.template_sync.get_graphiti') as mock_get:
+            result = await sync_template_to_graphiti(template_path, client=mock_client)
+
+            assert result is True
+            mock_client.add_episode.assert_called()
+            mock_get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_sync_template_falls_back_to_get_graphiti(self, tmp_path):
+        """sync_template_to_graphiti falls back to get_graphiti() when no client passed."""
+        template_path = tmp_path / "test-template"
+        template_path.mkdir()
+        manifest = {"name": "test-template", "language": "Python"}
+        (template_path / "manifest.json").write_text(json.dumps(manifest))
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client) as mock_get:
+            result = await sync_template_to_graphiti(template_path)
+
+            assert result is True
+            mock_get.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_sync_agent_uses_passed_client(self, tmp_path):
+        """sync_agent_to_graphiti uses the passed client instead of get_graphiti()."""
+        agent_path = tmp_path / "test-agent.md"
+        agent_path.write_text("---\nname: test-agent\ndescription: Test\n---\n# Agent")
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti') as mock_get:
+            result = await sync_agent_to_graphiti(agent_path, "template-id", client=mock_client)
+
+            assert result is True
+            mock_client.add_episode.assert_called_once()
+            mock_get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_sync_rule_uses_passed_client(self, tmp_path):
+        """sync_rule_to_graphiti uses the passed client instead of get_graphiti()."""
+        rule_path = tmp_path / "test-rule.md"
+        rule_path.write_text("---\npaths: src/**\n---\n# Rule Content")
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti') as mock_get:
+            result = await sync_rule_to_graphiti(rule_path, "template-id", client=mock_client)
+
+            assert result is True
+            mock_client.add_episode.assert_called_once()
+            mock_get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_sync_template_propagates_client_to_agents_and_rules(self, tmp_path):
+        """sync_template_to_graphiti passes client down to agent and rule syncs."""
+        template_path = tmp_path / "test-template"
+        template_path.mkdir()
+        manifest = {"name": "test-template", "language": "Python"}
+        (template_path / "manifest.json").write_text(json.dumps(manifest))
+
+        # Create an agent and a rule
+        agents_dir = template_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "my-agent.md").write_text(
+            "---\nname: my-agent\ndescription: Agent\n---\n# Agent"
+        )
+
+        rules_dir = template_path / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+        (rules_dir / "my-rule.md").write_text(
+            "---\npaths: src/**\n---\n# Rule"
+        )
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
+
+        # get_graphiti should never be called since we pass client directly
+        with patch('guardkit.knowledge.template_sync.get_graphiti') as mock_get:
+            result = await sync_template_to_graphiti(template_path, client=mock_client)
+
+            assert result is True
+            # Should have 3 calls: template + agent + rule
+            assert mock_client.add_episode.call_count == 3
+            mock_get.assert_not_called()
+
+
+# ============================================================================
+# 12. Integration Tests (2 tests - marked for selective running)
 # ============================================================================
 
 @pytest.mark.integration

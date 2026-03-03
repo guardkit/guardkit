@@ -10,6 +10,8 @@ from guardkit.integrations.graphiti.constants import (
     SourceType,
     PROJECT_GROUPS,
     SYSTEM_GROUPS,
+    PROJECT_GROUP_NAMES,
+    SYSTEM_GROUP_IDS,
 )
 from guardkit.integrations.graphiti.exists_result import ExistsResult
 from guardkit.integrations.graphiti.project import (
@@ -37,6 +39,8 @@ __all__ = [
     "SourceType",
     "PROJECT_GROUPS",
     "SYSTEM_GROUPS",
+    "PROJECT_GROUP_NAMES",
+    "SYSTEM_GROUP_IDS",
     "ExistsResult",
     # Project management
     "ProjectInfo",

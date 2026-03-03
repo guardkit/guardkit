@@ -396,3 +396,52 @@ async def seed_project_knowledge(
     result.success = True
 
     return result
+
+
+def estimate_episode_count(
+    skip_overview: bool = False,
+    project_dir: Optional[Path] = None,
+    project_overview_episode: Optional[Any] = None,
+) -> int:
+    """Estimate total episode count for progress display.
+
+    Counts how many ``client.add_episode`` calls will be made during
+    ``seed_project_knowledge``, allowing callers to show N/M progress.
+
+    Args:
+        skip_overview: If True, overview episodes are excluded.
+        project_dir: Project directory (defaults to cwd).
+        project_overview_episode: If provided, counts as 1 overview episode.
+
+    Returns:
+        Estimated total episode count.
+    """
+    total = 0
+
+    if not skip_overview:
+        if project_overview_episode is not None:
+            total += 1
+        else:
+            project_dir = project_dir or Path.cwd()
+            doc_files = ["CLAUDE.md", "README.md", "claude.md", "readme.md"]
+            for filename in doc_files:
+                filepath = project_dir / filename
+                if filepath.exists():
+                    try:
+                        parser = ProjectDocParser()
+                        content = filepath.read_text()
+                        if parser.can_parse(content, str(filepath)):
+                            parse_result = parser.parse(content, str(filepath))
+                            if parse_result.success:
+                                total += len(parse_result.episodes)
+                    except Exception:
+                        pass
+                    break
+
+    # Role constraints: always 2 (Player + Coach)
+    total += 2
+
+    # Implementation modes
+    total += len(IMPLEMENTATION_MODE_DEFAULTS)
+
+    return total

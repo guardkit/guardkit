@@ -147,7 +147,7 @@ def _extract_rule_content(content: str) -> str:
 # TEMPLATE SYNC
 # ============================================================================
 
-async def sync_template_to_graphiti(template_path: Path) -> bool:
+async def sync_template_to_graphiti(template_path: Path, client=None) -> bool:
     """Sync template metadata to Graphiti after creation.
 
     Reads the template manifest.json (if present) and syncs:
@@ -160,6 +160,8 @@ async def sync_template_to_graphiti(template_path: Path) -> bool:
 
     Args:
         template_path: Path to the template directory
+        client: Optional pre-connected GraphitiClient. Falls back to
+            get_graphiti() when not provided (for non-init callers).
 
     Returns:
         True if sync successful, False if client disabled or error occurred.
@@ -170,8 +172,9 @@ async def sync_template_to_graphiti(template_path: Path) -> bool:
             Path("installer/core/templates/fastapi-python")
         )
     """
-    # Get Graphiti client
-    client = get_graphiti()
+    # Get Graphiti client — prefer passed client, fall back to singleton
+    if client is None:
+        client = get_graphiti()
 
     if not client:
         logger.warning("[Graphiti] Template sync skipped: client unavailable")
@@ -249,7 +252,7 @@ async def sync_template_to_graphiti(template_path: Path) -> bool:
             if "-ext.md" in agent_file.name:
                 continue
             try:
-                await sync_agent_to_graphiti(agent_file, template_id)
+                await sync_agent_to_graphiti(agent_file, template_id, client=client)
             except Exception as e:
                 logger.warning(f"[Graphiti] Failed to sync agent {agent_file.name}: {e}")
 
@@ -258,7 +261,7 @@ async def sync_template_to_graphiti(template_path: Path) -> bool:
     if rules_dir.exists() and rules_dir.is_dir():
         for rule_file in rules_dir.rglob("*.md"):
             try:
-                await sync_rule_to_graphiti(rule_file, template_id)
+                await sync_rule_to_graphiti(rule_file, template_id, client=client)
             except Exception as e:
                 logger.warning(f"[Graphiti] Failed to sync rule {rule_file.name}: {e}")
 
@@ -269,7 +272,7 @@ async def sync_template_to_graphiti(template_path: Path) -> bool:
 # AGENT SYNC
 # ============================================================================
 
-async def sync_agent_to_graphiti(agent_path: Path, template_id: str) -> bool:
+async def sync_agent_to_graphiti(agent_path: Path, template_id: str, client=None) -> bool:
     """Sync agent metadata to Graphiti.
 
     Extracts metadata from agent markdown frontmatter and creates
@@ -278,6 +281,8 @@ async def sync_agent_to_graphiti(agent_path: Path, template_id: str) -> bool:
     Args:
         agent_path: Path to the agent markdown file
         template_id: ID of the parent template
+        client: Optional pre-connected GraphitiClient. Falls back to
+            get_graphiti() when not provided.
 
     Returns:
         True if sync successful, False if client disabled or error occurred.
@@ -288,8 +293,9 @@ async def sync_agent_to_graphiti(agent_path: Path, template_id: str) -> bool:
             "fastapi-python"
         )
     """
-    # Get Graphiti client
-    client = get_graphiti()
+    # Get Graphiti client — prefer passed client, fall back to singleton
+    if client is None:
+        client = get_graphiti()
 
     if not client:
         logger.warning("[Graphiti] Agent sync skipped: client unavailable")
@@ -359,7 +365,7 @@ async def sync_agent_to_graphiti(agent_path: Path, template_id: str) -> bool:
 # RULE SYNC
 # ============================================================================
 
-async def sync_rule_to_graphiti(rule_path: Path, template_id: str) -> bool:
+async def sync_rule_to_graphiti(rule_path: Path, template_id: str, client=None) -> bool:
     """Sync rule metadata to Graphiti.
 
     Extracts metadata from rule markdown frontmatter and creates
@@ -368,6 +374,8 @@ async def sync_rule_to_graphiti(rule_path: Path, template_id: str) -> bool:
     Args:
         rule_path: Path to the rule markdown file
         template_id: ID of the parent template
+        client: Optional pre-connected GraphitiClient. Falls back to
+            get_graphiti() when not provided.
 
     Returns:
         True if sync successful, False if client disabled or error occurred.
@@ -378,8 +386,9 @@ async def sync_rule_to_graphiti(rule_path: Path, template_id: str) -> bool:
             "fastapi-python"
         )
     """
-    # Get Graphiti client
-    client = get_graphiti()
+    # Get Graphiti client — prefer passed client, fall back to singleton
+    if client is None:
+        client = get_graphiti()
 
     if not client:
         logger.warning("[Graphiti] Rule sync skipped: client unavailable")

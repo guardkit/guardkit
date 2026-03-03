@@ -27,11 +27,18 @@ Thread-Safe Factory Pattern:
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
+import asyncio
 import logging
 import os
 import re
 import json
 import threading
+import time
+
+from guardkit._group_defs import (
+    PROJECT_GROUP_NAMES as _PROJECT_GROUP_NAMES,
+    SYSTEM_GROUP_IDS as _SYSTEM_GROUP_IDS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -221,16 +228,9 @@ class GraphitiClient:
         await client.close()
     """
 
-    # Project-level groups that require project_id prefixing
-    PROJECT_GROUP_NAMES = [
-        "project_overview",
-        "project_architecture",
-        "feature_specs",
-        "project_decisions",
-        "project_constraints",
-        "domain_knowledge",
-        "bdd_scenarios",  # Added by FEAT-SC-001 for /impact-analysis deep mode
-    ]
+    # Project-level groups that require project_id prefixing.
+    # Single source of truth: guardkit.integrations.graphiti.constants
+    PROJECT_GROUP_NAMES = _PROJECT_GROUP_NAMES
 
     def __init__(self, config: Optional[GraphitiConfig] = None, auto_detect_project: bool = True):
         """Initialize GraphitiClient.
@@ -249,7 +249,9 @@ class GraphitiClient:
         # Circuit breaker state
         self._consecutive_failures = 0
         self._circuit_breaker_tripped = False
+        self._circuit_breaker_tripped_at: Optional[float] = None
         self._max_failures = 3
+        self._circuit_breaker_reset_timeout = 60.0  # seconds
 
         # Determine project_id: explicit > auto-detect
         if self.config.project_id is not None:
@@ -438,7 +440,7 @@ class GraphitiClient:
         Returns:
             True if enabled, connected, and circuit breaker not tripped
         """
-        return self.config.enabled and self._connected and not self._circuit_breaker_tripped
+        return self.config.enabled and self._connected and not self._check_circuit_breaker()
 
     def _record_success(self) -> None:
         """Record a successful operation, resetting the failure counter."""
@@ -449,11 +451,53 @@ class GraphitiClient:
         self._consecutive_failures += 1
         if self._consecutive_failures >= self._max_failures:
             self._circuit_breaker_tripped = True
+            self._circuit_breaker_tripped_at = time.monotonic()
             logger.warning(
                 "Graphiti disabled after %d consecutive failures -- "
                 "continuing without knowledge graph context",
                 self._consecutive_failures,
             )
+
+    def _check_circuit_breaker(self) -> bool:
+        """Check if the circuit breaker is tripped, with half-open reset.
+
+        If the circuit breaker has been tripped for longer than the reset
+        timeout (default 60s), it resets to allow a retry (half-open state).
+
+        Returns:
+            True if the circuit breaker is active (operations should be blocked),
+            False if operations can proceed.
+        """
+        if not self._circuit_breaker_tripped:
+            return False
+        if self._circuit_breaker_tripped_at is not None:
+            elapsed = time.monotonic() - self._circuit_breaker_tripped_at
+            if elapsed >= self._circuit_breaker_reset_timeout:
+                self._circuit_breaker_tripped = False
+                self._consecutive_failures = 0
+                logger.info("Circuit breaker reset after %.0fs (half-open)", elapsed)
+                return False
+        return True
+
+    @staticmethod
+    def _is_transient_error(error: Exception) -> bool:
+        """Classify whether an error is transient and worth retrying.
+
+        Args:
+            error: The exception to classify
+
+        Returns:
+            True if the error is likely transient (connection issues,
+            query throttling), False otherwise.
+        """
+        error_str = str(error)
+        return (
+            "Max pending queries" in error_str
+            or "Connection" in error_str
+            or "connection" in error_str
+            or "Timed out" in error_str
+            or "timed out" in error_str
+        )
 
     def _build_embedder(self):
         """Build OpenAI-compatible embedder for non-OpenAI providers.
@@ -542,7 +586,7 @@ class GraphitiClient:
         if not self.config.enabled:
             return False
 
-        if self._circuit_breaker_tripped:
+        if self._check_circuit_breaker():
             return False
 
         if not self._connected or not self._graphiti:
@@ -715,7 +759,7 @@ class GraphitiClient:
         Returns:
             List of search results as dictionaries
         """
-        if self._circuit_breaker_tripped:
+        if self._check_circuit_breaker():
             return []
 
         if not self._graphiti:
@@ -815,7 +859,7 @@ class GraphitiClient:
         """Create an episode in Graphiti using graphiti-core.
 
         This is the internal method that creates the episode.
-        It can be mocked in tests.
+        Retries transient FalkorDB errors with exponential backoff.
 
         Args:
             name: Episode name/title
@@ -825,38 +869,49 @@ class GraphitiClient:
         Returns:
             Episode UUID if successful, None otherwise
         """
-        if self._circuit_breaker_tripped:
+        if self._check_circuit_breaker():
             return None
 
         if not self._graphiti:
             logger.warning("Graphiti not initialized, episode creation unavailable")
             return None
 
-        try:
-            from graphiti_core.nodes import EpisodeType
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                from graphiti_core.nodes import EpisodeType
 
-            # Add episode using graphiti-core
-            result = await self._graphiti.add_episode(
-                name=name,
-                episode_body=episode_body,
-                source=EpisodeType.text,
-                source_description=f"GuardKit knowledge seeding: {name}",
-                reference_time=datetime.now(timezone.utc),
-                group_id=group_id
-            )
+                # Add episode using graphiti-core
+                result = await self._graphiti.add_episode(
+                    name=name,
+                    episode_body=episode_body,
+                    source=EpisodeType.text,
+                    source_description=f"GuardKit knowledge seeding: {name}",
+                    reference_time=datetime.now(timezone.utc),
+                    group_id=group_id
+                )
 
-            # Return the episode UUID
-            if result and hasattr(result, 'episode') and result.episode:
-                episode_uuid = result.episode.uuid
-                # Record success
-                self._record_success()
-                return episode_uuid
-            return None
+                # Return the episode UUID
+                if result and hasattr(result, 'episode') and result.episode:
+                    episode_uuid = result.episode.uuid
+                    self._record_success()
+                    return episode_uuid
+                return None
 
-        except Exception as e:
-            logger.warning(f"Episode creation request failed: {e}")
-            self._record_failure()
-            return None
+            except Exception as e:
+                if self._is_transient_error(e) and attempt < max_retries - 1:
+                    delay = 2 ** (attempt + 1)  # 2s, 4s
+                    logger.warning(
+                        "Transient FalkorDB error (attempt %d/%d), "
+                        "retrying in %ds: %s",
+                        attempt + 1, max_retries, delay, e,
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.warning("Episode creation failed: %s", e)
+                    self._record_failure()
+                    return None
+        return None
 
     def _inject_metadata(self, content: str, metadata: "EpisodeMetadata") -> str:
         """Inject metadata block into episode content.
@@ -1173,7 +1228,7 @@ class GraphitiClient:
             logger.warning("Graphiti not initialized, episode_exists unavailable")
             return ExistsResult.not_found()
 
-        if self._circuit_breaker_tripped:
+        if self._check_circuit_breaker():
             return ExistsResult.not_found()
 
         try:
@@ -1255,29 +1310,9 @@ class GraphitiClient:
     # CLEAR METHODS
     # =========================================================================
 
-    # System group IDs that are cleared with --system-only
-    SYSTEM_GROUP_IDS = [
-        "guardkit_templates",
-        "guardkit_patterns",
-        "guardkit_workflows",
-        "product_knowledge",
-        "command_workflows",
-        "quality_gate_phases",
-        "technology_stack",
-        "feature_build_architecture",
-        "architecture_decisions",
-        "failure_patterns",
-        "component_status",
-        "integration_points",
-        "templates",
-        "agents",
-        "patterns",
-        "rules",
-        "failed_approaches",
-        "quality_gate_configs",
-        "role_constraints",
-        "implementation_modes",
-    ]
+    # System group IDs that are cleared with --system-only.
+    # Single source of truth: guardkit.integrations.graphiti.constants
+    SYSTEM_GROUP_IDS = _SYSTEM_GROUP_IDS
 
     async def _list_groups(self) -> List[str]:
         """List all group IDs in the knowledge graph.
