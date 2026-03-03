@@ -9,7 +9,7 @@ completed_location: tasks/completed/TASK-IMP-674A-PREREQ/
 priority: critical
 tags: [setup, infrastructure, prerequisite]
 complexity: 3
-task_type: implementation
+task_type: feature
 blocks: [TASK-IMP-674A]
 organized_files:
   - TASK-IMP-674A-PREREQ.md

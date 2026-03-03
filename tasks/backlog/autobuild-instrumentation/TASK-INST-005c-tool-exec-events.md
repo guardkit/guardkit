@@ -1,6 +1,6 @@
 ---
 id: TASK-INST-005c
-title: "Emit tool execution events with secret redaction"
+title: Emit tool execution events with secret redaction
 task_type: feature
 parent_review: TASK-REV-2FE2
 feature_id: FEAT-INST
@@ -8,26 +8,43 @@ wave: 3
 implementation_mode: task-work
 complexity: 3
 dependencies:
-  - TASK-INST-001
-  - TASK-INST-002
-  - TASK-INST-003
-  - TASK-INST-005a
-  - TASK-INST-005b
+- TASK-INST-001
+- TASK-INST-002
+- TASK-INST-003
+- TASK-INST-005a
+- TASK-INST-005b
 autobuild:
   enabled: true
   max_turns: 5
   mode: tdd
 consumer_context:
-  - task: TASK-INST-002
-    consumes: EVENT_EMITTER
-    framework: "EventEmitter protocol (async)"
-    driver: "guardkit.orchestrator.instrumentation.emitter"
-    format_note: "Reuse self._emitter already injected by TASK-INST-005b"
-  - task: TASK-INST-003
-    consumes: REDACTION_PIPELINE
-    framework: "redact_secrets() function"
-    driver: "guardkit.orchestrator.instrumentation.redaction"
-    format_note: "Call redact_secrets(text) on cmd, stdout_tail, stderr_tail before constructing ToolExecEvent"
+- task: TASK-INST-002
+  consumes: EVENT_EMITTER
+  framework: EventEmitter protocol (async)
+  driver: guardkit.orchestrator.instrumentation.emitter
+  format_note: Reuse self._emitter already injected by TASK-INST-005b
+- task: TASK-INST-003
+  consumes: REDACTION_PIPELINE
+  framework: redact_secrets() function
+  driver: guardkit.orchestrator.instrumentation.redaction
+  format_note: Call redact_secrets(text) on cmd, stdout_tail, stderr_tail before constructing
+    ToolExecEvent
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 30
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57
+  base_branch: main
+  started_at: '2026-03-02T23:04:54.589806'
+  last_updated: '2026-03-02T23:11:34.207324'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-03-02T23:04:54.589806'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Emit Tool Execution Events with Secret Redaction

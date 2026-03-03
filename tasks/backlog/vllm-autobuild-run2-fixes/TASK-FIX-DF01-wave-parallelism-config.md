@@ -2,7 +2,7 @@
 id: TASK-FIX-DF01
 title: Add configurable wave parallelism for local backends
 status: backlog
-task_type: implementation
+task_type: feature
 priority: low
 tags: [autobuild, vllm, config, feature-orchestrator, p2]
 complexity: 4

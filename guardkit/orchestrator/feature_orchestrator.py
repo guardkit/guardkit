@@ -46,6 +46,10 @@ from guardkit.orchestrator.feature_loader import (
     FeatureNotFoundError,
     FeatureValidationError,
 )
+from guardkit.orchestrator.feature_validator import (
+    validate_feature_preflight,
+    format_preflight_report,
+)
 from guardkit.orchestrator.environment_bootstrap import (
     ProjectEnvironmentDetector,
     EnvironmentBootstrapper,
@@ -247,6 +251,7 @@ class FeatureOrchestrator:
         task_timeout: int = 2400,
         timeout_multiplier: Optional[float] = None,
         max_parallel: Optional[int] = None,
+        skip_validation: bool = False,
         emitter: Optional[Any] = None,
     ):
         """
@@ -295,6 +300,10 @@ class FeatureOrchestrator:
             Maximum number of parallel tasks per wave (default: None = unlimited).
             When set, uses an asyncio.Semaphore to limit concurrent task execution
             within each wave. Useful for local/vLLM backends with limited resources.
+        skip_validation : bool, optional
+            Skip pre-flight frontmatter validation (default: False).
+            When True, bypasses the frontmatter field and task_type checks
+            that run before worktree creation.
 
         Raises
         ------
@@ -335,6 +344,7 @@ class FeatureOrchestrator:
         self.enable_context = enable_context
         self.task_timeout = int(task_timeout * self.timeout_multiplier)
         self.max_parallel = max_parallel
+        self.skip_validation = skip_validation
         self._emitter = emitter if emitter is not None else NullEmitter()  # TASK-INST-004
         self.features_dir = features_dir or self.repo_root / ".guardkit" / "features"
 
@@ -532,6 +542,26 @@ class FeatureOrchestrator:
             )
 
         console.print("[green]✓[/green] Feature validation passed")
+
+        # Pre-flight frontmatter validation (TASK-FIX-7537)
+        if not self.skip_validation:
+            preflight_result = validate_feature_preflight(feature, self.repo_root)
+
+            # Display warnings (alias suggestions) even if valid
+            if preflight_result.has_warnings:
+                for warning in preflight_result.warnings:
+                    console.print(
+                        f"[yellow]![/yellow] {warning.task_id}: {warning.message}"
+                    )
+                    if warning.suggestion:
+                        console.print(f"    Suggestion: {warning.suggestion}")
+
+            # Fail on errors
+            if preflight_result.has_errors:
+                report = format_preflight_report(preflight_result)
+                raise FeatureValidationError(report)
+
+            console.print("[green]✓[/green] Pre-flight validation passed")
 
         # Initialize wave progress display
         if not self.quiet:

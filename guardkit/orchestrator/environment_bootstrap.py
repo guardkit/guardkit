@@ -261,11 +261,15 @@ class BootstrapResult:
     installs_attempted : int
         Number of install commands executed.
     installs_failed : int
-        Number of install commands that failed.
+        Number of install commands that failed (essential stacks only).
     error : Optional[str]
         Human-readable error message when success is False, else None.
     duration_seconds : float
         Wall-clock duration of the bootstrap operation in seconds.
+    non_relevant_failures : int
+        Count of failures from non-relevant stacks (non-blocking).
+    skipped_stacks : List[str]
+        Stacks that were skipped or had non-blocking failures.
     """
 
     success: bool
@@ -277,6 +281,8 @@ class BootstrapResult:
     error: Optional[str] = None
     duration_seconds: float = 0.0
     venv_python: Optional[str] = None
+    non_relevant_failures: int = 0
+    skipped_stacks: List[str] = field(default_factory=list)
 
 
 # ============================================================================
@@ -332,7 +338,11 @@ class ProjectEnvironmentDetector:
     python pyproject.toml
     """
 
-    def __init__(self, root: Path) -> None:
+    def __init__(
+        self,
+        root: Path,
+        exclude_patterns: Optional[List[str]] = None,
+    ) -> None:
         """
         Initialize the detector.
 
@@ -340,8 +350,16 @@ class ProjectEnvironmentDetector:
         ----------
         root : Path
             Absolute path to the worktree root directory.
+        exclude_patterns : Optional[List[str]], optional
+            Directory path patterns to exclude from scanning (relative to
+            root). Any subdirectory whose path relative to root starts with
+            one of these patterns is skipped. Defaults to
+            ``["tests/fixtures"]``.
         """
         self._root = root
+        self._exclude_patterns: List[str] = (
+            exclude_patterns if exclude_patterns is not None else ["tests/fixtures"]
+        )
 
     def detect(self) -> List[DetectedManifest]:
         """
@@ -368,16 +386,29 @@ class ProjectEnvironmentDetector:
         """
         Return directories to scan: root plus immediate non-hidden subdirs.
 
+        Directories whose path relative to root starts with any pattern in
+        ``self._exclude_patterns`` are omitted.
+
         Returns
         -------
         List[Path]
-            [root] + immediate subdirectories (hidden dirs excluded).
+            [root] + immediate subdirectories (hidden and excluded dirs omitted).
         """
         dirs: List[Path] = [self._root]
         try:
             for entry in sorted(self._root.iterdir()):
-                if entry.is_dir() and not entry.name.startswith("."):
-                    dirs.append(entry)
+                if not entry.is_dir() or entry.name.startswith("."):
+                    continue
+                try:
+                    rel = entry.relative_to(self._root).as_posix()
+                except ValueError:
+                    rel = entry.name
+                if any(rel.startswith(pattern) for pattern in self._exclude_patterns):
+                    logger.debug(
+                        "Skipping excluded directory: %s (matches exclude pattern)", entry
+                    )
+                    continue
+                dirs.append(entry)
         except OSError as exc:
             logger.warning("Could not list subdirectories of %s: %s", self._root, exc)
         return dirs
@@ -615,7 +646,11 @@ class EnvironmentBootstrapper:
         self._retry_cooldown_seconds = retry_cooldown_seconds
         self._venv_python: Optional[Path] = None
 
-    def bootstrap(self, manifests: List[DetectedManifest]) -> BootstrapResult:
+    def bootstrap(
+        self,
+        manifests: List[DetectedManifest],
+        relevant_stacks: Optional[List[str]] = None,
+    ) -> BootstrapResult:
         """
         Install dependencies for the given manifests.
 
@@ -627,6 +662,13 @@ class EnvironmentBootstrapper:
         ----------
         manifests : List[DetectedManifest]
             Manifests returned by ProjectEnvironmentDetector.detect().
+        relevant_stacks : Optional[List[str]], optional
+            When provided, only manifests whose stack is in this list are
+            treated as essential. Failures from non-relevant stacks are
+            logged at WARNING level and counted in
+            ``BootstrapResult.non_relevant_failures`` rather than
+            ``installs_failed``, so they do not affect ``success``.
+            Defaults to None (all stacks are treated as essential).
 
         Returns
         -------
@@ -677,14 +719,31 @@ class EnvironmentBootstrapper:
         # Run install commands
         installs_attempted = 0
         installs_failed = 0
+        non_relevant_failures = 0
+        skipped_stacks: List[str] = []
 
         for manifest in manifests:
+            is_essential = (
+                relevant_stacks is None or manifest.stack in relevant_stacks
+            )
+
             if manifest.is_project_complete():
                 # Full project install (standard path)
                 installs_attempted += 1
                 success = self._run_install(manifest)
                 if not success:
-                    installs_failed += 1
+                    if is_essential:
+                        installs_failed += 1
+                    else:
+                        non_relevant_failures += 1
+                        if manifest.stack not in skipped_stacks:
+                            skipped_stacks.append(manifest.stack)
+                        logger.warning(
+                            "Non-relevant stack install failed for %s (%s) — "
+                            "not counted as blocking failure",
+                            manifest.stack,
+                            manifest.path.name,
+                        )
             else:
                 # Incomplete project: install declared dependencies individually
                 dep_commands = manifest.get_dependency_install_commands()
@@ -693,7 +752,18 @@ class EnvironmentBootstrapper:
                         installs_attempted += 1
                         success = self._run_single_command(cmd, manifest.path.parent)
                         if not success:
-                            installs_failed += 1
+                            if is_essential:
+                                installs_failed += 1
+                            else:
+                                non_relevant_failures += 1
+                                if manifest.stack not in skipped_stacks:
+                                    skipped_stacks.append(manifest.stack)
+                                logger.warning(
+                                    "Non-relevant stack dep-install failed for %s (%s) — "
+                                    "not counted as blocking failure",
+                                    manifest.stack,
+                                    manifest.path.name,
+                                )
                 else:
                     logger.warning(
                         "Incomplete project at %s (%s): no dependency install available",
@@ -721,6 +791,8 @@ class EnvironmentBootstrapper:
             ),
             duration_seconds=duration,
             venv_python=str(self._venv_python) if self._venv_python else None,
+            non_relevant_failures=non_relevant_failures,
+            skipped_stacks=sorted(skipped_stacks),
         )
 
     def _compute_hash(self, manifests: List[DetectedManifest]) -> str:

@@ -2,7 +2,7 @@
 id: TASK-BRF-003
 title: Raise Default Architectural Review Threshold
 status: backlog
-task_type: implementation
+task_type: feature
 created: 2026-01-24T16:30:00Z
 updated: 2026-01-24T16:30:00Z
 priority: medium

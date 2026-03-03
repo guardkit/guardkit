@@ -2,7 +2,7 @@
 id: TASK-FIX-TM03
 title: Add markdown formatting stripping to _match_by_text() normalization
 status: backlog
-task_type: implementation
+task_type: feature
 created: 2026-02-25T12:00:00Z
 priority: high
 tags: [autobuild, coach-validator, text-matching, defense-in-depth, P1]

@@ -42,6 +42,12 @@ from guardkit.orchestrator.feature_orchestrator import (
     TaskExecutionResult,
     WaveExecutionResult,
 )
+from guardkit.orchestrator.feature_validator import (
+    validate_feature_preflight,
+    format_preflight_report,
+    PreFlightValidationResult,
+    ValidationIssue,
+)
 from guardkit.orchestrator.environment_bootstrap import (
     ProjectEnvironmentDetector,
     EnvironmentBootstrapper,
@@ -123,6 +129,11 @@ __all__ = [
     "PreLoopPhaseError",
     "LoopPhaseError",
     "FinalizePhaseError",
+    # Feature pre-flight validation
+    "validate_feature_preflight",
+    "format_preflight_report",
+    "PreFlightValidationResult",
+    "ValidationIssue",
     # Exceptions - Feature Orchestration
     "FeatureNotFoundError",
     "FeatureParseError",

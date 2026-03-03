@@ -1,6 +1,6 @@
 ---
 id: TASK-INST-004
-title: "Instrument AutoBuild orchestrator with lifecycle events"
+title: Instrument AutoBuild orchestrator with lifecycle events
 task_type: feature
 parent_review: TASK-REV-2FE2
 feature_id: FEAT-INST
@@ -8,18 +8,35 @@ wave: 3
 implementation_mode: task-work
 complexity: 5
 dependencies:
-  - TASK-INST-001
-  - TASK-INST-002
+- TASK-INST-001
+- TASK-INST-002
 autobuild:
   enabled: true
   max_turns: 5
   mode: tdd
 consumer_context:
-  - task: TASK-INST-002
-    consumes: EVENT_EMITTER
-    framework: "EventEmitter protocol (async)"
-    driver: "guardkit.orchestrator.instrumentation.emitter"
-    format_note: "EventEmitter injected via constructor; call await emitter.emit(event) for each lifecycle event"
+- task: TASK-INST-002
+  consumes: EVENT_EMITTER
+  framework: EventEmitter protocol (async)
+  driver: guardkit.orchestrator.instrumentation.emitter
+  format_note: EventEmitter injected via constructor; call await emitter.emit(event)
+    for each lifecycle event
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 30
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57
+  base_branch: main
+  started_at: '2026-03-02T22:26:58.422309'
+  last_updated: '2026-03-02T22:42:31.050623'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-03-02T22:26:58.422309'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Instrument AutoBuild Orchestrator with Lifecycle Events

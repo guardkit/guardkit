@@ -2,7 +2,7 @@
 id: TASK-INT-002
 title: Add integration tests for combined TWD + SEC functionality
 status: backlog
-task_type: implementation
+task_type: feature
 created: 2026-01-01T12:30:00Z
 priority: medium
 tags: [integration, testing, autobuild, coach]

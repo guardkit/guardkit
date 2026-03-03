@@ -1,6 +1,6 @@
 ---
 id: TASK-INST-009
-title: "Integration tests for instrumentation pipeline"
+title: Integration tests for instrumentation pipeline
 task_type: testing
 parent_review: TASK-REV-2FE2
 feature_id: FEAT-INST
@@ -8,15 +8,31 @@ wave: 4
 implementation_mode: task-work
 complexity: 4
 dependencies:
-  - TASK-INST-004
-  - TASK-INST-005
-  - TASK-INST-006
-  - TASK-INST-007
-  - TASK-INST-008
+- TASK-INST-004
+- TASK-INST-005
+- TASK-INST-006
+- TASK-INST-007
+- TASK-INST-008
 autobuild:
   enabled: true
   max_turns: 5
   mode: tdd
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 30
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57
+  base_branch: main
+  started_at: '2026-03-02T23:11:38.504302'
+  last_updated: '2026-03-02T23:17:00.013695'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-03-02T23:11:38.504302'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Integration Tests for Instrumentation Pipeline

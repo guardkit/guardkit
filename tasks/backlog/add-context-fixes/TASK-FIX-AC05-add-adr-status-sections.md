@@ -6,7 +6,7 @@ created: 2026-02-13T00:00:00Z
 updated: 2026-02-13T00:00:00Z
 priority: medium
 tags: [fix, documentation, adr]
-task_type: implementation
+task_type: feature
 parent_review: TASK-REV-1294
 feature_id: FEAT-AC01
 wave: 2

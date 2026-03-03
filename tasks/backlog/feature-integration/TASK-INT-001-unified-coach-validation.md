@@ -2,7 +2,7 @@
 id: TASK-INT-001
 title: Implement unified Coach validation flow integrating security and honesty checks
 status: backlog
-task_type: implementation
+task_type: feature
 created: 2026-01-01T12:30:00Z
 priority: high
 tags: [integration, autobuild, coach, security, validation]

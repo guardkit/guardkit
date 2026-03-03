@@ -2,7 +2,7 @@
 id: TASK-FP-4F81
 title: "Add existing code audit step to /feature-plan command"
 status: backlog
-task_type: implementation
+task_type: feature
 created: 2025-12-24T00:00:00Z
 updated: 2025-12-24T00:00:00Z
 priority: medium

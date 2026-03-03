@@ -7,7 +7,7 @@ updated: 2026-02-09T16:30:00Z
 completed: 2026-02-09T16:30:00Z
 priority: medium
 tags: [documentation, graphiti, threading, architecture]
-task_type: implementation
+task_type: feature
 complexity: 4
 feature: FEAT-C90E
 depends_on: [TASK-FIX-GTP1, TASK-FIX-GTP2, TASK-FIX-GTP5]

@@ -1,6 +1,6 @@
 ---
 id: TASK-INST-005a
-title: "Create LLM instrumentation helper module"
+title: Create LLM instrumentation helper module
 task_type: scaffolding
 parent_review: TASK-REV-2FE2
 feature_id: FEAT-INST
@@ -8,12 +8,28 @@ wave: 3
 implementation_mode: task-work
 complexity: 3
 dependencies:
-  - TASK-INST-001
-  - TASK-INST-002
+- TASK-INST-001
+- TASK-INST-002
 autobuild:
   enabled: true
   max_turns: 5
   mode: tdd
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 30
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57
+  base_branch: main
+  started_at: '2026-03-02T22:26:58.424328'
+  last_updated: '2026-03-02T22:32:32.457732'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-03-02T22:26:58.424328'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Create LLM Instrumentation Helper Module

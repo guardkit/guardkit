@@ -2,7 +2,7 @@
 id: TASK-POF-001
 title: Add --autobuild-mode composite flag to task-work
 status: completed
-task_type: implementation
+task_type: feature
 created: 2026-02-15T14:00:00Z
 updated: 2026-02-15T15:00:00Z
 completed: 2026-02-15T15:00:00Z

@@ -1,0 +1,59 @@
+{
+  "task_id": "TASK-FIX-7539",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/environment_bootstrap.py"
+  ],
+  "files_created": [
+    "tests/unit/test_environment_bootstrap_fix7539.py"
+  ],
+  "tests_written": [
+    "tests/unit/test_environment_bootstrap_fix7539.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "22 passed in 1.83s (new tests) + 127 passed in 1.92s (existing tests, no regressions)",
+  "implementation_notes": "Made four backward-compatible additions to environment_bootstrap.py:\n1. BootstrapResult: added `non_relevant_failures: int = 0` and `skipped_stacks: List[str] = field(default_factory=list)` fields — both default to safe values so existing consumers are unaffected.\n2. ProjectEnvironmentDetector.__init__(): added `exclude_patterns: Optional[List[str]] = None` parameter; defaults to [\"tests/fixtures\"]. The existing single-argument call signature still works.\n3. ProjectEnvironmentDetector._scan_dirs(): iterates over immediate subdirs, computes their posix path relative to root, and skips any dir whose relative path starts with a configured exclude pattern. Root is always included.\n4. EnvironmentBootstrapper.bootstrap(): added `relevant_stacks: Optional[List[str]] = None` parameter. When provided, manifests whose stack is NOT in relevant_stacks are still run (so the install attempt is counted) but failures go into `non_relevant_failures` + `skipped_stacks` rather than `installs_failed`, and do not affect the overall `success` flag. A WARNING log is emitted for non-blocking failures so they remain visible. When relevant_stacks=None the behaviour is identical to before.",
+  "concerns": [],
+  "requirements_addressed": [
+    "Exclude fixture/test directories from detection scanning (exclude_patterns default [\"tests/fixtures\"])",
+    "Add relevant_stacks parameter to EnvironmentBootstrapper.bootstrap()",
+    "Update BootstrapResult with non_relevant_failures and skipped_stacks fields",
+    "Add exclude_dirs parameter to ProjectEnvironmentDetector"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Exclude fixture/test directories from detection scanning — paths containing tests/fixtures should be excluded",
+      "status": "complete",
+      "evidence": "Added exclude_patterns parameter to ProjectEnvironmentDetector.__init__ defaulting to ['tests/fixtures']. _scan_dirs() computes each immediate subdir's relative posix path and skips it if it starts with any exclude pattern. Verified by test_default_excludes_tests_fixtures which creates a .csproj inside tests/fixtures/sample_projects/maui_sample/ and confirms dotnet is not detected.",
+      "test_file": "tests/unit/test_environment_bootstrap_fix7539.py",
+      "implementation_files": ["guardkit/orchestrator/environment_bootstrap.py"]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Add relevant_stacks parameter to EnvironmentBootstrapper.bootstrap() — non-relevant stack failures are non-blocking",
+      "status": "complete",
+      "evidence": "Added optional relevant_stacks: Optional[List[str]] = None to bootstrap(). When a manifest's stack is not in relevant_stacks, failures are logged at WARNING and counted in non_relevant_failures rather than installs_failed, leaving success unaffected.",
+      "test_file": "tests/unit/test_environment_bootstrap_fix7539.py",
+      "implementation_files": ["guardkit/orchestrator/environment_bootstrap.py"]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Update BootstrapResult dataclass — add non_relevant_failures and skipped_stacks fields",
+      "status": "complete",
+      "evidence": "Added non_relevant_failures: int = 0 and skipped_stacks: List[str] = field(default_factory=list) to BootstrapResult. Both use safe defaults ensuring backwards compatibility with all existing consumers.",
+      "test_file": "tests/unit/test_environment_bootstrap_fix7539.py",
+      "implementation_files": ["guardkit/orchestrator/environment_bootstrap.py"]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Add exclude_dirs parameter to ProjectEnvironmentDetector",
+      "status": "complete",
+      "evidence": "exclude_patterns: Optional[List[str]] = None added to ProjectEnvironmentDetector.__init__(). Default ['tests/fixtures'] applied when None is passed. Custom patterns and empty list both tested.",
+      "test_file": "tests/unit/test_environment_bootstrap_fix7539.py",
+      "implementation_files": ["guardkit/orchestrator/environment_bootstrap.py"]
+    }
+  ]
+}

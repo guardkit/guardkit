@@ -595,6 +595,12 @@ def status(ctx, task_id: str, verbose: bool):
         "unlimited otherwise. Override via GUARDKIT_MAX_PARALLEL_TASKS env var."
     ),
 )
+@click.option(
+    "--skip-validation",
+    "skip_validation",
+    is_flag=True,
+    help="Skip pre-flight frontmatter validation (not recommended).",
+)
 @click.pass_context
 @handle_cli_errors
 def feature(
@@ -613,6 +619,7 @@ def feature(
     task_timeout: int,
     timeout_multiplier: Optional[float],
     max_parallel: Optional[int],
+    skip_validation: bool,
 ):
     """
     Execute AutoBuild for all tasks in a feature.
@@ -738,6 +745,7 @@ def feature(
             task_timeout=task_timeout,
             timeout_multiplier=timeout_multiplier,
             max_parallel=max_parallel,
+            skip_validation=skip_validation,
         )
 
         # Execute feature orchestration

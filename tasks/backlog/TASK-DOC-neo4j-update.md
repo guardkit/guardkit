@@ -3,7 +3,7 @@ id: TASK-DOC-N4J1
 title: Update Graphiti Documentation - Neo4j as Database Backend
 status: completed
 priority: medium
-task_type: implementation
+task_type: feature
 parent_review: TASK-REV-DB01
 created_at: 2026-01-29T10:35:00Z
 updated_at: 2026-01-29T10:35:00Z

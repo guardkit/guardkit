@@ -2,7 +2,7 @@
 id: TASK-FB-W3
 title: "Wave 3: State Persistence and Resume Capability"
 status: completed
-task_type: implementation
+task_type: feature
 created: 2025-12-24T00:00:00Z
 updated: 2025-12-24T00:00:00Z
 completed: 2025-12-24T00:00:00Z

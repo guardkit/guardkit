@@ -1,6 +1,6 @@
 ---
 id: TASK-INST-005b
-title: "Emit LLM call events from _invoke_with_role"
+title: Emit LLM call events from _invoke_with_role
 task_type: feature
 parent_review: TASK-REV-2FE2
 feature_id: FEAT-INST
@@ -8,19 +8,35 @@ wave: 3
 implementation_mode: task-work
 complexity: 4
 dependencies:
-  - TASK-INST-001
-  - TASK-INST-002
-  - TASK-INST-005a
+- TASK-INST-001
+- TASK-INST-002
+- TASK-INST-005a
 autobuild:
   enabled: true
   max_turns: 5
   mode: tdd
 consumer_context:
-  - task: TASK-INST-002
-    consumes: EVENT_EMITTER
-    framework: "EventEmitter protocol (async)"
-    driver: "guardkit.orchestrator.instrumentation.emitter"
-    format_note: "EventEmitter injected via constructor; call await emitter.emit(event)"
+- task: TASK-INST-002
+  consumes: EVENT_EMITTER
+  framework: EventEmitter protocol (async)
+  driver: guardkit.orchestrator.instrumentation.emitter
+  format_note: EventEmitter injected via constructor; call await emitter.emit(event)
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 30
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57
+  base_branch: main
+  started_at: '2026-03-02T22:42:35.615180'
+  last_updated: '2026-03-02T23:04:50.139886'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-03-02T22:42:35.615180'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Emit LLM Call Events from _invoke_with_role

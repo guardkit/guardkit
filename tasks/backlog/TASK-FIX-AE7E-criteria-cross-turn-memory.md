@@ -2,7 +2,7 @@
 id: TASK-FIX-AE7E
 title: Add cross-turn criteria memory to prevent criteria verification stalls
 status: backlog
-task_type: implementation
+task_type: feature
 created: 2026-02-18T16:00:00Z
 updated: 2026-02-18T16:00:00Z
 priority: high

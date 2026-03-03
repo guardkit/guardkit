@@ -2,7 +2,7 @@
 id: TASK-FIX-ASPF-001
 title: Commit DMCP fixes (DMCP-001 through 004)
 status: backlog
-task_type: implementation
+task_type: feature
 created: 2026-02-24T23:00:00Z
 priority: critical
 tags: [autobuild, direct-mode, criteria-pipeline, git]
