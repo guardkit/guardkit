@@ -1659,3 +1659,445 @@ class TestApplyTemplateAllTemplates:
 
         # Verify rules
         assert (target / ".claude" / "rules" / "code-style.md").exists()
+
+
+# ============================================================================
+# 10. --copy-graphiti Flag Tests (TASK-4B7F)
+# ============================================================================
+
+_SAMPLE_GRAPHITI_CONFIG = {
+    "project_id": "original-project",
+    "enabled": True,
+    "graph_store": "falkordb",
+    "falkordb_host": "myhost",
+    "falkordb_port": 6379,
+    "timeout": 30.0,
+    "llm_provider": "vllm",
+    "llm_base_url": "http://llmhost:8000/v1",
+    "llm_model": "claude-sonnet-4-6",
+    "embedding_provider": "vllm",
+    "embedding_base_url": "http://embhost:8001/v1",
+    "embedding_model": "nomic-embed-text-v1.5",
+    "group_ids": ["product_knowledge", "command_workflows"],
+    "host": "localhost",
+    "port": 8000,
+}
+
+
+def _write_graphiti_yaml(directory: Path, config: dict) -> Path:
+    """Write a graphiti.yaml file into directory/.guardkit/graphiti.yaml."""
+    try:
+        import yaml
+    except ImportError:
+        pytest.skip("PyYAML not installed")
+
+    guardkit_dir = directory / ".guardkit"
+    guardkit_dir.mkdir(parents=True, exist_ok=True)
+    config_path = guardkit_dir / "graphiti.yaml"
+    with open(config_path, "w") as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+    return config_path
+
+
+class TestFindSourceGraphitiConfig:
+    """Unit tests for _find_source_graphiti_config()."""
+
+    def test_auto_finds_config_in_parent_directory(self, tmp_path):
+        """Auto-discovery finds graphiti.yaml in a parent directory."""
+        from guardkit.cli.init import _find_source_graphiti_config
+
+        # Create a parent project with graphiti.yaml
+        parent_project = tmp_path / "parent-project"
+        parent_project.mkdir()
+        _write_graphiti_yaml(parent_project, _SAMPLE_GRAPHITI_CONFIG)
+
+        # cwd would be a subdirectory of parent_project; we search from its parent
+        # Simulate: cwd = parent_project/child, so cwd.parent = parent_project
+        child_dir = parent_project / "child"
+        child_dir.mkdir()
+
+        with patch("guardkit.cli.init._find_project_root") as mock_find_root:
+            mock_find_root.return_value = parent_project
+            with patch("pathlib.Path.cwd", return_value=child_dir):
+                result = _find_source_graphiti_config("auto")
+
+        assert result is not None
+        assert result == parent_project / ".guardkit" / "graphiti.yaml"
+
+    def test_auto_returns_none_when_no_parent_config(self, tmp_path):
+        """Auto-discovery returns None when no parent has .guardkit/graphiti.yaml."""
+        from guardkit.cli.init import _find_source_graphiti_config
+
+        with patch("guardkit.cli.init._find_project_root", return_value=None):
+            with patch("pathlib.Path.cwd", return_value=tmp_path / "myproject"):
+                result = _find_source_graphiti_config("auto")
+
+        assert result is None
+
+    def test_explicit_path_finds_config(self, tmp_path):
+        """Explicit path finds graphiti.yaml in the specified directory."""
+        from guardkit.cli.init import _find_source_graphiti_config
+
+        source_dir = tmp_path / "source-project"
+        source_dir.mkdir()
+        _write_graphiti_yaml(source_dir, _SAMPLE_GRAPHITI_CONFIG)
+
+        result = _find_source_graphiti_config(str(source_dir))
+
+        assert result is not None
+        assert result == source_dir / ".guardkit" / "graphiti.yaml"
+
+    def test_explicit_path_returns_none_when_config_missing(self, tmp_path):
+        """Explicit path returns None when graphiti.yaml does not exist there."""
+        from guardkit.cli.init import _find_source_graphiti_config
+
+        source_dir = tmp_path / "source-project"
+        source_dir.mkdir()
+        # .guardkit dir exists but no graphiti.yaml
+        (source_dir / ".guardkit").mkdir()
+
+        result = _find_source_graphiti_config(str(source_dir))
+
+        assert result is None
+
+    def test_explicit_path_expands_home_tilde(self, tmp_path):
+        """Explicit path with ~ is expanded correctly (uses real home dir)."""
+        from guardkit.cli.init import _find_source_graphiti_config
+        import os
+
+        # Use the real home directory for tilde expansion test
+        home_dir = Path.home()
+        # Create a uniquely-named temp project inside the real home dir
+        unique_name = f"_guardkit_test_{tmp_path.name}"
+        source_dir = home_dir / unique_name
+        try:
+            source_dir.mkdir(parents=True, exist_ok=True)
+            _write_graphiti_yaml(source_dir, _SAMPLE_GRAPHITI_CONFIG)
+
+            result = _find_source_graphiti_config(f"~/{unique_name}")
+
+            assert result is not None
+            assert result == source_dir / ".guardkit" / "graphiti.yaml"
+        finally:
+            # Clean up
+            import shutil as _shutil
+            if source_dir.exists():
+                _shutil.rmtree(source_dir)
+
+    def test_auto_searches_from_parent_not_cwd(self, tmp_path):
+        """Auto-discovery starts from cwd.parent, not cwd itself."""
+        from guardkit.cli.init import _find_source_graphiti_config
+
+        # Put a graphiti.yaml in tmp_path (which IS cwd)
+        _write_graphiti_yaml(tmp_path, _SAMPLE_GRAPHITI_CONFIG)
+
+        # _find_project_root is called with tmp_path.parent, not tmp_path itself
+        with patch("guardkit.cli.init._find_project_root", return_value=None) as mock_find:
+            with patch("pathlib.Path.cwd", return_value=tmp_path):
+                result = _find_source_graphiti_config("auto")
+
+        # Should have been called with tmp_path.parent
+        mock_find.assert_called_once_with(tmp_path.parent)
+        assert result is None
+
+
+class TestCopyGraphitiConfig:
+    """Unit tests for copy_graphiti_config()."""
+
+    def test_copies_full_config_with_replaced_project_id(self, tmp_path):
+        """Copies all fields from source, replacing project_id."""
+        from guardkit.cli.init import copy_graphiti_config
+
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+        source_config = _write_graphiti_yaml(source_dir, _SAMPLE_GRAPHITI_CONFIG)
+
+        target_dir = tmp_path / "target"
+        target_dir.mkdir()
+
+        result = copy_graphiti_config("my-new-project", target_dir, source_config)
+
+        assert result is True
+        target_config = target_dir / ".guardkit" / "graphiti.yaml"
+        assert target_config.exists()
+
+        import yaml
+        with open(target_config) as f:
+            written = yaml.safe_load(f)
+
+        # project_id should be replaced with normalized new name
+        assert written["project_id"] == "my-new-project"
+        # All other fields from source should be present
+        assert written["graph_store"] == "falkordb"
+        assert written["falkordb_host"] == "myhost"
+        assert written["llm_provider"] == "vllm"
+        assert written["llm_model"] == "claude-sonnet-4-6"
+        assert written["embedding_model"] == "nomic-embed-text-v1.5"
+
+    def test_project_id_is_normalized(self, tmp_path):
+        """project_id in the copied config is normalized (hyphens, lowercase)."""
+        from guardkit.cli.init import copy_graphiti_config
+
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+        source_config = _write_graphiti_yaml(source_dir, _SAMPLE_GRAPHITI_CONFIG)
+
+        target_dir = tmp_path / "target"
+        target_dir.mkdir()
+
+        # Project name with spaces and uppercase should be normalized
+        result = copy_graphiti_config("My New Project", target_dir, source_config)
+
+        assert result is True
+
+        import yaml
+        with open(target_dir / ".guardkit" / "graphiti.yaml") as f:
+            written = yaml.safe_load(f)
+
+        # normalize_project_id converts spaces to hyphens and lowercases
+        assert written["project_id"] == "my-new-project"
+
+    def test_creates_target_guardkit_dir_if_missing(self, tmp_path):
+        """Creates .guardkit/ in target if it does not exist yet."""
+        from guardkit.cli.init import copy_graphiti_config
+
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+        source_config = _write_graphiti_yaml(source_dir, _SAMPLE_GRAPHITI_CONFIG)
+
+        target_dir = tmp_path / "target"
+        target_dir.mkdir()
+        # Do NOT create .guardkit in target
+
+        result = copy_graphiti_config("new-project", target_dir, source_config)
+
+        assert result is True
+        assert (target_dir / ".guardkit" / "graphiti.yaml").exists()
+
+    def test_returns_false_on_invalid_source(self, tmp_path):
+        """Returns False when the source config file is invalid/empty YAML."""
+        from guardkit.cli.init import copy_graphiti_config
+
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+        (source_dir / ".guardkit").mkdir()
+        source_config = source_dir / ".guardkit" / "graphiti.yaml"
+        # Write invalid content (not a dict)
+        source_config.write_text("- just\n- a\n- list\n")
+
+        target_dir = tmp_path / "target"
+        target_dir.mkdir()
+
+        result = copy_graphiti_config("new-project", target_dir, source_config)
+
+        assert result is False
+
+    def test_preserves_group_ids_list(self, tmp_path):
+        """group_ids list from source is preserved in copied config."""
+        from guardkit.cli.init import copy_graphiti_config
+
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+        source_config = _write_graphiti_yaml(source_dir, _SAMPLE_GRAPHITI_CONFIG)
+
+        target_dir = tmp_path / "target"
+        target_dir.mkdir()
+
+        copy_graphiti_config("new-project", target_dir, source_config)
+
+        import yaml
+        with open(target_dir / ".guardkit" / "graphiti.yaml") as f:
+            written = yaml.safe_load(f)
+
+        assert written["group_ids"] == ["product_knowledge", "command_workflows"]
+
+
+class TestCopyGraphitiFlagCLI:
+    """Integration tests for --copy-graphiti CLI flag."""
+
+    def test_copy_graphiti_flag_in_help(self, tmp_path, monkeypatch):
+        """--copy-graphiti option appears in init --help output."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["init", "--help"])
+        assert result.exit_code == 0
+        assert "copy-graphiti" in result.output
+
+    def test_copy_graphiti_auto_copies_config(self, tmp_path, monkeypatch):
+        """--copy-graphiti auto copies config from auto-discovered source."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        source_config_path = tmp_path / "source" / ".guardkit" / "graphiti.yaml"
+
+        with patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
+             patch("guardkit.cli.init.GraphitiClient") as mock_client_class, \
+             patch("guardkit.cli.init._find_source_graphiti_config",
+                   return_value=source_config_path) as mock_find, \
+             patch("guardkit.cli.init.copy_graphiti_config", return_value=True) as mock_copy:
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True)
+
+            result = runner.invoke(cli, ["init", "--copy-graphiti", "auto"])
+
+            assert result.exit_code == 0
+            mock_find.assert_called_once_with("auto")
+            mock_copy.assert_called_once()
+
+    def test_copy_graphiti_explicit_path_copies_config(self, tmp_path, monkeypatch):
+        """--copy-graphiti /path copies config from that explicit path."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        source_dir = tmp_path / "source-project"
+        source_dir.mkdir()
+        source_config_path = _write_graphiti_yaml(source_dir, _SAMPLE_GRAPHITI_CONFIG)
+
+        with patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
+             patch("guardkit.cli.init.GraphitiClient") as mock_client_class, \
+             patch("guardkit.cli.init._find_source_graphiti_config",
+                   return_value=source_config_path) as mock_find, \
+             patch("guardkit.cli.init.copy_graphiti_config", return_value=True) as mock_copy:
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True)
+
+            result = runner.invoke(cli, ["init", "--copy-graphiti", str(source_dir)])
+
+            assert result.exit_code == 0
+            mock_find.assert_called_once_with(str(source_dir))
+            mock_copy.assert_called_once()
+
+    def test_copy_graphiti_fallback_when_source_not_found(self, tmp_path, monkeypatch):
+        """--copy-graphiti falls back to write_graphiti_config when source not found."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        with patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
+             patch("guardkit.cli.init.GraphitiClient") as mock_client_class, \
+             patch("guardkit.cli.init._find_source_graphiti_config", return_value=None), \
+             patch("guardkit.cli.init.write_graphiti_config", return_value=True) as mock_write, \
+             patch("guardkit.cli.init.copy_graphiti_config") as mock_copy:
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True)
+
+            result = runner.invoke(cli, ["init", "--copy-graphiti", "auto"])
+
+            assert result.exit_code == 0
+            # copy_graphiti_config should NOT have been called
+            mock_copy.assert_not_called()
+            # Fallback: write_graphiti_config should have been called
+            mock_write.assert_called_once()
+
+    def test_copy_graphiti_fallback_when_copy_fails(self, tmp_path, monkeypatch):
+        """--copy-graphiti falls back to write_graphiti_config when copy fails."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        source_config_path = tmp_path / "source" / ".guardkit" / "graphiti.yaml"
+
+        with patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
+             patch("guardkit.cli.init.GraphitiClient") as mock_client_class, \
+             patch("guardkit.cli.init._find_source_graphiti_config",
+                   return_value=source_config_path), \
+             patch("guardkit.cli.init.copy_graphiti_config", return_value=False), \
+             patch("guardkit.cli.init.write_graphiti_config", return_value=True) as mock_write:
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True)
+
+            result = runner.invoke(cli, ["init", "--copy-graphiti", "auto"])
+
+            assert result.exit_code == 0
+            # Fallback should have been called
+            mock_write.assert_called_once()
+
+    def test_no_copy_graphiti_flag_uses_existing_behavior(self, tmp_path, monkeypatch):
+        """Without --copy-graphiti, existing write_graphiti_config behavior is used."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        with patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
+             patch("guardkit.cli.init.GraphitiClient") as mock_client_class, \
+             patch("guardkit.cli.init.write_graphiti_config", return_value=True) as mock_write, \
+             patch("guardkit.cli.init.copy_graphiti_config") as mock_copy, \
+             patch("guardkit.cli.init._find_source_graphiti_config") as mock_find:
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True)
+
+            result = runner.invoke(cli, ["init"])
+
+            assert result.exit_code == 0
+            # copy_graphiti_config and _find_source_graphiti_config should NOT be called
+            mock_copy.assert_not_called()
+            mock_find.assert_not_called()
+            # write_graphiti_config IS called
+            mock_write.assert_called_once()
+
+    def test_copy_graphiti_end_to_end(self, tmp_path, monkeypatch):
+        """End-to-end: --copy-graphiti copies real config with replaced project_id."""
+        runner = CliRunner()
+
+        # Create target project directory
+        target_project = tmp_path / "new-project"
+        target_project.mkdir()
+        monkeypatch.chdir(target_project)
+
+        # Create source project with graphiti.yaml in parent
+        source_project = tmp_path / "existing-project"
+        source_project.mkdir()
+        _write_graphiti_yaml(source_project, _SAMPLE_GRAPHITI_CONFIG)
+        source_config_path = source_project / ".guardkit" / "graphiti.yaml"
+
+        with patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
+             patch("guardkit.cli.init.GraphitiClient") as mock_client_class, \
+             patch("guardkit.cli.init._find_source_graphiti_config",
+                   return_value=source_config_path):
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True)
+
+            result = runner.invoke(cli, ["init", "--copy-graphiti", str(source_project)])
+
+        assert result.exit_code == 0
+
+        # Check the written config
+        target_yaml = target_project / ".guardkit" / "graphiti.yaml"
+        assert target_yaml.exists()
+
+        import yaml
+        with open(target_yaml) as f:
+            written = yaml.safe_load(f)
+
+        # project_id replaced with directory name
+        assert written["project_id"] == "new-project"
+        # Other fields from source preserved
+        assert written["graph_store"] == "falkordb"
+        assert written["llm_provider"] == "vllm"
+        assert written["llm_model"] == "claude-sonnet-4-6"

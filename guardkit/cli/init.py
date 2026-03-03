@@ -38,6 +38,7 @@ from rich.console import Console
 from rich.prompt import Confirm, Prompt
 
 from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
+from guardkit.knowledge.config import _find_project_root
 from guardkit.knowledge.graphiti_client import GraphitiClient, GraphitiConfig, normalize_project_id
 from guardkit.knowledge.project_seeding import seed_project_knowledge
 from guardkit.knowledge.template_sync import sync_template_to_graphiti
@@ -313,6 +314,88 @@ def write_graphiti_config(project_name: str, target_dir: Path) -> bool:
         return False
 
 
+def _find_source_graphiti_config(copy_graphiti: str) -> Optional[Path]:
+    """Find the source graphiti.yaml to copy from.
+
+    If an explicit path is given, looks for .guardkit/graphiti.yaml under that path.
+    If ``copy_graphiti`` is "auto", walks up from the parent of cwd to find an
+    existing .guardkit/graphiti.yaml, skipping cwd itself to avoid finding the
+    target project's own (not-yet-created) config.
+
+    Args:
+        copy_graphiti: Either "auto" for auto-discovery or an explicit directory path.
+
+    Returns:
+        Path to the source graphiti.yaml if found, or None.
+    """
+    if copy_graphiti == "auto":
+        # Walk up from the *parent* of cwd so we don't pick up the target project's own config
+        start = Path.cwd().resolve().parent
+        project_root = _find_project_root(start)
+        if project_root is None:
+            return None
+        candidate = project_root / ".guardkit" / "graphiti.yaml"
+        return candidate if candidate.is_file() else None
+    else:
+        # Explicit path provided
+        source_dir = Path(copy_graphiti).expanduser().resolve()
+        candidate = source_dir / ".guardkit" / "graphiti.yaml"
+        return candidate if candidate.is_file() else None
+
+
+def copy_graphiti_config(
+    project_name: str,
+    target_dir: Path,
+    source_config: Path,
+) -> bool:
+    """Copy a source graphiti.yaml to the target, replacing project_id.
+
+    Loads the full source config, replaces the ``project_id`` field with the
+    normalized version of ``project_name``, and writes the result to
+    ``target_dir/.guardkit/graphiti.yaml``.
+
+    Args:
+        project_name: The new project name; will be normalized to a valid project_id.
+        target_dir: Target directory containing .guardkit folder.
+        source_config: Path to the source graphiti.yaml to copy from.
+
+    Returns:
+        True if config written successfully, False otherwise.
+    """
+    try:
+        try:
+            import yaml
+        except ImportError:
+            logger.warning("PyYAML not installed, cannot copy graphiti.yaml")
+            return False
+
+        # Load source config
+        with open(source_config, "r") as f:
+            config_data = yaml.safe_load(f)
+
+        if not config_data or not isinstance(config_data, dict):
+            logger.warning(f"Source graphiti.yaml is empty or invalid: {source_config}")
+            return False
+
+        # Replace project_id with the normalized new project name
+        project_id = normalize_project_id(project_name)
+        config_data["project_id"] = project_id
+
+        # Write to target
+        config_dir = target_dir / ".guardkit"
+        config_file = config_dir / "graphiti.yaml"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        with open(config_file, "w") as f:
+            yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+
+        logger.info(f"Copied graphiti config with project_id '{project_id}' to {config_file}")
+        return True
+
+    except Exception as e:
+        logger.warning(f"Failed to copy graphiti.yaml: {e}")
+        return False
+
+
 def apply_template(template_name: str, target_dir: Optional[Path] = None) -> bool:
     """Apply a template to the target directory.
 
@@ -470,6 +553,7 @@ async def _cmd_init(
     skip_graphiti: bool,
     project_name: Optional[str],
     interactive: bool = False,
+    copy_graphiti: Optional[str] = None,
 ) -> int:
     """Async implementation of init command.
 
@@ -478,6 +562,8 @@ async def _cmd_init(
         skip_graphiti: If True, skip Graphiti seeding.
         project_name: Override project name.
         interactive: If True, run interactive setup mode.
+        copy_graphiti: If set, copy graphiti config from an existing project.
+            Use "auto" for auto-discovery or an explicit directory path.
 
     Returns:
         Exit code (0 for success).
@@ -497,7 +583,28 @@ async def _cmd_init(
         console.print(f"  [yellow]Warning: Template '{template}' not found, using defaults[/yellow]")
 
     # Step 1.1: Write Graphiti config with project_id
-    if write_graphiti_config(project_name, project_dir):
+    if copy_graphiti is not None:
+        # --copy-graphiti flag: try to copy config from existing project
+        source_config = _find_source_graphiti_config(copy_graphiti)
+        if source_config is not None:
+            if copy_graphiti_config(project_name, project_dir, source_config):
+                console.print(
+                    f"  [green]Copied Graphiti config from {source_config} "
+                    f"to .guardkit/graphiti.yaml[/green]"
+                )
+            else:
+                console.print(
+                    f"  [yellow]Warning: Could not copy graphiti.yaml, "
+                    f"falling back to project_id only[/yellow]"
+                )
+                write_graphiti_config(project_name, project_dir)
+        else:
+            console.print(
+                f"  [yellow]Warning: No source graphiti.yaml found "
+                f"(--copy-graphiti), falling back to project_id only[/yellow]"
+            )
+            write_graphiti_config(project_name, project_dir)
+    elif write_graphiti_config(project_name, project_dir):
         console.print(f"  [green]Written project_id to .guardkit/graphiti.yaml[/green]")
     else:
         console.print(f"  [yellow]Warning: Could not write .guardkit/graphiti.yaml[/yellow]")
@@ -605,7 +712,22 @@ async def _cmd_init(
     is_flag=True,
     help="Interactive setup mode for project knowledge",
 )
-def init(template: str, skip_graphiti: bool, project_name: Optional[str], interactive: bool):
+@click.option(
+    "--copy-graphiti",
+    default=None,
+    help=(
+        "Copy Graphiti config from an existing project. "
+        "Use 'auto' for auto-discovery (walks up from parent of cwd), "
+        "or provide an explicit path: --copy-graphiti /path/to/project"
+    ),
+)
+def init(
+    template: str,
+    skip_graphiti: bool,
+    project_name: Optional[str],
+    interactive: bool,
+    copy_graphiti: Optional[str],
+):
     """Initialize GuardKit in the current directory.
 
     Applies a template and optionally seeds project knowledge to Graphiti.
@@ -613,6 +735,8 @@ def init(template: str, skip_graphiti: bool, project_name: Optional[str], intera
     TEMPLATE is the name of the template to apply (default: 'default').
     Available templates: default, fastapi-python, react-typescript, nextjs-fullstack.
     """
-    exit_code = asyncio.run(_cmd_init(template, skip_graphiti, project_name, interactive))
+    exit_code = asyncio.run(
+        _cmd_init(template, skip_graphiti, project_name, interactive, copy_graphiti)
+    )
     if exit_code != 0:
         raise SystemExit(exit_code)
