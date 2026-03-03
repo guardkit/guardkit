@@ -1,0 +1,35 @@
+{
+  "task_id": "TASK-INST-006",
+  "turn": 1,
+  "decision": "feedback",
+  "validation_results": {
+    "quality_gates": {
+      "tests_passed": true,
+      "coverage_met": false,
+      "arch_review_passed": true,
+      "plan_audit_passed": true,
+      "all_gates_passed": false
+    },
+    "independent_tests": null,
+    "requirements": null
+  },
+  "criteria_verification": [],
+  "acceptance_criteria_verification": {
+    "criteria_results": []
+  },
+  "issues": [
+    {
+      "severity": "must_fix",
+      "category": "coverage",
+      "description": "Coverage threshold not met",
+      "details": {
+        "line_coverage": 48.0,
+        "branch_coverage": 0
+      }
+    }
+  ],
+  "rationale": "1 quality gate(s) failed",
+  "context_used": null,
+  "approved_without_independent_tests": false,
+  "is_configuration_error": false
+}

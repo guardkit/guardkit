@@ -1,0 +1,145 @@
+{
+  "task_id": "TASK-INST-001",
+  "turn": 1,
+  "files_modified": [
+    ".guardkit/bootstrap_state.json",
+    "guardkit/cli/init.py",
+    "tests/cli/test_init.py"
+  ],
+  "files_created": [
+    ".claude/task-plans/TASK-INST-001-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-010-implementation-plan.md",
+    ".guardkit/autobuild/TASK-INST-001/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-001/task_work_results.json",
+    ".guardkit/autobuild/TASK-INST-001/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-010/turn_context.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/.guardkit/autobuild/TASK-INST-001/player_turn_1.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/guardkit/orchestrator/instrumentation/__init__.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/guardkit/orchestrator/instrumentation/schemas.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/orchestrator/instrumentation/__init__.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/orchestrator/instrumentation/test_schemas.py",
+    "guardkit/orchestrator/instrumentation/__init__.py",
+    "guardkit/orchestrator/instrumentation/schemas.py",
+    "tasks/backlog/TASK-INST-002-event-emitter-backends.md",
+    "tasks/backlog/TASK-INST-003-secret-redaction-pipeline.md",
+    "tasks/backlog/TASK-INST-004-instrument-orchestrator.md",
+    "tasks/backlog/TASK-INST-005a-llm-instrumentation-helpers.md",
+    "tasks/backlog/TASK-INST-005b-llm-call-events.md",
+    "tasks/backlog/TASK-INST-005c-tool-exec-events.md",
+    "tasks/backlog/TASK-INST-006-instrument-graphiti-loader.md",
+    "tasks/backlog/TASK-INST-007-role-specific-digests.md",
+    "tasks/backlog/TASK-INST-008-adaptive-concurrency.md",
+    "tasks/backlog/TASK-INST-009-integration-tests.md",
+    "tasks/backlog/TASK-INST-011-wire-template-graphiti-sync.md",
+    "tasks/backlog/TASK-INST-012-enrich-system-seeding.md",
+    "tasks/design_approved/TASK-INST-001-event-schema-models.md",
+    "tasks/design_approved/TASK-INST-010-reconcile-init-paths.md",
+    "tests/orchestrator/instrumentation/__init__.py",
+    "tests/orchestrator/instrumentation/test_schemas.py"
+  ],
+  "tests_written": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/orchestrator/instrumentation/test_schemas.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation",
+  "concerns": [],
+  "requirements_addressed": [
+    "All 7 event model classes defined with Pydantic v2",
+    "Controlled vocabularies enforced via Literal types",
+    "BaseEvent provides common fields inherited by all events",
+    "Invalid events rejected with descriptive ValidationError messages",
+    "schema_version field present on all events (default 1.0.0)",
+    "Models support model_dump() for JSON serialization",
+    "Zero input_tokens produces valid LLMCallEvent",
+    "Unit tests cover all event types, valid/invalid cases, boundary values"
+  ],
+  "requirements_remaining": [],
+  "sdk_turns_used": 34,
+  "sdk_max_turns": 100,
+  "sdk_ceiling_hit": false,
+  "tests_passed_count": 72,
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "All 7 event model classes defined with Pydantic v2",
+      "status": "complete",
+      "evidence": "Defined BaseEvent, LLMCallEvent, ToolExecEvent, TaskStartedEvent, TaskCompletedEvent, TaskFailedEvent, WaveCompletedEvent, and GraphitiQueryEvent as Pydantic v2 BaseModel subclasses in guardkit/orchestrator/instrumentation/schemas.py",
+      "test_file": "tests/orchestrator/instrumentation/test_schemas.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/schemas.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Controlled vocabularies enforced via Literal types",
+      "status": "complete",
+      "evidence": "All controlled vocabularies (AgentRole, FailureCategory, PromptProfile, LLMProvider, LLMCallStatus, LLMCallErrorType, GraphitiQueryType, GraphitiStatus) are defined as Literal type aliases and used as field types. Tests verify invalid values are rejected with ValidationError for each vocabulary.",
+      "test_file": "tests/orchestrator/instrumentation/test_schemas.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/schemas.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "BaseEvent provides common fields inherited by all events",
+      "status": "complete",
+      "evidence": "BaseEvent defines run_id, feature_id, task_id, agent_role, attempt, timestamp, schema_version. All 7 event types inherit from BaseEvent. Tests verify inheritance in TestBaseEvent.test_common_fields_inherited and per-event inherits_base_event tests.",
+      "test_file": "tests/orchestrator/instrumentation/test_schemas.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/schemas.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Invalid events rejected with descriptive ValidationError messages",
+      "status": "complete",
+      "evidence": "Tests verify that missing required fields, invalid controlled vocabulary values, invalid agent_role, negative tokens, and negative counts all raise ValidationError with field names in the error message. 15+ rejection tests cover all event types.",
+      "test_file": "tests/orchestrator/instrumentation/test_schemas.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/schemas.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "schema_version field present on all events (default '1.0.0')",
+      "status": "complete",
+      "evidence": "BaseEvent defines schema_version with default='1.0.0'. TestCrossEventValidation.test_all_events_have_schema_version verifies all 7 event types have schema_version=='1.0.0'. TestBaseEvent.test_schema_version_default also confirms the default.",
+      "test_file": "tests/orchestrator/instrumentation/test_schemas.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/schemas.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Models support model_dump() for JSON serialization",
+      "status": "complete",
+      "evidence": "TestCrossEventValidation.test_all_events_support_model_dump verifies all 7 event types return dict from model_dump() with expected fields. Individual test classes also have model_dump_serialization tests. TestCrossEventValidation.test_zero_input_tokens_full_event verifies JSON serialization via json.dumps().",
+      "test_file": "tests/orchestrator/instrumentation/test_schemas.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/schemas.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Zero input_tokens produces valid LLMCallEvent",
+      "status": "complete",
+      "evidence": "TestLLMCallEvent.test_zero_input_tokens_valid and TestCrossEventValidation.test_zero_input_tokens_full_event both verify input_tokens=0 creates valid event. The full event test also verifies JSON serialization works with zero tokens.",
+      "test_file": "tests/orchestrator/instrumentation/test_schemas.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/schemas.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "Unit tests cover all event types, valid/invalid cases, boundary values",
+      "status": "complete",
+      "evidence": "72 tests organized across 9 test classes: TestBaseEvent (11), TestLLMCallEvent (21), TestToolExecEvent (6), TestTaskStartedEvent (3), TestTaskCompletedEvent (5), TestTaskFailedEvent (5), TestWaveCompletedEvent (8), TestGraphitiQueryEvent (9), TestCrossEventValidation (4). Tests cover valid creation, invalid value rejection, boundary values (zero tokens, zero counts, negative values), optional field defaults, serialization.",
+      "test_file": "tests/orchestrator/instrumentation/test_schemas.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/schemas.py"
+      ]
+    }
+  ]
+}

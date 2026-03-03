@@ -1,0 +1,194 @@
+{
+  "task_id": "TASK-INST-002",
+  "timestamp": "2026-03-02T22:26:42.463076",
+  "completed": true,
+  "phases": {
+    "phase_3": {
+      "detected": true,
+      "text": "Implementation",
+      "completed": false
+    },
+    "phase_4": {
+      "detected": true,
+      "completed": true
+    }
+  },
+  "quality_gates": {
+    "tests_passing": true,
+    "tests_passed": 35,
+    "tests_failed": 0,
+    "coverage": 90.0,
+    "coverage_met": true,
+    "all_passed": true
+  },
+  "files_modified": [
+    ".claude/task-plans/TASK-INST-002-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-003-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-007-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-011-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-012-implementation-plan.md",
+    ".guardkit/autobuild/TASK-INST-002/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-003/checkpoints.json",
+    ".guardkit/autobuild/TASK-INST-003/coach_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-003/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-003/task_work_results.json",
+    ".guardkit/autobuild/TASK-INST-003/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-007/coach_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-007/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-007/task_work_results.json",
+    ".guardkit/autobuild/TASK-INST-007/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-010/checkpoints.json",
+    ".guardkit/autobuild/TASK-INST-011/checkpoints.json",
+    ".guardkit/autobuild/TASK-INST-011/coach_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-011/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-011/task_work_results.json",
+    ".guardkit/autobuild/TASK-INST-011/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-012/checkpoints.json",
+    ".guardkit/autobuild/TASK-INST-012/coach_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-012/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-012/task_work_results.json",
+    ".guardkit/autobuild/TASK-INST-012/turn_context.json",
+    ".guardkit/bootstrap_state.json",
+    ".guardkit/digests/coach.md",
+    ".guardkit/digests/player.md",
+    ".guardkit/digests/resolver.md",
+    ".guardkit/digests/router.md",
+    "guardkit/cli/init.py",
+    "guardkit/knowledge/seed_agents.py",
+    "guardkit/knowledge/seed_helpers.py",
+    "guardkit/knowledge/seed_rules.py",
+    "guardkit/knowledge/seed_templates.py",
+    "guardkit/knowledge/template_sync.py",
+    "guardkit/orchestrator/instrumentation/__init__.py",
+    "guardkit/orchestrator/instrumentation/digests.py",
+    "guardkit/orchestrator/instrumentation/emitter.py",
+    "guardkit/orchestrator/instrumentation/prompt_profile.py",
+    "guardkit/orchestrator/instrumentation/redaction.py",
+    "tasks/design_approved/TASK-INST-002-event-emitter-backends.md",
+    "tasks/design_approved/TASK-INST-003-secret-redaction-pipeline.md",
+    "tasks/design_approved/TASK-INST-007-role-specific-digests.md",
+    "tasks/design_approved/TASK-INST-011-wire-template-graphiti-sync.md",
+    "tasks/design_approved/TASK-INST-012-enrich-system-seeding.md",
+    "tests/cli/test_init.py",
+    "tests/knowledge/test_seed_enrichment.py",
+    "tests/knowledge/test_template_sync.py",
+    "tests/orchestrator/instrumentation/test_digests.py",
+    "tests/orchestrator/instrumentation/test_emitter.py",
+    "tests/orchestrator/instrumentation/test_redaction.py"
+  ],
+  "files_created": [
+    ".guardkit/autobuild/TASK-INST-002/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-002/task_work_results.json",
+    ".guardkit/autobuild/TASK-INST-007/checkpoints.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/.guardkit/autobuild/TASK-INST-002/player_turn_1.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/guardkit/orchestrator/instrumentation/emitter.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/orchestrator/instrumentation/test_emitter.py"
+  ],
+  "tests_written": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/orchestrator/instrumentation/test_emitter.py"
+  ],
+  "summary": "35 tests passed, 90.0% coverage, all quality gates passed",
+  "sdk_turns": {
+    "turns_used": 56,
+    "max_turns": 100,
+    "ceiling_hit": false
+  },
+  "code_review": {
+    "score": 92,
+    "solid": 95,
+    "dry": 90,
+    "yagni": 90
+  },
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "EventEmitter protocol defined with emit/flush/close methods",
+      "status": "complete",
+      "evidence": "EventEmitter Protocol class defined with @runtime_checkable decorator at emitter.py:59-91. Has async emit(event: BaseEvent), async flush(), and async close() methods. Tests TestEventEmitterProtocol verify all 3 methods exist and that NullEmitter, JSONLFileBackend, and CompositeBackend all satisfy the protocol.",
+      "test_file": "tests/orchestrator/instrumentation/test_emitter.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/emitter.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "JSONLFileBackend writes valid JSONL, one event per line",
+      "status": "complete",
+      "evidence": "JSONLFileBackend.emit() serializes events via model_dump() -> json.dumps() and writes one JSON line per event. Tests test_writes_valid_jsonl, test_append_only, and test_each_line_is_valid_json all verify this. Each line is independently parseable as valid JSON.",
+      "test_file": "tests/orchestrator/instrumentation/test_emitter.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/emitter.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "NATSBackend publishes async, handles connection failure gracefully",
+      "status": "complete",
+      "evidence": "NATSBackend.emit() wraps publish in try/except, logging warnings on failure. Tests test_publish_event verifies async publish to correct subject with valid JSON payload. test_connection_failure_logs_warning verifies ConnectionError is caught and logged. test_graceful_degradation_on_exception verifies RuntimeError is also handled.",
+      "test_file": "tests/orchestrator/instrumentation/test_emitter.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/emitter.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "CompositeBackend fans out to all backends, tolerates individual failures",
+      "status": "complete",
+      "evidence": "CompositeBackend.emit() iterates all backends, catching exceptions per-backend. Tests test_fans_out_to_all_backends confirms JSONL and NullEmitter both receive events. test_tolerates_individual_backend_failure creates a failing AsyncMock backend alongside working ones and verifies the working backends still receive events.",
+      "test_file": "tests/orchestrator/instrumentation/test_emitter.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/emitter.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "NullEmitter captures events in memory for test assertions",
+      "status": "complete",
+      "evidence": "NullEmitter(capture=True) stores events in self.events list. Tests test_emit_with_capture, test_emit_multiple_events verify capture behavior. test_emit_no_capture verifies default no-capture behavior. test_default_no_capture verifies events list is empty by default.",
+      "test_file": "tests/orchestrator/instrumentation/test_emitter.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/emitter.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "NATS connection loss mid-run falls back to JSONL with warning logged",
+      "status": "complete",
+      "evidence": "test_connection_loss_mid_run simulates first publish succeeding then second failing with ConnectionError - verified NATSBackend logs warning and continues. test_nats_failure_falls_back_to_jsonl creates CompositeBackend with JSONL + failing NATS and verifies JSONL still receives events when NATS fails.",
+      "test_file": "tests/orchestrator/instrumentation/test_emitter.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/emitter.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Event emission does not block calling code (async fire-and-forget)",
+      "status": "complete",
+      "evidence": "All emit() methods are async. test_emit_is_async verifies emit() returns a coroutine. test_emit_returns_quickly verifies JSONLFileBackend.emit() completes quickly. All backends use async def emit() ensuring non-blocking behavior in the event loop.",
+      "test_file": "tests/orchestrator/instrumentation/test_emitter.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/emitter.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "Thread-safe concurrent writes from multiple workers",
+      "status": "complete",
+      "evidence": "JSONLFileBackend uses asyncio.Lock for all file operations. test_thread_safe_concurrent_writes fires 20 concurrent emit() calls via asyncio.gather() and verifies all 20 events are written as valid JSONL lines without corruption.",
+      "test_file": "tests/orchestrator/instrumentation/test_emitter.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/emitter.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "Unit tests cover all backends and failure modes",
+      "status": "complete",
+      "evidence": "35 tests across 8 test classes: TestEventEmitterProtocol (6), TestNullEmitter (6), TestJSONLFileBackend (7), TestNATSBackend (6), TestCompositeBackend (6), TestNonBlockingEmission (2), TestEventSchemasSeam (2). Covers happy paths, error handling, concurrent writes, protocol compliance, and seam contract verification. 90% line+branch coverage.",
+      "test_file": "tests/orchestrator/instrumentation/test_emitter.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/emitter.py"
+      ]
+    }
+  ]
+}

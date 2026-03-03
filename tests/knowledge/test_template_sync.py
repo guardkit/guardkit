@@ -122,17 +122,23 @@ class TestMissingFileHandling:
 
     @pytest.mark.asyncio
     async def test_sync_template_missing_manifest(self, tmp_path):
-        """Test sync_template_to_graphiti handles missing manifest gracefully."""
+        """Test sync_template_to_graphiti handles missing manifest gracefully.
+
+        TASK-INST-011: Manifest is now optional. When missing, sync proceeds
+        with agents and rules only (returns True).
+        """
         template_path = tmp_path / "test-template"
         template_path.mkdir()
         # No manifest.json created
 
         mock_client = AsyncMock()
         mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_template_to_graphiti(template_path)
-            assert result is False
+            # Now returns True (manifest is optional)
+            assert result is True
 
     @pytest.mark.asyncio
     async def test_sync_agent_missing_file(self, tmp_path):
@@ -584,17 +590,23 @@ class TestErrorHandling:
 
     @pytest.mark.asyncio
     async def test_sync_template_handles_invalid_json_manifest(self, tmp_path):
-        """Test sync_template_to_graphiti handles invalid JSON in manifest."""
+        """Test sync_template_to_graphiti handles invalid JSON in manifest.
+
+        TASK-INST-011: Invalid manifest is treated as absent; agents/rules
+        still sync. Returns True (graceful degradation).
+        """
         template_path = tmp_path / "test-template"
         template_path.mkdir()
         (template_path / "manifest.json").write_text("{ invalid json }")
 
         mock_client = AsyncMock()
         mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_template_to_graphiti(template_path)
-            assert result is False
+            # Now returns True (manifest parse failure is not fatal)
+            assert result is True
 
     @pytest.mark.asyncio
     async def test_sync_agent_handles_read_failure(self, tmp_path):
@@ -787,7 +799,253 @@ Content here.
 
 
 # ============================================================================
-# 8. Integration Tests (2 tests - marked for selective running)
+# 8. TASK-INST-011: Full Content Ingestion Tests
+# ============================================================================
+
+class TestFullContentIngestion:
+    """Test that rule and agent sync includes full content, not just previews."""
+
+    @pytest.mark.asyncio
+    async def test_rule_sync_includes_full_content(self, tmp_path):
+        """AC: Rule content includes full text (not just 500-char preview)."""
+        rule_path = tmp_path / "long-rule.md"
+        # Create rule content that exceeds 500 chars
+        long_content = "# Long Rule\n\n" + ("This is detailed rule guidance. " * 50)
+        rule_content = f"---\npaths: src/**/*.py\n---\n{long_content}"
+        rule_path.write_text(rule_content)
+
+        captured_body = None
+
+        async def capture_episode(name, episode_body, group_id, **kwargs):
+            nonlocal captured_body
+            captured_body = episode_body
+            return "episode_id"
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = capture_episode
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
+            result = await sync_rule_to_graphiti(rule_path, "test-template")
+
+            assert result is True
+            body_data = json.loads(captured_body)
+            # Full content must be present, not just a 500-char preview
+            assert 'full_content' in body_data
+            assert len(body_data['full_content']) > 500
+
+    @pytest.mark.asyncio
+    async def test_rule_sync_short_content_also_has_full_content(self, tmp_path):
+        """Short rules also get full_content field."""
+        rule_path = tmp_path / "short-rule.md"
+        rule_content = "---\npaths: src/**\n---\n# Short Rule\n\nBrief guidance."
+        rule_path.write_text(rule_content)
+
+        captured_body = None
+
+        async def capture_episode(name, episode_body, group_id, **kwargs):
+            nonlocal captured_body
+            captured_body = episode_body
+            return "episode_id"
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = capture_episode
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
+            result = await sync_rule_to_graphiti(rule_path, "test-template")
+
+            assert result is True
+            body_data = json.loads(captured_body)
+            assert 'full_content' in body_data
+
+    @pytest.mark.asyncio
+    async def test_agent_sync_includes_body_content(self, tmp_path):
+        """AC: Agent sync includes body content beyond frontmatter."""
+        agent_path = tmp_path / "detailed-agent.md"
+        agent_content = """---
+name: detailed-agent
+description: Detailed agent
+capabilities:
+  - Code review
+---
+
+# Detailed Agent
+
+You are a detailed specialist agent.
+
+## Responsibilities
+
+1. Review code for quality
+2. Ensure test coverage
+3. Validate architecture
+
+## Guidelines
+
+Follow SOLID principles and ensure all code is well-documented.
+"""
+        agent_path.write_text(agent_content)
+
+        captured_body = None
+
+        async def capture_episode(name, episode_body, group_id, **kwargs):
+            nonlocal captured_body
+            captured_body = episode_body
+            return "episode_id"
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = capture_episode
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
+            result = await sync_agent_to_graphiti(agent_path, "test-template")
+
+            assert result is True
+            body_data = json.loads(captured_body)
+            assert 'body_content' in body_data
+            assert 'Responsibilities' in body_data['body_content']
+            assert 'SOLID principles' in body_data['body_content']
+
+
+# ============================================================================
+# 9. TASK-INST-011: Template Sync Without Manifest
+# ============================================================================
+
+class TestTemplateSyncWithoutManifest:
+    """Test sync_template_to_graphiti works without manifest.json."""
+
+    @pytest.mark.asyncio
+    async def test_sync_template_without_manifest_syncs_agents(self, tmp_path):
+        """AC: Template not found (no manifest): sync agents and rules gracefully."""
+        template_path = tmp_path / "default-template"
+        template_path.mkdir()
+        # No manifest.json
+
+        # Create agents directory with an agent
+        agents_dir = template_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "test-agent.md").write_text(
+            "---\nname: test-agent\ndescription: Test\n---\n# Test Agent"
+        )
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
+            result = await sync_template_to_graphiti(template_path)
+
+            # Should return True even without manifest
+            assert result is True
+            # Should still sync agents
+            assert mock_client.add_episode.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_sync_template_without_manifest_syncs_rules(self, tmp_path):
+        """Template without manifest still syncs rule files."""
+        template_path = tmp_path / "minimal-template"
+        template_path.mkdir()
+        # No manifest.json
+
+        rules_dir = template_path / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+        (rules_dir / "code-style.md").write_text(
+            "---\npaths: src/**\n---\n# Code Style\nContent."
+        )
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
+            result = await sync_template_to_graphiti(template_path)
+
+            assert result is True
+            assert mock_client.add_episode.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_sync_template_without_manifest_no_content_returns_true(self, tmp_path):
+        """Template with no manifest, agents or rules still returns True (nothing to sync)."""
+        template_path = tmp_path / "empty-template"
+        template_path.mkdir()
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
+            result = await sync_template_to_graphiti(template_path)
+            assert result is True
+
+
+# ============================================================================
+# 10. TASK-INST-011: Agent Directory Resolution
+# ============================================================================
+
+class TestAgentDirectoryResolution:
+    """Test that sync_template_to_graphiti checks both agents/ and .claude/agents/."""
+
+    @pytest.mark.asyncio
+    async def test_sync_template_checks_dotclaude_agents(self, tmp_path):
+        """AC: Template sync checks .claude/agents/ for agent files."""
+        template_path = tmp_path / "template-with-dotclaude-agents"
+        template_path.mkdir()
+        manifest = {"name": "dotclaude-template", "language": "Python"}
+        (template_path / "manifest.json").write_text(json.dumps(manifest))
+
+        # Create agents in .claude/agents/ (not agents/)
+        agents_dir = template_path / ".claude" / "agents"
+        agents_dir.mkdir(parents=True)
+        (agents_dir / "specialist.md").write_text(
+            "---\nname: specialist\ndescription: Specialist\n---\n# Specialist"
+        )
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
+            result = await sync_template_to_graphiti(template_path)
+
+            assert result is True
+            # Should have synced template + agent
+            assert mock_client.add_episode.call_count >= 2
+
+    @pytest.mark.asyncio
+    async def test_sync_template_checks_both_agent_dirs(self, tmp_path):
+        """Template sync checks both agents/ and .claude/agents/ directories."""
+        template_path = tmp_path / "template-both-dirs"
+        template_path.mkdir()
+        manifest = {"name": "both-dirs-template", "language": "Python"}
+        (template_path / "manifest.json").write_text(json.dumps(manifest))
+
+        # Create agents in both locations
+        top_agents_dir = template_path / "agents"
+        top_agents_dir.mkdir()
+        (top_agents_dir / "top-agent.md").write_text(
+            "---\nname: top-agent\ndescription: Top\n---\n# Top Agent"
+        )
+
+        dotclaude_agents_dir = template_path / ".claude" / "agents"
+        dotclaude_agents_dir.mkdir(parents=True)
+        (dotclaude_agents_dir / "dotclaude-agent.md").write_text(
+            "---\nname: dotclaude-agent\ndescription: DotClaude\n---\n# DotClaude Agent"
+        )
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
+            result = await sync_template_to_graphiti(template_path)
+
+            assert result is True
+            # Should have synced template + 2 agents
+            assert mock_client.add_episode.call_count >= 3
+
+
+# ============================================================================
+# 11. Integration Tests (2 tests - marked for selective running)
 # ============================================================================
 
 @pytest.mark.integration

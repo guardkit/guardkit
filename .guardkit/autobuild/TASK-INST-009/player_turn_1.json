@@ -1,0 +1,146 @@
+{
+  "task_id": "TASK-INST-009",
+  "turn": 1,
+  "files_modified": [
+    ".guardkit/bootstrap_state.json",
+    "tasks/backlog/TASK-INST-009-integration-tests.md"
+  ],
+  "files_created": [
+    ".claude/task-plans/TASK-INST-009-implementation-plan.md",
+    ".guardkit/autobuild/TASK-INST-005c/checkpoints.json",
+    ".guardkit/autobuild/TASK-INST-009/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-009/task_work_results.json",
+    ".guardkit/autobuild/TASK-INST-009/turn_context.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/.guardkit/autobuild/TASK-INST-009/player_turn_1.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/orchestrator/instrumentation/test_integration.py",
+    "tasks/design_approved/TASK-INST-009-integration-tests.md",
+    "tests/orchestrator/instrumentation/test_integration.py"
+  ],
+  "tests_written": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/orchestrator/instrumentation/test_integration.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation",
+  "concerns": [],
+  "requirements_addressed": [
+    "End-to-end event stream for successful task",
+    "End-to-end event stream for failed task",
+    "NATS unavailable: all events written to local JSONL",
+    "NATS drops mid-run: seamless fallback with warning",
+    "No events silently dropped in any failure scenario",
+    "Concurrent workers produce independent, non-corrupted events",
+    "A/B data: same task produces comparable metrics under different profiles",
+    "Digest boundary: 700 tokens accepted, 701 warned",
+    "Phase 1: rules bundle + digest coexist",
+    "Async emission verified non-blocking"
+  ],
+  "requirements_remaining": [],
+  "sdk_turns_used": 39,
+  "sdk_max_turns": 100,
+  "sdk_ceiling_hit": false,
+  "tests_passed_count": 27,
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "End-to-end test verifies complete event stream for successful task",
+      "status": "complete",
+      "evidence": "TestEndToEndSuccessfulTask class contains 4 tests: test_complete_event_stream_successful_task verifies full lifecycle (started -> llm calls -> tool execs -> completed), test_all_events_share_same_run_id, test_all_events_share_same_task_id, and test_events_roundtrip_through_jsonl_backend verifying JSONL persistence and readback.",
+      "test_file": "tests/orchestrator/instrumentation/test_integration.py",
+      "implementation_files": [
+        "tests/orchestrator/instrumentation/test_integration.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "End-to-end test verifies event stream for failed task",
+      "status": "complete",
+      "evidence": "TestEndToEndFailedTask class with 2 tests: test_complete_event_stream_failed_task verifies lifecycle ending with TaskFailedEvent and correct failure_category, test_failed_task_preserves_all_events verifies all events including failure are persisted to JSONL.",
+      "test_file": "tests/orchestrator/instrumentation/test_integration.py",
+      "implementation_files": [
+        "tests/orchestrator/instrumentation/test_integration.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "NATS unavailable: all events written to local JSONL",
+      "status": "complete",
+      "evidence": "TestNATSUnavailableFallback class with 3 tests: test_events_written_to_jsonl_without_nats (CompositeBackend with only JSONL), test_each_jsonl_line_is_valid_json, and test_nats_unavailable_all_events_still_in_jsonl (NATS throws ConnectionError, all 4 events still in JSONL).",
+      "test_file": "tests/orchestrator/instrumentation/test_integration.py",
+      "implementation_files": [
+        "tests/orchestrator/instrumentation/test_integration.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "NATS drops mid-run: seamless fallback with warning",
+      "status": "complete",
+      "evidence": "TestNATSMidRunFallback.test_nats_drops_mid_run_events_still_captured: first 2 NATS publishes succeed, events 3-4 fail with ConnectionError. All 4 events land in JSONL. Verifies NATS warning is logged.",
+      "test_file": "tests/orchestrator/instrumentation/test_integration.py",
+      "implementation_files": [
+        "tests/orchestrator/instrumentation/test_integration.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "No events silently dropped in any failure scenario",
+      "status": "complete",
+      "evidence": "TestNoSilentDrops class with 2 tests: test_no_events_dropped_when_nats_fails (10 events, NATS broken, all 10 in JSONL), test_no_events_dropped_with_failing_custom_backend (failing backend + JSONL + NullEmitter, all 3 events captured by both healthy backends).",
+      "test_file": "tests/orchestrator/instrumentation/test_integration.py",
+      "implementation_files": [
+        "tests/orchestrator/instrumentation/test_integration.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Concurrent workers produce independent, non-corrupted events",
+      "status": "complete",
+      "evidence": "TestConcurrentWorkerSafety with 2 tests: test_three_workers_independent_events (3 async workers, 12 events total, each event's task_id and run_id consistently paired per worker, 4 events per worker), test_no_cross_contamination_between_workers (15 events from 3 workers, input_tokens range verified per worker).",
+      "test_file": "tests/orchestrator/instrumentation/test_integration.py",
+      "implementation_files": [
+        "tests/orchestrator/instrumentation/test_integration.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "A/B data: same task produces comparable metrics under different profiles",
+      "status": "complete",
+      "evidence": "TestABComparisonData with 3 tests: test_same_task_different_profiles_produce_completed_events (both runs produce TaskCompletedEvent with same task_id), test_input_tokens_available_for_both_runs (500 vs 800 tokens), test_latency_ms_available_for_comparison (4 latency values per profile, p50 computation verified).",
+      "test_file": "tests/orchestrator/instrumentation/test_integration.py",
+      "implementation_files": [
+        "tests/orchestrator/instrumentation/test_integration.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "Digest boundary: 700 tokens accepted, 701 warned",
+      "status": "complete",
+      "evidence": "TestDigestValidationBoundary with 2 tests: test_digest_at_exactly_max_tokens_accepted (generates text at 700 tokens, validates no warning), test_digest_at_701_tokens_triggers_warning (generates text exceeding 700 tokens, validates warning is set and contains 'exceeds').",
+      "test_file": "tests/orchestrator/instrumentation/test_integration.py",
+      "implementation_files": [
+        "tests/orchestrator/instrumentation/test_integration.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "Phase 1: rules bundle + digest coexist",
+      "status": "complete",
+      "evidence": "TestPhase1MigrationPreservation with 4 tests: test_rules_bundle_and_digest_coexist (both 'Player Digest' and 'Full Rules Bundle' in assembled output), test_prompt_profile_tagged_as_digest_rules_bundle (last_profile == DIGEST_RULES_BUNDLE), test_events_tagged_with_digest_rules_bundle_profile (LLMCallEvent and TaskCompletedEvent carry 'digest+rules_bundle'), test_default_profile_is_digest_rules_bundle.",
+      "test_file": "tests/orchestrator/instrumentation/test_integration.py",
+      "implementation_files": [
+        "tests/orchestrator/instrumentation/test_integration.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-010",
+      "criterion_text": "Async emission verified non-blocking",
+      "status": "complete",
+      "evidence": "TestAsyncEmissionNonBlocking with 4 tests: test_emit_is_async_coroutine (verifies asyncio.iscoroutine), test_emit_does_not_block_caller (3 emits under 1s), test_fire_and_forget_pattern (5 create_task fire-and-forget emissions), test_concurrent_emit_with_simulated_work (5 concurrent LLM calls with emission, all under 1s).",
+      "test_file": "tests/orchestrator/instrumentation/test_integration.py",
+      "implementation_files": [
+        "tests/orchestrator/instrumentation/test_integration.py"
+      ]
+    }
+  ]
+}

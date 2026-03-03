@@ -1,0 +1,222 @@
+{
+  "task_id": "TASK-INST-007",
+  "turn": 1,
+  "files_modified": [
+    ".claude/task-plans/TASK-INST-002-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-003-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-007-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-011-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-012-implementation-plan.md",
+    ".guardkit/autobuild/TASK-INST-002/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-003/checkpoints.json",
+    ".guardkit/autobuild/TASK-INST-003/coach_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-003/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-003/task_work_results.json",
+    ".guardkit/autobuild/TASK-INST-003/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-007/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-007/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-010/checkpoints.json",
+    ".guardkit/autobuild/TASK-INST-011/checkpoints.json",
+    ".guardkit/autobuild/TASK-INST-011/coach_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-011/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-011/task_work_results.json",
+    ".guardkit/autobuild/TASK-INST-011/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-012/coach_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-012/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-012/task_work_results.json",
+    ".guardkit/autobuild/TASK-INST-012/turn_context.json",
+    ".guardkit/bootstrap_state.json",
+    ".guardkit/digests/coach.md",
+    ".guardkit/digests/player.md",
+    ".guardkit/digests/resolver.md",
+    ".guardkit/digests/router.md",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/guardkit/orchestrator/instrumentation/__init__.py",
+    "`guardkit/orchestrator/instrumentation/__init__.py",
+    "guardkit/cli/init.py",
+    "guardkit/knowledge/seed_agents.py",
+    "guardkit/knowledge/seed_helpers.py",
+    "guardkit/knowledge/seed_rules.py",
+    "guardkit/knowledge/seed_templates.py",
+    "guardkit/knowledge/template_sync.py",
+    "guardkit/orchestrator/instrumentation/__init__.py",
+    "guardkit/orchestrator/instrumentation/digests.py",
+    "guardkit/orchestrator/instrumentation/emitter.py",
+    "guardkit/orchestrator/instrumentation/prompt_profile.py",
+    "guardkit/orchestrator/instrumentation/redaction.py",
+    "tasks/design_approved/TASK-INST-002-event-emitter-backends.md",
+    "tasks/design_approved/TASK-INST-003-secret-redaction-pipeline.md",
+    "tasks/design_approved/TASK-INST-007-role-specific-digests.md",
+    "tasks/design_approved/TASK-INST-011-wire-template-graphiti-sync.md",
+    "tasks/design_approved/TASK-INST-012-enrich-system-seeding.md",
+    "tests/cli/test_init.py",
+    "tests/knowledge/test_seed_enrichment.py",
+    "tests/knowledge/test_template_sync.py",
+    "tests/orchestrator/instrumentation/test_digests.py",
+    "tests/orchestrator/instrumentation/test_emitter.py",
+    "tests/orchestrator/instrumentation/test_redaction.py"
+  ],
+  "files_created": [
+    ".guardkit/autobuild/TASK-INST-007/task_work_results.json",
+    ".guardkit/autobuild/TASK-INST-012/checkpoints.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/.guardkit/autobuild/TASK-INST-007/player_turn_1.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/.guardkit/digests/coach.md",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/.guardkit/digests/player.md",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/.guardkit/digests/resolver.md",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/.guardkit/digests/router.md",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/guardkit/orchestrator/instrumentation/__init__.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/guardkit/orchestrator/instrumentation/digests.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/guardkit/orchestrator/instrumentation/prompt_profile.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/orchestrator/instrumentation/test_digests.py"
+  ],
+  "tests_written": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/orchestrator/instrumentation/test_digests.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation",
+  "concerns": [],
+  "requirements_addressed": [
+    "Four digest files created (player, coach, resolver, router)",
+    "Each digest under 700 tokens",
+    "DigestValidator accepts exactly 700 tokens, warns at 701+",
+    "Missing digest file produces clear error (no silent fallback)",
+    "DigestLoader returns correct digest for each role",
+    "Prompt profile switching supports all four profiles",
+    "Phase 1: full rules bundle injected alongside digest",
+    "No two digests are identical",
+    "Token counting implemented (word-based fallback)",
+    "Digest content is stack-agnostic",
+    "Unit tests cover validation boundaries (700/701), loading, profiles"
+  ],
+  "requirements_remaining": [],
+  "sdk_turns_used": 44,
+  "sdk_max_turns": 100,
+  "sdk_ceiling_hit": false,
+  "tests_passed_count": 45,
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Four digest files created (player, coach, resolver, router)",
+      "status": "complete",
+      "evidence": "Created .guardkit/digests/player.md, coach.md, resolver.md, router.md with role-specific content for each agent role.",
+      "test_file": "tests/orchestrator/instrumentation/test_digests.py",
+      "implementation_files": [
+        ".guardkit/digests/player.md",
+        ".guardkit/digests/coach.md",
+        ".guardkit/digests/resolver.md",
+        ".guardkit/digests/router.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Each digest under 700 tokens",
+      "status": "complete",
+      "evidence": "TestRealDigestFiles::test_each_digest_under_700_tokens validates all four digests are under 700 tokens using count_tokens(). All pass.",
+      "test_file": "tests/orchestrator/instrumentation/test_digests.py",
+      "implementation_files": [
+        ".guardkit/digests/player.md",
+        ".guardkit/digests/coach.md",
+        ".guardkit/digests/resolver.md",
+        ".guardkit/digests/router.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "DigestValidator accepts exactly 700 tokens, warns at 701+",
+      "status": "complete",
+      "evidence": "TestDigestValidator::test_exactly_700_tokens_accepted verifies 700-token digest passes without warning. TestDigestValidator::test_701_tokens_warns verifies 701+ tokens produces a warning. Both pass.",
+      "test_file": "tests/orchestrator/instrumentation/test_digests.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/digests.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Missing digest file produces clear error (no silent fallback)",
+      "status": "complete",
+      "evidence": "TestDigestValidator::test_missing_digest_raises_error and test_missing_digest_no_silent_fallback verify DigestLoadError is raised with clear message. TestDigestLoader::test_load_missing_digest_raises_error also covers the loader path. All pass.",
+      "test_file": "tests/orchestrator/instrumentation/test_digests.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/digests.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "DigestLoader returns correct digest for each role",
+      "status": "complete",
+      "evidence": "TestDigestLoader tests (test_load_player_digest, test_load_coach_digest, test_load_resolver_digest, test_load_router_digest, test_load_correct_content_per_role) verify each role gets its own specific content. All pass.",
+      "test_file": "tests/orchestrator/instrumentation/test_digests.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/digests.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Prompt profile switching supports all four profiles",
+      "status": "complete",
+      "evidence": "TestPromptProfile::test_all_four_profiles_exist verifies 4 profiles. TestPromptProfileAssembler tests verify digest_only, digest+graphiti, digest+rules_bundle, and digest+graphiti+rules_bundle all assemble correctly. All pass.",
+      "test_file": "tests/orchestrator/instrumentation/test_digests.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/prompt_profile.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Phase 1: full rules bundle injected alongside digest",
+      "status": "complete",
+      "evidence": "TestPromptProfileAssembler::test_default_profile_is_digest_rules_bundle confirms default is digest+rules_bundle. TestPromptProfileAssembler::test_digest_rules_bundle_includes_both confirms both digest and rules bundle content are present. All pass.",
+      "test_file": "tests/orchestrator/instrumentation/test_digests.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/prompt_profile.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "No two digests are identical",
+      "status": "complete",
+      "evidence": "TestRealDigestFiles::test_no_two_digests_identical checks all pairs of digest files for uniqueness. Passes.",
+      "test_file": "tests/orchestrator/instrumentation/test_digests.py",
+      "implementation_files": [
+        ".guardkit/digests/player.md",
+        ".guardkit/digests/coach.md",
+        ".guardkit/digests/resolver.md",
+        ".guardkit/digests/router.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "Token counting implemented (tiktoken or word-based fallback)",
+      "status": "complete",
+      "evidence": "count_tokens() function implemented with tiktoken try/except falling back to character-based estimation (chars/4). TestTokenCounting class has 6 tests covering empty strings, single words, multiple words, markdown, and approximation accuracy. All pass.",
+      "test_file": "tests/orchestrator/instrumentation/test_digests.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/digests.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-010",
+      "criterion_text": "Digest content is stack-agnostic (no Python/Node/.NET-specific references)",
+      "status": "complete",
+      "evidence": "TestRealDigestFiles::test_digests_are_stack_agnostic checks all four digest files against 18 stack-specific regex patterns (pytest, npm, dotnet, cargo, python, typescript, etc.). All pass - no stack-specific references found.",
+      "test_file": "tests/orchestrator/instrumentation/test_digests.py",
+      "implementation_files": [
+        ".guardkit/digests/player.md",
+        ".guardkit/digests/coach.md",
+        ".guardkit/digests/resolver.md",
+        ".guardkit/digests/router.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-011",
+      "criterion_text": "Unit tests cover validation boundaries (700/701), loading, profiles",
+      "status": "complete",
+      "evidence": "45 tests covering: token counting (6), DigestValidator with 700/701 boundary (10), DigestValidationResult (2), DigestLoader (8), PromptProfile enum (5), PromptProfileAssembler (6), real digest file validation (6), DIGEST_ROLES constant (2). All pass with 95%/92% coverage on source files.",
+      "test_file": "tests/orchestrator/instrumentation/test_digests.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/digests.py",
+        "guardkit/orchestrator/instrumentation/prompt_profile.py"
+      ]
+    }
+  ]
+}

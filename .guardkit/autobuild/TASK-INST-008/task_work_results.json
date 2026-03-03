@@ -1,0 +1,172 @@
+{
+  "task_id": "TASK-INST-008",
+  "timestamp": "2026-03-02T22:33:14.990423",
+  "completed": true,
+  "phases": {
+    "phase_3": {
+      "detected": true,
+      "text": "Implementation (TDD Mode)",
+      "completed": true
+    }
+  },
+  "quality_gates": {
+    "tests_passing": true,
+    "tests_passed": 41,
+    "tests_failed": 0,
+    "coverage": 98.0,
+    "coverage_met": true,
+    "all_passed": true
+  },
+  "files_modified": [
+    ".claude/task-plans/TASK-INST-004-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-005a-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-006-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-008-implementation-plan.md",
+    ".guardkit/autobuild/TASK-INST-002/checkpoints.json",
+    ".guardkit/autobuild/TASK-INST-004/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-005a/coach_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-005a/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-005a/task_work_results.json",
+    ".guardkit/autobuild/TASK-INST-005a/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-006/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-008/turn_context.json",
+    ".guardkit/bootstrap_state.json",
+    "guardkit/knowledge/context_loader.py",
+    "guardkit/orchestrator/autobuild.py",
+    "guardkit/orchestrator/instrumentation/concurrency.py",
+    "guardkit/orchestrator/instrumentation/llm_instrumentation.py",
+    "tasks/design_approved/TASK-INST-004-instrument-orchestrator.md",
+    "tasks/design_approved/TASK-INST-005a-llm-instrumentation-helpers.md",
+    "tasks/design_approved/TASK-INST-006-instrument-graphiti-loader.md",
+    "tasks/design_approved/TASK-INST-008-adaptive-concurrency.md",
+    "tests/orchestrator/instrumentation/test_concurrency.py",
+    "tests/orchestrator/instrumentation/test_graphiti_events.py",
+    "tests/orchestrator/instrumentation/test_llm_instrumentation.py",
+    "tests/orchestrator/instrumentation/test_orchestrator_events.py"
+  ],
+  "files_created": [
+    ".guardkit/autobuild/TASK-INST-005a/checkpoints.json",
+    ".guardkit/autobuild/TASK-INST-008/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-008/task_work_results.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/.guardkit/autobuild/TASK-INST-008/player_turn_1.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/guardkit/orchestrator/instrumentation/concurrency.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/orchestrator/instrumentation/test_concurrency.py"
+  ],
+  "tests_written": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/orchestrator/instrumentation/test_concurrency.py"
+  ],
+  "summary": "41 tests passed, 98.0% coverage, all quality gates passed",
+  "sdk_turns": {
+    "turns_used": 27,
+    "max_turns": 100,
+    "ceiling_hit": false
+  },
+  "code_review": {
+    "score": 90,
+    "solid": 95,
+    "dry": 90,
+    "yagni": 95
+  },
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Rate limit count > 0 triggers 50% concurrency reduction",
+      "status": "complete",
+      "evidence": "ConcurrencyController._evaluate() checks event.rate_limit_count > 0 and computes new = max(1, current_workers // 2). Tests: test_rate_limit_count_1_triggers_reduction (boundary count=1), test_rate_limit_count_many_triggers_reduction, test_rate_limit_reduction_rounds_down, test_rate_limit_on_already_reduced_workers all verify 50% reduction with floor at 1.",
+      "test_file": "tests/orchestrator/instrumentation/test_concurrency.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/concurrency.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "p95 latency above threshold triggers concurrency reduction",
+      "status": "complete",
+      "evidence": "When p95_task_latency_ms exceeds baseline * (1 + p95_threshold_pct/100), the controller returns a reduce decision. Default threshold is 100% (2x baseline). Tests: test_latency_above_2x_baseline_triggers_reduction (5000ms baseline, 10001ms triggers), test_custom_threshold_percentage (50% threshold).",
+      "test_file": "tests/orchestrator/instrumentation/test_concurrency.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/concurrency.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "p95 just below threshold (e.g., 9999 vs 10000) does not trigger reduction",
+      "status": "complete",
+      "evidence": "Strict greater-than comparison (event.p95_task_latency_ms > threshold). Tests: test_latency_just_below_threshold_no_reduction (9999ms < 10000ms = maintain), test_latency_exactly_at_threshold_no_reduction (10000ms == 10000ms = maintain).",
+      "test_file": "tests/orchestrator/instrumentation/test_concurrency.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/concurrency.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Recovery increases by +1 after 5 minutes stability",
+      "status": "complete",
+      "evidence": "After a reduction, if _is_stability_elapsed() returns True and no rate limits present, controller returns increase with new_workers = current + 1. Tests: test_recovery_after_stability_window (stability_minutes=0 for immediate), test_recovery_with_real_stability_window (10min window prevents recovery), test_recovery_with_mocked_time (mocks 6min passage).",
+      "test_file": "tests/orchestrator/instrumentation/test_concurrency.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/concurrency.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Zero rate limit count reports 0 and triggers no adaptation",
+      "status": "complete",
+      "evidence": "When rate_limit_count == 0 and latency is within threshold, controller returns maintain decision. Tests: test_zero_rate_limits_maintains_workers, test_zero_rate_limits_no_reduction (5 consecutive waves all maintain).",
+      "test_file": "tests/orchestrator/instrumentation/test_concurrency.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/concurrency.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Minimum concurrency is 1 worker",
+      "status": "complete",
+      "evidence": "All reductions use max(1, current_workers // 2) which floors at 1. Tests: test_cannot_reduce_below_1 (2->1->1), test_single_worker_rate_limit_stays_at_1 (initial=1 stays 1), test_minimum_floor_with_odd_numbers (3->1).",
+      "test_file": "tests/orchestrator/instrumentation/test_concurrency.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/concurrency.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Maximum concurrency is original configured value",
+      "status": "complete",
+      "evidence": "Recovery uses min(current + 1, initial_workers) and when at ceiling returns maintain. Tests: test_cannot_increase_above_initial (4->2->3->4->maintain at 4).",
+      "test_file": "tests/orchestrator/instrumentation/test_concurrency.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/concurrency.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "ConcurrencyController integrates with FeatureOrchestrator",
+      "status": "complete",
+      "evidence": "Controller accepts WaveCompletedEvent (same schema FeatureOrchestrator emits), returns ConcurrencyDecision dataclass, exposes current_workers property. Tests: test_accepts_wave_completed_event, test_decision_has_required_fields, test_current_workers_is_property, test_sequential_wave_processing (realistic multi-wave sequence).",
+      "test_file": "tests/orchestrator/instrumentation/test_concurrency.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/concurrency.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "Concurrency decisions logged",
+      "status": "complete",
+      "evidence": "ConcurrencyController._log_decision() uses logger.info() with wave_id, action, new_workers, and reason. Tests: test_reduction_logged, test_maintain_logged, test_increase_logged, test_log_includes_worker_counts \u2014 all verify log records via caplog fixture.",
+      "test_file": "tests/orchestrator/instrumentation/test_concurrency.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/concurrency.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-010",
+      "criterion_text": "Unit tests cover all boundary conditions from BDD spec",
+      "status": "complete",
+      "evidence": "41 tests across 10 test classes covering: boundary rate_limit_count=1, exactly-at-threshold latency (9999/10000/10001), odd worker counts (3, 5), initial_workers=1, large workers (100), rate limit priority over latency, consecutive maintain, reduce-recover-reduce cycle, p95_threshold_pct=0 edge case, None latency, first-wave-as-baseline.",
+      "test_file": "tests/orchestrator/instrumentation/test_concurrency.py",
+      "implementation_files": [
+        "guardkit/orchestrator/instrumentation/concurrency.py"
+      ]
+    }
+  ]
+}

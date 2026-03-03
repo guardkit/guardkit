@@ -1,0 +1,187 @@
+{
+  "task_id": "TASK-INST-005b",
+  "turn": 1,
+  "decision": "approve",
+  "validation_results": {
+    "quality_gates": {
+      "tests_passed": true,
+      "coverage_met": true,
+      "arch_review_passed": true,
+      "plan_audit_passed": true,
+      "all_gates_passed": true
+    },
+    "independent_tests": {
+      "tests_passed": true,
+      "test_command": "pytest tests/orchestrator/instrumentation/test_llm_call_events.py -v --tb=short",
+      "test_output_summary": "Result:\n============================== 13 passed in 2.46s ==============================",
+      "duration_seconds": 9.195796012878418
+    },
+    "requirements": {
+      "criteria_total": 9,
+      "criteria_met": 9,
+      "all_criteria_met": true,
+      "missing": []
+    }
+  },
+  "criteria_verification": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "`llm.call` event emitted for every successful SDK invocation",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Implemented _emit_llm_call_event() method called in the finally block of _invoke_with_role(). On success path, status='ok' and error_type=None. Test: test_emits_event_on_successful_call verifies event emission with NullEmitter(capture=True).",
+      "notes": "Implemented _emit_llm_call_event() method called in the finally block of _invoke_with_role(). On success path, status='ok' and error_type=None. Test: test_emits_event_on_successful_call verifies event emission with NullEmitter(capture=True)."
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "`llm.call` event emitted for failed SDK invocations (timeout, API error)",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Error path sets call_status='error' and captures the exception. Event is emitted in finally block regardless of success/failure. Tests: test_emits_event_on_timeout (verifies timeout error emission with error_type='timeout') and test_emits_event_on_process_error (verifies ProcessError emission).",
+      "notes": "Error path sets call_status='error' and captures the exception. Event is emitted in finally block regardless of success/failure. Tests: test_emits_event_on_timeout (verifies timeout error emission with error_type='timeout') and test_emits_event_on_process_error (verifies ProcessError emission)."
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Event includes all required fields: run_id, task_id, agent_role, provider, model, tokens, latency, prompt_profile, status",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "LLMCallEvent constructed with all required fields in _emit_llm_call_event(). run_id from self._run_id or instance ID fallback, task_id extracted from prompt, agent_role from method param, provider from detect_provider(), model from param, tokens from extract_token_usage(), latency from measure_latency(), prompt_profile from self._prompt_profile or default, status from call tracking. Test: test_event_includes_all_required_fields asserts all fields.",
+      "notes": "LLMCallEvent constructed with all required fields in _emit_llm_call_event(). run_id from self._run_id or instance ID fallback, task_id extracted from prompt, agent_role from method param, provider from detect_provider(), model from param, tokens from extract_token_usage(), latency from measure_latency(), prompt_profile from self._prompt_profile or default, status from call tracking. Test: test_event_includes_all_required_fields asserts all fields."
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Event emission is non-blocking (asyncio.create_task)",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Event emission uses asyncio.get_running_loop().create_task(_safe_emit()) \u2014 fire-and-forget pattern. _invoke_with_role returns immediately without waiting for emission. Test: test_emission_does_not_block_caller verifies method returns before emission completes.",
+      "notes": "Event emission uses asyncio.get_running_loop().create_task(_safe_emit()) \u2014 fire-and-forget pattern. _invoke_with_role returns immediately without waiting for emission. Test: test_emission_does_not_block_caller verifies method returns before emission completes."
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Emission failure does not propagate to caller",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "The _safe_emit() async wrapper catches all exceptions from emitter.emit() and logs a warning. The outer _emit_llm_call_event() also catches event construction failures. Test: test_emission_failure_does_not_propagate uses a failing emitter (raises RuntimeError) and verifies _invoke_with_role completes without error.",
+      "notes": "The _safe_emit() async wrapper catches all exceptions from emitter.emit() and logs a warning. The outer _emit_llm_call_event() also catches event construction failures. Test: test_emission_failure_does_not_propagate uses a failing emitter (raises RuntimeError) and verifies _invoke_with_role completes without error."
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "NullEmitter default preserves existing behaviour (no event emission when emitter not injected)",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "AgentInvoker.__init__() defaults emitter parameter to NullEmitter() when None. NullEmitter drops events silently. Tests: test_default_emitter_is_null_emitter verifies default type, test_no_events_captured_without_injected_emitter verifies zero events captured.",
+      "notes": "AgentInvoker.__init__() defaults emitter parameter to NullEmitter() when None. NullEmitter drops events silently. Tests: test_default_emitter_is_null_emitter verifies default type, test_no_events_captured_without_injected_emitter verifies zero events captured."
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Multiple calls in same turn produce distinct events",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Each _invoke_with_role() call produces exactly one LLMCallEvent with its own timestamp from datetime.now().isoformat(). Test: test_two_calls_produce_two_events makes two invocations (player + coach) and verifies 2 distinct events with different agent_roles.",
+      "notes": "Each _invoke_with_role() call produces exactly one LLMCallEvent with its own timestamp from datetime.now().isoformat(). Test: test_two_calls_produce_two_events makes two invocations (player + coach) and verifies 2 distinct events with different agent_roles."
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "Existing tests in test_agent_invoker.py still pass (zero regression)",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "All 552 existing agent_invoker tests pass. The emitter parameter defaults to NullEmitter() so all existing callers are unaffected. Ran: pytest tests/unit/test_agent_invoker*.py \u2014 552 passed, 0 failed.",
+      "notes": "All 552 existing agent_invoker tests pass. The emitter parameter defaults to NullEmitter() so all existing callers are unaffected. Ran: pytest tests/unit/test_agent_invoker*.py \u2014 552 passed, 0 failed."
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "New tests cover: successful emission, error emission, non-blocking behaviour, NullEmitter default",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "13 new tests in test_llm_call_events.py covering: TestSuccessfulEmission (2 tests), TestErrorEmission (2 tests), TestNonBlockingEmission (1 test), TestEmissionFailureSafe (1 test), TestNullEmitterDefault (2 tests), TestMultipleCallsDistinctEvents (1 test), TestLatencyTracking (2 tests), TestPromptProfile (1 test). All pass.",
+      "notes": "13 new tests in test_llm_call_events.py covering: TestSuccessfulEmission (2 tests), TestErrorEmission (2 tests), TestNonBlockingEmission (1 test), TestEmissionFailureSafe (1 test), TestNullEmitterDefault (2 tests), TestMultipleCallsDistinctEvents (1 test), TestLatencyTracking (2 tests), TestPromptProfile (1 test). All pass."
+    }
+  ],
+  "acceptance_criteria_verification": {
+    "criteria_results": [
+      {
+        "criterion_id": "AC-001",
+        "criterion_text": "`llm.call` event emitted for every successful SDK invocation",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Implemented _emit_llm_call_event() method called in the finally block of _invoke_with_role(). On success path, status='ok' and error_type=None. Test: test_emits_event_on_successful_call verifies event emission with NullEmitter(capture=True).",
+        "notes": "Implemented _emit_llm_call_event() method called in the finally block of _invoke_with_role(). On success path, status='ok' and error_type=None. Test: test_emits_event_on_successful_call verifies event emission with NullEmitter(capture=True)."
+      },
+      {
+        "criterion_id": "AC-002",
+        "criterion_text": "`llm.call` event emitted for failed SDK invocations (timeout, API error)",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Error path sets call_status='error' and captures the exception. Event is emitted in finally block regardless of success/failure. Tests: test_emits_event_on_timeout (verifies timeout error emission with error_type='timeout') and test_emits_event_on_process_error (verifies ProcessError emission).",
+        "notes": "Error path sets call_status='error' and captures the exception. Event is emitted in finally block regardless of success/failure. Tests: test_emits_event_on_timeout (verifies timeout error emission with error_type='timeout') and test_emits_event_on_process_error (verifies ProcessError emission)."
+      },
+      {
+        "criterion_id": "AC-003",
+        "criterion_text": "Event includes all required fields: run_id, task_id, agent_role, provider, model, tokens, latency, prompt_profile, status",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "LLMCallEvent constructed with all required fields in _emit_llm_call_event(). run_id from self._run_id or instance ID fallback, task_id extracted from prompt, agent_role from method param, provider from detect_provider(), model from param, tokens from extract_token_usage(), latency from measure_latency(), prompt_profile from self._prompt_profile or default, status from call tracking. Test: test_event_includes_all_required_fields asserts all fields.",
+        "notes": "LLMCallEvent constructed with all required fields in _emit_llm_call_event(). run_id from self._run_id or instance ID fallback, task_id extracted from prompt, agent_role from method param, provider from detect_provider(), model from param, tokens from extract_token_usage(), latency from measure_latency(), prompt_profile from self._prompt_profile or default, status from call tracking. Test: test_event_includes_all_required_fields asserts all fields."
+      },
+      {
+        "criterion_id": "AC-004",
+        "criterion_text": "Event emission is non-blocking (asyncio.create_task)",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Event emission uses asyncio.get_running_loop().create_task(_safe_emit()) \u2014 fire-and-forget pattern. _invoke_with_role returns immediately without waiting for emission. Test: test_emission_does_not_block_caller verifies method returns before emission completes.",
+        "notes": "Event emission uses asyncio.get_running_loop().create_task(_safe_emit()) \u2014 fire-and-forget pattern. _invoke_with_role returns immediately without waiting for emission. Test: test_emission_does_not_block_caller verifies method returns before emission completes."
+      },
+      {
+        "criterion_id": "AC-005",
+        "criterion_text": "Emission failure does not propagate to caller",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "The _safe_emit() async wrapper catches all exceptions from emitter.emit() and logs a warning. The outer _emit_llm_call_event() also catches event construction failures. Test: test_emission_failure_does_not_propagate uses a failing emitter (raises RuntimeError) and verifies _invoke_with_role completes without error.",
+        "notes": "The _safe_emit() async wrapper catches all exceptions from emitter.emit() and logs a warning. The outer _emit_llm_call_event() also catches event construction failures. Test: test_emission_failure_does_not_propagate uses a failing emitter (raises RuntimeError) and verifies _invoke_with_role completes without error."
+      },
+      {
+        "criterion_id": "AC-006",
+        "criterion_text": "NullEmitter default preserves existing behaviour (no event emission when emitter not injected)",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "AgentInvoker.__init__() defaults emitter parameter to NullEmitter() when None. NullEmitter drops events silently. Tests: test_default_emitter_is_null_emitter verifies default type, test_no_events_captured_without_injected_emitter verifies zero events captured.",
+        "notes": "AgentInvoker.__init__() defaults emitter parameter to NullEmitter() when None. NullEmitter drops events silently. Tests: test_default_emitter_is_null_emitter verifies default type, test_no_events_captured_without_injected_emitter verifies zero events captured."
+      },
+      {
+        "criterion_id": "AC-007",
+        "criterion_text": "Multiple calls in same turn produce distinct events",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Each _invoke_with_role() call produces exactly one LLMCallEvent with its own timestamp from datetime.now().isoformat(). Test: test_two_calls_produce_two_events makes two invocations (player + coach) and verifies 2 distinct events with different agent_roles.",
+        "notes": "Each _invoke_with_role() call produces exactly one LLMCallEvent with its own timestamp from datetime.now().isoformat(). Test: test_two_calls_produce_two_events makes two invocations (player + coach) and verifies 2 distinct events with different agent_roles."
+      },
+      {
+        "criterion_id": "AC-008",
+        "criterion_text": "Existing tests in test_agent_invoker.py still pass (zero regression)",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "All 552 existing agent_invoker tests pass. The emitter parameter defaults to NullEmitter() so all existing callers are unaffected. Ran: pytest tests/unit/test_agent_invoker*.py \u2014 552 passed, 0 failed.",
+        "notes": "All 552 existing agent_invoker tests pass. The emitter parameter defaults to NullEmitter() so all existing callers are unaffected. Ran: pytest tests/unit/test_agent_invoker*.py \u2014 552 passed, 0 failed."
+      },
+      {
+        "criterion_id": "AC-009",
+        "criterion_text": "New tests cover: successful emission, error emission, non-blocking behaviour, NullEmitter default",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "13 new tests in test_llm_call_events.py covering: TestSuccessfulEmission (2 tests), TestErrorEmission (2 tests), TestNonBlockingEmission (1 test), TestEmissionFailureSafe (1 test), TestNullEmitterDefault (2 tests), TestMultipleCallsDistinctEvents (1 test), TestLatencyTracking (2 tests), TestPromptProfile (1 test). All pass.",
+        "notes": "13 new tests in test_llm_call_events.py covering: TestSuccessfulEmission (2 tests), TestErrorEmission (2 tests), TestNonBlockingEmission (1 test), TestEmissionFailureSafe (1 test), TestNullEmitterDefault (2 tests), TestMultipleCallsDistinctEvents (1 test), TestLatencyTracking (2 tests), TestPromptProfile (1 test). All pass."
+      }
+    ]
+  },
+  "issues": [
+    {
+      "severity": "consider",
+      "category": "seam_test_recommendation",
+      "description": "No seam tests detected for cross-boundary feature. Consider adding seam/contract/boundary tests to validate technology boundary interactions. This is a recommendation, not a blocking gate."
+    }
+  ],
+  "rationale": "All quality gates passed. Independent verification confirmed. All acceptance criteria met.",
+  "context_used": null,
+  "approved_without_independent_tests": false,
+  "is_configuration_error": false
+}

@@ -55,6 +55,10 @@ from guardkit.tasks.task_loader import TaskLoader
 from guardkit.worktrees import WorktreeManager, Worktree, WorktreeCreationError
 from guardkit.cli.display import WaveProgressDisplay
 
+# Import instrumentation (TASK-INST-004)
+from guardkit.orchestrator.instrumentation.emitter import NullEmitter
+from guardkit.orchestrator.instrumentation.schemas import WaveCompletedEvent
+
 logger = logging.getLogger(__name__)
 console = Console()
 
@@ -243,6 +247,7 @@ class FeatureOrchestrator:
         task_timeout: int = 2400,
         timeout_multiplier: Optional[float] = None,
         max_parallel: Optional[int] = None,
+        emitter: Optional[Any] = None,
     ):
         """
         Initialize FeatureOrchestrator.
@@ -330,6 +335,7 @@ class FeatureOrchestrator:
         self.enable_context = enable_context
         self.task_timeout = int(task_timeout * self.timeout_multiplier)
         self.max_parallel = max_parallel
+        self._emitter = emitter if emitter is not None else NullEmitter()  # TASK-INST-004
         self.features_dir = features_dir or self.repo_root / ".guardkit" / "features"
 
         # Raise file descriptor limit for parallel task execution
@@ -1592,12 +1598,101 @@ The detailed specifications are in the task markdown file.
         if all_succeeded:
             self._mark_wave_completed(feature, wave_number)
 
+        # Emit wave.completed event (TASK-INST-004)
+        tasks_completed_count = sum(1 for r in results if r.success)
+        task_failures_count = sum(1 for r in results if not r.success)
+        try:
+            asyncio.run(
+                self._emit_wave_completed(
+                    feature_id=feature.id,
+                    wave_id=f"wave-{wave_number}",
+                    wave_number=wave_number,
+                    worker_count=len(task_ids),
+                    queue_depth_start=len(task_ids),
+                    queue_depth_end=len(task_ids) - len(results),
+                    tasks_completed=tasks_completed_count,
+                    task_failures=task_failures_count,
+                    rate_limit_count=0,
+                    p95_task_latency_ms=None,
+                    run_id=f"run-{feature.id}",
+                    task_id=feature.id,
+                )
+            )
+        except Exception as exc:
+            logger.warning("Failed to emit wave.completed event: %s", exc)
+
         return WaveExecutionResult(
             wave_number=wave_number,
             task_ids=task_ids,
             results=results,
             all_succeeded=all_succeeded,
         )
+
+    # ========================================================================
+    # Instrumentation Helpers (TASK-INST-004)
+    # ========================================================================
+
+    async def _emit_wave_completed(
+        self,
+        feature_id: str,
+        wave_id: str,
+        wave_number: int,
+        worker_count: int,
+        queue_depth_start: int,
+        queue_depth_end: int,
+        tasks_completed: int,
+        task_failures: int,
+        rate_limit_count: int,
+        p95_task_latency_ms: Optional[float],
+        run_id: str,
+        task_id: str,
+    ) -> None:
+        """Emit wave.completed lifecycle event.
+
+        Parameters
+        ----------
+        feature_id : str
+            Parent feature identifier.
+        wave_id : str
+            Unique wave identifier (distinct per wave).
+        wave_number : int
+            Wave number (1-indexed).
+        worker_count : int
+            Number of concurrent workers.
+        queue_depth_start : int
+            Queue depth at wave start.
+        queue_depth_end : int
+            Queue depth at wave end.
+        tasks_completed : int
+            Number of successfully completed tasks.
+        task_failures : int
+            Number of failed tasks.
+        rate_limit_count : int
+            Number of rate limit events in wave.
+        p95_task_latency_ms : Optional[float]
+            95th percentile task latency.
+        run_id : str
+            Run identifier.
+        task_id : str
+            Task/feature identifier for event.
+        """
+        event = WaveCompletedEvent(
+            run_id=run_id,
+            feature_id=feature_id,
+            task_id=task_id,
+            agent_role="router",
+            attempt=1,
+            timestamp=datetime.now().isoformat(),
+            wave_id=wave_id,
+            worker_count=worker_count,
+            queue_depth_start=queue_depth_start,
+            queue_depth_end=queue_depth_end,
+            tasks_completed=tasks_completed,
+            task_failures=task_failures,
+            rate_limit_count=rate_limit_count,
+            p95_task_latency_ms=p95_task_latency_ms,
+        )
+        await self._emitter.emit(event)
 
     def _resolve_enable_pre_loop(
         self,

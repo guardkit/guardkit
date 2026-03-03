@@ -6,6 +6,13 @@ relevant knowledge from Graphiti at the start of Claude Code sessions and comman
 This is THE feature that fixes the memory problem by ensuring sessions have
 knowledge of architectural decisions, failure patterns, and quality gates.
 
+Instrumentation (TASK-INST-006):
+    When an EventEmitter is provided, every Graphiti query emits a
+    ``graphiti.query`` event (GraphitiQueryEvent) with query_type,
+    items_returned, tokens_injected, latency_ms, and status fields.
+    When Graphiti is unreachable, an error event is emitted and a
+    warning is logged; the run continues with digest-only context.
+
 Example Usage:
     from guardkit.knowledge.context_loader import load_critical_context
 
@@ -16,6 +23,18 @@ Example Usage:
     context = await load_critical_context(
         task_id="TASK-001",
         command="feature-build"
+    )
+
+    # With instrumentation (TASK-INST-006)
+    from guardkit.orchestrator.instrumentation.emitter import NullEmitter
+    emitter = NullEmitter(capture=True)
+    context = await load_critical_context(
+        command="task-work",
+        emitter=emitter,
+        run_id="run-001",
+        task_id="TASK-001",
+        agent_role="player",
+        attempt=1,
     )
 
     # Format and inject into session
@@ -34,13 +53,24 @@ Example Usage:
         print(f"Prevention: {warning['prevention']}")
 """
 
+from __future__ import annotations
+
+import json
+import time
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 import logging
 
 from guardkit.knowledge.graphiti_client import get_graphiti
 
+if TYPE_CHECKING:
+    from guardkit.orchestrator.instrumentation.emitter import EventEmitter
+
 logger = logging.getLogger(__name__)
+
+# Characters-per-token estimate (conservative for JSON structures).
+_CHARS_PER_TOKEN = 4
 
 
 @dataclass
@@ -121,10 +151,81 @@ def _filter_valid_results(results: List[Any]) -> List[Dict[str, Any]]:
     return valid
 
 
+def _estimate_tokens(results: List[Any]) -> int:
+    """Estimate the number of tokens in a list of results.
+
+    Uses a simple character-count heuristic (~4 chars per token).
+
+    Args:
+        results: List of result items (dicts or other serialisable objects).
+
+    Returns:
+        Estimated token count (>= 0).
+    """
+    if not results:
+        return 0
+    try:
+        char_count = len(json.dumps(results, default=str))
+    except (TypeError, ValueError):
+        char_count = sum(len(str(r)) for r in results)
+    return max(0, char_count // _CHARS_PER_TOKEN)
+
+
+async def _emit_graphiti_event(
+    emitter: Optional[EventEmitter],
+    *,
+    query_type: str,
+    items_returned: int,
+    tokens_injected: int,
+    latency_ms: float,
+    status: str,
+    run_id: str,
+    task_id: str,
+    agent_role: str,
+    attempt: int,
+) -> None:
+    """Emit a GraphitiQueryEvent if an emitter is provided.
+
+    Args:
+        emitter: Optional EventEmitter instance. No-op when ``None``.
+        query_type: One of "context_loader", "nearest_neighbours", "adr_lookup".
+        items_returned: Number of items returned by the query.
+        tokens_injected: Estimated token count of injected context.
+        latency_ms: Query duration in milliseconds.
+        status: "ok" or "error".
+        run_id: AutoBuild run identifier.
+        task_id: Task identifier.
+        agent_role: Agent role (player, coach, etc.).
+        attempt: 1-indexed attempt number.
+    """
+    if emitter is None:
+        return
+
+    from guardkit.orchestrator.instrumentation.schemas import GraphitiQueryEvent
+
+    event = GraphitiQueryEvent(
+        run_id=run_id,
+        task_id=task_id,
+        agent_role=agent_role,
+        attempt=attempt,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        query_type=query_type,
+        items_returned=items_returned,
+        tokens_injected=tokens_injected,
+        latency_ms=latency_ms,
+        status=status,
+    )
+    await emitter.emit(event)
+
+
 async def load_critical_context(
     task_id: Optional[str] = None,
     feature_id: Optional[str] = None,
-    command: Optional[str] = None
+    command: Optional[str] = None,
+    emitter: Optional[EventEmitter] = None,
+    run_id: str = "",
+    agent_role: str = "player",
+    attempt: int = 1,
 ) -> CriticalContext:
     """Load must-know context at session/command start.
 
@@ -135,10 +236,17 @@ async def load_critical_context(
     - Architecture decisions that MUST be followed
     - Failure patterns to avoid
 
+    When *emitter* is provided, a ``graphiti.query`` event is emitted for
+    every internal Graphiti search call (TASK-INST-006).
+
     Args:
         task_id: Optional task ID for task-specific context
         feature_id: Optional feature ID for feature-specific context
         command: Optional command name (e.g., "task-work", "feature-build")
+        emitter: Optional EventEmitter for instrumentation (TASK-INST-006).
+        run_id: AutoBuild run identifier (used in emitted events).
+        agent_role: Agent role string (used in emitted events).
+        attempt: 1-indexed attempt number (used in emitted events).
 
     Returns:
         CriticalContext with all loaded knowledge, or empty context if
@@ -148,12 +256,19 @@ async def load_critical_context(
         # Load context for feature-build command
         context = await load_critical_context(command="feature-build")
 
-        # Load context for specific task
+        # Load context for specific task with instrumentation
+        from guardkit.orchestrator.instrumentation.emitter import NullEmitter
+        emitter = NullEmitter(capture=True)
         context = await load_critical_context(
             task_id="TASK-001",
-            command="task-work"
+            command="task-work",
+            emitter=emitter,
+            run_id="run-001",
         )
     """
+    # Resolve effective task_id for events (parameter shadows outer name intentionally)
+    effective_task_id = task_id or ""
+
     graphiti = get_graphiti()
 
     # Graceful degradation: return empty context if Graphiti unavailable
@@ -165,23 +280,41 @@ async def load_critical_context(
         logger.debug("Graphiti is disabled, returning empty context")
         return _create_empty_context()
 
+    # Event-emission kwargs shared across all _load_* calls
+    _emit_kwargs: Dict[str, Any] = dict(
+        emitter=emitter,
+        run_id=run_id,
+        task_id=effective_task_id,
+        agent_role=agent_role,
+        attempt=attempt,
+    )
+
     try:
         # 1. Always load: System context (what GuardKit is)
-        system_context = await _load_system_context(graphiti)
+        system_context = await _instrumented_load(
+            graphiti, _load_system_context, "context_loader", **_emit_kwargs,
+        )
 
         # 2. Always load: Quality gates (critical for all commands)
-        quality_gates = await _load_quality_gates(graphiti)
+        quality_gates = await _instrumented_load(
+            graphiti, _load_quality_gates, "context_loader", **_emit_kwargs,
+        )
 
         # 3. Always load: Architecture decisions (MUST FOLLOW)
-        architecture_decisions = await _load_architecture_decisions(graphiti)
+        architecture_decisions = await _instrumented_load(
+            graphiti, _load_architecture_decisions, "context_loader", **_emit_kwargs,
+        )
 
         # 4. Always load: Failure patterns (DO NOT REPEAT)
-        failure_patterns = await _load_failure_patterns(graphiti)
+        failure_patterns = await _instrumented_load(
+            graphiti, _load_failure_patterns, "context_loader", **_emit_kwargs,
+        )
 
         # 5. Command-specific context
         if command == "feature-build":
-            # Load feature-build specific knowledge
-            fb_context = await _load_feature_build_context(graphiti)
+            fb_context = await _instrumented_load(
+                graphiti, _load_feature_build_context, "context_loader", **_emit_kwargs,
+            )
             system_context.extend(fb_context)
 
         return CriticalContext(
@@ -201,7 +334,80 @@ async def load_critical_context(
         return _create_empty_context()
 
 
-async def _load_system_context(graphiti) -> List[Dict[str, Any]]:
+async def _instrumented_load(
+    graphiti: Any,
+    load_fn: Any,
+    query_type: str,
+    *,
+    emitter: Optional[EventEmitter] = None,
+    run_id: str = "",
+    task_id: str = "",
+    agent_role: str = "player",
+    attempt: int = 1,
+) -> List[Dict[str, Any]]:
+    """Execute a ``_load_*`` function with timing and event emission.
+
+    Wraps the actual load function to measure latency, count results,
+    estimate tokens, and emit a ``graphiti.query`` event via the emitter.
+
+    On error the function emits an error event, logs a warning about
+    Graphiti fallback, and returns an empty list so the caller can
+    continue with digest-only context.
+
+    Args:
+        graphiti: GraphitiClient instance.
+        load_fn: One of the ``_load_*`` coroutine functions.
+        query_type: Event query_type value.
+        emitter: Optional EventEmitter.
+        run_id: AutoBuild run identifier.
+        task_id: Task identifier.
+        agent_role: Agent role string.
+        attempt: 1-indexed attempt number.
+
+    Returns:
+        Filtered results list, or empty list on failure.
+    """
+    t0 = time.monotonic()
+    try:
+        results = await load_fn(graphiti)
+        latency_ms = (time.monotonic() - t0) * 1000.0
+        tokens = _estimate_tokens(results)
+        await _emit_graphiti_event(
+            emitter,
+            query_type=query_type,
+            items_returned=len(results),
+            tokens_injected=tokens,
+            latency_ms=latency_ms,
+            status="ok",
+            run_id=run_id,
+            task_id=task_id,
+            agent_role=agent_role,
+            attempt=attempt,
+        )
+        return results
+    except Exception as exc:
+        latency_ms = (time.monotonic() - t0) * 1000.0
+        logger.warning(
+            "Graphiti fallback: %s failed (%s), continuing with digest-only context",
+            load_fn.__name__,
+            exc,
+        )
+        await _emit_graphiti_event(
+            emitter,
+            query_type=query_type,
+            items_returned=0,
+            tokens_injected=0,
+            latency_ms=latency_ms,
+            status="error",
+            run_id=run_id,
+            task_id=task_id,
+            agent_role=agent_role,
+            attempt=attempt,
+        )
+        return []
+
+
+async def _load_system_context(graphiti: Any) -> List[Dict[str, Any]]:
     """Load system context (what GuardKit is).
 
     Args:
@@ -210,19 +416,15 @@ async def _load_system_context(graphiti) -> List[Dict[str, Any]]:
     Returns:
         List of system context results.
     """
-    try:
-        results = await graphiti.search(
-            query="GuardKit product workflow quality gate",
-            group_ids=["product_knowledge", "command_workflows"],
-            num_results=5
-        )
-        return _filter_valid_results(results)
-    except Exception as e:
-        logger.warning(f"Error loading system context: {e}")
-        return []
+    results = await graphiti.search(
+        query="GuardKit product workflow quality gate",
+        group_ids=["product_knowledge", "command_workflows"],
+        num_results=5
+    )
+    return _filter_valid_results(results)
 
 
-async def _load_quality_gates(graphiti) -> List[Dict[str, Any]]:
+async def _load_quality_gates(graphiti: Any) -> List[Dict[str, Any]]:
     """Load quality gate definitions.
 
     Args:
@@ -231,19 +433,15 @@ async def _load_quality_gates(graphiti) -> List[Dict[str, Any]]:
     Returns:
         List of quality gate results.
     """
-    try:
-        results = await graphiti.search(
-            query="quality gate phase approval threshold coverage",
-            group_ids=["quality_gate_phases"],
-            num_results=5
-        )
-        return _filter_valid_results(results)
-    except Exception as e:
-        logger.warning(f"Error loading quality gates: {e}")
-        return []
+    results = await graphiti.search(
+        query="quality gate phase approval threshold coverage",
+        group_ids=["quality_gate_phases"],
+        num_results=5
+    )
+    return _filter_valid_results(results)
 
 
-async def _load_architecture_decisions(graphiti) -> List[Dict[str, Any]]:
+async def _load_architecture_decisions(graphiti: Any) -> List[Dict[str, Any]]:
     """Load architecture decisions (MUST FOLLOW).
 
     Args:
@@ -252,19 +450,15 @@ async def _load_architecture_decisions(graphiti) -> List[Dict[str, Any]]:
     Returns:
         List of architecture decision results.
     """
-    try:
-        results = await graphiti.search(
-            query="architecture decision SDK subprocess worktree delegation",
-            group_ids=["architecture_decisions"],
-            num_results=10
-        )
-        return _filter_valid_results(results)
-    except Exception as e:
-        logger.warning(f"Error loading architecture decisions: {e}")
-        return []
+    results = await graphiti.search(
+        query="architecture decision SDK subprocess worktree delegation",
+        group_ids=["architecture_decisions"],
+        num_results=10
+    )
+    return _filter_valid_results(results)
 
 
-async def _load_failure_patterns(graphiti) -> List[Dict[str, Any]]:
+async def _load_failure_patterns(graphiti: Any) -> List[Dict[str, Any]]:
     """Load failure patterns (DO NOT REPEAT).
 
     Args:
@@ -273,19 +467,15 @@ async def _load_failure_patterns(graphiti) -> List[Dict[str, Any]]:
     Returns:
         List of failure pattern results.
     """
-    try:
-        results = await graphiti.search(
-            query="failure error bug anti-pattern subprocess mock",
-            group_ids=["failure_patterns"],
-            num_results=5
-        )
-        return _filter_valid_results(results)
-    except Exception as e:
-        logger.warning(f"Error loading failure patterns: {e}")
-        return []
+    results = await graphiti.search(
+        query="failure error bug anti-pattern subprocess mock",
+        group_ids=["failure_patterns"],
+        num_results=5
+    )
+    return _filter_valid_results(results)
 
 
-async def _load_feature_build_context(graphiti) -> List[Dict[str, Any]]:
+async def _load_feature_build_context(graphiti: Any) -> List[Dict[str, Any]]:
     """Load feature-build specific context.
 
     Args:
@@ -294,16 +484,12 @@ async def _load_feature_build_context(graphiti) -> List[Dict[str, Any]]:
     Returns:
         List of feature-build specific results.
     """
-    try:
-        results = await graphiti.search(
-            query="feature-build Player Coach delegation task-work SDK query",
-            group_ids=["feature_build_architecture"],
-            num_results=10
-        )
-        return _filter_valid_results(results)
-    except Exception as e:
-        logger.warning(f"Error loading feature-build context: {e}")
-        return []
+    results = await graphiti.search(
+        query="feature-build Player Coach delegation task-work SDK query",
+        group_ids=["feature_build_architecture"],
+        num_results=10
+    )
+    return _filter_valid_results(results)
 
 
 async def load_feature_overview(feature_name: str) -> Optional["FeatureOverviewEntity"]:
@@ -411,11 +597,27 @@ async def load_feature_overview(feature_name: str) -> Optional["FeatureOverviewE
         return None
 
 
-async def load_critical_adrs() -> List[Dict[str, Any]]:
+async def load_critical_adrs(
+    emitter: Optional[EventEmitter] = None,
+    run_id: str = "",
+    task_id: str = "",
+    agent_role: str = "player",
+    attempt: int = 1,
+) -> List[Dict[str, Any]]:
     """Load critical Architecture Decision Records for context injection.
 
     Queries Graphiti for ADRs in the architecture_decisions group and
     returns them formatted for injection into Claude Code sessions.
+
+    When *emitter* is provided, emits a ``graphiti.query`` event with
+    ``query_type="adr_lookup"`` (TASK-INST-006).
+
+    Args:
+        emitter: Optional EventEmitter for instrumentation (TASK-INST-006).
+        run_id: AutoBuild run identifier (used in emitted events).
+        task_id: Task identifier (used in emitted events).
+        agent_role: Agent role string (used in emitted events).
+        attempt: 1-indexed attempt number (used in emitted events).
 
     Returns:
         List of ADR dictionaries with id, title, decision, violation_symptoms, etc.
@@ -437,15 +639,29 @@ async def load_critical_adrs() -> List[Dict[str, Any]]:
         logger.debug("Graphiti is disabled, returning empty list for critical ADRs")
         return []
 
+    t0 = time.monotonic()
     try:
         results = await graphiti.search(
             query="architecture_decision feature-build ADR",
             group_ids=["architecture_decisions"],
             num_results=10
         )
+        latency_ms = (time.monotonic() - t0) * 1000.0
 
         if not results:
             logger.debug("No critical ADRs found in Graphiti")
+            await _emit_graphiti_event(
+                emitter,
+                query_type="adr_lookup",
+                items_returned=0,
+                tokens_injected=0,
+                latency_ms=latency_ms,
+                status="ok",
+                run_id=run_id,
+                task_id=task_id,
+                agent_role=agent_role,
+                attempt=attempt,
+            )
             return []
 
         # Extract body fields from results
@@ -455,10 +671,40 @@ async def load_critical_adrs() -> List[Dict[str, Any]]:
             if isinstance(body, dict) and body:
                 adrs.append(body)
 
+        tokens = _estimate_tokens(adrs)
+        await _emit_graphiti_event(
+            emitter,
+            query_type="adr_lookup",
+            items_returned=len(adrs),
+            tokens_injected=tokens,
+            latency_ms=latency_ms,
+            status="ok",
+            run_id=run_id,
+            task_id=task_id,
+            agent_role=agent_role,
+            attempt=attempt,
+        )
+
         return adrs
 
     except Exception as e:
-        logger.warning(f"Error loading critical ADRs: {e}")
+        latency_ms = (time.monotonic() - t0) * 1000.0
+        logger.warning(
+            "Graphiti fallback: load_critical_adrs failed (%s), continuing without ADRs",
+            e,
+        )
+        await _emit_graphiti_event(
+            emitter,
+            query_type="adr_lookup",
+            items_returned=0,
+            tokens_injected=0,
+            latency_ms=latency_ms,
+            status="error",
+            run_id=run_id,
+            task_id=task_id,
+            agent_role=agent_role,
+            attempt=attempt,
+        )
         return []
 
 

@@ -29,6 +29,16 @@ from guardkit.orchestrator.exceptions import (
     TaskStateError,
     TaskWorkResult,
 )
+from guardkit.orchestrator.instrumentation.emitter import NullEmitter
+from guardkit.orchestrator.instrumentation.llm_instrumentation import (
+    classify_error,
+    detect_provider,
+    extract_token_usage,
+    measure_latency,
+    sanitise_tool_name,
+)
+from guardkit.orchestrator.instrumentation.redaction import SecretRedactor
+from guardkit.orchestrator.instrumentation.schemas import LLMCallEvent, ToolExecEvent
 from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.orchestrator.prompts import load_protocol
 from guardkit.orchestrator.coach_verification import (
@@ -696,6 +706,7 @@ class AgentInvoker:
         development_mode: str = "tdd",
         cancellation_event: Optional[threading.Event] = None,
         timeout_multiplier: Optional[float] = None,
+        emitter: Optional[Any] = None,
     ):
         """Initialize AgentInvoker.
 
@@ -719,6 +730,9 @@ class AgentInvoker:
             timeout_multiplier: Multiplier for all timeout values (default: auto-detect).
                 When None, auto-detects from ANTHROPIC_BASE_URL (4.0 for localhost).
                 (TASK-FIX-VL05)
+            emitter: Optional EventEmitter for instrumentation telemetry.
+                Defaults to NullEmitter() when not provided (zero behaviour change
+                for existing callers). (TASK-INST-005b)
         """
         self.worktree_path = Path(worktree_path)
         self.max_turns_per_agent = max_turns_per_agent
@@ -735,6 +749,8 @@ class AgentInvoker:
         self.development_mode = development_mode
         self._cancellation_event: Optional[threading.Event] = cancellation_event
         self._baseline_commit: Optional[str] = None
+        # TASK-INST-005b: EventEmitter for instrumentation telemetry
+        self._emitter = emitter if emitter is not None else NullEmitter()
 
         if self.timeout_multiplier != 1.0:
             logger.info(
@@ -1807,7 +1823,9 @@ Follow the decision format specified in your agent definition.
         """Low-level SDK invocation with role-based permissions.
 
         This method handles the actual Claude Agent SDK invocation with
-        appropriate permissions and timeout handling.
+        appropriate permissions and timeout handling. Emits an ``llm.call``
+        event for every invocation via the injected EventEmitter
+        (TASK-INST-005b).
 
         Args:
             prompt: Formatted prompt for agent
@@ -1845,6 +1863,11 @@ Follow the decision format specified in your agent definition.
             raise AgentInvocationError(diagnosis) from e
 
         from guardkit.orchestrator.sdk_utils import check_assistant_message_error
+
+        # TASK-INST-005b: Instrumentation state for event emission
+        call_status: str = "ok"
+        call_error: Optional[Exception] = None
+        response_messages: List[Any] = []
 
         try:
             options_kwargs = dict(
@@ -1887,27 +1910,46 @@ Follow the decision format specified in your agent definition.
 
             _install_sdk_cleanup_handler(asyncio.get_running_loop())
             try:
-                async with asyncio.timeout(self.sdk_timeout_seconds):
-                    async with async_heartbeat(
-                        heartbeat_task_id,
-                        f"{agent_type.capitalize()} invocation",
-                    ):
-                        async for message in query(prompt=prompt, options=options):
-                            err = check_assistant_message_error(message)
-                            if err:
-                                raise AgentInvocationError(
-                                    f"Agent {agent_type} received API error: {err}"
-                                )
-                            # Progress tracking handled by ProgressDisplay
-                            # Agent writes report to JSON file, which is loaded after
-                            # the query completes via _load_agent_report()
-                            if isinstance(message, ResultMessage):
-                                break
+                # TASK-INST-005b: Wrap SDK call with latency measurement
+                with measure_latency() as latency:
+                    try:
+                        async with asyncio.timeout(self.sdk_timeout_seconds):
+                            async with async_heartbeat(
+                                heartbeat_task_id,
+                                f"{agent_type.capitalize()} invocation",
+                            ):
+                                async for message in query(prompt=prompt, options=options):
+                                    response_messages.append(message)
+                                    err = check_assistant_message_error(message)
+                                    if err:
+                                        raise AgentInvocationError(
+                                            f"Agent {agent_type} received API error: {err}"
+                                        )
+                                    # Progress tracking handled by ProgressDisplay
+                                    # Agent writes report to JSON file, which is loaded after
+                                    # the query completes via _load_agent_report()
+                                    if isinstance(message, ResultMessage):
+                                        break
+                    except Exception as exc:
+                        call_status = "error"
+                        call_error = exc
+                        raise
             finally:
                 if monitor and not monitor.done():
                     monitor.cancel()
                     with suppress(asyncio.CancelledError):
                         await monitor
+
+                # TASK-INST-005b: Emit llm.call event (fire-and-forget)
+                self._emit_llm_call_event(
+                    agent_type=agent_type,
+                    model=model,
+                    latency_ms=latency.ms,
+                    response_messages=response_messages,
+                    status=call_status,
+                    error=call_error,
+                    task_id=heartbeat_task_id,
+                )
 
         except asyncio.TimeoutError:
             raise SDKTimeoutError(
@@ -1930,6 +1972,190 @@ Follow the decision format specified in your agent definition.
             raise AgentInvocationError(
                 f"SDK invocation failed for {agent_type}: {str(e)}"
             ) from e
+
+    def _emit_llm_call_event(
+        self,
+        agent_type: Literal["player", "coach"],
+        model: Optional[str],
+        latency_ms: float,
+        response_messages: List[Any],
+        status: str,
+        error: Optional[Exception],
+        task_id: str,
+    ) -> None:
+        """Construct and fire-and-forget an LLMCallEvent.
+
+        Emission is non-blocking via asyncio.create_task(). If the emitter
+        raises, the error is logged as a warning but never propagated to
+        the caller. (TASK-INST-005b)
+
+        Args:
+            agent_type: Agent role ("player" or "coach").
+            model: Model identifier or None for CLI default.
+            latency_ms: Wall-clock latency of the SDK call in milliseconds.
+            response_messages: SDK response messages (for token extraction).
+            status: "ok" or "error".
+            error: The exception if status is "error", else None.
+            task_id: Task identifier extracted from prompt.
+        """
+        try:
+            input_tokens, output_tokens = extract_token_usage(response_messages)
+
+            # Read prompt_profile from instance or use Phase 1 baseline default
+            prompt_profile = getattr(self, "_prompt_profile", None) or "digest+rules_bundle"
+
+            # Read run_id from instance or generate a session-level default
+            run_id = getattr(self, "_run_id", None) or f"run-{id(self)}"
+
+            # Read current attempt from instance or default to 1
+            attempt = getattr(self, "_current_attempt", None) or 1
+
+            # Detect provider from environment base URL
+            base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
+
+            event = LLMCallEvent(
+                run_id=run_id,
+                task_id=task_id,
+                agent_role=agent_type,
+                attempt=attempt,
+                timestamp=datetime.now().isoformat(),
+                provider=detect_provider(base_url, model),
+                model=model or "default",
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                latency_ms=latency_ms,
+                prompt_profile=prompt_profile,
+                status=status,
+                error_type=classify_error(error),
+            )
+
+            async def _safe_emit() -> None:
+                """Emit event, swallowing any errors."""
+                try:
+                    await self._emitter.emit(event)
+                except Exception as emit_exc:
+                    logger.warning(
+                        "LLM call event emission failed: %s. "
+                        "Event will not be delivered but LLM call is unaffected.",
+                        emit_exc,
+                    )
+
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(_safe_emit())
+            except RuntimeError:
+                # No running event loop — skip emission silently
+                logger.debug("No running event loop for LLM call event emission")
+        except Exception as build_exc:
+            # Event construction failure must never block the SDK call path
+            logger.warning(
+                "Failed to construct LLM call event: %s. "
+                "Instrumentation skipped for this call.",
+                build_exc,
+            )
+
+    # TASK-INST-005c: Shared SecretRedactor instance (lazy-initialised)
+    _tool_exec_redactor: Optional["SecretRedactor"] = None
+
+    # TASK-INST-005c: Tools that emit tool.exec events (Bash-type only)
+    _TOOL_EXEC_EVENT_TOOLS = frozenset({"Bash"})
+
+    def _emit_tool_exec_event(
+        self,
+        tool_name: str,
+        cmd: str,
+        exit_code: int,
+        latency_ms: float,
+        stdout_tail: str,
+        stderr_tail: str,
+        task_id: str,
+    ) -> None:
+        """Construct and fire-and-forget a ToolExecEvent.
+
+        Only emits events for Bash-type tool invocations (tools with shell
+        command semantics). Non-Bash tools (Write, Edit, Glob, etc.) are
+        silently ignored.
+
+        Secret redaction is applied to cmd, stdout_tail, and stderr_tail
+        before event construction. Tool names are sanitised against shell
+        metacharacters. stdout_tail and stderr_tail are truncated to the
+        last 500 characters.
+
+        Emission is non-blocking via asyncio.create_task(). If the emitter
+        raises, the error is logged as a warning but never propagated to
+        the caller. (TASK-INST-005c)
+
+        Args:
+            tool_name: Name of the tool invoked (e.g., "Bash").
+            cmd: Command string executed by the tool.
+            exit_code: Process exit code.
+            latency_ms: Execution latency in milliseconds.
+            stdout_tail: Tail of stdout output.
+            stderr_tail: Tail of stderr output.
+            task_id: Task identifier.
+        """
+        # AC-005: Only emit for Bash-type tools
+        if tool_name not in self._TOOL_EXEC_EVENT_TOOLS:
+            return
+
+        try:
+            # Lazy-initialise the shared redactor
+            if self._tool_exec_redactor is None:
+                self._tool_exec_redactor = SecretRedactor()
+
+            redactor = self._tool_exec_redactor
+
+            # AC-006: Truncate output to last 500 chars
+            stdout_truncated = stdout_tail[-500:] if len(stdout_tail) > 500 else stdout_tail
+            stderr_truncated = stderr_tail[-500:] if len(stderr_tail) > 500 else stderr_tail
+
+            # Read run_id from instance or generate a session-level default
+            run_id = getattr(self, "_run_id", None) or f"run-{id(self)}"
+
+            # Read current attempt from instance or default to 1
+            attempt = getattr(self, "_current_attempt", None) or 1
+
+            # Read current agent role or default to "player"
+            agent_role = getattr(self, "_current_agent_role", None) or "player"
+
+            event = ToolExecEvent(
+                run_id=run_id,
+                task_id=task_id,
+                agent_role=agent_role,
+                attempt=attempt,
+                timestamp=datetime.now().isoformat(),
+                tool_name=sanitise_tool_name(tool_name),
+                cmd=redactor.redact(cmd),
+                exit_code=exit_code,
+                latency_ms=latency_ms,
+                stdout_tail=redactor.redact(stdout_truncated),
+                stderr_tail=redactor.redact(stderr_truncated),
+            )
+
+            async def _safe_emit() -> None:
+                """Emit event, swallowing any errors."""
+                try:
+                    await self._emitter.emit(event)
+                except Exception as emit_exc:
+                    logger.warning(
+                        "Tool exec event emission failed: %s. "
+                        "Event will not be delivered but tool execution is unaffected.",
+                        emit_exc,
+                    )
+
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(_safe_emit())
+            except RuntimeError:
+                # No running event loop — skip emission silently
+                logger.debug("No running event loop for tool exec event emission")
+        except Exception as build_exc:
+            # Event construction failure must never block the tool execution path
+            logger.warning(
+                "Failed to construct tool exec event: %s. "
+                "Instrumentation skipped for this tool call.",
+                build_exc,
+            )
 
     def _create_player_report_from_task_work(
         self,

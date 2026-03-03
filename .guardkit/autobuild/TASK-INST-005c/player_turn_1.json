@@ -1,0 +1,138 @@
+{
+  "task_id": "TASK-INST-005c",
+  "turn": 1,
+  "files_modified": [
+    ".guardkit/bootstrap_state.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/guardkit/orchestrator/agent_invoker.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/orchestrator/instrumentation/test_tool_exec_events.py",
+    "guardkit/orchestrator/agent_invoker.py",
+    "tasks/backlog/TASK-INST-005c-tool-exec-events.md"
+  ],
+  "files_created": [
+    ".claude/task-plans/TASK-INST-005c-implementation-plan.md",
+    ".guardkit/autobuild/TASK-INST-005b/checkpoints.json",
+    ".guardkit/autobuild/TASK-INST-005c/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-005c/task_work_results.json",
+    ".guardkit/autobuild/TASK-INST-005c/turn_context.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/.guardkit/autobuild/TASK-INST-005c/player_turn_1.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/orchestrator/instrumentation/test_tool_exec_events.py",
+    "tasks/design_approved/TASK-INST-005c-tool-exec-events.md",
+    "tests/orchestrator/instrumentation/test_tool_exec_events.py"
+  ],
+  "tests_written": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/orchestrator/instrumentation/test_tool_exec_events.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation",
+  "concerns": [],
+  "requirements_addressed": [
+    "tool.exec event emitted for Bash tool invocations in SDK stream",
+    "Secret redaction applied to cmd, stdout_tail, stderr_tail",
+    "Tool names sanitised against shell metacharacters",
+    "Event emission is non-blocking",
+    "Non-Bash tools (Write, Edit, Glob) do NOT emit tool.exec events",
+    "stdout_tail and stderr_tail truncated to last 500 chars",
+    "Existing tool tracking in _track_tool_call still works",
+    "Seam test validates redaction contract",
+    "Unit tests cover all scenarios"
+  ],
+  "requirements_remaining": [],
+  "sdk_turns_used": 54,
+  "sdk_max_turns": 100,
+  "sdk_ceiling_hit": false,
+  "tests_passed_count": 15,
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "tool.exec event emitted for Bash tool invocations in SDK stream",
+      "status": "complete",
+      "evidence": "Added _emit_tool_exec_event() method to AgentInvoker that constructs and emits ToolExecEvent for Bash tool invocations. Test TestBashToolEmitsEvent verifies event emission with correct fields.",
+      "test_file": "tests/orchestrator/instrumentation/test_tool_exec_events.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Secret redaction applied to cmd, stdout_tail, stderr_tail",
+      "status": "complete",
+      "evidence": "SecretRedactor.redact() is applied to cmd, stdout_tail (after truncation), and stderr_tail (after truncation) before ToolExecEvent construction. Tests TestSecretRedaction::test_cmd_secrets_redacted and TestSecretRedaction::test_stdout_secrets_redacted verify Bearer tokens, sk- keys, and SECRET= values are redacted.",
+      "test_file": "tests/orchestrator/instrumentation/test_tool_exec_events.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Tool names sanitised against shell metacharacters",
+      "status": "complete",
+      "evidence": "sanitise_tool_name() from llm_instrumentation.py is applied to tool_name before ToolExecEvent construction. Tests TestToolNameSanitisation::test_tool_name_sanitised and test_emitted_event_has_sanitised_name verify metacharacters are stripped.",
+      "test_file": "tests/orchestrator/instrumentation/test_tool_exec_events.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Event emission is non-blocking",
+      "status": "complete",
+      "evidence": "Uses asyncio.create_task() for fire-and-forget emission, identical pattern to _emit_llm_call_event(). _safe_emit() wrapper catches and logs exceptions. TestNonBlockingEmission verifies emission failure does not propagate.",
+      "test_file": "tests/orchestrator/instrumentation/test_tool_exec_events.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Non-Bash tools (Write, Edit, Glob) do NOT emit tool.exec events",
+      "status": "complete",
+      "evidence": "_emit_tool_exec_event() checks tool_name against _TOOL_EXEC_EVENT_TOOLS frozenset({'Bash'}) and returns early for non-Bash tools. TestNonBashToolsIgnored::test_write_tool_does_not_emit_tool_exec verifies Write tool is filtered out.",
+      "test_file": "tests/orchestrator/instrumentation/test_tool_exec_events.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "stdout_tail and stderr_tail truncated to last 500 chars",
+      "status": "complete",
+      "evidence": "stdout_tail[-500:] and stderr_tail[-500:] applied before redaction and event construction. TestOutputTruncation::test_stdout_truncated_to_500_chars verifies 1000-char inputs are truncated to 500.",
+      "test_file": "tests/orchestrator/instrumentation/test_tool_exec_events.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Existing tool tracking in _track_tool_call still works (file tracking unchanged)",
+      "status": "complete",
+      "evidence": "_track_tool_call() and _parse_tool_invocations() in TaskWorkStreamParser are completely unchanged. TestExistingFileTracking::test_write_tool_still_tracked and test_edit_tool_still_tracked verify Write/Edit file tracking still works. 393 total instrumentation tests pass with zero regressions.",
+      "test_file": "tests/orchestrator/instrumentation/test_tool_exec_events.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "Seam test validates redaction contract",
+      "status": "complete",
+      "evidence": "TestRedactionPipelineContract class with @pytest.mark.seam and @pytest.mark.integration_contract markers. Three tests validate: Bearer token redaction, sk- key redaction, and sanitise_tool_name metacharacter stripping.",
+      "test_file": "tests/orchestrator/instrumentation/test_tool_exec_events.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "Unit tests cover: Bash tool event, non-Bash tool ignored, redaction applied, sanitisation",
+      "status": "complete",
+      "evidence": "15 tests total covering all scenarios: TestBashToolEmitsEvent, TestSecretRedaction (cmd + stdout/stderr), TestToolNameSanitisation (2 tests), TestNonBlockingEmission, TestNonBashToolsIgnored, TestOutputTruncation, TestExistingFileTracking (2 tests), TestRedactionPipelineContract (3 tests), TestBashEventWithAllFields, TestMultipleBashToolEvents.",
+      "test_file": "tests/orchestrator/instrumentation/test_tool_exec_events.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    }
+  ]
+}

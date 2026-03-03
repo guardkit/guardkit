@@ -1,0 +1,196 @@
+{
+  "task_id": "TASK-INST-011",
+  "timestamp": "2026-03-02T22:04:41.551236",
+  "completed": true,
+  "phases": {
+    "phase_3": {
+      "detected": true,
+      "text": "Implementation",
+      "completed": false
+    },
+    "phase_4": {
+      "detected": true,
+      "completed": true
+    }
+  },
+  "quality_gates": {
+    "tests_passing": true,
+    "tests_passed": 105,
+    "tests_failed": 0,
+    "coverage": 89.0,
+    "coverage_met": true,
+    "all_passed": true
+  },
+  "files_modified": [
+    ".claude/task-plans/TASK-INST-002-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-003-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-007-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-011-implementation-plan.md",
+    ".claude/task-plans/TASK-INST-012-implementation-plan.md",
+    ".guardkit/autobuild/TASK-INST-002/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-003/coach_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-003/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-003/task_work_results.json",
+    ".guardkit/autobuild/TASK-INST-003/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-007/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-010/checkpoints.json",
+    ".guardkit/autobuild/TASK-INST-011/turn_context.json",
+    ".guardkit/autobuild/TASK-INST-012/turn_context.json",
+    ".guardkit/bootstrap_state.json",
+    ".guardkit/digests/coach.md",
+    ".guardkit/digests/player.md",
+    ".guardkit/digests/resolver.md",
+    ".guardkit/digests/router.md",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/guardkit/cli/init.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/guardkit/knowledge/template_sync.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/cli/test_init.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/knowledge/test_template_sync.py",
+    "guardkit/cli/init.py",
+    "guardkit/knowledge/seed_agents.py",
+    "guardkit/knowledge/seed_helpers.py",
+    "guardkit/knowledge/seed_rules.py",
+    "guardkit/knowledge/seed_templates.py",
+    "guardkit/knowledge/template_sync.py",
+    "guardkit/orchestrator/instrumentation/__init__.py",
+    "guardkit/orchestrator/instrumentation/digests.py",
+    "guardkit/orchestrator/instrumentation/emitter.py",
+    "guardkit/orchestrator/instrumentation/prompt_profile.py",
+    "guardkit/orchestrator/instrumentation/redaction.py",
+    "tasks/design_approved/TASK-INST-002-event-emitter-backends.md",
+    "tasks/design_approved/TASK-INST-003-secret-redaction-pipeline.md",
+    "tasks/design_approved/TASK-INST-007-role-specific-digests.md",
+    "tasks/design_approved/TASK-INST-011-wire-template-graphiti-sync.md",
+    "tasks/design_approved/TASK-INST-012-enrich-system-seeding.md",
+    "tests/cli/test_init.py",
+    "tests/knowledge/test_seed_enrichment.py",
+    "tests/knowledge/test_template_sync.py",
+    "tests/orchestrator/instrumentation/test_digests.py",
+    "tests/orchestrator/instrumentation/test_emitter.py",
+    "tests/orchestrator/instrumentation/test_redaction.py"
+  ],
+  "files_created": [
+    ".guardkit/autobuild/TASK-INST-003/checkpoints.json",
+    ".guardkit/autobuild/TASK-INST-011/player_turn_1.json",
+    ".guardkit/autobuild/TASK-INST-011/task_work_results.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/.guardkit/autobuild/TASK-INST-011/player_turn_1.json"
+  ],
+  "tests_written": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/cli/test_init.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57/tests/knowledge/test_template_sync.py"
+  ],
+  "summary": "105 tests passed, 89.0% coverage, all quality gates passed",
+  "sdk_turns": {
+    "turns_used": 48,
+    "max_turns": 100,
+    "ceiling_hit": false
+  },
+  "code_review": {
+    "score": 90,
+    "solid": 18,
+    "dry": 18,
+    "yagni": 18
+  },
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "guardkit init fastapi-python calls sync_template_to_graphiti() when Graphiti is available",
+      "status": "complete",
+      "evidence": "Added import of sync_template_to_graphiti in guardkit/cli/init.py and wired Step 2.5 in _cmd_init() that calls sync_template_to_graphiti(template_source) after Graphiti client is initialized and enabled. Test test_init_calls_sync_template_when_graphiti_available verifies this.",
+      "test_file": "tests/cli/test_init.py",
+      "implementation_files": [
+        "guardkit/cli/init.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Template manifest metadata appears in Graphiti after init",
+      "status": "complete",
+      "evidence": "sync_template_to_graphiti() syncs manifest metadata (name, language, frameworks, patterns, tags, complexity) via add_episode() to 'templates' group. Test test_sync_template_episode_body_contains_metadata verifies body contains expected fields.",
+      "test_file": "tests/knowledge/test_template_sync.py",
+      "implementation_files": [
+        "guardkit/knowledge/template_sync.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Template agent metadata appears in Graphiti after init",
+      "status": "complete",
+      "evidence": "sync_agent_to_graphiti() syncs agent metadata including body_content to 'agents' group. sync_template_to_graphiti() now checks both agents/ and .claude/agents/ directories. Tests: test_sync_agent_to_graphiti, test_sync_template_includes_agents, test_sync_template_checks_dotclaude_agents.",
+      "test_file": "tests/knowledge/test_template_sync.py",
+      "implementation_files": [
+        "guardkit/knowledge/template_sync.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Template rule content appears in Graphiti after init",
+      "status": "complete",
+      "evidence": "sync_rule_to_graphiti() syncs rule content to 'rules' group. sync_template_to_graphiti() iterates .claude/rules/**/*.md and syncs each. Tests: test_sync_rule_to_graphiti, test_sync_template_includes_rules.",
+      "test_file": "tests/knowledge/test_template_sync.py",
+      "implementation_files": [
+        "guardkit/knowledge/template_sync.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "--skip-graphiti flag skips template sync",
+      "status": "complete",
+      "evidence": "Step 2.5 (template sync) is inside the 'else' branch of 'if skip_graphiti:', so when --skip-graphiti is set, the entire Graphiti section including template sync is skipped. Test test_init_skip_graphiti_skips_template_sync verifies sync_template_to_graphiti is not called.",
+      "test_file": "tests/cli/test_init.py",
+      "implementation_files": [
+        "guardkit/cli/init.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Graphiti unavailable: template files still copied, sync skipped with warning",
+      "status": "complete",
+      "evidence": "Template files are copied in Step 1 (apply_template) before any Graphiti operations. Step 2.5 only runs when Graphiti is initialized and enabled. If client.initialized returns False, the sync is skipped. Test test_init_graphiti_unavailable_skips_template_sync verifies this.",
+      "test_file": "tests/cli/test_init.py",
+      "implementation_files": [
+        "guardkit/cli/init.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Template not found: sync skipped gracefully",
+      "status": "complete",
+      "evidence": "In Step 2.5, _resolve_template_source_dir(template) is called. If it returns None (template not found), sync is skipped with logger.info message. Test test_init_template_not_found_skips_sync verifies sync_template_to_graphiti is not called when template source is None.",
+      "test_file": "tests/cli/test_init.py",
+      "implementation_files": [
+        "guardkit/cli/init.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "Rule content includes full text (not just 500-char preview)",
+      "status": "complete",
+      "evidence": "Added 'full_content' field to rule_body in sync_rule_to_graphiti() containing the complete rule content (main_content). Retained 'content_preview' for backwards compatibility. Test test_rule_sync_includes_full_content verifies full_content > 500 chars for long rules.",
+      "test_file": "tests/knowledge/test_template_sync.py",
+      "implementation_files": [
+        "guardkit/knowledge/template_sync.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "Agent sync includes body content beyond frontmatter",
+      "status": "complete",
+      "evidence": "Added _extract_body_content() helper and 'body_content' field to agent_body in sync_agent_to_graphiti(). This includes the full markdown body after frontmatter. Test test_agent_sync_includes_body_content verifies body_content contains sections like 'Responsibilities' and 'SOLID principles'.",
+      "test_file": "tests/knowledge/test_template_sync.py",
+      "implementation_files": [
+        "guardkit/knowledge/template_sync.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-010",
+      "criterion_text": "Unit tests cover: successful sync, Graphiti unavailable, template not found",
+      "status": "complete",
+      "evidence": "105 tests pass (2 integration tests skipped). New tests added: TestFullContentIngestion (3 tests), TestTemplateSyncWithoutManifest (3 tests), TestAgentDirectoryResolution (2 tests), TestInitCallsTemplateSyncToGraphiti (5 tests covering successful sync, skip-graphiti, graphiti unavailable, sync failure, template not found).",
+      "test_file": "tests/knowledge/test_template_sync.py",
+      "implementation_files": [
+        "guardkit/knowledge/template_sync.py",
+        "guardkit/cli/init.py"
+      ]
+    }
+  ]
+}
