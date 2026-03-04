@@ -937,8 +937,8 @@ class TestFullContentIngestion:
             assert 'content_preview' in body_data
 
     @pytest.mark.asyncio
-    async def test_agent_sync_includes_body_content(self, tmp_path):
-        """AC: Agent sync includes body content beyond frontmatter."""
+    async def test_agent_sync_excludes_body_content_uses_preview(self, tmp_path):
+        """AC: Agent body uses content_preview only, no body_content (reduces entity extraction)."""
         agent_path = tmp_path / "detailed-agent.md"
         agent_content = """---
 name: detailed-agent
@@ -979,9 +979,10 @@ Follow SOLID principles and ensure all code is well-documented.
 
             assert result is True
             body_data = json.loads(captured_body)
-            assert 'body_content' in body_data
-            assert 'Responsibilities' in body_data['body_content']
-            assert 'SOLID principles' in body_data['body_content']
+            assert 'body_content' not in body_data
+            assert 'content_preview' in body_data
+            assert 'Responsibilities' in body_data['content_preview']
+            assert 'SOLID principles' in body_data['content_preview']
 
 
 # ============================================================================

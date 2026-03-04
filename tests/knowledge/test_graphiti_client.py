@@ -670,6 +670,54 @@ class TestGraphitiClientAddEpisode:
             assert call_count == 1
 
     @pytest.mark.asyncio
+    async def test_add_episode_project_overview_uses_longer_timeout(self):
+        """Test that project_overview group uses 180s timeout instead of 120s."""
+        import asyncio as _asyncio
+
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        mock_episode = MagicMock()
+        mock_episode.uuid = "episode-uuid"
+        mock_result = MagicMock()
+        mock_result.episode = mock_episode
+
+        mock_graphiti = MagicMock()
+        mock_graphiti.add_episode = AsyncMock(return_value=mock_result)
+        client._graphiti = mock_graphiti
+
+        mock_episode_type = MagicMock()
+        mock_episode_type.text = "text"
+        mock_nodes_module = MagicMock(EpisodeType=mock_episode_type)
+
+        captured_timeouts = []
+        original_wait_for = _asyncio.wait_for
+
+        async def capturing_wait_for(coro, *, timeout):
+            captured_timeouts.append(timeout)
+            return await original_wait_for(coro, timeout=timeout)
+
+        with patch.dict('sys.modules', {'graphiti_core.nodes': mock_nodes_module}), \
+             patch('guardkit.knowledge.graphiti_client.asyncio.wait_for', side_effect=capturing_wait_for):
+            # _create_episode receives prefixed group_id, so test at that level
+            # project_overview (endswith check) should use 180s
+            await client._create_episode(
+                name="Project Purpose",
+                episode_body="Content",
+                group_id="myproject__project_overview"
+            )
+            assert captured_timeouts[-1] == 180.0
+
+            # Other groups should use 120s
+            captured_timeouts.clear()
+            await client._create_episode(
+                name="Role Constraint",
+                episode_body="Content",
+                group_id="role_constraints"
+            )
+            assert captured_timeouts[-1] == 120.0
+
+    @pytest.mark.asyncio
     async def test_add_episode_graceful_degradation_on_error(self):
         """Test add_episode returns None on error (graceful degradation)."""
         config = GraphitiConfig(enabled=True)

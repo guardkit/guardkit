@@ -382,7 +382,7 @@ async def sync_agent_to_graphiti(agent_path: Path, template_id: str, client=None
         "priority": metadata.get('priority', 5),
         "collaborates_with": metadata.get('collaborates_with', []),
         "keywords": metadata.get('keywords', []),
-        "body_content": body_text,
+        "content_preview": body_text[:500] if body_text else "",
     }
 
     # Sync agent to Graphiti

@@ -877,7 +877,7 @@ class GraphitiClient:
             return None
 
         max_retries = 3
-        episode_timeout = 120.0  # 2 minutes max per episode
+        episode_timeout = 180.0 if group_id.endswith("project_overview") else 120.0
         for attempt in range(max_retries):
             try:
                 from graphiti_core.nodes import EpisodeType
