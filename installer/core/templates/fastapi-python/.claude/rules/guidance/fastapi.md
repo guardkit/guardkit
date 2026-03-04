@@ -1,5 +1,5 @@
 ---
-paths: **/router*.py, **/main.py, **/api/**/*.py
+paths: "**/router*.py, **/main.py, **/api/**/*.py"
 ---
 
 # FastAPI Specialist Agent

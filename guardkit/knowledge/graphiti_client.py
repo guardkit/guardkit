@@ -877,18 +877,22 @@ class GraphitiClient:
             return None
 
         max_retries = 3
+        episode_timeout = 120.0  # 2 minutes max per episode
         for attempt in range(max_retries):
             try:
                 from graphiti_core.nodes import EpisodeType
 
-                # Add episode using graphiti-core
-                result = await self._graphiti.add_episode(
-                    name=name,
-                    episode_body=episode_body,
-                    source=EpisodeType.text,
-                    source_description=f"GuardKit knowledge seeding: {name}",
-                    reference_time=datetime.now(timezone.utc),
-                    group_id=group_id
+                # Add episode using graphiti-core with per-episode timeout
+                result = await asyncio.wait_for(
+                    self._graphiti.add_episode(
+                        name=name,
+                        episode_body=episode_body,
+                        source=EpisodeType.text,
+                        source_description=f"GuardKit knowledge seeding: {name}",
+                        reference_time=datetime.now(timezone.utc),
+                        group_id=group_id
+                    ),
+                    timeout=episode_timeout,
                 )
 
                 # Return the episode UUID
@@ -896,6 +900,14 @@ class GraphitiClient:
                     episode_uuid = result.episode.uuid
                     self._record_success()
                     return episode_uuid
+                return None
+
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Episode creation timed out after %.0fs: %s",
+                    episode_timeout, name,
+                )
+                self._record_failure()
                 return None
 
             except Exception as e:

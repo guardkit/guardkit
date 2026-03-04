@@ -24,6 +24,7 @@ Patterns Used (following seeding.py conventions):
 import json
 import logging
 import re
+import time
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
@@ -184,88 +185,127 @@ async def sync_template_to_graphiti(template_path: Path, client=None) -> bool:
         logger.debug("[Graphiti] Template sync skipped: client disabled")
         return False
 
-    # Load manifest if it exists (no longer required)
-    manifest: Optional[Dict[str, Any]] = None
-    manifest_path = template_path / "manifest.json"
-    if manifest_path.exists():
-        try:
-            manifest_text = manifest_path.read_text()
-            manifest = json.loads(manifest_text)
-        except json.JSONDecodeError as e:
-            logger.warning(f"[Graphiti] Invalid JSON in manifest.json: {e}")
-            manifest = None
-        except Exception as e:
-            logger.warning(f"[Graphiti] Could not read manifest.json: {e}")
-            manifest = None
+    # Suppress FalkorDB driver ERROR logs during sync — they dump full
+    # 768-dimensional embedding vectors on query failure, producing ~120KB
+    # of unreadable noise.  GuardKit's own retry WARNINGs remain visible.
+    falkordb_logger = logging.getLogger("graphiti_core.driver.falkordb_driver")
+    original_level = falkordb_logger.level
+    falkordb_logger.setLevel(logging.WARNING)
 
-    # Determine template_id from manifest or directory name
-    template_id = template_path.name
-    if manifest:
-        template_id = manifest.get('name', template_path.name)
+    try:
+        start_time = time.monotonic()
+        template_count = 0
+        agent_count = 0
+        rule_count = 0
+        warning_count = 0
 
-    # Sync manifest metadata if available
-    if manifest:
-        template_body = {
-            "entity_type": "template",
-            "id": template_id,
-            "name": manifest.get('display_name', template_id),
-            "description": manifest.get('description', ''),
-            "language": manifest.get('language', 'Unknown'),
-            "frameworks": [
-                f.get('name') if isinstance(f, dict) else str(f)
-                for f in manifest.get('frameworks', [])
-            ],
-            "patterns": manifest.get('patterns', []),
-            "tags": manifest.get('tags', []),
-            "complexity": manifest.get('complexity', 5),
-            "production_ready": manifest.get('production_ready', False),
-        }
-
-        try:
-            await client.add_episode(
-                name=f"template_{template_id}",
-                episode_body=json.dumps(template_body),
-                group_id="templates",
-                source="template_sync",
-                entity_type="template"
-            )
-            logger.info(f"[Graphiti] Synced template '{template_id}'")
-        except Exception as e:
-            logger.warning(f"[Graphiti] Failed to sync template '{template_id}': {e}")
-            return False
-    else:
-        logger.info(f"[Graphiti] No manifest.json found for '{template_id}', syncing agents and rules only")
-
-    # Sync agents from both agents/ and .claude/agents/ directories
-    agent_dirs: List[Path] = []
-    top_agents = template_path / "agents"
-    dotclaude_agents = template_path / ".claude" / "agents"
-
-    if top_agents.exists() and top_agents.is_dir():
-        agent_dirs.append(top_agents)
-    if dotclaude_agents.exists() and dotclaude_agents.is_dir():
-        agent_dirs.append(dotclaude_agents)
-
-    for agents_dir in agent_dirs:
-        for agent_file in agents_dir.glob("*.md"):
-            # Skip extended files (they're supplementary)
-            if "-ext.md" in agent_file.name:
-                continue
+        # Load manifest if it exists (no longer required)
+        manifest: Optional[Dict[str, Any]] = None
+        manifest_path = template_path / "manifest.json"
+        if manifest_path.exists():
             try:
-                await sync_agent_to_graphiti(agent_file, template_id, client=client)
+                manifest_text = manifest_path.read_text()
+                manifest = json.loads(manifest_text)
+            except json.JSONDecodeError as e:
+                logger.warning(f"[Graphiti] Invalid JSON in manifest.json: {e}")
+                warning_count += 1
+                manifest = None
             except Exception as e:
-                logger.warning(f"[Graphiti] Failed to sync agent {agent_file.name}: {e}")
+                logger.warning(f"[Graphiti] Could not read manifest.json: {e}")
+                warning_count += 1
+                manifest = None
 
-    # Sync rules if .claude/rules/ directory exists
-    rules_dir = template_path / ".claude" / "rules"
-    if rules_dir.exists() and rules_dir.is_dir():
-        for rule_file in rules_dir.rglob("*.md"):
+        # Determine template_id from manifest or directory name
+        template_id = template_path.name
+        if manifest:
+            template_id = manifest.get('name', template_path.name)
+
+        # Sync manifest metadata if available
+        if manifest:
+            template_body = {
+                "entity_type": "template",
+                "id": template_id,
+                "name": manifest.get('display_name', template_id),
+                "description": manifest.get('description', ''),
+                "language": manifest.get('language', 'Unknown'),
+                "frameworks": [
+                    f.get('name') if isinstance(f, dict) else str(f)
+                    for f in manifest.get('frameworks', [])
+                ],
+                "patterns": manifest.get('patterns', []),
+                "tags": manifest.get('tags', []),
+                "complexity": manifest.get('complexity', 5),
+                "production_ready": manifest.get('production_ready', False),
+            }
+
             try:
-                await sync_rule_to_graphiti(rule_file, template_id, client=client)
+                await client.add_episode(
+                    name=f"template_{template_id}",
+                    episode_body=json.dumps(template_body),
+                    group_id="templates",
+                    source="template_sync",
+                    entity_type="template"
+                )
+                logger.info(f"[Graphiti] Synced template '{template_id}'")
+                template_count += 1
             except Exception as e:
-                logger.warning(f"[Graphiti] Failed to sync rule {rule_file.name}: {e}")
+                logger.warning(f"[Graphiti] Failed to sync template '{template_id}': {e}")
+                warning_count += 1
+                return False
+        else:
+            logger.info(f"[Graphiti] No manifest.json found for '{template_id}', syncing agents and rules only")
 
-    return True
+        # Sync agents from both agents/ and .claude/agents/ directories
+        agent_dirs: List[Path] = []
+        top_agents = template_path / "agents"
+        dotclaude_agents = template_path / ".claude" / "agents"
+
+        if top_agents.exists() and top_agents.is_dir():
+            agent_dirs.append(top_agents)
+        if dotclaude_agents.exists() and dotclaude_agents.is_dir():
+            agent_dirs.append(dotclaude_agents)
+
+        for agents_dir in agent_dirs:
+            for agent_file in agents_dir.glob("*.md"):
+                # Skip extended files (they're supplementary)
+                if "-ext.md" in agent_file.name:
+                    continue
+                try:
+                    result = await sync_agent_to_graphiti(agent_file, template_id, client=client)
+                    if result:
+                        agent_count += 1
+                except Exception as e:
+                    logger.warning(f"[Graphiti] Failed to sync agent {agent_file.name}: {e}")
+                    warning_count += 1
+
+        # Sync rules if .claude/rules/ directory exists
+        rules_dir = template_path / ".claude" / "rules"
+        if rules_dir.exists() and rules_dir.is_dir():
+            for rule_file in rules_dir.rglob("*.md"):
+                try:
+                    result = await sync_rule_to_graphiti(rule_file, template_id, client=client)
+                    if result:
+                        rule_count += 1
+                except Exception as e:
+                    logger.warning(f"[Graphiti] Failed to sync rule {rule_file.name}: {e}")
+                    warning_count += 1
+
+        elapsed = time.monotonic() - start_time
+        summary_parts = []
+        if template_count:
+            summary_parts.append(f"{template_count} template")
+        summary_parts.append(f"{agent_count} agents")
+        summary_parts.append(f"{rule_count} rules")
+        summary = ", ".join(summary_parts)
+        warning_suffix = f", {warning_count} warnings" if warning_count else ""
+        logger.info(
+            f"[Graphiti] Template sync complete: {summary} synced"
+            f" ({elapsed:.1f}s){warning_suffix}"
+        )
+
+        return True
+    finally:
+        falkordb_logger.setLevel(original_level)
 
 
 # ============================================================================
@@ -347,13 +387,16 @@ async def sync_agent_to_graphiti(agent_path: Path, template_id: str, client=None
 
     # Sync agent to Graphiti
     try:
-        await client.add_episode(
+        result = await client.add_episode(
             name=f"agent_{template_id}_{agent_name}",
             episode_body=json.dumps(agent_body),
             group_id="agents",
             source="template_sync",
             entity_type="agent"
         )
+        if result is None:
+            logger.warning(f"[Graphiti] Failed to sync agent '{agent_name}' (episode creation returned None)")
+            return False
         logger.info(f"[Graphiti] Synced agent '{agent_name}'")
         return True
     except Exception as e:
@@ -432,7 +475,7 @@ async def sync_rule_to_graphiti(rule_path: Path, template_id: str, client=None) 
         elif line.startswith('## '):
             topics.append(line[3:].strip())
 
-    # Build rule episode with full content
+    # Build rule episode (content_preview only - full content served via .claude/rules/*.md)
     rule_body = {
         "entity_type": "rule",
         "id": f"{template_id}_{rule_name}",
@@ -441,18 +484,20 @@ async def sync_rule_to_graphiti(rule_path: Path, template_id: str, client=None) 
         "path_patterns": path_patterns,
         "topics": topics[:10],  # Limit to first 10 topics
         "content_preview": main_content[:500] if main_content else "",
-        "full_content": main_content if main_content else "",
     }
 
     # Sync rule to Graphiti
     try:
-        await client.add_episode(
+        result = await client.add_episode(
             name=f"rule_{template_id}_{rule_name}",
             episode_body=json.dumps(rule_body),
             group_id="rules",
             source="template_sync",
             entity_type="rule"
         )
+        if result is None:
+            logger.warning(f"[Graphiti] Failed to sync rule '{rule_name}' (episode creation returned None)")
+            return False
         logger.info(f"[Graphiti] Synced rule '{rule_name}'")
         return True
     except Exception as e:

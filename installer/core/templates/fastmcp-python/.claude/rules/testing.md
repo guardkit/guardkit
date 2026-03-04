@@ -1,5 +1,5 @@
 ---
-paths: tests/**/*.py, **/conftest.py
+paths: "tests/**/*.py, **/conftest.py"
 ---
 
 # MCP Testing Patterns

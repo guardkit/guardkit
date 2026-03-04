@@ -1,5 +1,5 @@
 ---
-paths: **/dependencies.py, **/deps.py
+paths: "**/dependencies.py, **/deps.py"
 ---
 
 # Dependency Injection Patterns

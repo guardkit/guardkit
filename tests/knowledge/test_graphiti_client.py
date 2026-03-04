@@ -590,6 +590,86 @@ class TestGraphitiClientAddEpisode:
             assert call_kwargs['group_id'] == "role_constraints"
 
     @pytest.mark.asyncio
+    async def test_add_episode_timeout(self):
+        """Test add_episode returns None on timeout and records circuit breaker failure."""
+        import asyncio as _asyncio
+
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        # Create a coroutine that never completes
+        async def hang_forever(**kwargs):
+            await _asyncio.sleep(9999)
+
+        mock_graphiti = MagicMock()
+        mock_graphiti.add_episode = hang_forever
+        client._graphiti = mock_graphiti
+
+        # Mock the EpisodeType import
+        mock_episode_type = MagicMock()
+        mock_episode_type.text = "text"
+        mock_nodes_module = MagicMock(EpisodeType=mock_episode_type)
+
+        # Patch wait_for to use a very short timeout so the test is fast
+        original_wait_for = _asyncio.wait_for
+
+        async def fast_wait_for(coro, *, timeout):
+            return await original_wait_for(coro, timeout=0.01)
+
+        with patch.dict('sys.modules', {'graphiti_core.nodes': mock_nodes_module}), \
+             patch('guardkit.knowledge.graphiti_client.asyncio.wait_for', side_effect=fast_wait_for):
+            initial_failures = client._consecutive_failures
+
+            result = await client.add_episode(
+                name="Slow Episode",
+                episode_body="Content",
+                group_id="role_constraints"
+            )
+
+            assert result is None
+            assert client._consecutive_failures == initial_failures + 1
+
+    @pytest.mark.asyncio
+    async def test_add_episode_timeout_no_retry(self):
+        """Test that timed-out episodes are not retried."""
+        import asyncio as _asyncio
+
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        call_count = 0
+
+        async def hang_and_count(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            await _asyncio.sleep(9999)
+
+        mock_graphiti = MagicMock()
+        mock_graphiti.add_episode = hang_and_count
+        client._graphiti = mock_graphiti
+
+        mock_episode_type = MagicMock()
+        mock_episode_type.text = "text"
+        mock_nodes_module = MagicMock(EpisodeType=mock_episode_type)
+
+        original_wait_for = _asyncio.wait_for
+
+        async def fast_wait_for(coro, *, timeout):
+            return await original_wait_for(coro, timeout=0.01)
+
+        with patch.dict('sys.modules', {'graphiti_core.nodes': mock_nodes_module}), \
+             patch('guardkit.knowledge.graphiti_client.asyncio.wait_for', side_effect=fast_wait_for):
+            result = await client.add_episode(
+                name="Slow Episode",
+                episode_body="Content",
+                group_id="role_constraints"
+            )
+
+            assert result is None
+            # Only called once - timeout is not retried
+            assert call_count == 1
+
+    @pytest.mark.asyncio
     async def test_add_episode_graceful_degradation_on_error(self):
         """Test add_episode returns None on error (graceful degradation)."""
         config = GraphitiConfig(enabled=True)

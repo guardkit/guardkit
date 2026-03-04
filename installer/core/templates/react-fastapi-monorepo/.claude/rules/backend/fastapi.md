@@ -1,5 +1,5 @@
 ---
-paths: apps/backend/**/*.py
+paths: "apps/backend/**/*.py"
 ---
 
 # FastAPI Backend Architecture

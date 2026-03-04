@@ -1,5 +1,5 @@
 ---
-paths: **/*use*.ts, **/hooks/**, **/components/**
+paths: "**/*use*.ts, **/hooks/**, **/components/**"
 ---
 
 # React State Specialist

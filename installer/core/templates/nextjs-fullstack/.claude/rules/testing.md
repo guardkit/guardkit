@@ -1,5 +1,5 @@
 ---
-paths: **/*.test.*, **/e2e/**
+paths: "**/*.test.*, **/e2e/**"
 ---
 
 # Testing Guidelines

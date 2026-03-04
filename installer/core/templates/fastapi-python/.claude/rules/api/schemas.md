@@ -1,5 +1,5 @@
 ---
-paths: **/schemas.py, **/schema.py, **/models/schemas.py
+paths: "**/schemas.py, **/schema.py, **/models/schemas.py"
 ---
 
 # Pydantic Schema Patterns

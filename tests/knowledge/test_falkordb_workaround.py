@@ -1,7 +1,9 @@
-"""Tests for FalkorDB decorator workaround (TASK-FKDB-32D9).
+"""Tests for FalkorDB workarounds (TASK-FKDB-32D9, TASK-FIX-1136).
 
-Tests the monkey-patch that fixes the @handle_multiple_group_ids decorator
-in graphiti-core to support single group_id searches on FalkorDB.
+Tests the monkey-patches that fix:
+1. @handle_multiple_group_ids decorator for single group_id searches
+2. build_fulltext_query underscore escaping and sanitization
+3. edge_fulltext_search / edge_bfs_search O(n×m) re-MATCH fix
 """
 
 import asyncio
@@ -454,3 +456,212 @@ def handle_multiple_group_ids(func):
         with patch("inspect.getsource", return_value=unexpected_source):
             result = apply_falkordb_workaround()
             assert result is False
+
+
+# ---------------------------------------------------------------------------
+# Test: Workaround 3 — edge_fulltext_search / edge_bfs_search O(n×m) fix
+# ---------------------------------------------------------------------------
+
+class TestApplyEdgeSearchWorkaround:
+    """Tests for apply_edge_search_workaround() (TASK-FIX-1136)."""
+
+    def test_returns_true_when_graphiti_available(self):
+        """Edge search workaround applies successfully."""
+        from guardkit.knowledge.falkordb_workaround import apply_edge_search_workaround
+        result = apply_edge_search_workaround()
+        assert result is True
+
+    def test_idempotent_multiple_calls(self):
+        """Calling apply multiple times is safe and returns True."""
+        from guardkit.knowledge.falkordb_workaround import apply_edge_search_workaround
+        assert apply_edge_search_workaround() is True
+        assert apply_edge_search_workaround() is True
+
+    def test_is_edge_search_workaround_applied_tracks_state(self):
+        """is_edge_search_workaround_applied() tracks state correctly."""
+        from guardkit.knowledge.falkordb_workaround import (
+            apply_edge_search_workaround,
+            is_edge_search_workaround_applied,
+        )
+        assert is_edge_search_workaround_applied() is False
+        apply_edge_search_workaround()
+        assert is_edge_search_workaround_applied() is True
+
+    def test_remove_edge_search_workaround_resets_state(self):
+        """remove_edge_search_workaround() resets the applied flag."""
+        from guardkit.knowledge.falkordb_workaround import (
+            apply_edge_search_workaround,
+            is_edge_search_workaround_applied,
+            remove_edge_search_workaround,
+        )
+        apply_edge_search_workaround()
+        assert is_edge_search_workaround_applied() is True
+        remove_edge_search_workaround()
+        assert is_edge_search_workaround_applied() is False
+
+    def test_patches_edge_fulltext_search_in_search_utils(self):
+        """Workaround replaces edge_fulltext_search in search_utils module."""
+        from guardkit.knowledge.falkordb_workaround import apply_edge_search_workaround
+        import graphiti_core.search.search_utils as search_utils
+
+        original = search_utils.edge_fulltext_search
+        apply_edge_search_workaround()
+        patched = search_utils.edge_fulltext_search
+
+        assert patched is not original
+
+    def test_patches_edge_fulltext_search_in_search_module(self):
+        """Workaround also patches the imported reference in search.py."""
+        from guardkit.knowledge.falkordb_workaround import apply_edge_search_workaround
+        import graphiti_core.search.search as search_module
+
+        original = search_module.edge_fulltext_search
+        apply_edge_search_workaround()
+        patched = search_module.edge_fulltext_search
+
+        assert patched is not original
+
+    def test_patches_edge_bfs_search_in_search_utils(self):
+        """Workaround replaces edge_bfs_search in search_utils module."""
+        from guardkit.knowledge.falkordb_workaround import apply_edge_search_workaround
+        import graphiti_core.search.search_utils as search_utils
+
+        original = search_utils.edge_bfs_search
+        apply_edge_search_workaround()
+        patched = search_utils.edge_bfs_search
+
+        assert patched is not original
+
+    def test_patches_edge_bfs_search_in_search_module(self):
+        """Workaround also patches the imported reference in search.py."""
+        from guardkit.knowledge.falkordb_workaround import apply_edge_search_workaround
+        import graphiti_core.search.search as search_module
+
+        original = search_module.edge_bfs_search
+        apply_edge_search_workaround()
+        patched = search_module.edge_bfs_search
+
+        assert patched is not original
+
+    def test_remove_restores_originals(self):
+        """remove_edge_search_workaround() restores the original functions."""
+        from guardkit.knowledge.falkordb_workaround import (
+            apply_edge_search_workaround,
+            remove_edge_search_workaround,
+        )
+        import graphiti_core.search.search_utils as search_utils
+        import graphiti_core.search.search as search_module
+
+        orig_fulltext = search_utils.edge_fulltext_search
+        orig_bfs = search_utils.edge_bfs_search
+        orig_search_fulltext = search_module.edge_fulltext_search
+        orig_search_bfs = search_module.edge_bfs_search
+
+        apply_edge_search_workaround()
+        remove_edge_search_workaround()
+
+        assert search_utils.edge_fulltext_search is orig_fulltext
+        assert search_utils.edge_bfs_search is orig_bfs
+        assert search_module.edge_fulltext_search is orig_search_fulltext
+        assert search_module.edge_bfs_search is orig_search_bfs
+
+    def test_called_from_apply_falkordb_workaround(self):
+        """apply_falkordb_workaround() also applies the edge search workaround."""
+        from guardkit.knowledge.falkordb_workaround import (
+            apply_falkordb_workaround,
+            is_edge_search_workaround_applied,
+        )
+        apply_falkordb_workaround()
+        assert is_edge_search_workaround_applied() is True
+
+
+# ---------------------------------------------------------------------------
+# Test: Edge search patched Cypher queries (TASK-FIX-1136)
+# ---------------------------------------------------------------------------
+
+class TestEdgeSearchPatchedBehavior:
+    """Tests that the patched edge search functions use startNode/endNode."""
+
+    def test_fulltext_search_source_has_startNode(self):
+        """Patched edge_fulltext_search should use startNode(e)/endNode(e)."""
+        import inspect
+        from guardkit.knowledge.falkordb_workaround import apply_edge_search_workaround
+        apply_edge_search_workaround()
+
+        import graphiti_core.search.search_utils as search_utils
+        source = inspect.getsource(search_utils.edge_fulltext_search)
+        assert 'startNode(e)' in source
+        assert 'endNode(e)' in source
+
+    def test_fulltext_search_source_no_rematch(self):
+        """Patched edge_fulltext_search should NOT have the O(n×m) re-MATCH."""
+        import inspect
+        from guardkit.knowledge.falkordb_workaround import (
+            apply_edge_search_workaround,
+            _FULLTEXT_BUG_PATTERN,
+        )
+        apply_edge_search_workaround()
+
+        import graphiti_core.search.search_utils as search_utils
+        source = inspect.getsource(search_utils.edge_fulltext_search)
+        assert _FULLTEXT_BUG_PATTERN not in source
+
+    def test_bfs_search_source_has_startNode(self):
+        """Patched edge_bfs_search should use startNode(e)/endNode(e)."""
+        import inspect
+        from guardkit.knowledge.falkordb_workaround import apply_edge_search_workaround
+        apply_edge_search_workaround()
+
+        import graphiti_core.search.search_utils as search_utils
+        source = inspect.getsource(search_utils.edge_bfs_search)
+        assert 'startNode(e)' in source
+        assert 'endNode(e)' in source
+
+    def test_bfs_search_source_no_rematch(self):
+        """Patched edge_bfs_search should NOT have the O(n×m) re-MATCH."""
+        import inspect
+        from guardkit.knowledge.falkordb_workaround import (
+            apply_edge_search_workaround,
+            _BFS_BUG_PATTERN,
+        )
+        apply_edge_search_workaround()
+
+        import graphiti_core.search.search_utils as search_utils
+        source = inspect.getsource(search_utils.edge_bfs_search)
+        assert _BFS_BUG_PATTERN not in source
+
+    def test_bfs_search_filters_relates_to_type(self):
+        """Patched edge_bfs_search should filter by type(e) = 'RELATES_TO'."""
+        import inspect
+        from guardkit.knowledge.falkordb_workaround import apply_edge_search_workaround
+        apply_edge_search_workaround()
+
+        import graphiti_core.search.search_utils as search_utils
+        source = inspect.getsource(search_utils.edge_bfs_search)
+        assert "type(e) = 'RELATES_TO'" in source
+
+
+# ---------------------------------------------------------------------------
+# Test: Edge search upstream fix detection (TASK-FIX-1136)
+# ---------------------------------------------------------------------------
+
+class TestEdgeSearchUpstreamDetection:
+    """Tests that edge search workaround detects upstream fix."""
+
+    def test_skips_when_fulltext_already_fixed(self):
+        """Workaround skips if upstream source no longer has the bug pattern."""
+        from guardkit.knowledge.falkordb_workaround import (
+            apply_edge_search_workaround,
+            remove_edge_search_workaround,
+        )
+        remove_edge_search_workaround()
+
+        # Mock both functions to return source without the bug pattern
+        fixed_source = '''
+async def edge_fulltext_search(driver, query, search_filter, group_ids=None, limit=10):
+    """Already uses startNode/endNode."""
+    pass
+'''
+        with patch("inspect.getsource", return_value=fixed_source):
+            result = apply_edge_search_workaround()
+            assert result is True  # Returns True (already fixed)

@@ -1,5 +1,5 @@
 ---
-paths: turbo.json, docker-compose*, pnpm-*
+paths: "turbo.json, docker-compose*, pnpm-*"
 ---
 
 # Monorepo Specialist Agent

@@ -1,5 +1,5 @@
 ---
-paths: packages/shared-types/**, **/openapi*, **/generated/**
+paths: "packages/shared-types/**, **/openapi*, **/generated/**"
 ---
 
 # Type Safety Specialist Agent

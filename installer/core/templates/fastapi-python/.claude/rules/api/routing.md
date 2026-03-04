@@ -1,5 +1,5 @@
 ---
-paths: **/router*.py, **/routes/**, **/api/**/*.py, **/main.py
+paths: "**/router*.py, **/routes/**, **/api/**/*.py, **/main.py"
 ---
 
 # FastAPI Routing Patterns

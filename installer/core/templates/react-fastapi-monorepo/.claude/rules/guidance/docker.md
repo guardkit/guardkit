@@ -1,5 +1,5 @@
 ---
-paths: **/Dockerfile, docker-compose*
+paths: "**/Dockerfile, docker-compose*"
 ---
 
 # Docker Orchestration Specialist Agent

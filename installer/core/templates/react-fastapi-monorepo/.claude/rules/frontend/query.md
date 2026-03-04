@@ -1,5 +1,5 @@
 ---
-paths: apps/frontend/**/*query*, apps/frontend/**/*api*
+paths: "apps/frontend/**/*query*, apps/frontend/**/*api*"
 ---
 
 # TanStack Query Patterns

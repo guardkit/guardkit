@@ -1,5 +1,5 @@
 ---
-paths: tests/**/*, **/test_*.*, **/*.test.*, .claude/settings.json
+paths: "tests/**/*, **/test_*.*, **/*.test.*, .claude/settings.json"
 ---
 
 # Quality Standards

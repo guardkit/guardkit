@@ -1,5 +1,5 @@
 ---
-paths: **/crud/*.py, **/crud.py, **/repository/*.py
+paths: "**/crud/*.py, **/crud.py, **/repository/*.py"
 ---
 
 # CRUD Pattern with Generics

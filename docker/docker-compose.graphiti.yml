@@ -48,6 +48,10 @@ services:
       - "3000:3000"   # FalkorDB Browser UI
     volumes:
       - falkordb_data:/data
+    environment:
+      # Match NAS FalkorDB config for local dev parity.
+      # TIMEOUT 30000 aligns server-side with GraphitiConfig.timeout (30s default).
+      - FALKORDB_ARGS=MAX_QUEUED_QUERIES 100 TIMEOUT 30000 RESULTSET_SIZE 10000
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s

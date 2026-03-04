@@ -1,5 +1,5 @@
 ---
-paths: apps/backend/**/schemas/**
+paths: "apps/backend/**/schemas/**"
 ---
 
 # Pydantic Schemas

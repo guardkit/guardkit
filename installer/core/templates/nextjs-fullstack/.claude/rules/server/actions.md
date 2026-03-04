@@ -1,5 +1,5 @@
 ---
-paths: **/actions/*.ts, **/actions/**/*.ts
+paths: "**/actions/*.ts, **/actions/**/*.ts"
 ---
 
 # Server Actions

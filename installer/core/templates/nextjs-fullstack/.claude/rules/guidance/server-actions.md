@@ -1,5 +1,5 @@
 ---
-paths: **/actions/**, **/actions/**/*.ts
+paths: "**/actions/**, **/actions/**/*.ts"
 ---
 
 # Server Actions Specialist

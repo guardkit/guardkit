@@ -1,5 +1,5 @@
 ---
-paths: **/alembic/**, **/migrations/**, **/alembic.ini
+paths: "**/alembic/**, **/migrations/**, **/alembic.ini"
 ---
 
 # Database Migration Patterns

@@ -1,5 +1,5 @@
 ---
-paths: **/prisma/**, **/lib/db.ts
+paths: "**/prisma/**, **/lib/db.ts"
 ---
 
 # Prisma ORM Integration

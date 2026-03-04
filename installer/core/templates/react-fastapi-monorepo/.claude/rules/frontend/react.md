@@ -1,5 +1,5 @@
 ---
-paths: apps/frontend/**/*.tsx, apps/frontend/**/*.ts
+paths: "apps/frontend/**/*.tsx, apps/frontend/**/*.ts"
 ---
 
 # React Frontend Architecture

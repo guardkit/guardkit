@@ -1,5 +1,5 @@
 ---
-paths: packages/shared-types/**, **/generated/**
+paths: "packages/shared-types/**, **/generated/**"
 ---
 
 # Type-Safe API Client

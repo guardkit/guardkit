@@ -1,5 +1,5 @@
 ---
-paths: apps/backend/**/models/**, apps/backend/**/crud/**
+paths: "apps/backend/**/models/**, apps/backend/**/crud/**"
 ---
 
 # Database Layer

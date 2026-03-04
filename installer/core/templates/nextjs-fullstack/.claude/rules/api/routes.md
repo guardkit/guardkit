@@ -1,5 +1,5 @@
 ---
-paths: **/api/**/route.ts
+paths: "**/api/**/route.ts"
 ---
 
 # API Route Handlers

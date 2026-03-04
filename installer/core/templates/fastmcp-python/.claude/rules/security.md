@@ -1,5 +1,5 @@
 ---
-paths: src/**/*.py, **/.mcp.json, **/config/*.py
+paths: "src/**/*.py, **/.mcp.json, **/config/*.py"
 ---
 
 # MCP Security Patterns

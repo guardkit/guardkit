@@ -1,5 +1,5 @@
 ---
-paths: **/models/*.py, **/models.py, **/db/**
+paths: "**/models/*.py, **/models.py, **/db/**"
 ---
 
 # SQLAlchemy Model Patterns

@@ -1,5 +1,5 @@
 ---
-paths: **/models/*.py, **/crud/*.py, **/db/**
+paths: "**/models/*.py, **/crud/*.py, **/db/**"
 ---
 
 # Database Specialist Agent

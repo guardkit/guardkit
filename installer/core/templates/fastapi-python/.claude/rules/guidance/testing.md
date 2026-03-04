@@ -1,5 +1,5 @@
 ---
-paths: **/tests/**, **/test_*.py, **/*_test.py, **/conftest.py
+paths: "**/tests/**, **/test_*.py, **/*_test.py, **/conftest.py"
 ---
 
 # Testing Specialist Agent

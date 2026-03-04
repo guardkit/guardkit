@@ -1,5 +1,5 @@
 ---
-paths: **/app/**/*.tsx, **/app/**/page.tsx, **/app/**/layout.tsx
+paths: "**/app/**/*.tsx, **/app/**/page.tsx, **/app/**/layout.tsx"
 ---
 
 # Server Components Specialist

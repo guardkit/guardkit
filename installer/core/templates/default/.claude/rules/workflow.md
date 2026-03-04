@@ -1,5 +1,5 @@
 ---
-paths: tasks/**/*
+paths: "tasks/**/*"
 ---
 
 # GuardKit Workflow

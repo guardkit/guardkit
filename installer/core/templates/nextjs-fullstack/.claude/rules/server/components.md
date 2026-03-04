@@ -1,5 +1,5 @@
 ---
-paths: **/app/**/*.tsx, !**/components/**
+paths: "**/app/**/*.tsx, !**/components/**"
 ---
 
 # React Server Components

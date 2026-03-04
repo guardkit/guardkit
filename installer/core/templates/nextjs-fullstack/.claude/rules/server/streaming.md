@@ -1,5 +1,5 @@
 ---
-paths: **/loading.tsx, **/error.tsx
+paths: "**/loading.tsx, **/error.tsx"
 ---
 
 # Streaming & Loading UI

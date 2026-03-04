@@ -1,5 +1,5 @@
 ---
-paths: **/auth/**, **/api/auth/**
+paths: "**/auth/**, **/api/auth/**"
 ---
 
 # NextAuth Authentication

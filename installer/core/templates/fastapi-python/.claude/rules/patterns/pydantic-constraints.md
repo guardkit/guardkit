@@ -1,5 +1,5 @@
 ---
-paths: **/*.py, **/schemas/**
+paths: "**/*.py, **/schemas/**"
 ---
 
 # Pydantic Field Constraint Patterns

@@ -1,5 +1,5 @@
 ---
-paths: src/**/*.py, **/__main__.py
+paths: "src/**/*.py, **/__main__.py"
 ---
 
 # MCP Development Patterns

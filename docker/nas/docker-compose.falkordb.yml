@@ -51,8 +51,8 @@ services:
     environment:
       # Override default MAX_QUEUED_QUERIES (25) to handle graphiti-core's
       # parallel edge-scoring queries during add_episode() seeding.
-      # Preserves other defaults: TIMEOUT 1000, RESULTSET_SIZE 10000.
-      - FALKORDB_ARGS=MAX_QUEUED_QUERIES 100 TIMEOUT 1000 RESULTSET_SIZE 10000
+      # TIMEOUT 30000 aligns server-side with GraphitiConfig.timeout (30s default).
+      - FALKORDB_ARGS=MAX_QUEUED_QUERIES 100 TIMEOUT 30000 RESULTSET_SIZE 10000
     command: >
       --maxmemory 1gb
       --save 900 1

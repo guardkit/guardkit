@@ -562,6 +562,52 @@ invalid yaml: [unclosed
         # At minimum, should not crash
         assert isinstance(metadata, dict)
 
+    def test_extract_agent_metadata_with_glob_paths(self):
+        """Test that frontmatter with quoted glob paths parses correctly.
+
+        YAML safe_load interprets unquoted * at the start of a value as an
+        alias indicator, causing parsing to fail. Quoting the paths value
+        prevents this.
+        """
+        # Quoted glob pattern (the fix)
+        content_quoted = """---
+name: code-style
+paths: "**/*.py"
+alwaysApply: false
+---
+
+# Code Style Rules
+"""
+        metadata = extract_agent_metadata(content_quoted)
+        assert metadata['name'] == 'code-style'
+        assert metadata['paths'] == '**/*.py'
+        assert metadata['alwaysApply'] is False
+
+        # Multi-pattern quoted glob
+        content_multi = """---
+name: testing
+paths: "**/tests/**, **/test_*.py, **/*_test.py, **/conftest.py"
+alwaysApply: false
+---
+
+# Testing Rules
+"""
+        metadata_multi = extract_agent_metadata(content_multi)
+        assert metadata_multi['name'] == 'testing'
+        assert '**/*_test.py' in metadata_multi['paths']
+
+        # Glob pattern not starting with * (already worked, but verify)
+        content_safe = """---
+name: database
+paths: "apps/backend/**/models/**, apps/backend/**/crud/**"
+---
+
+# Database Rules
+"""
+        metadata_safe = extract_agent_metadata(content_safe)
+        assert metadata_safe['name'] == 'database'
+        assert 'apps/backend' in metadata_safe['paths']
+
 
 # ============================================================================
 # 7. Error Handling Tests (2 tests)
@@ -650,6 +696,34 @@ class TestErrorHandling:
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_agent_to_graphiti(agent_path, "test-template")
+            assert result is False
+
+    @pytest.mark.asyncio
+    async def test_sync_agent_add_episode_returns_none(self, tmp_path):
+        """Test sync_agent_to_graphiti returns False when add_episode returns None."""
+        agent_path = tmp_path / "test-agent.md"
+        agent_path.write_text("---\nname: test\ndescription: Test\n---\n# Test")
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value=None)
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
+            result = await sync_agent_to_graphiti(agent_path, "test-template")
+            assert result is False
+
+    @pytest.mark.asyncio
+    async def test_sync_rule_add_episode_returns_none(self, tmp_path):
+        """Test sync_rule_to_graphiti returns False when add_episode returns None."""
+        rule_path = tmp_path / "test-rule.md"
+        rule_path.write_text("---\npaths: src/**\n---\n# Rule Content")
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value=None)
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
+            result = await sync_rule_to_graphiti(rule_path, "test-template")
             assert result is False
 
     @pytest.mark.asyncio
@@ -806,8 +880,8 @@ class TestFullContentIngestion:
     """Test that rule and agent sync includes full content, not just previews."""
 
     @pytest.mark.asyncio
-    async def test_rule_sync_includes_full_content(self, tmp_path):
-        """AC: Rule content includes full text (not just 500-char preview)."""
+    async def test_rule_sync_excludes_full_content(self, tmp_path):
+        """AC: Rule body uses content_preview only, no full_content (reduces entity extraction)."""
         rule_path = tmp_path / "long-rule.md"
         # Create rule content that exceeds 500 chars
         long_content = "# Long Rule\n\n" + ("This is detailed rule guidance. " * 50)
@@ -830,13 +904,15 @@ class TestFullContentIngestion:
 
             assert result is True
             body_data = json.loads(captured_body)
-            # Full content must be present, not just a 500-char preview
-            assert 'full_content' in body_data
-            assert len(body_data['full_content']) > 500
+            # full_content removed to reduce entity extraction work
+            assert 'full_content' not in body_data
+            # content_preview retained for search display
+            assert 'content_preview' in body_data
+            assert len(body_data['content_preview']) == 500
 
     @pytest.mark.asyncio
-    async def test_rule_sync_short_content_also_has_full_content(self, tmp_path):
-        """Short rules also get full_content field."""
+    async def test_rule_sync_short_content_has_preview_only(self, tmp_path):
+        """Short rules get content_preview but no full_content."""
         rule_path = tmp_path / "short-rule.md"
         rule_content = "---\npaths: src/**\n---\n# Short Rule\n\nBrief guidance."
         rule_path.write_text(rule_content)
@@ -857,7 +933,8 @@ class TestFullContentIngestion:
 
             assert result is True
             body_data = json.loads(captured_body)
-            assert 'full_content' in body_data
+            assert 'full_content' not in body_data
+            assert 'content_preview' in body_data
 
     @pytest.mark.asyncio
     async def test_agent_sync_includes_body_content(self, tmp_path):
@@ -1227,3 +1304,253 @@ capabilities:
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=client):
             result = await sync_agent_to_graphiti(agent_path, "test-template")
             assert result is True
+
+
+# ============================================================================
+# 13. TASK-IGR-TS01: Summary Logging Tests
+# ============================================================================
+
+class TestSummaryLogging:
+    """Test that sync_template_to_graphiti logs a completion summary."""
+
+    @pytest.mark.asyncio
+    async def test_summary_logged_with_template_agents_rules(self, tmp_path):
+        """Summary message is logged when template, agents, and rules are synced."""
+        template_path = tmp_path / "full-template"
+        template_path.mkdir()
+
+        manifest = {"name": "full-template", "language": "Python"}
+        (template_path / "manifest.json").write_text(json.dumps(manifest))
+
+        agents_dir = template_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "agent-one.md").write_text(
+            "---\nname: agent-one\ndescription: Agent One\n---\n# Agent One"
+        )
+
+        rules_dir = template_path / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+        (rules_dir / "rule-one.md").write_text(
+            "---\npaths: src/**\n---\n# Rule One"
+        )
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
+            with patch('guardkit.knowledge.template_sync.logger') as mock_logger:
+                result = await sync_template_to_graphiti(template_path)
+
+                assert result is True
+
+                # Find the summary log call
+                info_calls = [str(c) for c in mock_logger.info.call_args_list]
+                summary_calls = [c for c in info_calls if "Template sync complete" in c]
+                assert len(summary_calls) == 1, "Expected exactly one summary log line"
+
+                summary_msg = summary_calls[0]
+                assert "1 template" in summary_msg
+                assert "1 agents" in summary_msg
+                assert "1 rules" in summary_msg
+                # Timing suffix in the form (N.Ns)
+                assert "s)" in summary_msg
+
+    @pytest.mark.asyncio
+    async def test_summary_logged_without_manifest(self, tmp_path):
+        """Summary message omits template count when no manifest is synced."""
+        template_path = tmp_path / "no-manifest-template"
+        template_path.mkdir()
+        # No manifest.json
+
+        agents_dir = template_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "my-agent.md").write_text(
+            "---\nname: my-agent\ndescription: My Agent\n---\n# My Agent"
+        )
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
+            with patch('guardkit.knowledge.template_sync.logger') as mock_logger:
+                result = await sync_template_to_graphiti(template_path)
+
+                assert result is True
+
+                info_calls = [str(c) for c in mock_logger.info.call_args_list]
+                summary_calls = [c for c in info_calls if "Template sync complete" in c]
+                assert len(summary_calls) == 1
+
+                summary_msg = summary_calls[0]
+                # No template count when manifest is absent
+                assert "1 template" not in summary_msg
+                assert "1 agents" in summary_msg
+
+    @pytest.mark.asyncio
+    async def test_summary_includes_warning_count_on_manifest_parse_failure(self, tmp_path):
+        """Summary includes warning count when manifest JSON is invalid."""
+        template_path = tmp_path / "bad-manifest-template"
+        template_path.mkdir()
+        (template_path / "manifest.json").write_text("{ not valid json }")
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
+            with patch('guardkit.knowledge.template_sync.logger') as mock_logger:
+                result = await sync_template_to_graphiti(template_path)
+
+                assert result is True
+
+                info_calls = [str(c) for c in mock_logger.info.call_args_list]
+                summary_calls = [c for c in info_calls if "Template sync complete" in c]
+                assert len(summary_calls) == 1
+
+                summary_msg = summary_calls[0]
+                assert "warnings" in summary_msg
+
+    @pytest.mark.asyncio
+    async def test_summary_no_warnings_suffix_when_clean(self, tmp_path):
+        """Summary omits warnings suffix when sync completes without issues."""
+        template_path = tmp_path / "clean-template"
+        template_path.mkdir()
+
+        manifest = {"name": "clean-template", "language": "Python"}
+        (template_path / "manifest.json").write_text(json.dumps(manifest))
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
+            with patch('guardkit.knowledge.template_sync.logger') as mock_logger:
+                result = await sync_template_to_graphiti(template_path)
+
+                assert result is True
+
+                info_calls = [str(c) for c in mock_logger.info.call_args_list]
+                summary_calls = [c for c in info_calls if "Template sync complete" in c]
+                assert len(summary_calls) == 1
+
+                summary_msg = summary_calls[0]
+                assert "warnings" not in summary_msg
+
+    @pytest.mark.asyncio
+    async def test_summary_zero_counts_when_nothing_to_sync(self, tmp_path):
+        """Summary shows zero agents and rules when directories are absent."""
+        template_path = tmp_path / "empty-template"
+        template_path.mkdir()
+        # No manifest, no agents dir, no rules dir
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
+            with patch('guardkit.knowledge.template_sync.logger') as mock_logger:
+                result = await sync_template_to_graphiti(template_path)
+
+                assert result is True
+
+                info_calls = [str(c) for c in mock_logger.info.call_args_list]
+                summary_calls = [c for c in info_calls if "Template sync complete" in c]
+                assert len(summary_calls) == 1
+
+                summary_msg = summary_calls[0]
+                assert "0 agents" in summary_msg
+                assert "0 rules" in summary_msg
+
+
+# ============================================================================
+# Logger Suppression Tests
+# ============================================================================
+
+class TestFalkorDBLoggerSuppression:
+    """Test that FalkorDB driver ERROR logs are suppressed during sync."""
+
+    @pytest.mark.asyncio
+    async def test_falkordb_logger_suppressed_during_sync(self, tmp_path):
+        """FalkorDB driver logger set to WARNING during sync operations."""
+        import logging
+
+        template_path = tmp_path / "test-template"
+        template_path.mkdir()
+
+        falkordb_logger = logging.getLogger("graphiti_core.driver.falkordb_driver")
+        falkordb_logger.setLevel(logging.DEBUG)
+
+        captured_levels = []
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+
+        async def capture_level(*args, **kwargs):
+            captured_levels.append(falkordb_logger.level)
+            return "episode_id"
+
+        mock_client.add_episode = AsyncMock(side_effect=capture_level)
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
+            await sync_template_to_graphiti(template_path)
+
+        # Logger should have been WARNING during the sync (no add_episode calls
+        # for this template since no manifest, but level should still restore)
+        assert falkordb_logger.level == logging.DEBUG
+
+    @pytest.mark.asyncio
+    async def test_falkordb_logger_restored_after_error(self, tmp_path):
+        """FalkorDB driver logger level restored even when sync raises."""
+        import logging
+
+        template_path = tmp_path / "test-template"
+        template_path.mkdir()
+        manifest = {"name": "test-template", "language": "Python"}
+        (template_path / "manifest.json").write_text(json.dumps(manifest))
+
+        falkordb_logger = logging.getLogger("graphiti_core.driver.falkordb_driver")
+        falkordb_logger.setLevel(logging.ERROR)
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(side_effect=Exception("connection lost"))
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
+            result = await sync_template_to_graphiti(template_path)
+
+        # Logger must be restored to ERROR even though sync failed
+        assert falkordb_logger.level == logging.ERROR
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_falkordb_logger_at_warning_during_episode_add(self, tmp_path):
+        """During add_episode calls the FalkorDB logger is at WARNING level."""
+        import logging
+
+        template_path = tmp_path / "test-template"
+        template_path.mkdir()
+        manifest = {"name": "test-template", "language": "Python"}
+        (template_path / "manifest.json").write_text(json.dumps(manifest))
+
+        falkordb_logger = logging.getLogger("graphiti_core.driver.falkordb_driver")
+        falkordb_logger.setLevel(logging.DEBUG)
+
+        observed_level = None
+
+        async def observe_level(*args, **kwargs):
+            nonlocal observed_level
+            observed_level = falkordb_logger.level
+            return "episode_id"
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(side_effect=observe_level)
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
+            await sync_template_to_graphiti(template_path)
+
+        assert observed_level == logging.WARNING
+        # Restored after sync
+        assert falkordb_logger.level == logging.DEBUG
