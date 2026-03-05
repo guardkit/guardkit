@@ -155,4 +155,4 @@ async def seed_templates(client) -> None:
     episodes = [_build_template_episode(t) for t in discovered]
 
     logger.info(f"Seeding {len(episodes)} templates from {templates_dir}")
-    await _add_episodes(client, episodes, "templates", "templates", entity_type="template")
+    return await _add_episodes(client, episodes, "templates", "templates", entity_type="template")

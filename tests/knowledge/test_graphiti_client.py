@@ -187,6 +187,56 @@ class TestGraphitiConfig:
         assert config.llm_provider == "openai"
         assert config.llm_base_url is None
 
+    def test_config_default_max_concurrent_episodes(self):
+        """Test that max_concurrent_episodes defaults to 3."""
+        config = GraphitiConfig()
+        assert config.max_concurrent_episodes == 3
+
+    def test_config_custom_max_concurrent_episodes(self):
+        """Test setting max_concurrent_episodes to a valid value."""
+        config = GraphitiConfig(max_concurrent_episodes=5)
+        assert config.max_concurrent_episodes == 5
+
+    def test_config_max_concurrent_episodes_min_valid(self):
+        """Test max_concurrent_episodes = 1 is valid (sequential mode)."""
+        config = GraphitiConfig(max_concurrent_episodes=1)
+        assert config.max_concurrent_episodes == 1
+
+    def test_config_max_concurrent_episodes_zero_raises(self):
+        """Test max_concurrent_episodes = 0 raises ValueError."""
+        with pytest.raises(ValueError, match="max_concurrent_episodes must be >= 1"):
+            GraphitiConfig(max_concurrent_episodes=0)
+
+    def test_config_max_concurrent_episodes_bool_raises(self):
+        """Test max_concurrent_episodes = True raises TypeError (bool is subclass of int)."""
+        with pytest.raises(TypeError, match="max_concurrent_episodes must be int"):
+            GraphitiConfig(max_concurrent_episodes=True)
+
+    def test_config_is_transient_error_rate_limit(self):
+        """_is_transient_error returns True for rate limit errors."""
+        client = GraphitiClient()
+
+        assert client._is_transient_error(Exception("Rate limit exceeded"))
+        assert client._is_transient_error(Exception("rate_limit"))
+        assert client._is_transient_error(Exception("HTTP 429 Too Many Requests"))
+        assert client._is_transient_error(Exception("Too Many Requests"))
+
+    def test_config_is_transient_error_connection(self):
+        """_is_transient_error returns True for connection errors."""
+        client = GraphitiClient()
+
+        assert client._is_transient_error(Exception("Connection refused"))
+        assert client._is_transient_error(Exception("Max pending queries exceeded"))
+        assert client._is_transient_error(Exception("Timed out waiting for response"))
+
+    def test_config_is_transient_error_non_transient(self):
+        """_is_transient_error returns False for non-transient errors."""
+        client = GraphitiClient()
+
+        assert not client._is_transient_error(Exception("Syntax error in query"))
+        assert not client._is_transient_error(Exception("Authentication failed"))
+        assert not client._is_transient_error(Exception("Schema validation error"))
+
 
 class TestGraphitiClientInitialization:
     """Test GraphitiClient initialization and basic properties."""
@@ -670,8 +720,8 @@ class TestGraphitiClientAddEpisode:
             assert call_count == 1
 
     @pytest.mark.asyncio
-    async def test_add_episode_project_overview_uses_longer_timeout(self):
-        """Test that project_overview group uses 180s timeout instead of 120s."""
+    async def test_add_episode_group_specific_timeouts(self):
+        """Test that different groups use appropriate tiered timeouts."""
         import asyncio as _asyncio
 
         config = GraphitiConfig(enabled=True)
@@ -699,21 +749,56 @@ class TestGraphitiClientAddEpisode:
 
         with patch.dict('sys.modules', {'graphiti_core.nodes': mock_nodes_module}), \
              patch('guardkit.knowledge.graphiti_client.asyncio.wait_for', side_effect=capturing_wait_for):
-            # _create_episode receives prefixed group_id, so test at that level
-            # project_overview (endswith check) should use 180s
+            # project_overview (endswith check) should use 300s
             await client._create_episode(
                 name="Project Purpose",
                 episode_body="Content",
                 group_id="myproject__project_overview"
             )
+            assert captured_timeouts[-1] == 300.0
+
+            # rules group should use 180s
+            captured_timeouts.clear()
+            await client._create_episode(
+                name="Code Style Rule",
+                episode_body="Content",
+                group_id="rules"
+            )
             assert captured_timeouts[-1] == 180.0
 
-            # Other groups should use 120s
+            # role_constraints group should use 150s
             captured_timeouts.clear()
             await client._create_episode(
                 name="Role Constraint",
                 episode_body="Content",
                 group_id="role_constraints"
+            )
+            assert captured_timeouts[-1] == 150.0
+
+            # agents group should use 150s
+            captured_timeouts.clear()
+            await client._create_episode(
+                name="Agent Specialist",
+                episode_body="Content",
+                group_id="agents"
+            )
+            assert captured_timeouts[-1] == 150.0
+
+            # templates group should use 180s
+            captured_timeouts.clear()
+            await client._create_episode(
+                name="Template Item",
+                episode_body="Content",
+                group_id="templates"
+            )
+            assert captured_timeouts[-1] == 180.0
+
+            # Other groups should use 120s default
+            captured_timeouts.clear()
+            await client._create_episode(
+                name="Implementation Mode",
+                episode_body="Content",
+                group_id="implementation_modes"
             )
             assert captured_timeouts[-1] == 120.0
 
@@ -1125,3 +1210,93 @@ class TestGraphitiClientIntegration:
             group_id="role_constraints"
         )
         assert episode_id is None
+
+
+# ============================================================================
+# Circuit Breaker Reset Tests (TASK-SPR-5399)
+# ============================================================================
+
+class TestCircuitBreakerReset:
+    """Test reset_circuit_breaker() method prevents cascade between categories."""
+
+    def test_reset_clears_tripped_state(self):
+        """Test reset_circuit_breaker clears tripped flag."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config, auto_detect_project=False)
+        client._connected = True
+
+        # Trip the circuit breaker
+        client._circuit_breaker_tripped = True
+        client._consecutive_failures = 3
+        client._circuit_breaker_tripped_at = 12345.0
+
+        # Reset
+        client.reset_circuit_breaker()
+
+        assert client._circuit_breaker_tripped is False
+        assert client._consecutive_failures == 0
+        assert client._circuit_breaker_tripped_at is None
+
+    def test_reset_when_not_tripped_is_noop(self):
+        """Test reset_circuit_breaker is safe when breaker is not tripped."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config, auto_detect_project=False)
+        client._connected = True
+
+        # Not tripped, 1 failure recorded
+        client._consecutive_failures = 1
+
+        client.reset_circuit_breaker()
+
+        assert client._circuit_breaker_tripped is False
+        assert client._consecutive_failures == 0
+        assert client._circuit_breaker_tripped_at is None
+
+    def test_is_healthy_after_reset(self):
+        """Test client reports healthy after circuit breaker reset."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config, auto_detect_project=False)
+        client._connected = True
+
+        # Trip it
+        for _ in range(3):
+            client._record_failure()
+        assert client.is_healthy is False
+
+        # Reset
+        client.reset_circuit_breaker()
+        assert client.is_healthy is True
+
+    def test_circuit_breaker_still_protects_within_category(self):
+        """Test circuit breaker still trips after 3 failures (no regression)."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config, auto_detect_project=False)
+        client._connected = True
+
+        # Record 3 consecutive failures
+        client._record_failure()
+        client._record_failure()
+        client._record_failure()
+
+        assert client._circuit_breaker_tripped is True
+        assert client.is_healthy is False
+
+    def test_reset_between_categories_prevents_cascade(self):
+        """Test reset between operations prevents failure cascade."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config, auto_detect_project=False)
+        client._connected = True
+
+        # Category 1: trip the breaker
+        for _ in range(3):
+            client._record_failure()
+        assert client.is_healthy is False
+
+        # Reset before category 2
+        client.reset_circuit_breaker()
+        assert client.is_healthy is True
+
+        # Category 2: 1 failure should NOT trip breaker
+        client._record_failure()
+        assert client.is_healthy is True
+        assert client._consecutive_failures == 1

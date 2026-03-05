@@ -154,32 +154,8 @@ This is the readme file used for fallback.
             # Should still call seeding (using README.md)
             assert mock_seed.called
 
-    def test_init_seeds_role_constraints(self, tmp_path, monkeypatch):
-        """Test that init seeds default role constraints."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-
-            # Create seed result that includes role constraints
-            seed_result = MagicMock()
-            seed_result.success = True
-            seed_result.role_constraints_seeded = True
-            mock_seed.return_value = seed_result
-
-            result = runner.invoke(cli, ["init"])
-
-            assert mock_seed.called
-
-    def test_init_seeds_quality_gate_configs(self, tmp_path, monkeypatch):
-        """Test that init seeds quality gate configurations."""
+    def test_init_does_not_seed_role_constraints(self, tmp_path, monkeypatch):
+        """Test that init does NOT seed role constraints (system-scoped, handled by seed-system)."""
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
@@ -194,15 +170,17 @@ This is the readme file used for fallback.
 
             seed_result = MagicMock()
             seed_result.success = True
-            seed_result.quality_gates_seeded = True
+            seed_result.role_constraints_seeded = False
             mock_seed.return_value = seed_result
 
             result = runner.invoke(cli, ["init"])
 
             assert mock_seed.called
+            # Role constraints are NOT seeded during init (system-scoped)
+            assert seed_result.role_constraints_seeded is False
 
-    def test_init_seeds_implementation_modes(self, tmp_path, monkeypatch):
-        """Test that init seeds implementation mode defaults."""
+    def test_init_does_not_seed_implementation_modes(self, tmp_path, monkeypatch):
+        """Test that init does NOT seed implementation modes (system-scoped, handled by seed-system)."""
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
@@ -217,12 +195,34 @@ This is the readme file used for fallback.
 
             seed_result = MagicMock()
             seed_result.success = True
-            seed_result.implementation_modes_seeded = True
+            seed_result.implementation_modes_seeded = False
             mock_seed.return_value = seed_result
 
             result = runner.invoke(cli, ["init"])
 
             assert mock_seed.called
+            # Implementation modes are NOT seeded during init (system-scoped)
+            assert seed_result.implementation_modes_seeded is False
+
+    def test_init_suggests_seed_system(self, tmp_path, monkeypatch):
+        """Test that init suggests running seed-system after completion."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class:
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True)
+
+            result = runner.invoke(cli, ["init"])
+
+            assert result.exit_code == 0
+            assert "seed-system" in result.output
 
 
 # ============================================================================
@@ -365,8 +365,12 @@ class TestProjectSeedingModule:
     """Test the project seeding module directly."""
 
     @pytest.mark.asyncio
-    async def test_seed_project_knowledge_seeds_all_components(self):
-        """Test that seed_project_knowledge seeds all required components."""
+    async def test_seed_project_knowledge_seeds_project_overview_only(self):
+        """Test that seed_project_knowledge only seeds project-specific content.
+
+        After TASK-ISF-006, system-scoped content (role constraints, impl modes,
+        arch decisions) is handled by `guardkit graphiti seed-system`.
+        """
         try:
             from guardkit.knowledge.project_seeding import seed_project_knowledge, SeedResult
         except ImportError:
@@ -374,7 +378,7 @@ class TestProjectSeedingModule:
 
         mock_client = MagicMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode-id")
+        mock_client.upsert_episode = AsyncMock(return_value=None)
 
         result = await seed_project_knowledge(
             project_name="test-project",
@@ -383,6 +387,10 @@ class TestProjectSeedingModule:
 
         assert isinstance(result, SeedResult)
         assert result.success is True
+        # System-scoped flags should be False (no longer seeded here)
+        assert result.role_constraints_seeded is False
+        assert result.implementation_modes_seeded is False
+        assert result.architectural_decisions_seeded is False
 
     @pytest.mark.asyncio
     async def test_seed_project_knowledge_returns_seed_result(self):
@@ -394,7 +402,7 @@ class TestProjectSeedingModule:
 
         mock_client = MagicMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode-id")
+        mock_client.upsert_episode = AsyncMock(return_value=None)
 
         result = await seed_project_knowledge(
             project_name="test-project",
@@ -1077,6 +1085,39 @@ class TestApplyTemplateCopiesAgents:
         md_files = list(agents_target.glob("*.md"))
         assert len(md_files) == 0
 
+    def test_copies_ext_md_files(self, tmp_path):
+        """AC: -ext.md files are copied alongside core agent files (TASK-ISF-003)."""
+        from guardkit.cli.init import apply_template
+
+        templates_dir = tmp_path / "templates"
+        _create_fake_template(
+            templates_dir, "fastapi-python",
+            agents_in_dotclaude=False,
+            agent_files=[
+                "fastapi-specialist.md",
+                "fastapi-specialist-ext.md",
+                "fastapi-testing-specialist.md",
+                "fastapi-testing-specialist-ext.md",
+            ],
+        )
+
+        target = tmp_path / "project"
+        target.mkdir()
+
+        with patch(
+            "guardkit.cli.init._resolve_template_source_dir",
+            return_value=templates_dir / "fastapi-python",
+        ):
+            result = apply_template("fastapi-python", target)
+
+        assert result is True
+        agents_target = target / ".claude" / "agents"
+        # Both core and ext files should be present
+        assert (agents_target / "fastapi-specialist.md").exists()
+        assert (agents_target / "fastapi-specialist-ext.md").exists()
+        assert (agents_target / "fastapi-testing-specialist.md").exists()
+        assert (agents_target / "fastapi-testing-specialist-ext.md").exists()
+
 
 class TestApplyTemplateCopiesRules:
     """Test that apply_template copies rules preserving directory structure."""
@@ -1323,18 +1364,19 @@ class TestApplyTemplateNoArgs:
 # ============================================================================
 
 
-class TestInitCallsTemplateSyncToGraphiti:
-    """Test that guardkit init calls sync_template_to_graphiti."""
+class TestInitDoesNotCallTemplateSyncToGraphiti:
+    """Test that guardkit init does NOT call sync_template_to_graphiti (TASK-ISF-006).
 
-    def test_init_calls_sync_template_when_graphiti_available(self, tmp_path, monkeypatch):
-        """AC: guardkit init fastapi-python calls sync_template_to_graphiti when Graphiti available."""
+    Template sync is now system-scoped and handled by `guardkit graphiti seed-system`.
+    """
+
+    def test_init_does_not_call_template_sync(self, tmp_path, monkeypatch):
+        """AC: guardkit init no longer calls sync_template_to_graphiti."""
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
         with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
-             patch('guardkit.cli.init.sync_template_to_graphiti', new_callable=AsyncMock) as mock_sync, \
-             patch('guardkit.cli.init._resolve_template_source_dir') as mock_resolve:
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class:
 
             mock_client = MagicMock()
             mock_client.enabled = True
@@ -1342,101 +1384,32 @@ class TestInitCallsTemplateSyncToGraphiti:
             mock_client.close = AsyncMock()
             mock_client_class.return_value = mock_client
             mock_seed.return_value = MagicMock(success=True)
-            mock_resolve.return_value = tmp_path / "fake-template"
-            mock_sync.return_value = True
 
             result = runner.invoke(cli, ["init", "fastapi-python"])
 
             assert result.exit_code == 0
-            mock_sync.assert_called_once()
+            # sync_template_to_graphiti is no longer imported or called in init.py
 
-    def test_init_skip_graphiti_skips_template_sync(self, tmp_path, monkeypatch):
-        """AC: --skip-graphiti flag skips template sync."""
+    def test_init_output_does_not_mention_step_2_5(self, tmp_path, monkeypatch):
+        """AC: Init output should not mention Step 2.5 (template sync removed)."""
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
         with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
-             patch('guardkit.cli.init.sync_template_to_graphiti', new_callable=AsyncMock) as mock_sync:
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class:
 
             mock_client = MagicMock()
             mock_client.enabled = True
             mock_client.initialize = AsyncMock(return_value=True)
             mock_client.close = AsyncMock()
             mock_client_class.return_value = mock_client
-
-            result = runner.invoke(cli, ["init", "--skip-graphiti"])
-
-            assert result.exit_code == 0
-            mock_sync.assert_not_called()
-
-    def test_init_graphiti_unavailable_skips_template_sync(self, tmp_path, monkeypatch):
-        """AC: Graphiti unavailable: template files still copied, sync skipped with warning."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        with patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
-             patch('guardkit.cli.init.sync_template_to_graphiti', new_callable=AsyncMock) as mock_sync:
-
-            mock_client = MagicMock()
-            mock_client.enabled = False
-            mock_client.initialize = AsyncMock(return_value=False)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True)
 
             result = runner.invoke(cli, ["init"])
 
             assert result.exit_code == 0
-            # Template sync should NOT be called when Graphiti is unavailable
-            mock_sync.assert_not_called()
-
-    def test_init_template_sync_failure_does_not_block(self, tmp_path, monkeypatch):
-        """AC: Template sync failure doesn't block init (graceful degradation)."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
-             patch('guardkit.cli.init.sync_template_to_graphiti', new_callable=AsyncMock) as mock_sync, \
-             patch('guardkit.cli.init._resolve_template_source_dir') as mock_resolve:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True)
-            mock_resolve.return_value = tmp_path / "fake-template"
-            # Sync fails
-            mock_sync.return_value = False
-
-            result = runner.invoke(cli, ["init", "fastapi-python"])
-
-            # Init should still succeed
-            assert result.exit_code == 0
-
-    def test_init_template_not_found_skips_sync(self, tmp_path, monkeypatch):
-        """AC: Template not found: sync skipped gracefully."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
-             patch('guardkit.cli.init.sync_template_to_graphiti', new_callable=AsyncMock) as mock_sync, \
-             patch('guardkit.cli.init._resolve_template_source_dir', return_value=None):
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True)
-
-            result = runner.invoke(cli, ["init", "nonexistent"])
-
-            assert result.exit_code == 0
-            # Should not call sync when template is not found
-            mock_sync.assert_not_called()
+            assert "Step 2.5" not in result.output
+            assert "Syncing template content" not in result.output
 
 
 class TestResolveTemplateSourceDir:

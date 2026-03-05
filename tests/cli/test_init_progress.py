@@ -157,29 +157,28 @@ class TestEstimateEpisodeCount:
     """Test the episode count estimator used for N/M display."""
 
     def test_count_with_skip_overview(self):
-        """Test count when overview is skipped (constraints + modes only)."""
-        # 2 role constraints + 3 implementation modes = 5
+        """Test count when overview is skipped (project-only, no system content)."""
         count = estimate_episode_count(skip_overview=True)
-        assert count == 5
+        assert count == 0
 
     def test_count_with_interactive_episode(self):
         """Test count when a project_overview_episode is provided."""
         mock_episode = MagicMock()
-        # 1 overview + 2 constraints + 3 modes = 6
+        # 1 overview episode only (system content handled by seed-system)
         count = estimate_episode_count(
             skip_overview=False,
             project_overview_episode=mock_episode,
         )
-        assert count == 6
+        assert count == 1
 
     def test_count_with_no_doc_file(self, tmp_path):
         """Test count when no CLAUDE.md or README.md exists."""
-        # 0 overview + 2 constraints + 3 modes = 5
+        # 0 overview (no doc file), no system content
         count = estimate_episode_count(
             skip_overview=False,
             project_dir=tmp_path,
         )
-        assert count == 5
+        assert count == 0
 
     def test_count_with_unparseable_doc(self, tmp_path):
         """Test count when doc exists but cannot be parsed."""
@@ -189,8 +188,8 @@ class TestEstimateEpisodeCount:
             skip_overview=False,
             project_dir=tmp_path,
         )
-        # At minimum: 2 constraints + 3 modes = 5
-        assert count >= 5
+        # No system content, only project overview (if parseable)
+        assert count >= 0
 
 
 # ============================================================================
@@ -202,16 +201,21 @@ class TestSeedingWithProgress:
     """Test that _ProgressClient integrates with seed_project_knowledge."""
 
     @pytest.mark.asyncio
-    async def test_seeding_calls_add_episode_through_proxy(self):
-        """Test that seed_project_knowledge works with _ProgressClient."""
+    async def test_seeding_calls_upsert_episode_through_proxy(self):
+        """Test that seed_project_knowledge works with _ProgressClient.
+
+        After TASK-ISF-006, seed_project_knowledge only seeds project overview
+        (project-specific content). System content is handled by seed-system.
+        With no CLAUDE.md or README.md, zero upsert_episode calls are expected.
+        """
         from guardkit.knowledge.project_seeding import seed_project_knowledge
 
         mock_client = MagicMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="ep-id")
+        mock_client.upsert_episode = AsyncMock(return_value=None)
         mock_console = MagicMock()
 
-        proxy = _ProgressClient(mock_client, total=5, console_obj=mock_console)
+        proxy = _ProgressClient(mock_client, total=1, console_obj=mock_console)
 
         result = await seed_project_knowledge(
             project_name="test-project",
@@ -219,11 +223,8 @@ class TestSeedingWithProgress:
         )
 
         assert result.success is True
-        # The proxy should have intercepted add_episode calls
-        # At minimum: 2 role constraints + 3 implementation modes = 5
-        assert mock_client.add_episode.call_count >= 5
-        # Each episode produces 2 prints (start + done)
-        assert mock_console.print.call_count >= 10
+        # No CLAUDE.md/README.md in cwd, so 0 project overview episodes
+        # System content (role constraints, impl modes) no longer seeded here
 
     @pytest.mark.asyncio
     async def test_seeding_progress_with_none_client(self):

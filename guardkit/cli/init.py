@@ -42,7 +42,6 @@ from guardkit.integrations.graphiti.episodes.project_overview import ProjectOver
 from guardkit.knowledge.config import _find_project_root, load_graphiti_config
 from guardkit.knowledge.graphiti_client import GraphitiClient, GraphitiConfig, normalize_project_id
 from guardkit.knowledge.project_seeding import estimate_episode_count, seed_project_knowledge
-from guardkit.knowledge.template_sync import sync_template_to_graphiti
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -64,7 +63,7 @@ class _ProgressClient:
         self._console = console_obj
         self._current = 0
 
-    async def add_episode(self, *args, **kwargs):
+    async def _episode_with_progress(self, method, *args, **kwargs):
         self._current += 1
         self._console.print(
             f"  Seeding episode {self._current}/{self._total}...",
@@ -72,7 +71,7 @@ class _ProgressClient:
         )
         start = time.monotonic()
         try:
-            result = await self._client.add_episode(*args, **kwargs)
+            result = await method(*args, **kwargs)
             elapsed = time.monotonic() - start
             self._console.print(f" done ({elapsed:.1f}s)")
             return result
@@ -82,6 +81,16 @@ class _ProgressClient:
                 f" [yellow]warning ({elapsed:.1f}s): {e}[/yellow]"
             )
             raise
+
+    async def add_episode(self, *args, **kwargs):
+        return await self._episode_with_progress(
+            self._client.add_episode, *args, **kwargs
+        )
+
+    async def upsert_episode(self, *args, **kwargs):
+        return await self._episode_with_progress(
+            self._client.upsert_episode, *args, **kwargs
+        )
 
     async def initialize(self):
         return await self._client.initialize()
@@ -203,10 +212,6 @@ def _copy_agents(template_dir: Path, target_dir: Path) -> List[str]:
             if agent_file.suffix != ".md":
                 continue
             if agent_file.name.startswith("."):
-                continue
-            # Skip extended files (-ext.md) - they stay in ~/.agentecflow/
-            # for on-demand loading (progressive disclosure pattern)
-            if agent_file.name.endswith("-ext.md"):
                 continue
 
             if _copy_file_if_not_exists(
@@ -753,22 +758,6 @@ async def _cmd_init(
                         f" ({seed_elapsed:.1f}s total)[/yellow]"
                     )
 
-                # Step 2.5: Sync template content to Graphiti
-                template_source = _resolve_template_source_dir(template)
-                if template_source is not None:
-                    console.print("\n[bold]Step 2.5: Syncing template content to Graphiti...[/bold]")
-                    try:
-                        sync_result = await sync_template_to_graphiti(template_source, client=client)
-                        if sync_result:
-                            console.print("  [green]Template content synced to Graphiti[/green]")
-                        else:
-                            console.print("  [yellow]Warning: Template sync returned incomplete results[/yellow]")
-                    except Exception as e:
-                        console.print(f"  [yellow]Warning: Template sync error: {e}[/yellow]")
-                        logger.debug(f"Template sync error: {e}", exc_info=True)
-                else:
-                    logger.info(f"Template source not found for '{template}', skipping template sync")
-
         except Exception as e:
             console.print(f"  [yellow]Warning: Graphiti seeding error: {e}[/yellow]")
             logger.debug(f"Graphiti error: {e}", exc_info=True)
@@ -782,9 +771,15 @@ async def _cmd_init(
     # Summary
     console.print("\n[bold green]GuardKit initialized successfully![/bold green]")
     console.print(f"\nNext steps:")
-    console.print(f"  1. Create a task: /task-create \"Your first task\"")
-    console.print(f"  2. Work on it: /task-work TASK-XXX")
-    console.print(f"  3. Complete it: /task-complete TASK-XXX")
+    if not skip_graphiti:
+        console.print(f"  1. Seed system knowledge: guardkit graphiti seed-system")
+        console.print(f"  2. Create a task: /task-create \"Your first task\"")
+        console.print(f"  3. Work on it: /task-work TASK-XXX")
+        console.print(f"  4. Complete it: /task-complete TASK-XXX")
+    else:
+        console.print(f"  1. Create a task: /task-create \"Your first task\"")
+        console.print(f"  2. Work on it: /task-work TASK-XXX")
+        console.print(f"  3. Complete it: /task-complete TASK-XXX")
 
     return 0
 

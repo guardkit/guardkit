@@ -16,6 +16,7 @@ Usage:
 import json
 import logging
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -87,23 +88,23 @@ from guardkit.knowledge.seed_project_overview import seed_project_overview  # no
 from guardkit.knowledge.seed_project_architecture import seed_project_architecture  # noqa: E402
 
 
-async def seed_pattern_examples_wrapper(client) -> None:
+async def seed_pattern_examples_wrapper(client):
     """Wrapper for seed_pattern_examples to match orchestrator signature."""
     if not client or not client.enabled:
-        return
+        return None
     from guardkit.knowledge.seed_pattern_examples import seed_pattern_examples
-    await seed_pattern_examples(client)
+    return await seed_pattern_examples(client)
 
 
-async def seed_failed_approaches_wrapper(client) -> None:
+async def seed_failed_approaches_wrapper(client):
     """Wrapper for seed_failed_approaches to match orchestrator signature."""
     if not client or not client.enabled:
-        return
+        return None
     from guardkit.knowledge.seed_failed_approaches import seed_failed_approaches
-    await seed_failed_approaches(client)
+    return await seed_failed_approaches(client)
 
 
-async def seed_all_system_context(client, force: bool = False) -> bool:
+async def seed_all_system_context(client, force: bool = False):
     """Seed all system context into Graphiti.
 
     Args:
@@ -111,8 +112,10 @@ async def seed_all_system_context(client, force: bool = False) -> bool:
         force: If True, re-seed even if already seeded
 
     Returns:
-        True if seeding completed (or skipped because already seeded)
-        False if client is disabled or None
+        dict mapping category names to (created, skipped) tuples when
+        seeding runs. The dict is truthy so ``if result:`` still works.
+        Returns True if skipped because already seeded.
+        Returns False if client is disabled or None.
     """
     # Handle None client
     if client is None:
@@ -133,6 +136,9 @@ async def seed_all_system_context(client, force: bool = False) -> bool:
 
     # Track partial failures but continue
     had_errors = False
+
+    # Per-category results: name -> (created, skipped) or "error"
+    category_results = {}
 
     # Get the current module dynamically to support patching in tests
     # sys.modules lookup happens at runtime, allowing unittest.mock.patch to work
@@ -161,12 +167,27 @@ async def seed_all_system_context(client, force: bool = False) -> bool:
 
     for name, fn_name in categories:
         try:
+            # Reset circuit breaker between categories to prevent cascade
+            # (failures in one category should not block subsequent ones)
+            client.reset_circuit_breaker()
             # Dynamic lookup enables unittest.mock.patch to work
             seed_fn = getattr(seeding_module, fn_name)
-            await seed_fn(client)
-            logger.info(f"  Seeded {name}")
+            result = await seed_fn(client)
+            # Log with episode counts if available (TASK-FIX-bbbd)
+            if isinstance(result, tuple) and len(result) == 2:
+                created, skipped = result
+                category_results[name] = (created, skipped)
+                if skipped > 0:
+                    logger.warning(f"  Seeded {name}: {created}/{created + skipped} episodes ({skipped} skipped)")
+                else:
+                    logger.info(f"  Seeded {name}: {created} episodes")
+            else:
+                # No episode counts returned — record as unknown success
+                category_results[name] = None
+                logger.info(f"  Seeded {name}")
         except Exception as e:
             logger.warning(f"  Failed to seed {name}: {e}")
+            category_results[name] = "error"
             had_errors = True
 
     # Mark as seeded even with partial failures
@@ -181,4 +202,53 @@ async def seed_all_system_context(client, force: bool = False) -> bool:
     else:
         logger.info("System context seeding complete")
 
-    return True
+    return category_results
+
+
+def compute_seed_summary(category_results: dict) -> dict:
+    """Compute aggregate summary statistics from per-category seed results.
+
+    Args:
+        category_results: Dict mapping category names to (created, skipped)
+            tuples, None (unknown success), or "error".
+
+    Returns:
+        Dict with keys: total_categories, succeeded, partial, failed,
+        total_created, total_skipped, total_episodes.
+    """
+    succeeded = 0
+    partial = 0
+    failed = 0
+    total_created = 0
+    total_skipped = 0
+
+    for _name, outcome in category_results.items():
+        if outcome == "error":
+            failed += 1
+        elif outcome is None:
+            # Unknown success (no episode counts)
+            succeeded += 1
+        else:
+            created, skipped = outcome
+            total_created += created
+            total_skipped += skipped
+            total = created + skipped
+            if total == 0 or skipped == 0:
+                succeeded += 1
+            elif created == 0 or skipped > total * 0.8:
+                failed += 1
+            else:
+                partial += 1
+
+    total_categories = len(category_results)
+    total_episodes = total_created + total_skipped
+
+    return {
+        "total_categories": total_categories,
+        "succeeded": succeeded,
+        "partial": partial,
+        "failed": failed,
+        "total_created": total_created,
+        "total_skipped": total_skipped,
+        "total_episodes": total_episodes,
+    }

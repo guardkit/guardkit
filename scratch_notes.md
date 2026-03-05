@@ -130,3 +130,53 @@ TASK-FKDB-004 is complete. Here's a summary of what was done:
 docs/reviews/graphiti-falkordb-migration/continuation-handoff.md
 
 three-machine-infrastructure-guide.md
+
+
+guardkit graphiti clear --project-only --confirm
+
+guardkit init fastapi-python -n vllm-profiling --copy-graphiti-from ~/Projects/appmilla_github/guardkit
+
+
+What I Got Wrong
+I proposed "selective retrieval replaces static rules" via Graphiti. But your own Graphiti fidelity assessment (Feb 5) already proved this won't work:
+
+"Graphiti is a knowledge graph that extracts semantic facts, not a document store that preserves verbatim content."
+
+You tested it. Code goes in, "OrchestrationState has a field named strategy" comes out. FEAT-CR01 already pivoted to Graphiti-independent reduction. I should have found that before making recommendations.
+
+
+
+
+
+
+You're right — a full clear + reseed is the cleanest path
+The graph has accumulated debris from 7 iterative init runs (init_project_1 through 7), each adding system episodes that --project-only clear never touches. That means:
+
+role_constraints: Multiple duplicate episodes from every init run (uses add_episode(), not upsert)
+implementation_modes: Potentially duplicated across runs
+agents/rules/templates: Partial syncs from failed runs (0/12 rules from init_7, 6/12 from init_5, etc.)
+Graph growth: This accumulated data is why episodes are getting progressively slower — more nodes/edges means longer Phase 4 resolution in graphiti-core
+Recommended approach
+Before starting Wave 1 tasks (TASK-ISF-001/002):
+
+
+# 1. Full clear — wipe everything (system + project)
+guardkit graphiti clear --confirm
+
+# 2. Reseed system knowledge (the 17 categories)
+guardkit graphiti seed --force
+Then do the Wave 1 reverts (ISF-001 + ISF-002), and run a fresh guardkit init against a clean graph. This gives you a proper baseline for init_project_8 — no accumulated graph bloat, no partial episodes from failed syncs.
+
+Why not just --project-only clear?
+Because the problem is in the system groups. The 19 system groups have been accumulating episodes across all 7 init runs. A project-only clear followed by re-init just adds more on top.
+
+One consideration
+guardkit graphiti seed seeds the 17 system knowledge categories (product_knowledge, command_workflows, quality_gate_phases, etc.) — this is the GuardKit domain knowledge, not the template/agent/rule content that init Step 2.5 adds. So the sequence would be:
+
+
+guardkit graphiti clear --confirm          # Wipe everything
+guardkit graphiti seed --force             # Reseed 17 system categories
+guardkit init fastapi-python --project-id vllm-profiling  # Fresh init with clean graph
+This gives init the best possible chance of succeeding with the reverted code, since the graph starts clean rather than bloated with duplicates from prior runs.
+
+Want me to add this as a prerequisite step in the IMPLEMENTATION-GUIDE.md, or would you prefer to handle the clear/reseed manually before starting the Wave 1 tasks?

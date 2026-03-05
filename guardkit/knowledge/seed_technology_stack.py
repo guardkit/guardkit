@@ -119,4 +119,4 @@ async def seed_technology_stack(client) -> None:
         })
     ]
 
-    await _add_episodes(client, episodes, "technology_stack", "technology stack", entity_type="technology")
+    return await _add_episodes(client, episodes, "technology_stack", "technology stack", entity_type="technology")

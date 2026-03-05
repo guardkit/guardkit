@@ -290,15 +290,16 @@ class TestRuleContent:
             f"Rules should span multiple templates, found: {templates_found}"
 
     @pytest.mark.asyncio
-    async def test_seed_rules_preserves_group_id(self):
-        """AC: Existing group_id convention 'rules' maintained."""
+    async def test_seed_rules_uses_per_template_group_id(self):
+        """AC: Rules use per-template group_id (rules_{template_id})."""
         from guardkit.knowledge.seed_rules import seed_rules
 
         client = _make_mock_client()
         await seed_rules(client)
 
         for ep in _captured_episodes(client):
-            assert ep["group_id"] == "rules"
+            assert ep["group_id"].startswith("rules_"), \
+                f"Expected per-template group_id starting with 'rules_', got '{ep['group_id']}'"
 
 
 # ============================================================================

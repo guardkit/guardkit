@@ -21,6 +21,7 @@ Patterns Used (following seeding.py conventions):
     - Gracefully handle disabled client (check `if not client.enabled: return`)
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -30,6 +31,7 @@ from typing import Dict, Any, Optional, List
 
 import yaml
 
+from guardkit.knowledge.episode_splitting import split_episode_content
 from guardkit.knowledge.graphiti_client import get_graphiti
 
 logger = logging.getLogger(__name__)
@@ -144,6 +146,58 @@ def _extract_rule_content(content: str) -> str:
     return _extract_body_content(content)
 
 
+async def _sync_items_parallel(
+    items: List[Path],
+    sync_fn,
+    template_id: str,
+    client,
+    max_concurrent: int = 3,
+    item_type: str = "item",
+) -> tuple:
+    """Sync multiple items in parallel with bounded concurrency.
+
+    Uses asyncio.Semaphore to limit concurrent episode creation calls,
+    preventing OpenAI/vLLM rate limit errors while improving throughput.
+
+    Args:
+        items: List of file paths to sync.
+        sync_fn: Async callable(path, template_id, client=client) -> bool.
+        template_id: Template identifier.
+        client: GraphitiClient instance.
+        max_concurrent: Maximum concurrent syncs (default 3).
+        item_type: Label for logging ("agent" or "rule").
+
+    Returns:
+        Tuple of (success_count, warning_count).
+    """
+    if not items:
+        return 0, 0
+
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def sync_with_bound(item_path: Path) -> bool:
+        async with semaphore:
+            return await sync_fn(item_path, template_id, client=client)
+
+    results = await asyncio.gather(
+        *[sync_with_bound(item) for item in items],
+        return_exceptions=True,
+    )
+
+    success_count = 0
+    warning_count = 0
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            logger.warning(
+                f"[Graphiti] Failed to sync {item_type} {items[i].name}: {result}"
+            )
+            warning_count += 1
+        elif result:
+            success_count += 1
+
+    return success_count, warning_count
+
+
 # ============================================================================
 # TEMPLATE SYNC
 # ============================================================================
@@ -222,6 +276,7 @@ async def sync_template_to_graphiti(template_path: Path, client=None) -> bool:
 
         # Sync manifest metadata if available
         if manifest:
+            episode_name = f"template_{template_id}"
             template_body = {
                 "entity_type": "template",
                 "id": template_id,
@@ -239,15 +294,19 @@ async def sync_template_to_graphiti(template_path: Path, client=None) -> bool:
             }
 
             try:
-                await client.add_episode(
-                    name=f"template_{template_id}",
+                result = await client.upsert_episode(
+                    name=episode_name,
                     episode_body=json.dumps(template_body),
                     group_id="templates",
+                    entity_id=episode_name,
                     source="template_sync",
-                    entity_type="template"
+                    entity_type="template",
                 )
-                logger.info(f"[Graphiti] Synced template '{template_id}'")
-                template_count += 1
+                if result is not None and getattr(result, "was_skipped", False):
+                    logger.info(f"[Graphiti] Skipping unchanged episode: {episode_name}")
+                else:
+                    logger.info(f"[Graphiti] Synced template '{template_id}'")
+                    template_count += 1
             except Exception as e:
                 logger.warning(f"[Graphiti] Failed to sync template '{template_id}': {e}")
                 warning_count += 1
@@ -265,9 +324,11 @@ async def sync_template_to_graphiti(template_path: Path, client=None) -> bool:
         if dotclaude_agents.exists() and dotclaude_agents.is_dir():
             agent_dirs.append(dotclaude_agents)
 
+        # Sync agents sequentially to avoid circuit breaker cascade failures.
+        # (Parallel sync via _sync_items_parallel() caused accumulated timeouts
+        # to trip the breaker faster than sequential successes could reset it.)
         for agents_dir in agent_dirs:
             for agent_file in agents_dir.glob("*.md"):
-                # Skip extended files (they're supplementary)
                 if "-ext.md" in agent_file.name:
                     continue
                 try:
@@ -278,7 +339,7 @@ async def sync_template_to_graphiti(template_path: Path, client=None) -> bool:
                     logger.warning(f"[Graphiti] Failed to sync agent {agent_file.name}: {e}")
                     warning_count += 1
 
-        # Sync rules if .claude/rules/ directory exists
+        # Sync rules sequentially if .claude/rules/ directory exists
         rules_dir = template_path / ".claude" / "rules"
         if rules_dir.exists() and rules_dir.is_dir():
             for rule_file in rules_dir.rglob("*.md"):
@@ -386,17 +447,22 @@ async def sync_agent_to_graphiti(agent_path: Path, template_id: str, client=None
     }
 
     # Sync agent to Graphiti
+    episode_name = f"agent_{template_id}_{agent_name}"
     try:
-        result = await client.add_episode(
-            name=f"agent_{template_id}_{agent_name}",
+        result = await client.upsert_episode(
+            name=episode_name,
             episode_body=json.dumps(agent_body),
             group_id="agents",
+            entity_id=episode_name,
             source="template_sync",
-            entity_type="agent"
+            entity_type="agent",
         )
         if result is None:
             logger.warning(f"[Graphiti] Failed to sync agent '{agent_name}' (episode creation returned None)")
             return False
+        if getattr(result, "was_skipped", False):
+            logger.info(f"[Graphiti] Skipping unchanged episode: {episode_name}")
+            return True
         logger.info(f"[Graphiti] Synced agent '{agent_name}'")
         return True
     except Exception as e:
@@ -475,31 +541,58 @@ async def sync_rule_to_graphiti(rule_path: Path, template_id: str, client=None) 
         elif line.startswith('## '):
             topics.append(line[3:].strip())
 
-    # Build rule episode (content_preview only - full content served via .claude/rules/*.md)
-    rule_body = {
-        "entity_type": "rule",
-        "id": f"{template_id}_{rule_name}",
-        "name": rule_name,
-        "template_id": template_id,
-        "path_patterns": path_patterns,
-        "topics": topics[:10],  # Limit to first 10 topics
-        "content_preview": main_content[:500] if main_content else "",
-    }
+    # Split large rule content into chunks at markdown section boundaries.
+    # This reduces edges per episode call in graphiti-core Phase 4 resolution.
+    base_rule_id = f"{template_id}_{rule_name}"
+    base_episode_name = f"rule_{template_id}_{rule_name}"
+    chunks = split_episode_content(main_content)
 
-    # Sync rule to Graphiti
-    try:
-        result = await client.add_episode(
-            name=f"rule_{template_id}_{rule_name}",
-            episode_body=json.dumps(rule_body),
-            group_id="rules",
-            source="template_sync",
-            entity_type="rule"
-        )
-        if result is None:
-            logger.warning(f"[Graphiti] Failed to sync rule '{rule_name}' (episode creation returned None)")
+    synced_any = False
+    for chunk in chunks:
+        chunk_name = base_episode_name
+        chunk_rule_id = base_rule_id
+        if chunk.total_chunks > 1:
+            chunk_name = f"{base_episode_name}_chunk{chunk.chunk_index}"
+            chunk_rule_id = f"{base_rule_id}_chunk{chunk.chunk_index}"
+
+        rule_body = {
+            "entity_type": "rule",
+            "id": chunk_rule_id,
+            "name": rule_name,
+            "template_id": template_id,
+            "path_patterns": path_patterns,
+            "topics": topics[:10],  # Limit to first 10 topics
+            "content_preview": chunk.content[:500] if chunk.content else "",
+            "chunk_index": chunk.chunk_index,
+            "total_chunks": chunk.total_chunks,
+        }
+
+        try:
+            result = await client.upsert_episode(
+                name=chunk_name,
+                episode_body=json.dumps(rule_body),
+                group_id="rules",
+                entity_id=chunk_name,
+                source="template_sync",
+                entity_type="rule",
+            )
+            if result is None:
+                logger.warning(
+                    f"[Graphiti] Failed to sync rule '{rule_name}' chunk {chunk.chunk_index}"
+                    " (episode creation returned None)"
+                )
+                return False
+            if getattr(result, "was_skipped", False):
+                logger.info(f"[Graphiti] Skipping unchanged episode: {chunk_name}")
+            else:
+                synced_any = True
+        except Exception as e:
+            logger.warning(f"[Graphiti] Failed to sync rule '{rule_name}' chunk {chunk.chunk_index}: {e}")
             return False
-        logger.info(f"[Graphiti] Synced rule '{rule_name}'")
-        return True
-    except Exception as e:
-        logger.warning(f"[Graphiti] Failed to sync rule '{rule_name}': {e}")
-        return False
+
+    if synced_any or chunks[0].total_chunks == 1:
+        logger.info(
+            f"[Graphiti] Synced rule '{rule_name}'"
+            + (f" ({chunks[0].total_chunks} chunks)" if chunks[0].total_chunks > 1 else "")
+        )
+    return True

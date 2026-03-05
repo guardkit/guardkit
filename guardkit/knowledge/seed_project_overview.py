@@ -87,4 +87,4 @@ async def seed_project_overview(client) -> None:
         })
     ]
 
-    await _add_episodes(client, episodes, "project_overview", "project overview", entity_type="project_overview")
+    return await _add_episodes(client, episodes, "project_overview", "project overview", entity_type="project_overview")

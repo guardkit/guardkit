@@ -90,4 +90,4 @@ async def seed_project_architecture(client) -> None:
         })
     ]
 
-    await _add_episodes(client, episodes, "project_architecture", "project architecture", entity_type="project_architecture")
+    return await _add_episodes(client, episodes, "project_architecture", "project architecture", entity_type="project_architecture")

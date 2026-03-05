@@ -66,4 +66,4 @@ async def seed_product_knowledge(client) -> None:
         })
     ]
 
-    await _add_episodes(client, episodes, "product_knowledge", "product knowledge", entity_type="product_knowledge")
+    return await _add_episodes(client, episodes, "product_knowledge", "product knowledge", entity_type="product_knowledge")

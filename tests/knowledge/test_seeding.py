@@ -43,6 +43,7 @@ try:
         seed_patterns,
         seed_rules,
         seed_all_system_context,
+        compute_seed_summary,
         is_seeded,
         mark_seeded,
         clear_seeding_marker,
@@ -547,6 +548,85 @@ class TestSeedAllSystemContext:
 
             # Result should indicate partial failure
             assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_seed_all_resets_circuit_breaker_between_categories(self, tmp_path):
+        """Test seed_all_system_context resets circuit breaker before each category."""
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.reset_circuit_breaker = Mock()
+
+        with patch('guardkit.knowledge.seeding.get_state_dir', return_value=tmp_path), \
+             patch('guardkit.knowledge.seeding.seed_product_knowledge', new_callable=AsyncMock), \
+             patch('guardkit.knowledge.seeding.seed_command_workflows', new_callable=AsyncMock), \
+             patch('guardkit.knowledge.seeding.seed_quality_gate_phases', new_callable=AsyncMock), \
+             patch('guardkit.knowledge.seeding.seed_technology_stack', new_callable=AsyncMock), \
+             patch('guardkit.knowledge.seeding.seed_feature_build_architecture', new_callable=AsyncMock), \
+             patch('guardkit.knowledge.seeding.seed_architecture_decisions', new_callable=AsyncMock), \
+             patch('guardkit.knowledge.seeding.seed_failure_patterns', new_callable=AsyncMock), \
+             patch('guardkit.knowledge.seeding.seed_component_status', new_callable=AsyncMock), \
+             patch('guardkit.knowledge.seeding.seed_integration_points', new_callable=AsyncMock), \
+             patch('guardkit.knowledge.seeding.seed_templates', new_callable=AsyncMock), \
+             patch('guardkit.knowledge.seeding.seed_agents', new_callable=AsyncMock), \
+             patch('guardkit.knowledge.seeding.seed_patterns', new_callable=AsyncMock), \
+             patch('guardkit.knowledge.seeding.seed_rules', new_callable=AsyncMock), \
+             patch('guardkit.knowledge.seeding.seed_project_overview', new_callable=AsyncMock), \
+             patch('guardkit.knowledge.seeding.seed_project_architecture', new_callable=AsyncMock), \
+             patch('guardkit.knowledge.seeding.seed_failed_approaches_wrapper', new_callable=AsyncMock), \
+             patch('guardkit.knowledge.seeding.seed_pattern_examples_wrapper', new_callable=AsyncMock):
+
+            await seed_all_system_context(mock_client)
+
+            # reset_circuit_breaker should be called once per category (17 categories)
+            assert mock_client.reset_circuit_breaker.call_count == 17
+
+    @pytest.mark.asyncio
+    async def test_seed_all_circuit_breaker_reset_prevents_cascade(self, tmp_path):
+        """Test that circuit breaker reset prevents failure cascade across categories."""
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_id")
+
+        # Track reset calls to verify ordering
+        call_order = []
+        original_reset = Mock(side_effect=lambda: call_order.append("reset"))
+        mock_client.reset_circuit_breaker = original_reset
+
+        async def failing_seed(client):
+            call_order.append("fail")
+            raise Exception("timeout")
+
+        async def success_seed(client):
+            call_order.append("success")
+
+        with patch('guardkit.knowledge.seeding.get_state_dir', return_value=tmp_path), \
+             patch('guardkit.knowledge.seeding.seed_product_knowledge', new_callable=AsyncMock, side_effect=failing_seed), \
+             patch('guardkit.knowledge.seeding.seed_command_workflows', new_callable=AsyncMock, side_effect=success_seed), \
+             patch('guardkit.knowledge.seeding.seed_quality_gate_phases', new_callable=AsyncMock, side_effect=success_seed), \
+             patch('guardkit.knowledge.seeding.seed_technology_stack', new_callable=AsyncMock, side_effect=success_seed), \
+             patch('guardkit.knowledge.seeding.seed_feature_build_architecture', new_callable=AsyncMock, side_effect=success_seed), \
+             patch('guardkit.knowledge.seeding.seed_architecture_decisions', new_callable=AsyncMock, side_effect=success_seed), \
+             patch('guardkit.knowledge.seeding.seed_failure_patterns', new_callable=AsyncMock, side_effect=success_seed), \
+             patch('guardkit.knowledge.seeding.seed_component_status', new_callable=AsyncMock, side_effect=success_seed), \
+             patch('guardkit.knowledge.seeding.seed_integration_points', new_callable=AsyncMock, side_effect=success_seed), \
+             patch('guardkit.knowledge.seeding.seed_templates', new_callable=AsyncMock, side_effect=success_seed), \
+             patch('guardkit.knowledge.seeding.seed_agents', new_callable=AsyncMock, side_effect=success_seed), \
+             patch('guardkit.knowledge.seeding.seed_patterns', new_callable=AsyncMock, side_effect=success_seed), \
+             patch('guardkit.knowledge.seeding.seed_rules', new_callable=AsyncMock, side_effect=success_seed), \
+             patch('guardkit.knowledge.seeding.seed_project_overview', new_callable=AsyncMock, side_effect=success_seed), \
+             patch('guardkit.knowledge.seeding.seed_project_architecture', new_callable=AsyncMock, side_effect=success_seed), \
+             patch('guardkit.knowledge.seeding.seed_failed_approaches_wrapper', new_callable=AsyncMock, side_effect=success_seed), \
+             patch('guardkit.knowledge.seeding.seed_pattern_examples_wrapper', new_callable=AsyncMock, side_effect=success_seed):
+
+            result = await seed_all_system_context(mock_client)
+
+            # Verify reset happens before each category (reset, then seed function)
+            # First entries should be: reset, fail, reset, success, reset, success, ...
+            assert call_order[0] == "reset"  # Reset before first category
+            assert call_order[1] == "fail"   # First category fails
+            assert call_order[2] == "reset"  # Reset before second category
+            assert call_order[3] == "success"  # Second category succeeds despite first failing
 
 
 # ============================================================================
@@ -1053,3 +1133,100 @@ class TestMetadataBlock:
             # Should still have original fields (e.g., entity_type for product_knowledge)
             # At minimum, should have more than just _metadata
             assert len(data) > 1, "Episode should have content fields in addition to _metadata"
+
+
+# ============================================================================
+# compute_seed_summary Tests (TASK-SPR-9d9b)
+# ============================================================================
+
+@pytest.mark.skipif(not IMPORTS_AVAILABLE, reason="Imports not available")
+class TestComputeSeedSummary:
+    """Test compute_seed_summary aggregation function."""
+
+    def test_all_succeeded(self):
+        """All categories succeed with no skips."""
+        results = {
+            "cat_a": (10, 0),
+            "cat_b": (5, 0),
+            "cat_c": (3, 0),
+        }
+        summary = compute_seed_summary(results)
+        assert summary["total_categories"] == 3
+        assert summary["succeeded"] == 3
+        assert summary["partial"] == 0
+        assert summary["failed"] == 0
+        assert summary["total_created"] == 18
+        assert summary["total_skipped"] == 0
+        assert summary["total_episodes"] == 18
+
+    def test_with_errors(self):
+        """Some categories have errors."""
+        results = {
+            "cat_a": (10, 0),
+            "cat_b": "error",
+            "cat_c": (5, 0),
+        }
+        summary = compute_seed_summary(results)
+        assert summary["succeeded"] == 2
+        assert summary["failed"] == 1
+        assert summary["total_created"] == 15
+
+    def test_with_partial_skips(self):
+        """Categories with some skipped episodes (partial success)."""
+        results = {
+            "cat_a": (8, 2),  # 20% skipped -> partial
+            "cat_b": (5, 0),  # all succeeded
+        }
+        summary = compute_seed_summary(results)
+        assert summary["succeeded"] == 1
+        assert summary["partial"] == 1
+        assert summary["total_created"] == 13
+        assert summary["total_skipped"] == 2
+        assert summary["total_episodes"] == 15
+
+    def test_with_heavy_skips(self):
+        """Category with >80% skipped counts as failed."""
+        results = {
+            "cat_a": (1, 9),  # 90% skipped -> failed
+        }
+        summary = compute_seed_summary(results)
+        assert summary["succeeded"] == 0
+        assert summary["failed"] == 1
+        assert summary["total_created"] == 1
+        assert summary["total_skipped"] == 9
+
+    def test_with_none_outcome(self):
+        """Categories with None outcome (unknown success)."""
+        results = {
+            "cat_a": None,
+            "cat_b": (5, 0),
+        }
+        summary = compute_seed_summary(results)
+        assert summary["succeeded"] == 2
+        assert summary["total_created"] == 5
+
+    def test_empty_results(self):
+        """Empty results dict."""
+        summary = compute_seed_summary({})
+        assert summary["total_categories"] == 0
+        assert summary["succeeded"] == 0
+        assert summary["total_created"] == 0
+        assert summary["total_episodes"] == 0
+
+    def test_zero_episode_categories(self):
+        """Categories with (0, 0) count as succeeded."""
+        results = {
+            "cat_a": (0, 0),
+        }
+        summary = compute_seed_summary(results)
+        assert summary["succeeded"] == 1
+        assert summary["total_episodes"] == 0
+
+    def test_all_created_zero_but_skipped(self):
+        """Category with 0 created but some skipped counts as failed."""
+        results = {
+            "cat_a": (0, 5),
+        }
+        summary = compute_seed_summary(results)
+        assert summary["failed"] == 1
+        assert summary["total_skipped"] == 5

@@ -169,6 +169,8 @@ class GraphitiConfig:
     embedding_provider: str = "openai"     # "openai" | "vllm" | "ollama"
     embedding_base_url: Optional[str] = None  # e.g., "http://host:8001/v1"
     embedding_model: str = "text-embedding-3-small"
+    # Concurrency control for parallel episode seeding
+    max_concurrent_episodes: int = 3       # Max concurrent episode creation calls (>=1)
 
     def __post_init__(self):
         """Validate and normalize configuration values."""
@@ -184,6 +186,10 @@ class GraphitiConfig:
             raise ValueError(f"llm_base_url is required when llm_provider is '{self.llm_provider}'")
         if self.embedding_provider in ("vllm", "ollama") and not self.embedding_base_url:
             raise ValueError(f"embedding_base_url is required when embedding_provider is '{self.embedding_provider}'")
+        if not isinstance(self.max_concurrent_episodes, int) or isinstance(self.max_concurrent_episodes, bool):
+            raise TypeError(f"max_concurrent_episodes must be int, got {type(self.max_concurrent_episodes).__name__}")
+        if self.max_concurrent_episodes < 1:
+            raise ValueError(f"max_concurrent_episodes must be >= 1, got {self.max_concurrent_episodes}")
 
         # Validate and normalize project_id if provided
         if self.project_id is not None:
@@ -442,6 +448,22 @@ class GraphitiClient:
         """
         return self.config.enabled and self._connected and not self._check_circuit_breaker()
 
+    def reset_circuit_breaker(self) -> None:
+        """Reset circuit breaker state for a fresh category/operation.
+
+        Call this between independent operations (e.g., seeding categories)
+        to prevent failures in one category from cascading to subsequent ones.
+        The circuit breaker still protects within each category.
+        """
+        if self._circuit_breaker_tripped:
+            logger.info(
+                "Circuit breaker reset (was tripped after %d failures)",
+                self._consecutive_failures,
+            )
+        self._circuit_breaker_tripped = False
+        self._consecutive_failures = 0
+        self._circuit_breaker_tripped_at = None
+
     def _record_success(self) -> None:
         """Record a successful operation, resetting the failure counter."""
         self._consecutive_failures = 0
@@ -497,6 +519,10 @@ class GraphitiClient:
             or "connection" in error_str
             or "Timed out" in error_str
             or "timed out" in error_str
+            or "Rate limit" in error_str
+            or "rate_limit" in error_str
+            or "429" in error_str
+            or "Too Many Requests" in error_str
         )
 
     def _build_embedder(self):
@@ -740,6 +766,73 @@ class GraphitiClient:
             logger.warning(f"Graphiti health check failed: {e}")
             return False
 
+    async def wait_for_llm_endpoints(self, timeout: float = 60.0) -> bool:
+        """Wait for LLM and embedding endpoints to become available.
+
+        Polls the /models endpoint of configured vLLM/ollama servers with
+        exponential backoff.  Returns True immediately when using the OpenAI
+        cloud provider (assumed always available).
+
+        Args:
+            timeout: Maximum seconds to wait for endpoints (default 60).
+
+        Returns:
+            True if all required endpoints responded within the timeout,
+            False otherwise.
+        """
+        check_llm = self.config.llm_provider in ("vllm", "ollama")
+        check_embedding = self.config.embedding_provider in ("vllm", "ollama")
+
+        if not check_llm and not check_embedding:
+            return True
+
+        try:
+            import httpx  # noqa: F811 – transitive dep of graphiti-core
+        except ImportError:
+            logger.warning("httpx not available, skipping LLM endpoint check")
+            return True
+
+        endpoints: Dict[str, str] = {}
+        if check_llm and self.config.llm_base_url:
+            endpoints["LLM"] = f"{self.config.llm_base_url}/models"
+        if check_embedding and self.config.embedding_base_url:
+            endpoints["Embedding"] = f"{self.config.embedding_base_url}/models"
+
+        if not endpoints:
+            return True
+
+        start = time.monotonic()
+        ready: set = set()
+        poll_interval = 5.0
+
+        async with httpx.AsyncClient() as http_client:
+            while time.monotonic() - start < timeout:
+                for name, url in endpoints.items():
+                    if name in ready:
+                        continue
+                    try:
+                        resp = await http_client.get(url, timeout=5.0)
+                        if resp.status_code == 200:
+                            ready.add(name)
+                            logger.info("%s endpoint ready: %s", name, url)
+                    except Exception:
+                        pass
+
+                if len(ready) == len(endpoints):
+                    return True
+
+                remaining = timeout - (time.monotonic() - start)
+                if remaining <= 0:
+                    break
+                await asyncio.sleep(min(poll_interval, remaining))
+
+        for name in set(endpoints.keys()) - ready:
+            logger.warning(
+                "%s endpoint not available after %.0fs: %s",
+                name, timeout, endpoints[name],
+            )
+        return False
+
     async def _execute_search(
         self,
         query: str,
@@ -877,7 +970,18 @@ class GraphitiClient:
             return None
 
         max_retries = 3
-        episode_timeout = 180.0 if group_id.endswith("project_overview") else 120.0
+        if group_id.endswith("project_overview"):
+            episode_timeout = 300.0   # Was 240s; project_architecture hit ceiling
+        elif group_id == "rules":
+            episode_timeout = 180.0   # Working for 10/12 rules
+        elif group_id == "role_constraints":
+            episode_timeout = 150.0   # Coach at 120s needs ~130s with growth
+        elif group_id == "agents":
+            episode_timeout = 150.0   # testing-specialist at 120s needs ~130s
+        elif group_id == "templates":
+            episode_timeout = 180.0   # template manifests need 111-150s on clean graph
+        else:
+            episode_timeout = 120.0   # implementation_modes etc: safe
         for attempt in range(max_retries):
             try:
                 from graphiti_core.nodes import EpisodeType
@@ -912,7 +1016,11 @@ class GraphitiClient:
 
             except Exception as e:
                 if self._is_transient_error(e) and attempt < max_retries - 1:
-                    delay = 2 ** (attempt + 1)  # 2s, 4s
+                    error_str = str(e)
+                    if "429" in error_str or "Rate limit" in error_str or "rate_limit" in error_str:
+                        delay = 2 ** (attempt + 2)  # 4s, 8s for rate limits
+                    else:
+                        delay = 2 ** (attempt + 1)  # 2s, 4s for other transient errors
                     logger.warning(
                         "Transient FalkorDB error (attempt %d/%d), "
                         "retrying in %ds: %s",

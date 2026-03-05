@@ -55,4 +55,4 @@ async def seed_integration_points(client) -> None:
         })
     ]
 
-    await _add_episodes(client, episodes, "integration_points", "integration points", entity_type="integration_point")
+    return await _add_episodes(client, episodes, "integration_points", "integration points", entity_type="integration_point")

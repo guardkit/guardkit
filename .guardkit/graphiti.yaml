@@ -34,6 +34,11 @@ falkordb_port: 6379
 # Connection settings
 timeout: 30.0
 
+# Maximum concurrent episode creation calls during init seeding.
+# Bounds asyncio.gather parallelism to avoid LLM rate limits.
+# Range: 1-10 (1 = sequential, 3 = default)
+max_concurrent_episodes: 3
+
 # LLM provider for Graphiti entity extraction
 # Options: openai (default), vllm, ollama
 llm_provider: vllm

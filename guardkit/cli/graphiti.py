@@ -19,6 +19,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 import warnings
 from pathlib import Path
 from typing import Optional
@@ -38,6 +39,7 @@ def _format_connection_target(settings: GraphitiSettings) -> str:
     return f"Neo4j at {settings.neo4j_uri}"
 from guardkit.knowledge.seeding import (
     seed_all_system_context,
+    compute_seed_summary,
     is_seeded,
     clear_seeding_marker,
     SEEDING_VERSION,
@@ -127,6 +129,24 @@ async def _cmd_seed(force: bool) -> None:
         console.print("[green]Connected to Graphiti[/green]")
         console.print()
 
+        # Pre-seed LLM endpoint check (vLLM/ollama only)
+        if settings.llm_provider in ("vllm", "ollama") or settings.embedding_provider in ("vllm", "ollama"):
+            console.print("Checking LLM endpoint availability...")
+            console.print("[dim]Waiting for vLLM... (timeout 60s)[/dim]")
+            llm_ready = await client.wait_for_llm_endpoints(timeout=60.0)
+            if llm_ready:
+                console.print("[green]LLM endpoints ready[/green]")
+            else:
+                console.print(
+                    "[yellow]Warning: LLM endpoints not available after 60s.[/yellow]"
+                )
+                console.print(
+                    "[yellow]Seeding will likely fail. "
+                    "Check that vLLM is running.[/yellow]"
+                )
+                raise SystemExit(1)
+            console.print()
+
         # Clear marker if forcing
         if force and is_seeded():
             console.print("Clearing previous seeding marker...")
@@ -136,40 +156,86 @@ async def _cmd_seed(force: bool) -> None:
         console.print("Seeding system context...")
         console.print()
 
+        seed_start = time.monotonic()
         try:
             result = await seed_all_system_context(client, force=force)
         except Exception as e:
             console.print(f"[red]Error during seeding: {e}[/red]")
             logger.exception("Seeding failed")
             raise SystemExit(1)
+        seed_elapsed = time.monotonic() - seed_start
 
         if result:
             console.print()
             console.print("[bold green]System context seeding complete![/bold green]")
             console.print()
             console.print("Knowledge categories seeded:")
-            categories = [
-                "product_knowledge",
-                "command_workflows",
-                "quality_gate_phases",
-                "technology_stack",
-                "feature_build_architecture",
-                "architecture_decisions",
-                "failure_patterns",
-                "component_status",
-                "integration_points",
-                "templates",
-                "agents",
-                "patterns",
-                "rules",
-                "project_overview",
-                "project_architecture",
-                "failed_approaches",
-                "quality_gate_configs",
-                "pattern_examples",
-            ]
-            for cat in categories:
-                console.print(f"  [green]\u2713[/green] {cat}")
+
+            if isinstance(result, dict):
+                # Per-category results available (TASK-SPR-2cf7)
+                for cat, outcome in result.items():
+                    if outcome == "error":
+                        console.print(f"  [red]\u2717[/red] {cat} [red](error)[/red]")
+                    elif outcome is None:
+                        # No episode counts — assume success
+                        console.print(f"  [green]\u2713[/green] {cat}")
+                    else:
+                        created, skipped = outcome
+                        total = created + skipped
+                        if total == 0:
+                            # No episodes to seed
+                            console.print(f"  [green]\u2713[/green] {cat}")
+                        elif skipped == 0:
+                            # All succeeded
+                            console.print(f"  [green]\u2713[/green] {cat} ({created} episodes)")
+                        elif created == 0 or skipped > total * 0.8:
+                            # Failure: 0 created or >80% skipped
+                            console.print(
+                                f"  [red]\u2717[/red] {cat} "
+                                f"({created}/{total} episodes, {skipped} skipped)"
+                            )
+                        else:
+                            # Partial success
+                            console.print(
+                                f"  [yellow]\u26a0[/yellow] {cat} "
+                                f"({created}/{total} episodes, {skipped} skipped)"
+                            )
+            else:
+                # Boolean result (e.g. already-seeded skip) — no details
+                console.print("  [green]\u2713[/green] All categories (no details available)")
+
+            # Display seed summary (TASK-SPR-9d9b)
+            if isinstance(result, dict):
+                summary = compute_seed_summary(result)
+                console.print()
+                console.print("[bold]Seed Summary:[/bold]")
+                not_succeeded = summary["partial"] + summary["failed"]
+                if not_succeeded > 0:
+                    console.print(
+                        f"  Categories: {summary['succeeded']}/{summary['total_categories']} "
+                        f"fully seeded, {not_succeeded} partial/failed"
+                    )
+                else:
+                    console.print(
+                        f"  Categories: {summary['total_categories']}/{summary['total_categories']} "
+                        f"fully seeded"
+                    )
+                if summary["total_episodes"] > 0:
+                    pct = summary["total_created"] / summary["total_episodes"] * 100
+                    console.print(
+                        f"  Episodes:   {summary['total_created']}/{summary['total_episodes']} "
+                        f"created ({pct:.1f}%)"
+                    )
+                    if summary["total_skipped"] > 0:
+                        console.print(f"  Skipped:    {summary['total_skipped']} episodes")
+                else:
+                    console.print(f"  Episodes:   {summary['total_created']} created")
+                mins, secs = divmod(int(seed_elapsed), 60)
+                if mins > 0:
+                    console.print(f"  Duration:   {mins}m {secs:02d}s")
+                else:
+                    console.print(f"  Duration:   {secs}s")
+
             console.print()
             console.print("Run 'guardkit graphiti verify' to test queries.")
             console.print()
@@ -498,6 +564,156 @@ def seed_adrs(force: bool):
     Use --force to re-seed even if ADRs have already been seeded.
     """
     _run_async(_cmd_seed_adrs(force))
+
+
+async def _cmd_seed_system(force: bool, template: Optional[str]) -> None:
+    """Async implementation of seed-system command."""
+    from guardkit.knowledge.system_seeding import (
+        seed_system_content,
+        is_system_seeded,
+        clear_system_seed_marker,
+    )
+
+    console.print("[bold blue]System Content Seeding[/bold blue]")
+    console.print()
+
+    # Check if already seeded
+    if is_system_seeded() and not force:
+        console.print("[yellow]System content already seeded.[/yellow]")
+        console.print("Use --force to re-seed.")
+        return
+
+    # Create client
+    client, settings = _get_client_and_config()
+
+    # Handle disabled Graphiti
+    if not settings.enabled:
+        console.print("[yellow]Graphiti is disabled in configuration.[/yellow]")
+        console.print("System seeding skipped.")
+        return
+
+    # Initialize connection
+    console.print(f"Connecting to {_format_connection_target(settings)}...")
+
+    try:
+        initialized = await client.initialize()
+    except Exception as e:
+        console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
+        raise SystemExit(1)
+
+    try:
+        if not initialized or not client.enabled:
+            console.print("[yellow]Graphiti not available or disabled.[/yellow]")
+            console.print("System seeding skipped.")
+            return
+
+        console.print("[green]Connected to Graphiti[/green]")
+        console.print()
+
+        # Pre-seed LLM endpoint check (vLLM/ollama only)
+        if settings.llm_provider in ("vllm", "ollama") or settings.embedding_provider in ("vllm", "ollama"):
+            console.print("Checking LLM endpoint availability...")
+            console.print("[dim]Waiting for vLLM... (timeout 60s)[/dim]")
+            llm_ready = await client.wait_for_llm_endpoints(timeout=60.0)
+            if llm_ready:
+                console.print("[green]LLM endpoints ready[/green]")
+            else:
+                console.print(
+                    "[yellow]Warning: LLM endpoints not available after 60s.[/yellow]"
+                )
+                console.print(
+                    "[yellow]Seeding will likely fail. "
+                    "Check that vLLM is running.[/yellow]"
+                )
+                raise SystemExit(1)
+            console.print()
+
+        # Clear marker if forcing
+        if force:
+            console.print("Clearing previous system seed marker...")
+            clear_system_seed_marker()
+
+        # Run system seeding
+        console.print("Seeding system content...")
+        console.print()
+
+        try:
+            result = await seed_system_content(
+                client=client,
+                template_name=template,
+                force=force,
+            )
+        except Exception as e:
+            console.print(f"[red]Error during system seeding: {e}[/red]")
+            logger.exception("System seeding failed")
+            raise SystemExit(1)
+
+        # Display results
+        if result.success:
+            console.print()
+            console.print("[bold green]System content seeding complete![/bold green]")
+            console.print()
+
+            if result.template_name:
+                console.print(f"Template: {result.template_name}")
+                console.print()
+
+            console.print("Components seeded:")
+            for comp in result.results:
+                status = "[green]\u2713[/green]" if comp.success else "[red]\u2717[/red]"
+                detail = (
+                    f" ({comp.episodes_created} episodes)"
+                    if comp.episodes_created > 0
+                    else ""
+                )
+                console.print(f"  {status} {comp.component}{detail}")
+
+            console.print()
+            console.print(
+                f"Total: {result.total_episodes} episodes created, "
+                f"{result.total_skipped} unchanged"
+            )
+        else:
+            console.print("[yellow]System seeding completed with warnings.[/yellow]")
+    finally:
+        await client.close()
+
+
+@graphiti.command("seed-system")
+@click.option(
+    "--force",
+    "-f",
+    is_flag=True,
+    help="Force re-seeding regardless of existing content",
+)
+@click.option(
+    "--template",
+    "-t",
+    default=None,
+    help="Template to seed (auto-detected if not specified)",
+)
+def seed_system(force: bool, template: Optional[str]):
+    """Seed template and system content into Graphiti.
+
+    Seeds system-level content independent of any specific project:
+
+    \b
+    - Template manifest metadata
+    - Agent definitions from template
+    - Rule previews from template
+    - Player/Coach role constraints
+    - Implementation mode patterns
+
+    This is independent of 'guardkit graphiti seed'. Use it to seed or
+    re-seed template/system content at any time.
+
+    \b
+    Examples:
+        guardkit graphiti seed-system
+        guardkit graphiti seed-system --template fastapi-python
+        guardkit graphiti seed-system --force
+    """
+    _run_async(_cmd_seed_system(force, template))
 
 
 @graphiti.command("add-context")

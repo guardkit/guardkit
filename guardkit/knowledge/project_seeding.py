@@ -6,6 +6,7 @@ project initialization. It coordinates:
 - Project overview parsing from CLAUDE.md or README.md
 - Role constraints seeding
 - Implementation modes seeding
+- Architectural decisions seeding (system-scoped lessons learned)
 
 Graceful Degradation:
 When Graphiti is unavailable or disabled, all operations return success
@@ -20,11 +21,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from guardkit.integrations.graphiti.episodes.architectural_decision import (
+    ARCHITECTURAL_DECISION_DEFAULTS,
+)
 from guardkit.integrations.graphiti.episodes.implementation_mode import (
     IMPLEMENTATION_MODE_DEFAULTS,
 )
 from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
 from guardkit.integrations.graphiti.parsers.project_doc_parser import ProjectDocParser
+from guardkit.knowledge.episode_splitting import split_episode_content
 from guardkit.knowledge.seed_role_constraints import seed_role_constraints
 
 logger = logging.getLogger(__name__)
@@ -53,6 +58,7 @@ class SeedResult:
     role_constraints_seeded: bool = False
     quality_gates_seeded: bool = False
     implementation_modes_seeded: bool = False
+    architectural_decisions_seeded: bool = False
 
     def add_result(self, result: SeedComponentResult) -> None:
         """Add a component result to the results list."""
@@ -128,25 +134,46 @@ async def seed_project_overview(
                 episodes_created=0,
             )
 
-        # Seed each parsed episode
+        # Seed each parsed episode, splitting large content into chunks
         episodes_created = 0
         for episode_data in parse_result.episodes:
             try:
-                episode_body = json.dumps(
-                    {
-                        "entity_type": episode_data.entity_type,
-                        "content": episode_data.content,
-                        "metadata": episode_data.metadata,
-                        "project_name": project_name,
-                    }
-                )
+                section_type = episode_data.metadata.get("section_type", "unknown")
+                base_episode_name = f"project_{section_type}_{project_name}"
 
-                await client.add_episode(
-                    name=f"project_{episode_data.metadata.get('section_type', 'unknown')}_{project_name}",
-                    episode_body=episode_body,
-                    group_id="project_overview",
-                )
-                episodes_created += 1
+                # Split large episodes at markdown section boundaries
+                chunks = split_episode_content(episode_data.content)
+
+                for chunk in chunks:
+                    chunk_metadata = {
+                        **episode_data.metadata,
+                        "chunk_index": chunk.chunk_index,
+                        "total_chunks": chunk.total_chunks,
+                    }
+
+                    chunk_name = base_episode_name
+                    if chunk.total_chunks > 1:
+                        chunk_name = f"{base_episode_name}_chunk{chunk.chunk_index}"
+
+                    chunk_body = json.dumps(
+                        {
+                            "entity_type": episode_data.entity_type,
+                            "content": chunk.content,
+                            "metadata": chunk_metadata,
+                            "project_name": project_name,
+                        }
+                    )
+
+                    result = await client.upsert_episode(
+                        name=chunk_name,
+                        episode_body=chunk_body,
+                        group_id="project_overview",
+                        entity_id=chunk_name,
+                    )
+                    if result is not None and getattr(result, "was_skipped", False):
+                        logger.info(f"Skipping unchanged episode: {chunk_name}")
+                    elif result is not None:
+                        episodes_created += 1
             except Exception as e:
                 logger.warning(f"Failed to seed episode: {e}")
 
@@ -191,6 +218,7 @@ async def seed_implementation_modes_from_defaults(
 
     for mode_name, mode_episode in IMPLEMENTATION_MODE_DEFAULTS.items():
         try:
+            episode_name = f"implementation_mode_{mode_name}"
             episode_content = mode_episode.to_episode_content()
             episode_body = json.dumps(
                 {
@@ -205,13 +233,17 @@ async def seed_implementation_modes_from_defaults(
                 }
             )
 
-            await client.add_episode(
-                name=f"implementation_mode_{mode_name}",
+            result = await client.upsert_episode(
+                name=episode_name,
                 episode_body=episode_body,
                 group_id="implementation_modes",
+                entity_id=episode_name,
                 scope="system",  # System-level, not project-specific
             )
-            episodes_created += 1
+            if result is not None and getattr(result, "was_skipped", False):
+                logger.info(f"Skipping unchanged episode: {episode_name}")
+            elif result is not None:
+                episodes_created += 1
         except Exception as e:
             logger.warning(f"Failed to seed implementation mode {mode_name}: {e}")
 
@@ -219,6 +251,70 @@ async def seed_implementation_modes_from_defaults(
         component="implementation_modes",
         success=True,
         message=f"Seeded {episodes_created} modes",
+        episodes_created=episodes_created,
+    )
+
+
+async def seed_architectural_decisions(
+    client: Any,
+) -> SeedComponentResult:
+    """Seed system-scoped architectural decisions into Graphiti.
+
+    Seeds lessons learned and architectural decisions that apply across
+    all projects, ensuring future sessions don't repeat failed approaches.
+
+    Args:
+        client: GraphitiClient instance.
+
+    Returns:
+        SeedComponentResult indicating success/failure.
+    """
+    if client is None or not client.enabled:
+        return SeedComponentResult(
+            component="architectural_decisions",
+            success=True,
+            message="Skipped (Graphiti unavailable)",
+        )
+
+    episodes_created = 0
+
+    for decision_key, decision_episode in ARCHITECTURAL_DECISION_DEFAULTS.items():
+        try:
+            episode_name = f"arch_decision_{decision_key}"
+            episode_content = decision_episode.to_episode_content()
+            episode_body = json.dumps(
+                {
+                    "entity_type": decision_episode.entity_type,
+                    "title": decision_episode.title,
+                    "summary": decision_episode.summary,
+                    "implications": decision_episode.implications,
+                    "evidence": decision_episode.evidence,
+                    "decision_reference": decision_episode.decision_reference,
+                    "date": decision_episode.date,
+                    "content": episode_content,
+                }
+            )
+
+            result = await client.upsert_episode(
+                name=episode_name,
+                episode_body=episode_body,
+                group_id="architecture_decisions",
+                entity_id=episode_name,
+                scope="system",
+            )
+            if result is not None and getattr(result, "was_skipped", False):
+                logger.info(f"Skipping unchanged episode: {episode_name}")
+            elif result is not None:
+                episodes_created += 1
+        except Exception as e:
+            logger.warning(
+                f"Failed to seed architectural decision {decision_key}: {e}"
+            )
+
+    return SeedComponentResult(
+        component="architectural_decisions",
+        success=True,
+        message=f"Seeded {episodes_created} decisions",
         episodes_created=episodes_created,
     )
 
@@ -283,6 +379,7 @@ async def seed_project_overview_from_episode(
         )
 
     try:
+        episode_name = f"project_overview_{project_name}"
         episode_content = episode.to_episode_content()
         episode_body = json.dumps(
             {
@@ -296,17 +393,27 @@ async def seed_project_overview_from_episode(
             }
         )
 
-        await client.add_episode(
-            name=f"project_overview_{project_name}",
+        result = await client.upsert_episode(
+            name=episode_name,
             episode_body=episode_body,
             group_id="project_overview",
+            entity_id=episode_name,
         )
+
+        if result is not None and getattr(result, "was_skipped", False):
+            logger.info(f"Skipping unchanged episode: {episode_name}")
+            return SeedComponentResult(
+                component="project_overview",
+                success=True,
+                message="Skipped (unchanged)",
+                episodes_created=0,
+            )
 
         return SeedComponentResult(
             component="project_overview",
             success=True,
             message="Seeded from interactive setup",
-            episodes_created=1,
+            episodes_created=1 if result is not None else 0,
         )
     except Exception as e:
         logger.warning(f"Failed to seed project overview episode: {e}")
@@ -325,16 +432,14 @@ async def seed_project_knowledge(
     project_dir: Optional[Path] = None,
     project_overview_episode: Optional[ProjectOverviewEpisode] = None,
 ) -> SeedResult:
-    """Seed all project knowledge to Graphiti.
+    """Seed project-specific knowledge to Graphiti.
 
-    Orchestrates seeding of:
-    1. Project overview (from CLAUDE.md or README.md, or from provided episode)
-    2. Role constraints (Player/Coach defaults)
-    3. Implementation modes (defaults)
+    Seeds only project-specific content (project overview). System-scoped
+    content (role constraints, implementation modes, architectural decisions,
+    template/agent/rule sync) is handled by ``guardkit graphiti seed-system``.
 
     Graceful Degradation:
     If client is None or disabled, returns success with skip messages.
-    Individual component failures don't prevent other components from seeding.
 
     Args:
         project_name: Name of the project.
@@ -359,7 +464,9 @@ async def seed_project_knowledge(
     """
     result = SeedResult(success=True, project_name=project_name)
 
-    # 1. Seed project overview
+    # Seed project overview (project-specific content only)
+    # System-scoped content (role constraints, implementation modes,
+    # architectural decisions) is now handled by `guardkit graphiti seed-system`.
     if not skip_overview:
         if project_overview_episode is not None:
             # Use the provided episode from interactive setup
@@ -378,21 +485,6 @@ async def seed_project_knowledge(
         result.add_result(overview_result)
         result.project_overview_seeded = overview_result.episodes_created > 0
 
-    # 2. Seed role constraints (system-level defaults)
-    constraints_result = await _seed_role_constraints_wrapper(client)
-    result.add_result(constraints_result)
-    result.role_constraints_seeded = constraints_result.episodes_created > 0
-
-    # 3. Seed implementation modes (system-level defaults)
-    modes_result = await seed_implementation_modes_from_defaults(
-        project_name=project_name,
-        client=client,
-    )
-    result.add_result(modes_result)
-    result.implementation_modes_seeded = modes_result.episodes_created > 0
-
-    # All components use graceful degradation, so overall success is True
-    # unless we want to change this to require at least one success
     result.success = True
 
     return result
@@ -405,8 +497,12 @@ def estimate_episode_count(
 ) -> int:
     """Estimate total episode count for progress display.
 
-    Counts how many ``client.add_episode`` calls will be made during
+    Counts how many ``client.upsert_episode`` calls will be made during
     ``seed_project_knowledge``, allowing callers to show N/M progress.
+
+    Only counts project-specific episodes (project overview). System-scoped
+    episodes (role constraints, implementation modes, architectural decisions)
+    are handled by ``guardkit graphiti seed-system``.
 
     Args:
         skip_overview: If True, overview episodes are excluded.
@@ -437,11 +533,5 @@ def estimate_episode_count(
                     except Exception:
                         pass
                     break
-
-    # Role constraints: always 2 (Player + Coach)
-    total += 2
-
-    # Implementation modes
-    total += len(IMPLEMENTATION_MODE_DEFAULTS)
 
     return total

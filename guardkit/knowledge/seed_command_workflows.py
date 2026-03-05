@@ -326,4 +326,4 @@ async def seed_command_workflows(client) -> None:
         })
     ]
 
-    await _add_episodes(client, episodes, "command_workflows", "command workflows", entity_type="command_workflow")
+    return await _add_episodes(client, episodes, "command_workflows", "command workflows", entity_type="command_workflow")

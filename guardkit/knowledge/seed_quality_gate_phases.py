@@ -184,4 +184,4 @@ async def seed_quality_gate_phases(client) -> None:
         })
     ]
 
-    await _add_episodes(client, episodes, "quality_gate_phases", "quality gate phases", entity_type="quality_gate_phase")
+    return await _add_episodes(client, episodes, "quality_gate_phases", "quality gate phases", entity_type="quality_gate_phase")

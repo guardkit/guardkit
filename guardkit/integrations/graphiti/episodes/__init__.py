@@ -7,6 +7,7 @@ Episode Types:
 - ProjectArchitectureEpisode: Captures system architecture patterns
 - ProjectOverviewEpisode: Captures project overview for North Star context
 - ImplementationModeEpisode: Captures implementation mode patterns and guidance
+- ArchitecturalDecisionEpisode: Captures architectural decisions and lessons learned
 """
 
 from guardkit.integrations.graphiti.episodes.project_architecture import (
@@ -19,10 +20,16 @@ from guardkit.integrations.graphiti.episodes.implementation_mode import (
     ImplementationModeEpisode,
     IMPLEMENTATION_MODE_DEFAULTS,
 )
+from guardkit.integrations.graphiti.episodes.architectural_decision import (
+    ArchitecturalDecisionEpisode,
+    ARCHITECTURAL_DECISION_DEFAULTS,
+)
 
 __all__ = [
     "ProjectArchitectureEpisode",
     "ProjectOverviewEpisode",
     "ImplementationModeEpisode",
     "IMPLEMENTATION_MODE_DEFAULTS",
+    "ArchitecturalDecisionEpisode",
+    "ARCHITECTURAL_DECISION_DEFAULTS",
 ]

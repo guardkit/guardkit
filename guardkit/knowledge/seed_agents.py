@@ -230,4 +230,4 @@ async def seed_agents(client) -> None:
         return
 
     logger.info(f"Seeding {len(episodes)} agents from {templates_dir}")
-    await _add_episodes(client, episodes, "agents", "agents", entity_type="agent")
+    return await _add_episodes(client, episodes, "agents", "agents", entity_type="agent")

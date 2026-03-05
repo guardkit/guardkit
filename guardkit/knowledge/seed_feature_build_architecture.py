@@ -161,4 +161,4 @@ async def seed_feature_build_architecture(client) -> None:
         })
     ]
 
-    await _add_episodes(client, episodes, "feature_build_architecture", "feature-build architecture", entity_type="feature_build_architecture")
+    return await _add_episodes(client, episodes, "feature_build_architecture", "feature-build architecture", entity_type="feature_build_architecture")

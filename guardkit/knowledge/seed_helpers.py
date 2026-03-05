@@ -21,7 +21,7 @@ async def _add_episodes(
     group_id: str,
     category_name: str,
     entity_type: str = "generic"
-) -> None:
+) -> tuple[int, int]:
     """Add multiple episodes to Graphiti with error handling.
 
     Metadata injection is handled by GraphitiClient.add_episode() via
@@ -33,21 +33,30 @@ async def _add_episodes(
         group_id: Group ID for all episodes
         category_name: Human-readable category name for logging
         entity_type: Type of entity (e.g., "rule", "pattern", "agent")
+
+    Returns:
+        Tuple of (created_count, skipped_count).
     """
     if not client.enabled:
         logger.debug(f"Skipping {category_name} seeding - client disabled")
-        return
+        return (0, 0)
 
+    created = 0
+    skipped = 0
     for name, body in episodes:
         try:
-            # Pass body directly - GraphitiClient will inject metadata
-            await client.add_episode(
+            result = await client.add_episode(
                 name=name,
                 episode_body=json.dumps(body),
                 group_id=group_id,
                 source="guardkit_seeding",
                 entity_type=entity_type
             )
+            if result is not None:
+                created += 1
+            else:
+                skipped += 1
         except Exception as e:
             logger.warning(f"Failed to seed episode {name}: {e}")
-            # Continue with other episodes
+            skipped += 1
+    return (created, skipped)

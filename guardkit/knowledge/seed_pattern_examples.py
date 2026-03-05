@@ -29,6 +29,21 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
+def _get_patterns_dir() -> Path:
+    """Locate the .claude/rules/patterns/ directory.
+
+    Walks up from this file to find the guardkit project root, then resolves
+    the patterns directory. Falls back to CWD-relative path.
+    """
+    current = Path(__file__).resolve().parent
+    while current != current.parent:
+        candidate = current / ".claude" / "rules" / "patterns"
+        if candidate.is_dir():
+            return candidate
+        current = current.parent
+    return Path.cwd() / ".claude" / "rules" / "patterns"
+
+
 async def seed_pattern_examples(client, force: bool = False) -> dict:
     """Seed Graphiti patterns group with concrete code examples.
 
@@ -53,7 +68,7 @@ async def seed_pattern_examples(client, force: bool = False) -> dict:
         }
 
     # Pattern file paths
-    patterns_dir = Path(".claude/rules/patterns")
+    patterns_dir = _get_patterns_dir()
     pattern_files = {
         "dataclasses": patterns_dir / "dataclasses.md",
         "pydantic-models": patterns_dir / "pydantic-models.md",

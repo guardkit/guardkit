@@ -201,25 +201,33 @@ def _build_rule_episodes(
     return [(base_name, body)]
 
 
-async def seed_rules(client) -> None:
+async def seed_rules(client) -> tuple[int, int]:
     """Seed rule content by reading actual .md files from templates.
 
     Discovers rule files across all templates in .claude/rules/,
     reads their full content, and creates episodes organized by template.
     Files over 10KB are chunked by ## headers for better queryability.
 
+    Rules are batched per-template to reduce circuit breaker exposure.
+    Each template's rules are seeded independently so that failures in
+    one template don't block others.
+
     Args:
         client: GraphitiClient instance
+
+    Returns:
+        Tuple of (total_created, total_skipped) across all templates.
     """
     if not client or not client.enabled:
-        return
+        return (0, 0)
 
     templates_dir = _get_templates_dir()
     if not templates_dir.is_dir():
         logger.warning(f"Templates directory not found: {templates_dir}")
-        return
+        return (0, 0)
 
-    episodes: list[tuple[str, dict[str, Any]]] = []
+    # Group episodes by template for per-template batching
+    episodes_by_template: dict[str, list[tuple[str, dict[str, Any]]]] = {}
 
     for template_entry in sorted(templates_dir.iterdir()):
         if not template_entry.is_dir() or template_entry.name.startswith("."):
@@ -234,11 +242,43 @@ async def seed_rules(client) -> None:
                 continue
 
             rule_episodes = _build_rule_episodes(template_id, rule_file, content)
-            episodes.extend(rule_episodes)
+            if rule_episodes:
+                episodes_by_template.setdefault(template_id, []).extend(rule_episodes)
 
-    if not episodes:
+    if not episodes_by_template:
         logger.warning("No rule files discovered for seeding")
-        return
+        return (0, 0)
 
-    logger.info(f"Seeding {len(episodes)} rule episodes from {templates_dir}")
-    await _add_episodes(client, episodes, "rules", "rules", entity_type="rule")
+    total_episodes = sum(len(eps) for eps in episodes_by_template.values())
+    logger.info(
+        f"Seeding {total_episodes} rule episodes from {len(episodes_by_template)} "
+        f"templates in {templates_dir}"
+    )
+
+    total_created = 0
+    total_skipped = 0
+
+    for template_id, episodes in episodes_by_template.items():
+        # Reset circuit breaker between templates so failures in one
+        # template don't cascade to others
+        if hasattr(client, "reset_circuit_breaker"):
+            client.reset_circuit_breaker()
+
+        group_id = f"rules_{template_id}"
+        category_name = f"rules/{template_id}"
+
+        created, skipped = await _add_episodes(
+            client, episodes, group_id, category_name, entity_type="rule"
+        )
+        total_created += created
+        total_skipped += skipped
+
+        if skipped > 0:
+            logger.warning(
+                f"  rules/{template_id}: {created}/{created + skipped} episodes "
+                f"({skipped} skipped)"
+            )
+        else:
+            logger.info(f"  rules/{template_id}: {created} episodes")
+
+    return (total_created, total_skipped)

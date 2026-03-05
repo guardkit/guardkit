@@ -51,4 +51,4 @@ async def seed_failure_patterns(client) -> None:
         })
     ]
 
-    await _add_episodes(client, episodes, "failure_patterns", "failure patterns", entity_type="failure_pattern")
+    return await _add_episodes(client, episodes, "failure_patterns", "failure patterns", entity_type="failure_pattern")

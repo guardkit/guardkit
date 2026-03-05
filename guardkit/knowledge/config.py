@@ -20,6 +20,7 @@ Environment Variables:
     - LLM_MODEL: LLM model name (e.g., 'Qwen/Qwen3-Coder-30B-A3B')
     - EMBEDDING_PROVIDER: Embedding provider ('openai', 'vllm', 'ollama')
     - EMBEDDING_BASE_URL: Embedding provider base URL (e.g., 'http://host:8001/v1')
+    - MAX_CONCURRENT_EPISODES: Max concurrent episode creation calls during seeding (1-10)
 
     # Deprecated (kept for backwards compatibility):
     - GRAPHITI_HOST: Deprecated - use NEO4J_URI instead
@@ -64,6 +65,7 @@ class GraphitiSettings:
         llm_model: LLM model name (required for vllm/ollama)
         embedding_provider: Embedding provider ('openai', 'vllm', 'ollama')
         embedding_base_url: Embedding provider base URL (required for vllm/ollama)
+        max_concurrent_episodes: Max concurrent episode creation calls during seeding (1-10)
         host: Deprecated - use neo4j_uri instead
         port: Deprecated - use neo4j_uri instead
 
@@ -98,6 +100,8 @@ class GraphitiSettings:
     # Embedding provider settings for vector search
     embedding_provider: str = "openai"    # 'openai' | 'vllm' | 'ollama'
     embedding_base_url: Optional[str] = None  # e.g., 'http://host:8001/v1'
+    # Concurrency control for parallel episode seeding
+    max_concurrent_episodes: int = 3      # Max concurrent episode creation calls (1-10)
     # Deprecated fields for backwards compatibility
     host: str = "localhost"
     port: int = 8000
@@ -135,6 +139,10 @@ class GraphitiSettings:
             raise TypeError(f"embedding_provider must be str, got {type(self.embedding_provider).__name__}")
         if self.embedding_base_url is not None and not isinstance(self.embedding_base_url, str):
             raise TypeError(f"embedding_base_url must be str or None, got {type(self.embedding_base_url).__name__}")
+        if not isinstance(self.max_concurrent_episodes, int) or isinstance(self.max_concurrent_episodes, bool):
+            raise TypeError(f"max_concurrent_episodes must be int, got {type(self.max_concurrent_episodes).__name__}")
+        if self.max_concurrent_episodes < 1 or self.max_concurrent_episodes > 10:
+            raise ValueError(f"max_concurrent_episodes must be between 1 and 10, got {self.max_concurrent_episodes}")
 
         # Convert timeout to float if int
         if isinstance(self.timeout, int):
@@ -352,6 +360,7 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
         'embedding_provider': 'openai',
         'embedding_base_url': None,
         'embedding_model': 'text-embedding-3-small',
+        'max_concurrent_episodes': 3,
         'host': 'localhost',  # Deprecated
         'port': 8000,  # Deprecated
     }
@@ -380,6 +389,7 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
                     'embedding_provider': str,
                     'embedding_base_url': str,
                     'embedding_model': str,
+                    'max_concurrent_episodes': int,
                     'host': str,
                     'port': int,
                 }
@@ -425,6 +435,7 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
         'EMBEDDING_PROVIDER': ('embedding_provider', str),
         'EMBEDDING_BASE_URL': ('embedding_base_url', str),
         'EMBEDDING_MODEL': ('embedding_model', str),
+        'MAX_CONCURRENT_EPISODES': ('max_concurrent_episodes', int),
         # Deprecated env vars (kept for backwards compatibility)
         'GRAPHITI_HOST': ('host', str),
         'GRAPHITI_PORT': ('port', int),

@@ -1,0 +1,108 @@
+{
+  "task_id": "TASK-FIX-77b2",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/knowledge/config.py",
+    "guardkit/knowledge/graphiti_client.py",
+    "guardkit/knowledge/template_sync.py",
+    ".guardkit/graphiti.yaml",
+    "tests/knowledge/test_template_sync.py",
+    "tests/knowledge/test_graphiti_client.py"
+  ],
+  "files_created": [],
+  "tests_written": [
+    "tests/knowledge/test_template_sync.py (TestParallelSeeding class - 7 new tests)",
+    "tests/knowledge/test_graphiti_client.py (TestGraphitiConfig - 8 new tests)"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "132 passed, 4 skipped in 1.98s (4 skipped are @pytest.mark.integration requiring live Graphiti)",
+  "implementation_notes": "Implemented bounded asyncio.gather parallelism for episode seeding within groups. Key changes: (1) Added max_concurrent_episodes field (default=3, range 1-10) to GraphitiSettings dataclass in config.py with full validation, YAML field_types, and env override MAX_CONCURRENT_EPISODES. (2) Added max_concurrent_episodes field (default=3, range >=1) to frozen GraphitiConfig dataclass with type/value validation. (3) Extended _is_transient_error() to detect rate limit errors (429, Rate limit, rate_limit, Too Many Requests). (4) Updated _create_episode() retry backoff to use longer delays (4s/8s) for rate limit errors vs standard (2s/4s) for other transient errors. (5) Added import asyncio to template_sync.py. (6) Added _sync_items_parallel() helper function using asyncio.Semaphore for bounded concurrency with return_exceptions=True in gather. (7) Replaced sequential agent and rule loops in sync_template_to_graphiti() with parallel versions using _sync_items_parallel(). Max concurrent value is safely extracted from client.config.max_concurrent_episodes with isinstance guard to handle AsyncMock in tests. (8) Added max_concurrent_episodes: 3 to .guardkit/graphiti.yaml with documentation comments. No asyncio.Lock added (not needed for single-threaded asyncio). project_seeding.py was NOT modified.",
+  "concerns": [],
+  "requirements_addressed": [
+    "Added max_concurrent_episodes field to GraphitiSettings (config.py) with validation and env override",
+    "Added max_concurrent_episodes field to GraphitiConfig (graphiti_client.py) with validation",
+    "Extended _is_transient_error() to detect rate limit errors (429, Rate limit, rate_limit, Too Many Requests)",
+    "Added rate-limit-aware backoff in _create_episode() (4s/8s for 429 vs 2s/4s for other transient errors)",
+    "Added import asyncio to template_sync.py",
+    "Added _sync_items_parallel() helper with bounded asyncio.Semaphore",
+    "Replaced sequential agent loop with parallel _sync_items_parallel() call",
+    "Replaced sequential rule loop with parallel _sync_items_parallel() call",
+    "Added max_concurrent_episodes: 3 to .guardkit/graphiti.yaml"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Add max_concurrent_episodes: int = 3 to GraphitiSettings in config.py with validation (range 1-10) and env override MAX_CONCURRENT_EPISODES",
+      "status": "complete",
+      "evidence": "Added max_concurrent_episodes: int = 3 field after embedding_base_url. __post_init__ validates type (not bool subclass) and range 1-10. load_graphiti_config() adds default '3' to config_data, 'int' to field_types, and ('max_concurrent_episodes', int) to env_overrides.",
+      "test_file": "tests/knowledge/test_graphiti_client.py",
+      "implementation_files": ["guardkit/knowledge/config.py"]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Add max_concurrent_episodes: int = 3 to GraphitiConfig frozen dataclass with validation (>= 1)",
+      "status": "complete",
+      "evidence": "Added max_concurrent_episodes: int = 3 field after embedding_model. __post_init__ validates type (not bool subclass) and value >= 1.",
+      "test_file": "tests/knowledge/test_graphiti_client.py",
+      "implementation_files": ["guardkit/knowledge/graphiti_client.py"]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Extend _is_transient_error() to detect rate limit errors",
+      "status": "complete",
+      "evidence": "Added four additional OR clauses: 'Rate limit' in error_str, 'rate_limit' in error_str, '429' in error_str, 'Too Many Requests' in error_str.",
+      "test_file": "tests/knowledge/test_graphiti_client.py",
+      "implementation_files": ["guardkit/knowledge/graphiti_client.py"]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Add rate-limit-aware backoff in _create_episode() (4s/8s for rate limits vs 2s/4s for other transient errors)",
+      "status": "complete",
+      "evidence": "Replaced the single 'delay = 2 ** (attempt + 1)' line with conditional: if 429/Rate limit/rate_limit in error_str, delay = 2 ** (attempt + 2) (4s, 8s); else delay = 2 ** (attempt + 1) (2s, 4s).",
+      "test_file": null,
+      "implementation_files": ["guardkit/knowledge/graphiti_client.py"]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Add _sync_items_parallel() helper to template_sync.py with bounded asyncio.Semaphore",
+      "status": "complete",
+      "evidence": "Added _sync_items_parallel() after _extract_rule_content(). Uses asyncio.Semaphore(max_concurrent), asyncio.gather with return_exceptions=True. Returns (success_count, warning_count) tuple. Handles empty list, success, False return, and exceptions correctly.",
+      "test_file": "tests/knowledge/test_template_sync.py",
+      "implementation_files": ["guardkit/knowledge/template_sync.py"]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Replace sequential agent loop in sync_template_to_graphiti() with parallel _sync_items_parallel() call",
+      "status": "complete",
+      "evidence": "Replaced the for-loop over agent_dirs/agent_files with collect-then-parallel pattern. max_concurrent is extracted from client.config.max_concurrent_episodes with isinstance guard to safely handle mock objects.",
+      "test_file": "tests/knowledge/test_template_sync.py",
+      "implementation_files": ["guardkit/knowledge/template_sync.py"]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Replace sequential rule loop in sync_template_to_graphiti() with parallel _sync_items_parallel() call",
+      "status": "complete",
+      "evidence": "Replaced the for-loop over rules_dir.rglob('*.md') with collect-then-parallel pattern using the same max_concurrent extracted from client config.",
+      "test_file": "tests/knowledge/test_template_sync.py",
+      "implementation_files": ["guardkit/knowledge/template_sync.py"]
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "Add max_concurrent_episodes: 3 to .guardkit/graphiti.yaml with documentation",
+      "status": "complete",
+      "evidence": "Added after the 'timeout: 30.0' line with a comment block explaining range (1-10) and purpose.",
+      "test_file": null,
+      "implementation_files": [".guardkit/graphiti.yaml"]
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "Do NOT add asyncio.Lock to circuit breaker and do NOT modify project_seeding.py",
+      "status": "complete",
+      "evidence": "No Lock was added anywhere. project_seeding.py was not touched. Only the four specified files were modified.",
+      "test_file": null,
+      "implementation_files": []
+    }
+  ]
+}

@@ -31,6 +31,7 @@ try:
         sync_rule_to_graphiti,
         extract_agent_metadata,
     )
+    from guardkit.integrations.graphiti.upsert_result import UpsertResult
     IMPORTS_AVAILABLE = True
 except ImportError:
     IMPORTS_AVAILABLE = False
@@ -41,6 +42,11 @@ pytestmark = pytest.mark.skipif(
     not IMPORTS_AVAILABLE,
     reason="Implementation not yet created (TDD RED phase)"
 )
+
+
+def _mock_upsert_created():
+    """Create a mock UpsertResult for 'created' action."""
+    return UpsertResult.created(episode={"uuid": "episode_id"}, uuid="episode_id")
 
 
 # ============================================================================
@@ -70,7 +76,7 @@ class TestGracefulDegradation:
             assert result is False
 
             # Should not attempt to add episodes
-            mock_client.add_episode.assert_not_called()
+            mock_client.upsert_episode.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_sync_template_no_client(self, tmp_path):
@@ -96,7 +102,7 @@ class TestGracefulDegradation:
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_agent_to_graphiti(agent_path, "test-template")
             assert result is False
-            mock_client.add_episode.assert_not_called()
+            mock_client.upsert_episode.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_sync_rule_disabled_client(self, tmp_path):
@@ -110,7 +116,7 @@ class TestGracefulDegradation:
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_rule_to_graphiti(rule_path, "test-template")
             assert result is False
-            mock_client.add_episode.assert_not_called()
+            mock_client.upsert_episode.assert_not_called()
 
 
 # ============================================================================
@@ -133,7 +139,7 @@ class TestMissingFileHandling:
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_template_to_graphiti(template_path)
@@ -195,16 +201,16 @@ class TestTemplateSync:
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_template_to_graphiti(template_path)
 
             assert result is True
-            mock_client.add_episode.assert_called()
+            mock_client.upsert_episode.assert_called()
 
             # Verify episode content
-            call_args = mock_client.add_episode.call_args
+            call_args = mock_client.upsert_episode.call_args
             assert call_args.kwargs['group_id'] == 'templates'
             assert 'fastapi-python' in call_args.kwargs['name']
 
@@ -239,14 +245,14 @@ Test content.
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_template_to_graphiti(template_path)
             assert result is True
 
-            # Should have called add_episode at least twice (template + agent)
-            assert mock_client.add_episode.call_count >= 2
+            # Should have called upsert_episode at least twice (template + agent)
+            assert mock_client.upsert_episode.call_count >= 2
 
     @pytest.mark.asyncio
     async def test_sync_template_uses_correct_group_id(self, tmp_path):
@@ -258,13 +264,13 @@ Test content.
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             await sync_template_to_graphiti(template_path)
 
             # First call should be for template with 'templates' group_id
-            call_args = mock_client.add_episode.call_args_list[0]
+            call_args = mock_client.upsert_episode.call_args_list[0]
             assert call_args.kwargs['group_id'] == 'templates'
 
     @pytest.mark.asyncio
@@ -284,22 +290,22 @@ Test content.
 
         captured_body = None
 
-        async def capture_episode(name, episode_body, group_id, **kwargs):
+        async def capture_episode(**kwargs):
             nonlocal captured_body
-            if group_id == 'templates':
-                captured_body = episode_body
-            return "episode_id"
+            if kwargs.get('group_id') == 'templates':
+                captured_body = kwargs.get('episode_body')
+            return _mock_upsert_created()
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = capture_episode
+        mock_client.upsert_episode = capture_episode
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             await sync_template_to_graphiti(template_path)
 
             # Verify episode body contains expected fields
             assert captured_body is not None
-            # episode_body is still a string in graphiti_client.add_episode
+            # episode_body is still a string in graphiti_client.upsert_episode
             body_data = json.loads(captured_body)
             assert body_data['entity_type'] == 'template'
             assert body_data['name'] == 'test-template'
@@ -341,15 +347,15 @@ You are a FastAPI specialist.
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_agent_to_graphiti(agent_path, "fastapi-python")
 
             assert result is True
-            mock_client.add_episode.assert_called_once()
+            mock_client.upsert_episode.assert_called_once()
 
-            call_args = mock_client.add_episode.call_args
+            call_args = mock_client.upsert_episode.call_args
             assert call_args.kwargs['group_id'] == 'agents'
             assert 'fastapi-specialist' in call_args.kwargs['name']
 
@@ -371,14 +377,14 @@ capabilities:
 
         captured_body = None
 
-        async def capture_episode(name, episode_body, group_id, **kwargs):
+        async def capture_episode(**kwargs):
             nonlocal captured_body
-            captured_body = episode_body
-            return "episode_id"
+            captured_body = kwargs.get('episode_body')
+            return _mock_upsert_created()
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = capture_episode
+        mock_client.upsert_episode = capture_episode
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             await sync_agent_to_graphiti(agent_path, "test-template")
@@ -402,14 +408,14 @@ description: Test agent
 
         captured_body = None
 
-        async def capture_episode(name, episode_body, group_id, **kwargs):
+        async def capture_episode(**kwargs):
             nonlocal captured_body
-            captured_body = episode_body
-            return "episode_id"
+            captured_body = kwargs.get('episode_body')
+            return _mock_upsert_created()
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = capture_episode
+        mock_client.upsert_episode = capture_episode
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             await sync_agent_to_graphiti(agent_path, "my-template")
@@ -442,15 +448,15 @@ Use PascalCase for classes.
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_rule_to_graphiti(rule_path, "fastapi-python")
 
             assert result is True
-            mock_client.add_episode.assert_called_once()
+            mock_client.upsert_episode.assert_called_once()
 
-            call_args = mock_client.add_episode.call_args
+            call_args = mock_client.upsert_episode.call_args
             assert call_args.kwargs['group_id'] == 'rules'
 
     @pytest.mark.asyncio
@@ -469,14 +475,14 @@ Write tests for all public functions.
 
         captured_body = None
 
-        async def capture_episode(name, episode_body, group_id, **kwargs):
+        async def capture_episode(**kwargs):
             nonlocal captured_body
-            captured_body = episode_body
-            return "episode_id"
+            captured_body = kwargs.get('episode_body')
+            return _mock_upsert_created()
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = capture_episode
+        mock_client.upsert_episode = capture_episode
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             await sync_rule_to_graphiti(rule_path, "test-template")
@@ -617,8 +623,8 @@ class TestErrorHandling:
     """Test error handling in sync operations."""
 
     @pytest.mark.asyncio
-    async def test_sync_template_handles_add_episode_failure(self, tmp_path):
-        """Test sync_template_to_graphiti handles add_episode failure gracefully."""
+    async def test_sync_template_handles_upsert_episode_failure(self, tmp_path):
+        """Test sync_template_to_graphiti handles upsert_episode failure gracefully."""
         template_path = tmp_path / "test-template"
         template_path.mkdir()
         manifest = {"name": "test-template"}
@@ -626,7 +632,7 @@ class TestErrorHandling:
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(side_effect=Exception("API Error"))
+        mock_client.upsert_episode = AsyncMock(side_effect=Exception("API Error"))
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             # Should handle exception gracefully
@@ -647,7 +653,7 @@ class TestErrorHandling:
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_template_to_graphiti(template_path)
@@ -682,45 +688,45 @@ class TestErrorHandling:
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_agent_to_graphiti(agent_path, "test-template")
             assert result is False
-            mock_client.add_episode.assert_not_called()
+            mock_client.upsert_episode.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_sync_agent_add_episode_failure(self, tmp_path):
-        """Test sync_agent_to_graphiti handles add_episode failure."""
+    async def test_sync_agent_upsert_episode_failure(self, tmp_path):
+        """Test sync_agent_to_graphiti handles upsert_episode failure."""
         agent_path = tmp_path / "test-agent.md"
         agent_path.write_text("---\nname: test\ndescription: Test\n---\n# Test")
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(side_effect=Exception("API Error"))
+        mock_client.upsert_episode = AsyncMock(side_effect=Exception("API Error"))
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_agent_to_graphiti(agent_path, "test-template")
             assert result is False
 
     @pytest.mark.asyncio
-    async def test_sync_agent_add_episode_returns_none(self, tmp_path):
-        """Test sync_agent_to_graphiti returns False when add_episode returns None."""
+    async def test_sync_agent_upsert_episode_returns_none(self, tmp_path):
+        """Test sync_agent_to_graphiti returns False when upsert_episode returns None."""
         agent_path = tmp_path / "test-agent.md"
         agent_path.write_text("---\nname: test\ndescription: Test\n---\n# Test")
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value=None)
+        mock_client.upsert_episode = AsyncMock(return_value=None)
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_agent_to_graphiti(agent_path, "test-template")
             assert result is False
 
     @pytest.mark.asyncio
-    async def test_sync_rule_add_episode_returns_none(self, tmp_path):
-        """Test sync_rule_to_graphiti returns False when add_episode returns None."""
+    async def test_sync_rule_upsert_episode_returns_none(self, tmp_path):
+        """Test sync_rule_to_graphiti returns False when upsert_episode returns None."""
         rule_path = tmp_path / "test-rule.md"
         rule_path.write_text("---\npaths: src/**\n---\n# Rule Content")
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value=None)
+        mock_client.upsert_episode = AsyncMock(return_value=None)
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_rule_to_graphiti(rule_path, "test-template")
@@ -751,14 +757,14 @@ class TestErrorHandling:
                 assert result is False
 
     @pytest.mark.asyncio
-    async def test_sync_rule_add_episode_failure(self, tmp_path):
-        """Test sync_rule_to_graphiti handles add_episode failure."""
+    async def test_sync_rule_upsert_episode_failure(self, tmp_path):
+        """Test sync_rule_to_graphiti handles upsert_episode failure."""
         rule_path = tmp_path / "test-rule.md"
         rule_path.write_text("---\npaths: src/**\n---\n# Rule Content")
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(side_effect=Exception("API Error"))
+        mock_client.upsert_episode = AsyncMock(side_effect=Exception("API Error"))
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_rule_to_graphiti(rule_path, "test-template")
@@ -782,14 +788,14 @@ Content here.
 
         captured_body = None
 
-        async def capture_episode(name, episode_body, group_id, **kwargs):
+        async def capture_episode(**kwargs):
             nonlocal captured_body
-            captured_body = episode_body
-            return "episode_id"
+            captured_body = kwargs.get('episode_body')
+            return _mock_upsert_created()
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = capture_episode
+        mock_client.upsert_episode = capture_episode
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_rule_to_graphiti(rule_path, "test-template")
@@ -813,14 +819,14 @@ Content here.
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_template_to_graphiti(template_path)
             assert result is True
 
             # Check that extended agent was not synced
-            call_names = [call.kwargs.get('name', '') for call in mock_client.add_episode.call_args_list]
+            call_names = [call.kwargs.get('name', '') for call in mock_client.upsert_episode.call_args_list]
             assert not any('extended' in name for name in call_names)
 
     @pytest.mark.asyncio
@@ -838,14 +844,14 @@ Content here.
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_template_to_graphiti(template_path)
             assert result is True
 
             # Check that rule was synced (should have at least 2 calls: template + rule)
-            assert mock_client.add_episode.call_count >= 2
+            assert mock_client.upsert_episode.call_count >= 2
 
     @pytest.mark.asyncio
     async def test_sync_template_handles_agent_sync_failure(self, tmp_path):
@@ -864,7 +870,7 @@ Content here.
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_template_to_graphiti(template_path)
@@ -877,11 +883,11 @@ Content here.
 # ============================================================================
 
 class TestFullContentIngestion:
-    """Test that rule and agent sync includes full content, not just previews."""
+    """Test that rule and agent sync includes content with chunking support."""
 
     @pytest.mark.asyncio
     async def test_rule_sync_excludes_full_content(self, tmp_path):
-        """AC: Rule body uses content_preview only, no full_content (reduces entity extraction)."""
+        """AC: Rule body uses content_preview (500 char limit), no full_content field."""
         rule_path = tmp_path / "long-rule.md"
         # Create rule content that exceeds 500 chars
         long_content = "# Long Rule\n\n" + ("This is detailed rule guidance. " * 50)
@@ -890,43 +896,47 @@ class TestFullContentIngestion:
 
         captured_body = None
 
-        async def capture_episode(name, episode_body, group_id, **kwargs):
+        async def capture_episode(**kwargs):
             nonlocal captured_body
-            captured_body = episode_body
-            return "episode_id"
+            captured_body = kwargs.get('episode_body')
+            return _mock_upsert_created()
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = capture_episode
+        mock_client.upsert_episode = capture_episode
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_rule_to_graphiti(rule_path, "test-template")
 
             assert result is True
             body_data = json.loads(captured_body)
-            # full_content removed to reduce entity extraction work
+            # full_content and main_content fields do not exist
             assert 'full_content' not in body_data
-            # content_preview retained for search display
+            assert 'main_content' not in body_data
+            # content_preview field holds truncated content (500 chars max)
             assert 'content_preview' in body_data
-            assert len(body_data['content_preview']) == 500
+            assert len(body_data['content_preview']) <= 500
+            # chunk metadata present
+            assert 'chunk_index' in body_data
+            assert 'total_chunks' in body_data
 
     @pytest.mark.asyncio
     async def test_rule_sync_short_content_has_preview_only(self, tmp_path):
-        """Short rules get content_preview but no full_content."""
+        """Short rules include content_preview with single chunk metadata."""
         rule_path = tmp_path / "short-rule.md"
         rule_content = "---\npaths: src/**\n---\n# Short Rule\n\nBrief guidance."
         rule_path.write_text(rule_content)
 
         captured_body = None
 
-        async def capture_episode(name, episode_body, group_id, **kwargs):
+        async def capture_episode(**kwargs):
             nonlocal captured_body
-            captured_body = episode_body
-            return "episode_id"
+            captured_body = kwargs.get('episode_body')
+            return _mock_upsert_created()
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = capture_episode
+        mock_client.upsert_episode = capture_episode
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_rule_to_graphiti(rule_path, "test-template")
@@ -934,7 +944,11 @@ class TestFullContentIngestion:
             assert result is True
             body_data = json.loads(captured_body)
             assert 'full_content' not in body_data
+            assert 'main_content' not in body_data
+            # Short content is a single chunk with content_preview
             assert 'content_preview' in body_data
+            assert body_data['chunk_index'] == 1
+            assert body_data['total_chunks'] == 1
 
     @pytest.mark.asyncio
     async def test_agent_sync_excludes_body_content_uses_preview(self, tmp_path):
@@ -965,14 +979,14 @@ Follow SOLID principles and ensure all code is well-documented.
 
         captured_body = None
 
-        async def capture_episode(name, episode_body, group_id, **kwargs):
+        async def capture_episode(**kwargs):
             nonlocal captured_body
-            captured_body = episode_body
-            return "episode_id"
+            captured_body = kwargs.get('episode_body')
+            return _mock_upsert_created()
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = capture_episode
+        mock_client.upsert_episode = capture_episode
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_agent_to_graphiti(agent_path, "test-template")
@@ -1008,7 +1022,7 @@ class TestTemplateSyncWithoutManifest:
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_template_to_graphiti(template_path)
@@ -1016,7 +1030,7 @@ class TestTemplateSyncWithoutManifest:
             # Should return True even without manifest
             assert result is True
             # Should still sync agents
-            assert mock_client.add_episode.call_count >= 1
+            assert mock_client.upsert_episode.call_count >= 1
 
     @pytest.mark.asyncio
     async def test_sync_template_without_manifest_syncs_rules(self, tmp_path):
@@ -1033,13 +1047,13 @@ class TestTemplateSyncWithoutManifest:
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_template_to_graphiti(template_path)
 
             assert result is True
-            assert mock_client.add_episode.call_count >= 1
+            assert mock_client.upsert_episode.call_count >= 1
 
     @pytest.mark.asyncio
     async def test_sync_template_without_manifest_no_content_returns_true(self, tmp_path):
@@ -1049,7 +1063,7 @@ class TestTemplateSyncWithoutManifest:
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_template_to_graphiti(template_path)
@@ -1080,14 +1094,14 @@ class TestAgentDirectoryResolution:
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_template_to_graphiti(template_path)
 
             assert result is True
             # Should have synced template + agent
-            assert mock_client.add_episode.call_count >= 2
+            assert mock_client.upsert_episode.call_count >= 2
 
     @pytest.mark.asyncio
     async def test_sync_template_checks_both_agent_dirs(self, tmp_path):
@@ -1112,14 +1126,14 @@ class TestAgentDirectoryResolution:
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_template_to_graphiti(template_path)
 
             assert result is True
             # Should have synced template + 2 agents
-            assert mock_client.add_episode.call_count >= 3
+            assert mock_client.upsert_episode.call_count >= 3
 
 
 # ============================================================================
@@ -1139,14 +1153,14 @@ class TestReuseConnectedClient:
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         # Pass client directly — get_graphiti should NOT be called
         with patch('guardkit.knowledge.template_sync.get_graphiti') as mock_get:
             result = await sync_template_to_graphiti(template_path, client=mock_client)
 
             assert result is True
-            mock_client.add_episode.assert_called()
+            mock_client.upsert_episode.assert_called()
             mock_get.assert_not_called()
 
     @pytest.mark.asyncio
@@ -1159,7 +1173,7 @@ class TestReuseConnectedClient:
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client) as mock_get:
             result = await sync_template_to_graphiti(template_path)
@@ -1175,13 +1189,13 @@ class TestReuseConnectedClient:
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti') as mock_get:
             result = await sync_agent_to_graphiti(agent_path, "template-id", client=mock_client)
 
             assert result is True
-            mock_client.add_episode.assert_called_once()
+            mock_client.upsert_episode.assert_called_once()
             mock_get.assert_not_called()
 
     @pytest.mark.asyncio
@@ -1192,13 +1206,13 @@ class TestReuseConnectedClient:
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti') as mock_get:
             result = await sync_rule_to_graphiti(rule_path, "template-id", client=mock_client)
 
             assert result is True
-            mock_client.add_episode.assert_called_once()
+            mock_client.upsert_episode.assert_called_once()
             mock_get.assert_not_called()
 
     @pytest.mark.asyncio
@@ -1224,7 +1238,7 @@ class TestReuseConnectedClient:
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         # get_graphiti should never be called since we pass client directly
         with patch('guardkit.knowledge.template_sync.get_graphiti') as mock_get:
@@ -1232,7 +1246,7 @@ class TestReuseConnectedClient:
 
             assert result is True
             # Should have 3 calls: template + agent + rule
-            assert mock_client.add_episode.call_count == 3
+            assert mock_client.upsert_episode.call_count == 3
             mock_get.assert_not_called()
 
 
@@ -1337,7 +1351,7 @@ class TestSummaryLogging:
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             with patch('guardkit.knowledge.template_sync.logger') as mock_logger:
@@ -1372,7 +1386,7 @@ class TestSummaryLogging:
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             with patch('guardkit.knowledge.template_sync.logger') as mock_logger:
@@ -1398,7 +1412,7 @@ class TestSummaryLogging:
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             with patch('guardkit.knowledge.template_sync.logger') as mock_logger:
@@ -1424,7 +1438,7 @@ class TestSummaryLogging:
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             with patch('guardkit.knowledge.template_sync.logger') as mock_logger:
@@ -1448,7 +1462,7 @@ class TestSummaryLogging:
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             with patch('guardkit.knowledge.template_sync.logger') as mock_logger:
@@ -1490,14 +1504,14 @@ class TestFalkorDBLoggerSuppression:
 
         async def capture_level(*args, **kwargs):
             captured_levels.append(falkordb_logger.level)
-            return "episode_id"
+            return _mock_upsert_created()
 
-        mock_client.add_episode = AsyncMock(side_effect=capture_level)
+        mock_client.upsert_episode = AsyncMock(side_effect=capture_level)
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             await sync_template_to_graphiti(template_path)
 
-        # Logger should have been WARNING during the sync (no add_episode calls
+        # Logger should have been WARNING during the sync (no upsert_episode calls
         # for this template since no manifest, but level should still restore)
         assert falkordb_logger.level == logging.DEBUG
 
@@ -1516,7 +1530,7 @@ class TestFalkorDBLoggerSuppression:
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(side_effect=Exception("connection lost"))
+        mock_client.upsert_episode = AsyncMock(side_effect=Exception("connection lost"))
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             result = await sync_template_to_graphiti(template_path)
@@ -1527,7 +1541,7 @@ class TestFalkorDBLoggerSuppression:
 
     @pytest.mark.asyncio
     async def test_falkordb_logger_at_warning_during_episode_add(self, tmp_path):
-        """During add_episode calls the FalkorDB logger is at WARNING level."""
+        """During upsert_episode calls the FalkorDB logger is at WARNING level."""
         import logging
 
         template_path = tmp_path / "test-template"
@@ -1543,11 +1557,11 @@ class TestFalkorDBLoggerSuppression:
         async def observe_level(*args, **kwargs):
             nonlocal observed_level
             observed_level = falkordb_logger.level
-            return "episode_id"
+            return _mock_upsert_created()
 
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(side_effect=observe_level)
+        mock_client.upsert_episode = AsyncMock(side_effect=observe_level)
 
         with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
             await sync_template_to_graphiti(template_path)
@@ -1555,3 +1569,207 @@ class TestFalkorDBLoggerSuppression:
         assert observed_level == logging.WARNING
         # Restored after sync
         assert falkordb_logger.level == logging.DEBUG
+
+
+# ============================================================================
+# TASK-FIX-77b2: Parallel Seeding Tests
+# ============================================================================
+
+class TestParallelSeeding:
+    """Test _sync_items_parallel helper and parallel episode seeding in sync_template_to_graphiti."""
+
+    @pytest.mark.asyncio
+    async def test_sync_items_parallel_empty_list(self):
+        """_sync_items_parallel with empty list returns (0, 0) without calling sync_fn."""
+        from guardkit.knowledge.template_sync import _sync_items_parallel
+
+        mock_sync_fn = AsyncMock(return_value=True)
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+
+        result = await _sync_items_parallel(
+            items=[],
+            sync_fn=mock_sync_fn,
+            template_id="test",
+            client=mock_client,
+        )
+
+        assert result == (0, 0)
+        mock_sync_fn.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_sync_items_parallel_all_success(self, tmp_path):
+        """_sync_items_parallel returns correct success count when all items succeed."""
+        from guardkit.knowledge.template_sync import _sync_items_parallel
+
+        # Create 3 dummy files
+        files = []
+        for i in range(3):
+            f = tmp_path / f"agent-{i}.md"
+            f.write_text(f"---\nname: agent-{i}\n---\n# Agent {i}")
+            files.append(f)
+
+        mock_sync_fn = AsyncMock(return_value=True)
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+
+        success_count, warning_count = await _sync_items_parallel(
+            items=files,
+            sync_fn=mock_sync_fn,
+            template_id="test",
+            client=mock_client,
+            max_concurrent=2,
+            item_type="agent",
+        )
+
+        assert success_count == 3
+        assert warning_count == 0
+        assert mock_sync_fn.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_sync_items_parallel_partial_failure(self, tmp_path):
+        """_sync_items_parallel counts exceptions as warnings, not successes."""
+        from guardkit.knowledge.template_sync import _sync_items_parallel
+
+        files = []
+        for i in range(3):
+            f = tmp_path / f"item-{i}.md"
+            f.write_text("content")
+            files.append(f)
+
+        call_count = 0
+
+        async def flaky_sync(path, template_id, client=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                raise RuntimeError("transient error")
+            return True
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+
+        success_count, warning_count = await _sync_items_parallel(
+            items=files,
+            sync_fn=flaky_sync,
+            template_id="test",
+            client=mock_client,
+            max_concurrent=3,
+            item_type="rule",
+        )
+
+        assert success_count == 2
+        assert warning_count == 1
+
+    @pytest.mark.asyncio
+    async def test_sync_items_parallel_false_return_not_counted(self, tmp_path):
+        """_sync_items_parallel does not count False returns as successes or warnings."""
+        from guardkit.knowledge.template_sync import _sync_items_parallel
+
+        files = []
+        for i in range(2):
+            f = tmp_path / f"item-{i}.md"
+            f.write_text("content")
+            files.append(f)
+
+        # sync_fn returning False (e.g., no metadata)
+        mock_sync_fn = AsyncMock(return_value=False)
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+
+        success_count, warning_count = await _sync_items_parallel(
+            items=files,
+            sync_fn=mock_sync_fn,
+            template_id="test",
+            client=mock_client,
+        )
+
+        assert success_count == 0
+        assert warning_count == 0
+
+    @pytest.mark.asyncio
+    async def test_sync_items_parallel_respects_semaphore(self, tmp_path):
+        """_sync_items_parallel never exceeds max_concurrent simultaneous calls."""
+        import asyncio
+        from guardkit.knowledge.template_sync import _sync_items_parallel
+
+        max_concurrent = 2
+        concurrent_peak = 0
+        active = 0
+
+        files = []
+        for i in range(5):
+            f = tmp_path / f"item-{i}.md"
+            f.write_text("content")
+            files.append(f)
+
+        async def count_concurrent(path, template_id, client=None):
+            nonlocal concurrent_peak, active
+            active += 1
+            concurrent_peak = max(concurrent_peak, active)
+            await asyncio.sleep(0)  # Yield to event loop
+            active -= 1
+            return True
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+
+        await _sync_items_parallel(
+            items=files,
+            sync_fn=count_concurrent,
+            template_id="test",
+            client=mock_client,
+            max_concurrent=max_concurrent,
+        )
+
+        assert concurrent_peak <= max_concurrent
+
+    @pytest.mark.asyncio
+    async def test_sync_template_uses_max_concurrent_from_config(self, tmp_path):
+        """sync_template_to_graphiti reads max_concurrent_episodes from client.config."""
+        from unittest.mock import Mock
+
+        template_path = tmp_path / "test-template"
+        template_path.mkdir()
+        manifest = {"name": "test-template", "language": "Python"}
+        (template_path / "manifest.json").write_text(json.dumps(manifest))
+
+        agents_dir = template_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "agent-a.md").write_text(
+            "---\nname: agent-a\ndescription: Agent A\n---\n# Agent A"
+        )
+
+        # Create a mock client with a real config-like object that has max_concurrent_episodes=1
+        mock_config = Mock()
+        mock_config.max_concurrent_episodes = 1
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.config = mock_config
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
+            result = await sync_template_to_graphiti(template_path, client=mock_client)
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_sync_template_defaults_to_3_when_no_config(self, tmp_path):
+        """sync_template_to_graphiti defaults max_concurrent to 3 when client has no config."""
+        template_path = tmp_path / "test-template"
+        template_path.mkdir()
+        manifest = {"name": "test-template", "language": "Python"}
+        (template_path / "manifest.json").write_text(json.dumps(manifest))
+
+        # Client with no config attribute at all
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        del mock_client.config  # Remove the auto-generated config attribute
+        mock_client.upsert_episode = AsyncMock(return_value=_mock_upsert_created())
+
+        with patch('guardkit.knowledge.template_sync.get_graphiti', return_value=mock_client):
+            # Should not raise — defaults to 3
+            result = await sync_template_to_graphiti(template_path)
+
+        assert result is True

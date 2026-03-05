@@ -67,4 +67,4 @@ async def seed_component_status(client) -> None:
         })
     ]
 
-    await _add_episodes(client, episodes, "component_status", "component status", entity_type="component_status")
+    return await _add_episodes(client, episodes, "component_status", "component status", entity_type="component_status")
