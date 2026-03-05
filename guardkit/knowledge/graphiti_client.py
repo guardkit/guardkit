@@ -972,8 +972,8 @@ class GraphitiClient:
         max_retries = 3
         if group_id.endswith("project_overview"):
             episode_timeout = 300.0   # Was 240s; project_architecture hit ceiling
-        elif group_id == "rules":
-            episode_timeout = 180.0   # Working for 10/12 rules
+        elif "rules" in group_id:
+            episode_timeout = 180.0   # Matches bare "rules" and per-template "rules_fastapi_python"
         elif group_id == "role_constraints":
             episode_timeout = 150.0   # Coach at 120s needs ~130s with growth
         elif group_id == "agents":

@@ -803,6 +803,95 @@ class TestGraphitiClientAddEpisode:
             assert captured_timeouts[-1] == 120.0
 
     @pytest.mark.asyncio
+    async def test_timeout_tier_rules_per_template_group_id(self):
+        """Test that per-template rules group_ids get 180s timeout (TASK-FIX-7595).
+
+        After TASK-SPR-18fc, seed_rules uses per-template group_ids like
+        'guardkit__rules_fastapi_python' instead of bare 'rules'.
+        These must still match the 180s timeout tier.
+        """
+        import asyncio as _asyncio
+
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        mock_episode = MagicMock()
+        mock_episode.uuid = "episode-uuid"
+        mock_result = MagicMock()
+        mock_result.episode = mock_episode
+
+        mock_graphiti = MagicMock()
+        mock_graphiti.add_episode = AsyncMock(return_value=mock_result)
+        client._graphiti = mock_graphiti
+
+        mock_episode_type = MagicMock()
+        mock_episode_type.text = "text"
+        mock_nodes_module = MagicMock(EpisodeType=mock_episode_type)
+
+        captured_timeouts = []
+        original_wait_for = _asyncio.wait_for
+
+        async def capturing_wait_for(coro, *, timeout):
+            captured_timeouts.append(timeout)
+            return await original_wait_for(coro, timeout=timeout)
+
+        with patch.dict('sys.modules', {'graphiti_core.nodes': mock_nodes_module}), \
+             patch('guardkit.knowledge.graphiti_client.asyncio.wait_for', side_effect=capturing_wait_for):
+            # Prefixed per-template group_id (after _apply_group_prefix)
+            await client._create_episode(
+                name="Rule Episode",
+                episode_body="Content",
+                group_id="guardkit__rules_fastapi_python"
+            )
+            assert captured_timeouts[-1] == 180.0
+
+            # Unprefixed per-template group_id (before _apply_group_prefix)
+            captured_timeouts.clear()
+            await client._create_episode(
+                name="Rule Episode",
+                episode_body="Content",
+                group_id="rules_react_typescript"
+            )
+            assert captured_timeouts[-1] == 180.0
+
+    @pytest.mark.asyncio
+    async def test_timeout_tier_rules_bare_group_id(self):
+        """Regression guard: bare 'rules' group_id still gets 180s (TASK-FIX-7595)."""
+        import asyncio as _asyncio
+
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        mock_episode = MagicMock()
+        mock_episode.uuid = "episode-uuid"
+        mock_result = MagicMock()
+        mock_result.episode = mock_episode
+
+        mock_graphiti = MagicMock()
+        mock_graphiti.add_episode = AsyncMock(return_value=mock_result)
+        client._graphiti = mock_graphiti
+
+        mock_episode_type = MagicMock()
+        mock_episode_type.text = "text"
+        mock_nodes_module = MagicMock(EpisodeType=mock_episode_type)
+
+        captured_timeouts = []
+        original_wait_for = _asyncio.wait_for
+
+        async def capturing_wait_for(coro, *, timeout):
+            captured_timeouts.append(timeout)
+            return await original_wait_for(coro, timeout=timeout)
+
+        with patch.dict('sys.modules', {'graphiti_core.nodes': mock_nodes_module}), \
+             patch('guardkit.knowledge.graphiti_client.asyncio.wait_for', side_effect=capturing_wait_for):
+            await client._create_episode(
+                name="Rule Episode",
+                episode_body="Content",
+                group_id="rules"
+            )
+            assert captured_timeouts[-1] == 180.0
+
+    @pytest.mark.asyncio
     async def test_add_episode_graceful_degradation_on_error(self):
         """Test add_episode returns None on error (graceful degradation)."""
         config = GraphitiConfig(enabled=True)
