@@ -971,13 +971,13 @@ class GraphitiClient:
 
         max_retries = 3
         if group_id.endswith("project_overview"):
-            episode_timeout = 300.0   # Was 240s; project_architecture hit ceiling
+            episode_timeout = 600.0   # Was 300s; project_purpose consistently hits 300s ceiling (TASK-FIX-cc7e)
         elif "rules" in group_id:
             episode_timeout = 180.0   # Matches bare "rules" and per-template "rules_fastapi_python"
         elif group_id == "role_constraints":
             episode_timeout = 150.0   # Coach at 120s needs ~130s with growth
         elif group_id == "agents":
-            episode_timeout = 150.0   # testing-specialist at 120s needs ~130s
+            episode_timeout = 240.0   # 9/18 agents timeout at 150s; raise to recover 150-240s range (TASK-FIX-303e)
         elif group_id == "templates":
             episode_timeout = 180.0   # template manifests need 111-150s on clean graph
         else:
@@ -998,6 +998,19 @@ class GraphitiClient:
                     ),
                     timeout=episode_timeout,
                 )
+
+                # Log episode profiling stats from graphiti-core result
+                if result:
+                    nodes_count = len(result.nodes) if hasattr(result, 'nodes') and result.nodes else 0
+                    edges_count = len(result.edges) if hasattr(result, 'edges') and result.edges else 0
+                    invalidated = sum(
+                        1 for e in (result.edges or [])
+                        if hasattr(e, 'expired') and e.expired
+                    ) if hasattr(result, 'edges') and result.edges else 0
+                    logger.info(
+                        "Episode profile [%s]: nodes=%d, edges=%d, invalidated=%d",
+                        name, nodes_count, edges_count, invalidated,
+                    )
 
                 # Return the episode UUID
                 if result and hasattr(result, 'episode') and result.episode:
@@ -1425,6 +1438,78 @@ class GraphitiClient:
         except Exception as e:
             logger.warning(f"Graphiti episode_exists failed: {e}")
             return ExistsResult.not_found()
+
+    # =========================================================================
+    # GRAPH STATS METHOD
+    # =========================================================================
+
+    async def graph_stats(self) -> Dict[str, Any]:
+        """Get graph topology statistics for performance investigation.
+
+        Returns entity counts, edge counts, and episode counts per group
+        for comparing graph density between runs.
+
+        Returns:
+            Dictionary with keys: entity_count, edge_count, episode_count,
+            episodes_per_group, and density metrics. Empty dict on error.
+        """
+        if not self._graphiti or not self._connected:
+            return {}
+
+        try:
+            driver = getattr(self._graphiti, 'driver', None)
+            if not driver:
+                return {}
+
+            stats: Dict[str, Any] = {}
+
+            # Count entity nodes
+            result = await driver.execute_query(
+                "MATCH (n:Entity) RETURN count(n) AS count"
+            )
+            if result:
+                records, _, _ = result
+                stats["entity_count"] = records[0]["count"] if records else 0
+
+            # Count entity edges (relationships between entities)
+            result = await driver.execute_query(
+                "MATCH ()-[r:RELATES_TO]->() RETURN count(r) AS count"
+            )
+            if result:
+                records, _, _ = result
+                stats["entity_edge_count"] = records[0]["count"] if records else 0
+
+            # Count episodes
+            result = await driver.execute_query(
+                "MATCH (e:Episode) RETURN count(e) AS count"
+            )
+            if result:
+                records, _, _ = result
+                stats["episode_count"] = records[0]["count"] if records else 0
+
+            # Episodes per group
+            result = await driver.execute_query(
+                "MATCH (e:Episode) RETURN e.group_id AS group_id, count(e) AS count "
+                "ORDER BY count DESC"
+            )
+            if result:
+                records, _, _ = result
+                stats["episodes_per_group"] = {
+                    r["group_id"]: r["count"] for r in records if r.get("group_id")
+                }
+
+            # Compute density (edges per entity)
+            entity_count = stats.get("entity_count", 0)
+            edge_count = stats.get("entity_edge_count", 0)
+            stats["edge_density"] = (
+                round(edge_count / entity_count, 2) if entity_count > 0 else 0.0
+            )
+
+            return stats
+
+        except Exception as e:
+            logger.warning(f"Failed to get graph stats: {e}")
+            return {}
 
     # =========================================================================
     # CLEAR METHODS

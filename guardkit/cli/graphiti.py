@@ -525,6 +525,84 @@ def status(verbose: bool):
 
 
 @graphiti.command()
+def stats():
+    """Show graph topology statistics for performance analysis.
+
+    Displays entity counts, edge counts, episodes per group, and edge
+    density metrics. Useful for investigating performance regressions
+    by comparing graph state between runs.
+    """
+    _run_async(_cmd_stats())
+
+
+async def _cmd_stats() -> None:
+    """Async implementation of stats command."""
+    try:
+        settings = load_graphiti_config()
+    except Exception as e:
+        console.print(f"[red]Error loading config: {e}[/red]")
+        return
+
+    config = GraphitiConfig(
+        enabled=settings.enabled,
+        neo4j_uri=settings.neo4j_uri,
+        neo4j_user=settings.neo4j_user,
+        neo4j_password=settings.neo4j_password,
+        timeout=settings.timeout,
+        project_id=getattr(settings, 'project_id', None) or "unknown",
+        graph_store=settings.graph_store,
+        falkordb_host=settings.falkordb_host,
+        falkordb_port=settings.falkordb_port,
+        host=getattr(settings, 'host', None),
+        port=getattr(settings, 'port', None),
+        llm_provider=settings.llm_provider,
+        llm_base_url=settings.llm_base_url,
+        llm_model=settings.llm_model,
+        embedding_provider=settings.embedding_provider,
+        embedding_base_url=settings.embedding_base_url,
+        embedding_model=settings.embedding_model,
+    )
+
+    client = GraphitiClient(config)
+    try:
+        initialized = await client.initialize()
+        if not initialized:
+            console.print("[yellow]Could not connect to graph database[/yellow]")
+            return
+
+        result = await client.graph_stats()
+        if not result:
+            console.print("[yellow]No stats available[/yellow]")
+            return
+
+        console.print("\n[bold]Graph Topology Statistics[/bold]\n")
+
+        # Summary table
+        table = Table(title="Summary")
+        table.add_column("Metric", style="cyan")
+        table.add_column("Value", style="green", justify="right")
+        table.add_row("Entity nodes", str(result.get("entity_count", 0)))
+        table.add_row("Entity edges (RELATES_TO)", str(result.get("entity_edge_count", 0)))
+        table.add_row("Episodes", str(result.get("episode_count", 0)))
+        table.add_row("Edge density (edges/entity)", str(result.get("edge_density", 0.0)))
+        console.print(table)
+
+        # Episodes per group
+        epg = result.get("episodes_per_group", {})
+        if epg:
+            console.print()
+            group_table = Table(title="Episodes per Group")
+            group_table.add_column("Group", style="cyan")
+            group_table.add_column("Count", style="green", justify="right")
+            for group_id, count in sorted(epg.items(), key=lambda x: -x[1]):
+                group_table.add_row(group_id, str(count))
+            console.print(group_table)
+
+    finally:
+        await client.close()
+
+
+@graphiti.command()
 @click.option(
     "--verbose",
     "-v",

@@ -749,13 +749,13 @@ class TestGraphitiClientAddEpisode:
 
         with patch.dict('sys.modules', {'graphiti_core.nodes': mock_nodes_module}), \
              patch('guardkit.knowledge.graphiti_client.asyncio.wait_for', side_effect=capturing_wait_for):
-            # project_overview (endswith check) should use 300s
+            # project_overview (endswith check) should use 600s (TASK-FIX-cc7e)
             await client._create_episode(
                 name="Project Purpose",
                 episode_body="Content",
                 group_id="myproject__project_overview"
             )
-            assert captured_timeouts[-1] == 300.0
+            assert captured_timeouts[-1] == 600.0
 
             # rules group should use 180s
             captured_timeouts.clear()
@@ -775,14 +775,14 @@ class TestGraphitiClientAddEpisode:
             )
             assert captured_timeouts[-1] == 150.0
 
-            # agents group should use 150s
+            # agents group should use 240s (TASK-FIX-303e)
             captured_timeouts.clear()
             await client._create_episode(
                 name="Agent Specialist",
                 episode_body="Content",
                 group_id="agents"
             )
-            assert captured_timeouts[-1] == 150.0
+            assert captured_timeouts[-1] == 240.0
 
             # templates group should use 180s
             captured_timeouts.clear()
