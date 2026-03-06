@@ -104,12 +104,15 @@ async def seed_failed_approaches_wrapper(client):
     return await seed_failed_approaches(client)
 
 
-async def seed_all_system_context(client, force: bool = False):
+async def seed_all_system_context(client, force: bool = False, template: str | None = None):
     """Seed all system context into Graphiti.
 
     Args:
         client: GraphitiClient instance (required)
         force: If True, re-seed even if already seeded
+        template: If provided, filter template-specific categories
+            (templates, agents, rules) to only seed this template plus
+            'default'. Non-template categories are always seeded.
 
     Returns:
         dict mapping category names to (created, skipped) tuples when
@@ -133,6 +136,15 @@ async def seed_all_system_context(client, force: bool = False):
         return True
 
     logger.info("Seeding GuardKit system context...")
+
+    # Resolve template filter set
+    template_filter = None
+    if template:
+        template_filter = {template, "default"}
+        logger.info(f"Template filter active: seeding only {template_filter}")
+
+    # Categories that support template_filter
+    _TEMPLATE_SPECIFIC_CATEGORIES = {"templates", "agents", "rules"}
 
     # Track partial failures but continue
     had_errors = False
@@ -172,7 +184,11 @@ async def seed_all_system_context(client, force: bool = False):
             client.reset_circuit_breaker()
             # Dynamic lookup enables unittest.mock.patch to work
             seed_fn = getattr(seeding_module, fn_name)
-            result = await seed_fn(client)
+            # Pass template_filter to template-specific categories
+            if template_filter and name in _TEMPLATE_SPECIFIC_CATEGORIES:
+                result = await seed_fn(client, template_filter=template_filter)
+            else:
+                result = await seed_fn(client)
             # Log with episode counts if available (TASK-FIX-bbbd)
             if isinstance(result, tuple) and len(result) == 2:
                 created, skipped = result

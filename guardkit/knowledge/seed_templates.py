@@ -133,7 +133,7 @@ def _build_template_episode(template_info: dict[str, Any]) -> tuple[str, dict[st
     return (episode_name, body)
 
 
-async def seed_templates(client) -> None:
+async def seed_templates(client, template_filter: set[str] | None = None) -> None:
     """Seed template metadata by reading actual manifest.json files.
 
     Discovers all templates in installer/core/templates/ and creates
@@ -141,12 +141,17 @@ async def seed_templates(client) -> None:
 
     Args:
         client: GraphitiClient instance
+        template_filter: If provided, only seed templates whose
+            template_id is in this set (e.g., {"fastapi-python", "default"}).
     """
     if not client or not client.enabled:
         return
 
     templates_dir = _get_templates_dir()
     discovered = _discover_templates(templates_dir)
+
+    if template_filter:
+        discovered = [t for t in discovered if t["template_id"] in template_filter]
 
     if not discovered:
         logger.warning("No templates discovered for seeding")

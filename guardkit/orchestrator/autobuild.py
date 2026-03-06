@@ -45,6 +45,7 @@ import concurrent.futures
 import hashlib
 import logging
 import re
+import shutil
 import sys
 import threading
 import time
@@ -167,6 +168,26 @@ MIN_TURN_BUDGET_SECONDS: int = 600
 # boundary (i.e., when the cancellation event is set but Player returned
 # success=True).  Ensures Coach always gets a fair window to validate.
 COACH_GRACE_PERIOD_SECONDS: int = 120
+
+
+# ============================================================================
+# AutoBuild Essential Rules (TASK-daab)
+# ============================================================================
+
+# Rules files to keep in worktree `.claude/rules/`.
+# Everything else is pruned after worktree creation to reduce context size.
+# ~17 KB retained vs ~63 KB total — frees ~11.5K tokens per turn.
+AUTOBUILD_ESSENTIAL_RULES: frozenset = frozenset({
+    "autobuild.md",
+    "anti-stub.md",
+    "hash-based-ids.md",
+    "testing.md",
+})
+
+# Additional rules to keep when running in feature-build mode.
+FEATURE_BUILD_EXTRA_RULES: frozenset = frozenset({
+    "feature-build-invariants.md",
+})
 
 
 # ============================================================================
@@ -1082,6 +1103,9 @@ class AutoBuildOrchestrator:
 
             logger.info(f"Worktree created: {worktree.path}")
 
+            # Prune non-essential rules to reduce context size (TASK-daab)
+            self._prune_worktree_rules(worktree.path)
+
             # Initialize AgentInvoker with worktree path (lazy initialization)
             if self._agent_invoker is None:
                 self._agent_invoker = AgentInvoker(
@@ -1098,6 +1122,51 @@ class AutoBuildOrchestrator:
         except WorktreeCreationError as e:
             logger.error(f"Setup phase failed: {e}")
             raise SetupPhaseError(f"Failed to create worktree: {e}") from e
+
+    def _prune_worktree_rules(self, worktree_path: Path) -> None:
+        """Remove non-essential rules from AutoBuild worktree to reduce context.
+
+        AutoBuild loads all `.claude/rules/` files via the SDK's
+        ``setting_sources=["project"]``.  Only ~17 KB of the ~63 KB total is
+        relevant to autonomous code generation.  This method removes the rest,
+        freeing ~11.5K tokens per Player/Coach turn.
+
+        The pruning is safe because git worktrees have independent working
+        trees — removing files here does NOT affect the main branch.
+
+        Parameters
+        ----------
+        worktree_path : Path
+            Filesystem path to the worktree root directory.
+        """
+        rules_dir = worktree_path / ".claude" / "rules"
+        if not rules_dir.is_dir():
+            logger.debug("No .claude/rules/ directory in worktree — skipping prune")
+            return
+
+        # Build the set of rules to keep
+        keep = set(AUTOBUILD_ESSENTIAL_RULES)
+        if self._existing_worktree is not None:
+            # Feature-build mode: keep feature-build-invariants.md too
+            keep |= FEATURE_BUILD_EXTRA_RULES
+
+        removed_count = 0
+        for item in list(rules_dir.iterdir()):
+            if item.is_dir():
+                shutil.rmtree(item)
+                removed_count += 1
+                logger.debug(f"Pruned rules directory: {item.name}/")
+            elif item.name not in keep:
+                item.unlink()
+                removed_count += 1
+                logger.debug(f"Pruned rule file: {item.name}")
+
+        if removed_count > 0:
+            remaining = [f.name for f in rules_dir.iterdir() if f.is_file()]
+            logger.info(
+                f"Pruned {removed_count} non-essential rules from worktree "
+                f"(kept {len(remaining)}: {', '.join(sorted(remaining))})"
+            )
 
     def _pre_loop_phase(
         self,

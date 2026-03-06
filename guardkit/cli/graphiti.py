@@ -97,7 +97,7 @@ def _get_client_and_config() -> tuple[GraphitiClient, GraphitiSettings]:
     return client, settings
 
 
-async def _cmd_seed(force: bool) -> None:
+async def _cmd_seed(force: bool, template: Optional[str] = None) -> None:
     """Async implementation of seed command."""
     console.print("[bold blue]Graphiti System Context Seeding[/bold blue]")
     console.print()
@@ -152,13 +152,27 @@ async def _cmd_seed(force: bool) -> None:
             console.print("Clearing previous seeding marker...")
             clear_seeding_marker()
 
+        # Auto-detect template if not specified
+        if template is None:
+            try:
+                from guardkit.knowledge.system_seeding import resolve_template_path
+                resolved = resolve_template_path()
+                if resolved:
+                    template = resolved.name
+                    console.print(f"Auto-detected template: [cyan]{template}[/cyan]")
+            except Exception as e:
+                logger.debug(f"Template auto-detection failed: {e}")
+
         # Run seeding
-        console.print("Seeding system context...")
+        if template:
+            console.print(f"Seeding system context (template: [cyan]{template}[/cyan])...")
+        else:
+            console.print("Seeding system context (all templates)...")
         console.print()
 
         seed_start = time.monotonic()
         try:
-            result = await seed_all_system_context(client, force=force)
+            result = await seed_all_system_context(client, force=force, template=template)
         except Exception as e:
             console.print(f"[red]Error during seeding: {e}[/red]")
             logger.exception("Seeding failed")
@@ -494,16 +508,26 @@ def graphiti():
     is_flag=True,
     help="Force re-seeding even if already seeded",
 )
-def seed(force: bool):
+@click.option(
+    "--template",
+    "-t",
+    default=None,
+    help="Template to seed (auto-detected if not specified)",
+)
+def seed(force: bool, template: Optional[str]):
     """Seed system context into Graphiti.
 
     Seeds comprehensive GuardKit knowledge into the Graphiti knowledge graph.
     This includes product knowledge, command workflows, quality gate phases,
     technology stack information, and more.
 
+    Use --template to only seed template-specific categories (templates,
+    agents, rules) for the specified template plus 'default'. Without
+    --template, auto-detects from manifest.json or seeds all templates.
+
     Use --force to re-seed even if seeding has already been completed.
     """
-    _run_async(_cmd_seed(force))
+    _run_async(_cmd_seed(force, template))
 
 
 @graphiti.command()

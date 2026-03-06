@@ -187,7 +187,7 @@ def _build_agent_episode(
     return (episode_name, episode_body)
 
 
-async def seed_agents(client) -> None:
+async def seed_agents(client, template_filter: set[str] | None = None) -> None:
     """Seed agent content by reading actual .md files from templates.
 
     Discovers agent files across all templates (checking both agents/ and
@@ -199,6 +199,8 @@ async def seed_agents(client) -> None:
 
     Args:
         client: GraphitiClient instance
+        template_filter: If provided, only seed agents from templates
+            whose ID is in this set (e.g., {"fastapi-python", "default"}).
     """
     if not client or not client.enabled:
         return
@@ -215,6 +217,8 @@ async def seed_agents(client) -> None:
             continue
 
         template_id = template_entry.name
+        if template_filter and template_id not in template_filter:
+            continue
         agent_files = _discover_agent_files(template_entry)
 
         for agent_file in agent_files:

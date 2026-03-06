@@ -201,7 +201,7 @@ def _build_rule_episodes(
     return [(base_name, body)]
 
 
-async def seed_rules(client) -> tuple[int, int]:
+async def seed_rules(client, template_filter: set[str] | None = None) -> tuple[int, int]:
     """Seed rule content by reading actual .md files from templates.
 
     Discovers rule files across all templates in .claude/rules/,
@@ -214,6 +214,8 @@ async def seed_rules(client) -> tuple[int, int]:
 
     Args:
         client: GraphitiClient instance
+        template_filter: If provided, only seed rules from templates
+            whose ID is in this set (e.g., {"fastapi-python", "default"}).
 
     Returns:
         Tuple of (total_created, total_skipped) across all templates.
@@ -234,6 +236,8 @@ async def seed_rules(client) -> tuple[int, int]:
             continue
 
         template_id = template_entry.name
+        if template_filter and template_id not in template_filter:
+            continue
         rule_files = _discover_rule_files(template_entry)
 
         for rule_file in rule_files:
