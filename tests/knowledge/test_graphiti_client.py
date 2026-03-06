@@ -757,14 +757,14 @@ class TestGraphitiClientAddEpisode:
             )
             assert captured_timeouts[-1] == 600.0
 
-            # rules group should use 180s
+            # rules group should use 240s (TASK-FIX-7A01: raised from 180s)
             captured_timeouts.clear()
             await client._create_episode(
                 name="Code Style Rule",
                 episode_body="Content",
                 group_id="rules"
             )
-            assert captured_timeouts[-1] == 180.0
+            assert captured_timeouts[-1] == 240.0
 
             # role_constraints group should use 150s
             captured_timeouts.clear()
@@ -793,6 +793,42 @@ class TestGraphitiClientAddEpisode:
             )
             assert captured_timeouts[-1] == 180.0
 
+            # command_workflows group should use 180s (TASK-FIX-7A01)
+            captured_timeouts.clear()
+            await client._create_episode(
+                name="Command Workflow",
+                episode_body="Content",
+                group_id="command_workflows"
+            )
+            assert captured_timeouts[-1] == 180.0
+
+            # quality_gate_phases group should use 150s (TASK-FIX-7A01)
+            captured_timeouts.clear()
+            await client._create_episode(
+                name="Quality Gate Phase",
+                episode_body="Content",
+                group_id="quality_gate_phases"
+            )
+            assert captured_timeouts[-1] == 150.0
+
+            # component_status group should use 150s (TASK-FIX-7A01)
+            captured_timeouts.clear()
+            await client._create_episode(
+                name="Component Status",
+                episode_body="Content",
+                group_id="component_status"
+            )
+            assert captured_timeouts[-1] == 150.0
+
+            # project_architecture group should use 150s (TASK-FIX-7A01)
+            captured_timeouts.clear()
+            await client._create_episode(
+                name="Project Architecture",
+                episode_body="Content",
+                group_id="project_architecture"
+            )
+            assert captured_timeouts[-1] == 150.0
+
             # Other groups should use 120s default
             captured_timeouts.clear()
             await client._create_episode(
@@ -804,11 +840,11 @@ class TestGraphitiClientAddEpisode:
 
     @pytest.mark.asyncio
     async def test_timeout_tier_rules_per_template_group_id(self):
-        """Test that per-template rules group_ids get 180s timeout (TASK-FIX-7595).
+        """Test that per-template rules group_ids get 240s timeout (TASK-FIX-7595, TASK-FIX-7A01).
 
         After TASK-SPR-18fc, seed_rules uses per-template group_ids like
         'guardkit__rules_fastapi_python' instead of bare 'rules'.
-        These must still match the 180s timeout tier.
+        These must still match the rules timeout tier (240s after TASK-FIX-7A01).
         """
         import asyncio as _asyncio
 
@@ -843,7 +879,7 @@ class TestGraphitiClientAddEpisode:
                 episode_body="Content",
                 group_id="guardkit__rules_fastapi_python"
             )
-            assert captured_timeouts[-1] == 180.0
+            assert captured_timeouts[-1] == 240.0
 
             # Unprefixed per-template group_id (before _apply_group_prefix)
             captured_timeouts.clear()
@@ -852,11 +888,11 @@ class TestGraphitiClientAddEpisode:
                 episode_body="Content",
                 group_id="rules_react_typescript"
             )
-            assert captured_timeouts[-1] == 180.0
+            assert captured_timeouts[-1] == 240.0
 
     @pytest.mark.asyncio
     async def test_timeout_tier_rules_bare_group_id(self):
-        """Regression guard: bare 'rules' group_id still gets 180s (TASK-FIX-7595)."""
+        """Regression guard: bare 'rules' group_id still gets 240s (TASK-FIX-7595, TASK-FIX-7A01)."""
         import asyncio as _asyncio
 
         config = GraphitiConfig(enabled=True)
@@ -889,7 +925,7 @@ class TestGraphitiClientAddEpisode:
                 episode_body="Content",
                 group_id="rules"
             )
-            assert captured_timeouts[-1] == 180.0
+            assert captured_timeouts[-1] == 240.0
 
     @pytest.mark.asyncio
     async def test_add_episode_graceful_degradation_on_error(self):

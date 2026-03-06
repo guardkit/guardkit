@@ -1,9 +1,11 @@
 ---
 id: TASK-daab
 title: Selective rule loading for AutoBuild worktrees
-status: in_review
+status: completed
 created: 2026-03-06T15:00:00Z
-updated: 2026-03-06T16:00:00Z
+updated: 2026-03-06T16:15:00Z
+completed: 2026-03-06T16:15:00Z
+completed_location: tasks/completed/TASK-daab/
 priority: high
 task_type: implementation
 complexity: 4
@@ -85,12 +87,12 @@ def _prune_worktree_rules(self, worktree_path: Path) -> None:
 
 ## Acceptance Criteria
 
-- [ ] AutoBuild worktrees contain only essential rules after creation
-- [ ] Non-essential rules (patterns/, guidance/, etc.) are removed from worktree
-- [ ] Interactive sessions (non-worktree) are unaffected — full rules remain
-- [ ] Essential rules list is configurable (constant, easy to modify)
-- [ ] Existing tests pass
-- [ ] New test verifying rule pruning works correctly
+- [x] AutoBuild worktrees contain only essential rules after creation
+- [x] Non-essential rules (patterns/, guidance/, etc.) are removed from worktree
+- [x] Interactive sessions (non-worktree) are unaffected — full rules remain
+- [x] Essential rules list is configurable (constant, easy to modify)
+- [x] Existing tests pass
+- [x] New test verifying rule pruning works correctly
 
 ## Notes
 

@@ -15,8 +15,9 @@ logger = logging.getLogger(__name__)
 async def seed_project_overview(client) -> None:
     """Seed project overview knowledge for on-demand retrieval.
 
-    Creates 3 episodes covering:
-    - guardkit_purpose: Project tagline, description, core features
+    Creates 4 episodes covering:
+    - guardkit_mission: Project tagline, description, core features
+    - guardkit_commands_overview: Key command reference by category
     - guardkit_core_principles: 5 core principles with descriptions
     - guardkit_target_users: Target users, use cases, when to use RequireKit
 
@@ -29,9 +30,9 @@ async def seed_project_overview(client) -> None:
         return
 
     episodes = [
-        ("guardkit_purpose", {
+        ("guardkit_mission", {
             "entity_type": "project_overview",
-            "name": "GuardKit Purpose and Core Features",
+            "name": "GuardKit Mission and Core Features",
             "tagline": "Lightweight AI-Assisted Development with Quality Gates",
             "description": (
                 "GuardKit is a lightweight, pragmatic task workflow system with built-in "
@@ -42,7 +43,11 @@ async def seed_project_overview(client) -> None:
                 "Simple Workflow (Create -> Work -> Complete) - 3 commands",
                 "AI Collaboration - AI does heavy lifting, humans make decisions",
                 "Zero Ceremony - No unnecessary documentation or process"
-            ],
+            ]
+        }),
+        ("guardkit_commands_overview", {
+            "entity_type": "project_overview",
+            "name": "GuardKit Command Reference",
             "key_commands": {
                 "core": "/task-create, /task-work, /task-complete, /task-status",
                 "review": "/task-create task_type:review, /task-review",

@@ -1,10 +1,12 @@
 ---
 id: TASK-a912
 title: Add template filtering to guardkit graphiti seed
-status: in_review
+status: completed
 created: 2026-03-06T15:00:00Z
-updated: 2026-03-06T16:15:00Z
-previous_state: in_progress
+updated: 2026-03-06T16:20:00Z
+completed: 2026-03-06T16:20:00Z
+previous_state: in_review
+completed_location: tasks/completed/TASK-a912/
 priority: high
 task_type: implementation
 complexity: 3

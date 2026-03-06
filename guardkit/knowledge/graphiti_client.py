@@ -973,13 +973,17 @@ class GraphitiClient:
         if group_id.endswith("project_overview"):
             episode_timeout = 600.0   # Was 300s; project_purpose consistently hits 300s ceiling (TASK-FIX-cc7e)
         elif "rules" in group_id:
-            episode_timeout = 180.0   # Matches bare "rules" and per-template "rules_fastapi_python"
+            episode_timeout = 240.0   # Was 180s; rule_default_quality_gates & rule_default_workflow timeout at 180s (TASK-FIX-7A01)
         elif group_id == "role_constraints":
             episode_timeout = 150.0   # Coach at 120s needs ~130s with growth
         elif group_id == "agents":
             episode_timeout = 240.0   # 9/18 agents timeout at 150s; raise to recover 150-240s range (TASK-FIX-303e)
         elif group_id == "templates":
             episode_timeout = 180.0   # template manifests need 111-150s on clean graph
+        elif group_id == "command_workflows":
+            episode_timeout = 180.0   # 3 episodes (task_work, feature_spec, feature_to_build) timeout at 120s (TASK-FIX-7A01)
+        elif group_id in ("quality_gate_phases", "component_status", "project_architecture"):
+            episode_timeout = 150.0   # phases_overview, taskwork_interface, project_structure timeout at 120s (TASK-FIX-7A01)
         else:
             episode_timeout = 120.0   # implementation_modes etc: safe
         for attempt in range(max_retries):
