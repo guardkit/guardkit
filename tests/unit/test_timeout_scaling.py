@@ -42,17 +42,17 @@ class TestDetectTimeoutMultiplier:
         monkeypatch.delenv("GUARDKIT_TIMEOUT_MULTIPLIER", raising=False)
         assert detect_timeout_multiplier() == 1.0
 
-    def test_localhost_returns_4(self, monkeypatch):
-        """ANTHROPIC_BASE_URL=http://localhost:8000 → multiplier=4.0."""
+    def test_localhost_returns_3(self, monkeypatch):
+        """ANTHROPIC_BASE_URL=http://localhost:8000 → multiplier=3.0."""
         monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://localhost:8000")
         monkeypatch.delenv("GUARDKIT_TIMEOUT_MULTIPLIER", raising=False)
-        assert detect_timeout_multiplier() == 4.0
+        assert detect_timeout_multiplier() == 3.0
 
-    def test_127_0_0_1_returns_4(self, monkeypatch):
-        """ANTHROPIC_BASE_URL=http://127.0.0.1:8000 → multiplier=4.0."""
+    def test_127_0_0_1_returns_3(self, monkeypatch):
+        """ANTHROPIC_BASE_URL=http://127.0.0.1:8000 → multiplier=3.0."""
         monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:8000")
         monkeypatch.delenv("GUARDKIT_TIMEOUT_MULTIPLIER", raising=False)
-        assert detect_timeout_multiplier() == 4.0
+        assert detect_timeout_multiplier() == 3.0
 
     def test_remote_host_returns_1(self, monkeypatch):
         """ANTHROPIC_BASE_URL=http://remote-host:8000 → multiplier=1.0."""
@@ -88,7 +88,7 @@ class TestDetectTimeoutMultiplier:
         """Invalid GUARDKIT_TIMEOUT_MULTIPLIER falls back to auto-detection."""
         monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://localhost:8000")
         monkeypatch.setenv("GUARDKIT_TIMEOUT_MULTIPLIER", "not-a-number")
-        assert detect_timeout_multiplier() == 4.0  # Falls back to localhost detection
+        assert detect_timeout_multiplier() == 3.0  # Falls back to localhost detection
 
 
 # ============================================================================
@@ -120,12 +120,12 @@ class TestAgentInvokerTimeoutMultiplier:
         invoker = AgentInvoker(worktree_path=worktree_path, timeout_multiplier=4.0)
         assert invoker.timeout_multiplier == 4.0
 
-    def test_localhost_auto_detects_4x(self, worktree_path, monkeypatch):
-        """AgentInvoker auto-detects 4x multiplier for localhost."""
+    def test_localhost_auto_detects_3x(self, worktree_path, monkeypatch):
+        """AgentInvoker auto-detects 3x multiplier for localhost."""
         monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://localhost:8000")
         monkeypatch.delenv("GUARDKIT_TIMEOUT_MULTIPLIER", raising=False)
         invoker = AgentInvoker(worktree_path=worktree_path)
-        assert invoker.timeout_multiplier == 4.0
+        assert invoker.timeout_multiplier == 3.0
 
     def test_calculate_sdk_timeout_applies_multiplier(self, worktree_path, monkeypatch):
         """_calculate_sdk_timeout applies timeout_multiplier."""
@@ -253,7 +253,7 @@ class TestFeatureOrchestratorTimeoutMultiplier:
         assert orch.task_timeout == 3600  # 1800 * 2
 
     def test_localhost_auto_detects_multiplier(self, temp_repo, mock_worktree_manager, monkeypatch):
-        """FeatureOrchestrator auto-detects 4x multiplier for localhost."""
+        """FeatureOrchestrator auto-detects 3x multiplier for localhost."""
         monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://localhost:8000")
         monkeypatch.delenv("GUARDKIT_TIMEOUT_MULTIPLIER", raising=False)
 
@@ -263,5 +263,5 @@ class TestFeatureOrchestratorTimeoutMultiplier:
             repo_root=temp_repo,
             worktree_manager=mock_worktree_manager,
         )
-        assert orch.timeout_multiplier == 4.0
-        assert orch.task_timeout == 9600  # 2400 * 4
+        assert orch.timeout_multiplier == 3.0
+        assert orch.task_timeout == 7200  # 2400 * 3

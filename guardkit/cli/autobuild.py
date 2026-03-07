@@ -708,11 +708,11 @@ def feature(
                 param_hint="'GUARDKIT_MAX_PARALLEL_TASKS'",
             )
     elif max_parallel is None:
-        # Auto-detect: default to 2 for local backends
+        # Auto-detect: default to 1 for local backends (TASK-VPT-001: was 2, reduced due to KV cache contention)
         from guardkit.orchestrator.agent_invoker import detect_timeout_multiplier
         detected_multiplier = timeout_multiplier if timeout_multiplier is not None else detect_timeout_multiplier()
         if detected_multiplier > 1.0:
-            max_parallel = 2
+            max_parallel = 1
 
     if max_parallel is not None and max_parallel < 1:
         raise click.BadParameter(

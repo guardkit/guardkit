@@ -152,7 +152,7 @@ def detect_timeout_multiplier() -> float:
     # Auto-detect from backend URL
     base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
     if "localhost" in base_url or "127.0.0.1" in base_url:
-        return 4.0
+        return 3.0
     return 1.0
 
 
@@ -761,7 +761,7 @@ class AgentInvoker:
 
         # TASK-FIX-7718: Auto-reduce SDK max turns for local backends
         if not _SDK_MAX_TURNS_IS_OVERRIDE and self.timeout_multiplier > 1.0:
-            self._effective_sdk_max_turns = min(TASK_WORK_SDK_MAX_TURNS, 50)
+            self._effective_sdk_max_turns = min(TASK_WORK_SDK_MAX_TURNS, 75)
             logger.info(
                 "SDK max turns reduced to %d for local backend "
                 "(timeout_multiplier=%.1f)",

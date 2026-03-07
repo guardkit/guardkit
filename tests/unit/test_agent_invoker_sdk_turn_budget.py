@@ -4,7 +4,7 @@ Unit tests for TASK-FIX-7718: SDK max turns env-var override and auto-reduction.
 Tests the following behaviours introduced by TASK-FIX-7718:
 - TASK_WORK_SDK_MAX_TURNS defaults to 100 when GUARDKIT_SDK_MAX_TURNS is unset
 - GUARDKIT_SDK_MAX_TURNS env var overrides TASK_WORK_SDK_MAX_TURNS at module level
-- AgentInvoker._effective_sdk_max_turns is auto-reduced to 50 when
+- AgentInvoker._effective_sdk_max_turns is auto-reduced to 75 when
   timeout_multiplier > 1.0 and the env var was NOT explicitly set
 - AgentInvoker._effective_sdk_max_turns equals TASK_WORK_SDK_MAX_TURNS when
   timeout_multiplier == 1.0
@@ -52,7 +52,7 @@ class TestEffectiveSdkMaxTurns:
     """Tests for AgentInvoker._effective_sdk_max_turns computation."""
 
     def test_effective_turns_reduced_for_local_backend(self, tmp_path, monkeypatch):
-        """_effective_sdk_max_turns is capped at 50 when timeout_multiplier > 1.0
+        """_effective_sdk_max_turns is capped at 75 when timeout_multiplier > 1.0
         and GUARDKIT_SDK_MAX_TURNS was not explicitly set."""
         worktree = tmp_path / "worktree"
         worktree.mkdir()
@@ -66,7 +66,7 @@ class TestEffectiveSdkMaxTurns:
             timeout_multiplier=4.0,
         )
 
-        assert invoker._effective_sdk_max_turns == 50
+        assert invoker._effective_sdk_max_turns == 75
 
     def test_effective_turns_unchanged_for_remote_backend(self, tmp_path, monkeypatch):
         """_effective_sdk_max_turns equals TASK_WORK_SDK_MAX_TURNS when

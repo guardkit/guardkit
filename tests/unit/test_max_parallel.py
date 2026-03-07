@@ -4,7 +4,7 @@ Unit tests for --max-parallel CLI option (TASK-VPR-001).
 Tests:
 - CLI option parsing and validation
 - Environment variable override (GUARDKIT_MAX_PARALLEL_TASKS)
-- Auto-detection default (2 for local backends, None otherwise)
+- Auto-detection default (1 for local backends, None otherwise)
 - Semaphore-based wave dispatch limiting
 - Edge cases (max_parallel=1, large values)
 
@@ -64,7 +64,7 @@ class TestMaxParallelCLI:
     @patch("guardkit.cli.autobuild.FeatureOrchestrator")
     @patch("guardkit.orchestrator.agent_invoker.detect_timeout_multiplier", return_value=4.0)
     def test_auto_detect_local_backend(self, mock_detect, mock_orch_cls, mock_sdk, cli_runner):
-        """When no --max-parallel and local backend detected, default to 2."""
+        """When no --max-parallel and local backend detected, default to 1."""
         mock_orch = MagicMock()
         mock_orch.orchestrate.return_value = MagicMock(success=True)
         mock_orch_cls.return_value = mock_orch
@@ -74,7 +74,7 @@ class TestMaxParallelCLI:
         )
 
         call_kwargs = mock_orch_cls.call_args[1]
-        assert call_kwargs["max_parallel"] == 2
+        assert call_kwargs["max_parallel"] == 1
 
     @patch("guardkit.cli.autobuild._require_sdk")
     @patch("guardkit.cli.autobuild.FeatureOrchestrator")
