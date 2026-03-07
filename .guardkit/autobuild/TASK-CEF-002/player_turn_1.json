@@ -1,0 +1,66 @@
+{
+  "task_id": "TASK-CEF-002",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/agent_invoker.py",
+    "guardkit/orchestrator/autobuild.py",
+    "guardkit/orchestrator/feature_orchestrator.py"
+  ],
+  "files_created": [],
+  "tests_written": [],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "Targeted tests: tests/unit/test_agent_invoker.py (passes all), tests/unit/test_autobuild_orchestrator.py (passes all), tests/unit/test_feature_orchestrator.py (passes all). Pre-existing failures in tests/unit/test_autobuild_timeout_budget.py (9 failures: AttributeError wave_size/_timeout_event) confirmed pre-existing via git stash baseline check. No regressions introduced.",
+  "implementation_notes": "Added CancelledError handling at all 5 guard points as specified. Python 3.9+ changed CancelledError to inherit from BaseException instead of Exception, so existing except Exception handlers miss it. All files already had import asyncio. Guard points: GP1 (_invoke_with_role, agent_invoker.py:1938) — changed except Exception to except (Exception, asyncio.CancelledError), logs warning before re-raising. GP2 (invoke_player, agent_invoker.py:1279) — changed except Exception to except (Exception, asyncio.CancelledError), returns error_msg 'Cancelled: ...' vs 'Unexpected error: ...'. GP3 (_invoke_player_safely, autobuild.py:3811) — added explicit except asyncio.CancelledError handler inserted BEFORE except UNRECOVERABLE_ERRORS, returns AgentInvocationResult with error 'Cancelled: ...'. GP4 (except Exception in _invoke_player_safely, autobuild.py:3834) — intentionally NOT modified per spec since GP3 intercepts CancelledError before it reaches GP4. GP5 (_execute_task, feature_orchestrator.py:1939) — changed except Exception to except (Exception, asyncio.CancelledError), sets final_decision to 'cancelled' vs 'error', logs warning. All handlers use logger.warning with guard point location for diagnostics. All existing Exception handling preserved with no behavior change for non-CancelledError.",
+  "concerns": [],
+  "requirements_addressed": [
+    "GP1: CancelledError caught at _invoke_with_role telemetry handler with warning log before re-raise",
+    "GP2: CancelledError caught at invoke_player with Cancelled: error message in AgentInvocationResult",
+    "GP3: Explicit CancelledError handler inserted before UNRECOVERABLE_ERRORS in _invoke_player_safely",
+    "GP4: Intentionally unmodified — GP3 intercepts CancelledError before GP4 is reached",
+    "GP5: CancelledError caught at _execute_task with final_decision='cancelled' and warning log"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "GP1",
+      "criterion_text": "agent_invoker.py _invoke_with_role: catch CancelledError with logger.warning before re-raise",
+      "status": "complete",
+      "evidence": "Changed except Exception to except (Exception, asyncio.CancelledError) at line 1938. Added isinstance check to log CancelledError with logger.warning including guard point location before setting call_status/call_error and re-raising.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/agent_invoker.py"]
+    },
+    {
+      "criterion_id": "GP2",
+      "criterion_text": "agent_invoker.py invoke_player: catch CancelledError and return AgentInvocationResult with error='Cancelled: ...'",
+      "status": "complete",
+      "evidence": "Changed except Exception to except (Exception, asyncio.CancelledError) at line 1279. Added isinstance check: CancelledError logs warning and uses error_msg='Cancelled: {str(e)}', otherwise 'Unexpected error: {str(e)}'.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/agent_invoker.py"]
+    },
+    {
+      "criterion_id": "GP3",
+      "criterion_text": "autobuild.py _invoke_player_safely: add explicit except asyncio.CancelledError before except UNRECOVERABLE_ERRORS",
+      "status": "complete",
+      "evidence": "Inserted except asyncio.CancelledError handler at line 3811, before the existing except UNRECOVERABLE_ERRORS. Handler logs warning with task_id and returns AgentInvocationResult with error='Cancelled: {str(e)}'.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/autobuild.py"]
+    },
+    {
+      "criterion_id": "GP4",
+      "criterion_text": "autobuild.py _invoke_player_safely: except Exception at GP4 — intentionally unmodified since GP3 intercepts CancelledError",
+      "status": "complete",
+      "evidence": "Per spec: Do NOT modify GP4. The GP3 explicit handler intercepts asyncio.CancelledError (a BaseException) before it can reach the except Exception handler at GP4. Code is left unchanged.",
+      "test_file": null,
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "GP5",
+      "criterion_text": "feature_orchestrator.py _execute_task: catch CancelledError, set final_decision='cancelled', log warning",
+      "status": "complete",
+      "evidence": "Changed except Exception to except (Exception, asyncio.CancelledError) at line 1939. Added decision variable: 'cancelled' if CancelledError else 'error'. Logs warning for CancelledError with task.id. Returns TaskExecutionResult with final_decision=decision.",
+      "test_file": null,
+      "implementation_files": ["guardkit/orchestrator/feature_orchestrator.py"]
+    }
+  ]
+}

@@ -1276,8 +1276,13 @@ class AgentInvoker:
                 duration_seconds=duration,
                 error=f"SDK timeout after {self.sdk_timeout_seconds}s: {str(e)}",
             )
-        except Exception as e:
+        except (Exception, asyncio.CancelledError) as e:
             duration = time.time() - start_time
+            if isinstance(e, asyncio.CancelledError):
+                logger.warning(f"CancelledError caught at invoke_player for {task_id}: {e}")
+                error_msg = f"Cancelled: {str(e)}"
+            else:
+                error_msg = f"Unexpected error: {str(e)}"
             return AgentInvocationResult(
                 task_id=task_id,
                 turn=turn,
@@ -1285,7 +1290,7 @@ class AgentInvoker:
                 success=False,
                 report={},
                 duration_seconds=duration,
-                error=f"Unexpected error: {str(e)}",
+                error=error_msg,
             )
         finally:
             # TASK-ASF-008: Restore original timeout after invocation
@@ -1930,7 +1935,9 @@ Follow the decision format specified in your agent definition.
                                     # the query completes via _load_agent_report()
                                     if isinstance(message, ResultMessage):
                                         break
-                    except Exception as exc:
+                    except (Exception, asyncio.CancelledError) as exc:
+                        if isinstance(exc, asyncio.CancelledError):
+                            logger.warning(f"CancelledError caught at _invoke_with_role: {exc}")
                         call_status = "error"
                         call_error = exc
                         raise

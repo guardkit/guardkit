@@ -22,6 +22,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 import tempfile
 import yaml
 import asyncio
+import logging
 
 from guardkit.orchestrator.feature_orchestrator import (
     FeatureOrchestrator,
@@ -203,7 +204,8 @@ def temp_repo(sample_feature) -> Path:
             task_file = repo_root / task.file_path
             task_file.parent.mkdir(parents=True, exist_ok=True)
             task_file.write_text(
-                f"---\nid: {task.id}\ntitle: {task.name}\nstatus: pending\n---\n\n"
+                f"---\nid: {task.id}\ntitle: {task.name}\nstatus: pending\n"
+                f"task_type: feature\ncomplexity: {task.complexity}\n---\n\n"
                 f"# {task.name}\n\nTask content."
             )
 
@@ -2490,3 +2492,403 @@ class TestCooperativeCancellation:
         # Verify cancellation_event defaults to None
         call_kwargs = mock_ab_class.call_args[1]
         assert call_kwargs["cancellation_event"] is None
+
+
+# ============================================================================
+# CancelledError and BaseException result processing tests (TASK-CEF-001)
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_cancelled_error_produces_cancelled_result(temp_repo, parallel_feature, mock_worktree, mock_worktree_manager):
+    """Test that CancelledError in gather results produces TaskExecutionResult with final_decision='cancelled'."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+        if task.id == "TASK-P-001":
+            raise asyncio.CancelledError()
+        return TaskExecutionResult(
+            task_id=task.id,
+            success=True,
+            total_turns=1,
+            final_decision="approved",
+        )
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
+        results = await orchestrator._execute_wave_parallel(
+            1, ["TASK-P-001", "TASK-P-002"], parallel_feature, mock_worktree
+        )
+
+        assert len(results) == 2
+
+        p001_result = next(r for r in results if r.task_id == "TASK-P-001")
+        assert p001_result.success is False
+        assert p001_result.final_decision == "cancelled"
+        assert "cancelled" in p001_result.error.lower()
+        assert p001_result.total_turns == 0
+
+        p002_result = next(r for r in results if r.task_id == "TASK-P-002")
+        assert p002_result.success is True
+
+
+@pytest.mark.asyncio
+async def test_keyboard_interrupt_produces_error_result(temp_repo, parallel_feature, mock_worktree, mock_worktree_manager):
+    """Test that KeyboardInterrupt in gather results produces TaskExecutionResult with final_decision='error'.
+
+    KeyboardInterrupt and SystemExit cannot be raised in threads without affecting the test
+    runner, so we mock asyncio.gather to return them directly as result values (which is
+    exactly how return_exceptions=True delivers them).
+    """
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    # Simulate gather returning KeyboardInterrupt and a success result
+    gather_results = [
+        KeyboardInterrupt(),
+        TaskExecutionResult(task_id="TASK-P-002", success=True, total_turns=1, final_decision="approved"),
+    ]
+
+    with patch.object(orchestrator, '_execute_task') as mock_exec:
+        with patch("asyncio.gather", new_callable=AsyncMock, return_value=gather_results):
+            results = await orchestrator._execute_wave_parallel(
+                1, ["TASK-P-001", "TASK-P-002"], parallel_feature, mock_worktree
+            )
+
+    assert len(results) == 2
+    p001_result = next(r for r in results if r.task_id == "TASK-P-001")
+    assert p001_result.success is False
+    assert p001_result.final_decision == "error"
+    assert "KeyboardInterrupt" in p001_result.error
+    assert p001_result.total_turns == 0
+
+    p002_result = next(r for r in results if r.task_id == "TASK-P-002")
+    assert p002_result.success is True
+
+
+@pytest.mark.asyncio
+async def test_system_exit_produces_error_result(temp_repo, parallel_feature, mock_worktree, mock_worktree_manager):
+    """Test that SystemExit in gather results produces TaskExecutionResult with final_decision='error'.
+
+    SystemExit cannot be raised in threads without affecting the test runner, so we mock
+    asyncio.gather to return it directly as a result value.
+    """
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    gather_results = [
+        SystemExit(1),
+        TaskExecutionResult(task_id="TASK-P-002", success=True, total_turns=1, final_decision="approved"),
+    ]
+
+    with patch.object(orchestrator, '_execute_task') as mock_exec:
+        with patch("asyncio.gather", new_callable=AsyncMock, return_value=gather_results):
+            results = await orchestrator._execute_wave_parallel(
+                1, ["TASK-P-001", "TASK-P-002"], parallel_feature, mock_worktree
+            )
+
+    assert len(results) == 2
+    p001_result = next(r for r in results if r.task_id == "TASK-P-001")
+    assert p001_result.success is False
+    assert p001_result.final_decision == "error"
+    assert "SystemExit" in p001_result.error
+    assert p001_result.total_turns == 0
+
+
+@pytest.mark.asyncio
+async def test_timeout_error_handling_unchanged(temp_repo, parallel_feature, mock_worktree, mock_worktree_manager):
+    """Test that TimeoutError handling remains unchanged after CancelledError fix."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        task_timeout=600,
+    )
+
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+        if task.id == "TASK-P-001":
+            raise asyncio.TimeoutError()
+        return TaskExecutionResult(
+            task_id=task.id,
+            success=True,
+            total_turns=1,
+            final_decision="approved",
+        )
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
+        results = await orchestrator._execute_wave_parallel(
+            1, ["TASK-P-001", "TASK-P-002"], parallel_feature, mock_worktree
+        )
+
+        p001_result = next(r for r in results if r.task_id == "TASK-P-001")
+        assert p001_result.success is False
+        assert p001_result.final_decision == "timeout"
+
+
+@pytest.mark.asyncio
+async def test_regular_exception_handling_unchanged(temp_repo, parallel_feature, mock_worktree, mock_worktree_manager):
+    """Test that regular Exception handling remains unchanged after CancelledError fix."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+        if task.id == "TASK-P-001":
+            raise RuntimeError("Something went wrong")
+        return TaskExecutionResult(
+            task_id=task.id,
+            success=True,
+            total_turns=1,
+            final_decision="approved",
+        )
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
+        results = await orchestrator._execute_wave_parallel(
+            1, ["TASK-P-001", "TASK-P-002"], parallel_feature, mock_worktree
+        )
+
+        p001_result = next(r for r in results if r.task_id == "TASK-P-001")
+        assert p001_result.success is False
+        assert p001_result.final_decision == "error"
+        assert "Something went wrong" in p001_result.error
+
+
+@pytest.mark.asyncio
+async def test_normal_result_handling_unchanged(temp_repo, parallel_feature, mock_worktree, mock_worktree_manager):
+    """Test that normal TaskExecutionResult handling remains unchanged."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+        return TaskExecutionResult(
+            task_id=task.id,
+            success=True,
+            total_turns=3,
+            final_decision="approved",
+        )
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
+        results = await orchestrator._execute_wave_parallel(
+            1, ["TASK-P-001", "TASK-P-002"], parallel_feature, mock_worktree
+        )
+
+        assert len(results) == 2
+        assert all(r.success for r in results)
+        assert all(r.final_decision == "approved" for r in results)
+
+
+@pytest.mark.asyncio
+async def test_cancelled_error_updates_wave_display(temp_repo, parallel_feature, mock_worktree, mock_worktree_manager):
+    """Test that CancelledError updates wave display with 'cancelled' status."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+    orchestrator._wave_display = MagicMock()
+
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+        raise asyncio.CancelledError()
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
+        with patch.object(orchestrator, '_update_feature'):
+            await orchestrator._execute_wave_parallel(
+                1, ["TASK-P-001"], parallel_feature, mock_worktree
+            )
+
+    # First call is "in_progress" at task start, second is "cancelled" from result processing
+    calls = orchestrator._wave_display.update_task_status.call_args_list
+    cancelled_calls = [c for c in calls if len(c[0]) >= 2 and c[0][1] == "cancelled"]
+    assert len(cancelled_calls) == 1
+    cancelled_call = cancelled_calls[0]
+    assert cancelled_call[0][0] == "TASK-P-001"
+    assert cancelled_call[1]["decision"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_cancelled_error_calls_update_feature(temp_repo, parallel_feature, mock_worktree, mock_worktree_manager):
+    """Test that CancelledError calls _update_feature with the error result."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+        raise asyncio.CancelledError()
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
+        with patch.object(orchestrator, '_update_feature') as mock_update:
+            await orchestrator._execute_wave_parallel(
+                1, ["TASK-P-001"], parallel_feature, mock_worktree
+            )
+
+    mock_update.assert_called_once()
+    call_args = mock_update.call_args[0]
+    assert call_args[1] == "TASK-P-001"
+    result = call_args[2]
+    assert result.final_decision == "cancelled"
+    assert result.success is False
+
+
+@pytest.mark.asyncio
+async def test_isinstance_check_order(temp_repo, parallel_feature, mock_worktree, mock_worktree_manager):
+    """Test that check order is: TimeoutError → CancelledError → Exception → BaseException → success."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        task_timeout=600,
+    )
+
+    # CancelledError is a BaseException (not Exception) on Python 3.9+
+    # It must be caught before the Exception branch
+    cancelled = asyncio.CancelledError()
+    assert isinstance(cancelled, BaseException)
+    # On Python 3.9+, CancelledError is NOT an Exception subclass
+    # This test validates the check order handles this correctly
+
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+        raise asyncio.CancelledError()
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
+        with patch.object(orchestrator, '_update_feature'):
+            results = await orchestrator._execute_wave_parallel(
+                1, ["TASK-P-001"], parallel_feature, mock_worktree
+            )
+
+    # CancelledError must hit the CancelledError branch, not BaseException
+    assert results[0].final_decision == "cancelled"
+
+
+# ============================================================================
+# Cancellation Diagnostics Logging Tests (TASK-CEF-004)
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_gather_start_logged_with_wave_and_task_ids(temp_repo, parallel_feature, mock_worktree, mock_worktree_manager, caplog):
+    """AC-1: Gather start logged with wave number and task IDs."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+        return TaskExecutionResult(
+            task_id=task.id, success=True, total_turns=1, final_decision="approved",
+        )
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
+        with caplog.at_level(logging.INFO, logger="guardkit.orchestrator.feature_orchestrator"):
+            await orchestrator._execute_wave_parallel(
+                2, ["TASK-P-001", "TASK-P-002"], parallel_feature, mock_worktree
+            )
+
+    gather_logs = [r for r in caplog.records if "Starting parallel gather" in r.message]
+    assert len(gather_logs) == 1
+    msg = gather_logs[0].message
+    assert "wave 2" in msg
+    assert "TASK-P-001" in msg
+    assert "TASK-P-002" in msg
+    assert "task_timeout=" in msg
+
+
+@pytest.mark.asyncio
+async def test_cancelled_error_logs_elapsed_time(temp_repo, parallel_feature, mock_worktree, mock_worktree_manager, caplog):
+    """AC-2: CancelledError results include elapsed time since wave start."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+        raise asyncio.CancelledError()
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
+        with patch.object(orchestrator, '_update_feature'):
+            with caplog.at_level(logging.ERROR, logger="guardkit.orchestrator.feature_orchestrator"):
+                await orchestrator._execute_wave_parallel(
+                    1, ["TASK-P-001"], parallel_feature, mock_worktree
+                )
+
+    cancelled_logs = [r for r in caplog.records if "CANCELLED" in r.message and "CancelledError" in r.message]
+    assert len(cancelled_logs) == 1
+    msg = cancelled_logs[0].message
+    assert "Elapsed:" in msg
+    assert "TASK-P-001" in msg
+
+
+@pytest.mark.asyncio
+async def test_cancelled_error_logs_cancellation_event_state(temp_repo, parallel_feature, mock_worktree, mock_worktree_manager, caplog):
+    """AC-3: CancelledError results include cancellation_event state."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+        raise asyncio.CancelledError()
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
+        with patch.object(orchestrator, '_update_feature'):
+            with caplog.at_level(logging.ERROR, logger="guardkit.orchestrator.feature_orchestrator"):
+                await orchestrator._execute_wave_parallel(
+                    1, ["TASK-P-001"], parallel_feature, mock_worktree
+                )
+
+    cancelled_logs = [r for r in caplog.records if "CANCELLED" in r.message and "CancelledError" in r.message]
+    assert len(cancelled_logs) == 1
+    assert "cancellation_event=" in cancelled_logs[0].message
+
+
+@pytest.mark.asyncio
+async def test_cancelled_error_logs_timeout_event_state(temp_repo, parallel_feature, mock_worktree, mock_worktree_manager, caplog):
+    """AC-4: CancelledError results include timeout_event state."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+        raise asyncio.CancelledError()
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
+        with patch.object(orchestrator, '_update_feature'):
+            with caplog.at_level(logging.ERROR, logger="guardkit.orchestrator.feature_orchestrator"):
+                await orchestrator._execute_wave_parallel(
+                    1, ["TASK-P-001"], parallel_feature, mock_worktree
+                )
+
+    cancelled_logs = [r for r in caplog.records if "CANCELLED" in r.message and "CancelledError" in r.message]
+    assert len(cancelled_logs) == 1
+    assert "timeout_event=" in cancelled_logs[0].message
+
+
+@pytest.mark.asyncio
+async def test_success_path_no_diagnostics_logging(temp_repo, parallel_feature, mock_worktree, mock_worktree_manager, caplog):
+    """AC-5: No diagnostics logging for normal success paths."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+        return TaskExecutionResult(
+            task_id=task.id, success=True, total_turns=1, final_decision="approved",
+        )
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
+        with caplog.at_level(logging.DEBUG, logger="guardkit.orchestrator.feature_orchestrator"):
+            await orchestrator._execute_wave_parallel(
+                1, ["TASK-P-001", "TASK-P-002"], parallel_feature, mock_worktree
+            )
+
+    # No CANCELLED diagnostics should appear for successful tasks
+    cancelled_logs = [r for r in caplog.records if "CANCELLED" in r.message and "CancelledError" in r.message]
+    assert len(cancelled_logs) == 0

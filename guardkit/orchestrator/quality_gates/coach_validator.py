@@ -1175,11 +1175,20 @@ class CoachValidator:
         try:
             # Use GUARDKIT_COACH_TEST_MODEL env var if set, otherwise CLI default
             model = self._get_coach_test_model()
+
+            # Fix: ensure worktree root has priority on PYTHONPATH to avoid
+            # stale .pth files from previous editable installs polluting sys.path
+            current_pythonpath = os.environ.get("PYTHONPATH", "")
+            worktree_str = str(self.worktree_path)
+            new_pythonpath = f"{worktree_str}:{current_pythonpath}" if current_pythonpath else worktree_str
+            logger.debug(f"Coach SDK PYTHONPATH: {new_pythonpath}")
+
             options_kwargs = dict(
                 cwd=str(self.worktree_path),
                 allowed_tools=["Bash"],
                 permission_mode="bypassPermissions",
                 max_turns=1,
+                env={"PYTHONPATH": new_pythonpath},
             )
             if model is not None:
                 options_kwargs["model"] = model

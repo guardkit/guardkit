@@ -3808,6 +3808,17 @@ class AutoBuildOrchestrator:
                 duration_seconds=0.0,
                 error="SDK integration pending",
             )
+        except asyncio.CancelledError as e:
+            logger.warning(f"CancelledError caught at _invoke_player_safely for {task_id}: {e}")
+            return AgentInvocationResult(
+                task_id=task_id,
+                turn=turn,
+                agent_type="player",
+                success=False,
+                report={},
+                duration_seconds=0.0,
+                error=f"Cancelled: {str(e)}",
+            )
         except UNRECOVERABLE_ERRORS as e:
             # Unrecoverable errors - fail immediately without retrying
             logger.error(f"Unrecoverable error for {task_id}: {e}")

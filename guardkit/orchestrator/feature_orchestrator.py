@@ -1494,6 +1494,12 @@ The detailed specifications are in the task markdown file.
                             return await c
                     tasks_to_execute.append(bounded())
 
+            # TASK-CEF-004: Log gather start for cancellation diagnostics
+            logger.info(
+                f"Starting parallel gather for wave {wave_number}: "
+                f"tasks={task_id_mapping}, task_timeout={self.task_timeout}s"
+            )
+
             parallel_results = None
             try:
                 parallel_results = await asyncio.gather(*tasks_to_execute, return_exceptions=True)
@@ -1543,6 +1549,39 @@ The detailed specifications are in the task markdown file.
                     # Update feature with timeout result
                     self._update_feature(feature, task_id, error_result, wave_number)
 
+                elif isinstance(result, asyncio.CancelledError):
+                    # TASK-CEF-004: Cancellation diagnostics logging
+                    elapsed = time.monotonic() - wave_start_time
+                    cancel_event_set = cancellation_events.get(task_id, threading.Event()).is_set()
+                    timeout_event_set = timeout_events.get(task_id, threading.Event()).is_set()
+                    logger.error(
+                        f"CANCELLED: {task_id} received CancelledError in wave {wave_number}. "
+                        f"Elapsed: {elapsed:.1f}s, "
+                        f"cancellation_event={cancel_event_set}, "
+                        f"timeout_event={timeout_event_set}. "
+                        f"CancelledError originated from within worker thread "
+                        f"(not external cancellation — gather returned results normally)."
+                    )
+                    cancel_msg = f"Task {task_id} was cancelled"
+                    error_result = TaskExecutionResult(
+                        task_id=task_id,
+                        success=False,
+                        total_turns=0,
+                        final_decision="cancelled",
+                        error=cancel_msg,
+                    )
+                    results.append(error_result)
+
+                    # Update task status in display
+                    if self._wave_display:
+                        self._wave_display.update_task_status(
+                            task_id, "cancelled", cancel_msg,
+                            turns=0, decision="cancelled"
+                        )
+
+                    # Update feature with cancelled result
+                    self._update_feature(feature, task_id, error_result, wave_number)
+
                 elif isinstance(result, Exception):
                     error_result = self._create_error_result(task_id, result)
                     results.append(error_result)
@@ -1556,6 +1595,29 @@ The detailed specifications are in the task markdown file.
 
                     # Update feature with error result
                     self._update_feature(feature, task_id, error_result, wave_number)
+
+                elif isinstance(result, BaseException):
+                    base_msg = f"Task {task_id} failed with {type(result).__name__}: {result}"
+                    logger.error(f"BASE_EXCEPTION: {task_id} — {base_msg}")
+                    error_result = TaskExecutionResult(
+                        task_id=task_id,
+                        success=False,
+                        total_turns=0,
+                        final_decision="error",
+                        error=base_msg,
+                    )
+                    results.append(error_result)
+
+                    # Update task status in display
+                    if self._wave_display:
+                        self._wave_display.update_task_status(
+                            task_id, "failed", "error",
+                            turns=0, decision="error"
+                        )
+
+                    # Update feature with error result
+                    self._update_feature(feature, task_id, error_result, wave_number)
+
                 else:
                     results.append(result)
 
@@ -1891,13 +1953,16 @@ The detailed specifications are in the task markdown file.
                 sdk_turns_per_invocation=sdk_turns_list,
             )
 
-        except Exception as e:
-            console.print(f"    [red]✗[/red] {task.id}: Error - {e}")
+        except (Exception, asyncio.CancelledError) as e:
+            decision = "cancelled" if isinstance(e, asyncio.CancelledError) else "error"
+            if isinstance(e, asyncio.CancelledError):
+                logger.warning(f"CancelledError caught at _execute_task for {task.id}: {e}")
+            console.print(f"    [red]✗[/red] {task.id}: {decision.upper()} - {e}")
             return TaskExecutionResult(
                 task_id=task.id,
                 success=False,
                 total_turns=0,
-                final_decision="error",
+                final_decision=decision,
                 error=str(e),
             )
 
@@ -1944,7 +2009,7 @@ The detailed specifications are in the task markdown file.
             )
         ]
 
-    def _create_error_result(self, task_id: str, error: Exception) -> TaskExecutionResult:
+    def _create_error_result(self, task_id: str, error: BaseException) -> TaskExecutionResult:
         """
         Create TaskExecutionResult from exception.
 
@@ -1952,7 +2017,7 @@ The detailed specifications are in the task markdown file.
         ----------
         task_id : str
             Task identifier
-        error : Exception
+        error : BaseException
             Exception that occurred
 
         Returns
