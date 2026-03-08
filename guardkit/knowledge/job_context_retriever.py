@@ -600,6 +600,10 @@ class JobContextRetriever:
         # Results dictionary to collect results
         results: Dict[str, List[Dict[str, Any]]] = {}
 
+        # Reset circuit breaker before querying (RC7: TASK-REV-F8BA)
+        if hasattr(self.graphiti, 'reset_circuit_breaker'):
+            self.graphiti.reset_circuit_breaker()
+
         # Query categories in priority order
         for group_id, category_name, allocation in category_configs:
             if should_stop():
@@ -850,6 +854,11 @@ class JobContextRetriever:
             ),
         ]
 
+        # Reset circuit breaker before querying to prevent cascading failures
+        # from previous operations (RC7: TASK-REV-F8BA)
+        if hasattr(self.graphiti, 'reset_circuit_breaker'):
+            self.graphiti.reset_circuit_breaker()
+
         # Execute all standard queries in parallel
         results = await asyncio.gather(*standard_queries)
 
@@ -875,6 +884,10 @@ class JobContextRetriever:
         implementation_modes: List[Dict[str, Any]] = []
 
         if is_autobuild:
+            # Reset circuit breaker before AutoBuild queries (RC7: TASK-REV-F8BA)
+            if hasattr(self.graphiti, 'reset_circuit_breaker'):
+                self.graphiti.reset_circuit_breaker()
+
             feature_id = task.get("feature_id", "")
             task_id_val = task.get("id", "")
 

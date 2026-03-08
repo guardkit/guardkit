@@ -421,7 +421,8 @@ class TestSearchProjectNamespace:
         client.project_id = "my-project"
 
         mock_graphiti = MagicMock()
-        mock_graphiti.search = AsyncMock(return_value=[])
+        mock_search_results = MagicMock(edges=[], edge_reranker_scores=[])
+        mock_graphiti.search_ = AsyncMock(return_value=mock_search_results)
         client._graphiti = mock_graphiti
 
         await client.search(
@@ -430,7 +431,7 @@ class TestSearchProjectNamespace:
         )
 
         # Verify search was called with prefixed group_ids
-        call_args = mock_graphiti.search.call_args
+        call_args = mock_graphiti.search_.call_args
         assert call_args[1]['group_ids'] == [
             "my-project__project_overview",
             "my-project__feature_specs"
@@ -444,7 +445,8 @@ class TestSearchProjectNamespace:
         client.project_id = "my-project"
 
         mock_graphiti = MagicMock()
-        mock_graphiti.search = AsyncMock(return_value=[])
+        mock_search_results = MagicMock(edges=[], edge_reranker_scores=[])
+        mock_graphiti.search_ = AsyncMock(return_value=mock_search_results)
         client._graphiti = mock_graphiti
 
         await client.search(
@@ -453,7 +455,7 @@ class TestSearchProjectNamespace:
         )
 
         # Verify search was called with unprefixed system groups
-        call_args = mock_graphiti.search.call_args
+        call_args = mock_graphiti.search_.call_args
         assert call_args[1]['group_ids'] == [
             "role_constraints",
             "quality_gate_configs"
@@ -467,7 +469,8 @@ class TestSearchProjectNamespace:
         client.project_id = "test-app"
 
         mock_graphiti = MagicMock()
-        mock_graphiti.search = AsyncMock(return_value=[])
+        mock_search_results = MagicMock(edges=[], edge_reranker_scores=[])
+        mock_graphiti.search_ = AsyncMock(return_value=mock_search_results)
         client._graphiti = mock_graphiti
 
         await client.search(
@@ -481,7 +484,7 @@ class TestSearchProjectNamespace:
         )
 
         # Verify correct selective prefixing
-        call_args = mock_graphiti.search.call_args
+        call_args = mock_graphiti.search_.call_args
         assert call_args[1]['group_ids'] == [
             "test-app__project_overview",
             "role_constraints",
@@ -497,7 +500,8 @@ class TestSearchProjectNamespace:
         client.project_id = "my-project"
 
         mock_graphiti = MagicMock()
-        mock_graphiti.search = AsyncMock(return_value=[])
+        mock_search_results = MagicMock(edges=[], edge_reranker_scores=[])
+        mock_graphiti.search_ = AsyncMock(return_value=mock_search_results)
         client._graphiti = mock_graphiti
 
         # Force system scope for all groups
@@ -508,7 +512,7 @@ class TestSearchProjectNamespace:
         )
 
         # Should NOT prefix when scope is system
-        call_args = mock_graphiti.search.call_args
+        call_args = mock_graphiti.search_.call_args
         assert call_args[1]['group_ids'] == [
             "project_overview",
             "feature_specs"
@@ -530,7 +534,8 @@ class TestCrossProjectSearch:
         client.project_id = "current-project"
 
         mock_graphiti = MagicMock()
-        mock_graphiti.search = AsyncMock(return_value=[])
+        mock_search_results = MagicMock(edges=[], edge_reranker_scores=[])
+        mock_graphiti.search_ = AsyncMock(return_value=mock_search_results)
         client._graphiti = mock_graphiti
 
         # Search other project's groups by explicit prefix
@@ -540,7 +545,7 @@ class TestCrossProjectSearch:
         )
 
         # Should pass through the explicit prefix unchanged
-        call_args = mock_graphiti.search.call_args
+        call_args = mock_graphiti.search_.call_args
         assert call_args[1]['group_ids'] == ["other-project__project_overview"]
 
     @pytest.mark.asyncio
@@ -551,7 +556,8 @@ class TestCrossProjectSearch:
         client.project_id = "project-a"
 
         mock_graphiti = MagicMock()
-        mock_graphiti.search = AsyncMock(return_value=[])
+        mock_search_results = MagicMock(edges=[], edge_reranker_scores=[])
+        mock_graphiti.search_ = AsyncMock(return_value=mock_search_results)
         client._graphiti = mock_graphiti
 
         # Search across multiple projects
@@ -565,7 +571,7 @@ class TestCrossProjectSearch:
         )
 
         # Should preserve all explicit prefixes
-        call_args = mock_graphiti.search.call_args
+        call_args = mock_graphiti.search_.call_args
         assert call_args[1]['group_ids'] == [
             "project-a__domain_knowledge",
             "project-b__domain_knowledge",
@@ -580,7 +586,8 @@ class TestCrossProjectSearch:
         client.project_id = "my-project"
 
         mock_graphiti = MagicMock()
-        mock_graphiti.search = AsyncMock(return_value=[])
+        mock_search_results = MagicMock(edges=[], edge_reranker_scores=[])
+        mock_graphiti.search_ = AsyncMock(return_value=mock_search_results)
         client._graphiti = mock_graphiti
 
         # Search all projects by passing None group_ids
@@ -590,7 +597,7 @@ class TestCrossProjectSearch:
         )
 
         # Should pass None through to search all
-        call_args = mock_graphiti.search.call_args
+        call_args = mock_graphiti.search_.call_args
         assert call_args[1]['group_ids'] is None
 
 
@@ -647,7 +654,8 @@ class TestEdgeCases:
         # project_id not set
 
         mock_graphiti = MagicMock()
-        mock_graphiti.search = AsyncMock(return_value=[])
+        mock_search_results = MagicMock(edges=[], edge_reranker_scores=[])
+        mock_graphiti.search_ = AsyncMock(return_value=mock_search_results)
         client._graphiti = mock_graphiti
 
         # Should work for system groups
@@ -657,7 +665,7 @@ class TestEdgeCases:
         )
 
         # Should succeed
-        assert mock_graphiti.search.called
+        assert mock_graphiti.search_.called
 
     def test_get_group_id_with_special_chars_in_project_id(self):
         """Test group_id generation with special characters in project_id."""

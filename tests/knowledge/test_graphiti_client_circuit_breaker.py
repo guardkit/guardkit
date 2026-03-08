@@ -175,15 +175,19 @@ class TestSearchWithCircuitBreaker:
         mock_edge.name = "test name"
         mock_edge.created_at = "2025-01-01T00:00:00Z"
         mock_edge.valid_at = "2025-01-01T00:00:00Z"
-        mock_edge.score = 0.95
+
+        mock_search_results = MagicMock()
+        mock_search_results.edges = [mock_edge]
+        mock_search_results.edge_reranker_scores = [0.95]
 
         mock_graphiti = AsyncMock()
-        mock_graphiti.search.return_value = [mock_edge]
+        mock_graphiti.search_.return_value = mock_search_results
         client._graphiti = mock_graphiti
 
         results = await client._execute_search("test query")
 
         assert len(results) == 1
+        assert results[0]["score"] == 0.95
         assert client._consecutive_failures == 0  # Should be reset
 
     @pytest.mark.asyncio
@@ -192,9 +196,9 @@ class TestSearchWithCircuitBreaker:
         client = GraphitiClient()
         client._consecutive_failures = 0
 
-        # Mock search that raises exception
+        # Mock search_ that raises exception
         mock_graphiti = AsyncMock()
-        mock_graphiti.search.side_effect = Exception("Connection error")
+        mock_graphiti.search_.side_effect = Exception("Connection error")
         client._graphiti = mock_graphiti
 
         results = await client._execute_search("test query")
@@ -208,9 +212,9 @@ class TestSearchWithCircuitBreaker:
         client = GraphitiClient()
         client._consecutive_failures = 0
 
-        # Mock search that always fails
+        # Mock search_ that always fails
         mock_graphiti = AsyncMock()
-        mock_graphiti.search.side_effect = Exception("Connection error")
+        mock_graphiti.search_.side_effect = Exception("Connection error")
         client._graphiti = mock_graphiti
 
         # Trigger 3 failures
@@ -360,22 +364,26 @@ class TestCircuitBreakerIntegration:
         mock_edge.uuid = "test-uuid"
         mock_edge.fact = "test fact"
 
+        mock_search_results = MagicMock()
+        mock_search_results.edges = [mock_edge]
+        mock_search_results.edge_reranker_scores = [0.9]
+
         mock_graphiti = AsyncMock()
         client._graphiti = mock_graphiti
 
         # First call succeeds
-        mock_graphiti.search.return_value = [mock_edge]
+        mock_graphiti.search_.return_value = mock_search_results
         await client._execute_search("query1")
         assert client._consecutive_failures == 0
 
         # Second call fails
-        mock_graphiti.search.side_effect = Exception("Error")
+        mock_graphiti.search_.side_effect = Exception("Error")
         await client._execute_search("query2")
         assert client._consecutive_failures == 1
 
         # Third call succeeds - should reset counter
-        mock_graphiti.search.side_effect = None
-        mock_graphiti.search.return_value = [mock_edge]
+        mock_graphiti.search_.side_effect = None
+        mock_graphiti.search_.return_value = mock_search_results
         await client._execute_search("query3")
         assert client._consecutive_failures == 0
         assert client._circuit_breaker_tripped is False
@@ -415,7 +423,7 @@ class TestCircuitBreakerIntegration:
         client = GraphitiClient()
 
         mock_graphiti = AsyncMock()
-        mock_graphiti.search.side_effect = Exception("Error")
+        mock_graphiti.search_.side_effect = Exception("Error")
         mock_graphiti.add_episode.side_effect = Exception("Error")
         client._graphiti = mock_graphiti
 

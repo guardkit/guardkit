@@ -1,7 +1,7 @@
 ---
 id: TASK-REV-F8BA
 title: Investigate Graphiti context retrieval returning 0 categories despite seeded data
-status: backlog
+status: review_complete
 task_type: review
 review_mode: decision
 review_depth: comprehensive

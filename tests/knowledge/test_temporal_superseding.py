@@ -224,8 +224,11 @@ class TestOldContentRetrievability:
         )
 
         mock_graphiti = MagicMock()
-        # Search returns both episodes (old and new)
-        mock_graphiti.search = AsyncMock(return_value=[new_edge, old_edge])
+        # search_ returns SearchResults (used by _execute_search)
+        mock_search_results = MagicMock()
+        mock_search_results.edges = [new_edge, old_edge]
+        mock_search_results.edge_reranker_scores = [0.9, 0.8]
+        mock_graphiti.search_ = AsyncMock(return_value=mock_search_results)
         client._graphiti = mock_graphiti
 
         # Semantic search for the old content topic
@@ -298,7 +301,11 @@ class TestOldContentRetrievability:
         )
 
         mock_graphiti = MagicMock()
-        mock_graphiti.search = AsyncMock(return_value=[old_edge])
+        # search_ returns SearchResults (used by _execute_search)
+        mock_search_results = MagicMock()
+        mock_search_results.edges = [old_edge]
+        mock_search_results.edge_reranker_scores = [0.9]
+        mock_graphiti.search_ = AsyncMock(return_value=mock_search_results)
         client._graphiti = mock_graphiti
         client._connected = True
 
@@ -711,7 +718,11 @@ class TestTemporalSupersedingRecommendation:
             content=content_v2,
             source_hash=hashlib.sha256(content_v2.encode()).hexdigest(),
         )
-        mock_graphiti.search = AsyncMock(return_value=[new_edge, old_edge])
+        # search_ returns SearchResults (used by _execute_search for client.search())
+        mock_search_results = MagicMock()
+        mock_search_results.edges = [new_edge, old_edge]
+        mock_search_results.edge_reranker_scores = [0.9, 0.8]
+        mock_graphiti.search_ = AsyncMock(return_value=mock_search_results)
         client._connected = True
 
         results = await client.search(

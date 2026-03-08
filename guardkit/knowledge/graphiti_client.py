@@ -265,6 +265,16 @@ class GraphitiClient:
         # Determine project_id: explicit > auto-detect
         if self.config.project_id is not None:
             self._project_id = self.config.project_id
+            # RC4 (TASK-REV-F8BA): Warn if auto-detected name differs from config,
+            # which would indicate a cross-project namespace mismatch risk
+            if auto_detect_project:
+                cwd_name = normalize_project_id(get_current_project_name())
+                if cwd_name and cwd_name != self._project_id:
+                    logger.info(
+                        "project_id '%s' from config differs from cwd-derived '%s'. "
+                        "Using config value. Project groups will use '%s__' prefix.",
+                        self._project_id, cwd_name, self._project_id,
+                    )
         elif auto_detect_project:
             self._project_id = normalize_project_id(get_current_project_name())
             logger.warning(
@@ -863,14 +873,24 @@ class GraphitiClient:
             return []
 
         try:
-            # Use graphiti-core search
-            results = await self._graphiti.search(
+            # Use graphiti-core search_ for full SearchResults with reranker scores
+            # (search() discards scores; search_() returns SearchResults with
+            #  edge_reranker_scores parallel to edges — see TASK-REV-F8BA RC6)
+            from graphiti_core.search.search_config_recipes import EDGE_HYBRID_SEARCH_RRF
+
+            search_config = EDGE_HYBRID_SEARCH_RRF
+            search_config.limit = num_results
+
+            search_results = await self._graphiti.search_(
                 query,
+                config=search_config,
                 group_ids=group_ids,
-                num_results=num_results
             )
 
-            # Convert Edge objects to dictionaries
+            edges = search_results.edges
+            scores = search_results.edge_reranker_scores
+
+            # Convert Edge objects to dictionaries, zipping with reranker scores
             result_list = [
                 {
                     "uuid": edge.uuid,
@@ -878,9 +898,9 @@ class GraphitiClient:
                     "name": getattr(edge, 'name', edge.fact[:50] if edge.fact else 'unknown'),
                     "created_at": str(edge.created_at) if hasattr(edge, 'created_at') else None,
                     "valid_at": str(edge.valid_at) if hasattr(edge, 'valid_at') else None,
-                    "score": getattr(edge, 'score', 0.0),
+                    "score": scores[i] if i < len(scores) else 1.0,
                 }
-                for edge in results
+                for i, edge in enumerate(edges)
             ]
 
             # Record success

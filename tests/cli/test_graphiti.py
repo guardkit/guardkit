@@ -40,14 +40,19 @@ class TestGraphitiSeedCommand:
         """Test that seed command invokes seed_all_system_context."""
         runner = CliRunner()
 
-        with patch('guardkit.cli.graphiti.seed_all_system_context', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.graphiti.GraphitiClient') as mock_client_class:
+        mock_client = MagicMock()
+        mock_client.enabled = True
+        mock_client.initialize = AsyncMock(return_value=True)
+        mock_client.close = AsyncMock()
 
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
+        mock_settings = MagicMock()
+        mock_settings.llm_provider = "openai"
+        mock_settings.embedding_provider = "openai"
+
+        with patch('guardkit.cli.graphiti.seed_all_system_context', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.graphiti._get_client_and_config', return_value=(mock_client, mock_settings)), \
+             patch('guardkit.cli.graphiti.is_seeded', return_value=False):
+
             mock_seed.return_value = True
 
             result = runner.invoke(cli, ["graphiti", "seed"])
@@ -60,14 +65,20 @@ class TestGraphitiSeedCommand:
         """Test that --force flag passes through to seeding."""
         runner = CliRunner()
 
-        with patch('guardkit.cli.graphiti.seed_all_system_context', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.graphiti.GraphitiClient') as mock_client_class:
+        mock_client = MagicMock()
+        mock_client.enabled = True
+        mock_client.initialize = AsyncMock(return_value=True)
+        mock_client.close = AsyncMock()
 
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
+        mock_settings = MagicMock()
+        mock_settings.llm_provider = "openai"
+        mock_settings.embedding_provider = "openai"
+
+        with patch('guardkit.cli.graphiti.seed_all_system_context', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.graphiti._get_client_and_config', return_value=(mock_client, mock_settings)), \
+             patch('guardkit.cli.graphiti.is_seeded', return_value=False), \
+             patch('guardkit.cli.graphiti.clear_seeding_marker'):
+
             mock_seed.return_value = True
 
             result = runner.invoke(cli, ["graphiti", "seed", "--force"])
@@ -81,12 +92,17 @@ class TestGraphitiSeedCommand:
         """Test seed command handles disabled Graphiti client gracefully."""
         runner = CliRunner()
 
-        with patch('guardkit.cli.graphiti.GraphitiClient') as mock_client_class:
-            mock_client = MagicMock()
-            mock_client.enabled = False
-            mock_client.initialize = AsyncMock(return_value=False)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
+        mock_client = MagicMock()
+        mock_client.enabled = False
+        mock_client.initialize = AsyncMock(return_value=False)
+        mock_client.close = AsyncMock()
+
+        mock_settings = MagicMock()
+        mock_settings.llm_provider = "openai"
+        mock_settings.embedding_provider = "openai"
+
+        with patch('guardkit.cli.graphiti._get_client_and_config', return_value=(mock_client, mock_settings)), \
+             patch('guardkit.cli.graphiti.is_seeded', return_value=False):
 
             result = runner.invoke(cli, ["graphiti", "seed"])
 
@@ -99,10 +115,16 @@ class TestGraphitiSeedCommand:
         """Test seed command handles connection errors gracefully."""
         runner = CliRunner()
 
-        with patch('guardkit.cli.graphiti.GraphitiClient') as mock_client_class:
-            mock_client = MagicMock()
-            mock_client.initialize = AsyncMock(side_effect=Exception("Connection refused"))
-            mock_client_class.return_value = mock_client
+        mock_client = MagicMock()
+        mock_client.initialize = AsyncMock(side_effect=Exception("Connection refused"))
+        mock_client.close = AsyncMock()
+
+        mock_settings = MagicMock()
+        mock_settings.llm_provider = "openai"
+        mock_settings.embedding_provider = "openai"
+
+        with patch('guardkit.cli.graphiti._get_client_and_config', return_value=(mock_client, mock_settings)), \
+             patch('guardkit.cli.graphiti.is_seeded', return_value=False):
 
             result = runner.invoke(cli, ["graphiti", "seed"])
 
