@@ -29,7 +29,9 @@ consumer_context:
   driver: guardkit.orchestrator.instrumentation.redaction
   format_note: Call redact_secrets(text) on cmd, stdout_tail, stderr_tail before constructing
     ToolExecEvent
-status: in_review
+status: completed
+completed: '2026-03-08T12:00:00Z'
+completed_note: Completed via manual task-work. See tasks/completed/2026-03/TASK-INST-005c/
 autobuild_state:
   current_turn: 1
   max_turns: 30

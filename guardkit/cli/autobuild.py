@@ -39,6 +39,10 @@ from guardkit.orchestrator.feature_complete import (
     FeatureCompleteResult,
     FeatureCompleteError,
 )
+from guardkit.orchestrator.instrumentation.emitter import (
+    CompositeBackend,
+    JSONLFileBackend,
+)
 from guardkit.tasks.task_loader import TaskLoader
 from guardkit.worktrees import WorktreeManager, Worktree
 
@@ -728,6 +732,10 @@ def feature(
         f"timeout_multiplier={timeout_multiplier}, max_parallel={max_parallel})"
     )
 
+    # Create instrumentation emitter (TASK-INST-013)
+    events_dir = Path(".guardkit/autobuild") / feature_id
+    emitter = CompositeBackend(backends=[JSONLFileBackend(events_dir=events_dir)])
+
     try:
         # Initialize feature orchestrator
         orchestrator = FeatureOrchestrator(
@@ -746,6 +754,7 @@ def feature(
             timeout_multiplier=timeout_multiplier,
             max_parallel=max_parallel,
             skip_validation=skip_validation,
+            emitter=emitter,
         )
 
         # Execute feature orchestration
@@ -771,6 +780,18 @@ def feature(
         console.print(f"[red]Orchestration error: {e}[/red]")
         logger.error(f"Feature orchestration error: {e}")
         sys.exit(2)
+
+    finally:
+        # Emitter lifecycle: flush and close (TASK-INST-013)
+        import asyncio as _asyncio
+        try:
+            _asyncio.run(emitter.flush())
+        except Exception as exc:
+            logger.warning("Failed to flush emitter: %s", exc)
+        try:
+            _asyncio.run(emitter.close())
+        except Exception as exc:
+            logger.warning("Failed to close emitter: %s", exc)
 
 
 # ============================================================================

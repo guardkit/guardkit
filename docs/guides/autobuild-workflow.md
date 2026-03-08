@@ -1166,6 +1166,7 @@ diff normal_mode.log ablation_mode.log
 ### GuardKit Documentation
 
 - [AutoBuild Architecture Deep-Dive](../deep-dives/autobuild-architecture.md) - Technical implementation details
+- [AutoBuild Instrumentation Guide](autobuild-instrumentation-guide.md) - Event types, jq queries, prompt profiles, and adaptive concurrency
 - [CLI vs Claude Code Comparison](cli-vs-claude-code.md) - Choosing your interface
 
 ---

@@ -312,4 +312,5 @@ All performance data in this guide comes from the **TASK-REV-C960** review, whic
 
 - [Simple Local AutoBuild Setup](simple-local-autobuild.md) — vLLM server setup and model alignment
 - [AutoBuild Workflow Guide](autobuild-workflow.md) — Full AutoBuild architecture and usage
+- [AutoBuild Instrumentation Guide](autobuild-instrumentation-guide.md) — Event types, token tracking, vLLM metrics, and prompt profile A/B comparison
 - [CLI vs Claude Code](cli-vs-claude-code.md) — When to use the CLI vs slash commands

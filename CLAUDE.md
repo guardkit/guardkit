@@ -169,6 +169,7 @@ installer/core/             # Global resources (agents, commands, templates)
 | System Context | `docs/guides/system-overview-guide.md`, `impact-analysis-guide.md`, `context-switch-guide.md` |
 | Stack Templates | `installer/core/templates/*/` |
 | Rules & Patterns | `.claude/rules/` |
+| Instrumentation Guide | `docs/guides/autobuild-instrumentation-guide.md` |
 | MCP Integration | `docs/deep-dives/mcp-integration/` |
 | Graphiti Knowledge | `.claude/rules/graphiti-knowledge.md` |
 | Installation | `pip install guardkit-py` or `./installer/scripts/install.sh` |

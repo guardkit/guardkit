@@ -4333,6 +4333,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 tool_count = 0
                 result_count = 0
                 _sdk_stream_error = None
+                # TASK-INST-005c: Track pending Bash tool invocations for
+                # tool.exec event emission. Keyed by tool_use_id.
+                _pending_bash_tools: Dict[str, Dict[str, Any]] = {}
                 # TASK-VPR-003: Track SDK turns from ResultMessage
                 sdk_turns_used = None
                 async with asyncio.timeout(self.sdk_timeout_seconds):
@@ -4393,7 +4396,35 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                                     f"[{task_id}] ToolUseBlock {block.name} input is "
                                                     f"{type(tool_input).__name__}, not dict: {str(tool_input)[:200]}"
                                                 )
+                                        # TASK-INST-005c: Track Bash tool invocations
+                                        # for tool.exec event emission
+                                        elif block.name == "Bash":
+                                            tool_input = getattr(block, "input", {})
+                                            if isinstance(tool_input, dict):
+                                                _pending_bash_tools[block.id] = {
+                                                    "cmd": tool_input.get("command", ""),
+                                                    "start_ns": time.monotonic_ns(),
+                                                }
                                     elif isinstance(block, ToolResultBlock):
+                                        # TASK-INST-005c: Emit tool.exec event for
+                                        # completed Bash tool invocations
+                                        _tool_use_id = getattr(block, "tool_use_id", "")
+                                        if _tool_use_id in _pending_bash_tools:
+                                            _bash_info = _pending_bash_tools.pop(_tool_use_id)
+                                            _content = str(block.content) if block.content else ""
+                                            _latency = (
+                                                (time.monotonic_ns() - _bash_info["start_ns"])
+                                                / 1_000_000
+                                            )
+                                            self._emit_tool_exec_event(
+                                                tool_name="Bash",
+                                                cmd=_bash_info["cmd"],
+                                                exit_code=0,
+                                                latency_ms=_latency,
+                                                stdout_tail=_content,
+                                                stderr_tail="",
+                                                task_id=task_id,
+                                            )
                                         # Extract content from tool results if present
                                         if block.content:
                                             collected_output.append(str(block.content))

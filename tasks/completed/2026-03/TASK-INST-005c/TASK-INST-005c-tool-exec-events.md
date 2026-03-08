@@ -26,7 +26,9 @@ feature_id: FEAT-INST
 id: TASK-INST-005c
 implementation_mode: task-work
 parent_review: TASK-REV-2FE2
-status: design_approved
+status: completed
+completed: '2026-03-08T12:00:00Z'
+completed_location: tasks/completed/2026-03/TASK-INST-005c/
 task_type: feature
 title: Emit tool execution events with secret redaction
 wave: 3

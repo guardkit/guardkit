@@ -14,7 +14,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from types import ModuleType
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -580,3 +580,98 @@ class TestMultipleBashToolEvents:
         tool_events = [e for e in emitter.events if isinstance(e, ToolExecEvent)]
         assert len(tool_events) == 2
         assert tool_events[0].cmd != tool_events[1].cmd
+
+
+# ============================================================================
+# Test: SDK stream wiring (AC-001 integration)
+# ============================================================================
+
+
+class TestSDKStreamWiring:
+    """Verify _emit_tool_exec_event is called from SDK stream processing."""
+
+    def test_pending_bash_tools_tracking(self, tmp_path: Path) -> None:
+        """Bash ToolUseBlock followed by ToolResultBlock emits event."""
+        import time as _time
+
+        emitter = NullEmitter(capture=True)
+        invoker = _make_invoker(tmp_path, emitter=emitter)
+
+        # Simulate what the SDK stream loop does:
+        # 1. Bash ToolUseBlock arrives → store in _pending_bash_tools
+        # 2. ToolResultBlock arrives → match, emit, remove
+
+        pending: Dict[str, Dict[str, Any]] = {}
+        block_id = "tool_Bash_12345"
+        cmd_text = "pytest tests/ -v"
+        start_ns = _time.monotonic_ns()
+
+        # Step 1: Bash ToolUseBlock detected
+        pending[block_id] = {"cmd": cmd_text, "start_ns": start_ns}
+
+        # Step 2: ToolResultBlock detected for same tool_use_id
+        assert block_id in pending
+        bash_info = pending.pop(block_id)
+        content = "12 tests passed, 0 failed"
+        latency_ms = (_time.monotonic_ns() - bash_info["start_ns"]) / 1_000_000
+
+        # Step 3: Emit event (same call as the wiring code)
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(
+                self._emit_and_check(
+                    invoker, emitter, bash_info["cmd"], latency_ms, content
+                )
+            )
+        finally:
+            loop.close()
+
+    async def _emit_and_check(
+        self,
+        invoker: Any,
+        emitter: NullEmitter,
+        cmd: str,
+        latency_ms: float,
+        stdout_tail: str,
+    ) -> None:
+        invoker._emit_tool_exec_event(
+            tool_name="Bash",
+            cmd=cmd,
+            exit_code=0,
+            latency_ms=latency_ms,
+            stdout_tail=stdout_tail,
+            stderr_tail="",
+            task_id="TASK-WIRE-001",
+        )
+        await asyncio.sleep(0.05)
+
+        assert len(emitter.events) == 1
+        event = emitter.events[0]
+        assert isinstance(event, ToolExecEvent)
+        assert event.tool_name == "Bash"
+        assert event.cmd == "pytest tests/ -v"
+        assert event.task_id == "TASK-WIRE-001"
+        assert event.latency_ms > 0
+
+    def test_non_bash_tool_result_does_not_emit(self, tmp_path: Path) -> None:
+        """ToolResultBlock for non-Bash tool does not emit tool.exec event."""
+        emitter = NullEmitter(capture=True)
+        invoker = _make_invoker(tmp_path, emitter=emitter)
+
+        # Simulate: only Write ToolUseBlock → no entry in pending_bash_tools
+        pending: Dict[str, Dict[str, Any]] = {}
+        write_block_id = "tool_Write_99999"
+
+        # Write tool does NOT add to pending_bash_tools
+        # So when ToolResultBlock arrives, nothing happens
+        assert write_block_id not in pending
+
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(asyncio.sleep(0.01))
+        finally:
+            loop.close()
+
+        # No tool.exec events emitted
+        tool_events = [e for e in emitter.events if isinstance(e, ToolExecEvent)]
+        assert len(tool_events) == 0

@@ -1916,6 +1916,7 @@ The detailed specifications are in the task markdown file.
                 task_timeout=self.task_timeout,  # Feature task budget for SDK timeout logging (TASK-ABFIX-006)
                 timeout_multiplier=self.timeout_multiplier,  # TASK-FIX-VL05
                 wave_size=wave_size,  # Parallel wave context for Coach isolation (TASK-ABFIX-005)
+                emitter=self._emitter,  # Forward emitter to task orchestrator (TASK-INST-013)
             )
 
             # Execute task orchestration

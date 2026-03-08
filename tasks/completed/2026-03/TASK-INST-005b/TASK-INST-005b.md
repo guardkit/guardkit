@@ -1,42 +1,29 @@
 ---
-id: TASK-INST-005b
-title: Emit LLM call events from _invoke_with_role
-task_type: feature
-parent_review: TASK-REV-2FE2
-feature_id: FEAT-INST
-wave: 3
-implementation_mode: task-work
-complexity: 4
-dependencies:
-- TASK-INST-001
-- TASK-INST-002
-- TASK-INST-005a
 autobuild:
   enabled: true
   max_turns: 5
   mode: tdd
+complexity: 4
 consumer_context:
-- task: TASK-INST-002
-  consumes: EVENT_EMITTER
-  framework: EventEmitter protocol (async)
+- consumes: EVENT_EMITTER
   driver: guardkit.orchestrator.instrumentation.emitter
   format_note: EventEmitter injected via constructor; call await emitter.emit(event)
-status: in_review
-autobuild_state:
-  current_turn: 1
-  max_turns: 30
-  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CF57
-  base_branch: main
-  started_at: '2026-03-02T22:42:35.615180'
-  last_updated: '2026-03-02T23:04:50.139886'
-  turns:
-  - turn: 1
-    decision: approve
-    feedback: null
-    timestamp: '2026-03-02T22:42:35.615180'
-    player_summary: Implementation via task-work delegation
-    player_success: true
-    coach_success: true
+  framework: EventEmitter protocol (async)
+  task: TASK-INST-002
+dependencies:
+- TASK-INST-001
+- TASK-INST-002
+- TASK-INST-005a
+feature_id: FEAT-INST
+id: TASK-INST-005b
+implementation_mode: task-work
+parent_review: TASK-REV-2FE2
+status: completed
+completed: 2026-03-08T00:00:00Z
+previous_state: design_approved
+task_type: feature
+title: Emit LLM call events from _invoke_with_role
+wave: 3
 ---
 
 # Task: Emit LLM Call Events from _invoke_with_role
@@ -121,15 +108,15 @@ asyncio.create_task(self._emitter.emit(event))
 
 ## Acceptance Criteria
 
-- [ ] `llm.call` event emitted for every successful SDK invocation
-- [ ] `llm.call` event emitted for failed SDK invocations (timeout, API error)
-- [ ] Event includes all required fields: run_id, task_id, agent_role, provider, model, tokens, latency, prompt_profile, status
-- [ ] Event emission is non-blocking (asyncio.create_task)
-- [ ] Emission failure does not propagate to caller
-- [ ] NullEmitter default preserves existing behaviour (no event emission when emitter not injected)
-- [ ] Multiple calls in same turn produce distinct events
-- [ ] Existing tests in test_agent_invoker.py still pass (zero regression)
-- [ ] New tests cover: successful emission, error emission, non-blocking behaviour, NullEmitter default
+- [x] `llm.call` event emitted for every successful SDK invocation
+- [x] `llm.call` event emitted for failed SDK invocations (timeout, API error)
+- [x] Event includes all required fields: run_id, task_id, agent_role, provider, model, tokens, latency, prompt_profile, status
+- [x] Event emission is non-blocking (asyncio.create_task)
+- [x] Emission failure does not propagate to caller
+- [x] NullEmitter default preserves existing behaviour (no event emission when emitter not injected)
+- [x] Multiple calls in same turn produce distinct events
+- [x] Existing tests in test_agent_invoker.py still pass (zero regression)
+- [x] New tests cover: successful emission, error emission, non-blocking behaviour, NullEmitter default
 
 ## File Location
 
@@ -139,3 +126,12 @@ Changes to:
 ## Test Location
 
 `tests/orchestrator/instrumentation/test_llm_call_events.py`
+
+## Completion Notes
+
+**Implementation verified 2026-03-08:**
+- `AgentInvoker.__init__`: `emitter` parameter with `NullEmitter()` default (line 709)
+- `_invoke_with_role`: `measure_latency()` wraps SDK call, error tracking in except block, event emission in finally block (lines 1932-1972)
+- `_emit_llm_call_event`: Helper method with fire-and-forget via `asyncio.create_task()`, error swallowing (lines 1996-2075)
+- 13 dedicated tests all passing
+- 420/420 instrumentation suite tests passing (zero regression)
