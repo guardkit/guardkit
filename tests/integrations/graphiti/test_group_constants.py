@@ -36,7 +36,7 @@ class TestProjectGroups:
 
     def test_project_groups_contains_all_required_group_ids(self):
         """
-        PROJECT_GROUPS should contain all 7 required group IDs.
+        PROJECT_GROUPS should contain all 9 required group IDs.
 
         Per the unified specification, these are the standard group IDs
         for organizing project-specific knowledge:
@@ -47,6 +47,8 @@ class TestProjectGroups:
         - project_constraints: Constraints and limitations
         - domain_knowledge: Domain terminology and concepts
         - bdd_scenarios: BDD Gherkin scenarios
+        - task_outcomes: Task completion outcomes and lessons learned
+        - turn_states: Feature-build turn state history
         """
         required_groups = {
             "project_overview",
@@ -56,6 +58,8 @@ class TestProjectGroups:
             "project_constraints",
             "domain_knowledge",
             "bdd_scenarios",
+            "task_outcomes",
+            "turn_states",
         }
 
         actual_groups = set(PROJECT_GROUPS.keys())
@@ -120,6 +124,8 @@ class TestProjectGroups:
             "project_constraints": "Constraints and limitations",
             "domain_knowledge": "Domain terminology and concepts",
             "bdd_scenarios": "BDD Gherkin scenarios for behavior specifications",
+            "task_outcomes": "Task completion outcomes and lessons learned",
+            "turn_states": "Feature-build turn state history for cross-turn learning",
         }
 
         assert PROJECT_GROUPS == expected_descriptions, (
@@ -369,12 +375,12 @@ class TestGroupConstantsAreImmutable:
 class TestGroupCountExpectations:
     """Tests to validate expected group counts for regression detection."""
 
-    def test_project_groups_count_is_exactly_seven(self):
+    def test_project_groups_count_is_exactly_nine(self):
         """
-        PROJECT_GROUPS should contain exactly 7 group IDs.
+        PROJECT_GROUPS should contain exactly 9 group IDs.
         """
-        assert len(PROJECT_GROUPS) == 7, (
-            f"PROJECT_GROUPS should contain exactly 7 groups, "
+        assert len(PROJECT_GROUPS) == 9, (
+            f"PROJECT_GROUPS should contain exactly 9 groups, "
             f"found {len(PROJECT_GROUPS)}"
         )
 
@@ -387,14 +393,14 @@ class TestGroupCountExpectations:
             f"found {len(SYSTEM_GROUPS)}"
         )
 
-    def test_total_group_count_is_twenty_seven(self):
+    def test_total_group_count_is_twenty_nine(self):
         """
-        Total number of groups across both constants should be 27.
-        (7 project + 20 system = 27 total groups)
+        Total number of groups across both constants should be 29.
+        (9 project + 20 system = 29 total groups)
         """
         total_count = len(PROJECT_GROUPS) + len(SYSTEM_GROUPS)
 
-        assert total_count == 27, (
-            f"Total group count should be 27 (7 project + 20 system), "
+        assert total_count == 29, (
+            f"Total group count should be 29 (9 project + 20 system), "
             f"found {total_count}"
         )

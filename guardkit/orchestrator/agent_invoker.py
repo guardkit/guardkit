@@ -152,7 +152,7 @@ def detect_timeout_multiplier() -> float:
     # Auto-detect from backend URL
     base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
     if "localhost" in base_url or "127.0.0.1" in base_url:
-        return 3.0
+        return 4.0
     return 1.0
 
 
@@ -761,7 +761,7 @@ class AgentInvoker:
 
         # TASK-FIX-7718: Auto-reduce SDK max turns for local backends
         if not _SDK_MAX_TURNS_IS_OVERRIDE and self.timeout_multiplier > 1.0:
-            self._effective_sdk_max_turns = min(TASK_WORK_SDK_MAX_TURNS, 75)
+            self._effective_sdk_max_turns = min(TASK_WORK_SDK_MAX_TURNS, 100)
             logger.info(
                 "SDK max turns reduced to %d for local backend "
                 "(timeout_multiplier=%.1f)",
@@ -1199,6 +1199,13 @@ class AgentInvoker:
                     _sdk_max_turns = result.sdk_max_turns
                     _sdk_ceiling_hit = detect_ceiling_hit(_sdk_turns_used, _sdk_max_turns)
 
+                    # TASK-VOPT-002: Per-turn timing instrumentation
+                    logger.info(
+                        "[%s] SDK invocation complete: %.1fs, %d SDK turns (%.1fs/turn avg)",
+                        task_id, duration, _sdk_turns_used or 0,
+                        duration / max(_sdk_turns_used or 0, 1),
+                    )
+
                     return AgentInvocationResult(
                         task_id=task_id,
                         turn=turn,
@@ -1244,6 +1251,12 @@ class AgentInvoker:
                 self._validate_player_report(report)
 
                 duration = time.time() - start_time
+
+                # TASK-VOPT-002: Per-turn timing instrumentation (legacy path)
+                logger.info(
+                    "[%s] SDK invocation complete: %.1fs (legacy direct mode)",
+                    task_id, duration,
+                )
 
                 return AgentInvocationResult(
                     task_id=task_id,
@@ -3502,6 +3515,12 @@ Follow the decision format specified in your agent definition.
 
             duration = time.time() - start_time
 
+            # TASK-VOPT-002: Per-turn timing instrumentation (direct mode)
+            logger.info(
+                "[%s] SDK invocation complete: %.1fs (direct mode)",
+                task_id, duration,
+            )
+
             return AgentInvocationResult(
                 task_id=task_id,
                 turn=turn,
@@ -3923,7 +3942,14 @@ Follow the decision format specified in your agent definition.
             )
 
         # --- Section 6: Execution protocol (loaded from file) ---
-        protocol_content = load_protocol("autobuild_execution_protocol")
+        # TASK-VOPT-001: Use slim protocol for local backends to reduce
+        # prompt size (~18KB → ~4KB protocol section) and improve per-turn
+        # latency on slower inference backends.
+        if self.timeout_multiplier > 1.0:
+            protocol_name = "autobuild_execution_protocol_slim"
+        else:
+            protocol_name = "autobuild_execution_protocol"
+        protocol_content = load_protocol(protocol_name)
         # Substitute placeholders in protocol
         protocol_content = protocol_content.replace("{task_id}", task_id)
         protocol_content = protocol_content.replace("{turn}", str(turn))
@@ -4221,9 +4247,14 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             context=context,
         )
 
+        # TASK-VOPT-001: Log protocol variant and size
+        protocol_variant = "slim" if self.timeout_multiplier > 1.0 else "full"
         logger.info(f"Executing inline implement protocol for {task_id} (mode={mode})")
         logger.info(f"Working directory: {self.worktree_path}")
-        logger.info(f"Inline protocol size: {len(prompt)} bytes")
+        logger.info(
+            f"Inline protocol size: {len(prompt)} bytes "
+            f"(variant={protocol_variant}, multiplier={self.timeout_multiplier}x)"
+        )
 
         try:
             from claude_agent_sdk import (

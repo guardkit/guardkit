@@ -16,6 +16,8 @@ Created: 2025-10-11
 Updated: 2025-11-25 (TASK-HAI-006: AI discovery integration)
 """
 
+from __future__ import annotations
+
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from datetime import datetime

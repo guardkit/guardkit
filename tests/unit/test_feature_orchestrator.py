@@ -2065,20 +2065,77 @@ class TestPreflightCheck:
     def test_preflight_disables_context_when_factory_none(
         self, temp_repo, mock_worktree_manager
     ):
-        """Test that pre-flight check disables context when get_factory returns None."""
+        """Test that pre-flight check disables context when get_factory returns None even after lazy init."""
         orchestrator = FeatureOrchestrator(
             repo_root=temp_repo,
             worktree_manager=mock_worktree_manager,
             enable_context=True,
         )
 
-        with patch("guardkit.knowledge.graphiti_client.get_factory") as mock_get:
-            mock_get.return_value = None
+        with patch("guardkit.knowledge.graphiti_client.get_factory") as mock_get_factory, \
+             patch("guardkit.knowledge.graphiti_client.get_graphiti") as mock_get_graphiti:
+            # get_factory returns None both before and after lazy init attempt
+            mock_get_factory.return_value = None
+            mock_get_graphiti.return_value = None
 
             result = orchestrator._preflight_check()
 
             assert result is False
             assert orchestrator.enable_context is False
+            # Verify lazy init was attempted
+            mock_get_graphiti.assert_called_once()
+
+    def test_preflight_triggers_lazy_init_when_factory_none(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """Test that _preflight_check calls get_graphiti() when get_factory() initially returns None."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            enable_context=True,
+        )
+
+        mock_factory = MagicMock()
+        mock_factory.config.enabled = True
+        mock_factory.check_connectivity.return_value = True
+
+        with patch("guardkit.knowledge.graphiti_client.get_factory") as mock_get_factory, \
+             patch("guardkit.knowledge.graphiti_client.get_graphiti") as mock_get_graphiti:
+            # First call returns None (not yet initialized),
+            # second call returns factory (after lazy init)
+            mock_get_factory.side_effect = [None, mock_factory]
+            mock_get_graphiti.return_value = MagicMock()
+
+            result = orchestrator._preflight_check()
+
+            assert result is True
+            assert orchestrator.enable_context is True
+            mock_get_graphiti.assert_called_once()
+            assert mock_get_factory.call_count == 2
+
+    def test_preflight_skips_lazy_init_when_factory_already_available(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """Test that get_graphiti() is NOT called when get_factory() already returns a factory."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            enable_context=True,
+        )
+
+        mock_factory = MagicMock()
+        mock_factory.config.enabled = True
+        mock_factory.check_connectivity.return_value = True
+
+        with patch("guardkit.knowledge.graphiti_client.get_factory") as mock_get_factory, \
+             patch("guardkit.knowledge.graphiti_client.get_graphiti") as mock_get_graphiti:
+            mock_get_factory.return_value = mock_factory
+
+            result = orchestrator._preflight_check()
+
+            assert result is True
+            # get_graphiti should NOT be called — factory was already available
+            mock_get_graphiti.assert_not_called()
 
     def test_preflight_disables_context_when_factory_not_enabled(
         self, temp_repo, mock_worktree_manager

@@ -347,6 +347,108 @@ class TestImplementationPromptEdgeCases:
 
 
 # ============================================================================
+# TASK-VOPT-001: Slim Protocol Routing Tests
+# ============================================================================
+
+
+class TestSlimProtocolRouting:
+    """Tests for slim protocol routing based on timeout_multiplier."""
+
+    def test_default_multiplier_uses_full_protocol(self, worktree_path):
+        """When timeout_multiplier=1.0 (Anthropic API), use full protocol."""
+        invoker = AgentInvoker(worktree_path=worktree_path, timeout_multiplier=1.0)
+        prompt = invoker._build_autobuild_implementation_prompt(
+            task_id="TASK-001", requirements="Test"
+        )
+        # Full protocol has detailed SOLID descriptions
+        assert "Single Responsibility" in prompt
+
+    def test_local_backend_uses_slim_protocol(self, worktree_path):
+        """When timeout_multiplier>1.0 (local backend), use slim protocol."""
+        invoker = AgentInvoker(worktree_path=worktree_path, timeout_multiplier=4.0)
+        prompt = invoker._build_autobuild_implementation_prompt(
+            task_id="TASK-001", requirements="Test"
+        )
+        # Slim protocol does NOT have detailed SOLID descriptions
+        assert "Single Responsibility" not in prompt
+        # But still has essential quality gates
+        assert "Phase 3" in prompt
+        assert "Phase 4" in prompt
+        assert "Phase 5" in prompt
+        assert "Quality gates" in prompt
+
+    def test_slim_protocol_smaller_than_full(self, worktree_path):
+        """Slim protocol prompt should be significantly smaller than full."""
+        full_invoker = AgentInvoker(worktree_path=worktree_path, timeout_multiplier=1.0)
+        slim_invoker = AgentInvoker(worktree_path=worktree_path, timeout_multiplier=4.0)
+
+        full_prompt = full_invoker._build_autobuild_implementation_prompt(
+            task_id="TASK-001", requirements="Test"
+        )
+        slim_prompt = slim_invoker._build_autobuild_implementation_prompt(
+            task_id="TASK-001", requirements="Test"
+        )
+
+        # Slim should be at least 30% smaller
+        assert len(slim_prompt) < len(full_prompt) * 0.7
+
+    def test_slim_protocol_preserves_player_report_schema(self, worktree_path):
+        """Slim protocol must include player report schema for Coach parsing."""
+        invoker = AgentInvoker(worktree_path=worktree_path, timeout_multiplier=4.0)
+        prompt = invoker._build_autobuild_implementation_prompt(
+            task_id="TASK-001", requirements="Test"
+        )
+        assert "completion_promises" in prompt
+        assert "player_turn_" in prompt
+
+    def test_slim_protocol_preserves_output_markers(self, worktree_path):
+        """Slim protocol must include output markers for stream parsing."""
+        invoker = AgentInvoker(worktree_path=worktree_path, timeout_multiplier=4.0)
+        prompt = invoker._build_autobuild_implementation_prompt(
+            task_id="TASK-001", requirements="Test"
+        )
+        assert "tests passed" in prompt
+        assert "tests failed" in prompt
+        assert "Coverage:" in prompt
+        assert "Quality gates: PASSED" in prompt
+
+    def test_slim_protocol_preserves_fix_loop(self, worktree_path):
+        """Slim protocol must include fix loop instructions."""
+        invoker = AgentInvoker(worktree_path=worktree_path, timeout_multiplier=4.0)
+        prompt = invoker._build_autobuild_implementation_prompt(
+            task_id="TASK-001", requirements="Test"
+        )
+        assert "Phase 4.5" in prompt
+        assert "3 attempts" in prompt or "Max 3" in prompt
+
+    def test_slim_protocol_includes_acceptance_criteria(self, worktree_path):
+        """Slim protocol prompt includes task requirements (acceptance criteria)."""
+        invoker = AgentInvoker(worktree_path=worktree_path, timeout_multiplier=4.0)
+        requirements = "AC-001: Users can log in\nAC-002: Sessions expire"
+        prompt = invoker._build_autobuild_implementation_prompt(
+            task_id="TASK-001", requirements=requirements
+        )
+        assert "AC-001" in prompt
+        assert "AC-002" in prompt
+
+    def test_multiplier_exactly_one_uses_full(self, worktree_path):
+        """Boundary: multiplier=1.0 (exact) uses full protocol."""
+        invoker = AgentInvoker(worktree_path=worktree_path, timeout_multiplier=1.0)
+        prompt = invoker._build_autobuild_implementation_prompt(
+            task_id="TASK-001", requirements="Test"
+        )
+        assert "Single Responsibility" in prompt
+
+    def test_multiplier_just_above_one_uses_slim(self, worktree_path):
+        """Boundary: multiplier=1.1 uses slim protocol."""
+        invoker = AgentInvoker(worktree_path=worktree_path, timeout_multiplier=1.1)
+        prompt = invoker._build_autobuild_implementation_prompt(
+            task_id="TASK-001", requirements="Test"
+        )
+        assert "Single Responsibility" not in prompt
+
+
+# ============================================================================
 # Design Prompt Builder Tests
 # ============================================================================
 

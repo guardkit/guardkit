@@ -49,9 +49,12 @@ References:
 import asyncio
 import hashlib
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 from .task_analyzer import TaskAnalyzer, TaskPhase, TaskCharacteristics
 from .budget_calculator import DynamicBudgetCalculator, ContextBudget
@@ -355,7 +358,7 @@ class JobContextRetriever:
     # Based on TASK-GR6-012 requirements:
     # 1. feature_specs (15%)
     # 2. task_outcomes (25%)
-    # 3. patterns_{stack} (20%)
+    # 3. patterns (20%)
     # 4. project_architecture (20%)
     # 5. failure_patterns (15%)
     # 6. domain_knowledge (5%) - lowest priority
@@ -581,7 +584,7 @@ class JobContextRetriever:
         category_configs = [
             ("feature_specs", "feature_context", budget.get_allocation("feature_context")),
             ("task_outcomes", "similar_outcomes", budget.get_allocation("similar_outcomes")),
-            (f"patterns_{tech_stack}", "relevant_patterns", budget.get_allocation("relevant_patterns")),
+            ("patterns", "relevant_patterns", budget.get_allocation("relevant_patterns")),
             ("project_architecture", "architecture_context", budget.get_allocation("architecture_context")),
             ("failure_patterns", "warnings", budget.get_allocation("warnings")),
             ("domain_knowledge", "domain_knowledge", budget.get_allocation("domain_knowledge")),
@@ -815,7 +818,7 @@ class JobContextRetriever:
             ),
             self._query_category(
                 query=description,
-                group_ids=[f"patterns_{tech_stack}"],
+                group_ids=["patterns"],
                 budget_allocation=budget.get_allocation("relevant_patterns"),
                 threshold=threshold,
                 metrics_collector=metrics_collector,
@@ -993,8 +996,10 @@ class JobContextRetriever:
 
             return trimmed, tokens_used
 
-        except Exception:
-            # Graceful degradation - return empty on error
+        except Exception as e:
+            logger.warning(
+                "[Graphiti] Category '%s' query failed: %s", category, e
+            )
             return [], 0
 
     async def _query_turn_states(
@@ -1059,8 +1064,13 @@ class JobContextRetriever:
 
             return trimmed, tokens_used
 
-        except Exception:
-            # Graceful degradation - return empty on error
+        except Exception as e:
+            logger.warning(
+                "[Graphiti] turn_states query failed (feature=%s, task=%s): %s",
+                feature_id,
+                task_id,
+                e,
+            )
             return [], 0
 
     def _trim_to_budget(

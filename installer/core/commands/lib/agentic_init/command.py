@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional
 import shutil
 
-from .template_discovery import discover_templates, TemplateDiscovery
+from .template_discovery import discover_templates, TemplateDiscovery, TemplateInfo
 from .template_selection import select_template, display_template_info
 from .agent_installer import install_template_agents
 

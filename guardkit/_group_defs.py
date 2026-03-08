@@ -21,6 +21,8 @@ PROJECT_GROUPS: Dict[str, str] = {
     "project_constraints": "Constraints and limitations",
     "domain_knowledge": "Domain terminology and concepts",
     "bdd_scenarios": "BDD Gherkin scenarios for behavior specifications",
+    "task_outcomes": "Task completion outcomes and lessons learned",
+    "turn_states": "Feature-build turn state history for cross-turn learning",
 }
 
 # System-level group IDs with descriptions

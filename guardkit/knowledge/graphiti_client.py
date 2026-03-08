@@ -42,6 +42,9 @@ from guardkit._group_defs import (
 
 logger = logging.getLogger(__name__)
 
+# Suppress FalkorDB "Index already exists" noise (keeps WARNING+ visible)
+logging.getLogger("graphiti_core.driver.falkordb_driver").setLevel(logging.WARNING)
+
 # Lazy import graphiti-core to allow graceful degradation
 _graphiti_core_available = None
 

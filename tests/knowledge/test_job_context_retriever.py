@@ -467,7 +467,7 @@ class TestContextCategoryQueries:
 
     @pytest.mark.asyncio
     async def test_queries_relevant_patterns(self):
-        """Test that retrieve() queries patterns_{stack} group."""
+        """Test that retrieve() queries patterns system group."""
         from guardkit.knowledge.job_context_retriever import JobContextRetriever
         from guardkit.knowledge.task_analyzer import TaskPhase
 
@@ -484,10 +484,10 @@ class TestContextCategoryQueries:
 
         await retriever.retrieve(task, TaskPhase.IMPLEMENT)
 
-        # Should have queried patterns_python group
+        # Should have queried patterns system group (not patterns_{stack})
         calls = mock_graphiti.search.call_args_list
         group_ids_used = [call[1].get("group_ids", []) for call in calls]
-        assert any("patterns_python" in groups for groups in group_ids_used)
+        assert any("patterns" in groups for groups in group_ids_used)
 
     @pytest.mark.asyncio
     async def test_queries_architecture_context(self):
@@ -1578,7 +1578,7 @@ class TestParallelRetrieval:
 
         assert "feature_specs" in all_groups
         assert "task_outcomes" in all_groups
-        assert "patterns_python" in all_groups
+        assert "patterns" in all_groups
         assert "project_architecture" in all_groups
         assert "failure_patterns" in all_groups
         assert "domain_knowledge" in all_groups

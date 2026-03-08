@@ -52,7 +52,7 @@ class TestEffectiveSdkMaxTurns:
     """Tests for AgentInvoker._effective_sdk_max_turns computation."""
 
     def test_effective_turns_reduced_for_local_backend(self, tmp_path, monkeypatch):
-        """_effective_sdk_max_turns is capped at 75 when timeout_multiplier > 1.0
+        """_effective_sdk_max_turns is capped at 100 when timeout_multiplier > 1.0
         and GUARDKIT_SDK_MAX_TURNS was not explicitly set."""
         worktree = tmp_path / "worktree"
         worktree.mkdir()
@@ -66,7 +66,7 @@ class TestEffectiveSdkMaxTurns:
             timeout_multiplier=4.0,
         )
 
-        assert invoker._effective_sdk_max_turns == 75
+        assert invoker._effective_sdk_max_turns == 100
 
     def test_effective_turns_unchanged_for_remote_backend(self, tmp_path, monkeypatch):
         """_effective_sdk_max_turns equals TASK_WORK_SDK_MAX_TURNS when

@@ -41,6 +41,7 @@ References:
 """
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
@@ -187,6 +188,7 @@ class AutoBuildContextLoader:
             return self._empty_result(task_id)
 
         logger.info("[Graphiti] Loading Player context (turn %d)...", turn_number)
+        context_start = time.monotonic()
 
         # Build task dict for JobContextRetriever
         task = self._build_task_dict(
@@ -238,6 +240,10 @@ class AutoBuildContextLoader:
             if similar_outcomes_count > 0:
                 logger.info("[Graphiti] Similar outcomes found: %d matches", similar_outcomes_count)
 
+            # TASK-VOPT-002: Per-turn context loading timing
+            context_duration = time.monotonic() - context_start
+            logger.info("[Graphiti] Context loaded in %.1fs", context_duration)
+
             logger.info(
                 "[Graphiti] Player context: %d categories, %d/%d tokens",
                 len(result.categories_populated),
@@ -247,7 +253,11 @@ class AutoBuildContextLoader:
             return result
 
         except Exception as e:
-            logger.warning(f"Failed to retrieve Player context for {task_id}: {e}")
+            context_duration = time.monotonic() - context_start
+            logger.warning(
+                "Failed to retrieve Player context for %s after %.1fs: %s",
+                task_id, context_duration, e,
+            )
             return self._empty_result(task_id)
 
     async def get_coach_context(
@@ -285,6 +295,7 @@ class AutoBuildContextLoader:
             return self._empty_result(task_id)
 
         logger.info("[Graphiti] Loading Coach context (turn %d)...", turn_number)
+        context_start = time.monotonic()
 
         # Build task dict for JobContextRetriever
         task = self._build_task_dict(
@@ -333,6 +344,10 @@ class AutoBuildContextLoader:
             # Log coach context categories
             logger.info("[Graphiti] Coach context categories: %s", result.categories_populated)
 
+            # TASK-VOPT-002: Per-turn context loading timing
+            context_duration = time.monotonic() - context_start
+            logger.info("[Graphiti] Context loaded in %.1fs", context_duration)
+
             logger.info(
                 "[Graphiti] Coach context: %d categories, %d/%d tokens",
                 len(result.categories_populated),
@@ -342,7 +357,11 @@ class AutoBuildContextLoader:
             return result
 
         except Exception as e:
-            logger.warning(f"Failed to retrieve Coach context for {task_id}: {e}")
+            context_duration = time.monotonic() - context_start
+            logger.warning(
+                "Failed to retrieve Coach context for %s after %.1fs: %s",
+                task_id, context_duration, e,
+            )
             return self._empty_result(task_id)
 
     def _build_task_dict(

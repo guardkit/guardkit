@@ -1191,8 +1191,15 @@ The detailed specifications are in the task markdown file.
             # client.initialize() or _check_health() leaves FalkorDB asyncio.Lock
             # objects bound to a dead loop, causing "Lock bound to different
             # event loop" errors when the client is later used on the worker's loop.
-            from guardkit.knowledge.graphiti_client import get_factory
+            from guardkit.knowledge.graphiti_client import get_factory, get_graphiti
             factory = get_factory()
+            if factory is None:
+                # Trigger lazy initialization — loads config from
+                # .guardkit/graphiti.yaml, creates GraphitiClientFactory.
+                # This is synchronous and does NOT create asyncio objects
+                # (GLF-003: thread clients have pending_init=True).
+                get_graphiti()
+                factory = get_factory()
             if factory is None or not factory.config.enabled:
                 logger.info("Graphiti factory not available or disabled, disabling context loading")
                 console.print(
