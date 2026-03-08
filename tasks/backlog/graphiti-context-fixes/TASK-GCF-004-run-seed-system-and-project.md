@@ -18,35 +18,44 @@ created: 2026-03-08T15:00:00Z
 
 ## Problem
 
-The `.guardkit/seeding/` directory has no `.system_seeded.json` or `.graphiti_seeded.json` markers, indicating that `seed-system` and `seed-project` were never run successfully. This means all system-scoped groups (failure_patterns, role_constraints, quality_gate_configs, implementation_modes, patterns) and project-scoped groups (project_architecture, domain_knowledge) are empty in FalkorDB.
+System seeding WAS run successfully from Richards-MBP (74/79 episodes, see `docs/reviews/vllm-profiling/graphiti_seeding.md`). However:
+
+1. **Seeding marker is machine-local**: `.graphiti_seeded.json` was written to the Mac's filesystem, not present on promaxgb10-41b1 where AutoBuild runs. The `verify` command exits early without querying FalkorDB when the marker is absent.
+2. **Project groups seeded under wrong namespace**: Seeding ran from guardkit repo (`project_id: guardkit`), creating `guardkit__project_overview`. AutoBuild runs from vllm-profiling (`project_id: vllm-profiling`), querying `vllm-profiling__project_overview` — namespace mismatch.
+3. **System groups should be queryable** (no prefix) but queries still return 0 — needs investigation (may be RC5 silent exceptions or FalkorDB search issues).
 
 ## Prerequisites
 
 - FalkorDB running on whitestocks:6379 (Synology NAS)
 - vLLM server available at promaxgb10-41b1:8000 (for entity extraction)
 - TASK-GCF-001 merged (so patterns query uses correct group ID)
+- TASK-GCF-002 merged (so query failures are logged, not silently swallowed)
 
 ## Steps
 
-### From guardkit repo (`~/Projects/appmilla_github/guardkit/`)
+### Step 0: Investigate why system group queries return 0 (from promaxgb10-41b1)
 
-System seeding uses guardkit's own templates, agents, rules, and patterns. The `.guardkit/graphiti.yaml` config (FalkorDB on whitestocks:6379, project_id: guardkit) lives here.
+System groups have no prefix and should be queryable regardless of project_id. The 74 seeded episodes include `patterns` (5), `failure_patterns` (4), `quality_gate_phases` (12), etc. We need to determine why these return empty.
 
-1. Verify FalkorDB connectivity:
+1. Create the seeding marker on GB10 so `verify` doesn't exit early:
+   ```bash
+   cd ~/Projects/appmilla_github/guardkit
+   mkdir -p .guardkit/seeding
+   echo '{"seeded": true, "version": "1.2.0", "source": "copied-from-mac"}' > .guardkit/seeding/.graphiti_seeded.json
+   ```
+
+2. Run verify with verbose output:
    ```bash
    guardkit graphiti verify --verbose
    ```
 
-2. Seed system content:
+3. If verify still returns 0 results, run a manual search to isolate:
    ```bash
-   guardkit graphiti seed-system --force
+   guardkit graphiti search "quality gate phases" --group quality_gate_phases --verbose
+   guardkit graphiti search "Player Coach pattern" --group feature_build_architecture --verbose
    ```
 
-3. Verify seeding markers created:
-   ```bash
-   ls -la .guardkit/seeding/
-   # Should see .system_seeded.json
-   ```
+4. If manual searches also return 0, the issue is in FalkorDB's search layer (fulltext index, embedding search, or the FalkorDB workarounds). If they return results, the issue is in the JobContextRetriever query construction.
 
 ### From vllm-profiling repo (`~/Projects/appmilla_github/vllm-profiling/`)
 

@@ -4,7 +4,7 @@
 
 Run 4 (fresh) completed **all 7/7 tasks in 227m** (3h 47m), an **19% improvement** over Run 2 (282m, 6/7 tasks). The Anthropic-to-vLLM ratio dropped from **10x to 8.1x**. FBP-007 (the persistent failure) now succeeds in 1 turn — attributable to the **cancelled-error-fix**, NOT Graphiti context (which returned 0 categories for all tasks in both Run 3 and Run 4).
 
-**Critical finding**: Graphiti is connected but returns 0 categories for ALL tasks due to **5 independent root causes**: (1) `seed-system` never run (no seeding markers), (2) `patterns` vs `patterns_{tech_stack}` group ID mismatch, (3) dynamic-only groups empty on fresh runs, (4) project knowledge not seeded, (5) silent exception swallowing in `_query_category()` masks failures. The TASK-FIX-GPLI infrastructure fix worked, but the knowledge graph needs both operational seeding AND code fixes before context can flow.
+**Critical finding**: Graphiti is connected but returns 0 categories for ALL tasks due to **5 independent root causes**: (1) System groups were seeded (74 episodes from Mac) but queries return empty — seeding marker is machine-local and system group queries may be silently failing, (2) `patterns` vs `patterns_{tech_stack}` group ID mismatch, (3) dynamic-only groups empty on fresh runs, (4) project groups seeded under `guardkit__` namespace but queried from `vllm-profiling__` namespace, (5) silent exception swallowing in `_query_category()` masks all failures. The TASK-FIX-GPLI infrastructure fix worked, but code fixes + cross-project namespace resolution are needed before context can flow.
 
 **VOPT task status**: TASK-VOPT-004 is satisfied (Run 4 completed). TASK-VOPT-001 (context reduction) remains the highest-impact addressable optimisation. TASK-VOPT-002 (timing instrumentation) has partial coverage from existing logs. TASK-VOPT-003 (FalkorDB noise) is still present and worth fixing.
 
@@ -554,18 +554,20 @@ INFO:guardkit.knowledge.autobuild_context_loader:[Graphiti] Player context: 0 ca
 
 ### Root Cause Analysis: 5 Independent Failures
 
-#### Root Cause 1: No Seeding Markers Found
+#### Root Cause 1: ~~No Seeding~~ → Seeding Marker is Machine-Local
 
-**Evidence**: The `.guardkit/seeding/` directory contains ONLY `FEAT-1253-seed.sh` — NO `.system_seeded.json` or `.graphiti_seeded.json` markers exist.
+**CORRECTED**: Seeding WAS run successfully from Richards-MBP (Mac) on 2026-03-06 — 74/79 episodes created in 106m 26s (see `docs/reviews/vllm-profiling/graphiti_seeding.md`). All key system groups were seeded: `patterns` (5 episodes), `failure_patterns` (4), `product_knowledge` (3), `quality_gate_phases` (12), `project_overview` (4), `project_architecture` (2), etc.
 
-**Impact**: Without `guardkit graphiti seed-system` having been run successfully, the following system-scoped groups are **empty in FalkorDB**:
-- `failure_patterns` (SYSTEM group)
-- `role_constraints` (SYSTEM group)
-- `quality_gate_configs` (SYSTEM group)
-- `implementation_modes` (SYSTEM group)
-- `patterns` (SYSTEM group — seeded by `seed_patterns.py`)
+**However**, the seeding marker (`.guardkit/seeding/.graphiti_seeded.json`) was written to the Mac's local filesystem. AutoBuild runs execute on **promaxgb10-41b1** (Dell GB10) where the marker doesn't exist. The `guardkit graphiti verify` command checks `is_seeded()` → looks for local marker → returns "not seeded" without even querying FalkorDB.
 
-**This alone explains why 6/10 categories return 0.**
+**Impact on queries**: The data IS in FalkorDB on whitestocks — but:
+- The `verify` command exits early (line 365-368 of `graphiti.py`) when marker absent
+- The AutoBuild context loading does NOT check the marker — it queries FalkorDB directly
+- So the marker's absence doesn't explain the 0 categories during AutoBuild
+
+**New root cause**: Since the data IS seeded, the system groups (failure_patterns, role_constraints, quality_gate_configs, implementation_modes, patterns) SHOULD return results. The fact they don't suggests either: (a) queries are failing silently (RC5), or (b) the FalkorDB search is returning empty despite data existing.
+
+**Additional finding — project_id namespace mismatch**: Seeding was run from the **guardkit** repo (`project_id: guardkit`), so project groups were seeded as `guardkit__project_overview`, `guardkit__project_architecture`. But AutoBuild queries run from **vllm-profiling** (`project_id: vllm-profiling`), querying `vllm-profiling__project_overview` — a different namespace. **Project groups are unreachable due to cross-project namespace mismatch.**
 
 #### Root Cause 2: Group ID Mismatch — `patterns` vs `patterns_{tech_stack}`
 
@@ -595,14 +597,17 @@ Three groups are **only populated during task execution**:
 
 These groups are inherently empty on fresh runs with no prior history. This is by design for `turn_states` (Turn 1 has no prior turns), but `task_outcomes` should accumulate over time — they just haven't been populated yet.
 
-#### Root Cause 4: Project Groups Not Seeded
+#### Root Cause 4: Project Groups Seeded Under Wrong Namespace
 
-The project-scoped groups require `seed_project_knowledge()` to be run:
+Project groups WERE seeded — but from the **guardkit** repo (`project_id: guardkit`), creating `guardkit__project_overview` and `guardkit__project_architecture`. AutoBuild runs from **vllm-profiling** (`project_id: vllm-profiling`), querying `vllm-profiling__project_overview` and `vllm-profiling__project_architecture` — different namespaces.
 
-| Group | Required Seeding | Status |
-|-------|-----------------|--------|
-| `project_architecture` | `seed_project_knowledge()` with CLAUDE.md/README | **Not seeded** |
-| `domain_knowledge` | Project overview seeding | **Not seeded** |
+| Group | Seeded As | Queried As | Match? |
+|-------|-----------|-----------|--------|
+| `project_overview` | `guardkit__project_overview` | `vllm-profiling__project_overview` | **NO** |
+| `project_architecture` | `guardkit__project_architecture` | `vllm-profiling__project_architecture` | **NO** |
+| `domain_knowledge` | Not seeded | `vllm-profiling__domain_knowledge` | **NO** |
+
+**Fix**: Run `guardkit graphiti seed-project` from the vllm-profiling directory (which has its own `.guardkit/graphiti.yaml` with `project_id: vllm-profiling`).
 
 #### Root Cause 5: Silent Exception Swallowing
 
@@ -706,10 +711,10 @@ This bare `except Exception` with no logging means ANY failure during search (co
 
 | Root Cause | Categories Affected | Fix Type | Effort | Impact |
 |-----------|-------------------|----------|--------|--------|
-| RC1: No seeding markers | failure_patterns, role_constraints, quality_gate_configs, implementation_modes, patterns | Operational (run seed-system) | 5 min | **4-5 categories populated** |
+| RC1: Seeding marker machine-local + system queries return 0 despite data | failure_patterns, role_constraints, quality_gate_configs, implementation_modes | Investigation (why FalkorDB search returns empty on seeded data) | 1-2 hrs | **Critical — need to determine if data is actually queryable** |
 | RC2: patterns → patterns_python mismatch | patterns/relevant_patterns | Code fix | 1 line | **1 category populated** |
 | RC3: Dynamic groups empty | task_outcomes, turn_states, feature_specs | By design (accumulate over time) | N/A | Improves with usage |
-| RC4: Project groups not seeded | project_architecture, domain_knowledge | Operational (run seed-project) | 5 min | **2 categories populated** |
+| RC4: Project groups seeded under wrong namespace (guardkit vs vllm-profiling) | project_architecture, domain_knowledge | Operational (run seed-project from vllm-profiling dir) | 5 min | **2 categories populated** |
 | RC5: Silent exception swallowing | All (masks failures) | Code fix | 1 line | **Diagnostic visibility** |
 
 ### Expected Outcome After Fixes
@@ -723,8 +728,8 @@ With RC1 + RC2 + RC4 fixed:
 
 | # | Action | Priority | Type |
 |---|--------|----------|------|
-| 1 | Run `guardkit graphiti seed-system --force` | **P0** | Operational |
-| 2 | Run `guardkit graphiti seed-project` | **P0** | Operational |
+| 1 | **Investigate why seeded system groups return 0** — data exists in FalkorDB (74 episodes) but queries return empty. Add logging (RC5) first, then run manual search queries to isolate | **P0** | Investigation |
+| 2 | Run `guardkit graphiti seed-project` **from vllm-profiling directory** (not guardkit) | **P0** | Operational |
 | 3 | Fix `patterns_{tech_stack}` → `patterns` in `job_context_retriever.py` line 583 | **P0** | Code fix |
 | 4 | Add `logger.warning()` to `_query_category()` exception handler (line 996-998) | **P1** | Code fix |
 | 5 | Add `task_outcomes` and `turn_states` to `_group_defs.py` (prevent incorrect project prefixing) | **P2** | Code fix |
