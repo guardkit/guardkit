@@ -1,9 +1,17 @@
 ---
 id: TASK-REV-A00F
 title: "Design simplified quality gate profile expansion to replace CSC epic"
-status: backlog
+status: review_complete
 created: 2026-03-08T12:00:00Z
-updated: 2026-03-08T12:00:00Z
+updated: 2026-03-08T14:00:00Z
+review_results:
+  mode: architectural
+  depth: standard
+  score: 85
+  findings_count: 4
+  recommendations_count: 3
+  decision: implement_option_a
+  report_path: .claude/reviews/TASK-REV-A00F-review-report.md
 priority: high
 tags: [quality-gates, coach-validator, task-types, design-review, architecture]
 complexity: 5

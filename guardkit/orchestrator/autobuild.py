@@ -99,7 +99,7 @@ from guardkit.orchestrator.quality_gates import (
 )
 
 # Import task type models for quality gate profile resolution
-from guardkit.models.task_types import TaskType, get_profile as get_quality_gate_profile
+from guardkit.models.task_types import TaskType, TASK_TYPE_ALIASES, get_profile as get_quality_gate_profile
 
 # Import state detection for partial work recovery
 from guardkit.orchestrator.state_detection import (
@@ -4173,17 +4173,10 @@ class AutoBuildOrchestrator:
             True if tests are required (default for unknown/None task types),
             False for task types with tests_required=False in their profile.
         """
-        _ALIASES = {
-            "implementation": TaskType.FEATURE,
-            "bug-fix": TaskType.FEATURE,
-            "bug_fix": TaskType.FEATURE,
-            "benchmark": TaskType.TESTING,
-            "research": TaskType.DOCUMENTATION,
-        }
         if not task_type:
             return True  # Default FEATURE profile requires tests
         try:
-            task_type_enum = _ALIASES.get(task_type) or TaskType(task_type)
+            task_type_enum = TASK_TYPE_ALIASES.get(task_type) or TaskType(task_type)
             return get_quality_gate_profile(task_type_enum).tests_required
         except (ValueError, KeyError):
             return True  # Default to requiring tests for unknown types

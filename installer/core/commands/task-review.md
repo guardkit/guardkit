@@ -1168,7 +1168,7 @@ Review tasks use extended metadata fields:
 id: TASK-XXX
 title: Review authentication architecture
 status: in_progress
-task_type: review                    # NEW: review | implementation | research | docs
+task_type: review                    # NEW: review | implementation | research | docs | declarative
 review_mode: architectural           # NEW: architectural | code-quality | decision | etc.
 review_depth: standard               # NEW: quick | standard | comprehensive
 priority: high

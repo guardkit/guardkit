@@ -225,6 +225,17 @@ test_results:
 - `blocked` - Cannot proceed
 - `completed` - Done and verified
 
+### Task Type Values
+- `feature` - Feature implementation, bug fixes, enhancements (default)
+- `scaffolding` - Configuration files, project setup, templates
+- `infrastructure` - Docker, deployment, CI/CD, terraform
+- `integration` - Wiring endpoints, connecting services
+- `documentation` - Guides, API docs, tutorials
+- `testing` - Test creation, coverage improvements
+- `refactor` - Code cleanup, performance optimization
+- `declarative` - Pydantic models, DTOs, Settings classes, constants, enums
+- `review` - Analysis and decision-making tasks
+
 ### library_context Field (Optional)
 
 The `library_context` frontmatter field allows manual specification of library API documentation. This resolves via **Context7 MCP** (library documentation service), not the Graphiti knowledge graph. Any library available in Context7 can be referenced here.

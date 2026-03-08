@@ -28,9 +28,9 @@ from guardkit.models.task_types import (
 class TestTaskTypeEnum:
     """Test TaskType enumeration."""
 
-    def test_task_type_enum_has_seven_values(self):
-        """Test that TaskType enum has exactly 7 values."""
-        assert len(TaskType) == 7
+    def test_task_type_enum_has_eight_values(self):
+        """Test that TaskType enum has exactly 8 values."""
+        assert len(TaskType) == 8
 
     def test_task_type_scaffolding_value(self):
         """Test SCAFFOLDING task type value."""
@@ -56,6 +56,10 @@ class TestTaskTypeEnum:
         """Test REFACTOR task type value."""
         assert TaskType.REFACTOR.value == "refactor"
 
+    def test_task_type_declarative_value(self):
+        """Test DECLARATIVE task type value."""
+        assert TaskType.DECLARATIVE.value == "declarative"
+
     def test_task_type_enum_lookup_by_value(self):
         """Test looking up enum members by value."""
         assert TaskType("scaffolding") == TaskType.SCAFFOLDING
@@ -64,6 +68,7 @@ class TestTaskTypeEnum:
         assert TaskType("documentation") == TaskType.DOCUMENTATION
         assert TaskType("testing") == TaskType.TESTING
         assert TaskType("refactor") == TaskType.REFACTOR
+        assert TaskType("declarative") == TaskType.DECLARATIVE
 
 
 # ============================================================================
@@ -857,6 +862,8 @@ class TestNormaliseTaskType:
             ("enhancement", "feature"),
             ("benchmark", "testing"),
             ("research", "documentation"),
+            ("config", "declarative"),
+            ("dto", "declarative"),
         ],
     )
     def test_known_aliases_resolve(self, alias, expected):
@@ -889,3 +896,85 @@ class TestNormaliseTaskType:
         with caplog.at_level(logging.DEBUG, logger="guardkit.models.task_types"):
             normalise_task_type("feature")
         assert caplog.text == ""
+
+    def test_normalise_task_type_declarative(self):
+        """Test that 'declarative' canonical value passes through."""
+        assert normalise_task_type("declarative") == "declarative"
+
+
+# ============================================================================
+# 13. DECLARATIVE Task Type Tests (TASK-IMP-D4A0)
+# ============================================================================
+
+class TestDeclarativeTaskType:
+    """Test DECLARATIVE task type enum, profile, and lookup."""
+
+    def test_declarative_enum_value(self):
+        """TaskType.DECLARATIVE exists with value 'declarative'."""
+        assert TaskType.DECLARATIVE.value == "declarative"
+
+    def test_declarative_enum_lookup_by_value(self):
+        """Test looking up DECLARATIVE by value string."""
+        assert TaskType("declarative") == TaskType.DECLARATIVE
+
+    def test_default_profiles_declarative_configuration(self):
+        """Confirm all DECLARATIVE profile field values."""
+        profile = DEFAULT_PROFILES[TaskType.DECLARATIVE]
+        assert profile.arch_review_required is False
+        assert profile.arch_review_threshold == 0
+        assert profile.coverage_required is False
+        assert profile.coverage_threshold == 0.0
+        assert profile.tests_required is True
+        assert profile.plan_audit_required is True
+        assert profile.zero_test_blocking is False
+        assert profile.seam_tests_recommended is False
+
+    def test_get_profile_with_declarative(self):
+        """get_profile(TaskType.DECLARATIVE) returns correct profile."""
+        profile = get_profile(TaskType.DECLARATIVE)
+        assert profile.arch_review_required is False
+        assert profile.tests_required is True
+        assert profile.coverage_required is False
+        assert profile.plan_audit_required is True
+        assert profile.zero_test_blocking is False
+
+    def test_for_type_returns_declarative_profile(self):
+        """QualityGateProfile.for_type(TaskType.DECLARATIVE) works."""
+        profile = QualityGateProfile.for_type(TaskType.DECLARATIVE)
+        assert profile.tests_required is True
+        assert profile.arch_review_required is False
+        assert profile.coverage_required is False
+
+    def test_declarative_profile_differs_from_feature(self):
+        """DECLARATIVE profile is less strict than FEATURE."""
+        declarative = get_profile(TaskType.DECLARATIVE)
+        feature = get_profile(TaskType.FEATURE)
+        assert declarative.arch_review_required is False
+        assert feature.arch_review_required is True
+        assert declarative.coverage_required is False
+        assert feature.coverage_required is True
+        assert declarative.zero_test_blocking is False
+        assert feature.zero_test_blocking is True
+        assert declarative.seam_tests_recommended is False
+        assert feature.seam_tests_recommended is True
+
+    def test_declarative_profile_differs_from_scaffolding(self):
+        """DECLARATIVE requires tests while SCAFFOLDING does not."""
+        declarative = get_profile(TaskType.DECLARATIVE)
+        scaffolding = get_profile(TaskType.SCAFFOLDING)
+        assert declarative.tests_required is True
+        assert scaffolding.tests_required is False
+
+    def test_workflow_declarative_task(self):
+        """Integration test for declarative task workflow."""
+        profile = get_profile(TaskType.DECLARATIVE)
+        # No arch review needed for pure data models
+        assert profile.arch_review_required is False
+        # No coverage needed for declarative code
+        assert profile.coverage_required is False
+        # Tests still required to catch import errors
+        assert profile.tests_required is True
+        # Plan audit ensures completeness
+        assert profile.plan_audit_required is True
+        # Missing tests should not block (declarative code may not need them)
+        assert profile.zero_test_blocking is False

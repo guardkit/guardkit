@@ -41,6 +41,7 @@ class TaskType(Enum):
         DOCUMENTATION: Guides, API docs, tutorials, README files
         TESTING: Test files, test utilities, coverage improvements
         REFACTOR: Code cleanup, performance optimization, pattern refactoring
+        DECLARATIVE: Pydantic models, DTOs, Settings classes, constants, app init
     """
 
     SCAFFOLDING = "scaffolding"
@@ -50,6 +51,7 @@ class TaskType(Enum):
     DOCUMENTATION = "documentation"
     TESTING = "testing"
     REFACTOR = "refactor"
+    DECLARATIVE = "declarative"
 
 
 @dataclass
@@ -245,6 +247,16 @@ DEFAULT_PROFILES: Dict[TaskType, QualityGateProfile] = {
         zero_test_blocking=True,
         seam_tests_recommended=True,
     ),
+    TaskType.DECLARATIVE: QualityGateProfile(
+        arch_review_required=False,
+        arch_review_threshold=0,
+        coverage_required=False,
+        coverage_threshold=0.0,
+        tests_required=True,  # Catch import errors
+        plan_audit_required=True,  # Verify completeness
+        zero_test_blocking=False,
+        seam_tests_recommended=False,
+    ),
 }
 
 
@@ -258,6 +270,8 @@ TASK_TYPE_ALIASES: Dict[str, TaskType] = {
     "benchmark": TaskType.TESTING,
     "research": TaskType.DOCUMENTATION,
     "enhancement": TaskType.FEATURE,
+    "config": TaskType.DECLARATIVE,
+    "dto": TaskType.DECLARATIVE,
 }
 
 # Combined set of all valid task_type strings (enum values + aliases)

@@ -1,8 +1,9 @@
 """Unit tests for task type detection.
 
 Tests the automatic task type classification based on keyword analysis.
-Covers all task types (SCAFFOLDING, DOCUMENTATION, INFRASTRUCTURE, TESTING,
-REFACTOR, FEATURE) and edge cases (empty strings, hybrid tasks, ambiguous cases).
+Covers all task types (SCAFFOLDING, DOCUMENTATION, INFRASTRUCTURE, INTEGRATION,
+TESTING, REFACTOR, DECLARATIVE, FEATURE) and edge cases (empty strings, hybrid
+tasks, ambiguous cases).
 """
 
 import pytest
@@ -204,6 +205,53 @@ class TestRefactorDetection:
         assert detect_task_type("Migrate Database") == TaskType.REFACTOR
 
 
+class TestDeclarativeDetection:
+    """Test detection of DECLARATIVE task type."""
+
+    def test_pydantic_keywords(self):
+        """Test Pydantic-related keywords."""
+        assert detect_task_type("Add Pydantic models for user data") == TaskType.DECLARATIVE
+        assert detect_task_type("Create DTO for API response") == TaskType.DECLARATIVE
+
+    def test_data_model_keywords(self):
+        """Test data model keywords."""
+        assert detect_task_type("Define data model for orders") == TaskType.DECLARATIVE
+        assert detect_task_type("Add data class for configuration") == TaskType.DECLARATIVE
+        assert detect_task_type("Create dataclass for state") == TaskType.DECLARATIVE
+        assert detect_task_type("Add type definitions for API") == TaskType.DECLARATIVE
+
+    def test_schema_and_model_keywords(self):
+        """Test schema and model class keywords."""
+        assert detect_task_type("Define schema for database tables") == TaskType.DECLARATIVE
+        assert detect_task_type("Add model class for products") == TaskType.DECLARATIVE
+
+    def test_settings_and_constants_keywords(self):
+        """Test settings and constants keywords."""
+        assert detect_task_type("Create settings class for app config") == TaskType.DECLARATIVE
+        assert detect_task_type("Define constants for error codes") == TaskType.DECLARATIVE
+        assert detect_task_type("Add enums for task status") == TaskType.DECLARATIVE
+        assert detect_task_type("Create enum class for priorities") == TaskType.DECLARATIVE
+
+    def test_app_init_keyword(self):
+        """Test app initialization keyword."""
+        assert detect_task_type("Add app init configuration") == TaskType.DECLARATIVE
+
+    def test_case_insensitive(self):
+        """Test case-insensitive matching for declarative."""
+        assert detect_task_type("ADD PYDANTIC MODELS") == TaskType.DECLARATIVE
+        assert detect_task_type("Create Data Model") == TaskType.DECLARATIVE
+
+    def test_description_provides_context(self):
+        """Test description influences declarative classification."""
+        assert (
+            detect_task_type(
+                "Add new types",
+                "Create Pydantic models for the API layer"
+            )
+            == TaskType.DECLARATIVE
+        )
+
+
 class TestFeatureDetection:
     """Test detection of FEATURE task type (default)."""
 
@@ -263,7 +311,7 @@ class TestEdgeCases:
 class TestPriorityOrder:
     """Test priority-based classification.
 
-    Priority order: INFRASTRUCTURE > TESTING > REFACTOR > DOCUMENTATION > SCAFFOLDING > FEATURE
+    Priority order: INFRASTRUCTURE > INTEGRATION > TESTING > REFACTOR > DOCUMENTATION > DECLARATIVE > SCAFFOLDING > FEATURE
     """
 
     def test_infrastructure_over_scaffolding(self):
@@ -421,8 +469,10 @@ class TestTaskTypeSummary:
         assert get_task_type_summary(TaskType.SCAFFOLDING) == "Configuration and boilerplate"
         assert get_task_type_summary(TaskType.DOCUMENTATION) == "Documentation and guides"
         assert get_task_type_summary(TaskType.INFRASTRUCTURE) == "DevOps and deployment"
+        assert get_task_type_summary(TaskType.INTEGRATION) == "Integration and wiring"
         assert get_task_type_summary(TaskType.TESTING) == "Test infrastructure and tests"
         assert get_task_type_summary(TaskType.REFACTOR) == "Code refactoring and migration"
+        assert get_task_type_summary(TaskType.DECLARATIVE) == "Pydantic models, DTOs, constants"
         assert get_task_type_summary(TaskType.FEATURE) == "Feature implementation"
 
     def test_unknown_task_type(self):
@@ -441,8 +491,10 @@ class TestKeywordMappings:
         assert TaskType.SCAFFOLDING in KEYWORD_MAPPINGS
         assert TaskType.DOCUMENTATION in KEYWORD_MAPPINGS
         assert TaskType.INFRASTRUCTURE in KEYWORD_MAPPINGS
+        assert TaskType.INTEGRATION in KEYWORD_MAPPINGS
         assert TaskType.TESTING in KEYWORD_MAPPINGS
         assert TaskType.REFACTOR in KEYWORD_MAPPINGS
+        assert TaskType.DECLARATIVE in KEYWORD_MAPPINGS
 
     def test_feature_has_no_keywords(self):
         """Test FEATURE type has no keywords (default)."""
@@ -486,6 +538,7 @@ class TestIntegration:
             ("Implement authentication", "Add JWT-based auth service"),
             ("Add unit tests", "Write tests for auth service"),
             ("Refactor database layer", "Restructure data access code"),
+            ("Add Pydantic models for API", "Define data models and DTOs"),
         ]
 
         expected = [
@@ -495,6 +548,7 @@ class TestIntegration:
             TaskType.FEATURE,
             TaskType.TESTING,  # Now correctly detected as TESTING
             TaskType.REFACTOR,  # Now correctly detected as REFACTOR
+            TaskType.DECLARATIVE,
         ]
 
         for (title, desc), expected_type in zip(subtasks, expected):
@@ -522,6 +576,57 @@ class TestIntegration:
 
         results = [detect_task_type(task) for task in tasks]
         assert results == expected
+
+
+class TestDeclarativePriority:
+    """Test DECLARATIVE priority ordering."""
+
+    def test_declarative_over_scaffolding(self):
+        """Test DECLARATIVE takes priority over SCAFFOLDING.
+
+        'settings class' matches DECLARATIVE before 'settings' matches SCAFFOLDING.
+        """
+        assert detect_task_type("Create settings class for app") == TaskType.DECLARATIVE
+
+    def test_declarative_over_feature(self):
+        """Test DECLARATIVE takes priority over FEATURE (default)."""
+        assert detect_task_type("Add Pydantic models") == TaskType.DECLARATIVE
+
+    def test_infrastructure_over_declarative(self):
+        """Test INFRASTRUCTURE takes priority over DECLARATIVE."""
+        # "deploy" is INFRASTRUCTURE, "schema" is DECLARATIVE
+        assert detect_task_type("Deploy schema migrations") == TaskType.INFRASTRUCTURE
+
+    def test_testing_over_declarative(self):
+        """Test TESTING takes priority over DECLARATIVE."""
+        # "test" is TESTING, "schema" is DECLARATIVE
+        assert detect_task_type("Test schema validation") == TaskType.TESTING
+
+
+class TestDeclarativeKeywordMappings:
+    """Test DECLARATIVE keyword mappings."""
+
+    def test_declarative_keywords_exist(self):
+        """Test DECLARATIVE has keyword mappings."""
+        assert TaskType.DECLARATIVE in KEYWORD_MAPPINGS
+
+    def test_declarative_keywords_are_lowercase(self):
+        """Test all DECLARATIVE keywords are lowercase."""
+        for keyword in KEYWORD_MAPPINGS[TaskType.DECLARATIVE]:
+            assert keyword == keyword.lower(), (
+                f"Keyword '{keyword}' in DECLARATIVE should be lowercase"
+            )
+
+    def test_declarative_has_reasonable_keyword_count(self):
+        """Test DECLARATIVE has at least 5 keywords."""
+        assert len(KEYWORD_MAPPINGS[TaskType.DECLARATIVE]) >= 5
+
+    def test_declarative_no_duplicate_keywords(self):
+        """Test no duplicate keywords in DECLARATIVE."""
+        keywords = KEYWORD_MAPPINGS[TaskType.DECLARATIVE]
+        assert len(keywords) == len(set(keywords)), (
+            "Duplicate keywords found in DECLARATIVE"
+        )
 
 
 class TestIntegrationDetection:

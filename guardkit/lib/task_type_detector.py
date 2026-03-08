@@ -2,7 +2,7 @@
 
 Provides automatic task type classification for feature planning workflow.
 Analyzes task titles and descriptions to assign appropriate task types
-(SCAFFOLDING, DOCUMENTATION, INFRASTRUCTURE, INTEGRATION, TESTING, REFACTOR, FEATURE)
+(SCAFFOLDING, DOCUMENTATION, INFRASTRUCTURE, INTEGRATION, TESTING, REFACTOR, DECLARATIVE, FEATURE)
 based on keyword matching.
 
 The detector uses a priority-based classification system:
@@ -11,8 +11,9 @@ The detector uses a priority-based classification system:
 3. TESTING - Test frameworks, test types, test infrastructure
 4. REFACTOR - Code restructuring, migration, modernization
 5. DOCUMENTATION - Docs, guides, tutorials
-6. SCAFFOLDING - Configuration, boilerplate, setup tasks
-7. FEATURE - Default for implementation tasks
+6. DECLARATIVE - Pydantic models, DTOs, Settings classes, constants
+7. SCAFFOLDING - Configuration, boilerplate, setup tasks
+8. FEATURE - Default for implementation tasks
 
 This module supports the /feature-plan workflow by automatically determining
 which quality gate profile should be applied to each subtask.
@@ -151,6 +152,25 @@ KEYWORD_MAPPINGS = {
         "clean up",
         "clean-up",
     ],
+    TaskType.DECLARATIVE: [
+        # Data models
+        "pydantic",
+        "dto",
+        "data model",
+        "data class",
+        "dataclass",
+        "type definitions",
+        # Schema and models
+        "schema",
+        "model class",
+        # Settings and constants
+        "settings class",
+        "constants",
+        "enums",
+        "enum class",
+        # App initialization
+        "app init",
+    ],
     TaskType.SCAFFOLDING: [
         # Configuration files (more generic, checked after infrastructure)
         "config",
@@ -273,6 +293,7 @@ def detect_task_type(title: str, description: str = "") -> TaskType:
         TaskType.TESTING,
         TaskType.REFACTOR,
         TaskType.DOCUMENTATION,
+        TaskType.DECLARATIVE,
         TaskType.SCAFFOLDING,
     ]:
         keywords = KEYWORD_MAPPINGS.get(task_type, [])
@@ -310,6 +331,7 @@ def get_task_type_summary(task_type: TaskType) -> str:
         TaskType.INTEGRATION: "Integration and wiring",
         TaskType.TESTING: "Test infrastructure and tests",
         TaskType.REFACTOR: "Code refactoring and migration",
+        TaskType.DECLARATIVE: "Pydantic models, DTOs, constants",
         TaskType.FEATURE: "Feature implementation",
     }
     return summaries.get(task_type, "Unknown task type")

@@ -1,5 +1,14 @@
 # Feature: Context-Sensitive Coach
 
+> **STATUS: SUPERSEDED** (2026-03-08)
+>
+> This epic was superseded by TASK-REV-A00F which found that 80-90% of the original problem
+> had been solved through incremental profile expansion (TASK-FBSDK-025, TASK-FIX-ARIMPL,
+> TASK-TT-001, TASK-FIX-93C1, etc.). The remaining 10-20% gap is addressed by adding a
+> single `TaskType.DECLARATIVE` profile (TASK-IMP-D4A0), making the full CSC system unnecessary.
+>
+> See: `.claude/reviews/TASK-REV-A00F-review-report.md`
+
 ## Overview
 
 Implements an AI-powered context-sensitive CoachValidator that adapts quality gate thresholds based on what was actually implemented, rather than applying fixed thresholds based solely on task_type.

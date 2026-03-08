@@ -1263,6 +1263,7 @@ The `task_type` field is **REQUIRED** for AutoBuild integration. Without it, Coa
 | "Add tests", "Create test...", "Test infrastructure" | `testing` |
 | "Update docs", "Add README", "Documentation..." | `documentation` |
 | "Refactor...", "Migrate...", "Upgrade..." | `refactor` |
+| "Pydantic model", "DTO", "Settings class", "constants", "enums", "app init", "data model", "type definitions", "schema" | `declarative` |
 | All other implementation tasks | `feature` |
 
 **Seam Test Checklist**:
@@ -1284,6 +1285,8 @@ This is a soft gate - Coach will note missing seam tests but won't block approva
 - "Implement health endpoint" → `task_type: feature`
 - "Add unit tests for authentication" → `task_type: testing`
 - "Update API documentation" → `task_type: documentation`
+- "Add Pydantic models for user schema" → `task_type: declarative`
+- "Create Settings class and constants" → `task_type: declarative`
 
 This enables:
 - **Traceability**: From feature idea → review → implementation → completion
@@ -1877,12 +1880,14 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
    - `testing`: Test creation tasks
    - `documentation`: Documentation tasks
    - `refactor`: Refactoring/migration tasks
+   - `declarative`: Pydantic models, DTOs, Settings classes, constants, enums, app init
 
    **Pattern Matching for task_type:**
    - Title contains "Create project", "Setup", "Initialize", "Configure" → `scaffolding`
    - Title contains "test", "Test" → `testing`
    - Title contains "doc", "README", "Documentation" → `documentation`
    - Title contains "Refactor", "Migrate", "Upgrade" → `refactor`
+   - Title contains "Pydantic", "model", "DTO", "schema", "Settings class", "constants", "enums", "app init", "data model", "type definitions" → `declarative`
    - All other tasks → `feature`
 
    **Why This Matters:**
