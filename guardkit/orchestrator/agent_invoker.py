@@ -1996,6 +1996,10 @@ Follow the decision format specified in your agent definition.
                 monitor = asyncio.create_task(_cancel_monitor())
 
             _install_sdk_cleanup_handler(asyncio.get_running_loop())
+            # TASK-RFX-8332: Hold explicit reference to query() generator
+            # so we can call aclose() in the finally block, preventing GC
+            # from scheduling athrow(GeneratorExit) in a wrong asyncio Task.
+            gen = None
             try:
                 # TASK-INST-005b: Wrap SDK call with latency measurement
                 with measure_latency() as latency:
@@ -2005,7 +2009,8 @@ Follow the decision format specified in your agent definition.
                                 heartbeat_task_id,
                                 f"{agent_type.capitalize()} invocation",
                             ):
-                                async for message in query(prompt=prompt, options=options):
+                                gen = query(prompt=prompt, options=options)
+                                async for message in gen:
                                     response_messages.append(message)
                                     err = check_assistant_message_error(message)
                                     if err:
@@ -2038,6 +2043,18 @@ Follow the decision format specified in your agent definition.
                         call_error = exc
                         raise
             finally:
+                # TASK-RFX-8332: Explicitly close the query() async generator
+                # to prevent GC finalization from scheduling athrow(GeneratorExit)
+                # in a wrong asyncio Task (causes CancelledError on 40% of
+                # direct-mode invocations).
+                if gen is not None:
+                    with suppress(Exception):
+                        try:
+                            async with asyncio.timeout(5):
+                                await gen.aclose()
+                        except (asyncio.TimeoutError, asyncio.CancelledError):
+                            pass
+
                 if monitor and not monitor.done():
                     monitor.cancel()
                     with suppress(asyncio.CancelledError):
@@ -4401,6 +4418,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             logger.debug(f"[{task_id}] Prompt (first 500 chars): {prompt[:500]}...")
 
             _install_sdk_cleanup_handler(asyncio.get_running_loop())
+            # TASK-RFX-8332: Track generator reference across retry iterations
+            # for cleanup in exception handlers (declared before retry loop)
+            _tw_gen = None
             # TASK-FIX-46F2: Retry loop for transient SDK stream errors.
             # Under GPU contention, vLLM SSE streams can be interrupted with
             # "unknown" errors. A single retry avoids expensive state-recovery.
@@ -4421,9 +4441,14 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 _pending_bash_tools: Dict[str, Dict[str, Any]] = {}
                 # TASK-VPR-003: Track SDK turns from ResultMessage
                 sdk_turns_used = None
+                # TASK-RFX-8332: Hold explicit reference to query() generator
+                # so we can call aclose() in cleanup, preventing GC from
+                # scheduling athrow(GeneratorExit) in a wrong asyncio Task.
+                _tw_gen = None
                 async with asyncio.timeout(self.sdk_timeout_seconds):
                     async with async_heartbeat(task_id, "task-work implementation"):
-                        async for message in query(prompt=prompt, options=options):
+                        _tw_gen = query(prompt=prompt, options=options)
+                        async for message in _tw_gen:
                             # TASK-FBSDK-011: Track message counts
                             message_count += 1
                             # TASK-FB-FIX-013: Properly iterate ContentBlocks instead of str()
@@ -4517,6 +4542,17 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                 sdk_turns_used = message.num_turns
                                 logger.info(f"[{task_id}] SDK completed: turns={message.num_turns}")
                                 break
+
+                # TASK-RFX-8332: Explicitly close the query() async generator
+                # after each retry iteration to prevent GC finalization.
+                if _tw_gen is not None:
+                    with suppress(Exception):
+                        try:
+                            async with asyncio.timeout(5):
+                                await _tw_gen.aclose()
+                        except (asyncio.TimeoutError, asyncio.CancelledError):
+                            pass
+                    _tw_gen = None
 
                 if _sdk_stream_error is None:
                     break  # Stream completed successfully, exit retry loop
@@ -4648,6 +4684,17 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 output={},
                 error=error_msg,
             )
+        finally:
+            # TASK-RFX-8332: Ensure query() generator is closed on ALL exit
+            # paths (timeout, process error, etc.) to prevent GC finalization
+            # from scheduling athrow(GeneratorExit) in a wrong asyncio Task.
+            if _tw_gen is not None:
+                with suppress(Exception):
+                    try:
+                        async with asyncio.timeout(5):
+                            await _tw_gen.aclose()
+                    except (asyncio.TimeoutError, asyncio.CancelledError):
+                        pass
 
     def _parse_task_work_output(self, stdout: str) -> Dict[str, Any]:
         """Parse task-work stdout into structured output.

@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-RFX
 **Parent Review**: [TASK-REV-A8C6](../../backlog/TASK-REV-A8C6-analyse-run3-success-youtube-transcript-mcp.md)
 **Review Report**: [.claude/reviews/TASK-REV-A8C6-review-report.md](../../../.claude/reviews/TASK-REV-A8C6-review-report.md)
-**Status**: 0/9 tasks complete
+**Status**: 5/9 tasks complete
 
 ## Summary
 
@@ -13,11 +13,11 @@ Fixes and improvements identified from the TASK-REV-A8C6 architectural review of
 
 | Wave | Task ID | Title | Priority | Complexity | Mode | Status |
 |------|---------|-------|----------|-----------|------|--------|
-| 1 | TASK-RFX-5E37 | Clean up stale CRV task files | high | 1 | direct | backlog |
-| 1 | TASK-RFX-BAD9 | Normalize pip to sys.executable -m pip | high | 2 | direct | backlog |
-| 1 | TASK-RFX-C9D9 | Deprioritise CRV-B275 and CRV-7DBC | low | 1 | direct | backlog |
-| 2 | TASK-RFX-8332 | Fix CancelledError via explicit gen.aclose() | high | 5 | task-work | backlog |
-| 2 | TASK-RFX-5FED | Local file-based turn state capture | high | 5 | task-work | backlog |
+| 1 | TASK-RFX-5E37 | Clean up stale CRV task files | high | 1 | direct | **complete** |
+| 1 | TASK-RFX-BAD9 | Normalize pip to sys.executable -m pip | high | 2 | direct | **complete** |
+| 1 | TASK-RFX-C9D9 | Deprioritise CRV-B275 and CRV-7DBC | low | 1 | direct | **complete** |
+| 2 | TASK-RFX-8332 | Fix CancelledError via explicit gen.aclose() | high | 5 | task-work | **complete** |
+| 2 | TASK-RFX-5FED | Local file-based turn state capture | high | 5 | task-work | **complete** |
 | 3 | TASK-RFX-528E | Coach criteria soft gate Phase 1 | medium | 3 | task-work | backlog |
 | 3 | TASK-RFX-F7F5 | Coach criteria soft gate Phase 2 | medium | 6 | task-work | backlog |
 | 4 | TASK-RFX-7C63 | Extended CoachValidator (CRV-9914) | medium | 6 | task-work | backlog |
