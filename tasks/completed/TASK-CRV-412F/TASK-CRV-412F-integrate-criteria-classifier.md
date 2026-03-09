@@ -1,9 +1,11 @@
 ---
 id: TASK-CRV-412F
 title: Integrate criteria classifier into Coach validation pipeline
-status: backlog
+status: completed
 created: 2026-03-09T00:00:00Z
 updated: 2026-03-09T00:00:00Z
+completed: 2026-03-09T00:00:00Z
+completed_location: tasks/completed/TASK-CRV-412F/
 priority: high
 tags: [coach, criteria-classifier, verification, autobuild]
 task_type: feature

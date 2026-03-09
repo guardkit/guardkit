@@ -5227,3 +5227,78 @@ class TestSdkEnvMerge:
         assert str(tmp_worktree) in pythonpath, "worktree path must appear in PYTHONPATH"
         assert "/some/existing/path" in pythonpath, "existing PYTHONPATH must be preserved"
         assert pythonpath.startswith(str(tmp_worktree)), "worktree must have priority (be first)"
+
+
+# ============================================================================
+# Test Criteria Classifier Routing (TASK-CRV-412F)
+# ============================================================================
+
+
+class TestCriteriaClassifierRouting:
+    """Test criteria classifier integration in validate_requirements."""
+
+    def test_file_content_criteria_verified_normally(self, tmp_worktree):
+        """file_content criteria route through existing text-matching unchanged."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task([
+            "The `config.py` module exists",
+            "The `models.py` file is created",
+        ])
+        results = make_task_work_results(
+            requirements_met=["The `config.py` module exists", "The `models.py` file is created"]
+        )
+
+        validation = validator.validate_requirements(task, results)
+
+        assert validation.all_criteria_met is True
+        assert validation.criteria_total == 2
+
+    def test_command_execution_criteria_excluded_from_matching(self, tmp_worktree):
+        """command_execution criteria are excluded from text-matching; only file_content counts."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task([
+            "The `config.py` file is created",          # file_content
+            "`pip install guardkit` runs successfully",  # command_execution
+        ])
+        results = make_task_work_results(
+            requirements_met=["The `config.py` file is created"]
+        )
+
+        validation = validator.validate_requirements(task, results)
+
+        # command_execution criterion excluded → only 1 file_content criterion counts
+        assert validation.criteria_total == 1
+        assert validation.all_criteria_met is True
+
+    def test_manual_criteria_skipped_not_counted_against_threshold(self, tmp_worktree):
+        """manual criteria are skipped and don't count against the verification threshold."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task([
+            "The `output.py` file is created",          # file_content
+            "Visually verify the output looks correct",  # manual
+        ])
+        results = make_task_work_results(
+            requirements_met=["The `output.py` file is created"]
+        )
+
+        validation = validator.validate_requirements(task, results)
+
+        # manual criterion skipped → only 1 file_content criterion counts
+        assert validation.criteria_total == 1
+        assert validation.all_criteria_met is True
+
+    def test_classifier_fallback_on_exception(self, tmp_worktree):
+        """All criteria fall through to existing paths when classifier raises an exception."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature A", "Feature B"])
+        results = make_task_work_results(requirements_met=["Feature A", "Feature B"])
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.criteria_classifier.classify_acceptance_criteria",
+            side_effect=RuntimeError("classifier failure"),
+        ):
+            validation = validator.validate_requirements(task, results)
+
+        # Fallback: all original criteria pass through unchanged
+        assert validation.criteria_total == 2
+        assert validation.all_criteria_met is True

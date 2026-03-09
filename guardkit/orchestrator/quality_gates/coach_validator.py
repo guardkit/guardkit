@@ -1773,6 +1773,49 @@ class CoachValidator:
         """
         acceptance_criteria = task.get("acceptance_criteria", [])
 
+        # Criteria classifier routing (TASK-CRV-412F): classify criteria and
+        # route file_content through existing paths; exclude command_execution
+        # (Path D, TASK-CRV-537E) and skip manual criteria from the threshold.
+        # Graceful fallback: if classifier errors, all criteria use existing paths.
+        try:
+            from guardkit.orchestrator.quality_gates.criteria_classifier import (
+                classify_acceptance_criteria,
+            )
+            _clf = classify_acceptance_criteria(acceptance_criteria)
+            for _c in _clf.file_content_criteria:
+                logger.debug(
+                    "criteria-classifier: FILE_CONTENT (confidence=%.2f): %.80s",
+                    _c.confidence,
+                    _c.text,
+                )
+            for _c in _clf.command_criteria:
+                logger.debug(
+                    "criteria-classifier: COMMAND_EXECUTION excluded (confidence=%.2f): %.80s",
+                    _c.confidence,
+                    _c.text,
+                )
+            for _c in _clf.manual_criteria:
+                logger.debug(
+                    "criteria-classifier: MANUAL skipped (confidence=%.2f): %.80s",
+                    _c.confidence,
+                    _c.text,
+                )
+            if _clf.command_criteria or _clf.manual_criteria:
+                logger.debug(
+                    "criteria-classifier: routing %d file_content, "
+                    "%d command_execution (excluded), %d manual (skipped) of %d total",
+                    len(_clf.file_content_criteria),
+                    len(_clf.command_criteria),
+                    len(_clf.manual_criteria),
+                    _clf.total_count,
+                )
+                acceptance_criteria = [_c.text for _c in _clf.file_content_criteria]
+        except Exception as _clf_err:
+            logger.debug(
+                "criteria-classifier: classification error, falling through: %s",
+                _clf_err,
+            )
+
         # Synthetic report path (TASK-ASF-006, TASK-FIX-ASPF-006)
         is_synthetic = task_work_results.get("_synthetic", False)
         if is_synthetic:
