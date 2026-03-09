@@ -2154,6 +2154,9 @@ class AutoBuildOrchestrator:
                     error=player_result.error,
                 )
 
+            # TASK-PFI-A1B2: Capture original error before potential overwrite
+            _original_error = player_result.error
+
             # Attempt multi-layered state detection
             recovered_player_result = self._attempt_state_recovery(
                 task_id=task_id,
@@ -2176,6 +2179,11 @@ class AutoBuildOrchestrator:
                 logger.info(
                     f"State recovery successful for {task_id} turn {turn}"
                 )
+                # TASK-PFI-A1B2: Log CancelledError at DEBUG when recovery succeeds
+                if _original_error and _original_error.startswith("Cancelled:"):
+                    logger.debug(
+                        f"CancelledError caught for {task_id} (recovered: True)"
+                    )
                 summary = self._build_player_summary(
                     player_result.report,
                     tests_required=self._resolve_tests_required(task_type),
@@ -2189,6 +2197,11 @@ class AutoBuildOrchestrator:
                 logger.warning(
                     f"State recovery failed for {task_id} turn {turn}"
                 )
+                # TASK-PFI-A1B2: Keep CancelledError at WARNING when recovery fails
+                if _original_error and _original_error.startswith("Cancelled:"):
+                    logger.warning(
+                        f"CancelledError caught for {task_id} (recovered: False)"
+                    )
                 return TurnRecord(
                     turn=turn,
                     player_result=player_result,
@@ -4033,7 +4046,7 @@ class AutoBuildOrchestrator:
                 error="SDK integration pending",
             )
         except asyncio.CancelledError as e:
-            logger.warning(f"CancelledError caught at _invoke_player_safely for {task_id}: {e}")
+            logger.debug(f"CancelledError caught for {task_id}: {e}")
             return AgentInvocationResult(
                 task_id=task_id,
                 turn=turn,

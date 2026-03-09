@@ -1386,7 +1386,7 @@ class AgentInvoker:
         except (Exception, asyncio.CancelledError) as e:
             duration = time.time() - start_time
             if isinstance(e, asyncio.CancelledError):
-                logger.warning(f"CancelledError caught at invoke_player for {task_id}: {e}")
+                logger.debug(f"CancelledError caught for {task_id}: {e}")
                 error_msg = f"Cancelled: {str(e)}"
             else:
                 error_msg = f"Unexpected error: {str(e)}"
@@ -2062,7 +2062,7 @@ Follow the decision format specified in your agent definition.
                                         break
                     except (Exception, asyncio.CancelledError) as exc:
                         if isinstance(exc, asyncio.CancelledError):
-                            logger.warning(f"CancelledError caught at _invoke_with_role: {exc}")
+                            logger.debug(f"CancelledError caught at _invoke_with_role: {exc}")
                             # TASK-CRV-1540: Extract partial data before re-raising
                             try:
                                 self._last_partial_report = _extract_partial_from_messages(

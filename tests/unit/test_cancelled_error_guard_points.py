@@ -6,7 +6,7 @@ at each of the 5 guard points in the invocation chain.
 
 Guard Points Tested
 -------------------
-GP1 - agent_invoker._invoke_with_role      : re-raises after logger.warning
+GP1 - agent_invoker._invoke_with_role      : re-raises after logger.debug (TASK-PFI-A1B2: downgraded from WARNING)
 GP2 - agent_invoker.invoke_player          : returns AgentInvocationResult(success=False, error="Cancelled: ...")
 GP3 - autobuild._invoke_player_safely      : explicit except before UNRECOVERABLE_ERRORS, returns result with error="Cancelled: ..."
 GP5 - feature_orchestrator._execute_task   : returns TaskExecutionResult(final_decision="cancelled")
@@ -155,8 +155,8 @@ class TestGP1InvokeWithRole:
                 )
 
     @pytest.mark.asyncio
-    async def test_cancelled_error_triggers_logger_warning(self, agent_invoker):
-        """CancelledError at _invoke_with_role emits a logger.warning mentioning the guard point."""
+    async def test_cancelled_error_triggers_logger_debug(self, agent_invoker):
+        """CancelledError at _invoke_with_role emits logger.debug (TASK-PFI-A1B2: downgraded from WARNING)."""
 
         async def _raising_query(*args, **kwargs):
             raise asyncio.CancelledError("gp1-cancellation")
@@ -191,12 +191,12 @@ class TestGP1InvokeWithRole:
                     permission_mode="acceptEdits",
                 )
 
-            warning_calls = mock_logger.warning.call_args_list
+            debug_calls = mock_logger.debug.call_args_list
             assert any(
-                "_invoke_with_role" in str(call) for call in warning_calls
+                "_invoke_with_role" in str(call) for call in debug_calls
             ), (
-                f"Expected logger.warning to mention '_invoke_with_role' but got: "
-                f"{warning_calls}"
+                f"Expected logger.debug to mention '_invoke_with_role' but got: "
+                f"{debug_calls}"
             )
 
 
@@ -272,8 +272,8 @@ class TestGP2InvokePlayer:
         )
 
     @pytest.mark.asyncio
-    async def test_cancelled_error_triggers_logger_warning(self, agent_invoker):
-        """CancelledError in invoke_player emits a logger.warning mentioning the guard point."""
+    async def test_cancelled_error_triggers_logger_debug(self, agent_invoker):
+        """CancelledError in invoke_player emits logger.debug (TASK-PFI-A1B2: downgraded from WARNING)."""
         agent_invoker.use_task_work_delegation = False
 
         with (
@@ -298,12 +298,12 @@ class TestGP2InvokePlayer:
                 requirements="test requirements",
             )
 
-            warning_calls = mock_logger.warning.call_args_list
+            debug_calls = mock_logger.debug.call_args_list
             assert any(
-                "invoke_player" in str(call) for call in warning_calls
+                "CancelledError caught for" in str(call) for call in debug_calls
             ), (
-                f"Expected logger.warning to mention 'invoke_player' but got: "
-                f"{warning_calls}"
+                f"Expected logger.debug to mention 'CancelledError caught for' but got: "
+                f"{debug_calls}"
             )
 
     @pytest.mark.asyncio
@@ -423,8 +423,8 @@ class TestGP3InvokePlayerSafely:
             f"Expected error starting with 'Cancelled:' but got: {result.error!r}"
         )
 
-    def test_cancelled_error_triggers_logger_warning(self, tmp_path):
-        """CancelledError in _invoke_player_safely emits logger.warning with guard point name."""
+    def test_cancelled_error_triggers_logger_debug(self, tmp_path):
+        """CancelledError in _invoke_player_safely emits logger.debug (TASK-PFI-A1B2: downgraded from WARNING)."""
         orchestrator = self._make_autobuild_orchestrator(tmp_path)
 
         mock_loop = MagicMock()
@@ -441,12 +441,12 @@ class TestGP3InvokePlayerSafely:
                 feedback=None,
             )
 
-            warning_calls = mock_logger.warning.call_args_list
+            debug_calls = mock_logger.debug.call_args_list
             assert any(
-                "_invoke_player_safely" in str(call) for call in warning_calls
+                "CancelledError caught for" in str(call) for call in debug_calls
             ), (
-                f"Expected logger.warning to mention '_invoke_player_safely' but got: "
-                f"{warning_calls}"
+                f"Expected logger.debug to mention 'CancelledError caught for' but got: "
+                f"{debug_calls}"
             )
 
     def test_non_cancelled_exception_produces_recoverable_error(self, tmp_path):

@@ -16,6 +16,7 @@ Test Coverage:
 Coverage Target: >=80%
 """
 
+import asyncio
 import pytest
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from typing import Optional, List
@@ -1040,6 +1041,82 @@ class TestGraphitiClientClose:
 
         # Should not raise
         await client.close()
+
+
+class TestCloseWithBackgroundTasks:
+    """Test close() cancels pending graphiti background tasks (TASK-PFI-E5F6)."""
+
+    @pytest.mark.asyncio
+    async def test_close_cancels_pending_background_tasks(self):
+        """close() should cancel graphiti-core background tasks before closing."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        mock_graphiti = MagicMock()
+        mock_graphiti.close = AsyncMock()
+        client._graphiti = mock_graphiti
+
+        # Simulate a pending background task from graphiti_core
+        task_completed = False
+
+        async def fake_background():
+            nonlocal task_completed
+            try:
+                await asyncio.sleep(10)  # Long-running task
+                task_completed = True
+            except asyncio.CancelledError:
+                pass
+
+        bg_task = asyncio.create_task(fake_background())
+        # Patch _is_graphiti_background_task to identify our task
+        with patch(
+            "guardkit.knowledge.graphiti_client._is_graphiti_background_task",
+            side_effect=lambda t: t is bg_task,
+        ):
+            await client.close()
+
+        assert bg_task.done()
+        assert not task_completed  # Was cancelled, not completed
+        mock_graphiti.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_close_no_pending_tasks(self):
+        """close() works normally when no background tasks are pending."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        mock_graphiti = MagicMock()
+        mock_graphiti.close = AsyncMock()
+        client._graphiti = mock_graphiti
+
+        await client.close()
+
+        mock_graphiti.close.assert_called_once()
+        assert client._graphiti is None
+        assert client._connected is False
+
+    @pytest.mark.asyncio
+    async def test_close_background_cancel_error_suppressed(self):
+        """Errors during background task cancellation are suppressed."""
+        config = GraphitiConfig(enabled=True)
+        client = GraphitiClient(config)
+
+        mock_graphiti = MagicMock()
+        mock_graphiti.close = AsyncMock()
+        client._graphiti = mock_graphiti
+
+        # Patch _cancel_pending_background_tasks to raise
+        with patch.object(
+            client,
+            "_cancel_pending_background_tasks",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("task cancel blew up"),
+        ):
+            # The outer try/except in close() catches this
+            await client.close()
+
+        # Still closed despite the error
+        assert client._graphiti is None
 
 
 class TestSingletonPattern:

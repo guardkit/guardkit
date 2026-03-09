@@ -1975,10 +1975,22 @@ class GraphitiClient:
     async def close(self) -> None:
         """Close the Graphiti connection and clean up resources.
 
+        Cancels any pending FalkorDB background tasks (e.g.
+        ``build_indices_and_constraints`` scheduled by graphiti-core during
+        ``add_episode``) before closing the connection pool.  This prevents
+        ``Buffer is closed`` errors that occur when the Redis connection pool
+        is torn down while background tasks are still running.
+
         Safe to call even if not connected or already closed.
         """
         if self._graphiti:
             try:
+                # Cancel pending graphiti-core background tasks before closing
+                # the connection pool.  graphiti-core schedules
+                # build_indices_and_constraints() as fire-and-forget tasks
+                # during add_episode(); if the pool closes first those tasks
+                # raise RedisError("Buffer is closed.").
+                await self._cancel_pending_background_tasks()
                 await self._graphiti.close()
             except Exception as e:
                 logger.debug(f"Error closing Graphiti connection: {e}")
@@ -1986,21 +1998,72 @@ class GraphitiClient:
                 self._graphiti = None
                 self._connected = False
 
+    async def _cancel_pending_background_tasks(self) -> None:
+        """Cancel pending asyncio tasks spawned by graphiti-core.
+
+        Identifies tasks whose coroutine originates from the
+        ``graphiti_core`` package and cancels them with a short grace
+        period so they can clean up.  This is a best-effort operation;
+        any errors are silently suppressed.
+        """
+        try:
+            current = asyncio.current_task()
+            pending = [
+                t for t in asyncio.all_tasks()
+                if t is not current
+                and not t.done()
+                and _is_graphiti_background_task(t)
+            ]
+            if not pending:
+                return
+            logger.debug(f"Cancelling {len(pending)} pending graphiti background task(s)")
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+        except Exception:
+            # Best-effort — never block shutdown
+            pass
+
+
+def _is_graphiti_background_task(task: "asyncio.Task") -> bool:
+    """Return True if *task* was spawned by graphiti-core internals.
+
+    Checks the coroutine's source filename for ``graphiti_core`` and the
+    task name for an explicit ``graphiti`` marker.  The qualname is *not*
+    checked because it can false-positive on our own test classes whose
+    names happen to contain "graphiti".
+    """
+    try:
+        coro = task.get_coro()
+        # Primary check: coroutine source file lives inside graphiti_core
+        code = getattr(coro, "cr_code", None)
+        if code is not None:
+            filename = getattr(code, "co_filename", "") or ""
+            if "graphiti_core" in filename:
+                return True
+        # Secondary check: explicit task name set by graphiti-core
+        name = task.get_name() if hasattr(task, "get_name") else ""
+        if "graphiti" in name.lower():
+            return True
+    except Exception:
+        pass
+    return False
+
 
 def _suppress_httpx_cleanup_errors(loop: "asyncio.AbstractEventLoop") -> None:
-    """Install a custom exception handler that suppresses httpx cleanup errors.
+    """Install a custom exception handler that suppresses shutdown cleanup errors.
 
-    When ``asyncio.run()`` creates a temporary event loop for Graphiti client
-    initialization, httpx ``AsyncClient`` objects may schedule background
-    ``aclose()`` tasks.  After ``asyncio.run()`` completes the loop is closed,
-    so those pending tasks raise ``RuntimeError('Event loop is closed')``.
+    Suppresses two categories of harmless errors that surface during shutdown:
 
-    These errors are harmless — the OS will reclaim the underlying sockets when
-    the thread exits — but they produce noisy ``ERROR:asyncio:Task exception was
-    never retrieved`` log lines.
+    1. **httpx cleanup**: ``RuntimeError('Event loop is closed')`` from httpx
+       ``AsyncClient.aclose()`` tasks scheduled during ``asyncio.run()``.
 
-    This handler silences only those specific errors while letting everything
-    else propagate normally.
+    2. **FalkorDB cleanup**: ``RedisError('Buffer is closed.')`` from
+       graphiti-core ``build_indices_and_constraints()`` background tasks
+       that outlive the Redis connection pool (TASK-PFI-E5F6).
+
+    Both are cosmetic — the OS reclaims sockets on thread exit — but they
+    produce noisy ``ERROR:asyncio:Task exception was never retrieved`` logs.
 
     Parameters
     ----------
@@ -2019,6 +2082,9 @@ def _suppress_httpx_cleanup_errors(loop: "asyncio.AbstractEventLoop") -> None:
         ):
             # Harmless httpx cleanup error — suppress silently
             return
+        if _is_redis_buffer_closed(exception):
+            # Harmless FalkorDB shutdown error — suppress silently
+            return
         # Delegate everything else to the original handler (or default)
         if original_handler is not None:
             original_handler(_loop, context)
@@ -2026,6 +2092,20 @@ def _suppress_httpx_cleanup_errors(loop: "asyncio.AbstractEventLoop") -> None:
             _loop.default_exception_handler(context)
 
     loop.set_exception_handler(_handler)
+
+
+def _is_redis_buffer_closed(exception: Optional[BaseException]) -> bool:
+    """Return True if *exception* is a Redis ``Buffer is closed`` error.
+
+    Uses string-based type checking to avoid a hard dependency on the
+    ``redis`` package.
+    """
+    if exception is None:
+        return False
+    type_name = type(exception).__name__
+    if type_name in ("RedisError", "ConnectionError", "ResponseError"):
+        return "buffer is closed" in str(exception).lower()
+    return False
 
 
 class GraphitiClientFactory:
