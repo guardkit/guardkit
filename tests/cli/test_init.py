@@ -2003,7 +2003,7 @@ class TestCopyGraphitiFlagCLI:
             mock_write.assert_called_once()
 
     def test_no_copy_graphiti_flag_uses_existing_behavior(self, tmp_path, monkeypatch):
-        """Without --copy-graphiti, existing write_graphiti_config behavior is used."""
+        """Without --copy-graphiti and no parent config found, write_graphiti_config is used."""
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
@@ -2011,7 +2011,7 @@ class TestCopyGraphitiFlagCLI:
              patch("guardkit.cli.init.GraphitiClient") as mock_client_class, \
              patch("guardkit.cli.init.write_graphiti_config", return_value=True) as mock_write, \
              patch("guardkit.cli.init.copy_graphiti_config") as mock_copy, \
-             patch("guardkit.cli.init._find_source_graphiti_config") as mock_find:
+             patch("guardkit.cli.init._find_source_graphiti_config", return_value=None) as mock_find:
 
             mock_client = MagicMock()
             mock_client.enabled = True
@@ -2023,11 +2023,131 @@ class TestCopyGraphitiFlagCLI:
             result = runner.invoke(cli, ["init"])
 
             assert result.exit_code == 0
-            # copy_graphiti_config and _find_source_graphiti_config should NOT be called
+            # Auto-offer: _find_source_graphiti_config is called with "auto"
+            mock_find.assert_called_once_with("auto")
+            # No parent config found: copy_graphiti_config NOT called
             mock_copy.assert_not_called()
-            mock_find.assert_not_called()
             # write_graphiti_config IS called
             mock_write.assert_called_once()
+
+    def test_auto_offer_prompt_shown_when_parent_config_found(self, tmp_path, monkeypatch):
+        """Without --copy-graphiti, a prompt is shown when a parent config is found."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        source_config_path = tmp_path / "parent" / ".guardkit" / "graphiti.yaml"
+
+        with patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
+             patch("guardkit.cli.init.GraphitiClient") as mock_client_class, \
+             patch("guardkit.cli.init._find_source_graphiti_config",
+                   return_value=source_config_path), \
+             patch("guardkit.cli.init.copy_graphiti_config", return_value=True):
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True)
+
+            # Provide 'Y' to accept the prompt
+            result = runner.invoke(cli, ["init"], input="Y\n")
+
+            assert result.exit_code == 0
+            assert "Found existing graphiti.yaml" in result.output
+            assert "Copy infrastructure config" in result.output
+
+    def test_auto_offer_y_accepted_copies_config(self, tmp_path, monkeypatch):
+        """When user accepts auto-offer prompt, config is copied."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        source_config_path = tmp_path / "parent" / ".guardkit" / "graphiti.yaml"
+
+        with patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
+             patch("guardkit.cli.init.GraphitiClient") as mock_client_class, \
+             patch("guardkit.cli.init._find_source_graphiti_config",
+                   return_value=source_config_path), \
+             patch("guardkit.cli.init.copy_graphiti_config", return_value=True) as mock_copy, \
+             patch("guardkit.cli.init.write_graphiti_config") as mock_write:
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True)
+
+            result = runner.invoke(cli, ["init"], input="Y\n")
+
+            assert result.exit_code == 0
+            mock_copy.assert_called_once()
+            mock_write.assert_not_called()
+
+    def test_auto_offer_n_declined_uses_project_id_only(self, tmp_path, monkeypatch):
+        """When user declines auto-offer prompt, write_graphiti_config is used."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        source_config_path = tmp_path / "parent" / ".guardkit" / "graphiti.yaml"
+
+        with patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
+             patch("guardkit.cli.init.GraphitiClient") as mock_client_class, \
+             patch("guardkit.cli.init._find_source_graphiti_config",
+                   return_value=source_config_path), \
+             patch("guardkit.cli.init.copy_graphiti_config") as mock_copy, \
+             patch("guardkit.cli.init.write_graphiti_config", return_value=True) as mock_write:
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True)
+
+            result = runner.invoke(cli, ["init"], input="n\n")
+
+            assert result.exit_code == 0
+            mock_copy.assert_not_called()
+            mock_write.assert_called_once()
+
+    def test_no_questions_skips_auto_offer_prompt(self, tmp_path, monkeypatch):
+        """--no-questions skips the auto-offer prompt and uses project_id-only."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        source_config_path = tmp_path / "parent" / ".guardkit" / "graphiti.yaml"
+
+        with patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
+             patch("guardkit.cli.init.GraphitiClient") as mock_client_class, \
+             patch("guardkit.cli.init._find_source_graphiti_config") as mock_find, \
+             patch("guardkit.cli.init.copy_graphiti_config") as mock_copy, \
+             patch("guardkit.cli.init.write_graphiti_config", return_value=True) as mock_write:
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_find.return_value = source_config_path
+            mock_seed.return_value = MagicMock(success=True)
+
+            result = runner.invoke(cli, ["init", "--no-questions"])
+
+            assert result.exit_code == 0
+            # _find_source_graphiti_config NOT called (--no-questions skips auto-offer)
+            mock_find.assert_not_called()
+            # copy_graphiti_config NOT called
+            mock_copy.assert_not_called()
+            # write_graphiti_config IS called (project_id-only)
+            mock_write.assert_called_once()
+
+    def test_no_questions_flag_in_help(self):
+        """--no-questions option appears in init --help output."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["init", "--help"])
+        assert result.exit_code == 0
+        assert "no-questions" in result.output
 
     def test_copy_graphiti_end_to_end(self, tmp_path, monkeypatch):
         """End-to-end: --copy-graphiti copies real config with replaced project_id."""
