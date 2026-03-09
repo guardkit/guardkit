@@ -611,6 +611,7 @@ async def _cmd_init(
     interactive: bool = False,
     copy_graphiti: Optional[str] = None,
     verbose: bool = False,
+    no_questions: bool = False,
 ) -> int:
     """Async implementation of init command.
 
@@ -622,6 +623,7 @@ async def _cmd_init(
         copy_graphiti: If set, copy graphiti config from an existing project.
             Use "auto" for auto-discovery or an explicit directory path.
         verbose: If True, show all log output including third-party DEBUG/INFO.
+        no_questions: If True, skip the auto-offer prompt and use project_id-only.
 
     Returns:
         Exit code (0 for success).
@@ -668,10 +670,38 @@ async def _cmd_init(
                 f"(--copy-graphiti), falling back to project_id only[/yellow]"
             )
             write_graphiti_config(project_name, project_dir)
-    elif write_graphiti_config(project_name, project_dir):
-        console.print(f"  [green]Written project_id to .guardkit/graphiti.yaml[/green]")
     else:
-        console.print(f"  [yellow]Warning: Could not write .guardkit/graphiti.yaml[/yellow]")
+        # No explicit --copy-graphiti flag: auto-offer if a parent config exists
+        source_config = None if no_questions else _find_source_graphiti_config("auto")
+        if source_config is not None:
+            console.print(f"\nFound existing graphiti.yaml at {source_config}")
+            try:
+                should_copy = Confirm.ask(
+                    "Copy infrastructure config to this project?", default=True
+                )
+            except Exception:
+                should_copy = True
+            if should_copy:
+                if copy_graphiti_config(project_name, project_dir, source_config):
+                    console.print(
+                        f"  [green]Copied Graphiti config from {source_config} "
+                        f"to .guardkit/graphiti.yaml[/green]"
+                    )
+                else:
+                    console.print(
+                        f"  [yellow]Warning: Could not copy graphiti.yaml, "
+                        f"falling back to project_id only[/yellow]"
+                    )
+                    write_graphiti_config(project_name, project_dir)
+            else:
+                if write_graphiti_config(project_name, project_dir):
+                    console.print(f"  [green]Written project_id to .guardkit/graphiti.yaml[/green]")
+                else:
+                    console.print(f"  [yellow]Warning: Could not write .guardkit/graphiti.yaml[/yellow]")
+        elif write_graphiti_config(project_name, project_dir):
+            console.print(f"  [green]Written project_id to .guardkit/graphiti.yaml[/green]")
+        else:
+            console.print(f"  [yellow]Warning: Could not write .guardkit/graphiti.yaml[/yellow]")
 
     # Step 1.5: Interactive setup (if requested)
     project_overview_episode = None
@@ -821,6 +851,12 @@ async def _cmd_init(
     is_flag=True,
     help="Show all log output including third-party DEBUG/INFO messages.",
 )
+@click.option(
+    "--no-questions",
+    is_flag=True,
+    default=False,
+    help="Skip prompts and use project_id-only graphiti.yaml (backward compatible).",
+)
 def init(
     template: str,
     skip_graphiti: bool,
@@ -829,6 +865,7 @@ def init(
     copy_graphiti: bool,
     copy_graphiti_from: Optional[str],
     verbose: bool,
+    no_questions: bool,
 ):
     """Initialize GuardKit in the current directory.
 
@@ -847,7 +884,7 @@ def init(
     exit_code = asyncio.run(
         _cmd_init(
             template, skip_graphiti, project_name, interactive,
-            copy_graphiti_value, verbose,
+            copy_graphiti_value, verbose, no_questions,
         )
     )
     if exit_code != 0:
