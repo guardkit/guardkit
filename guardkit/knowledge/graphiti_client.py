@@ -107,6 +107,26 @@ def normalize_project_id(name: str) -> str:
 
 VALID_PROVIDERS = ("openai", "vllm", "ollama")
 
+# Known output dimensions for common embedding models.
+# Used by the pre-flight dimension check in GraphitiClient.initialize().
+# Avoids a live embedding API call during startup.
+KNOWN_EMBEDDING_DIMS: Dict[str, int] = {
+    "text-embedding-3-small": 1536,
+    "text-embedding-3-large": 3072,
+    "text-embedding-ada-002": 1536,
+    "nomic-embed-text-v1.5": 768,
+    "nomic-embed-text": 768,
+    "all-minilm-l6-v2": 384,
+    "all-minilm-l12-v2": 384,
+    "bge-small-en-v1.5": 384,
+    "bge-base-en-v1.5": 768,
+    "bge-large-en-v1.5": 1024,
+    "mxbai-embed-large": 1024,
+    "snowflake-arctic-embed": 1024,
+    "BAAI/bge-m3": 1024,
+    "e5-mistral-7b-instruct": 4096,
+}
+
 
 @dataclass(frozen=True)
 class GraphitiConfig:
@@ -575,6 +595,106 @@ class GraphitiClient:
             )
         )
 
+    async def _check_embedding_dimensions(self) -> None:
+        """Pre-flight check: verify configured embedding model dimensions match FalkorDB index.
+
+        Runs after a successful FalkorDB connection. If an existing vector index
+        has a different dimension than the configured model produces, logs an ERROR
+        with a clear remediation message. Never raises or blocks initialization.
+        Total budget: <2s (enforced by asyncio.wait_for timeout).
+
+        Skips silently when:
+        - graph_store is not 'falkordb'
+        - not connected
+        - configured model not in KNOWN_EMBEDDING_DIMS
+        - FalkorDB has no vector index yet (fresh DB)
+        - the index query times out or fails
+        """
+        if self.config.graph_store != "falkordb":
+            return
+        if not self._graphiti or not self._connected:
+            return
+
+        try:
+            await asyncio.wait_for(
+                self._do_embedding_dimension_check(),
+                timeout=1.5,
+            )
+        except asyncio.TimeoutError:
+            logger.debug("Embedding dimension pre-flight check timed out, skipping")
+        except Exception as e:
+            logger.debug("Embedding dimension pre-flight check failed, skipping: %s", e)
+
+    async def _do_embedding_dimension_check(self) -> None:
+        """Execute the embedding dimension comparison logic."""
+        expected_dim = KNOWN_EMBEDDING_DIMS.get(self.config.embedding_model)
+        if expected_dim is None:
+            logger.debug(
+                "Embedding dimension check: model '%s' not in KNOWN_EMBEDDING_DIMS, skipping",
+                self.config.embedding_model,
+            )
+            return
+
+        stored_dim = await self._query_stored_embedding_dim()
+
+        if stored_dim is None:
+            logger.debug(
+                "Embedding dimension check: no stored vector index found (fresh DB), skipping"
+            )
+            return
+
+        if expected_dim != stored_dim:
+            logger.error(
+                "Embedding dimension mismatch! Configured model produces %d-dim vectors "
+                "but FalkorDB index expects %d-dim vectors. Search will fail. "
+                "Check embedding_provider/embedding_model in .guardkit/graphiti.yaml",
+                expected_dim,
+                stored_dim,
+            )
+        else:
+            logger.debug(
+                "Embedding dimension check passed: %d-dim vectors match FalkorDB index",
+                expected_dim,
+            )
+
+    async def _query_stored_embedding_dim(self) -> Optional[int]:
+        """Query FalkorDB for the dimension stored in its vector index.
+
+        Returns:
+            Dimension as int if a vector index exists, None otherwise
+            (fresh DB, query unsupported, or any error).
+        """
+        if not self._graphiti or not hasattr(self._graphiti, "_driver"):
+            return None
+
+        driver = self._graphiti._driver
+        if not hasattr(driver, "execute_query"):
+            return None
+
+        try:
+            result = await driver.execute_query(
+                "CALL db.indexes() YIELD name, dimension "
+                "WHERE dimension IS NOT NULL "
+                "RETURN dimension LIMIT 1",
+                {},
+            )
+            if result and hasattr(result, "records"):
+                for record in result.records:
+                    dim = None
+                    if hasattr(record, "get"):
+                        dim = record.get("dimension")
+                    elif hasattr(record, "__getitem__"):
+                        try:
+                            dim = record["dimension"]
+                        except (KeyError, IndexError):
+                            pass
+                    if dim is not None:
+                        return int(dim)
+        except Exception:
+            pass
+
+        return None
+
     async def _check_connection(self) -> bool:
         """Check if connection to the graph database can be established.
 
@@ -731,6 +851,8 @@ class GraphitiClient:
             )
 
             self._connected = True
+            # Run embedding dimension pre-flight check (non-blocking, <2s)
+            await self._check_embedding_dimensions()
             if self.config.graph_store == "falkordb":
                 logger.info(
                     f"Connected to FalkorDB via graphiti-core at "
