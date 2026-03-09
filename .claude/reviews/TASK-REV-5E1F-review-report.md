@@ -108,10 +108,14 @@ All 8 FBP-007 turns were cancelled via anyio cancel scopes, not by SDK timeout (
 - The pattern suggests the Claude SDK's internal anyio cancel scopes are being triggered by external timeout signals propagating into the SDK's streaming loop
 - Total elapsed across all 8 turns: ~9910s (exceeds the 2820s budget), indicating the autobuild loop continued retrying despite budget exhaustion — state recovery between turns adds overhead
 
-**Asymmetric budget handling** (code evidence from `agent_invoker.py`):
-- `invoke_player()`: Does NOT accept `remaining_budget` parameter
+**~~Asymmetric budget handling~~ CORRECTED** (code evidence from `agent_invoker.py`):
+- ~~`invoke_player()`: Does NOT accept `remaining_budget` parameter~~ **CORRECTION (TASK-REV-35DC):** `invoke_player()` DOES accept `remaining_budget` (added via TASK-VRF-003, at `agent_invoker.py:1144`). The full chain flows through:
+  - `feature_orchestrator.py:1483` → `task_budget = max(0, task_timeout - elapsed)`
+  - `autobuild.py:2069` → `_invoke_player_safely(remaining_budget=...)`
+  - `agent_invoker.py:1197` → `_calculate_sdk_timeout(remaining_budget=...)`
+  - `agent_invoker.py:3456` → `effective = min(effective, int(remaining_budget))`
 - `invoke_coach()`: DOES accept `remaining_budget`, caps SDK timeout to remaining wall-clock time
-- This means the Player SDK call cannot be dynamically shortened as budget depletes
+- Both Player and Coach SDK calls are dynamically shortened as budget depletes
 
 ---
 
@@ -161,8 +165,8 @@ The regression is attributable to **FBP-006's non-deterministic SDK turn consump
 | A: Increase task_timeout for Wave 5 | Medium | Low | Low | Quick fix, doesn't address root cause |
 | B: Relax FBP-007 acceptance criteria | High | Low | Medium | Removes infeasible constraint |
 | C: Move FBP-007 to separate wave | High | Medium | Low | Eliminates budget starvation |
-| D: Pass remaining_budget to Player | High | Medium | Low | Systemic fix for budget asymmetry |
-| E: B + C + D combined | Very High | Medium | Low | **Recommended** |
+| D: ~~Pass remaining_budget to Player~~ | ~~High~~ | ~~Medium~~ | ~~Low~~ | **ALREADY IMPLEMENTED** (TASK-VRF-003) — see TASK-REV-35DC correction |
+| E: B + C combined | Very High | Medium | Low | **Recommended** |
 
 ---
 
@@ -252,7 +256,9 @@ The cancellation intervals (6-41 minutes) are well below the 6240s SDK timeout b
 
 ## Deep-Dive B: FBP-006 Turn Inflation (110 vs 43 SDK Turns)
 
-### Root Cause: vLLM Non-Determinism + Expanded Scope
+### ~~Root Cause: vLLM Non-Determinism + Expanded Scope~~ CORRECTED: Slim Protocol (TASK-VOPT-001)
+
+**CORRECTION (TASK-REV-35DC):** The primary root cause of SDK turn inflation is the **slim protocol** (TASK-VOPT-001), not vLLM non-determinism or the `--fresh` flag. Run 4 used the full 19KB protocol; Runs 5-6 used the slim 5.5KB protocol (5,587 bytes, ~131 lines). The slim protocol removes detailed stack-specific patterns (47 lines → 1 sentence), fix loop pseudocode (34 lines → 1 paragraph), anti-stub rules with examples (88 lines → 1 sentence), and SOLID/DRY/YAGNI explanations (48 lines → 1 checklist). Without this pedagogical guidance, the vLLM model needs more iterations to converge on acceptable output. All three runs used the same vLLM backend.
 
 | Metric | Run 4 | Run 5 |
 |--------|-------|-------|
@@ -263,8 +269,11 @@ The cancellation intervals (6-41 minutes) are well below the 6240s SDK timeout b
 | Files created | 7 | 7 |
 | Files modified | 3 | 6 |
 | Tests passing | 1 | 5 |
+| **Protocol variant** | **Full (19KB)** | **Slim (5.5KB)** |
 
-**Run 5's Player produced more comprehensive output** (5 passing tests vs 1, 6 modified files vs 3), requiring proportionally more SDK turns. This is **not a regression** — Run 5 delivered better coverage but at higher cost.
+~~**Run 5's Player produced more comprehensive output** (5 passing tests vs 1, 6 modified files vs 3), requiring proportionally more SDK turns. This is **not a regression** — Run 5 delivered better coverage but at higher cost.~~
+
+**Revised attribution**: The 43→110 turn increase is primarily caused by the slim protocol reducing guidance. FBP-006 (highest complexity at 6) is the most sensitive to the removed guidance (anti-stub rules, detailed test patterns, error handling examples).
 
 ### Ceiling Hit Mechanics
 
@@ -394,7 +403,7 @@ The feature planning system generates AC without checking whether they are achie
 | A: Increase task_timeout for Wave 5 | Low | Low | Low | Band-aid, doesn't fix root causes |
 | B: Relax FBP-007 acceptance criteria | High | Low | Medium | Removes infeasible AC-008 |
 | C: Move FBP-007 to separate wave (Wave 6) | High | Low | Low | Eliminates budget starvation |
-| D: Pass remaining_budget to invoke_player | High | Medium | Low | Systemic fix for budget asymmetry |
+| D: ~~Pass remaining_budget to invoke_player~~ | ~~High~~ | ~~Medium~~ | ~~Low~~ | **ALREADY IMPLEMENTED** (TASK-VRF-003) — see TASK-REV-35DC correction |
 | E: Add backend-aware AC validation to feature-plan | Very High | High | Low | Prevents future infeasible AC |
 | F: Explore max_parallel=2 with GPU memory guardrails | Medium | Medium | Medium | Eliminates serialization penalty |
 | **G: B + C + D + E (phased)** | **Very High** | **High** | **Low** | **Recommended** |
@@ -413,9 +422,11 @@ Remove AC-008 ("no Any types") entirely. Replace with: "Type annotations present
 
 Move TASK-FBP-007 from Wave 5 to Wave 6. With `max_parallel=1`, co-locating with FBP-006 creates deterministic budget starvation when FBP-006 runs long.
 
-### R3: Pass remaining_budget to invoke_player (Priority: HIGH, Effort: MEDIUM)
+### R3: ~~Pass remaining_budget to invoke_player~~ ALREADY IMPLEMENTED (Priority: ~~HIGH~~ N/A, Effort: ~~MEDIUM~~ N/A)
 
-Add `remaining_budget: Optional[float]` parameter to `invoke_player()` and use `min(calculated_timeout, remaining_budget)` for SDK timeout. This matches the existing Coach behavior and prevents starting turns that cannot complete.
+**CORRECTION (TASK-REV-35DC):** This is already implemented via TASK-VRF-003. The `remaining_budget: Optional[float]` parameter exists at `agent_invoker.py:1144` and is used by `_calculate_sdk_timeout()` at line 3456 to cap the SDK timeout. COMPLETED — implemented before Run 5.
+
+~~Add `remaining_budget: Optional[float]` parameter to `invoke_player()` and use `min(calculated_timeout, remaining_budget)` for SDK timeout. This matches the existing Coach behavior and prevents starting turns that cannot complete.~~
 
 ### R4: Add backend-aware AC validation to feature-plan (Priority: HIGH, Effort: HIGH)
 
@@ -451,7 +462,7 @@ Update TASK-REV-5E1F to reflect that both runs used `direct` mode, and that FBP-
 |------|-------|---------|
 | `guardkit/orchestrator/agent_invoker.py` | 3162-3296 | Mode routing (deterministic auto-detection) |
 | `guardkit/orchestrator/agent_invoker.py` | 3298-3381 | SDK timeout calculation |
-| `guardkit/orchestrator/agent_invoker.py` | 1071-1081 | invoke_player (no remaining_budget param) |
+| `guardkit/orchestrator/agent_invoker.py` | 1071-1081 | invoke_player (has remaining_budget param — TASK-VRF-003) |
 | `guardkit/orchestrator/agent_invoker.py` | 1312-1319 | invoke_coach (has remaining_budget param) |
 | `guardkit/orchestrator/feature_orchestrator.py` | 1473-1486 | Wave execution, task_budget calculation |
 | `guardkit/orchestrator/autobuild.py` | 1718-1790 | Timeout decision tree in loop phase |
@@ -464,3 +475,13 @@ Update TASK-REV-5E1F to reflect that both runs used `direct` mode, and that FBP-
 | `guardkit/cli/autobuild.py` | 699-719 | max_parallel auto-detection (TASK-VPT-001) |
 | `anyio/_backends/_asyncio.py` | 628 | CancelScope.cancel() — "Cancelled via cancel scope" origin |
 | `installer/core/commands/feature-plan.md` | — | Feature plan command spec (no AC validation) |
+
+---
+
+## Addendum: Corrections Applied (TASK-VR6-5497, ref: TASK-REV-35DC)
+
+The following corrections were applied on 2026-03-09 based on findings from the TASK-REV-35DC deep-dive analysis:
+
+1. **Finding 3 corrected**: `invoke_player()` DOES accept `remaining_budget` parameter (TASK-VRF-003, `agent_invoker.py:1144`). The original claim that it did not was incorrect.
+2. **R3 marked as ALREADY IMPLEMENTED**: The `remaining_budget` parameter was implemented via TASK-VRF-003 before Run 5. R3 is no longer actionable.
+3. **Deep-Dive B attribution corrected**: SDK turn inflation (43→110 turns for FBP-006) is caused by the slim protocol (TASK-VOPT-001), not vLLM non-determinism or the `--fresh` flag. Run 4 used the full 19KB protocol; Runs 5-6 used the slim 5.5KB protocol.

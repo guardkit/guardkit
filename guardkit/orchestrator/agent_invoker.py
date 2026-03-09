@@ -4091,11 +4091,13 @@ Follow the decision format specified in your agent definition.
             )
 
         # --- Section 6: Execution protocol (loaded from file) ---
-        # TASK-VOPT-001: Use slim protocol for local backends to reduce
-        # prompt size (~18KB → ~4KB protocol section) and improve per-turn
-        # latency on slower inference backends.
+        # TASK-VOPT-001 / TASK-VR6-MP01: Use medium protocol for local
+        # backends. Medium (~10KB) restores anti-stub examples and stack
+        # patterns that slim (~5.5KB) removed, reducing 24-174% turn
+        # inflation observed in vLLM Runs 5-6 while staying well below
+        # the full protocol (~19KB).
         if self.timeout_multiplier > 1.0:
-            protocol_name = "autobuild_execution_protocol_slim"
+            protocol_name = "autobuild_execution_protocol_medium"
         else:
             protocol_name = "autobuild_execution_protocol"
         protocol_content = load_protocol(protocol_name)
@@ -4397,7 +4399,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         )
 
         # TASK-VOPT-001: Log protocol variant and size
-        protocol_variant = "slim" if self.timeout_multiplier > 1.0 else "full"
+        protocol_variant = "medium" if self.timeout_multiplier > 1.0 else "full"
         logger.info(f"Executing inline implement protocol for {task_id} (mode={mode})")
         logger.info(f"Working directory: {self.worktree_path}")
         logger.info(

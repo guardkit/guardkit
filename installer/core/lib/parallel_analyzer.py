@@ -168,12 +168,43 @@ def _validate_dependencies(subtasks: List[Dict[str, Any]]) -> None:
                 raise ValueError(f"Task {task['id']}: dependency '{dep_id}' does not exist")
 
 
-def detect_parallel_groups(subtasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _enforce_single_task_waves(
+    waves: List[List[str]],
+    task_by_id: Dict[str, Dict[str, Any]],
+) -> List[List[str]]:
+    """
+    Redistribute waves so each contains at most one task.
+
+    Used when max_parallel=1 to prevent budget starvation. Tasks within
+    a multi-task wave are split into separate sequential waves, preserving
+    their original ordering.
+
+    Args:
+        waves: List of waves, where each wave is a list of task IDs
+        task_by_id: Lookup dict mapping task IDs to task dicts
+
+    Returns:
+        New list of waves, each containing exactly one task
+    """
+    new_waves: List[List[str]] = []
+    for wave in waves:
+        for task_id in wave:
+            new_waves.append([task_id])
+    return new_waves
+
+
+def detect_parallel_groups(
+    subtasks: List[Dict[str, Any]],
+    max_parallel: int = 0,
+) -> List[Dict[str, Any]]:
     """
     Analyze file conflicts and assign parallel groups (waves) to subtasks.
 
     Tasks in the same wave can run in parallel (no file conflicts, dependencies satisfied).
     Tasks assigned to later waves have dependencies or file conflicts with earlier waves.
+
+    When max_parallel=1, a post-processing step enforces single-task-per-wave to prevent
+    budget starvation when tasks are serialized by a semaphore.
 
     Algorithm:
         1. Validate input structure
@@ -182,13 +213,16 @@ def detect_parallel_groups(subtasks: List[Dict[str, Any]]) -> List[Dict[str, Any
         4. Greedy wave assignment:
            - For each wave, add tasks with no conflicts and satisfied dependencies
            - Continue until all tasks assigned
-        5. Assign parallel_group numbers (None for single-task waves)
+        5. If max_parallel=1, redistribute so each wave has at most 1 task
+        6. Assign parallel_group numbers
 
     Args:
         subtasks: List of task dictionaries. Each task must have:
             - 'id' (str): Unique task identifier
             - 'files' (list[str], optional): Files modified by this task
             - 'dependencies' (list[str], optional): Task IDs that must complete first
+        max_parallel: Maximum parallel tasks. When 1, enforces single-task-per-wave.
+            0 (default) means no limit (existing behavior unchanged).
 
     Returns:
         New list of task dictionaries with 'parallel_group' field added.
@@ -284,6 +318,10 @@ def detect_parallel_groups(subtasks: List[Dict[str, Any]]) -> List[Dict[str, Any
 
         # Mark tasks in current wave as assigned for next iteration
         assigned_to_previous_waves.update(current_wave)
+
+    # Post-processing: enforce single-task-per-wave when max_parallel=1
+    if max_parallel == 1:
+        waves = _enforce_single_task_waves(waves, task_by_id)
 
     # Assign parallel_group numbers
     for wave_num, wave_tasks in enumerate(waves, start=1):

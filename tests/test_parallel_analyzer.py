@@ -512,6 +512,113 @@ class TestEdgeCases:
         assert task_by_id["B"]["parallel_group"] == 2
 
 
+class TestMaxParallelOne:
+    """Test max_parallel=1 wave isolation behavior."""
+
+    def test_two_tasks_same_wave_separated(self):
+        """When max_parallel=1, tasks in same wave are split into separate waves."""
+        subtasks = [
+            {"id": "A", "files": ["f1.py"]},
+            {"id": "B", "files": ["f2.py"]},
+        ]
+        result = detect_parallel_groups(subtasks, max_parallel=1)
+
+        task_by_id = {t["id"]: t for t in result}
+
+        # Without max_parallel=1, both would be in wave 1
+        # With max_parallel=1, each gets its own wave
+        assert task_by_id["A"]["parallel_group"] != task_by_id["B"]["parallel_group"]
+        groups = sorted(t["parallel_group"] for t in result)
+        assert groups == [1, 2]
+
+    def test_dependency_chain_preserved(self):
+        """When max_parallel=1, dependency ordering is preserved."""
+        subtasks = [
+            {"id": "A", "files": ["f1.py"], "dependencies": []},
+            {"id": "B", "files": ["f2.py"], "dependencies": ["A"]},
+            {"id": "C", "files": ["f3.py"], "dependencies": ["B"]},
+        ]
+        result = detect_parallel_groups(subtasks, max_parallel=1)
+
+        task_by_id = {t["id"]: t for t in result}
+
+        # Chain dependency already produces separate waves, should stay the same
+        assert task_by_id["A"]["parallel_group"] == 1
+        assert task_by_id["B"]["parallel_group"] == 2
+        assert task_by_id["C"]["parallel_group"] == 3
+
+    def test_default_max_parallel_no_change(self):
+        """max_parallel=0 (default) preserves existing behavior."""
+        subtasks = [
+            {"id": "A", "files": ["f1.py"]},
+            {"id": "B", "files": ["f2.py"]},
+            {"id": "C", "files": ["f3.py"]},
+        ]
+        result_default = detect_parallel_groups(subtasks)
+        result_zero = detect_parallel_groups(subtasks, max_parallel=0)
+
+        # Both should produce same results
+        default_groups = {t["id"]: t["parallel_group"] for t in result_default}
+        zero_groups = {t["id"]: t["parallel_group"] for t in result_zero}
+        assert default_groups == zero_groups
+
+        # All in wave 1 (no conflicts)
+        assert all(t["parallel_group"] == 1 for t in result_default)
+
+    def test_max_parallel_gt1_no_change(self):
+        """max_parallel > 1 preserves existing behavior."""
+        subtasks = [
+            {"id": "A", "files": ["f1.py"]},
+            {"id": "B", "files": ["f2.py"]},
+        ]
+        result = detect_parallel_groups(subtasks, max_parallel=2)
+
+        # Both should be in wave 1 (no conflicts, max_parallel > 1)
+        assert all(t["parallel_group"] == 1 for t in result)
+
+    def test_max_parallel_one_three_tasks_no_conflicts(self):
+        """Three non-conflicting tasks each get own wave when max_parallel=1."""
+        subtasks = [
+            {"id": "A", "files": ["f1.py"]},
+            {"id": "B", "files": ["f2.py"]},
+            {"id": "C", "files": ["f3.py"]},
+        ]
+        result = detect_parallel_groups(subtasks, max_parallel=1)
+
+        groups = sorted(t["parallel_group"] for t in result)
+        assert groups == [1, 2, 3]
+
+    def test_max_parallel_one_with_existing_conflicts(self):
+        """Tasks already in separate waves stay separate, multi-task waves split."""
+        subtasks = [
+            {"id": "A", "files": ["f1.py", "f2.py"]},
+            {"id": "B", "files": ["f2.py", "f3.py"]},  # Conflicts with A
+            {"id": "C", "files": ["f4.py"]},  # No conflicts
+        ]
+        result = detect_parallel_groups(subtasks, max_parallel=1)
+
+        task_by_id = {t["id"]: t for t in result}
+
+        # Without max_parallel=1: Wave 1 (A,C), Wave 2 (B)
+        # With max_parallel=1: each task gets own wave
+        groups = sorted(t["parallel_group"] for t in result)
+        assert groups == [1, 2, 3]
+
+        # A should come before B (B conflicts with A)
+        assert task_by_id["A"]["parallel_group"] < task_by_id["B"]["parallel_group"]
+
+    def test_max_parallel_one_empty_list(self):
+        """Empty list with max_parallel=1 returns empty list."""
+        result = detect_parallel_groups([], max_parallel=1)
+        assert result == []
+
+    def test_max_parallel_one_single_task(self):
+        """Single task with max_parallel=1 stays in wave 1."""
+        subtasks = [{"id": "A", "files": ["f1.py"]}]
+        result = detect_parallel_groups(subtasks, max_parallel=1)
+        assert result[0]["parallel_group"] == 1
+
+
 class TestComplexScenarios:
     """Test complex real-world scenarios."""
 
