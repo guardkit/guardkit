@@ -36,6 +36,7 @@ Example:
 import json
 import logging
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from guardkit.knowledge.entities.turn_state import TurnStateEntity, TurnMode
@@ -124,36 +125,40 @@ async def load_turn_continuation_context(
     graphiti_client,
     feature_id: str,
     task_id: str,
-    current_turn: int
+    current_turn: int,
+    autobuild_dir: Optional[Path] = None,
 ) -> Optional[str]:
     """Load context for Turn N when N > 1.
 
-    Queries Graphiti for the previous turn's state and formats it as
-    actionable context for the current turn. Returns None for turn 1
-    (no previous turn to learn from) or if Graphiti is unavailable.
+    Tries local turn state files first (fast, <1ms), then falls back to
+    Graphiti query if local files are not found (TASK-RFX-5FED).
 
     Args:
         graphiti_client: Graphiti client instance (can be None)
         feature_id: Feature identifier (e.g., "FEAT-GE")
         task_id: Task identifier (e.g., "TASK-GE-001")
         current_turn: Current turn number (1-indexed)
+        autobuild_dir: Optional path to .guardkit/autobuild/{task_id}/ directory.
+            When provided, local turn_state_turn_N.json files are checked first.
 
     Returns:
         Formatted markdown string with previous turn summary, or None if:
         - current_turn is 1 (no previous turn)
-        - Graphiti is unavailable or disabled
+        - No local file found AND Graphiti is unavailable
         - No previous turn found
         - An error occurs during retrieval
 
     Example:
         from guardkit.knowledge.graphiti_client import get_graphiti
+        from pathlib import Path
 
         graphiti = get_graphiti()
         context = await load_turn_continuation_context(
             graphiti,
             feature_id="FEAT-GE",
             task_id="TASK-GE-001",
-            current_turn=2
+            current_turn=2,
+            autobuild_dir=Path(".guardkit/autobuild/TASK-GE-001"),
         )
 
         if context:
@@ -162,9 +167,76 @@ async def load_turn_continuation_context(
     """
     # No previous turn for turn 1
     if current_turn <= 1:
-        logger.debug("[Graphiti] Turn 1 has no previous turn to load")
+        logger.debug("[TurnState] Turn 1 has no previous turn to load")
         return None
 
+    prev_turn_num = current_turn - 1
+
+    # TASK-RFX-5FED: Try local file first (fast path, <1ms)
+    if autobuild_dir is not None:
+        local_result = _load_from_local_file(autobuild_dir, prev_turn_num, task_id)
+        if local_result is not None:
+            return local_result
+
+    # Fallback: Graphiti query (backward compatibility)
+    return await _load_from_graphiti(graphiti_client, task_id, prev_turn_num)
+
+
+def _load_from_local_file(
+    autobuild_dir: Path,
+    turn_number: int,
+    task_id: str,
+) -> Optional[str]:
+    """Load turn state from local JSON file.
+
+    Args:
+        autobuild_dir: Path to .guardkit/autobuild/{task_id}/ directory
+        turn_number: Turn number to load
+        task_id: Task identifier (for logging)
+
+    Returns:
+        Formatted markdown string, or None if file not found
+    """
+    state_path = autobuild_dir / f"turn_state_turn_{turn_number}.json"
+
+    if not state_path.exists():
+        logger.debug(f"[TurnState] Local file not found: {state_path}")
+        return None
+
+    try:
+        with open(state_path, "r") as f:
+            body = json.load(f)
+
+        if not body or not isinstance(body, dict):
+            logger.debug(f"[TurnState] Malformed local turn state for {task_id}")
+            return None
+
+        context = _format_turn_state_body(body, turn_number)
+        logger.info(
+            f"[TurnState] Loaded from local file: {state_path} ({len(context)} chars)"
+        )
+        return context
+
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning(f"[TurnState] Failed to read local turn state: {e}")
+        return None
+
+
+async def _load_from_graphiti(
+    graphiti_client,
+    task_id: str,
+    prev_turn_num: int,
+) -> Optional[str]:
+    """Load turn state from Graphiti (fallback path).
+
+    Args:
+        graphiti_client: Graphiti client instance (can be None)
+        task_id: Task identifier
+        prev_turn_num: Previous turn number to load
+
+    Returns:
+        Formatted markdown string, or None if unavailable
+    """
     # Graceful degradation: return None if client is None
     if graphiti_client is None:
         logger.debug("[Graphiti] Client unavailable, returning None for turn context")
@@ -176,8 +248,6 @@ async def load_turn_continuation_context(
         return None
 
     try:
-        # Query for previous turn state
-        prev_turn_num = current_turn - 1
         query = f"turn_state {task_id} turn {prev_turn_num}"
 
         results = await graphiti_client.search(
@@ -189,7 +259,6 @@ async def load_turn_continuation_context(
             logger.debug(f"[Graphiti] No previous turn found for {task_id} turn {prev_turn_num}")
             return None
 
-        # Get the first result
         result = results[0]
         body = result.get("body", {})
 
@@ -197,55 +266,62 @@ async def load_turn_continuation_context(
             logger.debug(f"[Graphiti] Malformed turn state result for {task_id}")
             return None
 
-        # Format as actionable context
-        context_lines = [
-            f"## Previous Turn Summary (Turn {prev_turn_num})",
-            f"**What was attempted**: {body.get('player_summary', 'Unknown')}",
-            f"**Player decision**: {body.get('player_decision', 'Unknown')}",
-            f"**Coach decision**: {body.get('coach_decision', 'Unknown')}",
-        ]
-
-        # Include coach feedback if present
-        coach_feedback = body.get('coach_feedback')
-        if coach_feedback:
-            context_lines.append(f"**Coach feedback**: {coach_feedback}")
-
-        # Include blockers if present
-        blockers = body.get('blockers_found', [])
-        if blockers:
-            blockers_str = ", ".join(blockers)
-            context_lines.append(f"**Blockers found**: {blockers_str}")
-
-        # Include lessons learned
-        lessons = body.get('lessons_from_turn', [])
-        if lessons:
-            lessons_str = "; ".join(lessons)
-            context_lines.append(f"**Lessons learned**: {lessons_str}")
-
-        # Include suggested next focus
-        next_focus = body.get('what_to_try_next')
-        if next_focus:
-            context_lines.append(f"**Suggested focus for this turn**: {next_focus}")
-
-        # Include acceptance criteria status
-        ac_status = body.get('acceptance_criteria_status', {})
-        if ac_status:
-            context_lines.append("")
-            context_lines.append("**Acceptance Criteria Status**:")
-            for criterion, status in ac_status.items():
-                if status == "completed":
-                    icon = "✓"
-                elif status == "rejected" or status == "failed":
-                    icon = "✗"
-                else:
-                    icon = "○"
-                context_lines.append(f"  {icon} {criterion}: {status}")
-
-        return "\n".join(context_lines)
+        return _format_turn_state_body(body, prev_turn_num)
 
     except Exception as e:
         logger.warning(f"[Graphiti] Failed to load turn continuation context: {e}")
         return None
+
+
+def _format_turn_state_body(body: dict, turn_number: int) -> str:
+    """Format turn state body dict as actionable markdown context.
+
+    Args:
+        body: Turn state data dictionary (from local file or Graphiti)
+        turn_number: Turn number for display
+
+    Returns:
+        Formatted markdown string
+    """
+    context_lines = [
+        f"## Previous Turn Summary (Turn {turn_number})",
+        f"**What was attempted**: {body.get('player_summary', 'Unknown')}",
+        f"**Player decision**: {body.get('player_decision', 'Unknown')}",
+        f"**Coach decision**: {body.get('coach_decision', 'Unknown')}",
+    ]
+
+    coach_feedback = body.get('coach_feedback')
+    if coach_feedback:
+        context_lines.append(f"**Coach feedback**: {coach_feedback}")
+
+    blockers = body.get('blockers_found', [])
+    if blockers:
+        blockers_str = ", ".join(blockers)
+        context_lines.append(f"**Blockers found**: {blockers_str}")
+
+    lessons = body.get('lessons_from_turn', [])
+    if lessons:
+        lessons_str = "; ".join(lessons)
+        context_lines.append(f"**Lessons learned**: {lessons_str}")
+
+    next_focus = body.get('what_to_try_next')
+    if next_focus:
+        context_lines.append(f"**Suggested focus for this turn**: {next_focus}")
+
+    ac_status = body.get('acceptance_criteria_status', {})
+    if ac_status:
+        context_lines.append("")
+        context_lines.append("**Acceptance Criteria Status**:")
+        for criterion, status in ac_status.items():
+            if status == "completed":
+                icon = "✓"
+            elif status == "rejected" or status == "failed":
+                icon = "✗"
+            else:
+                icon = "○"
+            context_lines.append(f"  {icon} {criterion}: {status}")
+
+    return "\n".join(context_lines)
 
 
 async def load_turn_context(feature_id: str, task_id: str) -> str:

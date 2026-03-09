@@ -4,7 +4,7 @@ title: MCP tool integration for Coach with server lifecycle management
 status: backlog
 created: 2026-03-09T00:00:00Z
 updated: 2026-03-09T00:00:00Z
-priority: medium
+priority: low
 tags: [mcp, playwright, coach, verification, server-lifecycle, future]
 task_type: feature
 parent_review: TASK-REV-3F40

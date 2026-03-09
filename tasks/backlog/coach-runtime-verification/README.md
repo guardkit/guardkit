@@ -4,7 +4,7 @@
 
 Enable the Coach validator to verify acceptance criteria that require runtime execution (commands, API calls, UI verification), addressing the structural gap that caused FEAT-2AAA's UNRECOVERABLE_STALL failure.
 
-**Current Status**: 1/9 tasks complete (criteria classifier POC implemented and tested)
+**Current Status**: 5/9 tasks complete (Wave 1 and Wave 2 finished)
 
 **Source Review**: [TASK-REV-3F40](.claude/reviews/TASK-REV-3F40-review-report.md) — Analysis of FEAT-2AAA failure on Anthropic models
 
@@ -43,15 +43,22 @@ This is not a task authoring problem — it's a verification pipeline gap.
 
 | Wave | Task | Status | Effort | Mode |
 |------|------|--------|--------|------|
-| 1 | [TASK-CRV-412F](TASK-CRV-412F-integrate-criteria-classifier.md) | backlog | 1-2h | task-work |
-| 1 | [TASK-CRV-537E](TASK-CRV-537E-orchestrator-command-execution.md) | backlog | 2-3h | task-work |
-| 2 | [TASK-CRV-1540](TASK-CRV-1540-cancelederror-partial-data.md) | backlog | 2-3h | task-work |
-| 2 | [TASK-CRV-9618](TASK-CRV-9618-carry-forward-best-requirements.md) | backlog | 1-2h | task-work |
-| 2 | [TASK-CRV-90FB](TASK-CRV-90FB-align-stall-detector.md) | backlog | 1h | task-work |
+| 1 | [TASK-CRV-412F](../../completed/TASK-CRV-412F/TASK-CRV-412F-integrate-criteria-classifier.md) | **complete** | 1-2h | task-work |
+| 1 | [TASK-CRV-537E](../../completed/TASK-CRV-537E/TASK-CRV-537E.md) | **complete** | 2-3h | task-work |
+| 2 | [TASK-CRV-1540](../../completed/TASK-CRV-1540/TASK-CRV-1540.md) | **complete** | 2-3h | task-work |
+| 2 | [TASK-CRV-9618](../../completed/TASK-CRV-9618/TASK-CRV-9618-carry-forward-best-requirements.md) | **complete** | 1-2h | task-work |
+| 2 | [TASK-CRV-90FB](../../completed/TASK-CRV-90FB/TASK-CRV-90FB-align-stall-detector.md) | **complete** | 1h | task-work |
 | 3 | [TASK-CRV-9914](TASK-CRV-9914-extended-coach-validator.md) | backlog | 3-4h | task-work |
-| 3 | [TASK-CRV-B275](TASK-CRV-B275-rate-limit-invoke-with-role.md) | backlog | 1h | direct |
-| 4 | [TASK-CRV-7DBC](TASK-CRV-7DBC-mcp-coach-integration.md) | backlog | 4-6h | task-work |
+| 3 | [TASK-CRV-B275](TASK-CRV-B275-rate-limit-invoke-with-role.md) | backlog (low priority) | 1h | direct |
+| 4 | [TASK-CRV-7DBC](TASK-CRV-7DBC-mcp-coach-integration.md) | backlog (low priority) | 4-6h | task-work |
 | 4 | [TASK-CRV-3B1A](TASK-CRV-3B1A-sdk-sessions-player-resume.md) | backlog | 4-6h | task-work |
+
+## Deprioritised Tasks
+
+Per [TASK-REV-A8C6](../../review_complete/) review findings:
+
+- **TASK-CRV-B275** (Rate limit detection): Deprioritised to low. No rate limit errors observed in any autobuild run (Run 2 or Run 3). Defensive improvement with no evidence of current need.
+- **TASK-CRV-7DBC** (MCP Coach integration): Deprioritised to low. Depends on TASK-CRV-9914 which itself depends on other work. Long dependency chain; MCP integration is a future capability not needed for current autobuild reliability.
 
 ## Prerequisites
 

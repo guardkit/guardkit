@@ -1,10 +1,12 @@
 ---
 id: TASK-RFX-BAD9
 title: Normalize pip to sys.executable -m pip in command execution
-status: backlog
+status: completed
 task_type: implementation
 created: 2026-03-09T16:00:00Z
-updated: 2026-03-09T16:00:00Z
+updated: 2026-03-09T17:05:00Z
+completed: 2026-03-09T17:05:00Z
+completed_location: tasks/completed/run3-review-fixes/TASK-RFX-BAD9/
 priority: high
 complexity: 2
 wave: 1
@@ -29,12 +31,12 @@ Runtime criteria uses bare `pip` which resolves to `/opt/homebrew/bin/pip` (brok
 
 ## Acceptance Criteria
 
-- [ ] `_execute_command_criteria()` normalizes `pip install ...` to `{sys.executable} -m pip install ...`
-- [ ] `_execute_command_criteria()` normalizes `pip` to `{sys.executable} -m pip` for all pip subcommands
-- [ ] Normalization is logged at INFO level when applied
-- [ ] If `.venv/bin/` exists in the worktree, PATH is prepended in subprocess env
-- [ ] Unit tests cover pip normalization with various command patterns
-- [ ] Unit tests cover virtualenv PATH injection
+- [x] `_execute_command_criteria()` normalizes `pip install ...` to `{sys.executable} -m pip install ...`
+- [x] `_execute_command_criteria()` normalizes `pip` to `{sys.executable} -m pip` for all pip subcommands
+- [x] Normalization is logged at INFO level when applied
+- [x] If `.venv/bin/` exists in the worktree, PATH is prepended in subprocess env
+- [x] Unit tests cover pip normalization with various command patterns
+- [x] Unit tests cover virtualenv PATH injection
 
 ## Implementation Notes
 

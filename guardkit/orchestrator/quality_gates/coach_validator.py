@@ -1989,6 +1989,190 @@ class CoachValidator:
 
         return validation
 
+    def verify_command_criteria(
+        self,
+        acceptance_criteria: List[str],
+        per_command_timeout: int = 60,
+        total_timeout: int = 180,
+    ) -> "CommandVerificationResult":
+        """Execute command_execution acceptance criteria in the worktree.
+
+        Classifies *acceptance_criteria* via the criteria classifier, runs each
+        extracted command via ``subprocess.run()`` in ``self.worktree_path``,
+        and returns structured results with classified failures.
+
+        This method owns all runtime command verification logic, providing
+        cleaner separation of concerns (TASK-RFX-7C63). The orchestrator
+        delegates here and handles report injection separately.
+
+        Parameters
+        ----------
+        acceptance_criteria : List[str]
+            Raw acceptance criteria text from the task.
+        per_command_timeout : int
+            Per-command timeout in seconds (default: 60).
+        total_timeout : int
+            Aggregate timeout across all commands in seconds (default: 180).
+
+        Returns
+        -------
+        CommandVerificationResult
+            Aggregate result with per-command results, classified failures,
+            and passed criteria texts.
+        """
+        from guardkit.orchestrator.quality_gates.command_models import (
+            CommandExecutionResult,
+            CommandVerificationResult,
+            _assert_worktree_path,
+            normalise_pip_command,
+            build_venv_env,
+        )
+        from guardkit.orchestrator.quality_gates.criteria_classifier import (
+            classify_acceptance_criteria as _classify,
+        )
+        from guardkit.orchestrator.quality_gates.command_failure_classifier import (
+            classify_command_failure,
+            CommandFailureRecord,
+        )
+
+        verification = CommandVerificationResult()
+
+        classification = _classify(acceptance_criteria)
+        command_criteria = classification.command_criteria
+
+        if not command_criteria:
+            return verification
+
+        logger.info(
+            "verify_command_criteria: %d command_execution criteria detected",
+            len(command_criteria),
+        )
+
+        _assert_worktree_path(self.worktree_path)
+
+        env = build_venv_env(self.worktree_path)
+        if env is not None:
+            logger.info(
+                "Prepended virtualenv PATH: %s",
+                self.worktree_path / ".venv" / "bin",
+            )
+
+        elapsed_total = 0.0
+        for criterion in command_criteria:
+            if not criterion.extracted_command:
+                continue
+
+            if elapsed_total >= total_timeout:
+                logger.warning(
+                    "Aggregate command timeout reached (%.0fs >= %ds), "
+                    "skipping remaining criteria",
+                    elapsed_total,
+                    total_timeout,
+                )
+                break
+
+            try:
+                cmd = normalise_pip_command(criterion.extracted_command)
+                if cmd != criterion.extracted_command:
+                    logger.info(
+                        "Normalized 'pip' to '%s -m pip'",
+                        sys.executable,
+                    )
+
+                start = time.monotonic()
+                proc = subprocess.run(
+                    cmd,
+                    shell=True,
+                    cwd=str(self.worktree_path),
+                    capture_output=True,
+                    text=True,
+                    timeout=per_command_timeout,
+                    env=env,
+                )
+                elapsed = time.monotonic() - start
+                elapsed_total += elapsed
+
+                passed = proc.returncode == 0
+                verification.results.append(
+                    CommandExecutionResult(
+                        criterion_text=criterion.text,
+                        extracted_command=cmd,
+                        passed=passed,
+                        exit_code=proc.returncode,
+                        stdout=(proc.stdout or "")[:500],
+                        stderr=(proc.stderr or "")[:500],
+                        elapsed_seconds=elapsed,
+                        timed_out=False,
+                    )
+                )
+
+                if passed:
+                    verification.passed_criteria.append(criterion.text)
+                    logger.info(
+                        "Runtime criterion verified: %s", criterion.text[:80]
+                    )
+                else:
+                    logger.warning(
+                        "Runtime criterion failed (exit %d): %s\nstderr: %s",
+                        proc.returncode,
+                        criterion.text[:80],
+                        proc.stderr[:200] if proc.stderr else "",
+                    )
+                    failure_class = classify_command_failure(
+                        returncode=proc.returncode,
+                        stderr=proc.stderr or "",
+                        stdout=proc.stdout or "",
+                        command=cmd,
+                    )
+                    verification.failures.append(
+                        CommandFailureRecord(
+                            command=cmd,
+                            criterion_text=criterion.text,
+                            returncode=proc.returncode,
+                            stderr=(proc.stderr or "")[:500],
+                            stdout=(proc.stdout or "")[:500],
+                            classification=failure_class,
+                        )
+                    )
+                    logger.info(
+                        "Command failure classified as '%s': %s",
+                        failure_class,
+                        criterion.text[:80],
+                    )
+
+            except subprocess.TimeoutExpired:
+                elapsed_total += per_command_timeout
+                verification.results.append(
+                    CommandExecutionResult(
+                        criterion_text=criterion.text,
+                        extracted_command=criterion.extracted_command or "",
+                        passed=False,
+                        exit_code=None,
+                        stdout="",
+                        stderr="",
+                        elapsed_seconds=float(per_command_timeout),
+                        timed_out=True,
+                    )
+                )
+                logger.warning(
+                    "Runtime criterion timed out (%ds): %s",
+                    per_command_timeout,
+                    criterion.text[:80],
+                )
+                verification.failures.append(
+                    CommandFailureRecord(
+                        command=criterion.extracted_command or "",
+                        criterion_text=criterion.text,
+                        returncode=None,
+                        stderr="",
+                        stdout="",
+                        classification="transient",
+                        timed_out=True,
+                    )
+                )
+
+        return verification
+
     def _load_completion_promises(
         self,
         task_work_results: Dict[str, Any],

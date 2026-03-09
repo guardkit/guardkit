@@ -43,7 +43,9 @@ Example:
 import asyncio
 import concurrent.futures
 import hashlib
+import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -102,6 +104,11 @@ from guardkit.orchestrator.quality_gates import (
 # Import criteria classifier for runtime command verification (TASK-CRV-537E)
 from guardkit.orchestrator.quality_gates.criteria_classifier import (
     classify_acceptance_criteria,
+)
+from guardkit.orchestrator.quality_gates.command_failure_classifier import (
+    classify_command_failure,
+    build_command_failure_advisory,
+    CommandFailureRecord,
 )
 
 # Import task type models for quality gate profile resolution
@@ -178,33 +185,19 @@ COACH_GRACE_PERIOD_SECONDS: int = 120
 
 # ============================================================================
 # Runtime Command Execution Constants (TASK-CRV-537E)
+# Canonical definitions live in command_models.py; re-exported here for
+# backward compatibility with existing tests and callers (TASK-RFX-7C63).
 # ============================================================================
 
-# Sentinel path fragment that must appear in any directory used as cwd for
-# subprocess.run().  This ensures commands never execute against the base repo.
-WORKTREE_SENTINEL: str = ".guardkit/worktrees/"
-
-# Per-command timeout (seconds).
-COMMAND_TIMEOUT_SECONDS: int = 60
-
-# Aggregate timeout across all command criteria per turn (seconds).
-COMMAND_TOTAL_TIMEOUT_SECONDS: int = 180
-
-
-def _assert_worktree_path(path: Path) -> None:
-    """Defensive check: never execute commands outside a worktree.
-
-    Raises
-    ------
-    RuntimeError
-        If *path* does not contain the worktree sentinel.
-    """
-    resolved = str(path.resolve())
-    if WORKTREE_SENTINEL not in resolved:
-        raise RuntimeError(
-            f"Refusing to execute commands outside worktree. "
-            f"Path '{resolved}' does not contain '{WORKTREE_SENTINEL}'"
-        )
+from guardkit.orchestrator.quality_gates.command_models import (  # noqa: E402
+    WORKTREE_SENTINEL,
+    COMMAND_TIMEOUT_SECONDS,
+    COMMAND_TOTAL_TIMEOUT_SECONDS,
+    _PIP_CMD_RE,
+    _assert_worktree_path,
+    CommandExecutionResult,
+    CommandVerificationResult,
+)
 
 
 # ============================================================================
@@ -448,6 +441,7 @@ class TurnRecord:
     sdk_max_turns: Optional[int] = None        # TASK-VPR-003: Effective SDK turn ceiling
     sdk_ceiling_hit: bool = False              # TASK-VPR-003: Whether ceiling was hit
     is_configuration_error: bool = False       # TASK-ABFIX-003: True when Coach flagged a config error (e.g. invalid task_type)
+    command_results: Optional[Tuple[CommandExecutionResult, ...]] = None  # TASK-RFX-528E: Structured command execution results
 
 
 @dataclass
@@ -1733,6 +1727,9 @@ class AutoBuildOrchestrator:
         """
         logger.info(f"Phase 2 (Loop): Starting adversarial turns for {task_id} from turn {start_turn}")
 
+        # TASK-RFX-5FED: Store worktree path for local turn state file access
+        self._active_worktree_path = worktree.path
+
         # Track loop start time for SDK-level timeout remaining budget (TASK-ABFIX-006)
         import time as _time
         loop_start = _time.monotonic()
@@ -1792,6 +1789,10 @@ class AutoBuildOrchestrator:
                 # When reset triggered, Player receives only original requirements (no feedback)
                 if self._should_reset_perspective(turn):
                     previous_feedback = None
+                    # TASK-RFX-B20B: Also clear session to avoid carrying
+                    # prior context that perspective reset is meant to discard
+                    if self._agent_invoker is not None:
+                        self._agent_invoker.set_player_resume_session(None)
 
                 # Execute single turn
                 # Skip arch review when pre-loop is disabled (implement-only mode)
@@ -1812,6 +1813,18 @@ class AutoBuildOrchestrator:
 
                 turn_history.append(turn_record)
                 self._turn_history = turn_history  # Keep internal copy for state
+
+                # TASK-RFX-B20B: Update session_id on AgentInvoker for next turn
+                # The invoker reads _last_session_id internally when building
+                # ClaudeAgentOptions, so we just set it after each turn.
+                if (
+                    self._agent_invoker is not None
+                    and turn_record.player_result is not None
+                    and turn_record.player_result.session_id is not None
+                ):
+                    self._agent_invoker.set_player_resume_session(
+                        turn_record.player_result.session_id
+                    )
 
                 # Cooperative cancellation check after turn (TASK-ASF-007)
                 # If event was set during _execute_turn (between Player/Coach),
@@ -1849,8 +1862,11 @@ class AutoBuildOrchestrator:
                     )
 
 
-                # Capture turn state for cross-turn learning (TASK-GE-002)
-                self._capture_turn_state(turn_record, acceptance_criteria, task_id=task_id)
+                # Capture turn state for cross-turn learning (TASK-GE-002, TASK-RFX-5FED)
+                self._capture_turn_state(
+                    turn_record, acceptance_criteria,
+                    task_id=task_id, worktree_path=worktree.path,
+                )
 
                 # Record honesty score from Coach's verification
                 self._record_honesty(turn_record)
@@ -2196,6 +2212,7 @@ class AutoBuildOrchestrator:
         # Execute command_execution criteria in the worktree (TASK-CRV-537E)
         # Only when on the synthetic report path — not when Player returns
         # structured data directly.
+        command_exec_results: List[CommandExecutionResult] = []
         if (
             player_result.success
             and player_result.report.get("_synthetic")
@@ -2204,11 +2221,25 @@ class AutoBuildOrchestrator:
         ):
             try:
                 _assert_worktree_path(worktree.path)
-                self._execute_command_criteria(
+                command_exec_results = self._execute_command_criteria(
                     synthetic_report=player_result.report,
                     acceptance_criteria=acceptance_criteria,
                     worktree_path=worktree.path,
                 )
+                # TASK-RFX-528E: Inject structured results into player report
+                # for Coach visibility and coach_turn_N.json persistence.
+                if command_exec_results:
+                    player_result.report["command_results"] = [
+                        r.to_dict() for r in command_exec_results
+                    ]
+                    passed = sum(1 for r in command_exec_results if r.passed)
+                    total = len(command_exec_results)
+                    summary = f"Runtime Commands: {passed}/{total} passed"
+                    logger.info(summary)
+                    # TASK-RFX-528E: Show in progress display
+                    self._progress_display.console.print(
+                        f"   [dim]{summary}[/dim]"
+                    )
             except RuntimeError:
                 logger.error(
                     "Worktree path assertion failed for %s — "
@@ -2314,6 +2345,7 @@ class AutoBuildOrchestrator:
                     sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
                     sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
                     sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
+                    command_results=tuple(command_exec_results) if command_exec_results else None,
                 )
         else:
             # No cancellation: pass the caller-provided remaining budget to Coach
@@ -2339,6 +2371,7 @@ class AutoBuildOrchestrator:
                 sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
                 sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
                 sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
+                command_results=tuple(command_exec_results) if command_exec_results else None,
             )
 
         self._progress_display.start_turn(turn, "Coach Validation")
@@ -2380,6 +2413,7 @@ class AutoBuildOrchestrator:
                 sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
                 sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
                 sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
+                command_results=tuple(command_exec_results) if command_exec_results else None,
             )
 
         # Extract decision and feedback
@@ -2408,10 +2442,19 @@ class AutoBuildOrchestrator:
                 sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
                 sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
                 sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
+                command_results=tuple(command_exec_results) if command_exec_results else None,
             )
 
         else:  # feedback
             feedback_text = self._extract_feedback(coach_result.report)
+            # TASK-RFX-F7F5: Inject command failure advisory into feedback
+            # when Coach is already rejecting. Environment/transient failures
+            # are suppressed; only implementation/unknown failures are shown.
+            if player_result.success and player_result.report:
+                cmd_failures = player_result.report.get("command_failures", [])
+                advisory = build_command_failure_advisory(cmd_failures)
+                if advisory:
+                    feedback_text = feedback_text + "\n\n" + advisory
             is_config_error = coach_result.report.get("is_configuration_error", False)
             summary = (
                 f"Feedback: {feedback_text[:80]}..."
@@ -2439,6 +2482,7 @@ class AutoBuildOrchestrator:
                 sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
                 sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
                 is_configuration_error=is_config_error,
+                command_results=tuple(command_exec_results) if command_exec_results else None,
             )
 
     def _finalize_phase(
@@ -2833,13 +2877,14 @@ class AutoBuildOrchestrator:
         synthetic_report: Dict[str, Any],
         acceptance_criteria: List[str],
         worktree_path: Path,
-    ) -> None:
+    ) -> List[CommandExecutionResult]:
         """Execute ``command_execution`` acceptance criteria in the worktree.
 
-        Classifies *acceptance_criteria* via the criteria classifier, runs each
-        extracted command via ``subprocess.run()`` in *worktree_path*, and
-        injects successful results into
-        ``synthetic_report["requirements_addressed"]``.
+        Delegates to ``CoachValidator.verify_command_criteria()`` for the
+        actual command execution and classification (TASK-RFX-7C63). This
+        method handles orchestrator-level concerns: injecting passed criteria
+        into ``synthetic_report["requirements_addressed"]`` and recording
+        failures in ``synthetic_report["command_failures"]``.
 
         Parameters
         ----------
@@ -2849,65 +2894,31 @@ class AutoBuildOrchestrator:
             Raw acceptance criteria text from the task.
         worktree_path : Path
             Worktree directory to use as ``cwd``.
+
+        Returns
+        -------
+        List[CommandExecutionResult]
+            Structured results for each executed command criterion
+            (TASK-RFX-528E). Empty list if no command criteria found.
         """
-        classification = classify_acceptance_criteria(acceptance_criteria)
-        command_criteria = classification.command_criteria
-
-        if not command_criteria:
-            return
-
-        logger.info(
-            "Runtime criteria: %d command_execution criteria detected",
-            len(command_criteria),
+        validator = CoachValidator(str(worktree_path))
+        verification = validator.verify_command_criteria(
+            acceptance_criteria,
+            per_command_timeout=COMMAND_TIMEOUT_SECONDS,
+            total_timeout=COMMAND_TOTAL_TIMEOUT_SECONDS,
         )
 
-        elapsed_total = 0.0
-        for criterion in command_criteria:
-            if not criterion.extracted_command:
-                continue
+        # Inject passed criteria into synthetic report (orchestrator concern)
+        for criterion_text in verification.passed_criteria:
+            synthetic_report.setdefault("requirements_addressed", []).append(
+                criterion_text
+            )
 
-            if elapsed_total >= COMMAND_TOTAL_TIMEOUT_SECONDS:
-                logger.warning(
-                    "Aggregate command timeout reached (%.0fs >= %ds), "
-                    "skipping remaining criteria",
-                    elapsed_total,
-                    COMMAND_TOTAL_TIMEOUT_SECONDS,
-                )
-                break
+        # Inject failures into synthetic report (orchestrator concern)
+        for failure in verification.failures:
+            synthetic_report.setdefault("command_failures", []).append(failure)
 
-            try:
-                start = time.monotonic()
-                proc = subprocess.run(
-                    criterion.extracted_command,
-                    shell=True,
-                    cwd=str(worktree_path),
-                    capture_output=True,
-                    text=True,
-                    timeout=COMMAND_TIMEOUT_SECONDS,
-                )
-                elapsed_total += time.monotonic() - start
-
-                if proc.returncode == 0:
-                    synthetic_report.setdefault("requirements_addressed", []).append(
-                        criterion.text
-                    )
-                    logger.info(
-                        "Runtime criterion verified: %s", criterion.text[:80]
-                    )
-                else:
-                    logger.warning(
-                        "Runtime criterion failed (exit %d): %s\nstderr: %s",
-                        proc.returncode,
-                        criterion.text[:80],
-                        proc.stderr[:200],
-                    )
-            except subprocess.TimeoutExpired:
-                elapsed_total += COMMAND_TIMEOUT_SECONDS
-                logger.warning(
-                    "Runtime criterion timed out (%ds): %s",
-                    COMMAND_TIMEOUT_SECONDS,
-                    criterion.text[:80],
-                )
+        return verification.results
 
     def _generate_file_existence_promises(
         self,
@@ -3334,12 +3345,14 @@ class AutoBuildOrchestrator:
         acceptance_criteria: List[str],
         start_time: Optional[datetime] = None,
         task_id: Optional[str] = None,
+        worktree_path: Optional[Path] = None,
     ) -> None:
         """
-        Capture turn state to Graphiti for cross-turn learning (TASK-GE-002).
+        Capture turn state for cross-turn learning (TASK-GE-002, TASK-RFX-5FED).
 
-        This method creates a TurnStateEntity from the completed turn and
-        stores it in Graphiti for retrieval by subsequent turns.
+        Creates a TurnStateEntity from the completed turn and saves it to a
+        local JSON file for instant cross-turn context loading. The blocking
+        Graphiti write has been replaced with local file persistence.
 
         Parameters
         ----------
@@ -3351,18 +3364,14 @@ class AutoBuildOrchestrator:
             Turn start time (defaults to now - duration if not provided)
         task_id : Optional[str]
             Task identifier for this turn (TASK-GR5-007)
+        worktree_path : Optional[Path]
+            Path to worktree for local file persistence (TASK-RFX-5FED)
 
         Notes
         -----
-        This enables cross-turn learning by allowing Turn N to query
-        what happened in Turn N-1, including:
-        - What was attempted and the outcome
-        - Coach feedback for improvement
-        - Blockers encountered
-        - Lessons learned
-
-        The capture is fire-and-forget with graceful degradation - if
-        Graphiti is unavailable, execution continues without blocking.
+        TASK-RFX-5FED: Replaced blocking Graphiti capture (30s timeout per turn)
+        with local file write (<1ms). This saves ~30s per turn (~3.5 minutes on
+        a 7-turn run). Local files are read by load_turn_continuation_context().
         """
         # TASK-GLF-002: Skip capture during shutdown to avoid noisy errors
         if getattr(self, '_shutting_down', False):
@@ -3487,51 +3496,17 @@ class AutoBuildOrchestrator:
                 what_to_try_next=what_to_try_next,
             )
 
-            # Capture to Graphiti (sync call via run_until_complete, graceful degradation)
-            # Retrieve client from _thread_loaders (same storage as _get_thread_local_loader)
-            # to avoid dual-storage bug where get_thread_client() creates a redundant
-            # client via asyncio.run() bound to a dead loop (TASK-FIX-FD02)
-            graphiti = None
-            stored_loop = None
-            if self._factory is not None:
-                thread_id = threading.get_ident()
-                entry = self._thread_loaders.get(thread_id)
-                if entry is not None:
-                    loader, stored_loop = entry
-                    if loader is not None and loader.graphiti is not None:
-                        graphiti = loader.graphiti
-            if graphiti is None:
-                # Fallback to module-level get_graphiti() for non-factory usage
-                graphiti = get_graphiti()
-            if graphiti and graphiti.enabled and self.enable_context:
-                # TASK-ACR-007: Use stored loop from _thread_loaders or create a fresh one.
-                # Never call asyncio.get_event_loop() which is fragile in worker threads.
-                created_loop = False
-                if stored_loop is not None and not stored_loop.is_closed():
-                    loop = stored_loop
-                else:
-                    loop = asyncio.new_event_loop()
-                    created_loop = True
+            # TASK-RFX-5FED: Write turn state to local file (<1ms, replaces 30s Graphiti timeout)
+            if worktree_path is not None:
                 try:
-                    _suppress_httpx_cleanup_errors(loop)
-                    loop.run_until_complete(
-                        asyncio.wait_for(
-                            capture_turn_state(graphiti, entity),
-                            timeout=30,
-                        )
-                    )
-                    logger.debug(f"Turn state captured for turn {turn_record.turn}")
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        f"Turn state capture timed out after 30s for turn {turn_record.turn}"
-                    )
-                except RuntimeError as e:
-                    logger.debug(f"Event loop error during turn state capture: {e}")
-                finally:
-                    if created_loop:
-                        loop.close()
-            else:
-                logger.debug("Graphiti disabled, skipping turn state capture")
+                    autobuild_dir = worktree_path / ".guardkit" / "autobuild" / current_task_id
+                    autobuild_dir.mkdir(parents=True, exist_ok=True)
+                    state_path = autobuild_dir / f"turn_state_turn_{turn_record.turn}.json"
+                    with open(state_path, "w") as f:
+                        json.dump(entity.to_episode_body(), f, indent=2)
+                    logger.info(f"Turn state saved to local file: {state_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to save local turn state file: {e}")
 
         except Exception as e:
             # Graceful degradation - log and continue
@@ -3785,7 +3760,8 @@ class AutoBuildOrchestrator:
                     return None
 
             loader = AutoBuildContextLoader(
-                graphiti=client, verbose=self.verbose
+                graphiti=client, verbose=self.verbose,
+                worktree_path=getattr(self, '_active_worktree_path', None),
             )
             self._thread_loaders[thread_id] = (loader, loop)
             logger.info(f"Created per-thread context loader for thread {thread_id}")
@@ -4275,7 +4251,19 @@ class AutoBuildOrchestrator:
             duration = time.time() - start_time
 
             # Save Coach decision to file
-            validator.save_decision(validation_result)
+            decision_path = validator.save_decision(validation_result)
+
+            # TASK-RFX-528E: Append command_results to Coach decision JSON
+            # for visibility in the turn artifact files.
+            if player_report.get("command_results") and decision_path.exists():
+                try:
+                    with open(decision_path, "r") as f:
+                        decision_data = json.load(f)
+                    decision_data["command_results"] = player_report["command_results"]
+                    with open(decision_path, "w") as f:
+                        json.dump(decision_data, f, indent=2)
+                except Exception as exc:
+                    logger.debug("Failed to append command_results to coach decision: %s", exc)
 
             # Convert CoachValidationResult to AgentInvocationResult
             return AgentInvocationResult(

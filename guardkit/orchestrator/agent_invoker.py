@@ -725,6 +725,7 @@ class AgentInvocationResult:
     sdk_turns_used: Optional[int] = None      # TASK-VPR-003: Actual SDK turns from ResultMessage
     sdk_max_turns: Optional[int] = None        # TASK-VPR-003: Effective SDK turn ceiling
     sdk_ceiling_hit: bool = False              # TASK-VPR-003: Whether ceiling was hit
+    session_id: Optional[str] = None           # TASK-RFX-B20B: SDK session ID for resumption
 
 
 class AgentInvoker:
@@ -812,6 +813,8 @@ class AgentInvoker:
         self._baseline_commit: Optional[str] = None
         # TASK-CRV-1540: Partial data extracted from response_messages on CancelledError
         self._last_partial_report: Optional[Dict[str, Any]] = None
+        # TASK-RFX-B20B: Last captured session_id from ResultMessage for resume
+        self._last_session_id: Optional[str] = None
         # TASK-INST-005b: EventEmitter for instrumentation telemetry
         self._emitter = emitter if emitter is not None else NullEmitter()
 
@@ -856,6 +859,21 @@ class AgentInvoker:
         if idx >= 0:
             return Path(worktree_str[:idx])
         return None
+
+    # =========================================================================
+    # Session Resume Support (TASK-RFX-B20B)
+    # =========================================================================
+
+    def set_player_resume_session(self, session_id: Optional[str]) -> None:
+        """Set session ID for the next Player invocation to resume from.
+
+        Called by the orchestrator between turns to enable session continuity.
+        Pass None to start a fresh session (no resume).
+
+        Args:
+            session_id: SDK session ID from a previous ResultMessage, or None.
+        """
+        self._last_session_id = session_id
 
     # =========================================================================
     # Cancellation Support (TASK-FIX-ASPF-004)
@@ -1285,6 +1303,7 @@ class AgentInvoker:
                         sdk_turns_used=_sdk_turns_used,
                         sdk_max_turns=_sdk_max_turns,
                         sdk_ceiling_hit=_sdk_ceiling_hit,
+                        session_id=result.session_id,  # TASK-RFX-B20B
                     )
                 else:
                     return AgentInvocationResult(
@@ -1295,6 +1314,7 @@ class AgentInvoker:
                         report={},
                         duration_seconds=duration,
                         error=result.error,
+                        session_id=self._last_session_id,  # TASK-RFX-B20B: preserve for retry
                     )
             else:
                 # Legacy direct SDK invocation
@@ -1308,11 +1328,13 @@ class AgentInvoker:
 
                 # Invoke SDK with Player permissions (Read, Write, Edit, Bash)
                 # Model selection delegated to CLI default
+                # TASK-RFX-B20B: Pass resume_session_id for session continuity
                 await self._invoke_with_role(
                     prompt=prompt,
                     agent_type="player",
                     allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
                     permission_mode="acceptEdits",
+                    resume_session_id=self._last_session_id,
                 )
 
                 # Load and validate Player report
@@ -1334,6 +1356,7 @@ class AgentInvoker:
                     success=True,
                     report=report,
                     duration_seconds=duration,
+                    session_id=self._last_session_id,  # TASK-RFX-B20B
                 )
 
         except (PlayerReportNotFoundError, PlayerReportInvalidError) as e:
@@ -1346,6 +1369,7 @@ class AgentInvoker:
                 report={},
                 duration_seconds=duration,
                 error=str(e),
+                session_id=self._last_session_id,  # TASK-RFX-B20B: preserve for retry
             )
         except SDKTimeoutError as e:
             duration = time.time() - start_time
@@ -1357,6 +1381,7 @@ class AgentInvoker:
                 report={},
                 duration_seconds=duration,
                 error=f"SDK timeout after {self.sdk_timeout_seconds}s: {str(e)}",
+                session_id=self._last_session_id,  # TASK-RFX-B20B: preserve for retry
             )
         except (Exception, asyncio.CancelledError) as e:
             duration = time.time() - start_time
@@ -1373,6 +1398,7 @@ class AgentInvoker:
                 report={},
                 duration_seconds=duration,
                 error=error_msg,
+                session_id=self._last_session_id,  # TASK-RFX-B20B: preserve for retry
             )
         finally:
             # TASK-ASF-008: Restore original timeout after invocation
@@ -1906,6 +1932,7 @@ Follow the decision format specified in your agent definition.
         allowed_tools: list[str],
         permission_mode: Literal["acceptEdits", "bypassPermissions"],
         model: Optional[str] = None,
+        resume_session_id: Optional[str] = None,
     ) -> None:
         """Low-level SDK invocation with role-based permissions.
 
@@ -1920,6 +1947,9 @@ Follow the decision format specified in your agent definition.
             allowed_tools: List of allowed SDK tools
             permission_mode: "acceptEdits" (Player) or "bypassPermissions" (Coach)
             model: Model identifier, or None to use CLI default
+            resume_session_id: Optional SDK session ID to resume from.
+                If provided, passed as ``resume`` kwarg to ClaudeAgentOptions.
+                If None, starts a fresh session. (TASK-RFX-B20B)
 
         Raises:
             AgentInvocationError: If SDK invocation fails
@@ -1969,6 +1999,12 @@ Follow the decision format specified in your agent definition.
             )
             if model is not None:
                 options_kwargs["model"] = model
+            # TASK-RFX-B20B: Resume from prior session if session_id provided
+            if resume_session_id is not None:
+                options_kwargs["resume"] = resume_session_id
+                logger.info(
+                    f"Resuming SDK session: {resume_session_id[:16]}..."
+                )
             options = ClaudeAgentOptions(**options_kwargs)
 
             # Extract task_id from prompt for heartbeat logging
@@ -2021,6 +2057,8 @@ Follow the decision format specified in your agent definition.
                                     # Agent writes report to JSON file, which is loaded after
                                     # the query completes via _load_agent_report()
                                     if isinstance(message, ResultMessage):
+                                        # TASK-RFX-B20B: Capture session_id for resumption
+                                        self._last_session_id = getattr(message, "session_id", None)
                                         break
                     except (Exception, asyncio.CancelledError) as exc:
                         if isinstance(exc, asyncio.CancelledError):
@@ -2039,6 +2077,11 @@ Follow the decision format specified in your agent definition.
                             except Exception as extract_err:
                                 logger.warning(f"Failed to extract partial data: {extract_err}")
                                 self._last_partial_report = None
+                            # TASK-RFX-B20B: Scan accumulated messages for session_id
+                            for msg in reversed(response_messages):
+                                if type(msg).__name__ == "ResultMessage":
+                                    self._last_session_id = getattr(msg, "session_id", None)
+                                    break
                         call_status = "error"
                         call_error = exc
                         raise
@@ -3536,11 +3579,13 @@ Follow the decision format specified in your agent definition.
 
             # Invoke SDK with Player permissions (Read, Write, Edit, Bash)
             # Model selection delegated to CLI default
+            # TASK-RFX-B20B: Pass resume_session_id for session continuity
             await self._invoke_with_role(
                 prompt=prompt,
                 agent_type="player",
                 allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
                 permission_mode="acceptEdits",
+                resume_session_id=self._last_session_id,
             )
 
             # Add small delay to allow filesystem buffering to complete
@@ -3628,6 +3673,7 @@ Follow the decision format specified in your agent definition.
                 success=True,
                 report=report,
                 duration_seconds=duration,
+                session_id=self._last_session_id,  # TASK-RFX-B20B
             )
 
         except (PlayerReportNotFoundError, PlayerReportInvalidError) as e:
@@ -3657,6 +3703,7 @@ Follow the decision format specified in your agent definition.
                 report={},
                 duration_seconds=duration,
                 error=error_msg,
+                session_id=self._last_session_id,  # TASK-RFX-B20B
             )
         except SDKTimeoutError as e:
             duration = time.time() - start_time
@@ -3684,6 +3731,7 @@ Follow the decision format specified in your agent definition.
                 report={},
                 duration_seconds=duration,
                 error=f"SDK timeout after {self.sdk_timeout_seconds}s: {str(e)}",
+                session_id=self._last_session_id,  # TASK-RFX-B20B: preserve for retry
             )
         except Exception as e:
             duration = time.time() - start_time
@@ -3711,6 +3759,7 @@ Follow the decision format specified in your agent definition.
                 report={},
                 duration_seconds=duration,
                 error=error_msg,
+                session_id=self._last_session_id,  # TASK-RFX-B20B: preserve for retry
             )
 
     def _write_direct_mode_results(
@@ -4392,7 +4441,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         from guardkit.orchestrator.sdk_utils import check_assistant_message_error
 
         try:
-            options = ClaudeAgentOptions(
+            _tw_options_kwargs = dict(
                 cwd=str(self.worktree_path),
                 # TASK-POF-004: Removed "Skill" - inline protocol doesn't invoke skills
                 allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task"],
@@ -4406,6 +4455,13 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 # skill invocation, no need to load user commands (~839KB savings)
                 setting_sources=["project"],
             )
+            # TASK-RFX-B20B: Resume from prior session if available
+            if self._last_session_id is not None:
+                _tw_options_kwargs["resume"] = self._last_session_id
+                logger.info(
+                    f"[{task_id}] Resuming SDK session: {self._last_session_id[:16]}..."
+                )
+            options = ClaudeAgentOptions(**_tw_options_kwargs)
 
             # TASK-FBSDK-011: Log SDK configuration before invocation
             logger.info(f"[{task_id}] SDK invocation starting")
@@ -4441,6 +4497,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 _pending_bash_tools: Dict[str, Dict[str, Any]] = {}
                 # TASK-VPR-003: Track SDK turns from ResultMessage
                 sdk_turns_used = None
+                # TASK-RFX-B20B: Track session_id from ResultMessage
+                sdk_session_id = None
                 # TASK-RFX-8332: Hold explicit reference to query() generator
                 # so we can call aclose() in cleanup, preventing GC from
                 # scheduling athrow(GeneratorExit) in a wrong asyncio Task.
@@ -4540,6 +4598,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                 result_count += 1
                                 # TASK-VPR-003: Capture SDK turns from ResultMessage
                                 sdk_turns_used = message.num_turns
+                                # TASK-RFX-B20B: Capture session_id for resumption
+                                sdk_session_id = getattr(message, "session_id", None)
+                                self._last_session_id = sdk_session_id
                                 logger.info(f"[{task_id}] SDK completed: turns={message.num_turns}")
                                 break
 
@@ -4598,6 +4659,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 output=parsed_result,
                 sdk_turns_used=sdk_turns_used,
                 sdk_max_turns=self._effective_sdk_max_turns,
+                session_id=sdk_session_id,  # TASK-RFX-B20B
             )
 
         except asyncio.TimeoutError:

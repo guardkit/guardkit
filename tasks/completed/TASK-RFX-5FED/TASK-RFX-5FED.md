@@ -1,10 +1,12 @@
 ---
 id: TASK-RFX-5FED
 title: Replace Graphiti turn state capture with local file-based approach
-status: backlog
+status: completed
 task_type: implementation
 created: 2026-03-09T16:00:00Z
 updated: 2026-03-09T16:00:00Z
+completed: 2026-03-09T18:00:00Z
+completed_location: tasks/completed/TASK-RFX-5FED/
 priority: high
 complexity: 5
 wave: 2
@@ -13,6 +15,8 @@ parent_review: TASK-REV-A8C6
 feature_id: FEAT-RFX
 tags: [autobuild, graphiti, turn-state, performance]
 dependencies: []
+organized_files:
+  - TASK-RFX-5FED.md
 ---
 
 # Task: Replace Graphiti Turn State Capture with Local File-Based Approach
@@ -35,18 +39,39 @@ Cross-turn Graphiti learning is 100% non-functional -- the `add_episode` LLM pip
 
 ## Acceptance Criteria
 
-- [ ] `load_turn_continuation_context()` reads from local `work_state_turn_N.json` when available
-- [ ] Local file read provides: Player summary, Coach decision, Coach feedback, blockers, lessons learned, suggested focus, AC status
-- [ ] Falls back to Graphiti query if local files not found
-- [ ] The 30s blocking `asyncio.wait_for(capture_turn_state(...))` is removed from the turn loop
-- [ ] Optionally: fire-and-forget Graphiti `add_episode` for cross-session learning (non-blocking)
-- [ ] Unit tests verify local file turn state loading
-- [ ] Unit tests verify fallback to Graphiti when local files missing
-- [ ] Integration test: multi-turn task context includes previous turn data
-- [ ] Performance: turn state capture takes <1ms (local file write) vs previous 30s timeout
+- [x] `load_turn_continuation_context()` reads from local `turn_state_turn_N.json` when available
+- [x] Local file read provides: Player summary, Coach decision, Coach feedback, blockers, lessons learned, suggested focus, AC status
+- [x] Falls back to Graphiti query if local files not found
+- [x] The 30s blocking `asyncio.wait_for(capture_turn_state(...))` is removed from the turn loop
+- [x] Optionally: fire-and-forget Graphiti `add_episode` for cross-session learning (non-blocking) -- Graphiti write removed entirely; local file is the primary store
+- [x] Unit tests verify local file turn state loading
+- [x] Unit tests verify fallback to Graphiti when local files missing
+- [x] Integration test: multi-turn task context includes previous turn data (roundtrip test)
+- [x] Performance: turn state capture takes <1ms (local file write) vs previous 30s timeout
 
 ## Impact
 
 - Saves ~30s per turn (~3.5 minutes on a 7-turn run like FEAT-2AAA)
 - Enables cross-turn context that has never worked in production
 - VID-005-style multi-turn tasks would get previous turn's Coach feedback and AC status
+
+## Implementation Summary
+
+### Files Modified (3)
+
+| File | Change |
+|------|--------|
+| `guardkit/orchestrator/autobuild.py` | Added `import json`; replaced 40-line blocking Graphiti `asyncio.wait_for` with 8-line local file write; added `worktree_path` param to `_capture_turn_state()`; wired worktree path through `_loop_phase()` and `_get_thread_local_loader()` |
+| `guardkit/knowledge/turn_state_operations.py` | Refactored `load_turn_continuation_context()` to try local files first with Graphiti fallback; extracted `_load_from_local_file()`, `_load_from_graphiti()`, `_format_turn_state_body()` helpers |
+| `guardkit/knowledge/autobuild_context_loader.py` | Added `worktree_path` parameter; computes `autobuild_dir` and passes to `load_turn_continuation_context()` |
+
+### Files Created (1)
+
+| File | Purpose |
+|------|---------|
+| `tests/unit/test_local_turn_state.py` | 20 tests covering formatting, local file read/write, Graphiti fallback, backward compatibility, roundtrip |
+
+### Test Results
+
+- 20/20 new tests passing
+- 23/23 existing autobuild tests passing (no regressions)

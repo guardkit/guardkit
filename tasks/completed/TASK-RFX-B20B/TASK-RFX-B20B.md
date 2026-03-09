@@ -1,7 +1,11 @@
 ---
 id: TASK-RFX-B20B
 title: SDK sessions for Player resumption after CancelledError (CRV-3B1A)
-status: backlog
+status: completed
+completed: 2026-03-09T18:00:00Z
+completed_location: tasks/completed/TASK-RFX-B20B/
+previous_state: in_review
+state_transition_reason: "Task completed - all acceptance criteria met"
 task_type: implementation
 created: 2026-03-09T16:00:00Z
 updated: 2026-03-09T16:00:00Z
@@ -26,11 +30,11 @@ This is the original TASK-CRV-3B1A from the coach-runtime-verification feature (
 
 ## Acceptance Criteria
 
-- [ ] Player invocation can be resumed after CancelledError using SDK session ID
-- [ ] Resumed session continues from the last completed tool use
-- [ ] State recovery path is used only when session resume fails
-- [ ] Unit tests for session creation and resumption
-- [ ] Integration test: Player resumes after simulated CancelledError
+- [x] Player invocation can be resumed after CancelledError using SDK session ID
+- [x] Resumed session continues from the last completed tool use
+- [x] State recovery path is used only when session resume fails
+- [x] Unit tests for session creation and resumption
+- [x] Integration test: Player resumes after simulated CancelledError
 
 ## Implementation Notes
 

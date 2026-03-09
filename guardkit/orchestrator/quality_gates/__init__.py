@@ -55,6 +55,10 @@ from guardkit.orchestrator.quality_gates.security_detection import (
     SECURITY_KEYWORDS,
     should_run_full_review,
 )
+from guardkit.orchestrator.quality_gates.command_models import (
+    CommandExecutionResult,
+    CommandVerificationResult,
+)
 from guardkit.orchestrator.quality_gates.exceptions import (
     QualityGateError,
     QualityGateBlocked,
@@ -81,6 +85,9 @@ __all__ = [
     "HIGH_RISK_CATEGORIES",
     "SECURITY_KEYWORDS",
     "should_run_full_review",
+    # Command models
+    "CommandExecutionResult",
+    "CommandVerificationResult",
     # Exceptions
     "QualityGateError",
     "QualityGateBlocked",

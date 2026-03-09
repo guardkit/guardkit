@@ -26,6 +26,7 @@ class TaskWorkResult:
     exit_code: int = 0
     sdk_turns_used: Optional[int] = None  # TASK-VPR-003: Actual SDK turns from ResultMessage
     sdk_max_turns: Optional[int] = None   # TASK-VPR-003: Effective SDK turn ceiling
+    session_id: Optional[str] = None      # TASK-RFX-B20B: SDK session ID for resumption
 
 
 # ============================================================================

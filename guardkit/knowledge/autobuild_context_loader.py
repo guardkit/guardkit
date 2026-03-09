@@ -43,6 +43,7 @@ References:
 import logging
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from .job_context_retriever import JobContextRetriever, RetrievedContext
@@ -126,6 +127,7 @@ class AutoBuildContextLoader:
         self,
         graphiti: Optional[Any] = None,
         verbose: bool = False,
+        worktree_path: Optional[Path] = None,
     ) -> None:
         """Initialize AutoBuildContextLoader.
 
@@ -133,9 +135,12 @@ class AutoBuildContextLoader:
             graphiti: Optional GraphitiClient instance for knowledge queries.
                 If not provided, context loading is a no-op (graceful degradation).
             verbose: If True, include detailed context information in results.
+            worktree_path: Optional worktree path for local turn state file reads
+                (TASK-RFX-5FED). Enables fast local file reads instead of Graphiti.
         """
         self.graphiti = graphiti
         self.verbose = verbose
+        self.worktree_path = worktree_path
         self._retriever: Optional[JobContextRetriever] = None
 
     @property
@@ -211,26 +216,31 @@ class AutoBuildContextLoader:
                 collect_metrics=self.verbose,
             )
 
-            # Load turn continuation context for turn > 1
+            # Load turn continuation context for turn > 1 (TASK-RFX-5FED: local files first)
             turn_continuation = None
-            if turn_number > 1 and self.graphiti is not None:
+            if turn_number > 1:
                 try:
                     from guardkit.knowledge.turn_state_operations import load_turn_continuation_context
+                    # Compute autobuild_dir from worktree_path if available
+                    autobuild_dir = None
+                    if self.worktree_path is not None:
+                        autobuild_dir = self.worktree_path / ".guardkit" / "autobuild" / task_id
                     turn_continuation = await load_turn_continuation_context(
                         graphiti_client=self.graphiti,
                         feature_id=feature_id,
                         task_id=task_id,
                         current_turn=turn_number,
+                        autobuild_dir=autobuild_dir,
                     )
                     if turn_continuation:
                         logger.info(
-                            "[Graphiti] Turn continuation loaded: %d chars for turn %d",
+                            "[TurnState] Turn continuation loaded: %d chars for turn %d",
                             len(turn_continuation), turn_number,
                         )
                     else:
-                        logger.debug("[Graphiti] No turn continuation available for turn %d", turn_number)
+                        logger.debug("[TurnState] No turn continuation available for turn %d", turn_number)
                 except Exception as e:
-                    logger.warning("[Graphiti] Failed to load turn continuation context: %s", e)
+                    logger.warning("[TurnState] Failed to load turn continuation context: %s", e)
 
             # Build result
             result = self._build_result(context, actor="player", turn_continuation=turn_continuation)
@@ -317,26 +327,30 @@ class AutoBuildContextLoader:
                 collect_metrics=self.verbose,
             )
 
-            # Load turn continuation context for turn > 1
+            # Load turn continuation context for turn > 1 (TASK-RFX-5FED: local files first)
             turn_continuation = None
-            if turn_number > 1 and self.graphiti is not None:
+            if turn_number > 1:
                 try:
                     from guardkit.knowledge.turn_state_operations import load_turn_continuation_context
+                    autobuild_dir = None
+                    if self.worktree_path is not None:
+                        autobuild_dir = self.worktree_path / ".guardkit" / "autobuild" / task_id
                     turn_continuation = await load_turn_continuation_context(
                         graphiti_client=self.graphiti,
                         feature_id=feature_id,
                         task_id=task_id,
                         current_turn=turn_number,
+                        autobuild_dir=autobuild_dir,
                     )
                     if turn_continuation:
                         logger.info(
-                            "[Graphiti] Turn continuation loaded: %d chars for turn %d",
+                            "[TurnState] Turn continuation loaded: %d chars for turn %d",
                             len(turn_continuation), turn_number,
                         )
                     else:
-                        logger.debug("[Graphiti] No turn continuation available for turn %d", turn_number)
+                        logger.debug("[TurnState] No turn continuation available for turn %d", turn_number)
                 except Exception as e:
-                    logger.warning("[Graphiti] Failed to load turn continuation context: %s", e)
+                    logger.warning("[TurnState] Failed to load turn continuation context: %s", e)
 
             # Build result with Coach-specific formatting
             result = self._build_result(context, actor="coach", turn_continuation=turn_continuation)
