@@ -343,6 +343,9 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
     if config_path is None:
         config_path = get_config_path()
 
+    # Track whether embedding_provider was explicitly set (yaml or env)
+    embedding_provider_explicit = False
+
     # Start with default values
     config_data = {
         'enabled': True,
@@ -402,6 +405,8 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
                             if key in optional_none_fields and value == '':
                                 value = None
                             config_data[key] = value
+                            if key == 'embedding_provider':
+                                embedding_provider_explicit = True
                         except (ValueError, TypeError) as e:
                             logger.warning(f"Invalid value for {key} in config file: {e}")
                             # Keep default value
@@ -451,9 +456,26 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
                 if config_key in optional_none_env_fields and value == '':
                     value = None
                 config_data[config_key] = value
+                if config_key == 'embedding_provider':
+                    embedding_provider_explicit = True
             except (ValueError, TypeError) as e:
                 logger.warning(f"Invalid environment variable {env_var}={env_value}: {e}")
                 # Keep previous value (from file or default)
+
+    # Warn when sparse config connects to FalkorDB without an explicit embedding provider.
+    # This catches the dimension-mismatch scenario where a shared FalkorDB was seeded
+    # with a different embedding model than the default.
+    if (
+        config_data.get('enabled')
+        and config_data.get('graph_store') == 'falkordb'
+        and not embedding_provider_explicit
+    ):
+        logger.warning(
+            "Graphiti enabled with FalkorDB but embedding_provider not configured "
+            "(defaulting to 'openai'). If this FalkorDB was seeded with a different "
+            "embedding provider, search will fail with dimension mismatch. "
+            "Set embedding_provider in .guardkit/graphiti.yaml"
+        )
 
     # Create and return settings
     # Let ValueError propagate for truly invalid configuration (like invalid project_id)

@@ -709,3 +709,94 @@ embedding_provider: openai
         assert config.llm_base_url is None
         assert config.llm_model is None
         assert config.embedding_base_url is None
+
+
+class TestSparseConfigFalkorDBWarning:
+    """Tests for warning when sparse config + FalkorDB combination is detected."""
+
+    def test_sparse_yaml_falkordb_emits_warning(self, caplog):
+        """Warning emitted when enabled+falkordb but embedding_provider not set in yaml."""
+        import logging
+        yaml_content = """
+enabled: true
+graph_store: falkordb
+"""
+        with patch('builtins.open', mock_open(read_data=yaml_content)):
+            with patch('pathlib.Path.exists', return_value=True):
+                with caplog.at_level(logging.WARNING, logger='guardkit.knowledge.config'):
+                    load_graphiti_config()
+
+        assert any(
+            'embedding_provider not configured' in record.message
+            for record in caplog.records
+        )
+
+    def test_explicit_embedding_provider_in_yaml_no_warning(self, caplog):
+        """No warning when embedding_provider is explicitly set in yaml."""
+        import logging
+        yaml_content = """
+enabled: true
+graph_store: falkordb
+embedding_provider: ollama
+"""
+        with patch('builtins.open', mock_open(read_data=yaml_content)):
+            with patch('pathlib.Path.exists', return_value=True):
+                with caplog.at_level(logging.WARNING, logger='guardkit.knowledge.config'):
+                    load_graphiti_config()
+
+        assert not any(
+            'embedding_provider not configured' in record.message
+            for record in caplog.records
+        )
+
+    def test_embedding_provider_env_var_no_warning(self, caplog):
+        """No warning when EMBEDDING_PROVIDER env var is set."""
+        import logging
+        yaml_content = """
+enabled: true
+graph_store: falkordb
+"""
+        with patch.dict(os.environ, {'EMBEDDING_PROVIDER': 'ollama'}):
+            with patch('builtins.open', mock_open(read_data=yaml_content)):
+                with patch('pathlib.Path.exists', return_value=True):
+                    with caplog.at_level(logging.WARNING, logger='guardkit.knowledge.config'):
+                        load_graphiti_config()
+
+        assert not any(
+            'embedding_provider not configured' in record.message
+            for record in caplog.records
+        )
+
+    def test_neo4j_graph_store_no_warning(self, caplog):
+        """No warning when graph_store is neo4j (default), even without embedding_provider."""
+        import logging
+        yaml_content = """
+enabled: true
+graph_store: neo4j
+"""
+        with patch('builtins.open', mock_open(read_data=yaml_content)):
+            with patch('pathlib.Path.exists', return_value=True):
+                with caplog.at_level(logging.WARNING, logger='guardkit.knowledge.config'):
+                    load_graphiti_config()
+
+        assert not any(
+            'embedding_provider not configured' in record.message
+            for record in caplog.records
+        )
+
+    def test_disabled_graphiti_no_warning(self, caplog):
+        """No warning when graphiti is disabled."""
+        import logging
+        yaml_content = """
+enabled: false
+graph_store: falkordb
+"""
+        with patch('builtins.open', mock_open(read_data=yaml_content)):
+            with patch('pathlib.Path.exists', return_value=True):
+                with caplog.at_level(logging.WARNING, logger='guardkit.knowledge.config'):
+                    load_graphiti_config()
+
+        assert not any(
+            'embedding_provider not configured' in record.message
+            for record in caplog.records
+        )
