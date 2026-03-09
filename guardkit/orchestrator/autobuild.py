@@ -52,7 +52,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 
 import yaml
 
@@ -701,6 +701,10 @@ class AutoBuildOrchestrator:
         # Accumulated peak criteria count across turns — criteria verified in turn N
         # remain counted in turn N+1 to prevent false stall detection (TASK-FIX-AE7E)
         self._max_criteria_passed: int = 0
+        # Cumulative requirements_addressed across turns — once a criterion is
+        # inferred as addressed, it remains addressed in subsequent turns to
+        # prevent criteria oscillation in synthetic reports (TASK-VRF-005).
+        self._cumulative_requirements_addressed: Set[str] = set()
 
         # Context retrieval settings (TASK-GR6-006)
         self.enable_context = enable_context
@@ -2022,6 +2026,7 @@ class AutoBuildOrchestrator:
             turn=turn,
             requirements=requirements,
             feedback=previous_feedback,
+            remaining_budget=remaining_budget,  # TASK-VRF-003: Forward budget for SDK timeout capping
         )
         # Snapshot context status after invocation (TASK-FIX-GCW5)
         player_context_status = self._last_player_context_status
@@ -2147,6 +2152,28 @@ class AutoBuildOrchestrator:
                 f"[Turn {turn}] Passing synthetic report to Coach for {task_id}. "
                 f"Promise matching will fail — falling through to text matching."
             )
+
+        # Cumulative requirements_addressed high-water-mark (TASK-VRF-005)
+        # Once a criterion is inferred as addressed in any turn, it remains
+        # addressed in subsequent turns.  This prevents criteria oscillation
+        # caused by non-deterministic file reading in synthetic reports.
+        if player_result.success and player_result.report:
+            current_addressed = player_result.report.get("requirements_addressed", [])
+            if current_addressed:
+                self._cumulative_requirements_addressed.update(current_addressed)
+            # Merge cumulative set back into the report so the Coach sees all
+            # criteria ever addressed, not just this turn's inference.
+            if self._cumulative_requirements_addressed:
+                player_result.report["requirements_addressed"] = list(
+                    self._cumulative_requirements_addressed
+                )
+                logger.info(
+                    "Cumulative requirements_addressed: %d criteria "
+                    "(current turn: %d, accumulated: %d)",
+                    len(self._cumulative_requirements_addressed),
+                    len(current_addressed),
+                    len(self._cumulative_requirements_addressed) - len(current_addressed),
+                )
 
         # Cooperative cancellation check BETWEEN Player and Coach (TASK-ASF-007)
         # If Player succeeded, grant Coach a grace period instead of aborting (TASK-ABFIX-004)
@@ -3685,6 +3712,7 @@ class AutoBuildOrchestrator:
         turn: int,
         requirements: str,
         feedback: Optional[str],
+        remaining_budget: Optional[float] = None,
     ) -> AgentInvocationResult:
         """
         Invoke Player agent with comprehensive error handling.
@@ -3792,6 +3820,7 @@ class AutoBuildOrchestrator:
                     feedback=feedback,
                     max_turns=self.max_turns,  # Enable escape hatch pattern
                     context=context_prompt,  # Pass job-specific context (TASK-GR6-006)
+                    remaining_budget=remaining_budget,  # TASK-VRF-003: Cap SDK timeout at budget
                 )
             )
             return result

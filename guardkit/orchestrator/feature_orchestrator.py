@@ -56,6 +56,11 @@ from guardkit.orchestrator.environment_bootstrap import (
     BootstrapResult,
 )
 from guardkit.tasks.task_loader import TaskLoader
+from guardkit.orchestrator.parallel_strategy import (
+    MaxParallelMode,
+    ParallelConfig,
+    resolve_max_parallel,
+)
 from guardkit.worktrees import WorktreeManager, Worktree, WorktreeCreationError
 from guardkit.cli.display import WaveProgressDisplay
 
@@ -251,6 +256,7 @@ class FeatureOrchestrator:
         task_timeout: int = 2400,
         timeout_multiplier: Optional[float] = None,
         max_parallel: Optional[int] = None,
+        parallel_config: Optional["ParallelConfig"] = None,
         skip_validation: bool = False,
         emitter: Optional[Any] = None,
     ):
@@ -344,6 +350,7 @@ class FeatureOrchestrator:
         self.enable_context = enable_context
         self.task_timeout = int(task_timeout * self.timeout_multiplier)
         self.max_parallel = max_parallel
+        self._parallel_config = parallel_config if parallel_config is not None else ParallelConfig.from_legacy(max_parallel)
         self.skip_validation = skip_validation
         self._emitter = emitter if emitter is not None else NullEmitter()  # TASK-INST-004
         self.features_dir = features_dir or self.repo_root / ".guardkit" / "features"
@@ -1490,9 +1497,16 @@ The detailed specifications are in the task markdown file.
 
         # Execute all tasks in parallel if any, respecting max_parallel limit
         if tasks_to_execute:
-            # Apply max_parallel semaphore if configured
-            if self.max_parallel is not None and self.max_parallel > 0:
-                semaphore = asyncio.Semaphore(self.max_parallel)
+            # TASK-VRF-006: Resolve max_parallel via strategy (supports static/dynamic/per-wave)
+            effective_max_parallel = resolve_max_parallel(
+                self._parallel_config,
+                wave_number=wave_number,
+                wave_size=len(task_ids),
+            )
+
+            # Apply semaphore if max_parallel is set
+            if effective_max_parallel is not None and effective_max_parallel > 0:
+                semaphore = asyncio.Semaphore(effective_max_parallel)
                 original_tasks = tasks_to_execute
                 tasks_to_execute = []
                 for coro in original_tasks:

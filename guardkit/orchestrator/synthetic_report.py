@@ -460,6 +460,12 @@ def infer_requirements_from_files(
     if not all_files:
         return []
 
+    # Sort files alphabetically for deterministic reading order (TASK-VRF-005).
+    # Without sorting, the 1MB total-byte cap causes different file subsets to
+    # be read each turn (file order depends on git change order), producing
+    # non-deterministic keyword matches and criteria oscillation.
+    all_files = sorted(set(all_files))
+
     # Read file contents (with size guards)
     file_contents: Dict[str, str] = {}
     total_bytes = 0

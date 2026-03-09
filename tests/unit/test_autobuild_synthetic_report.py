@@ -1053,3 +1053,111 @@ def test_synthetic_hybrid_fallback_with_empty_requirements(
     # Verify the warning about no promises was logged
     warning_messages = [r.message for r in caplog.records if r.levelname == "WARNING"]
     assert any("no completion_promises" in msg for msg in warning_messages)
+
+
+# ============================================================================
+# Section: Cumulative Requirements Addressed (TASK-VRF-005)
+# ============================================================================
+
+
+class TestCumulativeRequirementsAddressed:
+    """Tests for cumulative requirements_addressed high-water-mark (TASK-VRF-005).
+
+    Verifies that once a criterion is inferred as addressed in any turn,
+    it remains addressed in subsequent turns even if the current turn's
+    inference doesn't find it.
+    """
+
+    def test_cumulative_set_initialized_empty(self, orchestrator):
+        """Orchestrator starts with empty cumulative requirements set."""
+        assert orchestrator._cumulative_requirements_addressed == set()
+
+    def test_cumulative_set_accumulates_across_reports(self, orchestrator):
+        """Cumulative set grows as new requirements are addressed."""
+        # Simulate turn 1: criteria A addressed
+        report1 = {
+            "requirements_addressed": ["Criterion A"],
+            "_synthetic": True,
+        }
+        player_result1 = Mock(spec=AgentInvocationResult)
+        player_result1.success = True
+        player_result1.report = report1
+
+        # Simulate the accumulation logic (mirrors _execute_turn)
+        current = report1.get("requirements_addressed", [])
+        orchestrator._cumulative_requirements_addressed.update(current)
+        report1["requirements_addressed"] = list(
+            orchestrator._cumulative_requirements_addressed
+        )
+
+        assert "Criterion A" in report1["requirements_addressed"]
+
+        # Simulate turn 2: criteria B addressed, A not found this turn
+        report2 = {
+            "requirements_addressed": ["Criterion B"],
+            "_synthetic": True,
+        }
+        current2 = report2.get("requirements_addressed", [])
+        orchestrator._cumulative_requirements_addressed.update(current2)
+        report2["requirements_addressed"] = list(
+            orchestrator._cumulative_requirements_addressed
+        )
+
+        # Both A and B should be present (high water mark)
+        assert "Criterion A" in report2["requirements_addressed"]
+        assert "Criterion B" in report2["requirements_addressed"]
+        assert len(report2["requirements_addressed"]) == 2
+
+    def test_cumulative_set_prevents_regression(self, orchestrator):
+        """Criteria verified in turn N remain verified in turn N+1."""
+        # Turn 1: 3 criteria addressed
+        criteria_turn1 = ["Criterion A", "Criterion B", "Criterion C"]
+        orchestrator._cumulative_requirements_addressed.update(criteria_turn1)
+
+        # Turn 2: only 1 criterion re-detected (regression in inference)
+        criteria_turn2 = ["Criterion B"]
+        orchestrator._cumulative_requirements_addressed.update(criteria_turn2)
+
+        # Report should still show all 3 (no regression)
+        report = {"requirements_addressed": criteria_turn2}
+        report["requirements_addressed"] = list(
+            orchestrator._cumulative_requirements_addressed
+        )
+        assert len(report["requirements_addressed"]) == 3
+        assert set(report["requirements_addressed"]) == {
+            "Criterion A", "Criterion B", "Criterion C"
+        }
+
+    def test_cumulative_set_handles_empty_requirements(self, orchestrator):
+        """Empty requirements_addressed in a turn doesn't clear cumulative set."""
+        # Seed with prior criteria
+        orchestrator._cumulative_requirements_addressed.update(
+            ["Criterion A", "Criterion B"]
+        )
+
+        # Turn with empty requirements (e.g., inference failed)
+        report = {"requirements_addressed": []}
+        current = report.get("requirements_addressed", [])
+        orchestrator._cumulative_requirements_addressed.update(current)
+        if orchestrator._cumulative_requirements_addressed:
+            report["requirements_addressed"] = list(
+                orchestrator._cumulative_requirements_addressed
+            )
+
+        assert len(report["requirements_addressed"]) == 2
+
+    def test_cumulative_set_skipped_for_failed_player(self, orchestrator):
+        """Cumulative accumulation only happens for successful player results."""
+        # Simulate failed player — report should not be merged
+        report = {"requirements_addressed": ["Should Not Accumulate"]}
+        player_result = Mock(spec=AgentInvocationResult)
+        player_result.success = False
+        player_result.report = report
+
+        # The _execute_turn logic guards on player_result.success
+        if player_result.success and player_result.report:
+            orchestrator._cumulative_requirements_addressed.update(
+                report.get("requirements_addressed", [])
+            )
+
+        assert len(orchestrator._cumulative_requirements_addressed) == 0

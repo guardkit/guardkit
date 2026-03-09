@@ -595,8 +595,18 @@ def status(ctx, task_id: str, verbose: bool):
     type=int,
     help=(
         "Max parallel tasks per wave (default: auto-detect). "
-        "Defaults to 2 for local backends (timeout_multiplier > 1.0), "
+        "Defaults to 1 for local backends (TASK-VPT-001: reduced from 2 due to KV cache contention), "
         "unlimited otherwise. Override via GUARDKIT_MAX_PARALLEL_TASKS env var."
+    ),
+)
+@click.option(
+    "--max-parallel-strategy",
+    "max_parallel_strategy",
+    default="static",
+    type=click.Choice(["static", "dynamic"]),
+    help=(
+        "Strategy for max_parallel: 'static' uses fixed value (default), "
+        "'dynamic' checks GPU memory before each wave (TASK-VRF-006)."
     ),
 )
 @click.option(
@@ -623,6 +633,7 @@ def feature(
     task_timeout: int,
     timeout_multiplier: Optional[float],
     max_parallel: Optional[int],
+    max_parallel_strategy: str,
     skip_validation: bool,
 ):
     """
@@ -724,12 +735,24 @@ def feature(
             param_hint="'--max-parallel'",
         )
 
+    # TASK-VRF-006: Build ParallelConfig from CLI args
+    from guardkit.orchestrator.parallel_strategy import MaxParallelMode, ParallelConfig
+
+    if max_parallel_strategy == "dynamic":
+        parallel_config = ParallelConfig(
+            mode=MaxParallelMode.DYNAMIC,
+            static_value=max_parallel,  # fallback when GPU pressure is UNKNOWN
+        )
+    else:
+        parallel_config = ParallelConfig.from_legacy(max_parallel)
+
     logger.info(
         f"Starting feature orchestration: {feature_id} "
         f"(max_turns={max_turns}, stop_on_failure={stop_on_failure}, "
         f"resume={resume}, fresh={fresh}, refresh={refresh}, "
         f"sdk_timeout={sdk_timeout}, enable_pre_loop={enable_pre_loop}, "
-        f"timeout_multiplier={timeout_multiplier}, max_parallel={max_parallel})"
+        f"timeout_multiplier={timeout_multiplier}, max_parallel={max_parallel}, "
+        f"max_parallel_strategy={max_parallel_strategy})"
     )
 
     # Create instrumentation emitter (TASK-INST-013)
@@ -753,6 +776,7 @@ def feature(
             task_timeout=task_timeout,
             timeout_multiplier=timeout_multiplier,
             max_parallel=max_parallel,
+            parallel_config=parallel_config,
             skip_validation=skip_validation,
             emitter=emitter,
         )

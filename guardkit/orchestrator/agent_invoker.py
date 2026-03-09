@@ -1078,6 +1078,7 @@ class AgentInvoker:
         max_turns: int = 5,
         documentation_level: str = "minimal",
         context: str = "",
+        remaining_budget: Optional[float] = None,
     ) -> AgentInvocationResult:
         """Invoke Player agent via task-work delegation or Claude Agents SDK.
 
@@ -1107,6 +1108,10 @@ class AgentInvoker:
             context: Job-specific context from Graphiti (role constraints, quality gates,
                 turn states). Included in Player prompt but kept separate from requirements.
                 Default: "" (empty string, no context).
+            remaining_budget: Optional remaining wall-clock budget in seconds.
+                When provided, sdk_timeout_seconds is capped at this value for
+                this invocation then restored. Used to honour per-turn budgets
+                and prevent Player from starting turns it cannot finish. (TASK-VRF-003)
 
         Returns:
             AgentInvocationResult with Player's report
@@ -1125,7 +1130,8 @@ class AgentInvoker:
             self._record_baseline()
 
         # TASK-ASF-008: Calculate dynamic SDK timeout based on task characteristics
-        effective_timeout = self._calculate_sdk_timeout(task_id)
+        # TASK-VRF-003: Cap SDK timeout at remaining budget (mirrors invoke_coach pattern)
+        effective_timeout = self._calculate_sdk_timeout(task_id, remaining_budget=remaining_budget)
         original_timeout = self.sdk_timeout_seconds
         self.sdk_timeout_seconds = effective_timeout
 

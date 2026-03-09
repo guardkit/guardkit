@@ -539,6 +539,55 @@ class TestInferRequirementsFromFiles:
         )
         assert result == []
 
+    def test_deterministic_file_reading_order(self, tmp_path):
+        """Files are sorted alphabetically for deterministic reading (TASK-VRF-005).
+
+        Without sorting, the 1MB byte cap causes different file subsets to be
+        read depending on the order files appear in the input lists, leading to
+        non-deterministic keyword matches across turns.
+        """
+        # Create two files — one with matching keywords, one without.
+        # File "aaa.py" alphabetically first, "zzz.py" last.
+        aaa = tmp_path / "aaa.py"
+        zzz = tmp_path / "zzz.py"
+        aaa.write_text("class Settings:\n    log_level: str = 'INFO'\n")
+        zzz.write_text("def unrelated():\n    pass\n")
+
+        # Pass files in reverse alphabetical order — sorting should fix order
+        result_reversed = infer_requirements_from_files(
+            acceptance_criteria=["Settings class has log_level field"],
+            files_created=["zzz.py", "aaa.py"],
+            files_modified=[],
+            worktree_path=tmp_path,
+        )
+
+        # Pass files in alphabetical order
+        result_sorted = infer_requirements_from_files(
+            acceptance_criteria=["Settings class has log_level field"],
+            files_created=["aaa.py", "zzz.py"],
+            files_modified=[],
+            worktree_path=tmp_path,
+        )
+
+        # Both orders must produce identical results (deterministic)
+        assert result_reversed == result_sorted
+        assert len(result_reversed) == 1
+
+    def test_deduplicates_files_across_created_and_modified(self, tmp_path):
+        """Files appearing in both created and modified are read only once (TASK-VRF-005)."""
+        src = tmp_path / "src" / "settings.py"
+        src.parent.mkdir(parents=True)
+        src.write_text("class Settings:\n    log_level: str = 'INFO'\n")
+
+        result = infer_requirements_from_files(
+            acceptance_criteria=["Settings class has log_level field"],
+            files_created=["src/settings.py"],
+            files_modified=["src/settings.py"],  # duplicate
+            worktree_path=tmp_path,
+        )
+        # Should still match (no double-counting issues)
+        assert len(result) == 1
+
 
 # ===========================================================================
 # Section 5: build_synthetic_report() with worktree_path (TASK-FIX-ASPF-006)
