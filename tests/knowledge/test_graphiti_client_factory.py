@@ -530,6 +530,144 @@ class TestHttpxCleanupErrorSuppression:
 
 
 # ============================================================================
+# 7b. FalkorDB Shutdown Error Suppression (TASK-PFI-E5F6)
+# ============================================================================
+
+
+class TestFalkorDBShutdownErrorSuppression:
+    """Tests for RedisError('Buffer is closed.') suppression during shutdown.
+
+    graphiti-core schedules build_indices_and_constraints() as fire-and-forget
+    background tasks during add_episode(). When the Redis connection pool closes
+    before these tasks complete, they raise RedisError('Buffer is closed.').
+    The exception handler should suppress these harmless shutdown errors.
+    """
+
+    def test_suppresses_redis_buffer_closed_error(self):
+        """Handler silences RedisError('Buffer is closed.')."""
+        loop = asyncio.new_event_loop()
+        _suppress_httpx_cleanup_errors(loop)
+
+        # Simulate RedisError — use a stand-in class to avoid redis dependency
+        class RedisError(Exception):
+            pass
+
+        context = {
+            "exception": RedisError("Buffer is closed."),
+            "message": "Task exception was never retrieved",
+        }
+        # Patch _is_redis_buffer_closed to handle our stand-in class
+        with patch(
+            "guardkit.knowledge.graphiti_client._is_redis_buffer_closed",
+            return_value=True,
+        ):
+            # Should not raise
+            loop.call_exception_handler(context)
+        loop.close()
+
+    def test_propagates_other_redis_errors(self):
+        """Handler propagates RedisError with different message."""
+        loop = asyncio.new_event_loop()
+
+        captured = []
+
+        def base_handler(_loop, ctx):
+            captured.append(ctx)
+
+        loop.set_exception_handler(base_handler)
+        _suppress_httpx_cleanup_errors(loop)
+
+        class RedisError(Exception):
+            pass
+
+        context = {
+            "exception": RedisError("Connection refused"),
+            "message": "Task exception was never retrieved",
+        }
+        loop.call_exception_handler(context)
+
+        # Should propagate — not a "Buffer is closed" error
+        assert len(captured) == 1
+        loop.close()
+
+
+class TestIsRedisBufferClosed:
+    """Tests for _is_redis_buffer_closed helper (TASK-PFI-E5F6)."""
+
+    def test_none_exception(self):
+        from guardkit.knowledge.graphiti_client import _is_redis_buffer_closed
+
+        assert _is_redis_buffer_closed(None) is False
+
+    def test_non_redis_exception(self):
+        from guardkit.knowledge.graphiti_client import _is_redis_buffer_closed
+
+        assert _is_redis_buffer_closed(ValueError("Buffer is closed.")) is False
+
+    def test_redis_error_buffer_closed(self):
+        from guardkit.knowledge.graphiti_client import _is_redis_buffer_closed
+
+        class RedisError(Exception):
+            pass
+
+        assert _is_redis_buffer_closed(RedisError("Buffer is closed.")) is True
+
+    def test_redis_error_different_message(self):
+        from guardkit.knowledge.graphiti_client import _is_redis_buffer_closed
+
+        class RedisError(Exception):
+            pass
+
+        assert _is_redis_buffer_closed(RedisError("Connection refused")) is False
+
+    def test_connection_error_buffer_closed(self):
+        from guardkit.knowledge.graphiti_client import _is_redis_buffer_closed
+
+        class ConnectionError(Exception):
+            pass
+
+        assert _is_redis_buffer_closed(ConnectionError("Buffer is closed.")) is True
+
+    def test_case_insensitive_match(self):
+        from guardkit.knowledge.graphiti_client import _is_redis_buffer_closed
+
+        class RedisError(Exception):
+            pass
+
+        assert _is_redis_buffer_closed(RedisError("BUFFER IS CLOSED.")) is True
+
+
+class TestIsGraphitiBackgroundTask:
+    """Tests for _is_graphiti_background_task helper (TASK-PFI-E5F6)."""
+
+    def test_non_graphiti_task(self):
+        from guardkit.knowledge.graphiti_client import _is_graphiti_background_task
+
+        loop = asyncio.new_event_loop()
+
+        async def unrelated_coro():
+            pass
+
+        task = loop.create_task(unrelated_coro())
+        assert _is_graphiti_background_task(task) is False
+        loop.run_until_complete(task)
+        loop.close()
+
+    def test_task_with_graphiti_name(self):
+        from guardkit.knowledge.graphiti_client import _is_graphiti_background_task
+
+        loop = asyncio.new_event_loop()
+
+        async def some_coro():
+            pass
+
+        task = loop.create_task(some_coro(), name="graphiti_build_indices")
+        assert _is_graphiti_background_task(task) is True
+        loop.run_until_complete(task)
+        loop.close()
+
+
+# ============================================================================
 # 8. Connectivity Check Tests (TASK-GLF-005)
 # ============================================================================
 
