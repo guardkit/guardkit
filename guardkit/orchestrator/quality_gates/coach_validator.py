@@ -1188,7 +1188,7 @@ class CoachValidator:
                 allowed_tools=["Bash"],
                 permission_mode="bypassPermissions",
                 max_turns=1,
-                env={"PYTHONPATH": new_pythonpath},
+                env={**os.environ, "PYTHONPATH": new_pythonpath},
             )
             if model is not None:
                 options_kwargs["model"] = model

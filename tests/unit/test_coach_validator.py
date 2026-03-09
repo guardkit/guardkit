@@ -5155,3 +5155,75 @@ class TestInfrastructureFeedbackDetail:
         assert result.decision == "approve"
         assert result.approved_without_independent_tests is True
         assert "collection" in result.rationale.lower()
+
+
+# ============================================================================
+# SDK env merge (TASK-EMB-004)
+# ============================================================================
+
+
+def _make_mock_sdk(captured_env: dict) -> MagicMock:
+    """Return a mock claude_agent_sdk module that captures ClaudeAgentOptions kwargs."""
+
+    class CapturingOptions:
+        def __init__(self, **kwargs):
+            captured_env.update(kwargs.get("env", {}))
+
+    async def fake_query(prompt, options):  # pragma: no cover
+        if False:
+            yield  # make this an async generator that yields nothing
+
+    mock_sdk = MagicMock()
+    mock_sdk.ClaudeAgentOptions = CapturingOptions
+    mock_sdk.query = fake_query
+    mock_sdk.AssistantMessage = object
+    mock_sdk.UserMessage = object
+    mock_sdk.ToolResultBlock = object
+    mock_sdk.TextBlock = object
+    mock_sdk.CLINotFoundError = Exception
+    mock_sdk.ProcessError = Exception
+    mock_sdk.CLIJSONDecodeError = Exception
+    return mock_sdk
+
+
+class TestSdkEnvMerge:
+    """Verify _run_tests_via_sdk passes merged env (TASK-EMB-004).
+
+    env= must be {**os.environ, "PYTHONPATH": new_pythonpath} so that
+    API keys and other inherited vars are not stripped.
+    """
+
+    def test_sdk_env_inherits_os_environ_keys(self, tmp_worktree, monkeypatch):
+        """ClaudeAgentOptions receives os.environ keys plus the PYTHONPATH override."""
+        import asyncio
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-api-key")
+        monkeypatch.setenv("EMBEDDING_PROVIDER", "openai")
+        monkeypatch.delenv("PYTHONPATH", raising=False)
+
+        validator = CoachValidator(str(tmp_worktree))
+        captured_env: dict = {}
+
+        with patch.dict("sys.modules", {"claude_agent_sdk": _make_mock_sdk(captured_env)}):
+            asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
+
+        assert "ANTHROPIC_API_KEY" in captured_env, "API key must be inherited from os.environ"
+        assert "EMBEDDING_PROVIDER" in captured_env, "EMBEDDING_PROVIDER must be inherited"
+        assert captured_env["PYTHONPATH"] == str(tmp_worktree), "PYTHONPATH must be worktree root"
+
+    def test_sdk_env_pythonpath_prepends_worktree(self, tmp_worktree, monkeypatch):
+        """PYTHONPATH in env includes worktree root when an existing PYTHONPATH is set."""
+        import asyncio
+
+        monkeypatch.setenv("PYTHONPATH", "/some/existing/path")
+
+        validator = CoachValidator(str(tmp_worktree))
+        captured_env: dict = {}
+
+        with patch.dict("sys.modules", {"claude_agent_sdk": _make_mock_sdk(captured_env)}):
+            asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
+
+        pythonpath = captured_env.get("PYTHONPATH", "")
+        assert str(tmp_worktree) in pythonpath, "worktree path must appear in PYTHONPATH"
+        assert "/some/existing/path" in pythonpath, "existing PYTHONPATH must be preserved"
+        assert pythonpath.startswith(str(tmp_worktree)), "worktree must have priority (be first)"
