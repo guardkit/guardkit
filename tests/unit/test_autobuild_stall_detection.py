@@ -158,14 +158,29 @@ def make_coach_result(
     decision: str = "feedback",
     feedback_text: str = "Fix type hints in user.py",
     criteria_results: Optional[list] = None,
+    criteria_met: int = 0,
+    criteria_total: int = 0,
 ) -> AgentInvocationResult:
-    """Helper to create Coach AgentInvocationResult with feedback."""
+    """Helper to create Coach AgentInvocationResult with feedback.
+
+    TASK-CRV-90FB: Includes both validation_results.requirements (authoritative)
+    and acceptance_criteria_verification (legacy) to match real Coach output.
+    """
+    cr = criteria_results or []
     report = {
         "task_id": task_id,
         "turn": turn,
         "decision": decision,
         "acceptance_criteria_verification": {
-            "criteria_results": criteria_results or [],
+            "criteria_results": cr,
+        },
+        "validation_results": {
+            "requirements": {
+                "criteria_total": criteria_total,
+                "criteria_met": criteria_met,
+                "all_criteria_met": criteria_met == criteria_total and criteria_total > 0,
+                "missing": [],
+            },
         },
     }
     if decision == "feedback":
@@ -179,10 +194,8 @@ def make_coach_result(
         ]
         report["rationale"] = feedback_text
     elif decision == "approve":
-        report["validation_results"] = {
-            "tests_run": True,
-            "tests_passed": True,
-        }
+        report["validation_results"]["tests_run"] = True
+        report["validation_results"]["tests_passed"] = True
         report["rationale"] = "All requirements met"
 
     return AgentInvocationResult(
@@ -305,10 +318,74 @@ class TestIsFeedbackStalled:
 
 
 class TestCountCriteriaPassed:
-    """Test _count_criteria_passed helper method."""
+    """Test _count_criteria_passed helper method.
 
-    def test_count_with_verified_criteria(self):
-        """Should count criteria with 'verified' status."""
+    TASK-CRV-90FB: Sources criteria count from Coach's validation_results.requirements.criteria_met
+    (authoritative) with fallback to acceptance_criteria_verification counting (legacy).
+    """
+
+    def test_count_from_coach_validation_results(self):
+        """Should use Coach's criteria_met from validation_results (TASK-CRV-90FB)."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+        )
+
+        turn_record = Mock()
+        turn_record.coach_result = Mock()
+        turn_record.coach_result.report = {
+            "validation_results": {
+                "requirements": {
+                    "criteria_total": 3,
+                    "criteria_met": 2,
+                    "all_criteria_met": False,
+                    "missing": ["criterion 3"],
+                }
+            },
+            "acceptance_criteria_verification": {
+                "criteria_results": [
+                    {"criterion_id": "c1", "status": "verified"},
+                    {"criterion_id": "c2", "status": "not_started"},
+                    {"criterion_id": "c3", "status": "verified"},
+                ]
+            },
+        }
+
+        assert orchestrator._count_criteria_passed(turn_record) == 2
+
+    def test_count_prefers_coach_over_legacy(self):
+        """When Coach reports 0 but legacy criteria_results show 2, use Coach's 0 (TASK-CRV-90FB)."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+        )
+
+        turn_record = Mock()
+        turn_record.coach_result = Mock()
+        turn_record.coach_result.report = {
+            "validation_results": {
+                "requirements": {
+                    "criteria_total": 3,
+                    "criteria_met": 0,
+                    "all_criteria_met": False,
+                    "missing": ["c1", "c2", "c3"],
+                }
+            },
+            # Legacy path would count 2 verified, but Coach says 0
+            "acceptance_criteria_verification": {
+                "criteria_results": [
+                    {"criterion_id": "c1", "status": "verified"},
+                    {"criterion_id": "c2", "status": "verified"},
+                    {"criterion_id": "c3", "status": "not_started"},
+                ]
+            },
+        }
+
+        # Coach's authoritative count (0) takes precedence
+        assert orchestrator._count_criteria_passed(turn_record) == 0
+
+    def test_count_fallback_to_legacy_criteria_results(self):
+        """Should fall back to counting criteria_results when validation_results absent."""
         orchestrator = AutoBuildOrchestrator(
             repo_root=Path.cwd(),
             max_turns=5,
@@ -352,6 +429,28 @@ class TestCountCriteriaPassed:
         turn_record.coach_result.report = {}
 
         assert orchestrator._count_criteria_passed(turn_record) == 0
+
+    def test_count_with_none_requirements(self):
+        """Should fall back to legacy when requirements is None (TASK-CRV-90FB)."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+        )
+
+        turn_record = Mock()
+        turn_record.coach_result = Mock()
+        turn_record.coach_result.report = {
+            "validation_results": {
+                "requirements": None,
+            },
+            "acceptance_criteria_verification": {
+                "criteria_results": [
+                    {"criterion_id": "c1", "status": "verified"},
+                ]
+            },
+        }
+
+        assert orchestrator._count_criteria_passed(turn_record) == 1
 
 
 # ============================================================================

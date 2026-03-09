@@ -1,9 +1,10 @@
 ---
 id: TASK-CRV-90FB
 title: Align stall detector criteria count with Coach validator
-status: backlog
+status: completed
 created: 2026-03-09T00:00:00Z
 updated: 2026-03-09T00:00:00Z
+completed: 2026-03-09T00:00:00Z
 priority: low
 tags: [stall-detection, coach, criteria-count, alignment]
 task_type: feature
@@ -25,11 +26,11 @@ Align both to use the same verified criteria count from the Coach's actual decis
 
 ## Acceptance Criteria
 
-- [ ] Stall detector's criteria count sourced from Coach validator's actual verified count (not synthetic report inference)
-- [ ] Stall detection log message accurately reflects Coach's verified/total ratio
-- [ ] Extended stall threshold (for partial progress) only triggers when Coach reports genuine progress
-- [ ] Existing stall detection tests continue to pass
-- [ ] New test verifying count alignment between stall detector and Coach
+- [x] Stall detector's criteria count sourced from Coach validator's actual verified count (not synthetic report inference)
+- [x] Stall detection log message accurately reflects Coach's verified/total ratio
+- [x] Extended stall threshold (for partial progress) only triggers when Coach reports genuine progress
+- [x] Existing stall detection tests continue to pass
+- [x] New test verifying count alignment between stall detector and Coach
 
 ## Implementation Notes
 

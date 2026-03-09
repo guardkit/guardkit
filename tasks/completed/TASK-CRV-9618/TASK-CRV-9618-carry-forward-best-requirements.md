@@ -1,9 +1,10 @@
 ---
 id: TASK-CRV-9618
 title: Carry forward best requirements_addressed across turns
-status: backlog
+status: completed
 created: 2026-03-09T00:00:00Z
 updated: 2026-03-09T00:00:00Z
+completed: 2026-03-09T00:00:00Z
 priority: medium
 tags: [synthetic-report, requirements, state-tracking, reliability]
 task_type: feature

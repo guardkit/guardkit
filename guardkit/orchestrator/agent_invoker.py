@@ -58,6 +58,67 @@ logger = logging.getLogger(__name__)
 
 
 # =========================================================================
+# Partial Data Extraction (TASK-CRV-1540)
+# =========================================================================
+
+
+def _extract_partial_from_messages(response_messages: List[Any]) -> Dict[str, Any]:
+    """Extract partial data from accumulated response_messages.
+
+    Called in the CancelledError handler to salvage information from
+    AssistantMessage objects that were collected before cancellation.
+
+    Defensively handles empty, malformed, or unexpected message types.
+
+    Parameters
+    ----------
+    response_messages : List[Any]
+        SDK messages accumulated during the query loop (AssistantMessage,
+        ResultMessage, etc.)
+
+    Returns
+    -------
+    Dict[str, Any]
+        Partial report with text_block_count, tool_call_count,
+        file_modifications, and last_text_blocks.
+    """
+    text_blocks: List[str] = []
+    tool_calls: List[Dict[str, Any]] = []
+    file_modifications: List[str] = []
+
+    for msg in response_messages:
+        try:
+            content = getattr(msg, "content", None)
+            if not content or not isinstance(content, (list, tuple)):
+                continue
+            for block in content:
+                block_type = type(block).__name__
+                if block_type == "TextBlock":
+                    text = getattr(block, "text", "")
+                    if text:
+                        text_blocks.append(text)
+                elif block_type == "ToolUseBlock":
+                    name = getattr(block, "name", "")
+                    inp = getattr(block, "input", {}) or {}
+                    tool_calls.append({"name": name, "input_keys": list(inp.keys())})
+                    if name in ("Write", "Edit") and isinstance(inp, dict):
+                        fp = inp.get("file_path", "")
+                        if fp:
+                            file_modifications.append(fp)
+        except Exception:
+            # Defensive: skip malformed messages
+            continue
+
+    return {
+        "text_block_count": len(text_blocks),
+        "tool_call_count": len(tool_calls),
+        "file_modifications": file_modifications,
+        "last_text_blocks": text_blocks[-3:] if text_blocks else [],
+        "message_count": len(response_messages),
+    }
+
+
+# =========================================================================
 # Heartbeat Logging for SDK Invocations
 # =========================================================================
 
@@ -749,6 +810,8 @@ class AgentInvoker:
         self.development_mode = development_mode
         self._cancellation_event: Optional[threading.Event] = cancellation_event
         self._baseline_commit: Optional[str] = None
+        # TASK-CRV-1540: Partial data extracted from response_messages on CancelledError
+        self._last_partial_report: Optional[Dict[str, Any]] = None
         # TASK-INST-005b: EventEmitter for instrumentation telemetry
         self._emitter = emitter if emitter is not None else NullEmitter()
 
@@ -1957,6 +2020,20 @@ Follow the decision format specified in your agent definition.
                     except (Exception, asyncio.CancelledError) as exc:
                         if isinstance(exc, asyncio.CancelledError):
                             logger.warning(f"CancelledError caught at _invoke_with_role: {exc}")
+                            # TASK-CRV-1540: Extract partial data before re-raising
+                            try:
+                                self._last_partial_report = _extract_partial_from_messages(
+                                    response_messages
+                                )
+                                logger.info(
+                                    f"Extracted partial data from {len(response_messages)} messages: "
+                                    f"{self._last_partial_report['text_block_count']} text blocks, "
+                                    f"{self._last_partial_report['tool_call_count']} tool calls, "
+                                    f"{len(self._last_partial_report['file_modifications'])} file mods"
+                                )
+                            except Exception as extract_err:
+                                logger.warning(f"Failed to extract partial data: {extract_err}")
+                                self._last_partial_report = None
                         call_status = "error"
                         call_error = exc
                         raise

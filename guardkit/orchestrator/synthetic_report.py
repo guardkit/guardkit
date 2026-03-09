@@ -8,6 +8,7 @@ Public API
 build_synthetic_report : Build a synthetic Player report dict.
 generate_file_existence_promises : Extract file promises from acceptance criteria.
 infer_requirements_from_files : Infer requirements_addressed from file contents.
+validate_requirements_staleness : Re-validate carry-forward requirements against current worktree state.
 """
 
 import fnmatch as _fnmatch
@@ -512,3 +513,43 @@ def infer_requirements_from_files(
             )
 
     return addressed
+
+
+# ---------------------------------------------------------------------------
+# Staleness validation for cumulative carry-forward (TASK-CRV-9618)
+# ---------------------------------------------------------------------------
+
+
+def validate_requirements_staleness(
+    requirements: List[str],
+    source_files: List[str],
+    worktree_path: Path,
+) -> List[str]:
+    """Re-validate previously-inferred requirements against current worktree state.
+
+    Reuses the keyword-matching logic of ``infer_requirements_from_files`` to
+    check whether previously-inferred requirements are still supported by
+    the files in the worktree.  Requirements whose keywords no longer appear
+    in the tracked source files are considered stale and excluded from the
+    returned list.
+
+    Parameters
+    ----------
+    requirements : List[str]
+        Requirement texts to validate (subset of acceptance criteria).
+    source_files : List[str]
+        Relative file paths to check (accumulated across turns).
+    worktree_path : Path
+        Worktree root for resolving file paths.
+
+    Returns
+    -------
+    List[str]
+        Requirements that are still valid (keywords still present in files).
+    """
+    return infer_requirements_from_files(
+        acceptance_criteria=requirements,
+        files_created=source_files,
+        files_modified=[],
+        worktree_path=worktree_path,
+    )

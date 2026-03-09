@@ -1,0 +1,106 @@
+{
+  "task_id": "TASK-CRV-9618",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/synthetic_report.py",
+    "guardkit/orchestrator/autobuild.py"
+  ],
+  "files_created": [
+    "tests/unit/test_autobuild_carry_forward.py"
+  ],
+  "tests_written": [
+    "tests/unit/test_autobuild_carry_forward.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "14 passed in 1.95s (all new tests) + 95 passed in 1.93s (regression suite including existing autobuild and synthetic_report tests)",
+  "implementation_notes": "Added validate_requirements_staleness() to synthetic_report.py as a thin wrapper around infer_requirements_from_files() — passes acceptance_criteria=requirements, files_created=source_files, files_modified=[], worktree_path=worktree_path. This reuses all existing size guards, binary file handling, and keyword matching logic.\n\nAdded _cumulative_source_files: Set[str] = set() to AutoBuildOrchestrator.__init__ immediately after _cumulative_requirements_addressed, with an explanatory comment referencing TASK-CRV-9618.\n\nReplaced the cumulative merge block in _execute_turn (formerly lines 2217-2237) with staleness-aware logic that: (1) tracks files_created+files_modified into _cumulative_source_files, (2) computes carry_forward = cumulative - current, (3) re-validates carry_forward via validate_requirements_staleness (local import, matching existing pattern), (4) drops stale requirements with debug/info logging, (5) merges current_addressed | validated_carry_forward into cumulative set and report.\n\nThe local import of validate_requirements_staleness inside the block follows the existing pattern used for build_synthetic_report and generate_file_existence_promises imports in the same file.\n\nTest file uses a _apply_carry_forward() helper that replicates the merge block logic for unit-testable access without invoking the full turn pipeline. Real-file I/O tests for validate_requirements_staleness use tmp_path directly.",
+  "concerns": [],
+  "requirements_addressed": [
+    "Add validate_requirements_staleness to synthetic_report.py",
+    "Add _cumulative_source_files tracking to AutoBuildOrchestrator.__init__",
+    "Replace cumulative merge block with staleness-aware logic",
+    "Create test file tests/unit/test_autobuild_carry_forward.py covering all 6 specified scenarios"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Add validate_requirements_staleness to synthetic_report.py that reuses infer_requirements_from_files",
+      "status": "complete",
+      "evidence": "Function added at lines 522-554 of synthetic_report.py. Calls infer_requirements_from_files with acceptance_criteria=requirements, files_created=source_files, files_modified=[], worktree_path=worktree_path. Module docstring updated to include new public API entry.",
+      "test_file": "tests/unit/test_autobuild_carry_forward.py",
+      "implementation_files": [
+        "guardkit/orchestrator/synthetic_report.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Add _cumulative_source_files: Set[str] = set() to AutoBuildOrchestrator.__init__",
+      "status": "complete",
+      "evidence": "Added immediately after _cumulative_requirements_addressed at line 745 of autobuild.py with comment referencing TASK-CRV-9618.",
+      "test_file": "tests/unit/test_autobuild_carry_forward.py",
+      "implementation_files": [
+        "guardkit/orchestrator/autobuild.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Replace cumulative merge block (lines 2217-2237) with staleness-aware logic",
+      "status": "complete",
+      "evidence": "Block replaced with staleness-aware version: tracks source files, computes carry_forward, runs staleness check only on carry_forward (not current turn), drops stale with logging, merges and updates cumulative set and report. Local import pattern preserved.",
+      "test_file": "tests/unit/test_autobuild_carry_forward.py",
+      "implementation_files": [
+        "guardkit/orchestrator/autobuild.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "test_carry_forward_merges_previous_requirements: Turn 1 infers R1, turn 2 infers R2, merged set contains both",
+      "status": "complete",
+      "evidence": "Implemented in TestCarryForwardMergesRequirements.test_carry_forward_merges_previous_requirements. Simulates two turns via _apply_carry_forward helper; asserts both R1 and R2 are present after turn 2.",
+      "test_file": "tests/unit/test_autobuild_carry_forward.py",
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "test_staleness_drops_requirement_when_file_deleted",
+      "status": "complete",
+      "evidence": "Implemented in TestCarryForwardMergesRequirements.test_staleness_drops_requirement_when_file_deleted. Seeds cumulative set with R1, runs turn 2 with validate_requirements_staleness mocked to return [], asserts R1 is absent from cumulative set.",
+      "test_file": "tests/unit/test_autobuild_carry_forward.py",
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "test_staleness_drops_requirement_when_content_changes",
+      "status": "complete",
+      "evidence": "Implemented in TestCarryForwardMergesRequirements.test_staleness_drops_requirement_when_content_changes. Verifies requirement dropped when staleness returns empty (keywords removed).",
+      "test_file": "tests/unit/test_autobuild_carry_forward.py",
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "test_staleness_keeps_requirement_when_file_still_valid",
+      "status": "complete",
+      "evidence": "Implemented in TestCarryForwardMergesRequirements.test_staleness_keeps_requirement_when_file_still_valid. Staleness returns the requirement — asserts it survives in cumulative set.",
+      "test_file": "tests/unit/test_autobuild_carry_forward.py",
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "test_cumulative_source_files_tracked: _cumulative_source_files accumulates across turns",
+      "status": "complete",
+      "evidence": "Implemented in TestCarryForwardMergesRequirements.test_cumulative_source_files_tracked_across_turns. Runs two turns with different file sets, asserts all files from both turns present in _cumulative_source_files.",
+      "test_file": "tests/unit/test_autobuild_carry_forward.py",
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "test_carry_forward_resets_with_new_task: new AutoBuild instance starts fresh",
+      "status": "complete",
+      "evidence": "Implemented in TestCarryForwardMergesRequirements.test_carry_forward_resets_with_new_autobuild_instance. Creates fresh AutoBuildOrchestrator, asserts both _cumulative_requirements_addressed and _cumulative_source_files are empty sets.",
+      "test_file": "tests/unit/test_autobuild_carry_forward.py",
+      "implementation_files": []
+    }
+  ]
+}

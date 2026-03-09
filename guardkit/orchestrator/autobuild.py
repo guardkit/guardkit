@@ -46,6 +46,7 @@ import hashlib
 import logging
 import re
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -96,6 +97,11 @@ from guardkit.orchestrator.quality_gates import (
     CheckpointRejectedError,
     CoachValidator,
     CoachValidationResult,
+)
+
+# Import criteria classifier for runtime command verification (TASK-CRV-537E)
+from guardkit.orchestrator.quality_gates.criteria_classifier import (
+    classify_acceptance_criteria,
 )
 
 # Import task type models for quality gate profile resolution
@@ -168,6 +174,37 @@ MIN_TURN_BUDGET_SECONDS: int = 600
 # boundary (i.e., when the cancellation event is set but Player returned
 # success=True).  Ensures Coach always gets a fair window to validate.
 COACH_GRACE_PERIOD_SECONDS: int = 120
+
+
+# ============================================================================
+# Runtime Command Execution Constants (TASK-CRV-537E)
+# ============================================================================
+
+# Sentinel path fragment that must appear in any directory used as cwd for
+# subprocess.run().  This ensures commands never execute against the base repo.
+WORKTREE_SENTINEL: str = ".guardkit/worktrees/"
+
+# Per-command timeout (seconds).
+COMMAND_TIMEOUT_SECONDS: int = 60
+
+# Aggregate timeout across all command criteria per turn (seconds).
+COMMAND_TOTAL_TIMEOUT_SECONDS: int = 180
+
+
+def _assert_worktree_path(path: Path) -> None:
+    """Defensive check: never execute commands outside a worktree.
+
+    Raises
+    ------
+    RuntimeError
+        If *path* does not contain the worktree sentinel.
+    """
+    resolved = str(path.resolve())
+    if WORKTREE_SENTINEL not in resolved:
+        raise RuntimeError(
+            f"Refusing to execute commands outside worktree. "
+            f"Path '{resolved}' does not contain '{WORKTREE_SENTINEL}'"
+        )
 
 
 # ============================================================================
@@ -705,6 +742,9 @@ class AutoBuildOrchestrator:
         # inferred as addressed, it remains addressed in subsequent turns to
         # prevent criteria oscillation in synthetic reports (TASK-VRF-005).
         self._cumulative_requirements_addressed: Set[str] = set()
+        # Files contributing to cumulative requirements — used for staleness
+        # re-validation when carry-forward is applied (TASK-CRV-9618).
+        self._cumulative_source_files: Set[str] = set()
 
         # Context retrieval settings (TASK-GR6-006)
         self.enable_context = enable_context
@@ -2153,26 +2193,92 @@ class AutoBuildOrchestrator:
                 f"Promise matching will fail — falling through to text matching."
             )
 
-        # Cumulative requirements_addressed high-water-mark (TASK-VRF-005)
-        # Once a criterion is inferred as addressed in any turn, it remains
-        # addressed in subsequent turns.  This prevents criteria oscillation
-        # caused by non-deterministic file reading in synthetic reports.
-        if player_result.success and player_result.report:
-            current_addressed = player_result.report.get("requirements_addressed", [])
-            if current_addressed:
-                self._cumulative_requirements_addressed.update(current_addressed)
-            # Merge cumulative set back into the report so the Coach sees all
-            # criteria ever addressed, not just this turn's inference.
-            if self._cumulative_requirements_addressed:
-                player_result.report["requirements_addressed"] = list(
-                    self._cumulative_requirements_addressed
+        # Execute command_execution criteria in the worktree (TASK-CRV-537E)
+        # Only when on the synthetic report path — not when Player returns
+        # structured data directly.
+        if (
+            player_result.success
+            and player_result.report.get("_synthetic")
+            and acceptance_criteria
+            and worktree is not None
+        ):
+            try:
+                _assert_worktree_path(worktree.path)
+                self._execute_command_criteria(
+                    synthetic_report=player_result.report,
+                    acceptance_criteria=acceptance_criteria,
+                    worktree_path=worktree.path,
                 )
+            except RuntimeError:
+                logger.error(
+                    "Worktree path assertion failed for %s — "
+                    "skipping runtime command execution",
+                    task_id,
+                    exc_info=True,
+                )
+
+        # Cumulative requirements_addressed high-water-mark (TASK-VRF-005)
+        # with staleness validation (TASK-CRV-9618).
+        if player_result.success and player_result.report:
+            # Track source files for staleness checking (TASK-CRV-9618)
+            current_files = set(
+                player_result.report.get("files_created", [])
+                + player_result.report.get("files_modified", [])
+            )
+            self._cumulative_source_files.update(current_files)
+
+            current_addressed = set(
+                player_result.report.get("requirements_addressed", [])
+            )
+            # Requirements carried forward from previous turns (not current)
+            carry_forward = self._cumulative_requirements_addressed - current_addressed
+
+            # Staleness check: re-validate carry-forward requirements
+            # against current worktree file contents (TASK-CRV-9618).
+            if carry_forward and worktree is not None:
+                from guardkit.orchestrator.synthetic_report import (
+                    validate_requirements_staleness,
+                )
+
+                still_valid = set(
+                    validate_requirements_staleness(
+                        requirements=list(carry_forward),
+                        source_files=list(self._cumulative_source_files),
+                        worktree_path=worktree.path,
+                    )
+                )
+                stale = carry_forward - still_valid
+                if stale:
+                    for req in stale:
+                        logger.debug(
+                            "Dropping stale requirement: %s", req[:80]
+                        )
+                    logger.info(
+                        "Dropped %d stale requirements from carry-forward",
+                        len(stale),
+                    )
+                carry_forward = still_valid
+
+            # Merge: current turn + validated carry-forward
+            merged = current_addressed | carry_forward
+            carried_count = len(carry_forward)
+
+            if carried_count > 0:
+                logger.info(
+                    "Carried forward %d requirements from previous turns",
+                    carried_count,
+                )
+
+            # Update cumulative set and report
+            self._cumulative_requirements_addressed = merged
+            if merged:
+                player_result.report["requirements_addressed"] = list(merged)
                 logger.info(
                     "Cumulative requirements_addressed: %d criteria "
-                    "(current turn: %d, accumulated: %d)",
-                    len(self._cumulative_requirements_addressed),
+                    "(current turn: %d, carried: %d)",
+                    len(merged),
                     len(current_addressed),
-                    len(self._cumulative_requirements_addressed) - len(current_addressed),
+                    carried_count,
                 )
 
         # Cooperative cancellation check BETWEEN Player and Coach (TASK-ASF-007)
@@ -2560,6 +2666,19 @@ class AutoBuildOrchestrator:
             # Ensure task_id is populated in report (TASK-ACR-001)
             synthetic_report["task_id"] = task_id
 
+            # TASK-CRV-1540: Enrich synthetic report with partial data from
+            # response_messages if available (extracted during CancelledError)
+            if self._agent_invoker is not None:
+                partial = getattr(self._agent_invoker, "_last_partial_report", None)
+                if partial:
+                    synthetic_report["partial_data"] = partial
+                    logger.info(
+                        f"Enriched synthetic report with partial data: "
+                        f"{partial.get('text_block_count', 0)} text blocks, "
+                        f"{partial.get('tool_call_count', 0)} tool calls, "
+                        f"{len(partial.get('file_modifications', []))} file mods"
+                    )
+
             # Return as AgentInvocationResult
             return AgentInvocationResult(
                 task_id=task_id,
@@ -2706,6 +2825,89 @@ class AutoBuildOrchestrator:
                 )
 
         return report
+
+    # --- Runtime command execution for command_execution criteria (TASK-CRV-537E) ---
+
+    def _execute_command_criteria(
+        self,
+        synthetic_report: Dict[str, Any],
+        acceptance_criteria: List[str],
+        worktree_path: Path,
+    ) -> None:
+        """Execute ``command_execution`` acceptance criteria in the worktree.
+
+        Classifies *acceptance_criteria* via the criteria classifier, runs each
+        extracted command via ``subprocess.run()`` in *worktree_path*, and
+        injects successful results into
+        ``synthetic_report["requirements_addressed"]``.
+
+        Parameters
+        ----------
+        synthetic_report : Dict[str, Any]
+            The synthetic Player report to enrich.
+        acceptance_criteria : List[str]
+            Raw acceptance criteria text from the task.
+        worktree_path : Path
+            Worktree directory to use as ``cwd``.
+        """
+        classification = classify_acceptance_criteria(acceptance_criteria)
+        command_criteria = classification.command_criteria
+
+        if not command_criteria:
+            return
+
+        logger.info(
+            "Runtime criteria: %d command_execution criteria detected",
+            len(command_criteria),
+        )
+
+        elapsed_total = 0.0
+        for criterion in command_criteria:
+            if not criterion.extracted_command:
+                continue
+
+            if elapsed_total >= COMMAND_TOTAL_TIMEOUT_SECONDS:
+                logger.warning(
+                    "Aggregate command timeout reached (%.0fs >= %ds), "
+                    "skipping remaining criteria",
+                    elapsed_total,
+                    COMMAND_TOTAL_TIMEOUT_SECONDS,
+                )
+                break
+
+            try:
+                start = time.monotonic()
+                proc = subprocess.run(
+                    criterion.extracted_command,
+                    shell=True,
+                    cwd=str(worktree_path),
+                    capture_output=True,
+                    text=True,
+                    timeout=COMMAND_TIMEOUT_SECONDS,
+                )
+                elapsed_total += time.monotonic() - start
+
+                if proc.returncode == 0:
+                    synthetic_report.setdefault("requirements_addressed", []).append(
+                        criterion.text
+                    )
+                    logger.info(
+                        "Runtime criterion verified: %s", criterion.text[:80]
+                    )
+                else:
+                    logger.warning(
+                        "Runtime criterion failed (exit %d): %s\nstderr: %s",
+                        proc.returncode,
+                        criterion.text[:80],
+                        proc.stderr[:200],
+                    )
+            except subprocess.TimeoutExpired:
+                elapsed_total += COMMAND_TIMEOUT_SECONDS
+                logger.warning(
+                    "Runtime criterion timed out (%ds): %s",
+                    COMMAND_TIMEOUT_SECONDS,
+                    criterion.text[:80],
+                )
 
     def _generate_file_existence_promises(
         self,
@@ -3085,7 +3287,16 @@ class AutoBuildOrchestrator:
 
     def _count_criteria_passed(self, turn_record: TurnRecord) -> int:
         """
-        Count acceptance criteria verified as passing from Coach report (TASK-AB-SD01).
+        Count acceptance criteria verified as passing from Coach's actual decision.
+
+        Sources the count from ``validation_results.requirements.criteria_met``
+        which is the Coach validator's authoritative verified count.  This
+        ensures the stall detector and Coach always agree on progress
+        (TASK-CRV-90FB).
+
+        Falls back to counting ``acceptance_criteria_verification.criteria_results``
+        entries with ``status == "verified"`` when the structured path is absent
+        (backward compatibility with older Coach report formats).
 
         Parameters
         ----------
@@ -3095,14 +3306,22 @@ class AutoBuildOrchestrator:
         Returns
         -------
         int
-            Number of criteria with 'verified' status
+            Number of criteria verified by the Coach
         """
         if not turn_record.coach_result or not turn_record.coach_result.report:
             return 0
 
-        verification = turn_record.coach_result.report.get(
-            "acceptance_criteria_verification", {}
-        )
+        report = turn_record.coach_result.report
+
+        # Primary source: Coach's authoritative criteria_met (TASK-CRV-90FB)
+        validation_results = report.get("validation_results", {}) or {}
+        requirements = validation_results.get("requirements", {}) or {}
+        criteria_met = requirements.get("criteria_met")
+        if criteria_met is not None:
+            return int(criteria_met)
+
+        # Fallback: count from acceptance_criteria_verification (legacy)
+        verification = report.get("acceptance_criteria_verification", {})
         criteria_results = verification.get("criteria_results", [])
         return sum(
             1 for r in criteria_results
