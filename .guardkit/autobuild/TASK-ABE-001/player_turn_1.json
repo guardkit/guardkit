@@ -1,0 +1,93 @@
+{
+  "task_id": "TASK-ABE-001",
+  "turn": 1,
+  "files_modified": [
+    "docs/templates/research-to-implementation-template.md",
+    "docs/guides/research-template.md",
+    "installer/core/commands/feature-plan.md"
+  ],
+  "files_created": [
+    "tests/planning/__init__.py",
+    "tests/planning/test_lint_ac_compliance.py"
+  ],
+  "tests_written": [
+    "tests/planning/test_lint_ac_compliance.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "11 passed in 1.76s",
+  "implementation_notes": "Made four targeted changes: (1) Added a MANDATORY LINT COMPLIANCE AC blockquote callout after the Task 1 template in research-to-implementation-template.md Section 5, and a DO NOT CREATE STANDALONE QUALITY GATE TASKS blockquote at the end of Section 5 before Section 6. (2) Added lint compliance guidance and standalone QG task prohibition to the Section 5 explanation in research-template.md, referencing FEAT-6CE9 evidence as requested. (3) Added a CRITICAL instruction block in feature-plan.md after the consumer_context rule (line ~1909), consistent with the existing CRITICAL instruction style already present in that step. (4) Created tests/planning/test_lint_ac_compliance.py with 11 integration tests across three test classes: TestLintComplianceInACs (4 tests), TestNoStandaloneQualityGateTasks (3 tests), and TestQualityGateGeneratorWithLintCommands (4 tests). The helper function _is_standalone_qg_task is careful to exclude tasks with 'implement', 'generator', 'create', 'build', 'add' in their name to avoid false positives on tasks like 'Implement Quality Gate Generator'. All instructions are stack-agnostic, referencing 'lint/format checks' not specific tools.",
+  "concerns": [],
+  "requirements_addressed": [
+    "Research template prompts include instructions to add lint/format compliance to every implementation task's ACs",
+    "Research template prompts include explicit instruction to NOT create standalone quality gate verification tasks",
+    "Instruction is stack-agnostic — references lint compliance generically, not specific tools like ruff",
+    "Existing feature plan parsing (spec_parser.py) continues to work without modification",
+    "Quality gate generator (quality_gate_generator.py) continues to aggregate lint commands from individual task ACs",
+    "Integration test verifies generated feature plan includes lint compliance in task ACs and does not contain standalone quality gate tasks"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Research template prompts include instructions to add lint/format compliance to every implementation task's ACs",
+      "status": "complete",
+      "evidence": "Added MANDATORY LINT COMPLIANCE AC blockquote callout after the task template in docs/templates/research-to-implementation-template.md Section 5 (after line 201). Added parallel guidance in docs/guides/research-template.md Section 5 explanation.",
+      "test_file": "tests/planning/test_lint_ac_compliance.py",
+      "implementation_files": [
+        "docs/templates/research-to-implementation-template.md",
+        "docs/guides/research-template.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Research template prompts include explicit instruction to NOT create standalone quality gate verification tasks",
+      "status": "complete",
+      "evidence": "Added DO NOT CREATE STANDALONE QUALITY GATE TASKS blockquote at the end of Section 5 in docs/templates/research-to-implementation-template.md (before Section 6). Added matching prohibition in docs/guides/research-template.md Section 5 explanation.",
+      "test_file": "tests/planning/test_lint_ac_compliance.py",
+      "implementation_files": [
+        "docs/templates/research-to-implementation-template.md",
+        "docs/guides/research-template.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "The instruction is stack-agnostic — references lint compliance generically, not specific tools like ruff",
+      "status": "complete",
+      "evidence": "All added instructions say 'project-configured lint/format checks' and explicitly note not to reference specific tools like ruff, eslint, biome. The test test_lint_ac_text_is_stack_agnostic verifies this property for parsed tasks.",
+      "test_file": "tests/planning/test_lint_ac_compliance.py",
+      "implementation_files": [
+        "docs/templates/research-to-implementation-template.md",
+        "docs/guides/research-template.md",
+        "installer/core/commands/feature-plan.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Existing feature plan parsing (spec_parser.py) continues to work without modification",
+      "status": "complete",
+      "evidence": "spec_parser.py was not touched. The integration test uses parse_research_template() from spec_parser.py and it works correctly with the new test fixtures (11/11 tests pass).",
+      "test_file": "tests/planning/test_lint_ac_compliance.py",
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Quality gate generator (quality_gate_generator.py) continues to aggregate lint commands from individual task ACs",
+      "status": "complete",
+      "evidence": "quality_gate_generator.py was not touched. Three tests in TestQualityGateGeneratorWithLintCommands verify it still works: generates YAML correctly, includes lint gates, and deduplicates lint commands across tasks.",
+      "test_file": "tests/planning/test_lint_ac_compliance.py",
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "At least one integration test verifies that a generated feature plan includes lint compliance in task ACs and does not contain standalone quality gate tasks",
+      "status": "complete",
+      "evidence": "Created tests/planning/test_lint_ac_compliance.py with 11 tests. test_implementation_tasks_have_lint_ac parses a full research spec and asserts every implementation task has a lint AC. test_compliant_spec_has_no_standalone_qg_tasks asserts no standalone QG tasks exist. test_standalone_qg_task_is_detected verifies the counter-example spec is correctly identified.",
+      "test_file": "tests/planning/test_lint_ac_compliance.py",
+      "implementation_files": [
+        "tests/planning/__init__.py",
+        "tests/planning/test_lint_ac_compliance.py"
+      ]
+    }
+  ]
+}

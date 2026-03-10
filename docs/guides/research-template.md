@@ -284,6 +284,20 @@ with built-in persistence and approval workflow support.
 - Vague acceptance criteria ("code should work")
 - Missing constraints (Player implements extra features)
 - No validation commands (Coach can't verify)
+- Missing lint compliance AC (Player skips format checks)
+- Standalone quality gate tasks (wastes orchestrator turns)
+
+**Lint compliance is mandatory for every implementation task:**
+
+Every implementation and refactor task MUST include the following acceptance criterion:
+
+> "All modified files pass project-configured lint/format checks with zero errors"
+
+This criterion is stack-agnostic — it does not reference specific tools. The Coach discovers and runs lint tools based on the project's own configuration (pyproject.toml, package.json, .eslintrc, etc.). Evidence from FEAT-6CE9 shows that features with lint compliance baked into individual task ACs achieve the highest efficiency, with zero wasted orchestrator turns on standalone quality gate tasks.
+
+**Do not create standalone quality gate verification tasks:**
+
+Tasks whose sole purpose is to run linting, type-checking, or format verification produce zero production code and consume orchestrator turns. Lint and format compliance must be verified as part of each implementation task's Coach validation commands, not in a separate final task. This applies to all task types except scaffolding, documentation, and testing tasks.
 
 **Task metadata drives Graphiti retrieval:**
 - **Complexity** → token budget (low: ~2000, medium: ~4000, high: ~6000+)

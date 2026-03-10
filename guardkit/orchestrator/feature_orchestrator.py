@@ -2125,7 +2125,7 @@ The detailed specifications are in the task markdown file.
         # Display summary
         self._display_summary(feature, wave_results, worktree, final_status)
 
-        return FeatureOrchestrationResult(
+        orchestration_result = FeatureOrchestrationResult(
             feature_id=feature.id,
             success=success,
             status=final_status,
@@ -2136,6 +2136,22 @@ The detailed specifications are in the task markdown file.
             worktree=worktree,
             error=None if success else f"{tasks_failed} task(s) failed",
         )
+
+        # TASK-ABE-003: Generate structured review summary
+        try:
+            from guardkit.orchestrator.review_summary import ReviewSummaryGenerator
+
+            summary_dir = self.repo_root / ".guardkit" / "autobuild" / feature.id
+            generator = ReviewSummaryGenerator(output_dir=summary_dir)
+            summary_result = generator.generate(orchestration_result)
+            if summary_result.success:
+                console.print(
+                    f"[green]✓[/green] Review summary: {summary_result.output_path}"
+                )
+        except Exception as exc:
+            logger.warning("Review summary generation failed: %s", exc)
+
+        return orchestration_result
 
     def _dependencies_satisfied(
         self,

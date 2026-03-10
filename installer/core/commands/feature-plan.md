@@ -1908,6 +1908,13 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
 
    Do NOT add `consumer_context` to tasks that are only producers. Do NOT add it when no §4 section was generated.
 
+   **CRITICAL: Every implementation task MUST include lint compliance in acceptance criteria:**
+   - Add this acceptance criterion to every implementation and refactor task: "All modified files pass project-configured lint/format checks with zero errors"
+   - Do NOT reference specific tools (e.g., ruff, eslint, biome) — keep it stack-agnostic
+   - Do NOT create standalone quality gate verification tasks (tasks whose sole purpose is lint/type-check/format verification)
+   - Lint and format compliance MUST be verified as part of each implementation task's Coach Validation commands, not in a separate final task
+   - This applies to all task types EXCEPT: scaffolding, documentation, and testing tasks
+
    **Seam Test Stub Generation Rule:**
 
    When a §4 Integration Contract exists AND a task is listed as a **consumer** in that contract, you MUST include a `## Seam Tests` section at the bottom of the consumer task markdown file body (below Acceptance Criteria, above Implementation Notes).

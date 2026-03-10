@@ -200,6 +200,10 @@ Each task includes metadata that drives GuardKit's job-specific context retrieva
   # python -c "from src.module import ClassName; print('Import OK')"
   ```
 
+> **MANDATORY LINT COMPLIANCE AC**: Every implementation task MUST include the following acceptance criterion:
+> "All modified files pass project-configured lint/format checks with zero errors"
+> This is stack-agnostic — do not reference specific tools (e.g., ruff, eslint). The Coach will verify using the project's own lint configuration.
+
 ### Task 2: [Task Name]
 
 - **Task ID:** TASK-XXX
@@ -226,6 +230,8 @@ Each task includes metadata that drives GuardKit's job-specific context retrieva
 ### Task 3: [Task Name]
 
 [PLACEHOLDER: Repeat pattern for each task. Each task should be atomic and completable in one AutoBuild cycle.]
+
+> **DO NOT CREATE STANDALONE QUALITY GATE TASKS**: Do not create tasks whose sole purpose is to run linting, type-checking, or other quality gate verification. Lint and format compliance MUST be verified as part of each implementation task's acceptance criteria and Coach validation commands. Standalone quality gate tasks produce zero production code and waste orchestrator turns.
 
 ---
 
