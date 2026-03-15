@@ -1767,16 +1767,63 @@ class TestFindSourceGraphitiConfig:
         """Auto-discovery starts from cwd.parent, not cwd itself."""
         from guardkit.cli.init import _find_source_graphiti_config
 
-        # Put a graphiti.yaml in tmp_path (which IS cwd)
-        _write_graphiti_yaml(tmp_path, _SAMPLE_GRAPHITI_CONFIG)
+        # Create an isolated parent so sibling scan doesn't pick up temp artifacts
+        parent_dir = tmp_path / "workspace"
+        parent_dir.mkdir()
+        project_dir = parent_dir / "my-project"
+        project_dir.mkdir()
 
-        # _find_project_root is called with tmp_path.parent, not tmp_path itself
+        # Put a graphiti.yaml in the project dir (which IS cwd) — should be skipped
+        _write_graphiti_yaml(project_dir, _SAMPLE_GRAPHITI_CONFIG)
+
+        # _find_project_root is called with parent_dir, not project_dir itself
         with patch("guardkit.cli.init._find_project_root", return_value=None) as mock_find:
-            with patch("pathlib.Path.cwd", return_value=tmp_path):
+            with patch("pathlib.Path.cwd", return_value=project_dir):
                 result = _find_source_graphiti_config("auto")
 
-        # Should have been called with tmp_path.parent
-        mock_find.assert_called_once_with(tmp_path.parent)
+        # Should have been called with parent_dir
+        mock_find.assert_called_once_with(parent_dir)
+        # No ancestor config found and no siblings have .guardkit/ either
+        assert result is None
+
+    def test_auto_finds_config_in_sibling_directory(self, tmp_path):
+        """Auto-discovery finds graphiti.yaml in a sibling directory."""
+        from guardkit.cli.init import _find_source_graphiti_config
+
+        # Simulate: workspace/guardkit has config, workspace/new-project is cwd
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+
+        sibling_project = workspace / "guardkit"
+        sibling_project.mkdir()
+        _write_graphiti_yaml(sibling_project, _SAMPLE_GRAPHITI_CONFIG)
+
+        new_project = workspace / "new-project"
+        new_project.mkdir()
+
+        with patch("guardkit.cli.init._find_project_root", return_value=None):
+            with patch("pathlib.Path.cwd", return_value=new_project):
+                result = _find_source_graphiti_config("auto")
+
+        assert result is not None
+        assert result == sibling_project / ".guardkit" / "graphiti.yaml"
+
+    def test_auto_skips_cwd_in_sibling_scan(self, tmp_path):
+        """Sibling scan skips the cwd directory to avoid finding target's own config."""
+        from guardkit.cli.init import _find_source_graphiti_config
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+
+        # Only cwd has a config — no sibling projects
+        new_project = workspace / "new-project"
+        new_project.mkdir()
+        _write_graphiti_yaml(new_project, _SAMPLE_GRAPHITI_CONFIG)
+
+        with patch("guardkit.cli.init._find_project_root", return_value=None):
+            with patch("pathlib.Path.cwd", return_value=new_project):
+                result = _find_source_graphiti_config("auto")
+
         assert result is None
 
 

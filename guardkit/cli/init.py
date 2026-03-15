@@ -374,9 +374,10 @@ def _find_source_graphiti_config(copy_graphiti: str) -> Optional[Path]:
     """Find the source graphiti.yaml to copy from.
 
     If an explicit path is given, looks for .guardkit/graphiti.yaml under that path.
-    If ``copy_graphiti`` is "auto", walks up from the parent of cwd to find an
-    existing .guardkit/graphiti.yaml, skipping cwd itself to avoid finding the
-    target project's own (not-yet-created) config.
+    If ``copy_graphiti`` is "auto", uses a two-strategy approach:
+      1. Walk up from the parent of cwd to find an ancestor project's config.
+      2. Scan sibling directories of cwd for a .guardkit/graphiti.yaml.
+    Skips cwd itself to avoid finding the target project's own config.
 
     Args:
         copy_graphiti: Either "auto" for auto-discovery or an explicit directory path.
@@ -385,13 +386,29 @@ def _find_source_graphiti_config(copy_graphiti: str) -> Optional[Path]:
         Path to the source graphiti.yaml if found, or None.
     """
     if copy_graphiti == "auto":
-        # Walk up from the *parent* of cwd so we don't pick up the target project's own config
-        start = Path.cwd().resolve().parent
-        project_root = _find_project_root(start)
-        if project_root is None:
-            return None
-        candidate = project_root / ".guardkit" / "graphiti.yaml"
-        return candidate if candidate.is_file() else None
+        cwd = Path.cwd().resolve()
+        parent_dir = cwd.parent
+
+        # Strategy 1: Walk up from the parent of cwd (finds ancestor projects)
+        project_root = _find_project_root(parent_dir)
+        if project_root is not None:
+            candidate = project_root / ".guardkit" / "graphiti.yaml"
+            if candidate.is_file():
+                return candidate
+
+        # Strategy 2: Scan sibling directories (finds peer projects like guardkit/)
+        # Resolve both sides when comparing to handle macOS /var -> /private/var symlinks.
+        try:
+            for sibling in sorted(parent_dir.iterdir()):
+                if not sibling.is_dir() or sibling.resolve() == cwd:
+                    continue
+                candidate = sibling / ".guardkit" / "graphiti.yaml"
+                if candidate.is_file():
+                    return candidate
+        except PermissionError:
+            pass
+
+        return None
     else:
         # Explicit path provided
         source_dir = Path(copy_graphiti).expanduser().resolve()
@@ -649,6 +666,10 @@ async def _cmd_init(
         console.print(f"  [yellow]Warning: Template '{template}' not found, using defaults[/yellow]")
 
     # Step 1.1: Write Graphiti config with project_id
+    # Track whether we obtained a full config (with connection details).
+    # If only project_id was written, seeding would fail with default Neo4j settings.
+    graphiti_config_complete = False
+
     if copy_graphiti is not None:
         # --copy-graphiti flag: try to copy config from existing project
         source_config = _find_source_graphiti_config(copy_graphiti)
@@ -658,6 +679,7 @@ async def _cmd_init(
                     f"  [green]Copied Graphiti config from {source_config} "
                     f"to .guardkit/graphiti.yaml[/green]"
                 )
+                graphiti_config_complete = True
             else:
                 console.print(
                     f"  [yellow]Warning: Could not copy graphiti.yaml, "
@@ -669,9 +691,13 @@ async def _cmd_init(
                 f"  [yellow]Warning: No source graphiti.yaml found "
                 f"(--copy-graphiti), falling back to project_id only[/yellow]"
             )
+            console.print(
+                f"  [dim]Tip: Use --copy-graphiti-from /path/to/project "
+                f"to specify the source project explicitly[/dim]"
+            )
             write_graphiti_config(project_name, project_dir)
     else:
-        # No explicit --copy-graphiti flag: auto-offer if a parent config exists
+        # No explicit --copy-graphiti flag: auto-offer if a parent/sibling config exists
         source_config = None if no_questions else _find_source_graphiti_config("auto")
         if source_config is not None:
             console.print(f"\nFound existing graphiti.yaml at {source_config}")
@@ -687,6 +713,7 @@ async def _cmd_init(
                         f"  [green]Copied Graphiti config from {source_config} "
                         f"to .guardkit/graphiti.yaml[/green]"
                     )
+                    graphiti_config_complete = True
                 else:
                     console.print(
                         f"  [yellow]Warning: Could not copy graphiti.yaml, "
@@ -723,7 +750,19 @@ async def _cmd_init(
     system_seeded = False
 
     # Step 2: Seed Graphiti (if not skipped)
-    if skip_graphiti:
+    # Also skip if --copy-graphiti was used but failed — seeding with default
+    # Neo4j settings would just produce connection errors for minutes.
+    if not skip_graphiti and copy_graphiti is not None and not graphiti_config_complete:
+        skip_graphiti = True
+        console.print(
+            "\n[bold]Step 2: Skipping Graphiti seeding "
+            "(no valid config found)[/bold]"
+        )
+        console.print(
+            "  [dim]Run 'guardkit graphiti seed' after configuring "
+            ".guardkit/graphiti.yaml[/dim]"
+        )
+    elif skip_graphiti:
         console.print("\n[bold]Step 2: Skipping Graphiti seeding (--skip-graphiti)[/bold]")
     else:
         console.print("\n[bold]Step 2: Seeding project knowledge to Graphiti...[/bold]")
