@@ -719,6 +719,9 @@ async def _cmd_init(
             # In non-interactive contexts (e.g., tests without mock), skip CLAUDE.md prompt
             pass
 
+    # Track whether system seeding ran (for summary)
+    system_seeded = False
+
     # Step 2: Seed Graphiti (if not skipped)
     if skip_graphiti:
         console.print("\n[bold]Step 2: Skipping Graphiti seeding (--skip-graphiti)[/bold]")
@@ -782,6 +785,61 @@ async def _cmd_init(
                     for component_result in result.results:
                         status = "[green]OK[/green]" if component_result.success else "[yellow]WARN[/yellow]"
                         console.print(f"    {status} {component_result.component}: {component_result.message}")
+                    # Step 2.5: Offer system seeding after successful project seeding
+                    if client and client.enabled:
+                        try:
+                            if no_questions:
+                                should_seed_system = True
+                            else:
+                                should_seed_system = Confirm.ask(
+                                    "Seed system knowledge now? (recommended for AutoBuild)",
+                                    default=True,
+                                )
+                        except Exception:
+                            should_seed_system = True  # Non-interactive fallback
+
+                        if should_seed_system:
+                            console.print(
+                                "\n[bold]Step 3: Seeding system knowledge...[/bold]"
+                            )
+                            try:
+                                from guardkit.knowledge.system_seeding import (
+                                    seed_system_content,
+                                )
+
+                                sys_result = await seed_system_content(
+                                    client, template_name=template
+                                )
+                                if sys_result.success:
+                                    console.print(
+                                        "  [green]System knowledge seeded"
+                                        " successfully[/green]"
+                                    )
+                                    for comp in sys_result.results:
+                                        status = (
+                                            "[green]OK[/green]"
+                                            if comp.success
+                                            else "[yellow]WARN[/yellow]"
+                                        )
+                                        console.print(
+                                            f"    {status} {comp.component}:"
+                                            f" {comp.message}"
+                                        )
+                                    system_seeded = True
+                                else:
+                                    console.print(
+                                        "  [yellow]Warning: Some system seeding"
+                                        " components failed[/yellow]"
+                                    )
+                            except Exception as e:
+                                console.print(
+                                    f"  [yellow]Warning: System seeding"
+                                    f" error: {e}[/yellow]"
+                                )
+                                logger.debug(
+                                    f"System seeding error: {e}", exc_info=True
+                                )
+
                 else:
                     console.print(
                         f"  [yellow]Warning: Some seeding components failed"
@@ -800,12 +858,31 @@ async def _cmd_init(
 
     # Summary
     console.print("\n[bold green]GuardKit initialized successfully![/bold green]")
-    console.print(f"\nNext steps:")
     if not skip_graphiti:
+        console.print(
+            "\n  [green]Seeded:[/green] project knowledge "
+            "(project overview from CLAUDE.md/README.md)"
+        )
+        if system_seeded:
+            console.print(
+                "  [green]Seeded:[/green] system knowledge "
+                "(templates, rules, role constraints, implementation modes)"
+            )
+        else:
+            console.print(
+                "  [yellow]Not yet seeded:[/yellow] system knowledge "
+                "(templates, rules, role constraints, implementation modes)"
+            )
+    console.print(f"\nNext steps:")
+    if not skip_graphiti and not system_seeded:
         console.print(f"  1. Seed system knowledge: guardkit graphiti seed-system")
         console.print(f"  2. Create a task: /task-create \"Your first task\"")
         console.print(f"  3. Work on it: /task-work TASK-XXX")
         console.print(f"  4. Complete it: /task-complete TASK-XXX")
+        console.print(
+            "\n  [dim]Tip: For multi-project FalkorDB setups, use --copy-graphiti "
+            "to share config across projects.[/dim]"
+        )
     else:
         console.print(f"  1. Create a task: /task-create \"Your first task\"")
         console.print(f"  2. Work on it: /task-work TASK-XXX")
@@ -837,7 +914,7 @@ async def _cmd_init(
     "--copy-graphiti",
     is_flag=True,
     default=False,
-    help="Auto-discover and copy Graphiti config from a parent directory project.",
+    help="Auto-discover and copy Graphiti config from a parent directory project. Recommended for multi-project setups sharing a FalkorDB instance to prevent embedding dimension mismatches.",
 )
 @click.option(
     "--copy-graphiti-from",

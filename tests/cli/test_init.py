@@ -204,8 +204,13 @@ This is the readme file used for fallback.
             # Implementation modes are NOT seeded during init (system-scoped)
             assert seed_result.implementation_modes_seeded is False
 
-    def test_init_suggests_seed_system(self, tmp_path, monkeypatch):
-        """Test that init suggests running seed-system after completion."""
+    def test_init_offers_system_seeding_after_project_seeding(self, tmp_path, monkeypatch):
+        """Test that init offers system seeding after project seeding succeeds.
+
+        Previously this test checked for 'seed-system' in Next steps.
+        After TASK-IGP-001, system seeding is offered inline, so when accepted
+        (default), 'seed-system' is no longer in Next steps.
+        """
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
@@ -222,7 +227,8 @@ This is the readme file used for fallback.
             result = runner.invoke(cli, ["init"])
 
             assert result.exit_code == 0
-            assert "seed-system" in result.output
+            # System seeding prompt should have been shown
+            assert "system knowledge" in result.output.lower()
 
 
 # ============================================================================
@@ -2281,3 +2287,228 @@ class TestLoggerSuppression:
         runner = CliRunner()
         result = runner.invoke(cli, ["init", "--help"])
         assert "--verbose" in result.output or "-v" in result.output
+
+
+# ============================================================================
+# System Seeding Auto-Offer Tests (TASK-IGP-001)
+# ============================================================================
+
+
+class TestInitSystemSeedingAutoOffer:
+    """Test auto-offer of system seeding after project seeding."""
+
+    def test_system_seeding_offered_after_project_seeding(self, tmp_path, monkeypatch):
+        """Test that user is prompted for system seeding after project seeding succeeds."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        mock_sys_result = MagicMock()
+        mock_sys_result.success = True
+        mock_sys_result.results = []
+
+        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
+             patch('guardkit.cli.init.Confirm.ask', return_value=True) as mock_confirm, \
+             patch('guardkit.knowledge.system_seeding.seed_system_content', new_callable=AsyncMock) as mock_sys_seed:
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True, results=[])
+            mock_sys_seed.return_value = mock_sys_result
+
+            result = runner.invoke(cli, ["init"])
+
+            # Should have asked about system seeding
+            confirm_calls = [str(c) for c in mock_confirm.call_args_list]
+            assert any("system" in c.lower() for c in confirm_calls)
+
+    def test_system_seeding_runs_when_accepted(self, tmp_path, monkeypatch):
+        """Test that system seeding runs when user accepts the offer."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        mock_sys_result = MagicMock()
+        mock_sys_result.success = True
+        mock_sys_result.results = []
+
+        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
+             patch('guardkit.cli.init.Confirm.ask', return_value=True), \
+             patch('guardkit.knowledge.system_seeding.seed_system_content', new_callable=AsyncMock) as mock_sys_seed:
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True, results=[])
+            mock_sys_seed.return_value = mock_sys_result
+
+            result = runner.invoke(cli, ["init"])
+
+            assert result.exit_code == 0
+            # seed-system should NOT appear in next steps (already done)
+            assert "seed-system" not in result.output
+            mock_sys_seed.assert_called_once()
+
+    def test_system_seeding_skipped_when_declined(self, tmp_path, monkeypatch):
+        """Test that system seeding is skipped when user declines."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        # Confirm.ask returns False for system seeding, True for graphiti config offer
+        confirm_responses = []
+
+        def confirm_side_effect(*args, **kwargs):
+            question = str(args[0]) if args else ""
+            if "system" in question.lower():
+                return False
+            return True  # Accept other prompts
+
+        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
+             patch('guardkit.cli.init.Confirm.ask', side_effect=confirm_side_effect), \
+             patch('guardkit.knowledge.system_seeding.seed_system_content', new_callable=AsyncMock) as mock_sys_seed:
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True, results=[])
+
+            result = runner.invoke(cli, ["init"])
+
+            assert result.exit_code == 0
+            # seed-system SHOULD appear in next steps (not done)
+            assert "seed-system" in result.output
+            # system seeding should NOT have been called
+            mock_sys_seed.assert_not_called()
+
+    def test_no_questions_auto_accepts_system_seeding(self, tmp_path, monkeypatch):
+        """Test that --no-questions flag auto-accepts system seeding."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        mock_sys_result = MagicMock()
+        mock_sys_result.success = True
+        mock_sys_result.results = []
+
+        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
+             patch('guardkit.knowledge.system_seeding.seed_system_content', new_callable=AsyncMock) as mock_sys_seed:
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True, results=[])
+            mock_sys_seed.return_value = mock_sys_result
+
+            result = runner.invoke(cli, ["init", "--no-questions"])
+
+            assert result.exit_code == 0
+            # System seeding should have run without prompting
+            mock_sys_seed.assert_called_once()
+
+    def test_skip_graphiti_skips_system_seeding(self, tmp_path, monkeypatch):
+        """Test that --skip-graphiti skips both project AND system seeding."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.knowledge.system_seeding.seed_system_content', new_callable=AsyncMock) as mock_sys_seed:
+
+            result = runner.invoke(cli, ["init", "--skip-graphiti"])
+
+            assert result.exit_code == 0
+            mock_seed.assert_not_called()
+            mock_sys_seed.assert_not_called()
+
+    def test_system_seeding_error_does_not_fail_init(self, tmp_path, monkeypatch):
+        """Test that exception in system seeding does not fail overall init."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
+             patch('guardkit.cli.init.Confirm.ask', return_value=True), \
+             patch('guardkit.knowledge.system_seeding.seed_system_content', new_callable=AsyncMock) as mock_sys_seed:
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True, results=[])
+            # System seeding raises an exception
+            mock_sys_seed.side_effect = Exception("FalkorDB connection refused")
+
+            result = runner.invoke(cli, ["init"])
+
+            # Init should still succeed (graceful degradation)
+            assert result.exit_code == 0
+            assert "warning" in result.output.lower() or "error" in result.output.lower()
+
+    def test_next_steps_omit_seed_system_when_already_seeded(self, tmp_path, monkeypatch):
+        """Test that 'Next steps' omits seed-system when system seeding already ran."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        mock_sys_result = MagicMock()
+        mock_sys_result.success = True
+        mock_sys_result.results = []
+
+        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
+             patch('guardkit.cli.init.Confirm.ask', return_value=True), \
+             patch('guardkit.knowledge.system_seeding.seed_system_content', new_callable=AsyncMock) as mock_sys_seed:
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True, results=[])
+            mock_sys_seed.return_value = mock_sys_result
+
+            result = runner.invoke(cli, ["init"])
+
+            assert result.exit_code == 0
+            # "seed-system" should NOT be in next steps
+            assert "seed-system" not in result.output
+            # But task creation steps should still appear
+            assert "task-create" in result.output
+
+    def test_next_steps_include_seed_system_when_not_seeded(self, tmp_path, monkeypatch):
+        """Test that 'Next steps' includes seed-system when system seeding was declined."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        def confirm_side_effect(*args, **kwargs):
+            question = str(args[0]) if args else ""
+            if "system" in question.lower():
+                return False
+            return True
+
+        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
+             patch('guardkit.cli.init.Confirm.ask', side_effect=confirm_side_effect), \
+             patch('guardkit.knowledge.system_seeding.seed_system_content', new_callable=AsyncMock) as mock_sys_seed:
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True, results=[])
+
+            result = runner.invoke(cli, ["init"])
+
+            assert result.exit_code == 0
+            # "seed-system" SHOULD be in next steps
+            assert "seed-system" in result.output

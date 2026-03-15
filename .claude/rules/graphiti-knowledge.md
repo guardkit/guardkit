@@ -108,4 +108,53 @@ if factory:
     thread_client = factory.get_thread_client()  # Per-thread, lazy
 ```
 
+## Two-Phase Seeding Architecture
+
+Graphiti knowledge seeding is split into two distinct phases, each targeting a different scope:
+
+### Phase 1: Project Knowledge (`guardkit init`)
+
+Run automatically during `guardkit init`. Seeds **project-specific** knowledge:
+- Project overview extracted from CLAUDE.md / README.md
+- Project name, purpose, and structure
+
+This gives Graphiti enough context to assist with project-level tasks immediately after init.
+
+### Phase 2: System Knowledge (`guardkit graphiti seed-system`)
+
+Run manually after init. Seeds **system-scoped** knowledge shared across all GuardKit projects:
+- Templates, rules, and implementation patterns
+- Role constraints (Player/Coach behaviors)
+- Implementation modes and workflow definitions
+- Agent definitions and command specifications
+
+System knowledge is larger and takes longer to seed, which is why it runs separately.
+
+## Multi-Project Setup (Shared FalkorDB)
+
+When multiple projects share a FalkorDB instance, use `--copy-graphiti` during init
+to inherit infrastructure settings from an existing project:
+
+```bash
+guardkit init --copy-graphiti
+```
+
+This auto-discovers a parent project's `.guardkit/graphiti.yaml` and copies all
+connection and embedding settings, replacing only the `project_id`. This prevents
+embedding dimension mismatches when the shared FalkorDB was seeded with a specific
+embedding model.
+
+For explicit source selection:
+
+```bash
+guardkit init --copy-graphiti-from /path/to/parent/project
+```
+
+Without `--copy-graphiti`, projects fall back to defaults (neo4j graph store, OpenAI
+embeddings). If the actual infrastructure uses FalkorDB with a different embedding
+model, this causes dimension mismatches. **`--copy-graphiti` is the recommended
+default for any multi-project environment sharing FalkorDB.**
+
+System knowledge only needs to be seeded once per FalkorDB instance.
+
 **See**: [Interactive Capture Guide](../../docs/guides/graphiti-knowledge-capture.md) | [Integration Guide](../../docs/guides/graphiti-integration-guide.md)
