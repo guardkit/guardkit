@@ -1089,6 +1089,24 @@ group = "project-b__architecture"  # Different prefix
 group = "role_constraints"  # No prefix
 ```
 
+### Setting Up a New Project (Recommended: `--copy-graphiti`)
+
+When adding a new project to a shared FalkorDB instance, use `--copy-graphiti` during init to inherit connection and embedding settings:
+
+```bash
+guardkit init --copy-graphiti
+```
+
+This auto-discovers a parent project's `.guardkit/graphiti.yaml` and copies all settings, replacing only the `project_id`. This prevents embedding dimension mismatches when the shared FalkorDB was seeded with a specific embedding model.
+
+For explicit source selection:
+
+```bash
+guardkit init --copy-graphiti-from /path/to/parent/project
+```
+
+Without `--copy-graphiti`, projects fall back to defaults which may cause dimension mismatches if the FalkorDB instance uses a non-default embedding model.
+
 ### Quick Start
 
 **Auto-detection (Recommended)**:

@@ -149,45 +149,62 @@ Run 'guardkit graphiti seed' to seed system context.
 
 ### Step 4: Seed Knowledge
 
-Load GuardKit system context into the knowledge graph:
+Graphiti knowledge seeding uses a **two-phase architecture**, each targeting a different scope:
+
+#### Phase 1: Project Knowledge (automatic during `guardkit init`)
+
+Project-specific knowledge is seeded automatically when you run `guardkit init`. This includes:
+
+- Project overview extracted from `CLAUDE.md` / `README.md`
+- Project name, purpose, and structure
+
+This gives Graphiti enough context to assist with project-level tasks immediately after init.
+
+#### Phase 2: System Knowledge (via `guardkit graphiti seed-system` or auto-offer)
+
+System-scoped knowledge is shared across all GuardKit projects and includes:
+
+- Templates, rules, and implementation patterns
+- Role constraints (Player/Coach behaviors)
+- Implementation modes and workflow definitions
+- Agent definitions and command specifications
+
+During `guardkit init`, after project knowledge is seeded, you will be prompted:
+
+```
+Seed system knowledge now? (recommended for AutoBuild) [Y/n]:
+```
+
+Answering **Y** (the default) seeds system knowledge immediately. If you skip it, you can seed later:
 
 ```bash
-guardkit graphiti seed
+guardkit graphiti seed-system
 ```
 
-**Expected output**:
-```
-Graphiti System Context Seeding
+System knowledge is larger and takes longer to seed, which is why it runs as a separate phase. It only needs to be seeded **once per FalkorDB instance** — all projects sharing the same instance benefit from a single system seed.
 
-Connecting to Graphiti at localhost:8000...
-Connected to Graphiti
-
-Seeding system context...
-
-System context seeding complete!
-
-Knowledge categories seeded:
-  ✓ product_knowledge
-  ✓ command_workflows
-  ✓ quality_gate_phases
-  ✓ technology_stack
-  ✓ feature_build_architecture
-  ✓ architecture_decisions
-  ✓ failure_patterns
-  ✓ component_status
-  ✓ integration_points
-  ✓ templates
-  ✓ agents
-  ✓ patterns
-  ✓ rules
-
-Run 'guardkit graphiti verify' to test queries.
-```
-
-**Note**: Seeding is a one-time operation. Use `--force` to re-seed:
+**Note**: Use `--force` to re-seed:
 ```bash
-guardkit graphiti seed --force
+guardkit graphiti seed-system --force
 ```
+
+#### Multi-Project FalkorDB Environments
+
+When multiple projects share a FalkorDB instance, use `--copy-graphiti` during init to inherit infrastructure settings from an existing project:
+
+```bash
+guardkit init --copy-graphiti
+```
+
+This auto-discovers a parent project's `.guardkit/graphiti.yaml` and copies all connection and embedding settings, replacing only the `project_id`. This prevents embedding dimension mismatches when the shared FalkorDB was seeded with a specific embedding model.
+
+For explicit source selection:
+
+```bash
+guardkit init --copy-graphiti-from /path/to/parent/project
+```
+
+Without `--copy-graphiti`, projects fall back to defaults (neo4j graph store, OpenAI embeddings). If the actual infrastructure uses FalkorDB with a different embedding model, this causes dimension mismatches. **`--copy-graphiti` is the recommended default for any multi-project environment sharing FalkorDB.**
 
 ---
 

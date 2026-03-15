@@ -97,6 +97,47 @@ These additional categories were added in Phase 2 (Graphiti Refinement):
 | `quality_gate_configs` | Task-type specific thresholds | FEAT-GR-004 | Quality gate customization |
 | `implementation_modes` | Direct vs task-work guidance | FEAT-GR-006 | AutoBuild workflow preferences |
 
+## Project vs System Scope Boundary
+
+Graphiti knowledge is organized into two distinct scopes, seeded in separate phases during `guardkit init`:
+
+### Project Scope
+
+Seeded automatically during `guardkit init` (Phase 1). Contains knowledge specific to a single project:
+
+- **Project overview** extracted from `CLAUDE.md` / `README.md`
+- **Project name, purpose, and structure**
+- Group IDs are auto-prefixed with `{project_id}__` (e.g., `my-app__project_overview`)
+
+Project knowledge gives Graphiti enough context to assist with project-level tasks immediately after init.
+
+### System Scope
+
+Seeded via `guardkit graphiti seed-system` or auto-offered during init (Phase 2). Contains knowledge shared across all GuardKit projects:
+
+- Templates, rules, and implementation patterns
+- Role constraints (Player/Coach behaviors)
+- Implementation modes and workflow definitions
+- Agent definitions and command specifications
+- Group IDs are never prefixed (e.g., `role_constraints`, `guardkit_templates`)
+
+System knowledge is larger and takes longer to seed, which is why it runs separately. It only needs to be seeded **once per FalkorDB instance** — all projects sharing the same instance benefit from a single system seed.
+
+### Why Two Phases?
+
+| Aspect | Project Knowledge | System Knowledge |
+|--------|------------------|-----------------|
+| **When seeded** | Automatically during `guardkit init` | Auto-offered after project seed, or manually via `seed-system` |
+| **Scope** | Single project | All projects on instance |
+| **Frequency** | Once per project | Once per FalkorDB instance |
+| **Content** | Project overview, name, structure | Templates, rules, role constraints, patterns |
+| **Group ID prefix** | `{project_id}__` | None (shared) |
+| **Size** | Small (~5 episodes) | Large (~100+ episodes) |
+
+This separation ensures fast init times (project seed is quick) while allowing the heavier system seed to run once and be reused across projects.
+
+---
+
 ## Python API Reference
 
 ### Core Client
