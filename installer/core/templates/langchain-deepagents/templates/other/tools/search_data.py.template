@@ -1,0 +1,35 @@
+"""Generic search tool using {{ProjectName}} API."""
+
+import os
+
+from {{ProjectName}}.tools import tool
+
+
+@tool
+def search_data(query: str, source: str) -> str:
+    """Searches for relevant information using the given query and source context.
+
+    Uses {{ProjectName}} web search to find information related to the query.
+    The source parameter provides domain context to help scope results.
+
+    Args:
+        query: The search query string.
+        source: Context hint for the search (e.g., domain name from config).
+    """
+    try:
+        api_key = os.environ.get("TAVILY_API_KEY")
+        if not api_key:
+            return "error: TAVILY_API_KEY environment variable is not set"
+
+        from tavily import TavilyClient
+
+        client = TavilyClient(api_key=api_key)
+        response = client.search(query=f"{query} {source}", max_results=5)
+
+        results = response.get("results", [])
+        if not results:
+            return f"no results found for: {query}"
+
+        return "\n\n".join(r.get("content", "") for r in results)
+    except Exception as e:
+        return f"error: {e}"

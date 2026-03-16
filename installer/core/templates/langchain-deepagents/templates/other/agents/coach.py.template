@@ -1,0 +1,24 @@
+"""Coach agent factory for the adversarial cooperation pattern."""
+
+from deepagents import create_deep_agent
+
+from {{ProjectName}}.coach_prompts import COACH_SYSTEM_PROMPT
+
+
+def create_coach(model, domain_prompt: str):
+    """Create a configured Coach agent instance.
+
+    Args:
+        model: The LLM model instance or provider:model string.
+        domain_prompt: Domain-specific evaluation criteria appended to the system prompt.
+
+    Returns:
+        A configured DeepAgent with no custom tools (evaluation only).
+    """
+    system_prompt = COACH_SYSTEM_PROMPT + "\n\n" + domain_prompt
+    return create_deep_agent(
+        model=model,
+        tools=[],
+        system_prompt=system_prompt,
+        memory=["./AGENTS.md"],
+    )

@@ -1,0 +1,76 @@
+"""Main entrypoint — wires config, models, and agent factories for LangGraph Studio."""
+
+import argparse
+import os
+import pathlib
+
+import yaml
+from {{ProjectName}}.chat_models import init_chat_model
+
+from {{ProjectName}}.coach import create_coach
+from {{ProjectName}}.player import create_player
+
+
+def _load_config() -> dict:
+    """Read coach-config.yaml and return parsed config."""
+    config_path = pathlib.Path("coach-config.yaml")
+    return yaml.safe_load(config_path.read_text())
+
+
+def _create_model(config: dict):
+    """Create an LLM model instance based on provider setting in config."""
+    coach_cfg = config["coach"]
+    provider = coach_cfg["provider"]
+
+    if provider == "local":
+        endpoint = os.environ.get(
+            "LOCAL_MODEL_ENDPOINT",
+            coach_cfg["local"]["endpoint"],
+        )
+        model_name = coach_cfg["local"]["model"]
+        return init_chat_model(
+            model_name,
+            model_provider="openai",
+            base_url=endpoint,
+            api_key=os.environ.get("OPENAI_API_KEY", "not-needed"),
+        )
+
+    if provider == "api":
+        model_string = coach_cfg["api"]["model"]
+        return init_chat_model(model_string)
+
+    raise ValueError(f"Unknown provider: {provider!r}. Expected 'local' or 'api'.")
+
+
+def _get_domain() -> str:
+    """Get domain name from --domain CLI arg or DOMAIN env var."""
+    parser = argparse.ArgumentParser(description="DeepAgents exemplar entrypoint")
+    parser.add_argument(
+        "--domain",
+        default=os.environ.get("DOMAIN", "example-domain"),
+        help="Domain name (default: example-domain)",
+    )
+    args, _ = parser.parse_known_args()
+    return args.domain
+
+
+def _load_domain_prompt(domain: str) -> str:
+    """Read DOMAIN.md for the specified domain."""
+    domain_path = pathlib.Path("domains") / domain / "DOMAIN.md"
+    if not domain_path.exists():
+        raise FileNotFoundError(f"Domain config not found: {domain_path}")
+    return domain_path.read_text()
+
+
+# --- Module-level wiring (executed on import by LangGraph Studio) ---
+
+_config = _load_config()
+_model = _create_model(_config)
+_domain = _get_domain()
+_domain_prompt = _load_domain_prompt(_domain)
+
+_player = create_player(model=_model, domain_prompt=_domain_prompt)
+_coach = create_coach(model=_model, domain_prompt=_domain_prompt)
+
+# Module-level agent variable required by langgraph.json
+agent = _player

@@ -2199,7 +2199,16 @@ Enhance the {agent_name} agent with template-specific content:
 
         print(f"\n  ├── manifest.json ({self._file_size(output_path / 'manifest.json')})")
         print(f"  ├── settings.json ({self._file_size(output_path / 'settings.json')})")
-        print(f"  ├── CLAUDE.md ({self._file_size(output_path / 'CLAUDE.md')})")
+        if self.config.use_rules_structure:
+            claude_dir = output_path / ".claude"
+            if claude_dir.exists():
+                rules_dir = claude_dir / "rules"
+                rule_files = list(rules_dir.glob("**/*.md")) if rules_dir.exists() else []
+                print(f"  ├── .claude/rules/ ({len(rule_files)} files)")
+            else:
+                print(f"  ├── .claude/rules/ (pending)")
+        else:
+            print(f"  ├── CLAUDE.md ({self._file_size(output_path / 'CLAUDE.md')})")
 
         if templates:
             print(f"  ├── templates/ ({templates.total_count} files)")

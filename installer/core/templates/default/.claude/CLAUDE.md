@@ -15,6 +15,7 @@ The **default** template is a **language-agnostic** starting point for projects 
 - **Python/FastAPI** → `fastapi-python` template
 - **Next.js Full-Stack** → `nextjs-fullstack` template
 - **React + FastAPI Monorepo** → `react-fastapi-monorepo` template
+- **LangChain/DeepAgents** → `langchain-deepagents` template
 
 **Why?** Specialized templates provide stack-specific quality gates, testing frameworks, pre-configured agents, and optimized workflows.
 

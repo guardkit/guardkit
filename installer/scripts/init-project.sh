@@ -151,6 +151,9 @@ show_templates() {
                     react-fastapi-monorepo)
                         echo "  • react-fastapi-monorepo - React + FastAPI monorepo with type safety (9.2/10)"
                         ;;
+                    langchain-deepagents)
+                        echo "  * langchain-deepagents - Python Adversarial Cooperation with DeepAgents/LangGraph (10/10)"
+                        ;;
                     *)
                         echo "  • $name"
                         ;;
@@ -182,7 +185,24 @@ detect_project_type() {
             echo "node"
         fi
     elif [ -f "requirements.txt" ] || [ -f "pyproject.toml" ]; then
-        echo "python"
+        # Check for DeepAgents+LangChain before generic Python
+        local has_deepagents=false
+        local has_langchain=false
+        if [ -f "pyproject.toml" ]; then
+            grep -q "deepagents" pyproject.toml 2>/dev/null && has_deepagents=true
+            grep -q "langchain" pyproject.toml 2>/dev/null && has_langchain=true
+        fi
+        if [ "$has_deepagents" != "true" ] || [ "$has_langchain" != "true" ]; then
+            if [ -f "requirements.txt" ]; then
+                grep -q "deepagents" requirements.txt 2>/dev/null && has_deepagents=true
+                grep -q "langchain" requirements.txt 2>/dev/null && has_langchain=true
+            fi
+        fi
+        if [ "$has_deepagents" = "true" ] && [ "$has_langchain" = "true" ]; then
+            echo "deepagents"
+        else
+            echo "python"
+        fi
     else
         echo "unknown"
     fi
@@ -244,6 +264,7 @@ copy_template_files() {
     if [ "$TEMPLATE" = "default" ] && [ "$detected_type" != "unknown" ]; then
         case "$detected_type" in
             react) effective_template="react-typescript" ;;
+            deepagents) effective_template="langchain-deepagents" ;;
             python) effective_template="fastapi-python" ;;
             node) effective_template="nextjs-fullstack" ;;
         esac
@@ -613,6 +634,15 @@ print_next_steps() {
             echo "  3. Complete: /task-complete TASK-001"
             echo ""
             ;;
+        langchain-deepagents)
+            echo -e "${BOLD}Quick Start for LangChain DeepAgents:${NC}"
+            echo "  1. cp .env.example .env && edit API keys"
+            echo "  2. uv sync"
+            echo "  3. Copy a domain from domains/example-domain/"
+            echo "  4. uv run pytest tests/"
+            echo "  5. Open in LangGraph Studio"
+            echo ""
+            ;;
     esac
     
     echo -e "${BOLD}GuardKit Workflow:${NC}"
@@ -721,6 +751,7 @@ main() {
                 if [[ $REPLY =~ ^[Yy]$ ]]; then
                     case "$detected" in
                         react) TEMPLATE="react-typescript" ;;
+                        deepagents) TEMPLATE="langchain-deepagents" ;;
                         python) TEMPLATE="fastapi-python" ;;
                         node) TEMPLATE="nextjs-fullstack" ;;
                         *) TEMPLATE="default" ;;

@@ -1,0 +1,113 @@
+{
+  "schema_version": "1.0.0",
+  "name": "langchain-deepagents",
+  "display_name": "Python Adversarial Cooperation (Player Coach Multi Agent Orchestration)",
+  "description": "Python template using Adversarial Cooperation (Player-Coach multi-agent orchestration) architecture with DeepAgents >=0.4.11, LangChain >=1.2.11",
+  "version": "1.0.0",
+  "author": "Richard Woollcott",
+  "language": "Python",
+  "language_version": ">=3.11",
+  "frameworks": [
+    {
+      "name": "DeepAgents >=0.4.11",
+      "version": null,
+      "purpose": "core"
+    },
+    {
+      "name": "LangChain >=1.2.11",
+      "version": null,
+      "purpose": "core"
+    },
+    {
+      "name": "LangChain-Core >=1.2.18",
+      "version": null,
+      "purpose": "core"
+    },
+    {
+      "name": "LangGraph >=0.2",
+      "version": null,
+      "purpose": "core"
+    },
+    {
+      "name": "LangChain-Community >=0.3",
+      "version": null,
+      "purpose": "core"
+    },
+    {
+      "name": "pytest >=9.0.2",
+      "version": null,
+      "purpose": "testing"
+    }
+  ],
+  "architecture": "Adversarial Cooperation (Player-Coach multi-agent orchestration)",
+  "patterns": [
+    "Adversarial Cooperation",
+    "Domain-Driven Configuration",
+    "Factory",
+    "Memory Injection",
+    "Tool Delegation"
+  ],
+  "layers": [
+    "Entrypoint",
+    "Agents",
+    "Prompts",
+    "Tools",
+    "Domain Config",
+    "Runtime Config",
+    "Tests"
+  ],
+  "placeholders": {
+    "ProjectName": {
+      "name": "{{ProjectName}}",
+      "description": "Name of the project/solution",
+      "default_value": null,
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+      "required": true
+    },
+    "Namespace": {
+      "name": "{{Namespace}}",
+      "description": "Root namespace for the project",
+      "default_value": null,
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)*$",
+      "required": true
+    },
+    "Author": {
+      "name": "{{Author}}",
+      "description": "Project author name",
+      "default_value": "Developer",
+      "pattern": null,
+      "required": false
+    }
+  },
+  "tags": [
+    "adversarial-cooperation",
+    "adversarial-cooperation-(player-coach-multi-agent-orchestration)",
+    "agents",
+    "deepagents->=0.4.11",
+    "domain config",
+    "domain-driven-configuration",
+    "entrypoint",
+    "factory",
+    "langchain->=1.2.11",
+    "langchain-community->=0.3",
+    "langchain-core->=1.2.18",
+    "langgraph->=0.2",
+    "memory-injection",
+    "prompts",
+    "pytest->=9.0.2",
+    "python",
+    "runtime config",
+    "tests",
+    "tool-delegation",
+    "tools"
+  ],
+  "category": "general",
+  "complexity": 10,
+  "compatible_with": [],
+  "requires": [
+    "agent:python-domain-specialist"
+  ],
+  "created_at": "2026-03-16T11:17:49.127701",
+  "source_project": "https://github.com/appmilla/deepagents-tutor-exemplar",
+  "confidence_score": 96.67
+}

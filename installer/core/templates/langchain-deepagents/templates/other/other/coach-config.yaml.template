@@ -1,0 +1,17 @@
+# Coach Agent Configuration
+#
+# Controls which LLM provider and model the Coach agent uses for evaluation.
+# Switch between a local model (e.g. Ollama) and a remote API provider.
+
+coach:
+  # Provider selection: "local" or "api"
+  provider: local
+
+  # Local model settings (used when provider: local)
+  local:
+    model: llama3.2
+    endpoint: http://localhost:11434/v1
+
+  # Remote API settings (used when provider: api)
+  api:
+    model: gpt-4o-mini
