@@ -10,7 +10,7 @@ Graphiti is accessed via the `guardkit.knowledge` Python client library, connect
 directly to FalkorDB. There is NO Graphiti MCP server configured for this project.
 
 - Do NOT check for MCP tools (`mcp__graphiti__*`) to determine availability
-- Use `python -m installer.core.commands.lib.graphiti_check --status` to check availability
+- Use `graphiti-check --status` to check availability (wrapper at `~/.agentecflow/bin/graphiti-check`)
 - Use the Python client imports (`from guardkit.knowledge import get_graphiti`) for direct access
 - Configuration: `.guardkit/graphiti.yaml` (FalkorDB at whitestocks:6379)
 

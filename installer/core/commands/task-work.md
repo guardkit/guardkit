@@ -1706,11 +1706,10 @@ Instead, run the Python check script via bash as described below.
 
 **STEP 1: Check Graphiti Availability via Python Client**
 
-Run the graphiti check script from the project root directory:
+Run the graphiti check wrapper:
 
 ```bash
-cd {project_root}  # The guardkit project directory
-python -m installer.core.commands.lib.graphiti_check --status --quiet
+graphiti-check --status --quiet
 ```
 
 This script checks:
@@ -1739,8 +1738,7 @@ PROCEED to Step 2
 Run the context loader with task details:
 
 ```bash
-cd {project_root}
-python -m installer.core.commands.lib.graphiti_check \
+graphiti-check \
     --status --task-context --quiet \
     --task-id "{task_id}" \
     --description "{task_description}" \

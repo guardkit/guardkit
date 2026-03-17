@@ -353,12 +353,22 @@ check_prerequisites() {
                 fi
 
                 # Check and install graphiti-core (required for knowledge graph integration)
+                # Note: This system-level install is belt-and-suspenders alongside the
+                # guardkit venv wrapper script (TASK-FIX-GC01). The wrapper uses the
+                # guardkit venv Python which already has graphiti-core. This install
+                # ensures graphiti-core is also available to system Python for cases
+                # where the wrapper is bypassed (e.g., direct python3 -m invocation).
                 print_info "Checking for graphiti-core..."
+                local python_path
+                python_path="$(command -v python3 2>/dev/null || echo 'not found')"
+                local python_version
+                python_version="$(python3 --version 2>/dev/null || echo 'unknown')"
+                print_info "Using Python: $python_path ($python_version)"
+
                 set +e  # Temporarily allow errors for package checks
                 python3 -c "from graphiti_core import Graphiti" </dev/null 2>&1 >/dev/null
                 graphiti_status=$?
                 set -e  # Re-enable exit on error
-                print_info "graphiti-core check completed (status: $graphiti_status)"
 
                 if [ $graphiti_status -ne 0 ]; then
                     print_info "Installing graphiti-core (required for knowledge graph integration)..."
@@ -366,22 +376,50 @@ check_prerequisites() {
                     # Try with --break-system-packages for PEP 668 compatibility (Python 3.11+)
                     # Use python3 -m pip for reliability with multiple Python installations
                     set +e  # Temporarily allow errors
+                    local install_ok=false
                     python3 -m pip install --break-system-packages graphiti-core 2>&1
                     if [ $? -ne 0 ]; then
                         # Fallback to user install if --break-system-packages not supported
                         print_info "Retrying with --user flag..."
                         python3 -m pip install --user graphiti-core 2>&1
-                        if [ $? -ne 0 ]; then
-                            print_warning "Failed to install graphiti-core - install manually with: python3 -m pip install --user graphiti-core"
-                        else
+                        if [ $? -eq 0 ]; then
+                            install_ok=true
                             print_success "graphiti-core installed successfully (user mode)"
                         fi
                     else
+                        install_ok=true
                         print_success "graphiti-core installed successfully"
+                    fi
+
+                    # Verify the import actually works after installation
+                    if [ "$install_ok" = true ]; then
+                        python3 -c "from graphiti_core import Graphiti" </dev/null 2>&1 >/dev/null
+                        if [ $? -ne 0 ]; then
+                            install_ok=false
+                            print_warning "graphiti-core was installed but import verification failed"
+                        else
+                            print_success "graphiti-core import verified successfully"
+                        fi
+                    fi
+
+                    if [ "$install_ok" = false ]; then
+                        print_warning "graphiti-core installation failed for system Python"
+                        print_warning "Python path: $python_path"
+                        print_warning ""
+                        print_warning "Remediation options:"
+                        print_warning "  1. Install into a virtual environment:"
+                        print_warning "     python3 -m venv ~/.graphiti-env && ~/.graphiti-env/bin/pip install graphiti-core"
+                        print_warning "  2. Install with user flag (may require PATH update):"
+                        print_warning "     python3 -m pip install --user graphiti-core"
+                        print_warning "  3. Use the guardkit venv wrapper (recommended — installed by TASK-FIX-GC01):"
+                        print_warning "     The graphiti-check wrapper at ~/.agentecflow/bin/graphiti-check"
+                        print_warning "     already uses the guardkit venv which includes graphiti-core."
+                        print_warning ""
+                        print_warning "Graphiti knowledge graph features will still work via the wrapper script."
                     fi
                     set -e  # Re-enable exit on error
                 else
-                    print_success "graphiti-core already installed"
+                    print_success "graphiti-core already installed and verified"
                 fi
 
                 print_success "Python dependency checks complete"
@@ -1179,6 +1217,34 @@ EOF
     ln -sf "$INSTALL_DIR/bin/guardkit-init" "$INSTALL_DIR/bin/gki"
 
     print_success "Created CLI commands (guardkit, guardkit-init, gk, gki)"
+
+    # Create graphiti-check wrapper script
+    # Uses a wrapper (not symlink) to ensure the correct Python is used
+    # and PYTHONPATH includes the guardkit repo root
+    local REPO_ROOT
+    REPO_ROOT="$(cd "$INSTALLER_DIR/.." && pwd)"
+
+    cat > "$INSTALL_DIR/bin/graphiti-check" << WRAPPER_EOF
+#!/usr/bin/env bash
+# Generated by guardkit installer — do not edit
+# Wrapper for graphiti_check.py that ensures correct Python and PYTHONPATH
+
+GUARDKIT_REPO="$REPO_ROOT"
+
+# Find python3
+if command -v python3 &> /dev/null; then
+    PYTHON_CMD="python3"
+else
+    echo "Error: python3 not found" >&2
+    exit 1
+fi
+
+export PYTHONPATH="\$GUARDKIT_REPO\${PYTHONPATH:+:\$PYTHONPATH}"
+exec "\$PYTHON_CMD" -m installer.core.commands.lib.graphiti_check "\$@"
+WRAPPER_EOF
+
+    chmod +x "$INSTALL_DIR/bin/graphiti-check"
+    print_success "Created graphiti-check wrapper"
 }
 
 # Setup shell integration
@@ -1752,6 +1818,12 @@ setup_python_bin_symlinks() {
 
         # Skip test files (files starting with test_)
         if [[ "$script_file" == test_* ]]; then
+            symlinks_skipped=$((symlinks_skipped + 1))
+            continue
+        fi
+
+        # Skip scripts that have dedicated wrapper scripts (created in create_cli_commands)
+        if [ "$script_file" = "graphiti_check.py" ]; then
             symlinks_skipped=$((symlinks_skipped + 1))
             continue
         fi
