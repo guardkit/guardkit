@@ -1092,7 +1092,8 @@ class GraphitiClient:
         self,
         name: str,
         episode_body: str,
-        group_id: str
+        group_id: str,
+        timeout_override: Optional[float] = None,
     ) -> Optional[str]:
         """Create an episode in Graphiti using graphiti-core.
 
@@ -1103,6 +1104,7 @@ class GraphitiClient:
             name: Episode name/title
             episode_body: Episode content
             group_id: Group ID for organization
+            timeout_override: If set, overrides the group-based timeout (seconds)
 
         Returns:
             Episode UUID if successful, None otherwise
@@ -1129,8 +1131,13 @@ class GraphitiClient:
             episode_timeout = 180.0   # 3 episodes (task_work, feature_spec, feature_to_build) timeout at 120s (TASK-FIX-7A01)
         elif group_id in ("quality_gate_phases", "component_status", "project_architecture"):
             episode_timeout = 150.0   # phases_overview, taskwork_interface, project_structure timeout at 120s (TASK-FIX-7A01)
+        elif group_id.endswith("project_knowledge") or group_id.endswith("project_decisions"):
+            episode_timeout = 600.0   # add-context: vLLM processing time varies with graph density, 300s still too low (TASK-REV-5B3A)
         else:
             episode_timeout = 120.0   # implementation_modes etc: safe
+        # CLI --timeout override takes precedence over group-based defaults
+        if timeout_override is not None:
+            episode_timeout = timeout_override
         for attempt in range(max_retries):
             try:
                 from graphiti_core.nodes import EpisodeType
@@ -1218,6 +1225,7 @@ class GraphitiClient:
         metadata: Optional["EpisodeMetadata"] = None,
         source: str = "user_added",
         entity_type: str = "generic",
+        timeout_override: Optional[float] = None,
     ) -> Optional[str]:
         """Add episode with graceful degradation.
 
@@ -1233,6 +1241,7 @@ class GraphitiClient:
             metadata: Optional EpisodeMetadata to inject. If None, auto-generates.
             source: Source of the episode (default: "user_added").
             entity_type: Type of entity (default: "generic").
+            timeout_override: If set, overrides the group-based timeout (seconds).
 
         Returns:
             Episode UUID if successful, None if:
@@ -1271,7 +1280,8 @@ class GraphitiClient:
             return await self._create_episode(
                 name=name,
                 episode_body=episode_body_with_metadata,
-                group_id=prefixed_group_id
+                group_id=prefixed_group_id,
+                timeout_override=timeout_override,
             )
         except Exception as e:
             logger.warning(f"Graphiti add_episode failed: {e}")

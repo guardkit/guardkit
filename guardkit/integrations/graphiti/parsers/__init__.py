@@ -14,6 +14,7 @@ from guardkit.integrations.graphiti.parsers.full_doc_parser import FullDocParser
 from guardkit.integrations.graphiti.parsers.project_doc_parser import ProjectDocParser
 from guardkit.integrations.graphiti.parsers.project_overview import ProjectOverviewParser
 from guardkit.integrations.graphiti.parsers.registry import ParserRegistry
+from guardkit.integrations.graphiti.parsers.yaml_parser import YAMLParser
 
 __all__ = [
     "BaseParser",
@@ -24,4 +25,5 @@ __all__ = [
     "ParserRegistry",
     "ProjectDocParser",
     "ProjectOverviewParser",
+    "YAMLParser",
 ]

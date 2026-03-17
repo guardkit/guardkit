@@ -51,6 +51,7 @@ from guardkit.integrations.graphiti.parsers.feature_spec import FeatureSpecParse
 from guardkit.integrations.graphiti.parsers.full_doc_parser import FullDocParser
 from guardkit.integrations.graphiti.parsers.project_doc_parser import ProjectDocParser
 from guardkit.integrations.graphiti.parsers.project_overview import ProjectOverviewParser
+from guardkit.integrations.graphiti.parsers.yaml_parser import YAMLParser
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -253,8 +254,8 @@ async def _cmd_seed(force: bool, template: Optional[str] = None) -> None:
             console.print()
             console.print("Run 'guardkit graphiti verify' to test queries.")
             console.print()
-            console.print("To seed project ADRs:")
-            console.print("  guardkit graphiti add-context docs/adr/ --type adr")
+            console.print("To seed project architecture and ADRs:")
+            console.print("  guardkit graphiti add-context docs/architecture/ --pattern \"**/*.md\"")
         else:
             console.print("[yellow]Seeding completed with warnings.[/yellow]")
     finally:
@@ -860,7 +861,20 @@ def seed_system(force: bool, template: Optional[str]):
     default=0.5,
     help="Inter-episode delay in seconds (default: 0.5, 0 to disable)",
 )
-def add_context(path: str, parser_type: Optional[str], force: bool, dry_run: bool, pattern: str, verbose: bool, quiet: bool, delay: float):
+@click.option(
+    "--chunk-size",
+    type=int,
+    default=None,
+    help="Force chunking for docs above this size in bytes (default: 10240). Use 0 to always chunk.",
+)
+@click.option(
+    "--timeout",
+    "episode_timeout",
+    type=float,
+    default=None,
+    help="Per-episode timeout in seconds (overrides auto-detected timeout). Use for slow vLLM instances.",
+)
+def add_context(path: str, parser_type: Optional[str], force: bool, dry_run: bool, pattern: str, verbose: bool, quiet: bool, delay: float, chunk_size: Optional[int] = None, episode_timeout: Optional[float] = None):
     """Add context from files to Graphiti.
 
     Adds content from markdown files to the Graphiti knowledge graph.
@@ -888,7 +902,7 @@ def add_context(path: str, parser_type: Optional[str], force: bool, dry_run: boo
     if verbose and quiet:
         raise click.UsageError("Options --verbose and --quiet are mutually exclusive")
 
-    _run_async(_cmd_add_context(path, parser_type, force, dry_run, pattern, verbose, quiet, delay))
+    _run_async(_cmd_add_context(path, parser_type, force, dry_run, pattern, verbose, quiet, delay, chunk_size, episode_timeout))
 
 
 async def _cmd_add_context(
@@ -900,6 +914,8 @@ async def _cmd_add_context(
     verbose: bool = False,
     quiet: bool = False,
     delay: float = 0.5,
+    chunk_size: Optional[int] = None,
+    episode_timeout: Optional[float] = None,
 ) -> None:
     """Async implementation of add-context command."""
     # Set SEMAPHORE_LIMIT before graphiti-core is imported (lazy import in
@@ -953,7 +969,11 @@ async def _cmd_add_context(
             registry.register(FeatureSpecParser())
             registry.register(ProjectDocParser())
             registry.register(ProjectOverviewParser())
-            registry.register(FullDocParser())
+            registry.register(YAMLParser())
+            if chunk_size is not None:
+                registry.register(FullDocParser(chunk_threshold=chunk_size))
+            else:
+                registry.register(FullDocParser())
 
             # Collect files to process
             files_to_process: list[str] = []
@@ -981,6 +1001,9 @@ async def _cmd_add_context(
 
             # Process each file
             for file_path_str in files_to_process:
+                # Reset circuit breaker between files to prevent cascade
+                # (a timeout on one large file should not block subsequent files)
+                client.reset_circuit_breaker()
                 try:
                     # Read file content
                     with open(file_path_str, "r", encoding="utf-8") as f:
@@ -1043,6 +1066,7 @@ async def _cmd_add_context(
                                     group_id=episode.group_id,
                                     entity_type=episode.entity_type,
                                     source="add_context_cli",
+                                    timeout_override=episode_timeout,
                                 )
                                 if result_uuid is not None:
                                     episodes_added += 1

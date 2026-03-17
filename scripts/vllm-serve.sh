@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# vllm-serve.sh — Start VLLM server on Dell Pro Max GB10 / DGX Spark
+# vllm-serve.sh — Start VLLM server for AutoBuild on Dell Pro Max GB10 / DGX Spark
 #
 # Usage:
 #   ./scripts/vllm-serve.sh                    # Default: Qwen3-Coder-Next FP8
@@ -9,11 +9,16 @@
 #   ./scripts/vllm-serve.sh custom org/model   # Any custom model
 #
 # Environment variables (override defaults):
-#   VLLM_PORT=8000          Server port
+#   VLLM_PORT=8002          Server port (default 8002, was 8000 before Graphiti split)
 #   VLLM_GPU_UTIL=0.8       GPU memory utilization (0.0-1.0)
 #   VLLM_MAX_LEN=262144     Max context length (Qwen3-Coder-Next supports 256K natively)
 #   VLLM_IMAGE=nvcr.io/nvidia/vllm:26.01-py3  Docker image
 #   HF_TOKEN=...            Hugging Face token (for gated models)
+#
+# Port allocation:
+#   8000 — Graphiti LLM (vllm-graphiti.sh) — Nemotron 3 Nano 4B
+#   8001 — Embedding model (vllm-embed.sh) — nomic-embed-text-v1.5
+#   8002 — AutoBuild LLM (this script)    — Qwen3-Coder-Next
 #
 # Resilience strategy:
 #   Primary (AutoBuild):     ./vllm-serve.sh              → Qwen3-Coder-Next FP8
@@ -23,11 +28,15 @@
 #   All presets serve on the same port with the same model alias, so downstream
 #   tooling (AutoBuild, autobuild-vllm wrapper) works without changes.
 #   Only ONE model runs at a time — the script stops any existing container first.
+#
+# AutoBuild usage (note port 8002):
+#   ANTHROPIC_BASE_URL=http://localhost:8002 ANTHROPIC_API_KEY=vllm-local \
+#     guardkit autobuild task TASK-XXX
 
 set -euo pipefail
 
 # --- Configuration ---
-PORT="${VLLM_PORT:-8000}"
+PORT="${VLLM_PORT:-8002}"
 GPU_UTIL="${VLLM_GPU_UTIL:-0.8}"
 MAX_LEN="${VLLM_MAX_LEN:-262144}"
 IMAGE="${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.01-py3}"
@@ -210,7 +219,7 @@ if [ "$USE_LLAMACPP" = true ]; then
   echo "  Health: curl http://localhost:${PORT}/health"
   echo "  Stop:   kill $LLAMA_PID"
   echo ""
-  echo "Once ready, use AutoBuild with:"
+  echo "Once ready, use AutoBuild with (note port ${PORT}):"
   echo "  ANTHROPIC_BASE_URL=http://localhost:${PORT} ANTHROPIC_API_KEY=vllm-local guardkit autobuild task TASK-XXX"
   echo ""
   echo "NOTE: llama.cpp serves an OpenAI-compatible API, not Anthropic Messages API."
@@ -312,5 +321,10 @@ echo "  Logs:   docker logs -f $CONTAINER_NAME"
 echo "  Health: curl http://localhost:${PORT}/health"
 echo "  Models: curl http://localhost:${PORT}/v1/models"
 echo ""
-echo "Once ready, use AutoBuild with:"
+echo "Once ready, use AutoBuild with (note port ${PORT}):"
 echo "  ANTHROPIC_BASE_URL=http://localhost:${PORT} ANTHROPIC_API_KEY=vllm-local guardkit autobuild task TASK-XXX"
+echo ""
+echo "Port allocation:"
+echo "  8000 — Graphiti LLM (vllm-graphiti.sh)"
+echo "  8001 — Embeddings (vllm-embed.sh)"
+echo "  ${PORT} — AutoBuild LLM (this script)"
