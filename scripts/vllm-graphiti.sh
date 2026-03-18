@@ -14,12 +14,13 @@
 #   them, the model still spends the time generating them — causing 900s+ timeouts
 #   on Graphiti episodes. Qwen2.5 is a pure instruct model with no thinking mode.
 #
-# Why --guided-decoding-backend xgrammar:
+# Why --structured-outputs-config.backend xgrammar:
 #   Graphiti uses response_format={"type":"json_schema",...} — it relies on the
 #   server to enforce the schema, not just prompt the model. xgrammar enforces
 #   the JSON schema at the token level, guaranteeing valid output regardless of
-#   model behaviour. Without this, json_schema requests may be silently ignored
-#   and the model may return invalid JSON, causing ingestion failures.
+#   model behaviour. This is the vLLM v0.13+ flag (the old --guided-decoding-backend
+#   flag was removed in v0.12). Default "auto" also selects xgrammar, but
+#   explicit is better for Graphiti's correctness requirements.
 #
 # Port allocation (DGX Spark GB10):
 #   8000 — Graphiti LLM      (this script)
@@ -41,8 +42,9 @@
 #
 # DGX Spark (GB10) notes:
 #   - SM 12.1 (ARM64) — FP8 is the stable quantisation; NVFP4 has ARM64 bugs
-#   - --guided-decoding-backend xgrammar: enforces json_schema at token level
-#     (Graphiti requires this — pure prompt-based JSON is unreliable)
+#   - --structured-outputs-config.backend xgrammar: enforces json_schema at
+#     token level (Graphiti requires this — pure prompt-based JSON is unreliable)
+#     NOTE: vLLM v0.13+ only — replaces old --guided-decoding-backend flag
 #   - --enable-prefix-caching: Graphiti's repeated system prompts benefit
 #     enormously (TTFT ~28s → 2-3s with shared prefix cache)
 #   - MoE models need VLLM_FLASHINFER_MOE_BACKEND=latency on SM 12.1
@@ -77,7 +79,7 @@ case "$MODEL_PRESET" in
     # xgrammar enforces json_schema at token level (required for Graphiti)
     EXTRA_ARGS="--kv-cache-dtype fp8 \
       --enable-prefix-caching \
-      --guided-decoding-backend xgrammar"
+      --structured-outputs-config.backend xgrammar"
     echo "═══ Qwen2.5-14B-Instruct FP8 (~16GB, 128K ctx) ═══"
     echo "    Graphiti entity extraction & fact deduplication"
     echo "    No thinking mode | xgrammar enforces json_schema"
@@ -88,7 +90,7 @@ case "$MODEL_PRESET" in
     MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-32768}"
     EXTRA_ARGS="--kv-cache-dtype fp8 \
       --enable-prefix-caching \
-      --guided-decoding-backend xgrammar"
+      --structured-outputs-config.backend xgrammar"
     echo "═══ Qwen2.5-32B-Instruct FP8 (~34GB, 128K ctx) ═══"
     echo "    Higher quality extraction — use if 14B misses entities"
     echo "    No thinking mode | xgrammar enforces json_schema"
@@ -104,7 +106,7 @@ case "$MODEL_PRESET" in
     # Use qwen2.5-14b instead. This preset kept for testing/comparison only.
     EXTRA_ARGS="--trust-remote-code --tensor-parallel-size 1 --kv-cache-dtype fp8 \
       --enable-prefix-caching --reasoning-parser qwen3 \
-      --guided-decoding-backend xgrammar"
+      --structured-outputs-config.backend xgrammar"
     echo "═══ Qwen3-30B-A3B FP8 (3.3B active, ~32.5GB, 32K ctx) ═══"
     echo "    WARNING: thinking mode causes slow Graphiti episodes"
     echo "    Prefer qwen2.5-14b for Graphiti workloads"
@@ -113,7 +115,7 @@ case "$MODEL_PRESET" in
     MODEL="${2:?Usage: $0 custom org/model-name}"
     GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.15}"
     MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-32768}"
-    EXTRA_ARGS="--guided-decoding-backend xgrammar"
+    EXTRA_ARGS="--structured-outputs-config.backend xgrammar"
     echo "═══ Custom model: $MODEL ═══"
     ;;
   *)
@@ -131,7 +133,7 @@ case "$MODEL_PRESET" in
     echo "  Other:"
     echo "    custom   Any model: $0 custom org/model-name"
     echo ""
-    echo "  NOTE: All presets use --guided-decoding-backend xgrammar"
+    echo "  NOTE: All presets use --structured-outputs-config.backend xgrammar"
     echo "        to enforce Graphiti's json_schema response format."
     echo ""
     echo "Port allocation:"
