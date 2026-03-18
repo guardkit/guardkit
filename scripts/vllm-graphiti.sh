@@ -34,6 +34,12 @@
 #     benefit enormously (TTFT 28s → 2-3s with shared prefix cache)
 #   - --reasoning-parser qwen3 strips <think>...</think> blocks from Qwen3
 #     responses so Graphiti receives clean JSON output
+#   - DeepGEMM is unavailable on SM 12.1 — vLLM falls back to Triton for FP8
+#     MoE. This is expected and harmless (ignore the warning).
+#   - No MoE tuning config exists for GB10 yet — vLLM uses generic defaults.
+#     To optimise: run `vllm benchmark` and save the result to:
+#     E=128,N=768,device_name=NVIDIA_GB10,dtype=fp8_w8a8,block_shape=[128,128].json
+#     inside the container's fused_moe/configs/ directory.
 #   - See TASK-REV-DGX1 and forum: https://forums.developer.nvidia.com/t/362200
 #
 # Memory budget (128GB unified):
@@ -66,7 +72,7 @@ case "$MODEL_PRESET" in
     # --reasoning-parser qwen3: strips <think>...</think> blocks server-side
     # Graphiti needs clean JSON — do not remove this flag
     EXTRA_ARGS="--trust-remote-code --tensor-parallel-size 1 --kv-cache-dtype fp8 \
-      --enable-prefix-caching --reasoning-parser qwen3 --load-format fastsafetensors"
+      --enable-prefix-caching --reasoning-parser qwen3"
     echo "═══ Qwen3-30B-A3B FP8 (3.3B active, ~32.5GB, 32K ctx) ═══"
     echo "    Graphiti entity extraction & fact deduplication"
     echo "    ~52-66 tok/s on GB10 | reasoning-parser strips <think> blocks"
@@ -77,7 +83,7 @@ case "$MODEL_PRESET" in
     MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-32768}"
     # Dense model — no MoE backend needed
     EXTRA_ARGS="--trust-remote-code --kv-cache-dtype fp8 \
-      --enable-prefix-caching --reasoning-parser qwen3 --load-format fastsafetensors"
+      --enable-prefix-caching --reasoning-parser qwen3"
     echo "═══ Qwen3-14B FP8 (~16.3GB, 32K ctx) ═══"
     echo "    Fallback: lower memory, slightly less entity extraction quality"
     echo "    ~80-120 tok/s on GB10 | reasoning-parser strips <think> blocks"
@@ -88,7 +94,7 @@ case "$MODEL_PRESET" in
     MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-32768}"
     # Dense model — no MoE backend needed
     EXTRA_ARGS="--trust-remote-code --kv-cache-dtype fp8 \
-      --enable-prefix-caching --reasoning-parser qwen3 --load-format fastsafetensors"
+      --enable-prefix-caching --reasoning-parser qwen3"
     echo "═══ Qwen3-8B FP8 (~9.4GB, 32K ctx) ═══"
     echo "    Lightest option — adequate JSON quality, highest throughput"
     echo "    ~120-180 tok/s on GB10 | reasoning-parser strips <think> blocks"
