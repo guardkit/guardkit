@@ -1,54 +1,52 @@
 #!/usr/bin/env bash
-# vllm-graphiti.sh — Start lightweight LLM for Graphiti knowledge graph operations
+# vllm-graphiti.sh — Serve LLM for Graphiti knowledge graph on DGX Spark GB10
 #
-# Serves a small, general-purpose model on port 8000 for Graphiti's entity
-# extraction, relationship resolution, and fact deduplication. This replaces
-# the coding-optimised Qwen3-Coder for Graphiti workloads, which caused
-# extreme processing times (>600s per episode) due to poor structured JSON
-# performance and graph density issues.
+# Graphiti uses this LLM at ingestion time for entity extraction and fact
+# deduplication. It sends structured JSON prompts that require a general-purpose
+# instruction-following model — NOT a coding model.
 #
-# Port allocation:
-#   8000 — Graphiti LLM (this script)  — Nemotron 3 Nano 4B
-#   8001 — Embedding model             — nomic-embed-text-v1.5 (vllm-embed.sh)
-#   8002 — AutoBuild LLM              — Qwen3-Coder-Next (vllm-serve.sh)
+# Context requirement: Graphiti's system prompts use ~7800-8100 tokens of
+# baseline overhead, so the model MUST have a context window > 10K tokens.
+# The default preset (qwen3-30b) provides 32K native context.
+#
+# Port allocation (DGX Spark GB10):
+#   8000 — Graphiti LLM      (this script)
+#   8001 — Embedding model   (vllm-embed.sh)       nomic-embed-text-v1.5
+#   8002 — AutoBuild LLM     (vllm-serve.sh)        Qwen3-Coder-Next
+#   8003 — Nemotron 3 Nano   (vllm-nemotron3-nano.sh)
 #
 # Usage:
-#   ./scripts/vllm-graphiti.sh                  # Default: Nemotron 3 Nano 4B FP8
-#   ./scripts/vllm-graphiti.sh nano-4b-nvfp4    # Nano 4B NVFP4 (smaller, needs Avarok image)
-#   ./scripts/vllm-graphiti.sh nano-30b         # Nano 30B-A3B FP8 (better quality, more memory)
-#   ./scripts/vllm-graphiti.sh nano-30b-nvfp4   # Nano 30B-A3B NVFP4 (65+ tok/s, Avarok image)
-#   ./scripts/vllm-graphiti.sh custom org/model # Any custom model
+#   ./scripts/vllm-graphiti.sh                   # Default: Qwen3-30B-A3B FP8
+#   ./scripts/vllm-graphiti.sh qwen3-14b         # Smaller fallback (~16GB)
+#   ./scripts/vllm-graphiti.sh qwen3-8b          # Lightest option (~9GB)
+#   ./scripts/vllm-graphiti.sh custom org/model  # Any custom model
 #
 # Environment variables (override defaults):
-#   VLLM_GRAPHITI_PORT=8000         Server port
-#   VLLM_GRAPHITI_GPU_UTIL=0.05    GPU memory utilization (0.0-1.0)
-#   VLLM_IMAGE=nvcr.io/nvidia/vllm:26.01-py3  Docker image (overridden by NVFP4 presets)
+#   VLLM_GRAPHITI_PORT=8000        Server port
+#   VLLM_GRAPHITI_GPU_UTIL=0.30   GPU memory utilization (0.0-1.0)
+#   VLLM_GRAPHITI_MAX_LEN=32768   Max context length
+#   VLLM_IMAGE=nvcr.io/nvidia/vllm:26.01-py3  Docker image
 #
-# DGX Spark (GB10) performance notes:
-#   - FP8 models work with standard NGC image
-#   - NVFP4 models need Avarok image (avarok/dgx-vllm-nvfp4-kernel:v22)
-#     for SM 12.1 software E2M1 workaround (32x speedup)
-#   - MoE models (30B-A3B) need VLLM_FLASHINFER_MOE_BACKEND=latency
-#     to avoid CUTLASS kernel issues on SM 12.1 (60% speedup)
-#   - See: https://blog.avarok.net/dgx-spark-nemotron3-and-nvfp4-getting-to-65-tps-8c5569025eb6
+# DGX Spark (GB10) notes:
+#   - SM 12.1 (ARM64) — FP8 is the stable quantisation; NVFP4 has ARM64 bugs
+#   - MoE models need VLLM_FLASHINFER_MOE_BACKEND=latency on SM 12.1
+#   - --enable-prefix-caching is essential: Graphiti's repeated system prompts
+#     benefit enormously (TTFT 28s → 2-3s with shared prefix cache)
+#   - --reasoning-parser qwen3 strips <think>...</think> blocks from Qwen3
+#     responses so Graphiti receives clean JSON output
+#   - See TASK-REV-DGX1 and forum: https://forums.developer.nvidia.com/t/362200
 #
-# Background:
-#   Graphiti uses the LLM only at ingestion time for entity extraction and
-#   fact deduplication. It sends structured JSON prompts that require a
-#   general-purpose instruction-following model, NOT a coding model.
-#   The 4B Nano model handles these tasks in 10-30s vs 120-600s+ with
-#   the 80B Qwen3-Coder. The embedding model (port 8001) is unchanged —
-#   existing graph data remains valid when switching LLMs.
-#
-# See: TASK-REV-5B3A for the analysis that motivated this change.
+# Memory budget (128GB unified):
+#   qwen3-30b  ~33GB  | qwen3-14b  ~17GB  | qwen3-8b  ~10GB
+#   + nomic-embed (port 8001) ~0.5GB
+#   + Qwen3-Coder-Next (port 8002) ~32-45GB
+#   Total with all ports: ~66-79GB — comfortable headroom
 
 set -euo pipefail
 
 # --- Configuration ---
 PORT="${VLLM_GRAPHITI_PORT:-8000}"
-GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.15}"
-# Default to standard NGC image; Avarok image recommended for NVFP4 models
-# (has SM 12.1 software E2M1 workaround for 32x speedup on GB10)
+GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.30}"
 IMAGE="${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.01-py3}"
 CONTAINER_NAME="vllm-graphiti"
 
@@ -56,60 +54,49 @@ CONTAINER_NAME="vllm-graphiti"
 EXTRA_ENV=""
 
 # --- Model selection ---
-MODEL_PRESET="${1:-nano-4b}"
+MODEL_PRESET="${1:-qwen3-30b}"
 
 case "$MODEL_PRESET" in
-  nano-4b|default|"")
-    MODEL="nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8"
-    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.15}"
-    MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-8192}"
-    # Nano 4B is hybrid Mamba-2 (not MoE), so MoE-specific env vars not needed
-    EXTRA_ARGS="--trust-remote-code --kv-cache-dtype fp8"
-    echo "═══ Nemotron 3 Nano 4B FP8 (~4GB, edge-optimised) ═══"
-    echo "    Graphiti entity extraction & fact deduplication"
-    echo "    Fine-tuning base for GCSE tutor SLM"
-    ;;
-  nano-4b-nvfp4)
-    MODEL="nvidia/NVIDIA-Nemotron-3-Nano-4B-NVFP4"
-    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.10}"
-    MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-8192}"
-    IMAGE="${VLLM_IMAGE:-avarok/dgx-vllm-nvfp4-kernel:v22}"
-    EXTRA_ARGS="--trust-remote-code --kv-cache-dtype fp8 --quantization modelopt_fp4"
-    echo "═══ Nemotron 3 Nano 4B NVFP4 (~2GB, Avarok kernel) ═══"
-    echo "    Smallest memory footprint, requires Avarok image"
-    echo "    TIP: Falls back to NGC image if Avarok unavailable"
-    ;;
-  nano-30b)
-    MODEL="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8"
-    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.15}"
-    MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-8192}"
-    # 30B-A3B is MoE — needs FlashInfer latency backend for SM 12.1 (GB10)
-    # See: https://blog.avarok.net/dgx-spark-nemotron3-and-nvfp4-getting-to-65-tps-8c5569025eb6
+  qwen3-30b|default|"")
+    MODEL="Qwen/Qwen3-30B-A3B-FP8"
+    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.30}"
+    MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-32768}"
+    # MoE model — latency backend required for SM 12.1 (GB10), ~60% speedup
     EXTRA_ENV="-e VLLM_FLASHINFER_MOE_BACKEND=latency"
-    EXTRA_ARGS="--trust-remote-code --tensor-parallel-size 1 --kv-cache-dtype fp8"
-    echo "═══ Nemotron 3 Nano 30B-A3B FP8 (3.2B active, ~15GB) ═══"
-    echo "    Higher quality entity extraction, more memory"
+    # --reasoning-parser qwen3: strips <think>...</think> blocks server-side
+    # Graphiti needs clean JSON — do not remove this flag
+    EXTRA_ARGS="--trust-remote-code --tensor-parallel-size 1 --kv-cache-dtype fp8 \
+      --enable-prefix-caching --reasoning-parser qwen3 --load-format fastsafetensors"
+    echo "═══ Qwen3-30B-A3B FP8 (3.3B active, ~32.5GB, 32K ctx) ═══"
+    echo "    Graphiti entity extraction & fact deduplication"
+    echo "    ~52-66 tok/s on GB10 | reasoning-parser strips <think> blocks"
     ;;
-  nano-30b-nvfp4)
-    MODEL="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"
+  qwen3-14b)
+    MODEL="Qwen/Qwen3-14B-FP8"
+    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.15}"
+    MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-32768}"
+    # Dense model — no MoE backend needed
+    EXTRA_ARGS="--trust-remote-code --kv-cache-dtype fp8 \
+      --enable-prefix-caching --reasoning-parser qwen3 --load-format fastsafetensors"
+    echo "═══ Qwen3-14B FP8 (~16.3GB, 32K ctx) ═══"
+    echo "    Fallback: lower memory, slightly less entity extraction quality"
+    echo "    ~80-120 tok/s on GB10 | reasoning-parser strips <think> blocks"
+    ;;
+  qwen3-8b)
+    MODEL="Qwen/Qwen3-8B-FP8"
     GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.10}"
-    MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-8192}"
-    IMAGE="${VLLM_IMAGE:-avarok/dgx-vllm-nvfp4-kernel:v22}"
-    # MoE + NVFP4: use Avarok image + Marlin backend for SM 12.1
-    EXTRA_ENV="-e VLLM_FLASHINFER_MOE_BACKEND=latency \
-      -e VLLM_USE_FLASHINFER_MOE_FP4=0 \
-      -e VLLM_TEST_FORCE_FP8_MARLIN=1 \
-      -e VLLM_NVFP4_GEMM_BACKEND=marlin"
-    EXTRA_ARGS="--trust-remote-code --tensor-parallel-size 1 \
-      --kv-cache-dtype fp8 --quantization modelopt_fp4"
-    echo "═══ Nemotron 3 Nano 30B-A3B NVFP4 (3.2B active, ~8GB, Avarok kernel) ═══"
-    echo "    Best quality/memory ratio, requires Avarok image"
-    echo "    65+ tok/s with MoE latency backend"
+    MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-32768}"
+    # Dense model — no MoE backend needed
+    EXTRA_ARGS="--trust-remote-code --kv-cache-dtype fp8 \
+      --enable-prefix-caching --reasoning-parser qwen3 --load-format fastsafetensors"
+    echo "═══ Qwen3-8B FP8 (~9.4GB, 32K ctx) ═══"
+    echo "    Lightest option — adequate JSON quality, highest throughput"
+    echo "    ~120-180 tok/s on GB10 | reasoning-parser strips <think> blocks"
     ;;
   custom)
     MODEL="${2:?Usage: $0 custom org/model-name}"
-    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.10}"
-    MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-8192}"
+    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.30}"
+    MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-32768}"
     EXTRA_ARGS="--trust-remote-code"
     echo "═══ Custom model: $MODEL ═══"
     ;;
@@ -118,21 +105,24 @@ case "$MODEL_PRESET" in
     echo ""
     echo "Available presets:"
     echo ""
-    echo "  FP8 (standard NGC image):"
-    echo "    nano-4b       Nemotron 3 Nano 4B FP8 (default, ~4GB, fastest)"
-    echo "    nano-30b      Nemotron 3 Nano 30B-A3B FP8 (3.2B active, ~15GB)"
-    echo ""
-    echo "  NVFP4 (requires Avarok image — smaller memory, faster on GB10):"
-    echo "    nano-4b-nvfp4   Nemotron 3 Nano 4B NVFP4 (~2GB)"
-    echo "    nano-30b-nvfp4  Nemotron 3 Nano 30B-A3B NVFP4 (~8GB, 65+ tok/s)"
+    echo "  FP8 (standard NGC image, recommended for GB10 ARM64):"
+    echo "    qwen3-30b   Qwen3-30B-A3B FP8 (default, 3.3B active, ~33GB, 32K ctx)"
+    echo "    qwen3-14b   Qwen3-14B FP8 (~17GB, 32K ctx, lower memory fallback)"
+    echo "    qwen3-8b    Qwen3-8B FP8 (~10GB, 32K ctx, highest throughput)"
     echo ""
     echo "  Other:"
-    echo "    custom     Any model: $0 custom org/model-name"
+    echo "    custom   Any model: $0 custom org/model-name"
+    echo ""
+    echo "  NOTE: All Qwen3 presets use --reasoning-parser qwen3 to strip"
+    echo "        <think> blocks. Graphiti requires clean JSON output."
     echo ""
     echo "Port allocation:"
     echo "  8000 — Graphiti LLM (this script)"
     echo "  8001 — Embeddings (vllm-embed.sh)"
     echo "  8002 — AutoBuild LLM (vllm-serve.sh)"
+    echo "  8003 — Nemotron 3 Nano (vllm-nemotron3-nano.sh)"
+    echo ""
+    echo "Default port: $PORT  (override: VLLM_GRAPHITI_PORT=XXXX)"
     exit 1
     ;;
 esac
@@ -148,33 +138,10 @@ if docker ps -aq --filter "name=$CONTAINER_NAME" | grep -q .; then
   docker rm "$CONTAINER_NAME" 2>/dev/null || true
 fi
 
-# --- Check if port 8000 is in use by vllm-server (AutoBuild) ---
-if docker ps -q --filter "name=vllm-server" | grep -q .; then
-  echo ""
-  echo "WARNING: vllm-server (AutoBuild) is running on port 8000."
-  echo "  It needs to move to port 8002 before starting the Graphiti LLM."
-  echo ""
-  echo "  Option 1: Stop it and restart on port 8002:"
-  echo "    docker stop vllm-server && docker rm vllm-server"
-  echo "    VLLM_PORT=8002 ./scripts/vllm-serve.sh"
-  echo ""
-  echo "  Option 2: Stop it (if you don't need AutoBuild right now):"
-  echo "    docker stop vllm-server && docker rm vllm-server"
-  echo ""
-  read -r -p "  Stop vllm-server now? [y/N] " response
-  if [[ "$response" =~ ^[Yy]$ ]]; then
-    docker stop vllm-server && docker rm vllm-server
-    echo "  Stopped vllm-server."
-  else
-    echo "  Aborted. Stop vllm-server first, then re-run this script."
-    exit 1
-  fi
-fi
-
-# --- Start VLLM Graphiti server ---
+# --- Start server ---
 echo ""
 echo "========================================"
-echo "  VLLM Graphiti LLM — Dell Pro Max GB10"
+echo "  VLLM Graphiti LLM — DGX Spark GB10"
 echo "========================================"
 echo "  Model:    $MODEL"
 echo "  Port:     $PORT"
@@ -210,15 +177,13 @@ docker run -d \
 
 echo "Container started: $CONTAINER_NAME"
 echo ""
-echo "Waiting for model to load (should be quick — 4B model)..."
+echo "Waiting for model to load (~2-5 min for 32.5GB FP8)..."
 echo "  Logs:   docker logs -f $CONTAINER_NAME"
 echo "  Health: curl http://localhost:${PORT}/health"
 echo "  Models: curl http://localhost:${PORT}/v1/models"
 echo ""
 echo "Graphiti will use this automatically (port 8000 matches graphiti.yaml)."
 echo ""
-echo "To also run AutoBuild (Qwen3-Coder on port 8002):"
+echo "To also start other services:"
+echo "  VLLM_PORT=8001 ./scripts/vllm-embed.sh"
 echo "  VLLM_PORT=8002 ./scripts/vllm-serve.sh"
-echo ""
-echo "Then use AutoBuild with:"
-echo "  ANTHROPIC_BASE_URL=http://localhost:8002 ANTHROPIC_API_KEY=vllm-local guardkit autobuild task TASK-XXX"

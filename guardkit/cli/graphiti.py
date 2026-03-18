@@ -90,6 +90,7 @@ def _get_client_and_config() -> tuple[GraphitiClient, GraphitiSettings]:
         llm_provider=settings.llm_provider,
         llm_base_url=settings.llm_base_url,
         llm_model=settings.llm_model,
+        llm_max_tokens=settings.llm_max_tokens,
         embedding_provider=settings.embedding_provider,
         embedding_base_url=settings.embedding_base_url,
         embedding_model=settings.embedding_model,
@@ -583,6 +584,7 @@ async def _cmd_stats() -> None:
         llm_provider=settings.llm_provider,
         llm_base_url=settings.llm_base_url,
         llm_model=settings.llm_model,
+        llm_max_tokens=settings.llm_max_tokens,
         embedding_provider=settings.embedding_provider,
         embedding_base_url=settings.embedding_base_url,
         embedding_model=settings.embedding_model,
@@ -970,8 +972,9 @@ async def _cmd_add_context(
             registry.register(ProjectDocParser())
             registry.register(ProjectOverviewParser())
             registry.register(YAMLParser())
-            if chunk_size is not None:
-                registry.register(FullDocParser(chunk_threshold=chunk_size))
+            effective_chunk_size = chunk_size if chunk_size is not None else settings.llm_chunk_threshold
+            if effective_chunk_size is not None:
+                registry.register(FullDocParser(chunk_threshold=effective_chunk_size))
             else:
                 registry.register(FullDocParser())
 

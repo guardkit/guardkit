@@ -16,7 +16,7 @@
 #   HF_TOKEN=...            Hugging Face token (for gated models)
 #
 # Port allocation:
-#   8000 — Graphiti LLM (vllm-graphiti.sh) — Nemotron 3 Nano 4B
+#   8000 — Graphiti LLM (llm-graphiti.sh) — Nemotron 3 Nano 4B
 #   8001 — Embedding model (vllm-embed.sh) — nomic-embed-text-v1.5
 #   8002 — AutoBuild LLM (this script)    — Qwen3-Coder-Next
 #
@@ -325,6 +325,6 @@ echo "Once ready, use AutoBuild with (note port ${PORT}):"
 echo "  ANTHROPIC_BASE_URL=http://localhost:${PORT} ANTHROPIC_API_KEY=vllm-local guardkit autobuild task TASK-XXX"
 echo ""
 echo "Port allocation:"
-echo "  8000 — Graphiti LLM (vllm-graphiti.sh)"
+echo "  8000 — Graphiti LLM (llm-graphiti.sh)"
 echo "  8001 — Embeddings (vllm-embed.sh)"
 echo "  ${PORT} — AutoBuild LLM (this script)"

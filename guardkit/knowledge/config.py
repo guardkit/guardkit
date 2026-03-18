@@ -63,6 +63,8 @@ class GraphitiSettings:
         llm_provider: LLM provider for entity extraction ('openai', 'vllm', 'ollama')
         llm_base_url: LLM provider base URL (required for vllm/ollama)
         llm_model: LLM model name (required for vllm/ollama)
+        llm_max_tokens: Max tokens for LLM responses (None = provider default). Use to cap
+            output for models with small context windows (e.g. 4096 for Nemotron 4B/8192 ctx).
         embedding_provider: Embedding provider ('openai', 'vllm', 'ollama')
         embedding_base_url: Embedding provider base URL (required for vllm/ollama)
         max_concurrent_episodes: Max concurrent episode creation calls during seeding (1-10)
@@ -97,6 +99,8 @@ class GraphitiSettings:
     llm_provider: str = "openai"          # 'openai' | 'vllm' | 'ollama'
     llm_base_url: Optional[str] = None    # e.g., 'http://host:8000/v1'
     llm_model: Optional[str] = None       # e.g., 'Qwen/Qwen3-Coder-30B-A3B'
+    llm_max_tokens: Optional[int] = None  # Cap output tokens (e.g. 4096 for 8192-ctx models)
+    llm_chunk_threshold: Optional[int] = None  # Bytes above which docs are split into chunks (e.g. 1500 for 8K-ctx models)
     # Embedding provider settings for vector search
     embedding_provider: str = "openai"    # 'openai' | 'vllm' | 'ollama'
     embedding_base_url: Optional[str] = None  # e.g., 'http://host:8001/v1'
@@ -135,6 +139,16 @@ class GraphitiSettings:
             raise TypeError(f"llm_base_url must be str or None, got {type(self.llm_base_url).__name__}")
         if self.llm_model is not None and not isinstance(self.llm_model, str):
             raise TypeError(f"llm_model must be str or None, got {type(self.llm_model).__name__}")
+        if self.llm_max_tokens is not None:
+            if not isinstance(self.llm_max_tokens, int) or isinstance(self.llm_max_tokens, bool):
+                raise TypeError(f"llm_max_tokens must be int or None, got {type(self.llm_max_tokens).__name__}")
+            if self.llm_max_tokens < 1:
+                raise ValueError(f"llm_max_tokens must be >= 1, got {self.llm_max_tokens}")
+        if self.llm_chunk_threshold is not None:
+            if not isinstance(self.llm_chunk_threshold, int) or isinstance(self.llm_chunk_threshold, bool):
+                raise TypeError(f"llm_chunk_threshold must be int or None, got {type(self.llm_chunk_threshold).__name__}")
+            if self.llm_chunk_threshold < 0:
+                raise ValueError(f"llm_chunk_threshold must be >= 0, got {self.llm_chunk_threshold}")
         if not isinstance(self.embedding_provider, str):
             raise TypeError(f"embedding_provider must be str, got {type(self.embedding_provider).__name__}")
         if self.embedding_base_url is not None and not isinstance(self.embedding_base_url, str):
@@ -360,6 +374,8 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
         'llm_provider': 'openai',
         'llm_base_url': None,
         'llm_model': None,
+        'llm_max_tokens': None,
+        'llm_chunk_threshold': None,
         'embedding_provider': 'openai',
         'embedding_base_url': None,
         'embedding_model': 'text-embedding-3-small',
@@ -389,6 +405,8 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
                     'llm_provider': str,
                     'llm_base_url': str,
                     'llm_model': str,
+                    'llm_max_tokens': int,
+                    'llm_chunk_threshold': int,
                     'embedding_provider': str,
                     'embedding_base_url': str,
                     'embedding_model': str,
@@ -396,7 +414,7 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
                     'host': str,
                     'port': int,
                 }
-                optional_none_fields = {'project_id', 'llm_base_url', 'llm_model', 'embedding_base_url'}
+                optional_none_fields = {'project_id', 'llm_base_url', 'llm_model', 'llm_max_tokens', 'llm_chunk_threshold', 'embedding_base_url'}
                 for key, target_type in field_types.items():
                     if key in yaml_data and yaml_data[key] is not None:
                         try:
@@ -437,6 +455,8 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
         'LLM_PROVIDER': ('llm_provider', str),
         'LLM_BASE_URL': ('llm_base_url', str),
         'LLM_MODEL': ('llm_model', str),
+        'LLM_MAX_TOKENS': ('llm_max_tokens', int),
+        'LLM_CHUNK_THRESHOLD': ('llm_chunk_threshold', int),
         'EMBEDDING_PROVIDER': ('embedding_provider', str),
         'EMBEDDING_BASE_URL': ('embedding_base_url', str),
         'EMBEDDING_MODEL': ('embedding_model', str),
@@ -446,7 +466,7 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
         'GRAPHITI_PORT': ('port', int),
     }
 
-    optional_none_env_fields = {'project_id', 'llm_base_url', 'llm_model', 'embedding_base_url'}
+    optional_none_env_fields = {'project_id', 'llm_base_url', 'llm_model', 'llm_max_tokens', 'llm_chunk_threshold', 'embedding_base_url'}
     for env_var, (config_key, config_type) in env_overrides.items():
         env_value = os.environ.get(env_var)
         if env_value is not None:

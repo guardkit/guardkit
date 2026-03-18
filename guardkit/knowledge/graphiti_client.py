@@ -189,6 +189,7 @@ class GraphitiConfig:
     llm_provider: str = "openai"           # "openai" | "vllm" | "ollama"
     llm_base_url: Optional[str] = None     # e.g., "http://host:8000/v1"
     llm_model: Optional[str] = None        # e.g., "Qwen/Qwen3-Coder-30B-A3B"
+    llm_max_tokens: Optional[int] = None   # Cap output tokens (e.g. 4096 for 8192-ctx models)
     embedding_provider: str = "openai"     # "openai" | "vllm" | "ollama"
     embedding_base_url: Optional[str] = None  # e.g., "http://host:8001/v1"
     embedding_model: str = "text-embedding-3-small"
@@ -587,12 +588,16 @@ class GraphitiClient:
             return None
         from graphiti_core.llm_client.openai_generic_client import OpenAIGenericClient
         from graphiti_core.llm_client import LLMConfig
+        kwargs = {}
+        if self.config.llm_max_tokens is not None:
+            kwargs["max_tokens"] = self.config.llm_max_tokens
         return OpenAIGenericClient(
             config=LLMConfig(
                 base_url=self.config.llm_base_url,
                 model=self.config.llm_model,
                 api_key="local-key",  # Local inference ignores API key; placeholder required
-            )
+            ),
+            **kwargs,
         )
 
     async def _check_embedding_dimensions(self) -> None:
@@ -2362,6 +2367,7 @@ def _try_lazy_init() -> Optional[GraphitiClient]:
             llm_provider=settings.llm_provider,
             llm_base_url=settings.llm_base_url,
             llm_model=settings.llm_model,
+            llm_max_tokens=settings.llm_max_tokens,
             embedding_provider=settings.embedding_provider,
             embedding_base_url=settings.embedding_base_url,
             embedding_model=settings.embedding_model,

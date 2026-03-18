@@ -43,7 +43,7 @@ max_concurrent_episodes: 3
 # Options: openai (default), vllm, ollama
 llm_provider: vllm
 llm_base_url: http://promaxgb10-41b1:8000/v1
-llm_model: claude-sonnet-4-6
+llm_model: Qwen/Qwen3-30B-A3B-FP8
 
 # Embedding provider for Graphiti vector search
 # Options: openai (default), vllm, ollama

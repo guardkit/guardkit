@@ -786,6 +786,7 @@ async def _cmd_init(
                 llm_provider=settings.llm_provider,
                 llm_base_url=settings.llm_base_url,
                 llm_model=settings.llm_model,
+                llm_max_tokens=settings.llm_max_tokens,
                 embedding_provider=settings.embedding_provider,
                 embedding_base_url=settings.embedding_base_url,
                 embedding_model=settings.embedding_model,
