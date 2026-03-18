@@ -72,7 +72,7 @@ MODEL_PRESET="${1:-qwen2.5-14b}"
 
 case "$MODEL_PRESET" in
   qwen2.5-14b|default|"")
-    MODEL="Qwen/Qwen2.5-14B-Instruct-FP8"
+    MODEL="neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic"
     GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.15}"
     MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-32768}"
     # Dense model — no MoE backend needed
@@ -85,7 +85,7 @@ case "$MODEL_PRESET" in
     echo "    No thinking mode | xgrammar enforces json_schema"
     ;;
   qwen2.5-32b)
-    MODEL="Qwen/Qwen2.5-32B-Instruct-FP8"
+    MODEL="neuralmagic/Qwen2.5-32B-Instruct-FP8-dynamic"
     GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.30}"
     MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-32768}"
     EXTRA_ARGS="--kv-cache-dtype fp8 \
