@@ -94,6 +94,7 @@ def _get_client_and_config() -> tuple[GraphitiClient, GraphitiSettings]:
         embedding_provider=settings.embedding_provider,
         embedding_base_url=settings.embedding_base_url,
         embedding_model=settings.embedding_model,
+        embedding_dimensions=getattr(settings, "embedding_dimensions", None),
     )
     client = GraphitiClient(config)
     return client, settings
@@ -588,6 +589,7 @@ async def _cmd_stats() -> None:
         embedding_provider=settings.embedding_provider,
         embedding_base_url=settings.embedding_base_url,
         embedding_model=settings.embedding_model,
+        embedding_dimensions=getattr(settings, "embedding_dimensions", None),
     )
 
     client = GraphitiClient(config)

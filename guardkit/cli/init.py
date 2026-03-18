@@ -28,11 +28,12 @@ Coverage Target: >=85%
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import shutil
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import click
 from rich.console import Console
@@ -104,6 +105,315 @@ class _ProgressClient:
 
     def __getattr__(self, name):
         return getattr(self._client, name)
+
+
+# ---------------------------------------------------------------------------
+# MCP configuration helpers
+# ---------------------------------------------------------------------------
+
+_MCP_SERVER_PATH_CONFIG = Path.home() / ".guardkit" / "mcp-server-path"
+_GRAPHITI_MCP_PATH_ENV = "GRAPHITI_MCP_PATH"
+
+# Default entity types for Graphiti MCP server config
+_DEFAULT_ENTITY_TYPES = [
+    {"name": "Preference", "description": "User preferences, choices, opinions, or selections"},
+    {"name": "Requirement", "description": "Specific needs, features, or functionality that must be fulfilled"},
+    {"name": "Procedure", "description": "Standard operating procedures and sequential instructions"},
+    {"name": "Topic", "description": "Subject of conversation, interest, or knowledge domain"},
+    {"name": "Document", "description": "Information content in various forms (books, articles, reports, etc.)"},
+]
+
+
+def _find_uv_command() -> str:
+    """Return the absolute path to the uv command, or 'uv' if not found.
+
+    Returns:
+        Absolute path string to uv binary, or 'uv' as fallback.
+    """
+    uv_path = shutil.which("uv")
+    return uv_path if uv_path else "uv"
+
+
+def discover_graphiti_mcp_path(prompt_if_missing: bool = True) -> Optional[Path]:
+    """Discover the Graphiti MCP server installation path.
+
+    Discovery order:
+    1. GRAPHITI_MCP_PATH environment variable
+    2. ~/.guardkit/mcp-server-path config file
+    3. Prompt user if prompt_if_missing is True
+
+    If the path is discovered via prompt, stores it to the config file for
+    future use.
+
+    Args:
+        prompt_if_missing: If True, prompt the user when path not found.
+
+    Returns:
+        Path to the Graphiti MCP server directory, or None if not found.
+    """
+    import os
+
+    # Strategy 1: environment variable
+    env_val = os.environ.get(_GRAPHITI_MCP_PATH_ENV)
+    if env_val:
+        candidate = Path(env_val).expanduser().resolve()
+        if candidate.is_dir():
+            logger.debug(f"Graphiti MCP path from env: {candidate}")
+            return candidate
+        logger.warning(f"GRAPHITI_MCP_PATH={env_val} does not exist, ignoring")
+
+    # Strategy 2: config file
+    if _MCP_SERVER_PATH_CONFIG.is_file():
+        try:
+            stored = _MCP_SERVER_PATH_CONFIG.read_text().strip()
+            if stored:
+                candidate = Path(stored).expanduser().resolve()
+                if candidate.is_dir():
+                    logger.debug(f"Graphiti MCP path from config: {candidate}")
+                    return candidate
+                logger.warning(f"Stored MCP path {stored} does not exist, ignoring")
+        except Exception as e:
+            logger.debug(f"Could not read mcp-server-path config: {e}")
+
+    # Strategy 3: prompt user
+    if prompt_if_missing:
+        try:
+            user_input = Prompt.ask(
+                "Enter path to Graphiti MCP server directory",
+                default="",
+            )
+            if user_input:
+                candidate = Path(user_input).expanduser().resolve()
+                if candidate.is_dir():
+                    # Store for future use
+                    try:
+                        _MCP_SERVER_PATH_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+                        _MCP_SERVER_PATH_CONFIG.write_text(str(candidate))
+                        logger.info(f"Stored Graphiti MCP path to {_MCP_SERVER_PATH_CONFIG}")
+                    except Exception as e:
+                        logger.debug(f"Could not store MCP path: {e}")
+                    return candidate
+                else:
+                    console.print(f"  [yellow]Warning: Path does not exist: {candidate}[/yellow]")
+        except Exception as e:
+            logger.debug(f"Prompt failed: {e}")
+
+    return None
+
+
+def generate_mcp_server_config(
+    project_id: str,
+    settings: Any,
+) -> Dict[str, Any]:
+    """Generate the per-project Graphiti MCP server YAML config as a dict.
+
+    Reads LLM/embedding/database settings from the guardkit graphiti settings
+    object and produces a config dict compatible with the Graphiti MCP server.
+
+    Args:
+        project_id: Normalized project ID for namespace.
+        settings: GraphitiSettings instance loaded from .guardkit/graphiti.yaml.
+
+    Returns:
+        Dict representing the MCP server YAML config.
+    """
+    llm_base_url = getattr(settings, "llm_base_url", None) or "http://localhost:8000/v1"
+    llm_model = getattr(settings, "llm_model", None) or "gpt-4o"
+    llm_max_tokens = getattr(settings, "llm_max_tokens", None) or 4096
+    embedding_base_url = getattr(settings, "embedding_base_url", None) or "http://localhost:8001/v1"
+    embedding_model = getattr(settings, "embedding_model", None) or "text-embedding-ada-002"
+    embedding_dimensions = getattr(settings, "embedding_dimensions", None) or 1024
+    falkordb_host = getattr(settings, "falkordb_host", None) or "localhost"
+    falkordb_port = getattr(settings, "falkordb_port", None) or 6379
+
+    return {
+        "server": {"transport": "stdio"},
+        "llm": {
+            "provider": "openai",
+            "model": llm_model,
+            "max_tokens": llm_max_tokens,
+            "providers": {
+                "openai": {
+                    "api_key": "${OPENAI_API_KEY}",
+                    "api_url": f"${{LLM_API_URL:{llm_base_url}}}",
+                }
+            },
+        },
+        "embedder": {
+            "provider": "openai",
+            "model": embedding_model,
+            "dimensions": embedding_dimensions,
+            "providers": {
+                "openai": {
+                    "api_key": "${OPENAI_API_KEY}",
+                    "api_url": f"${{EMBEDDING_API_URL:{embedding_base_url}}}",
+                }
+            },
+        },
+        "database": {
+            "provider": "falkordb",
+            "providers": {
+                "falkordb": {
+                    "uri": f"redis://{falkordb_host}:{falkordb_port}",
+                    "password": "",
+                    "database": "default_db",
+                }
+            },
+        },
+        "graphiti": {
+            "group_id": project_id,
+            "user_id": "user",
+            "entity_types": _DEFAULT_ENTITY_TYPES,
+        },
+    }
+
+
+def write_mcp_server_config(
+    project_id: str,
+    mcp_server_path: Path,
+    settings: Any,
+) -> Optional[Path]:
+    """Write the per-project MCP server config YAML to {mcp_server_path}/config/.
+
+    Args:
+        project_id: Normalized project ID.
+        mcp_server_path: Path to the Graphiti MCP server directory.
+        settings: GraphitiSettings instance.
+
+    Returns:
+        Path to the written config file, or None on failure.
+    """
+    try:
+        try:
+            import yaml
+        except ImportError:
+            logger.warning("PyYAML not installed, cannot write MCP server config")
+            return None
+
+        config_dir = mcp_server_path / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        config_file = config_dir / f"config-{project_id}.yaml"
+
+        config_data = generate_mcp_server_config(project_id, settings)
+
+        with open(config_file, "w") as f:
+            yaml.dump(config_data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+        logger.info(f"Written MCP server config to {config_file}")
+        return config_file
+
+    except Exception as e:
+        logger.warning(f"Failed to write MCP server config: {e}")
+        return None
+
+
+def generate_mcp_json_entry(
+    project_id: str,
+    mcp_server_path: Path,
+    config_path: Path,
+    settings: Any,
+) -> Dict[str, Any]:
+    """Generate the mcpServers entry dict for .mcp.json.
+
+    Args:
+        project_id: Normalized project ID (used as server key).
+        mcp_server_path: Absolute path to Graphiti MCP server directory.
+        config_path: Absolute path to the per-project config YAML.
+        settings: GraphitiSettings instance for endpoint env vars.
+
+    Returns:
+        Dict with the mcpServers entry for this project.
+    """
+    uv_cmd = _find_uv_command()
+    llm_base_url = getattr(settings, "llm_base_url", None) or "http://localhost:8000/v1"
+    embedding_base_url = getattr(settings, "embedding_base_url", None) or "http://localhost:8001/v1"
+    embedding_dimensions = getattr(settings, "embedding_dimensions", None) or 1024
+
+    return {
+        "type": "stdio",
+        "command": uv_cmd,
+        "args": [
+            "--directory",
+            str(mcp_server_path),
+            "run",
+            "main.py",
+            "--transport",
+            "stdio",
+            "--config",
+            str(config_path),
+        ],
+        "env": {
+            "CONFIG_PATH": str(config_path),
+            "OPENAI_API_KEY": "not-needed-vllm-local",
+            "LLM_API_URL": llm_base_url,
+            "EMBEDDING_API_URL": embedding_base_url,
+            "EMBEDDING_DIM": str(embedding_dimensions),
+        },
+    }
+
+
+def write_mcp_json(
+    target_dir: Path,
+    mcp_server_path: Path,
+    project_id: str,
+    settings: Any,
+    server_key: str = "graphiti",
+) -> bool:
+    """Write or merge the Graphiti MCP entry into .mcp.json.
+
+    If .mcp.json already exists, reads it and merges the graphiti entry under
+    mcpServers, preserving all other server entries. If it does not exist,
+    creates it fresh.
+
+    Args:
+        target_dir: Project directory where .mcp.json should be written.
+        mcp_server_path: Path to the Graphiti MCP server directory.
+        project_id: Normalized project ID.
+        settings: GraphitiSettings instance.
+        server_key: Key to use in mcpServers (default: "graphiti").
+
+    Returns:
+        True if written successfully, False otherwise.
+    """
+    mcp_json_path = target_dir / ".mcp.json"
+
+    try:
+        # Write the per-project server config YAML first
+        config_path = write_mcp_server_config(project_id, mcp_server_path, settings)
+        if config_path is None:
+            logger.warning("Could not write MCP server config, skipping .mcp.json")
+            return False
+
+        # Generate the mcpServers entry
+        entry = generate_mcp_json_entry(project_id, mcp_server_path, config_path, settings)
+
+        # Load existing .mcp.json or start fresh
+        existing: Dict[str, Any] = {}
+        if mcp_json_path.is_file():
+            try:
+                with open(mcp_json_path, "r") as f:
+                    loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    existing = loaded
+            except Exception as e:
+                logger.warning(f"Could not parse existing .mcp.json: {e}, overwriting")
+
+        # Merge: add/update mcpServers.graphiti
+        if "mcpServers" not in existing or not isinstance(existing["mcpServers"], dict):
+            existing["mcpServers"] = {}
+        existing["mcpServers"][server_key] = entry
+
+        # Write back
+        with open(mcp_json_path, "w") as f:
+            json.dump(existing, f, indent=2)
+            f.write("\n")
+
+        logger.info(f"Written MCP config to {mcp_json_path}")
+        return True
+
+    except Exception as e:
+        logger.warning(f"Failed to write .mcp.json: {e}")
+        return False
 
 
 def _get_templates_base_dir() -> Path:
@@ -629,6 +939,7 @@ async def _cmd_init(
     copy_graphiti: Optional[str] = None,
     verbose: bool = False,
     no_questions: bool = False,
+    with_mcp: bool = False,
 ) -> int:
     """Async implementation of init command.
 
@@ -641,6 +952,7 @@ async def _cmd_init(
             Use "auto" for auto-discovery or an explicit directory path.
         verbose: If True, show all log output including third-party DEBUG/INFO.
         no_questions: If True, skip the auto-offer prompt and use project_id-only.
+        with_mcp: If True, generate .mcp.json and per-project MCP server config.
 
     Returns:
         Exit code (0 for success).
@@ -790,6 +1102,7 @@ async def _cmd_init(
                 embedding_provider=settings.embedding_provider,
                 embedding_base_url=settings.embedding_base_url,
                 embedding_model=settings.embedding_model,
+                embedding_dimensions=getattr(settings, "embedding_dimensions", None),
             )
             client = GraphitiClient(config)
             initialized = await client.initialize()
@@ -896,6 +1209,46 @@ async def _cmd_init(
                 except Exception:
                     pass
 
+    # Step 3 (optional): Generate MCP configuration
+    mcp_configured = False
+    if with_mcp:
+        console.print("\n[bold]Step 3: Generating MCP configuration...[/bold]")
+        try:
+            settings = load_graphiti_config()
+            project_id = normalize_project_id(project_name)
+            mcp_server_path = discover_graphiti_mcp_path(prompt_if_missing=not no_questions)
+            if mcp_server_path is not None:
+                if write_mcp_json(project_dir, mcp_server_path, project_id, settings):
+                    config_path = mcp_server_path / "config" / f"config-{project_id}.yaml"
+                    console.print(f"  [green]Generated .mcp.json with Graphiti MCP config[/green]")
+                    console.print(f"  [green]Written MCP server config: {config_path}[/green]")
+                    mcp_configured = True
+                    # Warn if embedding dimensions may be inconsistent between Python client and MCP
+                    explicit_dims = getattr(settings, "embedding_dimensions", None)
+                    if explicit_dims is None:
+                        model = getattr(settings, "embedding_model", None) or ""
+                        from guardkit.knowledge.graphiti_client import KNOWN_EMBEDDING_DIMS
+                        known_dim = KNOWN_EMBEDDING_DIMS.get(model)
+                        if known_dim is not None and known_dim != 1024:
+                            console.print(
+                                f"  [yellow]Warning: embedding_dimensions not set in .guardkit/graphiti.yaml.[/yellow]\n"
+                                f"  [yellow]MCP server will use 1024 dimensions (default), but model "
+                                f"'{model}' default is {known_dim}.[/yellow]\n"
+                                f"  [dim]If this FalkorDB was seeded with 1024-dim vectors (Matryoshka), "
+                                f"add 'embedding_dimensions: 1024' to .guardkit/graphiti.yaml.[/dim]"
+                            )
+                else:
+                    console.print("  [yellow]Warning: Could not write .mcp.json[/yellow]")
+            else:
+                console.print(
+                    "  [yellow]Warning: Graphiti MCP server path not found.[/yellow]\n"
+                    "  [dim]Set GRAPHITI_MCP_PATH env var or re-run with --with-mcp "
+                    "after cloning the Graphiti repo.[/dim]"
+                )
+        except Exception as e:
+            console.print(f"  [yellow]Warning: MCP config error: {e}[/yellow]")
+            logger.debug(f"MCP config error: {e}", exc_info=True)
+
     # Summary
     console.print("\n[bold green]GuardKit initialized successfully![/bold green]")
     if not skip_graphiti:
@@ -974,6 +1327,16 @@ async def _cmd_init(
     default=False,
     help="Skip prompts and use project_id-only graphiti.yaml (backward compatible).",
 )
+@click.option(
+    "--with-mcp",
+    is_flag=True,
+    default=False,
+    help=(
+        "Generate .mcp.json and per-project MCP server config for Claude Code "
+        "Graphiti integration. Discovers the Graphiti MCP server path via "
+        "GRAPHITI_MCP_PATH env var, ~/.guardkit/mcp-server-path, or user prompt."
+    ),
+)
 def init(
     template: str,
     skip_graphiti: bool,
@@ -983,6 +1346,7 @@ def init(
     copy_graphiti_from: Optional[str],
     verbose: bool,
     no_questions: bool,
+    with_mcp: bool,
 ):
     """Initialize GuardKit in the current directory.
 
@@ -1001,7 +1365,7 @@ def init(
     exit_code = asyncio.run(
         _cmd_init(
             template, skip_graphiti, project_name, interactive,
-            copy_graphiti_value, verbose, no_questions,
+            copy_graphiti_value, verbose, no_questions, with_mcp,
         )
     )
     if exit_code != 0:

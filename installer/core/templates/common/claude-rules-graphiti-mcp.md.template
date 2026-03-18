@@ -1,0 +1,55 @@
+# Graphiti Knowledge Graph — Usage Guide
+
+## Overview
+
+This project has a Graphiti MCP server connected to a FalkorDB knowledge graph
+at `{{falkordb_host}}:{{falkordb_port}}`. The graph contains seeded project knowledge
+about architecture, workflows, and design decisions.
+**You must query it correctly to retrieve results.**
+
+## Critical: Always Pass group_ids
+
+Knowledge is partitioned by `group_id`. Searching without `group_ids` returns nothing.
+Always pass the project-prefixed group IDs when searching:
+
+```python
+group_ids = {{group_ids}}
+```
+
+Group IDs use the format `{{project_id}}__<group>` to isolate this project's knowledge
+from other projects sharing the same FalkorDB instance.
+
+### What each group contains
+
+| Group ID | Contents |
+|----------|----------|
+| `{{project_id}}__product_knowledge` | Project context, goals, target users, quality gates |
+| `{{project_id}}__command_workflows` | Slash commands, Player-Coach workflow, task pipeline |
+| `{{project_id}}__architecture_decisions` | ADRs, architecture decisions, design rationale |
+| `{{project_id}}__project_architecture` | Components, services, data flow, system structure |
+| `{{project_id}}__project_design` | System design artifacts and decisions |
+| `{{project_id}}__task_outcomes` | Task completion outcomes for learning |
+| `{{project_id}}__failure_patterns` | Recurring failure patterns and mitigations |
+| `{{project_id}}__successful_fixes` | Successful fix patterns for similar issues |
+
+## Search Tools
+
+Use both search tools together for comprehensive results:
+
+- `mcp__graphiti__search_nodes` — finds entities (concepts, components, roles)
+- `mcp__graphiti__search_memory_facts` — finds relationships between entities
+
+Always search with **all relevant group_ids** unless you have a specific reason to filter.
+
+## Adding Knowledge
+
+Use `mcp__graphiti__add_memory` with:
+- `source`: `"text"`, `"json"`, or `"message"`
+- `group_id`: one of the project-prefixed group IDs above (pick the most appropriate)
+- Provide descriptive `name` and `source_description` for better retrieval
+
+## Configuration Reference
+
+- Server config: see `.mcp.json` for MCP server launch configuration
+- Project config: see `.guardkit/graphiti.yaml` for group_ids and infrastructure details
+- Graph database: FalkorDB on `{{falkordb_host}}:{{falkordb_port}}`

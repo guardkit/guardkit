@@ -1,268 +1,586 @@
-# Review Report: REV-SD-001
+# Review Report: REV-SD-001 (Revised)
 
 ## Executive Summary
 
-The `/system-design` command (and 7 other commands) uses **Python pseudocode** in its prompt template to check Graphiti availability. Since these commands are executed by an LLM (Claude Code), the LLM cannot actually run `get_graphiti()` imports — it has no Python runtime. The LLM correctly recognises the code is non-executable and defaults to the `else` branch ("Graphiti unavailable"), even when Graphiti is fully configured and operational.
+The `/system-design` command (and 7 other commands) defaults to "Graphiti unavailable" because its command specification contains **Python pseudocode** (`get_graphiti()`, `SystemDesignGraphiti`) that the executing LLM interprets as **intended behaviour logic** but cannot actually execute. The LLM has no Python runtime — it processes the command spec as natural-language instructions and, seeing non-importable modules, rationally takes the `else` fallback path.
 
-The fix is well-understood: replace the Python pseudocode pattern with the **file-existence + CLI check pattern** already proven in `/task-work` Phase 1.7.
+This has been validated by tracing the complete execution flow across four system boundaries (User → VS Code → Claude Code → LLM → Tools) and confirmed by a live test showing `graphiti-check --status` returns `{"available": true}` on this machine.
+
+**Root Cause Confidence: HIGH** — validated via C4 sequence diagrams, live connectivity test, and direct comparison with the working `/task-work` Phase 1.7 pattern.
 
 ## Review Details
 
-- **Mode**: Architectural Review
-- **Depth**: Standard
+- **Mode**: Architectural Review (Revised — deeper analysis)
+- **Depth**: Comprehensive
 - **Task**: REV-SD-001
-- **Reviewer**: architectural-reviewer (manual analysis)
+- **Reviewer**: architectural-reviewer (manual trace analysis + live verification)
 
-## Architecture Score: 45/100
+---
+
+## C4 Context Diagram: Command Execution Landscape
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      GuardKit System                        │
+│                                                             │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
+│  │  Command      │    │  Python      │    │  Knowledge   │  │
+│  │  Specs (.md)  │    │  Libraries   │    │  Graph       │  │
+│  │              │    │              │    │  (FalkorDB)  │  │
+│  │  8 commands   │    │  guardkit/   │    │              │  │
+│  │  with Python  │    │  knowledge/  │    │  whitestocks │  │
+│  │  pseudocode   │    │  planning/   │    │  :6379       │  │
+│  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘  │
+│         │                   │                   │           │
+│         │    ┌──────────────┴───────┐           │           │
+│         │    │  graphiti-check      │           │           │
+│         │    │  CLI wrapper         ├───────────┘           │
+│         │    │  (the bridge)        │                       │
+│         │    └──────────────────────┘                       │
+└─────────┼───────────────────────────────────────────────────┘
+          │
+    ┌─────┴─────┐         ┌──────────────┐
+    │  Claude    │◄────────│   User       │
+    │  Code LLM │         │   (VS Code)  │
+    │           │         └──────────────┘
+    │  Has:     │
+    │  - Read   │
+    │  - Bash   │
+    │  - Edit   │
+    │  - Grep   │
+    │           │
+    │  Does NOT │
+    │  have:    │
+    │  - Python │
+    │    runtime│
+    └───────────┘
+```
+
+**Key insight**: The command specs (left) and the Python libraries (centre) are in different execution domains. The `graphiti-check` CLI wrapper is the **only bridge** between them. Only `/task-work` uses it.
+
+---
+
+## C4 Container Diagram: System Boundaries
+
+```
+┌─ USER SPACE ──────────────────────────────────────────────────────────┐
+│                                                                       │
+│   User types: /system-design                                          │
+│                                                                       │
+└───────────────────────────┬───────────────────────────────────────────┘
+                            │
+                            ▼
+┌─ VS CODE + CLAUDE CODE ──────────────────────────────────────────────┐
+│                                                                       │
+│   1. Skill tool resolves "system-design"                              │
+│   2. Loads ~/.claude/commands/system-design.md                        │
+│      (symlink → ~/.agentecflow/commands/system-design.md)             │
+│   3. Injects full markdown as prompt context for the LLM              │
+│                                                                       │
+│   NOTE: NO Python interpreter is invoked. The markdown is treated     │
+│   as instructions for the LLM to follow.                              │
+│                                                                       │
+└───────────────────────────┬───────────────────────────────────────────┘
+                            │
+                            ▼
+┌─ LLM EXECUTION CONTEXT ─────────────────────────────────────────────┐
+│                                                                       │
+│   The LLM reads the command spec and encounters:                      │
+│                                                                       │
+│   "CRITICAL EXECUTION INSTRUCTIONS FOR CLAUDE"                        │
+│   "you MUST execute these steps in order"                             │
+│                                                                       │
+│   Step 1 contains:                                                    │
+│   ```python                                                           │
+│   from guardkit.knowledge.graphiti_client import get_graphiti         │
+│   client = get_graphiti()                                             │
+│   if client:                                                          │
+│       ...                                                             │
+│   else:                                                               │
+│       print("⚠️ Graphiti unavailable")                                │
+│   ```                                                                 │
+│                                                                       │
+│   LLM reasoning:                                                      │
+│   - "I must execute these steps"                                      │
+│   - "Step 1 is a Python code block with imports"                      │
+│   - "I cannot import guardkit.knowledge.graphiti_client"              │
+│   - "get_graphiti() would return None (I can't call it)"             │
+│   - "Therefore: client = None → else branch → unavailable"           │
+│                                                                       │
+│   Available tools: Read, Bash, Edit, Grep, Write, Glob, Agent        │
+│   NOT available: Python runtime, pip, import system                   │
+│                                                                       │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Sequence Diagram: BROKEN Flow (/system-design)
+
+```
+User          VS Code/Claude Code    LLM                   graphiti-check    FalkorDB
+ │                 │                   │                         │               │
+ │ /system-design  │                   │                         │               │
+ ├────────────────►│                   │                         │               │
+ │                 │ Load skill:       │                         │               │
+ │                 │ system-design.md  │                         │               │
+ │                 ├──────────────────►│                         │               │
+ │                 │                   │                         │               │
+ │                 │  [Full markdown   │                         │               │
+ │                 │   injected as     │                         │               │
+ │                 │   prompt context] │                         │               │
+ │                 │                   │                         │               │
+ │                 │                   │ Parse: "CRITICAL        │               │
+ │                 │                   │ EXECUTION INSTRUCTIONS" │               │
+ │                 │                   │                         │               │
+ │                 │                   │ Step 1: Python block    │               │
+ │                 │                   │ "get_graphiti()"        │               │
+ │                 │                   │                         │               │
+ │                 │                   │ ┌─────────────────┐     │               │
+ │                 │                   │ │ LLM REASONING:  │     │               │
+ │                 │                   │ │                 │     │               │
+ │                 │                   │ │ I see Python    │     │               │
+ │                 │                   │ │ imports I can't │     │               │
+ │                 │                   │ │ execute. No     │     │               │
+ │                 │                   │ │ Python runtime. │     │               │
+ │                 │                   │ │                 │     │               │
+ │                 │                   │ │ → Take else     │     │               │
+ │                 │                   │ │   branch        │     │               │
+ │                 │                   │ └─────────────────┘     │               │
+ │                 │                   │                         │               │
+ │                 │                   │  ╔═══════════════════╗  │               │
+ │                 │                   │  ║ graphiti-check    ║  │               │
+ │                 │                   │  ║ NEVER CALLED      ║  │               │
+ │                 │                   │  ║                   ║  │               │
+ │                 │                   │  ║ FalkorDB          ║  │               │
+ │                 │                   │  ║ NEVER CONTACTED   ║  │               │
+ │                 │                   │  ╚═══════════════════╝  │               │
+ │                 │                   │                         │               │
+ │  "⚠️ Graphiti   │                   │                         │               │
+ │   unavailable"  │◄─────────────────│                         │               │
+ │◄────────────────│                   │                         │               │
+ │                 │                   │                         │               │
+```
+
+**Failure point**: The LLM never crosses the boundary into the Python/infrastructure layer. It stays entirely within the LLM execution context and makes a reasoning-based decision that `get_graphiti()` would return None.
+
+---
+
+## Sequence Diagram: WORKING Flow (/task-work Phase 1.7)
+
+```
+User          VS Code/Claude Code    LLM                   graphiti-check    FalkorDB
+ │                 │                   │                         │               │
+ │ /task-work      │                   │                         │               │
+ ├────────────────►│                   │                         │               │
+ │                 │ Load skill:       │                         │               │
+ │                 │ task-work.md      │                         │               │
+ │                 ├──────────────────►│                         │               │
+ │                 │                   │                         │               │
+ │                 │                   │ Parse Phase 1.7:        │               │
+ │                 │                   │ "Run the graphiti       │               │
+ │                 │                   │  check wrapper"         │               │
+ │                 │                   │                         │               │
+ │                 │                   │ ```bash                 │               │
+ │                 │                   │ graphiti-check           │               │
+ │                 │                   │   --status --quiet      │               │
+ │                 │                   │ ```                     │               │
+ │                 │                   │                         │               │
+ │                 │                   │ ┌─────────────────┐     │               │
+ │                 │                   │ │ LLM REASONING:  │     │               │
+ │                 │                   │ │                 │     │               │
+ │                 │                   │ │ It says "Run"   │     │               │
+ │                 │                   │ │ + bash block.   │     │               │
+ │                 │                   │ │ I have a Bash   │     │               │
+ │                 │                   │ │ tool. Use it.   │     │               │
+ │                 │                   │ └─────────────────┘     │               │
+ │                 │                   │                         │               │
+ │                 │     Bash tool     │                         │               │
+ │                 │◄──────────────────│                         │               │
+ │                 │                   │                         │               │
+ │                 │  Execute:         │                         │               │
+ │                 │  graphiti-check   │                         │               │
+ │                 │  --status --quiet │                         │               │
+ │                 │                   │                         │               │
+ │                 │                   │         ┌───────────────┤               │
+ │                 │                   │         │ Python exec   │               │
+ │                 │                   │         │               │               │
+ │                 │                   │         │ Check 1: ENV  │               │
+ │                 │                   │         │ Check 2: lib  │               │
+ │                 │                   │         │ Check 3: yaml │               │
+ │                 │                   │         │ Check 4: ping ├──────────────►│
+ │                 │                   │         │               │     PING      │
+ │                 │                   │         │               │◄──────────────│
+ │                 │                   │         │               │     PONG      │
+ │                 │                   │         └───────┬───────┘               │
+ │                 │                   │                 │                       │
+ │                 │  JSON stdout:     │                 │                       │
+ │                 │  {"available":    │◄────────────────┘                       │
+ │                 │   true, ...}      │                                         │
+ │                 ├──────────────────►│                                         │
+ │                 │                   │                                         │
+ │                 │                   │ Parse JSON → available = true           │
+ │                 │                   │ Proceed with Graphiti context           │
+ │                 │                   │                                         │
+ │ "[Graphiti]     │                   │                                         │
+ │  Context loaded"│◄─────────────────│                                         │
+ │◄────────────────│                   │                                         │
+```
+
+**Success point**: The LLM crosses into the infrastructure layer via the Bash tool, which invokes `graphiti-check` (a real Python process), which pings FalkorDB and returns a concrete boolean.
+
+---
+
+## Sequence Diagram: PROPOSED Fix for /system-design
+
+```
+User          VS Code/Claude Code    LLM                   Read tool         .guardkit/
+ │                 │                   │                         │            graphiti.yaml
+ │ /system-design  │                   │                         │               │
+ ├────────────────►│                   │                         │               │
+ │                 │ Load skill:       │                         │               │
+ │                 │ system-design.md  │                         │               │
+ │                 ├──────────────────►│                         │               │
+ │                 │                   │                         │               │
+ │                 │                   │ Parse Step 1:           │               │
+ │                 │                   │ "Read .guardkit/        │               │
+ │                 │                   │  graphiti.yaml"         │               │
+ │                 │                   │                         │               │
+ │                 │     Read tool     │                         │               │
+ │                 │◄──────────────────│                         │               │
+ │                 │                   │                         │               │
+ │                 │  Read file:       │                         │               │
+ │                 │  .guardkit/       ├────────────────────────►│               │
+ │                 │  graphiti.yaml    │                         │               │
+ │                 │                   │◄────────────────────────│               │
+ │                 │                   │  File contents:         │               │
+ │                 │  YAML content     │  enabled: true          │               │
+ │                 ├──────────────────►│  group_ids: [...]       │               │
+ │                 │                   │                         │               │
+ │                 │                   │ Parse YAML → enabled    │               │
+ │                 │                   │ = true → Graphiti       │               │
+ │                 │                   │ available               │               │
+ │                 │                   │                         │               │
+ │                 │                   │ [Continue with design   │               │
+ │                 │                   │  session, using         │               │
+ │                 │                   │  guardkit graphiti CLI  │               │
+ │                 │                   │  for seeding]           │               │
+ │                 │                   │                         │               │
+ │ "🏗️ Architecture│                  │                         │               │
+ │  loaded..."     │◄─────────────────│                         │               │
+ │◄────────────────│                   │                         │               │
+```
+
+**Fix**: Replace the Python pseudocode with a Read tool instruction. The LLM has a Read tool. Reading a YAML file is something it can do. No bridge script needed for the availability check — `graphiti-check` is still valuable for the full connectivity test if desired, but the basic availability signal is just a file read.
+
+---
+
+## Root Cause Analysis: Validated
+
+### The Three System Boundaries
+
+| Boundary | From | To | Crossing Mechanism |
+|----------|------|----|--------------------|
+| **B1**: User → LLM | User intent | Claude Code prompt | Skill tool (loads .md as prompt) |
+| **B2**: LLM → OS | LLM reasoning | Shell commands | Bash tool |
+| **B3**: OS → Infrastructure | Shell process | FalkorDB | Python client / TCP |
+
+**The broken commands never cross B2.** They present Python code at the prompt level (B1) and expect it to somehow reach the infrastructure layer (B3) — but there's no mechanism for that. The LLM reads the Python as descriptive pseudocode and makes a reasoning-based judgment.
+
+**The working command (/task-work) crosses all three boundaries**: prompt → Bash tool (B2) → graphiti-check Python process → FalkorDB ping (B3).
+
+### Why the LLM Takes the `else` Branch
+
+The command spec says: "you MUST execute these steps in order" and then shows:
+
+```python
+client = get_graphiti()
+if client:
+    ...
+else:
+    print("⚠️ Graphiti unavailable")
+```
+
+The LLM's reasoning chain:
+1. "I need to execute `get_graphiti()` to get a client"
+2. "This requires importing `guardkit.knowledge.graphiti_client`"
+3. "I have no Python runtime and cannot import this module"
+4. "Therefore `client` would be `None`"
+5. "Therefore I follow the `else` branch"
+6. Output: "Graphiti unavailable"
+
+This is **correct LLM reasoning given incorrect instructions**. The LLM is not broken — the prompt is asking it to do something impossible.
+
+### Live Verification
+
+```bash
+$ /Users/richardwoollcott/.agentecflow/bin/graphiti-check --status --quiet
+{"available": true, "error": null, "context": null, "categories": 0, "tokens_used": 0, "tokens_budget": 0}
+```
+
+Graphiti IS available. The Python client, config, and FalkorDB connectivity all pass. The only thing broken is the command spec's instruction to the LLM.
+
+### Additional Finding: `graphiti-check` Not on PATH
+
+`~/.agentecflow/bin/` is not in `$PATH`. The `/task-work` command references `graphiti-check` as a bare command — this may work if the user's shell profile adds it, but it's fragile. The full path `/Users/richardwoollcott/.agentecflow/bin/graphiti-check` is more reliable, or a `Read` tool approach avoids PATH issues entirely.
+
+---
+
+## Architecture Score: 42/100 (revised from 45)
 
 | Principle | Score | Notes |
 |-----------|-------|-------|
-| SOLID - SRP | 6/10 | Command specs mix "what the LLM should do" with "illustrative Python" |
-| SOLID - OCP | 5/10 | Adding new Graphiti checks requires modifying each command spec |
-| SOLID - LSP | 7/10 | N/A — no inheritance hierarchy |
-| SOLID - ISP | 6/10 | Commands depend on imports they can't use |
-| SOLID - DIP | 3/10 | **Critical**: Commands depend on concrete Python imports instead of abstract availability signals |
-| DRY | 2/10 | **Critical**: Same broken pattern copy-pasted across 8 commands |
-| YAGNI | 7/10 | No unnecessary features, but pseudocode adds confusion |
+| SOLID - SRP | 5/10 | Command specs conflate "LLM instructions" with "Python implementation reference" |
+| SOLID - OCP | 5/10 | Adding Graphiti to a new command requires copy-pasting the broken pattern |
+| SOLID - LSP | 7/10 | N/A |
+| SOLID - ISP | 5/10 | Commands present an interface (Python imports) that the consumer (LLM) cannot use |
+| SOLID - DIP | 2/10 | **Critical**: All 8 commands depend on concrete Python class instantiation for a simple boolean check |
+| DRY | 2/10 | **Critical**: Same broken pattern in 20+ locations across 8 files |
+| YAGNI | 7/10 | The Python classes themselves are well-designed; the problem is how they're referenced |
 
-## Findings
+**Score decreased** because the deeper analysis confirmed the DIP violation is more severe than initially assessed — the entire Graphiti integration surface area is broken, not just the availability check.
 
-### Finding 1: Python Pseudocode Is Non-Executable by the LLM (CRITICAL)
+---
 
-**Evidence**: [system-design.md:44-74](installer/core/commands/system-design.md#L44-L74), [system-arch.md:36-52](installer/core/commands/system-arch.md#L36-L52)
+## Findings (Revised)
 
-The command prompt contains:
+### Finding 1: Two Execution Models — Only One Works (CRITICAL, CONFIRMED)
+
+The command spec system supports two execution models:
+
+| Model | Mechanism | Python code blocks interpreted as | Works for Graphiti? |
+|-------|-----------|-----------------------------------|---------------------|
+| **A: Script delegation** | Command delegates to `python3 ~/.agentecflow/bin/<script>` | Executable code run by Python interpreter | Yes |
+| **B: Markdown interpretation** | Full markdown injected as LLM prompt | Pseudocode describing intended behaviour | **No** |
+
+`/system-design` uses Model B. The LLM sees the Python as behavioural intent, not executable code.
+
+`/task-work` Phase 1.7 works because it uses **bash code blocks with explicit "Run" instructions** — which the LLM can execute via its Bash tool.
+
+**Key quote from task-work.md (line 1703)**:
+> "Instead, **run the Python check script via bash** as described below."
+
+**Key quote from system-design.md (line 1132)**:
+> "you MUST execute these steps in order" — followed by `python` code blocks
+
+The difference: task-work explicitly tells the LLM *how* (Bash tool). system-design tells the LLM *what* (Python pseudocode) without a viable *how*.
+
+### Finding 2: Broken Pattern Spans 20+ Code Block Instances Across 8 Commands
+
+| Command | `get_graphiti()` instances | Other Python Graphiti calls |
+|---------|---------------------------|----------------------------|
+| `/system-design` | 3 (lines 50, 88, 1142) | `SystemDesignGraphiti`, `SystemPlanGraphiti`, `upsert_*` |
+| `/system-arch` | 3 (lines 40, 62, 1003) | `has_architecture_context()`, `upsert_*`, `sanitise_for_graphiti()` |
+| `/system-plan` | 3 (lines 46, 796, 1066) | `SystemPlanGraphiti`, context queries |
+| `/system-overview` | 2 (lines 43, 287) | Architecture context queries |
+| `/impact-analysis` | 2 (lines 92, 433) | `SystemPlanGraphiti`, impact queries |
+| `/arch-refine` | 3 (lines 48, 76, 762) | `sanitise_for_graphiti()`, ADR context |
+| `/design-refine` | 3 (lines 52, 89, 1029) | `SystemDesignGraphiti`, design updates |
+| `/context-switch` | 1 (line 449) | Project context queries |
+
+**Total**: ~20 `get_graphiti()` call sites + ~30 method calls on Graphiti objects = **~50 non-executable Python references** across the command spec corpus.
+
+### Finding 3: Seeding Is Doubly Broken
+
+Even if the availability check were fixed, the seeding phase (e.g., system-design Step 8) uses:
 
 ```python
-from guardkit.planning.graphiti_arch import SystemPlanGraphiti
-from guardkit.knowledge.graphiti_client import get_graphiti
-
-client = get_graphiti()  # Returns None if Graphiti unavailable
-if client:
-    # ... use Graphiti
-else:
-    print("⚠️ Graphiti unavailable — reading architecture from local files")
+design_sp.upsert_api_contract(contract)
 ```
 
-When Claude Code reads this prompt, it cannot execute these Python imports. It sees code that references modules it has no way to import, so it rationally takes the `else` path. **This is the root cause of the bug.**
+The LLM cannot call Python methods on objects. Even with correct availability detection, the seeding step requires either:
+- A CLI command (`guardkit graphiti add-context ...`) the LLM can run via Bash tool
+- A separate Script Delegation model (Model A) for the seeding phase
 
-**Severity**: Critical — renders all Graphiti integration non-functional for affected commands.
+### Finding 4: `graphiti-check` Not on PATH (NEW)
 
-### Finding 2: Proven Fix Pattern Exists in task-work Phase 1.7
+The `graphiti-check` wrapper lives at `~/.agentecflow/bin/graphiti-check` but `~/.agentecflow/bin/` is NOT in `$PATH`:
 
-**Evidence**: [task-work.md:1700-1804](installer/core/commands/task-work.md#L1700-L1804)
-
-The `/task-work` command solved this problem correctly using a **CLI-executable pattern**:
-
-```bash
-graphiti-check --status --quiet
-# Returns JSON: {"available": true|false, "error": null|"...", ...}
+```
+$ which graphiti-check
+graphiti-check not found
 ```
 
-This works because:
-1. Claude Code **can** execute bash commands
-2. The `graphiti-check` script ([graphiti_check.py](installer/core/commands/lib/graphiti_check.py)) performs all 4 checks (env var, library, config, connectivity)
-3. The result is a simple JSON boolean — no Python import gymnastics
+This means even the working `/task-work` pattern is fragile — it works only if:
+- The user's shell profile adds `~/.agentecflow/bin` to PATH, or
+- Claude Code resolves the wrapper via some other mechanism
 
-### Finding 3: 8 Commands Share the Same Broken Pattern (DRY Violation)
+The Read-based approach (reading `.guardkit/graphiti.yaml` directly) avoids this entirely.
 
-**Evidence**: Grep across `installer/core/commands/*.md`
+### Finding 5: Group ID Configuration Is By Design (DOWNGRADED)
 
-| Command | Import Pattern | Lines |
-|---------|---------------|-------|
-| `/system-design` | `from guardkit.knowledge.graphiti_client import get_graphiti` | 47, 85, 1139 |
-| `/system-arch` | `from guardkit.knowledge.graphiti_service import get_graphiti` | 37, 62, 1001 |
-| `/system-plan` | `from guardkit.knowledge.graphiti_service import get_graphiti` | 43, 792, 1066 |
-| `/system-overview` | `from guardkit.knowledge.graphiti_client import get_graphiti` | 39, 284 |
-| `/impact-analysis` | `from guardkit.knowledge.graphiti_client import get_graphiti` | 89, 430 |
-| `/arch-refine` | `from guardkit.knowledge.graphiti_client import get_graphiti` | 45, 74, 760 |
-| `/design-refine` | `from guardkit.knowledge.graphiti_client import get_graphiti` | 49, 86, 1027 |
-| `/context-switch` | `from guardkit.knowledge.graphiti_client import get_graphiti` | 447 |
+The `group_ids` in `graphiti.yaml` (`product_knowledge`, `command_workflows`, `architecture_decisions`) are **seeding groups**, not an exhaustive registry. `SystemDesignGraphiti` uses `project_design` and `api_contracts` which are auto-prefixed by `GraphitiClient.get_group_id()`. This is working as designed in the Python layer — the only issue is that the command spec presents these groups in non-executable Python code.
 
-Note: Two different import paths are used (`graphiti_service` vs `graphiti_client`) — an additional inconsistency.
+### Finding 6: Import Path Inconsistency (CONFIRMED)
 
-### Finding 4: Group ID Mismatch
+`/system-arch` and `/system-plan` reference `guardkit.knowledge.graphiti_service` (doesn't exist as a file). All other commands reference `guardkit.knowledge.graphiti_client` (exists). Since these are pseudocode anyway, the inconsistency is cosmetic — but it adds to the confusion about whether these are meant to be executable.
 
-**Evidence**: [graphiti.yaml:57-62](.guardkit/graphiti.yaml#L57-L62) vs [system-design.md:689](installer/core/commands/system-design.md#L689)
+---
 
-| Source | Group IDs |
-|--------|-----------|
-| `.guardkit/graphiti.yaml` | `product_knowledge`, `command_workflows`, `architecture_decisions` |
-| `/system-design` Phase 5 | `project_design`, `api_contracts` |
-| `/system-arch` Phase 4 | `project_architecture`, `project_decisions` |
-| `graphiti-knowledge.md` rules | `product_knowledge`, `command_workflows`, `patterns`, `agents`, `project_overview`, `project_architecture`, `feature_specs`, `project_decisions`, `architecture_decisions`, `task_outcomes`, `failure_patterns`, `successful_fixes`, `turn_states` |
+## Revised Recommendations
 
-The `SystemDesignGraphiti` class references `project_design` and `api_contracts` groups. These are **not** listed in `graphiti.yaml`'s `group_ids` section. However, the `GraphitiClient.get_group_id()` method likely auto-creates/prefixes groups, so this may be working as designed — the YAML `group_ids` list is for seeding, not an exhaustive registry. This needs confirmation.
+### Recommendation 1: Replace Python Pseudocode with Tool-Native Instructions (CRITICAL)
 
-### Finding 5: Seeding Instructions Missing from Command Prompts
+**Two-tier approach for the availability check:**
 
-**Evidence**: [system-design.md:687-714](installer/core/commands/system-design.md#L687-L714)
-
-Phase 5 (Graphiti Seeding) uses Python pseudocode with `SystemDesignGraphiti` method calls. When Graphiti is "unavailable" (per Finding 1), this entire phase is skipped. Even if the availability check were fixed, the LLM still can't call `design_sp.upsert_api_contract()` directly.
-
-The command should instead emit `guardkit graphiti add-context` CLI commands that the user (or automation) can run.
-
-### Finding 6: graphiti_check.py Is Well-Designed but Under-Utilised
-
-**Evidence**: [graphiti_check.py](installer/core/commands/lib/graphiti_check.py)
-
-The `graphiti_check.py` script performs robust 4-layer availability checking:
-1. Environment variable override (`GRAPHITI_ENABLED`)
-2. Library availability (`graphiti-core` installed)
-3. Configuration validation (`.guardkit/graphiti.yaml` + `enabled: true`)
-4. Connectivity test (FalkorDB ping)
-
-This is exactly what the other 8 commands need, but only `/task-work` uses it.
-
-### Finding 7: Inconsistent Import Paths
-
-**Evidence**: `/system-arch` and `/system-plan` use `guardkit.knowledge.graphiti_service`, while all others use `guardkit.knowledge.graphiti_client`.
-
-This inconsistency suggests the commands were written at different times and not harmonised. The actual module is `graphiti_client` (confirmed by file existence at [guardkit/knowledge/](guardkit/knowledge/)).
-
-### Finding 8: No Graphiti Availability Caching
-
-Each command checks Graphiti availability independently. If the user runs `/system-arch` followed by `/system-design`, the availability check runs twice. This is minor (the check is fast) but worth noting for the file-existence pattern, which is essentially free.
-
-## Recommendations
-
-### Recommendation 1: Replace Python Pseudocode with CLI/File-Check Pattern (Priority: CRITICAL)
-
-**For all 8 affected commands**, replace the Python import pattern with:
+**Tier 1 (Simple — Read tool):** For the availability boolean, instruct the LLM to read the config file:
 
 ```markdown
-### Graphiti Availability Check
+### Step 1: Check Graphiti Availability
 
-**Check `.guardkit/graphiti.yaml` for Graphiti availability:**
+Use the Read tool to read `.guardkit/graphiti.yaml`.
 
-1. Read `.guardkit/graphiti.yaml` — if file does not exist, Graphiti is unavailable
-2. Check `enabled: true` in the YAML — if false or missing, Graphiti is unavailable
-3. If available, note the `group_ids` for seeding operations
+**IF** the file exists and contains `enabled: true`:
+  - SET graphiti_available = true
+  - Note the configured group_ids and connection details
 
-**OR** run the CLI check for full connectivity verification:
-
-```bash
-graphiti-check --status --quiet
+**IF** the file does not exist, or `enabled:` is false or missing:
+  - SET graphiti_available = false
+  - DISPLAY: "⚠️ Graphiti unavailable — continuing with markdown artefacts only"
 ```
 
-Parse JSON output: `{"available": true|false, "error": null|"..."}`
-```
-
-**Effort**: Medium (each command spec needs targeted edits)
-**Impact**: Fixes the core bug across all commands
-
-### Recommendation 2: Standardise Seeding to CLI Commands (Priority: HIGH)
-
-Replace Phase 5 Python pseudocode with actionable CLI commands:
+**Tier 2 (Full connectivity — Bash tool):** For commands that need live Graphiti access (seeding):
 
 ```markdown
-### Phase 5: Graphiti Seeding
+### Graphiti Connectivity Check (optional)
 
-**IF Graphiti available**, emit these commands for the user to run:
+Run via Bash tool to verify FalkorDB is reachable:
 
 ```bash
-guardkit graphiti add-context docs/design/contracts/{context}-api.yaml --group project_design
-guardkit graphiti add-context docs/design/models/{context}-models.md --group project_design
-guardkit graphiti add-context docs/design/decisions/DDR-{NNN}.md --group architecture_decisions
+/Users/richardwoollcott/.agentecflow/bin/graphiti-check --status --quiet
 ```
 
-**IF Graphiti unavailable**:
-```
-⚠️ Graphiti unavailable — artefacts written to markdown only
-   Re-run with Graphiti enabled to seed knowledge graph
-```
+Parse JSON: `{"available": true|false, "error": "..."|null}`
 ```
 
-**Effort**: Medium
-**Impact**: Makes seeding actually executable
+**Effort**: 1-2 days across all 8 commands
+**Impact**: Fixes the root cause for all affected commands
 
-### Recommendation 3: Create a Shared Graphiti Preamble Include (Priority: MEDIUM)
+### Recommendation 2: Replace Python Seeding Pseudocode with CLI Commands (HIGH)
 
-Extract the availability check into a reusable snippet that all commands reference:
+For seeding phases, replace:
+```python
+design_sp.upsert_api_contract(contract)  # LLM can't do this
+```
+
+With:
+```markdown
+**IF graphiti_available**, generate and display seeding commands:
+
+```bash
+guardkit graphiti add-context docs/design/contracts/{context}-api.yaml \
+  --group project_design
+
+guardkit graphiti add-context docs/design/decisions/DDR-{NNN}.md \
+  --group architecture_decisions
+```
+
+Ask user: "Run these seeding commands now? [Y/n]"
+If yes, execute each via Bash tool.
+```
+
+**Effort**: Medium (each command's seeding phase needs rewriting)
+**Impact**: Makes Graphiti seeding actually work
+
+### Recommendation 3: Create Shared Graphiti Preamble (MEDIUM)
+
+Create `installer/core/commands/lib/graphiti-preamble.md`:
 
 ```markdown
-<!-- In installer/core/commands/lib/graphiti-preamble.md -->
 ## Graphiti Availability Check
 
-Read `.guardkit/graphiti.yaml`. If the file exists and contains `enabled: true`,
-Graphiti is available. Store this as a boolean for use throughout the command.
-
-Alternatively, run: `graphiti-check --status --quiet`
+1. Use the Read tool to read `.guardkit/graphiti.yaml`
+2. If file exists and `enabled: true` → graphiti_available = true
+3. If missing or disabled → graphiti_available = false, warn user
+4. For full connectivity: run `graphiti-check --status --quiet` via Bash tool
 ```
 
-Each command then includes: `**See**: lib/graphiti-preamble.md for Graphiti availability check`
+Each command references this instead of duplicating the pattern.
 
 **Effort**: Low
-**Impact**: Eliminates DRY violation, single point of maintenance
+**Impact**: Single point of maintenance, prevents future drift
 
-### Recommendation 4: Harmonise Import Paths (Priority: LOW)
+### Recommendation 4: Fix `graphiti-check` PATH Issue (MEDIUM)
 
-Replace all `guardkit.knowledge.graphiti_service` references with `guardkit.knowledge.graphiti_client` (the actual module name). This affects `/system-arch` and `/system-plan`.
-
-**Effort**: Low (search-and-replace)
-**Impact**: Removes confusion if anyone reads the pseudocode for reference
-
-### Recommendation 5: Document Group ID Strategy (Priority: LOW)
-
-Add a section to `graphiti-knowledge.md` that documents all group IDs used across commands:
-
-| Group | Created By | Used By |
-|-------|-----------|---------|
-| `product_knowledge` | `guardkit init` | General queries |
-| `project_architecture` | `/system-arch` | `/system-design`, `/impact-analysis` |
-| `project_design` | `/system-design` | `/feature-spec`, `/feature-plan` |
-| `api_contracts` | `/system-design` | `/feature-spec`, `/feature-plan` |
-| `architecture_decisions` | `/system-arch` | `/arch-refine`, `/design-refine` |
+Either:
+- Use absolute path in command specs: `~/.agentecflow/bin/graphiti-check`
+- Or add `~/.agentecflow/bin` to PATH in installer's shell profile setup
+- Or prefer the Read-based approach (Recommendation 1 Tier 1) which avoids PATH entirely
 
 **Effort**: Low
-**Impact**: Clarifies the group ID landscape
+**Impact**: Makes the existing /task-work integration more robust
 
-## Decision Matrix
+### Recommendation 5: Harmonise Import Paths and Document Group IDs (LOW)
+
+- Replace `graphiti_service` → `graphiti_client` in system-arch, system-plan pseudocode
+- Add group ID registry to `graphiti-knowledge.md`
+
+**Effort**: Low
+**Impact**: Cosmetic clarity
+
+---
+
+## Decision Matrix (Revised)
 
 | Option | Score | Effort | Risk | Recommendation |
 |--------|-------|--------|------|----------------|
-| Fix all 8 commands at once | 95 | High (2-3 days) | Low | **Recommended** |
-| Fix system-design only, others later | 70 | Low (4 hours) | Medium (inconsistency) | Acceptable |
-| Create shared preamble + fix all | 98 | High (3-4 days) | Low | Best long-term |
-| Do nothing | 10 | None | High (broken feature) | Not recommended |
+| Fix all 8 commands (Read-based check + CLI seeding) | 98 | 2-3 days | Low | **Recommended** |
+| Fix system-design only as pilot, then roll out | 80 | 4-6 hours | Low | Good starting point |
+| Create shared preamble first, then fix all | 95 | 3-4 days | Low | Best architecture |
+| Do nothing | 5 | None | Critical | Entire Graphiti pipeline broken |
 
-## Appendix
+---
 
-### Affected Files
+## Appendix A: Affected Files
 
-| File | Type | Changes Needed |
-|------|------|---------------|
-| `installer/core/commands/system-design.md` | Command spec | Replace 3 pseudocode blocks |
-| `installer/core/commands/system-arch.md` | Command spec | Replace 3 pseudocode blocks |
-| `installer/core/commands/system-plan.md` | Command spec | Replace 3 pseudocode blocks |
-| `installer/core/commands/system-overview.md` | Command spec | Replace 2 pseudocode blocks |
-| `installer/core/commands/impact-analysis.md` | Command spec | Replace 2 pseudocode blocks |
-| `installer/core/commands/arch-refine.md` | Command spec | Replace 3 pseudocode blocks |
-| `installer/core/commands/design-refine.md` | Command spec | Replace 3 pseudocode blocks |
-| `installer/core/commands/context-switch.md` | Command spec | Replace 1 pseudocode block |
-| `.claude/rules/graphiti-knowledge.md` | Rules | Add group ID documentation |
+| File | Lines | Python pseudocode blocks to replace |
+|------|-------|-------------------------------------|
+| `installer/core/commands/system-design.md` | 1338 | 3 availability + 1 seeding |
+| `installer/core/commands/system-arch.md` | ~1160 | 3 availability + 1 seeding |
+| `installer/core/commands/system-plan.md` | ~1070 | 3 availability + 1 seeding |
+| `installer/core/commands/system-overview.md` | ~300 | 2 availability |
+| `installer/core/commands/impact-analysis.md` | ~440 | 2 availability |
+| `installer/core/commands/arch-refine.md` | ~960 | 3 availability + 1 seeding |
+| `installer/core/commands/design-refine.md` | ~1150 | 3 availability + 1 seeding |
+| `installer/core/commands/context-switch.md` | ~450 | 1 availability |
+| `installer/core/commands/lib/graphiti-preamble.md` | New | Shared availability check |
+| `.claude/rules/graphiti-knowledge.md` | Existing | Add group ID registry |
 
-### Pattern Comparison
+## Appendix B: Pattern Comparison (Three Variants)
 
-**Broken Pattern** (current — system-design et al.):
+**BROKEN (current)** — Python pseudocode, LLM can't execute:
 ```python
 from guardkit.knowledge.graphiti_client import get_graphiti
-client = get_graphiti()  # LLM cannot execute this
+client = get_graphiti()  # ← LLM has no Python runtime
 if client:
-    # Graphiti path (never reached)
+    ...  # Never reached
 else:
-    print("⚠️ Graphiti unavailable")  # Always reached
+    print("Graphiti unavailable")  # Always reached
 ```
 
-**Working Pattern** (task-work Phase 1.7):
+**WORKING (task-work)** — Bash command, LLM can execute:
+```markdown
+Run the graphiti check wrapper:
 ```bash
 graphiti-check --status --quiet
-# LLM CAN execute this via Bash tool
-# Returns JSON: {"available": true, ...}
+```
+Parse JSON output...
 ```
 
-**Proposed Simplest Pattern** (file-existence check):
+**PROPOSED (simplest)** — Read tool, LLM can execute:
 ```markdown
-Read `.guardkit/graphiti.yaml`.
+Read `.guardkit/graphiti.yaml` using the Read tool.
 If the file exists and contains `enabled: true`, Graphiti is available.
 ```
+
+## Appendix C: Live Test Results
+
+```
+$ /Users/richardwoollcott/.agentecflow/bin/graphiti-check --status --quiet
+{"available": true, "error": null, "context": null, "categories": 0, "tokens_used": 0, "tokens_budget": 0}
+
+$ cat .guardkit/graphiti.yaml | grep enabled
+enabled: true
+```
+
+Both methods confirm Graphiti is available. The system-design command never checks either way.

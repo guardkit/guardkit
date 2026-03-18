@@ -43,36 +43,17 @@ The command instructs Claude directly (Pattern A: command-spec-only) through a s
 
 Before starting the refinement session, `/design-refine` MUST verify that design context exists. This ensures refinement builds on established design decisions rather than creating from scratch.
 
-```python
-from guardkit.planning.graphiti_design import SystemDesignGraphiti
-from guardkit.planning.graphiti_arch import SystemPlanGraphiti
-from guardkit.knowledge.graphiti_client import get_graphiti
+**Check Graphiti availability** (Tier 1 — see `lib/graphiti-preamble.md`):
 
-# Initialize Graphiti client
-client = get_graphiti()  # Returns None if Graphiti unavailable
+Use the Read tool to read `.guardkit/graphiti.yaml`.
+- If the file exists and `enabled: true`: set `graphiti_available = true`
+- Otherwise: set `graphiti_available = false` and display the unavailability warning from the preamble
 
-if client:
-    design_sp = SystemDesignGraphiti(client, project_id="current_project")
-    arch_sp = SystemPlanGraphiti(client, project_id="current_project")
-    has_design = design_sp.has_design_context()
-
-    if not has_design:
-        print(NO_DESIGN_CONTEXT_MESSAGE)
-        choice = input("Run /system-design first? [Y/n]: ")
-        if choice.lower() != "n":
-            print("Launching /system-design...")
-            return
-        else:
-            print("Cannot proceed without design context.")
-            exit(0)
-else:
-    # Graphiti unavailable — check for local docs/design/ files
-    design_dir = Path("docs/design")
-    if not design_dir.exists() or not list(design_dir.glob("*.md")):
-        print(NO_DESIGN_CONTEXT_MESSAGE)
-        exit(0)
-    print("WARNING: Graphiti unavailable — reading design from local files")
-```
+Check for design context:
+- If `graphiti_available = true`: verify design artefact files exist in `docs/design/`
+- If `graphiti_available = false`: use Glob to check for `docs/design/*.md`
+  - If no local design files found: display `NO_DESIGN_CONTEXT_MESSAGE`, ask "Run /system-design first? [Y/n]", and exit
+  - If local files found: display `"WARNING: Graphiti unavailable — reading design from local files"` and continue
 
 ## Execution Flow
 
@@ -80,39 +61,16 @@ else:
 
 **Load existing design context and validate prerequisites:**
 
-```python
-from guardkit.planning.graphiti_design import SystemDesignGraphiti
-from guardkit.planning.graphiti_arch import SystemPlanGraphiti
-from guardkit.knowledge.graphiti_client import get_graphiti
+**Check Graphiti availability** (Tier 1 — see `lib/graphiti-preamble.md`):
+Read `.guardkit/graphiti.yaml`. Set `graphiti_available` accordingly.
 
-# Initialize clients
-client = get_graphiti()
-
-if client:
-    design_sp = SystemDesignGraphiti(client, project_id="current_project")
-    arch_sp = SystemPlanGraphiti(client, project_id="current_project")
-
-    # Load existing design context
-    existing_decisions = design_sp.get_design_decisions()
-    existing_contracts = design_sp.get_api_contracts()
-
-    # Load existing ADRs for contradiction detection
-    existing_adrs = arch_sp.get_relevant_context_for_topic(
-        "architecture decision ADR constraint", 20
-    )
-
-    print(f"Design context loaded:")
-    print(f"  {len(existing_decisions)} design decisions (DDRs)")
-    print(f"  {len(existing_contracts)} API contracts")
-else:
-    # Graceful degradation: read from local files
-    existing_decisions = load_decisions_from_files("docs/design/decisions/")
-    existing_contracts = load_contracts_from_files("docs/design/contracts/")
-    existing_adrs = []
-    design_sp = None
-    arch_sp = None
-    print("WARNING: Graphiti unavailable — continuing without persistence")
-```
+Load existing design context:
+- If `graphiti_available = true`: design decisions (DDRs), API contracts, and ADRs for contradiction detection are available via Graphiti (run Tier 2 connectivity check from preamble to confirm reachability)
+- If `graphiti_available = false`:
+  - Use the Read tool on files in `docs/design/decisions/` for DDRs
+  - Use the Read tool on files in `docs/design/contracts/` for API contracts
+  - No ADRs available for contradiction detection (skip that step)
+  - Display `"WARNING: Graphiti unavailable — continuing without persistence"`
 
 **Load additional context files (if --context provided):**
 
@@ -545,30 +503,33 @@ if affected_contexts:
 
 **Upsert all updated design artefacts into Graphiti (`project_design` and `api_contracts` groups):**
 
-```python
-if design_sp:
-    # Update changed DDRs
-    for ddr in changed_ddrs:
-        uuid = design_sp.upsert_design_decision(ddr)
-        if uuid:
-            print(f"  ✓ {ddr.entity_id} updated in Graphiti (project_design)")
+If `graphiti_available` is true, run the Tier 2 connectivity check (see `lib/graphiti-preamble.md`).
 
-    # Update changed contracts
-    for contract in changed_contracts:
-        uuid = design_sp.upsert_api_contract(contract)
-        if uuid:
-            print(f"  ✓ {contract.entity_id} updated in Graphiti (api_contracts)")
+Generate and offer the following seeding commands based on what was changed:
 
-    # Update changed data models
-    for model in changed_models:
-        uuid = design_sp.upsert_data_model(model)
-        if uuid:
-            print(f"  ✓ {model.entity_id} updated in Graphiti (project_design)")
+```bash
+# Seed updated DDR(s) — run for each changed DDR file
+guardkit graphiti add-context docs/design/decisions/{ddr-file}.md \
+  --group architecture_decisions
 
-    print(f"\n  ✓ All updated artefacts synchronised to Graphiti")
-else:
-    print("\n  WARNING: Graphiti unavailable — artefacts written to markdown only")
-    print("  Re-run with Graphiti enabled to seed knowledge graph")
+# Seed updated API contract(s) — run for each changed contract file
+guardkit graphiti add-context docs/design/contracts/{contract-file}.md \
+  --group architecture_decisions
+
+# Seed updated data model(s) — run for each changed model file
+guardkit graphiti add-context docs/design/{model-file}.md \
+  --group architecture_decisions
+```
+
+Ask: "Run these seeding commands now? [Y/n]"
+
+If yes, execute each applicable command via the Bash tool.
+
+If Graphiti is unavailable, display the unavailability warning from the preamble:
+
+```
+⚠️  Graphiti unavailable — artefacts written to markdown only.
+    Re-run with Graphiti enabled to seed knowledge graph.
 ```
 
 ### Phase 8: Summary Output
@@ -622,32 +583,26 @@ Next steps:
 
 ### Graphiti Unavailable
 
-```python
-if not client:
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print("WARNING: Graphiti unavailable")
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print()
-    print("Design refinement will continue WITHOUT persistence.")
-    print("Markdown artefacts will be updated, but changes won't be")
-    print("queryable by /feature-spec, /feature-plan, or /system-plan.")
-    print()
-    print("Limitations in degraded mode:")
-    print("  • Disambiguation uses local file scanning (less accurate)")
-    print("  • Feature spec staleness detection skipped")
-    print("  • Downstream staleness flagging skipped")
-    print("  • Contradiction detection limited to local ADR files")
-    print()
-    print("To enable Graphiti:")
-    print("  1. Install: pip install guardkit-py[graphiti]")
-    print("  2. Configure: Add Graphiti settings to .env")
-    print()
+When `graphiti_available = false`, display the unavailability warning from `lib/graphiti-preamble.md`:
 
-    choice = input("Continue without persistence? [Y/n]: ")
-    if choice.lower() == "n":
-        print("Cancelled.")
-        exit(0)
 ```
+⚠️  Graphiti unavailable — continuing without knowledge graph context.
+    Reason: {error from graphiti-check, or "Config disabled / file not found"}
+
+    To enable: ensure .guardkit/graphiti.yaml has `enabled: true` and
+    FalkorDB is reachable at the configured host.
+```
+
+Then inform the user of the specific limitations for design refinement:
+- Disambiguation uses local file scanning (less accurate)
+- Feature spec staleness detection skipped
+- Downstream staleness flagging skipped
+- Contradiction detection limited to local ADR files
+- Changes won't be queryable by `/feature-spec`, `/feature-plan`, or `/system-plan`
+
+Ask: "Continue without persistence? [Y/n]"
+
+If no: display "Cancelled." and stop. Do not block if no input — default to continue.
 
 ### Partial Graphiti Failure
 
@@ -1021,35 +976,18 @@ if no_questions:
 
 ### Step 2: Initialize Graphiti and Verify Prerequisite
 
-```python
-from guardkit.planning.graphiti_design import SystemDesignGraphiti
-from guardkit.planning.graphiti_arch import SystemPlanGraphiti
-from guardkit.knowledge.graphiti_client import get_graphiti
+**Check Graphiti availability** (Tier 1 — see `lib/graphiti-preamble.md`):
 
-client = get_graphiti()
+Use the Read tool to read `.guardkit/graphiti.yaml`.
+- If `enabled: true`: set `graphiti_available = true`
+- Otherwise: set `graphiti_available = false`
 
-if client:
-    design_sp = SystemDesignGraphiti(client, project_id="current_project")
-    arch_sp = SystemPlanGraphiti(client, project_id="current_project")
-
-    has_design = design_sp.has_design_context()
-    if not has_design:
-        print("❌ No design context found")
-        print("Run /system-design first to establish design context.")
-        exit(0)
-else:
-    # Fallback to local files
-    if not Path("docs/design").exists():
-        print("❌ No design context found")
-        exit(0)
-
-    print("WARNING: Graphiti unavailable — continuing without persistence")
-    choice = input("Continue? [Y/n]: ")
-    if choice.lower() == "n":
-        exit(0)
-    design_sp = None
-    arch_sp = None
-```
+Check for design context:
+- If `graphiti_available = true`: verify design artefact files exist in `docs/design/` (run Tier 2 connectivity check before any seeding operations)
+- If `graphiti_available = false`:
+  - Use Glob to check for `docs/design/*.md`
+  - If no local files: display `"❌ No design context found"` and exit
+  - If local files exist: display the unavailability warning from the preamble and ask: "Continue? [Y/n]"
 
 ### Step 3: Disambiguation
 
@@ -1106,12 +1044,27 @@ Based on selected artefact type:
 
 ### Step 9: Graphiti Persistence
 
-```python
-# Upsert all changed artefacts to Graphiti
-# DDRs → project_design group
-# Contracts → api_contracts group
-# Data models → project_design group
+**Seed Graphiti** (if `graphiti_available` is true):
+
+Run the Tier 2 connectivity check from `lib/graphiti-preamble.md`, then generate and offer the seeding commands for all changed artefacts:
+
+```bash
+# Seed changed DDRs
+guardkit graphiti add-context docs/design/decisions/{ddr-file}.md \
+  --group architecture_decisions
+
+# Seed changed API contracts
+guardkit graphiti add-context docs/design/contracts/{contract-file}.md \
+  --group architecture_decisions
+
+# Seed changed data models
+guardkit graphiti add-context docs/design/{model-file}.md \
+  --group architecture_decisions
 ```
+
+Ask: "Run these seeding commands now? [Y/n]"
+
+If yes, execute each applicable command via the Bash tool.
 
 ### Step 10: Summary
 
@@ -1140,7 +1093,7 @@ User: /design-refine "add rate limiting to payment API"
 
 Claude executes:
   1. Parse arguments → description = "add rate limiting to payment API"
-  2. Initialize Graphiti → client = get_graphiti(), verify design context
+  2. Check Graphiti availability → read `.guardkit/graphiti.yaml` (Tier 1 check), verify design context
   3. Disambiguation → search_design_context("add rate limiting to payment API")
   4. Present top 3-5 matches → user selects API-payment-processing
   5. API Contract refinement → present current, capture changes, show diff
@@ -1149,7 +1102,7 @@ Claude executes:
   8. Feature spec staleness → query feature_specs for affected scenarios
   9. Downstream staleness → flag dependent Graphiti nodes
   10. C4 L3 re-review → present revised diagram if structure changed
-  11. Graphiti persistence → upsert updated contract to api_contracts
+  11. Graphiti seeding → offer `guardkit graphiti add-context` CLI commands for updated contract
   12. OpenAPI validation → validate updated spec
   13. Summary → display changes, staleness, next steps
 ```
@@ -1173,19 +1126,11 @@ that /design-refine iterates upon.
 Run /system-design first to establish design context.
 """
 
-GRAPHITI_UNAVAILABLE_MESSAGE = """
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-WARNING: Graphiti unavailable
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Design refinement will continue WITHOUT persistence.
-Markdown artefacts will be updated, but changes won't be
-queryable by /feature-spec, /feature-plan, or /system-plan.
-
-To enable Graphiti:
-  1. Install: pip install guardkit-py[graphiti]
-  2. Configure: Add Graphiti settings to .env
-"""
+GRAPHITI_UNAVAILABLE_MESSAGE:
+Use the warning template from `lib/graphiti-preamble.md`. Additional context for design refinement:
+- Changes won't be queryable by /feature-spec, /feature-plan, or /system-plan
+- Feature spec staleness detection skipped
+- Downstream staleness flagging skipped
 
 SESSION_CANCELLED_MESSAGE = """
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

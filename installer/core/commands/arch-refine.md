@@ -40,28 +40,17 @@ The disambiguation flow used by `/arch-refine` is identical to that used by `/de
 
 Before starting the refinement session, `/arch-refine` MUST verify that architecture context exists. The command requires existing ADRs from `/system-arch` to refine.
 
-```python
-from guardkit.planning.graphiti_arch import SystemPlanGraphiti
-from guardkit.knowledge.graphiti_client import get_graphiti
+**Check Graphiti availability** (Tier 1 — see `lib/graphiti-preamble.md`):
 
-# Initialize Graphiti client
-client = get_graphiti()  # Returns None if Graphiti unavailable
+Use the Read tool to read `.guardkit/graphiti.yaml`.
+- If the file exists and `enabled: true`: set `graphiti_available = true`
+- Otherwise: set `graphiti_available = false` and display the unavailability warning from the preamble
 
-if client:
-    arch_sp = SystemPlanGraphiti(client, project_id="current_project")
-    has_arch = arch_sp.has_architecture_context()
-
-    if not has_arch:
-        print(NO_ARCHITECTURE_CONTEXT_MESSAGE)
-        exit(0)
-else:
-    # Graceful degradation: check for local docs/architecture/decisions/ files
-    arch_decisions_dir = Path("docs/architecture/decisions")
-    if not arch_decisions_dir.exists() or not list(arch_decisions_dir.glob("ADR-ARCH-*.md")):
-        print(NO_ARCHITECTURE_CONTEXT_MESSAGE)
-        exit(0)
-    print("WARNING: Graphiti unavailable — reading ADRs from local files")
-```
+Check for architecture context:
+- If `graphiti_available = true`: verify ADR files exist in `docs/architecture/decisions/`
+- If `graphiti_available = false`: use Glob to check for `docs/architecture/decisions/ADR-ARCH-*.md`
+  - If no local ADRs found: display `NO_ARCHITECTURE_CONTEXT_MESSAGE` and exit
+  - If local ADRs found: display `"WARNING: Graphiti unavailable — reading ADRs from local files"` and continue
 
 ## Execution Flow
 
@@ -69,27 +58,15 @@ else:
 
 **Load existing ADRs and architecture context:**
 
-```python
-from guardkit.planning.graphiti_arch import SystemPlanGraphiti
-from guardkit.knowledge.graphiti_client import get_graphiti
+**Check Graphiti availability** (Tier 1 — see `lib/graphiti-preamble.md`):
+Read `.guardkit/graphiti.yaml`. Set `graphiti_available` accordingly.
 
-client = get_graphiti()
+Load existing ADRs:
+- If `graphiti_available = true`: ADR context is available via Graphiti (run Tier 2 connectivity check from preamble to confirm reachability before querying)
+- If `graphiti_available = false`: use the Read tool on each file matched by `docs/architecture/decisions/ADR-ARCH-*.md`
 
-if client:
-    arch_sp = SystemPlanGraphiti(client, project_id="current_project")
-    existing_adrs = arch_sp.get_relevant_context_for_topic(
-        "architecture decision ADR", 20
-    )
-else:
-    existing_adrs = load_adrs_from_files("docs/architecture/decisions/")
-
-# Load additional context files (if --context provided)
-context_files = flags.get("context", [])
-for context_file in context_files:
-    with open(context_file) as f:
-        additional_context = f.read()
-    print(f"Loaded context from {context_file}")
-```
+Load additional context files (if `--context` provided):
+- Use the Read tool to read each context file specified
 
 ### Phase 1: Disambiguation — Locate the ADR to Refine
 
@@ -97,20 +74,11 @@ If `--adr=ADR-ARCH-NNN` is provided, skip disambiguation and directly load the t
 
 #### Step 1: Semantic Search
 
-```python
-from guardkit.planning.graphiti_arch import SystemPlanGraphiti
+Search for matching ADRs using the user's natural language query:
+- If `graphiti_available = true`: search Graphiti for ADRs matching the query (Tier 2 connectivity required)
+- If `graphiti_available = false`: use Glob and Read tools to scan `docs/architecture/decisions/ADR-ARCH-*.md` for relevant ADRs
 
-# Search for matching ADRs using the user's natural language query
-query = args[0]  # e.g., "database choice" or "change authentication approach"
-
-if client:
-    matches = arch_sp.get_relevant_context_for_topic(query, limit=5)
-else:
-    matches = search_local_adrs(query, "docs/architecture/decisions/", limit=5)
-
-# Cap results at 3-5 to prevent adversarial queries from surfacing excessive data (ASSUM-002)
-matches = matches[:5]
-```
+Cap results at 3-5 to prevent adversarial queries from surfacing excessive data (ASSUM-002).
 
 #### Step 2: Present Matches for Selection
 
@@ -445,42 +413,31 @@ writer.write_architecture_index(output_dir, system_context, components, concerns
 
 Upsert superseded and new episodes to Graphiti:
 
-```python
-# Sanitise free-text content before Graphiti seeding
-from guardkit.knowledge.sanitise import sanitise_for_graphiti
+If `graphiti_available` is true, run the Tier 2 connectivity check (see `lib/graphiti-preamble.md`).
 
-if client:
-    # Upsert superseded ADR (updated with superseded_by field)
-    sanitised_existing = sanitise_for_graphiti(existing_adr.to_episode_body())
-    arch_sp.upsert_episode(
-        entity_id=existing_adr.entity_id,
-        body=sanitised_existing,
-        group_ids=["project_decisions"],
-    )
+**Note on `sanitise_for_graphiti()`:** The `guardkit graphiti add-context` CLI command handles content sanitisation automatically — no manual sanitisation step is needed.
 
-    # Upsert new ADR
-    sanitised_new = sanitise_for_graphiti(new_adr.to_episode_body())
-    arch_sp.upsert_episode(
-        entity_id=new_adr.entity_id,
-        body=sanitised_new,
-        group_ids=["project_decisions"],
-    )
+Generate and offer the following seeding commands:
 
-    # Update project_architecture group if structure changed
-    if structure_changed:
-        for entity in updated_architecture_entities:
-            arch_sp.upsert_entity(
-                entity=entity,
-                group_ids=["project_architecture"],
-            )
+```bash
+# Seed superseded ADR (updated with superseded_by field)
+guardkit graphiti add-context docs/architecture/decisions/{existing-adr-file}.md \
+  --group architecture_decisions
 
-    print(f"  ✓ {existing_adr.entity_id} updated (superseded)")
-    print(f"  ✓ {new_adr.entity_id} created")
-    print(f"  ✓ {len(stale_nodes)} downstream nodes flagged as stale")
-else:
-    print("  ⚠️ Graphiti unavailable — artefacts written to markdown only")
-    print("  Markdown artefacts are still generated without persistence.")
-    print("  Re-run with Graphiti enabled to seed knowledge graph.")
+# Seed new ADR
+guardkit graphiti add-context docs/architecture/decisions/{new-adr-file}.md \
+  --group architecture_decisions
+```
+
+Ask: "Run these seeding commands now? [Y/n]"
+
+If yes, execute each via the Bash tool.
+
+If Graphiti is unavailable, display the unavailability warning from the preamble:
+
+```
+⚠️  Graphiti unavailable — artefacts written to markdown only.
+    Re-run with Graphiti enabled to seed knowledge graph.
 ```
 
 ## Error Handling
@@ -517,28 +474,24 @@ if not matches:
 
 ### Graphiti Unavailable
 
-```python
-if not client:
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print("WARNING: Graphiti unavailable")
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print()
-    print("Architecture refinement will continue WITHOUT persistence.")
-    print("Markdown artefacts will still be generated, but:")
-    print("  - Temporal superseding won't be tracked in knowledge graph")
-    print("  - Staleness flagging won't propagate to downstream nodes")
-    print("  - Impact analysis will be limited to local file scanning")
-    print()
-    print("To enable Graphiti:")
-    print("  1. Install: pip install guardkit-py[graphiti]")
-    print("  2. Configure: Add Graphiti settings to .env")
-    print()
+When `graphiti_available = false`, display the unavailability warning from `lib/graphiti-preamble.md`:
 
-    choice = input("Continue without persistence? [Y/n]: ")
-    if choice.lower() == "n":
-        print("Cancelled.")
-        exit(0)
 ```
+⚠️  Graphiti unavailable — continuing without knowledge graph context.
+    Reason: {error from graphiti-check, or "Config disabled / file not found"}
+
+    To enable: ensure .guardkit/graphiti.yaml has `enabled: true` and
+    FalkorDB is reachable at the configured host.
+```
+
+Then inform the user of the specific limitations for architecture refinement:
+- Temporal superseding won't be tracked in knowledge graph
+- Staleness flagging won't propagate to downstream nodes
+- Impact analysis will be limited to local file scanning
+
+Ask: "Continue without persistence? [Y/n]"
+
+If no: display "Cancelled." and stop. Do not block if no input — default to continue.
 
 ### Graphiti Connection Drop Mid-Session
 
@@ -755,30 +708,18 @@ if no_questions:
 
 ### Step 2: Initialize Graphiti and Prerequisite Check
 
-```python
-from guardkit.planning.graphiti_arch import SystemPlanGraphiti
-from guardkit.knowledge.graphiti_client import get_graphiti
+**Check Graphiti availability** (Tier 1 — see `lib/graphiti-preamble.md`):
 
-client = get_graphiti()
+Use the Read tool to read `.guardkit/graphiti.yaml`.
+- If `enabled: true`: set `graphiti_available = true`
+- Otherwise: set `graphiti_available = false`
 
-if client:
-    arch_sp = SystemPlanGraphiti(client, project_id="current_project")
-    has_arch = arch_sp.has_architecture_context()
-
-    if not has_arch:
-        print(NO_ARCHITECTURE_CONTEXT_MESSAGE)
-        exit(0)
-else:
-    # Check for local ADR files
-    if not Path("docs/architecture/decisions").exists():
-        print(NO_ARCHITECTURE_CONTEXT_MESSAGE)
-        exit(0)
-
-    print("WARNING: Graphiti unavailable — continuing without persistence")
-    choice = input("Continue? [Y/n]: ")
-    if choice.lower() == "n":
-        exit(0)
-```
+Check for architecture context:
+- If `graphiti_available = true`: verify ADR files exist in `docs/architecture/decisions/` (run Tier 2 connectivity check before any seeding operations)
+- If `graphiti_available = false`:
+  - Use Glob to check for `docs/architecture/decisions/ADR-ARCH-*.md`
+  - If no local files: display `NO_ARCHITECTURE_CONTEXT_MESSAGE` and exit
+  - If local files exist: display the unavailability warning from the preamble and ask: "Continue? [Y/n]"
 
 ### Step 3: Disambiguation — Locate Target ADR
 
@@ -872,16 +813,23 @@ if structure_changed:
 
 ### Step 9: Graphiti Seeding
 
-```python
-if client:
-    # Sanitise content before seeding
-    sanitised_old = sanitise_for_graphiti(target_adr.to_episode_body())
-    sanitised_new = sanitise_for_graphiti(new_adr.to_episode_body())
+**Seed Graphiti** (if `graphiti_available` is true):
 
-    # Upsert both episodes to project_decisions group
-    arch_sp.upsert_episode(entity_id=target_adr.entity_id, body=sanitised_old, group_ids=["project_decisions"])
-    arch_sp.upsert_episode(entity_id=new_adr.entity_id, body=sanitised_new, group_ids=["project_decisions"])
+Run the Tier 2 connectivity check from `lib/graphiti-preamble.md`, then generate and offer the seeding commands. The CLI handles sanitisation automatically.
+
+```bash
+# Seed superseded ADR
+guardkit graphiti add-context docs/architecture/decisions/{target-adr-file}.md \
+  --group architecture_decisions
+
+# Seed new ADR
+guardkit graphiti add-context docs/architecture/decisions/{new-adr-file}.md \
+  --group architecture_decisions
 ```
+
+Ask: "Run these seeding commands now? [Y/n]"
+
+If yes, execute each via the Bash tool.
 
 ### Step 10: Display Summary
 
@@ -935,16 +883,11 @@ Suggestions:
   3. Run /system-arch to view all existing ADRs
 """
 
-GRAPHITI_UNAVAILABLE_MESSAGE = """
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-WARNING: Graphiti unavailable
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Architecture refinement will continue WITHOUT persistence.
-Markdown artefacts will still be generated, but temporal
-superseding and staleness flagging won't be tracked in the
-knowledge graph.
-"""
+GRAPHITI_UNAVAILABLE_MESSAGE:
+Use the warning template from `lib/graphiti-preamble.md`. Additional context for architecture refinement:
+- Temporal superseding won't be tracked in knowledge graph
+- Staleness flagging won't propagate to downstream nodes
+- Impact analysis will be limited to local file scanning
 ```
 
 ### Example Execution Trace
@@ -954,7 +897,7 @@ User: /arch-refine "change authentication from JWT to session-based"
 
 Claude executes:
   1. Parse arguments → query = "change authentication from JWT to session-based"
-  2. Initialize Graphiti → client = get_graphiti()
+  2. Check Graphiti availability → read `.guardkit/graphiti.yaml` (Tier 1 check)
   3. Prerequisite check → architecture context exists ✓
   4. Semantic search → 3 matches found (capped at 5 per ASSUM-002)
   5. Display matches → present [1] ADR-ARCH-004: JWT Auth, [2] ADR-ARCH-007: API Keys, [3] ADR-ARCH-001: Auth Strategy
@@ -967,7 +910,7 @@ Claude executes:
   12. Staleness flagging → 6 downstream nodes tagged stale: true
   13. C4 re-review gate → revised L1 and L2 diagrams approved
   14. Output generation → ADR files written, diagrams regenerated
-  15. Graphiti seeding → both episodes upserted (sanitised), stale flags set
+  15. Graphiti seeding → offer `guardkit graphiti add-context` CLI commands for both ADR files
   16. Summary → display results and next steps
 ```
 

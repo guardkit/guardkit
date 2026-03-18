@@ -194,11 +194,15 @@ See: [BDD Workflow Guide](docs/guides/bdd-workflow-for-agentic-systems.md)
 
 ## Graphiti Knowledge Capture
 
-Persistent knowledge capture across sessions. See: `.claude/rules/graphiti-knowledge.md`
+Persistent knowledge capture across sessions. Two access methods coexist:
+- **MCP server** (Claude Code sessions): `mcp__graphiti__*` tools — see `.claude/rules/graphiti-knowledge-graph.md`
+- **Python client** (CLI / AutoBuild): `guardkit graphiti *` — see `.claude/rules/graphiti-knowledge.md`
+
+Both connect to the same FalkorDB instance. See: `docs/guides/graphiti-claude-code-integration.md` for architecture, setup, and troubleshooting.
 
 ## MCP Integration
 
-Optional MCP servers: **context7** (library docs) | **design-patterns** (pattern recommendations)
+Optional MCP servers: **context7** (library docs) | **design-patterns** (pattern recommendations) | **graphiti** (knowledge graph — see above)
 All MCPs are optional - falls back gracefully to training data.
 See: `docs/deep-dives/mcp-integration/` for setup and optimization.
 

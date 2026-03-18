@@ -44,6 +44,7 @@ max_concurrent_episodes: 3
 llm_provider: vllm
 llm_base_url: http://promaxgb10-41b1:8000/v1
 llm_model: neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic
+llm_max_tokens: 4096  # Cap output tokens; prevents 16384 default exceeding 32K context (TASK-REV-84A7)
 
 # Embedding provider for Graphiti vector search
 # Options: openai (default), vllm, ollama
@@ -53,6 +54,13 @@ embedding_base_url: http://promaxgb10-41b1:8001/v1
 # Embedding model for semantic search
 # Supported by openai, vllm, and ollama providers
 embedding_model: nomic-embed-text-v1.5
+
+# Explicit embedding vector dimensions.
+# nomic-embed-text-v1.5 supports Matryoshka dimensions: 64, 128, 256, 512, 768 (default), 1024.
+# This FalkorDB was seeded with 1024-dim vectors (Matryoshka enabled via task-transform param).
+# Setting this ensures the Python client and MCP server both use the same dimension,
+# preventing vector search failures from dimension mismatches.
+embedding_dimensions: 1024
 
 # Group IDs for organizing knowledge
 # These create separate namespaces in the knowledge graph

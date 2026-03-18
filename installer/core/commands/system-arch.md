@@ -33,23 +33,15 @@ The command automatically detects the appropriate mode based on existing archite
 
 **Graceful Degradation**: If Graphiti is unavailable, defaults to `setup` mode without persistence.
 
-```python
-from guardkit.knowledge.graphiti_service import get_graphiti
+**Check Graphiti availability** (see `lib/graphiti-preamble.md` Tier 1):
+Use the Read tool to read `.guardkit/graphiti.yaml`. If the file exists and `enabled: true`, set `graphiti_available = true`. Otherwise set `graphiti_available = false` and display the unavailability warning — continue without persistence.
 
-# Initialize Graphiti client
-client = get_graphiti()  # Returns None if Graphiti unavailable
+**Auto-detect mode via local file existence:**
+Use the Glob tool to check whether `docs/architecture/` contains `.md` files:
+- IF matching files found: `detected_mode = "refine"`
+- ELSE: `detected_mode = "setup"`
 
-# Auto-detect mode
-if client:
-    has_arch = client.has_architecture_context()
-    detected_mode = "refine" if has_arch else "setup"
-else:
-    detected_mode = "setup"
-    print("WARNING: Graphiti unavailable - running without persistence")
-
-# User override
-mode = flags.get("mode", detected_mode)
-```
+Apply user `--mode` override if provided.
 
 ## Execution Flow
 
@@ -57,34 +49,20 @@ mode = flags.get("mode", detected_mode)
 
 **Load existing architecture context and validate prerequisites:**
 
-```python
-# Check Graphiti availability
-client = get_graphiti()
+**Check Graphiti availability** (see `lib/graphiti-preamble.md` Tier 1):
+Use the Read tool to read `.guardkit/graphiti.yaml`. If `enabled: true`, set `graphiti_available = true`. Otherwise set `graphiti_available = false` and display the unavailability warning — continue without persistence.
 
-if client:
-    has_arch = client.has_architecture_context()
-    detected_mode = "refine" if has_arch else "setup"
-else:
-    detected_mode = "setup"
+**Detect mode via local file existence:**
+Use the Glob tool to check whether `docs/architecture/*.md` files exist.
+- IF files found: `detected_mode = "refine"`
+- ELSE: `detected_mode = "setup"`
 
-mode = flags.get("mode", detected_mode)
+Apply user `--mode` override if provided. Display the detected mode:
+- `"Mode: setup (no existing architecture context found)"`
+- `"Mode: refine (updating existing architecture)"`
 
-# Display mode selection
-if mode == "setup":
-    print("Mode: setup (no existing architecture context found)")
-elif mode == "refine":
-    print("Mode: refine (updating existing architecture)")
-```
-
-**Load additional context files (if --context provided):**
-
-```python
-context_files = flags.get("context", [])
-for context_file in context_files:
-    with open(context_file) as f:
-        additional_context = f.read()
-    print(f"Loaded context from {context_file}")
-```
+**Load additional context files (if `--context` provided):**
+Use the Read tool to load each specified context file and incorporate the content into the session context.
 
 ### Phase 1: Interactive Session — 6-Category Question Flow
 
@@ -148,22 +126,11 @@ Your choice [C/R/S/A]:
 
 **Graphiti Persistence (after checkpoint):**
 
-```python
-from guardkit.knowledge.entities.architecture import SystemContextDef
+If `graphiti_available` is true, run the Tier 2 connectivity check from `lib/graphiti-preamble.md`, then seed the captured domain context:
 
-system_context = SystemContextDef(
-    name=project_name,
-    purpose=answers["q1_purpose"],
-    users=answers["q2_users"],
-    methodology=answers["q4_pattern"],
-    domains=answers["q3_domains"],
-)
-
-if client:
-    client.upsert_entity(
-        entity=system_context,
-        group_ids=["project_architecture"],
-    )
+```bash
+guardkit graphiti add-context docs/architecture/domain-model.md \
+  --group project_architecture
 ```
 
 Each pattern selection is automatically recorded as an ADR (using `ADR-ARCH-NNN` prefix).
@@ -211,21 +178,11 @@ Domain events: DonorCreated, LPAFiled, TransactionFlagged
 
 **Graphiti Persistence:**
 
-```python
-from guardkit.knowledge.entities.architecture import ComponentDef
+If `graphiti_available` is true, run the Tier 2 connectivity check from `lib/graphiti-preamble.md`, then seed the captured components context:
 
-for component in captured_components:
-    comp_def = ComponentDef(
-        name=component.name,
-        description=component.description,
-        responsibilities=component.responsibilities,
-        dependencies=component.dependencies,
-    )
-    if client:
-        client.upsert_entity(
-            entity=comp_def,
-            group_ids=["project_architecture"],
-        )
+```bash
+guardkit graphiti add-context docs/architecture/domain-model.md \
+  --group project_architecture
 ```
 
 #### Category 3: Technology & Infrastructure
@@ -329,21 +286,11 @@ Captured 4 concerns:
 
 **Graphiti Persistence:**
 
-```python
-from guardkit.knowledge.entities.architecture import CrosscuttingConcernDef
+If `graphiti_available` is true, run the Tier 2 connectivity check from `lib/graphiti-preamble.md`, then seed the captured cross-cutting concerns:
 
-for concern in captured_concerns:
-    concern_def = CrosscuttingConcernDef(
-        name=concern.name,
-        category=concern.category,
-        description=concern.description,
-        affected_components=concern.affected_components,
-    )
-    if client:
-        client.upsert_entity(
-            entity=concern_def,
-            group_ids=["project_architecture"],
-        )
+```bash
+guardkit graphiti add-context docs/architecture/ARCHITECTURE.md \
+  --group project_architecture
 ```
 
 #### Category 6: Constraints & NFRs
@@ -510,22 +457,7 @@ Generate all mandatory output artefacts in `docs/architecture/`:
 
 **ADR Numbering**: Scan `docs/architecture/decisions/` for existing ADR files to determine the next available number. New ADRs use the `ADR-ARCH-NNN` prefix and continue from the highest existing number.
 
-```python
-import re
-from pathlib import Path
-
-def get_next_adr_number(decisions_dir: Path) -> int:
-    """Scan for existing ADRs and return next available number."""
-    existing = list(decisions_dir.glob("ADR-ARCH-*.md"))
-    if not existing:
-        return 1
-    numbers = []
-    for f in existing:
-        match = re.search(r"ADR-ARCH-(\d+)", f.name)
-        if match:
-            numbers.append(int(match.group(1)))
-    return max(numbers) + 1 if numbers else 1
-```
+Use the Glob tool to list `docs/architecture/decisions/ADR-ARCH-*.md`. Extract the highest NNN from filenames — new ADRs use NNN+1. If no files exist, start at 001.
 
 **Architecture Summary Output (`ARCHITECTURE.md`):**
 
@@ -578,68 +510,37 @@ Seed all artefacts into Graphiti knowledge graph for downstream command consumpt
 | Entity Type | Graphiti Group |
 |-------------|---------------|
 | System context, components, bounded contexts | `project_architecture` |
-| ADRs, technology decisions | `project_decisions` |
+| ADRs | `architecture_decisions` |
+| Technology decisions | `project_decisions` |
 | Cross-cutting concerns | `project_architecture` |
 | Assumptions | `project_architecture` |
 
-```python
-# Seed all entities to Graphiti
-if client:
-    # System context → project_architecture
-    client.upsert_entity(
-        entity=system_context,
-        group_ids=["project_architecture"],
-    )
+If `graphiti_available` is true, run the Tier 2 connectivity check from `lib/graphiti-preamble.md`, then generate and offer the following seeding commands:
 
-    # Components → project_architecture
-    for comp in captured_components:
-        client.upsert_entity(
-            entity=comp,
-            group_ids=["project_architecture"],
-        )
+```bash
+# Bounded contexts, components, cross-cutting concerns, assumptions → project_architecture
+guardkit graphiti add-context docs/architecture/domain-model.md \
+  --group project_architecture
 
-    # Cross-cutting concerns → project_architecture
-    for concern in captured_concerns:
-        client.upsert_entity(
-            entity=concern,
-            group_ids=["project_architecture"],
-        )
+guardkit graphiti add-context docs/architecture/ARCHITECTURE.md \
+  --group project_architecture
 
-    # ADRs → project_decisions
-    for adr in captured_adrs:
-        client.upsert_entity(
-            entity=adr,
-            group_ids=["project_decisions"],
-        )
+# ADRs → architecture_decisions
+guardkit graphiti add-context docs/architecture/decisions/ \
+  --group architecture_decisions
 
-    print("Graphiti context:")
-    print(f"  {len(captured_components)} components persisted")
-    print(f"  {len(captured_concerns)} cross-cutting concerns persisted")
-    print(f"  {len(captured_adrs)} ADRs persisted")
-    print(f"  1 system context persisted")
+# Technology decisions (Category 3 ADRs) → project_decisions
+# Note: technology-specific ADRs (language, framework, database choices)
+# may also be seeded separately to the project_decisions group
 ```
 
-**Security — Sanitise ADR Rationale:**
+Ask the user: "Run these seeding commands now? [Y/n]". If yes, execute each via the Bash tool.
 
-Before seeding ADR rationale text to Graphiti, sanitise the content to prevent injection:
+Display a summary after seeding completes (use Glob to count files created in `docs/architecture/`).
 
-```python
-import re
+**Security — ADR Sanitisation:**
 
-def sanitise_for_graphiti(text: str) -> str:
-    """Sanitise free-text content before Graphiti seeding.
-
-    Removes script tags, SQL fragments, and control characters
-    while preserving the original meaning of the text.
-    """
-    # Remove HTML/script tags
-    text = re.sub(r"<[^>]+>", "", text)
-    # Remove control characters (except newlines and tabs)
-    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
-    # Escape potential Cypher injection patterns
-    text = text.replace("'", "\\'")
-    return text.strip()
-```
+The `guardkit graphiti add-context` CLI handles sanitisation of free-text content internally before seeding. No manual pre-processing is required. When constructing ADR content during the interactive session, avoid embedding raw user input verbatim in rationale fields — paraphrase or summarise instead.
 
 ### Phase 5: Refine Mode Flow
 
@@ -697,26 +598,27 @@ if not description or not description.strip():
 
 ### Graphiti Unavailable
 
-```python
-if not client:
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print("WARNING: Graphiti unavailable")
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print()
-    print("Architecture definition will continue WITHOUT persistence.")
-    print("Markdown artefacts will still be generated, but context won't be")
-    print("queryable by /system-plan, /system-design, or /feature-spec.")
-    print()
-    print("To enable Graphiti:")
-    print("  1. Install: pip install guardkit-py[graphiti]")
-    print("  2. Configure: Add Graphiti settings to .env")
-    print()
+Display the standard unavailability warning from `lib/graphiti-preamble.md`:
 
-    choice = input("Continue without persistence? [Y/n]: ")
-    if choice.lower() == "n":
-        print("Cancelled.")
-        exit(0)
 ```
+⚠️  Graphiti unavailable — continuing without knowledge graph context.
+    Reason: {error from graphiti-check, or "Config disabled / file not found"}
+
+    To enable: ensure .guardkit/graphiti.yaml has `enabled: true` and
+    FalkorDB is reachable at the configured host.
+```
+
+Then display:
+
+```
+Architecture definition will continue WITHOUT persistence.
+Markdown artefacts will still be generated, but context won't be
+queryable by /system-plan, /system-design, or /feature-spec.
+
+Continue without persistence? [Y/n]:
+```
+
+If the user answers `n`, display "Cancelled." and stop. Otherwise continue with the session (markdown artefacts are still generated).
 
 ### Empty Answers
 
@@ -772,16 +674,15 @@ if checkpoint_choice.lower() == "s":
 
 ### Graphiti Connection Drop Mid-Session
 
-```python
-try:
-    client.upsert_entity(entity=component, group_ids=["project_architecture"])
-except ConnectionError:
-    print("WARNING: Graphiti connection lost during session")
-    print("Remaining categories will be captured in markdown artefacts only.")
-    print("Re-seed unpersisted categories when Graphiti is restored.")
-    client = None  # Disable further Graphiti calls
-    # Continue the interactive session without persistence
+If a `guardkit graphiti add-context` seeding command fails during the session, display:
+
 ```
+WARNING: Graphiti seeding failed for this category.
+Remaining categories will be captured in markdown artefacts only.
+Re-seed unpersisted artefacts when Graphiti is restored.
+```
+
+Set `graphiti_available = false` and continue the interactive session without further seeding attempts. All markdown artefacts are still generated regardless.
 
 ### --no-questions Flag
 
@@ -995,36 +896,32 @@ if no_questions:
     exit(1)
 ```
 
-### Step 2: Initialize Graphiti
+### Step 2: Check Graphiti Availability
 
-```python
-from guardkit.knowledge.graphiti_service import get_graphiti
+Follow the Tier 1 check from `lib/graphiti-preamble.md`:
+Use the Read tool to read `.guardkit/graphiti.yaml`.
+- IF the file exists and `enabled: true`: set `graphiti_available = true`
+- ELSE: set `graphiti_available = false`, display the unavailability warning, and ask:
 
-client = get_graphiti()  # Returns None if unavailable
-
-if not client:
-    print("WARNING: Graphiti unavailable")
-    print("Architecture definition will continue WITHOUT persistence.")
-    print("Markdown artefacts will still be generated.")
-    choice = input("Continue without persistence? [Y/n]: ")
-    if choice.lower() == "n":
-        exit(0)
 ```
+Architecture definition will continue WITHOUT persistence.
+Markdown artefacts will still be generated.
+
+Continue without persistence? [Y/n]:
+```
+
+If the user answers `n`, stop. Otherwise continue.
 
 ### Step 3: Auto-Detect Mode
 
-```python
-if not mode:
-    if client and client.has_architecture_context():
-        mode = "refine"
-    else:
-        mode = "setup"
+If `--mode` was not provided, detect mode via local file existence:
+Use the Glob tool to check for files matching `docs/architecture/*.md`.
+- IF matching files found: `mode = "refine"`
+- ELSE: `mode = "setup"`
 
-if mode == "setup":
-    print("Mode: setup (no existing architecture context found)")
-elif mode == "refine":
-    print("Mode: refine (updating existing architecture)")
-```
+Display the detected mode:
+- `"Mode: setup (no existing architecture context found)"`
+- `"Mode: refine (updating existing architecture)"`
 
 ### Step 4: Execute Interactive Session
 
@@ -1061,68 +958,65 @@ Show current architecture summary. Ask which area to refine. Run targeted conver
 
 ### Step 6: Generate Output Artefacts
 
-```python
-from guardkit.planning.architecture_writer import ArchitectureWriter
+Use the Write tool to create all mandatory artefacts under `docs/architecture/`:
 
-writer = ArchitectureWriter()
-output_dir = "docs/architecture"
+- `docs/architecture/domain-model.md` — domain entities, bounded contexts, relationships
+- `docs/architecture/system-context.md` — C4 Level 1 Mermaid diagram (from `system-context.md.j2` template)
+- `docs/architecture/container.md` — C4 Level 2 Mermaid diagram (from `container.md.j2` template)
+- `docs/architecture/assumptions.yaml` — all assumptions captured during the session
+- `docs/architecture/ARCHITECTURE.md` — index and summary for downstream commands
+- `docs/architecture/decisions/ADR-ARCH-{NNN}-{slug}.md` — one file per ADR captured
 
-# Write all artefacts
-writer.write_domain_model(output_dir, captured_domains, captured_components)
-writer.write_system_context(output_dir, system_context, captured_components, external_systems)
-writer.write_container_diagram(output_dir, containers, relationships)
-writer.write_assumptions_manifest(output_dir, captured_assumptions)
-writer.write_architecture_index(output_dir, system_context, components, concerns, decisions)
-
-# Write ADRs
-for adr in captured_adrs:
-    writer.write_adr(f"{output_dir}/decisions", adr)
-```
+Use the Glob tool to scan `docs/architecture/decisions/ADR-ARCH-*.md` to determine the next available ADR number before writing new ADRs.
 
 ### Step 7: Seed to Graphiti
 
-```python
-if client:
-    # Seed all entities to appropriate groups
-    for entity in all_architecture_entities:
-        client.upsert_entity(
-            entity=entity,
-            group_ids=["project_architecture"],
-        )
+If `graphiti_available` is true, run the Tier 2 connectivity check from `lib/graphiti-preamble.md`, then generate and offer the seeding commands:
 
-    for adr in captured_adrs:
-        sanitised_adr = sanitise_adr_for_graphiti(adr)
-        client.upsert_entity(
-            entity=sanitised_adr,
-            group_ids=["project_decisions"],
-        )
+```bash
+# Bounded contexts, components, cross-cutting concerns → project_architecture
+guardkit graphiti add-context docs/architecture/domain-model.md \
+  --group project_architecture
 
-    print("All artefacts seeded to Graphiti")
-else:
-    print("NOTE: Artefacts NOT seeded to Graphiti (unavailable)")
-    print("Markdown artefacts still generated in docs/architecture/")
+guardkit graphiti add-context docs/architecture/ARCHITECTURE.md \
+  --group project_architecture
+
+# ADRs and technology decisions → architecture_decisions
+guardkit graphiti add-context docs/architecture/decisions/ \
+  --group architecture_decisions
+```
+
+Ask the user: "Run these seeding commands now? [Y/n]". If yes, execute each via the Bash tool.
+
+If `graphiti_available` is false, display:
+
+```
+NOTE: Artefacts NOT seeded to Graphiti (unavailable).
+Markdown artefacts still generated in docs/architecture/
 ```
 
 ### Step 8: Display Summary
 
-```python
-print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-print("ARCHITECTURE DOCUMENTATION CREATED")
-print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-print()
-print(f"Created: {output_dir}/")
-print("  ├── ARCHITECTURE.md")
-print("  ├── domain-model.md")
-print("  ├── system-context.md (C4 Level 1)")
-print("  ├── container.md (C4 Level 2)")
-print("  ├── assumptions.yaml")
-print("  └── decisions/")
-print(f"      └── ... {len(captured_adrs)} ADRs")
-print()
-print("Next steps:")
-print("  1. Review: docs/architecture/ARCHITECTURE.md")
-print("  2. Design APIs: /system-design \"description\"")
-print("  3. Plan features: /system-plan \"feature description\"")
+Display the completion summary:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ARCHITECTURE DOCUMENTATION CREATED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Created: docs/architecture/
+  ├── ARCHITECTURE.md
+  ├── domain-model.md
+  ├── system-context.md (C4 Level 1)
+  ├── container.md (C4 Level 2)
+  ├── assumptions.yaml
+  └── decisions/
+      └── ... {N} ADRs
+
+Next steps:
+  1. Review: docs/architecture/ARCHITECTURE.md
+  2. Design APIs: /system-design "description"
+  3. Plan features: /system-plan "feature description"
 ```
 
 ### What NOT to Do
@@ -1147,23 +1041,23 @@ User: /system-arch "CLI task workflow tool"
 
 Claude executes:
   1. Parse arguments → description = "CLI task workflow tool"
-  2. Initialize Graphiti → client = get_graphiti()
-  3. Auto-detect mode → "setup" (no architecture exists)
+  2. Check Graphiti availability → Read .guardkit/graphiti.yaml (Tier 1)
+  3. Auto-detect mode → Glob docs/architecture/*.md → none found → "setup"
   4. Display: "Mode: setup"
   5. Category 1: Domain & Structural Pattern → ask Q1-Q4, checkpoint
-  6. Upsert system_context to Graphiti (project_architecture group)
+  6. If graphiti_available: seed domain-model.md → project_architecture
   7. Category 2: Bounded Contexts → adapt to pattern, checkpoint
-  8. Upsert components to Graphiti (project_architecture group)
+  8. If graphiti_available: seed domain-model.md → project_architecture
   9. Category 3: Technology & Infrastructure → ask Q8-Q12, checkpoint
-  10. Upsert technology decisions to Graphiti (project_decisions group)
+  10. If graphiti_available: seed decisions/ → architecture_decisions + project_decisions
   11. Category 4: Multi-Consumer API Strategy → ask Q13-Q16, checkpoint
   12. Category 5: Cross-Cutting Concerns → ask Q17-Q21, checkpoint
-  13. Upsert concerns to Graphiti (project_architecture group)
+  13. If graphiti_available: seed ARCHITECTURE.md → project_architecture
   14. Category 6: Constraints & NFRs → ask Q22-Q27, checkpoint
   15. Generate C4 Context diagram → present for approval
   16. Generate C4 Container diagram → present for approval
-  17. Generate all output artefacts in docs/architecture/
-  18. Seed all entities to Graphiti (sanitised)
+  17. Write all output artefacts to docs/architecture/ (Write tool)
+  18. Offer seeding commands to Graphiti (Tier 2 check + guardkit graphiti add-context)
   19. Display summary with file locations and next steps
 ```
 

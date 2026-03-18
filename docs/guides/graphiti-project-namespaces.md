@@ -449,6 +449,76 @@ def _is_already_prefixed(group_id: str) -> bool:
 
 ---
 
+## MCP Access and Group ID Namespacing
+
+When accessing the knowledge graph via the Graphiti MCP server (Claude Code sessions), the
+group ID behaviour differs from the Python client.
+
+### The Key Difference
+
+**Python client** auto-prefixes project groups:
+
+```python
+# Python client — pass logical (unprefixed) name
+client.search(group_ids=["project_architecture"])
+# → internally searches: "guardkit__project_architecture"
+```
+
+**MCP server** is pass-through — no auto-prefix:
+
+```python
+# MCP server — must pass fully qualified group ID
+mcp__graphiti__search_nodes(group_ids=["guardkit__project_architecture"])  # Correct ✅
+mcp__graphiti__search_nodes(group_ids=["project_architecture"])  # Wrong ❌ → returns nothing
+```
+
+### Why This Difference Exists
+
+The MCP server (`graphiti-core`) has no knowledge of your project's `project_id` beyond what
+you configure in `--group-id`. It does not apply prefixes automatically. The Python client's
+`GraphitiClient.get_group_id()` method is a GuardKit abstraction on top of `graphiti-core`
+that handles prefixing transparently.
+
+### Using Both Access Methods Together
+
+When a project uses both the Python client (CLI / AutoBuild) and the MCP server (Claude Code
+sessions), the same data is accessible from both — as long as group IDs are specified correctly:
+
+| Access Method | How to Reference Project Groups |
+|--------------|-------------------------------|
+| Python client | Logical name: `project_architecture` → auto-prefixed |
+| MCP server | Full name: `guardkit__project_architecture` → explicit |
+| System groups | Same in both: `product_knowledge`, `command_workflows` |
+
+### Group ID Reference for MCP Use
+
+The `.claude/rules/graphiti-knowledge-graph.md` file in each project contains the complete
+list of group IDs to use in MCP tool calls. This file is loaded automatically by Claude Code
+and instructs it to always pass explicit `group_ids` with the correct prefix.
+
+If you add a new project group via the Python client (e.g., `task_outcomes`), it will be
+stored as `{project_id}__task_outcomes` in FalkorDB. To search it via MCP, pass that full
+name: `guardkit__task_outcomes`.
+
+### Common Mistake: Searching Without group_ids
+
+Both the Python client and MCP server require explicit `group_ids` for FalkorDB searches.
+Omitting `group_ids` returns no results (FalkorDB limitation — unlike Neo4j which searches
+all groups):
+
+```python
+# Wrong — returns 0 results on FalkorDB
+mcp__graphiti__search_nodes(query="authentication patterns")
+
+# Correct — pass all relevant group_ids
+mcp__graphiti__search_nodes(
+    query="authentication patterns",
+    group_ids=["product_knowledge", "guardkit__project_architecture"]
+)
+```
+
+---
+
 ## Best Practices
 
 ### 1. Use Auto-Detection in Development
@@ -704,8 +774,9 @@ async def migrate_to_namespaces(client, old_group, new_project_id):
 ## See Also
 
 - [Graphiti Integration Guide](graphiti-integration-guide.md) - Setup and core concepts
+- [Graphiti Claude Code Integration](graphiti-claude-code-integration.md) - MCP access, group IDs for Claude Code sessions
+- [Graphiti Shared Infrastructure](graphiti-shared-infrastructure.md) - Multi-project FalkorDB setup
 - [Graphiti Commands](graphiti-commands.md) - Command reference
-- [FEAT-GR-PRE-001 Design](../research/graphiti-refinement/FEAT-GR-PRE-001-project-namespace-foundation.md) - Technical design
 - [GraphitiClient API Reference](../../guardkit/knowledge/graphiti_client.py) - Implementation details
 
 ---

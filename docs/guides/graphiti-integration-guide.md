@@ -11,6 +11,7 @@
 - [The Problem It Solves](#the-problem-it-solves)
 - [Quick Start (5-Minute Setup)](#quick-start-5-minute-setup)
 - [Init Seeding Workflow](#init-seeding-workflow)
+- [Claude Code MCP Access](#claude-code-mcp-access)
 - [What's New in Phase 2](#whats-new-in-phase-2)
 - [Core Concepts](#core-concepts)
 - [Using Graphiti with GuardKit Commands](#using-graphiti-with-guardkit-commands)
@@ -322,6 +323,75 @@ All core GuardKit functionality works without Graphiti - it's an enhancement, no
    guardkit graphiti status
    guardkit graphiti search "project overview"
    ```
+
+---
+
+## Claude Code MCP Access
+
+In addition to the Python client used by CLI commands and AutoBuild, GuardKit supports a
+second access method: the **Graphiti MCP server**. This enables Claude Code sessions to
+search and write to the knowledge graph interactively, mid-conversation.
+
+### Two Complementary Access Methods
+
+| Method | When Active | Use Case |
+|--------|------------|---------|
+| **MCP server** | Claude Code session with `mcp__graphiti__*` tools | Interactive context retrieval, adding knowledge during conversation |
+| **Python client** | CLI commands, AutoBuild, seeding | Bulk seeding, structured queries, phase integrations |
+
+Both methods connect to the **same FalkorDB instance** and operate on the **same group IDs**.
+There is no separate MCP-only dataset — they are fully interchangeable views of the same graph.
+
+### When MCP Access Is Active
+
+If you have configured `.mcp.json` with the Graphiti server block and restarted Claude Code,
+the `mcp__graphiti__search_nodes` and `mcp__graphiti__search_memory_facts` tools become
+available in your session. Claude Code will automatically use these tools when context from
+the knowledge graph is relevant.
+
+```
+Claude Code session
+    │
+    ├── mcp__graphiti__* tools available?
+    │       YES → MCP access (direct tool calls)
+    │             (see .claude/rules/graphiti-knowledge-graph.md)
+    │
+    └── Not available → Python client access
+              (guardkit graphiti * CLI commands)
+              (see .claude/rules/graphiti-knowledge.md)
+```
+
+### Quick Setup for MCP Access
+
+Add the Graphiti server to your `.mcp.json` and restart Claude Code:
+
+```json
+{
+  "mcpServers": {
+    "graphiti": {
+      "command": "uvx",
+      "args": [
+        "--from", "graphiti-core[falkordb]",
+        "graphiti-service",
+        "--transport", "stdio",
+        "--group-id", "guardkit"
+      ],
+      "env": {
+        "FALKORDB_HOST": "whitestocks",
+        "FALKORDB_PORT": "6379",
+        "OPENAI_API_KEY": "not-used",
+        "LLM_BASE_URL": "http://promaxgb10-41b1:8000/v1",
+        "LLM_MODEL": "neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic",
+        "EMBEDDER_BASE_URL": "http://promaxgb10-41b1:8001/v1",
+        "EMBEDDER_MODEL": "nomic-embed-text-v1.5"
+      }
+    }
+  }
+}
+```
+
+**See**: [Graphiti Claude Code Integration Guide](graphiti-claude-code-integration.md) for complete
+setup instructions, infrastructure topology, configuration files, project isolation, and troubleshooting.
 
 ---
 
@@ -1168,8 +1238,10 @@ See the complete **[Project Namespaces Guide](graphiti-project-namespaces.md)** 
 
 ### Core Guides
 
+- **[Claude Code MCP Integration](graphiti-claude-code-integration.md)** - MCP server setup, configuration, and troubleshooting
 - **[Graphiti Testing and Validation](graphiti-testing-validation.md)** - E2E tests and validation procedures
 - **[Graphiti Project Namespaces](graphiti-project-namespaces.md)** - Multi-project isolation guide
+- **[Graphiti Shared Infrastructure](graphiti-shared-infrastructure.md)** - Shared FalkorDB across projects
 - [Graphiti Setup Guide](../setup/graphiti-setup.md) - Detailed installation and configuration
 - [Graphiti Architecture](../architecture/graphiti-architecture.md) - Technical deep-dive for developers
 - [GuardKit Workflow](guardkit-workflow.md) - How Graphiti integrates with the workflow

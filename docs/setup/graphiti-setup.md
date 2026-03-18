@@ -249,6 +249,79 @@ Verification complete!
 
 ---
 
+### Step 6 (Optional): Enable MCP Access for Claude Code Sessions
+
+To make Graphiti directly accessible during Claude Code sessions (via `mcp__graphiti__*` tools),
+add the Graphiti MCP server to your project's `.mcp.json`.
+
+#### Prerequisites
+
+- `uv` installed: `pip install uv` or `brew install uv`
+- FalkorDB reachable (see Step 3)
+
+#### Add the MCP Server Block
+
+Create or update `.mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "graphiti": {
+      "command": "uvx",
+      "args": [
+        "--from", "graphiti-core[falkordb]",
+        "graphiti-service",
+        "--transport", "stdio",
+        "--group-id", "your-project-id"
+      ],
+      "env": {
+        "FALKORDB_HOST": "whitestocks",
+        "FALKORDB_PORT": "6379",
+        "OPENAI_API_KEY": "not-used",
+        "LLM_BASE_URL": "http://promaxgb10-41b1:8000/v1",
+        "LLM_MODEL": "neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic",
+        "EMBEDDER_BASE_URL": "http://promaxgb10-41b1:8001/v1",
+        "EMBEDDER_MODEL": "nomic-embed-text-v1.5"
+      }
+    }
+  }
+}
+```
+
+Replace `your-project-id` with your `project_id` from `.guardkit/graphiti.yaml`.
+Replace `FALKORDB_HOST`, `LLM_BASE_URL`, `EMBEDDER_BASE_URL`, and `EMBEDDER_MODEL` to
+match your infrastructure.
+
+> **If you already have a `.mcp.json`** (for Context7, Design Patterns, etc.), add only
+> the `"graphiti"` key to the existing `mcpServers` object.
+
+#### Restart Claude Code
+
+After saving `.mcp.json`, restart Claude Code. If the MCP server starts successfully, you
+will see `mcp__graphiti__search_nodes` and related tools in your session.
+
+#### Verify MCP Access
+
+In a Claude Code session, the tools should appear:
+
+```
+Available tools: mcp__graphiti__search_nodes, mcp__graphiti__search_memory_facts, ...
+```
+
+If the tools don't appear, check Claude Code's MCP output panel (View → Output → MCP Logs)
+for startup errors.
+
+#### Important: Embedding Model Must Match
+
+The `EMBEDDER_MODEL` in `.mcp.json` **must match** the `embedding_model` in
+`.guardkit/graphiti.yaml`. Mismatched models cause vector dimension errors when writing
+new knowledge via MCP.
+
+**See**: [Graphiti Claude Code Integration Guide](../guides/graphiti-claude-code-integration.md)
+for complete MCP setup, group ID reference, and troubleshooting.
+
+---
+
 ## Configuration File Reference
 
 ### Automatic Creation
@@ -750,11 +823,13 @@ For production deployments, consider [Neo4j Aura](https://neo4j.com/cloud/aura/)
 Once Graphiti is set up and verified:
 
 1. **Use in workflows**: Graphiti automatically provides context during `/task-work` and `/feature-build`
-2. **Seed ADRs**: Run `guardkit graphiti seed-adrs` to load Architecture Decision Records
-3. **Monitor usage**: Check logs to see Graphiti queries during sessions
-4. **Disable if needed**: Set `GRAPHITI_ENABLED=false` to temporarily disable
+2. **Enable MCP access**: Add `.mcp.json` configuration (Step 6) for interactive Claude Code access
+3. **Seed system knowledge**: Run `guardkit graphiti seed-system` to load GuardKit workflow knowledge
+4. **Capture project knowledge**: Run `guardkit graphiti capture --interactive` to add project context
+5. **Disable if needed**: Set `GRAPHITI_ENABLED=false` to temporarily disable
 
 **Related Documentation**:
-- [Feature-Build Workflow](../guides/feature-build-workflow.md) - How Graphiti enhances autonomous builds
-- [ADR Seeding](../guides/adr-seeding.md) - Loading Architecture Decision Records
-- [Graphiti Integration Deep Dive](../deep-dives/graphiti-integration.md) - Technical details
+- [Graphiti Claude Code Integration](../guides/graphiti-claude-code-integration.md) - MCP access setup and configuration
+- [Graphiti Integration Guide](../guides/graphiti-integration-guide.md) - Full integration overview
+- [Graphiti Shared Infrastructure](../guides/graphiti-shared-infrastructure.md) - Multi-project FalkorDB setup
+- [Graphiti Project Namespaces](../guides/graphiti-project-namespaces.md) - Project isolation deep-dive

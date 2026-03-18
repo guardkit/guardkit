@@ -4,15 +4,20 @@ paths: config/graphiti.yaml, guardkit/graphiti/**/*.py, docs/**/graphiti*
 
 # Graphiti Knowledge Capture
 
-## ⚠️ Access Method: Python Client Library (NOT MCP)
+## ⚠️ Access Method
+
+This file covers **Python client** access. For **MCP access** (when `mcp__graphiti__*`
+tools are available in your session), see `.claude/rules/graphiti-knowledge-graph.md`.
 
 Graphiti is accessed via the `guardkit.knowledge` Python client library, connecting
-directly to FalkorDB. There is NO Graphiti MCP server configured for this project.
+directly to FalkorDB.
 
-- Do NOT check for MCP tools (`mcp__graphiti__*`) to determine availability
-- Use `graphiti-check --status` to check availability (wrapper at `~/.agentecflow/bin/graphiti-check`)
+- Use `graphiti-check --status` to check Python client availability
 - Use the Python client imports (`from guardkit.knowledge import get_graphiti`) for direct access
 - Configuration: `.guardkit/graphiti.yaml` (FalkorDB at whitestocks:6379)
+
+If `mcp__graphiti__search_nodes` is available in your session, prefer MCP access —
+see `.claude/rules/graphiti-knowledge-graph.md` for the correct group IDs and usage.
 
 GuardKit integrates with Graphiti for persistent knowledge capture across sessions. Build project understanding through guided Q&A and query stored knowledge via CLI.
 
@@ -157,4 +162,36 @@ default for any multi-project environment sharing FalkorDB.**
 
 System knowledge only needs to be seeded once per FalkorDB instance.
 
-**See**: [Interactive Capture Guide](../../docs/guides/graphiti-knowledge-capture.md) | [Integration Guide](../../docs/guides/graphiti-integration-guide.md)
+## Group ID Registry
+
+> **Note:** The `group_ids` list in `.guardkit/graphiti.yaml` controls which groups are seeded by `guardkit graphiti seed-system`. It is **not** an exhaustive registry — many groups are created at runtime by commands. `GraphitiClient.get_group_id()` auto-prefixes every group ID with the project's `project_id` to ensure isolation between projects.
+
+| Group ID | Created By | Consumed By | Purpose |
+|----------|-----------|-------------|---------|
+| `product_knowledge` | Seeding (`seed-system`) | General queries | GuardKit product knowledge, features, and capabilities |
+| `command_workflows` | Seeding (`seed-system`) | General queries | Command workflow patterns and usage examples |
+| `architecture_decisions` | Seeding + `/system-arch` + `/arch-refine` | `/system-arch`, `/arch-refine` | Architecture decision records (ADRs) |
+| `project_architecture` | `/system-arch` | `/system-design`, `/impact-analysis` | Project-specific architecture (components, services, data flow) |
+| `project_design` | `/system-design` | `/feature-spec`, `/feature-plan` | System design artifacts and decisions |
+| `api_contracts` | `/system-design` | `/feature-spec`, `/feature-plan` | API interface definitions and contracts |
+| `project_decisions` | `/system-arch` | — | Project-level technical decisions |
+| `task_outcomes` | AutoBuild | AutoBuild | Task completion outcomes for learning |
+| `failure_patterns` | AutoBuild | AutoBuild | Recurring failure patterns and mitigations |
+| `successful_fixes` | AutoBuild | AutoBuild | Successful fix patterns for similar issues |
+| `turn_states` | `/feature-build` | `/feature-build` | Per-turn state tracking for cross-turn learning |
+
+**See**: [Interactive Capture Guide](../../docs/guides/graphiti-knowledge-capture.md) | [Integration Guide](../../docs/guides/graphiti-integration-guide.md) | [Claude Code Integration Guide](../../docs/guides/graphiti-claude-code-integration.md)
+
+## Dual Access Methods
+
+GuardKit uses two complementary methods to access the Graphiti knowledge graph — both connect to the same FalkorDB instance:
+
+| Method | When Active | How |
+|--------|-------------|-----|
+| **MCP server** | Claude Code session with `mcp__graphiti__*` tools | Tools available in session context |
+| **Python client** | CLI workflows, AutoBuild, seeding | `guardkit.knowledge.get_graphiti()` |
+
+If `mcp__graphiti__search_nodes` is available in your session, use it — see `.claude/rules/graphiti-knowledge-graph.md` for group IDs and patterns. Both methods read and write the **same group IDs** in the same FalkorDB instance.
+
+For full details on setup, configuration, and how the two methods relate, see:
+[Claude Code Integration Guide](../../docs/guides/graphiti-claude-code-integration.md)

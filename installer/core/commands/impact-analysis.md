@@ -83,19 +83,9 @@ include_bdd = "--include-bdd" in flags or depth == "deep"
 include_tasks = "--include-tasks" in flags or depth == "deep"
 ```
 
-**INITIALIZE** Graphiti:
-
-```python
-from guardkit.knowledge.graphiti_client import get_graphiti
-from guardkit.planning.graphiti_arch import SystemPlanGraphiti
-
-client = get_graphiti()
-
-if client:
-    sp = SystemPlanGraphiti(client, "current_project")
-else:
-    sp = None
-```
+**CHECK** Graphiti availability (see `lib/graphiti-preamble.md` Tier 1):
+Read `.guardkit/graphiti.yaml` — if the file exists and `enabled: true`, set `graphiti_available = true`.
+Otherwise set `graphiti_available = false` and display the unavailability warning from the preamble. Continue — do not block.
 
 ### Phase 2: Build Query
 
@@ -424,23 +414,12 @@ if depth == "deep":
     include_tasks = True
 ```
 
-### Step 2: Initialize Graphiti
+### Step 2: Check Graphiti Availability
 
-```python
-from guardkit.knowledge.graphiti_client import get_graphiti
-from guardkit.planning.graphiti_arch import SystemPlanGraphiti
-
-client = get_graphiti()
-
-if not client:
-    print(GRAPHITI_UNAVAILABLE_MESSAGE)
-    return
-
-sp = SystemPlanGraphiti(client, "current_project")
-
-if not sp.is_available():
-    print(NO_CONTEXT_MESSAGE)
-    return
+Follow the Tier 1 check from `lib/graphiti-preamble.md`:
+Use the Read tool to read `.guardkit/graphiti.yaml`.
+If the file exists and `enabled: true`, set `graphiti_available = true`.
+Otherwise set `graphiti_available = false` and display the unavailability warning. Continue — do not block.
 ```
 
 ### Step 3: Run Analysis

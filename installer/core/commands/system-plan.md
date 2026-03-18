@@ -36,35 +36,24 @@ The command automatically detects the appropriate mode based on existing archite
 
 ### Phase 0: Context Loading (All Modes)
 
-**Load existing architecture context from Graphiti:**
+**Check Graphiti availability** (Tier 1 — see `lib/graphiti-preamble.md`):
 
-```python
-from guardkit.planning.graphiti_arch import SystemPlanGraphiti
-from guardkit.knowledge.graphiti_service import get_graphiti
+Use the Read tool to read `.guardkit/graphiti.yaml`.
 
-# Initialize Graphiti client
-client = get_graphiti()  # Returns None if Graphiti unavailable
+- **IF** the file exists and contains `enabled: true`: set `graphiti_available = true`
+- **IF** the file does not exist, or `enabled:` is `false` or missing: set `graphiti_available = false`, display the unavailability warning from `lib/graphiti-preamble.md`, continue without persistence
 
-# Auto-detect mode
-if client:
-    sp = SystemPlanGraphiti(client, project_id="current_project")
-    has_arch = sp.has_architecture_context()  # Sync wrapper for async call
-    detected_mode = "refine" if has_arch else "setup"
-else:
-    detected_mode = "setup"
-    print("⚠️ Graphiti unavailable - running without persistence")
+**Auto-detect mode** (if not overridden by `--mode` flag):
 
-# User override
-mode = flags.get("mode", detected_mode)
+- **IF** `graphiti_available` and `docs/architecture/ARCHITECTURE.md` exists (use Glob): set `detected_mode = "refine"`
+- **ELSE**: set `detected_mode = "setup"`
 
-# Display mode selection
-if mode == "setup":
-    print("🏗️ Mode: setup (no existing architecture context found)")
-elif mode == "refine":
-    print("🔄 Mode: refine (updating existing architecture)")
-elif mode == "review":
-    print("🔍 Mode: review (evaluating change against existing architecture)")
-```
+**Apply user override**: use `--mode` flag value if provided, otherwise use `detected_mode`
+
+**Display mode selection**:
+- `setup` → `🏗️ Mode: setup (no existing architecture context found)`
+- `refine` → `🔄 Mode: refine (updating existing architecture)`
+- `review` → `🔍 Mode: review (evaluating change against existing architecture)`
 
 ### Phase 1: Interactive Session (Mode-Specific)
 
@@ -152,53 +141,9 @@ Status: [A]ccepted / [P]roposed / [D]eprecated / [S]uperseded
 ✓ ADR-001 captured. Continuing to next category...
 ```
 
-**Graphiti Persistence (after each category checkpoint):**
+**Graphiti Persistence (after session completes):**
 
-```python
-from guardkit.knowledge.entities.architecture import (
-    ComponentDef, SystemContextDef, CrosscuttingConcernDef, ArchitectureDecision
-)
-
-# After Category 1 (Domain & Methodology)
-system_context = SystemContextDef(
-    name=project_name,
-    purpose=answers.get("q1_purpose"),
-    users=answers.get("q2_users"),
-    methodology=answers.get("q5_methodology"),
-)
-sp.upsert_system_context(system_context)  # Upserts immediately
-
-# After Category 2 (System Structure)
-for component in captured_components:
-    comp_def = ComponentDef(
-        name=component.name,
-        description=component.description,
-        responsibilities=component.responsibilities,
-        dependencies=component.dependencies,
-    )
-    sp.upsert_component(comp_def)  # Upserts each component
-
-# After Category 5 (Cross-Cutting Concerns)
-for concern in captured_concerns:
-    concern_def = CrosscuttingConcernDef(
-        name=concern.name,
-        category=concern.category,
-        description=concern.description,
-        affected_components=concern.affected_components,
-    )
-    sp.upsert_crosscutting(concern_def)
-
-# If ADR captured at any checkpoint
-adr = ArchitectureDecision(
-    number=next_adr_number,
-    title=adr_title,
-    context=adr_context,
-    decision=adr_decision,
-    consequences=adr_consequences,
-    status=adr_status,
-)
-sp.upsert_adr(adr)
-```
+If `graphiti_available` is true, seed the generated markdown artefacts to Graphiti using CLI commands (see Step 6 and `lib/graphiti-preamble.md` Seeding Commands Template). The interactive session takes priority — do not interrupt categories for seeding. Batch seeding happens after all artefacts are written to `docs/architecture/`.
 
 #### Refine Mode Flow
 
@@ -440,33 +385,30 @@ _Look for: circular dependencies, components with too many inbound arrows (high 
 
 ### Phase 3: Graphiti Final Persistence
 
-**If not already done per-category, upsert all entities:**
+**Seed generated artefacts to Graphiti (if available):**
 
-Note: In setup mode, entities are upserted after each category checkpoint. This phase is a safety check to ensure all entities are persisted.
+If `graphiti_available` is true, run the Tier 2 connectivity check from `lib/graphiti-preamble.md`, then generate and offer seeding commands:
 
-```python
-# Verify all entities were persisted
-if client:
-    sp = SystemPlanGraphiti(client, project_id)
+```bash
+guardkit graphiti add-context docs/architecture/ARCHITECTURE.md \
+  --group architecture_decisions
 
-    # Double-check system context
-    if system_context:
-        sp.upsert_system_context(system_context)
+guardkit graphiti add-context docs/architecture/system-context.md \
+  --group architecture_decisions
 
-    # Double-check components
-    for comp in components:
-        sp.upsert_component(comp)
+guardkit graphiti add-context docs/architecture/components.md \
+  --group architecture_decisions
 
-    # Double-check concerns
-    for concern in concerns:
-        sp.upsert_crosscutting(concern)
-
-    # Double-check ADRs
-    for adr in decisions:
-        sp.upsert_adr(adr)
-
-    print("✓ All architecture entities synchronized to Graphiti")
+# Seed each ADR file
+guardkit graphiti add-context docs/architecture/decisions/ADR-001-{slug}.md \
+  --group architecture_decisions
 ```
+
+Ask the user: `"Seed architecture artefacts to Graphiti now? [Y/n]"`
+
+If yes, execute each via the Bash tool. Display: `✓ All architecture artefacts seeded to Graphiti`
+
+If `graphiti_available` is false, skip seeding and display the unavailability warning from `lib/graphiti-preamble.md`.
 
 ## Methodology-Specific Question Gating
 
@@ -561,26 +503,7 @@ for context_file in context_files:
 
 ### Graphiti Unavailable
 
-```python
-if not client:
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print("⚠️ WARNING: Graphiti unavailable")
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print("")
-    print("Architecture planning will continue WITHOUT persistence.")
-    print("Markdown files will be generated, but context won't be")
-    print("queryable by /feature-plan or AutoBuild coach.")
-    print("")
-    print("To enable Graphiti:")
-    print("  1. Install: pip install guardkit-py[graphiti]")
-    print("  2. Configure: Add Graphiti settings to .env")
-    print("")
-
-    choice = input("Continue without persistence? [Y/n]: ")
-    if choice.lower() == "n":
-        print("Cancelled.")
-        exit(0)
-```
+If `graphiti_available` is false (detected via Tier 1 Read check in Phase 0 — see `lib/graphiti-preamble.md`), display the standard unavailability warning from `lib/graphiti-preamble.md` and continue. Architecture planning proceeds normally — markdown artefacts are still generated, but won't be queryable by `/feature-plan` or AutoBuild coach.
 
 ### Empty Answers
 
@@ -786,172 +709,128 @@ defaults = flags.get("defaults", False)
 context_files = flags.get("context", [])
 ```
 
-### Step 2: Initialize Graphiti
+### Step 2: Check Graphiti Availability
 
-```python
-from guardkit.knowledge.graphiti_service import get_graphiti
-from guardkit.planning.graphiti_arch import SystemPlanGraphiti
+Follow the Tier 1 check from `lib/graphiti-preamble.md`:
 
-# Get Graphiti client (returns None if unavailable)
-client = get_graphiti()
+Use the Read tool to read `.guardkit/graphiti.yaml`.
 
-if client:
-    project_id = "current_project"  # Or extract from .guardkit/config
-    sp = SystemPlanGraphiti(client, project_id)
-else:
-    print("⚠️ WARNING: Graphiti unavailable")
-    print("Architecture planning will continue WITHOUT persistence.")
-    # Ask user if they want to continue
-    choice = input("Continue without persistence? [Y/n]: ")
-    if choice.lower() == "n":
-        exit(0)
-    sp = None
-```
+- **IF** file exists and `enabled: true`: set `graphiti_available = true`
+- **IF** file missing or disabled: set `graphiti_available = false`, display the unavailability warning from `lib/graphiti-preamble.md`, continue without persistence
 
 ### Step 3: Auto-Detect Mode (if not specified)
 
-```python
-if not mode:
-    if sp and sp.has_architecture_context():
-        mode = "refine"
-    else:
-        mode = "setup"
+If `--mode` flag was not provided, detect mode from the file system:
 
-# Display mode
-if mode == "setup":
-    print("🏗️ Mode: setup (no existing architecture context found)")
-elif mode == "refine":
-    print("🔄 Mode: refine (updating existing architecture)")
-elif mode == "review":
-    print("🔍 Mode: review (evaluating change against existing architecture)")
-```
+- **IF** `graphiti_available` and `docs/architecture/ARCHITECTURE.md` exists (use Glob): set `mode = "refine"`
+- **ELSE**: set `mode = "setup"`
+
+If `--mode` flag was provided, use it directly.
+
+**Display mode**:
+- `setup` → `🏗️ Mode: setup (no existing architecture context found)`
+- `refine` → `🔄 Mode: refine (updating existing architecture)`
+- `review` → `🔍 Mode: review (evaluating change against existing architecture)`
 
 ### Step 4: Execute Mode-Specific Flow
 
 #### If mode == "setup":
 
-```python
-from guardkit.planning.question_adapter import SetupQuestionAdapter
-from guardkit.knowledge.entities.architecture import (
-    ComponentDef, SystemContextDef, CrosscuttingConcernDef, ArchitectureDecision
-)
+Run the interactive session across 6 categories. Adapt questions based on methodology (see Phase 1 above). After each category, show the checkpoint prompt and wait for user input.
 
-adapter = SetupQuestionAdapter()
-answers = {}
-captured_components = []
-captured_concerns = []
-captured_adrs = []
-
-# Category 1: Domain & Methodology
-print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-print("📋 SYSTEM PLANNING:", description)
-print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-print()
-print("Category 1: Domain & Methodology Discovery")
-
-# Ask Q1-Q5 (including methodology selection)
-# ... collect answers ...
-
-# Checkpoint after Category 1
-print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-print("✓ Category 1: Domain & Methodology Discovery")
-print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-print()
-print("Captured:")
-print(f"  • Purpose: {answers['q1_purpose']}")
-print(f"  • Users: {answers['q2_users']}")
-print(f"  • Methodology: {answers['q5_methodology']}")
-print()
-checkpoint = input("[C]ontinue | [R]evise | [S]kip | [A]DR? ")
-
-if checkpoint.lower() == "a":
-    # Capture ADR inline
-    adr = capture_adr_inline()
-    captured_adrs.append(adr)
-    if sp:
-        sp.upsert_adr(adr)
-
-if checkpoint.lower() == "s":
-    print("Session cancelled")
-    break
-
-# Upsert system context to Graphiti after Category 1
-system_context = SystemContextDef(
-    name=description,
-    purpose=answers["q1_purpose"],
-    users=answers["q2_users"],
-    methodology=answers["q5_methodology"],
-)
-if sp:
-    sp.upsert_system_context(system_context)
-
-# Category 2: System Structure (adapts to methodology)
-questions = adapter.get_questions_for_category("system_structure", answers)
-# ... ask adapted questions ...
-# ... capture components ...
-# ... checkpoint ...
-# ... upsert components to Graphiti ...
-
-for comp in captured_components:
-    if sp:
-        sp.upsert_component(comp)
-
-# Continue for Categories 3-6
-# ... each with checkpoint and Graphiti upsert ...
 ```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 SYSTEM PLANNING: {description}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Category 1: Domain & Methodology Discovery
+  Q1. What does this system do?
+  Q2. Who are the primary users?
+  Q5. What architectural methodology best fits? [M/L/D/E/N]
+  ...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Category 1: Domain & Methodology Discovery
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Captured:
+  • Purpose: {q1_purpose}
+  • Users: {q2_users}
+  • Methodology: {q5_methodology}
+
+[C]ontinue | [R]evise | [S]kip | [A]DR?
+```
+
+- If `[A]DR?`: Capture ADR inline (title, context, decision, consequences, status), append to `captured_adrs`
+- If `[S]`: Stop session, generate artefacts from what was captured so far
+- If `[C]` or `[R]`: Continue/revise
+
+Repeat for Categories 2–6, adapting questions to the selected methodology as described in Phase 1. Accumulate `captured_components`, `captured_concerns`, and `captured_adrs` throughout.
+
+**Do not attempt to call Python methods or Graphiti clients inline** — Graphiti seeding happens after artefact generation in Step 6.
 
 #### If mode == "refine":
 
-```python
-# Show current architecture
-if sp:
-    summary = sp.get_architecture_summary()
-    print("Current architecture summary:")
-    print(f"  • Methodology: {summary.get('methodology')}")
-    print(f"  • {len(summary.get('components', []))} components")
-    print(f"  • {len(summary.get('decisions', []))} ADRs")
+Use the Read tool to read `docs/architecture/ARCHITECTURE.md` (and relevant sub-files such as `components.md`, `bounded-contexts.md`, `decisions/`) to load the current architecture state.
 
-# Ask what to refine
-print("What would you like to refine?")
-print("[C]omponents | [S]ervices | [D]ecisions | [T]echnology | [X]rosscutting | [A]ll")
-choice = input("Your choice: ")
+Display a summary based on the loaded content:
 
-# Show current state for selected area
-# Ask what changed (conversational, not full questionnaire)
-# Update Graphiti entities
-# Regenerate affected markdown
 ```
+🔄 Mode: refine (existing architecture found)
+
+Current architecture summary:
+  • Methodology: {from ARCHITECTURE.md}
+  • {N} components (from components.md or bounded-contexts.md)
+  • {N} ADRs (from decisions/ directory)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 REFINEMENT SCOPE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+What would you like to refine?
+[C]omponents | [S]ervices | [D]ecisions | [T]echnology | [X]rosscutting | [A]ll
+
+Your choice:
+```
+
+Show current state for the selected area (read from the relevant markdown file), ask what's changed conversationally, update the affected markdown file using the Write/Edit tool, then proceed to Step 6 to re-seed to Graphiti if available.
 
 #### If mode == "review":
 
-```python
-# Load architecture context
-if sp:
-    relevant_context = sp.get_relevant_context_for_topic(description)
+Use the Read tool to read `docs/architecture/ARCHITECTURE.md`, `components.md` (or `bounded-contexts.md`), and `decisions/` files to load the existing architecture context. Analyse the proposed change (`description`) against the loaded context.
 
-    print(f"Analyzing '{description}' against:")
-    print(f"  • {len(relevant_context.get('components', []))} components")
-    print(f"  • {len(relevant_context.get('decisions', []))} ADRs")
-
-    # Perform impact analysis
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print("📊 IMPACT ANALYSIS")
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-    # Analyze affected components
-    # Identify conflicting ADRs
-    # Suggest architectural implications
-
-    # Decision checkpoint
-    print("Options:")
-    print("  [A]ccept | [R]eject | [M]odify | [F]eature-plan | [C]ancel")
-    decision = input("Your choice: ")
-
-    if decision.lower() == "f":
-        # Chain to /feature-plan
-        print("Launching /feature-plan with architecture context...")
-        # Execute /feature-plan with enriched context
 ```
+🔍 Mode: review (evaluating against existing architecture)
+
+Analyzing '{description}' against:
+  • {N} components
+  • {N} ADRs
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 IMPACT ANALYSIS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Affected components:
+  {list components from ARCHITECTURE.md that the change touches}
+
+Conflicts with existing ADRs:
+  {list any ADRs from decisions/ that conflict with the proposed change}
+
+Architectural implications:
+  {describe new components, cross-cutting concerns, or events needed}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 DECISION CHECKPOINT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Options:
+  [A]ccept | [R]eject | [M]odify | [F]eature-plan | [C]ancel
+
+Your choice:
+```
+
+- If `[F]`: Display `"Launching /feature-plan with architecture context..."` and invoke `/feature-plan "{description}"` with the impact analysis context
+- If `[A]`: Update affected markdown files via Write/Edit tool, then proceed to Step 6 for re-seeding
 
 ### Step 5: Generate Markdown Artefacts
 
@@ -1014,18 +893,37 @@ print(f"      └── ... {len(decisions)} ADRs")
 - Relationships between components match what was captured in the interactive session
 - Each diagram has a caption explaining what to look for
 
-### Step 6: Verify Graphiti Persistence
+### Step 6: Seed to Graphiti (if available)
 
-```python
-if sp:
-    # Final verification that all entities were persisted
-    print()
-    print("Graphiti context:")
-    print(f"  ✓ {len(captured_components)} components persisted")
-    print(f"  ✓ {len(captured_concerns)} cross-cutting concerns persisted")
-    print(f"  ✓ {len(captured_adrs)} ADRs persisted")
-    print(f"  ✓ 1 system context persisted")
+If `graphiti_available` is true, run the Tier 2 connectivity check from `lib/graphiti-preamble.md`, then generate and offer seeding commands for the artefacts written to `docs/architecture/`:
+
+```bash
+guardkit graphiti add-context docs/architecture/ARCHITECTURE.md \
+  --group architecture_decisions
+
+guardkit graphiti add-context docs/architecture/system-context.md \
+  --group architecture_decisions
+
+guardkit graphiti add-context docs/architecture/components.md \
+  --group architecture_decisions
+
+# Include bounded-contexts.md instead of components.md for DDD methodology
+# Include each ADR file from docs/architecture/decisions/
 ```
+
+Ask the user: `"Seed architecture artefacts to Graphiti now? [Y/n]"`
+
+If yes, execute each seeding command via the Bash tool and display:
+
+```
+Graphiti context:
+  ✓ {N} components seeded
+  ✓ {N} cross-cutting concerns seeded
+  ✓ {N} ADRs seeded
+  ✓ 1 system context seeded
+```
+
+If `graphiti_available` is false or user declines, skip seeding and continue.
 
 ### What NOT to Do
 
@@ -1040,22 +938,11 @@ DO NOT:
 
 ### Error Handling
 
-```python
-# If Graphiti unavailable
-if not client:
-    print("⚠️ Graphiti unavailable - continuing without persistence")
+- **Graphiti unavailable**: If `graphiti_available` is false (from Step 2 Read check), display the standard warning from `lib/graphiti-preamble.md` and continue. Do not block the session.
 
-# If empty answer
-if not answer.strip():
-    answer = "[To be defined]"
-    print("⚠️ Empty answer - using placeholder")
+- **Empty answer**: If the user provides an empty answer, use `[To be defined]` as a placeholder and continue.
 
-# If session cancelled
-if checkpoint == "s":
-    print("⚠️ Session cancelled - partial architecture captured")
-    # Generate what we have so far
-    break
-```
+- **Session cancelled** (user chooses `[S]` at a checkpoint): Display `⚠️ Session cancelled — partial architecture captured`, generate markdown artefacts for the categories completed so far, then proceed to Step 6.
 
 ### Example Execution Trace
 
@@ -1063,19 +950,18 @@ if checkpoint == "s":
 User: /system-plan "CLI tool for developers"
 
 Claude executes:
-  1. Initialize Graphiti → client = get_graphiti()
-  2. Auto-detect mode → "setup" (no architecture exists)
+  1. Check Graphiti → Read .guardkit/graphiti.yaml (Tier 1 — lib/graphiti-preamble.md)
+  2. Auto-detect mode → "setup" (docs/architecture/ not found)
   3. Display: "🏗️ Mode: setup"
   4. Ask Category 1 questions (including methodology)
   5. Checkpoint after Category 1
-  6. Upsert system_context to Graphiti
-  7. Ask Category 2 questions (adapted to methodology)
-  8. Checkpoint after Category 2
-  9. Upsert components to Graphiti
-  10. ... continue for Categories 3-6 ...
-  11. Generate markdown files via ArchitectureWriter
-  12. Generate mandatory Mermaid diagrams (C4 Context + Component Dependencies)
-  13. Display summary with file locations
+  6. Ask Category 2 questions (adapted to methodology)
+  7. Checkpoint after Category 2
+  8. ... continue for Categories 3-6 ...
+  9. Generate markdown files to docs/architecture/
+  10. Generate mandatory Mermaid diagrams (C4 Context + Component Dependencies)
+  11. Display summary with file locations
+  12. Seed to Graphiti via CLI if graphiti_available (lib/graphiti-preamble.md Tier 2)
 ```
 
 Remember: This is an **interactive planning command**. You MUST present questions, wait for user input, show checkpoints, and allow the user to guide the session. DO NOT try to answer the questions yourself or auto-complete the flow.

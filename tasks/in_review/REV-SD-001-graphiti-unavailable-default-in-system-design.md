@@ -1,15 +1,24 @@
 ---
 id: REV-SD-001
 title: 'Review: /system-design defaults to Graphiti unavailable despite active configuration'
-status: in_progress
+status: review_complete
 created: '2026-03-18T00:00:00Z'
 updated: '2026-03-18T00:00:00Z'
 priority: high
 complexity: 5
 task_type: review
 review_mode: architectural
-review_depth: standard
+review_depth: comprehensive
 tags: [graphiti, system-design, bug]
+review_results:
+  score: 42
+  findings_count: 6
+  recommendations_count: 5
+  decision: implement
+  report_path: .claude/reviews/REV-SD-001-review-report.md
+  feature_id: FEAT-CD64
+  implementation_tasks: 7
+  completed_at: '2026-03-18T00:00:00Z'
 ---
 
 # Review: /system-design defaults to Graphiti unavailable despite active configuration

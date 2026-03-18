@@ -110,12 +110,14 @@ nav:
       - MCP Integration:
           - Context7 Setup: deep-dives/mcp-integration/context7-setup.md
           - Design Patterns Setup: deep-dives/mcp-integration/design-patterns-setup.md
+          - Graphiti MCP Setup: deep-dives/mcp-integration/graphiti-mcp-setup.md
           - MCP Optimization: deep-dives/mcp-integration/mcp-optimization.md
 
   - Knowledge Graph:
       - Overview: guides/graphiti-integration-guide.md
       - Setup: setup/graphiti-setup.md
       - Architecture: architecture/graphiti-architecture.md
+      - Claude Code Integration: guides/graphiti-claude-code-integration.md
       - Commands:
           - CLI Reference: guides/graphiti-commands.md
           - Add Context: guides/graphiti-add-context.md
@@ -124,6 +126,7 @@ nav:
           - Interactive Capture: guides/graphiti-knowledge-capture.md
           - Job-Specific Context: guides/graphiti-job-context.md
           - Project Namespaces: guides/graphiti-project-namespaces.md
+          - Shared Infrastructure: guides/graphiti-shared-infrastructure.md
       - Reference:
           - Parsers: guides/graphiti-parsers.md
           - Turn State Tracking: guides/graphiti-turn-states.md

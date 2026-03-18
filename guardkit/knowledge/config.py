@@ -67,6 +67,10 @@ class GraphitiSettings:
             output for models with small context windows (e.g. 4096 for Nemotron 4B/8192 ctx).
         embedding_provider: Embedding provider ('openai', 'vllm', 'ollama')
         embedding_base_url: Embedding provider base URL (required for vllm/ollama)
+        embedding_dimensions: Explicit embedding vector dimensions (optional). When set,
+            overrides model-default dimension for both Python client pre-flight checks and
+            MCP server config generation. Use to ensure consistent dimensions across access
+            methods (e.g. 1024 for nomic-embed-text-v1.5 with Matryoshka).
         max_concurrent_episodes: Max concurrent episode creation calls during seeding (1-10)
         host: Deprecated - use neo4j_uri instead
         port: Deprecated - use neo4j_uri instead
@@ -104,6 +108,7 @@ class GraphitiSettings:
     # Embedding provider settings for vector search
     embedding_provider: str = "openai"    # 'openai' | 'vllm' | 'ollama'
     embedding_base_url: Optional[str] = None  # e.g., 'http://host:8001/v1'
+    embedding_dimensions: Optional[int] = None  # explicit dimensions (e.g. 1024 for Matryoshka)
     # Concurrency control for parallel episode seeding
     max_concurrent_episodes: int = 3      # Max concurrent episode creation calls (1-10)
     # Deprecated fields for backwards compatibility
@@ -153,6 +158,11 @@ class GraphitiSettings:
             raise TypeError(f"embedding_provider must be str, got {type(self.embedding_provider).__name__}")
         if self.embedding_base_url is not None and not isinstance(self.embedding_base_url, str):
             raise TypeError(f"embedding_base_url must be str or None, got {type(self.embedding_base_url).__name__}")
+        if self.embedding_dimensions is not None:
+            if not isinstance(self.embedding_dimensions, int) or isinstance(self.embedding_dimensions, bool):
+                raise TypeError(f"embedding_dimensions must be int or None, got {type(self.embedding_dimensions).__name__}")
+            if self.embedding_dimensions < 1:
+                raise ValueError(f"embedding_dimensions must be >= 1, got {self.embedding_dimensions}")
         if not isinstance(self.max_concurrent_episodes, int) or isinstance(self.max_concurrent_episodes, bool):
             raise TypeError(f"max_concurrent_episodes must be int, got {type(self.max_concurrent_episodes).__name__}")
         if self.max_concurrent_episodes < 1 or self.max_concurrent_episodes > 10:
@@ -379,6 +389,7 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
         'embedding_provider': 'openai',
         'embedding_base_url': None,
         'embedding_model': 'text-embedding-3-small',
+        'embedding_dimensions': None,
         'max_concurrent_episodes': 3,
         'host': 'localhost',  # Deprecated
         'port': 8000,  # Deprecated
@@ -410,11 +421,12 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
                     'embedding_provider': str,
                     'embedding_base_url': str,
                     'embedding_model': str,
+                    'embedding_dimensions': int,
                     'max_concurrent_episodes': int,
                     'host': str,
                     'port': int,
                 }
-                optional_none_fields = {'project_id', 'llm_base_url', 'llm_model', 'llm_max_tokens', 'llm_chunk_threshold', 'embedding_base_url'}
+                optional_none_fields = {'project_id', 'llm_base_url', 'llm_model', 'llm_max_tokens', 'llm_chunk_threshold', 'embedding_base_url', 'embedding_dimensions'}
                 for key, target_type in field_types.items():
                     if key in yaml_data and yaml_data[key] is not None:
                         try:
@@ -460,13 +472,14 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
         'EMBEDDING_PROVIDER': ('embedding_provider', str),
         'EMBEDDING_BASE_URL': ('embedding_base_url', str),
         'EMBEDDING_MODEL': ('embedding_model', str),
+        'EMBEDDING_DIMENSIONS': ('embedding_dimensions', int),
         'MAX_CONCURRENT_EPISODES': ('max_concurrent_episodes', int),
         # Deprecated env vars (kept for backwards compatibility)
         'GRAPHITI_HOST': ('host', str),
         'GRAPHITI_PORT': ('port', int),
     }
 
-    optional_none_env_fields = {'project_id', 'llm_base_url', 'llm_model', 'llm_max_tokens', 'llm_chunk_threshold', 'embedding_base_url'}
+    optional_none_env_fields = {'project_id', 'llm_base_url', 'llm_model', 'llm_max_tokens', 'llm_chunk_threshold', 'embedding_base_url', 'embedding_dimensions'}
     for env_var, (config_key, config_type) in env_overrides.items():
         env_value = os.environ.get(env_var)
         if env_value is not None:

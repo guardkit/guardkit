@@ -153,6 +153,8 @@ class GraphitiConfig:
         embedding_provider: Embedding provider ('openai', 'vllm', 'ollama')
         embedding_base_url: Embedding provider base URL (required for vllm/ollama)
         embedding_model: Embedding model name (e.g., 'text-embedding-3-small')
+        embedding_dimensions: Explicit embedding vector dimensions (optional). When set,
+            used in place of KNOWN_EMBEDDING_DIMS for the pre-flight dimension check.
 
     Raises:
         ValueError: If timeout is not positive
@@ -193,6 +195,7 @@ class GraphitiConfig:
     embedding_provider: str = "openai"     # "openai" | "vllm" | "ollama"
     embedding_base_url: Optional[str] = None  # e.g., "http://host:8001/v1"
     embedding_model: str = "text-embedding-3-small"
+    embedding_dimensions: Optional[int] = None  # explicit dimensions (e.g. 1024 for Matryoshka)
     # Concurrency control for parallel episode seeding
     max_concurrent_episodes: int = 3       # Max concurrent episode creation calls (>=1)
 
@@ -632,13 +635,17 @@ class GraphitiClient:
 
     async def _do_embedding_dimension_check(self) -> None:
         """Execute the embedding dimension comparison logic."""
-        expected_dim = KNOWN_EMBEDDING_DIMS.get(self.config.embedding_model)
-        if expected_dim is None:
-            logger.debug(
-                "Embedding dimension check: model '%s' not in KNOWN_EMBEDDING_DIMS, skipping",
-                self.config.embedding_model,
-            )
-            return
+        # Use explicit embedding_dimensions from config if set; fall back to KNOWN_EMBEDDING_DIMS
+        if self.config.embedding_dimensions is not None:
+            expected_dim = self.config.embedding_dimensions
+        else:
+            expected_dim = KNOWN_EMBEDDING_DIMS.get(self.config.embedding_model)
+            if expected_dim is None:
+                logger.debug(
+                    "Embedding dimension check: model '%s' not in KNOWN_EMBEDDING_DIMS, skipping",
+                    self.config.embedding_model,
+                )
+                return
 
         stored_dim = await self._query_stored_embedding_dim()
 

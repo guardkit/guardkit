@@ -41,89 +41,38 @@ Designs API contracts, data models, and multi-protocol surfaces per bounded cont
 
 Before starting the interactive session, `/system-design` MUST verify that architecture context exists. This ensures the design phase builds on established structural decisions rather than assumptions.
 
-```python
-from guardkit.planning.graphiti_arch import SystemPlanGraphiti
-from guardkit.planning.graphiti_design import SystemDesignGraphiti
-from guardkit.knowledge.graphiti_client import get_graphiti
+**Check Graphiti availability** (Tier 1 — see `lib/graphiti-preamble.md`):
 
-# Initialize Graphiti client
-client = get_graphiti()  # Returns None if Graphiti unavailable
+Use the Read tool to read `.guardkit/graphiti.yaml`. If the file exists and `enabled: true`, set `graphiti_available = true`. Otherwise set `graphiti_available = false` and display the unavailability warning — do **not** block the command.
 
-if client:
-    arch_sp = SystemPlanGraphiti(client, project_id="current_project")
-    has_arch = arch_sp.has_architecture_context()  # Check architecture exists
+**Check for local architecture context:**
 
-    if not has_arch:
-        print(NO_ARCHITECTURE_CONTEXT_MESSAGE)
-        choice = input("Run /system-arch first? [Y/n]: ")
-        if choice.lower() != "n":
-            # Chain to /system-arch
-            print("Launching /system-arch...")
-            # Execute /system-arch
-            return
-        else:
-            print("Cannot proceed without architecture context.")
-            exit(0)
-else:
-    # Graphiti unavailable — check for local docs/architecture/ files
-    arch_dir = Path("docs/architecture")
-    if not arch_dir.exists() or not list(arch_dir.glob("*.md")):
-        print(NO_ARCHITECTURE_CONTEXT_MESSAGE)
-        exit(0)
-    print("⚠️ Graphiti unavailable — reading architecture from local files")
-```
+Use the Glob tool to search for `docs/architecture/*.md`.
+
+- **IF** matching files exist: architecture context is available — proceed to Phase 0 (Context Loading)
+- **IF** no matching files exist:
+  - Display the NO_ARCHITECTURE_CONTEXT_MESSAGE
+  - Ask: `"Run /system-arch first? [Y/n]:"` — if user confirms, chain to `/system-arch`; otherwise exit
 
 ## Execution Flow
 
 ### Phase 0: Context Loading
 
-**Load existing architecture context from Graphiti (`project_architecture` group):**
+**Load existing architecture context from local files:**
 
-```python
-from guardkit.planning.graphiti_arch import SystemPlanGraphiti
-from guardkit.planning.graphiti_design import SystemDesignGraphiti
-from guardkit.knowledge.graphiti_client import get_graphiti
+Use the Read tool to read files from `docs/architecture/`:
+- Read all `docs/architecture/*.md` files to extract bounded contexts, technology choices, and structural decisions
+- Read any `docs/architecture/ADR-*.md` files to collect existing architecture decisions — store as `existing_adrs` for contradiction detection in Phase 2
+- Apply the `--focus` filter if specified to limit to one bounded context
 
-# Initialize clients
-client = get_graphiti()
+**Check Graphiti availability** (Tier 1 — see `lib/graphiti-preamble.md`):
 
-if client:
-    arch_sp = SystemPlanGraphiti(client, project_id="current_project")
-    design_sp = SystemDesignGraphiti(client, project_id="current_project")
+Read `.guardkit/graphiti.yaml`. If `enabled: true`, set `graphiti_available = true`. Otherwise display the unavailability warning and continue with markdown artefacts only.
 
-    # Load architecture context
-    arch_summary = arch_sp.get_architecture_summary()
-    existing_decisions = arch_sp.get_relevant_context_for_topic("ADR decisions constraints", 20)
-
-    # Check for existing design context
-    has_design = design_sp.has_design_context()
-
-    # Extract bounded contexts from architecture
-    bounded_contexts = extract_bounded_contexts(arch_summary)
-
-    print(f"🏗️ Architecture loaded: {len(bounded_contexts)} bounded contexts")
-    if has_design:
-        print("🔄 Existing design context found — will update")
-    else:
-        print("🆕 No existing design context — starting fresh")
-else:
-    # Graceful degradation: read from local files
-    bounded_contexts = extract_bounded_contexts_from_files("docs/architecture/")
-    design_sp = None
-    print("⚠️ Graphiti unavailable — continuing without persistence")
-```
-
-**Load existing ADRs for contradiction detection:**
-
-```python
-# Load ADRs from project_decisions group for contradiction checking
-if client:
-    existing_adrs = arch_sp.get_relevant_context_for_topic(
-        "architecture decision ADR constraint", 20
-    )
-else:
-    existing_adrs = []
-```
+Display:
+- `🏗️ Architecture loaded: {N} bounded contexts`
+- `🔄 Existing design context found — will update` (if `docs/design/` has files)
+- `🆕 No existing design context — starting fresh` (if `docs/design/` is empty or absent)
 
 ### Phase 1: Per-Bounded-Context Interactive Design
 
@@ -398,10 +347,7 @@ all_decisions.append(decision)
 # Write DDR immediately
 writer.write_ddr(decision, output_dir)
 
-# Upsert to Graphiti immediately
-if design_sp:
-    design_sp.upsert_design_decision(decision)
-
+# Note: Graphiti seeding is deferred to Step 8 (guardkit graphiti add-context)
 print(f"\n✓ {decision.entity_id} captured. Continuing...")
 ```
 
@@ -410,53 +356,48 @@ print(f"\n✓ {decision.entity_id} captured. Continuing...")
 **Before finalising design artefacts, check proposed contracts against existing ADRs:**
 
 ```python
-# Query existing ADRs from project_decisions group
-if client:
-    existing_adrs = arch_sp.get_relevant_context_for_topic(
-        "architecture decision constraint protocol communication", 20
-    )
+# existing_adrs were loaded from docs/architecture/ADR-*.md in Phase 0
+# Check each contract against existing ADRs
+contradictions = []
+for contract in all_contracts:
+    for adr in existing_adrs:
+        adr_text = adr.get("fact", "")
 
-    # Check each contract against existing ADRs
-    contradictions = []
-    for contract in all_contracts:
-        for adr in existing_adrs:
-            adr_text = adr.get("fact", "")
+        # Simple contradiction detection: look for protocol conflicts
+        if contract.protocol == "Events" and "synchronous" in adr_text.lower():
+            contradictions.append({
+                "contract": f"{contract.bounded_context} ({contract.protocol})",
+                "adr": adr.get("name", "Unknown ADR"),
+                "reason": "Event-driven contract conflicts with synchronous communication ADR",
+            })
+        elif contract.protocol == "GraphQL" and "rest only" in adr_text.lower():
+            contradictions.append({
+                "contract": f"{contract.bounded_context} ({contract.protocol})",
+                "adr": adr.get("name", "Unknown ADR"),
+                "reason": "GraphQL contract conflicts with REST-only ADR",
+            })
 
-            # Simple contradiction detection: look for protocol conflicts
-            if contract.protocol == "Events" and "synchronous" in adr_text.lower():
-                contradictions.append({
-                    "contract": f"{contract.bounded_context} ({contract.protocol})",
-                    "adr": adr.get("name", "Unknown ADR"),
-                    "reason": "Event-driven contract conflicts with synchronous communication ADR",
-                })
-            elif contract.protocol == "GraphQL" and "rest only" in adr_text.lower():
-                contradictions.append({
-                    "contract": f"{contract.bounded_context} ({contract.protocol})",
-                    "adr": adr.get("name", "Unknown ADR"),
-                    "reason": "GraphQL contract conflicts with REST-only ADR",
-                })
+if contradictions:
+    print(f"\n{'━' * 60}")
+    print(f"⚠️  CONTRADICTION DETECTION: {len(contradictions)} conflict(s) found")
+    print(f"{'━' * 60}")
+    for c in contradictions:
+        print(f"\n  Contract: {c['contract']}")
+        print(f"  ADR: {c['adr']}")
+        print(f"  Conflict: {c['reason']}")
 
-    if contradictions:
-        print(f"\n{'━' * 60}")
-        print(f"⚠️  CONTRADICTION DETECTION: {len(contradictions)} conflict(s) found")
-        print(f"{'━' * 60}")
-        for c in contradictions:
-            print(f"\n  Contract: {c['contract']}")
-            print(f"  ADR: {c['adr']}")
-            print(f"  Conflict: {c['reason']}")
+    print(f"\n{'━' * 60}")
+    print("Options:")
+    print("  [R]evise contract — Modify the proposed contract to comply")
+    print("  [S]upersede ADR — Create a new ADR superseding the conflicting one")
+    print("  [A]ccept risk — Proceed with the contradiction documented")
+    choice = input("Your choice [R/S/A]: ")
 
-        print(f"\n{'━' * 60}")
-        print("Options:")
-        print("  [R]evise contract — Modify the proposed contract to comply")
-        print("  [S]upersede ADR — Create a new ADR superseding the conflicting one")
-        print("  [A]ccept risk — Proceed with the contradiction documented")
-        choice = input("Your choice [R/S/A]: ")
-
-        if choice.lower() == "s":
-            # Capture superseding ADR
-            pass  # Inline ADR capture flow
-    else:
-        print("\n✓ No contradictions detected with existing ADRs")
+    if choice.lower() == "s":
+        # Capture superseding ADR
+        pass  # Inline ADR capture flow
+else:
+    print("\n✓ No contradictions detected with existing ADRs")
 ```
 
 ### Phase 3: Output Artefact Generation
@@ -686,32 +627,31 @@ if openapi_path.exists():
 
 ### Phase 5: Graphiti Seeding
 
-**Upsert all design artefacts into Graphiti (`project_design` and `api_contracts` groups):**
+**Seed design artefacts into the knowledge graph (if available):**
 
-```python
-if design_sp:
-    # Seed API contracts into api_contracts group
-    for contract in all_contracts:
-        uuid = design_sp.upsert_api_contract(contract)
-        if uuid:
-            print(f"  ✓ {contract.entity_id} seeded to Graphiti (api_contracts)")
+If `graphiti_available` is true, run the Tier 2 connectivity check from `lib/graphiti-preamble.md`.
 
-    # Seed data models into project_design group
-    for model in all_models:
-        uuid = design_sp.upsert_data_model(model)
-        if uuid:
-            print(f"  ✓ {model.entity_id} seeded to Graphiti (project_design)")
+If Graphiti is reachable, generate the following seeding commands and ask: `"Run these seeding commands now? [Y/n]"`. If yes, execute each via the Bash tool.
 
-    # Seed design decisions into project_design group
-    for decision in all_decisions:
-        uuid = design_sp.upsert_design_decision(decision)
-        if uuid:
-            print(f"  ✓ {decision.entity_id} seeded to Graphiti (project_design)")
+```bash
+# Seed API contracts (one command per contract file generated)
+guardkit graphiti add-context docs/design/contracts/{contract-slug}.md \
+  --group project_design
 
-    print(f"\n  ✓ All design artefacts synchronised to Graphiti")
-else:
-    print("\n  ⚠️ Graphiti unavailable — artefacts written to markdown only")
-    print("  Re-run with Graphiti enabled to seed knowledge graph")
+# Seed data models (one command per model file generated)
+guardkit graphiti add-context docs/design/models/{model-slug}.md \
+  --group project_design
+
+# Seed design decisions / DDRs (one command per DDR captured)
+guardkit graphiti add-context docs/design/decisions/DDR-{NNN}.md \
+  --group architecture_decisions
+```
+
+If Graphiti is unavailable, display the standard warning from `lib/graphiti-preamble.md` and continue:
+
+```
+⚠️  Graphiti unavailable — artefacts written to markdown only.
+    Re-run /system-design with Graphiti enabled to seed knowledge graph.
 ```
 
 ### Phase 6: Summary Output
@@ -787,53 +727,34 @@ next_number = scan_next_ddr_number(decisions_dir)
 
 ### Graphiti Unavailable
 
-```python
-if not client:
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print("⚠️ WARNING: Graphiti unavailable")
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print()
-    print("System design will continue WITHOUT persistence.")
-    print("Markdown artefacts will be generated, but design context")
-    print("won't be queryable by /feature-spec or /feature-plan.")
-    print()
-    print("To enable Graphiti:")
-    print("  1. Install: pip install guardkit-py[graphiti]")
-    print("  2. Configure: Add Graphiti settings to .env")
-    print()
+Follow the unavailability pattern from `lib/graphiti-preamble.md` — **do not block the command**.
 
-    choice = input("Continue without persistence? [Y/n]: ")
-    if choice.lower() == "n":
-        print("Cancelled.")
-        exit(0)
+Display the standard warning and continue:
+
 ```
+⚠️  Graphiti unavailable — continuing without knowledge graph context.
+    Reason: Config disabled / file not found
+
+    To enable: ensure .guardkit/graphiti.yaml has `enabled: true` and
+    FalkorDB is reachable at the configured host.
+```
+
+System design will continue and generate all markdown artefacts. Design context won't be queryable by `/feature-spec` or `/feature-plan` until seeded.
+
+Ask: `"Continue without persistence? [Y/n]:"` — default Yes.
 
 ### Partial Graphiti Failure
 
-If Graphiti seeding fails partway through:
+If a `guardkit graphiti add-context` command fails during Phase 5 seeding:
 
-```python
-# Track successful seeds
-seeded_contracts = 0
-seeded_models = 0
-failed_seeds = []
-
-for contract in all_contracts:
-    uuid = design_sp.upsert_api_contract(contract)
-    if uuid:
-        seeded_contracts += 1
-    else:
-        failed_seeds.append(contract.entity_id)
-
-# Report partial failure
-if failed_seeds:
-    print(f"⚠️ {len(failed_seeds)} artefact(s) failed to seed:")
-    for entity_id in failed_seeds:
-        print(f"  ✗ {entity_id}")
-    print()
-    print("Markdown artefacts are still complete.")
-    print("Re-run /system-design to retry seeding.")
 ```
+⚠️  Graphiti seeding failed for {artefact}
+    Markdown artefact was still written successfully.
+    Re-run the command manually:
+    guardkit graphiti add-context {path} --group {group}
+```
+
+Markdown artefacts are still complete. Re-run the failed seeding command manually to retry.
 
 ### Missing Architecture Context
 
@@ -899,13 +820,13 @@ if invalid:
 
 ### Graphiti Error During Seeding
 
-```python
-try:
-    uuid = design_sp.upsert_api_contract(contract)
-except Exception as e:
-    print(f"⚠️ Graphiti error seeding {contract.entity_id}: {e}")
-    print("  Markdown artefact was still written successfully.")
-    print("  Re-run /system-design to retry seeding.")
+If a `guardkit graphiti add-context` command exits non-zero:
+
+```
+⚠️  Graphiti error seeding {artefact}
+    Markdown artefact was still written successfully.
+    Re-run the command manually:
+    guardkit graphiti add-context {path} --group {group}
 ```
 
 ### OpenAPI Validator Not Installed
@@ -1133,58 +1054,28 @@ When the user runs `/system-design`, you MUST execute these steps in order:
 
 ### Step 1: Prerequisite Check
 
-```python
-from guardkit.planning.graphiti_arch import SystemPlanGraphiti
-from guardkit.planning.graphiti_design import SystemDesignGraphiti
-from guardkit.knowledge.graphiti_client import get_graphiti
+**Check Graphiti availability** (Tier 1 — see `lib/graphiti-preamble.md`):
 
-# Get Graphiti client
-client = get_graphiti()
+Use the Read tool to read `.guardkit/graphiti.yaml`. Set `graphiti_available = true` if `enabled: true`, otherwise `false` — display the unavailability warning and continue.
 
-if client:
-    arch_sp = SystemPlanGraphiti(client, project_id="current_project")
-    has_arch = arch_sp.has_architecture_context()
+**Check for local architecture context:**
 
-    if not has_arch:
-        print(NO_ARCHITECTURE_CONTEXT_MESSAGE)
-        choice = input("Run /system-arch first? [Y/n]: ")
-        if choice.lower() != "n":
-            # Execute /system-arch
-            return
-        exit(0)
+Use the Glob tool to search for `docs/architecture/*.md`.
 
-    design_sp = SystemDesignGraphiti(client, project_id="current_project")
-else:
-    # Check local files
-    if not Path("docs/architecture").exists():
-        print(NO_ARCHITECTURE_CONTEXT_MESSAGE)
-        exit(0)
-
-    print("⚠️ Graphiti unavailable — continuing without persistence")
-    choice = input("Continue? [Y/n]: ")
-    if choice.lower() == "n":
-        exit(0)
-    design_sp = None
-```
+- **IF** matching files exist: proceed to Step 2
+- **IF** no files found:
+  - Display NO_ARCHITECTURE_CONTEXT_MESSAGE
+  - Ask: `"Run /system-arch first? [Y/n]:"` — if user confirms, chain to `/system-arch`; otherwise exit
 
 ### Step 2: Load Architecture Context
 
-```python
-# Load bounded contexts from /system-arch output
-if client:
-    arch_summary = arch_sp.get_architecture_summary()
-    bounded_contexts = extract_bounded_contexts(arch_summary)
-    existing_adrs = arch_sp.get_relevant_context_for_topic("ADR decisions constraints", 20)
-else:
-    bounded_contexts = extract_bounded_contexts_from_files("docs/architecture/")
-    existing_adrs = []
+Use the Read tool to read all `docs/architecture/*.md` files. Extract:
+- Bounded contexts (names, descriptions, responsibilities)
+- Existing ADRs from `docs/architecture/ADR-*.md` — store as `existing_adrs`
 
-# Apply --focus filter
-if flags.get("focus"):
-    bounded_contexts = [bc for bc in bounded_contexts if bc["name"] == flags["focus"]]
+Apply the `--focus` filter if specified.
 
-print(f"🏗️ Architecture loaded: {len(bounded_contexts)} bounded contexts")
-```
+Display: `🏗️ Architecture loaded: {N} bounded contexts`
 
 ### Step 3: Per-Context Interactive Design
 
@@ -1195,15 +1086,12 @@ For each bounded context:
 3. **Protocol-Specific Surfaces** — Design per-protocol details
 4. **Data Model Design** — Capture entities, relationships, invariants
 5. **Checkpoint** — `[C]ontinue | [R]evise | [D]DR? | [S]kip`
-6. **DDR Capture** (if chosen) — Inline DDR with `scan_next_ddr_number()`
+6. **DDR Capture** (if chosen) — Inline DDR; scan `docs/design/decisions/` to determine next number
 
 ### Step 4: Contradiction Detection
 
-```python
-# Query project_decisions group for existing ADRs
-# Compare each proposed contract against ADR constraints
-# Flag contradictions and offer: [R]evise / [S]upersede / [A]ccept risk
-```
+Compare each proposed contract against `existing_adrs` loaded from local files in Step 2.
+Flag contradictions and offer: `[R]evise / [S]upersede / [A]ccept risk`
 
 ### Step 5: Generate Output Artefacts
 
@@ -1261,15 +1149,27 @@ for bc in bounded_contexts:
 
 ### Step 8: Graphiti Seeding
 
-```python
-if design_sp:
-    for contract in all_contracts:
-        design_sp.upsert_api_contract(contract)
-    for model in all_models:
-        design_sp.upsert_data_model(model)
-    for decision in all_decisions:
-        design_sp.upsert_design_decision(decision)
+If `graphiti_available` is true, run the Tier 2 connectivity check from `lib/graphiti-preamble.md`.
+
+If Graphiti is reachable, generate and offer the seeding commands (see `lib/graphiti-preamble.md` — Seeding Commands Template):
+
+```bash
+# For each API contract file generated
+guardkit graphiti add-context docs/design/contracts/{contract-slug}.md \
+  --group project_design
+
+# For each data model file generated
+guardkit graphiti add-context docs/design/models/{model-slug}.md \
+  --group project_design
+
+# For each DDR captured
+guardkit graphiti add-context docs/design/decisions/DDR-{NNN}.md \
+  --group architecture_decisions
 ```
+
+Ask the user: `"Run these seeding commands now? [Y/n]"`. If yes, execute each via the Bash tool.
+
+If Graphiti is unavailable, skip seeding and display the standard warning from the preamble.
 
 ### Step 9: Summary
 
@@ -1280,7 +1180,7 @@ Display file tree, Graphiti status, and next steps.
 - **DO NOT** skip the prerequisite gate — always check for architecture context first
 - **DO NOT** proceed without user confirmation at design checkpoints
 - **DO NOT** skip the C4 L3 review gate — diagrams require explicit approval
-- **DO NOT** batch Graphiti seeding — upsert DDRs immediately when captured
+- **DO NOT** seed Graphiti directly via Python — always use `guardkit graphiti add-context` CLI commands in Step 8
 - **DO NOT** generate code implementations — this is a design command, not an implementation command
 - **DO NOT** assume protocols — always ask the user which protocols to support
 - **DO NOT** skip contradiction detection — always check proposed contracts against existing ADRs
@@ -1313,7 +1213,7 @@ won't be queryable by /feature-spec or /feature-plan.
 
 To enable Graphiti:
   1. Install: pip install guardkit-py[graphiti]
-  2. Configure: Add Graphiti settings to .env
+  2. Configure: Set `enabled: true` in .guardkit/graphiti.yaml
 """
 
 SESSION_CANCELLED_MESSAGE = """

@@ -442,13 +442,11 @@ if mode == "switch":
         print("Add with: cd /path/to/project && guardkit init")
         return
 
-    # Execute switch
-    from guardkit.planning.context_switch import execute_context_switch
-    from guardkit.knowledge.graphiti_client import get_graphiti
+    # Check Graphiti availability (see lib/graphiti-preamble.md Tier 1)
+    # Read .guardkit/graphiti.yaml — if enabled: true, graphiti_available = true
+    # Otherwise graphiti_available = false (display warning, continue)
 
-    client = get_graphiti()
-
-    result = execute_context_switch(client, target_project, config)
+    result = execute_context_switch(graphiti_available, target_project, config)
 
     # Display orientation
     print("=" * 70)
