@@ -36,7 +36,7 @@
 #
 # Environment variables (override defaults):
 #   VLLM_GRAPHITI_PORT=8000        Server port
-#   VLLM_GRAPHITI_GPU_UTIL=0.15   GPU memory utilization (0.0-1.0)
+#   VLLM_GRAPHITI_GPU_UTIL=0.40   GPU memory utilization (0.0-1.0)
 #   VLLM_GRAPHITI_MAX_LEN=32768   Max context length
 #   VLLM_IMAGE=nvcr.io/nvidia/vllm:26.01-py3  Docker image
 #
@@ -51,16 +51,18 @@
 #   - See TASK-REV-DGX1 review report for full model selection rationale
 #
 # Memory budget (128GB unified):
-#   qwen2.5-14b  ~17GB  | qwen2.5-32b  ~35GB  | qwen3-30b  ~33GB
+#   qwen2.5-14b  weights ~16GB, vLLM alloc ~51GB (@0.40)
+#   qwen2.5-32b  weights ~34GB, vLLM alloc ~38GB (@0.30)
+#   qwen3-30b    weights ~29GB, vLLM alloc ~38GB (@0.30)
 #   + nomic-embed (port 8001) ~0.5GB
 #   + Qwen3-Coder-Next (port 8002) ~32-45GB
-#   Total with all ports (14b default): ~50-63GB — comfortable headroom
+#   Total with all ports (14b default): ~84-97GB — comfortable headroom
 
 set -euo pipefail
 
 # --- Configuration ---
 PORT="${VLLM_GRAPHITI_PORT:-8000}"
-GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.15}"
+GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.40}"
 IMAGE="${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.01-py3}"
 CONTAINER_NAME="vllm-graphiti"
 
@@ -73,7 +75,7 @@ MODEL_PRESET="${1:-qwen2.5-14b}"
 case "$MODEL_PRESET" in
   qwen2.5-14b|default|"")
     MODEL="neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic"
-    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.15}"
+    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.40}"
     MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-32768}"
     # Dense model — no MoE backend needed
     # xgrammar enforces json_schema at token level (required for Graphiti)
@@ -113,7 +115,7 @@ case "$MODEL_PRESET" in
     ;;
   custom)
     MODEL="${2:?Usage: $0 custom org/model-name}"
-    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.15}"
+    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.40}"
     MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-32768}"
     EXTRA_ARGS="--structured-outputs-config.backend xgrammar"
     echo "═══ Custom model: $MODEL ═══"
