@@ -2,57 +2,63 @@
 # vllm-graphiti.sh — Serve LLM for Graphiti knowledge graph on DGX Spark GB10
 #
 # Graphiti uses this LLM at ingestion time for entity extraction and fact
-# deduplication. It sends structured JSON prompts that require a general-purpose
-# instruction-following model — NOT a coding model.
+# deduplication. It sends structured JSON prompts using response_format=json_schema,
+# which requires a model + vLLM backend that enforces schema compliance.
 #
 # Context requirement: Graphiti's system prompts use ~7800-8100 tokens of
 # baseline overhead, so the model MUST have a context window > 10K tokens.
-# The default preset (qwen3-30b) provides 32K native context.
+#
+# Why Qwen2.5-14B, not Qwen3:
+#   Qwen3 models have a thinking mode that generates thousands of <think> tokens
+#   internally before producing output. Even with --reasoning-parser qwen3 stripping
+#   them, the model still spends the time generating them — causing 900s+ timeouts
+#   on Graphiti episodes. Qwen2.5 is a pure instruct model with no thinking mode.
+#
+# Why --guided-decoding-backend xgrammar:
+#   Graphiti uses response_format={"type":"json_schema",...} — it relies on the
+#   server to enforce the schema, not just prompt the model. xgrammar enforces
+#   the JSON schema at the token level, guaranteeing valid output regardless of
+#   model behaviour. Without this, json_schema requests may be silently ignored
+#   and the model may return invalid JSON, causing ingestion failures.
 #
 # Port allocation (DGX Spark GB10):
 #   8000 — Graphiti LLM      (this script)
-#   8001 — Embedding model   (vllm-embed.sh)       nomic-embed-text-v1.5
-#   8002 — AutoBuild LLM     (vllm-serve.sh)        Qwen3-Coder-Next
+#   8001 — Embedding model   (vllm-embed.sh)          nomic-embed-text-v1.5
+#   8002 — AutoBuild LLM     (vllm-serve.sh)           Qwen3-Coder-Next
 #   8003 — Nemotron 3 Nano   (vllm-nemotron3-nano.sh)
 #
 # Usage:
-#   ./scripts/vllm-graphiti.sh                   # Default: Qwen3-30B-A3B FP8
-#   ./scripts/vllm-graphiti.sh qwen3-14b         # Smaller fallback (~16GB)
-#   ./scripts/vllm-graphiti.sh qwen3-8b          # Lightest option (~9GB)
-#   ./scripts/vllm-graphiti.sh custom org/model  # Any custom model
+#   ./scripts/vllm-graphiti.sh                      # Default: Qwen2.5-14B-Instruct FP8
+#   ./scripts/vllm-graphiti.sh qwen2.5-32b          # Larger option (~34GB, higher quality)
+#   ./scripts/vllm-graphiti.sh qwen3-30b            # Legacy: Qwen3 MoE (has thinking mode)
+#   ./scripts/vllm-graphiti.sh custom org/model     # Any custom model
 #
 # Environment variables (override defaults):
 #   VLLM_GRAPHITI_PORT=8000        Server port
-#   VLLM_GRAPHITI_GPU_UTIL=0.30   GPU memory utilization (0.0-1.0)
+#   VLLM_GRAPHITI_GPU_UTIL=0.15   GPU memory utilization (0.0-1.0)
 #   VLLM_GRAPHITI_MAX_LEN=32768   Max context length
 #   VLLM_IMAGE=nvcr.io/nvidia/vllm:26.01-py3  Docker image
 #
 # DGX Spark (GB10) notes:
 #   - SM 12.1 (ARM64) — FP8 is the stable quantisation; NVFP4 has ARM64 bugs
+#   - --guided-decoding-backend xgrammar: enforces json_schema at token level
+#     (Graphiti requires this — pure prompt-based JSON is unreliable)
+#   - --enable-prefix-caching: Graphiti's repeated system prompts benefit
+#     enormously (TTFT ~28s → 2-3s with shared prefix cache)
 #   - MoE models need VLLM_FLASHINFER_MOE_BACKEND=latency on SM 12.1
-#   - --enable-prefix-caching is essential: Graphiti's repeated system prompts
-#     benefit enormously (TTFT 28s → 2-3s with shared prefix cache)
-#   - --reasoning-parser qwen3 strips <think>...</think> blocks from Qwen3
-#     responses so Graphiti receives clean JSON output
-#   - DeepGEMM is unavailable on SM 12.1 — vLLM falls back to Triton for FP8
-#     MoE. This is expected and harmless (ignore the warning).
-#   - No MoE tuning config exists for GB10 yet — vLLM uses generic defaults.
-#     To optimise: run `vllm benchmark` and save the result to:
-#     E=128,N=768,device_name=NVIDIA_GB10,dtype=fp8_w8a8,block_shape=[128,128].json
-#     inside the container's fused_moe/configs/ directory.
-#   - See TASK-REV-DGX1 and forum: https://forums.developer.nvidia.com/t/362200
+#   - See TASK-REV-DGX1 review report for full model selection rationale
 #
 # Memory budget (128GB unified):
-#   qwen3-30b  ~33GB  | qwen3-14b  ~17GB  | qwen3-8b  ~10GB
+#   qwen2.5-14b  ~17GB  | qwen2.5-32b  ~35GB  | qwen3-30b  ~33GB
 #   + nomic-embed (port 8001) ~0.5GB
 #   + Qwen3-Coder-Next (port 8002) ~32-45GB
-#   Total with all ports: ~66-79GB — comfortable headroom
+#   Total with all ports (14b default): ~50-63GB — comfortable headroom
 
 set -euo pipefail
 
 # --- Configuration ---
 PORT="${VLLM_GRAPHITI_PORT:-8000}"
-GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.30}"
+GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.15}"
 IMAGE="${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.01-py3}"
 CONTAINER_NAME="vllm-graphiti"
 
@@ -60,50 +66,54 @@ CONTAINER_NAME="vllm-graphiti"
 EXTRA_ENV=""
 
 # --- Model selection ---
-MODEL_PRESET="${1:-qwen3-30b}"
+MODEL_PRESET="${1:-qwen2.5-14b}"
 
 case "$MODEL_PRESET" in
-  qwen3-30b|default|"")
+  qwen2.5-14b|default|"")
+    MODEL="Qwen/Qwen2.5-14B-Instruct-FP8"
+    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.15}"
+    MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-32768}"
+    # Dense model — no MoE backend needed
+    # xgrammar enforces json_schema at token level (required for Graphiti)
+    EXTRA_ARGS="--kv-cache-dtype fp8 \
+      --enable-prefix-caching \
+      --guided-decoding-backend xgrammar"
+    echo "═══ Qwen2.5-14B-Instruct FP8 (~16GB, 128K ctx) ═══"
+    echo "    Graphiti entity extraction & fact deduplication"
+    echo "    No thinking mode | xgrammar enforces json_schema"
+    ;;
+  qwen2.5-32b)
+    MODEL="Qwen/Qwen2.5-32B-Instruct-FP8"
+    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.30}"
+    MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-32768}"
+    EXTRA_ARGS="--kv-cache-dtype fp8 \
+      --enable-prefix-caching \
+      --guided-decoding-backend xgrammar"
+    echo "═══ Qwen2.5-32B-Instruct FP8 (~34GB, 128K ctx) ═══"
+    echo "    Higher quality extraction — use if 14B misses entities"
+    echo "    No thinking mode | xgrammar enforces json_schema"
+    ;;
+  qwen3-30b)
     MODEL="Qwen/Qwen3-30B-A3B-FP8"
     GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.30}"
     MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-32768}"
     # MoE model — latency backend required for SM 12.1 (GB10), ~60% speedup
     EXTRA_ENV="-e VLLM_FLASHINFER_MOE_BACKEND=latency"
-    # --reasoning-parser qwen3: strips <think>...</think> blocks server-side
-    # Graphiti needs clean JSON — do not remove this flag
+    # WARNING: Qwen3 has thinking mode — generates thousands of <think> tokens
+    # internally before each response, causing slow/timeout episodes in Graphiti.
+    # Use qwen2.5-14b instead. This preset kept for testing/comparison only.
     EXTRA_ARGS="--trust-remote-code --tensor-parallel-size 1 --kv-cache-dtype fp8 \
-      --enable-prefix-caching --reasoning-parser qwen3"
+      --enable-prefix-caching --reasoning-parser qwen3 \
+      --guided-decoding-backend xgrammar"
     echo "═══ Qwen3-30B-A3B FP8 (3.3B active, ~32.5GB, 32K ctx) ═══"
-    echo "    Graphiti entity extraction & fact deduplication"
-    echo "    ~52-66 tok/s on GB10 | reasoning-parser strips <think> blocks"
-    ;;
-  qwen3-14b)
-    MODEL="Qwen/Qwen3-14B-FP8"
-    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.15}"
-    MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-32768}"
-    # Dense model — no MoE backend needed
-    EXTRA_ARGS="--trust-remote-code --kv-cache-dtype fp8 \
-      --enable-prefix-caching --reasoning-parser qwen3"
-    echo "═══ Qwen3-14B FP8 (~16.3GB, 32K ctx) ═══"
-    echo "    Fallback: lower memory, slightly less entity extraction quality"
-    echo "    ~80-120 tok/s on GB10 | reasoning-parser strips <think> blocks"
-    ;;
-  qwen3-8b)
-    MODEL="Qwen/Qwen3-8B-FP8"
-    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.10}"
-    MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-32768}"
-    # Dense model — no MoE backend needed
-    EXTRA_ARGS="--trust-remote-code --kv-cache-dtype fp8 \
-      --enable-prefix-caching --reasoning-parser qwen3"
-    echo "═══ Qwen3-8B FP8 (~9.4GB, 32K ctx) ═══"
-    echo "    Lightest option — adequate JSON quality, highest throughput"
-    echo "    ~120-180 tok/s on GB10 | reasoning-parser strips <think> blocks"
+    echo "    WARNING: thinking mode causes slow Graphiti episodes"
+    echo "    Prefer qwen2.5-14b for Graphiti workloads"
     ;;
   custom)
     MODEL="${2:?Usage: $0 custom org/model-name}"
-    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.30}"
+    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.15}"
     MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-32768}"
-    EXTRA_ARGS="--trust-remote-code"
+    EXTRA_ARGS="--guided-decoding-backend xgrammar"
     echo "═══ Custom model: $MODEL ═══"
     ;;
   *)
@@ -111,16 +121,18 @@ case "$MODEL_PRESET" in
     echo ""
     echo "Available presets:"
     echo ""
-    echo "  FP8 (standard NGC image, recommended for GB10 ARM64):"
-    echo "    qwen3-30b   Qwen3-30B-A3B FP8 (default, 3.3B active, ~33GB, 32K ctx)"
-    echo "    qwen3-14b   Qwen3-14B FP8 (~17GB, 32K ctx, lower memory fallback)"
-    echo "    qwen3-8b    Qwen3-8B FP8 (~10GB, 32K ctx, highest throughput)"
+    echo "  Recommended (no thinking mode, xgrammar json_schema enforcement):"
+    echo "    qwen2.5-14b   Qwen2.5-14B-Instruct FP8 (default, ~16GB, 128K ctx)"
+    echo "    qwen2.5-32b   Qwen2.5-32B-Instruct FP8 (~34GB, higher quality)"
+    echo ""
+    echo "  Legacy (Qwen3 — has thinking mode, may cause slow episodes):"
+    echo "    qwen3-30b     Qwen3-30B-A3B FP8 (~33GB, 32K ctx)"
     echo ""
     echo "  Other:"
     echo "    custom   Any model: $0 custom org/model-name"
     echo ""
-    echo "  NOTE: All Qwen3 presets use --reasoning-parser qwen3 to strip"
-    echo "        <think> blocks. Graphiti requires clean JSON output."
+    echo "  NOTE: All presets use --guided-decoding-backend xgrammar"
+    echo "        to enforce Graphiti's json_schema response format."
     echo ""
     echo "Port allocation:"
     echo "  8000 — Graphiti LLM (this script)"
@@ -183,7 +195,7 @@ docker run -d \
 
 echo "Container started: $CONTAINER_NAME"
 echo ""
-echo "Waiting for model to load (~2-5 min for 32.5GB FP8)..."
+echo "Waiting for model to load (~1-2 min for 16GB FP8)..."
 echo "  Logs:   docker logs -f $CONTAINER_NAME"
 echo "  Health: curl http://localhost:${PORT}/health"
 echo "  Models: curl http://localhost:${PORT}/v1/models"
