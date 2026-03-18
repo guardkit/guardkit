@@ -46,7 +46,7 @@ set -euo pipefail
 
 # --- Configuration ---
 PORT="${VLLM_GRAPHITI_PORT:-8000}"
-GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.05}"
+GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.15}"
 # Default to standard NGC image; Avarok image recommended for NVFP4 models
 # (has SM 12.1 software E2M1 workaround for 32x speedup on GB10)
 IMAGE="${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.01-py3}"
@@ -61,7 +61,7 @@ MODEL_PRESET="${1:-nano-4b}"
 case "$MODEL_PRESET" in
   nano-4b|default|"")
     MODEL="nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8"
-    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.05}"
+    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.15}"
     MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-8192}"
     # Nano 4B is hybrid Mamba-2 (not MoE), so MoE-specific env vars not needed
     EXTRA_ARGS="--trust-remote-code --kv-cache-dtype fp8"
@@ -71,7 +71,7 @@ case "$MODEL_PRESET" in
     ;;
   nano-4b-nvfp4)
     MODEL="nvidia/NVIDIA-Nemotron-3-Nano-4B-NVFP4"
-    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.05}"
+    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.10}"
     MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-8192}"
     IMAGE="${VLLM_IMAGE:-avarok/dgx-vllm-nvfp4-kernel:v22}"
     EXTRA_ARGS="--trust-remote-code --kv-cache-dtype fp8 --quantization modelopt_fp4"
@@ -195,6 +195,7 @@ docker run -d \
   --ulimit memlock=-1 \
   --ulimit stack=67108864 \
   -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
+  -v "$HOME/.cache/vllm:/root/.cache/vllm" \
   ${HF_TOKEN:+-e "HF_TOKEN=$HF_TOKEN"} \
   -e "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True" \
   ${EXTRA_ENV} \
