@@ -6,15 +6,18 @@
 # write_output) while the Coach only needs text generation.
 #
 # Key difference from vllm-graphiti.sh:
-#   - Adds --enable-auto-tool-choice --tool-call-parser hermes
+#   - Adds --enable-auto-tool-choice with model-appropriate --tool-call-parser
 #   - Uses port 8002 (AutoBuild LLM slot)
 #   - Higher GPU util (dedicated to generation, not shared with Graphiti)
 #
+# Tool-call parser: --tool-call-parser qwen3_coder (official NVIDIA recommendation
+# for Nemotron 3 models). Using the wrong parser (e.g. hermes) causes tool_calls.args
+# double-serialization — see TASK-REV-FRF2.
+#
 # Usage:
-#   ./scripts/vllm-agentic-factory.sh                      # Default: Qwen2.5-14B
-#   ./scripts/vllm-agentic-factory.sh qwen2.5-32b          # Larger, higher quality
+#   ./scripts/vllm-agentic-factory.sh                      # Default: Nemotron 3 Nano 4B
 #   ./scripts/vllm-agentic-factory.sh nano-30b              # Nemotron 3 Nano 30B-A3B
-#   ./scripts/vllm-agentic-factory.sh custom org/model      # Any custom model
+#   ./scripts/vllm-agentic-factory.sh custom org/model       # Any custom model
 #
 # Environment variables:
 #   VLLM_FACTORY_PORT=8002         Server port
@@ -29,8 +32,7 @@
 #   8003 — Nemotron 3 Nano   (vllm-nemotron3-nano.sh)
 #
 # Memory budget (128GB unified, with Graphiti on 8000 @ 0.40):
-#   qwen2.5-14b  weights ~16GB, vLLM alloc ~45GB (@0.35)  Total with Graphiti: ~112GB
-#   qwen2.5-32b  weights ~34GB, vLLM alloc ~38GB (@0.30)  Total with Graphiti: ~123GB
+#   nano-4b      weights ~4GB,  vLLM alloc ~45GB (@0.35)  Total with Graphiti: ~100GB
 #   nano-30b     weights ~15GB, vLLM alloc ~38GB (@0.30)  Total with Graphiti: ~104GB
 
 set -euo pipefail
@@ -45,51 +47,47 @@ CONTAINER_NAME="vllm-agentic-factory"
 EXTRA_ENV=""
 
 # --- Model selection ---
-MODEL_PRESET="${1:-qwen2.5-14b}"
+MODEL_PRESET="${1:-nano-4b}"
+
+# Track which parser is used for the summary banner
+TOOL_PARSER=""
 
 case "$MODEL_PRESET" in
-  qwen2.5-14b|default|"")
-    MODEL="neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic"
+  nano-4b|default|"")
+    MODEL="nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8"
     GPU_UTIL="${VLLM_FACTORY_GPU_UTIL:-0.35}"
     MAX_LEN="${VLLM_FACTORY_MAX_LEN:-16384}"
-    EXTRA_ARGS="--kv-cache-dtype fp8 \
-      --enable-prefix-caching \
+    TOOL_PARSER="qwen3_coder"
+    # Nano 4B is hybrid Mamba-2 (not MoE), no MoE-specific env vars needed
+    EXTRA_ARGS="--trust-remote-code --kv-cache-dtype fp8 \
       --enable-auto-tool-choice \
-      --tool-call-parser hermes"
-    echo "═══ Qwen2.5-14B-Instruct FP8 (~16GB) — Tool-calling enabled ═══"
+      --tool-call-parser qwen3_coder"
+    echo "═══ Nemotron 3 Nano 4B FP8 (~4GB) — Tool-calling enabled ═══"
     echo "    Dataset factory Player + Coach inference"
-    echo "    Tool parser: hermes | Context: ${MAX_LEN}"
-    ;;
-  qwen2.5-32b)
-    MODEL="neuralmagic/Qwen2.5-32B-Instruct-FP8-dynamic"
-    GPU_UTIL="${VLLM_FACTORY_GPU_UTIL:-0.30}"
-    MAX_LEN="${VLLM_FACTORY_MAX_LEN:-16384}"
-    EXTRA_ARGS="--kv-cache-dtype fp8 \
-      --enable-prefix-caching \
-      --enable-auto-tool-choice \
-      --tool-call-parser hermes"
-    echo "═══ Qwen2.5-32B-Instruct FP8 (~34GB) — Tool-calling enabled ═══"
-    echo "    Higher quality generation"
-    echo "    Tool parser: hermes | Context: ${MAX_LEN}"
+    echo "    Tool parser: qwen3_coder | Context: ${MAX_LEN}"
     ;;
   nano-30b)
     MODEL="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8"
     GPU_UTIL="${VLLM_FACTORY_GPU_UTIL:-0.30}"
     MAX_LEN="${VLLM_FACTORY_MAX_LEN:-16384}"
+    TOOL_PARSER="qwen3_coder"
     EXTRA_ENV="-e VLLM_FLASHINFER_MOE_BACKEND=latency"
+    # 30B-A3B is MoE — needs FlashInfer latency backend for SM 12.1 (GB10)
     EXTRA_ARGS="--trust-remote-code --tensor-parallel-size 1 --kv-cache-dtype fp8 \
       --enable-auto-tool-choice \
-      --tool-call-parser hermes"
+      --tool-call-parser qwen3_coder"
     echo "═══ Nemotron 3 Nano 30B-A3B FP8 (3.2B active, ~15GB) — Tool-calling enabled ═══"
     echo "    MoE with FlashInfer latency backend"
-    echo "    Tool parser: hermes | Context: ${MAX_LEN}"
+    echo "    Tool parser: qwen3_coder | Context: ${MAX_LEN}"
     ;;
   custom)
     MODEL="${2:?Usage: $0 custom org/model-name}"
     GPU_UTIL="${VLLM_FACTORY_GPU_UTIL:-0.35}"
     MAX_LEN="${VLLM_FACTORY_MAX_LEN:-16384}"
-    EXTRA_ARGS="--enable-auto-tool-choice \
-      --tool-call-parser hermes"
+    TOOL_PARSER="qwen3_coder"
+    EXTRA_ARGS="--trust-remote-code \
+      --enable-auto-tool-choice \
+      --tool-call-parser qwen3_coder"
     echo "═══ Custom model: $MODEL — Tool-calling enabled ═══"
     ;;
   *)
@@ -97,15 +95,14 @@ case "$MODEL_PRESET" in
     echo ""
     echo "Available presets:"
     echo ""
-    echo "  Recommended:"
-    echo "    qwen2.5-14b   Qwen2.5-14B-Instruct FP8 (default, ~16GB)"
-    echo "    qwen2.5-32b   Qwen2.5-32B-Instruct FP8 (~34GB, higher quality)"
+    echo "  Nemotron 3 (recommended — native tool calling, qwen3_coder parser):"
+    echo "    nano-4b       Nemotron 3 Nano 4B FP8 (default, ~4GB)"
     echo "    nano-30b      Nemotron 3 Nano 30B-A3B FP8 (3.2B active, ~15GB)"
     echo ""
     echo "  Other:"
     echo "    custom        Any model: $0 custom org/model-name"
     echo ""
-    echo "All presets include --enable-auto-tool-choice --tool-call-parser hermes"
+    echo "All presets include --enable-auto-tool-choice --tool-call-parser qwen3_coder"
     echo ""
     echo "Default port: $PORT  (override: VLLM_FACTORY_PORT=XXXX)"
     exit 1
@@ -132,7 +129,7 @@ echo "  Model:    $MODEL"
 echo "  Port:     $PORT"
 echo "  GPU util: $GPU_UTIL"
 echo "  Max len:  $MAX_LEN"
-echo "  Tools:    hermes parser (auto tool choice)"
+echo "  Tools:    ${TOOL_PARSER} parser (auto tool choice)"
 echo "========================================"
 echo ""
 
@@ -162,7 +159,7 @@ docker run -d \
 
 echo "Container started: $CONTAINER_NAME"
 echo ""
-echo "Waiting for model to load (~1-2 min for 16GB FP8)..."
+echo "Waiting for model to load..."
 echo "  Logs:   docker logs -f $CONTAINER_NAME"
 echo "  Health: curl http://localhost:${PORT}/health"
 echo "  Models: curl http://localhost:${PORT}/v1/models"
