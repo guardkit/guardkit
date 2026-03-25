@@ -14,8 +14,8 @@ Architecture:
 Design Decisions:
     - All emit() calls are async and non-blocking to avoid blocking the
       LLM call critical path.
-    - JSONLFileBackend uses an asyncio.Lock for thread-safe writes from
-      concurrent coroutines.
+    - JSONLFileBackend uses a threading.Lock for thread-safe writes from
+      concurrent coroutines and worker threads.
     - NATSBackend degrades gracefully: connection failures are logged as
       warnings, never raised to callers.
     - CompositeBackend tolerates individual backend failures: if one backend
@@ -39,6 +39,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 from pathlib import Path
 from typing import Any, List, Optional, Protocol, runtime_checkable
 
@@ -146,8 +147,8 @@ class JSONLFileBackend:
     Writes each event as a valid JSON object on its own line to
     ``{events_dir}/events.jsonl``. Creates parent directories if needed.
 
-    Thread-safety is ensured via an asyncio.Lock so concurrent coroutines
-    can safely emit events without corrupting the file.
+    Thread-safety is ensured via a threading.Lock so concurrent coroutines
+    and worker threads can safely emit events without corrupting the file.
 
     Args:
         events_dir: Directory where ``events.jsonl`` will be written.
@@ -162,7 +163,7 @@ class JSONLFileBackend:
     def __init__(self, events_dir: Path) -> None:
         self._events_dir = events_dir
         self._events_file = events_dir / "events.jsonl"
-        self._lock = asyncio.Lock()
+        self._lock = threading.Lock()
         self._buffer: List[str] = []
         self._dir_created = False
 
@@ -183,7 +184,7 @@ class JSONLFileBackend:
             event: A BaseEvent subclass to persist.
         """
         line = json.dumps(event.model_dump(), separators=(",", ":"))
-        async with self._lock:
+        with self._lock:
             self._ensure_dir()
             with self._events_file.open("a", encoding="utf-8") as f:
                 f.write(line + "\n")
@@ -195,7 +196,7 @@ class JSONLFileBackend:
         synchronization point that ensures any in-flight write has
         completed.
         """
-        async with self._lock:
+        with self._lock:
             # All writes happen in emit() under the lock,
             # so acquiring the lock here ensures completion.
             pass

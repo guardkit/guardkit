@@ -615,6 +615,14 @@ def status(ctx, task_id: str, verbose: bool):
     is_flag=True,
     help="Skip pre-flight frontmatter validation (not recommended).",
 )
+@click.option(
+    "--task-log-interval",
+    "task_log_interval",
+    default=60,
+    type=int,
+    help="Seconds between per-task progress log snapshots (default: 60)",
+    show_default=True,
+)
 @click.pass_context
 @handle_cli_errors
 def feature(
@@ -635,6 +643,7 @@ def feature(
     max_parallel: Optional[int],
     max_parallel_strategy: str,
     skip_validation: bool,
+    task_log_interval: int,
 ):
     """
     Execute AutoBuild for all tasks in a feature.
@@ -779,6 +788,7 @@ def feature(
             parallel_config=parallel_config,
             skip_validation=skip_validation,
             emitter=emitter,
+            task_log_interval=task_log_interval,
         )
 
         # Execute feature orchestration

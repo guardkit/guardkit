@@ -128,16 +128,22 @@ async def async_heartbeat(
     task_id: str,
     phase: str,
     interval: int = 30,
+    progress_logger: Optional["TaskProgressLogger"] = None,
 ) -> AsyncGenerator[None, None]:
     """Context manager that logs heartbeat messages during SDK invocations.
 
     Provides periodic progress logging to eliminate the perception of "stalling"
-    during long-running SDK invocations (10-20+ minutes).
+    during long-running SDK invocations (10-20+ minutes). When a progress_logger
+    is provided, also writes snapshots to the per-task progress log file for
+    post-mortem diagnostics of timed-out parallel tasks.
 
     Args:
         task_id: Task identifier for log messages (e.g., "TASK-001")
         phase: Description of the current phase (e.g., "Player invocation")
         interval: Seconds between heartbeat logs (default: 30)
+        progress_logger: Optional TaskProgressLogger for per-task file logging.
+            When provided, snapshots are written at progress_logger.interval
+            (default: 60s) in addition to console heartbeat logs.
 
     Yields:
         None - just provides heartbeat logging during context
@@ -149,12 +155,28 @@ async def async_heartbeat(
         # Logs: [TASK-001] Player invocation in progress... (60s elapsed)
         # etc.
     """
+    from guardkit.orchestrator.progress_logger import TaskProgressLogger  # noqa: F811
+
+    snapshot_interval = progress_logger.interval if progress_logger else interval
+
     async def heartbeat() -> None:
         elapsed = 0
         while True:
             await asyncio.sleep(interval)
             elapsed += interval
             logger.info(f"[{task_id}] {phase} in progress... ({elapsed}s elapsed)")
+
+            # Write per-task progress snapshot at the configured interval
+            if progress_logger and elapsed % snapshot_interval == 0:
+                progress_logger.log_snapshot(
+                    elapsed=elapsed,
+                    phase=phase,
+                    files_changed=progress_logger._files_changed,
+                    last_tool=progress_logger._last_tool,
+                )
+
+    if progress_logger:
+        progress_logger.log_start(phase)
 
     heartbeat_task = asyncio.create_task(heartbeat())
     try:
@@ -811,6 +833,8 @@ class AgentInvoker:
         self.development_mode = development_mode
         self._cancellation_event: Optional[threading.Event] = cancellation_event
         self._baseline_commit: Optional[str] = None
+        # TASK-FIX-OBS2: Per-task progress logger for parallel execution diagnostics
+        self._progress_logger: Optional["TaskProgressLogger"] = None
         # TASK-CRV-1540: Partial data extracted from response_messages on CancelledError
         self._last_partial_report: Optional[Dict[str, Any]] = None
         # TASK-RFX-B20B: Last captured session_id from ResultMessage for resume
@@ -836,6 +860,48 @@ class AgentInvoker:
             )
         else:
             self._effective_sdk_max_turns = TASK_WORK_SDK_MAX_TURNS
+
+    # =========================================================================
+    # Per-Task Progress Logging (TASK-FIX-OBS2)
+    # =========================================================================
+
+    def set_progress_logger(self, progress_logger: Optional[Any]) -> None:
+        """Set the per-task progress logger for parallel execution diagnostics.
+
+        Parameters
+        ----------
+        progress_logger : Optional[TaskProgressLogger]
+            Progress logger instance, or None to disable.
+        """
+        self._progress_logger = progress_logger
+
+    def _track_tool_use(self, message: Any) -> None:
+        """Track tool use from SDK response messages for progress logging.
+
+        Extracts tool names and file modifications from AssistantMessage
+        content blocks to keep the progress logger's state up to date.
+
+        Parameters
+        ----------
+        message : Any
+            SDK response message (AssistantMessage, etc.)
+        """
+        if not self._progress_logger:
+            return
+        try:
+            content = getattr(message, "content", None)
+            if not content or not isinstance(content, (list, tuple)):
+                return
+            for block in content:
+                block_type = type(block).__name__
+                if block_type == "ToolUseBlock":
+                    name = getattr(block, "name", "")
+                    self._progress_logger._last_tool = name
+                    inp = getattr(block, "input", {}) or {}
+                    if name in ("Write", "Edit") and isinstance(inp, dict):
+                        self._progress_logger._files_changed += 1
+        except Exception:
+            pass  # Never crash orchestration for progress tracking
 
     # =========================================================================
     # Path Resolution Helpers (TASK-FIX-VL01)
@@ -2044,6 +2110,7 @@ Follow the decision format specified in your agent definition.
                             async with async_heartbeat(
                                 heartbeat_task_id,
                                 f"{agent_type.capitalize()} invocation",
+                                progress_logger=self._progress_logger,
                             ):
                                 gen = query(prompt=prompt, options=options)
                                 async for message in gen:
@@ -2053,12 +2120,26 @@ Follow the decision format specified in your agent definition.
                                         raise AgentInvocationError(
                                             f"Agent {agent_type} received API error: {err}"
                                         )
+                                    # TASK-FIX-OBS2: Track tool use for progress logging
+                                    if self._progress_logger:
+                                        self._track_tool_use(message)
                                     # Progress tracking handled by ProgressDisplay
                                     # Agent writes report to JSON file, which is loaded after
                                     # the query completes via _load_agent_report()
                                     if isinstance(message, ResultMessage):
                                         # TASK-RFX-B20B: Capture session_id for resumption
                                         self._last_session_id = getattr(message, "session_id", None)
+                                        # TASK-FIX-GEN1: Drain remaining messages so the
+                                        # generator exhausts naturally.  This prevents
+                                        # aclose() in the finally block from triggering
+                                        # AnyIO cancel-scope CancelledError (40% failure
+                                        # rate on direct-mode invocations).
+                                        try:
+                                            async for _ in gen:
+                                                pass
+                                        except Exception:
+                                            pass  # safe to ignore during drain
+                                        gen = None  # exhausted; skip aclose() in finally
                                         break
                     except (Exception, asyncio.CancelledError) as exc:
                         if isinstance(exc, asyncio.CancelledError):
@@ -3304,11 +3385,15 @@ Follow the decision format specified in your agent definition.
         """Determine implementation mode from task frontmatter or auto-detection.
 
         Checks the task file for an explicit `implementation_mode` field in the
-        frontmatter first. If no explicit mode is set, auto-detects eligibility
-        for direct mode based on complexity (<=3) and absence of high-risk keywords.
+        frontmatter first. If no explicit mode is set, defaults to task-work for
+        all tasks with complexity >= 2. Direct mode is only auto-selected for
+        scaffolding tasks with complexity <= 1.
 
-        Direct mode avoids the task-work preamble overhead by sending a custom
-        prompt directly to the SDK with project-only context.
+        Task-work mode is structurally superior for non-trivial tasks:
+        - Natural generator exhaustion (no cancel scope race condition)
+        - 1.5x SDK timeout multiplier
+        - Agent-written reports with real completion_promises
+        - Rich stream parsing with tool use tracking
 
         Args:
             task_id: Task identifier (e.g., "TASK-001")
@@ -3331,21 +3416,25 @@ Follow the decision format specified in your agent definition.
 
             # Explicit frontmatter overrides always take priority
             if impl_mode == "direct":
-                logger.debug(f"[{task_id}] Explicit implementation_mode: direct")
+                logger.info(
+                    f"[{task_id}] Mode: direct (explicit frontmatter override)"
+                )
                 return "direct"
 
             if impl_mode == "task-work":
-                logger.debug(f"[{task_id}] Explicit implementation_mode: task-work")
-                return "task-work"
-
-            if impl_mode:
-                logger.debug(
-                    f"[{task_id}] Unknown implementation_mode '{impl_mode}', "
-                    "normalizing to task-work"
+                logger.info(
+                    f"[{task_id}] Mode: task-work (explicit frontmatter override)"
                 )
                 return "task-work"
 
-            # No explicit mode - auto-detect based on complexity and risk
+            if impl_mode:
+                logger.info(
+                    f"[{task_id}] Mode: task-work (unknown implementation_mode "
+                    f"'{impl_mode}' normalized)"
+                )
+                return "task-work"
+
+            # No explicit mode - auto-detect based on task type and complexity
             return self._auto_detect_direct_mode(task_id, task_data)
 
         except Exception as e:
@@ -3362,8 +3451,10 @@ Follow the decision format specified in your agent definition.
     def _auto_detect_direct_mode(self, task_id: str, task_data: dict) -> str:
         """Auto-detect if a task is eligible for direct mode.
 
-        Tasks with complexity <=3 and no high-risk keywords in title or
-        description are routed to direct mode to avoid preamble overhead.
+        Direct mode is only used for scaffolding tasks with complexity <= 1.
+        All other tasks default to task-work mode, which provides structural
+        reliability benefits (natural generator exhaustion, SDK timeout
+        multiplier, agent-written reports).
 
         Args:
             task_id: Task identifier for logging
@@ -3372,71 +3463,41 @@ Follow the decision format specified in your agent definition.
         Returns:
             "direct" if eligible, "task-work" otherwise
         """
-        from guardkit.orchestrator.intensity_detector import HIGH_RISK_KEYWORDS
-
         frontmatter = task_data.get("frontmatter", {})
         complexity = frontmatter.get("complexity")
+        task_type = frontmatter.get("task_type", "")
 
         # Require explicit complexity score for auto-detection
         if complexity is None:
-            logger.debug(
-                f"[{task_id}] No complexity score in frontmatter, "
-                "skipping auto-detection (task-work)"
+            logger.info(
+                f"[{task_id}] Mode: task-work (auto-selected, "
+                "no complexity score)"
             )
             return "task-work"
 
         try:
             complexity = int(complexity)
         except (ValueError, TypeError):
-            logger.debug(
-                f"[{task_id}] Invalid complexity value '{complexity}', "
-                "skipping auto-detection (task-work)"
+            logger.info(
+                f"[{task_id}] Mode: task-work (auto-selected, "
+                f"invalid complexity '{complexity}')"
             )
             return "task-work"
 
-        if complexity > 3:
-            logger.debug(
-                f"[{task_id}] Complexity {complexity} > 3, not eligible "
-                "for auto-direct mode (task-work)"
+        # Direct mode only for scaffolding tasks with complexity <= 1
+        if task_type == "scaffolding" and complexity <= 1:
+            logger.info(
+                f"[{task_id}] Mode: direct (auto-selected, "
+                f"scaffolding task with complexity={complexity})"
             )
-            return "task-work"
+            return "direct"
 
-        # Check for high-risk keywords in title and content
-        title = frontmatter.get("title", "")
-        content = task_data.get("content", "")
-        searchable_text = f"{title} {content}".lower()
-
-        if any(keyword in searchable_text for keyword in HIGH_RISK_KEYWORDS):
-            logger.debug(
-                f"[{task_id}] High-risk keywords detected in task, "
-                "not eligible for auto-direct mode (task-work)"
-            )
-            return "task-work"
-
-        # Check acceptance criteria count - tasks with >=2 AC need task-work
-        # for richer agent-written reports
-        import re
-        ac_list = frontmatter.get("acceptance_criteria", [])
-        if isinstance(ac_list, list) and len(ac_list) >= 2:
-            ac_count = len(ac_list)
-        else:
-            # Parse from markdown content (checkbox items under AC section)
-            ac_items = re.findall(r'^\s*-\s*\[[ x]\]', content, re.MULTILINE)
-            ac_count = len(ac_items)
-
-        if ac_count >= 2:
-            logger.debug(
-                f"[{task_id}] Task has {ac_count} acceptance criteria (>=2), "
-                "not eligible for auto-direct mode (task-work)"
-            )
-            return "task-work"
-
+        # All other tasks use task-work for reliability
         logger.info(
-            f"[{task_id}] Auto-detected direct mode "
-            f"(complexity={complexity}, no high-risk keywords, "
-            f"ac_count={ac_count})"
+            f"[{task_id}] Mode: task-work (auto-selected, "
+            f"complexity={complexity}, task_type='{task_type}')"
         )
-        return "direct"
+        return "task-work"
 
     def _calculate_sdk_timeout(
         self,
@@ -4506,7 +4567,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 # scheduling athrow(GeneratorExit) in a wrong asyncio Task.
                 _tw_gen = None
                 async with asyncio.timeout(self.sdk_timeout_seconds):
-                    async with async_heartbeat(task_id, "task-work implementation"):
+                    async with async_heartbeat(task_id, "task-work implementation", progress_logger=self._progress_logger):
                         _tw_gen = query(prompt=prompt, options=options)
                         async for message in _tw_gen:
                             # TASK-FBSDK-011: Track message counts
@@ -4545,6 +4606,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                     elif isinstance(block, ToolUseBlock):
                                         tool_count += 1
                                         logger.debug(f"Tool invoked: {block.name}")
+                                        # TASK-FIX-OBS2: Update progress logger with tool use
+                                        if self._progress_logger:
+                                            self._progress_logger._last_tool = block.name
                                         # TASK-FIX-STUB-C: Track file operations from
                                         # Write/Edit tools to populate files_created/
                                         # files_modified in task_work_results.json
@@ -4559,6 +4623,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                                 parser._track_tool_call(
                                                     block.name, tool_input
                                                 )
+                                                # TASK-FIX-OBS2: Track file changes for progress
+                                                if self._progress_logger:
+                                                    self._progress_logger._files_changed += 1
                                             else:
                                                 logger.warning(
                                                     f"[{task_id}] ToolUseBlock {block.name} input is "

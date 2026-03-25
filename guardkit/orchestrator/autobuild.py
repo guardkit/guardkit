@@ -602,6 +602,7 @@ class AutoBuildOrchestrator:
         timeout_multiplier: Optional[float] = None,
         wave_size: int = 1,
         emitter: Optional[Any] = None,
+        progress_logger: Optional[Any] = None,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -747,6 +748,7 @@ class AutoBuildOrchestrator:
         self._feature_id: Optional[str] = feature_id  # Passed from FeatureOrchestrator or set during orchestration
         self._cancellation_event: Optional[threading.Event] = cancellation_event  # Cooperative cancellation (TASK-ASF-007)
         self._timeout_event: Optional[threading.Event] = timeout_event  # Feature-level timeout signal (TASK-ABFIX-006)
+        self._progress_logger = progress_logger  # TASK-FIX-OBS2: Per-task progress logging
         self._task_timeout: Optional[int] = task_timeout  # Feature task budget in seconds (TASK-ABFIX-006)
         self.wave_size: int = max(1, int(wave_size))  # Parallel wave context (TASK-ABFIX-005)
         # Per-turn context status tracking for progress display (TASK-FIX-GCW5)
@@ -1130,6 +1132,9 @@ class AutoBuildOrchestrator:
                         cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
                         timeout_multiplier=self.timeout_multiplier,  # TASK-FIX-VL05
                     )
+                # TASK-FIX-OBS2: Attach progress logger to agent invoker
+                if self._progress_logger and self._agent_invoker:
+                    self._agent_invoker.set_progress_logger(self._progress_logger)
 
                 return worktree
 
@@ -1154,6 +1159,9 @@ class AutoBuildOrchestrator:
                     use_task_work_delegation=True,
                     cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
                 )
+            # TASK-FIX-OBS2: Attach progress logger to agent invoker
+            if self._progress_logger and self._agent_invoker:
+                self._agent_invoker.set_progress_logger(self._progress_logger)
 
             return worktree
 
@@ -4767,6 +4775,9 @@ class AutoBuildOrchestrator:
                     use_task_work_delegation=True,
                     cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
                 )
+            # TASK-FIX-OBS2: Attach progress logger to agent invoker
+            if self._progress_logger and self._agent_invoker:
+                self._agent_invoker.set_progress_logger(self._progress_logger)
 
             # Calculate next turn
             start_turn = len(self._turn_history) + 1

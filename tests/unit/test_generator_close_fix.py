@@ -262,3 +262,67 @@ class TestSdkCleanupHandlerPreserved:
         import inspect
         source = inspect.getsource(AgentInvoker._invoke_task_work_implement)
         assert "_install_sdk_cleanup_handler(" in source
+
+
+# ============================================================================
+# 4. TASK-FIX-GEN1: Generator drain after ResultMessage (3 tests)
+# ============================================================================
+
+
+class TestGeneratorDrainAfterResultMessage:
+    """Verify _invoke_with_role drains the generator after ResultMessage
+    to prevent AnyIO cancel-scope CancelledError from gen.aclose()."""
+
+    def test_drain_loop_present_in_source(self):
+        """Source contains the drain loop after ResultMessage."""
+        import inspect
+        source = inspect.getsource(AgentInvoker._invoke_with_role)
+        # Must drain remaining messages after ResultMessage
+        assert "async for _ in gen:" in source, (
+            "Must drain generator after ResultMessage to prevent cancel-scope errors"
+        )
+        # Must set gen = None after drain to skip aclose() in finally
+        assert "gen = None" in source, (
+            "Must set gen = None after drain so finally block skips aclose()"
+        )
+
+    def test_gen_none_skips_aclose_in_finally(self):
+        """When gen is set to None by drain, the finally block skips aclose()."""
+        import inspect
+        source = inspect.getsource(AgentInvoker._invoke_with_role)
+        # The finally block must check gen is not None before aclose
+        finally_idx = source.find("finally:")
+        assert finally_idx != -1
+        after_finally = source[finally_idx:]
+        assert "if gen is not None:" in after_finally, (
+            "finally block must guard aclose() with 'if gen is not None'"
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_cancelled_error_after_result_message(self, agent_invoker):
+        """TASK-FIX-GEN1 regression: receiving ResultMessage must not raise
+        CancelledError from generator cleanup."""
+        MockResultMessage = type("ResultMessage", (), {})
+
+        async def query_with_extra_messages(*args, **kwargs):
+            """Yield assistant message, ResultMessage, then more messages."""
+            yield MagicMock(type="assistant", error=None)
+            yield MockResultMessage()
+            # These messages come after ResultMessage — the drain loop
+            # should consume them without error
+            yield MagicMock(type="assistant", error=None)
+            yield MagicMock(type="assistant", error=None)
+
+        mock_sdk, _ = _make_mock_sdk(query_with_extra_messages)
+        mock_sdk.ResultMessage = MockResultMessage
+
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
+            # This should complete without CancelledError.
+            # _invoke_with_role returns None; we just verify no exception.
+            await agent_invoker._invoke_with_role(
+                prompt="TASK-FIX-GEN1: regression test",
+                agent_type="player",
+                allowed_tools=["Read"],
+                permission_mode="acceptEdits",
+            )
+        # If we reach here, no CancelledError was raised — test passes

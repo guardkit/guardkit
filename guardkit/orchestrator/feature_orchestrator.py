@@ -259,6 +259,7 @@ class FeatureOrchestrator:
         parallel_config: Optional["ParallelConfig"] = None,
         skip_validation: bool = False,
         emitter: Optional[Any] = None,
+        task_log_interval: int = 60,
     ):
         """
         Initialize FeatureOrchestrator.
@@ -310,6 +311,9 @@ class FeatureOrchestrator:
             Skip pre-flight frontmatter validation (default: False).
             When True, bypasses the frontmatter field and task_type checks
             that run before worktree creation.
+        task_log_interval : int, optional
+            Seconds between per-task progress log snapshots (default: 60).
+            Each parallel task writes to .guardkit/autobuild/{task_id}/progress.log.
 
         Raises
         ------
@@ -353,6 +357,7 @@ class FeatureOrchestrator:
         self._parallel_config = parallel_config if parallel_config is not None else ParallelConfig.from_legacy(max_parallel)
         self.skip_validation = skip_validation
         self._emitter = emitter if emitter is not None else NullEmitter()  # TASK-INST-004
+        self.task_log_interval = task_log_interval  # TASK-FIX-OBS2
         self.features_dir = features_dir or self.repo_root / ".guardkit" / "features"
 
         # Raise file descriptor limit for parallel task execution
@@ -1546,9 +1551,21 @@ The detailed specifications are in the task markdown file.
                         f"Task {task_id} timed out after {self.task_timeout}s "
                         f"({self.task_timeout // 60} min)"
                     )
+                    # TASK-FIX-OBS2: Read last state from per-task progress log
+                    progress_log = (
+                        self.repo_root / ".guardkit" / "autobuild" / task_id / "progress.log"
+                    )
+                    last_state = ""
+                    if progress_log.exists():
+                        try:
+                            lines = progress_log.read_text().strip().splitlines()
+                            last_state = f" Last log: {lines[-1]}" if lines else ""
+                        except Exception:
+                            pass
                     logger.warning(
                         f"TIMEOUT (feature-level): task_timeout={self.task_timeout}s expired "
                         f"for {task_id}. SDK timeout budget was {sdk_timeout}s per invocation."
+                        f"{last_state}"
                     )
                     logger.warning(timeout_msg)
                     error_result = TaskExecutionResult(
@@ -1894,6 +1911,15 @@ The detailed specifications are in the task markdown file.
         TaskExecutionResult
             Execution result
         """
+        # TASK-FIX-OBS2: Create per-task progress logger for diagnostics
+        from guardkit.orchestrator.progress_logger import TaskProgressLogger
+        progress_logger = TaskProgressLogger(
+            task_id=task.id,
+            repo_root=self.repo_root,
+            interval=self.task_log_interval,
+        )
+        task_start_time = time.time()
+
         try:
             # Load task data from markdown file
             task_data = TaskLoader.load_task(task.id, repo_root=self.repo_root)
@@ -1931,6 +1957,7 @@ The detailed specifications are in the task markdown file.
                 timeout_multiplier=self.timeout_multiplier,  # TASK-FIX-VL05
                 wave_size=wave_size,  # Parallel wave context for Coach isolation (TASK-ABFIX-005)
                 emitter=self._emitter,  # Forward emitter to task orchestrator (TASK-INST-013)
+                progress_logger=progress_logger,  # TASK-FIX-OBS2: Per-task progress logging
             )
 
             # Execute task orchestration
@@ -1942,6 +1969,10 @@ The detailed specifications are in the task markdown file.
                 requires_infrastructure=task.requires_infrastructure,
                 time_budget_seconds=time_budget_seconds,
             )
+
+            # TASK-FIX-OBS2: Log completion
+            elapsed = time.time() - task_start_time
+            progress_logger.log_complete(elapsed, result.final_decision)
 
             status_icon = "[green]✓[/green]" if result.success else "[red]✗[/red]"
             console.print(
@@ -1979,6 +2010,9 @@ The detailed specifications are in the task markdown file.
             decision = "cancelled" if isinstance(e, asyncio.CancelledError) else "error"
             if isinstance(e, asyncio.CancelledError):
                 logger.warning(f"CancelledError caught at _execute_task for {task.id}: {e}")
+            # TASK-FIX-OBS2: Log error/cancellation with last known state
+            elapsed = time.time() - task_start_time
+            progress_logger.log_timeout(elapsed, f"decision={decision}, error={e}")
             console.print(f"    [red]✗[/red] {task.id}: {decision.upper()} - {e}")
             return TaskExecutionResult(
                 task_id=task.id,
@@ -1987,6 +2021,8 @@ The detailed specifications are in the task markdown file.
                 final_decision=decision,
                 error=str(e),
             )
+        finally:
+            progress_logger.close()
 
     def _execute_single_task(
         self,

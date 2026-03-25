@@ -9,6 +9,8 @@ build_synthetic_report : Build a synthetic Player report dict.
 generate_file_existence_promises : Extract file promises from acceptance criteria.
 infer_requirements_from_files : Infer requirements_addressed from file contents.
 validate_requirements_staleness : Re-validate carry-forward requirements against current worktree state.
+extract_code_evidence : Extract code patterns from changed files (TASK-FIX-SYNTH5).
+generate_code_pattern_promises : Generate promises from code pattern evidence (TASK-FIX-SYNTH5).
 """
 
 import fnmatch as _fnmatch
@@ -169,6 +171,32 @@ def build_synthetic_report(
                 "analysis (TASK-FIX-ASPF-006)",
                 len(inferred),
             )
+
+    # Generate code-pattern promises for semantic verification (TASK-FIX-SYNTH5).
+    # This enriches completion_promises with evidence extracted from actual code
+    # patterns (class names, type annotations, decorators, exception classes),
+    # enabling the Coach to verify semantic criteria that file-existence alone
+    # cannot satisfy.
+    if acceptance_criteria and worktree_path is not None:
+        code_evidence = extract_code_evidence(
+            files=files_created + files_modified,
+            worktree_path=worktree_path,
+        )
+        if code_evidence:
+            code_promises = generate_code_pattern_promises(
+                acceptance_criteria=acceptance_criteria,
+                code_evidence=code_evidence,
+            )
+            if code_promises:
+                existing = report.get("completion_promises", [])
+                report["completion_promises"] = _merge_promises(
+                    existing, code_promises,
+                )
+                logger.info(
+                    "Generated %d code-pattern promises for semantic "
+                    "verification (TASK-FIX-SYNTH5)",
+                    len(code_promises),
+                )
 
     return report
 
@@ -513,6 +541,287 @@ def infer_requirements_from_files(
             )
 
     return addressed
+
+
+# ---------------------------------------------------------------------------
+# Code pattern extraction for semantic verification (TASK-FIX-SYNTH5)
+# ---------------------------------------------------------------------------
+
+# Maximum file size for code evidence extraction (same as keyword inference).
+_CODE_EVIDENCE_MAX_FILE_SIZE = _MAX_FILE_SIZE
+_CODE_EVIDENCE_MAX_TOTAL_BYTES = _MAX_TOTAL_BYTES
+
+# Minimum fraction of criterion keywords that must appear in code evidence.
+_CODE_PATTERN_THRESHOLD = 0.40  # 40% — slightly lower than keyword threshold
+
+
+def extract_code_evidence(
+    files: List[str],
+    worktree_path: Path,
+) -> Dict[str, List[str]]:
+    """Extract code patterns from changed files using regex.
+
+    Reads each file and extracts semantic code constructs:
+    - Class definitions (``class Foo``)
+    - Type annotations (``Literal[...]``, ``Optional[...]``, ``Union[...]``)
+    - Decorators (``@validator``, ``@field_validator``)
+    - Exception classes (``class FooError``, ``class BarException``)
+    - Function/method signatures (``def process_payment(...)``)
+
+    Parameters
+    ----------
+    files : List[str]
+        Relative file paths to scan.
+    worktree_path : Path
+        Worktree root for resolving paths.
+
+    Returns
+    -------
+    Dict[str, List[str]]
+        Mapping of file path to list of extracted pattern strings.
+        Empty dict if no patterns found or no files readable.
+    """
+    if not files:
+        return {}
+
+    evidence: Dict[str, List[str]] = {}
+    total_bytes = 0
+    seen: Set[str] = set()
+
+    for rel_path in sorted(files):
+        if rel_path in seen:
+            continue
+        seen.add(rel_path)
+
+        abs_path = worktree_path / rel_path
+        try:
+            size = abs_path.stat().st_size
+            if size > _CODE_EVIDENCE_MAX_FILE_SIZE:
+                continue
+            if total_bytes + size > _CODE_EVIDENCE_MAX_TOTAL_BYTES:
+                break
+            content = abs_path.read_text(encoding="utf-8")
+            total_bytes += size
+        except (OSError, UnicodeDecodeError):
+            continue
+
+        patterns = _extract_patterns_from_content(content)
+        if patterns:
+            evidence[rel_path] = patterns
+
+    return evidence
+
+
+def _extract_patterns_from_content(content: str) -> List[str]:
+    """Extract code patterns from file content using regex.
+
+    Returns a deduplicated list of pattern strings found in the content.
+    """
+    patterns: List[str] = []
+    seen: Set[str] = set()
+
+    def _add(pattern: str) -> None:
+        if pattern not in seen:
+            patterns.append(pattern)
+            seen.add(pattern)
+
+    # Class definitions: class UserModel, class PaymentProcessor(Base)
+    for m in re.finditer(r'^class\s+(\w+)', content, re.MULTILINE):
+        _add(f"class:{m.group(1)}")
+
+    # Type annotations with Literal, Optional, Union, etc.
+    for m in re.finditer(
+        r':\s*(Literal\[[^\]]+\])', content,
+    ):
+        _add(f"type:{m.group(1)}")
+    for m in re.finditer(
+        r':\s*(Optional\[\w+\])', content,
+    ):
+        _add(f"type:{m.group(1)}")
+    for m in re.finditer(
+        r':\s*(Union\[[^\]]+\])', content,
+    ):
+        _add(f"type:{m.group(1)}")
+
+    # Constraint/validator decorators
+    for m in re.finditer(
+        r'^[ \t]*@(\w+(?:\.\w+)*)', content, re.MULTILINE,
+    ):
+        decorator = m.group(1)
+        # Filter out common non-informative decorators
+        if decorator not in ("property", "staticmethod", "classmethod"):
+            _add(f"decorator:{decorator}")
+
+    # Exception classes
+    for m in re.finditer(
+        r'^class\s+(\w+(?:Error|Exception))\b', content, re.MULTILINE,
+    ):
+        _add(f"exception:{m.group(1)}")
+
+    # Function/method definitions
+    for m in re.finditer(
+        r'^[ \t]*def\s+(\w+)\s*\(', content, re.MULTILINE,
+    ):
+        name = m.group(1)
+        if not name.startswith("_"):
+            _add(f"def:{name}")
+
+    return patterns
+
+
+def generate_code_pattern_promises(
+    acceptance_criteria: List[str],
+    code_evidence: Dict[str, List[str]],
+) -> List[Dict[str, Any]]:
+    """Generate completion promises based on code pattern matching.
+
+    For each acceptance criterion, checks whether extracted code patterns
+    (class names, type annotations, decorators, exception classes) match
+    the criterion text. This enables semantic verification of criteria
+    like "Literal constraints applied" or "models match API contract".
+
+    Parameters
+    ----------
+    acceptance_criteria : List[str]
+        Acceptance criteria text strings.
+    code_evidence : Dict[str, List[str]]
+        Code patterns per file from :func:`extract_code_evidence`.
+
+    Returns
+    -------
+    List[Dict[str, Any]]
+        Promise dicts with ``evidence_type: "code_pattern"``.
+    """
+    if not code_evidence:
+        return []
+
+    # Flatten all patterns and build a searchable text corpus
+    all_patterns: List[str] = []
+    for file_patterns in code_evidence.values():
+        all_patterns.extend(file_patterns)
+
+    if not all_patterns:
+        return []
+
+    # Extract the readable names from patterns (strip prefixes)
+    pattern_names: List[str] = []
+    for p in all_patterns:
+        _, _, name = p.partition(":")
+        pattern_names.append(name.lower())
+
+    pattern_corpus = " ".join(pattern_names)
+
+    promises: List[Dict[str, Any]] = []
+
+    for i, criterion_text in enumerate(acceptance_criteria):
+        criterion_id = f"AC-{i + 1:03d}"
+
+        # Extract keywords from criterion
+        keywords = _extract_criterion_keywords(criterion_text)
+        if len(keywords) < _MIN_KEYWORDS:
+            continue
+
+        # Check how many criterion keywords appear in code patterns
+        matched_keywords = [kw for kw in keywords if kw in pattern_corpus]
+
+        # Also do direct pattern name matching against criterion text
+        criterion_lower = criterion_text.lower()
+        matched_patterns: List[str] = []
+        for p in all_patterns:
+            _, _, name = p.partition(":")
+            # Match if pattern name appears in criterion text
+            if name.lower() in criterion_lower:
+                matched_patterns.append(p)
+
+        # Calculate match ratio
+        keyword_ratio = len(matched_keywords) / len(keywords) if keywords else 0
+        has_direct_match = len(matched_patterns) > 0
+
+        if keyword_ratio >= _CODE_PATTERN_THRESHOLD or has_direct_match:
+            # Build evidence string
+            evidence_parts: List[str] = []
+            if matched_patterns:
+                evidence_parts.append(
+                    "Patterns found: " + ", ".join(matched_patterns[:5])
+                )
+            if matched_keywords:
+                evidence_parts.append(
+                    "Keywords matched: " + ", ".join(matched_keywords[:5])
+                )
+            evidence = (
+                "Code-pattern analysis: " + "; ".join(evidence_parts)
+            )
+
+            # Find which files contributed the matches
+            contributing_files: List[str] = []
+            for fpath, fpatterns in code_evidence.items():
+                for mp in matched_patterns:
+                    if mp in fpatterns:
+                        if fpath not in contributing_files:
+                            contributing_files.append(fpath)
+                        break
+
+            promises.append({
+                "criterion_id": criterion_id,
+                "criterion_text": criterion_text,
+                "status": "partial",
+                "evidence": evidence,
+                "evidence_type": "code_pattern",
+                "confidence": min(0.6, keyword_ratio),
+                "contributing_files": contributing_files[:3],
+            })
+
+    return promises
+
+
+def _merge_promises(
+    primary: List[Dict[str, Any]],
+    secondary: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Merge two promise lists, preferring higher-status results.
+
+    For each criterion_id, keeps the promise with the higher status.
+    Status hierarchy: complete > partial > incomplete.
+
+    Parameters
+    ----------
+    primary : List[Dict[str, Any]]
+        Primary promise list (e.g., from file-existence).
+    secondary : List[Dict[str, Any]]
+        Secondary promise list (e.g., from code-pattern).
+
+    Returns
+    -------
+    List[Dict[str, Any]]
+        Merged promise list with one entry per criterion_id.
+    """
+    if not primary:
+        return list(secondary)
+    if not secondary:
+        return list(primary)
+
+    _STATUS_RANK = {"complete": 3, "partial": 2, "incomplete": 1}
+
+    # Index primary by criterion_id
+    merged: Dict[str, Dict[str, Any]] = {}
+    for p in primary:
+        cid = p.get("criterion_id", "")
+        merged[cid] = p
+
+    # Merge secondary: upgrade status if secondary is higher
+    for s in secondary:
+        cid = s.get("criterion_id", "")
+        if cid not in merged:
+            merged[cid] = s
+        else:
+            existing = merged[cid]
+            existing_rank = _STATUS_RANK.get(existing.get("status"), 0)
+            secondary_rank = _STATUS_RANK.get(s.get("status"), 0)
+            if secondary_rank > existing_rank:
+                merged[cid] = s
+
+    # Return in criterion_id order
+    return sorted(merged.values(), key=lambda p: p.get("criterion_id", ""))
 
 
 # ---------------------------------------------------------------------------

@@ -9,9 +9,12 @@ Tests cover:
 - infer_requirements_from_files(): Content-based keyword matching,
   conservative thresholds, size guards, binary file handling.
 - _extract_criterion_keywords(): Stopword filtering, short word removal.
+- extract_code_evidence(): Code pattern extraction from files (TASK-FIX-SYNTH5).
+- generate_code_pattern_promises(): Promise generation from code patterns.
+- _merge_promises(): Promise merging with status hierarchy.
 
 Coverage Target: >=90%
-Test Count: 28 tests
+Test Count: 48 tests
 """
 
 import logging
@@ -21,7 +24,11 @@ import pytest
 
 from guardkit.orchestrator.synthetic_report import (
     _extract_criterion_keywords,
+    _extract_patterns_from_content,
+    _merge_promises,
     build_synthetic_report,
+    extract_code_evidence,
+    generate_code_pattern_promises,
     generate_file_existence_promises,
     infer_requirements_from_files,
 )
@@ -823,3 +830,429 @@ class TestEnhancedFileExistencePromises:
 
         assert len(promises) == 1
         assert promises[0]["status"] == "incomplete"
+
+
+# ===========================================================================
+# Section 7: _extract_patterns_from_content() Tests (TASK-FIX-SYNTH5)
+# ===========================================================================
+
+
+class TestExtractPatternsFromContent:
+    """Tests for _extract_patterns_from_content() helper."""
+
+    def test_extracts_class_definitions(self):
+        """Class definitions are extracted with 'class:' prefix."""
+        content = "class UserModel:\n    pass\n\nclass PaymentProcessor(Base):\n    pass\n"
+        patterns = _extract_patterns_from_content(content)
+        assert "class:UserModel" in patterns
+        assert "class:PaymentProcessor" in patterns
+
+    def test_extracts_literal_type_annotations(self):
+        """Literal type annotations are extracted with 'type:' prefix."""
+        content = '    status: Literal["active", "inactive"]\n'
+        patterns = _extract_patterns_from_content(content)
+        assert any(p.startswith("type:Literal[") for p in patterns)
+
+    def test_extracts_optional_type_annotations(self):
+        """Optional type annotations are extracted."""
+        content = "    name: Optional[str]\n"
+        patterns = _extract_patterns_from_content(content)
+        assert "type:Optional[str]" in patterns
+
+    def test_extracts_union_type_annotations(self):
+        """Union type annotations are extracted."""
+        content = "    value: Union[str, int]\n"
+        patterns = _extract_patterns_from_content(content)
+        assert "type:Union[str, int]" in patterns
+
+    def test_extracts_decorators(self):
+        """Decorators are extracted with 'decorator:' prefix."""
+        content = "@validator\ndef check_name(cls, v):\n    return v\n"
+        patterns = _extract_patterns_from_content(content)
+        assert "decorator:validator" in patterns
+
+    def test_filters_common_decorators(self):
+        """Property, staticmethod, classmethod decorators are excluded."""
+        content = (
+            "@property\ndef name(self): pass\n"
+            "@staticmethod\ndef create(): pass\n"
+            "@classmethod\ndef from_dict(cls, d): pass\n"
+        )
+        patterns = _extract_patterns_from_content(content)
+        assert "decorator:property" not in patterns
+        assert "decorator:staticmethod" not in patterns
+        assert "decorator:classmethod" not in patterns
+
+    def test_extracts_exception_classes(self):
+        """Exception classes are extracted with 'exception:' prefix."""
+        content = "class ValidationError(Exception):\n    pass\n"
+        patterns = _extract_patterns_from_content(content)
+        assert "exception:ValidationError" in patterns
+        # Also extracted as class:
+        assert "class:ValidationError" in patterns
+
+    def test_extracts_function_definitions(self):
+        """Public function definitions are extracted with 'def:' prefix."""
+        content = "def process_payment(order_id: str) -> bool:\n    pass\n"
+        patterns = _extract_patterns_from_content(content)
+        assert "def:process_payment" in patterns
+
+    def test_skips_private_functions(self):
+        """Private functions (starting with _) are excluded."""
+        content = "def _internal_helper():\n    pass\n"
+        patterns = _extract_patterns_from_content(content)
+        assert "def:_internal_helper" not in patterns
+
+    def test_deduplicates_patterns(self):
+        """Duplicate patterns are not returned."""
+        content = "class Foo:\n    pass\nclass Foo:\n    pass\n"
+        patterns = _extract_patterns_from_content(content)
+        class_foo_count = sum(1 for p in patterns if p == "class:Foo")
+        assert class_foo_count == 1
+
+    def test_empty_content_returns_empty(self):
+        """Empty file content returns empty list."""
+        patterns = _extract_patterns_from_content("")
+        assert patterns == []
+
+    def test_dotted_decorator(self):
+        """Dotted decorators like @field_validator are extracted."""
+        content = "@pydantic.field_validator\ndef check(cls, v):\n    return v\n"
+        patterns = _extract_patterns_from_content(content)
+        assert "decorator:pydantic.field_validator" in patterns
+
+
+# ===========================================================================
+# Section 8: extract_code_evidence() Tests (TASK-FIX-SYNTH5)
+# ===========================================================================
+
+
+class TestExtractCodeEvidence:
+    """Tests for extract_code_evidence() function."""
+
+    def test_extracts_patterns_from_python_file(self, tmp_path):
+        """Extracts class and function patterns from a Python file."""
+        src = tmp_path / "src" / "models.py"
+        src.parent.mkdir(parents=True)
+        src.write_text(
+            "class UserModel:\n"
+            "    name: str\n"
+            '    status: Literal["active", "inactive"]\n'
+            "\n"
+            "def validate_user(user: UserModel) -> bool:\n"
+            "    return True\n"
+        )
+
+        evidence = extract_code_evidence(
+            files=["src/models.py"],
+            worktree_path=tmp_path,
+        )
+        assert "src/models.py" in evidence
+        patterns = evidence["src/models.py"]
+        assert "class:UserModel" in patterns
+        assert "def:validate_user" in patterns
+
+    def test_returns_empty_for_no_files(self, tmp_path):
+        """Empty file list returns empty dict."""
+        evidence = extract_code_evidence(files=[], worktree_path=tmp_path)
+        assert evidence == {}
+
+    def test_skips_missing_files(self, tmp_path):
+        """Missing files are silently skipped."""
+        evidence = extract_code_evidence(
+            files=["nonexistent.py"],
+            worktree_path=tmp_path,
+        )
+        assert evidence == {}
+
+    def test_skips_binary_files(self, tmp_path):
+        """Binary files are silently skipped."""
+        binfile = tmp_path / "data.bin"
+        binfile.write_bytes(b"\x80\x81\x82\x83\x00\xff\xfe")
+
+        evidence = extract_code_evidence(
+            files=["data.bin"],
+            worktree_path=tmp_path,
+        )
+        assert evidence == {}
+
+    def test_deduplicates_file_paths(self, tmp_path):
+        """Duplicate file paths are read only once."""
+        src = tmp_path / "models.py"
+        src.write_text("class Foo:\n    pass\n")
+
+        evidence = extract_code_evidence(
+            files=["models.py", "models.py"],
+            worktree_path=tmp_path,
+        )
+        assert "models.py" in evidence
+        assert len(evidence) == 1
+
+
+# ===========================================================================
+# Section 9: generate_code_pattern_promises() Tests (TASK-FIX-SYNTH5)
+# ===========================================================================
+
+
+class TestGenerateCodePatternPromises:
+    """Tests for generate_code_pattern_promises() function."""
+
+    def test_matches_class_name_in_criterion(self):
+        """Criterion mentioning a class name matches code patterns."""
+        code_evidence = {
+            "src/models.py": ["class:UserModel", "def:validate_user"],
+        }
+        criteria = [
+            "UserModel class with validate_user method implementation"
+        ]
+
+        promises = generate_code_pattern_promises(
+            acceptance_criteria=criteria,
+            code_evidence=code_evidence,
+        )
+        assert len(promises) == 1
+        assert promises[0]["status"] == "partial"
+        assert promises[0]["evidence_type"] == "code_pattern"
+        assert "UserModel" in promises[0]["evidence"]
+
+    def test_matches_literal_type_constraint(self):
+        """Criterion about Literal constraints matches type annotations."""
+        code_evidence = {
+            "src/models.py": [
+                "class:StatusModel",
+                'type:Literal["active", "inactive"]',
+            ],
+        }
+        criteria = ["Literal constraints applied to status fields"]
+
+        promises = generate_code_pattern_promises(
+            acceptance_criteria=criteria,
+            code_evidence=code_evidence,
+        )
+        assert len(promises) == 1
+        assert promises[0]["status"] == "partial"
+        assert "literal" in promises[0]["evidence"].lower()
+
+    def test_returns_empty_for_no_evidence(self):
+        """Empty code evidence returns no promises."""
+        promises = generate_code_pattern_promises(
+            acceptance_criteria=["Some criterion"],
+            code_evidence={},
+        )
+        assert promises == []
+
+    def test_skips_criteria_with_few_keywords(self):
+        """Criteria with too few keywords are skipped."""
+        code_evidence = {
+            "src/models.py": ["class:Foo"],
+        }
+        # "Create a new file" → all stopwords, <2 keywords
+        promises = generate_code_pattern_promises(
+            acceptance_criteria=["Create a new file"],
+            code_evidence=code_evidence,
+        )
+        assert promises == []
+
+    def test_includes_contributing_files(self):
+        """Promises include the files that contributed matching patterns."""
+        code_evidence = {
+            "src/models.py": ["class:UserModel", "def:validate_user"],
+        }
+        criteria = [
+            "UserModel class with validate_user method implementation"
+        ]
+
+        promises = generate_code_pattern_promises(
+            acceptance_criteria=criteria,
+            code_evidence=code_evidence,
+        )
+        assert len(promises) == 1
+        assert "src/models.py" in promises[0]["contributing_files"]
+
+    def test_criterion_id_format(self):
+        """Criterion IDs follow AC-NNN format."""
+        code_evidence = {
+            "src/models.py": ["class:UserModel", "def:validate_user"],
+        }
+        criteria = [
+            "First criterion about UserModel implementation",
+            "Second criterion about validate_user method",
+        ]
+
+        promises = generate_code_pattern_promises(
+            acceptance_criteria=criteria,
+            code_evidence=code_evidence,
+        )
+        ids = [p["criterion_id"] for p in promises]
+        assert "AC-001" in ids
+        assert "AC-002" in ids
+
+
+# ===========================================================================
+# Section 10: _merge_promises() Tests (TASK-FIX-SYNTH5)
+# ===========================================================================
+
+
+class TestMergePromises:
+    """Tests for _merge_promises() function."""
+
+    def test_returns_secondary_when_primary_empty(self):
+        """Empty primary returns secondary as-is."""
+        secondary = [
+            {"criterion_id": "AC-001", "status": "partial", "evidence": "code"},
+        ]
+        result = _merge_promises([], secondary)
+        assert len(result) == 1
+        assert result[0]["status"] == "partial"
+
+    def test_returns_primary_when_secondary_empty(self):
+        """Empty secondary returns primary as-is."""
+        primary = [
+            {"criterion_id": "AC-001", "status": "complete", "evidence": "file"},
+        ]
+        result = _merge_promises(primary, [])
+        assert len(result) == 1
+        assert result[0]["status"] == "complete"
+
+    def test_keeps_higher_status_from_primary(self):
+        """Primary 'complete' is kept over secondary 'partial'."""
+        primary = [
+            {"criterion_id": "AC-001", "status": "complete", "evidence": "file"},
+        ]
+        secondary = [
+            {"criterion_id": "AC-001", "status": "partial", "evidence": "code"},
+        ]
+        result = _merge_promises(primary, secondary)
+        assert len(result) == 1
+        assert result[0]["status"] == "complete"
+        assert result[0]["evidence"] == "file"
+
+    def test_upgrades_status_from_secondary(self):
+        """Secondary 'partial' upgrades primary 'incomplete'."""
+        primary = [
+            {"criterion_id": "AC-001", "status": "incomplete", "evidence": "none"},
+        ]
+        secondary = [
+            {"criterion_id": "AC-001", "status": "partial", "evidence": "code"},
+        ]
+        result = _merge_promises(primary, secondary)
+        assert len(result) == 1
+        assert result[0]["status"] == "partial"
+        assert result[0]["evidence"] == "code"
+
+    def test_merges_disjoint_criteria(self):
+        """Disjoint criterion IDs are both included."""
+        primary = [
+            {"criterion_id": "AC-001", "status": "complete", "evidence": "file"},
+        ]
+        secondary = [
+            {"criterion_id": "AC-002", "status": "partial", "evidence": "code"},
+        ]
+        result = _merge_promises(primary, secondary)
+        assert len(result) == 2
+        ids = {r["criterion_id"] for r in result}
+        assert ids == {"AC-001", "AC-002"}
+
+    def test_sorted_by_criterion_id(self):
+        """Results are sorted by criterion_id."""
+        primary = [
+            {"criterion_id": "AC-003", "status": "complete", "evidence": "a"},
+        ]
+        secondary = [
+            {"criterion_id": "AC-001", "status": "partial", "evidence": "b"},
+            {"criterion_id": "AC-002", "status": "partial", "evidence": "c"},
+        ]
+        result = _merge_promises(primary, secondary)
+        assert [r["criterion_id"] for r in result] == ["AC-001", "AC-002", "AC-003"]
+
+
+# ===========================================================================
+# Section 11: build_synthetic_report() code-pattern integration (TASK-FIX-SYNTH5)
+# ===========================================================================
+
+
+class TestBuildSyntheticReportCodePatterns:
+    """Tests for build_synthetic_report() code-pattern evidence integration."""
+
+    def test_code_patterns_added_to_promises(
+        self, base_report_kwargs, tmp_path
+    ):
+        """When worktree_path + criteria provided, code-pattern promises are generated."""
+        src = tmp_path / "src" / "new_module.py"
+        src.parent.mkdir(parents=True)
+        src.write_text(
+            "class BaseModule:\n"
+            '    status: Literal["active", "inactive"]\n'
+            "    def process(self):\n"
+            "        return True\n"
+        )
+
+        report = build_synthetic_report(
+            **base_report_kwargs,
+            acceptance_criteria=[
+                "BaseModule class with Literal constraints on status field"
+            ],
+            worktree_path=tmp_path,
+        )
+        # Should have completion_promises from code-pattern analysis
+        assert "completion_promises" in report
+        code_promises = [
+            p for p in report["completion_promises"]
+            if p.get("evidence_type") == "code_pattern"
+        ]
+        assert len(code_promises) >= 1
+
+    def test_code_patterns_not_generated_without_worktree(
+        self, base_report_kwargs
+    ):
+        """Without worktree_path, no code-pattern promises are generated."""
+        report = build_synthetic_report(
+            **base_report_kwargs,
+            acceptance_criteria=[
+                "BaseModule class with Literal constraints"
+            ],
+        )
+        # No code-pattern promises (may still have no promises at all)
+        promises = report.get("completion_promises", [])
+        code_promises = [
+            p for p in promises
+            if p.get("evidence_type") == "code_pattern"
+        ]
+        assert len(code_promises) == 0
+
+    def test_code_patterns_merged_with_file_existence(
+        self, tmp_path
+    ):
+        """Code-pattern promises are merged with file-existence promises."""
+        src = tmp_path / "src" / "new_module.py"
+        src.parent.mkdir(parents=True)
+        src.write_text(
+            "class BaseModule:\n"
+            "    def process(self):\n"
+            "        return True\n"
+        )
+
+        report = build_synthetic_report(
+            task_id="TASK-001",
+            turn=1,
+            files_modified=[],
+            files_created=["src/new_module.py"],
+            tests_written=[],
+            tests_passed=True,
+            test_count=1,
+            implementation_notes="Done",
+            concerns=[],
+            acceptance_criteria=[
+                "Create src/new_module.py with BaseModule class",
+            ],
+            task_type="scaffolding",
+            worktree_path=tmp_path,
+        )
+
+        promises = report.get("completion_promises", [])
+        assert len(promises) >= 1
+        # File-existence should give "complete" for the file match
+        ac1 = [p for p in promises if p["criterion_id"] == "AC-001"]
+        assert len(ac1) == 1
+        # "complete" from file-existence should be preserved (not downgraded)
+        assert ac1[0]["status"] == "complete"

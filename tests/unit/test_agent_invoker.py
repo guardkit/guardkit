@@ -6459,14 +6459,15 @@ Fix the typo in README.md.
 
 
 class TestDirectModeAutoDetection:
-    """Test auto-detection of direct mode for low-complexity tasks.
+    """Test auto-detection of implementation mode.
 
-    Tasks with complexity <=3 and no high-risk keywords are auto-routed
-    to direct mode when no explicit implementation_mode is set.
+    Direct mode is only auto-selected for scaffolding tasks with
+    complexity <= 1. All other tasks default to task-work mode.
+    Explicit implementation_mode in frontmatter always takes priority.
     """
 
-    def test_auto_detects_direct_for_low_complexity(self, agent_invoker, worktree_path):
-        """Auto-detects direct mode for complexity <=3 without high-risk keywords."""
+    def test_auto_detects_task_work_for_low_complexity(self, agent_invoker, worktree_path):
+        """Non-scaffolding tasks default to task-work even with low complexity."""
         tasks_dir = worktree_path / "tasks" / "backlog"
         tasks_dir.mkdir(parents=True, exist_ok=True)
 
@@ -6488,10 +6489,10 @@ Fix typo in the README file.
 """)
 
         mode = agent_invoker._get_implementation_mode("TASK-AUTO-001")
-        assert mode == "direct"
+        assert mode == "task-work"
 
-    def test_auto_detects_direct_for_complexity_3(self, agent_invoker, worktree_path):
-        """Auto-detects direct mode for complexity exactly 3 (boundary)."""
+    def test_auto_detects_task_work_for_complexity_3(self, agent_invoker, worktree_path):
+        """Complexity 3 tasks default to task-work (direct only for scaffolding <=1)."""
         tasks_dir = worktree_path / "tasks" / "backlog"
         tasks_dir.mkdir(parents=True, exist_ok=True)
 
@@ -6513,7 +6514,7 @@ Add logging statements to the utility module.
 """)
 
         mode = agent_invoker._get_implementation_mode("TASK-AUTO-002")
-        assert mode == "direct"
+        assert mode == "task-work"
 
     def test_no_auto_direct_for_complexity_4(self, agent_invoker, worktree_path):
         """Does not auto-detect direct mode for complexity 4 (above threshold)."""
@@ -6677,22 +6678,23 @@ Low complexity but explicitly set to task-work.
         task_file = tasks_dir / "TASK-AUTO-009-logging.md"
         task_file.write_text("""---
 id: TASK-AUTO-009
-title: Add comment to config file
+title: Create project scaffold
 status: backlog
 complexity: 1
+task_type: scaffolding
 ---
 
-# Add Comment
+# Create Scaffold
 
 ## Description
-Add a clarifying comment.
+Generate project scaffold files.
 """)
 
         with caplog.at_level(logging.INFO):
             mode = agent_invoker._get_implementation_mode("TASK-AUTO-009")
 
         assert mode == "direct"
-        assert "Auto-detected direct mode" in caplog.text
+        assert "Mode: direct (auto-selected" in caplog.text
 
     def test_no_auto_direct_for_complexity_10(self, agent_invoker, worktree_path):
         """No auto-detection for high complexity tasks."""
@@ -6738,8 +6740,8 @@ Fix the OAuth JWT session handling for the payment endpoint.
         mode = agent_invoker._get_implementation_mode("TASK-AUTO-011")
         assert mode == "task-work"
 
-    def test_auto_detect_with_complexity_1(self, agent_invoker, worktree_path):
-        """Auto-detects direct mode for minimum complexity."""
+    def test_auto_detect_with_complexity_1_non_scaffolding(self, agent_invoker, worktree_path):
+        """Non-scaffolding tasks with complexity=1 still default to task-work."""
         tasks_dir = worktree_path / "tasks" / "backlog"
         tasks_dir.mkdir(parents=True, exist_ok=True)
 
@@ -6758,7 +6760,7 @@ Remove trailing whitespace from files.
 """)
 
         mode = agent_invoker._get_implementation_mode("TASK-AUTO-012")
-        assert mode == "direct"
+        assert mode == "task-work"
 
     def test_invalid_complexity_value_falls_back(self, agent_invoker, worktree_path):
         """Invalid complexity value falls back to task-work."""
