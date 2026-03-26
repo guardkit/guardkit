@@ -168,8 +168,9 @@ docker run -d \
   ${HF_TOKEN:+-e "HF_TOKEN=$HF_TOKEN"} \
   -e "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True" \
   ${EXTRA_ENV} \
+  --entrypoint vllm \
   "$IMAGE" \
-  vllm serve "$MODEL" \
+  serve "$MODEL" \
     --host 0.0.0.0 \
     --port 8000 \
     --gpu-memory-utilization "$GPU_UTIL" \
