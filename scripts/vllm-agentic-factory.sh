@@ -15,7 +15,8 @@
 # double-serialization — see TASK-REV-FRF2.
 #
 # Usage:
-#   ./scripts/vllm-agentic-factory.sh                      # Default: Nemotron 3 Nano 4B
+#   ./scripts/vllm-agentic-factory.sh                      # Default: Qwen3.5-35B-A3B FP8
+#   ./scripts/vllm-agentic-factory.sh nano-4b               # Nemotron 3 Nano 4B
 #   ./scripts/vllm-agentic-factory.sh nano-30b              # Nemotron 3 Nano 30B-A3B
 #   ./scripts/vllm-agentic-factory.sh custom org/model       # Any custom model
 #
@@ -32,6 +33,7 @@
 #   8003 — Nemotron 3 Nano   (vllm-nemotron3-nano.sh)
 #
 # Memory budget (128GB unified, with Graphiti on 8000 @ 0.40):
+#   qwen35       weights ~70GB, vLLM alloc ~102GB (@0.80) Total with Graphiti: ~153GB (standalone recommended)
 #   nano-4b      weights ~4GB,  vLLM alloc ~45GB (@0.35)  Total with Graphiti: ~100GB
 #   nano-30b     weights ~15GB, vLLM alloc ~38GB (@0.30)  Total with Graphiti: ~104GB
 
@@ -47,13 +49,28 @@ CONTAINER_NAME="vllm-agentic-factory"
 EXTRA_ENV=""
 
 # --- Model selection ---
-MODEL_PRESET="${1:-nano-4b}"
+MODEL_PRESET="${1:-qwen35}"
 
 # Track which parser is used for the summary banner
 TOOL_PARSER=""
 
 case "$MODEL_PRESET" in
-  nano-4b|default|"")
+  qwen35|default|"")
+    MODEL="Qwen/Qwen3.5-35B-A3B-FP8"
+    GPU_UTIL="${VLLM_FACTORY_GPU_UTIL:-0.80}"
+    MAX_LEN="${VLLM_FACTORY_MAX_LEN:-262144}"
+    TOOL_PARSER="qwen3_coder"
+    IMAGE="${VLLM_IMAGE:-vllm/vllm-openai:cu130-nightly}"
+    EXTRA_ARGS="--trust-remote-code \
+      --reasoning-parser qwen3 \
+      --enable-auto-tool-choice \
+      --tool-call-parser qwen3_coder \
+      --enable-prefix-caching"
+    echo "═══ Qwen3.5-35B-A3B FP8 (3B active, ~70GB) — Tool-calling + Reasoning ═══"
+    echo "    BFCL-V4: 67.3 | TAU2: 81.2 | 50 tok/s sustained"
+    echo "    Tool parser: qwen3_coder | Reasoning: qwen3 | Context: ${MAX_LEN}"
+    ;;
+  nano-4b)
     MODEL="nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8"
     GPU_UTIL="${VLLM_FACTORY_GPU_UTIL:-0.35}"
     MAX_LEN="${VLLM_FACTORY_MAX_LEN:-16384}"
@@ -95,8 +112,11 @@ case "$MODEL_PRESET" in
     echo ""
     echo "Available presets:"
     echo ""
-    echo "  Nemotron 3 (recommended — native tool calling, qwen3_coder parser):"
-    echo "    nano-4b       Nemotron 3 Nano 4B FP8 (default, ~4GB)"
+    echo "  Qwen3.5 (recommended — best agentic tool-calling on DGX Spark):"
+    echo "    qwen35        Qwen3.5-35B-A3B FP8 (default, ~70GB, 50 tok/s)"
+    echo ""
+    echo "  Nemotron 3 (native tool calling, qwen3_coder parser):"
+    echo "    nano-4b       Nemotron 3 Nano 4B FP8 (~4GB)"
     echo "    nano-30b      Nemotron 3 Nano 30B-A3B FP8 (3.2B active, ~15GB)"
     echo ""
     echo "  Other:"
