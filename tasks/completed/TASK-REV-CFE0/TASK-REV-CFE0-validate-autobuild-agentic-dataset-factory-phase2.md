@@ -1,7 +1,7 @@
 ---
 id: TASK-REV-CFE0
 title: Validate autobuild runs for agentic-dataset-factory phase 2
-status: review_complete
+status: completed
 created: 2026-03-21T00:00:00Z
 updated: 2026-03-21T00:00:00Z
 priority: medium
@@ -14,7 +14,7 @@ review_results:
   score: 95
   findings_count: 3
   recommendations_count: 4
-  decision: accept
+  decision: implement
   report_path: .claude/reviews/TASK-REV-CFE0-review-report.md
 test_results:
   status: pending

@@ -62,13 +62,12 @@ case "$MODEL_PRESET" in
     TOOL_PARSER="qwen3_coder"
     IMAGE="${VLLM_IMAGE:-vllm/vllm-openai:cu130-nightly}"
     EXTRA_ARGS="--trust-remote-code \
-      --reasoning-parser qwen3 \
       --enable-auto-tool-choice \
       --tool-call-parser qwen3_coder \
       --enable-prefix-caching"
-    echo "═══ Qwen3.5-35B-A3B FP8 (3B active, ~70GB) — Tool-calling + Reasoning ═══"
+    echo "═══ Qwen3.5-35B-A3B FP8 (3B active, ~70GB) — Tool-calling ═══"
     echo "    BFCL-V4: 67.3 | TAU2: 81.2 | 50 tok/s sustained"
-    echo "    Tool parser: qwen3_coder | Reasoning: qwen3 | Context: ${MAX_LEN}"
+    echo "    Tool parser: qwen3_coder | Context: ${MAX_LEN}"
     ;;
   nano-4b)
     MODEL="nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8"
