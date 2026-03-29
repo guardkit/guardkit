@@ -1,28 +1,58 @@
-"""Player agent factory for the adversarial cooperation pattern."""
+"""Player agent factory for the adversarial cooperation pattern.
 
-from {{ProjectName}} import create_deep_agent
-from {{ProjectName}}.backends import FilesystemBackend
+TOOL SEPARATION CONTRACT:
+  - Player: domain-specific tools ONLY (e.g., search_data). NO write, NO filesystem.
+  - Coach: EMPTY tools. Evaluation only, no side effects.
+  - Orchestrator: owns write_output, invoked programmatically after Coach acceptance.
+
+Uses create_agent() (NOT create_deep_agent()) to prevent FilesystemMiddleware
+injection. Memory loading is handled explicitly via MemoryMiddleware.
+"""
+
+from deepagents.backends import FilesystemBackend
+from deepagents.middleware import MemoryMiddleware
+from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
+from langchain.agents import create_agent
 
 from {{ProjectName}}.player_prompts import PLAYER_SYSTEM_PROMPT
 from {{ProjectName}}.search_data import search_data
-from {{ProjectName}}.write_output import write_output
+from {{ProjectName}}.scaffold.orchestrator_pattern import validate_player_tools
 
 
 def create_player(model, domain_prompt: str):
     """Create a configured Player agent instance.
+
+    The Player receives domain-specific tools only. write_output is NOT included —
+    only the Orchestrator may call write_output after Coach acceptance.
+
+    Uses create_agent() to avoid FilesystemMiddleware injection that
+    create_deep_agent() unconditionally adds (ls, read_file, write_file,
+    edit_file, glob, grep, execute tools).
 
     Args:
         model: The LLM model instance or provider:model string.
         domain_prompt: Domain-specific criteria appended to the system prompt.
 
     Returns:
-        A configured DeepAgent with search and write {{ProjectName}}.
+        A configured agent with search tools only (no write or filesystem tools).
     """
+    tools = [search_data]
+
+    # Factory-level enforcement: Player must never have write_output
+    validate_player_tools(tools)
+
     system_prompt = PLAYER_SYSTEM_PROMPT + "\n\n" + domain_prompt
-    return create_deep_agent(
+
+    # Backend for memory file reading only — NOT for filesystem tool injection
+    backend = FilesystemBackend(root_dir=".")
+    middleware = [
+        MemoryMiddleware(backend=backend, sources=["./AGENTS.md"]),
+        PatchToolCallsMiddleware(),
+    ]
+
+    return create_agent(
         model=model,
-        {{ProjectName}}=[search_data, write_output],
+        tools=tools,
         system_prompt=system_prompt,
-        memory=["./AGENTS.md"],
-        backend=FilesystemBackend(root_dir="."),
+        middleware=middleware,
     )

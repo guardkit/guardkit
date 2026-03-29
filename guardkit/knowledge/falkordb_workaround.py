@@ -439,6 +439,22 @@ def apply_edge_search_workaround() -> bool:
             driver, query, search_filter, group_ids=None, limit=RELEVANT_SCHEMA_LIMIT
         ):
             """Fixed edge_fulltext_search: O(n) startNode/endNode instead of O(n×m) re-MATCH."""
+            try:
+                return await _edge_fulltext_search_inner(
+                    driver, query, search_filter, group_ids, limit
+                )
+            except RecursionError:
+                logger.warning(
+                    "[Graphiti] RecursionError in edge_fulltext_search "
+                    "(likely upstream graphiti-core/FalkorDB driver issue), "
+                    "returning empty results"
+                )
+                return []
+
+        async def _edge_fulltext_search_inner(
+            driver, query, search_filter, group_ids=None, limit=RELEVANT_SCHEMA_LIMIT
+        ):
+            """Inner implementation of edge_fulltext_search_fixed."""
             # Delegate to search_interface if available
             if driver.search_interface:
                 return await driver.search_interface.edge_fulltext_search(
@@ -522,6 +538,24 @@ def apply_edge_search_workaround() -> bool:
             search_filter, group_ids=None, limit=RELEVANT_SCHEMA_LIMIT
         ):
             """Fixed edge_bfs_search: O(n) startNode/endNode instead of O(n×m) re-MATCH."""
+            try:
+                return await _edge_bfs_search_inner(
+                    driver, bfs_origin_node_uuids, bfs_max_depth,
+                    search_filter, group_ids, limit
+                )
+            except RecursionError:
+                logger.warning(
+                    "[Graphiti] RecursionError in edge_bfs_search "
+                    "(likely upstream graphiti-core/FalkorDB driver issue), "
+                    "returning empty results"
+                )
+                return []
+
+        async def _edge_bfs_search_inner(
+            driver, bfs_origin_node_uuids, bfs_max_depth,
+            search_filter, group_ids=None, limit=RELEVANT_SCHEMA_LIMIT
+        ):
+            """Inner implementation of edge_bfs_search_fixed."""
             # Delegate to search_interface if available
             if driver.search_interface:
                 try:

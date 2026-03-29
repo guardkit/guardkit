@@ -1,0 +1,24 @@
+# Agent Configuration
+#
+# Per-role model configuration for Player and Coach agents.
+# Each role can use a different model, endpoint, or temperature.
+#
+# See docs/reference/model-compatibility.md for tested model/parser
+# combinations, minimum requirements, and known quirks before switching models.
+
+player:
+  provider: local
+  model: {{DefaultModel}}
+  endpoint: {{LocalEndpoint}}
+  temperature: 0.6
+
+coach:
+  provider: local
+  model: {{DefaultModel}}
+  endpoint: {{LocalEndpoint}}
+  temperature: 0.3
+
+generation:
+  max_turns: 3
+  llm_retry_attempts: 3
+  llm_retry_backoff: 2.0

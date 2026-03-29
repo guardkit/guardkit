@@ -6,7 +6,11 @@
     "testing": {
       "specification": "automated",
       "execution": "automated",
-      "gates": ["coverage", "complexity", "compliance"]
+      "gates": [
+        "coverage",
+        "complexity",
+        "compliance"
+      ]
     },
     "tracking": {
       "state": "markdown",
@@ -46,10 +50,10 @@
       "human_checkpoint_seconds": 1800
     },
     "weights": {
-      "solid_principles": 0.30,
+      "solid_principles": 0.3,
       "dry_principle": 0.25,
       "yagni_principle": 0.25,
-      "testability": 0.20
+      "testability": 0.2
     },
     "metrics": {
       "enabled": true,
@@ -65,15 +69,61 @@
       "interactive_mode": true,
       "default_split_strategy": "vertical",
       "patterns": {
-        "entity_keywords": ["user", "order", "product", "customer", "account", "profile"],
-        "api_keywords": ["endpoint", "route", "api", "rest", "graphql", "service"],
-        "ui_keywords": ["form", "dashboard", "component", "view", "page", "interface"],
-        "database_keywords": ["migration", "schema", "table", "database", "query"]
+        "entity_keywords": [
+          "user",
+          "order",
+          "product",
+          "customer",
+          "account",
+          "profile"
+        ],
+        "api_keywords": [
+          "endpoint",
+          "route",
+          "api",
+          "rest",
+          "graphql",
+          "service"
+        ],
+        "ui_keywords": [
+          "form",
+          "dashboard",
+          "component",
+          "view",
+          "page",
+          "interface"
+        ],
+        "database_keywords": [
+          "migration",
+          "schema",
+          "table",
+          "database",
+          "query"
+        ]
       },
       "risks": {
-        "security_keywords": ["auth", "password", "token", "encryption", "permission", "security"],
-        "data_keywords": ["migration", "schema", "database", "transaction", "consistency"],
-        "external_keywords": ["api", "integration", "third-party", "webhook", "external"]
+        "security_keywords": [
+          "auth",
+          "password",
+          "token",
+          "encryption",
+          "permission",
+          "security"
+        ],
+        "data_keywords": [
+          "migration",
+          "schema",
+          "database",
+          "transaction",
+          "consistency"
+        ],
+        "external_keywords": [
+          "api",
+          "integration",
+          "third-party",
+          "webhook",
+          "external"
+        ]
       },
       "file_estimation": {
         "files_per_entity": 2,
@@ -87,5 +137,8 @@
         "max_files_per_task": 5
       }
     }
+  },
+  "enabledPlugins": {
+    "langchain-skills@langchain-skills": true
   }
 }

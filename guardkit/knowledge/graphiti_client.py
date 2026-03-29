@@ -1041,6 +1041,15 @@ class GraphitiClient:
             self._record_success()
             return result_list
 
+        except RecursionError:
+            logger.warning(
+                "Search request failed: maximum recursion depth exceeded "
+                "(likely upstream graphiti-core/FalkorDB driver issue — "
+                "see TASK-FIX-A34C). Circuit breaker will disable after "
+                "consecutive failures."
+            )
+            self._record_failure()
+            return []
         except Exception as e:
             logger.warning(f"Search request failed: {e}")
             self._record_failure()

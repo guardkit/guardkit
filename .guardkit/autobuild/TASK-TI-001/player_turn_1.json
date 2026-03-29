@@ -1,0 +1,93 @@
+{
+  "task_id": "TASK-TI-001",
+  "turn": 1,
+  "files_modified": [],
+  "files_created": [
+    "installer/core/templates/langchain-deepagents/lib/__init__.py",
+    "installer/core/templates/langchain-deepagents/lib/json_extractor.py",
+    "tests/templates/langchain-deepagents/test_json_extractor.py"
+  ],
+  "tests_written": [
+    "tests/templates/langchain-deepagents/test_json_extractor.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "55 passed in 1.84s",
+  "implementation_notes": "Implemented JsonExtractor as a pure-stdlib (json, re) class with a 5-strategy cascade. Strategy 1 uses direct json.loads. Strategy 2 strips ```json/``` code fences. Strategy 3 uses a character-by-character string-aware brace matcher that correctly handles braces inside quoted values and escaped quotes. Strategy 4 repairs literal newline/tab/CR bytes inside JSON string values before re-parsing. Strategy 5 falls back to additional_kwargs['reasoning_content']. normalise_think_closing_tags uses a two-pass approach: first a regex to fix missing-slash closing tags (<think>...<think> → <think>...</think>), then a linear token scan to count unmatched opens and append the missing </think> tags. The __init__.py re-exports JsonExtractor, JsonExtractionError, and normalise_think_closing_tags as a package-level convenience. Tests load the module via importlib.util because the directory name 'langchain-deepagents' contains a hyphen.",
+  "concerns": [],
+  "requirements_addressed": [
+    "JsonExtractionError exception class",
+    "JsonExtractor.extract() with 5-strategy cascade",
+    "JsonExtractor.normalise_think_closing_tags() fixing missing-slash and unclosed think tags",
+    "Strategy 1: direct json.loads",
+    "Strategy 2: code-fence strip",
+    "Strategy 3: string-aware brace matching",
+    "Strategy 4: literal control-char repair",
+    "Strategy 5: reasoning_content fallback",
+    "lib/__init__.py exporting JsonExtractor, JsonExtractionError, normalise_think_closing_tags",
+    "Comprehensive pytest test suite with importlib loading pattern",
+    "stdlib only — no external dependencies"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "JsonExtractionError exception class exists",
+      "status": "complete",
+      "evidence": "Defined in json_extractor.py, exported from __init__.py",
+      "test_file": "tests/templates/langchain-deepagents/test_json_extractor.py",
+      "implementation_files": [
+        "installer/core/templates/langchain-deepagents/lib/json_extractor.py",
+        "installer/core/templates/langchain-deepagents/lib/__init__.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "JsonExtractor.extract() implements 5-strategy cascade",
+      "status": "complete",
+      "evidence": "Strategies 1-4 applied to main content, strategy 5 falls back to reasoning_content. First success wins. Raises JsonExtractionError with descriptive message if all fail.",
+      "test_file": "tests/templates/langchain-deepagents/test_json_extractor.py",
+      "implementation_files": [
+        "installer/core/templates/langchain-deepagents/lib/json_extractor.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "normalise_think_closing_tags fixes <think>...<think> and unclosed EOF patterns",
+      "status": "complete",
+      "evidence": "Two-pass: regex for missing-slash pattern, token-counting loop for unclosed-at-EOF. Already-correct tags are untouched.",
+      "test_file": "tests/templates/langchain-deepagents/test_json_extractor.py",
+      "implementation_files": [
+        "installer/core/templates/langchain-deepagents/lib/json_extractor.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "lib/__init__.py exports JsonExtractor, JsonExtractionError, and normalise_think_closing_tags",
+      "status": "complete",
+      "evidence": "__init__.py imports from .json_extractor and exposes all three names plus __all__",
+      "test_file": null,
+      "implementation_files": [
+        "installer/core/templates/langchain-deepagents/lib/__init__.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Comprehensive pytest test suite with importlib loading pattern",
+      "status": "complete",
+      "evidence": "55 tests across 9 classes covering all 5 strategies, normalise_think_closing_tags, pipeline ordering, edge cases, and full cascade. Uses importlib.util.spec_from_file_location for hyphenated directory.",
+      "test_file": "tests/templates/langchain-deepagents/test_json_extractor.py",
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Pure stdlib only — no external dependencies",
+      "status": "complete",
+      "evidence": "json_extractor.py imports only json and re from the standard library",
+      "test_file": null,
+      "implementation_files": [
+        "installer/core/templates/langchain-deepagents/lib/json_extractor.py"
+      ]
+    }
+  ]
+}

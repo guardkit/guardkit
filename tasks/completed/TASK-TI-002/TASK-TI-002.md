@@ -1,203 +1,84 @@
 ---
 id: TASK-TI-002
-title: Generate rules structure in template-init command
+title: Create prompt engineering template with CRITICAL section pattern
 status: completed
-created: 2025-12-12T10:45:00Z
-updated: 2025-12-12T14:15:00Z
-completed: 2025-12-12T14:15:00Z
+created: 2026-03-27T22:00:00Z
+updated: 2026-03-29T00:00:00Z
+completed: 2026-03-29T00:00:00Z
 completed_location: tasks/completed/TASK-TI-002/
-priority: high
-tags: [template-init, rules-structure, python, implementation]
-complexity: 6
-implementation_method: task-work
-development_mode: tdd
-wave: 2
-conductor_workspace: template-init-rules-wave2-1
-parent_feature: template-init-rules-structure
+priority: p0
+tags: [template, prompts, base-template]
+complexity: 4
+parent_review: TASK-REV-TRF12
+feature_id: FEAT-TI
+wave: 1
+implementation_mode: task-work
+depends_on: []
+test_results:
+  status: passed
+  coverage: null
+  last_run: 2026-03-29T00:00:00Z
+  tests_passed: 29
+  tests_failed: 0
+quality_gates:
+  compilation: passed
+  tests: 29/29 passed
+  code_review: approved
 organized_files:
   - TASK-TI-002.md
   - completion-report.md
-quality_gates:
-  test_coverage: 81-100%
-  unit_tests: 17/17 passed
-  integration_tests: 8/8 passed
-  code_review: approved
-commits:
-  - 80d83fe: "Implement Phase 4.5: Rules Structure Generation"
-  - 3adbfd2: "Mark TASK-TI-002 as completed"
 ---
 
-# Task: Generate Rules Structure in template-init Command
+# Task: Prompt Engineering Template
 
 ## Description
 
-Implement rules structure generation during `/template-init` execution, creating a modular `.claude/rules/` directory based on Q&A session answers.
-
-## Implementation Method
-
-**/task-work** (TDD recommended) - New Python code requiring architectural review and test coverage.
+Create a standard prompt template module for the `langchain-deepagents` base template that encodes the hard-won prompt engineering lessons from 7 fixes. The template generates prompt sections that prevent the most common prompt-related failures.
 
 ## What to Build
 
-### New Phase: Phase 4.5 - Rules Structure Generation
+Standard prompt section generators:
 
-Add a new phase between Phase 4 (Save Template) and Phase 4.5 (Quality Scoring):
+### 1. `## CRITICAL -- Response Format` (end-of-prompt)
+- Positioned LAST in system prompt (recency bias — TRF-031 lesson)
+- Uses imperative language: "MUST", "NEVER", "ALWAYS" (not "please", "should")
+- Includes negative examples: "Do NOT return conversational text"
+- Includes concrete JSON structure example (show-don't-tell — TRF-029 lesson)
 
-```python
-# Phase 4.5: Rules Structure Generation
-if not args.no_rules_structure:
-    generate_rules_structure(
-        template_dir=output_dir,
-        qa_answers=qa_session.answers,
-        claude_md_size_limit=args.claude_md_size_limit
-    )
-```
+### 2. `## Tool Usage`
+- Explicit call limits: "Call rag_retrieval at most once per target" (TRF-014 lesson)
+- Pre-fetch documentation: "Curriculum context is already provided below" (TRF-009 lesson)
+- Tool purpose descriptions with when-to-use/when-not-to-use
 
-### Rules Generator Module
+### 3. `## Quality Gates` (for evaluator/coach prompts)
+- Concrete accept/reject criteria with examples (TRF-027 lesson)
+- Weighted scoring template with configurable criteria
+- Scepticism tuning instructions
 
-Create `installer/core/lib/rules_generator/` with:
+### 4. `## Output Structure`
+- Full JSON example with all required fields (TRF-029 lesson)
+- Field-by-field description with types and constraints
+- Common mistakes section with "DO NOT" examples
 
-```
-rules_generator/
-├── __init__.py
-├── generator.py          # Main orchestration
-├── code_style.py         # Language-specific code style rules
-├── testing.py            # Framework-specific testing rules
-├── patterns.py           # Architecture pattern rules
-└── templates/            # Rule file templates
-    ├── code_style_python.md.template
-    ├── code_style_typescript.md.template
-    ├── testing_pytest.md.template
-    ├── testing_vitest.md.template
-    └── ...
-```
+## Fixes Prevented
 
-### Generation Logic
+TRF-008, TRF-009, TRF-014, TRF-027, TRF-029, TRF-031, FRF-002
 
-Based on Q&A answers, generate:
+## Target Location
 
-1. **code-style.md** - Language-specific
-   - Python → Python code style with `paths: **/*.py`
-   - TypeScript → TypeScript code style with `paths: **/*.{ts,tsx}`
-   - etc.
-
-2. **testing.md** - Framework-specific
-   - pytest → pytest patterns with `paths: **/tests/**/*.py`
-   - vitest → vitest patterns with `paths: **/*.test.{ts,tsx}`
-   - etc.
-
-3. **patterns/** - Architecture-specific
-   - Clean Architecture → patterns/clean-arch.md
-   - MVVM → patterns/mvvm.md
-   - Layered → patterns/layered.md
-
-### Flag Implementation
-
-Parse and handle:
-- `--use-rules-structure` (default: true)
-- `--no-rules-structure` (skip generation)
-- `--claude-md-size-limit SIZE` (validate core CLAUDE.md size)
-
-### Output Structure
-
-When rules structure is generated:
-
-```
-{template-name}/
-├── .claude/
-│   ├── CLAUDE.md              # Core only (~5KB)
-│   └── rules/
-│       ├── code-style.md      # paths: **/*.{ext}
-│       ├── testing.md         # paths: **/tests/**
-│       └── patterns/
-│           └── {pattern}.md   # Architecture-specific
-├── agents/
-├── templates/
-└── ...
-```
-
-When `--no-rules-structure`:
-
-```
-{template-name}/
-├── CLAUDE.md                  # Full content
-├── agents/
-├── templates/
-└── ...
-```
+`prompts/templates.py` (in the template output)
 
 ## Acceptance Criteria
 
-- [ ] Rules structure generated by default
-- [ ] `--no-rules-structure` suppresses rules generation
-- [ ] `--claude-md-size-limit` validates core CLAUDE.md size
-- [ ] code-style.md generated based on language selection
-- [ ] testing.md generated based on testing framework selection
-- [ ] patterns/ generated based on architecture pattern
-- [ ] All path patterns use correct glob syntax
-- [ ] Unit tests cover all generators (>80% coverage)
-- [ ] Integration test verifies end-to-end flow
+- [x] Four section generators implemented
+- [x] CRITICAL section positioned at end of prompt by default
+- [x] Imperative language used throughout (no polite hedging)
+- [x] At least one concrete JSON example in output structure
+- [x] Tool usage section includes explicit call limits
+- [x] Quality gates section includes weighted scoring
+- [x] Unit tests verify section positioning and content patterns
+- [x] Integration test assembles a full prompt from all sections
 
-## Files to Create/Modify
+## Effort Estimate
 
-### Create
-- `installer/core/lib/rules_generator/__init__.py`
-- `installer/core/lib/rules_generator/generator.py`
-- `installer/core/lib/rules_generator/code_style.py`
-- `installer/core/lib/rules_generator/testing.py`
-- `installer/core/lib/rules_generator/patterns.py`
-- `installer/core/lib/rules_generator/templates/*.md.template`
-- `tests/unit/test_rules_generator.py`
-
-### Modify
-- Template-init orchestrator (add Phase 4.5)
-- Argument parser (add new flags)
-
-## Testing Strategy
-
-### Unit Tests
-
-```python
-def test_code_style_python():
-    """Test Python code style rules generation."""
-    rules = generate_code_style_rules(language="python")
-    assert "paths: **/*.py" in rules
-    assert "# Python Code Style" in rules
-
-def test_testing_pytest():
-    """Test pytest testing rules generation."""
-    rules = generate_testing_rules(framework="pytest")
-    assert "paths: **/tests/**/*.py" in rules
-    assert "# Testing with pytest" in rules
-
-def test_no_rules_structure_flag():
-    """Test --no-rules-structure skips generation."""
-    result = run_template_init(["--no-rules-structure"])
-    assert not os.path.exists(f"{output_dir}/.claude/rules")
-```
-
-### Integration Tests
-
-```python
-def test_full_rules_structure_generation():
-    """Test complete rules structure generation flow."""
-    result = run_template_init_with_qa(
-        language="python",
-        framework="fastapi",
-        testing="pytest",
-        architecture="layered"
-    )
-
-    assert os.path.exists(f"{output_dir}/.claude/rules/code-style.md")
-    assert os.path.exists(f"{output_dir}/.claude/rules/testing.md")
-    assert os.path.exists(f"{output_dir}/.claude/rules/patterns/layered.md")
-```
-
-## Dependencies
-
-- TASK-TI-001 (flags documented)
-
-## Related Tasks
-
-- TASK-TI-003: Agent split files (parallel in Wave 2)
-- TASK-TI-005: Guidance file generation (depends on this)
+1 day

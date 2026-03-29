@@ -1,24 +1,45 @@
-"""Coach agent factory for the adversarial cooperation pattern."""
+"""Coach agent factory for the adversarial cooperation pattern.
 
-from deepagents import create_deep_agent
+TOOL SEPARATION CONTRACT:
+  - Player: domain-specific tools ONLY (e.g., search_data). NO write, NO filesystem.
+  - Coach: EMPTY tools. Evaluation only, no side effects.
+  - Orchestrator: owns write_output, invoked programmatically after Coach acceptance.
 
+D5 INVARIANT: Coach has NO tools — enforced by factory signature (no tools parameter).
+"""
+
+from langchain.agents import create_agent
+from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
+
+from {{ProjectName}}.backends import FilesystemBackend
 from {{ProjectName}}.coach_prompts import COACH_SYSTEM_PROMPT
+from {{ProjectName}}.middleware import MemoryMiddleware
+from {{ProjectName}}.middleware.patch_tool_calls import PatchToolCallsMiddleware
 
 
 def create_coach(model, domain_prompt: str):
     """Create a configured Coach agent instance.
+
+    D5 invariant: No tools parameter in signature — Coach NEVER has tools.
+    Uses create_agent() to avoid middleware-injected tool leakage.
 
     Args:
         model: The LLM model instance or provider:model string.
         domain_prompt: Domain-specific evaluation criteria appended to the system prompt.
 
     Returns:
-        A configured DeepAgent with no custom tools (evaluation only).
+        A configured agent with zero tools (evaluation only).
     """
     system_prompt = COACH_SYSTEM_PROMPT + "\n\n" + domain_prompt
-    return create_deep_agent(
+    backend = FilesystemBackend(root_dir=".")
+    middleware = [
+        MemoryMiddleware(backend=backend, sources=["./AGENTS.md"]),
+        PatchToolCallsMiddleware(),
+        AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
+    ]
+    return create_agent(
         model=model,
         tools=[],
         system_prompt=system_prompt,
-        memory=["./AGENTS.md"],
+        middleware=middleware,
     )

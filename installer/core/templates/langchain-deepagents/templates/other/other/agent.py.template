@@ -9,35 +9,46 @@ from {{ProjectName}}.chat_models import init_chat_model
 
 from {{ProjectName}}.coach import create_coach
 from {{ProjectName}}.player import create_player
+from {{ProjectName}}.scaffold.orchestrator_pattern import OrchestratorWriteGate
+from {{ProjectName}}.write_output import write_output
 
 
 def _load_config() -> dict:
-    """Read coach-config.yaml and return parsed config."""
-    config_path = pathlib.Path("coach-config.yaml")
+    """Read agent-config.yaml and return parsed config."""
+    config_path = pathlib.Path("agent-config.yaml")
     return yaml.safe_load(config_path.read_text())
 
 
-def _create_model(config: dict):
-    """Create an LLM model instance based on provider setting in config."""
-    coach_cfg = config["coach"]
-    provider = coach_cfg["provider"]
+def _create_model(role_config: dict):
+    """Create an LLM model instance from a per-role config section.
+
+    Each role (player/coach) has its own provider, model, endpoint, and
+    temperature settings in agent-config.yaml.
+
+    See docs/reference/model-compatibility.md for tested model/parser
+    combinations and known quirks before switching models.
+    """
+    provider = role_config.get("provider", "local")
 
     if provider == "local":
         endpoint = os.environ.get(
             "LOCAL_MODEL_ENDPOINT",
-            coach_cfg["local"]["endpoint"],
+            role_config.get("endpoint", "http://localhost:11434/v1"),
         )
-        model_name = coach_cfg["local"]["model"]
+        model_name = role_config["model"]
+        temperature = role_config.get("temperature", 0.6)
         return init_chat_model(
             model_name,
             model_provider="openai",
             base_url=endpoint,
             api_key=os.environ.get("OPENAI_API_KEY", "not-needed"),
+            temperature=temperature,
         )
 
     if provider == "api":
-        model_string = coach_cfg["api"]["model"]
-        return init_chat_model(model_string)
+        model_name = role_config["model"]
+        temperature = role_config.get("temperature", 0.6)
+        return init_chat_model(model_name, temperature=temperature)
 
     raise ValueError(f"Unknown provider: {provider!r}. Expected 'local' or 'api'.")
 
@@ -65,12 +76,19 @@ def _load_domain_prompt(domain: str) -> str:
 # --- Module-level wiring (executed on import by LangGraph Studio) ---
 
 _config = _load_config()
-_model = _create_model(_config)
+_player_model = _create_model(_config["player"])
+_coach_model = _create_model(_config["coach"])
 _domain = _get_domain()
 _domain_prompt = _load_domain_prompt(_domain)
 
-_player = create_player(model=_model, domain_prompt=_domain_prompt)
-_coach = create_coach(model=_model, domain_prompt=_domain_prompt)
+_player = create_player(model=_player_model, domain_prompt=_domain_prompt)
+_coach = create_coach(model=_coach_model, domain_prompt=_domain_prompt)
+
+# Orchestrator write gate — only the Orchestrator may call write_output
+_write_gate = OrchestratorWriteGate(
+    write_fn=write_output,
+    max_retries=_config.get("generation", {}).get("llm_retry_attempts", 3),
+)
 
 # Module-level agent variable required by langgraph.json
 agent = _player

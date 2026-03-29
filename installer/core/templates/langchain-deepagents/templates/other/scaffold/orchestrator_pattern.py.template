@@ -1,0 +1,284 @@
+"""Orchestrator-gated writes pattern for adversarial cooperation.
+
+Prevents the Player from writing output before Coach evaluation.
+The Orchestrator owns the write_output call and invokes it programmatically
+only after the Coach returns an acceptance verdict.
+
+Fixes prevented: TRF-003, TRF-005, TRF-006, TRF-016
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import dataclass, field
+from typing import Any, Callable, Optional
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class CoachVerdict:
+    """Structured verdict from the Coach agent."""
+
+    decision: str  # "accept" or "reject"
+    score: int  # 1-5
+    issues: list[str] = field(default_factory=list)
+    criteria_met: bool = False
+    quality_assessment: str = "needs_revision"
+
+    @property
+    def accepted(self) -> bool:
+        return self.decision == "accept"
+
+    @classmethod
+    def from_json(cls, raw: str) -> "CoachVerdict":
+        """Parse Coach JSON response into a CoachVerdict.
+
+        Args:
+            raw: JSON string from Coach agent.
+
+        Returns:
+            Parsed CoachVerdict.
+
+        Raises:
+            ValueError: If JSON is invalid or missing required fields.
+        """
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, TypeError) as e:
+            raise ValueError(f"Coach response is not valid JSON: {e}") from e
+
+        if "decision" not in data or "score" not in data:
+            raise ValueError(
+                "Coach response missing required fields: 'decision' and 'score'"
+            )
+
+        return cls(
+            decision=data["decision"],
+            score=data["score"],
+            issues=data.get("issues", []),
+            criteria_met=data.get("criteria_met", False),
+            quality_assessment=data.get("quality_assessment", "needs_revision"),
+        )
+
+
+@dataclass
+class WriteResult:
+    """Result of a write attempt."""
+
+    success: bool
+    target: str
+    attempts: int
+    error: Optional[str] = None
+
+
+class OrchestratorWriteGate:
+    """Enforces orchestrator-gated writes in the adversarial cooperation pattern.
+
+    The Player produces content, the Coach evaluates it, and ONLY the Orchestrator
+    may call write_output — and only after Coach acceptance.
+
+    Args:
+        write_fn: The write function to call on acceptance (e.g., write_output).
+        max_retries: Maximum retry attempts per target before exhaustion. Default 3.
+        on_rejection: Optional callback invoked on Coach rejection.
+        on_exhaustion: Optional callback invoked when retries are exhausted.
+    """
+
+    def __init__(
+        self,
+        write_fn: Callable[[str, str], str],
+        max_retries: int = 3,
+        on_rejection: Optional[Callable[[CoachVerdict, str], None]] = None,
+        on_exhaustion: Optional[Callable[[str, int], None]] = None,
+    ):
+        if max_retries < 1:
+            raise ValueError("max_retries must be >= 1")
+        self._write_fn = write_fn
+        self._max_retries = max_retries
+        self._on_rejection = on_rejection
+        self._on_exhaustion = on_exhaustion
+
+    @property
+    def max_retries(self) -> int:
+        return self._max_retries
+
+    def attempt_write(
+        self,
+        content: str,
+        output_path: str,
+        coach_verdict: CoachVerdict,
+        attempt: int = 1,
+    ) -> WriteResult:
+        """Attempt to write content, gated by Coach verdict.
+
+        The write proceeds ONLY if the Coach accepted. On rejection, the
+        on_rejection callback is invoked (if set). On retry exhaustion,
+        on_exhaustion is invoked and a failure result is returned.
+
+        Args:
+            content: JSON content to write.
+            output_path: Target output path.
+            coach_verdict: The Coach's evaluation verdict.
+            attempt: Current attempt number (1-indexed).
+
+        Returns:
+            WriteResult indicating success or failure.
+        """
+        target = output_path
+
+        if attempt > self._max_retries:
+            logger.warning(
+                "Retry exhaustion for %s after %d attempts", target, attempt - 1
+            )
+            if self._on_exhaustion:
+                self._on_exhaustion(target, attempt - 1)
+            return WriteResult(
+                success=False,
+                target=target,
+                attempts=attempt - 1,
+                error=f"Retry exhaustion: {attempt - 1}/{self._max_retries} attempts used",
+            )
+
+        if not coach_verdict.accepted:
+            logger.info(
+                "Coach rejected (attempt %d/%d): %s",
+                attempt,
+                self._max_retries,
+                coach_verdict.issues,
+            )
+            if self._on_rejection:
+                self._on_rejection(coach_verdict, content)
+            return WriteResult(
+                success=False,
+                target=target,
+                attempts=attempt,
+                error=f"Coach rejected: {'; '.join(coach_verdict.issues)}",
+            )
+
+        # Coach accepted — Orchestrator performs the write
+        result = self._write_fn(content, output_path)
+        if result.startswith("error:"):
+            logger.error("Write failed: %s", result)
+            return WriteResult(
+                success=False,
+                target=target,
+                attempts=attempt,
+                error=result,
+            )
+
+        logger.info("Write succeeded for %s on attempt %d", target, attempt)
+        return WriteResult(success=True, target=target, attempts=attempt)
+
+    def on_acceptance(self, coach_verdict: CoachVerdict, player_output: str) -> str:
+        """Handle Coach acceptance verdict.
+
+        Called by the orchestration loop when Coach accepts Player output.
+        Returns the player_output for the Orchestrator to write.
+
+        Args:
+            coach_verdict: The acceptance verdict from Coach.
+            player_output: The Player's JSON content.
+
+        Returns:
+            The player_output, validated for writing.
+
+        Raises:
+            ValueError: If verdict is not actually an acceptance.
+        """
+        if not coach_verdict.accepted:
+            raise ValueError(
+                f"on_acceptance called with rejection verdict (score={coach_verdict.score})"
+            )
+        # Validate JSON before passing to write
+        try:
+            json.loads(player_output)
+        except (json.JSONDecodeError, TypeError) as e:
+            raise ValueError(f"Player output is not valid JSON: {e}") from e
+        return player_output
+
+    def on_rejection(
+        self, coach_verdict: CoachVerdict, player_output: str
+    ) -> list[str]:
+        """Handle Coach rejection verdict.
+
+        Called by the orchestration loop when Coach rejects Player output.
+        Returns the issues list for the Player to address in revision.
+
+        The caller must build the retry input using ``user`` role only::
+
+            # IMPORTANT: ainvoke() contract (TASK-REV-R2A1)
+            # create_agent() unconditionally prepends system_prompt on every
+            # ainvoke() call.  NEVER pass system role messages in input — use
+            # "user" role for reinforcement.  Violation causes dual system
+            # messages → vLLM HTTP 400.
+            retry_input = {
+                "messages": [{
+                    "role": "user",  # NOT "system"
+                    "content": (
+                        "IMPORTANT: Your previous response was not valid JSON. "
+                        "Coach feedback: " + "; ".join(issues) + "\\n\\n"
+                        + player_content
+                    ),
+                }]
+            }
+
+        Args:
+            coach_verdict: The rejection verdict from Coach.
+            player_output: The Player's JSON content (for logging).
+
+        Returns:
+            List of issues for the Player to address.
+        """
+        logger.info(
+            "Coach rejected with score %d: %s",
+            coach_verdict.score,
+            coach_verdict.issues,
+        )
+        return coach_verdict.issues
+
+    def on_exhaustion(self, target: str, attempts: int) -> WriteResult:
+        """Handle retry exhaustion.
+
+        Called when the maximum number of retries is exceeded for a target.
+        Returns a structured error result — does NOT loop indefinitely.
+
+        Args:
+            target: The output path that failed.
+            attempts: Total attempts made.
+
+        Returns:
+            WriteResult with failure details.
+        """
+        logger.warning(
+            "Exhausted %d/%d retries for %s", attempts, self._max_retries, target
+        )
+        if self._on_exhaustion:
+            self._on_exhaustion(target, attempts)
+        return WriteResult(
+            success=False,
+            target=target,
+            attempts=attempts,
+            error=f"Exhausted {attempts}/{self._max_retries} retries",
+        )
+
+
+def validate_player_tools(player_tools: list[Any]) -> None:
+    """Assert that Player does not have write_output in its tool list.
+
+    This is the factory-level enforcement of tool separation.
+    Call this in the player factory after constructing the tool list.
+
+    Args:
+        player_tools: List of tools assigned to the Player agent.
+
+    Raises:
+        AssertionError: If write_output is found in the tool list.
+    """
+    tool_names = [getattr(t, "name", str(t)) for t in player_tools]
+    assert "write_output" not in tool_names, (
+        "TOOL SEPARATION VIOLATION: Player must NOT have write_output. "
+        "Only the Orchestrator may call write_output after Coach acceptance. "
+        "Remove write_output from the Player tool list."
+    )

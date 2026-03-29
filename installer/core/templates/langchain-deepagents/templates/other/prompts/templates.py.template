@@ -1,0 +1,268 @@
+"""Standard prompt section generators for adversarial cooperation agents.
+
+Encodes hard-won prompt engineering lessons from TRF-008, TRF-009, TRF-014,
+TRF-027, TRF-029, TRF-031, and FRF-002. Each generator produces a prompt
+section that prevents common prompt-related failures.
+
+Usage:
+    from prompts.templates import (
+        critical_response_format,
+        tool_usage,
+        quality_gates,
+        output_structure,
+        assemble_prompt,
+    )
+
+    prompt = assemble_prompt(
+        preamble="You are the Coach agent...",
+        sections=[
+            tool_usage(tools=[...]),
+            quality_gates(criteria=[...]),
+            output_structure(json_example={...}, field_descriptions={...}),
+        ],
+        critical=critical_response_format(json_example={...}),
+    )
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+
+def critical_response_format(
+    json_example: dict[str, Any],
+    *,
+    negative_examples: list[str] | None = None,
+) -> str:
+    """Generate a CRITICAL response format section (placed LAST in prompt).
+
+    Lesson: Recency bias means the model pays most attention to the end of
+    the system prompt (TRF-031). Uses imperative language and negative examples
+    to enforce strict output format (TRF-029).
+
+    Args:
+        json_example: Concrete JSON structure the model MUST return.
+        negative_examples: Things the model MUST NOT do. Defaults to common
+            anti-patterns if not provided.
+    """
+    if negative_examples is None:
+        negative_examples = [
+            "Do NOT return conversational text or prose.",
+            "Do NOT wrap the JSON in markdown code fences.",
+            "Do NOT add fields not shown in the example.",
+        ]
+
+    lines = [
+        "## CRITICAL -- Response Format",
+        "",
+        "You MUST respond with ONLY valid JSON matching the structure below.",
+        "NEVER include explanatory text before or after the JSON.",
+        "",
+        "### Required Structure",
+        "",
+        "```json",
+        json.dumps(json_example, indent=2),
+        "```",
+        "",
+    ]
+
+    if negative_examples:
+        lines.append("### NEVER Do This")
+        lines.append("")
+        for ex in negative_examples:
+            lines.append(f"- {ex}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def tool_usage(
+    tools: list[dict[str, str]],
+    *,
+    pre_fetched_context: str | None = None,
+) -> str:
+    """Generate a tool usage section with explicit call limits.
+
+    Lesson: Without explicit limits the model calls tools repeatedly (TRF-014).
+    Pre-fetched context prevents redundant retrieval (TRF-009).
+
+    Args:
+        tools: List of dicts with keys ``name``, ``purpose``,
+            ``when_to_use``, ``when_not_to_use``, and optional ``call_limit``.
+        pre_fetched_context: Description of context already provided in the
+            prompt, so the model does not fetch it again.
+    """
+    lines = [
+        "## Tool Usage",
+        "",
+    ]
+
+    if pre_fetched_context:
+        lines.append(
+            f"IMPORTANT: {pre_fetched_context} "
+            "Do NOT call a tool to retrieve information already provided below."
+        )
+        lines.append("")
+
+    for tool in tools:
+        name = tool["name"]
+        purpose = tool.get("purpose", "")
+        when_to_use = tool.get("when_to_use", "")
+        when_not_to_use = tool.get("when_not_to_use", "")
+        call_limit = tool.get("call_limit")
+
+        lines.append(f"### `{name}`")
+        lines.append("")
+        if purpose:
+            lines.append(f"**Purpose**: {purpose}")
+        if when_to_use:
+            lines.append(f"**When to use**: {when_to_use}")
+        if when_not_to_use:
+            lines.append(f"**When NOT to use**: {when_not_to_use}")
+        if call_limit is not None:
+            lines.append(
+                f"**Call limit**: Call `{name}` at most "
+                f"{call_limit} time(s) per target."
+            )
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def quality_gates(
+    criteria: list[dict[str, Any]],
+    *,
+    scoring_weights: dict[str, float] | None = None,
+    scepticism: str = "moderate",
+) -> str:
+    """Generate a quality gates section for evaluator/coach prompts.
+
+    Lesson: Without concrete accept/reject criteria the coach rubber-stamps
+    everything (TRF-027).
+
+    Args:
+        criteria: List of dicts with keys ``name``, ``description``,
+            ``accept_example``, and ``reject_example``.
+        scoring_weights: Optional mapping of criterion name to weight (0-1).
+            Weights MUST sum to 1.0.
+        scepticism: One of ``"lenient"``, ``"moderate"``, ``"strict"``.
+    """
+    scepticism_instructions = {
+        "lenient": "Accept borderline cases. Only reject on clear failures.",
+        "moderate": "Apply criteria fairly. Reject when issues are substantive.",
+        "strict": (
+            "Apply criteria rigorously. Reject on ANY deviation from "
+            "the required standard."
+        ),
+    }
+
+    lines = [
+        "## Quality Gates",
+        "",
+        f"**Evaluation stance**: {scepticism_instructions.get(scepticism, scepticism_instructions['moderate'])}",
+        "",
+    ]
+
+    for criterion in criteria:
+        name = criterion["name"]
+        description = criterion.get("description", "")
+        accept_example = criterion.get("accept_example", "")
+        reject_example = criterion.get("reject_example", "")
+
+        weight_str = ""
+        if scoring_weights and name in scoring_weights:
+            weight_str = f" (weight: {scoring_weights[name]:.0%})"
+
+        lines.append(f"### {name}{weight_str}")
+        lines.append("")
+        if description:
+            lines.append(description)
+            lines.append("")
+        if accept_example:
+            lines.append(f"**ACCEPT example**: {accept_example}")
+        if reject_example:
+            lines.append(f"**REJECT example**: {reject_example}")
+        lines.append("")
+
+    if scoring_weights:
+        lines.append("### Weighted Scoring")
+        lines.append("")
+        lines.append(
+            "Calculate the final score as: "
+            + " + ".join(
+                f"({name} score x {weight:.0%})"
+                for name, weight in scoring_weights.items()
+            )
+        )
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def output_structure(
+    json_example: dict[str, Any],
+    field_descriptions: dict[str, str],
+    *,
+    common_mistakes: list[str] | None = None,
+) -> str:
+    """Generate an output structure section with field-by-field descriptions.
+
+    Lesson: Show-don't-tell with a full JSON example prevents malformed
+    output (TRF-029). Common mistakes section catches recurring errors (TRF-008).
+
+    Args:
+        json_example: Complete JSON example with all required fields populated.
+        field_descriptions: Mapping of field name to description with type
+            and constraints.
+        common_mistakes: List of common mistakes to warn against.
+    """
+    lines = [
+        "## Output Structure",
+        "",
+        "Your output MUST be valid JSON matching this exact structure:",
+        "",
+        "```json",
+        json.dumps(json_example, indent=2),
+        "```",
+        "",
+        "### Field Definitions",
+        "",
+    ]
+
+    for field_name, description in field_descriptions.items():
+        lines.append(f"- **`{field_name}`**: {description}")
+    lines.append("")
+
+    if common_mistakes:
+        lines.append("### Common Mistakes — Do NOT")
+        lines.append("")
+        for mistake in common_mistakes:
+            lines.append(f"- {mistake}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def assemble_prompt(
+    preamble: str,
+    sections: list[str],
+    *,
+    critical: str | None = None,
+) -> str:
+    """Assemble a full prompt from preamble, sections, and critical section.
+
+    The ``critical`` section is ALWAYS placed last due to recency bias
+    (TRF-031). Sections are joined in the order provided.
+
+    Args:
+        preamble: Opening text (role description, context).
+        sections: Ordered list of prompt sections (from the generators above).
+        critical: Output of :func:`critical_response_format`. Placed at the
+            very end of the prompt.
+    """
+    parts = [preamble]
+    parts.extend(sections)
+    if critical is not None:
+        parts.append(critical)
+    return "\n\n".join(parts)

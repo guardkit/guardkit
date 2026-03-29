@@ -1,9 +1,12 @@
 ---
 id: TASK-FIX-A34C
 title: Add recursion depth guard for Graphiti FalkorDB searches
-status: backlog
+status: completed
 created: 2026-03-27T00:00:00Z
 updated: 2026-03-27T00:00:00Z
+completed: 2026-03-27T00:00:00Z
+previous_state: in_review
+completed_location: tasks/completed/TASK-FIX-A34C/
 priority: low
 tags: [graphiti, falkordb, resilience, autobuild]
 parent_review: TASK-REV-CFE0
@@ -23,11 +26,11 @@ The recursion depth error likely originates in the FalkorDB workaround patches a
 
 ## Acceptance Criteria
 
-- [ ] Investigate the recursion depth error path in `falkordb_workaround.py` patches
-- [ ] Add `sys.setrecursionlimit` guard or iterative alternative if recursion is in our patches
-- [ ] If recursion is in upstream `graphiti-core` or `falkordb` driver, document the issue and add a try/except guard with logging
-- [ ] Add a test that triggers the recursion path (if reproducible) or a defensive test for the guard
-- [ ] Graphiti context loading continues to degrade gracefully when this error occurs (existing behavior preserved)
+- [x] Investigate the recursion depth error path in `falkordb_workaround.py` patches
+- [x] Add `sys.setrecursionlimit` guard or iterative alternative if recursion is in our patches
+- [x] If recursion is in upstream `graphiti-core` or `falkordb` driver, document the issue and add a try/except guard with logging
+- [x] Add a test that triggers the recursion path (if reproducible) or a defensive test for the guard
+- [x] Graphiti context loading continues to degrade gracefully when this error occurs (existing behavior preserved)
 
 ## Key Files
 

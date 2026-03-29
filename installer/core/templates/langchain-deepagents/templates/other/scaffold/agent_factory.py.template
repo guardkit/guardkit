@@ -1,0 +1,100 @@
+"""Generated agent factory with tool allowlisting.
+
+Each factory function creates an agent with an explicit tool allowlist,
+enforced by assert_tool_inventory() at factory exit. This prevents the
+tool leakage bugs that dominated runs 1-6 (TRF-003, TRF-012, TRF-016, TRF-017).
+
+WARNING: create_deep_agent() unconditionally injects FilesystemMiddleware
+(8 tools: ls, read_file, write_file, edit_file, glob, grep, execute, write_todos).
+Use create_restricted_agent() for agents that must NOT have filesystem tools.
+
+WARNING: create_agent() unconditionally prepends system_prompt to messages
+on every ainvoke() call (langchain/agents/factory.py:1270-1271).
+NEVER pass system role messages in ainvoke() input — the framework owns
+system message injection. Additional instructions must use user role.
+Violation causes dual system messages -> vLLM 400 Bad Request.
+See: TASK-REV-R2A1 root cause analysis.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from {{ProjectName}} import create_deep_agent
+from {{ProjectName}}.backends import FilesystemBackend
+
+from {{ProjectName}}.lib.factory_guards import (
+    assert_no_system_messages,
+    assert_tool_inventory,
+    create_restricted_agent,
+)
+
+
+# -- Tool allowlists (baked in at generation time) --
+
+PLAYER_ALLOWED_TOOLS: set[str] = {"search_data"}
+COACH_ALLOWED_TOOLS: set[str] = set()  # Coach: evaluation only, no tools
+
+
+def create_player_agent(
+    model: Any,
+    tools: list[Any],
+    system_prompt: str,
+    *,
+    memory: list[str] | None = None,
+) -> Any:
+    """Create a Player agent with tool allowlist enforcement.
+
+    The Player receives domain-specific tools only. write_output is NOT
+    included — only the Orchestrator may call write_output after Coach
+    acceptance.
+
+    Uses create_restricted_agent() to bypass FilesystemMiddleware injection.
+    Asserts tool inventory at factory exit.
+
+    Args:
+        model: The LLM model instance or provider:model string.
+        tools: Domain-specific tools for the Player.
+        system_prompt: System prompt for the Player.
+        memory: Optional list of memory file paths.
+
+    Returns:
+        A configured agent with only the allowed tools.
+    """
+    agent = create_restricted_agent(
+        model=model,
+        tools=tools,
+        system_prompt=system_prompt,
+        memory=memory,
+        allowed_tools=PLAYER_ALLOWED_TOOLS,
+    )
+    return agent
+
+
+def create_coach_agent(
+    model: Any,
+    system_prompt: str,
+    *,
+    memory: list[str] | None = None,
+) -> Any:
+    """Create a Coach agent with empty tool set (evaluation only).
+
+    The Coach evaluates Player output and returns structured JSON verdicts.
+    It must never have tools — evaluation only, no side effects.
+
+    Args:
+        model: The LLM model instance or provider:model string.
+        system_prompt: System prompt for the Coach.
+        memory: Optional list of memory file paths.
+
+    Returns:
+        A configured agent with no tools.
+    """
+    agent = create_restricted_agent(
+        model=model,
+        tools=[],
+        system_prompt=system_prompt,
+        memory=memory,
+        allowed_tools=COACH_ALLOWED_TOOLS,
+    )
+    return agent

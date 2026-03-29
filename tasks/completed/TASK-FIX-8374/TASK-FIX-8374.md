@@ -1,9 +1,11 @@
 ---
 id: TASK-FIX-8374
 title: Fix graphiti-check Python environment resolution with wrapper script
-status: backlog
+status: completed
 created: 2026-03-27T00:00:00Z
-updated: 2026-03-27T00:00:00Z
+updated: 2026-03-27T14:15:00Z
+completed: 2026-03-27T14:15:00Z
+completed_location: tasks/completed/TASK-FIX-8374/
 priority: medium
 tags: [graphiti, installer, python-env, system-arch, infrastructure]
 parent_review: TASK-REV-CFE0
@@ -39,12 +41,12 @@ exec /path/to/guardkit/.venv/bin/python /path/to/graphiti_check.py "$@"
 
 ## Acceptance Criteria
 
-- [ ] Installer generates a wrapper script at `~/.agentecflow/bin/graphiti-check` instead of a symlink
-- [ ] Wrapper explicitly invokes the GuardKit venv Python
-- [ ] `graphiti_check.py` has execute permission set (`chmod +x`)
-- [ ] Running `graphiti-check` from any directory correctly reports Graphiti availability when infrastructure is up
-- [ ] Existing functionality unchanged for Claude Code sessions (MCP path unaffected)
-- [ ] Installer handles upgrade scenario (replaces existing symlink with wrapper)
+- [x] Installer generates a wrapper script at `~/.agentecflow/bin/graphiti-check` instead of a symlink
+- [x] Wrapper explicitly invokes the GuardKit venv Python
+- [x] `graphiti_check.py` has execute permission set (`chmod +x`)
+- [x] Running `graphiti-check` from any directory correctly reports Graphiti availability when infrastructure is up
+- [x] Existing functionality unchanged for Claude Code sessions (MCP path unaffected)
+- [x] Installer handles upgrade scenario (replaces existing symlink with wrapper)
 
 ## Key Files
 

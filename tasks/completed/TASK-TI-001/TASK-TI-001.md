@@ -1,139 +1,80 @@
 ---
 id: TASK-TI-001
-title: Add rules structure flags to template-init command
+title: Package JsonExtractor class from generation_loop.py
 status: completed
-created: 2025-12-12T10:45:00Z
-updated: 2025-12-12T12:00:00Z
-completed: 2025-12-12T12:05:00Z
-priority: high
-tags: [template-init, rules-structure, documentation, flags]
-complexity: 3
-implementation_method: direct
-wave: 1
-conductor_workspace: null
-parent_feature: template-init-rules-structure
+created: 2026-03-27T22:00:00Z
+updated: 2026-03-29T00:00:00Z
+completed: 2026-03-29T00:00:00Z
+previous_state: in_review
+state_transition_reason: "Task completed - all acceptance criteria met"
 completed_location: tasks/completed/TASK-TI-001/
+priority: p0
+tags: [template, extraction, json, base-template]
+complexity: 5
+parent_review: TASK-REV-TRF12
+feature_id: FEAT-TI
+wave: 1
+implementation_mode: task-work
+depends_on: []
+test_results:
+  status: passed
+  tests_total: 55
+  tests_passed: 55
+  tests_failed: 0
+  coverage: null
+  last_run: 2026-03-29T00:00:00Z
 ---
 
-# Task: Add Rules Structure Flags to template-init Command
+# Task: Package JsonExtractor Class
 
 ## Description
 
-Add command-line flags to `/template-init` for controlling rules structure generation, matching the flags available in `/template-create`.
+Extract the proven JSON extraction code from `entrypoint/generation_loop.py` into a reusable `JsonExtractor` class for the `langchain-deepagents` base template. This single component prevents 9 of the 31 fixes identified in TASK-REV-TRF12.
 
-## Implementation Method
+## What to Build
 
-**Direct** (Claude Code) - Documentation-only change, no Python code required.
+A `JsonExtractor` class implementing a 5-strategy cascade:
 
-## What to Do
+1. **Direct parse**: `json.loads(content)` — handles clean JSON
+2. **Code-fence strip**: Remove ` ```json ... ``` ` wrappers, retry parse
+3. **String-aware brace matching**: Find outermost `{...}` tracking quoted context (TRF-025 lesson)
+4. **JSON string repair**: Escape literal newlines/tabs in string values before parse (TRF-030 lesson)
+5. **reasoning_content fallback**: Check `additional_kwargs["reasoning_content"]` for vLLM providers (TRF-013/TRF-026 lesson)
 
-Edit `installer/core/commands/template-init.md` to add:
+Also include:
+- `normalise_think_closing_tags()` — fix `<think>...<think>` and `<think>...EOF` patterns (TRF-019/TRF-021)
+- Canonical pipeline order enforced: normalize -> extract -> validate
 
-### 1. Add to Options Table
+## Source Code
 
-```markdown
-| `--use-rules-structure` | flag | true | Generate modular .claude/rules/ structure |
-| `--no-rules-structure` | flag | false | Use single CLAUDE.md instead of rules/ |
-| `--claude-md-size-limit` | SIZE | 50KB | Maximum size for core CLAUDE.md content |
-```
+Extract from these existing, proven functions in `entrypoint/generation_loop.py`:
+- `_extract_example_json()`
+- `_extract_player_content()`
+- `_extract_coach_content()`
+- `_repair_json_strings()`
 
-### 2. Add Flag Descriptions
+And from `synthesis/validator.py`:
+- `normalise_think_closing_tags()`
 
-Add after existing options (around line 34):
+## Fixes Prevented
 
-```markdown
---use-rules-structure    Generate modular .claude/rules/ structure (default: enabled)
-                         Default: true
+TRF-008, TRF-013, TRF-015, TRF-019, TRF-020, TRF-021, TRF-025, TRF-026, TRF-030
 
-                         By default:
-                         - Creates .claude/rules/ directory
-                         - Generates rule files with path frontmatter
-                         - Groups patterns and agents in subdirectories
-                         - Core CLAUDE.md reduced to ~5KB
-                         - 60-70% context window reduction
+## Target Location
 
-                         Benefits:
-                         - Better organization for complex templates
-                         - Path-specific rule loading
-                         - Improved maintainability
-
---no-rules-structure     Use single CLAUDE.md + progressive disclosure instead
-                         of modular rules/ directory structure
-
-                         Use when:
-                         - Simple templates (<15KB)
-                         - Universal rules only (no path-specific patterns)
-                         - Backward compatibility needed
-
---claude-md-size-limit SIZE  Maximum size for core CLAUDE.md content
-                             Format: NUMBER[KB|MB] (e.g., 100KB, 1MB)
-                             Default: 50KB
-                             Use for complex codebases that exceed default limit
-```
-
-### 3. Add Examples
-
-Add example showing rules structure output:
-
-```markdown
-### Rules Structure Output (Default)
-```bash
-/template-init
-
-# Default behavior generates modular .claude/rules/ structure
-
-✅ Template Package Created Successfully!
-
-📁 Location: ~/.agentecflow/templates/my-template/
-  ├── manifest.json
-  ├── settings.json
-  ├── .claude/
-  │   ├── CLAUDE.md (core, ~5KB)
-  │   └── rules/
-  │       ├── code-style.md
-  │       ├── testing.md
-  │       ├── patterns/
-  │       └── guidance/
-  ├── templates/
-  └── agents/
-```
-
-### Opt-Out Example
-```bash
-/template-init --no-rules-structure
-
-# Uses single CLAUDE.md without rules/ directory
-```
-```
-
-### 4. Update Feature Comparison Table
-
-Update the comparison table (around line 534) to add:
-
-```markdown
-| **Rules Structure** | ✅ Default | ✅ Default |
-| **Progressive Disclosure** | ✅ Yes | ✅ Yes |
-| **Agent Split Files** | ✅ Yes | ✅ Yes |
-```
+`lib/json_extractor.py` (in the template output)
 
 ## Acceptance Criteria
 
-- [x] `--use-rules-structure` flag documented with description
-- [x] `--no-rules-structure` flag documented with description
-- [x] `--claude-md-size-limit` flag documented with description
-- [x] Examples updated to show rules structure output
-- [x] Feature comparison table updated
-- [x] Documentation consistent with `/template-create`
+- [x] `JsonExtractor` class with 5-strategy cascade
+- [x] `normalise_think_closing_tags()` included
+- [x] Brace matcher is string-aware (handles `{` inside quoted values)
+- [x] JSON repair handles literal newlines and tabs
+- [x] reasoning_content fallback for both Player and Coach extraction
+- [x] Unit tests covering all 5 strategies with edge cases from TRF fixes
+- [x] Regression tests derived from actual failing inputs in runs 7-10
+- [x] Pipeline order enforced: normalize before extract
 
-## Files to Modify
+## Effort Estimate
 
-- `installer/core/commands/template-init.md`
-
-## Notes
-
-This task is documentation-only. The actual flag implementation will be done in TASK-TI-002 when the rules structure generation code is added.
-
-## Related Tasks
-
-- TASK-TI-002: Generate rules structure (implements these flags)
-- TASK-REV-TI01: Source review task
+2-3 days

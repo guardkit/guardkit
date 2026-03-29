@@ -7,6 +7,21 @@ each agent's system prompt.
 
 ---
 
+## Framework Contract: ainvoke() Message Rules (TASK-REV-R2A1)
+
+`create_agent()` unconditionally prepends the `system_prompt` on every
+`ainvoke()` call. All messages passed in the `input` dict must use only
+`user` or `assistant` roles — **never `system`**.
+
+If you need to add extra instructions (e.g. retry reinforcement after Coach
+rejection), use the `user` role. Passing a `system` message causes dual
+system messages, which vLLM rejects with HTTP 400.
+
+Use `assert_no_system_messages()` from `factory_guards.py` at every
+`ainvoke()` call site to enforce this contract programmatically.
+
+---
+
 ## Player Agent
 
 The Player agent generates domain content by searching available data sources
