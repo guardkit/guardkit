@@ -1,9 +1,11 @@
 ---
 id: TASK-TI-025
 title: Register langchain-deepagents-weighted-evaluation template in installer
-status: in_review
+status: completed
 created: 2026-03-30T00:30:00Z
-updated: 2026-03-30T12:00:00Z
+updated: 2026-03-30T12:15:00Z
+completed: 2026-03-30T12:15:00Z
+completed_location: tasks/completed/TASK-TI-025/
 priority: p1
 tags: [template, installer, weighted-evaluation, registration]
 complexity: 4
