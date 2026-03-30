@@ -779,11 +779,213 @@ def copy_graphiti_config(
         return False
 
 
-def apply_template(template_name: str, target_dir: Optional[Path] = None) -> bool:
-    """Apply a template to the target directory.
+def _load_manifest(template_dir: Path) -> Optional[Dict[str, Any]]:
+    """Load manifest.json from a template directory.
+
+    Args:
+        template_dir: Template source directory.
+
+    Returns:
+        Parsed manifest dict, or None if not found or invalid.
+    """
+    manifest_path = template_dir / "manifest.json"
+    if not manifest_path.is_file():
+        return None
+    try:
+        return json.loads(manifest_path.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning(f"Failed to load manifest from {manifest_path}: {e}")
+        return None
+
+
+def _resolve_extends_chain(template_name: str) -> List[str]:
+    """Resolve the template inheritance chain via the ``extends`` field.
+
+    Walks the ``extends`` field in each template's manifest.json to build an
+    ordered list of templates to install.  The returned list is ordered from
+    base to extension (install order) so that extension files overlay base
+    files.
+
+    Protects against circular references by tracking visited templates.
+
+    Args:
+        template_name: Starting (most-derived) template name.
+
+    Returns:
+        List of template names from base to extension, e.g.
+        ``["langchain-deepagents", "langchain-deepagents-weighted-evaluation"]``.
+        If the template has no ``extends`` field, returns ``[template_name]``.
+    """
+    chain: List[str] = []
+    visited: set[str] = set()
+    current = template_name
+
+    while current and current not in visited:
+        visited.add(current)
+        chain.append(current)
+
+        template_dir = _resolve_template_source_dir(current)
+        if template_dir is None:
+            break
+
+        manifest = _load_manifest(template_dir)
+        if manifest is None:
+            break
+
+        current = manifest.get("extends")
+
+    # Reverse so base is first, most-derived is last
+    chain.reverse()
+    return chain
+
+
+def _merge_manifests(
+    base: Dict[str, Any], extension: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Merge two template manifests with extension values overriding base.
+
+    Scalar values from extension override base.  Dict values are shallow-merged
+    (extension keys override base keys).  List values are concatenated with
+    deduplication.
+
+    Args:
+        base: Base template manifest.
+        extension: Extension template manifest.
+
+    Returns:
+        Merged manifest dict.
+    """
+    merged = dict(base)
+
+    for key, ext_val in extension.items():
+        base_val = merged.get(key)
+
+        if isinstance(base_val, dict) and isinstance(ext_val, dict):
+            # Shallow merge dicts — extension keys override base keys
+            merged_dict = dict(base_val)
+            merged_dict.update(ext_val)
+            merged[key] = merged_dict
+        elif isinstance(base_val, list) and isinstance(ext_val, list):
+            # Concatenate lists, deduplicate preserving order
+            seen: set = set()
+            combined: list = []
+            for item in base_val + ext_val:
+                # For dicts, use json serialization as hashable key
+                hash_key = json.dumps(item, sort_keys=True) if isinstance(item, dict) else item
+                if hash_key not in seen:
+                    seen.add(hash_key)
+                    combined.append(item)
+            merged[key] = combined
+        else:
+            # Scalars: extension wins
+            merged[key] = ext_val
+
+    return merged
+
+
+def _apply_single_template(
+    template_dir: Path,
+    target_dir: Path,
+    *,
+    overwritable: Optional[set] = None,
+) -> Dict[str, List[str]]:
+    """Apply files from a single template directory to the target.
+
+    This is the inner copy routine used by ``apply_template`` for each
+    template in the inheritance chain.
+
+    Files that already exist at the destination are only overwritten if their
+    resolved path is in *overwritable* (i.e. they were created by a previous
+    template in the chain).  Pre-existing user files are never clobbered.
+
+    Args:
+        template_dir: Template source directory.
+        target_dir: Project target directory.
+        overwritable: Set of resolved destination paths that may be overwritten
+            (populated by previous templates in the chain).
+
+    Returns:
+        Dict with keys ``agents``, ``rules``, ``claude_md``, ``manifest``
+        listing what was copied.
+    """
+    if overwritable is None:
+        overwritable = set()
+
+    result: Dict[str, List[str]] = {
+        "agents": [],
+        "rules": [],
+        "claude_md": [],
+        "manifest": [],
+    }
+
+    def _copy(src: Path, dest: Path, label: str = "") -> bool:
+        """Copy src to dest, respecting overwritable set."""
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        resolved = dest.resolve()
+        if dest.exists() and resolved not in overwritable:
+            logger.info(f"Skipping {label or dest.name}: already exists at {dest}")
+            return False
+        shutil.copy2(src, dest)
+        overwritable.add(resolved)
+        return True
+
+    # --- Agents ---
+    agents_target = target_dir / ".claude" / "agents"
+    for agents_dir in [
+        template_dir / ".claude" / "agents",
+        template_dir / "agents",
+    ]:
+        if not agents_dir.is_dir():
+            continue
+        for agent_file in sorted(agents_dir.iterdir()):
+            if not agent_file.is_file() or agent_file.suffix != ".md" or agent_file.name.startswith("."):
+                continue
+            dest = agents_target / agent_file.name
+            if _copy(agent_file, dest, f"agent {agent_file.name}"):
+                result["agents"].append(agent_file.name)
+
+    # --- Rules ---
+    rules_src = template_dir / ".claude" / "rules"
+    rules_target = target_dir / ".claude" / "rules"
+    if rules_src.is_dir():
+        for rule_file in sorted(rules_src.rglob("*.md")):
+            rel_path = rule_file.relative_to(rules_src)
+            dest = rules_target / rel_path
+            if _copy(rule_file, dest, f"rule {rel_path}"):
+                result["rules"].append(str(rel_path))
+
+    # --- CLAUDE.md ---
+    for rel in ["CLAUDE.md", ".claude/CLAUDE.md"]:
+        src = template_dir / rel
+        if src.is_file():
+            dest = target_dir / rel
+            if _copy(src, dest, rel):
+                result["claude_md"].append(rel)
+
+    # --- manifest.json (raw copy; merged manifest written separately) ---
+    manifest_src = template_dir / "manifest.json"
+    if manifest_src.is_file():
+        dest = target_dir / ".claude" / "manifest.json"
+        if _copy(manifest_src, dest, "manifest.json"):
+            result["manifest"].append("manifest.json")
+
+    return result
+
+
+def apply_template(
+    template_name: str,
+    target_dir: Optional[Path] = None,
+    *,
+    base_only: bool = False,
+) -> bool:
+    """Apply a template to the target directory, honouring ``extends``.
 
     Creates the basic GuardKit directory structure and copies template-specific
     content including agents, rules, CLAUDE.md, and manifest.json.
+
+    When a template's manifest.json contains an ``extends`` field, the base
+    template is installed first and the extension template is overlaid on top
+    so that extension files take precedence.
 
     Handles structural variations across templates:
     - Agents may be in agents/ or .claude/agents/
@@ -794,6 +996,8 @@ def apply_template(template_name: str, target_dir: Optional[Path] = None) -> boo
     Args:
         template_name: Name of the template to apply.
         target_dir: Target directory (defaults to cwd).
+        base_only: If True and the template extends another, install
+            only the base template (ignore the extension).
 
     Returns:
         True if template applied successfully, False otherwise.
@@ -828,24 +1032,83 @@ def apply_template(template_name: str, target_dir: Optional[Path] = None) -> boo
         )
         return True
 
-    # Step 3: Copy template content
-    agents_copied = _copy_agents(template_dir, target_dir)
-    if agents_copied:
-        logger.info(f"Copied {len(agents_copied)} agent(s): {', '.join(agents_copied)}")
+    # Step 3: Resolve the extends chain (base → … → extension)
+    chain = _resolve_extends_chain(template_name)
 
-    rules_copied = _copy_rules(template_dir, target_dir)
-    if rules_copied:
-        logger.info(f"Copied {len(rules_copied)} rule(s)")
+    # Validate all templates in the chain are resolvable
+    for name in chain:
+        if _resolve_template_source_dir(name) is None:
+            logger.error(
+                f"Base template '{name}' required by extends chain not found. "
+                f"Chain: {' → '.join(chain)}"
+            )
+            return False
 
-    claude_copied = _copy_claude_md(template_dir, target_dir)
-    if claude_copied:
-        logger.info(f"Copied CLAUDE.md: {', '.join(claude_copied)}")
+    # If --base-only, only install the first template in the chain
+    if base_only and len(chain) > 1:
+        chain = chain[:1]
+        logger.info(f"--base-only: installing base template '{chain[0]}' only")
 
-    manifest_copied = _copy_manifest(template_dir, target_dir)
-    if manifest_copied:
-        logger.info("Copied manifest.json")
+    # Step 4: Apply each template in chain order (base first, extension last)
+    # The overwritable set tracks files created by previous templates in the
+    # chain so that extension templates can overlay them.  Pre-existing user
+    # files are never clobbered.
+    total_agents: List[str] = []
+    total_rules: List[str] = []
+    total_claude: List[str] = []
+    overwritable: set = set()
 
-    logger.info(f"Applied template '{template_name}' to {target_dir}")
+    for tpl_name in chain:
+        tpl_dir = _resolve_template_source_dir(tpl_name)
+        if tpl_dir is None:
+            continue  # Already validated above
+
+        logger.info(f"Applying template layer: {tpl_name}")
+        copied = _apply_single_template(tpl_dir, target_dir, overwritable=overwritable)
+        total_agents.extend(copied["agents"])
+        total_rules.extend(copied["rules"])
+        total_claude.extend(copied["claude_md"])
+
+    # Step 5: Write merged manifest if chain has multiple templates
+    if len(chain) > 1:
+        manifests = []
+        for tpl_name in chain:
+            tpl_dir = _resolve_template_source_dir(tpl_name)
+            if tpl_dir is not None:
+                m = _load_manifest(tpl_dir)
+                if m is not None:
+                    manifests.append(m)
+
+        if len(manifests) >= 2:
+            merged = manifests[0]
+            for m in manifests[1:]:
+                merged = _merge_manifests(merged, m)
+
+            merged_path = target_dir / ".claude" / "manifest.json"
+            merged_path.write_text(json.dumps(merged, indent=2) + "\n")
+            logger.info("Wrote merged manifest.json")
+
+    if total_agents:
+        # Deduplicate (extension may override base agents with same name)
+        unique = list(dict.fromkeys(total_agents))
+        logger.info(f"Copied {len(unique)} agent(s): {', '.join(unique)}")
+
+    if total_rules:
+        unique = list(dict.fromkeys(total_rules))
+        logger.info(f"Copied {len(unique)} rule(s)")
+
+    if total_claude:
+        unique = list(dict.fromkeys(total_claude))
+        logger.info(f"Copied CLAUDE.md: {', '.join(unique)}")
+
+    if len(chain) > 1:
+        logger.info(
+            f"Applied template '{template_name}' (extends: {' → '.join(chain)}) "
+            f"to {target_dir}"
+        )
+    else:
+        logger.info(f"Applied template '{template_name}' to {target_dir}")
+
     return True
 
 
@@ -940,6 +1203,7 @@ async def _cmd_init(
     verbose: bool = False,
     no_questions: bool = False,
     with_mcp: bool = False,
+    base_only: bool = False,
 ) -> int:
     """Async implementation of init command.
 
@@ -953,6 +1217,7 @@ async def _cmd_init(
         verbose: If True, show all log output including third-party DEBUG/INFO.
         no_questions: If True, skip the auto-offer prompt and use project_id-only.
         with_mcp: If True, generate .mcp.json and per-project MCP server config.
+        base_only: If True, install only the base template when extends is used.
 
     Returns:
         Exit code (0 for success).
@@ -972,7 +1237,7 @@ async def _cmd_init(
 
     # Step 1: Apply template
     console.print("\n[bold]Step 1: Applying template...[/bold]")
-    if apply_template(template, project_dir):
+    if apply_template(template, project_dir, base_only=base_only):
         console.print(f"  [green]Applied template: {template}[/green]")
     else:
         console.print(f"  [yellow]Warning: Template '{template}' not found, using defaults[/yellow]")
@@ -1337,6 +1602,15 @@ async def _cmd_init(
         "GRAPHITI_MCP_PATH env var, ~/.guardkit/mcp-server-path, or user prompt."
     ),
 )
+@click.option(
+    "--base-only",
+    is_flag=True,
+    default=False,
+    help=(
+        "When the selected template extends a base template, install only the "
+        "base template (ignore extension-specific files)."
+    ),
+)
 def init(
     template: str,
     skip_graphiti: bool,
@@ -1347,13 +1621,14 @@ def init(
     verbose: bool,
     no_questions: bool,
     with_mcp: bool,
+    base_only: bool,
 ):
     """Initialize GuardKit in the current directory.
 
     Applies a template and optionally seeds project knowledge to Graphiti.
 
     TEMPLATE is the name of the template to apply (default: 'default').
-    Available templates: default, fastapi-python, react-typescript, nextjs-fullstack.
+    Available templates: default, fastapi-python, react-typescript, nextjs-fullstack, langchain-deepagents, langchain-deepagents-weighted-evaluation.
     """
     # Merge the two options into a single value for _cmd_init
     copy_graphiti_value: Optional[str] = None
@@ -1366,6 +1641,7 @@ def init(
         _cmd_init(
             template, skip_graphiti, project_name, interactive,
             copy_graphiti_value, verbose, no_questions, with_mcp,
+            base_only=base_only,
         )
     )
     if exit_code != 0:

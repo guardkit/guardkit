@@ -220,4 +220,4 @@ pip install guardkit-py[dev]         # Development
 guardkit init [template-name]        # Initialize project
 ```
 
-Templates: react-typescript | fastapi-python | nextjs-fullstack | react-fastapi-monorepo | default
+Templates: react-typescript | fastapi-python | nextjs-fullstack | react-fastapi-monorepo | langchain-deepagents | langchain-deepagents-weighted-evaluation | default
