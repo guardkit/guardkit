@@ -20,10 +20,11 @@ import pytest
 from unittest.mock import Mock, AsyncMock, patch, call
 from pathlib import Path
 
-# Module under test (does not exist yet - TDD RED phase)
+# Module under test
 from guardkit.knowledge.review_knowledge_capture import (
     ReviewKnowledgeCapture,
     ReviewCaptureConfig,
+    format_review_for_graphiti,
     generate_review_questions,
     run_review_capture
 )
@@ -715,3 +716,168 @@ class TestInteractiveCaptureSessionIntegration:
             assert call_args is not None
             # Should have questions parameter
             assert 'questions' in call_args.kwargs or len(call_args.args) > 0
+
+
+# ============================================================================
+# Test 11: Graphiti Formatting (TASK-GMR-008)
+# ============================================================================
+
+class TestFormatReviewForGraphiti:
+    """Test format_review_for_graphiti produces correct Graphiti episodes."""
+
+    def test_returns_findings_and_outcome_episodes(
+        self, mock_task_context, mock_review_findings
+    ):
+        """Verify two episodes are returned: findings and outcome."""
+        result = format_review_for_graphiti(mock_task_context, mock_review_findings)
+
+        assert "findings" in result
+        assert "outcome" in result
+        assert isinstance(result["findings"], dict)
+        assert isinstance(result["outcome"], dict)
+
+    def test_findings_episode_has_correct_group_id(
+        self, mock_task_context, mock_review_findings
+    ):
+        """Verify findings episode targets project_decisions group."""
+        result = format_review_for_graphiti(mock_task_context, mock_review_findings)
+        assert result["findings"]["group_id"] == "guardkit__project_decisions"
+
+    def test_outcome_episode_has_correct_group_id(
+        self, mock_task_context, mock_review_findings
+    ):
+        """Verify outcome episode targets task_outcomes group."""
+        result = format_review_for_graphiti(mock_task_context, mock_review_findings)
+        assert result["outcome"]["group_id"] == "guardkit__task_outcomes"
+
+    def test_findings_episode_contains_task_id(
+        self, mock_task_context, mock_review_findings
+    ):
+        """Verify findings episode references the task ID."""
+        result = format_review_for_graphiti(mock_task_context, mock_review_findings)
+        assert "TASK-TEST-001" in result["findings"]["name"]
+        assert "TASK-TEST-001" in result["findings"]["content"]
+
+    def test_outcome_episode_contains_task_id(
+        self, mock_task_context, mock_review_findings
+    ):
+        """Verify outcome episode references the task ID."""
+        result = format_review_for_graphiti(mock_task_context, mock_review_findings)
+        assert "TASK-TEST-001" in result["outcome"]["name"]
+        assert "TASK-TEST-001" in result["outcome"]["content"]
+
+    def test_findings_episode_includes_review_mode(
+        self, mock_task_context, mock_review_findings
+    ):
+        """Verify findings episode includes the review mode."""
+        result = format_review_for_graphiti(mock_task_context, mock_review_findings)
+        assert "architectural" in result["findings"]["name"]
+        assert "architectural" in result["findings"]["content"]
+
+    def test_findings_episode_includes_score(
+        self, mock_task_context, mock_review_findings
+    ):
+        """Verify findings episode includes the review score."""
+        result = format_review_for_graphiti(mock_task_context, mock_review_findings)
+        assert "65/100" in result["findings"]["content"]
+
+    def test_outcome_episode_includes_score(
+        self, mock_task_context, mock_review_findings
+    ):
+        """Verify outcome episode includes the review score."""
+        result = format_review_for_graphiti(mock_task_context, mock_review_findings)
+        assert "65/100" in result["outcome"]["content"]
+
+    def test_findings_episode_includes_finding_descriptions(
+        self, mock_task_context, mock_review_findings
+    ):
+        """Verify findings episode includes descriptions from review findings."""
+        result = format_review_for_graphiti(mock_task_context, mock_review_findings)
+        content = result["findings"]["content"]
+        assert "Single Responsibility" in content
+        assert "Token validation" in content
+
+    def test_findings_episode_includes_severity(
+        self, mock_task_context, mock_review_findings
+    ):
+        """Verify findings episode includes severity levels."""
+        result = format_review_for_graphiti(mock_task_context, mock_review_findings)
+        content = result["findings"]["content"]
+        assert "[HIGH]" in content
+        assert "[MEDIUM]" in content
+
+    def test_outcome_episode_includes_recommendations(
+        self, mock_task_context, mock_review_findings
+    ):
+        """Verify outcome episode includes recommendation text."""
+        result = format_review_for_graphiti(mock_task_context, mock_review_findings)
+        content = result["outcome"]["content"]
+        assert "Split authentication" in content
+        assert "shared token validation" in content
+
+    def test_each_episode_has_required_keys(
+        self, mock_task_context, mock_review_findings
+    ):
+        """Verify each episode has group_id, name, and content."""
+        result = format_review_for_graphiti(mock_task_context, mock_review_findings)
+        for key in ("findings", "outcome"):
+            episode = result[key]
+            assert "group_id" in episode
+            assert "name" in episode
+            assert "content" in episode
+
+    def test_handles_empty_findings(self, mock_task_context):
+        """Verify graceful handling when no findings present."""
+        findings = {"mode": "architectural", "findings": [], "score": 80}
+        result = format_review_for_graphiti(mock_task_context, findings)
+        assert "No specific findings" in result["findings"]["content"]
+
+    def test_handles_empty_recommendations(self, mock_task_context):
+        """Verify graceful handling when no recommendations present."""
+        findings = {"mode": "code-quality", "findings": [], "score": 90}
+        result = format_review_for_graphiti(mock_task_context, findings)
+        assert "No recommendations" in result["outcome"]["content"]
+
+    def test_handles_string_findings(self, mock_task_context):
+        """Verify handling when findings are plain strings instead of dicts."""
+        findings = {
+            "mode": "decision",
+            "findings": ["Use JWT over sessions", "Add rate limiting"],
+            "score": 70,
+        }
+        result = format_review_for_graphiti(mock_task_context, findings)
+        assert "Use JWT over sessions" in result["findings"]["content"]
+        assert "Add rate limiting" in result["findings"]["content"]
+
+    def test_handles_string_recommendations(self, mock_task_context):
+        """Verify handling when recommendations are plain strings."""
+        findings = {
+            "mode": "security",
+            "findings": [],
+            "score": 55,
+            "recommendations": ["Fix SQL injection", "Add CSRF tokens"],
+        }
+        result = format_review_for_graphiti(mock_task_context, findings)
+        assert "Fix SQL injection" in result["outcome"]["content"]
+        assert "Add CSRF tokens" in result["outcome"]["content"]
+
+    def test_handles_missing_score(self, mock_task_context):
+        """Verify handling when score is not present."""
+        findings = {"mode": "technical-debt", "findings": []}
+        result = format_review_for_graphiti(mock_task_context, findings)
+        assert "N/A/100" in result["findings"]["content"]
+
+    def test_handles_dict_recommendations_with_text_key(self, mock_task_context):
+        """Verify handling when recommendations are dicts with text key."""
+        findings = {
+            "mode": "architectural",
+            "findings": [],
+            "score": 75,
+            "recommendations": [
+                {"text": "Implement repository pattern", "priority": "high"},
+                {"text": "Add caching layer", "priority": "medium"},
+            ],
+        }
+        result = format_review_for_graphiti(mock_task_context, findings)
+        assert "Implement repository pattern" in result["outcome"]["content"]
+        assert "Add caching layer" in result["outcome"]["content"]

@@ -213,7 +213,7 @@ async def load_task_context(
             context.warnings, context.domain_knowledge,
         ] if attr)
         logger.info(
-            "[Graphiti] Task context: %d categories, %d/%d tokens",
+            "[Graphiti] Context loaded via cli: %d categories, %d/%d tokens",
             category_count,
             context.budget_used,
             context.budget_total,
@@ -221,7 +221,7 @@ async def load_task_context(
         return prompt_text
 
     except Exception as e:
-        logger.warning("[Graphiti] Task context unavailable, continuing without")
+        logger.warning("[Graphiti] Context: unavailable (continuing without)")
         logger.debug("Graphiti context loading error: %s", e)
         return None
 

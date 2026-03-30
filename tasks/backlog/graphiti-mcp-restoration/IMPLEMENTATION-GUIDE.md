@@ -14,9 +14,10 @@
 | TASK-GMR-001: Restore .mcp.json | graphiti-mcp-restoration-wave1-1 | task-work | 15min |
 | TASK-GMR-002: Reverse anti-MCP instruction | graphiti-mcp-restoration-wave1-2 | task-work | 15min |
 | TASK-GMR-003: Verify MCP tools work | graphiti-mcp-restoration-wave1-3 | direct | 15min |
+| TASK-GMR-011: Add .mcp.json to init | graphiti-mcp-restoration-wave1-4 | task-work | 1hr |
 
-**Dependencies**: GMR-003 depends on GMR-001 (needs config before verification).
-**Validation**: After Wave 1, `mcp__graphiti__search_nodes` should return results in a guardkit Claude Code session.
+**Dependencies**: GMR-003 depends on GMR-001 (needs config before verification). GMR-011 is independent.
+**Validation**: After Wave 1, `mcp__graphiti__search_nodes` should return results in a guardkit Claude Code session. New projects via `guardkit init` should get `.mcp.json` automatically.
 
 ### Wave 2: Command Spec Updates (3 tasks, parallel via Conductor)
 

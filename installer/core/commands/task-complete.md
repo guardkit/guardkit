@@ -185,6 +185,170 @@ Ready for deployment: ✅
 
 This command ensures high-quality task completion while maintaining accurate progress tracking across the **Epic → Feature → Task hierarchy**.
 
+## Graphiti Knowledge Capture (Write Path)
+
+**Purpose**: Capture task outcome to the Graphiti knowledge graph so future tasks benefit from lessons learned. This is the learning flywheel — every completed task enriches the context available to `/task-work`, `/task-review`, and `/feature-plan` read paths.
+
+**Trigger**: Always execute after file organization and state updates, before git commit. Fast no-op if Graphiti unavailable.
+
+**Non-blocking**: Task completion MUST succeed even if Graphiti write fails. All errors are logged as warnings.
+
+See: `lib/graphiti-preamble.md` for availability check tiers.
+
+### Step 1: Extract Task Outcome Data
+
+From the task file frontmatter and content sections, extract:
+
+```
+task_id:     {from frontmatter: id}
+title:       {from frontmatter: title}
+complexity:  {from frontmatter: complexity}
+approach:    {from Implementation Notes section, or commit messages, or "standard implementation"}
+outcome:     {from acceptance criteria pass/fail status and quality gate results}
+lessons:     {from Notes section if present, or "No specific lessons recorded"}
+decisions:   {any architectural decisions noted in task content}
+```
+
+Format the task outcome as a narrative episode:
+
+```
+episode_name = "Task Completion: {task_id}"
+
+episode_body = "{task_id}: {title}. Complexity: {complexity}/10. Approach: {approach}. Result: {outcome}. Lessons: {lessons}."
+```
+
+**Example**:
+```
+episode_name = "Task Completion: TASK-042"
+
+episode_body = "TASK-042: Implement user authentication API. Complexity: 7/10. Approach: Used JWT with bcrypt password hashing, FastAPI dependency injection for auth middleware. Result: All acceptance criteria met, 92% test coverage, architectural review 85/100. Lessons: Redis session storage required careful connection pooling configuration for test isolation."
+```
+
+### Step 2: Check Graphiti Availability and Write
+
+**Tier 0 — MCP Tools (Preferred)**:
+
+Check whether `mcp__graphiti__add_memory` is available in the current session's tool list.
+
+**IF** MCP tool is available:
+
+**Write 1 — Task Outcome** (always):
+```
+mcp__graphiti__add_memory(
+  name: "Task Completion: {task_id}",
+  episode_body: "{task_id}: {title}. Complexity: {complexity}/10. Approach: {approach}. Result: {outcome}. Lessons: {lessons}.",
+  group_id: "guardkit__task_outcomes",
+  source: "text",
+  source_description: "GuardKit task completion"
+)
+```
+
+**Write 2 — Architectural Decisions** (only if task content contains architectural decisions):
+```
+mcp__graphiti__add_memory(
+  name: "Decision: {task_id} - {decision_summary}",
+  episode_body: "{decision_description}. Context: {task_id} ({title}). Rationale: {rationale}.",
+  group_id: "guardkit__project_decisions",
+  source: "text",
+  source_description: "GuardKit task architectural decision"
+)
+```
+
+**IF** MCP writes succeed:
+```
+DISPLAY: "[Graphiti] Task outcome captured to knowledge graph"
+```
+
+**IF** MCP writes fail (error from tool call):
+```
+DISPLAY: "[Graphiti] Warning: Could not capture task outcome ({error})"
+         "  (Non-critical — task completion continues)"
+```
+
+**DO NOT** block or fail task completion. Continue to git state commit.
+
+---
+
+**Tier 1/2 — CLI Fallback** (when MCP not available):
+
+**IF** `mcp__graphiti__add_memory` is NOT available:
+
+Check Graphiti availability via Read tool (Tier 1 from `lib/graphiti-preamble.md`):
+Read `.guardkit/graphiti.yaml` — if file exists and `enabled: true`, proceed to CLI write.
+
+**IF** Graphiti is enabled:
+
+Write a temporary file with the task outcome, then seed via CLI:
+
+```bash
+# Write outcome to temp file
+cat > /tmp/guardkit-task-outcome-{task_id}.md << 'OUTCOME_EOF'
+# Task Completion: {task_id}
+
+{task_id}: {title}. Complexity: {complexity}/10. Approach: {approach}. Result: {outcome}. Lessons: {lessons}.
+OUTCOME_EOF
+
+# Seed to knowledge graph via CLI
+guardkit graphiti add-context /tmp/guardkit-task-outcome-{task_id}.md \
+  --group task_outcomes
+
+# Clean up temp file
+rm -f /tmp/guardkit-task-outcome-{task_id}.md
+```
+
+**IF** CLI write succeeds:
+```
+DISPLAY: "[Graphiti] Task outcome captured via CLI"
+```
+
+**IF** CLI write fails:
+```
+DISPLAY: "[Graphiti] Warning: Could not capture task outcome via CLI ({error})"
+         "  (Non-critical — task completion continues)"
+```
+
+**IF** Graphiti is not enabled (config missing or `enabled: false`):
+```
+DISPLAY: "[Graphiti] Knowledge capture skipped (not configured)"
+```
+
+### Step 3: Summary
+
+After the write attempt (regardless of success/failure), continue to the git state commit step. The knowledge capture is purely additive — it enriches future sessions but is never required for task completion.
+
+**Example Flow (MCP path)**:
+```
+/task-complete TASK-042
+
+🏁 Completing Task: TASK-042
+
+📁 Organizing Task Files
+...
+
+🔄 Task State Transition
+Status: IN_PROGRESS → COMPLETED
+...
+
+📊 Progress Rollup Calculation
+...
+
+📝 Graphiti Knowledge Capture
+[Graphiti] Task outcome captured to knowledge graph
+
+✅ Task state committed to git
+
+🎉 Task Completion Summary
+✅ TASK-042 successfully completed
+```
+
+**Example Flow (unavailable)**:
+```
+📝 Graphiti Knowledge Capture
+[Graphiti] Knowledge capture skipped (not configured)
+
+✅ Task state committed to git
+```
+
 ## Git State Commit (REQUIRED for Conductor Support)
 
 **CRITICAL**: After completing the task and moving files to the completed directory, commit all task-related state files to git. This ensures that state is preserved across git worktrees (used by Conductor.build for parallel development).

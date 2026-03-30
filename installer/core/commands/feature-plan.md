@@ -517,28 +517,41 @@ The `/feature-plan` command orchestrates `/task-review` under the hood, so clari
         │
         ▼
 ┌─────────────────────────────┐
-│ 2. Execute Task Review      │◀── Context A: Review Scope
-│    with --mode=decision     │    (What to analyze?)
+│ 2. Review Scope             │◀── Context A: Review Scope
+│    Clarification            │    (What to analyze?)
 │                             │    Questions: focus, depth, trade-offs
 └─────────────────────────────┘
         │
         ▼
 ┌─────────────────────────────┐
-│ 3. Decision Checkpoint      │
+│ 2.5 Graphiti Pre-Planning   │◀── Knowledge Graph (MCP-first)
+│     Context Loading         │    Similar features, architecture,
+│     (graceful degradation)  │    past outcomes
+└─────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────┐
+│ 3. Execute Decision Review  │◀── context_a + graphiti_context
+│    with --mode=decision     │
+└─────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────┐
+│ 4. Decision Checkpoint      │
 │    [A]ccept/[R]evise/       │
 │    [I]mplement/[C]ancel     │
 └─────────────────────────────┘
         │
         ▼ (if [I]mplement)
 ┌─────────────────────────────┐
-│ 4. Implementation Prefs     │◀── Context B: Implementation
+│ 5. Implementation Prefs     │◀── Context B: Implementation
 │    (approach, parallel,     │    (How to implement?)
 │    testing depth)           │    Questions: approach, execution, testing
 └─────────────────────────────┘
         │
         ▼
 ┌─────────────────────────────┐
-│ 5. Generate Feature         │
+│ 6. Generate Feature         │
 │    Structure with subtasks  │
 │    (uses clarification)     │
 └─────────────────────────────┘
@@ -928,6 +941,126 @@ Return ClarificationContext with review preferences."""
 **ELSE**:
   **DISPLAY**: "Review scope clarification skipped (--no-questions)"
 
+### Step 2.5: Graphiti Pre-Planning Context Loading (TASK-GMR-006)
+
+**Purpose**: Query the knowledge graph for similar past features, architecture constraints, and domain patterns BEFORE generating the plan. This ensures the review analysis is informed by historical context.
+
+**Trigger**: Always execute after Step 2 (fast no-op if Graphiti unavailable)
+
+**Skip Conditions**:
+- `--no-context` flag is set
+
+**See**: `lib/graphiti-preamble.md` for availability check tiers
+
+**STEP 1: Check Graphiti Availability (MCP-First — Tier 0)**
+
+Check whether `mcp__graphiti__search_nodes` is available in the current session's tool list.
+
+**IF** MCP tools are available:
+  - SET `graphiti_available = true`
+  - SET `graphiti_access_method = "mcp"`
+  - **Skip Tier 1 and Tier 2** — proceed directly to Step 2
+
+**IF** MCP tools are NOT available:
+  - Fall through to Tier 1: Read `.guardkit/graphiti.yaml` using the Read tool
+  - **IF** file exists and `enabled: true`: SET `graphiti_available = true`, `graphiti_access_method = "cli"`
+  - **IF** file does not exist or `enabled: false`: SET `graphiti_available = false`
+
+**IF** `graphiti_available == false`:
+```
+DISPLAY: "[Graphiti] Feature context: unavailable (continuing without)"
+PROCEED to Step 3
+```
+
+**STEP 2: Load Pre-Planning Context**
+
+**IF** `graphiti_access_method == "mcp"` (Preferred Path):
+
+Run both MCP search tools in parallel with feature-relevant group_ids:
+
+```
+mcp__graphiti__search_nodes(
+  query: "{feature_description}",
+  group_ids: [
+    "guardkit__feature_specs",
+    "architecture_decisions",
+    "guardkit__project_architecture"
+  ]
+)
+
+mcp__graphiti__search_memory_facts(
+  query: "{feature_description}",
+  group_ids: [
+    "guardkit__task_outcomes",
+    "guardkit__project_decisions",
+    "architecture_decisions"
+  ]
+)
+```
+
+Parse results into three categories:
+
+| Category | Source | Purpose |
+|----------|--------|---------|
+| Similar features | `guardkit__feature_specs` nodes | Avoid repeating failed approaches |
+| Architecture context | `architecture_decisions`, `guardkit__project_architecture` nodes + facts | Ensure feature fits current architecture |
+| Past outcomes | `guardkit__task_outcomes` facts | Learn from what worked/didn't |
+
+**ELSE IF** `graphiti_access_method == "cli"` (Fallback Path):
+
+Run via Bash tool:
+
+```bash
+/Users/richardwoollcott/.agentecflow/bin/graphiti-check \
+    --status --task-context --quiet \
+    --description "{feature_description}" \
+    --phase plan
+```
+
+Parse the JSON output for context.
+
+**STEP 3: Store and Display**
+
+**IF** context was loaded (any results from either path):
+
+```python
+# Combine results into feature_graphiti_context
+feature_graphiti_context = {
+    "similar_features": [...],      # From guardkit__feature_specs
+    "architecture_context": [...],  # From architecture_decisions + project_architecture
+    "past_outcomes": [...]          # From guardkit__task_outcomes
+}
+
+total_items = (
+    len(feature_graphiti_context["similar_features"])
+    + len(feature_graphiti_context["architecture_context"])
+    + len(feature_graphiti_context["past_outcomes"])
+)
+```
+
+**DISPLAY**:
+```
+[Graphiti] Feature context loaded: {total_items} items
+  - Similar features: {count}
+  - Architecture context: {count}
+  - Past outcomes: {count}
+```
+
+**STORE** `feature_graphiti_context` for injection into Step 3 review analysis.
+
+**IF** no results returned:
+```
+DISPLAY: "[Graphiti] Feature context: no relevant items found (continuing without)"
+SET feature_graphiti_context = None
+```
+
+**ERROR HANDLING**:
+
+All Graphiti operations follow graceful degradation:
+- MCP tool call fails → fall back to CLI path
+- CLI path fails → continue without context
+- `/feature-plan` NEVER blocks or fails due to Graphiti errors
+
 ### Step 3: Execute Decision Review
 
 Internally executes:
@@ -936,6 +1069,37 @@ Internally executes:
 ```
 
 **PASS** context_a to review analysis (via task frontmatter or inline)
+
+**PASS** feature_graphiti_context to review analysis (if loaded in Step 2.5):
+
+```
+{if feature_graphiti_context:}
+KNOWLEDGE GRAPH CONTEXT (from Step 2.5 - Graphiti):
+The following context was retrieved from the project knowledge graph.
+Use this to inform feature scope, risk assessment, and architecture decisions:
+
+{if feature_graphiti_context.similar_features:}
+SIMILAR FEATURES:
+{for feature in feature_graphiti_context.similar_features:}
+  - {feature.name}: {feature.summary}
+{endfor}
+{endif}
+
+{if feature_graphiti_context.architecture_context:}
+ARCHITECTURE CONTEXT:
+{for item in feature_graphiti_context.architecture_context:}
+  - {item.name}: {item.fact}
+{endfor}
+{endif}
+
+{if feature_graphiti_context.past_outcomes:}
+PAST OUTCOMES:
+{for outcome in feature_graphiti_context.past_outcomes:}
+  - {outcome.name}: {outcome.fact}
+{endfor}
+{endif}
+{endif}
+```
 
 The review analyzes:
 - **Technical options** for implementing the feature

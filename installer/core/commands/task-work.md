@@ -12,8 +12,9 @@ This command supports **graceful degradation** based on installed packages:
 ### GuardKit + Graphiti (Knowledge-Enhanced Workflow)
 - All core features PLUS:
 - Loads job-specific context from knowledge graph during Phase 1.7
+- **MCP-first**: Uses `mcp__graphiti__search_nodes` and `mcp__graphiti__search_memory_facts` when available (zero CLI overhead)
+- **CLI fallback**: Falls back to `graphiti-check` CLI wrapper when MCP tools not in session
 - Injects feature context, similar outcomes, relevant patterns, warnings into planning prompt
-- Uses "standard" budget allocation (6 categories, ~4000 tokens)
 - Graceful degradation: works identically when Graphiti is unavailable
 
 ### GuardKit + Require-Kit (Enhanced Workflow)
@@ -1698,13 +1699,93 @@ Acceptance Criteria: {len(acceptance_criteria)} items
 - `--implement-only` flag is set (uses saved design)
 - `--no-context` flag is set
 
-**⚠️ IMPORTANT: Graphiti is accessed via the Python client library, NOT via MCP tools.**
-Do NOT check for MCP tools like `mcp__graphiti__search_nodes` to determine availability.
-Instead, run the Python check script via bash as described below.
+**⚠️ IMPORTANT: Prefer MCP tools (`mcp__graphiti__search_nodes`, `mcp__graphiti__search_memory_facts`)
+when available in the current session.** If MCP tools are not available, fall back to the Python
+check script via bash as described below.
 
 **Workflow**:
 
-**STEP 1: Check Graphiti Availability via Python Client**
+**STEP 0: Check for MCP Tools (Preferred Path — Zero Overhead)**
+
+Check whether `mcp__graphiti__search_nodes` is available in the current session's tool list
+(see `lib/graphiti-preamble.md` Tier 0).
+
+**IF** MCP tools are available:
+
+SET `graphiti_access_method = "mcp"`
+
+Execute both searches in parallel:
+
+**Search 1 — Entities** (nodes relevant to this task):
+```
+mcp__graphiti__search_nodes(
+  query: "{task_title} {key_terms_from_description}",
+  group_ids: [
+    "product_knowledge",
+    "architecture_decisions",
+    "guardkit__project_architecture",
+    "guardkit__project_decisions",
+    "guardkit__task_outcomes"
+  ]
+)
+```
+
+**Search 2 — Facts** (relationships and decisions):
+```
+mcp__graphiti__search_memory_facts(
+  query: "{task_title}",
+  group_ids: [
+    "architecture_decisions",
+    "guardkit__project_decisions",
+    "guardkit__task_outcomes"
+  ]
+)
+```
+
+**Query Construction**:
+- Use the task title as the primary query
+- Append 2-3 key terms extracted from the task description
+- Keep queries concise (under 100 characters) for best match quality
+- Example: title="Implement auth middleware" → query="Implement auth middleware session JWT"
+
+**Result Formatting**:
+Combine MCP results into a context block for Phase 2 injection:
+
+```python
+graphiti_context = ""
+
+# From search_nodes results
+if nodes_returned:
+    graphiti_context += "## Relevant Entities\n"
+    for node in search_nodes_results:
+        graphiti_context += f"- **{node.name}**: {node.summary}\n"
+
+# From search_memory_facts results
+if facts_returned:
+    graphiti_context += "\n## Relevant Facts & Decisions\n"
+    for fact in search_facts_results:
+        graphiti_context += f"- {fact.fact}\n"
+```
+
+SET `task_context["graphiti_context"] = graphiti_context`
+
+**DISPLAY**:
+```
+[Graphiti] Context loaded via MCP: {node_count} entities, {fact_count} facts
+```
+
+**IF** MCP search calls fail (error or empty results from both searches):
+```
+DISPLAY: "[Graphiti] MCP search returned no results (continuing without)"
+SET task_context["graphiti_context"] = None
+```
+
+**PROCEED** to Step 3 (skip Steps 1-2)
+
+**IF** MCP tools are NOT available:
+- Fall through to Steps 1-2 (CLI wrapper fallback)
+
+**STEP 1: Check Graphiti Availability via CLI Wrapper (Fallback)**
 
 Run the graphiti check wrapper:
 
@@ -1725,13 +1806,13 @@ The script outputs JSON to stdout:
 
 **IF** available == false:
 ```
-DISPLAY: "[Graphiti] Context: unavailable (continuing without)"
+DISPLAY: "[Graphiti] Context: unavailable via CLI (continuing without)"
          "  Reason: {error from JSON}"
 SET task_context["graphiti_context"] = None
-PROCEED to Step 2
+PROCEED to Step 3
 ```
 
-**STEP 2: Load Context from Knowledge Graph**
+**STEP 2: Load Context from Knowledge Graph via CLI**
 
 **IF** Graphiti is available (available == true from Step 1):
 
@@ -1763,26 +1844,41 @@ Parse the JSON output:
 **IF** context field is not null:
 ```
 SET task_context["graphiti_context"] = context_from_json
-DISPLAY: "[Graphiti] Context loaded: {categories} categories, {tokens_used}/{tokens_budget} tokens"
+DISPLAY: "[Graphiti] Context loaded via CLI: {categories} categories, {tokens_used}/{tokens_budget} tokens"
 ```
 
 **IF** context is null (loading failed):
 ```
-DISPLAY: "[Graphiti] Context: loading failed (continuing without)"
+DISPLAY: "[Graphiti] Context: loading failed via CLI (continuing without)"
          "  Error: {error from JSON}"
 SET task_context["graphiti_context"] = None
 ```
 
 **STEP 3: Store for Phase 2 Injection**
 
-The `graphiti_context` string (or None) is stored in `task_context` and injected into the Phase 2 planning prompt. See Phase 2 for the injection template.
+Both the MCP path (Step 0) and CLI path (Steps 1-2) produce `task_context["graphiti_context"]`
+as a text string (or None), and `task_context["graphiti_access_method"]` as `"mcp"`, `"cli"`,
+or `None`. These values are injected into the Phase 2 planning prompt. See Phase 2 for the
+injection template.
+
+Store the access method alongside the context:
+```python
+# Already set during Step 0 or Steps 1-2:
+# task_context["graphiti_access_method"] = "mcp" | "cli" | None
+# task_context["graphiti_context"] = context_string | None
+```
 
 **ERROR HANDLING**:
 
-All Graphiti operations follow the 3-layer graceful degradation pattern:
-1. Python script handles all errors internally and returns JSON
-2. Non-zero exit code = unavailable (script returns exit 1)
-3. If bash execution itself fails, treat as unavailable
+All Graphiti operations follow the 3-tier graceful degradation pattern
+(see `lib/graphiti-preamble.md`):
+
+1. **Tier 0 — MCP** (preferred): Direct tool calls with zero CLI overhead.
+   If MCP tools are not in the session, fall through to Tier 1/2.
+   If MCP calls return errors or empty results, set context to None and continue.
+2. **Tier 1/2 — CLI wrapper** (fallback): Python script handles errors internally,
+   returns JSON. Non-zero exit code = unavailable.
+3. If both paths fail, treat as unavailable and continue without context.
 
 Task-work NEVER blocks or fails due to Graphiti errors.
 
@@ -1803,25 +1899,38 @@ if is_graphiti_enabled():
     )
 ```
 
-**Example Flow**:
+**Example Flows**:
 
+MCP path (preferred — when Graphiti MCP tools are in session):
 ```
 /task-work TASK-a3f8
 
 Phase 1.5: Loading context...
 Phase 1.7: Graphiti Context Loading
 
-[Graphiti] Context loaded: 4 categories, 2800/4000 tokens
+[Graphiti] Context loaded via MCP: 5 entities, 3 facts
 
 Phase 2: Planning implementation with knowledge context...
 ```
 
-Or when unavailable:
+CLI fallback path (when MCP tools not available):
+```
+/task-work TASK-a3f8
+
+Phase 1.5: Loading context...
+Phase 1.7: Graphiti Context Loading
+
+[Graphiti] Context loaded via CLI: 4 categories, 2800/4000 tokens
+
+Phase 2: Planning implementation with knowledge context...
+```
+
+When unavailable (both paths fail):
 ```
 Phase 1.7: Graphiti Context Loading
 
 [Graphiti] Context: unavailable (continuing without)
-  Reason: Connection failed: Error 111 connecting to whitestocks:6379
+  Reason: MCP tools not in session; CLI: Connection failed
 
 Phase 2: Planning implementation...
 ```
@@ -2434,7 +2543,7 @@ clarification_context: {clarification_context}
 library_context: {list(library_context.keys())}
 {endif}
 {if task_context.graphiti_context:}
-graphiti_context: available
+graphiti_context: available ({task_context.graphiti_access_method or "cli"})
 {endif}
 </AGENT_CONTEXT>
 
@@ -2458,12 +2567,20 @@ Use these clarifications to inform your implementation plan.
 {endif}
 
 {if task_context.graphiti_context:}
-KNOWLEDGE GRAPH CONTEXT (from Phase 1.7 - Graphiti):
+KNOWLEDGE GRAPH CONTEXT (from Phase 1.7 - Graphiti, source: {task_context.graphiti_access_method}):
 The following context was retrieved from the project knowledge graph.
 Use this to inform architectural decisions, avoid known pitfalls, and
 build on successful patterns from previous tasks:
 
 {task_context.graphiti_context}
+
+IMPORTANT: In your plan output, include a "Context Used" section listing
+which knowledge graph items above influenced your plan decisions. Example:
+  ## Context Used
+  - Entity "AuthMiddleware": informed session management approach
+  - Fact "JWT preferred over sessions": guided token strategy
+{else:}
+No knowledge graph context available — planning from task description only.
 {endif}
 
 {if library_context:}
@@ -2524,6 +2641,7 @@ Duration: {phase_2_duration_seconds}s
 Files to create: {planned_file_count}
 Architecture patterns identified: {pattern_count}
 Risk factors: {risk_level}
+Knowledge context: {if task_context.graphiti_context:}used (source: {task_context.graphiti_access_method}){else:}none{endif}
 Status: Implementation plan generated successfully
 
 Proceeding to Phase 2.5A...

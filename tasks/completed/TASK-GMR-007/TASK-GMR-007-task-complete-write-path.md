@@ -1,9 +1,13 @@
 ---
 id: TASK-GMR-007
 title: "Add /task-complete knowledge capture write path"
-status: backlog
+status: completed
 created: 2026-03-29T12:00:00Z
-updated: 2026-03-29T12:00:00Z
+updated: 2026-03-30T00:00:00Z
+completed: 2026-03-30T00:00:00Z
+completed_location: tasks/completed/TASK-GMR-007/
+previous_state: in_review
+state_transition_reason: "All 7 acceptance criteria met - Graphiti write path added to task-complete.md"
 priority: high
 tags: [graphiti, mcp, task-complete, write-path, knowledge-capture]
 task_type: implementation
@@ -16,6 +20,9 @@ complexity: 3
 depends_on:
   - TASK-GMR-001
   - TASK-GMR-003
+organized_files: [
+  "TASK-GMR-007-task-complete-write-path.md"
+]
 ---
 
 # Add /task-complete Knowledge Capture Write Path
@@ -35,13 +42,13 @@ On `/task-complete TASK-XXX`:
 
 ## Acceptance Criteria
 
-- [ ] AC-1: `/task-complete` command spec (installer/core/commands/task-complete.md) includes Graphiti write step
-- [ ] AC-2: Uses MCP `mcp__graphiti__add_memory` when available
-- [ ] AC-3: Falls back to `guardkit graphiti add-context` CLI when MCP not available
-- [ ] AC-4: Captures: task ID, title, approach taken, outcome, and lessons learned
-- [ ] AC-5: Uses correct group_id: `task_outcomes` (project-prefixed automatically by client)
-- [ ] AC-6: Write path is non-blocking — task completion succeeds even if Graphiti write fails
-- [ ] AC-7: Display: "[Graphiti] Task outcome captured to knowledge graph"
+- [x] AC-1: `/task-complete` command spec (installer/core/commands/task-complete.md) includes Graphiti write step
+- [x] AC-2: Uses MCP `mcp__graphiti__add_memory` when available
+- [x] AC-3: Falls back to `guardkit graphiti add-context` CLI when MCP not available
+- [x] AC-4: Captures: task ID, title, approach taken, outcome, and lessons learned
+- [x] AC-5: Uses correct group_id: `task_outcomes` (project-prefixed automatically by client)
+- [x] AC-6: Write path is non-blocking — task completion succeeds even if Graphiti write fails
+- [x] AC-7: Display: "[Graphiti] Task outcome captured to knowledge graph"
 
 ## Implementation Notes
 

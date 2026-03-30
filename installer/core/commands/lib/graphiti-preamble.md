@@ -14,6 +14,33 @@ Python pseudocode like `get_graphiti()` will always be interpreted as unavailabl
 
 ---
 
+## Tier 0: MCP Tools (Preferred — Zero Overhead)
+
+Use this when Graphiti MCP tools are available in the current Claude Code session.
+
+**When to use**: Any command that reads from or searches the knowledge graph. MCP tools provide direct access with no CLI overhead.
+
+**Instructions for the LLM**:
+
+Check whether `mcp__graphiti__search_nodes` is available in the current session's tool list.
+
+- **IF** available:
+  - SET `graphiti_available = true`
+  - SET `graphiti_access_method = "mcp"`
+  - Use `mcp__graphiti__search_nodes` and `mcp__graphiti__search_memory_facts` directly
+  - Always pass explicit `group_ids` (see `.claude/rules/graphiti-knowledge-graph.md`)
+  - **Skip Tier 1 and Tier 2** — MCP handles connectivity internally
+
+- **IF** not available:
+  - Fall through to Tier 1 (Read-Based Check)
+
+> **Why prefer MCP?** MCP tools run in-process with the LLM session, avoiding
+> the overhead of spawning a Python subprocess via Bash. They also provide
+> richer results (structured entities and facts) compared to the CLI wrapper's
+> flat text output.
+
+---
+
 ## Tier 1: Read-Based Check (Always Available)
 
 Use this for a fast availability signal that requires no CLI tools.

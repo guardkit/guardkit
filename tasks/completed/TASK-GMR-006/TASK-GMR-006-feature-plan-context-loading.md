@@ -1,9 +1,13 @@
 ---
 id: TASK-GMR-006
 title: "Add pre-planning context to /feature-plan via MCP"
-status: backlog
+status: completed
 created: 2026-03-29T12:00:00Z
-updated: 2026-03-29T12:00:00Z
+updated: 2026-03-30T00:00:00Z
+completed: 2026-03-30T00:00:00Z
+previous_state: in_review
+state_transition_reason: "All acceptance criteria met - task complete"
+completed_location: tasks/completed/TASK-GMR-006/
 priority: medium
 tags: [graphiti, mcp, feature-plan, command-spec]
 task_type: implementation
@@ -35,11 +39,11 @@ depends_on:
 
 ## Acceptance Criteria
 
-- [ ] AC-1: `/feature-plan` spec (installer/core/commands/feature-plan.md) includes MCP context loading before plan generation
-- [ ] AC-2: Loaded context influences feature scope, risk assessment, and architecture decisions
-- [ ] AC-3: Existing post-generation seeding preserved (write path still works)
-- [ ] AC-4: CLI fallback when MCP not available
-- [ ] AC-5: Display: "[Graphiti] Feature context loaded: N items"
+- [x] AC-1: `/feature-plan` spec (installer/core/commands/feature-plan.md) includes MCP context loading before plan generation
+- [x] AC-2: Loaded context influences feature scope, risk assessment, and architecture decisions
+- [x] AC-3: Existing post-generation seeding preserved (write path still works)
+- [x] AC-4: CLI fallback when MCP not available
+- [x] AC-5: Display: "[Graphiti] Feature context loaded: N items"
 
 ## Implementation Notes
 

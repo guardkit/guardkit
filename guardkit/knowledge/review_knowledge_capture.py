@@ -247,6 +247,78 @@ class ReviewKnowledgeCapture:
         return result
 
 
+def format_review_for_graphiti(
+    task_context: Dict[str, Any],
+    review_findings: Dict[str, Any],
+) -> Dict[str, Dict[str, str]]:
+    """Format review data for Graphiti knowledge graph writes.
+
+    Produces two episodes ready for ``mcp__graphiti__add_memory`` or the
+    CLI ``guardkit graphiti add-context`` fallback:
+
+    * ``findings`` — key findings written to ``guardkit__project_decisions``
+    * ``outcome``  — score and recommendations written to ``guardkit__task_outcomes``
+
+    Args:
+        task_context: Task metadata (must include ``task_id``).
+        review_findings: Review results (must include ``mode``).
+
+    Returns:
+        Dict with ``findings`` and ``outcome`` keys, each containing
+        ``group_id``, ``name``, and ``content`` strings.
+    """
+    task_id = task_context.get("task_id", "unknown")
+    title = task_context.get("title", "")
+    review_mode = review_findings.get("mode", "unknown")
+    score = review_findings.get("score", "N/A")
+
+    # Build findings summary
+    finding_items = review_findings.get("findings", [])
+    findings_lines: List[str] = []
+    for f in finding_items:
+        if isinstance(f, dict):
+            desc = f.get("description", str(f))
+            severity = f.get("severity", "")
+            prefix = f"[{severity.upper()}] " if severity else ""
+            findings_lines.append(f"- {prefix}{desc}")
+        else:
+            findings_lines.append(f"- {f}")
+    findings_summary = "\n".join(findings_lines) if findings_lines else "No specific findings."
+
+    # Build recommendations summary
+    recommendations = review_findings.get("recommendations", [])
+    rec_lines: List[str] = []
+    for i, r in enumerate(recommendations, 1):
+        rec_text = r.get("text", str(r)) if isinstance(r, dict) else str(r)
+        rec_lines.append(f"{i}. {rec_text}")
+    rec_summary = "\n".join(rec_lines) if rec_lines else "No recommendations."
+
+    findings_episode = {
+        "group_id": "guardkit__project_decisions",
+        "name": f"Review findings: {task_id} ({review_mode})",
+        "content": (
+            f"Task {task_id} ({title}) - {review_mode} review.\n\n"
+            f"Key findings:\n{findings_summary}\n\n"
+            f"Score: {score}/100"
+        ),
+    }
+
+    outcome_episode = {
+        "group_id": "guardkit__task_outcomes",
+        "name": f"Review outcome: {task_id}",
+        "content": (
+            f"Review {task_id} completed. Mode: {review_mode}. "
+            f"Score: {score}/100.\n\n"
+            f"Recommendations:\n{rec_summary}"
+        ),
+    }
+
+    return {
+        "findings": findings_episode,
+        "outcome": outcome_episode,
+    }
+
+
 async def run_review_capture(
     task_context: Dict[str, Any],
     review_findings: Dict[str, Any],

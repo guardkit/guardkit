@@ -22,6 +22,7 @@ Restore the Graphiti MCP server configuration (proven working in agentic-dataset
 | 1 | TASK-GMR-001 | Restore Graphiti MCP configuration | task-work | 2 |
 | 1 | TASK-GMR-002 | Reverse anti-MCP instruction in task-work.md | task-work | 2 |
 | 1 | TASK-GMR-003 | Verify MCP tools available in Claude Code | direct | 2 |
+| 1 | TASK-GMR-011 | Add .mcp.json to guardkit init project setup | task-work | 3 |
 | 2 | TASK-GMR-004 | Update /task-work Phase 1.7 to use MCP | task-work | 4 |
 | 2 | TASK-GMR-005 | Add context loading to /task-review | task-work | 4 |
 | 2 | TASK-GMR-006 | Add pre-planning context to /feature-plan | task-work | 4 |
@@ -32,7 +33,7 @@ Restore the Graphiti MCP server configuration (proven working in agentic-dataset
 
 ## Execution Strategy
 
-- **Wave 1** (3 tasks, parallel): Restore MCP, verify it works
+- **Wave 1** (4 tasks, parallel): Restore MCP, verify it works, add to init
 - **Wave 2** (3 tasks, parallel): Update highest-value command specs
 - **Wave 3** (2 tasks, parallel): Add write paths for learning flywheel
 - **Wave 4** (2 tasks, parallel): Observability

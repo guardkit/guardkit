@@ -1,9 +1,13 @@
 ---
 id: TASK-GMR-005
 title: "Add Graphiti context loading to /task-review"
-status: backlog
+status: completed
+completed: 2026-03-30T00:00:00Z
+updated: 2026-03-30T00:00:00Z
+previous_state: in_review
+state_transition_reason: "All acceptance criteria met, task complete"
 created: 2026-03-29T12:00:00Z
-updated: 2026-03-29T12:00:00Z
+completed_location: tasks/completed/TASK-GMR-005/
 priority: high
 tags: [graphiti, mcp, task-review, command-spec]
 task_type: implementation
@@ -37,12 +41,12 @@ Add MCP-based context loading to Phase 1 of the task-review command spec.
 
 ## Acceptance Criteria
 
-- [ ] AC-1: Phase 1 of `/task-review` (installer/core/commands/task-review.md) includes MCP-based context loading
-- [ ] AC-2: Context loaded before Phase 2 (Execute Review Analysis) begins
-- [ ] AC-3: Loaded context passed to review agents (architectural-reviewer, code-reviewer, etc.)
-- [ ] AC-4: CLI wrapper fallback when MCP not available
-- [ ] AC-5: Display message: "[Graphiti] Review context loaded: N items from knowledge graph"
-- [ ] AC-6: Context influences review criteria (e.g., "Past reviews found X — check for recurrence")
+- [x] AC-1: Phase 1 of `/task-review` (installer/core/commands/task-review.md) includes MCP-based context loading
+- [x] AC-2: Context loaded before Phase 2 (Execute Review Analysis) begins
+- [x] AC-3: Loaded context passed to review agents (architectural-reviewer, code-reviewer, etc.)
+- [x] AC-4: CLI wrapper fallback when MCP not available
+- [x] AC-5: Display message: "[Graphiti] Review context loaded: N items from knowledge graph"
+- [x] AC-6: Context influences review criteria (e.g., "Past reviews found X — check for recurrence")
 
 ## Implementation Notes
 

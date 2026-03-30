@@ -1,9 +1,11 @@
 ---
 id: TASK-GMR-008
 title: "Add /task-review knowledge capture write path"
-status: backlog
+status: completed
 created: 2026-03-29T12:00:00Z
-updated: 2026-03-29T12:00:00Z
+updated: 2026-03-30T00:00:00Z
+completed: 2026-03-30T00:00:00Z
+completed_location: tasks/completed/TASK-GMR-008/
 priority: medium
 tags: [graphiti, mcp, task-review, write-path, knowledge-capture]
 task_type: implementation
@@ -16,6 +18,11 @@ complexity: 3
 depends_on:
   - TASK-GMR-001
   - TASK-GMR-003
+previous_state: in_review
+state_transition_reason: "All acceptance criteria met, tests passing"
+organized_files:
+  - TASK-GMR-008.md
+  - completion-report.md
 ---
 
 # Add /task-review Knowledge Capture Write Path
@@ -37,13 +44,13 @@ On `/task-review` [A]ccept:
 
 ## Acceptance Criteria
 
-- [ ] AC-1: [A]ccept at decision checkpoint triggers Graphiti write
-- [ ] AC-2: Uses MCP `mcp__graphiti__add_memory` when available
-- [ ] AC-3: Falls back to CLI when MCP not available
-- [ ] AC-4: Captures review mode, score, key findings, and recommendations
-- [ ] AC-5: Uses correct group_ids: `project_decisions` for findings, `task_outcomes` for score
-- [ ] AC-6: Non-blocking — review acceptance succeeds even if write fails
-- [ ] AC-7: Integrates with existing `--capture-knowledge` flag (Phase 4.5 in task-review spec)
+- [x] AC-1: [A]ccept at decision checkpoint triggers Graphiti write
+- [x] AC-2: Uses MCP `mcp__graphiti__add_memory` when available
+- [x] AC-3: Falls back to CLI when MCP not available
+- [x] AC-4: Captures review mode, score, key findings, and recommendations
+- [x] AC-5: Uses correct group_ids: `project_decisions` for findings, `task_outcomes` for score
+- [x] AC-6: Non-blocking — review acceptance succeeds even if write fails
+- [x] AC-7: Integrates with existing `--capture-knowledge` flag (Phase 4.5 in task-review spec)
 
 ## Implementation Notes
 

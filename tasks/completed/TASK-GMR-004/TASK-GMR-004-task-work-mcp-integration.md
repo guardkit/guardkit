@@ -1,9 +1,13 @@
 ---
 id: TASK-GMR-004
 title: "Update /task-work Phase 1.7 to use MCP tools"
-status: backlog
+status: completed
 created: 2026-03-29T12:00:00Z
-updated: 2026-03-29T12:00:00Z
+updated: 2026-03-30T00:00:00Z
+completed: 2026-03-30T00:00:00Z
+completed_location: tasks/completed/TASK-GMR-004/
+previous_state: in_review
+state_transition_reason: "All 6 acceptance criteria met - Phase 1.7 MCP-first workflow complete"
 priority: high
 tags: [graphiti, mcp, task-work, command-spec]
 task_type: implementation
@@ -47,12 +51,12 @@ Replace the fragile CLI wrapper integration in Phase 1.7 (`installer/core/comman
 
 ## Acceptance Criteria
 
-- [ ] AC-1: Phase 1.7 checks for MCP tool availability first
-- [ ] AC-2: MCP queries use appropriate group_ids (system + project groups from `.claude/rules/graphiti-knowledge-graph.md`)
-- [ ] AC-3: Query terms derived from task title and description
-- [ ] AC-4: CLI wrapper preserved as fallback when MCP not available
-- [ ] AC-5: Phase 2 injection template works with both MCP results and CLI wrapper results
-- [ ] AC-6: Display message indicates which path was used: "[Graphiti] Context loaded via MCP" or "[Graphiti] Context loaded via CLI"
+- [x] AC-1: Phase 1.7 checks for MCP tool availability first
+- [x] AC-2: MCP queries use appropriate group_ids (system + project groups from `.claude/rules/graphiti-knowledge-graph.md`)
+- [x] AC-3: Query terms derived from task title and description
+- [x] AC-4: CLI wrapper preserved as fallback when MCP not available
+- [x] AC-5: Phase 2 injection template works with both MCP results and CLI wrapper results
+- [x] AC-6: Display message indicates which path was used: "[Graphiti] Context loaded via MCP" or "[Graphiti] Context loaded via CLI"
 
 ## Implementation Notes
 

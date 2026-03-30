@@ -1,9 +1,13 @@
 ---
 id: TASK-GMR-001
 title: "Restore Graphiti MCP configuration to guardkit"
-status: backlog
+status: completed
 created: 2026-03-29T12:00:00Z
-updated: 2026-03-29T12:00:00Z
+updated: 2026-03-30T00:00:00Z
+completed: 2026-03-30T00:00:00Z
+previous_state: in_review
+state_transition_reason: "All acceptance criteria met, config verified identical to reference"
+completed_location: tasks/completed/TASK-GMR-001/
 priority: high
 tags: [graphiti, mcp, configuration]
 task_type: implementation
@@ -35,10 +39,10 @@ The configuration uses:
 
 ## Acceptance Criteria
 
-- [ ] AC-1: `.mcp.json` in guardkit root contains `graphiti` MCP server entry
-- [ ] AC-2: Configuration points to existing `graphiti/mcp_server/` and `config-guardkit.yaml`
-- [ ] AC-3: Environment variables set correctly (OPENAI_API_KEY, LLM_API_URL, EMBEDDING_API_URL, EMBEDDING_DIM)
-- [ ] AC-4: No other existing MCP server entries are disturbed
+- [x] AC-1: `.mcp.json` in guardkit root contains `graphiti` MCP server entry
+- [x] AC-2: Configuration points to existing `graphiti/mcp_server/` and `config-guardkit.yaml`
+- [x] AC-3: Environment variables set correctly (OPENAI_API_KEY, LLM_API_URL, EMBEDDING_API_URL, EMBEDDING_DIM)
+- [x] AC-4: No other existing MCP server entries are disturbed
 
 ## Implementation Notes
 

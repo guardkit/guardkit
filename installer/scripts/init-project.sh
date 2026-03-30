@@ -71,6 +71,48 @@ normalize_project_id() {
     echo "${normalized:0:50}"
 }
 
+# Find source .mcp.json by walking up from parent of cwd
+find_source_mcp_json() {
+    local start_dir="$1"
+    local current_dir="$start_dir"
+    local max_depth=10
+    local depth=0
+
+    while [ "$depth" -lt "$max_depth" ]; do
+        if [ -f "$current_dir/.mcp.json" ]; then
+            echo "$current_dir/.mcp.json"
+            return 0
+        fi
+        if [ "$current_dir" = "/" ]; then
+            return 1
+        fi
+        current_dir="$(dirname "$current_dir")"
+        depth=$((depth + 1))
+    done
+    return 1
+}
+
+# Copy .mcp.json to target project (straight copy, no modifications needed)
+copy_mcp_json() {
+    local source_file="$1"
+    local target_dir="$2"
+    local target_file="$target_dir/.mcp.json"
+
+    if [ ! -f "$source_file" ]; then
+        print_warning "Source .mcp.json not found: $source_file"
+        return 1
+    fi
+
+    if [ -f "$target_file" ]; then
+        print_warning ".mcp.json already exists in target project, skipping (not overwriting)"
+        return 0
+    fi
+
+    cp "$source_file" "$target_file"
+    print_success "Copied .mcp.json (MCP server config)"
+    return 0
+}
+
 # Find source graphiti.yaml by walking up from parent of cwd
 find_source_graphiti_config() {
     local start_dir="$1"
@@ -696,6 +738,7 @@ main() {
                 echo "  --copy-graphiti [PATH]     Copy Graphiti config from existing project"
                 echo "                             Without PATH: auto-discovers from parent directories"
                 echo "                             With PATH: copies from specified project directory"
+                echo "                             Also copies .mcp.json (MCP server config) if found"
                 echo "  -i, --interactive          Interactive setup mode"
                 echo "  -h, --help                 Show this help message"
                 exit 0
@@ -816,6 +859,28 @@ main() {
     else
         # Default: write minimal graphiti config with project_id
         write_graphiti_config "$PROJECT_DIR" "$project_id"
+    fi
+
+    # Copy .mcp.json for MCP server config (same file works for all projects)
+    local source_mcp=""
+    if [ -n "$COPY_GRAPHITI" ] && [ "$COPY_GRAPHITI" != "auto" ]; then
+        # If explicit path provided for --copy-graphiti, check there first
+        local explicit_path
+        explicit_path=$(eval echo "$COPY_GRAPHITI")  # expand ~
+        if [ -f "$explicit_path/.mcp.json" ]; then
+            source_mcp="$explicit_path/.mcp.json"
+        fi
+    fi
+    if [ -z "$source_mcp" ]; then
+        # Auto-discover: walk up from parent of cwd
+        local parent_dir
+        parent_dir="$(cd "$PROJECT_DIR/.." 2>/dev/null && pwd)"
+        source_mcp=$(find_source_mcp_json "$parent_dir" 2>/dev/null || true)
+    fi
+    if [ -n "$source_mcp" ]; then
+        copy_mcp_json "$source_mcp" "$PROJECT_DIR"
+    else
+        print_warning "No .mcp.json found in parent directories, skipping MCP config"
     fi
 
     print_next_steps

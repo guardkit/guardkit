@@ -1100,11 +1100,24 @@ class GraphitiClient:
                     self._apply_group_prefix(gid, scope) for gid in group_ids
                 ]
 
-            return await self._execute_search(
+            results = await self._execute_search(
                 query=query,
                 group_ids=prefixed_group_ids,
                 num_results=num_results
             )
+
+            # Log query result for data quality tracking
+            from guardkit.knowledge.query_logger import log_query, extract_preview
+            log_query(
+                operation="search",
+                query=query,
+                group_ids=group_ids,
+                result_count=len(results),
+                first_result_preview=extract_preview(results),
+                source="graphiti_client",
+            )
+
+            return results
         except Exception as e:
             logger.warning(f"Graphiti search failed: {e}")
             return []
@@ -1298,12 +1311,25 @@ class GraphitiClient:
         prefixed_group_id = self._apply_group_prefix(group_id, scope)
 
         try:
-            return await self._create_episode(
+            result = await self._create_episode(
                 name=name,
                 episode_body=episode_body_with_metadata,
                 group_id=prefixed_group_id,
                 timeout_override=timeout_override,
             )
+
+            # Log write operation for data quality tracking
+            from guardkit.knowledge.query_logger import log_query
+            log_query(
+                operation="add_episode",
+                query=name,
+                group_ids=[group_id],
+                result_count=1 if result else 0,
+                first_result_preview=episode_body[:50] if episode_body else None,
+                source="graphiti_client",
+            )
+
+            return result
         except Exception as e:
             logger.warning(f"Graphiti add_episode failed: {e}")
             return None
