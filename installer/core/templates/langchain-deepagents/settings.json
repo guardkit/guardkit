@@ -100,6 +100,16 @@
         "!test_*.py"
       ]
     },
+    "Hooks": {
+      "name": "Hooks",
+      "directory": "src/Hooks",
+      "namespace_pattern": "{{project_name}}.hooks",
+      "file_patterns": [
+        "*.py",
+        "!*_test.py",
+        "!test_*.py"
+      ]
+    },
     "Runtime Config": {
       "name": "Runtime Config",
       "directory": "src/Runtime Config",

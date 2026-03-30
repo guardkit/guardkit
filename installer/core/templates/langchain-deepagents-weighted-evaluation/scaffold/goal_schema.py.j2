@@ -1,0 +1,439 @@
+"""Domain configuration schema for weighted evaluation.
+
+Defines the GOAL.md / DOMAIN.md schema with weighted evaluation criteria.
+Each domain specifies criteria with weights that sum to 1.0.
+
+Template variables:
+    {{DomainName}} — Domain identifier
+
+Populated by: TASK-TI-012 (Domain Configuration Schema)
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass
+class EvaluationCriterion:
+    """A single weighted evaluation criterion.
+
+    Attributes:
+        name: Criterion identifier (e.g., "accuracy", "completeness").
+        weight: Weight in the composite score (0.0 to 1.0). All weights must sum to 1.0.
+        description: Human-readable description of what this criterion evaluates.
+        accept_example: Example of content that passes this criterion.
+        reject_example: Example of content that fails this criterion.
+        score_range: Valid score range string (e.g., "0.0-1.0" or "1-5").
+    """
+
+    name: str
+    weight: float
+    description: str = ""
+    accept_example: str = ""
+    reject_example: str = ""
+    score_range: str = "0.0-1.0"
+
+
+@dataclass
+class MetadataFieldSchema:
+    """Schema definition for a metadata field from GOAL.md table.
+
+    Maps to MetadataField from domain_validator.py at conversion time.
+    """
+
+    name: str
+    type: str = "string"  # string, integer, float, array, boolean
+    valid_values: str = ""  # Raw from table: "enum: [a, b]" or "range: 1-5" or "range: 1+"
+    required: bool = False
+    description: str = ""
+
+
+@dataclass
+class QualityThresholds:
+    """Quality threshold configuration from GOAL.md."""
+
+    minimum_weighted_score: float = 0.7
+    required_fields: list[str] = field(default_factory=list)
+    format_requirements: list[str] = field(default_factory=list)
+
+
+@dataclass
+class GoalSchema:
+    """Schema for a domain's GOAL.md configuration.
+
+    Defines the evaluation criteria, output format, and generation
+    guidelines for a specific domain.
+
+    Attributes:
+        domain_name: Domain identifier.
+        domain_description: What this domain is about.
+        criteria: List of weighted evaluation criteria.
+        output_schema: JSON schema for Player output.
+        generation_guidelines: Instructions for the Player.
+        metadata_schema: List of metadata field definitions from GOAL.md table.
+        quality_thresholds: Quality threshold configuration.
+        generation_target: Description of what the Player agent should generate.
+    """
+
+    domain_name: str
+    domain_description: str = ""
+    criteria: list[EvaluationCriterion] = field(default_factory=list)
+    output_schema: dict[str, Any] = field(default_factory=dict)
+    generation_guidelines: list[str] = field(default_factory=list)
+    metadata_schema: list[MetadataFieldSchema] = field(default_factory=list)
+    quality_thresholds: QualityThresholds | None = None
+    generation_target: str = ""
+
+    def validate_weights(self) -> bool:
+        """Check that criteria weights sum to 1.0 (within tolerance)."""
+        if not self.criteria:
+            return True
+        total = sum(c.weight for c in self.criteria)
+        return abs(total - 1.0) < 0.01
+
+    def criteria_as_dict(self) -> dict[str, float]:
+        """Return criteria as a name -> weight mapping."""
+        return {c.name: c.weight for c in self.criteria}
+
+
+# Default criteria for new domains
+DEFAULT_CRITERIA = [
+    EvaluationCriterion(
+        name="accuracy",
+        weight=0.3,
+        description="All claims supported by cited sources",
+        accept_example="Every factual statement has a source reference",
+        reject_example="Claims made without evidence or citation",
+    ),
+    EvaluationCriterion(
+        name="completeness",
+        weight=0.3,
+        description="Content addresses the request fully",
+        accept_example="All aspects of the query are covered",
+        reject_example="Major aspects of the query are missing",
+    ),
+    EvaluationCriterion(
+        name="structure",
+        weight=0.2,
+        description="Output follows required JSON schema",
+        accept_example="Valid JSON with all required fields",
+        reject_example="Missing fields or invalid JSON",
+    ),
+    EvaluationCriterion(
+        name="quality",
+        weight=0.2,
+        description="Writing quality and clarity",
+        accept_example="Clear, well-organized content",
+        reject_example="Incoherent or poorly structured text",
+    ),
+]
+
+
+DEFAULT_QUALITY_THRESHOLDS = QualityThresholds(
+    minimum_weighted_score=0.7,
+    required_fields=[],
+    format_requirements=[],
+)
+
+
+# ---------------------------------------------------------------------------
+# Markdown parsing utilities
+# ---------------------------------------------------------------------------
+
+
+def _parse_markdown_table(section: str) -> list[dict[str, str]]:
+    """Parse a generic markdown table into a list of row dicts.
+
+    Returns list of dicts keyed by header names (whitespace stripped).
+    Skips separator rows (containing only dashes, pipes, and spaces).
+    Handles rows with leading/trailing pipes.
+
+    Args:
+        section: A markdown section string that may contain a table.
+
+    Returns:
+        List of dicts, one per data row, keyed by column header names.
+    """
+    rows: list[dict[str, str]] = []
+    headers: list[str] = []
+
+    for line in section.splitlines():
+        stripped = line.strip()
+        if not stripped or not stripped.startswith("|"):
+            continue
+
+        # Skip separator rows: cells contain only dashes (and optional colons)
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        if all(re.match(r"^[-:]+$", c) for c in cells if c):
+            continue
+
+        if not headers:
+            headers = cells
+        else:
+            # Pad or truncate to header count
+            padded = cells + [""] * max(0, len(headers) - len(cells))
+            row = {headers[i]: padded[i] for i in range(len(headers))}
+            rows.append(row)
+
+    return rows
+
+
+def _parse_metadata_table(section: str) -> list[MetadataFieldSchema]:
+    """Parse a GOAL.md metadata table into MetadataFieldSchema objects.
+
+    Expected columns: Field, Type, Valid Values, Required, Description.
+
+    Args:
+        section: Markdown section string containing the metadata table.
+
+    Returns:
+        List of MetadataFieldSchema instances.
+    """
+    fields: list[MetadataFieldSchema] = []
+    for row in _parse_markdown_table(section):
+        name = row.get("Field", "").strip()
+        if not name:
+            continue
+        required_raw = row.get("Required", "no").strip().lower()
+        fields.append(
+            MetadataFieldSchema(
+                name=name,
+                type=row.get("Type", "string").strip() or "string",
+                valid_values=row.get("Valid Values", "").strip(),
+                required=required_raw in ("yes", "true", "1"),
+                description=row.get("Description", "").strip(),
+            )
+        )
+    return fields
+
+
+def _parse_criteria_table(section: str) -> list[EvaluationCriterion]:
+    """Parse a GOAL.md evaluation criteria table into EvaluationCriterion objects.
+
+    Expected columns: Criterion, Weight, Description, Score Range.
+    Weight can be "0.3" or "30%" — both are handled.
+
+    Args:
+        section: Markdown section string containing the criteria table.
+
+    Returns:
+        List of EvaluationCriterion instances.
+    """
+    criteria: list[EvaluationCriterion] = []
+    for row in _parse_markdown_table(section):
+        name = row.get("Criterion", "").strip()
+        if not name:
+            continue
+
+        weight_raw = row.get("Weight", "0").strip()
+        if weight_raw.endswith("%"):
+            weight = float(weight_raw.rstrip("%")) / 100.0
+        else:
+            weight = float(weight_raw) if weight_raw else 0.0
+
+        criteria.append(
+            EvaluationCriterion(
+                name=name,
+                weight=weight,
+                description=row.get("Description", "").strip(),
+                score_range=row.get("Score Range", "0.0-1.0").strip() or "0.0-1.0",
+            )
+        )
+    return criteria
+
+
+def _parse_list_value(value: str) -> list[str]:
+    """Parse a bracketed or bare comma-separated list into a Python list.
+
+    Handles:
+    - "[a, b, c]" bracket notation
+    - "a, b, c" bare comma-separated values
+    - "" empty string -> []
+
+    Args:
+        value: Raw string value from a GOAL.md bullet.
+
+    Returns:
+        List of stripped string items.
+    """
+    value = value.strip()
+    if not value:
+        return []
+
+    # Strip bracket notation
+    if value.startswith("[") and value.endswith("]"):
+        value = value[1:-1]
+
+    if not value.strip():
+        return []
+
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _parse_quality_thresholds(section: str) -> QualityThresholds:
+    """Parse a GOAL.md Quality Thresholds section into a QualityThresholds object.
+
+    Expected bullet list format:
+        - minimum_weighted_score: 0.7
+        - required_fields: [topic, difficulty]
+        - format_requirements: [think_blocks, json_structure]
+
+    Missing keys fall back to QualityThresholds defaults.
+
+    Args:
+        section: Markdown section string with the threshold bullet list.
+
+    Returns:
+        Populated QualityThresholds instance.
+    """
+    minimum_weighted_score = 0.7
+    required_fields: list[str] = []
+    format_requirements: list[str] = []
+
+    for line in section.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("-"):
+            continue
+        # Strip leading dash and whitespace
+        content = stripped.lstrip("-").strip()
+        if ":" not in content:
+            continue
+        key, _, raw_value = content.partition(":")
+        key = key.strip()
+        raw_value = raw_value.strip()
+
+        if key == "minimum_weighted_score":
+            try:
+                minimum_weighted_score = float(raw_value)
+            except ValueError:
+                pass
+        elif key == "required_fields":
+            required_fields = _parse_list_value(raw_value)
+        elif key == "format_requirements":
+            format_requirements = _parse_list_value(raw_value)
+
+    return QualityThresholds(
+        minimum_weighted_score=minimum_weighted_score,
+        required_fields=required_fields,
+        format_requirements=format_requirements,
+    )
+
+
+def parse_goal_md(text: str) -> GoalSchema:
+    """Parse a GOAL.md markdown file into a GoalSchema.
+
+    Expected sections:
+    - # Domain: {name}  (H1 heading)
+    - ## Generation Target
+    - ## Metadata Schema (markdown table)
+    - ## Evaluation Criteria (markdown table)
+    - ## Quality Thresholds (bullet list)
+
+    The domain name is extracted from the H1 heading: '# Domain: {name}'.
+    Missing sections produce empty/default values (graceful degradation).
+
+    Args:
+        text: Full content of a GOAL.md file.
+
+    Returns:
+        Populated GoalSchema instance.
+    """
+    # Extract domain name from H1
+    domain_name = "unknown"
+    for line in text.splitlines():
+        m = re.match(r"^#\s+Domain:\s*(.+)$", line.strip())
+        if m:
+            domain_name = m.group(1).strip()
+            break
+
+    # Split into sections by ## headings
+    sections: dict[str, str] = {}
+    current_key: str | None = None
+    current_lines: list[str] = []
+
+    for line in text.splitlines():
+        h2 = re.match(r"^##\s+(.+)$", line.strip())
+        if h2:
+            if current_key is not None:
+                sections[current_key] = "\n".join(current_lines)
+            current_key = h2.group(1).strip()
+            current_lines = []
+        else:
+            if current_key is not None:
+                current_lines.append(line)
+
+    if current_key is not None:
+        sections[current_key] = "\n".join(current_lines)
+
+    # Parse each section
+    generation_target = sections.get("Generation Target", "").strip()
+    metadata_schema = _parse_metadata_table(sections.get("Metadata Schema", ""))
+    criteria = _parse_criteria_table(sections.get("Evaluation Criteria", ""))
+
+    quality_thresholds: QualityThresholds | None = None
+    if "Quality Thresholds" in sections:
+        quality_thresholds = _parse_quality_thresholds(sections["Quality Thresholds"])
+
+    return GoalSchema(
+        domain_name=domain_name,
+        generation_target=generation_target,
+        metadata_schema=metadata_schema,
+        criteria=criteria,
+        quality_thresholds=quality_thresholds,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Coach prompt generation
+# ---------------------------------------------------------------------------
+
+
+def build_coach_criteria_section(goal: GoalSchema) -> str:
+    """Generate Coach prompt criteria section from GoalSchema.
+
+    Produces markdown-formatted criteria with weights, descriptions,
+    score ranges, and quality threshold rules.
+
+    This complements build_weighted_coach_prompt() in coach_template.py
+    by providing a GoalSchema-aware criteria section with score range info.
+
+    Args:
+        goal: A GoalSchema instance with criteria and optional quality_thresholds.
+
+    Returns:
+        Markdown-formatted string suitable for inclusion in a Coach prompt.
+    """
+    parts: list[str] = []
+
+    parts.append("## Evaluation Criteria\n")
+
+    for criterion in goal.criteria:
+        weight_pct = f"{criterion.weight:.0%}"
+        parts.append(f"\n### {criterion.name} (weight: {weight_pct})\n")
+        if criterion.description:
+            parts.append(f"{criterion.description}\n")
+        parts.append(f"- **Score range**: {criterion.score_range}\n")
+        if criterion.accept_example:
+            parts.append(f"- **ACCEPT example**: {criterion.accept_example}\n")
+        if criterion.reject_example:
+            parts.append(f"- **REJECT example**: {criterion.reject_example}\n")
+
+    # Quality thresholds section
+    thresholds = goal.quality_thresholds or DEFAULT_QUALITY_THRESHOLDS
+    parts.append("\n## Quality Thresholds\n")
+    parts.append(
+        f"- Minimum weighted score: {thresholds.minimum_weighted_score}\n"
+    )
+
+    if thresholds.required_fields:
+        fields_str = ", ".join(thresholds.required_fields)
+        parts.append(f"- Required fields: {fields_str}\n")
+
+    if thresholds.format_requirements:
+        reqs_str = ", ".join(thresholds.format_requirements)
+        parts.append(f"- Format requirements: {reqs_str}\n")
+
+    return "".join(parts)

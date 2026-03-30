@@ -1,0 +1,27 @@
+# Domain: {{ domain_name }}
+
+## Generation Target
+
+{{ generation_target | default("Describe what the Player agent should generate for this domain.") }}
+
+## Metadata Schema
+
+| Field | Type | Valid Values | Required | Description |
+|-------|------|-------------|----------|-------------|
+{% for f in metadata_schema -%}
+| {{ f.name }} | {{ f.type }} | {{ f.valid_values }} | {{ "yes" if f.required else "no" }} | {{ f.description }} |
+{% endfor %}
+
+## Evaluation Criteria
+
+| Criterion | Weight | Description | Score Range |
+|-----------|--------|-------------|-------------|
+{% for c in evaluation_criteria -%}
+| {{ c.name }} | {{ c.weight }} | {{ c.description }} | {{ c.score_range | default("0.0-1.0") }} |
+{% endfor %}
+
+## Quality Thresholds
+
+- minimum_weighted_score: {{ quality_thresholds.minimum_weighted_score | default(0.7) }}
+- required_fields: [{{ quality_thresholds.required_fields | default([]) | join(", ") }}]
+- format_requirements: [{{ quality_thresholds.format_requirements | default([]) | join(", ") }}]

@@ -1,9 +1,11 @@
 ---
 id: TASK-TI-026
 title: Document two-template architecture and evaluation model distinction
-status: backlog
+status: completed
 created: 2026-03-30T00:30:00Z
-updated: 2026-03-30T00:30:00Z
+updated: 2026-03-30T00:00:00Z
+completed: 2026-03-30T00:00:00Z
+completed_location: tasks/completed/TASK-TI-026/
 priority: p1
 tags: [template, documentation, architecture, weighted-evaluation]
 complexity: 3
@@ -11,7 +13,7 @@ parent_review: TASK-REV-32D2
 feature_id: FEAT-TI
 wave: 4
 implementation_mode: direct
-depends_on: [TASK-TI-025]
+depends_on: []
 test_results:
   status: pending
   coverage: null
@@ -72,11 +74,11 @@ Document the three proven use cases:
 
 ## Acceptance Criteria
 
-- [ ] Base template CLAUDE.md updated with clear scope description
-- [ ] Weighted-evaluation template CLAUDE.md created
-- [ ] Template selection guide written
-- [ ] Three cross-domain examples documented
-- [ ] Both templates reference each other for discoverability
+- [x] Base template CLAUDE.md updated with clear scope description
+- [x] Weighted-evaluation template CLAUDE.md created
+- [x] Template selection guide written
+- [x] Three cross-domain examples documented
+- [x] Both templates reference each other for discoverability
 
 ## Effort Estimate
 

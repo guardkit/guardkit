@@ -1,9 +1,11 @@
 ---
 id: TASK-TI-015
 title: Human-in-the-loop checkpoint hooks
-status: backlog
+status: completed
 created: 2026-03-27T22:00:00Z
-updated: 2026-03-27T22:00:00Z
+updated: 2026-03-30T00:00:00Z
+completed: 2026-03-30T00:00:00Z
+completed_location: tasks/completed/TASK-TI-015/
 priority: p3
 tags: [template, adversarial, hitl, hooks]
 complexity: 4
@@ -13,9 +15,10 @@ wave: 4
 implementation_mode: task-work
 depends_on: [TASK-TI-010]
 test_results:
-  status: pending
+  status: passed
+  tests: 57
   coverage: null
-  last_run: null
+  last_run: 2026-03-30T00:00:00Z
 ---
 
 # Task: Human-in-the-Loop Checkpoint Hooks
@@ -65,14 +68,14 @@ checkpoints:
 
 ## Acceptance Criteria
 
-- [ ] Five checkpoint types implemented
-- [ ] CLI mode with interactive prompts
-- [ ] Webhook mode with async response handling
-- [ ] Auto-approve mode for fully automated pipelines
-- [ ] Configurable which stages have checkpoints
-- [ ] CheckpointDecision: proceed, skip, override, abort
-- [ ] Unit tests for each hook type and decision
-- [ ] Integration test with CLI hook in orchestrator flow
+- [x] Five checkpoint types implemented
+- [x] CLI mode with interactive prompts
+- [x] Webhook mode with async response handling
+- [x] Auto-approve mode for fully automated pipelines
+- [x] Configurable which stages have checkpoints
+- [x] CheckpointDecision: proceed, skip, override, abort
+- [x] Unit tests for each hook type and decision
+- [x] Integration test with CLI hook in orchestrator flow
 
 ## Effort Estimate
 

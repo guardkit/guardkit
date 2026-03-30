@@ -1,9 +1,11 @@
 ---
 id: TASK-TI-016
 title: Sprint contract negotiation pattern
-status: backlog
+status: completed
 created: 2026-03-27T22:00:00Z
-updated: 2026-03-27T22:00:00Z
+updated: 2026-03-30T00:00:00Z
+completed: 2026-03-30T00:00:00Z
+completed_location: tasks/completed/TASK-TI-016/
 priority: p3
 tags: [template, adversarial, orchestration, sprint]
 complexity: 5
@@ -13,9 +15,11 @@ wave: 4
 implementation_mode: task-work
 depends_on: [TASK-TI-010, TASK-TI-015]
 test_results:
-  status: pending
+  status: passed
   coverage: null
-  last_run: null
+  last_run: 2026-03-30T00:00:00Z
+  tests_passed: 31
+  tests_failed: 0
 ---
 
 # Task: Sprint Contract Negotiation Pattern
@@ -60,14 +64,14 @@ class SprintContract:
 
 ## Acceptance Criteria
 
-- [ ] SprintContract dataclass with all fields
-- [ ] Negotiation flow: propose -> review -> counter-propose -> accept
-- [ ] Player feasibility check (can it handle the targets?)
-- [ ] Four escalation policies implemented
-- [ ] Contract logged for audit trail
-- [ ] Integration with HITL hooks for escalation
-- [ ] Unit tests for negotiation flow and escalation
-- [ ] Integration test: full negotiate -> execute -> evaluate cycle
+- [x] SprintContract dataclass with all fields
+- [x] Negotiation flow: propose -> review -> counter-propose -> accept
+- [x] Player feasibility check (can it handle the targets?)
+- [x] Four escalation policies implemented
+- [x] Contract logged for audit trail
+- [x] Integration with HITL hooks for escalation
+- [x] Unit tests for negotiation flow and escalation
+- [x] Integration test: full negotiate -> execute -> evaluate cycle
 
 ## Effort Estimate
 

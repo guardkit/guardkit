@@ -1,9 +1,11 @@
 ---
 id: TASK-TI-009
 title: Create langchain-deepagents-weighted-evaluation template scaffold
-status: backlog
+status: completed
 created: 2026-03-27T22:00:00Z
-updated: 2026-03-27T22:00:00Z
+updated: 2026-03-29T00:00:00Z
+completed: 2026-03-29T00:00:00Z
+completed_location: tasks/completed/TASK-TI-009/
 priority: p3
 tags: [template, adversarial, scaffold]
 complexity: 6
@@ -12,10 +14,17 @@ feature_id: FEAT-TI
 wave: 4
 implementation_mode: task-work
 depends_on: [TASK-TI-001, TASK-TI-002, TASK-TI-003, TASK-TI-004, TASK-TI-005, TASK-TI-006]
+previous_state: in_review
+state_transition_reason: "All acceptance criteria met, 53/53 tests passing"
 test_results:
-  status: pending
+  status: passed
+  total: 53
+  passed: 53
+  failed: 0
   coverage: null
-  last_run: null
+  last_run: 2026-03-29T00:00:00Z
+organized_files:
+  - TASK-TI-009.md
 ---
 
 # Task: Adversarial Template Scaffold
@@ -63,11 +72,11 @@ langchain-deepagents-weighted-evaluation/
 
 ## Acceptance Criteria
 
-- [ ] Template scaffold created with correct directory structure
-- [ ] SKILL.md with template metadata and variable definitions
-- [ ] Extends base template (inherits JsonExtractor, guards, validator)
-- [ ] Template variables documented with defaults
-- [ ] Smoke test: template generates a minimal adversarial agent project
+- [x] Template scaffold created with correct directory structure
+- [x] SKILL.md with template metadata and variable definitions
+- [x] Extends base template (inherits JsonExtractor, guards, validator)
+- [x] Template variables documented with defaults
+- [x] Smoke test: template generates a minimal adversarial agent project
 
 ## Effort Estimate
 

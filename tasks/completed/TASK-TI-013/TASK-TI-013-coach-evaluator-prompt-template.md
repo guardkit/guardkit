@@ -1,9 +1,13 @@
 ---
 id: TASK-TI-013
 title: Coach/Evaluator prompt template with weighted criteria and scepticism tuning
-status: backlog
+status: completed
+completed: 2026-03-29T00:00:00Z
+completed_location: tasks/completed/TASK-TI-013/
+updated: 2026-03-29T00:00:00Z
+previous_state: in_review
+state_transition_reason: "All acceptance criteria met, 99/99 tests passing"
 created: 2026-03-27T22:00:00Z
-updated: 2026-03-27T22:00:00Z
 priority: p3
 tags: [template, adversarial, prompts, coach]
 complexity: 5
@@ -13,9 +17,11 @@ wave: 4
 implementation_mode: task-work
 depends_on: [TASK-TI-002, TASK-TI-009]
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  total: 99
+  passed: 99
+  failed: 0
+  last_run: 2026-03-29T00:00:00Z
 ---
 
 # Task: Coach/Evaluator Prompt Template
@@ -54,13 +60,13 @@ Create the Coach/Evaluator prompt template for the adversarial template. This en
 
 ## Acceptance Criteria
 
-- [ ] Weighted criteria auto-generated from GOAL.md
-- [ ] Three scepticism levels with distinct prompt language
-- [ ] CRITICAL JSON response format at end of prompt
-- [ ] Explicit accept/reject examples
-- [ ] Think block verification configurable per domain
-- [ ] Unit tests for prompt generation at each scepticism level
-- [ ] Integration test: Coach prompt + mock evaluation
+- [x] Weighted criteria auto-generated from GOAL.md
+- [x] Three scepticism levels with distinct prompt language
+- [x] CRITICAL JSON response format at end of prompt
+- [x] Explicit accept/reject examples
+- [x] Think block verification configurable per domain
+- [x] Unit tests for prompt generation at each scepticism level
+- [x] Integration test: Coach prompt + mock evaluation
 
 ## Effort Estimate
 

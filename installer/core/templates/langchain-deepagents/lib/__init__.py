@@ -13,6 +13,9 @@ Exports:
     JsonExtractor: 5-strategy cascade JSON extractor for LLM outputs.
     JsonExtractionError: Raised when all extraction strategies fail.
     normalise_think_closing_tags: Stand-alone helper (also available via JsonExtractor).
+    ContentPipeline: Canonical content processing pipeline (normalize->extract->validate->write).
+    PipelineResult: Outcome of the full pipeline execution.
+    StageResult: Outcome of a single pipeline stage execution.
     ToolLeakageError: Raised when agent tool inventory doesn't match expected set.
     assert_tool_inventory: Post-factory assertion for tool allowlisting.
     create_restricted_agent: Agent factory that bypasses FilesystemMiddleware.
@@ -28,6 +31,23 @@ Exports:
     PreflightReport: Aggregated preflight validation report.
     run_preflight: Run all preflight checks against a project directory.
     format_report: Format a PreflightReport for terminal display.
+    CheckpointStage: Pipeline stages where HITL checkpoints can be inserted.
+    CheckpointDecision: Human decision at a checkpoint (proceed/skip/override/abort).
+    CheckpointContext: Context passed to checkpoint hooks at each stage.
+    CheckpointConfig: Configuration for checkpoint hooks.
+    CheckpointHook: Base class for checkpoint hooks.
+    CLICheckpointHook: Interactive CLI prompts for human review.
+    WebhookCheckpointHook: Posts to webhook URL, waits for response.
+    AutoApproveHook: No-op hook for fully automated pipelines.
+    create_checkpoint_hook: Factory to create the appropriate hook from config.
+    EscalationPolicy: Enum for sprint escalation strategies (retry/escalate/skip/abort).
+    QualityThreshold: Minimum acceptance criteria for Coach evaluation.
+    Target: A single generation target within a sprint.
+    SprintContract: Structured agreement between Orchestrator and Player.
+    FeasibilityResult: Player's assessment of contract feasibility.
+    NegotiationResult: Outcome of the negotiate() call.
+    EscalationResult: Outcome of applying an escalation policy.
+    SprintNegotiator: Orchestrates contract negotiation and escalation.
 """
 
 from .domain_validator import (
@@ -48,6 +68,7 @@ from .factory_guards import (
     create_restricted_agent,
 )
 from .json_extractor import JsonExtractionError, JsonExtractor
+from .content_pipeline import ContentPipeline, PipelineResult, StageResult
 from .observability import (
     PipelineStageLogger,
     StageTimer,
@@ -63,16 +84,51 @@ from .preflight import (
     format_report,
     run_preflight,
 )
+from .checkpoint_hooks import (
+    AutoApproveHook,
+    CheckpointConfig,
+    CheckpointContext,
+    CheckpointDecision,
+    CheckpointHook,
+    CheckpointStage,
+    CLICheckpointHook,
+    WebhookCheckpointHook,
+    create_checkpoint_hook,
+)
+from .sprint_contract import (
+    EscalationPolicy,
+    EscalationResult,
+    FeasibilityResult,
+    NegotiationResult,
+    QualityThreshold,
+    SprintContract,
+    SprintNegotiator,
+    Target,
+)
 
 normalise_think_closing_tags = JsonExtractor.normalise_think_closing_tags
 
 __all__ = [
+    "AutoApproveHook",
+    "CheckpointConfig",
+    "CheckpointContext",
+    "CheckpointDecision",
+    "CheckpointHook",
+    "CheckpointStage",
+    "CLICheckpointHook",
+    "ContentPipeline",
+    "EscalationPolicy",
+    "EscalationResult",
+    "FeasibilityResult",
     "DomainValidator",
     "FieldType",
     "JsonExtractor",
     "JsonExtractionError",
     "MetadataField",
+    "NegotiationResult",
+    "PipelineResult",
     "PipelineStageLogger",
+    "QualityThreshold",
     "StageTimer",
     "StageTimingRecord",
     "TokenTracker",
@@ -80,9 +136,11 @@ __all__ = [
     "ValidationError",
     "ValidationResult",
     "ToolLeakageError",
+    "WebhookCheckpointHook",
     "assert_no_system_messages",
     "assert_tool_inventory",
     "configure_logging",
+    "create_checkpoint_hook",
     "create_restricted_agent",
     "log_error_context",
     "coerce_value",
@@ -94,4 +152,8 @@ __all__ = [
     "PreflightReport",
     "format_report",
     "run_preflight",
+    "SprintContract",
+    "SprintNegotiator",
+    "StageResult",
+    "Target",
 ]

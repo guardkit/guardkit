@@ -1,0 +1,523 @@
+"""Three-role orchestrator wiring for weighted adversarial cooperation.
+
+Extends the base Orchestrator pattern with weighted evaluation:
+- Player produces content using domain tools
+- Coach evaluates against weighted criteria
+- Orchestrator writes ONLY after weighted score >= acceptance threshold
+
+Template variables:
+    {{ProjectName}} — Project identifier
+    {{DomainName}} — Domain for GOAL.md loading
+    {{AdversarialIntensity}} — full | light | solo
+    {{AcceptanceThreshold}} — Minimum weighted score (0.0-1.0)
+    {{MaxRetries}} — Maximum Player revision attempts
+
+Populated by: TASK-TI-010 (Three-Role Scaffold)
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import os
+import pathlib
+from typing import Any, Callable, Sequence
+
+from {{ProjectName}}.scaffold.pipeline import (
+    WeightedEvaluationPipeline,
+    WeightedVerdict,
+    PipelineResult,
+)
+from {{ProjectName}}.config.adversarial_config import load_adversarial_config
+from {{ProjectName}}.prompts.coach_template import build_weighted_coach_prompt
+from {{ProjectName}}.prompts.adversarial_base import (
+    PLAYER_SYSTEM_PROMPT,
+    build_player_prompt_with_domain,
+)
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Tool allowlists (TRF-003, TRF-005 — prevent tool leakage)
+# ---------------------------------------------------------------------------
+
+PLAYER_ALLOWED_TOOLS: set[str] = {"search_data"}
+COACH_ALLOWED_TOOLS: set[str] = set()  # Coach: evaluation only, no tools
+
+
+# ---------------------------------------------------------------------------
+# Agent factories
+# ---------------------------------------------------------------------------
+
+def create_player_agent(
+    model: Any,
+    tools: Sequence[Any],
+    domain_prompt: str,
+    *,
+    memory: list[str] | None = None,
+) -> Any:
+    """Create a restricted Player agent with domain tools only.
+
+    Uses create_restricted_agent() to avoid FilesystemMiddleware injection.
+    Asserts tool inventory at factory exit (TRF-003, TRF-012).
+
+    Args:
+        model: LLM model instance.
+        tools: Domain-specific tools (e.g., search_data).
+        domain_prompt: Content from DOMAIN.md.
+        memory: Optional memory file paths (e.g., AGENTS.md).
+
+    Returns:
+        Configured Player agent with curated tool access.
+    """
+    from lib.factory_guards import create_restricted_agent, validate_player_tools
+
+    validate_player_tools(list(tools))
+    system_prompt = build_player_prompt_with_domain(domain_prompt)
+
+    return create_restricted_agent(
+        model=model,
+        tools=list(tools),
+        system_prompt=system_prompt,
+        memory=memory,
+        allowed_tools=PLAYER_ALLOWED_TOOLS,
+    )
+
+
+def create_coach_agent(
+    model: Any,
+    domain_prompt: str,
+    adversarial_config: dict[str, Any],
+    *,
+    memory: list[str] | None = None,
+    scepticism: str = "moderate",
+) -> Any:
+    """Create a restricted Coach agent with NO tools (D5 invariant).
+
+    Uses create_restricted_agent() with empty tool list.
+    Coach evaluates only — no side effects.
+
+    Args:
+        model: LLM model instance.
+        domain_prompt: Content from DOMAIN.md.
+        adversarial_config: Configuration with evaluation criteria.
+        memory: Optional memory file paths (e.g., AGENTS.md).
+        scepticism: Evaluation stance (lenient | moderate | strict).
+
+    Returns:
+        Configured Coach agent with zero tools.
+    """
+    from lib.factory_guards import create_restricted_agent
+
+    criteria = adversarial_config.get("evaluation_criteria", [])
+    acceptance_threshold = adversarial_config.get("acceptance_threshold", 0.7)
+    system_prompt = build_weighted_coach_prompt(
+        criteria,
+        acceptance_threshold=acceptance_threshold,
+        scepticism=scepticism,
+    )
+
+    return create_restricted_agent(
+        model=model,
+        tools=[],
+        system_prompt=system_prompt,
+        memory=memory,
+        allowed_tools=COACH_ALLOWED_TOOLS,
+    )
+
+
+# ---------------------------------------------------------------------------
+# AdversarialOrchestrator — three-role wiring
+# ---------------------------------------------------------------------------
+
+class AdversarialOrchestrator:
+    """Three-role orchestrator: Orchestrator + Player + Coach.
+
+    The Orchestrator is a plain Python loop (NOT a DeepAgent). It:
+    1. Pre-fetches domain context for each target
+    2. Invokes the Player to generate content
+    3. Extracts structured JSON from the Player response
+    4. Passes extracted content to the Coach for evaluation
+    5. Writes output ONLY after Coach acceptance via the write gate
+    6. Retries on rejection up to the configured cap
+
+    Args:
+        player: Player agent (domain tools only, no write access).
+        coach: Coach agent (zero tools, evaluation only).
+        write_gate: OrchestratorWriteGate enforcing gated writes.
+        adversarial_config: Configuration for thresholds and retries.
+        prefetch_fn: Optional async callable for domain context pre-fetch.
+            Signature: (target: dict) -> str. Returns context string.
+    """
+
+    def __init__(
+        self,
+        player: Any,
+        coach: Any,
+        write_gate: Any,
+        adversarial_config: dict[str, Any],
+        *,
+        prefetch_fn: Callable[..., Any] | None = None,
+    ) -> None:
+        self._player = player
+        self._coach = coach
+        self._write_gate = write_gate
+        self._config = adversarial_config
+        self._prefetch_fn = prefetch_fn
+
+        self._max_retries = self._config.get("max_retries", {{MaxRetries}})
+        self._acceptance_threshold = self._config.get(
+            "acceptance_threshold", {{AcceptanceThreshold}}
+        )
+        self._criteria_weights = {
+            c["name"]: c["weight"]
+            for c in self._config.get("evaluation_criteria", [])
+        }
+
+    @property
+    def player(self) -> Any:
+        return self._player
+
+    @property
+    def coach(self) -> Any:
+        return self._coach
+
+    @property
+    def write_gate(self) -> Any:
+        return self._write_gate
+
+    @property
+    def max_retries(self) -> int:
+        return self._max_retries
+
+    @property
+    def acceptance_threshold(self) -> float:
+        return self._acceptance_threshold
+
+    @property
+    def criteria_weights(self) -> dict[str, float]:
+        return dict(self._criteria_weights)
+
+    async def prefetch_context(self, target: dict[str, Any]) -> str:
+        """Pre-fetch domain context before the Player turn.
+
+        Calls the prefetch_fn if provided, otherwise returns the target
+        description as context. This supports RAG retrieval, curriculum
+        loading, or any domain-specific context gathering.
+
+        Args:
+            target: Target specification dict with at least a 'description' key.
+
+        Returns:
+            Domain context string for the Player.
+        """
+        if self._prefetch_fn is not None:
+            return await self._prefetch_fn(target)
+        return target.get("description", "")
+
+    async def process_target(
+        self,
+        target: dict[str, Any],
+        output_path: str = "",
+    ) -> PipelineResult:
+        """Process a single target through the Player → Coach → Write pipeline.
+
+        Args:
+            target: Target specification with at least 'description'.
+            output_path: Path for the write gate output.
+
+        Returns:
+            PipelineResult with success status, content, verdict, and attempt count.
+        """
+        from lib.factory_guards import assert_no_system_messages
+        from lib.json_extractor import JsonExtractor
+
+        # Step 1: Pre-fetch domain context
+        context = await self.prefetch_context(target)
+        logger.info("Pre-fetched context for target: %s", target.get("id", "unknown"))
+
+        # Build initial Player input (user role only — TASK-REV-R2A1)
+        player_input = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": context,
+                },
+            ],
+        }
+
+        last_verdict: WeightedVerdict | None = None
+
+        for attempt in range(1, self._max_retries + 1):
+            # Step 2: Invoke Player
+            assert_no_system_messages(player_input)
+            player_response = await self._player.ainvoke(player_input)
+            player_content = _extract_content(player_response)
+
+            # Step 3: Extract structured content via JsonExtractor
+            try:
+                extracted = JsonExtractor.extract(
+                    player_content,
+                    additional_kwargs=getattr(player_response, "additional_kwargs", None),
+                )
+            except Exception as e:
+                logger.warning(
+                    "JSON extraction failed (attempt %d/%d): %s",
+                    attempt, self._max_retries, e,
+                )
+                # Feed extraction error back to Player for revision
+                player_input = _build_retry_input(
+                    player_content,
+                    issues=[f"JSON extraction failed: {e}"],
+                )
+                continue
+
+            extracted_json = _safe_json_str(extracted)
+
+            # Step 4: Invoke Coach
+            coach_input = {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": extracted_json,
+                    },
+                ],
+            }
+            assert_no_system_messages(coach_input)
+            coach_response = await self._coach.ainvoke(coach_input)
+            coach_content = _extract_content(coach_response)
+
+            # Step 4b: Parse Coach verdict (symmetric extraction — TRF-026)
+            try:
+                coach_data = JsonExtractor.extract(
+                    coach_content,
+                    additional_kwargs=getattr(coach_response, "additional_kwargs", None),
+                )
+                verdict = WeightedVerdict.from_json(
+                    _safe_json_str(coach_data),
+                    self._criteria_weights,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Coach verdict parsing failed (attempt %d/%d): %s",
+                    attempt, self._max_retries, e,
+                )
+                player_input = _build_retry_input(
+                    player_content,
+                    issues=[f"Coach evaluation error: {e}"],
+                )
+                continue
+
+            last_verdict = verdict
+
+            # Step 5: Check acceptance
+            if verdict.accepted and verdict.composite_score >= self._acceptance_threshold:
+                logger.info(
+                    "Accepted (attempt %d/%d, score=%.3f)",
+                    attempt, self._max_retries, verdict.composite_score,
+                )
+                # Write via gate
+                if output_path:
+                    self._write_gate.attempt_write(
+                        extracted_json, output_path, verdict, attempt,
+                    )
+                return PipelineResult(
+                    success=True,
+                    content=extracted_json,
+                    verdict=verdict,
+                    attempts=attempt,
+                )
+
+            # Step 6: Rejection — feed issues back to Player for revision
+            logger.info(
+                "Rejected (attempt %d/%d, score=%.3f): %s",
+                attempt, self._max_retries, verdict.composite_score, verdict.issues,
+            )
+            player_input = _build_retry_input(player_content, issues=verdict.issues)
+
+        # Exhausted retries
+        logger.warning(
+            "Exhausted %d retries for target %s",
+            self._max_retries, target.get("id", "unknown"),
+        )
+        return PipelineResult(
+            success=False,
+            content="",
+            verdict=last_verdict,
+            attempts=self._max_retries,
+            error=f"Exhausted {self._max_retries} retries",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Config / model / domain helpers
+# ---------------------------------------------------------------------------
+
+def _load_config() -> dict:
+    """Read agent-config.yaml and return parsed config."""
+    import yaml
+
+    config_path = pathlib.Path("agent-config.yaml")
+    return yaml.safe_load(config_path.read_text())
+
+
+def _create_model(role_config: dict) -> Any:
+    """Create an LLM model instance from a per-role config section."""
+    from langchain.chat_models import init_chat_model
+
+    provider = role_config.get("provider", "local")
+
+    if provider == "local":
+        endpoint = os.environ.get(
+            "LOCAL_MODEL_ENDPOINT",
+            role_config.get("endpoint", "http://localhost:11434/v1"),
+        )
+        return init_chat_model(
+            role_config["model"],
+            model_provider="openai",
+            base_url=endpoint,
+            api_key=os.environ.get("OPENAI_API_KEY", "not-needed"),
+            temperature=role_config.get("temperature", 0.6),
+        )
+
+    if provider == "api":
+        return init_chat_model(
+            role_config["model"],
+            temperature=role_config.get("temperature", 0.6),
+        )
+
+    raise ValueError(f"Unknown provider: {provider!r}")
+
+
+def _get_domain() -> str:
+    """Get domain name from --domain CLI arg or DOMAIN env var."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--domain",
+        default=os.environ.get("DOMAIN", "{{DomainName}}"),
+    )
+    args, _ = parser.parse_known_args()
+    return args.domain
+
+
+def _load_domain_prompt(domain: str) -> str:
+    """Read DOMAIN.md for the specified domain."""
+    domain_path = pathlib.Path("domains") / domain / "DOMAIN.md"
+    if not domain_path.exists():
+        raise FileNotFoundError(f"Domain config not found: {domain_path}")
+    return domain_path.read_text()
+
+
+# ---------------------------------------------------------------------------
+# Private helpers
+# ---------------------------------------------------------------------------
+
+def _extract_content(response: Any) -> str:
+    """Extract text content from an agent response."""
+    if isinstance(response, str):
+        return response
+    if isinstance(response, dict):
+        return response.get("output", response.get("content", str(response)))
+    return getattr(response, "content", str(response))
+
+
+def _safe_json_str(data: dict) -> str:
+    """Convert dict to JSON string."""
+    import json
+
+    return json.dumps(data, indent=2)
+
+
+def _build_retry_input(player_content: str, issues: list[str]) -> dict:
+    """Build retry input for the Player using user role only (TASK-REV-R2A1).
+
+    create_agent() unconditionally prepends system_prompt on every ainvoke()
+    call. NEVER pass system role messages — use user role for reinforcement.
+    """
+    feedback = "; ".join(issues)
+    return {
+        "messages": [
+            {
+                "role": "user",
+                "content": (
+                    "IMPORTANT: Your previous output was rejected by the Coach.\n"
+                    f"Feedback: {feedback}\n\n"
+                    "Apply targeted revisions focusing on the lowest-scoring "
+                    "criteria. Do NOT discard existing work.\n\n"
+                    f"Previous output:\n{player_content}"
+                ),
+            },
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Top-level wiring
+# ---------------------------------------------------------------------------
+
+def create_orchestrator(
+    *,
+    tools: Sequence[Any] | None = None,
+    prefetch_fn: Callable[..., Any] | None = None,
+    write_fn: Callable[[str, str], str] | None = None,
+) -> AdversarialOrchestrator:
+    """Wire up the three-role orchestrator with weighted evaluation.
+
+    Creates Player and Coach agents using create_restricted_agent(),
+    sets up the OrchestratorWriteGate, and returns an AdversarialOrchestrator
+    ready for target processing.
+
+    Args:
+        tools: Domain tools for the Player (default: empty list).
+        prefetch_fn: Optional async callable for domain context pre-fetch.
+        write_fn: Write function for the gate (default: no-op).
+
+    Returns:
+        Configured AdversarialOrchestrator.
+    """
+    from lib.factory_guards import OrchestratorWriteGate
+
+    config = _load_config()
+    adversarial_config = load_adversarial_config()
+
+    player_model = _create_model(config["player"])
+    coach_model = _create_model(config["coach"])
+
+    domain = _get_domain()
+    domain_prompt = _load_domain_prompt(domain)
+
+    # Create restricted agents with tool allowlists
+    player = create_player_agent(
+        model=player_model,
+        tools=tools or [],
+        domain_prompt=domain_prompt,
+        memory=["./AGENTS.md"] if pathlib.Path("AGENTS.md").exists() else None,
+    )
+
+    coach = create_coach_agent(
+        model=coach_model,
+        domain_prompt=domain_prompt,
+        adversarial_config=adversarial_config,
+        memory=["./AGENTS.md"] if pathlib.Path("AGENTS.md").exists() else None,
+    )
+
+    # Set up write gate — Orchestrator owns ALL writes
+    if write_fn is None:
+        def _noop_write(content: str, path: str) -> str:
+            logger.info("Write gate: %s (%d bytes)", path, len(content))
+            return path
+        write_fn = _noop_write
+
+    write_gate = OrchestratorWriteGate(
+        write_fn=write_fn,
+        max_retries=adversarial_config.get("max_retries", {{MaxRetries}}),
+    )
+
+    return AdversarialOrchestrator(
+        player=player,
+        coach=coach,
+        write_gate=write_gate,
+        adversarial_config=adversarial_config,
+        prefetch_fn=prefetch_fn,
+    )

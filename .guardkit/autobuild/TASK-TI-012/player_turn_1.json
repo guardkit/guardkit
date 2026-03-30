@@ -1,0 +1,118 @@
+{
+  "task_id": "TASK-TI-012",
+  "turn": 1,
+  "files_modified": [
+    "installer/core/templates/langchain-deepagents-weighted-evaluation/scaffold/goal_schema.py.j2"
+  ],
+  "files_created": [
+    "installer/core/templates/langchain-deepagents-weighted-evaluation/templates/goal.md.j2",
+    "installer/core/templates/langchain-deepagents-weighted-evaluation/tests/test_goal_schema.py"
+  ],
+  "tests_written": [
+    "installer/core/templates/langchain-deepagents-weighted-evaluation/tests/test_goal_schema.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "39 passed in 1.31s (183 total including pre-existing tests)",
+  "implementation_notes": "Extended goal_schema.py.j2 with MetadataFieldSchema, QualityThresholds dataclasses and added score_range field to EvaluationCriterion plus metadata_schema/quality_thresholds/generation_target fields to GoalSchema — all with defaults for backward compatibility. Added seven parsing functions (_parse_markdown_table, _parse_metadata_table, _parse_criteria_table, _parse_quality_thresholds, _parse_list_value, parse_goal_md, build_coach_criteria_section) and DEFAULT_QUALITY_THRESHOLDS constant. Created goal.md.j2 Jinja2 template in new templates/ subdirectory. All 144 pre-existing tests continue to pass.",
+  "concerns": [],
+  "requirements_addressed": [
+    "MetadataFieldSchema dataclass with name/type/valid_values/required/description fields",
+    "QualityThresholds dataclass with minimum_weighted_score/required_fields/format_requirements",
+    "score_range field added to EvaluationCriterion (default '0.0-1.0')",
+    "GoalSchema extended with metadata_schema, quality_thresholds, generation_target (all defaulted for backward compat)",
+    "parse_goal_md top-level parser splits on ## headings and dispatches to section parsers",
+    "_parse_markdown_table generic table parser skipping separator rows",
+    "_parse_metadata_table maps Field/Type/Valid Values/Required/Description columns",
+    "_parse_criteria_table handles weight as decimal or percentage, maps Score Range",
+    "_parse_quality_thresholds parses bullet list for min score, required_fields, format_requirements",
+    "_parse_list_value handles bracket notation and bare comma-separated values",
+    "build_coach_criteria_section generates Coach prompt criteria section with thresholds",
+    "DEFAULT_QUALITY_THRESHOLDS constant added",
+    "goal.md.j2 Jinja2 template created in templates/ directory",
+    "39-test test_goal_schema.py covering all new classes and functions"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "MetadataFieldSchema dataclass added to goal_schema.py.j2",
+      "status": "complete",
+      "evidence": "MetadataFieldSchema dataclass added with name, type, valid_values, required, description fields and correct defaults",
+      "test_file": "installer/core/templates/langchain-deepagents-weighted-evaluation/tests/test_goal_schema.py",
+      "implementation_files": ["installer/core/templates/langchain-deepagents-weighted-evaluation/scaffold/goal_schema.py.j2"]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "QualityThresholds dataclass added to goal_schema.py.j2",
+      "status": "complete",
+      "evidence": "QualityThresholds dataclass added with minimum_weighted_score=0.7, required_fields=[], format_requirements=[] defaults",
+      "test_file": "installer/core/templates/langchain-deepagents-weighted-evaluation/tests/test_goal_schema.py",
+      "implementation_files": ["installer/core/templates/langchain-deepagents-weighted-evaluation/scaffold/goal_schema.py.j2"]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "score_range field added to EvaluationCriterion with default '0.0-1.0'",
+      "status": "complete",
+      "evidence": "score_range: str = '0.0-1.0' added after reject_example in EvaluationCriterion dataclass",
+      "test_file": "installer/core/templates/langchain-deepagents-weighted-evaluation/tests/test_goal_schema.py",
+      "implementation_files": ["installer/core/templates/langchain-deepagents-weighted-evaluation/scaffold/goal_schema.py.j2"]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "GoalSchema extended with metadata_schema, quality_thresholds, generation_target",
+      "status": "complete",
+      "evidence": "All three fields added with defaults (list, None, empty string). Existing code unchanged. validate_weights and criteria_as_dict methods preserved.",
+      "test_file": "installer/core/templates/langchain-deepagents-weighted-evaluation/tests/test_goal_schema.py",
+      "implementation_files": ["installer/core/templates/langchain-deepagents-weighted-evaluation/scaffold/goal_schema.py.j2"]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "parse_goal_md function parses full GOAL.md document",
+      "status": "complete",
+      "evidence": "parse_goal_md splits by ## headings, extracts domain from H1, dispatches to section parsers, returns populated GoalSchema",
+      "test_file": "installer/core/templates/langchain-deepagents-weighted-evaluation/tests/test_goal_schema.py",
+      "implementation_files": ["installer/core/templates/langchain-deepagents-weighted-evaluation/scaffold/goal_schema.py.j2"]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "All parsing helpers implemented and tested",
+      "status": "complete",
+      "evidence": "_parse_markdown_table, _parse_metadata_table, _parse_criteria_table, _parse_quality_thresholds, _parse_list_value all implemented. TRF-028 and FRF-002 regression cases explicitly tested.",
+      "test_file": "installer/core/templates/langchain-deepagents-weighted-evaluation/tests/test_goal_schema.py",
+      "implementation_files": ["installer/core/templates/langchain-deepagents-weighted-evaluation/scaffold/goal_schema.py.j2"]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "build_coach_criteria_section generates Coach prompt section",
+      "status": "complete",
+      "evidence": "build_coach_criteria_section generates markdown with weighted criteria names, percentage weights, score ranges, and quality thresholds block",
+      "test_file": "installer/core/templates/langchain-deepagents-weighted-evaluation/tests/test_goal_schema.py",
+      "implementation_files": ["installer/core/templates/langchain-deepagents-weighted-evaluation/scaffold/goal_schema.py.j2"]
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "DEFAULT_QUALITY_THRESHOLDS constant added",
+      "status": "complete",
+      "evidence": "DEFAULT_QUALITY_THRESHOLDS = QualityThresholds(minimum_weighted_score=0.7, required_fields=[], format_requirements=[])",
+      "test_file": null,
+      "implementation_files": ["installer/core/templates/langchain-deepagents-weighted-evaluation/scaffold/goal_schema.py.j2"]
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "goal.md.j2 Jinja2 template created",
+      "status": "complete",
+      "evidence": "Created templates/goal.md.j2 with all four sections (Generation Target, Metadata Schema, Evaluation Criteria, Quality Thresholds) using Jinja2 for-loop rendering",
+      "test_file": null,
+      "implementation_files": ["installer/core/templates/langchain-deepagents-weighted-evaluation/templates/goal.md.j2"]
+    },
+    {
+      "criterion_id": "AC-010",
+      "criterion_text": "39-test test_goal_schema.py covering all new code",
+      "status": "complete",
+      "evidence": "39 tests across 11 test classes using _load_module() pattern from test_scaffold.py. All pass in 1.31s.",
+      "test_file": "installer/core/templates/langchain-deepagents-weighted-evaluation/tests/test_goal_schema.py",
+      "implementation_files": ["installer/core/templates/langchain-deepagents-weighted-evaluation/tests/test_goal_schema.py"]
+    }
+  ]
+}

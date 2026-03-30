@@ -1,0 +1,174 @@
+"""Canonical weighted evaluation pipeline for adversarial cooperation.
+
+Implements the Player → Coach → Write loop with weighted scoring:
+1. Player generates content
+2. Coach evaluates against weighted criteria
+3. Compute composite score from weighted criterion scores
+4. Accept if composite >= threshold, reject otherwise
+5. On rejection, feed issues back to Player for revision
+6. Write output ONLY after acceptance via OrchestratorWriteGate
+
+Template variables:
+    {{AcceptanceThreshold}} — Minimum weighted score (default: 0.7)
+    {{MaxRetries}} — Maximum revision attempts (default: 3)
+
+Populated by: TASK-TI-011 (Canonical Pipeline)
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import dataclass, field
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class CriterionScore:
+    """Score for a single evaluation criterion."""
+
+    name: str
+    weight: float
+    score: float  # 0.0 to 1.0
+    feedback: str = ""
+
+
+@dataclass
+class WeightedVerdict:
+    """Structured verdict with weighted multi-criteria scoring.
+
+    Extends the base CoachVerdict with per-criterion scores and
+    a composite weighted score.
+    """
+
+    decision: str  # "accept" or "reject"
+    composite_score: float  # 0.0 to 1.0 (weighted sum)
+    criterion_scores: list[CriterionScore] = field(default_factory=list)
+    issues: list[str] = field(default_factory=list)
+    quality_assessment: str = "needs_revision"
+
+    @property
+    def accepted(self) -> bool:
+        return self.decision == "accept"
+
+    @classmethod
+    def from_json(cls, raw: str, criteria_weights: dict[str, float]) -> "WeightedVerdict":
+        """Parse Coach JSON response into a WeightedVerdict.
+
+        Args:
+            raw: JSON string from Coach agent.
+            criteria_weights: Mapping of criterion name to weight.
+
+        Returns:
+            Parsed WeightedVerdict with computed composite score.
+        """
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, TypeError) as e:
+            raise ValueError(f"Coach response is not valid JSON: {e}") from e
+
+        if "criteria" not in data:
+            raise ValueError("Coach response missing 'criteria' field")
+
+        criterion_scores = []
+        for name, weight in criteria_weights.items():
+            criterion_data = data["criteria"].get(name, {})
+            criterion_scores.append(
+                CriterionScore(
+                    name=name,
+                    weight=weight,
+                    score=float(criterion_data.get("score", 0.0)),
+                    feedback=criterion_data.get("feedback", ""),
+                )
+            )
+
+        composite = sum(cs.score * cs.weight for cs in criterion_scores)
+
+        issues = data.get("issues", [])
+        decision = data.get("decision", "reject")
+
+        quality = "high" if composite >= 0.9 else "adequate" if composite >= 0.7 else "needs_revision"
+
+        return cls(
+            decision=decision,
+            composite_score=composite,
+            criterion_scores=criterion_scores,
+            issues=issues,
+            quality_assessment=quality,
+        )
+
+
+@dataclass
+class PipelineResult:
+    """Result of a complete pipeline execution."""
+
+    success: bool
+    content: str = ""
+    verdict: WeightedVerdict | None = None
+    attempts: int = 0
+    error: str | None = None
+
+
+class WeightedEvaluationPipeline:
+    """Orchestrates the Player → Coach → Write loop with weighted scoring.
+
+    Intensity routing (TASK-TI-014):
+    - full: Every Player output goes through Coach evaluation.
+    - light: Coach evaluates a random sample of outputs.
+    - solo: Coach is skipped entirely; validation is optional.
+
+    Args:
+        player_model: LLM model for the Player agent.
+        coach_model: LLM model for the Coach agent.
+        domain_prompt: Domain context from DOMAIN.md.
+        adversarial_config: Configuration for intensity, thresholds, etc.
+    """
+
+    def __init__(
+        self,
+        player_model: Any,
+        coach_model: Any,
+        domain_prompt: str,
+        adversarial_config: dict[str, Any],
+    ) -> None:
+        from {{ProjectName}}.config.adversarial_config import IntensityRouter
+
+        self._player_model = player_model
+        self._coach_model = coach_model
+        self._domain_prompt = domain_prompt
+        self._config = adversarial_config
+
+        self._max_retries = self._config.get("max_retries", {{MaxRetries}})
+        self._acceptance_threshold = self._config.get(
+            "acceptance_threshold", {{AcceptanceThreshold}}
+        )
+        self._criteria_weights = {
+            c["name"]: c["weight"]
+            for c in self._config.get("evaluation_criteria", [])
+        }
+        self._router = IntensityRouter(self._config)
+
+    @property
+    def acceptance_threshold(self) -> float:
+        return self._acceptance_threshold
+
+    @property
+    def criteria_weights(self) -> dict[str, float]:
+        return dict(self._criteria_weights)
+
+    @property
+    def intensity_router(self) -> Any:
+        """Expose the intensity router for inspection."""
+        return self._router
+
+    async def run(self, input_messages: dict) -> PipelineResult:
+        """Execute the weighted evaluation pipeline.
+
+        Populated by TASK-TI-011 with full Player/Coach agent wiring.
+        """
+        raise NotImplementedError(
+            "Pipeline execution not yet implemented. "
+            "See TASK-TI-011 for canonical pipeline implementation."
+        )

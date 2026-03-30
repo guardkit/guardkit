@@ -17,7 +17,8 @@ Two-template strategy — the distinction is the **evaluation model**, not compl
 - **P1 (Wave 2)**: Factory allowlisting + Validators + Observability + Model docs (**COMPLETED**)
 - **P2 (Wave 3)**: Pre-flight validation script (`guardkit validate`) (**IN PROGRESS**: TI-008)
 - **P0-FIX (Wave 3.5)**: SDK alignment fixes from TASK-REV-32D2 — align template with proven agentic-dataset-factory patterns (**NEW — GATES Wave 4**)
-- **P3 (Wave 4)**: Adversarial template scaffold and components
+- **P3 (Wave 4)**: Adversarial template scaffold and components (**COMPLETED**)
+- **P2 (Wave 5)**: Post-review polish from TASK-REV-4F71 findings
 
 ## Subtask Summary
 
@@ -47,7 +48,28 @@ Two-template strategy — the distinction is the **evaluation model**, not compl
 | TASK-TI-016 | Sprint contract negotiation | 4 | task-work | P3 | BACKLOG |
 | **TASK-TI-025** | **Register weighted-evaluation template in installer** | **4** | **task-work** | **P1** | **BACKLOG** |
 | **TASK-TI-026** | **Document two-template architecture** | **4** | **direct** | **P1** | **BACKLOG** |
-| **TASK-TI-027** | **Implement template extends mechanism** | **4** | **task-work** | **P1** | **BACKLOG** |
+| **TASK-TI-027** | **Implement template extends mechanism** | **4** | **task-work** | **P1** | **COMPLETED** |
+| TASK-TI-028 | Remove duplicated settings.json from extension | 5 | direct | P2 | BACKLOG |
+| TASK-TI-029 | Align manifest pattern attribution | 5 | direct | P2 | BACKLOG |
+| TASK-TI-030 | Create GETTING_STARTED.md onboarding guide | 5 | direct | P2 | BACKLOG |
+| TASK-TI-031 | Verify extension tests excluded from installation | 5 | task-work | P2 | BACKLOG |
+| TASK-TI-032 | Document templating conventions (.template vs .j2) | 5 | direct | P2 | BACKLOG |
+
+## Wave 5 — Post-Review Polish (TASK-REV-4F71)
+
+Housekeeping tasks from the completeness review. All LOW or MEDIUM severity — no architectural changes.
+
+**Execution**: All 5 tasks are independent — execute in parallel.
+
+| Task | Finding | Severity | Description |
+|------|---------|----------|-------------|
+| TI-028 | F1 | LOW | Remove duplicated settings.json from extension |
+| TI-029 | F2 | LOW | Add HITL/Sprint patterns to base manifest |
+| TI-030 | F3 | MEDIUM | Create developer onboarding guide |
+| TI-031 | F4 | LOW | Verify/relocate extension tests |
+| TI-032 | F6+F7 | LOW | Document .template vs .j2 and SKILL.md conventions |
+
+**Source**: TASK-REV-4F71 architectural review (score: 82/100).
 
 ## Wave 3.5 — SDK Alignment Fixes (TASK-REV-32D2)
 
@@ -79,3 +101,5 @@ Sequential after group 1:
 - **Design Review**: TASK-REV-32D2 (SDK-validated, exemplar cross-referenced)
 - **Feature ID**: FEAT-TI
 - **Review Report**: `.claude/reviews/TASK-REV-TRF12-review-report.md`, `.claude/reviews/TASK-REV-32D2-review-report.md`
+- **Completeness Review**: TASK-REV-4F71 (score: 82/100, 8 findings, 5 implementation tasks)
+- **Completeness Report**: `.claude/reviews/TASK-REV-4F71-review-report.md`

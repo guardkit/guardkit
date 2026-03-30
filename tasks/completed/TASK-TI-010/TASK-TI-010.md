@@ -1,9 +1,11 @@
 ---
 id: TASK-TI-010
 title: Three-role orchestrator scaffold (Orchestrator + Player + Coach)
-status: backlog
+status: completed
 created: 2026-03-27T22:00:00Z
-updated: 2026-03-27T22:00:00Z
+updated: 2026-03-29T11:15:00Z
+completed: 2026-03-29T11:15:00Z
+completed_location: tasks/completed/TASK-TI-010/
 priority: p3
 tags: [template, adversarial, orchestration]
 complexity: 6
@@ -13,9 +15,11 @@ wave: 4
 implementation_mode: task-work
 depends_on: [TASK-TI-009]
 test_results:
-  status: pending
+  status: passing
   coverage: null
-  last_run: null
+  last_run: 2026-03-29T11:00:00Z
+  tests_passed: 45
+  tests_total: 45
 ---
 
 # Task: Three-Role Orchestrator Scaffold
@@ -70,14 +74,14 @@ class AdversarialOrchestrator:
 
 ## Acceptance Criteria
 
-- [ ] Three-role wiring with clear separation of concerns
-- [ ] Orchestrator owns write authority exclusively
-- [ ] Player and Coach use `create_restricted_agent()` with tool allowlists
-- [ ] Pre-fetch pattern for domain context
-- [ ] Retry logic with configurable caps
-- [ ] Content extraction using JsonExtractor
-- [ ] Unit tests for orchestration flow
-- [ ] Integration test with mock Player and Coach
+- [x] Three-role wiring with clear separation of concerns
+- [x] Orchestrator owns write authority exclusively
+- [x] Player and Coach use `create_restricted_agent()` with tool allowlists
+- [x] Pre-fetch pattern for domain context
+- [x] Retry logic with configurable caps
+- [x] Content extraction using JsonExtractor
+- [x] Unit tests for orchestration flow
+- [x] Integration test with mock Player and Coach
 
 ## Effort Estimate
 

@@ -1,9 +1,13 @@
 ---
 id: TASK-TI-011
 title: Canonical pipeline module (normalize -> extract -> validate -> write)
-status: backlog
+status: completed
+previous_state: in_review
+state_transition_reason: "All acceptance criteria met, quality gates passed"
 created: 2026-03-27T22:00:00Z
-updated: 2026-03-27T22:00:00Z
+updated: 2026-03-29T00:00:00Z
+completed: 2026-03-29T00:00:00Z
+completed_location: tasks/completed/TASK-TI-011/
 priority: p3
 tags: [template, adversarial, pipeline]
 complexity: 4
@@ -13,9 +17,12 @@ wave: 4
 implementation_mode: task-work
 depends_on: [TASK-TI-001, TASK-TI-009]
 test_results:
-  status: pending
+  status: passed
+  total: 48
+  passed: 48
+  failed: 0
   coverage: null
-  last_run: null
+  last_run: 2026-03-29T00:00:00Z
 ---
 
 # Task: Canonical Pipeline Module
@@ -54,13 +61,13 @@ class ContentPipeline:
 
 ## Acceptance Criteria
 
-- [ ] Four stages in canonical order (normalize, extract, validate, write)
-- [ ] Pipeline enforces order — cannot skip or reorder stages
-- [ ] Each stage logs input/output length via observability scaffold
-- [ ] Stage failure provides error context (head + tail + length)
-- [ ] Pipeline is composable (add custom stages)
-- [ ] Unit tests for each stage in isolation and full pipeline
-- [ ] Regression test: TRF-020 scenario (normalize after extract fails, normalize before extract succeeds)
+- [x] Four stages in canonical order (normalize, extract, validate, write)
+- [x] Pipeline enforces order — cannot skip or reorder stages
+- [x] Each stage logs input/output length via observability scaffold
+- [x] Stage failure provides error context (head + tail + length)
+- [x] Pipeline is composable (add custom stages)
+- [x] Unit tests for each stage in isolation and full pipeline
+- [x] Regression test: TRF-020 scenario (normalize after extract fails, normalize before extract succeeds)
 
 ## Effort Estimate
 

@@ -152,7 +152,10 @@ show_templates() {
                         echo "  • react-fastapi-monorepo - React + FastAPI monorepo with type safety (9.2/10)"
                         ;;
                     langchain-deepagents)
-                        echo "  * langchain-deepagents - Python Adversarial Cooperation with DeepAgents/LangGraph (10/10)"
+                        echo "  • langchain-deepagents - Adversarial Player-Coach with binary accept/reject evaluation (10/10)"
+                        ;;
+                    langchain-deepagents-weighted-evaluation)
+                        echo "  • langchain-deepagents-weighted-evaluation - Extends base with weighted multi-criteria scoring for subjective domains (extends langchain-deepagents)"
                         ;;
                     *)
                         echo "  • $name"
