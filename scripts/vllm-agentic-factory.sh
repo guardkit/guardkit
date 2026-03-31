@@ -65,10 +65,10 @@ case "$MODEL_PRESET" in
       --enable-auto-tool-choice \
       --tool-call-parser qwen3_coder \
       --enable-prefix-caching \
-      --guided-decoding-backend outlines"
+      --structured-outputs-config.backend xgrammar"
     echo "═══ Qwen3.5-35B-A3B FP8 (3B active, ~70GB) — Tool-calling ═══"
     echo "    BFCL-V4: 67.3 | TAU2: 81.2 | 50 tok/s sustained"
-    echo "    Tool parser: qwen3_coder | Guided: outlines | Context: ${MAX_LEN}"
+    echo "    Tool parser: qwen3_coder | Structured: xgrammar | Context: ${MAX_LEN}"
     ;;
   nano-4b)
     MODEL="nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8"
