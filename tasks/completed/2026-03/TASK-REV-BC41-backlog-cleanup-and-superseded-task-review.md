@@ -1,19 +1,26 @@
 ---
 id: TASK-REV-BC41
 title: Backlog cleanup — archive completed tasks and review superseded items
-status: in_progress
+status: review_complete
 created: 2026-03-30T12:30:00Z
-updated: 2026-03-30T12:30:00Z
+updated: 2026-03-30T18:00:00Z
 priority: high
 tags: [review, backlog, cleanup, housekeeping]
 task_type: review
 review_mode: decision
 complexity: 5
 depends_on: []
-test_results:
-  status: pending
-  coverage: null
-  last_run: null
+review_results:
+  mode: decision
+  depth: standard
+  findings_count: 6
+  recommendations_count: 3
+  items_archived: 121
+  backlog_before: 293
+  backlog_after: 172
+  reduction_percent: 41
+  report_path: .claude/reviews/TASK-REV-BC41-review-report.md
+  completed_at: 2026-03-30T18:00:00Z
 ---
 
 # Task: Backlog Cleanup — Archive Completed Tasks and Review Superseded Items
@@ -52,11 +59,11 @@ For each category of potentially superseded tasks, present:
 
 ## Acceptance Criteria
 
-- [ ] All genuinely completed tasks identified and archived
-- [ ] Superseded tasks reviewed with decision checkpoints
-- [ ] Feature directories assessed for archival
-- [ ] Backlog reduced to only actionable items
-- [ ] Review report generated
+- [x] All genuinely completed tasks identified and archived (61 tasks)
+- [x] Superseded tasks reviewed with decision checkpoints (6 checkpoints presented)
+- [x] Feature directories assessed for archival (111 dirs assessed, 59 archived/deleted)
+- [x] Backlog reduced to only actionable items (293 → 172, 41% reduction)
+- [x] Review report generated (.claude/reviews/TASK-REV-BC41-review-report.md)
 
 ## Suggested Review Approach
 
