@@ -180,3 +180,28 @@ guardkit init fastapi-python --project-id vllm-profiling  # Fresh init with clea
 This gives init the best possible chance of succeeding with the reverted code, since the graph starts clean rather than bloated with duplicates from prior runs.
 
 Want me to add this as a prerequisite step in the IMPLEMENTATION-GUIDE.md, or would you prefer to handle the clear/reseed manually before starting the Wave 1 tasks?
+
+
+
+Template langchain-deepagents-orchestrator created successfully.
+
+  Location: ~/.agentecflow/templates/langchain-deepagents-orchestrator/
+
+  Package contents:
+  - manifest.json (1.8 KB) — template metadata
+  - settings.json (1.9 KB) — naming conventions, layer mappings
+  - .claude/rules/ (17 files) — modular CLAUDE.md with code-style, testing, patterns, and agent guidance rules
+  - templates/ (10 files) — .template files covering agents, tools, prompts layers
+  - agents/ (7 agents) — specialized agents at 85% confidence:
+    a. deepagents-orchestrator-specialist (priority 10)
+    b. langchain-tool-decorator-specialist (priority 9)
+    c. system-prompt-template-specialist (priority 9)
+    d. subagent-composition-specialist (priority 9)
+    e. pytest-agent-testing-specialist (priority 8)
+    f. langgraph-deployment-config-specialist (priority 8)
+    g. domain-context-injection-specialist (priority 7)
+
+  Next steps:
+  - Use guardkit init langchain-deepagents-orchestrator to scaffold a new project from this template
+  - Optionally enhance agents with /agent-enhance langchain-deepagents-orchestrator/<agent-name> --hybrid (2-5 min
+  each) for domain-specific boundary sections

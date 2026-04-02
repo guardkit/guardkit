@@ -1,0 +1,107 @@
+{
+  "schema_version": "1.0.0",
+  "name": "langchain-deepagents-orchestrator",
+  "display_name": "LangChain DeepAgents Orchestrator",
+  "description": "Pipeline orchestrator template using DeepAgents two-model architecture (reasoning model orchestrates, implementation model executes) with LangGraph deployment",
+  "version": "1.0.0",
+  "author": "Richard Woollcott",
+  "language": "Python",
+  "language_version": ">=3.11,<4.0",
+  "frameworks": [
+    {
+      "name": "DeepAgents >=0.4.11",
+      "version": null,
+      "purpose": "core"
+    },
+    {
+      "name": "LangChain >=1.2.11",
+      "version": null,
+      "purpose": "core"
+    },
+    {
+      "name": "LangChain-Core >=1.2.18",
+      "version": null,
+      "purpose": "core"
+    },
+    {
+      "name": "LangGraph >=0.2",
+      "version": null,
+      "purpose": "core"
+    },
+    {
+      "name": "LangChain-Community >=0.3",
+      "version": null,
+      "purpose": "core"
+    },
+    {
+      "name": "pytest",
+      "version": null,
+      "purpose": "testing"
+    }
+  ],
+  "architecture": "Standard Structure",
+  "patterns": [
+    "Builder",
+    "Engine",
+    "Entity",
+    "Factory",
+    "Handler",
+    "Model",
+    "Service Layer",
+    "Validator"
+  ],
+  "layers": [
+    "Infrastructure",
+    "Shared"
+  ],
+  "placeholders": {
+    "ProjectName": {
+      "name": "{{ProjectName}}",
+      "description": "Name of the project/solution",
+      "default_value": null,
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+      "required": true
+    },
+    "Namespace": {
+      "name": "{{Namespace}}",
+      "description": "Root namespace for the project",
+      "default_value": null,
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)*$",
+      "required": true
+    },
+    "Author": {
+      "name": "{{Author}}",
+      "description": "Project author name",
+      "default_value": null,
+      "pattern": null,
+      "required": false
+    }
+  },
+  "tags": [
+    "builder",
+    "deepagents",
+    "engine",
+    "entity",
+    "factory",
+    "handler",
+    "infrastructure",
+    "langchain",
+    "langgraph",
+    "model",
+    "orchestrator",
+    "pipeline",
+    "pytest",
+    "python",
+    "service-layer",
+    "shared",
+    "two-model",
+    "validator"
+  ],
+  "category": "agent",
+  "complexity": 7,
+  "compatible_with": [],
+  "requires": [],
+  "created_at": "2026-03-30T21:09:18.781491",
+  "source_project": "deepagents-orchestrator-exemplar",
+  "confidence_score": 68.33
+}

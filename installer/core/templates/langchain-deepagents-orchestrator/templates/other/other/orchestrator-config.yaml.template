@@ -1,0 +1,13 @@
+# Orchestrator Configuration
+#
+# Model selection for the two-model orchestrator architecture.
+# The reasoning model plans and coordinates; the implementation model executes.
+#
+# Model format: "provider:model" (compatible with init_chat_model).
+# See docs/reference/model-compatibility.md for tested combinations.
+
+orchestrator:
+  reasoning_model: "anthropic:claude-sonnet-4-6"
+  implementation_model: "anthropic:claude-haiku-4-5"
+  domain: "example-domain"
+  max_retries: 3

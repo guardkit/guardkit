@@ -90,11 +90,20 @@ Focus especially on:
 - **Display name:** `Python Library Package`
 - **Install location:** `installer/core/templates/python-library/`
 
-## Primary Use Cases (context for agent enhancement)
+## Primary Use Cases (Updated March 2026)
 
-- `youtube-channel-intelligence` — YouTube Data API wrapper, outlier scoring, SQLite
-- `nats-core` (Ship's Computer) — shared Pydantic schemas and NATS client utilities
-- Any shared Python package pip-installed by multiple repos in the ecosystem
+This template is foundational infrastructure for the Jarvis Ship's Computer fleet:
+
+| Project | Description | Repo |
+|---------|------------|------|
+| **nats-core** | Shared Pydantic message schemas, NATS connection management, message envelope format — pip-installed by every NATS service and agent in the fleet | (new repo) |
+| **youtube-channel-intelligence** | YouTube Data API wrapper, outlier scoring, SQLite storage — foundation for YouTube Planner's Transcript Map sub-system | `youtube-planner` |
+| **guardkit-types** (future) | Shared types/schemas across GuardKit Factory, Architect Agent, and slash command tools | `guardkit` |
+| Any shared Python package | pip-installed by multiple repos in the ecosystem (common patterns, shared utilities) | Various |
+
+**Critical dependency:** `nats-core` is the first project to build from this template.
+Every NATS-connected service (adapters, agents, orchestrator) imports from it. This is
+Phase 2 of the build sequence in the fleet master index.
 
 ## Success Criteria
 

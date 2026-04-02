@@ -4,7 +4,7 @@ Stack-specific reference templates and customization guide.
 
 ## Available Templates
 
-GuardKit includes **5 high-quality templates** for learning and evaluation:
+GuardKit includes **8 templates** for learning and evaluation:
 
 ### Stack-Specific Reference Templates (9+/10 Quality)
 
@@ -19,6 +19,14 @@ GuardKit includes **5 high-quality templates** for learning and evaluation:
 | Template | Stack | Quality | Description |
 |----------|-------|---------|-------------|
 | **react-fastapi-monorepo** | Full-stack | 9.2/10 | React + FastAPI monorepo |
+
+### AI/Agent Templates
+
+| Template | Stack | Confidence | Description |
+|----------|-------|------------|-------------|
+| **langchain-deepagents** | Python / LangChain / DeepAgents | — | Base DeepAgents player-coach template |
+| **langchain-deepagents-weighted-evaluation** | Python / LangChain / DeepAgents | — | Extended variant with weighted evaluation scoring |
+| **langchain-deepagents-orchestrator** | Python / LangChain / DeepAgents / LangGraph | 68.33% | Pipeline orchestrator using two-model architecture (reasoning + implementation) |
 
 ### Language-Agnostic Template (8+/10 Quality)
 
@@ -166,6 +174,9 @@ Each reference template includes comprehensive README:
 - **[fastapi-python](https://github.com/guardkit/guardkit/tree/main/installer/core/templates/fastapi-python)**: Backend API patterns from FastAPI Best Practices
 - **[nextjs-fullstack](https://github.com/guardkit/guardkit/tree/main/installer/core/templates/nextjs-fullstack)**: Full-stack with Next.js App Router
 - **[react-fastapi-monorepo](https://github.com/guardkit/guardkit/tree/main/installer/core/templates/react-fastapi-monorepo)**: Monorepo structure (9.2/10)
+- **[langchain-deepagents](https://github.com/guardkit/guardkit/tree/main/installer/core/templates/langchain-deepagents)**: Base DeepAgents player-coach template
+- **[langchain-deepagents-weighted-evaluation](https://github.com/guardkit/guardkit/tree/main/installer/core/templates/langchain-deepagents-weighted-evaluation)**: Weighted evaluation scoring variant
+- **[langchain-deepagents-orchestrator](https://github.com/guardkit/guardkit/tree/main/installer/core/templates/langchain-deepagents-orchestrator)**: Pipeline orchestrator with two-model architecture
 - **[default](https://github.com/guardkit/guardkit/tree/main/installer/core/templates/default)**: Language-agnostic foundation
 
 ---

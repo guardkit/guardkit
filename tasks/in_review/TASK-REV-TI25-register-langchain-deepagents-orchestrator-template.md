@@ -1,13 +1,22 @@
 ---
 id: TASK-REV-TI25
 title: Register langchain-deepagents-orchestrator as builtin template
-status: backlog
+status: review_complete
 created: 2026-03-30T21:30:00Z
-updated: 2026-03-30T21:30:00Z
+updated: 2026-04-01T00:00:00Z
 priority: high
 tags: [template, installer, documentation, langchain-deepagents]
 task_type: review
+review_mode: architectural
+review_depth: standard
 complexity: 5
+review_results:
+  mode: architectural
+  depth: standard
+  score: 62
+  findings_count: 21
+  recommendations_count: 9
+  report_path: .claude/reviews/TASK-REV-TI25-review-report.md
 ---
 
 # Task: Register langchain-deepagents-orchestrator as builtin template
