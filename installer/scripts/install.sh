@@ -1667,6 +1667,15 @@ print_summary() {
                 mcp-typescript)
                     echo "  • $name - MCP TypeScript server with @modelcontextprotocol/sdk and Zod validation"
                     ;;
+                langchain-deepagents)
+                    echo "  • $name - DeepAgents adversarial Player-Coach multi-agent architecture (9.7/10)"
+                    ;;
+                langchain-deepagents-weighted-evaluation)
+                    echo "  • $name - DeepAgents Player-Coach with weighted evaluation scoring (9.5/10)"
+                    ;;
+                langchain-deepagents-orchestrator)
+                    echo "  • $name - DeepAgents pipeline orchestrator with two-model architecture (6.8/10)"
+                    ;;
                 *)
                     echo "  • $name"
                     ;;
