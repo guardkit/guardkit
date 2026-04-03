@@ -57,10 +57,17 @@ Use this as a reference when creating or updating vLLM serving scripts.
 ### Spark Arena
 - **URL**: https://spark-arena.com/leaderboard
 - **What it shows**: Community benchmarks of models running on GB10/DGX Spark hardware
-- **Key data point**: Qwen3-Coder-Next showing 60-70 tok/s with optimized configs (vs ~43 tok/s baseline on NGC)
+- **Key data point**: Qwen3.5-35B-A3B-FP8 showing 50.75 tok/s single node (top recipe)
 - **Note**: SPA app — data loads dynamically, can't be scraped statically
 - **Built by**: eugr, Raphael Amorim, dbsci (same community as spark-vllm-docker)
 - **Uses**: llama-benchy for benchmarking, sparkrun for workload management
+
+### CRITICAL: Leaderboard vs single-request throughput
+The leaderboard uses `llama-benchy` which sends **multiple concurrent requests**.
+The 50 tok/s figure is **batched throughput**. For sequential single-request
+workloads (like our Player-Coach pipeline), the practical limit on Qwen3.5-35B-A3B-FP8
+is **38-41 tok/s** regardless of flags or image. See `vllm-perf-tuning.md` for
+the full investigation.
 
 ---
 

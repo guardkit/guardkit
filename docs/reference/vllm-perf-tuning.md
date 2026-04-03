@@ -90,25 +90,108 @@ Headroom: ~31GB for OS, CPU tasks, Graphiti/FalkorDB. Safe but tight — if OOM,
 
 ## Changes Applied to vllm-agentic-factory.sh (Apr 2026)
 
-Migrated from direct `docker run` to eugr's `spark-vllm-docker` framework:
+Migrated from direct `docker run` with broken ghcr.io image to locally-built
+spark-vllm-docker `vllm-node-tf5` image.
 
-1. **Engine**: Direct `docker run` -> `launch-cluster.sh --solo` from spark-vllm-docker
-2. **Image**: `ghcr.io/eugr/spark-vllm:latest` (broken, private) -> locally-built `vllm-node`
-   via `./build-and-copy.sh` in `~/Projects/spark-vllm-docker`
-3. **Networking**: `-p 8002:8000` port mapping -> `--network host` (spark-vllm default),
-   with `--port 8002` passed directly to `vllm serve`
-4. **Container name**: `--name vllm-agentic-factory` passed to `launch-cluster.sh`
-5. **Run script**: `run-on-gb10.sh` updated to support both `--resume` and fresh starts
+1. **Image**: `ghcr.io/eugr/spark-vllm:latest` (broken, private) -> locally-built
+   `vllm-node-tf5` via `./build-and-copy.sh --tf5` in `~/Projects/spark-vllm-docker`
+2. **Networking**: `-p 8002:8000` port mapping -> `--network host` with `--port 8002`
+3. **Run script**: `run-on-gb10.sh` updated to support both `--resume` and fresh starts
    (previously hardcoded `--resume`)
+4. **Flags**: Aligned with spark-arena leaderboard #1 recipe (see investigation below)
 
 Prerequisites (one-time):
 ```bash
 git clone https://github.com/eugr/spark-vllm-docker.git ~/Projects/spark-vllm-docker
-cd ~/Projects/spark-vllm-docker && ./build-and-copy.sh
+cd ~/Projects/spark-vllm-docker && ./build-and-copy.sh --tf5
 ```
 
-**Pending validation**: Needs a generation run to confirm tok/s improvement over
-direct docker run with NGC/old spark images.
+---
+
+## Spark-Arena Leaderboard Investigation (Apr 2026)
+
+### Context
+
+The spark-arena leaderboard (https://spark-arena.com/leaderboard) shows
+Qwen3.5-35B-A3B-FP8 achieving **50.75 tok/s** on a single DGX Spark. Our
+dataset generation pipeline was achieving **38 tok/s**. Investigation to
+close the gap.
+
+### What we tried
+
+| Change | Result |
+|--------|--------|
+| `launch-cluster.sh --solo` (Ray wrapper) | **32 tok/s** — slower due to Ray overhead |
+| Direct `docker run vllm-node` (no Ray) | **35 tok/s** — better but below baseline |
+| Added `--kv-cache-dtype fp8`, `--attention-backend flashinfer` | **35 tok/s** — no change |
+| Added `VLLM_MARLIN_USE_ATOMIC_ADD=1` | **35 tok/s** — no change |
+| Removed `VLLM_USE_V1=1`, `--enable-chunked-prefill` | Marginal improvement |
+| Full spark-arena #1 recipe flags | **38 tok/s** — matched previous baseline |
+| Previous `cu130-nightly` image with original flags | **40 tok/s** — the best observed |
+
+### Flags from spark-arena #1 recipe (final config)
+
+```
+--trust-remote-code
+--enable-auto-tool-choice --tool-call-parser qwen3_coder
+--reasoning-parser qwen3
+--enable-prefix-caching
+--kv-cache-dtype fp8
+--attention-backend flashinfer
+--max-num-batched-tokens 32768
+--max-num-seqs 10
+--max-cudagraph-capture-size 10
+--mamba-ssm-cache-dtype float16
+--load-format fastsafetensors
+VLLM_MARLIN_USE_ATOMIC_ADD=1
+mods/fix-qwen3.5-autoround (Transformers rope validation patch)
+```
+
+### Root cause: leaderboard measures batched throughput
+
+The 50 tok/s leaderboard figure uses `llama-benchy`, which sends **multiple
+concurrent requests**. The throughput is measured across the batch.
+
+Our pipeline sends **1 request at a time** (sequential Player → Coach loop).
+vLLM logs consistently show `Running: 1 reqs, Waiting: 0 reqs`. With only
+1 concurrent request, CUDA graph optimisations and batching provide no
+benefit. The 38-40 tok/s we observe is close to the **single-request hardware
+limit** for this model on GB10.
+
+### Key learnings
+
+1. **Leaderboard != real-world single-request throughput**. Spark-arena
+   benchmarks use concurrent batched requests. Single-request decode
+   throughput on Qwen3.5-35B-A3B-FP8 tops out around **38-41 tok/s** on GB10.
+
+2. **`launch-cluster.sh --solo` adds Ray overhead** (~5 tok/s penalty).
+   For single-node setups, direct `docker run` is faster. The `--no-ray`
+   flag has no effect in solo mode.
+
+3. **`VLLM_USE_V1=1` may cause regressions** in vLLM 0.18.x for this model.
+   The leaderboard recipes omit it. Removing it recovered ~3 tok/s.
+
+4. **`--enable-chunked-prefill` hurts single-request workloads**. None of
+   the top recipes use it. Removing it helped slightly.
+
+5. **`vllm-node-tf5` vs `cu130-nightly`**: The locally-built spark-vllm
+   image (vLLM 0.18.2) performed ~2 tok/s slower than `cu130-nightly`
+   (vLLM ~0.17.x, pulled 26 Mar 2026) on our workload. Newer is not
+   always faster for specific model/workload combinations.
+
+6. **The real throughput bottleneck is architectural**: Player and Coach
+   run sequentially. Overlapping Player generation with Coach evaluation
+   (concurrent requests) would better utilise the GPU and could approach
+   the 50 tok/s batched throughput.
+
+### Run time estimates (2,500 targets at 38 tok/s)
+
+| Metric | Value |
+|--------|-------|
+| Avg tokens per target (prompt + completion) | ~10,500 |
+| Time per target at 38 tok/s decode | ~35-45s |
+| Estimated total for 2,500 targets | ~25-30 hours |
+| Previous run (Run 1, 40 tok/s) | 23 hours |
 
 ---
 

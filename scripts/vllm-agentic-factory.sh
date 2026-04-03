@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # vllm-agentic-factory.sh — Serve LLM for agentic-dataset-factory on DGX Spark GB10
 #
-# Uses eugr/spark-vllm-docker's launch-cluster.sh for optimised Spark inference.
-# Wraps launch-cluster.sh --solo with model presets and tool-calling config.
+# Uses the locally-built vllm-node image from eugr/spark-vllm-docker for
+# optimised Spark inference. Runs directly via docker run (no Ray overhead).
 #
 # Serves a model with tool-calling support for the Player-Coach adversarial
 # cooperation pipeline. The Player agent needs tool-calling (rag_retrieval,
@@ -45,14 +45,28 @@ MAX_NUM_SEQS="${VLLM_MAX_NUM_SEQS:-4}"
 SPARK_VLLM_DIR="${SPARK_VLLM_DIR:-$HOME/Projects/spark-vllm-docker}"
 CONTAINER_NAME="vllm-agentic-factory"
 
-# --- Verify spark-vllm-docker is available ---
-LAUNCH_SCRIPT="${SPARK_VLLM_DIR}/launch-cluster.sh"
-if [ ! -x "$LAUNCH_SCRIPT" ]; then
-  echo "ERROR: spark-vllm-docker not found at ${SPARK_VLLM_DIR}"
+# --- Select image ---
+# Override with VLLM_IMAGE env var, or auto-select best available.
+# Priority: env override > vllm-node-tf5 > vllm-node > cu130-nightly
+if [ -n "${VLLM_IMAGE:-}" ]; then
+  : # use env override as-is
+elif docker image inspect vllm-node-tf5 > /dev/null 2>&1; then
+  VLLM_IMAGE="vllm-node-tf5"
+elif docker image inspect vllm-node > /dev/null 2>&1; then
+  VLLM_IMAGE="vllm-node"
+elif docker image inspect vllm/vllm-openai:cu130-nightly > /dev/null 2>&1; then
+  VLLM_IMAGE="vllm/vllm-openai:cu130-nightly"
+  echo "NOTE: Using cu130-nightly fallback. For spark-vllm optimisations, build:"
+  echo "  cd ${SPARK_VLLM_DIR} && ./build-and-copy.sh --tf5"
+else
+  echo "ERROR: No vLLM Docker image found."
   echo ""
-  echo "Install it:"
+  echo "Either pull the nightly:"
+  echo "  docker pull vllm/vllm-openai:cu130-nightly"
+  echo ""
+  echo "Or build spark-vllm-docker (recommended):"
   echo "  git clone https://github.com/eugr/spark-vllm-docker.git ${SPARK_VLLM_DIR}"
-  echo "  cd ${SPARK_VLLM_DIR} && ./build-and-copy.sh"
+  echo "  cd ${SPARK_VLLM_DIR} && ./build-and-copy.sh --tf5"
   exit 1
 fi
 
@@ -63,16 +77,25 @@ EXTRA_ARGS=""
 case "$MODEL_PRESET" in
   qwen35|default|"")
     MODEL="Qwen/Qwen3.5-35B-A3B-FP8"
-    GPU_UTIL="${VLLM_FACTORY_GPU_UTIL:-0.80}"
+    GPU_UTIL="${VLLM_FACTORY_GPU_UTIL:-0.70}"
     MAX_LEN="${VLLM_FACTORY_MAX_LEN:-262144}"
+    # Flags from spark-arena #1 recipe (50.75 tok/s single node):
+    # https://spark-arena.com/leaderboard — Qwen3.5-35B-A3B-FP8
     EXTRA_ARGS="--trust-remote-code \
       --enable-auto-tool-choice \
       --tool-call-parser qwen3_coder \
+      --reasoning-parser qwen3 \
       --enable-prefix-caching \
-      --enable-chunked-prefill \
-      --structured-outputs-config.backend xgrammar"
+      --kv-cache-dtype fp8 \
+      --attention-backend flashinfer \
+      --max-num-batched-tokens 32768 \
+      --max-num-seqs 10 \
+      --max-cudagraph-capture-size 10 \
+      --mamba-ssm-cache-dtype float16"
+    # Apply mod at runtime (Transformers rope fix for Qwen3.5)
+    APPLY_MOD="${SPARK_VLLM_DIR}/mods/fix-qwen3.5-autoround"
     echo "═══ Qwen3.5-35B-A3B FP8 (3B active, ~70GB) — Tool-calling ═══"
-    echo "    Tool parser: qwen3_coder | Structured: xgrammar | Context: ${MAX_LEN}"
+    echo "    spark-arena #1 recipe | target: 50 tok/s | Context: ${MAX_LEN}"
     ;;
   nano-4b)
     MODEL="nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8"
@@ -137,25 +160,47 @@ echo "  Model:    $MODEL"
 echo "  Port:     $PORT"
 echo "  GPU util: $GPU_UTIL"
 echo "  Max len:  $MAX_LEN"
-echo "  Max seqs: $MAX_NUM_SEQS"
-echo "  Engine:   spark-vllm-docker (launch-cluster.sh --solo)"
+echo "  Image:    $VLLM_IMAGE"
+echo "  Mod:      ${APPLY_MOD:-none}"
 echo "========================================"
 echo ""
 
-# --- Launch via spark-vllm-docker ---
-# launch-cluster.sh uses --network host, so --port maps directly to the host.
+# --- Launch directly with docker run ---
+# Uses the locally-built vllm-node image from spark-vllm-docker.
+# Direct docker run avoids Ray overhead for single-node workloads.
+# Uses --network host so --port maps directly to the host.
+#
+# Env vars match leaderboard recipe (only VLLM_MARLIN_USE_ATOMIC_ADD).
+# VLLM_USE_V1 intentionally omitted — not in any top recipe and may
+# cause regressions in 0.18.x.
 # shellcheck disable=SC2086
-cd "$SPARK_VLLM_DIR"
-./launch-cluster.sh --solo --name "$CONTAINER_NAME" exec \
-  vllm serve "$MODEL" \
-    --port "$PORT" \
+docker run -d \
+  --name "$CONTAINER_NAME" \
+  --gpus all \
+  --network host \
+  --ipc=host \
+  --ulimit memlock=-1 \
+  --ulimit stack=67108864 \
+  -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
+  -v "$HOME/.cache/vllm:/root/.cache/vllm" \
+  ${HF_TOKEN:+-e "HF_TOKEN=$HF_TOKEN"} \
+  -e "VLLM_MARLIN_USE_ATOMIC_ADD=1" \
+  --entrypoint vllm \
+  "$VLLM_IMAGE" \
+  serve "$MODEL" \
     --host 0.0.0.0 \
+    --port "$PORT" \
     --gpu-memory-utilization "$GPU_UTIL" \
     --max-model-len "$MAX_LEN" \
-    --dtype auto \
     --load-format fastsafetensors \
-    --max-num-seqs "$MAX_NUM_SEQS" \
     $EXTRA_ARGS
+
+# --- Apply mod (runtime patch) if specified ---
+if [ -n "${APPLY_MOD:-}" ] && [ -d "$APPLY_MOD" ]; then
+  echo "Applying mod: $APPLY_MOD"
+  docker cp "$APPLY_MOD/." "$CONTAINER_NAME:/tmp/mod/"
+  docker exec "$CONTAINER_NAME" bash -c "cd /tmp/mod && bash run.sh" || true
+fi
 
 echo ""
 echo "Container started: $CONTAINER_NAME"
