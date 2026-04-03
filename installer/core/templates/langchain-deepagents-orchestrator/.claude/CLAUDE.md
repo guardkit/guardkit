@@ -1,4 +1,4 @@
-# {{ProjectName}} — Pipeline Orchestrator
+# LangChain DeepAgents — Pipeline Orchestrator
 
 A pipeline orchestrator agent using DeepAgents two-model architecture.
 

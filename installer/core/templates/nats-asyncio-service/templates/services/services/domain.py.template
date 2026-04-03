@@ -1,0 +1,35 @@
+"""Domain service — pure business logic, no NATS dependency.
+
+PATTERN: Services contain all business logic. They:
+- Accept typed Pydantic models as input
+- Return typed Pydantic models as output
+- Have NO dependency on NATS, FastStream, or broker
+- Are independently testable without any infrastructure
+
+This separation means you can unit test services without TestNatsBroker.
+"""
+
+from __future__ import annotations
+
+from {{ProjectName}}.config import settings
+from {{ProjectName}}.schemas import InboundMessage, OutboundMessage
+
+
+class {{ClassName}}:
+    """Processes domain actions.
+
+    Replace this with your actual domain logic.
+    """
+
+    async def process(self, msg: InboundMessage) -> OutboundMessage:
+        """Process an inbound message and return a result.
+
+        This is where your business logic lives.
+        """
+        # Example: echo back with processing confirmation
+        return OutboundMessage(
+            source_id=settings.service_name,
+            correlation_id=msg.message_id,
+            result=f"Processed: {msg.payload}",
+            success=True,
+        )

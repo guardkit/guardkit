@@ -38,7 +38,7 @@ This is a **production-ready FastAPI backend template** based on best practices 
 ## Project Structure
 
 ```
-{{ProjectName}}/
+<project_root>/
 ├── src/
 │   ├── {{feature_name}}/         # Feature modules (users, products, orders, etc.)
 │   │   ├── router.py             # API endpoints

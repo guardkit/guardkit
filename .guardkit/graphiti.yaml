@@ -3,6 +3,11 @@
 # This file configures the Graphiti integration for GuardKit.
 # FalkorDB runs on the Synology DS918+ NAS, accessible via Tailscale.
 #
+# LLM Endpoint Switching:
+#   To switch between GB10 and MacBook LLM, toggle the llm_provider/llm_base_url/
+#   llm_model settings below. See docs/reference/graphiti-macbook-offload.md for
+#   full setup instructions and the toggle script.
+#
 # All settings can be overridden via environment variables:
 #   - GRAPHITI_ENABLED: Enable/disable integration
 #   - GRAPH_STORE: Graph backend ('falkordb' or 'neo4j')
@@ -41,9 +46,19 @@ max_concurrent_episodes: 3
 
 # LLM provider for Graphiti entity extraction
 # Options: openai (default), vllm, ollama
-llm_provider: vllm
-llm_base_url: http://promaxgb10-41b1:8000/v1
-llm_model: neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic
+#
+# To switch back to GB10 (vLLM), uncomment the gb10 lines and comment the macbook lines.
+# Also update .mcp.json LLM_API_URL to http://promaxgb10-41b1:8000/v1
+#
+# --- GB10 (vLLM, FP8) ---
+#llm_provider: vllm
+#llm_base_url: http://promaxgb10-41b1:8000/v1
+#llm_model: neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic
+#
+# --- MacBook Pro M2 Max (Ollama, Q4_K_M) ---
+llm_provider: ollama
+llm_base_url: http://richards-macbook-pro.tailebf801.ts.net:8000/v1
+llm_model: qwen2.5:14b-instruct-q4_K_M
 llm_max_tokens: 4096  # Cap output tokens; prevents 16384 default exceeding 32K context (TASK-REV-84A7)
 
 # Embedding provider for Graphiti vector search

@@ -15,7 +15,7 @@ This is a **production-ready FastAPI backend template** based on best practices 
 ## Architecture Overview
 
 ```
-{{ProjectName}}/
+<project_root>/
 ├── src/
 │   ├── {{feature_name}}/      # Feature modules
 │   │   ├── router.py          # API endpoints

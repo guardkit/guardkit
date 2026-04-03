@@ -554,7 +554,7 @@ create_directories() {
     mkdir -p "$INSTALL_DIR/instructions"/{core,stacks}
     
     # Create sub-directories for templates
-    mkdir -p "$INSTALL_DIR/templates"/{default,react-typescript,fastapi-python,nextjs-fullstack,react-fastapi-monorepo}
+    mkdir -p "$INSTALL_DIR/templates"/{default,react-typescript,fastapi-python,nextjs-fullstack,react-fastapi-monorepo,python-library,nats-asyncio-service}
     
     # Create versions structure
     mkdir -p "$INSTALL_DIR/versions/$AGENTECFLOW_VERSION"
@@ -866,6 +866,8 @@ print_help() {
     echo "  fastapi-python       - FastAPI backend with layered architecture (9+/10)"
     echo "  nextjs-fullstack     - Next.js App Router full-stack (9+/10)"
     echo "  react-fastapi-monorepo - React + FastAPI monorepo with type safety (9.2/10)"
+    echo "  python-library         - Standalone pip-installable Python library with hatchling, src layout, pytest, ruff, mypy strict"
+    echo "  nats-asyncio-service   - NATS event-driven asyncio service with FastStream, TestNatsBroker, pydantic-settings, JetStream"
     echo ""
     echo "Examples:"
     echo "  guardkit-init                     # Interactive setup"

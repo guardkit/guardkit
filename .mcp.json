@@ -16,7 +16,8 @@
       "env": {
         "CONFIG_PATH": "/Users/richardwoollcott/Projects/appmilla_github/graphiti/mcp_server/config/config-guardkit.yaml",
         "OPENAI_API_KEY": "not-needed-vllm-local",
-        "LLM_API_URL": "http://promaxgb10-41b1:8000/v1",
+        "LLM_API_URL": "http://richards-macbook-pro.tailebf801.ts.net:8000/v1",
+        "LLM_MODEL": "qwen2.5:14b-instruct-q4_K_M",
         "EMBEDDING_API_URL": "http://promaxgb10-41b1:8001/v1",
         "EMBEDDING_DIM": "1024"
       }

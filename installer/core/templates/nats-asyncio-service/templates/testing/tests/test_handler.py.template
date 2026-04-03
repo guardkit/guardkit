@@ -1,0 +1,35 @@
+"""Unit tests for domain handler using TestNatsBroker.
+
+PATTERN: TestNatsBroker provides in-memory NATS testing — no real NATS server needed.
+This is the critical pattern that makes unit tests fast and infrastructure-free.
+"""
+
+from __future__ import annotations
+
+import pytest
+from {{ProjectName}}.nats import TestNatsBroker
+
+from {{ProjectName}}.app import broker
+from {{ProjectName}}.handlers.domain import handle_domain_action
+
+
+@pytest.mark.asyncio
+async def test_handle_domain_action_publishes_result(make_inbound_message) -> None:
+    """Handler should process inbound message and publish result."""
+    async with TestNatsBroker(broker) as tb:
+        msg = make_inbound_message(payload="test data")
+
+        await tb.publish(msg, "domain.action.request")
+
+        handle_domain_action.mock.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_domain_action_with_custom_source(make_inbound_message) -> None:
+    """Handler should preserve source_id from inbound message."""
+    async with TestNatsBroker(broker) as tb:
+        msg = make_inbound_message(source_id="custom-source", payload="hello")
+
+        await tb.publish(msg, "domain.action.request")
+
+        handle_domain_action.mock.assert_called_once()

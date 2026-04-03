@@ -17,7 +17,7 @@ This is a **production-ready FastMCP server template** for building MCP (Model C
 ### Flat MCP Structure
 
 ```
-{{ProjectName}}/
+<project_root>/
 ├── src/
 │   ├── __main__.py              # Server entry point (CRITICAL: module-level tool registration)
 │   ├── tools/                   # MCP tool implementations

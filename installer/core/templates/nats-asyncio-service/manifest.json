@@ -1,0 +1,114 @@
+{
+  "schema_version": "1.0.0",
+  "name": "nats-asyncio-service",
+  "display_name": "Python Layered Messaging Service (Pub/Sub)",
+  "description": "Python template using Layered Messaging Service (Pub/Sub) architecture with FastStream, Pydantic",
+  "version": "1.0.0",
+  "author": "Richard Woollcott",
+  "language": "Python",
+  "language_version": ">=3.12",
+  "frameworks": [
+    {
+      "name": "FastStream",
+      "version": null,
+      "purpose": "core"
+    },
+    {
+      "name": "Pydantic",
+      "version": null,
+      "purpose": "core"
+    },
+    {
+      "name": "pydantic-settings",
+      "version": null,
+      "purpose": "core"
+    },
+    {
+      "name": "pytest",
+      "version": null,
+      "purpose": "testing"
+    },
+    {
+      "name": "pytest-asyncio",
+      "version": null,
+      "purpose": "testing"
+    }
+  ],
+  "architecture": "Layered Messaging Service (Pub/Sub)",
+  "patterns": [
+    "Correlation ID linking for request/response tracing",
+    "Environment variable configuration via pydantic-settings",
+    "Explicit unidirectional dependency flow (handler -> service)",
+    "Factory function pattern for test data",
+    "Handler/Service separation",
+    "In-memory broker testing via TestNatsBroker",
+    "Lifespan context manager for startup/shutdown",
+    "Marker-gated integration tests",
+    "Module-level singleton for service instances",
+    "Pub/Sub messaging"
+  ],
+  "layers": [
+    "Entry Point",
+    "Application",
+    "Configuration",
+    "Schemas",
+    "Handlers",
+    "Services"
+  ],
+  "placeholders": {
+    "ProjectName": {
+      "name": "{{ProjectName}}",
+      "description": "Name of the project/solution",
+      "default_value": null,
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+      "required": true
+    },
+    "Namespace": {
+      "name": "{{Namespace}}",
+      "description": "Root namespace for the project",
+      "default_value": null,
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)*$",
+      "required": true
+    },
+    "Author": {
+      "name": "{{Author}}",
+      "description": "Project author name",
+      "default_value": null,
+      "pattern": null,
+      "required": false
+    }
+  },
+  "tags": [
+    "application",
+    "configuration",
+    "correlation-id-linking-for-request/response-tracing",
+    "entry point",
+    "environment-variable-configuration-via-pydantic-settings",
+    "explicit-unidirectional-dependency-flow-(handler-->-service)",
+    "factory-function-pattern-for-test-data",
+    "faststream",
+    "handler/service-separation",
+    "handlers",
+    "in-memory-broker-testing-via-testnatsbroker",
+    "layered-messaging-service-(pub/sub)",
+    "lifespan-context-manager-for-startup/shutdown",
+    "marker-gated-integration-tests",
+    "module-level-singleton-for-service-instances",
+    "pub/sub-messaging",
+    "pydantic",
+    "pydantic-settings",
+    "pytest",
+    "pytest-asyncio",
+    "python",
+    "schemas",
+    "services"
+  ],
+  "category": "general",
+  "complexity": 7,
+  "compatible_with": [],
+  "requires": [
+    "agent:python-domain-specialist"
+  ],
+  "created_at": "2026-04-03T20:50:09.155199",
+  "confidence_score": 70.0
+}

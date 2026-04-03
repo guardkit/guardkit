@@ -1,0 +1,44 @@
+"""Pydantic message schemas for NATS subjects.
+
+Each NATS subject should have a corresponding Pydantic model.
+Schemas define the wire format — keep them strict (no dict[str, Any] at top level).
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from uuid import uuid4
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class {{ClassName}}(BaseModel):
+    """Example inbound message received from a NATS subject.
+
+    Replace with your actual domain message schema.
+    """
+
+    model_config = ConfigDict(extra="ignore")  # Forward compatibility
+
+    message_id: str = Field(default_factory=lambda: str(uuid4()))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    version: str = "1.0"
+    source_id: str
+    payload: str  # Replace with your actual typed payload
+
+
+class {{ClassName}}(BaseModel):
+    """Example outbound message published to a NATS subject.
+
+    Replace with your actual domain response schema.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    message_id: str = Field(default_factory=lambda: str(uuid4()))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    version: str = "1.0"
+    source_id: str
+    correlation_id: str | None = None  # Links to originating message
+    result: str  # Replace with your actual typed result
+    success: bool = True

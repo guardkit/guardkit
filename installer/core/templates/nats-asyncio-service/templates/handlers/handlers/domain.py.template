@@ -1,0 +1,35 @@
+"""{{EntityName}} action handler — thin layer delegating to DomainService.
+
+PATTERN: Handlers are thin. They:
+1. Receive a validated Pydantic message from a NATS subject
+2. Call a service method with the message
+3. Return the result (which FastStream publishes to the output subject)
+
+Business logic belongs in services/domain.py, NOT here.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from {{ProjectName}}.app import broker
+from {{ProjectName}}.config import settings
+from {{ProjectName}}.schemas import InboundMessage, OutboundMessage
+from {{ProjectName}}.services.domain import DomainService
+
+logger = logging.getLogger(settings.service_name)
+
+domain_service = DomainService()
+
+
+@broker.subscriber("domain.action.request")
+@broker.publisher("domain.action.result")
+async def handle_domain_action(msg: InboundMessage) -> OutboundMessage:
+    """Handle an inbound domain action request.
+
+    Subject: domain.action.request -> domain.action.result
+    """
+    logger.info("Received domain action: %s from %s", msg.message_id, msg.source_id)
+    result = await domain_service.process(msg)
+    logger.info("Processed domain action: %s -> success=%s", msg.message_id, result.success)
+    return result

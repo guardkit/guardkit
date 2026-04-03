@@ -1,0 +1,27 @@
+"""Test fixtures — factory function pattern (not fixture-heavy).
+
+PATTERN: Use factory functions that return mock data classes, not pytest fixtures
+for every piece of test data. This keeps tests readable and self-contained.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from {{ProjectName}}.schemas import InboundMessage
+
+
+def _make_inbound_message(**overrides: object) -> InboundMessage:
+    """Factory for InboundMessage test instances."""
+    defaults = {
+        "source_id": "test-source",
+        "payload": "test payload data",
+    }
+    defaults.update(overrides)
+    return InboundMessage(**defaults)
+
+
+@pytest.fixture
+def make_inbound_message():
+    """Fixture exposing the InboundMessage factory — auto-discovered by pytest."""
+    return _make_inbound_message

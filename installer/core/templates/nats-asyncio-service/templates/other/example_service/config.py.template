@@ -1,0 +1,29 @@
+"""pydantic-settings configuration for the service."""
+
+from __future__ import annotations
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class {{ClassName}}(BaseSettings):
+    """Service configuration loaded from environment variables.
+
+    Environment variables are prefixed with SERVICE_ (e.g., SERVICE_NATS_URL).
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="SERVICE_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+    )
+
+    nats_url: str = "nats://localhost:4222"
+    nats_connect_timeout: int = 5
+    nats_reconnect_time_wait: int = 2
+    nats_max_reconnect_attempts: int = 60
+
+    log_level: str = "INFO"
+    service_name: str = "example-service"
+
+
+settings = {{ClassName}}()

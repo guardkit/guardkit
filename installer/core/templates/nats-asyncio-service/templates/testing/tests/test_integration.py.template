@@ -1,0 +1,69 @@
+"""Integration tests — require a real NATS server.
+
+Run with: pytest -m integration
+
+PATTERN: Integration tests are gated behind the 'integration' marker and excluded
+from default test runs (addopts = "-m 'not integration'" in pyproject.toml).
+They verify the full publish → handler → service → publish cycle with real NATS.
+
+Requires: docker compose up -d nats
+"""
+
+from __future__ import annotations
+
+import asyncio
+
+import nats
+import pytest
+
+from {{ProjectName}}.app import broker
+from {{ProjectName}}.schemas import InboundMessage, OutboundMessage
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_full_roundtrip_with_real_nats() -> None:
+    """End-to-end test: publish message, handler processes, result published.
+
+    This test requires a running NATS server (via docker compose).
+    It verifies the complete message flow through real infrastructure:
+      publish InboundMessage → handler → DomainService → publish OutboundMessage
+    """
+    await broker.start()
+    try:
+        # Connect a separate NATS client to observe the result subject
+        nc = await nats.connect("nats://localhost:4222")
+        try:
+            received: list[OutboundMessage] = []
+            event = asyncio.Event()
+
+            async def on_result(msg: nats.aio.msg.Msg) -> None:
+                received.append(OutboundMessage.model_validate_json(msg.data))
+                event.set()
+
+            sub = await nc.subscribe("domain.action.result", cb=on_result)
+            await asyncio.sleep(0.2)  # ensure subscription is active
+
+            # Publish via the broker (routes through real NATS)
+            inbound = InboundMessage(
+                source_id="integration-test",
+                payload="roundtrip-check",
+            )
+            await broker.publish(inbound, "domain.action.request")
+
+            # Wait for the handler to process and publish the result
+            await asyncio.wait_for(event.wait(), timeout=5.0)
+
+            # Verify the full roundtrip
+            assert len(received) == 1
+            result = received[0]
+            assert result.success is True
+            assert result.correlation_id == inbound.message_id
+            assert "roundtrip-check" in result.result
+            assert result.source_id == "example-service"
+
+            await sub.unsubscribe()
+        finally:
+            await nc.close()
+    finally:
+        await broker.stop()

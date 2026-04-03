@@ -1,0 +1,53 @@
+"""FastStream application with NATS broker and lifespan management."""
+
+from __future__ import annotations
+
+import logging
+import sys
+from {{ProjectName}}.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from {{ProjectName}} import FastStream
+from {{ProjectName}}.nats import NatsBroker
+
+from {{ProjectName}}.config import settings
+
+# Configure logging to stderr only (stdout must never be used for log output)
+logging.basicConfig(
+    level=getattr(logging, settings.log_level),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    stream=sys.stderr,
+)
+logger = logging.getLogger(settings.service_name)
+
+# Create the NATS broker
+broker = NatsBroker(
+    settings.nats_url,
+    connect_timeout=settings.nats_connect_timeout,
+    reconnect_time_wait=settings.nats_reconnect_time_wait,
+    max_reconnect_attempts=settings.nats_max_reconnect_attempts,
+)
+
+
+@asynccontextmanager
+async def lifespan() -> AsyncIterator[None]:
+    """Manage service lifecycle — startup and shutdown.
+
+    Use this for initialising shared resources (DB connections, API clients, etc.)
+    and cleaning them up on shutdown.
+    """
+    logger.info("Starting %s", settings.service_name)
+    # Startup: initialise shared resources here
+    # e.g., http_client = httpx.AsyncClient()
+    yield
+    # Shutdown: cleanup shared resources here
+    # e.g., await http_client.aclose()
+    logger.info("Stopping %s", settings.service_name)
+
+
+# Create the FastStream application
+app = FastStream(broker, lifespan=lifespan)
+
+# Import handlers to register them with the broker
+# This must happen after broker is created
+import {{ProjectName}}.handlers.domain  # noqa: E402, F401

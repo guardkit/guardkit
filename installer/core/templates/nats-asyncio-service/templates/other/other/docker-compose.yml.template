@@ -1,0 +1,24 @@
+services:
+  nats:
+    image: nats:latest
+    container_name: example-nats
+    ports:
+      - "4222:4222"   # Client connections
+      - "8222:8222"   # Monitoring / HTTP API
+    command: ["-js", "-m", "8222"]  # -js = JetStream enabled
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  service:
+    build: .
+    container_name: example-service
+    depends_on:
+      nats:
+        condition: service_healthy
+    environment:
+      - SERVICE_NATS_URL=nats://nats:4222
+      - SERVICE_LOG_LEVEL=INFO
+    restart: unless-stopped

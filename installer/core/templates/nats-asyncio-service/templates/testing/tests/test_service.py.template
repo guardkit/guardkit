@@ -1,0 +1,46 @@
+"""Unit tests for DomainService — pure logic, no NATS dependency.
+
+PATTERN: Service tests are plain async tests. No TestNatsBroker needed because
+services have no NATS dependency. This validates business logic in isolation.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from {{ProjectName}}.services.domain import DomainService
+
+
+@pytest.mark.asyncio
+async def test_process_returns_success(make_inbound_message) -> None:
+    """Service should return a successful result."""
+    svc = DomainService()
+    msg = make_inbound_message(payload="hello world")
+
+    result = await svc.process(msg)
+
+    assert result.success is True
+    assert "hello world" in result.result
+
+
+@pytest.mark.asyncio
+async def test_process_sets_correlation_id(make_inbound_message) -> None:
+    """Result should link back to the originating message via correlation_id."""
+    svc = DomainService()
+    msg = make_inbound_message()
+
+    result = await svc.process(msg)
+
+    assert result.correlation_id == msg.message_id
+
+
+@pytest.mark.asyncio
+async def test_process_sets_service_source_id(make_inbound_message) -> None:
+    """Result source_id should identify this service, not the sender."""
+    svc = DomainService()
+    msg = make_inbound_message(source_id="external-caller")
+
+    result = await svc.process(msg)
+
+    assert result.source_id != "external-caller"
+    assert result.source_id == "example-service"

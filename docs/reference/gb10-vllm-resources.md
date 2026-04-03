@@ -104,13 +104,14 @@ AutoBuild context loading):
 The embedding model (nomic-embed, port 8001) uses only 0.03 GPU util (~0.5GB).
 It can safely co-host alongside any dataset generation run.
 
-### Option 2: Graphiti LLM on MacBook Pro M2 Max
-- **Hardware**: 40-core GPU, 96GB RAM (need to close browsers/IDEs to free memory)
-- **Model**: Qwen2.5-14B GGUF via llama.cpp or Ollama
-- **How**: Run llama-server or `ollama serve` on MacBook, point `.guardkit/graphiti.yaml`
-  LLM endpoint to `http://<macbook-ip>:8000`
-- **Expected speed**: ~10-15 tok/s (slower than GB10's ~40 tok/s but unblocks work)
+### Option 2: Graphiti LLM on MacBook Pro M2 Max (validated)
+- **Hardware**: 40-core GPU, 96GB RAM (~10GB for Q4_K_M, no need to close apps)
+- **Model**: Qwen2.5-14B Q4_K_M via Ollama
+- **Measured speed**: ~15-25 tok/s, 54.7s full episode pipeline (TASK-GMO-004)
+- **Entity quality**: Comparable to GB10 (7/7 entities correct)
 - **Advantage**: GB10 stays 100% on dataset generation
+- **Setup guide**: [`docs/reference/graphiti-macbook-offload.md`](graphiti-macbook-offload.md)
+- **Toggle**: `source scripts/graphiti-endpoint-toggle.sh macbook`
 
 ### Option 3: Graphiti LLM on GB10 CPU-only
 - Run Qwen2.5-14B GGUF via llama.cpp with `-ngl 0` (no GPU layers)

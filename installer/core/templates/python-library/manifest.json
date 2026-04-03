@@ -1,0 +1,85 @@
+{
+  "schema_version": "1.0.0",
+  "name": "python-library",
+  "display_name": "Python Library",
+  "description": "Python pip-installable library with hatchling, src layout, pytest, ruff, mypy strict",
+  "version": "1.0.0",
+  "author": null,
+  "language": "Python",
+  "language_version": ">=3.10",
+  "frameworks": [
+    {
+      "name": "hatchling",
+      "version": null,
+      "purpose": "core"
+    },
+    {
+      "name": "pytest",
+      "version": null,
+      "purpose": "testing"
+    },
+    {
+      "name": "ruff",
+      "version": null,
+      "purpose": "linting"
+    },
+    {
+      "name": "mypy",
+      "version": null,
+      "purpose": "type-checking"
+    }
+  ],
+  "architecture": "Src Layout Library",
+  "patterns": [
+    "Factory",
+    "Model",
+    "Validator"
+  ],
+  "layers": [
+    "src",
+    "tests",
+    "docs"
+  ],
+  "placeholders": {
+    "ProjectName": {
+      "name": "{{ProjectName}}",
+      "description": "Name of the project/solution",
+      "default_value": null,
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
+      "required": true
+    },
+    "PackageName": {
+      "name": "{{PackageName}}",
+      "description": "Python package name (snake_case, used in src/ layout)",
+      "default_value": null,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "required": true
+    },
+    "Author": {
+      "name": "{{Author}}",
+      "description": "Project author name",
+      "default_value": null,
+      "pattern": null,
+      "required": false
+    }
+  },
+  "tags": [
+    "python",
+    "library",
+    "hatchling",
+    "pytest",
+    "ruff",
+    "mypy",
+    "src-layout",
+    "pip",
+    "pydantic",
+    "typed",
+    "pep561"
+  ],
+  "category": "library",
+  "complexity": 5,
+  "compatible_with": [],
+  "requires": [],
+  "created_at": "2026-04-03T18:13:54.289283",
+  "confidence_score": 92.0
+}

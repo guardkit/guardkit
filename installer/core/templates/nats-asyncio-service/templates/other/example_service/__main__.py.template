@@ -1,0 +1,16 @@
+"""Entry point for running the service: python -m {{ProjectName}}."""
+
+from __future__ import annotations
+
+import asyncio
+
+from {{ProjectName}}.app import app
+
+
+def main() -> None:
+    """Run the FastStream application."""
+    asyncio.run(app.run())
+
+
+if __name__ == "__main__":
+    main()

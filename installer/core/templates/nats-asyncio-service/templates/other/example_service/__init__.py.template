@@ -1,0 +1,8 @@
+"""Example NATS asyncio service — exemplar for {{ProjectName}} template."""
+
+from __future__ import annotations
+
+from {{ProjectName}}.app import app, broker
+from {{ProjectName}}.config import Settings
+
+__all__ = ["app", "broker", "Settings"]
