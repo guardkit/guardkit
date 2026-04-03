@@ -9,7 +9,24 @@ Use this as a reference when creating or updating vLLM serving scripts.
 
 ### spark-vllm-docker (community, recommended)
 - **Repo**: https://github.com/eugr/spark-vllm-docker
-- **Image**: `ghcr.io/eugr/spark-vllm:latest`
+- **Image**: Built locally — there is NO pre-built image to pull. The
+  `ghcr.io/eugr/spark-vllm:latest` reference in older scripts is stale
+  and returns `denied` on pull. You must clone and build locally.
+- **Setup (one-time)**:
+  ```bash
+  git clone https://github.com/eugr/spark-vllm-docker.git ~/Projects/spark-vllm-docker
+  cd ~/Projects/spark-vllm-docker
+  ./build-and-copy.sh          # single node, ~2-3 min
+  ./build-and-copy.sh -c       # cluster (copies to peers)
+  ```
+- **Running (single node)**:
+  ```bash
+  ./launch-cluster.sh --solo --name my-container exec \
+    vllm serve Qwen/Qwen3.5-35B-A3B-FP8 \
+    --port 8002 --host 0.0.0.0 \
+    --gpu-memory-utilization 0.80 \
+    --load-format fastsafetensors
+  ```
 - **What it provides**:
   - Nightly prebuilt vLLM and FlashInfer wheels (avoids 20-40 min compilation)
   - Multi-node cluster support with InfiniBand/RDMA
@@ -19,8 +36,10 @@ Use this as a reference when creating or updating vLLM serving scripts.
   - fastsafetensors support for faster weight loading
   - Autodiscovery of GB10 nodes
   - Build time: 2-3 min vs 20-40 min from source
+  - `--network host` — container uses host networking (no `-p` port mapping needed)
 - **Recipes available**: qwen3-coder-next-int4-autoround, qwen3.5-122b-fp8, qwen3.5-35b-a3b-fp8, qwen3.5-397b-int4-autoround
-- **Key flags**: `--solo` (single node), `--no-ray`, `--setup` (force autodiscovery), `--apply-mod <path>`
+- **Key flags**: `--solo` (single node), `--name` (container name), `--no-ray`, `--setup` (force autodiscovery), `--apply-mod <path>`
+- **Image tags** (local builds): `vllm-node` (default), `vllm-node-tf5` (with `--tf5`), `vllm-node-mxfp4` (with `--exp-mxfp4`)
 
 ### NGC vLLM (NVIDIA official, stable)
 - **Image**: `nvcr.io/nvidia/vllm:26.01-py3` (Jan 2026 release)
@@ -100,9 +119,21 @@ It can safely co-host alongside any dataset generation run.
 
 ## Related Project Files
 
+- `scripts/vllm-agentic-factory.sh` — Dataset Factory LLM (port 8002, uses spark-vllm-docker)
 - `scripts/vllm-serve.sh` — AutoBuild LLM (port 8002)
 - `scripts/vllm-graphiti.sh` — Graphiti LLM (port 8000)
 - `scripts/vllm-embed.sh` — Embedding model (port 8001)
 - `docs/reference/vllm-perf-tuning.md` — Performance tuning flags reference
 - `docs/reviews/vllm-profiling/` — Raw profiling run data
 - `.claude/reviews/TASK-REV-CB30-vllm-viability-review-report.md` — Viability analysis
+
+## Agentic Dataset Factory — Deployment Notes
+
+See `~/Projects/appmilla_github/agentic-dataset-factory/docs/deployment/gb10-setup.md`
+for the full setup guide covering:
+- Project and data sync (rsync from Mac to GB10)
+- Python environment (3.12, `pip install -e .`, `langchain-openai`)
+- `OPENAI_API_KEY=not-needed` for local vLLM endpoints
+- Output backup before fresh runs (pipeline wipes `output/` without `--resume`)
+- Merge workflow: `cat` + `scripts/clean_training_data.py`
+- tmux session management and checkpoint resume

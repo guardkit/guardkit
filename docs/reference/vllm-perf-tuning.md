@@ -88,12 +88,33 @@ Headroom: ~31GB for OS, CPU tasks, Graphiti/FalkorDB. Safe but tight — if OOM,
 5. Fallback: `VLLM_USE_NGC=1 ./scripts/vllm-serve.sh` restores old NGC image
 6. Original backed up as `scripts/vllm-serve.original.sh`
 
-**Pending validation**: Needs a profiling run (Run 7) on the GB10 to confirm actual tok/s improvement.
+## Changes Applied to vllm-agentic-factory.sh (Apr 2026)
+
+Migrated from direct `docker run` to eugr's `spark-vllm-docker` framework:
+
+1. **Engine**: Direct `docker run` -> `launch-cluster.sh --solo` from spark-vllm-docker
+2. **Image**: `ghcr.io/eugr/spark-vllm:latest` (broken, private) -> locally-built `vllm-node`
+   via `./build-and-copy.sh` in `~/Projects/spark-vllm-docker`
+3. **Networking**: `-p 8002:8000` port mapping -> `--network host` (spark-vllm default),
+   with `--port 8002` passed directly to `vllm serve`
+4. **Container name**: `--name vllm-agentic-factory` passed to `launch-cluster.sh`
+5. **Run script**: `run-on-gb10.sh` updated to support both `--resume` and fresh starts
+   (previously hardcoded `--resume`)
+
+Prerequisites (one-time):
+```bash
+git clone https://github.com/eugr/spark-vllm-docker.git ~/Projects/spark-vllm-docker
+cd ~/Projects/spark-vllm-docker && ./build-and-copy.sh
+```
+
+**Pending validation**: Needs a generation run to confirm tok/s improvement over
+direct docker run with NGC/old spark images.
 
 ---
 
 ## Related Files
 
+- `scripts/vllm-agentic-factory.sh` — Dataset Factory LLM (port 8002, uses spark-vllm-docker)
 - `scripts/vllm-serve.sh` — AutoBuild LLM (port 8002, optimized)
 - `scripts/vllm-graphiti.sh` — Graphiti LLM (port 8000, candidates for same optimizations)
 - `scripts/vllm-embed.sh` — Embedding model (port 8001)
