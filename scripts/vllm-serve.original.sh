@@ -10,30 +10,10 @@
 #
 # Environment variables (override defaults):
 #   VLLM_PORT=8002          Server port (default 8002, was 8000 before Graphiti split)
-#   VLLM_GPU_UTIL=0.90      GPU memory utilization (0.0-1.0, raised from 0.8 for more KV cache)
+#   VLLM_GPU_UTIL=0.8       GPU memory utilization (0.0-1.0)
 #   VLLM_MAX_LEN=262144     Max context length (Qwen3-Coder-Next supports 256K natively)
-#   VLLM_IMAGE=<auto>       Docker image (default: spark-vllm-docker nightly, see below)
-#   VLLM_USE_NGC=1          Force NGC image instead of spark-vllm-docker
-#   VLLM_NUM_SCHEDULER_STEPS=8  Multi-step scheduling (reduces overhead per token)
-#   VLLM_MAX_NUM_SEQS=4     Max concurrent sequences (low for single-user AutoBuild)
+#   VLLM_IMAGE=nvcr.io/nvidia/vllm:26.01-py3  Docker image
 #   HF_TOKEN=...            Hugging Face token (for gated models)
-#
-# Docker images:
-#   Default: ghcr.io/eugr/spark-vllm — nightly vLLM with precompiled wheels,
-#     FlashInfer, and GB10-specific optimizations. Builds in 2-3 min vs 20-40 min.
-#     See: https://github.com/eugr/spark-vllm-docker
-#   NGC:     nvcr.io/nvidia/vllm:26.01-py3 — stable but older vLLM. Use if
-#     spark image has issues: VLLM_USE_NGC=1 ./vllm-serve.sh
-#
-# Performance tuning (vs original ~43 tok/s baseline):
-#   --load-format fastsafetensors    Faster weight loading (~2-3x startup)
-#   --num-scheduler-steps 8          Multi-step scheduling (reduces per-token overhead)
-#   --enable-chunked-prefill         Better prefill/decode overlap for long context
-#   --max-num-seqs 4                 Less memory overhead for single-user workloads
-#   --gpu-memory-utilization 0.90    More KV cache headroom (dedicated GPU)
-#   VLLM_USE_V1=1                    vLLM v1 engine (faster for single-request)
-#   Community reports 60-70 tok/s with these optimizations on GB10.
-#   See: https://spark-arena.com/leaderboard
 #
 # Port allocation:
 #   8000 — Graphiti LLM (llm-graphiti.sh) — Nemotron 3 Nano 4B
@@ -57,24 +37,10 @@ set -euo pipefail
 
 # --- Configuration ---
 PORT="${VLLM_PORT:-8002}"
-GPU_UTIL="${VLLM_GPU_UTIL:-0.90}"
+GPU_UTIL="${VLLM_GPU_UTIL:-0.8}"
 MAX_LEN="${VLLM_MAX_LEN:-262144}"
-NUM_SCHEDULER_STEPS="${VLLM_NUM_SCHEDULER_STEPS:-8}"
-MAX_NUM_SEQS="${VLLM_MAX_NUM_SEQS:-4}"
+IMAGE="${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.01-py3}"
 CONTAINER_NAME="vllm-server"
-
-# --- Image selection ---
-# Default to spark-vllm-docker (nightly vLLM with GB10 optimizations).
-# Fall back to NGC with VLLM_USE_NGC=1 or by setting VLLM_IMAGE directly.
-NGC_IMAGE="nvcr.io/nvidia/vllm:26.01-py3"
-SPARK_IMAGE="ghcr.io/eugr/spark-vllm:latest"
-if [ -n "${VLLM_IMAGE:-}" ]; then
-  IMAGE="$VLLM_IMAGE"
-elif [ "${VLLM_USE_NGC:-0}" = "1" ]; then
-  IMAGE="$NGC_IMAGE"
-else
-  IMAGE="$SPARK_IMAGE"
-fi
 
 # IMPORTANT: SERVED_MODEL_NAME must match the model ID used by the bundled claude CLI.
 # The Claude Agent SDK's bundled 'claude' binary sends requests using its own default model ID.
@@ -99,11 +65,10 @@ case "$MODEL_PRESET" in
   next|default|"")
     MODEL="Qwen/Qwen3-Coder-Next-FP8"
     TOOL_PARSER="qwen3_coder"
-    GPU_UTIL="${VLLM_GPU_UTIL:-0.90}"
+    GPU_UTIL="${VLLM_GPU_UTIL:-0.8}"
     MAX_LEN="${VLLM_MAX_LEN:-262144}"
-    echo "═══ Qwen3-Coder-Next FP8 (80B MoE, ~92GB, 256K ctx) ═══"
+    echo "═══ Qwen3-Coder-Next FP8 (80B MoE, ~92GB, ~43 tok/s, 256K ctx) ═══"
     echo "    Primary model for AutoBuild"
-    echo "    Baseline: ~43 tok/s (NGC) → ~60-70 tok/s (spark-vllm + tuning)"
     ;;
   30b)
     MODEL="Qwen/Qwen3-Coder-30B-A3B-Instruct"
@@ -117,7 +82,7 @@ case "$MODEL_PRESET" in
     TOOL_PARSER="qwen3_coder"
     GPU_UTIL="${VLLM_GPU_UTIL:-0.5}"
     MAX_LEN="${VLLM_MAX_LEN:-262144}"
-    echo "═══ Qwen3-Coder-Next NVFP4 (80B MoE, ~50GB, ~35 tok/s) ═══"
+    echo "Model: Qwen3-Coder-Next NVFP4 (80B MoE, ~50GB, ~35 tok/s)"
     ;;
 
   # --- MiniMax M2.5 presets (Claude API backup / spec-writing) ---
@@ -187,9 +152,6 @@ case "$MODEL_PRESET" in
     echo ""
     echo "  All presets serve on port ${PORT} as '${SERVED_MODEL_NAME}'"
     echo "  so AutoBuild works without changes."
-    echo ""
-    echo "  Image: spark-vllm-docker (default) or NGC (VLLM_USE_NGC=1)"
-    echo "  See: https://github.com/eugr/spark-vllm-docker"
     exit 1
     ;;
 esac
@@ -303,13 +265,10 @@ echo ""
 echo "========================================"
 echo "  VLLM Server — Dell Pro Max GB10"
 echo "========================================"
-echo "  Image:    $IMAGE"
 echo "  Model:    $MODEL"
 echo "  Port:     $PORT"
 echo "  GPU util: $GPU_UTIL"
 echo "  Max len:  $MAX_LEN"
-echo "  Sched:    ${NUM_SCHEDULER_STEPS}-step"
-echo "  Max seqs: $MAX_NUM_SEQS"
 echo "  Alias:    $SERVED_MODEL_NAME"
 echo "========================================"
 echo ""
@@ -327,9 +286,6 @@ docker run -d \
   -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
   ${HF_TOKEN:+-e "HF_TOKEN=$HF_TOKEN"} \
   -e "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True" \
-  -e "VLLM_USE_V1=1" \
-  -e "CUDA_DEVICE_ORDER=PCI_BUS_ID" \
-  -e "SAFETENSORS_FAST_GPU=1" \
   ${EXTRA_ENV} \
   "$IMAGE" \
   vllm serve "$MODEL" \
@@ -342,10 +298,7 @@ docker run -d \
     --max-model-len "$MAX_LEN" \
     --attention-backend flashinfer \
     --enable-prefix-caching \
-    --enable-chunked-prefill \
-    --load-format fastsafetensors \
-    --num-scheduler-steps "$NUM_SCHEDULER_STEPS" \
-    --max-num-seqs "$MAX_NUM_SEQS" \
+    --load-format auto \
     ${EXTRA_VLLM_ARGS}
 
 echo "Container started: $CONTAINER_NAME"
@@ -357,7 +310,7 @@ case "$MODEL_PRESET" in
     echo "Waiting for model to load (5-8 min for MiniMax 230B)..."
     ;;
   next|default|"")
-    echo "Waiting for model to load (~2-3 min with fastsafetensors, was 3-5 min)..."
+    echo "Waiting for model to load (3-5 min for 80B)..."
     ;;
   *)
     echo "Waiting for model to load..."
@@ -375,6 +328,3 @@ echo "Port allocation:"
 echo "  8000 — Graphiti LLM (llm-graphiti.sh)"
 echo "  8001 — Embeddings (vllm-embed.sh)"
 echo "  ${PORT} — AutoBuild LLM (this script)"
-echo ""
-echo "If the container fails to start, try the NGC image as fallback:"
-echo "  VLLM_USE_NGC=1 ./scripts/vllm-serve.sh"

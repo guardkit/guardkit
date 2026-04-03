@@ -24,7 +24,15 @@
 #   VLLM_FACTORY_PORT=8002         Server port
 #   VLLM_FACTORY_GPU_UTIL=0.35     GPU memory utilization (0.0-1.0)
 #   VLLM_FACTORY_MAX_LEN=16384    Max context length
-#   VLLM_IMAGE=nvcr.io/nvidia/vllm:26.01-py3  Docker image
+#   VLLM_IMAGE=<auto>              Docker image (default: spark-vllm or cu130-nightly per preset)
+#   VLLM_USE_NGC=1                 Force NGC image instead of community images
+#   VLLM_NUM_SCHEDULER_STEPS=8    Multi-step scheduling (reduces overhead per token)
+#   VLLM_MAX_NUM_SEQS=4           Max concurrent sequences
+#
+# Performance tuning (see docs/reference/vllm-perf-tuning.md for full details):
+#   Same optimizations as vllm-serve.sh — fastsafetensors, chunked prefill,
+#   multi-step scheduling, VLLM_USE_V1. On 50-60 hour dataset runs, a 1.5x
+#   speedup (37-40 tok/s → ~60 tok/s) saves ~18 hours per run.
 #
 # Port allocation (DGX Spark GB10):
 #   8000 — Graphiti LLM      (vllm-graphiti.sh)       Qwen2.5-14B
@@ -42,8 +50,21 @@ set -euo pipefail
 # --- Configuration ---
 PORT="${VLLM_FACTORY_PORT:-8002}"
 GPU_UTIL="${VLLM_FACTORY_GPU_UTIL:-0.35}"
-IMAGE="${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.01-py3}"
+NUM_SCHEDULER_STEPS="${VLLM_NUM_SCHEDULER_STEPS:-8}"
+MAX_NUM_SEQS="${VLLM_MAX_NUM_SEQS:-4}"
 CONTAINER_NAME="vllm-agentic-factory"
+
+# --- Image selection ---
+NGC_IMAGE="nvcr.io/nvidia/vllm:26.01-py3"
+SPARK_IMAGE="ghcr.io/eugr/spark-vllm:latest"
+NIGHTLY_IMAGE="vllm/vllm-openai:cu130-nightly"
+if [ -n "${VLLM_IMAGE:-}" ]; then
+  IMAGE="$VLLM_IMAGE"
+elif [ "${VLLM_USE_NGC:-0}" = "1" ]; then
+  IMAGE="$NGC_IMAGE"
+else
+  IMAGE="$SPARK_IMAGE"
+fi
 
 # Extra environment variables for Docker (model-specific)
 EXTRA_ENV=""
@@ -60,14 +81,15 @@ case "$MODEL_PRESET" in
     GPU_UTIL="${VLLM_FACTORY_GPU_UTIL:-0.80}"
     MAX_LEN="${VLLM_FACTORY_MAX_LEN:-262144}"
     TOOL_PARSER="qwen3_coder"
-    IMAGE="${VLLM_IMAGE:-vllm/vllm-openai:cu130-nightly}"
     EXTRA_ARGS="--trust-remote-code \
       --enable-auto-tool-choice \
       --tool-call-parser qwen3_coder \
       --enable-prefix-caching \
+      --enable-chunked-prefill \
       --structured-outputs-config.backend xgrammar"
     echo "═══ Qwen3.5-35B-A3B FP8 (3B active, ~70GB) — Tool-calling ═══"
-    echo "    BFCL-V4: 67.3 | TAU2: 81.2 | 50 tok/s sustained"
+    echo "    BFCL-V4: 67.3 | TAU2: 81.2"
+    echo "    Baseline: ~37-40 tok/s → target ~55-65 tok/s (spark-vllm + tuning)"
     echo "    Tool parser: qwen3_coder | Structured: xgrammar | Context: ${MAX_LEN}"
     ;;
   nano-4b)
@@ -78,7 +100,9 @@ case "$MODEL_PRESET" in
     # Nano 4B is hybrid Mamba-2 (not MoE), no MoE-specific env vars needed
     EXTRA_ARGS="--trust-remote-code --kv-cache-dtype fp8 \
       --enable-auto-tool-choice \
-      --tool-call-parser qwen3_coder"
+      --tool-call-parser qwen3_coder \
+      --enable-prefix-caching \
+      --enable-chunked-prefill"
     echo "═══ Nemotron 3 Nano 4B FP8 (~4GB) — Tool-calling enabled ═══"
     echo "    Dataset factory Player + Coach inference"
     echo "    Tool parser: qwen3_coder | Context: ${MAX_LEN}"
@@ -92,7 +116,9 @@ case "$MODEL_PRESET" in
     # 30B-A3B is MoE — needs FlashInfer latency backend for SM 12.1 (GB10)
     EXTRA_ARGS="--trust-remote-code --tensor-parallel-size 1 --kv-cache-dtype fp8 \
       --enable-auto-tool-choice \
-      --tool-call-parser qwen3_coder"
+      --tool-call-parser qwen3_coder \
+      --enable-prefix-caching \
+      --enable-chunked-prefill"
     echo "═══ Nemotron 3 Nano 30B-A3B FP8 (3.2B active, ~15GB) — Tool-calling enabled ═══"
     echo "    MoE with FlashInfer latency backend"
     echo "    Tool parser: qwen3_coder | Context: ${MAX_LEN}"
@@ -145,10 +171,13 @@ echo ""
 echo "========================================"
 echo "  Agentic Dataset Factory — DGX Spark GB10"
 echo "========================================"
+echo "  Image:    $IMAGE"
 echo "  Model:    $MODEL"
 echo "  Port:     $PORT"
 echo "  GPU util: $GPU_UTIL"
 echo "  Max len:  $MAX_LEN"
+echo "  Sched:    ${NUM_SCHEDULER_STEPS}-step"
+echo "  Max seqs: $MAX_NUM_SEQS"
 echo "  Tools:    ${TOOL_PARSER} parser (auto tool choice)"
 echo "========================================"
 echo ""
@@ -167,6 +196,9 @@ docker run -d \
   -v "$HOME/.cache/vllm:/root/.cache/vllm" \
   ${HF_TOKEN:+-e "HF_TOKEN=$HF_TOKEN"} \
   -e "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True" \
+  -e "VLLM_USE_V1=1" \
+  -e "CUDA_DEVICE_ORDER=PCI_BUS_ID" \
+  -e "SAFETENSORS_FAST_GPU=1" \
   ${EXTRA_ENV} \
   --entrypoint vllm \
   "$IMAGE" \
@@ -176,6 +208,9 @@ docker run -d \
     --gpu-memory-utilization "$GPU_UTIL" \
     --max-model-len "$MAX_LEN" \
     --dtype auto \
+    --load-format fastsafetensors \
+    --num-scheduler-steps "$NUM_SCHEDULER_STEPS" \
+    --max-num-seqs "$MAX_NUM_SEQS" \
     $EXTRA_ARGS
 
 echo "Container started: $CONTAINER_NAME"
@@ -188,3 +223,5 @@ echo ""
 echo "Update agent-config.yaml endpoint to:"
 echo "  endpoint: http://promaxgb10-41b1:${PORT}/v1"
 echo ""
+echo "If the container fails to start, try the NGC image as fallback:"
+echo "  VLLM_USE_NGC=1 ./scripts/vllm-agentic-factory.sh"
