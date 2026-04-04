@@ -279,6 +279,9 @@ class GraphitiClient:
         self._pending_init: bool = False  # TASK-GLF-003: lazy init flag
         self._auto_detect_project = auto_detect_project
 
+        # Default timeout override (set via CLI --timeout to override group-based defaults)
+        self.default_timeout_override: Optional[float] = None
+
         # Circuit breaker state
         self._consecutive_failures = 0
         self._circuit_breaker_tripped = False
@@ -1170,8 +1173,10 @@ class GraphitiClient:
         else:
             episode_timeout = 120.0   # implementation_modes etc: safe
         # CLI --timeout override takes precedence over group-based defaults
-        if timeout_override is not None:
-            episode_timeout = timeout_override
+        # Per-call override > client default override > group-based default
+        effective_override = timeout_override if timeout_override is not None else self.default_timeout_override
+        if effective_override is not None:
+            episode_timeout = effective_override
         for attempt in range(max_retries):
             try:
                 from graphiti_core.nodes import EpisodeType
@@ -1211,7 +1216,9 @@ class GraphitiClient:
 
             except asyncio.TimeoutError:
                 logger.warning(
-                    "Episode creation timed out after %.0fs: %s",
+                    "Episode creation timed out after %.0fs: %s. "
+                    "Use --timeout to increase (e.g., --timeout 300 for local LLMs "
+                    "which are typically ~2x slower than GB10 vLLM).",
                     episode_timeout, name,
                 )
                 self._record_failure()

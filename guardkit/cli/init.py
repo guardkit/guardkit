@@ -51,6 +51,49 @@ logger = logging.getLogger(__name__)
 _SKIP_DIRS = {"templates", "config", "docker"}
 
 
+async def _check_llm_reachable(config: GraphitiConfig, timeout: float = 5.0) -> bool:
+    """Check if the configured LLM endpoint is reachable.
+
+    Sends a lightweight GET request to the LLM's /models endpoint.
+    Returns True immediately for OpenAI cloud provider (assumed always available).
+
+    Args:
+        config: Graphiti configuration with LLM provider details.
+        timeout: Maximum seconds to wait for a response (default 5).
+
+    Returns:
+        True if the LLM endpoint responds within the timeout, False otherwise.
+    """
+    if config.llm_provider not in ("vllm", "ollama"):
+        return True
+
+    if not config.llm_base_url:
+        return False
+
+    url = f"{config.llm_base_url.rstrip('/')}/models"
+
+    try:
+        import httpx
+    except ImportError:
+        # httpx unavailable — fall back to urllib
+        import urllib.request
+        import urllib.error
+
+        try:
+            req = urllib.request.Request(url, method="GET")
+            urllib.request.urlopen(req, timeout=timeout)
+            return True
+        except Exception:
+            return False
+
+    try:
+        async with httpx.AsyncClient() as http_client:
+            resp = await http_client.get(url, timeout=timeout)
+            return resp.status_code == 200
+    except Exception:
+        return False
+
+
 class _ProgressClient:
     """Wraps a GraphitiClient to display per-episode progress during seeding.
 
@@ -1417,6 +1460,46 @@ async def _cmd_init(
                             should_seed_system = True  # Non-interactive fallback
 
                         if should_seed_system:
+                            # Pre-flight: check LLM reachability before spending
+                            # ~32s on retries if the endpoint is down.
+                            llm_reachable = await _check_llm_reachable(config)
+                            if not llm_reachable:
+                                llm_url = config.llm_base_url or "(not configured)"
+                                console.print(
+                                    f"\n  [yellow]LLM at {llm_url} is unreachable."
+                                    " System knowledge seeding requires an LLM.[/yellow]"
+                                )
+                                try:
+                                    if no_questions:
+                                        skip_system_seed = True
+                                    else:
+                                        skip_system_seed = Confirm.ask(
+                                            "Skip system seeding?",
+                                            default=True,
+                                        )
+                                except Exception:
+                                    skip_system_seed = True
+
+                                if skip_system_seed:
+                                    console.print(
+                                        "  [dim]Skipping system seeding."
+                                        " Run 'guardkit graphiti seed-system'"
+                                        " when the LLM is available.[/dim]"
+                                    )
+                                    should_seed_system = False
+                                else:
+                                    console.print(
+                                        "\n  [red]Cannot proceed without LLM.[/red]"
+                                    )
+                                    console.print(
+                                        "  [dim]Check that the LLM server is running at"
+                                        f" {llm_url}\n"
+                                        "  and update .guardkit/graphiti.yaml if the"
+                                        " URL has changed.[/dim]"
+                                    )
+                                    return  # Exit init early
+
+                        if should_seed_system:
                             console.print(
                                 "\n[bold]Step 3: Seeding system knowledge...[/bold]"
                             )
@@ -1540,6 +1623,11 @@ async def _cmd_init(
         console.print(
             "\n  [dim]Tip: For multi-project FalkorDB setups, use --copy-graphiti "
             "to share config across projects.[/dim]"
+        )
+        console.print(
+            "  [dim]Tip: If using a local LLM (~2x slower than GB10 vLLM), use "
+            "--timeout to increase per-episode timeout "
+            "(e.g., guardkit graphiti seed-system --timeout 300).[/dim]"
         )
     else:
         console.print(f"  1. Create a task: /task-create \"Your first task\"")

@@ -1643,40 +1643,51 @@ print_summary() {
     echo "  • gk                          - Short for guardkit"
     echo "  • gki                         - Short for guardkit-init"
     echo ""
-    echo -e "${BOLD}Available Templates:${NC}"
+    echo -e "${BOLD}Available Templates${NC} (confidence = AI analysis accuracy)${BOLD}:${NC}"
+    # Confidence scores sourced from installer/core/templates/*/manifest.json → confidence_score
+    # Update these when running template-validate or template-create
     for template in "$INSTALL_DIR/templates"/*/; do
         if [ -d "$template" ]; then
             local name=$(basename "$template")
             case "$name" in
+                common)
+                    # Internal template, not user-facing
+                    ;;
                 default)
                     echo "  • $name - Language-agnostic foundation (Go, Rust, Ruby, PHP, etc.)"
                     ;;
                 react-typescript)
-                    echo "  • $name - React frontend with feature-based architecture (9+/10)"
+                    echo "  • $name - React frontend with feature-based architecture (confidence: 9.5/10)"
                     ;;
                 fastapi-python)
-                    echo "  • $name - FastAPI backend with layered architecture (9+/10)"
+                    echo "  • $name - FastAPI backend with layered architecture (confidence: 9.5/10)"
                     ;;
                 nextjs-fullstack)
-                    echo "  • $name - Next.js App Router full-stack (9+/10)"
+                    echo "  • $name - Next.js App Router full-stack (confidence: 9.2/10)"
                     ;;
                 react-fastapi-monorepo)
-                    echo "  • $name - React + FastAPI monorepo with type safety (9.2/10)"
+                    echo "  • $name - React + FastAPI monorepo with type safety (confidence: 9.3/10)"
                     ;;
                 fastmcp-python)
-                    echo "  • $name - FastMCP Python server with tool registration and async patterns"
+                    echo "  • $name - FastMCP Python server with tool registration and async patterns (confidence: 9.0/10)"
                     ;;
                 mcp-typescript)
-                    echo "  • $name - MCP TypeScript server with @modelcontextprotocol/sdk and Zod validation"
+                    echo "  • $name - MCP TypeScript server with @modelcontextprotocol/sdk and Zod validation (confidence: 8.8/10)"
                     ;;
                 langchain-deepagents)
-                    echo "  • $name - DeepAgents adversarial Player-Coach multi-agent architecture (9.7/10)"
+                    echo "  • $name - DeepAgents adversarial Player-Coach multi-agent architecture (confidence: 9.7/10)"
                     ;;
                 langchain-deepagents-weighted-evaluation)
-                    echo "  • $name - DeepAgents Player-Coach with weighted evaluation scoring (9.5/10)"
+                    echo "  • $name - DeepAgents Player-Coach with weighted evaluation scoring (confidence: 9.5/10)"
                     ;;
                 langchain-deepagents-orchestrator)
-                    echo "  • $name - DeepAgents pipeline orchestrator with two-model architecture (6.8/10)"
+                    echo "  • $name - DeepAgents pipeline orchestrator with two-model architecture (confidence: 8.5/10)"
+                    ;;
+                python-library)
+                    echo "  • $name - Standalone Python library with hatchling, src layout, pytest, ruff, mypy (confidence: 9.2/10)"
+                    ;;
+                nats-asyncio-service)
+                    echo "  • $name - NATS event-driven asyncio service with FastStream, TestNatsBroker, JetStream (confidence: 8.8/10)"
                     ;;
                 *)
                     echo "  • $name"

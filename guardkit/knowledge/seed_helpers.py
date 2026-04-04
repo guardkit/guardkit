@@ -20,7 +20,8 @@ async def _add_episodes(
     episodes: list,
     group_id: str,
     category_name: str,
-    entity_type: str = "generic"
+    entity_type: str = "generic",
+    timeout_override: float | None = None,
 ) -> tuple[int, int]:
     """Add multiple episodes to Graphiti with error handling.
 
@@ -33,6 +34,7 @@ async def _add_episodes(
         group_id: Group ID for all episodes
         category_name: Human-readable category name for logging
         entity_type: Type of entity (e.g., "rule", "pattern", "agent")
+        timeout_override: If set, overrides group-based timeout (seconds).
 
     Returns:
         Tuple of (created_count, skipped_count).
@@ -50,7 +52,8 @@ async def _add_episodes(
                 episode_body=json.dumps(body),
                 group_id=group_id,
                 source="guardkit_seeding",
-                entity_type=entity_type
+                entity_type=entity_type,
+                timeout_override=timeout_override,
             )
             if result is not None:
                 created += 1

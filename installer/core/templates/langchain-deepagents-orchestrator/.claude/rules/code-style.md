@@ -1,5 +1,5 @@
 ---
-paths: **/*.py, **/*.pyx
+paths: "**/*.py, **/*.pyx"
 ---
 
 # Code Style Guide

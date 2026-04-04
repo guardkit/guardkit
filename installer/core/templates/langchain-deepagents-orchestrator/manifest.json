@@ -39,18 +39,21 @@
       "purpose": "testing"
     }
   ],
-  "architecture": "Standard Structure",
+  "architecture": "Two-Model Pipeline Orchestrator",
   "patterns": [
-    "Builder",
-    "Engine",
-    "Entity",
-    "Factory",
-    "Handler",
-    "Model",
-    "Service Layer",
-    "Validator"
+    "Two-Model Orchestration",
+    "SubAgent Composition",
+    "Domain Prompt Injection",
+    "Factory Function Agents",
+    "Config-Driven Model Selection",
+    "Defensive Fallback Chain"
   ],
   "layers": [
+    "Agents",
+    "Tools",
+    "Prompts",
+    "Config",
+    "Domains",
     "Infrastructure",
     "Shared"
   ],
@@ -78,30 +81,43 @@
     }
   },
   "tags": [
-    "builder",
+    "config-driven-model-selection",
     "deepagents",
-    "engine",
-    "entity",
-    "factory",
-    "handler",
-    "infrastructure",
+    "defensive-fallback-chain",
+    "domain-prompt-injection",
+    "factory-function-agents",
     "langchain",
     "langgraph",
-    "model",
     "orchestrator",
     "pipeline",
     "pytest",
     "python",
-    "service-layer",
-    "shared",
+    "subagent-composition",
     "two-model",
-    "validator"
+    "two-model-orchestration",
+    "two-model-pipeline-orchestrator"
   ],
   "category": "agent",
   "complexity": 7,
-  "compatible_with": [],
-  "requires": [],
+  "compatible_with": [
+    "langchain-deepagents"
+  ],
+  "requires": [
+    "deepagents>=0.4.11",
+    "langchain>=1.2.11",
+    "langgraph>=0.2"
+  ],
+  "quality_scores": {
+    "architecture_clarity": 85,
+    "pattern_coverage": 80,
+    "documentation_quality": 75,
+    "placeholder_coverage": 70,
+    "overall": 77.5
+  },
+  "production_ready": false,
+  "learning_resource": true,
+  "reference_implementation": true,
   "created_at": "2026-03-30T21:09:18.781491",
   "source_project": "deepagents-orchestrator-exemplar",
-  "confidence_score": 68.33
+  "confidence_score": 85.0
 }

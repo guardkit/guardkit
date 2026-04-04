@@ -1,5 +1,5 @@
 ---
-paths: **/*.test.*, **/tests/**, **/*_test.*, **/*Test.*, **/*Spec.*
+paths: "**/*.test.*, **/tests/**, **/*_test.*, **/*Test.*, **/*Spec.*"
 ---
 
 # Testing Guide

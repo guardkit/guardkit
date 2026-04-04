@@ -7,7 +7,7 @@
       "case_style": "PascalCase",
       "prefix": null,
       "suffix": ".py",
-      "examples": []
+      "examples": ["DomainService", "ServiceSettings", "OrderRequest", "OrderResponse"]
     },
     "function": {
       "element_type": "function",
@@ -39,7 +39,7 @@
       "case_style": "SCREAMING_SNAKE_CASE",
       "prefix": null,
       "suffix": null,
-      "examples": []
+      "examples": ["NATS_URL", "SERVICE_NAME", "DEFAULT_TIMEOUT"]
     }
   },
   "file_organization": {
@@ -57,7 +57,8 @@
         "*.py",
         "!*_test.py",
         "!test_*.py"
-      ]
+      ],
+      "responsibilities": ["Application bootstrap", "Broker initialization", "Handler registration via import side-effects"]
     },
     "Application": {
       "name": "Application",
@@ -67,7 +68,8 @@
         "*.py",
         "!*_test.py",
         "!test_*.py"
-      ]
+      ],
+      "responsibilities": ["FastStream app creation", "Lifespan context manager", "Broker wiring"]
     },
     "Configuration": {
       "name": "Configuration",
@@ -77,7 +79,8 @@
         "*.py",
         "!*_test.py",
         "!test_*.py"
-      ]
+      ],
+      "responsibilities": ["Environment variable loading via pydantic-settings", "NATS connection parameters", "Service configuration"]
     },
     "Schemas": {
       "name": "Schemas",
@@ -87,7 +90,8 @@
         "*.py",
         "!*_test.py",
         "!test_*.py"
-      ]
+      ],
+      "responsibilities": ["Pydantic message models", "Correlation ID fields", "Request/response schema definitions"]
     },
     "Handlers": {
       "name": "Handlers",
@@ -97,7 +101,8 @@
         "*.py",
         "!*_test.py",
         "!test_*.py"
-      ]
+      ],
+      "responsibilities": ["NATS subscriber decorators", "Message dispatch to services", "Pub/sub topic binding"]
     },
     "Services": {
       "name": "Services",
@@ -107,14 +112,21 @@
         "*.py",
         "!*_test.py",
         "!test_*.py"
-      ]
+      ],
+      "responsibilities": ["Business logic implementation", "Domain operations", "No broker/NATS imports"]
     }
   },
   "code_style": {
     "indentation": "spaces",
     "indent_size": 4,
     "line_length": 88,
-    "trailing_commas": true
+    "trailing_commas": true,
+    "quote_style": "double",
+    "async_preferred": true,
+    "type_hints": "required",
+    "docstrings": "google",
+    "linter": "ruff",
+    "formatter": "ruff"
   },
   "generation_options": {
     "preserve_comments": true,

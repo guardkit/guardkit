@@ -1,5 +1,5 @@
 ---
-paths: "**/*.py", "**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"
+paths: "**/*.py, **/*.ts, **/*.tsx, **/*.js, **/*.jsx"
 ---
 
 # Code Style Guidelines

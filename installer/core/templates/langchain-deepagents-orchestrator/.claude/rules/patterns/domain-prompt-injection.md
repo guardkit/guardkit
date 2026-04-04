@@ -1,5 +1,5 @@
 ---
-paths: "**/agent.py", "**/domains/**", "**/prompts/**"
+paths: "**/agent.py, **/domains/**, **/prompts/**"
 ---
 
 # Domain Prompt Injection

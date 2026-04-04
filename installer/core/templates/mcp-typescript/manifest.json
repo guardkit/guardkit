@@ -116,6 +116,7 @@
   "tags": ["typescript", "mcp", "model-context-protocol", "claude-code", "zod", "vitest", "async"],
   "category": "integration",
   "complexity": 5,
+  "confidence_score": 88,
   "quality_scores": {
     "SOLID": 85,
     "DRY": 85,

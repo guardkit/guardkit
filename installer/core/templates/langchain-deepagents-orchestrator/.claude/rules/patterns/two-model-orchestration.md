@@ -1,5 +1,5 @@
 ---
-paths: "**/agent.py", "**/agents.py", "**/orchestrator*.py", "**/config*.yaml"
+paths: "**/agent.py, **/agents.py, **/orchestrator*.py, **/config*.yaml"
 ---
 
 # Two-Model Orchestration

@@ -1,5 +1,5 @@
 ---
-paths: "**/Dockerfile", "**/docker-compose.yml", "**/docker-compose.yaml"
+paths: "**/Dockerfile, **/docker-compose.yml, **/docker-compose.yaml"
 ---
 
 # Docker Patterns for MCP Servers

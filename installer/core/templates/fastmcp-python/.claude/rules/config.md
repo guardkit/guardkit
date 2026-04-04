@@ -1,5 +1,5 @@
 ---
-paths: "**/.mcp.json", "**/pyproject.toml", "**/.env", "**/config.py", "**/config/*.py"
+paths: "**/.mcp.json, **/pyproject.toml, **/.env, **/config.py, **/config/*.py"
 ---
 
 # MCP Configuration Patterns

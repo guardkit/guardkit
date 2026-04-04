@@ -12,8 +12,11 @@ from pathlib import Path
 
 from installer.core.lib.template_validation.sections.section_07_global import (
     has_paths_frontmatter,
+    has_unquoted_glob,
     suggest_paths,
     validate_rules_path_gating,
+    validate_rules_glob_quoting,
+    validate_rules_yaml_frontmatter,
     GlobalTemplateValidationSection,
 )
 from installer.core.lib.template_validation.models import (
@@ -249,8 +252,8 @@ class TestGlobalTemplateValidationSection:
     def test_full_coverage_positive_finding(self, tmp_path):
         """100% path-gating coverage produces positive finding."""
         self._create_template(tmp_path, rules_files={
-            "code-style.md": "---\npaths: **/*.py\n---\n\n# Style",
-            "testing.md": "---\npaths: tests/**/*\n---\n\n# Tests",
+            "code-style.md": '---\npaths: "**/*.py"\n---\n\n# Style',
+            "testing.md": '---\npaths: "tests/**/*"\n---\n\n# Tests',
         })
 
         section = GlobalTemplateValidationSection()
@@ -325,3 +328,403 @@ class TestGlobalTemplateValidationSection:
 
         assert ".claude/rules/ungated.md" in result.metadata["path_gating_ungated_files"]
         assert len(result.metadata["path_gating_ungated_files"]) == 1
+
+
+# ============================================================================
+# 5. has_unquoted_glob Tests
+# ============================================================================
+
+
+class TestHasUnquotedGlob:
+    """Test unquoted glob pattern detection in frontmatter."""
+
+    def test_unquoted_glob_detected(self):
+        """Detect unquoted asterisk in paths: value."""
+        assert has_unquoted_glob("paths: **/*.py") is True
+
+    def test_unquoted_glob_single_star(self):
+        """Detect single unquoted asterisk."""
+        assert has_unquoted_glob("paths: *.py") is True
+
+    def test_unquoted_glob_with_prefix(self):
+        """Detect unquoted glob after a directory prefix."""
+        assert has_unquoted_glob("paths: src/**/*.ts") is True
+
+    def test_quoted_glob_passes(self):
+        """Properly quoted globs are not flagged."""
+        assert has_unquoted_glob('paths: "**/*.py"') is False
+
+    def test_single_quoted_glob_passes(self):
+        """Single-quoted globs are not flagged."""
+        assert has_unquoted_glob("paths: '**/*.py'") is False
+
+    def test_array_syntax_passes(self):
+        """YAML array syntax with quoted values passes."""
+        assert has_unquoted_glob('paths: ["**/*.py", "tests/**/*"]') is False
+
+    def test_no_paths_key(self):
+        """No paths: key returns False."""
+        assert has_unquoted_glob("description: some rule") is False
+
+    def test_quoted_comma_separated_passes(self):
+        """Comma-separated quoted values pass."""
+        assert has_unquoted_glob('paths: "**/*.py, **/*.pyx"') is False
+
+    def test_unquoted_comma_separated_detected(self):
+        """Unquoted comma-separated values with glob detected."""
+        assert has_unquoted_glob("paths: **/*.py, **/*.pyx") is True
+
+
+# ============================================================================
+# 6. validate_rules_glob_quoting Tests
+# ============================================================================
+
+
+class TestValidateRulesGlobQuoting:
+    """Test the glob quoting validation function."""
+
+    def test_no_rules_dir(self, tmp_path):
+        """Return empty when .claude/rules/ doesn't exist."""
+        issues = validate_rules_glob_quoting(tmp_path)
+        assert issues == []
+
+    def test_properly_quoted_no_issues(self, tmp_path):
+        """No issues for properly quoted glob patterns."""
+        rules_dir = tmp_path / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+
+        (rules_dir / "code-style.md").write_text(
+            '---\npaths: "**/*.py, **/*.pyx"\n---\n\n# Code Style'
+        )
+        (rules_dir / "testing.md").write_text(
+            '---\npaths: "tests/**/*.py"\n---\n\n# Testing'
+        )
+
+        issues = validate_rules_glob_quoting(tmp_path)
+        assert issues == []
+
+    def test_unquoted_glob_detected(self, tmp_path):
+        """Detect unquoted glob pattern and report with file path."""
+        rules_dir = tmp_path / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+
+        (rules_dir / "bad.md").write_text(
+            "---\npaths: **/*.py\n---\n\n# Bad"
+        )
+
+        issues = validate_rules_glob_quoting(tmp_path)
+        assert len(issues) == 1
+        assert "bad.md" in issues[0].message
+        assert "unquoted glob" in issues[0].message
+        assert issues[0].severity == IssueSeverity.HIGH
+        assert issues[0].category == IssueCategory.PATH_GATING
+        assert issues[0].fixable is True
+
+    def test_fix_description_includes_quoted_value(self, tmp_path):
+        """Fix description shows properly quoted value."""
+        rules_dir = tmp_path / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+
+        (rules_dir / "bad.md").write_text(
+            "---\npaths: src/**/*.ts\n---\n\n# Bad"
+        )
+
+        issues = validate_rules_glob_quoting(tmp_path)
+        assert len(issues) == 1
+        assert '"src/**/*.ts"' in issues[0].fix_description
+
+    def test_files_without_frontmatter_skipped(self, tmp_path):
+        """Files without frontmatter are silently skipped."""
+        rules_dir = tmp_path / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+
+        (rules_dir / "no-fm.md").write_text("# No frontmatter\nContent")
+
+        issues = validate_rules_glob_quoting(tmp_path)
+        assert issues == []
+
+    def test_files_without_paths_key_skipped(self, tmp_path):
+        """Files with frontmatter but no paths: key are skipped."""
+        rules_dir = tmp_path / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+
+        (rules_dir / "other.md").write_text(
+            "---\ndescription: A rule\n---\n\n# Other"
+        )
+
+        issues = validate_rules_glob_quoting(tmp_path)
+        assert issues == []
+
+    def test_nested_rules_files_checked(self, tmp_path):
+        """Validate files in subdirectories like patterns/."""
+        patterns_dir = tmp_path / ".claude" / "rules" / "patterns"
+        patterns_dir.mkdir(parents=True)
+
+        (patterns_dir / "bad-pattern.md").write_text(
+            "---\npaths: **/handlers/*.py\n---\n\n# Bad Pattern"
+        )
+
+        issues = validate_rules_glob_quoting(tmp_path)
+        assert len(issues) == 1
+        assert "patterns/bad-pattern.md" in issues[0].location
+
+    def test_mixed_quoted_and_unquoted(self, tmp_path):
+        """Only flag files with unquoted patterns."""
+        rules_dir = tmp_path / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+
+        (rules_dir / "good.md").write_text(
+            '---\npaths: "**/*.py"\n---\n\n# Good'
+        )
+        (rules_dir / "bad.md").write_text(
+            "---\npaths: **/*.py\n---\n\n# Bad"
+        )
+
+        issues = validate_rules_glob_quoting(tmp_path)
+        assert len(issues) == 1
+        assert "bad.md" in issues[0].message
+
+
+# ============================================================================
+# 7. GlobalTemplateValidationSection Glob Quoting Integration
+# ============================================================================
+
+
+class TestGlobalSectionGlobQuoting:
+    """Test Section 7 integration with glob quoting validation."""
+
+    def _create_template(self, tmp_path, rules_files=None):
+        """Helper to create template with required files."""
+        (tmp_path / "manifest.json").write_text("{}")
+        (tmp_path / "CLAUDE.md").write_text("# CLAUDE")
+        (tmp_path / "README.md").write_text("# README")
+
+        if rules_files:
+            rules_dir = tmp_path / ".claude" / "rules"
+            rules_dir.mkdir(parents=True)
+            for name, content in rules_files.items():
+                (rules_dir / name).write_text(content)
+
+    def test_unquoted_glob_reduces_score(self, tmp_path):
+        """Unquoted glob patterns reduce the section score."""
+        self._create_template(tmp_path, rules_files={
+            "bad.md": "---\npaths: **/*.py\n---\n\n# Bad",
+        })
+
+        section = GlobalTemplateValidationSection()
+        result = section.execute(tmp_path)
+
+        assert result.score < 10.0
+        assert result.metadata["glob_quoting_issues"] == 1
+
+    def test_quoted_glob_no_score_impact(self, tmp_path):
+        """Properly quoted globs have no score impact."""
+        self._create_template(tmp_path, rules_files={
+            "good.md": '---\npaths: "**/*.py"\n---\n\n# Good',
+        })
+
+        section = GlobalTemplateValidationSection()
+        result = section.execute(tmp_path)
+
+        assert result.score == 10.0
+        assert result.metadata["glob_quoting_issues"] == 0
+
+    def test_multiple_unquoted_globs_capped_deduction(self, tmp_path):
+        """Score deduction for unquoted globs is capped at 3.0."""
+        self._create_template(tmp_path, rules_files={
+            f"bad-{i}.md": f"---\npaths: **/*.py\n---\n\n# Bad {i}"
+            for i in range(5)
+        })
+
+        section = GlobalTemplateValidationSection()
+        result = section.execute(tmp_path)
+
+        # 5 issues * 1.0 = 5.0, capped at 3.0
+        # Also 0 path-gating deductions since all have paths:
+        assert result.score >= 7.0
+
+
+# ============================================================================
+# 8. validate_rules_yaml_frontmatter Tests
+# ============================================================================
+
+
+class TestValidateRulesYamlFrontmatter:
+    """Test YAML frontmatter validation using yaml.safe_load()."""
+
+    def test_no_rules_dir(self, tmp_path):
+        """Return empty when .claude/rules/ doesn't exist."""
+        issues = validate_rules_yaml_frontmatter(tmp_path)
+        assert issues == []
+
+    def test_valid_yaml_no_issues(self, tmp_path):
+        """No issues for valid YAML frontmatter."""
+        rules_dir = tmp_path / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+
+        (rules_dir / "code-style.md").write_text(
+            '---\npaths: "**/*.py, **/*.pyx"\n---\n\n# Code Style'
+        )
+        (rules_dir / "testing.md").write_text(
+            '---\npaths: ["tests/**/*.py", "**/*.test.ts"]\n---\n\n# Testing'
+        )
+
+        issues = validate_rules_yaml_frontmatter(tmp_path)
+        assert issues == []
+
+    def test_unquoted_glob_detected(self, tmp_path):
+        """Detect unquoted glob pattern (failure pattern 1)."""
+        rules_dir = tmp_path / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+
+        (rules_dir / "bad.md").write_text(
+            "---\npaths: **/*.py\n---\n\n# Bad"
+        )
+
+        issues = validate_rules_yaml_frontmatter(tmp_path)
+        assert len(issues) == 1
+        assert issues[0].severity == IssueSeverity.HIGH
+        assert issues[0].category == IssueCategory.PATH_GATING
+        assert "bad.md" in issues[0].location
+        assert "Invalid YAML" in issues[0].message
+        assert issues[0].fixable is True
+
+    def test_comma_separated_quoted_strings_detected(self, tmp_path):
+        """Detect comma-separated quoted strings (failure pattern 2)."""
+        rules_dir = tmp_path / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+
+        (rules_dir / "bad.md").write_text(
+            '---\npaths: "**/*.py", "**/*.pyx"\n---\n\n# Bad'
+        )
+
+        issues = validate_rules_yaml_frontmatter(tmp_path)
+        assert len(issues) == 1
+        assert "bad.md" in issues[0].location
+        assert "Invalid YAML" in issues[0].message
+
+    def test_files_without_frontmatter_skipped(self, tmp_path):
+        """Files without frontmatter are silently skipped."""
+        rules_dir = tmp_path / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+
+        (rules_dir / "no-fm.md").write_text("# No frontmatter\nContent")
+
+        issues = validate_rules_yaml_frontmatter(tmp_path)
+        assert issues == []
+
+    def test_nested_rules_files_checked(self, tmp_path):
+        """Validate files in subdirectories like patterns/."""
+        patterns_dir = tmp_path / ".claude" / "rules" / "patterns"
+        patterns_dir.mkdir(parents=True)
+
+        (patterns_dir / "bad-pattern.md").write_text(
+            "---\npaths: **/*.py\n---\n\n# Bad Pattern"
+        )
+
+        issues = validate_rules_yaml_frontmatter(tmp_path)
+        assert len(issues) == 1
+        assert "patterns/bad-pattern.md" in issues[0].location
+
+    def test_multiple_invalid_files(self, tmp_path):
+        """Report issues for each invalid file."""
+        rules_dir = tmp_path / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+
+        (rules_dir / "bad1.md").write_text(
+            "---\npaths: **/*.py\n---\n\n# Bad 1"
+        )
+        (rules_dir / "bad2.md").write_text(
+            '---\npaths: "a", "b"\n---\n\n# Bad 2'
+        )
+        (rules_dir / "good.md").write_text(
+            '---\npaths: "**/*.py"\n---\n\n# Good'
+        )
+
+        issues = validate_rules_yaml_frontmatter(tmp_path)
+        assert len(issues) == 2
+
+    def test_fix_description_includes_guidance(self, tmp_path):
+        """Fix description provides actionable guidance."""
+        rules_dir = tmp_path / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+
+        (rules_dir / "bad.md").write_text(
+            "---\npaths: **/*.py\n---\n\n# Bad"
+        )
+
+        issues = validate_rules_yaml_frontmatter(tmp_path)
+        assert len(issues) == 1
+        assert "quote glob" in issues[0].fix_description.lower()
+
+    def test_valid_frontmatter_without_paths(self, tmp_path):
+        """Valid frontmatter without paths: key passes."""
+        rules_dir = tmp_path / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+
+        (rules_dir / "desc-only.md").write_text(
+            "---\ndescription: A rule file\n---\n\n# Desc Only"
+        )
+
+        issues = validate_rules_yaml_frontmatter(tmp_path)
+        assert issues == []
+
+
+# ============================================================================
+# 9. GlobalTemplateValidationSection YAML Frontmatter Integration
+# ============================================================================
+
+
+class TestGlobalSectionYamlFrontmatter:
+    """Test Section 7 integration with YAML frontmatter validation."""
+
+    def _create_template(self, tmp_path, rules_files=None):
+        """Helper to create template with required files."""
+        (tmp_path / "manifest.json").write_text("{}")
+        (tmp_path / "CLAUDE.md").write_text("# CLAUDE")
+        (tmp_path / "README.md").write_text("# README")
+
+        if rules_files:
+            rules_dir = tmp_path / ".claude" / "rules"
+            rules_dir.mkdir(parents=True)
+            for name, content in rules_files.items():
+                (rules_dir / name).write_text(content)
+
+    def test_invalid_yaml_reduces_score(self, tmp_path):
+        """Invalid YAML frontmatter reduces the section score."""
+        self._create_template(tmp_path, rules_files={
+            "bad.md": "---\npaths: **/*.py\n---\n\n# Bad",
+        })
+
+        section = GlobalTemplateValidationSection()
+        result = section.execute(tmp_path)
+
+        assert result.score < 10.0
+        assert result.metadata["yaml_frontmatter_issues"] == 1
+
+    def test_valid_yaml_no_score_impact(self, tmp_path):
+        """Valid YAML frontmatter has no score impact."""
+        self._create_template(tmp_path, rules_files={
+            "good.md": '---\npaths: "**/*.py"\n---\n\n# Good',
+        })
+
+        section = GlobalTemplateValidationSection()
+        result = section.execute(tmp_path)
+
+        assert result.score == 10.0
+        assert result.metadata["yaml_frontmatter_issues"] == 0
+
+    def test_yaml_issues_capped_deduction(self, tmp_path):
+        """Score deduction for YAML issues is capped at 3.0."""
+        self._create_template(tmp_path, rules_files={
+            f"bad-{i}.md": f"---\npaths: **/*.py\n---\n\n# Bad {i}"
+            for i in range(5)
+        })
+
+        section = GlobalTemplateValidationSection()
+        result = section.execute(tmp_path)
+
+        # YAML issues: 5 * 1.0 = 5.0, capped at 3.0
+        # Glob quoting issues also fire for same files: 5 * 1.0, capped at 3.0
+        # 10.0 - 3.0 - 3.0 = 4.0
+        assert result.score >= 4.0

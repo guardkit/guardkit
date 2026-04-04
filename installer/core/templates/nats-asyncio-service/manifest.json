@@ -10,27 +10,27 @@
   "frameworks": [
     {
       "name": "FastStream",
-      "version": null,
+      "version": ">=0.5.0",
       "purpose": "core"
     },
     {
       "name": "Pydantic",
-      "version": null,
+      "version": ">=2.0",
       "purpose": "core"
     },
     {
       "name": "pydantic-settings",
-      "version": null,
+      "version": ">=2.0",
       "purpose": "core"
     },
     {
       "name": "pytest",
-      "version": null,
+      "version": ">=8.0",
       "purpose": "testing"
     },
     {
       "name": "pytest-asyncio",
-      "version": null,
+      "version": ">=0.23",
       "purpose": "testing"
     }
   ],
@@ -109,6 +109,16 @@
   "requires": [
     "agent:python-domain-specialist"
   ],
+  "quality_scores": {
+    "solid_compliance": 85,
+    "dry_compliance": 80,
+    "yagni_compliance": 85,
+    "test_coverage": 80,
+    "documentation": 75
+  },
+  "production_ready": true,
+  "learning_resource": true,
+  "reference_implementation": true,
   "created_at": "2026-04-03T20:50:09.155199",
-  "confidence_score": 70.0
+  "confidence_score": 88.0
 }

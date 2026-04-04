@@ -1,5 +1,5 @@
 ---
-paths: "**/agents.py", "**/agent.py"
+paths: "**/agents.py, **/agent.py"
 ---
 
 # SubAgent Composition

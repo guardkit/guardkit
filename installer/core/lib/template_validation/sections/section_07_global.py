@@ -9,6 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import yaml
+
 from ..models import (
     SectionResult,
     ValidationIssue,
@@ -21,6 +23,10 @@ from ..models import (
 # Compiled regex for detecting paths: in YAML frontmatter
 _FRONTMATTER_PATTERN = re.compile(r'^---\s*\n(.*?)\n---', re.DOTALL)
 _PATHS_KEY_PATTERN = re.compile(r'^paths:\s', re.MULTILINE)
+
+# Detects unquoted glob patterns: paths: value contains * without being quoted
+# Matches lines like `paths: **/*.py` but NOT `paths: "**/*.py"` or `paths: ["**/*.py"]`
+_UNQUOTED_GLOB_PATTERN = re.compile(r'^paths:\s+([^"\'[\n]*\*)', re.MULTILINE)
 
 # Filename-to-path-pattern suggestions for common rules files
 _PATH_SUGGESTIONS: Dict[str, str] = {
@@ -112,6 +118,130 @@ def validate_rules_path_gating(
     return issues, total_count, gated_count, ungated_files
 
 
+def has_unquoted_glob(frontmatter: str) -> bool:
+    """Check if frontmatter contains an unquoted glob pattern on the paths: line.
+
+    Args:
+        frontmatter: The YAML frontmatter content (between --- delimiters).
+
+    Returns:
+        True if paths: value contains an unquoted asterisk.
+    """
+    return bool(_UNQUOTED_GLOB_PATTERN.search(frontmatter))
+
+
+def validate_rules_glob_quoting(
+    template_path: Path,
+) -> List[ValidationIssue]:
+    """Check that rules files with paths: frontmatter have properly quoted glob patterns.
+
+    Unquoted ``*`` in YAML is treated as an alias indicator, causing parse errors
+    or silent data corruption.  This validator catches the problem early.
+
+    Args:
+        template_path: Root path of the template being validated.
+
+    Returns:
+        List of validation issues for files with unquoted glob patterns.
+    """
+    issues: List[ValidationIssue] = []
+
+    rules_dir = template_path / ".claude" / "rules"
+    if not rules_dir.exists():
+        return issues
+
+    for rules_file in sorted(rules_dir.rglob("*.md")):
+        content = rules_file.read_text(encoding="utf-8")
+
+        fm_match = _FRONTMATTER_PATTERN.match(content)
+        if not fm_match:
+            continue
+
+        frontmatter = fm_match.group(1)
+        if not _PATHS_KEY_PATTERN.search(frontmatter):
+            continue
+
+        if has_unquoted_glob(frontmatter):
+            rel_path = str(rules_file.relative_to(template_path))
+            # Extract the raw paths: value for the error message
+            for line in frontmatter.splitlines():
+                if line.startswith("paths:"):
+                    raw_value = line[len("paths:"):].strip()
+                    break
+            else:
+                raw_value = "(unknown)"
+
+            issues.append(ValidationIssue(
+                severity=IssueSeverity.HIGH,
+                category=IssueCategory.PATH_GATING,
+                message=(
+                    f"Rule {rel_path} has unquoted glob pattern in paths: frontmatter. "
+                    f"Quote it: paths: \"{raw_value}\""
+                ),
+                location=rel_path,
+                fixable=True,
+                fix_description=f'Quote the paths value: paths: "{raw_value}"',
+            ))
+
+    return issues
+
+
+def validate_rules_yaml_frontmatter(
+    template_path: Path,
+) -> List[ValidationIssue]:
+    """Check that rules files have valid YAML in their frontmatter.
+
+    Parses each rule file's frontmatter with ``yaml.safe_load()`` and reports
+    any ``YAMLError`` as a validation failure.  This catches two known failure
+    patterns:
+      1. Unquoted glob patterns (``paths: **/*.py``)
+      2. Comma-separated quoted strings (``paths: "a", "b"``)
+
+    Args:
+        template_path: Root path of the template being validated.
+
+    Returns:
+        List of validation issues for files with invalid YAML frontmatter.
+    """
+    issues: List[ValidationIssue] = []
+
+    rules_dir = template_path / ".claude" / "rules"
+    if not rules_dir.exists():
+        return issues
+
+    for rules_file in sorted(rules_dir.rglob("*.md")):
+        content = rules_file.read_text(encoding="utf-8")
+
+        fm_match = _FRONTMATTER_PATTERN.match(content)
+        if not fm_match:
+            continue
+
+        frontmatter = fm_match.group(1)
+
+        try:
+            yaml.safe_load(frontmatter)
+        except yaml.YAMLError as exc:
+            rel_path = str(rules_file.relative_to(template_path))
+            # Extract concise error description
+            error_msg = str(exc).split("\n")[0] if "\n" in str(exc) else str(exc)
+            issues.append(ValidationIssue(
+                severity=IssueSeverity.HIGH,
+                category=IssueCategory.PATH_GATING,
+                message=(
+                    f"Invalid YAML frontmatter in {rel_path}: {error_msg}"
+                ),
+                location=rel_path,
+                fixable=True,
+                fix_description=(
+                    "Fix YAML syntax in frontmatter. Common fixes: "
+                    "quote glob patterns (paths: \"**/*.py\") or "
+                    "use YAML array syntax (paths: [\"a\", \"b\"])"
+                ),
+            ))
+
+    return issues
+
+
 class GlobalTemplateValidationSection:
     """Section 7: Global Template Validation"""
 
@@ -155,6 +285,18 @@ class GlobalTemplateValidationSection:
         # Path-gating validation
         pg_issues, total, gated, ungated = validate_rules_path_gating(template_path)
         issues.extend(pg_issues)
+
+        # Glob quoting validation
+        glob_issues = validate_rules_glob_quoting(template_path)
+        issues.extend(glob_issues)
+        if glob_issues:
+            score -= min(3.0, len(glob_issues) * 1.0)
+
+        # YAML frontmatter validation
+        yaml_issues = validate_rules_yaml_frontmatter(template_path)
+        issues.extend(yaml_issues)
+        if yaml_issues:
+            score -= min(3.0, len(yaml_issues) * 1.0)
 
         if total > 0:
             coverage_pct = (gated / total) * 100
@@ -210,6 +352,8 @@ class GlobalTemplateValidationSection:
                 "path_gating_gated": gated,
                 "path_gating_coverage_pct": round((gated / total) * 100, 1) if total > 0 else 100.0,
                 "path_gating_ungated_files": ungated,
+                "glob_quoting_issues": len(glob_issues),
+                "yaml_frontmatter_issues": len(yaml_issues),
             },
             completed_at=datetime.now(),
         )

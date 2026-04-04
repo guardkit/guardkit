@@ -1,5 +1,5 @@
 ---
-paths: **/*.test.*, **/tests/**, **/*_test.*, **/test_*.*,  **/conftest.py
+paths: "**/*.test.*, **/tests/**, **/*_test.*, **/test_*.*, **/conftest.py"
 ---
 
 # Testing Guide

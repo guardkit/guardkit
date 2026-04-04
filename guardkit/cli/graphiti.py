@@ -100,7 +100,7 @@ def _get_client_and_config() -> tuple[GraphitiClient, GraphitiSettings]:
     return client, settings
 
 
-async def _cmd_seed(force: bool, template: Optional[str] = None) -> None:
+async def _cmd_seed(force: bool, template: Optional[str] = None, episode_timeout: Optional[float] = None) -> None:
     """Async implementation of seed command."""
     console.print("[bold blue]Graphiti System Context Seeding[/bold blue]")
     console.print()
@@ -113,6 +113,10 @@ async def _cmd_seed(force: bool, template: Optional[str] = None) -> None:
 
     # Create client
     client, settings = _get_client_and_config()
+
+    # Apply CLI --timeout override to client
+    if episode_timeout is not None:
+        client.default_timeout_override = episode_timeout
 
     # Initialize connection
     console.print(f"Connecting to {_format_connection_target(settings)}...")
@@ -517,7 +521,15 @@ def graphiti():
     default=None,
     help="Template to seed (auto-detected if not specified)",
 )
-def seed(force: bool, template: Optional[str]):
+@click.option(
+    "--timeout",
+    "episode_timeout",
+    type=float,
+    default=None,
+    help="Per-episode timeout in seconds (overrides auto-detected timeout). "
+         "Local LLMs are typically ~2x slower than GB10 vLLM; try --timeout 300.",
+)
+def seed(force: bool, template: Optional[str], episode_timeout: Optional[float]):
     """Seed system context into Graphiti.
 
     Seeds comprehensive GuardKit knowledge into the Graphiti knowledge graph.
@@ -529,8 +541,13 @@ def seed(force: bool, template: Optional[str]):
     --template, auto-detects from manifest.json or seeds all templates.
 
     Use --force to re-seed even if seeding has already been completed.
+
+    \b
+    Performance: Local LLMs (e.g., MacBook Pro) are typically ~2x slower
+    than GB10 vLLM. Use --timeout to increase the per-episode timeout if
+    you see timeout warnings during seeding.
     """
-    _run_async(_cmd_seed(force, template))
+    _run_async(_cmd_seed(force, template, episode_timeout=episode_timeout))
 
 
 @graphiti.command()
@@ -673,7 +690,7 @@ def seed_adrs(force: bool):
     _run_async(_cmd_seed_adrs(force))
 
 
-async def _cmd_seed_system(force: bool, template: Optional[str]) -> None:
+async def _cmd_seed_system(force: bool, template: Optional[str], episode_timeout: Optional[float] = None) -> None:
     """Async implementation of seed-system command."""
     from guardkit.knowledge.system_seeding import (
         seed_system_content,
@@ -692,6 +709,10 @@ async def _cmd_seed_system(force: bool, template: Optional[str]) -> None:
 
     # Create client
     client, settings = _get_client_and_config()
+
+    # Apply CLI --timeout override to client
+    if episode_timeout is not None:
+        client.default_timeout_override = episode_timeout
 
     # Handle disabled Graphiti
     if not settings.enabled:
@@ -799,7 +820,15 @@ async def _cmd_seed_system(force: bool, template: Optional[str]) -> None:
     default=None,
     help="Template to seed (auto-detected if not specified)",
 )
-def seed_system(force: bool, template: Optional[str]):
+@click.option(
+    "--timeout",
+    "episode_timeout",
+    type=float,
+    default=None,
+    help="Per-episode timeout in seconds (overrides auto-detected timeout). "
+         "Local LLMs are typically ~2x slower than GB10 vLLM; try --timeout 300.",
+)
+def seed_system(force: bool, template: Optional[str], episode_timeout: Optional[float]):
     """Seed template and system content into Graphiti.
 
     Seeds system-level content independent of any specific project:
@@ -819,8 +848,12 @@ def seed_system(force: bool, template: Optional[str]):
         guardkit graphiti seed-system
         guardkit graphiti seed-system --template fastapi-python
         guardkit graphiti seed-system --force
+    \b
+    Performance: Local LLMs (e.g., MacBook Pro) are typically ~2x slower
+    than GB10 vLLM. Use --timeout to increase the per-episode timeout if
+    you see timeout warnings during seeding.
     """
-    _run_async(_cmd_seed_system(force, template))
+    _run_async(_cmd_seed_system(force, template, episode_timeout=episode_timeout))
 
 
 @graphiti.command("add-context")

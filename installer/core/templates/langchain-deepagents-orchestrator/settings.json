@@ -7,7 +7,11 @@
       "case_style": "PascalCase",
       "prefix": null,
       "suffix": ".py",
-      "examples": []
+      "examples": [
+        "OrchestratorConfig",
+        "SubAgentSpec",
+        "EvaluatorResult"
+      ]
     },
     "function": {
       "element_type": "function",
@@ -40,7 +44,11 @@
       "case_style": "SCREAMING_SNAKE_CASE",
       "prefix": null,
       "suffix": null,
-      "examples": []
+      "examples": [
+        "ORCHESTRATOR_SYSTEM_PROMPT",
+        "IMPLEMENTER_SYSTEM_PROMPT",
+        "DEFAULT_REASONING_MODEL"
+      ]
     }
   },
   "file_organization": {
@@ -50,10 +58,65 @@
     "max_files_per_directory": 50
   },
   "layer_mappings": {
+    "Agents": {
+      "name": "Agents",
+      "directory": "src/agents",
+      "namespace_pattern": "{{project_name}}.agents",
+      "responsibilities": "SubAgent factory functions (implementer, evaluator, builder) and orchestrator assembly via create_deep_agent",
+      "file_patterns": [
+        "*.py",
+        "!*_test.py",
+        "!test_*.py"
+      ]
+    },
+    "Tools": {
+      "name": "Tools",
+      "directory": "src/tools",
+      "namespace_pattern": "{{project_name}}.tools",
+      "responsibilities": "LangChain @tool decorated functions for orchestrator and subagent capabilities",
+      "file_patterns": [
+        "*.py",
+        "!*_test.py",
+        "!test_*.py"
+      ]
+    },
+    "Prompts": {
+      "name": "Prompts",
+      "directory": "src/prompts",
+      "namespace_pattern": "{{project_name}}.prompts",
+      "responsibilities": "System prompt constants with {date} and {domain_prompt} placeholders, organised per agent role",
+      "file_patterns": [
+        "*.py",
+        "!*_test.py",
+        "!test_*.py"
+      ]
+    },
+    "Config": {
+      "name": "Config",
+      "directory": "src/config",
+      "namespace_pattern": "{{project_name}}.config",
+      "responsibilities": "YAML-based orchestrator configuration, model selection, and deployment settings",
+      "file_patterns": [
+        "*.py",
+        "*.yaml",
+        "!*_test.py",
+        "!test_*.py"
+      ]
+    },
+    "Domains": {
+      "name": "Domains",
+      "directory": "domains",
+      "namespace_pattern": null,
+      "responsibilities": "Per-domain DOMAIN.md files injected into orchestrator system prompts at runtime",
+      "file_patterns": [
+        "*.md"
+      ]
+    },
     "Infrastructure": {
       "name": "Infrastructure",
-      "directory": "src/Infrastructure",
+      "directory": "src/infrastructure",
       "namespace_pattern": "{{project_name}}.infrastructure",
+      "responsibilities": "LangGraph deployment config, entrypoint wiring, and external service integration",
       "file_patterns": [
         "*.py",
         "!*_test.py",
@@ -62,8 +125,9 @@
     },
     "Shared": {
       "name": "Shared",
-      "directory": "src/Shared",
+      "directory": "src/shared",
       "namespace_pattern": "{{project_name}}.shared",
+      "responsibilities": "Cross-cutting utilities, type definitions, and helper functions shared across layers",
       "file_patterns": [
         "*.py",
         "!*_test.py",
@@ -75,7 +139,13 @@
     "indentation": "spaces",
     "indent_size": 4,
     "line_length": 88,
-    "trailing_commas": true
+    "trailing_commas": true,
+    "quote_style": "double",
+    "async_preferred": true,
+    "type_hints": "required",
+    "docstrings": "google",
+    "linter": "ruff",
+    "formatter": "ruff"
   },
   "generation_options": {
     "preserve_comments": true,
