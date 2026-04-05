@@ -1161,9 +1161,9 @@ class GraphitiClient:
         elif group_id == "role_constraints":
             episode_timeout = 150.0   # Coach at 120s needs ~130s with growth
         elif group_id == "agents":
-            episode_timeout = 240.0   # 9/18 agents timeout at 150s; raise to recover 150-240s range (TASK-FIX-303e)
+            episode_timeout = 360.0   # Was 240s; local LLM agents run 124-182s with outliers >240s (TASK-REV-2266)
         elif group_id == "templates":
-            episode_timeout = 180.0   # template manifests need 111-150s on clean graph
+            episode_timeout = 360.0   # Was 180s; nats-infrastructure local LLM timeout at 180s (TASK-REV-2266)
         elif group_id == "command_workflows":
             episode_timeout = 180.0   # 3 episodes (task_work, feature_spec, feature_to_build) timeout at 120s (TASK-FIX-7A01)
         elif group_id in ("quality_gate_phases", "component_status", "project_architecture"):
