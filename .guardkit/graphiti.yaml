@@ -51,14 +51,14 @@ max_concurrent_episodes: 3
 # Also update .mcp.json LLM_API_URL to http://promaxgb10-41b1:8000/v1
 #
 # --- GB10 (vLLM, FP8) ---
-#llm_provider: vllm
-#llm_base_url: http://promaxgb10-41b1:8000/v1
-#llm_model: neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic
+llm_provider: vllm
+llm_base_url: http://promaxgb10-41b1:8000/v1
+llm_model: neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic
 #
 # --- MacBook Pro M2 Max (Ollama, Q4_K_M) ---
-llm_provider: ollama
-llm_base_url: http://richards-macbook-pro.tailebf801.ts.net:8000/v1
-llm_model: qwen2.5:14b-instruct-q4_K_M
+#llm_provider: ollama
+#llm_base_url: http://richards-macbook-pro.tailebf801.ts.net:8000/v1
+#llm_model: qwen2.5:14b-instruct-q4_K_M
 llm_max_tokens: 4096  # Cap output tokens; prevents 16384 default exceeding 32K context (TASK-REV-84A7)
 
 # Embedding provider for Graphiti vector search
