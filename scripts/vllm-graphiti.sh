@@ -52,7 +52,7 @@
 #
 # Memory budget (128GB unified):
 #   qwen2.5-14b  weights ~16GB, vLLM alloc ~51GB (@0.40)
-#   qwen2.5-32b  weights ~34GB, vLLM alloc ~38GB (@0.30)
+#   qwen2.5-32b  weights ~34GB, vLLM alloc ~70GB (@0.55)
 #   qwen3-30b    weights ~29GB, vLLM alloc ~38GB (@0.30)
 #   + nomic-embed (port 8001) ~0.5GB
 #   + Qwen3-Coder-Next (port 8002) ~32-45GB
@@ -88,8 +88,8 @@ case "$MODEL_PRESET" in
     ;;
   qwen2.5-32b)
     MODEL="neuralmagic/Qwen2.5-32B-Instruct-FP8-dynamic"
-    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.30}"
-    MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-32768}"
+    GPU_UTIL="${VLLM_GRAPHITI_GPU_UTIL:-0.55}"
+    MAX_LEN="${VLLM_GRAPHITI_MAX_LEN:-16384}"
     EXTRA_ARGS="--kv-cache-dtype fp8 \
       --enable-prefix-caching \
       --structured-outputs-config.backend xgrammar"
