@@ -1,21 +1,23 @@
 ---
-id: TASK-TPL-004
-title: "Wire pattern loader into AutoBuildContextLoader + logging"
-task_type: feature
-parent_review: TASK-REV-B3F7
-feature_id: FEAT-TPL-PLAYER
-wave: 4
-implementation_mode: task-work
 complexity: 4
-dependencies:
-  - TASK-TPL-003
-status: backlog
 consumer_context:
-  - task: TASK-TPL-002
-    consumes: TemplatePatternContext
-    framework: "stdlib dataclass"
-    driver: "direct attribute access"
-    format_note: "Reads `selected_files` + template dir, formats each file's content into a markdown code block, assigns to `prompt_block`, and appends `prompt_block` to AutoBuildContextResult.prompt_text."
+- consumes: TemplatePatternContext
+  driver: direct attribute access
+  format_note: Reads `selected_files` + template dir, formats each file's content
+    into a markdown code block, assigns to `prompt_block`, and appends `prompt_block`
+    to AutoBuildContextResult.prompt_text.
+  framework: stdlib dataclass
+  task: TASK-TPL-002
+dependencies:
+- TASK-TPL-003
+feature_id: FEAT-TPL-PLAYER
+id: TASK-TPL-004
+implementation_mode: task-work
+parent_review: TASK-REV-B3F7
+status: design_approved
+task_type: feature
+title: Wire pattern loader into AutoBuildContextLoader + logging
+wave: 4
 ---
 
 # Wire pattern loader into AutoBuildContextLoader

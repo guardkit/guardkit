@@ -1,16 +1,16 @@
 ---
-id: TASK-TPL-005
-title: "Unit tests for resolver, loader, selector, and graceful degradation"
-task_type: testing
-parent_review: TASK-REV-B3F7
-feature_id: FEAT-TPL-PLAYER
-wave: 4
-implementation_mode: task-work
 complexity: 4
 dependencies:
-  - TASK-TPL-002
-  - TASK-TPL-003
-status: backlog
+- TASK-TPL-002
+- TASK-TPL-003
+feature_id: FEAT-TPL-PLAYER
+id: TASK-TPL-005
+implementation_mode: task-work
+parent_review: TASK-REV-B3F7
+status: design_approved
+task_type: testing
+title: Unit tests for resolver, loader, selector, and graceful degradation
+wave: 4
 ---
 
 # Unit tests for template pattern loader

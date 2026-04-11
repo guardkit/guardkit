@@ -50,7 +50,7 @@ from .job_context_retriever import JobContextRetriever, RetrievedContext
 from .task_analyzer import TaskPhase
 
 if TYPE_CHECKING:
-    pass  # Future type imports
+    from .template_pattern_loader import TemplatePatternContext
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +74,122 @@ class AutoBuildContextResult:
     budget_total: int
     categories_populated: List[str]
     verbose_details: Optional[str] = None
+
+
+def format_pattern_block(
+    context: "TemplatePatternContext",
+    file_contents: Dict[Path, str],
+) -> str:
+    """Format selected template pattern files into a markdown prompt block.
+
+    Produces a markdown block containing each selected file's content
+    wrapped in fenced code blocks, suitable for injection into the
+    Player prompt. Returns empty string when there are no selected files
+    or when template_name is None (graceful degradation).
+
+    Args:
+        context: TemplatePatternContext with selected_files populated.
+        file_contents: Mapping from file path to its text content.
+
+    Returns:
+        Formatted markdown block, or empty string if nothing to inject.
+    """
+    if context.template_name is None:
+        return ""
+
+    if not context.selected_files:
+        return ""
+
+    lines: List[str] = [
+        f"## Stack Pattern Reference (from {context.template_name} template)",
+        "The following template files show the canonical patterns for this",
+        "project's architecture. Use these as reference when generating code.",
+        "",
+    ]
+
+    for fpath in context.selected_files:
+        content = file_contents.get(fpath, "")
+        # Infer language hint from the template filename
+        lang = _infer_language_hint(fpath)
+        lines.append(f"### {fpath}")
+        lines.append(f"```{lang}")
+        lines.append(content)
+        lines.append("```")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def _infer_language_hint(template_path: Path) -> str:
+    """Infer a fenced-code-block language hint from a .template filename.
+
+    Strips the ``.template`` suffix and checks the remaining extension.
+
+    Args:
+        template_path: Path like ``api/router.py.template``.
+
+    Returns:
+        Language string like ``python``, ``typescript``, or empty string.
+    """
+    name = template_path.name
+    if name.endswith(".template"):
+        name = name[: -len(".template")]
+
+    ext_map = {
+        ".py": "python",
+        ".ts": "typescript",
+        ".tsx": "typescript",
+        ".js": "javascript",
+        ".jsx": "javascript",
+        ".json": "json",
+        ".yaml": "yaml",
+        ".yml": "yaml",
+        ".toml": "toml",
+        ".ini": "ini",
+        ".cfg": "ini",
+        ".cs": "csharp",
+        ".html": "html",
+        ".css": "css",
+    }
+
+    for ext, lang in ext_map.items():
+        if name.endswith(ext):
+            return lang
+    return ""
+
+
+def _load_file_contents(
+    context: "TemplatePatternContext",
+) -> Dict[Path, str]:
+    """Read the content of each selected template file.
+
+    Resolves each relative selected path against the template directory's
+    ``templates/`` subdirectory. Files that cannot be read are silently
+    skipped (content will be empty).
+
+    Args:
+        context: TemplatePatternContext with template_dir and selected_files.
+
+    Returns:
+        Mapping from selected file path to its text content.
+    """
+    contents: Dict[Path, str] = {}
+    if context.template_dir is None:
+        return contents
+
+    templates_subdir = context.template_dir / "templates"
+    for fpath in context.selected_files:
+        # selected_files may be absolute or relative; resolve accordingly
+        if fpath.is_absolute():
+            abs_path = fpath
+        else:
+            abs_path = templates_subdir / fpath
+        try:
+            contents[fpath] = abs_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            logger.debug("Cannot read template file %s: %s", fpath, exc)
+            contents[fpath] = ""
+    return contents
 
 
 class AutoBuildContextLoader:
@@ -190,7 +306,10 @@ class AutoBuildContextLoader:
         if self.retriever is None:
             # Graceful degradation - return empty context
             logger.debug(f"Graphiti not available, skipping Player context for {task_id}")
-            return self._empty_result(task_id)
+            result = self._empty_result(task_id)
+            # Still attempt template pattern injection (does not require Graphiti)
+            self._append_template_patterns(result, tech_stack=tech_stack)
+            return result
 
         logger.info("[Graphiti] Loading Player context (turn %d)...", turn_number)
         context_start = time.monotonic()
@@ -245,6 +364,9 @@ class AutoBuildContextLoader:
             # Build result
             result = self._build_result(context, actor="player", turn_continuation=turn_continuation)
 
+            # Append template pattern context (TASK-TPL-004)
+            self._append_template_patterns(result, tech_stack=tech_stack)
+
             # Log similar outcomes count
             similar_outcomes_count = len(context.similar_outcomes) if context.similar_outcomes else 0
             if similar_outcomes_count > 0:
@@ -268,7 +390,9 @@ class AutoBuildContextLoader:
                 "Failed to retrieve Player context for %s after %.1fs: %s",
                 task_id, context_duration, e,
             )
-            return self._empty_result(task_id)
+            result = self._empty_result(task_id)
+            self._append_template_patterns(result, tech_stack=tech_stack)
+            return result
 
     async def get_coach_context(
         self,
@@ -377,6 +501,90 @@ class AutoBuildContextLoader:
                 task_id, context_duration, e,
             )
             return self._empty_result(task_id)
+
+    def _append_template_patterns(
+        self,
+        result: AutoBuildContextResult,
+        tech_stack: str = "python",
+        file_path_hints: Optional[List[str]] = None,
+    ) -> None:
+        """Load template patterns and append to result prompt_text.
+
+        Attempts to locate ``.claude/manifest.json`` relative to the
+        worktree path, load template patterns, select relevant files,
+        and format them into a markdown block appended to prompt_text.
+        On any failure the method degrades silently — it never raises.
+
+        Args:
+            result: AutoBuildContextResult whose prompt_text will be mutated.
+            tech_stack: Technology stack for pattern selection.
+            file_path_hints: Optional file-path hints for targeted selection.
+        """
+        if self.worktree_path is None:
+            logger.debug("[TemplatePattern] No worktree_path, skipping template patterns")
+            return
+
+        manifest_path = self.worktree_path / ".claude" / "manifest.json"
+        if not manifest_path.exists():
+            logger.debug("[TemplatePattern] No manifest at %s, skipping", manifest_path)
+            return
+
+        try:
+            from .template_pattern_loader import (
+                load_template_patterns,
+                select_patterns,
+            )
+
+            # Load template context from manifest
+            tpl_ctx = load_template_patterns(manifest_path)
+
+            if tpl_ctx.template_name is None:
+                logger.debug(
+                    "[TemplatePattern] Template name is None (degraded), skipping pattern append"
+                )
+                return
+
+            # Select relevant patterns
+            tpl_ctx = select_patterns(
+                tpl_ctx,
+                tech_stack=tech_stack,
+                file_path_hints=file_path_hints or [],
+            )
+
+            if not tpl_ctx.selected_files:
+                logger.debug("[TemplatePattern] No files selected, skipping pattern append")
+                return
+
+            # Read file contents
+            file_contents = _load_file_contents(tpl_ctx)
+
+            # Format the block
+            block = format_pattern_block(tpl_ctx, file_contents)
+
+            if block:
+                result.prompt_text = (
+                    result.prompt_text + "\n\n" + block
+                    if result.prompt_text
+                    else block
+                )
+                # Estimate token count for the block
+                token_estimate = len(block) // 4
+                selected_names = [str(f) for f in tpl_ctx.selected_files]
+                logger.info(
+                    "[TemplatePattern] Appended pattern block: %d files, ~%d tokens (%s)",
+                    len(tpl_ctx.selected_files),
+                    token_estimate,
+                    ", ".join(selected_names),
+                )
+
+            # Log warnings from pattern loading/selection at warning level
+            for warning in tpl_ctx.warnings:
+                logger.warning("[TemplatePattern] %s", warning)
+
+        except Exception as exc:
+            logger.warning(
+                "[TemplatePattern] Failed to load template patterns: %s", exc
+            )
 
     def _build_task_dict(
         self,
