@@ -1,0 +1,14 @@
+{
+  "task_id": "TASK-TPL-005",
+  "checkpoints": [
+    {
+      "turn": 1,
+      "commit_hash": "8450a484683c1e2364d623be11c5e83063e3f57f",
+      "timestamp": "2026-04-11T17:14:45.112572",
+      "tests_passed": true,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 1 complete (tests: pass)"
+    }
+  ],
+  "last_updated": "2026-04-11T17:14:45.112851"
+}
