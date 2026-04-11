@@ -1,20 +1,23 @@
 ---
 id: TASK-REN-B9F2
 title: Rename templates/ subdirectory to patterns/ across all templates and consumers (deferred)
-status: backlog
+status: closed
 created: 2026-04-11T15:15:00Z
-updated: 2026-04-11T15:15:00Z
+updated: 2026-04-11T18:00:00Z
 priority: low
-tags: [templates, rename, cleanup, deferred, cross-cutting]
+tags: [templates, rename, cleanup, deferred, cross-cutting, closed, wont-do]
 parent_review: TASK-REV-A5F8
 feature_id: FEAT-1A5E
 implementation_mode: task-work
 complexity: 5
 depends_on: [TASK-PAT-1A5E]
-blocked_reason: "Deferred — do not start until TASK-PAT-1A5E has landed. May be dropped entirely if TASK-DOC-C3D7's templates/README.md stubs prove sufficient to disambiguate."
+closed_by: TASK-TPL-007
+closed_reason: "Consumer exists, no rename needed. FEAT-TPL-PLAYER (TASK-TPL-001 through TASK-TPL-004) implemented the AutoBuild Player as the consumer of templates/*.template files. Per Decision D6 in the FEAT-TPL-PLAYER specification: 'The templates/ directory in each builtin template is not renamed. Now that these files have a proper consumer, templates/ is accurate — they are template files.' The name collision concern (templates/{name}/templates/) is mitigated by the documentation added in TASK-TPL-007. Renaming would introduce unnecessary churn across 10+ template packages, all agent cross-references, and the consumer code for zero functional gain."
 ---
 
 # Task: Rename `templates/` subdirectory to `patterns/` across all templates and consumers
+
+> **Closed: will not implement.** Consumer exists, no rename needed. See `closed_reason` in frontmatter for full rationale.
 
 ## Background
 

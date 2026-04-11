@@ -1,20 +1,23 @@
 ---
 id: TASK-DOC-C3D7
 title: Document the two-layer template model (config layer + pattern layer)
-status: backlog
+status: completed
 created: 2026-04-11T15:15:00Z
-updated: 2026-04-11T15:15:00Z
+updated: 2026-04-11T18:00:00Z
 priority: medium
-tags: [documentation, templates, guardkit-init, autobuild, software-factory]
+tags: [documentation, templates, guardkit-init, autobuild, software-factory, completed]
 parent_review: TASK-REV-A5F8
 feature_id: FEAT-1A5E
 implementation_mode: direct
 complexity: 3
 depends_on: [TASK-PAT-1A5E]
-blocked_reason: "Must not ship until TASK-PAT-1A5E reaches design-approved state — docs that describe unwired pattern layer would ship a half-truth"
+completed_by: TASK-TPL-007
+completion_note: "The documentation component of this task was completed by TASK-TPL-007 as part of the FEAT-TPL-PLAYER feature. The AutoBuild Instrumentation Guide now includes a Template Pattern Context section covering data flow, key components, manifest requirements, pattern selection rules, graceful degradation, logging, and token impact. The dependency (TASK-PAT-1A5E) was implemented as FEAT-TPL-PLAYER (TASK-TPL-001 through TASK-TPL-004), so the docs now describe real wiring, not future intent."
 ---
 
 # Task: Document the two-layer template model
+
+> **Completed by TASK-TPL-007.** The documentation requirements of this task have been addressed as part of the FEAT-TPL-PLAYER feature implementation. See [AutoBuild Instrumentation Guide — Template Pattern Context](../../../docs/guides/autobuild-instrumentation-guide.md#template-pattern-context) for the delivered documentation.
 
 ## Background
 

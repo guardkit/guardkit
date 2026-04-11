@@ -1,16 +1,16 @@
 ---
-id: TASK-TPL-006
-title: "Integration test: AutoBuild context loading with template pattern block"
-task_type: testing
-parent_review: TASK-REV-B3F7
-feature_id: FEAT-TPL-PLAYER
-wave: 5
-implementation_mode: task-work
 complexity: 5
 dependencies:
-  - TASK-TPL-004
-  - TASK-TPL-005
-status: backlog
+- TASK-TPL-004
+- TASK-TPL-005
+feature_id: FEAT-TPL-PLAYER
+id: TASK-TPL-006
+implementation_mode: task-work
+parent_review: TASK-REV-B3F7
+status: design_approved
+task_type: testing
+title: 'Integration test: AutoBuild context loading with template pattern block'
+wave: 5
 ---
 
 # Integration test: end-to-end pattern injection
