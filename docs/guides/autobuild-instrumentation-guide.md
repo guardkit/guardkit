@@ -1,7 +1,7 @@
 # AutoBuild Instrumentation Guide
 
-**Version**: 1.0.0
-**Last Updated**: 2026-03-08
+**Version**: 1.1.0
+**Last Updated**: 2026-04-11
 **Compatibility**: GuardKit v1.0+, AutoBuild with instrumentation (FEAT-INST)
 **Document Type**: Technical Reference
 
@@ -13,6 +13,7 @@
 - [File Locations](#file-locations)
 - [How to Use](#how-to-use)
 - [Prompt Profiles and Digests](#prompt-profiles-and-digests)
+- [Template Pattern Context](#template-pattern-context)
 - [Adaptive Concurrency](#adaptive-concurrency)
 - [vLLM / Local Backend Specifics](#vllm--local-backend-specifics)
 - [Secret Redaction](#secret-redaction)
@@ -367,7 +368,11 @@ Emitted for each Graphiti knowledge graph query.
 | Prompt profiles | `guardkit/orchestrator/instrumentation/prompt_profile.py` |
 | Concurrency | `guardkit/orchestrator/instrumentation/concurrency.py` |
 | LLM helpers | `guardkit/orchestrator/instrumentation/llm_instrumentation.py` |
-| Tests | `tests/orchestrator/instrumentation/` |
+| Template pattern loader | `guardkit/knowledge/template_pattern_loader.py` |
+| Template resolver | `guardkit/templates/resolver.py` |
+| Context loader (pattern wiring) | `guardkit/knowledge/autobuild_context_loader.py` |
+| Tests (instrumentation) | `tests/orchestrator/instrumentation/` |
+| Tests (template patterns) | `tests/unit/test_template_pattern_loader.py` |
 
 ---
 
@@ -516,6 +521,140 @@ for r in results:
 | Phase 4 | `digest+graphiti+rules_bundle` | All sources; measures combined effectiveness |
 
 Compare phases by filtering events on `prompt_profile` and comparing token counts, latency, and task success rates.
+
+---
+
+## Template Pattern Context
+
+### Overview
+
+Template pattern context injects stack-specific `.template` files into the Player's prompt at build time, giving the AI canonical code shapes to follow when generating code. This was implemented in FEAT-TPL-PLAYER (tasks TASK-TPL-001 through TASK-TPL-004).
+
+**Why template patterns exist:**
+
+- **Consistency** — The Player sees the same patterns the template author intended, producing code that matches the project's established architecture.
+- **Reduced hallucination** — Instead of inferring patterns from agent prose descriptions, the Player reads actual parameterised code templates.
+- **Stack-specific guidance** — Each builtin template ships its own `.template` files (FastAPI routers, .NET endpoints, React components, etc.). Only relevant files are loaded per task.
+
+### Data Flow
+
+```
+guardkit init <template>
+    │
+    ├── Copies .claude/ config layer → project
+    └── Records template name in .claude/manifest.json
+        │
+        ... (development happens) ...
+        │
+/feature-build TASK-XXX
+    │
+    ▼
+AutoBuildContextLoader._append_template_patterns()
+    │
+    ├── 1. Read .claude/manifest.json → extract `name` field
+    │
+    ├── 2. resolve_template_source_dir(name)
+    │       → installer/core/templates/{name}/
+    │       → fallback: ~/.guardkit/templates/{name}/
+    │
+    ├── 3. load_template_patterns(manifest_path)
+    │       → enumerate templates/*.template files
+    │
+    ├── 4. select_patterns(context, tech_stack, file_path_hints)
+    │       → file-path hint matching (priority 1)
+    │       → tech-stack keyword fallback (priority 2)
+    │       → alphabetical fallback (priority 3)
+    │       → cap: max 5 files, ~3000 tokens
+    │
+    ├── 5. format_pattern_block(context, file_contents)
+    │       → markdown block with fenced code blocks
+    │
+    └── 6. Append to AutoBuildContextResult.prompt_text
+```
+
+### Key Components
+
+| Component | File Path | Purpose |
+|-----------|-----------|---------|
+| Template pattern loader | `guardkit/knowledge/template_pattern_loader.py` | Reads manifest, resolves template dir, enumerates `.template` files |
+| Template resolver | `guardkit/templates/resolver.py` | Resolves template source directory from name |
+| Context integration | `guardkit/knowledge/autobuild_context_loader.py` | `_append_template_patterns()` wires loader into Player context |
+| Tests | `tests/unit/test_template_pattern_loader.py` | Unit tests for loader, selector, and formatter |
+
+### Manifest Requirement
+
+The `.claude/manifest.json` file must contain a `name` field matching a known template:
+
+```json
+{
+  "name": "fastapi-python",
+  "version": "1.0.0"
+}
+```
+
+This is written automatically by `guardkit init <template>`. Projects without a manifest (or with a missing/invalid `name` field) degrade gracefully — no patterns are loaded, no errors are raised, and the Player proceeds without pattern context.
+
+### Pattern Selection Rules
+
+Selection follows a priority cascade:
+
+1. **File-path hints** — If the task touches files in `app/api/`, match template files under an `api/` subdirectory.
+2. **Tech-stack keywords** — If no file-path matches, use the tech stack (e.g., `"python"` → look for `api/`, `core/`, `config/`, `models/` subdirectories).
+3. **Alphabetical fallback** — If nothing else matches, take the first 3 files alphabetically.
+4. **Budget enforcement** — Maximum 5 files, approximately 3000 tokens. Files that would exceed the budget are skipped with a warning.
+
+### Graceful Degradation
+
+The template pattern pipeline never raises exceptions. Each failure point produces a warning and returns empty context:
+
+| Condition | Behaviour |
+|-----------|-----------|
+| No `worktree_path` configured | Skip silently (debug log) |
+| `.claude/manifest.json` missing | Skip silently (debug log) |
+| `name` field missing or invalid | Warning logged, empty context |
+| Template source dir not found | Warning logged, empty context |
+| No `templates/` subdirectory | Warning logged, empty context |
+| No files match selection criteria | Skip silently (debug log) |
+| File read error | Individual file skipped, others still loaded |
+
+### Logging
+
+Template pattern loading emits structured log messages at info and warning levels:
+
+```
+[TemplatePattern] Appended pattern block: 3 files, ~750 tokens (api/router.py.template, models/base.py.template, crud/crud_base.py.template)
+[TemplatePattern] Skipped db/session.py.template: adding 400 tokens would exceed budget (2800/3000)
+```
+
+### Token Impact
+
+Typical token costs by template type:
+
+| Template | Files Available | Files Selected (typical) | Token Cost |
+|----------|----------------|--------------------------|------------|
+| fastapi-python | 8-12 | 3-5 | ~500-800 |
+| dotnet-railway-fastendpoints | 18-22 | 3-5 | ~600-1000 |
+| react-typescript | 6-10 | 3-5 | ~400-700 |
+| python-library | 4-6 | 3-4 | ~300-500 |
+| No manifest / unknown template | — | 0 | 0 |
+
+The ~500-1000 token overhead is comparable to a single Graphiti context block and is well within the Player's context budget.
+
+### Relationship to Other Context Sources
+
+Template patterns are additive — they do not replace any existing context source:
+
+```
+Player Context Assembly:
+  ├── Graphiti knowledge context (similar outcomes, patterns, ADRs)
+  ├── Role constraints and quality gates
+  ├── Turn states (cross-turn learning)
+  ├── Implementation modes
+  ├── Template pattern context  ◄── NEW (FEAT-TPL-PLAYER)
+  └── Task description and acceptance criteria
+```
+
+The pattern block is appended to `prompt_text` after all other context sources. It appears in the Player's prompt as a "## Stack Pattern Reference" section.
 
 ---
 
@@ -728,3 +867,4 @@ jq 'select(.event_type == "llm.call" and .error_type == "rate_limited") |
 - [AutoBuild Workflow Guide](autobuild-workflow.md) — Full AutoBuild architecture, Player-Coach loop, and CLI usage
 - [Local Backend AutoBuild Guide](local-backend-autobuild-guide.md) — vLLM server setup, model alignment, and performance tuning
 - [CLI vs Claude Code](cli-vs-claude-code.md) — When to use the CLI vs slash commands
+- [Template Pattern Player Context](../features/FEAT-TPL-PLAYER-template-pattern-player-context.md) — Feature spec for template pattern injection (FEAT-TPL-PLAYER)

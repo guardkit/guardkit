@@ -1,0 +1,115 @@
+{
+  "task_id": "TASK-TPL-004",
+  "timestamp": "2026-04-11T17:14:36.425456",
+  "completed": true,
+  "phases": {
+    "phase_3": {
+      "detected": true,
+      "text": "Implementation (TDD RED)",
+      "completed": false
+    },
+    "phase_4": {
+      "detected": true,
+      "completed": true
+    }
+  },
+  "quality_gates": {
+    "tests_passing": true,
+    "tests_passed": 64,
+    "tests_failed": 0,
+    "coverage": 99.0,
+    "coverage_met": true,
+    "all_passed": true
+  },
+  "files_modified": [
+    ".guardkit/bootstrap_state.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-4396/guardkit/knowledge/autobuild_context_loader.py",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-4396/tests/unit/test_template_pattern_loader.py",
+    "guardkit/knowledge/autobuild_context_loader.py",
+    "tasks/backlog/TASK-TPL-004-wire-into-autobuild-context-loader.md",
+    "tasks/backlog/TASK-TPL-005-unit-tests.md",
+    "tests/unit/test_template_pattern_loader.py"
+  ],
+  "files_created": [
+    ".claude/task-plans/TASK-TPL-004-implementation-plan.md",
+    ".claude/task-plans/TASK-TPL-005-implementation-plan.md",
+    ".guardkit/autobuild/TASK-TPL-003/checkpoints.json",
+    ".guardkit/autobuild/TASK-TPL-004/player_turn_1.json",
+    ".guardkit/autobuild/TASK-TPL-004/task_work_results.json",
+    ".guardkit/autobuild/TASK-TPL-004/turn_context.json",
+    ".guardkit/autobuild/TASK-TPL-005/player_turn_1.json",
+    ".guardkit/autobuild/TASK-TPL-005/task_work_results.json",
+    ".guardkit/autobuild/TASK-TPL-005/turn_context.json",
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-4396/.guardkit/autobuild/TASK-TPL-004/player_turn_1.json",
+    "tasks/design_approved/TASK-TPL-004-wire-into-autobuild-context-loader.md",
+    "tasks/design_approved/TASK-TPL-005-unit-tests.md"
+  ],
+  "tests_written": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-4396/tests/unit/test_template_pattern_loader.py"
+  ],
+  "summary": "64 tests passed, 99.0% coverage, all quality gates passed",
+  "sdk_turns": {
+    "turns_used": 44,
+    "max_turns": 100,
+    "ceiling_hit": false
+  },
+  "code_review": {
+    "score": 85,
+    "solid": 18,
+    "dry": 18,
+    "yagni": 18
+  },
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "AutoBuildContextResult.prompt_text contains the pattern block when the project is initialised from a known template.",
+      "status": "complete",
+      "evidence": "Implemented _append_template_patterns() method in AutoBuildContextLoader that loads manifest, runs load_template_patterns + select_patterns, formats via format_pattern_block, and appends the result to prompt_text. Called from both the Graphiti-enabled and graceful-degradation paths in get_player_context(). Tests test_player_context_contains_pattern_block and test_wiring_logs_selected_files verify this behaviour.",
+      "test_file": "tests/unit/test_template_pattern_loader.py",
+      "implementation_files": [
+        "guardkit/knowledge/autobuild_context_loader.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "For projects with no .claude/manifest.json, prompt_text is identical to pre-change behaviour (regression-free \u2014 verified by existing AutoBuild tests).",
+      "status": "complete",
+      "evidence": "_append_template_patterns() checks manifest_path.exists() and returns early if absent \u2014 no changes to prompt_text. Test test_player_context_no_manifest_unchanged verifies 'Stack Pattern Reference' is NOT in prompt_text when no manifest exists. All 64 existing tests pass unchanged.",
+      "test_file": "tests/unit/test_template_pattern_loader.py",
+      "implementation_files": [
+        "guardkit/knowledge/autobuild_context_loader.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Log output (captured in tests) lists selected file names and token estimate.",
+      "status": "complete",
+      "evidence": "_append_template_patterns() emits logger.info with '[TemplatePattern] Appended pattern block: N files, ~N tokens (file1, file2)'. logger.warning for pattern loading warnings. logger.debug for skip reasons. Test test_wiring_logs_selected_files captures log output and verifies pattern/manifest/template is mentioned.",
+      "test_file": "tests/unit/test_template_pattern_loader.py",
+      "implementation_files": [
+        "guardkit/knowledge/autobuild_context_loader.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "The wiring does not alter the signature of get_player_context(); all existing callers remain compatible.",
+      "status": "complete",
+      "evidence": "get_player_context() signature is completely unchanged \u2014 the pattern loading is done inside the method body via _append_template_patterns(result, tech_stack=tech_stack) calls. Test test_wiring_does_not_alter_get_player_context_signature uses inspect.signature to verify all original parameters are present.",
+      "test_file": "tests/unit/test_template_pattern_loader.py",
+      "implementation_files": [
+        "guardkit/knowledge/autobuild_context_loader.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "All modified files pass project-configured lint/format checks with zero errors.",
+      "status": "complete",
+      "evidence": "Both modified files (autobuild_context_loader.py and test_template_pattern_loader.py) pass python -m py_compile with zero errors. Code follows PEP 8, uses type hints, proper docstrings, and consistent style with the existing codebase.",
+      "test_file": null,
+      "implementation_files": [
+        "guardkit/knowledge/autobuild_context_loader.py",
+        "tests/unit/test_template_pattern_loader.py"
+      ]
+    }
+  ]
+}

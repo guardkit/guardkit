@@ -17,11 +17,18 @@ superseded_by:
 superseded_reason: "TASK-REV-A5F8 analysed all three original options (document / extend init / delete files) and rejected them all. The real architectural fix is wiring scaffold templates into the AutoBuild Player as the missing consumer — filed as TASK-PAT-1A5E. The documentation component was reframed and re-scoped to all 10 templates as TASK-DOC-C3D7. The optional rename was carved out as TASK-REN-B9F2 (deferred). See .claude/reviews/TASK-REV-A5F8-review-report.md for full rationale."
 ---
 
-> **⚠️ This task has been superseded.** See the `superseded_by` frontmatter and the review report at [.claude/reviews/TASK-REV-A5F8-review-report.md](../../.claude/reviews/TASK-REV-A5F8-review-report.md). Do not work this task directly; instead work one of:
+> **⚠️ This task has been superseded and resolved.** The architectural fix has been implemented as FEAT-TPL-PLAYER (feature/template-pattern-player-context). The documentation component has been completed by TASK-TPL-007.
 >
-> - [TASK-PAT-1A5E](template-pattern-layer/TASK-PAT-1A5E-wire-template-patterns-into-autobuild-player.md) — the architectural fix (requires `/feature-plan`)
-> - [TASK-DOC-C3D7](template-pattern-layer/TASK-DOC-C3D7-document-two-layer-template-model.md) — documentation (on hold until PAT-1A5E is design-approved)
-> - [TASK-REN-B9F2](template-pattern-layer/TASK-REN-B9F2-rename-templates-to-patterns.md) — optional rename (deferred until PAT-1A5E has landed)
+> **Resolution summary:**
+> - **Architectural fix**: FEAT-TPL-PLAYER (TASK-TPL-001 through TASK-TPL-004) wired template `.template` files into the AutoBuild Player context pipeline. The Player now receives stack-specific pattern context at build time. See [FEAT-TPL-PLAYER spec](../../docs/features/FEAT-TPL-PLAYER-template-pattern-player-context.md) and the [AutoBuild Instrumentation Guide — Template Pattern Context](../../docs/guides/autobuild-instrumentation-guide.md#template-pattern-context).
+> - **Documentation**: TASK-TPL-007 updated the AutoBuild Instrumentation Guide with a Template Pattern Context section documenting the data flow, components, selection rules, graceful degradation, and token impact.
+> - **Rename decision**: TASK-REN-B9F2 closed — no rename needed now that the consumer exists (Decision D6 in FEAT-TPL-PLAYER spec).
+>
+> Original supersession notes preserved below for historical context:
+>
+> - [TASK-PAT-1A5E](template-pattern-layer/TASK-PAT-1A5E-wire-template-patterns-into-autobuild-player.md) — the architectural fix (implemented as FEAT-TPL-PLAYER)
+> - [TASK-DOC-C3D7](template-pattern-layer/TASK-DOC-C3D7-document-two-layer-template-model.md) — documentation (completed by TASK-TPL-007)
+> - [TASK-REN-B9F2](template-pattern-layer/TASK-REN-B9F2-rename-templates-to-patterns.md) — optional rename (closed: consumer exists, no rename needed)
 >
 > The original F4B8 text below is preserved for historical context only.
 

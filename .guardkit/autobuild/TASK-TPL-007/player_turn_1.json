@@ -1,0 +1,76 @@
+{
+  "task_id": "TASK-TPL-007",
+  "turn": 1,
+  "files_modified": [
+    "docs/guides/autobuild-instrumentation-guide.md",
+    "tasks/backlog/TASK-DRF-F4B8-clarify-template-scaffolding-vs-config-layer.md",
+    "tasks/backlog/template-pattern-layer/TASK-DOC-C3D7-document-two-layer-template-model.md",
+    "tasks/backlog/template-pattern-layer/TASK-REN-B9F2-rename-templates-to-patterns.md"
+  ],
+  "files_created": [
+    "tests/unit/test_doc_file_paths.py"
+  ],
+  "tests_written": [
+    "tests/unit/test_doc_file_paths.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "31 passed in 1.59s \u2014 validates all doc file paths exist, task statuses are correct, doc sections are present, and documentation claims match actual code (manifest name field, max_files=5, max_tokens=3000, Stack Pattern Reference header, _append_template_patterns method).",
+  "implementation_notes": "Completed all four acceptance criteria for TASK-TPL-007 (Documentation updates):\n\n1. AC-001: Added a comprehensive 'Template Pattern Context' section to the AutoBuild Instrumentation Guide (docs/guides/autobuild-instrumentation-guide.md). The section covers: overview and rationale, complete data flow diagram (manifest \u2192 resolver \u2192 selector \u2192 formatter \u2192 injection), key components table with file paths, manifest requirement (.claude/manifest.json `name` field), pattern selection rules (4-tier priority cascade), graceful degradation table (7 failure scenarios), structured logging examples, token impact table (5 template types), and relationship to other context sources. Also updated the File Locations table and Related Documentation links. Bumped version to 1.1.0.\n\n2. AC-002: Updated TASK-DRF-F4B8 (F4B8a) with a resolution summary pointing at FEAT-TPL-PLAYER and TASK-TPL-007. Updated TASK-DOC-C3D7 (the documentation subtask) to status:completed with completion_note referencing TASK-TPL-007 and a banner directing readers to the instrumentation guide.\n\n3. AC-003: Updated TASK-REN-B9F2 (F4B8b) to status:closed with closed_reason: 'Consumer exists, no rename needed. FEAT-TPL-PLAYER implemented the AutoBuild Player as the consumer of templates/*.template files. Per Decision D6...' Full rationale in frontmatter.\n\n4. AC-004: Systematically verified all file paths across all 4 modified docs. All paths in the instrumentation guide resolve correctly (15 source files, 1 directory, 4 related docs). All relative markdown links in task files resolve. Created 31 automated tests validating paths and doc-code consistency.",
+  "concerns": [],
+  "requirements_addressed": [
+    "AC-001: AutoBuild guide updates consistent with TASK-TPL-004 code",
+    "AC-002: F4B8a task annotated with resolution pointing at FEAT-TPL-PLAYER and TASK-TPL-007; DOC-C3D7 marked completed",
+    "AC-003: F4B8b (TASK-REN-B9F2) closed with rationale: consumer exists, no rename needed",
+    "AC-004: All referenced file paths in docs verified against reality with 31 automated tests"
+  ],
+  "requirements_remaining": [],
+  "implementation_mode": "direct",
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Updates to AutoBuild guide are present and internally consistent with the code shipped in TASK-TPL-004.",
+      "status": "complete",
+      "evidence": "Added 'Template Pattern Context' section to docs/guides/autobuild-instrumentation-guide.md. Section documents: data flow (manifest \u2192 resolver \u2192 selector \u2192 context injection), key components table (template_pattern_loader.py, resolver.py, autobuild_context_loader.py), manifest `name` field requirement (matches code: data.get('name')), selection rules (file-path hints \u2192 tech-stack \u2192 alphabetical \u2192 budget cap at max_files=5, max_tokens=3000 \u2014 all match code defaults), graceful degradation (7 scenarios matching code's never-raise contract), logging format ([TemplatePattern] prefix matching code), token impact table, and relationship to other context sources. Updated File Locations table with new component paths. Added FEAT-TPL-PLAYER feature spec to Related Documentation. Version bumped to 1.1.0.",
+      "test_file": "tests/unit/test_doc_file_paths.py",
+      "implementation_files": [
+        "docs/guides/autobuild-instrumentation-guide.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "F4B8a task is either closed with a note pointing at this feature, or rewritten as a doc task that this feature has completed.",
+      "status": "complete",
+      "evidence": "Two actions taken: (1) Updated TASK-DRF-F4B8 (F4B8a, already status:superseded) with a 'Resolution summary' banner documenting that the architectural fix was FEAT-TPL-PLAYER (TASK-TPL-001 through TASK-TPL-004), the documentation was completed by TASK-TPL-007, and the rename was closed. Links to FEAT-TPL-PLAYER spec and AutoBuild Instrumentation Guide Template Pattern Context section. (2) Updated TASK-DOC-C3D7 (the doc subtask of F4B8a) to status:completed with completed_by:TASK-TPL-007 and a completion_note explaining what was delivered and where. Added a 'Completed by TASK-TPL-007' banner at top.",
+      "test_file": "tests/unit/test_doc_file_paths.py",
+      "implementation_files": [
+        "tasks/backlog/TASK-DRF-F4B8-clarify-template-scaffolding-vs-config-layer.md",
+        "tasks/backlog/template-pattern-layer/TASK-DOC-C3D7-document-two-layer-template-model.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "F4B8b is closed with rationale: \"consumer exists, no rename needed\".",
+      "status": "complete",
+      "evidence": "Updated TASK-REN-B9F2 frontmatter: status changed from 'backlog' to 'closed', added closed_by:TASK-TPL-007, added closed_reason field with full rationale: 'Consumer exists, no rename needed. FEAT-TPL-PLAYER (TASK-TPL-001 through TASK-TPL-004) implemented the AutoBuild Player as the consumer of templates/*.template files. Per Decision D6 in the FEAT-TPL-PLAYER specification...' Added 'Closed: will not implement' banner at section heading. Test test_f4b8b_closed_with_rationale verifies both 'status: closed' and 'Consumer exists, no rename needed' are present.",
+      "test_file": "tests/unit/test_doc_file_paths.py",
+      "implementation_files": [
+        "tasks/backlog/template-pattern-layer/TASK-REN-B9F2-rename-templates-to-patterns.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "All referenced file paths in docs match reality (no dead links).",
+      "status": "complete",
+      "evidence": "Systematically verified every file path across all 4 modified documents. Instrumentation guide: 15 source code paths, 1 directory, 4 related docs \u2014 all exist. TASK-DRF-F4B8: 4 relative markdown links \u2014 all resolve. TASK-REN-B9F2: 17 paths (11 template dirs, 3 code files, 3 task refs) \u2014 all exist. TASK-DOC-C3D7: guide link resolves correctly. Created 31 automated tests in tests/unit/test_doc_file_paths.py covering: path existence (TestAutoBuildInstrumentationGuideFilePaths \u2014 17 parametrized tests), task file references (TestTaskFileReferences \u2014 5 tests), and doc-code consistency (TestGuideConsistencyWithCode \u2014 5 tests verifying manifest name field, max_files, max_tokens, prompt header, and method existence). All 31 tests pass.",
+      "test_file": "tests/unit/test_doc_file_paths.py",
+      "implementation_files": [
+        "docs/guides/autobuild-instrumentation-guide.md",
+        "tasks/backlog/TASK-DRF-F4B8-clarify-template-scaffolding-vs-config-layer.md",
+        "tasks/backlog/template-pattern-layer/TASK-DOC-C3D7-document-two-layer-template-model.md",
+        "tasks/backlog/template-pattern-layer/TASK-REN-B9F2-rename-templates-to-patterns.md"
+      ]
+    }
+  ],
+  "success": true
+}

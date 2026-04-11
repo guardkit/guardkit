@@ -1,0 +1,59 @@
+{
+  "task_id": "TASK-TPL-001",
+  "turn": 1,
+  "decision": "approve",
+  "validation_results": {
+    "quality_gates": {
+      "tests_passed": true,
+      "coverage_met": true,
+      "arch_review_passed": true,
+      "plan_audit_passed": true,
+      "all_gates_passed": true
+    },
+    "independent_tests": {
+      "tests_passed": true,
+      "test_command": "pytest tests/templates/test_resolver.py -v --tb=short",
+      "test_output_summary": "Result:\n============================== 11 passed in 1.67s ==============================",
+      "duration_seconds": 11.28229022026062
+    },
+    "requirements": {
+      "criteria_total": 1,
+      "criteria_met": 1,
+      "all_criteria_met": true,
+      "missing": []
+    }
+  },
+  "criteria_verification": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "No acceptance criteria specified",
+      "result": "verified",
+      "status": "verified",
+      "evidence": "Created guardkit/templates/__init__.py and guardkit/templates/resolver.py. The resolve_template_source_dir function has the same signature (template_name: str) -> Optional[Path] and identical behaviour: checks package-installed templates via _get_templates_base_dir() first, falls back to user templates via _get_user_templates_dir(). Verified by 4 unit tests in TestResolveTemplateSourceDir and 2 backward-compatibility tests.",
+      "notes": "Created guardkit/templates/__init__.py and guardkit/templates/resolver.py. The resolve_template_source_dir function has the same signature (template_name: str) -> Optional[Path] and identical behaviour: checks package-installed templates via _get_templates_base_dir() first, falls back to user templates via _get_user_templates_dir(). Verified by 4 unit tests in TestResolveTemplateSourceDir and 2 backward-compatibility tests."
+    }
+  ],
+  "acceptance_criteria_verification": {
+    "criteria_results": [
+      {
+        "criterion_id": "AC-001",
+        "criterion_text": "No acceptance criteria specified",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Created guardkit/templates/__init__.py and guardkit/templates/resolver.py. The resolve_template_source_dir function has the same signature (template_name: str) -> Optional[Path] and identical behaviour: checks package-installed templates via _get_templates_base_dir() first, falls back to user templates via _get_user_templates_dir(). Verified by 4 unit tests in TestResolveTemplateSourceDir and 2 backward-compatibility tests.",
+        "notes": "Created guardkit/templates/__init__.py and guardkit/templates/resolver.py. The resolve_template_source_dir function has the same signature (template_name: str) -> Optional[Path] and identical behaviour: checks package-installed templates via _get_templates_base_dir() first, falls back to user templates via _get_user_templates_dir(). Verified by 4 unit tests in TestResolveTemplateSourceDir and 2 backward-compatibility tests."
+      }
+    ]
+  },
+  "issues": [
+    {
+      "severity": "consider",
+      "category": "seam_test_recommendation",
+      "description": "No seam tests detected for cross-boundary feature. Consider adding seam/contract/boundary tests to validate technology boundary interactions. This is a recommendation, not a blocking gate."
+    }
+  ],
+  "rationale": "All quality gates passed. Independent verification confirmed. All acceptance criteria met. Architecture context: 630 chars provided.",
+  "context_used": "## Job-Specific Context\n\nBudget: 2887/5200 tokens\n\n### \u2705 Similar Outcomes\n- FILTERED_OUT\n- SPECIFIED_CONFIDENCE_SCORE\n- FIXES_FORMAT\n- DEPRECATED\n\n### \ud83c\udfa8 Relevant Patterns\n- BELONGS_TO_CATEGORY\n- SOURCE_OF_PATTERN\n- IS_FIELD_OF\n- IMPLEMENTED_BY\n\n### \ud83c\udfd7\ufe0f Architecture Context\n- KEY_REFERENCE_TARGET\n- HAS_AVAILABLE_TEMPLATE\n- REFERS_TO_PATH\n\n### \u26a0\ufe0f Warnings\n- HAS_FIX\n- HAS_ROOT_CAUSE\n- USES_ENDPOINT\n\n### \ud83c\udfad Role Constraints\n- DELEGATES_TO\n- HAS_ROLE_CONSTRAINT\n\n### \ud83d\udd04 Turn States\n*Learn from previous turns - don't repeat mistakes*\n\n**Turn ?**: ?\n\n**Turn ?**: ?\n\n**Turn ?**: ?\n\n### \ud83d\udee0\ufe0f Implementation Modes\n- ASSOCIATED_WITH_PROJECT\n",
+  "approved_without_independent_tests": false,
+  "is_configuration_error": false
+}
