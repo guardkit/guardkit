@@ -43,6 +43,11 @@ from guardkit.integrations.graphiti.episodes.project_overview import ProjectOver
 from guardkit.knowledge.config import _find_project_root, load_graphiti_config
 from guardkit.knowledge.graphiti_client import GraphitiClient, GraphitiConfig, normalize_project_id
 from guardkit.knowledge.project_seeding import estimate_episode_count, seed_project_knowledge
+from guardkit.templates.resolver import (
+    _get_templates_base_dir as _get_templates_base_dir,
+    _get_user_templates_dir as _get_user_templates_dir,
+    resolve_template_source_dir as resolve_template_source_dir,
+)
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -459,34 +464,20 @@ def write_mcp_json(
         return False
 
 
-def _get_templates_base_dir() -> Path:
-    """Return the base directory containing installed templates.
-
-    Uses __file__-relative path to locate installer/core/templates/
-    from the guardkit package installation.
-
-    Returns:
-        Path to the templates base directory.
-    """
-    # guardkit/cli/init.py -> guardkit/ -> project root -> installer/core/templates/
-    package_root = Path(__file__).resolve().parent.parent.parent
-    return package_root / "installer" / "core" / "templates"
-
-
-def _get_user_templates_dir() -> Path:
-    """Return the user-level templates directory (~/.guardkit/templates/).
-
-    Returns:
-        Path to the user templates directory.
-    """
-    return Path.home() / ".guardkit" / "templates"
+# Template resolution is now provided by guardkit.templates.resolver.
+# The wrapper below delegates to the module-level _get_templates_base_dir
+# and _get_user_templates_dir names so that existing test mocks which
+# patch "guardkit.cli.init._get_templates_base_dir" etc. continue to
+# control behaviour.  The canonical, public API lives in
+# guardkit.templates.resolver.resolve_template_source_dir.
 
 
 def _resolve_template_source_dir(template_name: str) -> Optional[Path]:
     """Resolve the source directory for a template.
 
-    Checks installed package templates first, then falls back to
-    user-installed templates at ~/.guardkit/templates/.
+    Thin wrapper kept for backward compatibility with existing call sites
+    and test mocks.  Delegates to :func:`resolve_template_source_dir` in
+    ``guardkit.templates.resolver`` via module-level helper imports.
 
     Args:
         template_name: Name of the template to resolve.
