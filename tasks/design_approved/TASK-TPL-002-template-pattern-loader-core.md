@@ -1,21 +1,22 @@
 ---
-id: TASK-TPL-002
-title: "Template pattern loader core + TemplatePatternContext"
-task_type: feature
-parent_review: TASK-REV-B3F7
-feature_id: FEAT-TPL-PLAYER
-wave: 2
-implementation_mode: task-work
 complexity: 5
-dependencies:
-  - TASK-TPL-001
-status: backlog
 consumer_context:
-  - task: guardkit init (existing)
-    consumes: MANIFEST_NAME
-    framework: "stdlib json"
-    driver: "Path.read_text + json.loads"
-    format_note: ".claude/manifest.json must contain a top-level `name` field (str) identifying the source template; graceful degrade if file missing, unreadable, or field absent"
+- consumes: MANIFEST_NAME
+  driver: Path.read_text + json.loads
+  format_note: .claude/manifest.json must contain a top-level `name` field (str) identifying
+    the source template; graceful degrade if file missing, unreadable, or field absent
+  framework: stdlib json
+  task: guardkit init (existing)
+dependencies:
+- TASK-TPL-001
+feature_id: FEAT-TPL-PLAYER
+id: TASK-TPL-002
+implementation_mode: task-work
+parent_review: TASK-REV-B3F7
+status: design_approved
+task_type: feature
+title: Template pattern loader core + TemplatePatternContext
+wave: 2
 ---
 
 # Template pattern loader core
