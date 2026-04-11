@@ -6,15 +6,21 @@ template was used, resolves the template source directory, and enumerates
 all available ``.template`` files. The result is a ``TemplatePatternContext``
 dataclass consumed by the selector (TASK-TPL-003) and wiring (TASK-TPL-004).
 
+The ``select_patterns`` function (TASK-TPL-003) narrows the available files
+to a relevant subset using file-path hints, tech-stack matching, and
+alphabetical fallback, respecting file-count and token-budget caps.
+
 Usage::
 
-    from guardkit.knowledge.template_pattern_loader import load_template_patterns
+    from guardkit.knowledge.template_pattern_loader import (
+        load_template_patterns,
+        select_patterns,
+    )
 
     ctx = load_template_patterns(Path(".claude/manifest.json"))
-    if ctx.template_name is not None:
-        print(f"Template: {ctx.template_name}, files: {len(ctx.available_files)}")
-    else:
-        print(f"Warnings: {ctx.warnings}")
+    ctx = select_patterns(ctx, tech_stack="Python", file_path_hints=["app/api/users.py"])
+    for f in ctx.selected_files:
+        print(f)
 """
 
 from __future__ import annotations
@@ -151,5 +157,206 @@ def load_template_patterns(manifest_path: Path) -> TemplatePatternContext:
         template_name=template_name,
         template_dir=template_dir,
         available_files=available_files,
+        warnings=warnings,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Domain-hint selector (TASK-TPL-003)
+# ---------------------------------------------------------------------------
+
+# Tech-stack keyword → template subdirectory name mappings.
+# Each tech-stack keyword maps to subdirectory names likely relevant to it.
+_TECH_STACK_SUBDIR_MAP: dict[str, list[str]] = {
+    "python": ["api", "core", "config", "models", "schemas", "crud", "db"],
+    "fastapi": ["api", "core", "config", "models", "schemas", "crud", "db", "dependencies"],
+    "django": ["api", "models", "views", "templates", "static"],
+    "react": ["components", "hooks", "pages", "styles", "utils"],
+    "typescript": ["components", "hooks", "pages", "types", "utils"],
+    "nextjs": ["pages", "components", "api", "styles", "public"],
+    "dotnet": ["controllers", "models", "services", "data", "middleware"],
+}
+
+
+def _extract_path_segments(file_path_hints: List[str]) -> List[str]:
+    """Extract unique directory segments from file path hints.
+
+    For each hint like ``app/api/users.py``, extracts the directory
+    segments (``app``, ``api``) and returns deduplicated segments.
+
+    Args:
+        file_path_hints: List of file path strings.
+
+    Returns:
+        Deduplicated list of path segments (lowercased), preserving order.
+    """
+    seen: set[str] = set()
+    segments: List[str] = []
+    for hint in file_path_hints:
+        parts = Path(hint).parts
+        # Exclude the filename itself — only directory segments
+        for part in parts[:-1]:
+            lower = part.lower()
+            if lower not in seen:
+                seen.add(lower)
+                segments.append(lower)
+    return segments
+
+
+def _match_files_by_subdirs(
+    available_files: List[Path],
+    target_subdirs: List[str],
+) -> List[Path]:
+    """Select files whose parent directory name matches any target subdir.
+
+    Args:
+        available_files: All available ``.template`` files (absolute paths).
+        target_subdirs: Subdirectory names to match against (lowercased).
+
+    Returns:
+        Matched files in the order they appear in ``available_files``.
+    """
+    target_set = set(target_subdirs)
+    matched: List[Path] = []
+    for fpath in available_files:
+        # Match the immediate parent directory name
+        parent_name = fpath.parent.name.lower()
+        if parent_name in target_set:
+            matched.append(fpath)
+    return matched
+
+
+def _estimate_tokens(file_path: Path) -> int:
+    """Estimate the token count of a file using the rough 4-chars-per-token heuristic.
+
+    Args:
+        file_path: Path to the file.
+
+    Returns:
+        Estimated token count; 0 if the file cannot be read.
+    """
+    try:
+        content = file_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return 0
+    return len(content) // 4
+
+
+def select_patterns(
+    context: TemplatePatternContext,
+    tech_stack: str,
+    file_path_hints: List[str],
+    max_files: int = 5,
+    max_tokens: int = 3000,
+) -> TemplatePatternContext:
+    """Select relevant template pattern files based on domain hints.
+
+    Selection rules (in priority order):
+
+    1. **File-path hints take precedence.** For each hint, match path segments
+       against template subdirectory names and collect matching ``.template``
+       files.
+    2. **Tech-stack fallback.** If file-path hints produced zero matches, fall
+       back to tech-stack keyword matching against subdirectory names.
+    3. **Alphabetical fallback.** If still nothing, take the first 3 files
+       alphabetically.
+    4. **Cap enforcement.** Truncate to ``max_files`` (default 5). Compute
+       rough token count (``len(content) / 4``); stop adding files once
+       ``max_tokens`` reached. Record skipped files as warnings.
+
+    The function returns a **new** ``TemplatePatternContext`` — it does not
+    mutate the input context's ``available_files`` or ``selected_files``.
+
+    Args:
+        context: The template pattern context from ``load_template_patterns``.
+        tech_stack: Technology stack string (e.g., ``"Python"``, ``"FastAPI"``).
+        file_path_hints: File paths the task touches (e.g., ``["app/api/users.py"]``).
+        max_files: Maximum number of files to return (default 5).
+        max_tokens: Approximate token budget for selected file contents (default 3000).
+
+    Returns:
+        A new ``TemplatePatternContext`` with ``selected_files`` and
+        ``warnings`` populated.
+    """
+    available = list(context.available_files)  # defensive copy
+    warnings: List[str] = list(context.warnings)  # carry forward existing warnings
+
+    # Early exit: nothing to select from
+    if not available:
+        return TemplatePatternContext(
+            template_name=context.template_name,
+            template_dir=context.template_dir,
+            available_files=context.available_files,
+            selected_files=[],
+            prompt_block=context.prompt_block,
+            warnings=warnings,
+        )
+
+    # --- Step 1: File-path hint matching ---
+    candidates: List[Path] = []
+    if file_path_hints:
+        segments = _extract_path_segments(file_path_hints)
+        if segments:
+            candidates = _match_files_by_subdirs(available, segments)
+
+    # --- Step 2: Tech-stack fallback ---
+    if not candidates and tech_stack:
+        tech_lower = tech_stack.lower()
+        # Look for a direct mapping first, then partial keyword match
+        mapped_subdirs: List[str] = []
+        for keyword, subdirs in _TECH_STACK_SUBDIR_MAP.items():
+            if keyword in tech_lower or tech_lower in keyword:
+                mapped_subdirs.extend(subdirs)
+        if mapped_subdirs:
+            candidates = _match_files_by_subdirs(available, mapped_subdirs)
+
+    # --- Step 3: Alphabetical fallback ---
+    if not candidates:
+        sorted_available = sorted(available)
+        candidates = sorted_available[:3]
+
+    # --- Step 4: Cap enforcement ---
+    # Deduplicate while preserving order
+    seen_paths: set[str] = set()
+    deduped: List[Path] = []
+    for f in candidates:
+        key = str(f)
+        if key not in seen_paths:
+            seen_paths.add(key)
+            deduped.append(f)
+    candidates = deduped
+
+    # Apply max_files cap
+    if len(candidates) > max_files:
+        candidates = candidates[:max_files]
+
+    # Apply token budget cap
+    selected: List[Path] = []
+    token_total = 0
+    for fpath in candidates:
+        tokens = _estimate_tokens(fpath)
+        if token_total + tokens > max_tokens and selected:
+            # Budget exceeded — skip this file
+            warnings.append(
+                f"Skipped {fpath.name}: adding {tokens} tokens would exceed "
+                f"budget ({token_total}/{max_tokens})"
+            )
+            continue
+        selected.append(fpath)
+        token_total += tokens
+
+    logger.debug(
+        "select_patterns: %d candidates → %d selected (%d tokens)",
+        len(candidates),
+        len(selected),
+        token_total,
+    )
+
+    return TemplatePatternContext(
+        template_name=context.template_name,
+        template_dir=context.template_dir,
+        available_files=context.available_files,
+        selected_files=selected,
+        prompt_block=context.prompt_block,
         warnings=warnings,
     )

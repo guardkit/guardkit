@@ -1,21 +1,22 @@
 ---
-id: TASK-TPL-003
-title: "Domain-hint selector with tech_stack + file-path matching"
-task_type: feature
-parent_review: TASK-REV-B3F7
-feature_id: FEAT-TPL-PLAYER
-wave: 3
-implementation_mode: task-work
 complexity: 5
-dependencies:
-  - TASK-TPL-002
-status: backlog
 consumer_context:
-  - task: TASK-TPL-002
-    consumes: TemplatePatternContext
-    framework: "stdlib dataclass"
-    driver: "direct attribute access"
-    format_note: "Reads `available_files: List[Path]` from context; populates `selected_files: List[Path]` in-place (or returns a new context). Must not mutate other fields."
+- consumes: TemplatePatternContext
+  driver: direct attribute access
+  format_note: 'Reads `available_files: List[Path]` from context; populates `selected_files:
+    List[Path]` in-place (or returns a new context). Must not mutate other fields.'
+  framework: stdlib dataclass
+  task: TASK-TPL-002
+dependencies:
+- TASK-TPL-002
+feature_id: FEAT-TPL-PLAYER
+id: TASK-TPL-003
+implementation_mode: task-work
+parent_review: TASK-REV-B3F7
+status: design_approved
+task_type: feature
+title: Domain-hint selector with tech_stack + file-path matching
+wave: 3
 ---
 
 # Domain-hint selector
