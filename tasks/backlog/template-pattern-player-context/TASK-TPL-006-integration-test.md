@@ -1,6 +1,6 @@
 ---
 id: TASK-TPL-006
-title: "Integration test: AutoBuild context loading with template pattern block"
+title: 'Integration test: AutoBuild context loading with template pattern block'
 task_type: testing
 parent_review: TASK-REV-B3F7
 feature_id: FEAT-TPL-PLAYER
@@ -8,9 +8,24 @@ wave: 5
 implementation_mode: task-work
 complexity: 5
 dependencies:
-  - TASK-TPL-004
-  - TASK-TPL-005
-status: backlog
+- TASK-TPL-004
+- TASK-TPL-005
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 30
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-4396
+  base_branch: main
+  started_at: '2026-04-11T17:15:17.514598'
+  last_updated: '2026-04-11T17:23:17.082733'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-04-11T17:15:17.514598'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Integration test: end-to-end pattern injection

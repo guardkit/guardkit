@@ -1,6 +1,6 @@
 ---
 id: TASK-TPL-002
-title: "Template pattern loader core + TemplatePatternContext"
+title: Template pattern loader core + TemplatePatternContext
 task_type: feature
 parent_review: TASK-REV-B3F7
 feature_id: FEAT-TPL-PLAYER
@@ -8,14 +8,30 @@ wave: 2
 implementation_mode: task-work
 complexity: 5
 dependencies:
-  - TASK-TPL-001
-status: backlog
+- TASK-TPL-001
+status: in_review
 consumer_context:
-  - task: guardkit init (existing)
-    consumes: MANIFEST_NAME
-    framework: "stdlib json"
-    driver: "Path.read_text + json.loads"
-    format_note: ".claude/manifest.json must contain a top-level `name` field (str) identifying the source template; graceful degrade if file missing, unreadable, or field absent"
+- task: guardkit init (existing)
+  consumes: MANIFEST_NAME
+  framework: stdlib json
+  driver: Path.read_text + json.loads
+  format_note: .claude/manifest.json must contain a top-level `name` field (str) identifying
+    the source template; graceful degrade if file missing, unreadable, or field absent
+autobuild_state:
+  current_turn: 1
+  max_turns: 30
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-4396
+  base_branch: main
+  started_at: '2026-04-11T16:54:58.226543'
+  last_updated: '2026-04-11T17:01:34.786151'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-04-11T16:54:58.226543'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Template pattern loader core

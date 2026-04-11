@@ -1,6 +1,6 @@
 ---
 id: TASK-TPL-003
-title: "Domain-hint selector with tech_stack + file-path matching"
+title: Domain-hint selector with tech_stack + file-path matching
 task_type: feature
 parent_review: TASK-REV-B3F7
 feature_id: FEAT-TPL-PLAYER
@@ -8,14 +8,30 @@ wave: 3
 implementation_mode: task-work
 complexity: 5
 dependencies:
-  - TASK-TPL-002
-status: backlog
+- TASK-TPL-002
+status: in_review
 consumer_context:
-  - task: TASK-TPL-002
-    consumes: TemplatePatternContext
-    framework: "stdlib dataclass"
-    driver: "direct attribute access"
-    format_note: "Reads `available_files: List[Path]` from context; populates `selected_files: List[Path]` in-place (or returns a new context). Must not mutate other fields."
+- task: TASK-TPL-002
+  consumes: TemplatePatternContext
+  framework: stdlib dataclass
+  driver: direct attribute access
+  format_note: 'Reads `available_files: List[Path]` from context; populates `selected_files:
+    List[Path]` in-place (or returns a new context). Must not mutate other fields.'
+autobuild_state:
+  current_turn: 1
+  max_turns: 30
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-4396
+  base_branch: main
+  started_at: '2026-04-11T17:01:41.378725'
+  last_updated: '2026-04-11T17:08:21.854355'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-04-11T17:01:41.378725'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Domain-hint selector

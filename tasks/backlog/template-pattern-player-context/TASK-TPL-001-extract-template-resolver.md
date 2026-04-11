@@ -1,6 +1,6 @@
 ---
 id: TASK-TPL-001
-title: "Extract template resolver into shared module"
+title: Extract template resolver into shared module
 task_type: refactor
 parent_review: TASK-REV-B3F7
 feature_id: FEAT-TPL-PLAYER
@@ -8,7 +8,28 @@ wave: 1
 implementation_mode: direct
 complexity: 3
 dependencies: []
-status: backlog
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 30
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-4396
+  base_branch: main
+  started_at: '2026-04-11T16:46:32.920538'
+  last_updated: '2026-04-11T16:54:51.956761'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-04-11T16:46:32.920538'
+    player_summary: 'Extracted template resolution logic from guardkit/cli/init.py
+      into guardkit/templates/resolver.py. The new module exposes resolve_template_source_dir()
+      as a public function. In init.py, the three original private functions (_get_templates_base_dir,
+      _get_user_templates_dir, _resolve_template_source_dir) are replaced: the first
+      two are imported from the resolver and re-exported under their original names,
+      while _resolve_template_source_dir is kept as a thin wrapper that calls the
+      module-level help'
+    player_success: true
+    coach_success: true
 ---
 
 # Extract template resolver into shared module

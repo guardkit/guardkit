@@ -1,6 +1,6 @@
 ---
 id: TASK-TPL-005
-title: "Unit tests for resolver, loader, selector, and graceful degradation"
+title: Unit tests for resolver, loader, selector, and graceful degradation
 task_type: testing
 parent_review: TASK-REV-B3F7
 feature_id: FEAT-TPL-PLAYER
@@ -8,9 +8,24 @@ wave: 4
 implementation_mode: task-work
 complexity: 4
 dependencies:
-  - TASK-TPL-002
-  - TASK-TPL-003
-status: backlog
+- TASK-TPL-002
+- TASK-TPL-003
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 30
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-4396
+  base_branch: main
+  started_at: '2026-04-11T17:08:28.094884'
+  last_updated: '2026-04-11T17:14:45.119422'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-04-11T17:08:28.094884'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Unit tests for template pattern loader
