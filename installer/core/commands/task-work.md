@@ -1708,7 +1708,7 @@ check script via bash as described below.
 **STEP 0: Check for MCP Tools (Preferred Path — Zero Overhead)**
 
 Check whether `mcp__graphiti__search_nodes` is available in the current session's tool list
-(see `lib/graphiti-preamble.md` Tier 0).
+(see `docs/internals/commands-lib/graphiti-preamble.md` Tier 0).
 
 **IF** MCP tools are available:
 
@@ -1871,7 +1871,7 @@ Store the access method alongside the context:
 **ERROR HANDLING**:
 
 All Graphiti operations follow the 3-tier graceful degradation pattern
-(see `lib/graphiti-preamble.md`):
+(see `docs/internals/commands-lib/graphiti-preamble.md`):
 
 1. **Tier 0 — MCP** (preferred): Direct tool calls with zero CLI overhead.
    If MCP tools are not in the session, fall through to Tier 1/2.

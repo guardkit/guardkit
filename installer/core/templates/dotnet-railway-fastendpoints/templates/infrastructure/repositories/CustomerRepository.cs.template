@@ -1,0 +1,123 @@
+using Dapper;
+using Exemplar.Core.Functional;
+using Exemplar.Customers.Domain;
+using Exemplar.Customers.Domain.Errors;
+using Npgsql;
+
+namespace {{Namespace}};
+
+/// <summary>
+/// Dapper + Npgsql repository. Every public method wraps exceptions in
+/// CustomerError.RepositoryUnavailable — callers never see raw exceptions.
+/// </summary>
+public sealed class {{ClassName}} : ICustomerRepository
+{
+    private readonly string _connectionString;
+
+    static {{ClassName}}()
+    {
+        // Map snake_case column names (e.g. created_at) to PascalCase properties (CreatedAt)
+        Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
+    }
+
+    public {{ClassName}}(string connectionString)
+        => _connectionString = connectionString;
+
+    private NpgsqlConnection CreateConnection() => new(_connectionString);
+
+    public async Task<Result<CustomerError, {{EntityName}}>> GetByIdAsync(Guid id, CancellationToken ct)
+    {
+        try
+        {
+            await using var conn = CreateConnection();
+            await conn.OpenAsync(ct);
+            var customer = await conn.QuerySingleOrDefaultAsync<{{EntityName}}>(
+                "SELECT id, name, email, status, created_at FROM customers WHERE id = @Id",
+                new { Id = id });
+            return customer is null
+                ? CustomerError.NotFound(id)
+                : Result<CustomerError, {{EntityName}}>.Success(customer);
+        }
+        catch (Exception ex)
+        {
+            return CustomerError.RepositoryUnavailable(ex);
+        }
+    }
+
+    public async Task<Result<CustomerError, IReadOnlyList<{{EntityName}}>>> GetAllAsync(CancellationToken ct)
+    {
+        try
+        {
+            await using var conn = CreateConnection();
+            await conn.OpenAsync(ct);
+            var customers = await conn.QueryAsync<{{EntityName}}>(
+                "SELECT id, name, email, status, created_at FROM customers ORDER BY created_at DESC");
+            return Result<CustomerError, IReadOnlyList<{{EntityName}}>>.Success(customers.ToList());
+        }
+        catch (Exception ex)
+        {
+            return CustomerError.RepositoryUnavailable(ex);
+        }
+    }
+
+    public async Task<Result<CustomerError, {{EntityName}}>> InsertAsync({{EntityName}} customer, CancellationToken ct)
+    {
+        try
+        {
+            await using var conn = CreateConnection();
+            await conn.OpenAsync(ct);
+            var inserted = await conn.QuerySingleAsync<{{EntityName}}>(
+                """
+                INSERT INTO customers (id, name, email, status, created_at)
+                VALUES (@Id, @Name, @Email, @Status, @CreatedAt)
+                RETURNING id, name, email, status, created_at
+                """,
+                new { customer.Id, customer.Name, customer.Email, Status = (int)customer.Status, customer.CreatedAt });
+            return Result<CustomerError, {{EntityName}}>.Success(inserted);
+        }
+        catch (Exception ex)
+        {
+            return CustomerError.RepositoryUnavailable(ex);
+        }
+    }
+
+    public async Task<Result<CustomerError, {{EntityName}}>> UpdateAsync({{EntityName}} customer, CancellationToken ct)
+    {
+        try
+        {
+            await using var conn = CreateConnection();
+            await conn.OpenAsync(ct);
+            var updated = await conn.QuerySingleOrDefaultAsync<{{EntityName}}>(
+                """
+                UPDATE customers SET name = @Name, email = @Email, status = @Status
+                WHERE id = @Id
+                RETURNING id, name, email, status, created_at
+                """,
+                new { customer.Id, customer.Name, customer.Email, Status = (int)customer.Status });
+            return updated is null
+                ? CustomerError.NotFound(customer.Id)
+                : Result<CustomerError, {{EntityName}}>.Success(updated);
+        }
+        catch (Exception ex)
+        {
+            return CustomerError.RepositoryUnavailable(ex);
+        }
+    }
+
+    public async Task<Result<CustomerError, bool>> EmailExistsAsync(string email, CancellationToken ct)
+    {
+        try
+        {
+            await using var conn = CreateConnection();
+            await conn.OpenAsync(ct);
+            var exists = await conn.ExecuteScalarAsync<bool>(
+                "SELECT EXISTS(SELECT 1 FROM customers WHERE email = @Email)",
+                new { Email = email });
+            return Result<CustomerError, bool>.Success(exists);
+        }
+        catch (Exception ex)
+        {
+            return CustomerError.RepositoryUnavailable(ex);
+        }
+    }
+}

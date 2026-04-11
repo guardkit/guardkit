@@ -1,0 +1,197 @@
+using System.Collections.Concurrent;
+using System.Text.Json;
+using Exemplar.Fleet.Models;
+using Exemplar.Fleet.Registry;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using NATS.Client.Core;
+
+namespace {{Namespace}};
+
+/// <summary>
+/// {{EntityName}} service that subscribes to fleet NATS topics and maintains
+/// the <see cref="IManifestRegistry"/> with live agent capability data.
+///
+/// Topics handled:
+///   fleet.register          — agent capability announcements (MessageEnvelope + AgentManifest payload)
+///   fleet.deregister        — agent shutdown notifications (MessageEnvelope + AgentDeregistrationPayload)
+///   fleet.heartbeat.&gt;       — agent liveness pulses (MessageEnvelope + AgentHeartbeatPayload)
+///
+/// Stale agents (no heartbeat within <see cref="FleetOptions.HeartbeatTimeoutSeconds"/>) are
+/// pruned by a <see cref="PeriodicTimer"/> running every 30 seconds.
+/// </summary>
+public sealed class {{ClassName}} : BackgroundService
+{
+    private readonly INatsConnection _nats;
+    private readonly IManifestRegistry _registry;
+    private readonly FleetOptions _opts;
+    private readonly ILogger<{{ClassName}}> _logger;
+
+    // Tracks last-heartbeat time per agent_id for liveness pruning.
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _heartbeats = new();
+
+    public {{ClassName}}(
+        INatsConnection nats,
+        IManifestRegistry registry,
+        IOptions<FleetOptions> opts,
+        ILogger<{{ClassName}}> logger)
+    {
+        _nats = nats;
+        _registry = registry;
+        _opts = opts.Value;
+        _logger = logger;
+    }
+
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        // Run all subscription loops + the pruner concurrently.
+        // Task.WhenAll propagates the first exception; individual loops catch their own errors.
+        return Task.WhenAll(
+            SubscribeRegistrationsAsync(stoppingToken),
+            SubscribeDeregistrationsAsync(stoppingToken),
+            SubscribeHeartbeatsAsync(stoppingToken),
+            PruneStaleAgentsAsync(stoppingToken));
+    }
+
+    // ── Subscriptions ─────────────────────────────────────────────────────────
+
+    private async Task SubscribeRegistrationsAsync(CancellationToken ct)
+    {
+        try
+        {
+            await foreach (var msg in _nats.SubscribeAsync<MessageEnvelope>("fleet.register", cancellationToken: ct))
+            {
+                if (msg.Data is null) continue;
+                HandleRegistration(msg.Data);
+            }
+        }
+        catch (OperationCanceledException) { /* normal shutdown */ }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "fleet.register subscription error");
+        }
+    }
+
+    private async Task SubscribeDeregistrationsAsync(CancellationToken ct)
+    {
+        try
+        {
+            await foreach (var msg in _nats.SubscribeAsync<MessageEnvelope>("fleet.deregister", cancellationToken: ct))
+            {
+                if (msg.Data is null) continue;
+                HandleDeregistration(msg.Data);
+            }
+        }
+        catch (OperationCanceledException) { /* normal shutdown */ }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "fleet.deregister subscription error");
+        }
+    }
+
+    private async Task SubscribeHeartbeatsAsync(CancellationToken ct)
+    {
+        try
+        {
+            // fleet.heartbeat.> matches fleet.heartbeat.{agent_id} for any agent.
+            await foreach (var msg in _nats.SubscribeAsync<MessageEnvelope>("fleet.heartbeat.>", cancellationToken: ct))
+            {
+                if (msg.Data is null) continue;
+                HandleHeartbeat(msg.Data);
+            }
+        }
+        catch (OperationCanceledException) { /* normal shutdown */ }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "fleet.heartbeat.> subscription error");
+        }
+    }
+
+    // ── Message handlers (internal for unit-test access) ─────────────────────
+
+    internal void HandleRegistration(MessageEnvelope envelope)
+    {
+        try
+        {
+            var manifest = JsonSerializer.Deserialize<AgentManifest>(envelope.Payload);
+            if (manifest is null) return;
+
+            _registry.Register(manifest);
+            _heartbeats[manifest.AgentId] = DateTimeOffset.UtcNow;
+
+            _logger.LogInformation(
+                "Fleet: registered agent {AgentId} ({Name} v{Version}) with {IntentCount} intents, {ToolCount} tools",
+                manifest.AgentId, manifest.Name, manifest.Version,
+                manifest.Intents.Count, manifest.Tools.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to process fleet.register message from {SourceId}", envelope.SourceId);
+        }
+    }
+
+    internal void HandleDeregistration(MessageEnvelope envelope)
+    {
+        try
+        {
+            var payload = JsonSerializer.Deserialize<AgentDeregistrationPayload>(envelope.Payload);
+            if (payload is null) return;
+
+            _registry.Deregister(payload.AgentId);
+            _heartbeats.TryRemove(payload.AgentId, out _);
+
+            _logger.LogInformation(
+                "Fleet: deregistered agent {AgentId} (reason: {Reason})",
+                payload.AgentId, payload.Reason ?? "none");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to process fleet.deregister message from {SourceId}", envelope.SourceId);
+        }
+    }
+
+    internal void HandleHeartbeat(MessageEnvelope envelope)
+    {
+        try
+        {
+            var payload = JsonSerializer.Deserialize<AgentHeartbeatPayload>(envelope.Payload);
+            if (payload is null) return;
+
+            _heartbeats[payload.AgentId] = DateTimeOffset.UtcNow;
+
+            _logger.LogDebug("Fleet: heartbeat from {AgentId} (status: {Status})",
+                payload.AgentId, payload.Status);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to process fleet.heartbeat message from {SourceId}", envelope.SourceId);
+        }
+    }
+
+    // ── Pruning ───────────────────────────────────────────────────────────────
+
+    private async Task PruneStaleAgentsAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                var threshold = DateTimeOffset.UtcNow.AddSeconds(-_opts.HeartbeatTimeoutSeconds);
+                foreach (var (agentId, lastSeen) in _heartbeats)
+                {
+                    if (lastSeen < threshold)
+                    {
+                        _registry.Deregister(agentId);
+                        _heartbeats.TryRemove(agentId, out _);
+                        _logger.LogWarning(
+                            "Fleet: pruned stale agent {AgentId} (last seen {LastSeen:O})",
+                            agentId, lastSeen);
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException) { /* normal shutdown */ }
+    }
+}

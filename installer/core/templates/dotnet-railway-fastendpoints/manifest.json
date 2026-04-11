@@ -1,0 +1,199 @@
+{
+  "schema_version": "1.0.0",
+  "name": "dotnet-railway-fastendpoints",
+  "display_name": "C# Railway-Oriented Monolith",
+  "description": "C# template using Modular Monolith with Bounded Context isolation architecture with ASP.NET Core 10.0, FastEndpoints",
+  "version": "1.0.0",
+  "author": null,
+  "language": "C#",
+  "language_version": "net10.0",
+  "frameworks": [
+    {
+      "name": "ASP.NET Core 10.0",
+      "version": null,
+      "purpose": "core"
+    },
+    {
+      "name": "FastEndpoints",
+      "version": "*",
+      "purpose": "core"
+    },
+    {
+      "name": "CSharpFunctionalExtensions",
+      "version": "*",
+      "purpose": "core"
+    },
+    {
+      "name": "FluentValidation (via FastEndpoints Validator<T>)",
+      "version": null,
+      "purpose": "core"
+    },
+    {
+      "name": "Dapper",
+      "version": "*",
+      "purpose": "core"
+    },
+    {
+      "name": "Npgsql",
+      "version": "*",
+      "purpose": "core"
+    },
+    {
+      "name": "DbUp (PostgreSQL migrations)",
+      "version": null,
+      "purpose": "core"
+    },
+    {
+      "name": "NATS.Client.Core / NATS.Client.JetStream",
+      "version": null,
+      "purpose": "core"
+    },
+    {
+      "name": "OpenTelemetry (AspNetCore + Http + OTLP)",
+      "version": null,
+      "purpose": "core"
+    },
+    {
+      "name": "Serilog (AspNetCore + OpenTelemetry sink)",
+      "version": null,
+      "purpose": "core"
+    },
+    {
+      "name": "Microsoft JWT Bearer / Keycloak",
+      "version": null,
+      "purpose": "core"
+    },
+    {
+      "name": "xUnit",
+      "version": "*",
+      "purpose": "testing"
+    },
+    {
+      "name": "FluentAssertions 7.x",
+      "version": null,
+      "purpose": "testing"
+    },
+    {
+      "name": "NSubstitute",
+      "version": "*",
+      "purpose": "testing"
+    },
+    {
+      "name": "Testcontainers.PostgreSql",
+      "version": "*",
+      "purpose": "testing"
+    },
+    {
+      "name": "Microsoft.AspNetCore.TestHost",
+      "version": "10.*",
+      "purpose": "testing"
+    },
+    {
+      "name": "Microsoft.AspNetCore.Mvc.Testing (WebApplicationFactory)",
+      "version": null,
+      "purpose": "testing"
+    }
+  ],
+  "architecture": "Modular Monolith with Bounded Context isolation",
+  "patterns": [
+    "Anti-Corruption Layer via Contracts project",
+    "Background Service",
+    "Enum-discriminated Error hierarchy",
+    "Extension Method composition for DI registration",
+    "In-Memory Registry",
+    "Optional Dependency injection",
+    "Railway-Oriented Programming / Result Monad",
+    "Repository Pattern",
+    "Service Layer",
+    "Static Factory Methods on domain aggregates",
+    "Testcontainers for hermetic test isolation",
+    "Vertical Slice / Bounded Context decomposition",
+    "WebApplicationFactory for integration and E2E testing"
+  ],
+  "layers": [
+    "Domain",
+    "Application",
+    "Infrastructure",
+    "Endpoints",
+    "Cross-Cutting Core",
+    "Contracts",
+    "Fleet"
+  ],
+  "placeholders": {
+    "ProjectName": {
+      "name": "{{ProjectName}}",
+      "description": "Name of the project/solution",
+      "default_value": null,
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+      "required": true
+    },
+    "Namespace": {
+      "name": "{{Namespace}}",
+      "description": "Root namespace for the project",
+      "default_value": null,
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)*$",
+      "required": true
+    },
+    "Author": {
+      "name": "{{Author}}",
+      "description": "Project author name",
+      "default_value": null,
+      "pattern": null,
+      "required": false
+    },
+    "DefaultRole": {
+      "name": "{{DefaultRole}}",
+      "description": "Default Keycloak realm role name required by admin-only endpoints (lowercase to match Keycloak convention)",
+      "default_value": "admin",
+      "pattern": null,
+      "required": false
+    }
+  },
+  "tags": [
+    "anti-corruption-layer-via-contracts-project",
+    "application",
+    "asp.net-core-10.0",
+    "background-service",
+    "c#",
+    "contracts",
+    "cross-cutting core",
+    "csharpfunctionalextensions",
+    "dapper",
+    "dbup-(postgresql-migrations)",
+    "domain",
+    "endpoints",
+    "enum-discriminated-error-hierarchy",
+    "extension-method-composition-for-di-registration",
+    "fastendpoints",
+    "fleet",
+    "fluentassertions-7.x",
+    "fluentvalidation-(via-fastendpoints-validator<t>)",
+    "in-memory-registry",
+    "infrastructure",
+    "microsoft-jwt-bearer-/-keycloak",
+    "microsoft.aspnetcore.mvc.testing-(webapplicationfactory)",
+    "microsoft.aspnetcore.testhost",
+    "modular-monolith-with-bounded-context-isolation",
+    "nats.client.core-/-nats.client.jetstream",
+    "npgsql",
+    "nsubstitute",
+    "opentelemetry-(aspnetcore-+-http-+-otlp)",
+    "optional-dependency-injection",
+    "railway-oriented-programming-/-result-monad",
+    "repository-pattern",
+    "serilog-(aspnetcore-+-opentelemetry-sink)",
+    "service-layer",
+    "static-factory-methods-on-domain-aggregates",
+    "testcontainers-for-hermetic-test-isolation",
+    "testcontainers.postgresql",
+    "vertical-slice-/-bounded-context-decomposition",
+    "webapplicationfactory-for-integration-and-e2e-testing",
+    "xunit"
+  ],
+  "category": "backend",
+  "complexity": 10,
+  "compatible_with": [],
+  "requires": [],
+  "created_at": "2026-04-11T10:37:17.579377",
+  "confidence_score": 94.67
+}

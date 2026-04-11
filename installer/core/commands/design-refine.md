@@ -43,7 +43,7 @@ The command instructs Claude directly (Pattern A: command-spec-only) through a s
 
 Before starting the refinement session, `/design-refine` MUST verify that design context exists. This ensures refinement builds on established design decisions rather than creating from scratch.
 
-**Check Graphiti availability** (Tier 1 — see `lib/graphiti-preamble.md`):
+**Check Graphiti availability** (Tier 1 — see `docs/internals/commands-lib/graphiti-preamble.md`):
 
 Use the Read tool to read `.guardkit/graphiti.yaml`.
 - If the file exists and `enabled: true`: set `graphiti_available = true`
@@ -61,7 +61,7 @@ Check for design context:
 
 **Load existing design context and validate prerequisites:**
 
-**Check Graphiti availability** (Tier 1 — see `lib/graphiti-preamble.md`):
+**Check Graphiti availability** (Tier 1 — see `docs/internals/commands-lib/graphiti-preamble.md`):
 Read `.guardkit/graphiti.yaml`. Set `graphiti_available` accordingly.
 
 Load existing design context:
@@ -503,7 +503,7 @@ if affected_contexts:
 
 **Upsert all updated design artefacts into Graphiti (`project_design` and `api_contracts` groups):**
 
-If `graphiti_available` is true, run the Tier 2 connectivity check (see `lib/graphiti-preamble.md`).
+If `graphiti_available` is true, run the Tier 2 connectivity check (see `docs/internals/commands-lib/graphiti-preamble.md`).
 
 Generate and offer the following seeding commands based on what was changed:
 
@@ -583,7 +583,7 @@ Next steps:
 
 ### Graphiti Unavailable
 
-When `graphiti_available = false`, display the unavailability warning from `lib/graphiti-preamble.md`:
+When `graphiti_available = false`, display the unavailability warning from `docs/internals/commands-lib/graphiti-preamble.md`:
 
 ```
 ⚠️  Graphiti unavailable — continuing without knowledge graph context.
@@ -976,7 +976,7 @@ if no_questions:
 
 ### Step 2: Initialize Graphiti and Verify Prerequisite
 
-**Check Graphiti availability** (Tier 1 — see `lib/graphiti-preamble.md`):
+**Check Graphiti availability** (Tier 1 — see `docs/internals/commands-lib/graphiti-preamble.md`):
 
 Use the Read tool to read `.guardkit/graphiti.yaml`.
 - If `enabled: true`: set `graphiti_available = true`
@@ -1046,7 +1046,7 @@ Based on selected artefact type:
 
 **Seed Graphiti** (if `graphiti_available` is true):
 
-Run the Tier 2 connectivity check from `lib/graphiti-preamble.md`, then generate and offer the seeding commands for all changed artefacts:
+Run the Tier 2 connectivity check from `docs/internals/commands-lib/graphiti-preamble.md`, then generate and offer the seeding commands for all changed artefacts:
 
 ```bash
 # Seed changed DDRs
@@ -1127,7 +1127,7 @@ Run /system-design first to establish design context.
 """
 
 GRAPHITI_UNAVAILABLE_MESSAGE:
-Use the warning template from `lib/graphiti-preamble.md`. Additional context for design refinement:
+Use the warning template from `docs/internals/commands-lib/graphiti-preamble.md`. Additional context for design refinement:
 - Changes won't be queryable by /feature-spec, /feature-plan, or /system-plan
 - Feature spec staleness detection skipped
 - Downstream staleness flagging skipped

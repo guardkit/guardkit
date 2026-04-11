@@ -1794,12 +1794,42 @@ setup_claude_integration() {
 
 # Create symlinks for Python command scripts in ~/.agentecflow/bin/
 # This allows commands to work from any directory
+prune_stale_bin_symlinks() {
+    # Remove symlinks in BIN_DIR whose targets have been deleted, but only when
+    # the target points inside installer/core/commands/. Never touch user-added
+    # symlinks pointing elsewhere, and never touch real files.
+    local BIN_DIR="$1"
+    [ -d "$BIN_DIR" ] || return 0
+
+    local pruned=0
+    for link in "$BIN_DIR"/*; do
+        [ -L "$link" ] || continue
+        local target
+        target=$(readlink "$link")
+        case "$target" in
+            */installer/core/commands/*) ;;
+            *) continue ;;
+        esac
+        if [ ! -e "$link" ]; then
+            rm "$link"
+            print_info "  Pruned stale symlink: $(basename "$link") -> $target"
+            pruned=$((pruned + 1))
+        fi
+    done
+    if [ "$pruned" -gt 0 ]; then
+        print_success "Pruned $pruned stale symlink(s)"
+    fi
+}
+
 setup_python_bin_symlinks() {
     print_info "Setting up Python command script symlinks..."
 
     local BIN_DIR="$INSTALL_DIR/bin"
     local COMMANDS_DIR="$INSTALLER_DIR/core/commands"
     local COMMANDS_LIB_DIR="$INSTALLER_DIR/core/commands/lib"
+    local MANIFEST_FILE="$COMMANDS_DIR/bin-entries.txt"
+    # Repository root is the parent of installer/
+    local REPO_ROOT="$(cd "$INSTALLER_DIR/.." && pwd)"
 
     # Create bin directory if it doesn't exist
     if [ ! -d "$BIN_DIR" ]; then
@@ -1807,91 +1837,103 @@ setup_python_bin_symlinks() {
         print_success "Created bin directory: $BIN_DIR"
     fi
 
+    # Prune stale symlinks left behind by deleted/unlisted commands/lib/*.py
+    # files before we (re)create the manifest-listed ones (TASK-FIX-CF8D).
+    prune_stale_bin_symlinks "$BIN_DIR"
+
+    # ------------------------------------------------------------------
+    # TASK-ISH-D09E: Manifest-driven symlink creation.
+    #
+    # Replaces the previous blind walk over commands/ and commands/lib/.
+    # The manifest at installer/core/commands/bin-entries.txt is the
+    # SOLE source of truth for which .py files become CLI commands.
+    # ------------------------------------------------------------------
+
+    if [ ! -f "$MANIFEST_FILE" ]; then
+        print_error "CLI manifest not found: $MANIFEST_FILE"
+        print_warning "Cannot install command symlinks without a manifest."
+        return 1
+    fi
+
     # Track statistics
     local symlinks_created=0
     local symlinks_updated=0
     local symlinks_skipped=0
+    local manifest_missing=0
     local errors=0
 
-    # Find all Python command scripts
-    local python_scripts=()
+    # Read manifest entries (resolved to absolute paths). Skip blanks/comments.
+    local manifest_entries=()
+    while IFS= read -r raw_line || [ -n "$raw_line" ]; do
+        # Strip leading/trailing whitespace and inline comments after '#'
+        local line="${raw_line%%#*}"
+        line="${line#"${line%%[![:space:]]*}"}"
+        line="${line%"${line##*[![:space:]]}"}"
+        [ -z "$line" ] && continue
+        manifest_entries+=("$line")
+    done < "$MANIFEST_FILE"
 
-    # Find scripts in commands/ directory (exclude lib/)
-    if [ -d "$COMMANDS_DIR" ]; then
-        while IFS= read -r script; do
-            python_scripts+=("$script")
-        done < <(find "$COMMANDS_DIR" -maxdepth 1 -type f -name "*.py" 2>/dev/null)
-    fi
-
-    # Find scripts in commands/lib/ directory (top-level only, not subdirectories)
-    if [ -d "$COMMANDS_LIB_DIR" ]; then
-        while IFS= read -r script; do
-            python_scripts+=("$script")
-        done < <(find "$COMMANDS_LIB_DIR" -maxdepth 1 -type f -name "*.py" 2>/dev/null)
-    fi
-
-    # Check if we found any scripts
-    if [ ${#python_scripts[@]} -eq 0 ]; then
-        print_warning "No Python command scripts found"
+    if [ ${#manifest_entries[@]} -eq 0 ]; then
+        print_warning "CLI manifest is empty: $MANIFEST_FILE"
         return 0
     fi
 
-    print_info "Found ${#python_scripts[@]} Python command script(s)"
+    print_info "Found ${#manifest_entries[@]} manifest entr(ies) in $(basename "$MANIFEST_FILE")"
 
-    # Create symlink for each Python script
-    for script_path in "${python_scripts[@]}"; do
-        local script_file=$(basename "$script_path")
+    # Track which files are listed (basename) for the drift-warning pass.
+    local listed_basenames=()
+
+    for rel_path in "${manifest_entries[@]}"; do
+        local script_path="$REPO_ROOT/$rel_path"
+        local script_file
+        script_file=$(basename "$script_path")
         local symlink_name="${script_file%.py}"
-
-        # Skip __init__.py files
-        if [ "$script_file" = "__init__.py" ]; then
-            symlinks_skipped=$((symlinks_skipped + 1))
-            continue
-        fi
-
-        # Skip test files (files starting with test_)
-        if [[ "$script_file" == test_* ]]; then
-            symlinks_skipped=$((symlinks_skipped + 1))
-            continue
-        fi
-
-        # Skip scripts that have dedicated wrapper scripts (created in create_cli_commands)
-        if [ "$script_file" = "graphiti_check.py" ]; then
-            symlinks_skipped=$((symlinks_skipped + 1))
-            continue
-        fi
-
-        # Convert underscores to hyphens
+        # Convert underscores to hyphens for shell-friendly command names.
         symlink_name="${symlink_name//_/-}"
-
         local symlink_path="$BIN_DIR/$symlink_name"
 
-        # Check if script is readable
+        listed_basenames+=("$script_file")
+
+        # Verify target file exists.
+        if [ ! -f "$script_path" ]; then
+            print_warning "Manifest entry missing on disk: $rel_path (skipping)"
+            manifest_missing=$((manifest_missing + 1))
+            continue
+        fi
+
+        # Verify target is readable.
         if [ ! -r "$script_path" ]; then
             print_warning "Cannot read script: $script_path (skipping)"
             errors=$((errors + 1))
             continue
         fi
 
-        # Check for conflicts
-        if [ -L "$symlink_path" ]; then
-            local existing_target=$(readlink "$symlink_path")
-            if [ "$existing_target" != "$script_path" ]; then
-                print_warning "Symlink conflict: $symlink_name"
-                print_warning "  Existing: $existing_target"
-                print_warning "  New: $script_path"
-                print_error "Cannot create symlink due to conflict"
-                errors=$((errors + 1))
-                continue
-            fi
+        # Manifest entry validation: must be runnable as a CLI.
+        # Look for a main() function OR an __main__ guard. This is a
+        # weak check (no AST parsing) but catches the obvious mistake of
+        # listing a pure library module as a CLI entry.
+        if ! grep -qE '^[[:space:]]*def main\(|^if __name__ == ["'\'']__main__["'\'']' "$script_path" 2>/dev/null; then
+            print_warning "Manifest entry has no main() / __main__ block: $rel_path"
+            print_warning "  Symlink will be created but the script may not run as a CLI."
         fi
 
-        # Create or update symlink
-        # NOTE: Do NOT chmod symlinks - on macOS/Linux, chmod on a symlink
-        # modifies the TARGET file's permissions, which would mark library
-        # files as executable in git. Symlinks inherit target permissions.
+        # Defensive: must not collide with a dedicated wrapper script
+        # (regular file, not symlink) created in create_cli_commands.
+        if [ -e "$symlink_path" ] && [ ! -L "$symlink_path" ]; then
+            print_error "Cannot create symlink: $symlink_path exists as a regular file"
+            print_warning "  This is likely a wrapper from create_cli_commands —"
+            print_warning "  remove the manifest entry to avoid the collision."
+            errors=$((errors + 1))
+            continue
+        fi
+
+        # Create / update / leave-alone the symlink.
+        # NOTE: Do NOT chmod symlinks — on macOS/Linux chmod on a symlink
+        # mutates the TARGET file's mode, which would mark library files
+        # as executable in git.
         if [ -L "$symlink_path" ]; then
-            local current_target=$(readlink "$symlink_path")
+            local current_target
+            current_target=$(readlink "$symlink_path")
             if [ "$current_target" = "$script_path" ]; then
                 symlinks_skipped=$((symlinks_skipped + 1))
             else
@@ -1899,15 +1941,98 @@ setup_python_bin_symlinks() {
                 symlinks_updated=$((symlinks_updated + 1))
                 print_info "  Updated: $symlink_name"
             fi
-        elif [ -e "$symlink_path" ]; then
-            print_error "Cannot create symlink: $symlink_path exists as regular file"
-            errors=$((errors + 1))
         else
             ln -s "$script_path" "$symlink_path"
             symlinks_created=$((symlinks_created + 1))
-            print_info "  Created: $symlink_name → $(basename $script_path)"
+            print_info "  Created: $symlink_name → $(basename "$script_path")"
         fi
     done
+
+    # ------------------------------------------------------------------
+    # Drift warning: any .py file under commands/ or commands/lib/ that
+    # is NOT listed in the manifest, NOT __init__/test_/demo_, and NOT
+    # graphiti_check.py (which has a wrapper). Informational only.
+    # ------------------------------------------------------------------
+    local unlisted=()
+    local candidate
+    for dir in "$COMMANDS_DIR" "$COMMANDS_LIB_DIR"; do
+        [ -d "$dir" ] || continue
+        while IFS= read -r candidate; do
+            local cand_base
+            cand_base=$(basename "$candidate")
+            case "$cand_base" in
+                __init__.py|test_*|demo_*) continue ;;
+                graphiti_check.py) continue ;;  # has dedicated wrapper
+            esac
+            local found=0
+            local listed
+            for listed in "${listed_basenames[@]}"; do
+                if [ "$listed" = "$cand_base" ]; then
+                    found=1
+                    break
+                fi
+            done
+            if [ $found -eq 0 ]; then
+                # Path relative to repo root for the warning message.
+                unlisted+=("${candidate#$REPO_ROOT/}")
+            fi
+        done < <(find "$dir" -maxdepth 1 -type f -name "*.py" 2>/dev/null)
+    done
+
+    if [ ${#unlisted[@]} -gt 0 ]; then
+        echo ""
+        print_warning "${#unlisted[@]} Python file(s) under commands/ are NOT in the CLI manifest"
+        print_warning "  They will NOT be exposed as shell commands. This is the expected"
+        print_warning "  case for internal library modules. Add to bin-entries.txt if a"
+        print_warning "  file is intended as a CLI, or delete/relocate if it is dead."
+        local u
+        for u in "${unlisted[@]}"; do
+            print_info "    - $u"
+        done
+    fi
+
+    # ------------------------------------------------------------------
+    # Manifest-driven sweep (TASK-ISH-D09E):
+    #
+    # Remove any existing symlink in BIN_DIR that points into
+    # installer/core/commands/ but is NOT in the manifest. This complements
+    # prune_stale_bin_symlinks (which only removes links with MISSING
+    # targets) so that on reinstall, library modules previously promoted
+    # to CLIs by the old blind walk are taken back out of bin/. User-added
+    # symlinks pointing elsewhere are NOT touched.
+    # ------------------------------------------------------------------
+    local swept=0
+    for link in "$BIN_DIR"/*; do
+        [ -L "$link" ] || continue
+        local link_target
+        link_target=$(readlink "$link")
+        case "$link_target" in
+            */installer/core/commands/*) ;;
+            *) continue ;;
+        esac
+        local link_name
+        link_name=$(basename "$link")
+
+        # Is this symlink one we just (re)created from the manifest?
+        local listed_base
+        local match=0
+        for listed_base in "${listed_basenames[@]}"; do
+            local expected="${listed_base%.py}"
+            expected="${expected//_/-}"
+            if [ "$link_name" = "$expected" ]; then
+                match=1
+                break
+            fi
+        done
+        if [ $match -eq 0 ]; then
+            rm "$link"
+            print_info "  Removed unlisted CLI symlink: $link_name (target: $link_target)"
+            swept=$((swept + 1))
+        fi
+    done
+    if [ $swept -gt 0 ]; then
+        print_success "Removed $swept symlink(s) no longer in CLI manifest"
+    fi
 
     # Summary
     echo ""
@@ -1915,14 +2040,20 @@ setup_python_bin_symlinks() {
         print_success "Python command symlinks configured successfully"
         print_info "  Created: $symlinks_created"
         print_info "  Updated: $symlinks_updated"
-        print_info "  Skipped: $symlinks_skipped"
+        print_info "  Unchanged: $symlinks_skipped"
+        if [ $manifest_missing -gt 0 ]; then
+            print_warning "  Manifest entries missing on disk: $manifest_missing"
+        fi
         print_info "  Location: $BIN_DIR"
         print_info "Commands can now be executed from any directory"
     else
         print_warning "Python command symlinks configured with errors"
         print_info "  Created: $symlinks_created"
         print_info "  Updated: $symlinks_updated"
-        print_info "  Skipped: $symlinks_skipped"
+        print_info "  Unchanged: $symlinks_skipped"
+        if [ $manifest_missing -gt 0 ]; then
+            print_warning "  Manifest entries missing on disk: $manifest_missing"
+        fi
         print_error "  Errors: $errors"
         print_warning "Some commands may not work correctly"
     fi

@@ -1,0 +1,137 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.Tokens;
+using System.Security.Claims;
+using System.Text.Json;
+
+namespace {{Namespace}};
+
+public static class {{ClassName}}
+{
+    /// <summary>
+    /// Registers JWT Bearer authentication configured for Keycloak.
+    /// MapInboundClaims = false is REQUIRED to preserve Keycloak claim names
+    /// (e.g. "preferred_username", "realm_access") without ASP.NET Core remapping them.
+    /// </summary>
+    public static IServiceCollection AddKeycloakAuthentication(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IWebHostEnvironment environment)
+    {
+        services
+            .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
+            {
+                options.Authority = configuration["Authentication:Authority"];
+                options.Audience  = configuration["Authentication:Audience"];
+
+                // REQUIRED: preserve Keycloak claim names — do not let ASP.NET Core
+                // remap "sub", "preferred_username", etc. to its own claim type URIs.
+                options.MapInboundClaims = false;
+
+                // Require HTTPS in all environments except Development.
+                options.RequireHttpsMetadata = !environment.IsDevelopment();
+
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateAudience = true,
+                    ValidateIssuer   = true,
+                    NameClaimType    = "preferred_username",
+                    RoleClaimType    = ClaimTypes.Role
+                };
+
+                options.Events = new JwtBearerEvents
+                {
+                    OnTokenValidated = ProcessKeycloakRoles
+                };
+            });
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds the three standard authorization policies used across the API.
+    /// </summary>
+    public static IServiceCollection AddAuthorizationPolicies(
+        this IServiceCollection services)
+    {
+        // {{TEMPLATE: PolicyNames}} — define authorization policies matching Keycloak role names
+        services.AddAuthorizationBuilder()
+            .AddPolicy("AdminOnly",              p => p.RequireRole("admin"))
+            .AddPolicy("UserOrAdmin",            p => p.RequireRole("user", "admin"))
+            .AddPolicy("RequireAuthentication",  p => p.RequireAuthenticatedUser())
+            // Fallback: any endpoint without explicit Roles() or AllowAnonymous() requires auth.
+            // Health check and Swagger endpoints must explicitly call .AllowAnonymous().
+            .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+                .RequireAuthenticatedUser()
+                .Build());
+
+        return services;
+    }
+
+    /// <summary>
+    /// Maps Keycloak roles from both realm_access.roles and
+    /// resource_access.{client}.roles onto ClaimTypes.Role so that
+    /// [Authorize(Roles = "admin")] and RequireRole() work correctly.
+    /// </summary>
+    private static Task ProcessKeycloakRoles(TokenValidatedContext ctx)
+    {
+        if (ctx.Principal is null)
+            return Task.CompletedTask;
+
+        var identity = (ClaimsIdentity?)ctx.Principal.Identity;
+        if (identity is null)
+            return Task.CompletedTask;
+
+        // Read the raw JWT payload — JWT uses base64url encoding; convert to standard base64 first.
+        var payload = ctx.SecurityToken.UnsafeToString();
+        var base64Payload = PadBase64(payload.Split('.')[1])
+            .Replace('-', '+')
+            .Replace('_', '/');
+        using var doc = JsonDocument.Parse(Convert.FromBase64String(base64Payload));
+
+        var root = doc.RootElement;
+
+        // realm_access.roles → ClaimTypes.Role
+        if (root.TryGetProperty("realm_access", out var realmAccess) &&
+            realmAccess.TryGetProperty("roles", out var realmRoles))
+        {
+            foreach (var role in realmRoles.EnumerateArray())
+            {
+                var roleName = role.GetString();
+                if (!string.IsNullOrEmpty(roleName))
+                    identity.AddClaim(new Claim(ClaimTypes.Role, roleName));
+            }
+        }
+
+        // resource_access.{audience}.roles → ClaimTypes.Role
+        var audience = ctx.Options.Audience;
+        if (!string.IsNullOrEmpty(audience) &&
+            root.TryGetProperty("resource_access", out var resourceAccess) &&
+            resourceAccess.TryGetProperty(audience, out var clientAccess) &&
+            clientAccess.TryGetProperty("roles", out var clientRoles))
+        {
+            foreach (var role in clientRoles.EnumerateArray())
+            {
+                var roleName = role.GetString();
+                if (!string.IsNullOrEmpty(roleName))
+                    identity.AddClaim(new Claim(ClaimTypes.Role, roleName));
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private static string PadBase64(string base64)
+    {
+        return (base64.Length % 4) switch
+        {
+            2 => base64 + "==",
+            3 => base64 + "=",
+            _ => base64
+        };
+    }
+}

@@ -193,7 +193,7 @@ This command ensures high-quality task completion while maintaining accurate pro
 
 **Non-blocking**: Task completion MUST succeed even if Graphiti write fails. All errors are logged as warnings.
 
-See: `lib/graphiti-preamble.md` for availability check tiers.
+See: `docs/internals/commands-lib/graphiti-preamble.md` for availability check tiers.
 
 ### Step 1: Extract Task Outcome Data
 
@@ -273,7 +273,7 @@ DISPLAY: "[Graphiti] Warning: Could not capture task outcome ({error})"
 
 **IF** `mcp__graphiti__add_memory` is NOT available:
 
-Check Graphiti availability via Read tool (Tier 1 from `lib/graphiti-preamble.md`):
+Check Graphiti availability via Read tool (Tier 1 from `docs/internals/commands-lib/graphiti-preamble.md`):
 Read `.guardkit/graphiti.yaml` — if file exists and `enabled: true`, proceed to CLI write.
 
 **IF** Graphiti is enabled:

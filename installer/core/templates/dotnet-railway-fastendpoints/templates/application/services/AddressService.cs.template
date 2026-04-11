@@ -1,0 +1,62 @@
+using Exemplar.Addresses.Domain;
+using Exemplar.Addresses.Domain.Errors;
+using Exemplar.Addresses.Infrastructure;
+using Exemplar.Core.Errors;
+using Exemplar.Core.Functional;
+using Exemplar.Customers.Contracts;
+
+namespace {{Namespace}};
+
+/// <summary>
+/// Addresses service. Demonstrates inter-BC communication:
+/// <c>ICustomerLookup</c> (from Customers.Contracts) is injected — never <c>CustomerService</c>.
+/// All pipelines use .BindAsync()/.MapErrorAsync() chains — no mid-chain .IsSuccess checks.
+/// </summary>
+public sealed class {{ClassName}} : IAddressService
+{
+    private readonly ICustomerLookup _customerLookup;
+    private readonly IAddressRepository _repo;
+
+    public {{ClassName}}(ICustomerLookup customerLookup, IAddressRepository repo)
+    {
+        _customerLookup = customerLookup;
+        _repo = repo;
+    }
+
+    public Task<Result<BaseError, IReadOnlyList<AddressDto>>> GetByCustomerIdAsync(
+        Guid customerId, CancellationToken ct)
+        => _repo.GetByCustomerIdAsync(customerId, ct)
+                .MapAsync(addresses => (IReadOnlyList<AddressDto>)addresses.Select(ToDto).ToList());
+
+    public Task<Result<BaseError, AddressDto>> AddAddressAsync(
+        Guid customerId, AddAddressRequest request, CancellationToken ct)
+        // Step 1: verify customer exists via the inter-BC contract (never CustomerService directly).
+        // Step 2: check no primary-address conflict if adding a primary.
+        // Step 3: insert the new address.
+        => _customerLookup.FindByIdAsync(customerId, ct)
+            .MapErrorAsync(_ => (BaseError)new CustomerNotFoundError(customerId))
+            .BindAsync(_ => CheckNoPrimaryConflictAsync(customerId, request, ct))
+            .BindAsync(_ => _repo.InsertAsync(
+                Address.Create(customerId, request.Line1, request.Line2, request.City,
+                               request.PostalCode, request.Country, request.IsPrimary), ct))
+            .MapAsync(ToDto);
+
+    // ── Private helpers ────────────────────────────────────────────────────────
+
+    private async Task<Result<BaseError, bool>> CheckNoPrimaryConflictAsync(
+        Guid customerId, AddAddressRequest request, CancellationToken ct)
+    {
+        if (!request.IsPrimary)
+            return Result<BaseError, bool>.Success(true);
+
+        var result = await _repo.HasPrimaryAddressAsync(customerId, ct);
+        if (result.IsFailure)
+            return result.Error;
+        if (result.Value)
+            return new DuplicatePrimaryAddressError(customerId);
+        return Result<BaseError, bool>.Success(true);
+    }
+
+    private static AddressDto ToDto(Address a) =>
+        new(a.Id, a.CustomerId, a.Line1, a.Line2, a.City, a.PostalCode, a.Country, a.IsPrimary, a.CreatedAt);
+}

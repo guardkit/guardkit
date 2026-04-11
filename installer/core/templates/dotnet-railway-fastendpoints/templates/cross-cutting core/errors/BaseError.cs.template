@@ -1,0 +1,10 @@
+using Microsoft.AspNetCore.Http;
+
+namespace {{Namespace}};
+
+public abstract record {{RecordName}}(string Message)
+{
+    public virtual int StatusCode => StatusCodes.Status500InternalServerError;
+    public virtual string? ErrorCode => null;
+    public Exception? InnerException { get; init; }
+}

@@ -1716,7 +1716,7 @@ def init(
     Applies a template and optionally seeds project knowledge to Graphiti.
 
     TEMPLATE is the name of the template to apply (default: 'default').
-    Available templates: default, fastapi-python, react-typescript, nextjs-fullstack, react-fastapi-monorepo, python-library, nats-asyncio-service, langchain-deepagents, langchain-deepagents-orchestrator, langchain-deepagents-weighted-evaluation.
+    Available templates: default, fastapi-python, react-typescript, nextjs-fullstack, react-fastapi-monorepo, python-library, nats-asyncio-service, langchain-deepagents, langchain-deepagents-orchestrator, langchain-deepagents-weighted-evaluation, dotnet-railway-fastendpoints.
     """
     # Merge the two options into a single value for _cmd_init
     copy_graphiti_value: Optional[str] = None

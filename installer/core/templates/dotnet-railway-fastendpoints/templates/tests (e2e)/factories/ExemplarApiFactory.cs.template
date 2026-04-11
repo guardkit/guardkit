@@ -1,0 +1,49 @@
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
+
+namespace {{Namespace}};
+
+/// <summary>
+/// WebApplicationFactory that starts the full Exemplar API against TestContainers infrastructure.
+/// Overrides DB connection string and Keycloak authority so the app under test uses the
+/// ephemeral containers rather than any locally configured services.
+/// </summary>
+public sealed class {{ClassName}} : WebApplicationFactory<Program>
+{
+    private readonly string _connectionString;
+    private readonly string _keycloakAuthority;
+
+    public {{ClassName}}(string connectionString, string keycloakAuthority)
+    {
+        _connectionString = connectionString;
+        _keycloakAuthority = keycloakAuthority;
+    }
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        // Run in Development so RequireHttpsMetadata = false (Keycloak container is HTTP).
+        builder.UseEnvironment("Development");
+
+        builder.ConfigureAppConfiguration((_, config) =>
+        {
+            config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                // Point at TestContainers PostgreSQL — DbUp migrations run here on startup.
+                ["ConnectionStrings:DefaultConnection"] = _connectionString,
+
+                // Point at TestContainers Keycloak — JWT validation uses this authority.
+                ["Authentication:Authority"] = _keycloakAuthority,
+                ["Authentication:Audience"]  = "exemplar-api", // {{TEMPLATE: KeycloakClientId}}
+                ["Authentication:ClientId"]  = "exemplar-api", // {{TEMPLATE: KeycloakClientId}}
+
+                // Disable OTLP export — no collector in the E2E test environment.
+                ["OTEL_EXPORTER_OTLP_ENDPOINT"] = string.Empty,
+
+                // Suppress Serilog OTLP sink by blanking the environment variable in config
+                // (Serilog reads from environment; set minimum level to avoid noise in tests).
+                ["Serilog:MinimumLevel:Default"] = "Warning",
+            });
+        });
+    }
+}

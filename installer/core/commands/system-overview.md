@@ -33,7 +33,7 @@ The `/system-overview` command provides a quick architectural summary of the cur
 
 ### Phase 1: Load Architecture Context
 
-**CHECK** Graphiti availability (see `lib/graphiti-preamble.md` Tier 1):
+**CHECK** Graphiti availability (see `docs/internals/commands-lib/graphiti-preamble.md` Tier 1):
 Read `.guardkit/graphiti.yaml` — if the file exists and `enabled: true`, set `graphiti_available = true`.
 Otherwise set `graphiti_available = false` and display the unavailability warning from the preamble. Continue — do not block.
 
@@ -268,7 +268,7 @@ for arg in args:
 
 ### Step 2: Check Graphiti Availability
 
-Follow the Tier 1 check from `lib/graphiti-preamble.md`:
+Follow the Tier 1 check from `docs/internals/commands-lib/graphiti-preamble.md`:
 Use the Read tool to read `.guardkit/graphiti.yaml`.
 If the file exists and `enabled: true`, set `graphiti_available = true`.
 Otherwise set `graphiti_available = false` and display the unavailability warning.

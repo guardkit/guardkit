@@ -40,7 +40,7 @@ The disambiguation flow used by `/arch-refine` is identical to that used by `/de
 
 Before starting the refinement session, `/arch-refine` MUST verify that architecture context exists. The command requires existing ADRs from `/system-arch` to refine.
 
-**Check Graphiti availability** (Tier 1 — see `lib/graphiti-preamble.md`):
+**Check Graphiti availability** (Tier 1 — see `docs/internals/commands-lib/graphiti-preamble.md`):
 
 Use the Read tool to read `.guardkit/graphiti.yaml`.
 - If the file exists and `enabled: true`: set `graphiti_available = true`
@@ -58,7 +58,7 @@ Check for architecture context:
 
 **Load existing ADRs and architecture context:**
 
-**Check Graphiti availability** (Tier 1 — see `lib/graphiti-preamble.md`):
+**Check Graphiti availability** (Tier 1 — see `docs/internals/commands-lib/graphiti-preamble.md`):
 Read `.guardkit/graphiti.yaml`. Set `graphiti_available` accordingly.
 
 Load existing ADRs:
@@ -413,7 +413,7 @@ writer.write_architecture_index(output_dir, system_context, components, concerns
 
 Upsert superseded and new episodes to Graphiti:
 
-If `graphiti_available` is true, run the Tier 2 connectivity check (see `lib/graphiti-preamble.md`).
+If `graphiti_available` is true, run the Tier 2 connectivity check (see `docs/internals/commands-lib/graphiti-preamble.md`).
 
 **Note on `sanitise_for_graphiti()`:** The `guardkit graphiti add-context` CLI command handles content sanitisation automatically — no manual sanitisation step is needed.
 
@@ -474,7 +474,7 @@ if not matches:
 
 ### Graphiti Unavailable
 
-When `graphiti_available = false`, display the unavailability warning from `lib/graphiti-preamble.md`:
+When `graphiti_available = false`, display the unavailability warning from `docs/internals/commands-lib/graphiti-preamble.md`:
 
 ```
 ⚠️  Graphiti unavailable — continuing without knowledge graph context.
@@ -708,7 +708,7 @@ if no_questions:
 
 ### Step 2: Initialize Graphiti and Prerequisite Check
 
-**Check Graphiti availability** (Tier 1 — see `lib/graphiti-preamble.md`):
+**Check Graphiti availability** (Tier 1 — see `docs/internals/commands-lib/graphiti-preamble.md`):
 
 Use the Read tool to read `.guardkit/graphiti.yaml`.
 - If `enabled: true`: set `graphiti_available = true`
@@ -815,7 +815,7 @@ if structure_changed:
 
 **Seed Graphiti** (if `graphiti_available` is true):
 
-Run the Tier 2 connectivity check from `lib/graphiti-preamble.md`, then generate and offer the seeding commands. The CLI handles sanitisation automatically.
+Run the Tier 2 connectivity check from `docs/internals/commands-lib/graphiti-preamble.md`, then generate and offer the seeding commands. The CLI handles sanitisation automatically.
 
 ```bash
 # Seed superseded ADR
@@ -884,7 +884,7 @@ Suggestions:
 """
 
 GRAPHITI_UNAVAILABLE_MESSAGE:
-Use the warning template from `lib/graphiti-preamble.md`. Additional context for architecture refinement:
+Use the warning template from `docs/internals/commands-lib/graphiti-preamble.md`. Additional context for architecture refinement:
 - Temporal superseding won't be tracked in knowledge graph
 - Staleness flagging won't propagate to downstream nodes
 - Impact analysis will be limited to local file scanning

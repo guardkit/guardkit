@@ -1,0 +1,92 @@
+id: FEAT-4396
+name: Template Pattern Layer — AutoBuild Player Context
+description: Inject relevant .template files from the project's source template into
+  the AutoBuild Player's context at build time, so generated code follows canonical
+  patterns.
+created: '2026-04-11T14:47:43.451040'
+status: planned
+complexity: 5
+estimated_tasks: 7
+tasks:
+- id: TASK-TPL-001
+  name: Extract template resolver into shared module
+  file_path: tasks/backlog/template-pattern-player-context/TASK-TPL-001-extract-template-resolver.md
+  complexity: 3
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+- id: TASK-TPL-002
+  name: Template pattern loader core
+  file_path: tasks/backlog/template-pattern-player-context/TASK-TPL-002-template-pattern-loader-core.md
+  complexity: 5
+  dependencies:
+  - TASK-TPL-001
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-TPL-003
+  name: Domain-hint selector
+  file_path: tasks/backlog/template-pattern-player-context/TASK-TPL-003-domain-hint-selector.md
+  complexity: 5
+  dependencies:
+  - TASK-TPL-002
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-TPL-004
+  name: Wire into AutoBuildContextLoader
+  file_path: tasks/backlog/template-pattern-player-context/TASK-TPL-004-wire-into-autobuild-context-loader.md
+  complexity: 4
+  dependencies:
+  - TASK-TPL-003
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-TPL-005
+  name: Unit tests
+  file_path: tasks/backlog/template-pattern-player-context/TASK-TPL-005-unit-tests.md
+  complexity: 4
+  dependencies:
+  - TASK-TPL-002
+  - TASK-TPL-003
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-TPL-006
+  name: Integration test
+  file_path: tasks/backlog/template-pattern-player-context/TASK-TPL-006-integration-test.md
+  complexity: 5
+  dependencies:
+  - TASK-TPL-004
+  - TASK-TPL-005
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-TPL-007
+  name: Documentation
+  file_path: tasks/backlog/template-pattern-player-context/TASK-TPL-007-documentation.md
+  complexity: 3
+  dependencies:
+  - TASK-TPL-004
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+orchestration:
+  parallel_groups:
+  - - TASK-TPL-001
+  - - TASK-TPL-002
+  - - TASK-TPL-003
+  - - TASK-TPL-004
+    - TASK-TPL-005
+  - - TASK-TPL-006
+    - TASK-TPL-007
+  estimated_duration_minutes: 391
+  recommended_parallel: 2

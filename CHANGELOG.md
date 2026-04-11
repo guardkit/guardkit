@@ -9,6 +9,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+#### Installer: Manifest-Driven CLI Symlinks (TASK-ISH-D09E)
+
+`installer/scripts/install.sh` no longer blindly walks `installer/core/commands/`
+and `installer/core/commands/lib/` and creates a `~/.agentecflow/bin/` symlink
+for every `.py` file it encounters. The walk is replaced by an explicit
+manifest at **`installer/core/commands/bin-entries.txt`** which is the sole
+source of truth for which Python scripts become user-facing CLI commands.
+
+**Why**: The old blind walk silently promoted ~60 internal library modules
+(`agent_discovery`, `task_breakdown`, `plan_modifier`, `phase_execution`, ...)
+to global shell commands even though they are imports, not CLI entry points.
+It also kept dead handlers for abandoned commands (e.g.
+`upfront_complexity_cli`) alive long after their slash-command counterparts
+were removed. The blind walk was the structural reason dead shims went
+unnoticed in the audits behind TASK-REV-C1B4.
+
+**What's still installed** (unchanged for users):
+
+- Top-level commands: `agent-enhance`, `agent-format`, `agent-validate`
+- Library-resident CLIs: `graphiti-diagnose`
+- Wrapper scripts (created by `create_cli_commands`, untouched by this change):
+  `guardkit`, `guardkit-init`, `gk`, `gki`, `graphiti-check`
+
+**What's removed on next reinstall** — 62 symlinks in `~/.agentecflow/bin/`
+that pointed at internal library modules and were never intended to be run
+from a shell. The full list (each is a `~/.agentecflow/bin/<name>` symlink
+pointing into `installer/core/commands/lib/`):
+
+```
+agent-discovery, agent-invocation-tracker, agent-invocation-validator,
+agent-utils, api-call-preview, breakdown-strategies, change-tracker,
+checkpoint-display, complexity-calculator, complexity-factors,
+complexity-models, constants, distribution-helpers, duplicate-detector,
+error-messages, feature-detection, flag-validator, generate-feature-yaml,
+git-state-helper, graphiti-context-loader, greenfield-qa-session,
+library-context, library-detector, micro-task-detector, micro-task-workflow,
+modification-applier, modification-persistence, modification-session,
+pager-display, phase-execution, phase-gate-validator, plan-audit,
+plan-markdown-parser, plan-markdown-renderer, plan-modifier, plan-persistence,
+qa-manager, refinement-handler, review-mode-executor, review-modes,
+review-report-generator, review-router, spec-drift-detector, split-models,
+task-breakdown, task-completion-helper, task-review-orchestrator,
+task-split-advisor, task-utils, template-create-orchestrator, template-merger,
+template-packager, template-qa-display, template-qa-persistence,
+template-qa-questions, template-qa-session, template-qa-validator,
+template-versioning, user-interaction, version-manager, visualization,
+worktree-cleanup
+```
+
+If you have shell history, scripts, or muscle memory invoking any of these
+as commands, they will stop resolving after the next reinstall. None of
+them have a documented public interface — they were never advertised as
+CLIs — so the migration path is to call the corresponding Python module
+via `python -m installer.core.commands.lib.<module_name>` or import it
+from a Python script.
+
+**Adding a new CLI**: create the script with a `main()` function or an
+`if __name__ == "__main__":` block, then add its repo-relative path to
+`installer/core/commands/bin-entries.txt` and re-run `install.sh`. Files
+not in the manifest still trigger an informational warning during install
+("File not in bin-entries.txt — will not be exposed as a CLI"), so drift
+is visible at install time.
+
+Builds on TASK-FIX-CF8D's prune pass (which removes the now-unlisted
+symlinks on reinstall).
+
+
 #### Template Overhaul
 
 Reduced template count from 10 to 8, removing low-quality templates based on comprehensive audit findings.

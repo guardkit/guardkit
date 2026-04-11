@@ -1,0 +1,71 @@
+using System.Collections.Concurrent;
+using Exemplar.Fleet.Models;
+
+namespace {{Namespace}};
+
+/// <summary>
+/// Thread-safe in-memory implementation of <see cref="IManifestRegistry"/>.
+/// Backed by a <see cref="ConcurrentDictionary{TKey,TValue}"/> keyed on agent_id.
+/// </summary>
+public sealed class {{ClassName}} : IManifestRegistry
+{
+    private readonly ConcurrentDictionary<string, AgentManifest> _manifests = new();
+
+    public void Register(AgentManifest manifest)
+        => _manifests[manifest.AgentId] = manifest;
+
+    public void Deregister(string agentId)
+        => _manifests.TryRemove(agentId, out _);
+
+    public AgentManifest? Get(string agentId)
+        => _manifests.TryGetValue(agentId, out var manifest) ? manifest : null;
+
+    public IReadOnlyList<AgentManifest> FindByIntent(string intentPattern)
+        => _manifests.Values
+            .Where(m => m.Intents.Any(i => MatchesGlob(i.Name, intentPattern)))
+            .ToList();
+
+    public IReadOnlyList<AgentManifest> FindByTool(string toolName)
+        => _manifests.Values
+            .Where(m => m.Tools.Any(t => string.Equals(t.Name, toolName, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+    public IReadOnlyList<AgentManifest> All()
+        => _manifests.Values.ToList();
+
+    // ── Glob matching ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Matches <paramref name="text"/> against a simple glob <paramref name="pattern"/>.
+    /// '*' matches any sequence of characters (including empty and across dots).
+    /// Comparison is case-insensitive.
+    /// </summary>
+    private static bool MatchesGlob(string text, string pattern)
+    {
+        if (pattern == "*") return true;
+        if (!pattern.Contains('*'))
+            return string.Equals(text, pattern, StringComparison.OrdinalIgnoreCase);
+
+        // Split on '*' and require each segment to appear in order within text.
+        var parts = pattern.Split('*');
+        var pos = 0;
+        for (var i = 0; i < parts.Length; i++)
+        {
+            var part = parts[i];
+            if (part.Length == 0) continue;
+
+            var idx = text.IndexOf(part, pos, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0) return false;
+
+            // Leading segment must start at beginning of text.
+            if (i == 0 && idx != 0) return false;
+
+            pos = idx + part.Length;
+        }
+
+        // Trailing segment must end at end of text when no trailing '*'.
+        if (!pattern.EndsWith('*') && pos != text.Length) return false;
+
+        return true;
+    }
+}

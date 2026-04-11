@@ -442,7 +442,7 @@ if mode == "switch":
         print("Add with: cd /path/to/project && guardkit init")
         return
 
-    # Check Graphiti availability (see lib/graphiti-preamble.md Tier 1)
+    # Check Graphiti availability (see docs/internals/commands-lib/graphiti-preamble.md Tier 1)
     # Read .guardkit/graphiti.yaml — if enabled: true, graphiti_available = true
     # Otherwise graphiti_available = false (display warning, continue)
 

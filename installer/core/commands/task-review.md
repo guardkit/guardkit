@@ -667,11 +667,11 @@ The `/task-review` command executes these phases automatically:
 **Skip Conditions**:
 - `--no-context` flag is set
 
-**Reference**: See `lib/graphiti-preamble.md` for the shared availability check pattern.
+**Reference**: See `docs/internals/commands-lib/graphiti-preamble.md` for the shared availability check pattern.
 
 **STEP 1: Check Graphiti Availability (Tier 0 → Tier 1 Fallback)**
 
-Follow the tiered availability check from `lib/graphiti-preamble.md`:
+Follow the tiered availability check from `docs/internals/commands-lib/graphiti-preamble.md`:
 
 **Tier 0 — MCP Tools (Preferred)**:
 
@@ -954,7 +954,7 @@ Your answer: _
 
 After the interactive capture session completes, persist the captured knowledge to the Graphiti knowledge graph. This step is non-blocking — capture session success is not affected by Graphiti write outcome.
 
-**Check Graphiti availability** (see `lib/graphiti-preamble.md` Tier 0):
+**Check Graphiti availability** (see `docs/internals/commands-lib/graphiti-preamble.md` Tier 0):
 
 **IF** `mcp__graphiti__add_memory` tool is available in the current session:
 

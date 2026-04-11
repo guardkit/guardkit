@@ -1,0 +1,149 @@
+{
+  "schema_version": "1.0.0",
+  "naming_conventions": {
+    "class": {
+      "element_type": "class",
+      "pattern": "{{Name}}",
+      "case_style": "PascalCase",
+      "prefix": null,
+      "suffix": ".cs",
+      "examples": [
+        "Result",
+        "ResultExtensions",
+        "BaseError",
+        "CustomerError",
+        "Customer"
+      ]
+    },
+    "interface": {
+      "element_type": "interface",
+      "pattern": "I{{Name}}",
+      "case_style": "PascalCase",
+      "prefix": "I",
+      "suffix": ".cs",
+      "examples": [
+        "Result",
+        "ResultExtensions"
+      ]
+    },
+    "method": {
+      "element_type": "method",
+      "pattern": "{{Name}}",
+      "case_style": "PascalCase",
+      "prefix": null,
+      "suffix": null,
+      "examples": [
+        "Result",
+        "ResultExtensions"
+      ]
+    },
+    "property": {
+      "element_type": "property",
+      "pattern": "{{Name}}",
+      "case_style": "PascalCase",
+      "prefix": null,
+      "suffix": null,
+      "examples": [
+        "Result",
+        "ResultExtensions"
+      ]
+    },
+    "field": {
+      "element_type": "field",
+      "pattern": "_{{name}}",
+      "case_style": "camelCase",
+      "prefix": "_",
+      "suffix": null,
+      "examples": []
+    }
+  },
+  "file_organization": {
+    "by_layer": true,
+    "by_feature": false,
+    "test_location": "adjacent",
+    "max_files_per_directory": 50
+  },
+  "layer_mappings": {
+    "Domain": {
+      "name": "Domain",
+      "directory": "src/{{ProjectName}}.Customers/Domain",
+      "namespace_pattern": "{{ProjectName}}.Domain.{{SubPath}}",
+      "file_patterns": [
+        "*.cs",
+        "!*Test.cs",
+        "!*Tests.cs"
+      ]
+    },
+    "Application": {
+      "name": "Application",
+      "directory": "src",
+      "namespace_pattern": "{{ProjectName}}.Application.{{SubPath}}",
+      "file_patterns": [
+        "*.cs",
+        "!*Test.cs",
+        "!*Tests.cs"
+      ]
+    },
+    "Infrastructure": {
+      "name": "Infrastructure",
+      "directory": "src/{{ProjectName}}.Customers/Infrastructure",
+      "namespace_pattern": "{{ProjectName}}.Infrastructure.{{SubPath}}",
+      "file_patterns": [
+        "*.cs",
+        "!*Test.cs",
+        "!*Tests.cs"
+      ]
+    },
+    "Endpoints": {
+      "name": "Endpoints",
+      "directory": "src",
+      "namespace_pattern": "{{ProjectName}}.Endpoints.{{SubPath}}",
+      "file_patterns": [
+        "*.cs",
+        "!*Test.cs",
+        "!*Tests.cs"
+      ]
+    },
+    "Cross-Cutting Core": {
+      "name": "Cross-Cutting Core",
+      "directory": "src/{{ProjectName}}.Core",
+      "namespace_pattern": "{{ProjectName}}.Cross-Cutting Core.{{SubPath}}",
+      "file_patterns": [
+        "*.cs",
+        "!*Test.cs",
+        "!*Tests.cs"
+      ]
+    },
+    "Contracts": {
+      "name": "Contracts",
+      "directory": "src/Contracts",
+      "namespace_pattern": "{{ProjectName}}.Contracts.{{SubPath}}",
+      "file_patterns": [
+        "*.cs",
+        "!*Test.cs",
+        "!*Tests.cs"
+      ]
+    },
+    "Fleet": {
+      "name": "Fleet",
+      "directory": "src/{{ProjectName}}.Fleet",
+      "namespace_pattern": "{{ProjectName}}.Fleet.{{SubPath}}",
+      "file_patterns": [
+        "*.cs",
+        "!*Test.cs",
+        "!*Tests.cs"
+      ]
+    }
+  },
+  "code_style": {
+    "indentation": "spaces",
+    "indent_size": 4,
+    "line_length": 120,
+    "trailing_commas": false
+  },
+  "generation_options": {
+    "preserve_comments": true,
+    "preserve_whitespace": true,
+    "auto_format": true
+  }
+}

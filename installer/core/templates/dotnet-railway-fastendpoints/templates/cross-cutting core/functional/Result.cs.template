@@ -1,0 +1,52 @@
+using Exemplar.Core.Errors;
+
+namespace {{Namespace}};
+
+/// <summary>
+/// Error-first Result wrapper over CSharpFunctionalExtensions.
+/// Consuming code never references CSharpFunctionalExtensions directly.
+/// </summary>
+public readonly struct Result<TError, TSuccess> where TError : BaseError
+{
+    private readonly CSharpFunctionalExtensions.Result<TSuccess, TError> _inner;
+
+    private Result(CSharpFunctionalExtensions.Result<TSuccess, TError> inner)
+        => _inner = inner;
+
+    public bool IsSuccess => _inner.IsSuccess;
+    public bool IsFailure => _inner.IsFailure;
+
+    public TSuccess Value => _inner.Value;
+    public TError Error => _inner.Error;
+
+    public static Result<TError, TSuccess> Success(TSuccess value)
+        => new(CSharpFunctionalExtensions.Result.Success<TSuccess, TError>(value));
+
+    public static Result<TError, TSuccess> Failure(TError error)
+        => new(CSharpFunctionalExtensions.Result.Failure<TSuccess, TError>(error));
+
+    public static implicit operator Result<TError, TSuccess>(TSuccess value)
+        => Success(value);
+
+    public static implicit operator Result<TError, TSuccess>(TError error)
+        => Failure(error);
+
+    public Result<TError, TNew> Map<TNew>(Func<TSuccess, TNew> mapper)
+        => IsSuccess
+            ? Result<TError, TNew>.Success(mapper(Value))
+            : Result<TError, TNew>.Failure(Error);
+
+    public Result<TError, TNew> Bind<TNew>(Func<TSuccess, Result<TError, TNew>> binder)
+        => IsSuccess
+            ? binder(Value)
+            : Result<TError, TNew>.Failure(Error);
+
+    public async Task<Result<TError, TNew>> BindAsync<TNew>(
+        Func<TSuccess, Task<Result<TError, TNew>>> binder)
+        => IsSuccess
+            ? await binder(Value)
+            : Result<TError, TNew>.Failure(Error);
+
+    public T Match<T>(Func<TSuccess, T> onSuccess, Func<TError, T> onFailure)
+        => IsSuccess ? onSuccess(Value) : onFailure(Error);
+}

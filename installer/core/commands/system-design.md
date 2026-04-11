@@ -41,7 +41,7 @@ Designs API contracts, data models, and multi-protocol surfaces per bounded cont
 
 Before starting the interactive session, `/system-design` MUST verify that architecture context exists. This ensures the design phase builds on established structural decisions rather than assumptions.
 
-**Check Graphiti availability** (Tier 1 — see `lib/graphiti-preamble.md`):
+**Check Graphiti availability** (Tier 1 — see `docs/internals/commands-lib/graphiti-preamble.md`):
 
 Use the Read tool to read `.guardkit/graphiti.yaml`. If the file exists and `enabled: true`, set `graphiti_available = true`. Otherwise set `graphiti_available = false` and display the unavailability warning — do **not** block the command.
 
@@ -65,7 +65,7 @@ Use the Read tool to read files from `docs/architecture/`:
 - Read any `docs/architecture/ADR-*.md` files to collect existing architecture decisions — store as `existing_adrs` for contradiction detection in Phase 2
 - Apply the `--focus` filter if specified to limit to one bounded context
 
-**Check Graphiti availability** (Tier 1 — see `lib/graphiti-preamble.md`):
+**Check Graphiti availability** (Tier 1 — see `docs/internals/commands-lib/graphiti-preamble.md`):
 
 Read `.guardkit/graphiti.yaml`. If `enabled: true`, set `graphiti_available = true`. Otherwise display the unavailability warning and continue with markdown artefacts only.
 
@@ -629,7 +629,7 @@ if openapi_path.exists():
 
 **Seed design artefacts into the knowledge graph (if available):**
 
-If `graphiti_available` is true, run the Tier 2 connectivity check from `lib/graphiti-preamble.md`.
+If `graphiti_available` is true, run the Tier 2 connectivity check from `docs/internals/commands-lib/graphiti-preamble.md`.
 
 If Graphiti is reachable, generate the following seeding commands and ask: `"Run these seeding commands now? [Y/n]"`. If yes, execute each via the Bash tool.
 
@@ -647,7 +647,7 @@ guardkit graphiti add-context docs/design/decisions/DDR-{NNN}.md \
   --group architecture_decisions
 ```
 
-If Graphiti is unavailable, display the standard warning from `lib/graphiti-preamble.md` and continue:
+If Graphiti is unavailable, display the standard warning from `docs/internals/commands-lib/graphiti-preamble.md` and continue:
 
 ```
 ⚠️  Graphiti unavailable — artefacts written to markdown only.
@@ -727,7 +727,7 @@ next_number = scan_next_ddr_number(decisions_dir)
 
 ### Graphiti Unavailable
 
-Follow the unavailability pattern from `lib/graphiti-preamble.md` — **do not block the command**.
+Follow the unavailability pattern from `docs/internals/commands-lib/graphiti-preamble.md` — **do not block the command**.
 
 Display the standard warning and continue:
 
@@ -1054,7 +1054,7 @@ When the user runs `/system-design`, you MUST execute these steps in order:
 
 ### Step 1: Prerequisite Check
 
-**Check Graphiti availability** (Tier 1 — see `lib/graphiti-preamble.md`):
+**Check Graphiti availability** (Tier 1 — see `docs/internals/commands-lib/graphiti-preamble.md`):
 
 Use the Read tool to read `.guardkit/graphiti.yaml`. Set `graphiti_available = true` if `enabled: true`, otherwise `false` — display the unavailability warning and continue.
 
@@ -1149,9 +1149,9 @@ for bc in bounded_contexts:
 
 ### Step 8: Graphiti Seeding
 
-If `graphiti_available` is true, run the Tier 2 connectivity check from `lib/graphiti-preamble.md`.
+If `graphiti_available` is true, run the Tier 2 connectivity check from `docs/internals/commands-lib/graphiti-preamble.md`.
 
-If Graphiti is reachable, generate and offer the seeding commands (see `lib/graphiti-preamble.md` — Seeding Commands Template):
+If Graphiti is reachable, generate and offer the seeding commands (see `docs/internals/commands-lib/graphiti-preamble.md` — Seeding Commands Template):
 
 ```bash
 # For each API contract file generated

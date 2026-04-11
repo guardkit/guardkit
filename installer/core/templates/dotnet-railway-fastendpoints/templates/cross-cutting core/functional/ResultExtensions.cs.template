@@ -1,0 +1,59 @@
+using Exemplar.Core.Errors;
+
+namespace {{Namespace}};
+
+public static class {{ClassName}}
+{
+    public static async Task<Result<TError, TNew>> MapAsync<TError, TSuccess, TNew>(
+        this Task<Result<TError, TSuccess>> resultTask,
+        Func<TSuccess, TNew> mapper)
+        where TError : BaseError
+    {
+        var result = await resultTask;
+        return result.Map(mapper);
+    }
+
+    public static async Task<Result<TError, TNew>> BindAsync<TError, TSuccess, TNew>(
+        this Task<Result<TError, TSuccess>> resultTask,
+        Func<TSuccess, Task<Result<TError, TNew>>> binder)
+        where TError : BaseError
+    {
+        var result = await resultTask;
+        return await result.BindAsync(binder);
+    }
+
+    /// <summary>
+    /// Transforms the error type while preserving the success value.
+    /// Used to adapt cross-BC result types (e.g. NotFoundError → CustomerNotFoundError).
+    /// </summary>
+    public static async Task<Result<TNewError, TSuccess>> MapErrorAsync<TError, TSuccess, TNewError>(
+        this Task<Result<TError, TSuccess>> resultTask,
+        Func<TError, TNewError> errorMapper)
+        where TError : BaseError
+        where TNewError : BaseError
+    {
+        var result = await resultTask;
+        return result.IsSuccess
+            ? Result<TNewError, TSuccess>.Success(result.Value)
+            : Result<TNewError, TSuccess>.Failure(errorMapper(result.Error));
+    }
+
+    /// <summary>
+    /// Runs a side-effect action on the success value without changing the result.
+    /// The action is awaited; exceptions are swallowed so that best-effort operations
+    /// (e.g. publishing a domain event) never cause the pipeline to fail.
+    /// </summary>
+    public static async Task<Result<TError, TSuccess>> TapAsync<TError, TSuccess>(
+        this Task<Result<TError, TSuccess>> resultTask,
+        Func<TSuccess, Task> action)
+        where TError : BaseError
+    {
+        var result = await resultTask;
+        if (result.IsSuccess)
+        {
+            try { await action(result.Value); }
+            catch (Exception) { /* best-effort side effect — failures do not affect the result */ }
+        }
+        return result;
+    }
+}

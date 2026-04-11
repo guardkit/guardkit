@@ -33,7 +33,7 @@ The command automatically detects the appropriate mode based on existing archite
 
 **Graceful Degradation**: If Graphiti is unavailable, defaults to `setup` mode without persistence.
 
-**Check Graphiti availability** (see `lib/graphiti-preamble.md` Tier 1):
+**Check Graphiti availability** (see `docs/internals/commands-lib/graphiti-preamble.md` Tier 1):
 Use the Read tool to read `.guardkit/graphiti.yaml`. If the file exists and `enabled: true`, set `graphiti_available = true`. Otherwise set `graphiti_available = false` and display the unavailability warning — continue without persistence.
 
 **Auto-detect mode via local file existence:**
@@ -49,7 +49,7 @@ Apply user `--mode` override if provided.
 
 **Load existing architecture context and validate prerequisites:**
 
-**Check Graphiti availability** (see `lib/graphiti-preamble.md` Tier 1):
+**Check Graphiti availability** (see `docs/internals/commands-lib/graphiti-preamble.md` Tier 1):
 Use the Read tool to read `.guardkit/graphiti.yaml`. If `enabled: true`, set `graphiti_available = true`. Otherwise set `graphiti_available = false` and display the unavailability warning — continue without persistence.
 
 **Detect mode via local file existence:**
@@ -126,7 +126,7 @@ Your choice [C/R/S/A]:
 
 **Graphiti Persistence (after checkpoint):**
 
-If `graphiti_available` is true, run the Tier 2 connectivity check from `lib/graphiti-preamble.md`, then seed the captured domain context:
+If `graphiti_available` is true, run the Tier 2 connectivity check from `docs/internals/commands-lib/graphiti-preamble.md`, then seed the captured domain context:
 
 ```bash
 guardkit graphiti add-context docs/architecture/domain-model.md \
@@ -178,7 +178,7 @@ Domain events: DonorCreated, LPAFiled, TransactionFlagged
 
 **Graphiti Persistence:**
 
-If `graphiti_available` is true, run the Tier 2 connectivity check from `lib/graphiti-preamble.md`, then seed the captured components context:
+If `graphiti_available` is true, run the Tier 2 connectivity check from `docs/internals/commands-lib/graphiti-preamble.md`, then seed the captured components context:
 
 ```bash
 guardkit graphiti add-context docs/architecture/domain-model.md \
@@ -286,7 +286,7 @@ Captured 4 concerns:
 
 **Graphiti Persistence:**
 
-If `graphiti_available` is true, run the Tier 2 connectivity check from `lib/graphiti-preamble.md`, then seed the captured cross-cutting concerns:
+If `graphiti_available` is true, run the Tier 2 connectivity check from `docs/internals/commands-lib/graphiti-preamble.md`, then seed the captured cross-cutting concerns:
 
 ```bash
 guardkit graphiti add-context docs/architecture/ARCHITECTURE.md \
@@ -515,7 +515,7 @@ Seed all artefacts into Graphiti knowledge graph for downstream command consumpt
 | Cross-cutting concerns | `project_architecture` |
 | Assumptions | `project_architecture` |
 
-If `graphiti_available` is true, run the Tier 2 connectivity check from `lib/graphiti-preamble.md`, then generate and offer the following seeding commands:
+If `graphiti_available` is true, run the Tier 2 connectivity check from `docs/internals/commands-lib/graphiti-preamble.md`, then generate and offer the following seeding commands:
 
 ```bash
 # Bounded contexts, components, cross-cutting concerns, assumptions → project_architecture
@@ -598,7 +598,7 @@ if not description or not description.strip():
 
 ### Graphiti Unavailable
 
-Display the standard unavailability warning from `lib/graphiti-preamble.md`:
+Display the standard unavailability warning from `docs/internals/commands-lib/graphiti-preamble.md`:
 
 ```
 ⚠️  Graphiti unavailable — continuing without knowledge graph context.
@@ -898,7 +898,7 @@ if no_questions:
 
 ### Step 2: Check Graphiti Availability
 
-Follow the Tier 1 check from `lib/graphiti-preamble.md`:
+Follow the Tier 1 check from `docs/internals/commands-lib/graphiti-preamble.md`:
 Use the Read tool to read `.guardkit/graphiti.yaml`.
 - IF the file exists and `enabled: true`: set `graphiti_available = true`
 - ELSE: set `graphiti_available = false`, display the unavailability warning, and ask:
@@ -971,7 +971,7 @@ Use the Glob tool to scan `docs/architecture/decisions/ADR-ARCH-*.md` to determi
 
 ### Step 7: Seed to Graphiti
 
-If `graphiti_available` is true, run the Tier 2 connectivity check from `lib/graphiti-preamble.md`, then generate and offer the seeding commands:
+If `graphiti_available` is true, run the Tier 2 connectivity check from `docs/internals/commands-lib/graphiti-preamble.md`, then generate and offer the seeding commands:
 
 ```bash
 # Bounded contexts, components, cross-cutting concerns → project_architecture

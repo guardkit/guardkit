@@ -1,0 +1,53 @@
+# GuardKit CLI manifest
+#
+# This file is the SOLE source of truth for which Python scripts under
+# installer/core/commands/ should be exposed as user-facing shell commands
+# in ~/.agentecflow/bin/ by install.sh.
+#
+# Format
+# ------
+#   * One path per line, relative to the repository root.
+#   * Lines starting with '#' and blank lines are ignored.
+#   * Each listed file becomes a symlink in ~/.agentecflow/bin/ with name
+#     equal to the basename (without .py) with underscores replaced by hyphens.
+#     Example: installer/core/commands/lib/graphiti_diagnose.py -> graphiti-diagnose
+#
+# Why a manifest?
+# ---------------
+# Prior to TASK-ISH-D09E, install.sh blindly walked installer/core/commands/
+# and installer/core/commands/lib/ and created a global shell command for
+# every .py file it found. This silently promoted ~60 internal library
+# modules (agent_discovery, task_breakdown, plan_modifier, ...) to global
+# CLI commands even though they are imported, never invoked from a shell.
+# It also kept dead handlers for abandoned commands alive long after their
+# slash-command counterparts were removed.
+#
+# To add a new CLI command:
+#   1. Create the script with a main() function or `if __name__ == "__main__":`.
+#   2. Add its repo-relative path to this file.
+#   3. Re-run installer/scripts/install.sh.
+#
+# To deprecate a CLI command:
+#   1. Remove its line from this file (or comment it out with #).
+#   2. Re-run install.sh — the prune pass added by TASK-FIX-CF8D will
+#      remove the stale symlink for any user who reinstalls.
+#
+# Files NOT listed here will trigger an informational warning during
+# install (see setup_python_bin_symlinks in install.sh) but will NOT be
+# exposed as CLI commands. Library modules under commands/lib/ are the
+# expected case for that warning.
+#
+# Files with dedicated wrapper scripts (created in create_cli_commands)
+# must NOT be listed here, or the symlink will collide with the wrapper:
+#   - graphiti_check.py     (wrapper: ~/.agentecflow/bin/graphiti-check)
+# ----------------------------------------------------------------------
+
+# --- Top-level commands (installer/core/commands/) ---
+installer/core/commands/agent-enhance.py
+installer/core/commands/agent-format.py
+installer/core/commands/agent-validate.py
+
+# --- Library-resident CLIs (installer/core/commands/lib/) ---
+# Diagnostic helper for verifying Graphiti / FalkorDB connectivity from
+# any project directory. Kept by TASK-FIX-8B4F.
+installer/core/commands/lib/graphiti_diagnose.py

@@ -1,0 +1,202 @@
+using Exemplar.Core.Functional;
+using Exemplar.Customers.Application;
+using Exemplar.Customers.Domain;
+using Exemplar.Customers.Domain.Errors;
+using Exemplar.Customers.Infrastructure;
+using FluentAssertions;
+using NSubstitute;
+using Xunit;
+
+namespace {{Namespace}};
+
+public class {{ClassName}}
+{
+    private readonly ICustomerRepository _repo = Substitute.For<ICustomerRepository>();
+    private readonly CustomerService _sut;
+
+    public {{ClassName}}() => _sut = new CustomerService(_repo);
+
+    // ── GetByIdAsync ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetByIdAsync_WhenCustomerExists_ReturnsDto()
+    {
+        var customer = MakeActiveCustomer();
+        _repo.GetByIdAsync(customer.Id, default)
+             .Returns(Result<CustomerError, {{EntityName}}>.Success(customer));
+
+        var result = await _sut.GetByIdAsync(customer.Id, default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Id.Should().Be(customer.Id);
+        result.Value.Name.Should().Be(customer.Name);
+        result.Value.Email.Should().Be(customer.Email);
+        result.Value.Status.Should().Be(CustomerStatus.Active.ToString());
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_WhenNotFound_ReturnsNotFoundError()
+    {
+        var id = Guid.NewGuid();
+        _repo.GetByIdAsync(id, default)
+             .Returns(CustomerError.NotFound(id));
+
+        var result = await _sut.GetByIdAsync(id, default);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Kind.Should().Be(CustomerErrorKind.NotFound);
+    }
+
+    // ── GetAllAsync ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetAllAsync_ReturnsAllCustomersAsDtos()
+    {
+        var customers = new List<{{EntityName}}> { MakeActiveCustomer(), MakeActiveCustomer() };
+        _repo.GetAllAsync(default)
+             .Returns(Result<CustomerError, IReadOnlyList<{{EntityName}}>>.Success(customers));
+
+        var result = await _sut.GetAllAsync(default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(2);
+    }
+
+    // ── CreateCustomerAsync ────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CreateCustomerAsync_WhenEmailFree_InsertsAndReturnsDto()
+    {
+        var request = new CreateCustomerRequest("Alice Smith", "alice@example.com");
+        _repo.EmailExistsAsync(request.Email, default)
+             .Returns(Result<CustomerError, bool>.Success(false));
+        _repo.InsertAsync(Arg.Any<{{EntityName}}>(), default)
+             .Returns(ci =>
+             {
+                 var c = ci.Arg<{{EntityName}}>();
+                 return Result<CustomerError, {{EntityName}}>.Success(c);
+             });
+
+        var result = await _sut.CreateCustomerAsync(request, default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Name.Should().Be("Alice Smith");
+        result.Value.Email.Should().Be("alice@example.com");
+        result.Value.Status.Should().Be(CustomerStatus.Active.ToString());
+    }
+
+    [Fact]
+    public async Task CreateCustomerAsync_WhenEmailTaken_ReturnsEmailAlreadyExistsError()
+    {
+        var request = new CreateCustomerRequest("Bob", "taken@example.com");
+        _repo.EmailExistsAsync(request.Email, default)
+             .Returns(Result<CustomerError, bool>.Success(true));
+
+        var result = await _sut.CreateCustomerAsync(request, default);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Kind.Should().Be(CustomerErrorKind.EmailAlreadyExists);
+        await _repo.DidNotReceive().InsertAsync(Arg.Any<{{EntityName}}>(), default);
+    }
+
+    [Fact]
+    public async Task CreateCustomerAsync_WhenRepoUnavailable_ReturnsRepositoryUnavailableError()
+    {
+        var request = new CreateCustomerRequest("Charlie", "charlie@example.com");
+        _repo.EmailExistsAsync(request.Email, default)
+             .Returns(CustomerError.RepositoryUnavailable(new Exception("db down")));
+
+        var result = await _sut.CreateCustomerAsync(request, default);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Kind.Should().Be(CustomerErrorKind.RepositoryUnavailable);
+        await _repo.DidNotReceive().InsertAsync(Arg.Any<{{EntityName}}>(), default);
+    }
+
+    // ── DeactivateCustomerAsync ────────────────────────────────────────────────
+
+    [Fact]
+    public async Task DeactivateCustomerAsync_WhenActive_SetsStatusInactiveAndReturnsDto()
+    {
+        var customer = MakeActiveCustomer();
+        _repo.GetByIdAsync(customer.Id, default)
+             .Returns(Result<CustomerError, {{EntityName}}>.Success(customer));
+        _repo.UpdateAsync(Arg.Any<{{EntityName}}>(), default)
+             .Returns(ci =>
+             {
+                 var updated = ci.Arg<{{EntityName}}>();
+                 return Result<CustomerError, {{EntityName}}>.Success(updated);
+             });
+
+        var result = await _sut.DeactivateCustomerAsync(customer.Id, default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(CustomerStatus.Inactive.ToString());
+    }
+
+    [Fact]
+    public async Task DeactivateCustomerAsync_WhenAlreadyInactive_ReturnsAlreadyInactiveError()
+    {
+        var customer = MakeInactiveCustomer();
+        _repo.GetByIdAsync(customer.Id, default)
+             .Returns(Result<CustomerError, {{EntityName}}>.Success(customer));
+
+        var result = await _sut.DeactivateCustomerAsync(customer.Id, default);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Kind.Should().Be(CustomerErrorKind.AlreadyInactive);
+        await _repo.DidNotReceive().UpdateAsync(Arg.Any<{{EntityName}}>(), default);
+    }
+
+    [Fact]
+    public async Task DeactivateCustomerAsync_WhenNotFound_ReturnsNotFoundError()
+    {
+        var id = Guid.NewGuid();
+        _repo.GetByIdAsync(id, default)
+             .Returns(CustomerError.NotFound(id));
+
+        var result = await _sut.DeactivateCustomerAsync(id, default);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Kind.Should().Be(CustomerErrorKind.NotFound);
+    }
+
+    // ── FindByIdAsync (ICustomerLookup) ────────────────────────────────────────
+
+    [Fact]
+    public async Task FindByIdAsync_WhenFound_ReturnsSummaryDto()
+    {
+        var customer = MakeActiveCustomer();
+        _repo.GetByIdAsync(customer.Id, default)
+             .Returns(Result<CustomerError, {{EntityName}}>.Success(customer));
+
+        var result = await _sut.FindByIdAsync(customer.Id, default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Id.Should().Be(customer.Id);
+        result.Value.Name.Should().Be(customer.Name);
+    }
+
+    [Fact]
+    public async Task FindByIdAsync_WhenNotFound_ReturnsNotFoundError()
+    {
+        var id = Guid.NewGuid();
+        _repo.GetByIdAsync(id, default)
+             .Returns(CustomerError.NotFound(id));
+
+        var result = await _sut.FindByIdAsync(id, default);
+
+        result.IsFailure.Should().BeTrue();
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+
+    private static {{EntityName}} MakeActiveCustomer() => {{EntityName}}.Create(
+        "Test {{EntityName}}", $"test-{Guid.NewGuid():N}@example.com");
+
+    private static {{EntityName}} MakeInactiveCustomer()
+    {
+        var c = {{EntityName}}.Create("Inactive", $"inactive-{Guid.NewGuid():N}@example.com");
+        return c.Deactivate();
+    }
+}

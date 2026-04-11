@@ -36,12 +36,12 @@ The command automatically detects the appropriate mode based on existing archite
 
 ### Phase 0: Context Loading (All Modes)
 
-**Check Graphiti availability** (Tier 1 — see `lib/graphiti-preamble.md`):
+**Check Graphiti availability** (Tier 1 — see `docs/internals/commands-lib/graphiti-preamble.md`):
 
 Use the Read tool to read `.guardkit/graphiti.yaml`.
 
 - **IF** the file exists and contains `enabled: true`: set `graphiti_available = true`
-- **IF** the file does not exist, or `enabled:` is `false` or missing: set `graphiti_available = false`, display the unavailability warning from `lib/graphiti-preamble.md`, continue without persistence
+- **IF** the file does not exist, or `enabled:` is `false` or missing: set `graphiti_available = false`, display the unavailability warning from `docs/internals/commands-lib/graphiti-preamble.md`, continue without persistence
 
 **Auto-detect mode** (if not overridden by `--mode` flag):
 
@@ -143,7 +143,7 @@ Status: [A]ccepted / [P]roposed / [D]eprecated / [S]uperseded
 
 **Graphiti Persistence (after session completes):**
 
-If `graphiti_available` is true, seed the generated markdown artefacts to Graphiti using CLI commands (see Step 6 and `lib/graphiti-preamble.md` Seeding Commands Template). The interactive session takes priority — do not interrupt categories for seeding. Batch seeding happens after all artefacts are written to `docs/architecture/`.
+If `graphiti_available` is true, seed the generated markdown artefacts to Graphiti using CLI commands (see Step 6 and `docs/internals/commands-lib/graphiti-preamble.md` Seeding Commands Template). The interactive session takes priority — do not interrupt categories for seeding. Batch seeding happens after all artefacts are written to `docs/architecture/`.
 
 #### Refine Mode Flow
 
@@ -387,7 +387,7 @@ _Look for: circular dependencies, components with too many inbound arrows (high 
 
 **Seed generated artefacts to Graphiti (if available):**
 
-If `graphiti_available` is true, run the Tier 2 connectivity check from `lib/graphiti-preamble.md`, then generate and offer seeding commands:
+If `graphiti_available` is true, run the Tier 2 connectivity check from `docs/internals/commands-lib/graphiti-preamble.md`, then generate and offer seeding commands:
 
 ```bash
 guardkit graphiti add-context docs/architecture/ARCHITECTURE.md \
@@ -408,7 +408,7 @@ Ask the user: `"Seed architecture artefacts to Graphiti now? [Y/n]"`
 
 If yes, execute each via the Bash tool. Display: `✓ All architecture artefacts seeded to Graphiti`
 
-If `graphiti_available` is false, skip seeding and display the unavailability warning from `lib/graphiti-preamble.md`.
+If `graphiti_available` is false, skip seeding and display the unavailability warning from `docs/internals/commands-lib/graphiti-preamble.md`.
 
 ## Methodology-Specific Question Gating
 
@@ -503,7 +503,7 @@ for context_file in context_files:
 
 ### Graphiti Unavailable
 
-If `graphiti_available` is false (detected via Tier 1 Read check in Phase 0 — see `lib/graphiti-preamble.md`), display the standard unavailability warning from `lib/graphiti-preamble.md` and continue. Architecture planning proceeds normally — markdown artefacts are still generated, but won't be queryable by `/feature-plan` or AutoBuild coach.
+If `graphiti_available` is false (detected via Tier 1 Read check in Phase 0 — see `docs/internals/commands-lib/graphiti-preamble.md`), display the standard unavailability warning from `docs/internals/commands-lib/graphiti-preamble.md` and continue. Architecture planning proceeds normally — markdown artefacts are still generated, but won't be queryable by `/feature-plan` or AutoBuild coach.
 
 ### Empty Answers
 
@@ -711,12 +711,12 @@ context_files = flags.get("context", [])
 
 ### Step 2: Check Graphiti Availability
 
-Follow the Tier 1 check from `lib/graphiti-preamble.md`:
+Follow the Tier 1 check from `docs/internals/commands-lib/graphiti-preamble.md`:
 
 Use the Read tool to read `.guardkit/graphiti.yaml`.
 
 - **IF** file exists and `enabled: true`: set `graphiti_available = true`
-- **IF** file missing or disabled: set `graphiti_available = false`, display the unavailability warning from `lib/graphiti-preamble.md`, continue without persistence
+- **IF** file missing or disabled: set `graphiti_available = false`, display the unavailability warning from `docs/internals/commands-lib/graphiti-preamble.md`, continue without persistence
 
 ### Step 3: Auto-Detect Mode (if not specified)
 
@@ -895,7 +895,7 @@ print(f"      └── ... {len(decisions)} ADRs")
 
 ### Step 6: Seed to Graphiti (if available)
 
-If `graphiti_available` is true, run the Tier 2 connectivity check from `lib/graphiti-preamble.md`, then generate and offer seeding commands for the artefacts written to `docs/architecture/`:
+If `graphiti_available` is true, run the Tier 2 connectivity check from `docs/internals/commands-lib/graphiti-preamble.md`, then generate and offer seeding commands for the artefacts written to `docs/architecture/`:
 
 ```bash
 guardkit graphiti add-context docs/architecture/ARCHITECTURE.md \
@@ -938,7 +938,7 @@ DO NOT:
 
 ### Error Handling
 
-- **Graphiti unavailable**: If `graphiti_available` is false (from Step 2 Read check), display the standard warning from `lib/graphiti-preamble.md` and continue. Do not block the session.
+- **Graphiti unavailable**: If `graphiti_available` is false (from Step 2 Read check), display the standard warning from `docs/internals/commands-lib/graphiti-preamble.md` and continue. Do not block the session.
 
 - **Empty answer**: If the user provides an empty answer, use `[To be defined]` as a placeholder and continue.
 

@@ -1,0 +1,40 @@
+using Exemplar.Core.Errors;
+using Microsoft.AspNetCore.Http;
+
+namespace {{Namespace}}; // {{TEMPLATE: ProjectName}}.Customers.Domain.Errors
+
+/// <summary>
+/// Pattern A: enum-discriminated error with static factories.
+/// StatusCode is derived from Kind via a switch expression.
+/// </summary>
+public record {{RecordName}}(string Message, CustomerErrorKind Kind) : BaseError(Message) // {{TEMPLATE: DomainName}}Error
+{
+    public override int StatusCode => Kind switch
+    {
+        CustomerErrorKind.NotFound            => StatusCodes.Status404NotFound,
+        CustomerErrorKind.EmailAlreadyExists  => StatusCodes.Status409Conflict,
+        CustomerErrorKind.AlreadyInactive     => StatusCodes.Status409Conflict,
+        _                                     => StatusCodes.Status500InternalServerError
+    };
+
+    public override string? ErrorCode => Kind switch
+    {
+        CustomerErrorKind.NotFound            => "CUSTOMER_NOT_FOUND",
+        CustomerErrorKind.EmailAlreadyExists  => "CUSTOMER_EMAIL_EXISTS",
+        CustomerErrorKind.AlreadyInactive     => "CUSTOMER_ALREADY_INACTIVE",
+        _                                     => null
+    };
+
+    public static {{RecordName}} NotFound(Guid id)
+        => new($"{{EntityName}} {id} not found", CustomerErrorKind.NotFound);
+
+    public static {{RecordName}} EmailAlreadyExists(string email)
+        => new($"Email {email} is already registered", CustomerErrorKind.EmailAlreadyExists);
+
+    public static {{RecordName}} AlreadyInactive(Guid id)
+        => new($"{{EntityName}} {id} is already inactive", CustomerErrorKind.AlreadyInactive);
+
+    public static {{RecordName}} RepositoryUnavailable(Exception ex)
+        => new("{{EntityName}} data store unavailable", CustomerErrorKind.RepositoryUnavailable)
+           { InnerException = ex };
+}
