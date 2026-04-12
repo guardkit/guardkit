@@ -2270,7 +2270,7 @@ class CoachValidator:
         # Build promise map: criterion_id -> promise dict
         promise_map: Dict[str, Dict[str, Any]] = {}
         for p in completion_promises:
-            cid = p.get("criterion_id", "")
+            cid = p.get("criterion_id") or p.get("ac_id", "")
             if cid:
                 promise_map[cid] = p
 

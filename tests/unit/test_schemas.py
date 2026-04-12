@@ -237,6 +237,64 @@ class TestCompletionPromise:
 
         assert promise.status == CriterionStatus.INCOMPLETE
 
+    def test_from_dict_ac_id_fallback(self):
+        """CompletionPromise.from_dict() falls back to ac_id when criterion_id is absent."""
+        data = {
+            "ac_id": "AC-001",
+            "criterion_text": "OAuth flow works",
+            "status": "complete",
+            "evidence": "Implemented in oauth.py",
+        }
+        promise = CompletionPromise.from_dict(data)
+        assert promise.criterion_id == "AC-001"
+
+    def test_from_dict_ac_id_fallback_when_criterion_id_empty(self):
+        """CompletionPromise.from_dict() falls back to ac_id when criterion_id is empty string."""
+        data = {
+            "criterion_id": "",
+            "ac_id": "AC-002",
+            "criterion_text": "Token refresh",
+            "status": "complete",
+            "evidence": "Done",
+        }
+        promise = CompletionPromise.from_dict(data)
+        assert promise.criterion_id == "AC-002"
+
+    def test_from_dict_criterion_id_preferred_over_ac_id(self):
+        """CompletionPromise.from_dict() prefers criterion_id over ac_id when both present."""
+        data = {
+            "criterion_id": "AC-001",
+            "ac_id": "AC-099",
+            "criterion_text": "Test",
+            "status": "complete",
+            "evidence": "Done",
+        }
+        promise = CompletionPromise.from_dict(data)
+        assert promise.criterion_id == "AC-001"
+
+    def test_from_dict_description_fallback(self):
+        """CompletionPromise.from_dict() falls back to description when criterion_text is absent."""
+        data = {
+            "criterion_id": "AC-001",
+            "description": "OAuth flow works",
+            "status": "complete",
+            "evidence": "Done",
+        }
+        promise = CompletionPromise.from_dict(data)
+        assert promise.criterion_text == "OAuth flow works"
+
+    def test_from_dict_description_fallback_when_criterion_text_empty(self):
+        """CompletionPromise.from_dict() falls back to description when criterion_text is empty."""
+        data = {
+            "criterion_id": "AC-001",
+            "criterion_text": "",
+            "description": "Fallback text",
+            "status": "complete",
+            "evidence": "Done",
+        }
+        promise = CompletionPromise.from_dict(data)
+        assert promise.criterion_text == "Fallback text"
+
     def test_roundtrip(self, sample_promise):
         """CompletionPromise round-trips through to_dict/from_dict."""
         data = sample_promise.to_dict()

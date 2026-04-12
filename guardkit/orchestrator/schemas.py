@@ -43,6 +43,14 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# Canonical status alias map — normalizes common LLM synonyms to enum values.
+# Imported by coach_validator to keep a single source of truth.
+STATUS_ALIASES: Dict[str, str] = {
+    "done": "complete",
+    "finished": "complete",
+    "completed": "complete",
+}
+
 
 class CriterionStatus(str, Enum):
     """Status of a completion promise for a criterion.
@@ -146,6 +154,8 @@ class CompletionPromise:
             'AC-001'
         """
         raw_status = data.get("status", "incomplete")
+        # Normalize common synonyms before enum construction
+        raw_status = STATUS_ALIASES.get(raw_status, raw_status)
         try:
             status = CriterionStatus(raw_status)
         except ValueError:
@@ -154,8 +164,8 @@ class CompletionPromise:
             )
             status = CriterionStatus.INCOMPLETE
         return cls(
-            criterion_id=data.get("criterion_id", ""),
-            criterion_text=data.get("criterion_text", ""),
+            criterion_id=data.get("criterion_id") or data.get("ac_id", ""),
+            criterion_text=data.get("criterion_text") or data.get("description", ""),
             status=status,
             evidence=data.get("evidence", ""),
             test_file=data.get("test_file"),
@@ -346,6 +356,7 @@ def format_verification_summary(verifications: List[CriterionVerification]) -> s
 # ============================================================================
 
 __all__ = [
+    "STATUS_ALIASES",
     "CriterionStatus",
     "VerificationResult",
     "CompletionPromise",

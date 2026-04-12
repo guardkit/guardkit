@@ -4046,6 +4046,39 @@ class TestCompletionPromisesMatching:
         assert validation.criteria_total == 0
         assert validation.all_criteria_met is True
 
+    def test_promises_with_ac_id_fallback(self, tmp_worktree):
+        """TASK-PSN-001: Promises using ac_id instead of criterion_id are matched."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature A", "Feature B"])
+        results = {
+            "completion_promises": [
+                {"ac_id": "AC-001", "status": "complete", "evidence": "Done A"},
+                {"ac_id": "AC-002", "status": "complete", "evidence": "Done B"},
+            ],
+        }
+
+        validation = validator.validate_requirements(task, results)
+
+        assert validation.all_criteria_met is True
+        assert validation.criteria_met == 2
+        assert all(cr.status == "verified" for cr in validation.criteria_results)
+
+    def test_promises_mixed_criterion_id_and_ac_id(self, tmp_worktree):
+        """TASK-PSN-001: Mix of criterion_id and ac_id fields both match correctly."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature A", "Feature B"])
+        results = {
+            "completion_promises": [
+                {"criterion_id": "AC-001", "status": "complete", "evidence": "Done A"},
+                {"ac_id": "AC-002", "status": "complete", "evidence": "Done B"},
+            ],
+        }
+
+        validation = validator.validate_requirements(task, results)
+
+        assert validation.all_criteria_met is True
+        assert validation.criteria_met == 2
+
 
 # ============================================================================
 # Test Seam Test Recommendation (TASK-SFT-009)
