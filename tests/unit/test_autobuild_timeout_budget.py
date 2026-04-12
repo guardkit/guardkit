@@ -114,6 +114,11 @@ def _make_orchestrator(
     orchestrator.enable_checkpoints = False
     orchestrator.rollback_on_pollution = False
     orchestrator._cancellation_event = cancellation_event
+    orchestrator._timeout_event = None
+    orchestrator._task_timeout = None
+    orchestrator._cumulative_source_files = set()
+    orchestrator._cumulative_requirements_addressed = set()
+    orchestrator.wave_size = 1
     orchestrator._turn_history = []
     orchestrator._feature_id = None
     orchestrator._max_criteria_passed = 0
@@ -365,6 +370,7 @@ class TestLoopPhaseBudgetExhaustion:
             mock_turn.decision = "approve"
             mock_turn.feedback = None
             mock_turn.is_configuration_error = False
+            mock_turn.player_result = Mock(error=None)
             mock_execute.return_value = mock_turn
 
             with patch.object(orchestrator, "_capture_turn_state"):
@@ -393,6 +399,7 @@ class TestLoopPhaseBudgetExhaustion:
             mock_turn.decision = "approve"
             mock_turn.feedback = None
             mock_turn.is_configuration_error = False
+            mock_turn.player_result = Mock(error=None)
             mock_execute.return_value = mock_turn
 
             with patch.object(orchestrator, "_capture_turn_state"):
@@ -420,6 +427,7 @@ class TestLoopPhaseBudgetExhaustion:
             mock_turn.decision = "feedback"  # Needs another turn
             mock_turn.feedback = "try harder"
             mock_turn.is_configuration_error = False
+            mock_turn.player_result = Mock(error=None)
             return mock_turn
 
         with patch.object(orchestrator, "_execute_turn", side_effect=execute_turn_side_effect):
@@ -613,6 +621,7 @@ class TestApprovalBeforeCancellationCheck:
             mock_turn.decision = "approve"
             mock_turn.feedback = None
             mock_turn.is_configuration_error = False
+            mock_turn.player_result = Mock(error=None)
             return mock_turn
 
         with patch.object(orchestrator, "_execute_turn", side_effect=execute_turn_side_effect):
@@ -642,6 +651,7 @@ class TestApprovalBeforeCancellationCheck:
             mock_turn.decision = "feedback"
             mock_turn.feedback = "need more tests"
             mock_turn.is_configuration_error = False
+            mock_turn.player_result = Mock(error=None)
             return mock_turn
 
         with patch.object(orchestrator, "_execute_turn", side_effect=execute_turn_side_effect):
@@ -686,6 +696,8 @@ class TestFeatureOrchestratorBudgetPropagation:
         fo.sdk_timeout = None
         fo.timeout_multiplier = 1.0
         fo.stop_on_failure = False
+        fo.task_log_interval = 60
+        fo._emitter = Mock()
         fo._wave_display = None
         fo._worktree_manager = Mock()
 

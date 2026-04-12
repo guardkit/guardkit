@@ -284,7 +284,7 @@ class TestInvokeWithRoleConfig:
                 pass
 
         assert captured.get("max_turns") == TASK_WORK_SDK_MAX_TURNS
-        assert captured.get("max_turns") == 50
+        assert captured.get("max_turns") == 100
 
 
 # ============================================================================
@@ -653,9 +653,9 @@ class TestInteractivePathNoRegression:
         """MAX_SDK_TIMEOUT is 3600 seconds (1 hour)."""
         assert MAX_SDK_TIMEOUT == 3600
 
-    def test_task_work_sdk_max_turns_is_50(self):
-        """TASK_WORK_SDK_MAX_TURNS is 50."""
-        assert TASK_WORK_SDK_MAX_TURNS == 50
+    def test_task_work_sdk_max_turns_is_100(self):
+        """TASK_WORK_SDK_MAX_TURNS is 100 (TASK-FIX-ASPF-005)."""
+        assert TASK_WORK_SDK_MAX_TURNS == 100
 
     def test_invoke_with_role_always_uses_project_setting_sources(self):
         """Verify source code sets setting_sources=['project'] in _invoke_with_role.

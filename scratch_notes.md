@@ -205,3 +205,35 @@ Template langchain-deepagents-orchestrator created successfully.
   - Use guardkit init langchain-deepagents-orchestrator to scaffold a new project from this template
   - Optionally enhance agents with /agent-enhance langchain-deepagents-orchestrator/<agent-name> --hybrid (2-5 min
   each) for domain-specific boundary sections
+
+
+
+
+  [I]mplement Complete
+Created in guardkit repo
+
+guardkit/tasks/backlog/promise-schema-normalization/
+  ├── README.md
+  ├── IMPLEMENTATION-GUIDE.md
+  ├── TASK-PSN-001-normalize-promise-field-names.md      (P0, wave 1, direct)
+  ├── TASK-PSN-002-normalize-promise-status-values.md    (P0, wave 1, direct)
+  └── TASK-PSN-003-format-reinforcement-near-ceiling.md  (P1, wave 2, task-work)
+Execution Strategy
+Wave 1 (parallel, unblocks FEAT-M2P resume):
+
+TASK-PSN-001: Field name fallback (ac_id -> criterion_id) in coach_validator.py:2273 + schemas.py
+TASK-PSN-002: Status alias map ("done" -> "complete") in schemas.py:148 + coach_validator.py:2284
+After Wave 1:
+
+
+cd specialist-agent
+guardkit autobuild feature FEAT-M2P --resume
+Wave 2 (root cause prevention):
+
+TASK-PSN-003: Format reinforcement near SDK turn ceiling in agent_invoker.py
+Graphiti Knowledge
+guardkit__architecture_decisions: Review findings and root cause analysis
+guardkit__task_outcomes: Implementation task creation and execution plan
+TASK-REV-D1AE Status
+Marked completed with decision: implement. Implementation tasks linked in frontmatter.
+

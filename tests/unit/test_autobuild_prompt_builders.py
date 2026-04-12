@@ -363,15 +363,15 @@ class TestSlimProtocolRouting:
         # Full protocol has detailed SOLID descriptions
         assert "Single Responsibility" in prompt
 
-    def test_local_backend_uses_slim_protocol(self, worktree_path):
-        """When timeout_multiplier>1.0 (local backend), use slim protocol."""
+    def test_local_backend_uses_medium_protocol(self, worktree_path):
+        """When timeout_multiplier>1.0 (local backend), use medium protocol (TASK-VR6-MP01)."""
         invoker = AgentInvoker(worktree_path=worktree_path, timeout_multiplier=4.0)
         prompt = invoker._build_autobuild_implementation_prompt(
             task_id="TASK-001", requirements="Test"
         )
-        # Slim protocol does NOT have detailed SOLID descriptions
-        assert "Single Responsibility" not in prompt
-        # But still has essential quality gates
+        # Medium protocol includes SOLID descriptions (unlike slim)
+        assert "Single Responsibility" in prompt
+        # And still has essential quality gates
         assert "Phase 3" in prompt
         assert "Phase 4" in prompt
         assert "Phase 5" in prompt
@@ -439,13 +439,14 @@ class TestSlimProtocolRouting:
         )
         assert "Single Responsibility" in prompt
 
-    def test_multiplier_just_above_one_uses_slim(self, worktree_path):
-        """Boundary: multiplier=1.1 uses slim protocol."""
+    def test_multiplier_just_above_one_uses_medium(self, worktree_path):
+        """Boundary: multiplier=1.1 uses medium protocol (TASK-VR6-MP01)."""
         invoker = AgentInvoker(worktree_path=worktree_path, timeout_multiplier=1.1)
         prompt = invoker._build_autobuild_implementation_prompt(
             task_id="TASK-001", requirements="Test"
         )
-        assert "Single Responsibility" not in prompt
+        # Medium protocol includes SOLID descriptions
+        assert "Single Responsibility" in prompt
 
 
 # ============================================================================

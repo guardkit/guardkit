@@ -11,6 +11,7 @@ Test Count: 30+ tests
 import pytest
 
 from guardkit.orchestrator.schemas import (
+    STATUS_ALIASES,
     CriterionStatus,
     VerificationResult,
     CompletionPromise,
@@ -282,6 +283,47 @@ class TestCompletionPromise:
         }
         promise = CompletionPromise.from_dict(data)
         assert promise.criterion_text == "OAuth flow works"
+
+    @pytest.mark.parametrize("alias", ["done", "finished", "completed"])
+    def test_from_dict_status_alias_maps_to_complete(self, alias):
+        """CompletionPromise.from_dict() normalizes status aliases to COMPLETE."""
+        data = {
+            "criterion_id": "AC-001",
+            "criterion_text": "Test",
+            "status": alias,
+            "evidence": "Done",
+        }
+        promise = CompletionPromise.from_dict(data)
+        assert promise.status == CriterionStatus.COMPLETE
+
+    def test_from_dict_canonical_complete_still_works(self):
+        """CompletionPromise.from_dict() still accepts canonical 'complete' value."""
+        data = {
+            "criterion_id": "AC-001",
+            "criterion_text": "Test",
+            "status": "complete",
+            "evidence": "Done",
+        }
+        promise = CompletionPromise.from_dict(data)
+        assert promise.status == CriterionStatus.COMPLETE
+
+    def test_from_dict_unknown_status_not_in_aliases(self):
+        """Status values not in alias map still fall back to INCOMPLETE with warning."""
+        data = {
+            "criterion_id": "AC-001",
+            "criterion_text": "Test",
+            "status": "bogus_value",
+            "evidence": "Done",
+        }
+        promise = CompletionPromise.from_dict(data)
+        assert promise.status == CriterionStatus.INCOMPLETE
+
+    def test_status_aliases_constant(self):
+        """STATUS_ALIASES maps expected synonyms to 'complete'."""
+        assert STATUS_ALIASES["done"] == "complete"
+        assert STATUS_ALIASES["finished"] == "complete"
+        assert STATUS_ALIASES["completed"] == "complete"
+        assert len(STATUS_ALIASES) == 3
 
     def test_from_dict_description_fallback_when_criterion_text_empty(self):
         """CompletionPromise.from_dict() falls back to description when criterion_text is empty."""

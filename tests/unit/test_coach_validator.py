@@ -4079,6 +4079,51 @@ class TestCompletionPromisesMatching:
         assert validation.all_criteria_met is True
         assert validation.criteria_met == 2
 
+    def test_promises_status_done_normalized_to_complete(self, tmp_worktree):
+        """TASK-PSN-002: status 'done' is normalized to 'complete' in promise matching."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature A"])
+        results = {
+            "completion_promises": [
+                {"criterion_id": "AC-001", "status": "done", "evidence": "Impl A"},
+            ],
+        }
+
+        validation = validator.validate_requirements(task, results)
+
+        assert validation.criteria_met == 1
+        assert validation.criteria_results[0].status == "verified"
+
+    def test_promises_status_finished_normalized_to_complete(self, tmp_worktree):
+        """TASK-PSN-002: status 'finished' is normalized to 'complete' in promise matching."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature A"])
+        results = {
+            "completion_promises": [
+                {"criterion_id": "AC-001", "status": "finished", "evidence": "Impl A"},
+            ],
+        }
+
+        validation = validator.validate_requirements(task, results)
+
+        assert validation.criteria_met == 1
+        assert validation.criteria_results[0].status == "verified"
+
+    def test_promises_status_completed_normalized_to_complete(self, tmp_worktree):
+        """TASK-PSN-002: status 'completed' is normalized to 'complete' in promise matching."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = make_task(["Feature A"])
+        results = {
+            "completion_promises": [
+                {"criterion_id": "AC-001", "status": "completed", "evidence": "Impl A"},
+            ],
+        }
+
+        validation = validator.validate_requirements(task, results)
+
+        assert validation.criteria_met == 1
+        assert validation.criteria_results[0].status == "verified"
+
 
 # ============================================================================
 # Test Seam Test Recommendation (TASK-SFT-009)

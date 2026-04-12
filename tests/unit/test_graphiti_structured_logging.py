@@ -298,7 +298,7 @@ class TestGraphitiContextLoaderLogging:
                 from installer.core.commands.lib.graphiti_context_loader import load_task_context
                 await load_task_context("TASK-001", {"description": "test"}, "implement")
 
-        assert any("[Graphiti] Task context:" in r.message for r in caplog.records)
+        assert any("[Graphiti] Context loaded via cli:" in r.message for r in caplog.records)
 
     async def test_logs_unavailable_on_exception(self, caplog):
         with patch("installer.core.commands.lib.graphiti_context_loader.is_graphiti_enabled", return_value=True), \
@@ -309,7 +309,7 @@ class TestGraphitiContextLoaderLogging:
                 result = await load_task_context("TASK-001", {"description": "test"}, "implement")
 
         assert result is None
-        assert any("[Graphiti] Task context unavailable" in r.message for r in caplog.records)
+        assert any("[Graphiti] Context: unavailable" in r.message for r in caplog.records)
 
     async def test_no_log_when_graphiti_disabled(self, caplog):
         with patch("installer.core.commands.lib.graphiti_context_loader.is_graphiti_enabled", return_value=False):

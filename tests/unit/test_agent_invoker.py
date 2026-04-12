@@ -2523,6 +2523,31 @@ class TestWriteTurnContext:
         assert content["escape_hatch_active"] is True
         assert content["turns_remaining"] == 1
 
+    def test_write_turn_context_includes_promise_schema_reminder(self, invoker, worktree_path):
+        """TASK-PSN-003: turn_context.json includes promise_schema_reminder field."""
+        invoker._write_turn_context(
+            task_id="TASK-004",
+            turn=1,
+            max_turns=5,
+            approaching_limit=False,
+        )
+
+        context_path = (
+            worktree_path / ".guardkit" / "autobuild" / "TASK-004" / "turn_context.json"
+        )
+        with open(context_path) as f:
+            content = json.load(f)
+
+        assert "promise_schema_reminder" in content
+        reminder = content["promise_schema_reminder"]
+        assert "criterion_id" in reminder
+        assert "criterion_text" in reminder
+        assert "status" in reminder
+        # Verify it warns against wrong field names
+        assert "ac_id" in reminder["criterion_id"]
+        assert "description" in reminder["criterion_text"]
+        assert "done" in reminder["status"]
+
 
 class TestLoadTurnContext:
     """Test load_turn_context method."""
@@ -2630,6 +2655,79 @@ class TestBuildPlayerPromptWithCriteria:
 
         # Should not have structured criteria section
         assert "You MUST create a completion_promise for each criterion" not in prompt
+
+    def test_prompt_includes_format_reinforcement_for_complex_tasks(self, invoker, monkeypatch):
+        """TASK-PSN-003: Player prompt includes format reinforcement when criteria >= threshold."""
+        from guardkit.orchestrator import agent_invoker as _mod
+
+        monkeypatch.setattr(_mod, "REINFORCEMENT_CRITERIA_THRESHOLD", 3)
+        criteria = [
+            {"id": f"AC-{i:03d}", "text": f"Criterion {i}"} for i in range(1, 6)
+        ]
+
+        prompt = invoker._build_player_prompt(
+            task_id="TASK-001",
+            turn=1,
+            requirements="Complex feature",
+            feedback=None,
+            acceptance_criteria=criteria,
+        )
+
+        assert "CRITICAL SCHEMA REQUIREMENT" in prompt
+        assert '"criterion_id"' in prompt
+        assert "ac_id" in prompt  # warns against wrong field
+        assert '"done"' in prompt  # warns against wrong status
+
+    def test_prompt_no_reinforcement_below_threshold(self, invoker, monkeypatch):
+        """TASK-PSN-003: Player prompt omits reinforcement when criteria < threshold."""
+        from guardkit.orchestrator import agent_invoker as _mod
+
+        monkeypatch.setattr(_mod, "REINFORCEMENT_CRITERIA_THRESHOLD", 10)
+        criteria = [
+            {"id": "AC-001", "text": "Simple criterion"},
+            {"id": "AC-002", "text": "Another criterion"},
+        ]
+
+        prompt = invoker._build_player_prompt(
+            task_id="TASK-001",
+            turn=1,
+            requirements="Simple task",
+            feedback=None,
+            acceptance_criteria=criteria,
+        )
+
+        assert "CRITICAL SCHEMA REQUIREMENT" not in prompt
+
+    def test_prompt_no_reinforcement_without_criteria(self, invoker):
+        """TASK-PSN-003: No reinforcement when acceptance_criteria is None."""
+        prompt = invoker._build_player_prompt(
+            task_id="TASK-001",
+            turn=1,
+            requirements="Simple task",
+            feedback=None,
+            acceptance_criteria=None,
+        )
+
+        assert "CRITICAL SCHEMA REQUIREMENT" not in prompt
+
+    def test_prompt_reinforcement_at_exact_threshold(self, invoker, monkeypatch):
+        """TASK-PSN-003: Reinforcement triggers at exactly the threshold count."""
+        from guardkit.orchestrator import agent_invoker as _mod
+
+        monkeypatch.setattr(_mod, "REINFORCEMENT_CRITERIA_THRESHOLD", 3)
+        criteria = [
+            {"id": f"AC-{i:03d}", "text": f"Criterion {i}"} for i in range(1, 4)
+        ]
+
+        prompt = invoker._build_player_prompt(
+            task_id="TASK-001",
+            turn=1,
+            requirements="Moderate task",
+            feedback=None,
+            acceptance_criteria=criteria,
+        )
+
+        assert "CRITICAL SCHEMA REQUIREMENT" in prompt
 
 
 # ==================== Coach Prompt with Verification Tests ====================

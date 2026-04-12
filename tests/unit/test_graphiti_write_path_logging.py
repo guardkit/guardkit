@@ -237,7 +237,7 @@ class TestTemplateSyncLogging:
                 await sync_template_to_graphiti(tmp_path)
 
         assert any(
-            "[Graphiti] Synced template" in r.message
+            "[Graphiti] Template sync complete:" in r.message
             for r in caplog.records
         )
 

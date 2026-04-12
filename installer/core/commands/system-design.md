@@ -37,6 +37,19 @@ Designs API contracts, data models, and multi-protocol surfaces per bounded cont
 - `/system-arch` outputs to `docs/architecture/`
 - `/system-design` outputs to `docs/design/`
 
+## Graphiti Integration Reference
+
+When Graphiti is available, `/system-design` uses these APIs for knowledge graph operations:
+
+- **Client**: `get_graphiti()` to obtain the Graphiti client instance
+- **Prerequisite check**: `has_architecture_context()` via `SystemPlanGraphiti` to verify architecture exists
+- **Context loading**: Read from `project_architecture` group for bounded contexts and structural decisions
+- **Design seeding**: `SystemDesignGraphiti` class for persisting design artefacts:
+  - `upsert_design_decision()` for DDRs
+  - `upsert_api_contract()` for API contracts
+  - `upsert_data_model()` for data models
+- **Contradiction detection**: Query `project_decisions` group to detect conflicts with existing decisions
+
 ## Prerequisite Gate
 
 Before starting the interactive session, `/system-design` MUST verify that architecture context exists. This ensures the design phase builds on established structural decisions rather than assumptions.

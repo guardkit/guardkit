@@ -1548,6 +1548,7 @@ class TestTurnContinuationWiring:
                 feature_id="FEAT-001",
                 task_id="TASK-001",
                 current_turn=2,
+                autobuild_dir=None,
             )
 
     async def test_player_turn_continuation_included_in_prompt(self):
@@ -1767,6 +1768,7 @@ class TestTurnContinuationWiring:
                 feature_id="FEAT-001",
                 task_id="TASK-001",
                 current_turn=2,
+                autobuild_dir=None,
             )
 
     async def test_structured_logging_for_continuation(self):
@@ -1817,7 +1819,7 @@ class TestTurnContinuationWiring:
 
             # Verify logging for turn continuation
             mock_logger.info.assert_any_call(
-                "[Graphiti] Turn continuation loaded: %d chars for turn %d",
+                "[TurnState] Turn continuation loaded: %d chars for turn %d",
                 len(continuation_text),
                 2,
             )

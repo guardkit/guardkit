@@ -539,9 +539,11 @@ class TestGlobalSectionGlobQuoting:
         section = GlobalTemplateValidationSection()
         result = section.execute(tmp_path)
 
-        # 5 issues * 1.0 = 5.0, capped at 3.0
-        # Also 0 path-gating deductions since all have paths:
-        assert result.score >= 7.0
+        # 5 glob issues * 1.0 = 5.0, capped at 3.0  → -3.0
+        # 5 yaml issues * 1.0 = 5.0, capped at 3.0  → -3.0
+        # Total deduction: -6.0, score = 10.0 - 6.0 = 4.0
+        assert result.score >= 4.0
+        assert result.score <= 4.0
 
 
 # ============================================================================

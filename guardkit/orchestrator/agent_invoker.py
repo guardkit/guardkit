@@ -250,6 +250,49 @@ TASK_WORK_SDK_MAX_TURNS = int(_SDK_MAX_TURNS_EXPLICIT) if _SDK_MAX_TURNS_EXPLICI
 _SDK_MAX_TURNS_IS_OVERRIDE = _SDK_MAX_TURNS_EXPLICIT is not None
 
 # =========================================================================
+# TASK-PSN-003: Promise format reinforcement near SDK turn ceiling
+# =========================================================================
+# When a task has many acceptance criteria, the completion_promises format
+# instructions (injected once at prompt start) can be forgotten by the agent
+# after many SDK turns due to context attention degradation.  Adding a
+# reinforcement block at the END of the prompt exploits recency bias to keep
+# the schema fresh.  The turn_context.json file also carries a reminder so
+# the agent has a second source of truth.
+#
+# Threshold: number of acceptance criteria that triggers stronger emphasis.
+# Configurable via env var; default 5 (root-cause incident had ~10+ criteria).
+_REINFORCEMENT_THRESHOLD_EXPLICIT = os.environ.get(
+    "GUARDKIT_REINFORCEMENT_CRITERIA_THRESHOLD"
+)
+REINFORCEMENT_CRITERIA_THRESHOLD: int = (
+    int(_REINFORCEMENT_THRESHOLD_EXPLICIT)
+    if _REINFORCEMENT_THRESHOLD_EXPLICIT is not None
+    else 5
+)
+
+PROMISE_FORMAT_REMINDER = (
+    "\n⚠️ CRITICAL SCHEMA REQUIREMENT — READ BEFORE WRITING YOUR REPORT ⚠️\n"
+    "Your completion_promises MUST use these EXACT field names:\n"
+    '  ✅ "criterion_id"   (NOT "ac_id", NOT "id", NOT "criteria_id")\n'
+    '  ✅ "criterion_text"  (NOT "description", NOT "text", NOT "criteria_text")\n'
+    '  ✅ "status"          must be "complete" or "incomplete"\n'
+    '                       (NOT "done", NOT "finished", NOT "completed")\n'
+    '  ✅ "evidence"        description of what you did\n'
+    '  ✅ "test_file"       path to test file (if applicable)\n'
+    '  ✅ "implementation_files"  list of files modified/created\n'
+)
+
+# Schema reminder included in turn_context.json for file-based reinforcement.
+_PROMISE_SCHEMA_FIELDS = {
+    "criterion_id": "CORRECT — do NOT use ac_id or id",
+    "criterion_text": "CORRECT — do NOT use description or text",
+    "status": "must be 'complete' or 'incomplete' — do NOT use done/finished",
+    "evidence": "description of what you did",
+    "test_file": "path to test file (if applicable)",
+    "implementation_files": "list of files modified/created",
+}
+
+# =========================================================================
 # SDK Async Generator Cleanup Noise Suppression (TASK-FIX-k3l4)
 # =========================================================================
 # When the SDK's query() async generator is closed between turns, AnyIO's
@@ -1735,6 +1778,12 @@ Your report MUST be valid JSON with these fields:
 
 Follow the report format specified in your agent definition.
 """
+        # TASK-PSN-003: Append format reinforcement for complex tasks.
+        # Placing it at the END of the prompt exploits recency bias so the
+        # schema stays fresh even after many SDK turns.
+        if acceptance_criteria and len(acceptance_criteria) >= REINFORCEMENT_CRITERIA_THRESHOLD:
+            prompt += PROMISE_FORMAT_REMINDER
+
         return prompt
 
     def _format_design_elements(self, elements: List[Dict[str, Any]]) -> str:
@@ -3342,6 +3391,9 @@ Follow the decision format specified in your agent definition.
                 "include a 'blocked_report' field in your player report JSON. "
                 "See autobuild-player.md for the blocked_report schema."
             ),
+            # TASK-PSN-003: Promise schema reminder — second source of truth so
+            # the agent can re-check field names even after many SDK turns.
+            "promise_schema_reminder": _PROMISE_SCHEMA_FIELDS,
         }
 
         context_path = autobuild_dir / "turn_context.json"

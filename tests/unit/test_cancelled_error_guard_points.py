@@ -500,6 +500,15 @@ class TestGP5ExecuteTask:
             base_branch="main",
         )
 
+    def _mock_task_loader(self):
+        """Return a mock for TaskLoader.load_task that returns valid task data."""
+        return {
+            "frontmatter": {"autobuild": {"sdk_timeout": 1200}},
+            "requirements": "test requirements",
+            "acceptance_criteria": ["criterion 1"],
+            "file_path": Path("/tmp/TASK-CEF-002.md"),
+        }
+
     def test_cancelled_error_returns_cancelled_decision(
         self, tmp_path, feature_orchestrator
     ):
@@ -511,6 +520,9 @@ class TestGP5ExecuteTask:
         # AutoBuildOrchestrator constructor raises CancelledError — simulates cancellation
         # propagating from within the task orchestration.
         with patch(
+            "guardkit.orchestrator.feature_orchestrator.TaskLoader.load_task",
+            return_value=self._mock_task_loader(),
+        ), patch(
             "guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator",
             side_effect=asyncio.CancelledError("gp5-cancellation"),
         ):
@@ -535,6 +547,10 @@ class TestGP5ExecuteTask:
         worktree = self._make_worktree(tmp_path)
 
         with (
+            patch(
+                "guardkit.orchestrator.feature_orchestrator.TaskLoader.load_task",
+                return_value=self._mock_task_loader(),
+            ),
             patch(
                 "guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator",
                 side_effect=asyncio.CancelledError("gp5-warning"),
@@ -566,6 +582,9 @@ class TestGP5ExecuteTask:
         worktree = self._make_worktree(tmp_path)
 
         with patch(
+            "guardkit.orchestrator.feature_orchestrator.TaskLoader.load_task",
+            return_value=self._mock_task_loader(),
+        ), patch(
             "guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator",
             side_effect=RuntimeError("non-cancelled-gp5"),
         ):

@@ -50,6 +50,7 @@ from guardkit.orchestrator.docker_fixtures import (
     is_known_service,
 )
 from guardkit.orchestrator.paths import TaskArtifactPaths
+from guardkit.orchestrator.schemas import STATUS_ALIASES
 from guardkit.models.task_types import TaskType, QualityGateProfile, get_profile, TASK_TYPE_ALIASES
 
 # Optional coach context integration (TASK-SC-009)
@@ -2281,13 +2282,15 @@ class CoachValidator:
             criterion_id = f"AC-{i+1:03d}"
             promise = promise_map.get(criterion_id)
 
-            if promise and promise.get("status") == "complete":
+            raw_status = promise.get("status", "") if promise else ""
+            normalized_status = STATUS_ALIASES.get(raw_status, raw_status)
+            if promise and normalized_status == "complete":
                 result_str = "verified"
                 evidence = promise.get(
                     "evidence",
                     f"Player completed {criterion_id}",
                 )
-            elif promise and promise.get("status") == "partial":
+            elif promise and normalized_status == "partial":
                 # TASK-ACR-004: Treat partial as verified with lower confidence
                 result_str = "verified"
                 evidence_type = promise.get("evidence_type", "unknown")

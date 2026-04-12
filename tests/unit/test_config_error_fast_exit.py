@@ -247,6 +247,11 @@ class TestExecuteTurnPropagatesConfigError:
         orch.enable_checkpoints = False
         orch._checkpoint_manager = None
         orch._cancellation_event = None
+        orch._timeout_event = None
+        orch._task_timeout = None
+        orch._cumulative_source_files = set()
+        orch._cumulative_requirements_addressed = set()
+        orch.wave_size = 1
         orch._turn_history = []
         orch.resume = False
         orch.enable_context = False
@@ -341,6 +346,11 @@ class TestLoopPhaseFastExit:
         orch.enable_checkpoints = False
         orch._checkpoint_manager = None
         orch._cancellation_event = None
+        orch._timeout_event = None
+        orch._task_timeout = None
+        orch._cumulative_source_files = set()
+        orch._cumulative_requirements_addressed = set()
+        orch.wave_size = 1
         orch._turn_history = []
         orch.resume = False
         orch.enable_context = False

@@ -45,7 +45,7 @@ Before starting the refinement session, `/design-refine` MUST verify that design
 
 **Check Graphiti availability** (Tier 1 — see `docs/internals/commands-lib/graphiti-preamble.md`):
 
-Use the Read tool to read `.guardkit/graphiti.yaml`.
+Use `get_graphiti()` to obtain the client, then read `.guardkit/graphiti.yaml`.
 - If the file exists and `enabled: true`: set `graphiti_available = true`
 - Otherwise: set `graphiti_available = false` and display the unavailability warning from the preamble
 
