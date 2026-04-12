@@ -1,0 +1,117 @@
+id: FEAT-C90E
+name: Migrate Graphiti from singleton to per-thread clients
+description: Replace the shared Graphiti singleton pattern with thread-safe per-thread
+  client creation to fix cross-loop hangs in parallel AutoBuild execution. Root cause
+  analysis in TASK-REV-2AA0 identified that the shared Neo4j driver bound to one event
+  loop causes non-deterministic hangs when used from worker thread event loops via
+  graphiti-core's unguarded asyncio.gather().
+created: '2026-02-09T14:00:00.000000'
+status: completed
+complexity: 7
+estimated_tasks: 6
+tasks:
+- id: TASK-FIX-GTP1
+  name: Create thread-safe Graphiti client factory
+  file_path: tasks/completed/TASK-FIX-GTP1/TASK-FIX-GTP1-client-factory.md
+  complexity: 6
+  dependencies: []
+  status: completed
+  implementation_mode: task-work
+  estimated_minutes: 90
+  result: passed
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-02-09T14:00:00'
+  completed_at: '2026-02-09T18:30:00'
+- id: TASK-FIX-GTP2
+  name: Migrate AutoBuild orchestrator to per-thread Graphiti clients
+  file_path: tasks/completed/TASK-FIX-GTP2/TASK-FIX-GTP2-autobuild-migration.md
+  complexity: 5
+  dependencies:
+  - TASK-FIX-GTP1
+  status: completed
+  implementation_mode: task-work
+  estimated_minutes: 75
+  result: passed
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-02-09T15:00:00'
+  completed_at: '2026-02-09T16:30:00'
+- id: TASK-FIX-GTP3
+  name: Fix capture_turn_state unawaited coroutine
+  file_path: tasks/backlog/graphiti-per-thread/TASK-FIX-GTP3-fix-capture-turn-state.md
+  complexity: 3
+  dependencies: []
+  status: completed
+  implementation_mode: task-work
+  estimated_minutes: 30
+  result: passed
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-02-09T12:00:00'
+  completed_at: '2026-02-09T13:00:00'
+- id: TASK-FIX-GTP4
+  name: Add defensive timeout to FeatureOrchestrator wave execution
+  file_path: tasks/backlog/graphiti-per-thread/TASK-FIX-GTP4-wave-timeout.md
+  complexity: 4
+  dependencies: []
+  status: completed
+  implementation_mode: task-work
+  estimated_minutes: 50
+  result: passed
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-02-09T13:00:00'
+  completed_at: '2026-02-09T14:00:00'
+- id: TASK-FIX-GTP5
+  name: Migrate remaining Graphiti call sites to factory pattern
+  file_path: tasks/completed/TASK-FIX-GTP5/TASK-FIX-GTP5-call-site-migration.md
+  complexity: 5
+  dependencies:
+  - TASK-FIX-GTP1
+  status: completed
+  implementation_mode: task-work
+  estimated_minutes: 75
+  result: passed
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-02-09T15:00:00'
+  completed_at: '2026-02-09T16:00:00'
+- id: TASK-DOC-GTP6
+  name: Update Graphiti documentation for per-thread architecture
+  file_path: tasks/completed/TASK-DOC-GTP6/TASK-DOC-GTP6-documentation-update.md
+  complexity: 4
+  dependencies:
+  - TASK-FIX-GTP1
+  - TASK-FIX-GTP2
+  - TASK-FIX-GTP5
+  status: completed
+  implementation_mode: task-work
+  estimated_minutes: 50
+  result: passed
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-02-09T16:00:00'
+  completed_at: '2026-02-09T16:30:00'
+orchestration:
+  parallel_groups:
+  - - TASK-FIX-GTP1
+    - TASK-FIX-GTP3
+    - TASK-FIX-GTP4
+  - - TASK-FIX-GTP2
+    - TASK-FIX-GTP5
+  - - TASK-DOC-GTP6
+  estimated_duration_minutes: 370
+  recommended_parallel: 3
+execution:
+  started_at: null
+  completed_at: null
+  worktree_path: null
+  total_turns: 0
+  tasks_completed: 6
+  tasks_failed: 0
+  current_wave: 3
+  completed_waves: [1, 2, 3]
+  last_updated: '2026-02-09T16:30:00'
+  archived_at: null
+  archived_to: null

@@ -23,6 +23,7 @@ Supports two modes:
 | `--dry-run` | Preview changes without merging | false |
 | `--force` | Skip confirmation prompts | false |
 | `--no-cleanup` | Keep worktree after merge | false |
+| `--no-merge` | Skip Step 0 worktree merge (use when merge was already done manually) | false |
 | `--no-archive` | Skip archiving before deletion (delete artifacts immediately) | false |
 | `--verbose` | Show detailed merge output | false |
 | `--verify` | Re-run tests after merge | false |
@@ -127,6 +128,9 @@ guardkit autobuild complete FEAT-A1B2 --force
 
 # Keep worktree for inspection after merge
 /feature-complete FEAT-A1B2 --no-cleanup
+
+# Skip merge (already merged manually via git or PR)
+/feature-complete FEAT-A1B2 --no-merge
 ```
 
 ## How It Works
@@ -148,6 +152,11 @@ For individual tasks (`TASK-XXX`), the command merges worktree changes to main b
 
 ### Merge Process
 
+0. **Worktree Pre-Merge** (unless `--no-merge`) — see [Step 0 details](#step-0-worktree-pre-merge)
+   - Verify autobuild completion (coach approved)
+   - Stage and commit any remaining uncommitted changes
+   - Merge worktree branch to main (fast-forward preferred)
+   - Delete worktree branch after merge
 1. **Load task file** from `tasks/` directory
 2. **Verify worktree exists** at `.guardkit/worktrees/TASK-XXX/`
 3. **Check branch** is `autobuild/TASK-XXX`
@@ -198,6 +207,26 @@ For features (`FEAT-XXX`), the command merges all tasks in sequence:
 │                     FEATURE MERGE                                │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
+│  Step 0: Worktree Pre-Merge (unless --no-merge)                 │
+│                                                                 │
+│  ✅ Verify AutoBuild Completion                                  │
+│     All tasks must have coach_decision == "approved"             │
+│                                                                 │
+│  💾 Commit Remaining Changes                                     │
+│     git add -A && git commit in each worktree                   │
+│                                                                 │
+│  🔀 Merge Each Task Branch to Main                               │
+│     TASK-001: git merge --ff-only autobuild/TASK-001            │
+│     TASK-002: git merge --ff-only autobuild/TASK-002            │
+│     ... (in dependency order, FF preferred)                     │
+│                                                                 │
+│  🗑️  Delete Merged Branches                                     │
+│     git branch -d autobuild/TASK-001 ... TASK-004               │
+│                                                                 │
+│  ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─  │
+│                                                                 │
+│  Steps 1+: Existing Flow                                        │
+│                                                                 │
 │  📁 Load Feature File                                           │
 │     .guardkit/features/FEAT-XXX.yaml                            │
 │                                                                 │
@@ -206,11 +235,6 @@ For features (`FEAT-XXX`), the command merges all tasks in sequence:
 │     ├── TASK-002 (status: completed)                            │
 │     ├── TASK-003 (status: completed)                            │
 │     └── TASK-004 (status: completed)                            │
-│                                                                 │
-│  🔀 Merge Each Task                                             │
-│     TASK-001: git merge autobuild/TASK-001                      │
-│     TASK-002: git merge autobuild/TASK-002                      │
-│     ... (in dependency order)                                   │
 │                                                                 │
 │  📊 Update Feature Status                                       │
 │     .guardkit/features/FEAT-XXX.yaml → merged                   │
@@ -225,6 +249,13 @@ For features (`FEAT-XXX`), the command merges all tasks in sequence:
 ```
 
 ### Feature Mode Phases
+
+#### Phase 0: Worktree Pre-Merge (unless --no-merge)
+1. Verify autobuild completion (coach approved) for all tasks
+2. Stage and commit any uncommitted changes in each worktree
+3. Merge each task branch to main (fast-forward preferred, in dependency order)
+4. Delete merged branches
+5. Halt on merge conflicts with clear error and resolution instructions
 
 #### Phase 1: Load Feature
 1. Load feature file from `.guardkit/features/FEAT-XXX.yaml`
@@ -324,11 +355,21 @@ cd .guardkit/worktrees/TASK-AUTH-001
 git diff main
 # ... review changes ...
 
-# 4. If approved, merge
+# 4. If approved: merge, archive, cleanup — single command
 /feature-complete TASK-AUTH-001
+# → Step 0: Verifies coach approved, commits remaining changes,
+#           merges to main (FF), deletes branch
+# → Steps 1+: Archives state, cleans up worktree, moves task
 
 # 5. Complete task
 /task-complete TASK-AUTH-001
+```
+
+**If you already merged manually:**
+
+```bash
+# Skip Step 0, just run artifact cleanup
+/feature-complete TASK-AUTH-001 --no-merge
 ```
 
 ### Feature Workflow
@@ -349,14 +390,24 @@ cd .guardkit/worktrees/FEAT-A1B2
 git diff main
 # ... review all changes ...
 
-# 4. If approved, merge all tasks
+# 4. If approved: merge all, archive, cleanup — single command
 /feature-complete FEAT-A1B2
+# → Step 0: Verifies all tasks coach-approved, commits remaining changes,
+#           merges each branch to main in dependency order, deletes branches
+# → Steps 1+: Archives state, cleans up worktrees, moves tasks
 
 # 5. Verify and complete tasks
 /task-complete TASK-001 TASK-002 TASK-003 TASK-004
 
 # 6. Verify deployment
 git log --oneline -10
+```
+
+**If you already merged manually:**
+
+```bash
+# Skip Step 0, just run artifact cleanup and archiving
+/feature-complete FEAT-A1B2 --no-merge
 ```
 
 ## State Management
@@ -519,6 +570,102 @@ def detect_mode(id_arg: str) -> str:
 
 When the user invokes `/feature-complete TASK-XXX`:
 
+#### Step 0: Worktree Pre-Merge (unless --no-merge)
+
+If `--no-merge` flag is set, skip Step 0 entirely and proceed to Step 1.
+
+```bash
+# --- 0a: Verify autobuild completion ---
+autobuild_state = load_json(f".guardkit/autobuild/TASK-XXX/state.json")
+
+if autobuild_state.get("coach_decision") != "approved":
+    print(f"""
+❌ AutoBuild not complete for TASK-XXX
+
+  Coach decision: {autobuild_state.get('coach_decision', 'unknown')}
+  Expected: approved
+
+  The feature-build must complete with coach approval before merging.
+  Run: /feature-build TASK-XXX --resume
+    """)
+    exit(1)
+
+print("  ✓ AutoBuild completion verified (coach approved)")
+
+# --- 0b: Stage and commit any remaining uncommitted changes ---
+worktree_path = f".guardkit/worktrees/TASK-XXX"
+cd {worktree_path}
+
+# Check for uncommitted changes
+uncommitted = run("git status --porcelain")
+if uncommitted:
+    run("git add -A")
+    run(f'git commit -m "chore: final changes for TASK-XXX"')
+    print(f"  ✓ Committed remaining changes in worktree")
+else:
+    print("  ✓ No uncommitted changes in worktree")
+
+# --- 0c: Merge worktree branch to main (fast-forward preferred) ---
+cd {project_root}
+
+if args.dry_run:
+    # Preview only — show what would be merged
+    diff_stat = run(f"git diff main...autobuild/TASK-XXX --stat")
+    print(f"""
+── Dry-run: Changes in autobuild/TASK-XXX (not yet merged)
+{diff_stat}
+
+Merge strategy: fast-forward (preferred)
+Target branch: main
+No changes made (--dry-run).
+    """)
+    exit(0)
+
+# Attempt fast-forward merge first
+result = run("git checkout main")
+ff_result = run(f"git merge --ff-only autobuild/TASK-XXX", capture_returncode=True)
+
+if ff_result.returncode != 0:
+    # Fast-forward failed — try merge commit as fallback
+    merge_result = run(f"git merge autobuild/TASK-XXX --no-edit", capture_returncode=True)
+
+    if merge_result.returncode != 0:
+        # Merge conflict — halt with clear error
+        conflicting = run("git diff --name-only --diff-filter=U")
+        run("git merge --abort")
+        print(f"""
+❌ Merge conflict detected for TASK-XXX
+
+  Conflicting files:
+{indent(conflicting, '    ')}
+
+  To resolve manually:
+    1. cd {worktree_path}
+    2. git merge main
+    3. Resolve conflicts in the files listed above
+    4. git add -A && git commit -m "Resolve merge conflicts"
+    5. Re-run: /feature-complete TASK-XXX
+
+  Or skip the merge step if you've already merged manually:
+    /feature-complete TASK-XXX --no-merge
+        """)
+        exit(1)
+
+    print("  ✓ Merged to main (merge commit)")
+else:
+    print("  ✓ Merged to main (fast-forward)")
+
+# --- 0d: Delete worktree branch after merge ---
+run(f"git branch -d autobuild/TASK-XXX")
+print("  ✓ Deleted branch autobuild/TASK-XXX")
+```
+
+**`--no-merge` flag**: Skips Step 0 entirely. Use when the worktree branch was already merged to main manually (e.g., via `git merge` or a GitHub PR). Existing steps 1+ then handle artifact cleanup, archiving, and status updates as usual.
+
+**`--force` interaction with Step 0**: When `--force` is set, Step 0 proceeds without merge confirmation. The `--force` flag does NOT skip Step 0 — use `--no-merge` for that.
+
+#### Steps 1+: Existing Flow (unchanged)
+
 1. **Load the task file** from `tasks/in_progress/` or `tasks/completed/`
 2. **Verify worktree exists** at `.guardkit/worktrees/TASK-XXX/`
 3. **Check branch** is `autobuild/TASK-XXX`
@@ -581,6 +728,119 @@ guardkit autobuild complete TASK-XXX [--dry-run] [--verify]
 ### Feature Mode Execution
 
 When the user invokes `/feature-complete FEAT-XXX`:
+
+#### Step 0: Worktree Pre-Merge for Feature (unless --no-merge)
+
+If `--no-merge` flag is set, skip Step 0 entirely and proceed to Step 1.
+
+```bash
+# --- 0a: Load feature file for task list ---
+feature = load_yaml(".guardkit/features/FEAT-XXX.yaml")
+tasks = feature["tasks"]
+parallel_groups = feature["orchestration"]["parallel_groups"]
+
+# --- 0b: Verify autobuild completion for ALL tasks ---
+for task in tasks:
+    if task["status"] != "completed":
+        continue
+
+    state_file = f".guardkit/autobuild/{task['id']}/state.json"
+    if not exists(state_file):
+        print(f"  ⚠️  No autobuild state for {task['id']} — skipping completion check")
+        continue
+
+    autobuild_state = load_json(state_file)
+    if autobuild_state.get("coach_decision") != "approved":
+        print(f"""
+❌ AutoBuild not complete for {task['id']}
+
+  Coach decision: {autobuild_state.get('coach_decision', 'unknown')}
+  Expected: approved
+
+  All tasks must have coach approval before feature merge.
+  Run: /feature-build {task['id']} --resume
+        """)
+        exit(1)
+
+print(f"  ✓ All {len(tasks)} tasks verified (coach approved)")
+
+# --- 0c: Stage and commit uncommitted changes in each task worktree ---
+for task in tasks:
+    worktree_path = f".guardkit/worktrees/{task['id']}"
+    if not exists(worktree_path):
+        continue
+
+    cd {worktree_path}
+    uncommitted = run("git status --porcelain")
+    if uncommitted:
+        run("git add -A")
+        run(f'git commit -m "chore: final changes for {task["id"]}"')
+        print(f"  ✓ Committed remaining changes in {task['id']} worktree")
+
+# --- 0d: Merge each task branch to main in dependency order ---
+cd {project_root}
+run("git checkout main")
+
+if args.dry_run:
+    # Preview only — show combined changes
+    total_insertions = 0
+    total_files = 0
+    for wave in parallel_groups:
+        for task_id in wave:
+            diff_stat = run(f"git diff main...autobuild/{task_id} --stat")
+            print(f"\n── Dry-run: autobuild/{task_id}")
+            print(diff_stat)
+    print("\nNo changes made (--dry-run).")
+    exit(0)
+
+for wave in parallel_groups:
+    for task_id in wave:
+        branch = f"autobuild/{task_id}"
+
+        # Attempt fast-forward first
+        ff_result = run(f"git merge --ff-only {branch}", capture_returncode=True)
+
+        if ff_result.returncode != 0:
+            # Try merge commit
+            merge_result = run(f"git merge {branch} --no-edit", capture_returncode=True)
+
+            if merge_result.returncode != 0:
+                conflicting = run("git diff --name-only --diff-filter=U")
+                run("git merge --abort")
+                print(f"""
+❌ Merge conflict detected for {task_id}
+
+  Conflicting files:
+{indent(conflicting, '    ')}
+
+  To resolve manually:
+    1. cd .guardkit/worktrees/{task_id}
+    2. git merge main
+    3. Resolve conflicts in the files listed above
+    4. git add -A && git commit -m "Resolve merge conflicts"
+    5. Re-run: /feature-complete FEAT-XXX
+
+  Or skip the merge step if you've already merged manually:
+    /feature-complete FEAT-XXX --no-merge
+                """)
+                exit(1)
+
+            print(f"  ✓ Merged {task_id} to main (merge commit)")
+        else:
+            print(f"  ✓ Merged {task_id} to main (fast-forward)")
+
+# --- 0e: Delete all merged branches ---
+for wave in parallel_groups:
+    for task_id in wave:
+        run(f"git branch -d autobuild/{task_id}")
+        print(f"  ✓ Deleted branch autobuild/{task_id}")
+
+print(f"\n  ✓ All task branches merged and deleted")
+```
+
+**`--no-merge` flag**: Skips Step 0 entirely. Use when all worktree branches were already merged to main manually. Steps 1+ then handle artifact cleanup, archiving, and status updates.
+
+#### Steps 1+: Existing Flow (unchanged)
 
 1. **Load the feature file** from `.guardkit/features/FEAT-XXX.yaml`
 2. **Parse task list** and completion status
