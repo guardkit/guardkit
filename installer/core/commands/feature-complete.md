@@ -23,6 +23,7 @@ Supports two modes:
 | `--dry-run` | Preview changes without merging | false |
 | `--force` | Skip confirmation prompts | false |
 | `--no-cleanup` | Keep worktree after merge | false |
+| `--no-archive` | Skip archiving before deletion (delete artifacts immediately) | false |
 | `--verbose` | Show detailed merge output | false |
 | `--verify` | Re-run tests after merge | false |
 
@@ -153,9 +154,11 @@ For individual tasks (`TASK-XXX`), the command merges worktree changes to main b
 4. **Preview changes** (unless `--dry-run` only or `--force`)
 5. **Merge to main** using fast-forward or merge commit
 6. **Update task status** from IN_PROGRESS to COMPLETED
-7. **Archive AutoBuild state** to `.guardkit/archive/`
-8. **Cleanup worktree** (unless `--no-cleanup`)
-9. **Run tests** (if `--verify`)
+7. **Archive AutoBuild state** to `.guardkit/archive/` (unless `--no-archive`)
+8. **Delete `.guardkit/autobuild/TASK-XXX/`** (autobuild artifacts)
+9. **Move task file** to `tasks/completed/`
+10. **Cleanup worktree** (unless `--no-cleanup`)
+11. **Run tests** (if `--verify`)
 
 ### Example Merge Output
 
@@ -364,7 +367,7 @@ After successful merge:
 
 ```
 .guardkit/
-├── archive/
+├── archive/                          # Gitignored, local-only
 │   ├── TASK-ABC123/
 │   │   ├── autobuild_state.json
 │   │   ├── player_turn_1.json
@@ -372,15 +375,24 @@ After successful merge:
 │   │   └── merge_summary.json
 │   │
 │   └── FEAT-A1B2/
-│       ├── feature_state.yaml
+│       ├── feature_state.yaml        # Archived from features/ before deletion
 │       ├── task_results.json
 │       └── merge_log.txt
 │
+├── autobuild/
+│   └── [TASK-*/FEAT-* dirs removed]  # Deleted after merge
+│
 ├── features/
-│   └── FEAT-A1B2.yaml (status: merged)
+│   └── [FEAT-A1B2.yaml removed]      # Archived then deleted
 │
 └── worktrees/
     └── [removed after cleanup]
+
+tasks/
+├── completed/
+│   └── TASK-ABC123.md                # Moved from backlog/
+└── backlog/
+    └── [task files moved out]
 ```
 
 ### Archive Contents
@@ -514,9 +526,12 @@ When the user invokes `/feature-complete TASK-XXX`:
 5. **Get user confirmation** (unless `--force` or `--dry-run` only)
 6. **Execute merge via CLI** to main branch
 7. **Update task status** to COMPLETED
-8. **Archive state** to `.guardkit/archive/TASK-XXX/`
-9. **Cleanup worktree** (unless `--no-cleanup`)
-10. **Show final results** with merge details
+8. **Archive state** to `.guardkit/archive/TASK-XXX/` (unless `--no-archive`)
+9. **Delete `.guardkit/autobuild/TASK-XXX/`** artifacts
+10. **Move task file** to `tasks/completed/`
+11. **Cleanup worktree** (unless `--no-cleanup`)
+12. **Display cleanup summary** (files deleted, bytes freed)
+13. **Show final results** with merge details
 
 #### Step 1: Verify Worktree Exists
 
@@ -574,7 +589,7 @@ When the user invokes `/feature-complete FEAT-XXX`:
 5. **Get user confirmation** (unless `--force` or `--dry-run` only)
 6. **Execute merges via CLI** in dependency order
 7. **Update feature status** to MERGED
-8. **Archive state** to `.guardkit/archive/FEAT-XXX/`
+8. **Archive and cleanup artifacts** (Step 5 — archive, delete autobuild state, move tasks, display summary)
 9. **Cleanup all worktrees** (unless `--no-cleanup`)
 10. **Show final results** with summary
 
@@ -637,23 +652,88 @@ for wave in parallel_groups:
         update_feature_yaml(feature, task_id, "merged")
 ```
 
-#### Step 5: Archive and Cleanup
+#### Step 5: Archive, Artifact Cleanup, and Task Finalization
 
 ```bash
-# Archive feature state
-archive_path = ".guardkit/archive/FEAT-XXX"
-copy_file(".guardkit/features/FEAT-XXX.yaml", f"{archive_path}/feature_state.yaml")
-save_merge_summary(archive_path)
+# --- 5a: Archive feature state (unless --no-archive) ---
+cleanup_summary = { "files_deleted": 0, "bytes_freed": 0 }
 
-# Cleanup worktrees (unless --no-cleanup)
+if not args.no_archive:
+    archive_path = ".guardkit/archive/FEAT-XXX"
+    mkdir -p archive_path
+
+    # Archive feature YAML before deletion
+    copy_file(".guardkit/features/FEAT-XXX.yaml", f"{archive_path}/feature_state.yaml")
+    save_merge_summary(archive_path)
+    print(f"  ✓ Archived feature state to {archive_path}/")
+else:
+    print("  ⏭️  Skipping archive (--no-archive)")
+
+# --- 5b: Cleanup worktrees (unless --no-cleanup) ---
 if not args.no_cleanup:
     for task in tasks:
-        rm -rf .guardkit/worktrees/{task["id"]}
+        worktree_path = f".guardkit/worktrees/{task['id']}"
+        if exists(worktree_path):
+            size = get_dir_size(worktree_path)
+            rm -rf worktree_path
+            cleanup_summary["files_deleted"] += count_files(worktree_path)
+            cleanup_summary["bytes_freed"] += size
     git worktree prune
+    print(f"  ✓ Cleaned up worktrees")
 
-# Update feature status
-update_feature_yaml(feature, "status", "merged")
+# --- 5c: Delete autobuild state for merged tasks ---
+for task in tasks:
+    autobuild_task_path = f".guardkit/autobuild/{task['id']}"
+    if exists(autobuild_task_path):
+        size = get_dir_size(autobuild_task_path)
+        rm -rf autobuild_task_path
+        cleanup_summary["files_deleted"] += count_files(autobuild_task_path)
+        cleanup_summary["bytes_freed"] += size
+        print(f"  ✓ Deleted autobuild state: {autobuild_task_path}/")
+
+# Delete autobuild state for the feature itself
+autobuild_feat_path = ".guardkit/autobuild/FEAT-XXX"
+if exists(autobuild_feat_path):
+    size = get_dir_size(autobuild_feat_path)
+    rm -rf autobuild_feat_path
+    cleanup_summary["files_deleted"] += count_files(autobuild_feat_path)
+    cleanup_summary["bytes_freed"] += size
+    print(f"  ✓ Deleted autobuild state: {autobuild_feat_path}/")
+
+# --- 5d: Delete feature YAML (already archived in 5a) ---
+feature_yaml_path = ".guardkit/features/FEAT-XXX.yaml"
+if exists(feature_yaml_path):
+    size = get_file_size(feature_yaml_path)
+    rm feature_yaml_path
+    cleanup_summary["files_deleted"] += 1
+    cleanup_summary["bytes_freed"] += size
+    print(f"  ✓ Deleted feature file: {feature_yaml_path}")
+
+# --- 5e: Move completed task files to tasks/completed/ ---
+mkdir -p "tasks/completed"
+for task in tasks:
+    # Search for task file in backlog (may be in subfolder)
+    task_file = find_task_file(task["id"], search_dirs=["tasks/backlog", "tasks/in_progress", "tasks/in_review"])
+    if task_file:
+        dest = f"tasks/completed/{basename(task_file)}"
+        move_file(task_file, dest)
+        # Update frontmatter status
+        update_frontmatter(dest, {"status": "completed", "updated": now_iso8601()})
+        print(f"  ✓ Moved {basename(task_file)} → tasks/completed/")
+
+# --- 5f: Display cleanup summary ---
+print()
+print(f"  🧹 Cleanup Summary:")
+print(f"     Files deleted: {cleanup_summary['files_deleted']}")
+print(f"     Space freed: {format_bytes(cleanup_summary['bytes_freed'])}")
+if not args.no_archive:
+    print(f"     Archive: .guardkit/archive/FEAT-XXX/")
+print()
 ```
+
+**Idempotency**: Each cleanup operation checks existence before acting. Running `/feature-complete` on an already-cleaned feature is a no-op — all checks return false and no errors are raised.
+
+**The `--no-archive` flag**: Skips step 5a (archiving to `.guardkit/archive/`). Artifact deletion in steps 5c-5d still proceeds. Use when you don't need the local archive (e.g., CI/CD pipelines or when disk space is constrained).
 
 ---
 
