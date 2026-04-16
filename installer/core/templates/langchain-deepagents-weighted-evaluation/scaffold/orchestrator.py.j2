@@ -247,6 +247,10 @@ class AdversarialOrchestrator:
             ],
         }
 
+        # Build context manifest for retry iterations. Without this,
+        # models fabricate filenames when the corpus is large (15+ docs).
+        context_manifest = _build_context_manifest(target, context)
+
         last_verdict: WeightedVerdict | None = None
 
         for attempt in range(1, self._max_retries + 1):
@@ -270,6 +274,7 @@ class AdversarialOrchestrator:
                 player_input = _build_retry_input(
                     player_content,
                     issues=[f"JSON extraction failed: {e}"],
+                    context_manifest=context_manifest,
                 )
                 continue
 
@@ -306,6 +311,7 @@ class AdversarialOrchestrator:
                 player_input = _build_retry_input(
                     player_content,
                     issues=[f"Coach evaluation error: {e}"],
+                    context_manifest=context_manifest,
                 )
                 continue
 
@@ -322,32 +328,42 @@ class AdversarialOrchestrator:
                     self._write_gate.attempt_write(
                         extracted_json, output_path, verdict, attempt,
                     )
-                return PipelineResult(
+                result = PipelineResult(
                     success=True,
                     content=extracted_json,
                     verdict=verdict,
                     attempts=attempt,
                 )
+                # Session log BEFORE returning — unconditional
+                _write_session_log(target.get("id", "unknown"), result)
+                return result
 
             # Step 6: Rejection — feed issues back to Player for revision
             logger.info(
                 "Rejected (attempt %d/%d, score=%.3f): %s",
                 attempt, self._max_retries, verdict.composite_score, verdict.issues,
             )
-            player_input = _build_retry_input(player_content, issues=verdict.issues)
+            player_input = _build_retry_input(
+                player_content,
+                issues=verdict.issues,
+                context_manifest=context_manifest,
+            )
 
         # Exhausted retries
         logger.warning(
             "Exhausted %d retries for target %s",
             self._max_retries, target.get("id", "unknown"),
         )
-        return PipelineResult(
+        result = PipelineResult(
             success=False,
             content="",
             verdict=last_verdict,
             attempts=self._max_retries,
             error=f"Exhausted {self._max_retries} retries",
         )
+        # Session log BEFORE returning — unconditional on failure too
+        _write_session_log(target.get("id", "unknown"), result)
+        return result
 
 
 # ---------------------------------------------------------------------------
@@ -390,15 +406,44 @@ def _create_model(role_config: dict) -> Any:
     raise ValueError(f"Unknown provider: {provider!r}")
 
 
-def _get_domain() -> str:
-    """Get domain name from --domain CLI arg or DOMAIN env var."""
+def _parse_cli_args() -> argparse.Namespace:
+    """Parse CLI args for domain, verbosity, and debug flags.
+
+    Returns namespace with: domain, verbose, debug.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--domain",
         default=os.environ.get("DOMAIN", "{{DomainName}}"),
     )
+    parser.add_argument("--verbose", "-v", action="store_true", default=False)
+    parser.add_argument("--debug", action="store_true", default=False)
     args, _ = parser.parse_known_args()
-    return args.domain
+    return args
+
+
+def _configure_logging(*, debug: bool = False, verbose: bool = False) -> None:
+    """Configure logging early in dispatch, before any agent work.
+
+    Without this, logger.info() calls are swallowed silently — every
+    dispatch path (not just greenfield) must configure logging.
+    Uses force=True to ensure configuration takes effect even when
+    the root logger already has handlers (e.g., from framework setup).
+    See: specialist-agent testing sessions, Category A bugs.
+    """
+    if debug:
+        logging.basicConfig(
+            level=logging.DEBUG, format="%(name)s: %(message)s", force=True,
+        )
+    elif verbose:
+        logging.basicConfig(
+            level=logging.INFO, format="%(name)s: %(message)s", force=True,
+        )
+
+
+def _get_domain() -> str:
+    """Get domain name from --domain CLI arg or DOMAIN env var."""
+    return _parse_cli_args().domain
 
 
 def _load_domain_prompt(domain: str) -> str:
@@ -429,24 +474,144 @@ def _safe_json_str(data: dict) -> str:
     return json.dumps(data, indent=2)
 
 
-def _build_retry_input(player_content: str, issues: list[str]) -> dict:
+def _build_context_manifest(target: dict[str, Any], context: str) -> str:
+    """Build a context manifest from the target and prefetched context.
+
+    Includes the filename list and any scope/constraint metadata from the
+    original target so that retry iterations retain structural context.
+    Without this, models fabricate filenames when the corpus is large.
+    See: specialist-agent testing sessions, Category C bugs.
+
+    Args:
+        target: Original target specification dict.
+        context: Prefetched domain context string.
+
+    Returns:
+        Manifest string suitable for inclusion in retry prompts.
+    """
+    parts: list[str] = []
+
+    # Include file list from target if available
+    files = target.get("files", target.get("documents", []))
+    if files:
+        parts.append("### Document manifest\n")
+        for f in files:
+            name = f if isinstance(f, str) else f.get("name", f.get("path", str(f)))
+            parts.append(f"- {name}")
+        parts.append("")
+
+    # Include scope/constraints from target
+    scope = target.get("scope", target.get("constraints", ""))
+    if scope:
+        parts.append(f"### Scope\n{scope}\n")
+
+    # If no structured metadata, extract a summary from context length
+    if not parts and context:
+        ctx_lines = context.strip().splitlines()
+        parts.append(f"Context: {len(ctx_lines)} lines of domain context provided in original input.")
+
+    return "\n".join(parts)
+
+
+def _write_session_log(
+    target_id: str,
+    result: PipelineResult,
+    log_dir: str = "session-logs",
+) -> None:
+    """Write session log unconditionally — before success/failure branching.
+
+    Failed runs MUST produce diagnostic output. Without session logs on
+    failure, debugging is guesswork. This function is called for every
+    pipeline execution regardless of outcome.
+    See: specialist-agent testing sessions, Category A bugs.
+
+    Args:
+        target_id: Identifier for the target being processed.
+        result: PipelineResult from the pipeline execution.
+        log_dir: Directory for session log files.
+    """
+    import json
+    from datetime import datetime
+
+    log_path = pathlib.Path(log_dir)
+    log_path.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = log_path / f"{target_id}_{timestamp}.json"
+
+    verdict_data = None
+    if result.verdict is not None:
+        verdict_data = {
+            "decision": result.verdict.decision,
+            "composite_score": result.verdict.composite_score,
+            "issues": result.verdict.issues,
+            "quality_assessment": result.verdict.quality_assessment,
+            "criterion_scores": [
+                {"name": cs.name, "score": cs.score, "feedback": cs.feedback}
+                for cs in result.verdict.criterion_scores
+            ],
+        }
+
+    log_entry = {
+        "target_id": target_id,
+        "timestamp": datetime.now().isoformat(),
+        "success": result.success,
+        "attempts": result.attempts,
+        "error": result.error,
+        "verdict": verdict_data,
+    }
+
+    try:
+        log_file.write_text(json.dumps(log_entry, indent=2))
+        logger.info("Session log written: %s", log_file)
+    except Exception as e:
+        logger.warning("Failed to write session log: %s", e)
+
+
+def _build_retry_input(
+    player_content: str,
+    issues: list[str],
+    *,
+    context_manifest: str | None = None,
+) -> dict:
     """Build retry input for the Player using user role only (TASK-REV-R2A1).
 
     create_agent() unconditionally prepends system_prompt on every ainvoke()
     call. NEVER pass system role messages — use user role for reinforcement.
+
+    Args:
+        player_content: The Player's previous output.
+        issues: List of Coach feedback issues or error messages.
+        context_manifest: Optional structural context from the original input.
+            Should include at minimum a filename manifest listing all documents
+            in the corpus. Without this, models fabricate filenames on retry
+            iterations when the corpus is large (15+ documents).
+            See: specialist-agent testing sessions, Category C bugs.
     """
     feedback = "; ".join(issues)
+
+    parts = [
+        "IMPORTANT: Your previous output was rejected by the Coach.\n",
+        f"Feedback: {feedback}\n\n",
+    ]
+
+    if context_manifest:
+        parts.append(
+            "## Available Context (from original input)\n\n"
+            f"{context_manifest}\n\n"
+        )
+
+    parts.append(
+        "Apply targeted revisions focusing on the lowest-scoring "
+        "criteria. Do NOT discard existing work.\n\n"
+        f"Previous output:\n{player_content}"
+    )
+
     return {
         "messages": [
             {
                 "role": "user",
-                "content": (
-                    "IMPORTANT: Your previous output was rejected by the Coach.\n"
-                    f"Feedback: {feedback}\n\n"
-                    "Apply targeted revisions focusing on the lowest-scoring "
-                    "criteria. Do NOT discard existing work.\n\n"
-                    f"Previous output:\n{player_content}"
-                ),
+                "content": "".join(parts),
             },
         ],
     }
@@ -477,6 +642,11 @@ def create_orchestrator(
         Configured AdversarialOrchestrator.
     """
     from lib.factory_guards import OrchestratorWriteGate
+
+    # Configure logging early — before role loading or any other work.
+    # Without this, every non-greenfield dispatch path swallows logger output.
+    cli_args = _parse_cli_args()
+    _configure_logging(debug=cli_args.debug, verbose=cli_args.verbose)
 
     config = _load_config()
     adversarial_config = load_adversarial_config()

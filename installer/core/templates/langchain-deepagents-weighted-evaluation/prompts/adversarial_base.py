@@ -5,9 +5,29 @@ prompt utilities. The base Player prompt is reused as-is since the Player
 workflow (research → generate → submit → revise) is unchanged.
 
 The Coach prompt is replaced by the weighted variant in coach_template.py.
+
+.. note:: TEMPLATE GUIDELINE — Player prompt authoring
+
+    Do not duplicate enforcement rules that the Coach already handles.
+    The Player should focus on generation quality. The Coach handles
+    compliance via detection patterns. Verbose compliance rules in
+    Player prompts actively degrade output quality — tested and
+    confirmed during specialist-agent validation (April 2026).
+
+    When customising this prompt for a new role:
+    - Keep the Player focused on WHAT to produce and HOW to produce it
+    - Leave enforcement of WHAT NOT to produce to the Coach
+    - Resist the urge to add "do not..." rules — they consume attention
+      budget and reduce generation quality
 """
 
 from __future__ import annotations
+
+# TEMPLATE GUIDELINE: Do not duplicate enforcement rules that the Coach already
+# handles. The Player should focus on generation quality. The Coach handles
+# compliance via detection patterns. Verbose compliance rules in Player prompts
+# actively degrade output quality — tested and confirmed during specialist-agent
+# validation (April 2026).
 
 # Player prompt is identical to the base template
 PLAYER_SYSTEM_PROMPT = """\

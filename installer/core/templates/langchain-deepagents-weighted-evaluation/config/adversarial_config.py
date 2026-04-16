@@ -94,6 +94,8 @@ INTENSITY_OVERRIDES: dict[str, dict[str, Any]] = {
 
 def load_adversarial_config(
     config_path: pathlib.Path | None = None,
+    *,
+    mode: str | None = None,
 ) -> dict[str, Any]:
     """Load adversarial configuration from file or defaults.
 
@@ -101,9 +103,13 @@ def load_adversarial_config(
     1. DEFAULT_CONFIG (base)
     2. agent-config.yaml adversarial section (if present)
     3. INTENSITY_OVERRIDES for the selected intensity
+    4. mode_overrides for the active mode (if present)
 
     Args:
         config_path: Path to agent-config.yaml. Defaults to ./agent-config.yaml.
+        mode: Active processing mode (e.g., "scope", "extract"). When set,
+            mode-specific criteria weight overrides from the coach.mode_overrides
+            section are merged onto base criteria weights.
 
     Returns:
         Merged configuration dict.
@@ -114,11 +120,12 @@ def load_adversarial_config(
     if config_path is None:
         config_path = pathlib.Path("agent-config.yaml")
 
+    file_config: dict[str, Any] = {}
     if config_path.exists():
         try:
             import yaml
 
-            file_config = yaml.safe_load(config_path.read_text())
+            file_config = yaml.safe_load(config_path.read_text()) or {}
             adversarial_section = file_config.get("adversarial", {})
             _deep_merge(config, adversarial_section)
         except Exception as e:
@@ -128,6 +135,12 @@ def load_adversarial_config(
     intensity = config.get("intensity", AdversarialIntensity.FULL.value)
     overrides = INTENSITY_OVERRIDES.get(intensity, {})
     _deep_merge(config, overrides)
+
+    # Apply mode-specific criteria weight overrides if a mode is active.
+    # mode_overrides lives under coach.mode_overrides in agent-config.yaml.
+    # See: specialist-agent testing sessions, Category E bugs.
+    if mode:
+        _apply_mode_overrides(config, file_config, mode)
 
     # Validate criteria weights sum to 1.0
     criteria = config.get("evaluation_criteria", [])
@@ -141,6 +154,54 @@ def load_adversarial_config(
             )
 
     return config
+
+
+def _apply_mode_overrides(
+    config: dict[str, Any],
+    file_config: dict[str, Any],
+    mode: str,
+) -> None:
+    """Merge mode-specific criteria weight overrides onto base weights.
+
+    Reads from coach.mode_overrides.<mode> in the file config. Each key
+    is a criterion name mapping to an override weight. Criteria not listed
+    in the override keep their base weights.
+
+    After applying overrides, weights are re-normalized to sum to 1.0.
+
+    Args:
+        config: The merged adversarial config (mutated in place).
+        file_config: The raw parsed agent-config.yaml.
+        mode: The active processing mode name.
+    """
+    coach_config = file_config.get("coach", {})
+    mode_overrides = coach_config.get("mode_overrides", {})
+    overrides_for_mode = mode_overrides.get(mode)
+
+    if not overrides_for_mode:
+        return
+
+    logger.info("Applying mode_overrides for mode=%s: %s", mode, overrides_for_mode)
+
+    criteria = config.get("evaluation_criteria", [])
+    if not criteria:
+        return
+
+    # Apply per-criterion weight overrides
+    for criterion in criteria:
+        name = criterion.get("name", "")
+        if name in overrides_for_mode:
+            criterion["weight"] = float(overrides_for_mode[name])
+
+    # Re-normalize weights to sum to 1.0
+    total = sum(c.get("weight", 0.0) for c in criteria)
+    if total > 0 and abs(total - 1.0) > 0.01:
+        logger.info(
+            "Re-normalizing criteria weights after mode override "
+            "(raw sum=%.3f)", total,
+        )
+        for criterion in criteria:
+            criterion["weight"] = criterion["weight"] / total
 
 
 def _deep_merge(base: dict, override: dict) -> None:

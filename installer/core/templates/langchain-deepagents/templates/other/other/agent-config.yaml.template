@@ -17,6 +17,16 @@ coach:
   model: {{DefaultModel}}
   endpoint: {{LocalEndpoint}}
   temperature: 0.3
+  # Mode-specific criteria weight overrides (weighted-evaluation template only).
+  # When a mode is active, these weights replace base criteria weights.
+  # Weights are re-normalized to sum to 1.0 after override.
+  # Uncomment and adjust for your domain:
+  # mode_overrides:
+  #   scope:
+  #     feature_coverage: 0.10   # reduced — scope mode deliberately excludes features
+  #     scope_discipline: 0.35   # increased — primary evaluation axis for this mode
+  #   extract:
+  #     feature_coverage: 0.30   # default weight, no override needed
 
 generation:
   max_turns: 3

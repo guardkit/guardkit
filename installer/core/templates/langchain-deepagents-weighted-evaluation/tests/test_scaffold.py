@@ -11,7 +11,7 @@ Verifies:
 8. Intensity routing behaves correctly for full/light/solo modes
 
 Coverage Target: >=85%
-Test Count: 80+ tests
+Test Count: 110+ tests
 """
 
 from __future__ import annotations
@@ -54,6 +54,116 @@ def _load_module(name: str, file_path: pathlib.Path):
     return module
 
 
+def _load_j2_module(name: str, file_path: pathlib.Path):
+    """Load a Jinja2 template (.j2) as a Python module after replacing placeholders.
+
+    Replaces {{Placeholder}} template variables with valid Python values
+    so the file can be loaded as a standard Python module. Used for
+    testing scaffold files that contain Jinja2 template variables.
+    """
+    import re
+    import sys
+    import tempfile
+
+    content = file_path.read_text()
+
+    # Replace Jinja2 template variables with valid Python values
+    replacements = {
+        "{{ProjectName}}": "_test_project",
+        "{{DomainName}}": "test_domain",
+        "{{AdversarialIntensity}}": "full",
+        "{{AcceptanceThreshold}}": "0.7",
+        "{{MaxRetries}}": "3",
+    }
+    for placeholder, value in replacements.items():
+        content = content.replace(placeholder, value)
+
+    # Remove any remaining {{ }} Jinja2 syntax (e.g., in f-strings)
+    content = re.sub(r"\{\{(\w+)\}\}", r"'\1'", content)
+
+    # Strip import lines that reference the fake project module
+    lines = content.splitlines()
+    filtered = []
+    skip_continuation = False
+    for line in lines:
+        if skip_continuation:
+            if line.strip().endswith(")"):
+                skip_continuation = False
+            continue
+        if "from _test_project." in line:
+            if not line.strip().endswith(")"):
+                skip_continuation = True
+            continue
+        if "from lib." in line:
+            if not line.strip().endswith(")"):
+                skip_continuation = True
+            continue
+        filtered.append(line)
+
+    content = "\n".join(filtered)
+
+    # Add stub imports for types referenced from other modules.
+    # Must be inserted AFTER any `from __future__` import line.
+    stubs = (
+        "\n# Auto-generated stubs for testing\n"
+        "class WeightedEvaluationPipeline: pass\n"
+        "class WeightedVerdict:\n"
+        "    def __init__(self, **kw): pass\n"
+        "    @classmethod\n"
+        "    def from_json(cls, raw, weights): pass\n"
+        "class PipelineResult:\n"
+        "    def __init__(self, success=False, content='', verdict=None, "
+        "attempts=0, error=None):\n"
+        "        self.success = success\n"
+        "        self.content = content\n"
+        "        self.verdict = verdict\n"
+        "        self.attempts = attempts\n"
+        "        self.error = error\n"
+        "def load_adversarial_config(**kw): return {}\n"
+        "def build_weighted_coach_prompt(*a, **kw): return ''\n"
+        "PLAYER_SYSTEM_PROMPT = ''\n"
+        "def build_player_prompt_with_domain(d): return d\n"
+        "def assert_no_system_messages(d): pass\n"
+        "class JsonExtractor:\n"
+        "    @staticmethod\n"
+        "    def extract(c, **kw): return {}\n"
+        "class OrchestratorWriteGate:\n"
+        "    def __init__(self, **kw): pass\n"
+        "def validate_player_tools(t): pass\n"
+        "def create_restricted_agent(**kw): return None\n"
+    )
+
+    # Insert stubs AFTER `from __future__` imports (which must be first)
+    lines_out = content.splitlines()
+    insert_idx = 0
+    for i, line in enumerate(lines_out):
+        if line.strip().startswith("from __future__"):
+            insert_idx = i + 1
+    lines_out.insert(insert_idx, stubs)
+    content = "\n".join(lines_out)
+
+    # Write to a temp file and load
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".py", prefix=f"_test_{name}_", delete=False,
+    ) as f:
+        f.write(content)
+        tmp_path = f.name
+
+    unique_name = f"_test_scaffold_j2_.{name}"
+    loader = importlib.machinery.SourceFileLoader(unique_name, tmp_path)
+    spec = importlib.util.spec_from_file_location(
+        unique_name, tmp_path, loader=loader,
+    )
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[unique_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(unique_name, None)
+        raise
+    return module
+
+
 class TestDirectoryStructure:
     """Verify the template has the correct directory structure."""
 
@@ -71,6 +181,7 @@ class TestDirectoryStructure:
         "filepath",
         [
             "SKILL.md",
+            "TEMPLATE-NOTES.md",
             "manifest.json",
             ".claude/CLAUDE.md",
             "scaffold/orchestrator.py.j2",
@@ -574,3 +685,335 @@ class TestIntensityRouter:
             config = adv_config.load_adversarial_config(config_path=config_file)
             router = adv_config.IntensityRouter(config)
             assert router.intensity.value == mode
+
+
+# ============================================================================
+# 9. Mode-Specific Criteria Overrides (Category E fix)
+# ============================================================================
+
+
+class TestModeOverrides:
+    """Test mode-specific criteria weight overrides in adversarial_config."""
+
+    @pytest.fixture
+    def adv_config(self):
+        """Load adversarial_config module via importlib."""
+        return _load_module(
+            "adversarial_config_mode",
+            TEMPLATE_ROOT / "config" / "adversarial_config.py",
+        )
+
+    def test_no_mode_returns_base_weights(self, adv_config):
+        """Without a mode, base criteria weights are unchanged."""
+        config = adv_config.load_adversarial_config(
+            config_path=pathlib.Path("nonexistent.yaml"),
+        )
+        criteria = config["evaluation_criteria"]
+        weights = {c["name"]: c["weight"] for c in criteria}
+        assert weights["accuracy"] == 0.3
+        assert weights["completeness"] == 0.3
+
+    def test_mode_with_no_overrides_returns_base_weights(self, adv_config):
+        """A mode with no matching overrides keeps base weights."""
+        config = adv_config.load_adversarial_config(
+            config_path=pathlib.Path("nonexistent.yaml"),
+            mode="nonexistent_mode",
+        )
+        criteria = config["evaluation_criteria"]
+        weights = {c["name"]: c["weight"] for c in criteria}
+        assert weights["accuracy"] == 0.3
+
+    def test_mode_overrides_applied(self, adv_config, tmp_path):
+        """Mode overrides are applied and weights re-normalized."""
+        yaml_content = (
+            "adversarial:\n"
+            "  intensity: full\n"
+            "coach:\n"
+            "  mode_overrides:\n"
+            "    scope:\n"
+            "      accuracy: 0.1\n"
+            "      completeness: 0.1\n"
+        )
+        config_file = tmp_path / "agent-config.yaml"
+        config_file.write_text(yaml_content)
+
+        config = adv_config.load_adversarial_config(
+            config_path=config_file, mode="scope",
+        )
+        criteria = config["evaluation_criteria"]
+        weights = {c["name"]: c["weight"] for c in criteria}
+
+        # accuracy and completeness should be reduced relative to structure/quality
+        assert weights["accuracy"] < 0.3
+        assert weights["completeness"] < 0.3
+        # Weights should still sum to ~1.0 after re-normalization
+        total = sum(weights.values())
+        assert abs(total - 1.0) < 0.01
+
+    def test_mode_overrides_renormalize(self, adv_config, tmp_path):
+        """Override weights that don't sum to 1.0 are re-normalized."""
+        yaml_content = (
+            "adversarial:\n"
+            "  intensity: full\n"
+            "coach:\n"
+            "  mode_overrides:\n"
+            "    test_mode:\n"
+            "      accuracy: 0.5\n"
+            "      quality: 0.5\n"
+        )
+        config_file = tmp_path / "agent-config.yaml"
+        config_file.write_text(yaml_content)
+
+        config = adv_config.load_adversarial_config(
+            config_path=config_file, mode="test_mode",
+        )
+        criteria = config["evaluation_criteria"]
+        total = sum(c["weight"] for c in criteria)
+        assert abs(total - 1.0) < 0.01
+
+    def test_mode_overrides_without_mode_arg_ignored(self, adv_config, tmp_path):
+        """mode_overrides in YAML are ignored when mode arg is not passed."""
+        yaml_content = (
+            "adversarial:\n"
+            "  intensity: full\n"
+            "coach:\n"
+            "  mode_overrides:\n"
+            "    scope:\n"
+            "      accuracy: 0.01\n"
+        )
+        config_file = tmp_path / "agent-config.yaml"
+        config_file.write_text(yaml_content)
+
+        config = adv_config.load_adversarial_config(config_path=config_file)
+        criteria = config["evaluation_criteria"]
+        weights = {c["name"]: c["weight"] for c in criteria}
+        # Should still have original weight since no mode was passed
+        assert weights["accuracy"] == 0.3
+
+
+# ============================================================================
+# 10. Retry Input Builder (Category C fix)
+# ============================================================================
+
+
+class TestRetryInputBuilder:
+    """Test _build_retry_input from the orchestrator scaffold."""
+
+    @pytest.fixture
+    def orch_mod(self):
+        """Load orchestrator module via importlib (with J2 preprocessing)."""
+        return _load_j2_module(
+            "orchestrator_retry",
+            TEMPLATE_ROOT / "scaffold" / "orchestrator.py.j2",
+        )
+
+    def test_basic_retry_input(self, orch_mod):
+        """Basic retry input contains feedback and previous output."""
+        result = orch_mod._build_retry_input(
+            "previous content", issues=["issue1", "issue2"],
+        )
+        content = result["messages"][0]["content"]
+        assert "issue1; issue2" in content
+        assert "previous content" in content
+        assert result["messages"][0]["role"] == "user"
+
+    def test_retry_input_with_context_manifest(self, orch_mod):
+        """Context manifest is included in retry input when provided."""
+        manifest = "### Document manifest\n- doc1.md\n- doc2.md"
+        result = orch_mod._build_retry_input(
+            "previous content",
+            issues=["bad quality"],
+            context_manifest=manifest,
+        )
+        content = result["messages"][0]["content"]
+        assert "doc1.md" in content
+        assert "doc2.md" in content
+        assert "Available Context" in content
+
+    def test_retry_input_without_context_manifest(self, orch_mod):
+        """Without context_manifest, retry input omits context section."""
+        result = orch_mod._build_retry_input(
+            "previous content", issues=["bad quality"],
+        )
+        content = result["messages"][0]["content"]
+        assert "Available Context" not in content
+
+
+# ============================================================================
+# 11. Context Manifest Builder
+# ============================================================================
+
+
+class TestContextManifestBuilder:
+    """Test _build_context_manifest from the orchestrator scaffold."""
+
+    @pytest.fixture
+    def orch_mod(self):
+        return _load_j2_module(
+            "orchestrator_manifest",
+            TEMPLATE_ROOT / "scaffold" / "orchestrator.py.j2",
+        )
+
+    def test_manifest_from_files_list(self, orch_mod):
+        """Manifest built from target['files'] list."""
+        target = {"files": ["doc1.md", "doc2.md", "doc3.md"]}
+        manifest = orch_mod._build_context_manifest(target, "some context")
+        assert "doc1.md" in manifest
+        assert "doc2.md" in manifest
+        assert "doc3.md" in manifest
+
+    def test_manifest_from_documents_list(self, orch_mod):
+        """Manifest built from target['documents'] list."""
+        target = {"documents": [{"name": "report.pdf"}]}
+        manifest = orch_mod._build_context_manifest(target, "some context")
+        assert "report.pdf" in manifest
+
+    def test_manifest_includes_scope(self, orch_mod):
+        """Scope from target is included in manifest."""
+        target = {"scope": "Only cover European markets"}
+        manifest = orch_mod._build_context_manifest(target, "context")
+        assert "European markets" in manifest
+
+    def test_manifest_fallback_to_context_length(self, orch_mod):
+        """Without files or scope, manifest reports context size."""
+        target = {"id": "test-1"}
+        context = "line1\nline2\nline3"
+        manifest = orch_mod._build_context_manifest(target, context)
+        assert "3 lines" in manifest
+
+    def test_manifest_empty_context(self, orch_mod):
+        """Empty context and no metadata produces empty manifest."""
+        target = {}
+        manifest = orch_mod._build_context_manifest(target, "")
+        assert manifest == ""
+
+
+# ============================================================================
+# 12. CLI Args and Logging Configuration
+# ============================================================================
+
+
+class TestLoggingConfig:
+    """Test _configure_logging from the orchestrator scaffold."""
+
+    @pytest.fixture
+    def orch_mod(self):
+        return _load_j2_module(
+            "orchestrator_logging",
+            TEMPLATE_ROOT / "scaffold" / "orchestrator.py.j2",
+        )
+
+    def test_configure_logging_debug(self, orch_mod):
+        """Debug flag configures DEBUG level."""
+        import logging
+
+        orch_mod._configure_logging(debug=True)
+        assert logging.getLogger().level == logging.DEBUG
+
+    def test_configure_logging_verbose(self, orch_mod):
+        """Verbose flag configures INFO level."""
+        import logging
+
+        orch_mod._configure_logging(verbose=True)
+        assert logging.getLogger().level == logging.INFO
+
+    def test_configure_logging_default(self, orch_mod):
+        """Neither flag leaves logging unconfigured (no error)."""
+        # Should not raise
+        orch_mod._configure_logging()
+
+
+# ============================================================================
+# 13. Session Log Writer
+# ============================================================================
+
+
+class TestSessionLogWriter:
+    """Test _write_session_log from the orchestrator scaffold."""
+
+    @pytest.fixture
+    def orch_mod(self):
+        return _load_j2_module(
+            "orchestrator_session",
+            TEMPLATE_ROOT / "scaffold" / "orchestrator.py.j2",
+        )
+
+    def test_writes_log_on_success(self, orch_mod, tmp_path):
+        """Session log is written for successful results."""
+        import json
+
+        result = orch_mod.PipelineResult(
+            success=True, content='{"test": true}', attempts=1,
+        )
+        log_dir = str(tmp_path / "logs")
+        orch_mod._write_session_log("target-1", result, log_dir=log_dir)
+
+        logs = list((tmp_path / "logs").glob("target-1_*.json"))
+        assert len(logs) == 1
+        data = json.loads(logs[0].read_text())
+        assert data["success"] is True
+        assert data["target_id"] == "target-1"
+
+    def test_writes_log_on_failure(self, orch_mod, tmp_path):
+        """Session log is written for failed results — the key fix."""
+        import json
+
+        result = orch_mod.PipelineResult(
+            success=False, attempts=3, error="Exhausted 3 retries",
+        )
+        log_dir = str(tmp_path / "logs")
+        orch_mod._write_session_log("target-fail", result, log_dir=log_dir)
+
+        logs = list((tmp_path / "logs").glob("target-fail_*.json"))
+        assert len(logs) == 1
+        data = json.loads(logs[0].read_text())
+        assert data["success"] is False
+        assert data["error"] == "Exhausted 3 retries"
+
+
+# ============================================================================
+# 14. Player Prompt Guideline (Category C fix)
+# ============================================================================
+
+
+class TestPlayerPromptGuideline:
+    """Verify Player prompt includes the Coach-separation guideline."""
+
+    @pytest.fixture
+    def prompt_mod(self):
+        return _load_module(
+            "adversarial_base_guideline",
+            TEMPLATE_ROOT / "prompts" / "adversarial_base.py",
+        )
+
+    def test_module_docstring_has_guideline(self, prompt_mod):
+        """Module docstring includes the template guideline."""
+        assert "Do not duplicate enforcement rules" in prompt_mod.__doc__
+
+    def test_player_prompt_unchanged(self, prompt_mod):
+        """Player prompt itself is unchanged (guideline is meta, not in prompt)."""
+        assert "Player agent" in prompt_mod.PLAYER_SYSTEM_PROMPT
+        assert "search_data" in prompt_mod.PLAYER_SYSTEM_PROMPT
+
+
+# ============================================================================
+# 15. TEMPLATE-NOTES.md Exists
+# ============================================================================
+
+
+class TestTemplateNotes:
+    """Verify TEMPLATE-NOTES.md exists with prompt-schema contract docs."""
+
+    def test_file_exists(self):
+        assert (TEMPLATE_ROOT / "TEMPLATE-NOTES.md").is_file()
+
+    def test_documents_prompt_schema_contract(self):
+        content = (TEMPLATE_ROOT / "TEMPLATE-NOTES.md").read_text()
+        assert "Prompt-Schema Contract" in content
+        assert "Pydantic" in content
+        assert "WeightedVerdict" in content
+
+    def test_documents_enum_alignment(self):
+        content = (TEMPLATE_ROOT / "TEMPLATE-NOTES.md").read_text()
+        assert "Enum" in content or "enum" in content
+        assert "prompt" in content.lower()

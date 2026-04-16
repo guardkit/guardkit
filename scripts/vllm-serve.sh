@@ -36,7 +36,7 @@
 #   See: https://spark-arena.com/leaderboard
 #
 # Port allocation:
-#   8000 — Graphiti LLM (llm-graphiti.sh) — Nemotron 3 Nano 4B
+#   8000 — Graphiti LLM (llm-graphiti.sh) — Qwen2.5-14B
 #   8001 — Embedding model (vllm-embed.sh) — nomic-embed-text-v1.5
 #   8002 — AutoBuild LLM (this script)    — Qwen3-Coder-Next
 #
