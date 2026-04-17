@@ -22,17 +22,30 @@ Use this when Graphiti MCP tools are available in the current Claude Code sessio
 
 **Instructions for the LLM**:
 
-Check whether `mcp__graphiti__search_nodes` is available in the current session's tool list.
+Check whether `mcp__graphiti__search_nodes` is available in the current session.
+This includes BOTH the immediate tool list AND the deferred-tool list shown in
+system reminders (deferred tools are loadable on demand via `ToolSearch` and must
+be treated as available).
 
-- **IF** available:
+- **IF** present in the immediate tool list:
   - SET `graphiti_available = true`
   - SET `graphiti_access_method = "mcp"`
+
+- **IF** present only in the deferred-tool list (system reminder):
+  - Load schemas first:
+    ```
+    ToolSearch(query: "select:mcp__graphiti__search_nodes,mcp__graphiti__search_memory_facts,mcp__graphiti__add_memory")
+    ```
+  - SET `graphiti_available = true`
+  - SET `graphiti_access_method = "mcp"`
+
+- **IF** Graphiti MCP tools are absent from BOTH lists:
+  - Fall through to Tier 1 (Read-Based Check)
+
+When `graphiti_available = true`:
   - Use `mcp__graphiti__search_nodes` and `mcp__graphiti__search_memory_facts` directly
   - Always pass explicit `group_ids` (see `.claude/rules/graphiti-knowledge-graph.md`)
   - **Skip Tier 1 and Tier 2** — MCP handles connectivity internally
-
-- **IF** not available:
-  - Fall through to Tier 1 (Read-Based Check)
 
 > **Why prefer MCP?** MCP tools run in-process with the LLM session, avoiding
 > the overhead of spawning a Python subprocess via Bash. They also provide

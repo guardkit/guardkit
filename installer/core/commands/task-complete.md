@@ -230,7 +230,23 @@ episode_body = "TASK-042: Implement user authentication API. Complexity: 7/10. A
 
 Check whether `mcp__graphiti__add_memory` is available in the current session's tool list.
 
-**IF** MCP tool is available:
+**IMPORTANT — Deferred tools**: In Claude Code sessions, MCP tools are often listed
+in the system reminder as "deferred" (loadable via `ToolSearch`) rather than appearing
+directly in the immediate tool list. Treat deferred tools as **available**.
+
+If `mcp__graphiti__add_memory` is **not** in the immediate tool list, scan the
+session's deferred-tool list (system reminder block) for `mcp__graphiti__add_memory`.
+If present, load it via:
+
+```
+ToolSearch(query: "select:mcp__graphiti__add_memory")
+```
+
+Only fall through to Tier 1/2 if the tool is absent from BOTH the immediate tool
+list AND the deferred-tool list (i.e., the graphiti MCP server is not configured
+for this session at all).
+
+**IF** MCP tool is available (either immediately or after ToolSearch load):
 
 **Write 1 — Task Outcome** (always):
 ```
