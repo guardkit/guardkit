@@ -524,6 +524,16 @@ class TestLocalInferenceProviderSettings:
         with pytest.raises(ValueError, match="embedding_provider must be one of"):
             GraphitiSettings(embedding_provider="huggingface")
 
+    def test_gemini_llm_provider_accepted(self):
+        """TASK-G7B2-001: 'gemini' is accepted as a valid llm_provider."""
+        settings = GraphitiSettings(llm_provider="gemini", llm_model="gemini-2.5-flash")
+        assert settings.llm_provider == "gemini"
+
+    def test_gemini_rejected_as_embedding_provider(self):
+        """TASK-G7B2-001: 'gemini' is NOT accepted as embedding_provider — keep embeddings local."""
+        with pytest.raises(ValueError, match="embedding_provider must be one of"):
+            GraphitiSettings(embedding_provider="gemini")
+
     def test_vllm_embedding_provider_accepted(self):
         """Test that 'vllm' is accepted as a valid embedding_provider."""
         settings = GraphitiSettings(embedding_provider="vllm")

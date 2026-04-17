@@ -527,3 +527,170 @@ class TestOpenAIAPIKeyRequirement:
             result = await client.initialize()
 
         assert result is False
+
+
+# ============================================================================
+# 9. Gemini Provider Tests (TASK-G7B2-001)
+# ============================================================================
+
+
+class TestGeminiProvider:
+    """Tests for gemini LLM provider support."""
+
+    def test_gemini_accepted_as_valid_llm_provider(self):
+        """GraphitiConfig accepts 'gemini' without raising."""
+        config = GraphitiConfig(
+            enabled=True,
+            llm_provider="gemini",
+            llm_model="gemini-2.5-flash",
+        )
+        assert config.llm_provider == "gemini"
+
+    def test_gemini_rejected_as_embedding_provider(self):
+        """Embedding provider does NOT accept 'gemini' — keep embeddings local."""
+        with pytest.raises(ValueError, match="embedding_provider must be one of"):
+            GraphitiConfig(
+                enabled=True,
+                llm_provider="openai",
+                embedding_provider="gemini",
+            )
+
+    def test_build_llm_client_creates_gemini_client(self):
+        """_build_llm_client returns a GeminiClient when llm_provider is 'gemini'."""
+        config = GraphitiConfig(
+            enabled=True,
+            llm_provider="gemini",
+            llm_model="gemini-2.5-flash",
+        )
+        client = GraphitiClient(config)
+
+        mock_gemini_instance = MagicMock()
+        mock_gemini_class = MagicMock(return_value=mock_gemini_instance)
+        mock_llm_config_class = MagicMock()
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "graphiti_core.llm_client.gemini_client": MagicMock(
+                    GeminiClient=mock_gemini_class,
+                ),
+                "graphiti_core.llm_client": MagicMock(
+                    LLMConfig=mock_llm_config_class,
+                ),
+            },
+        ), patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}):
+            result = client._build_llm_client()
+
+        assert result is mock_gemini_instance
+        mock_llm_config_class.assert_called_once_with(
+            api_key="test-key",
+            model="gemini-2.5-flash",
+        )
+
+    def test_build_llm_client_gemini_defaults_model(self):
+        """When llm_model is None and provider is gemini, default to gemini-2.5-flash."""
+        config = GraphitiConfig(
+            enabled=True,
+            llm_provider="gemini",
+            llm_model=None,
+        )
+        client = GraphitiClient(config)
+
+        mock_gemini_class = MagicMock()
+        mock_llm_config_class = MagicMock()
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "graphiti_core.llm_client.gemini_client": MagicMock(
+                    GeminiClient=mock_gemini_class,
+                ),
+                "graphiti_core.llm_client": MagicMock(
+                    LLMConfig=mock_llm_config_class,
+                ),
+            },
+        ), patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}):
+            client._build_llm_client()
+
+        kwargs = mock_llm_config_class.call_args.kwargs
+        assert kwargs["model"] == "gemini-2.5-flash"
+
+    def test_build_llm_client_gemini_missing_api_key_raises(self):
+        """Missing GOOGLE_API_KEY raises a clear error (fails fast, no silent fallback)."""
+        config = GraphitiConfig(
+            enabled=True,
+            llm_provider="gemini",
+            llm_model="gemini-2.5-flash",
+        )
+        client = GraphitiClient(config)
+
+        with patch.dict(os.environ, {}, clear=True), \
+             pytest.raises(RuntimeError, match="GOOGLE_API_KEY is not set"):
+            client._build_llm_client()
+
+
+# ============================================================================
+# 10. Embedding Dimensions Passthrough Tests (TASK-G7B2-001)
+# ============================================================================
+
+
+class TestEmbeddingDimensionsPassthrough:
+    """Tests for the embedding_dimensions -> OpenAIEmbedderConfig(embedding_dim=...) fix."""
+
+    def test_embedding_dim_passed_through_when_set(self):
+        """When embedding_dimensions is set on config, it's passed to OpenAIEmbedderConfig."""
+        config = GraphitiConfig(
+            enabled=True,
+            embedding_provider="vllm",
+            embedding_base_url="http://host:8001/v1",
+            embedding_model="nomic-embed-text-v1.5",
+            embedding_dimensions=1024,
+        )
+        client = GraphitiClient(config)
+
+        mock_config_class = MagicMock()
+        mock_embedder_class = MagicMock()
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "graphiti_core.embedder": MagicMock(
+                    OpenAIEmbedder=mock_embedder_class,
+                    OpenAIEmbedderConfig=mock_config_class,
+                ),
+            },
+        ):
+            client._build_embedder()
+
+        kwargs = mock_config_class.call_args.kwargs
+        assert kwargs["embedding_dim"] == 1024
+        assert kwargs["base_url"] == "http://host:8001/v1"
+        assert kwargs["embedding_model"] == "nomic-embed-text-v1.5"
+
+    def test_embedding_dim_omitted_when_none(self):
+        """When embedding_dimensions is None, embedding_dim kwarg is NOT passed (back-compat)."""
+        config = GraphitiConfig(
+            enabled=True,
+            embedding_provider="vllm",
+            embedding_base_url="http://host:8001/v1",
+            embedding_model="nomic-embed-text-v1.5",
+            embedding_dimensions=None,
+        )
+        client = GraphitiClient(config)
+
+        mock_config_class = MagicMock()
+        mock_embedder_class = MagicMock()
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "graphiti_core.embedder": MagicMock(
+                    OpenAIEmbedder=mock_embedder_class,
+                    OpenAIEmbedderConfig=mock_config_class,
+                ),
+            },
+        ):
+            client._build_embedder()
+
+        kwargs = mock_config_class.call_args.kwargs
+        assert "embedding_dim" not in kwargs

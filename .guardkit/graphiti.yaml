@@ -45,17 +45,24 @@ timeout: 30.0
 max_concurrent_episodes: 3
 
 # LLM provider for Graphiti entity extraction
-# Options: openai (default), vllm, ollama
+# Options: openai (default), vllm, ollama, gemini
 #
-# To switch back to GB10 (vLLM), uncomment the gb10 lines and comment the macbook lines.
-# Also update .mcp.json LLM_API_URL to http://promaxgb10-41b1:8000/v1
+# Gemini 2.5 Pro (paid tier) — moved off local GB10 vLLM to free GPU for fine-tuning.
+# Graphiti only calls the LLM during ingestion/seeding, not queries.
+# Requires GOOGLE_API_KEY env var and `pip install guardkit-py[gemini]`.
+# Paid tier chosen after free-tier 429s during seeding (Wave 2 smoke test, 2026-04-17).
+# See: docs/guides/graphiti-gemini-rollout-setup.md
 #
-# --- GB10 (vLLM, FP8) ---
-llm_provider: vllm
-llm_base_url: http://promaxgb10-41b1:8000/v1
-llm_model: neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic
+# --- Google Gemini (cloud) ---
+llm_provider: gemini
+llm_model: gemini-2.5-pro
 #
-# --- MacBook Pro M2 Max (Ollama, Q4_K_M) ---
+# --- Fallback: GB10 (vLLM, FP8) — uncomment to revert ---
+#llm_provider: vllm
+#llm_base_url: http://promaxgb10-41b1:8000/v1
+#llm_model: neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic
+#
+# --- Fallback: MacBook Pro M2 Max (Ollama, Q4_K_M) ---
 #llm_provider: ollama
 #llm_base_url: http://richards-macbook-pro.tailebf801.ts.net:8000/v1
 #llm_model: qwen2.5:14b-instruct-q4_K_M

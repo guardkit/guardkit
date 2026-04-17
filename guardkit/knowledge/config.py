@@ -60,9 +60,9 @@ class GraphitiSettings:
         graph_store: Graph database backend ('neo4j' or 'falkordb')
         falkordb_host: FalkorDB host for connection
         falkordb_port: FalkorDB port for connection
-        llm_provider: LLM provider for entity extraction ('openai', 'vllm', 'ollama')
-        llm_base_url: LLM provider base URL (required for vllm/ollama)
-        llm_model: LLM model name (required for vllm/ollama)
+        llm_provider: LLM provider for entity extraction ('openai', 'vllm', 'ollama', 'gemini')
+        llm_base_url: LLM provider base URL (required for vllm/ollama; unused for gemini)
+        llm_model: LLM model name (e.g., 'Qwen/...' for vllm, 'gemini-2.5-flash' for gemini)
         llm_max_tokens: Max tokens for LLM responses (None = provider default). Use to cap
             output for models with small context windows (e.g. 4096 for Nemotron 4B/8192 ctx).
         embedding_provider: Embedding provider ('openai', 'vllm', 'ollama')
@@ -80,7 +80,7 @@ class GraphitiSettings:
         ValueError: If neo4j_uri is empty
         ValueError: If project_id is invalid (>50 chars)
         ValueError: If graph_store is not 'neo4j' or 'falkordb'
-        ValueError: If llm_provider is not 'openai', 'vllm', or 'ollama'
+        ValueError: If llm_provider is not 'openai', 'vllm', 'ollama', or 'gemini'
         ValueError: If embedding_provider is not 'openai', 'vllm', or 'ollama'
         TypeError: If values have incorrect types
     """
@@ -100,7 +100,7 @@ class GraphitiSettings:
     falkordb_host: str = "localhost"
     falkordb_port: int = 6379
     # LLM provider settings for entity extraction
-    llm_provider: str = "openai"          # 'openai' | 'vllm' | 'ollama'
+    llm_provider: str = "openai"          # 'openai' | 'vllm' | 'ollama' | 'gemini'
     llm_base_url: Optional[str] = None    # e.g., 'http://host:8000/v1'
     llm_model: Optional[str] = None       # e.g., 'Qwen/Qwen3-Coder-30B-A3B'
     llm_max_tokens: Optional[int] = None  # Cap output tokens (e.g. 4096 for 8192-ctx models)
@@ -183,11 +183,12 @@ class GraphitiSettings:
             raise ValueError(f"falkordb_port must be between 1 and 65535, got {self.falkordb_port}")
         if self.port < 1 or self.port > 65535:
             raise ValueError(f"port must be between 1 and 65535, got {self.port}")
-        valid_providers = ("openai", "vllm", "ollama")
-        if self.llm_provider not in valid_providers:
-            raise ValueError(f"llm_provider must be one of {valid_providers}, got '{self.llm_provider}'")
-        if self.embedding_provider not in valid_providers:
-            raise ValueError(f"embedding_provider must be one of {valid_providers}, got '{self.embedding_provider}'")
+        valid_llm_providers = ("openai", "vllm", "ollama", "gemini")
+        valid_embedding_providers = ("openai", "vllm", "ollama")
+        if self.llm_provider not in valid_llm_providers:
+            raise ValueError(f"llm_provider must be one of {valid_llm_providers}, got '{self.llm_provider}'")
+        if self.embedding_provider not in valid_embedding_providers:
+            raise ValueError(f"embedding_provider must be one of {valid_embedding_providers}, got '{self.embedding_provider}'")
 
         # Validate project_id if provided
         if self.project_id is not None and self.project_id != "":

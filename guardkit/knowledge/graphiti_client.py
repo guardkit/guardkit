@@ -105,7 +105,10 @@ def normalize_project_id(name: str) -> str:
     return result[:50]
 
 
-VALID_PROVIDERS = ("openai", "vllm", "ollama")
+VALID_LLM_PROVIDERS = ("openai", "vllm", "ollama", "gemini")
+VALID_EMBEDDING_PROVIDERS = ("openai", "vllm", "ollama")
+# Back-compat alias — old name retained for any external callers that imported it.
+VALID_PROVIDERS = VALID_LLM_PROVIDERS
 
 # Known output dimensions for common embedding models.
 # Used by the pre-flight dimension check in GraphitiClient.initialize().
@@ -147,9 +150,9 @@ class GraphitiConfig:
         falkordb_port: FalkorDB port for connection
         host: Deprecated - use neo4j_uri instead (kept for backwards compatibility)
         port: Deprecated - use neo4j_uri instead (kept for backwards compatibility)
-        llm_provider: LLM provider for entity extraction ('openai', 'vllm', 'ollama')
-        llm_base_url: LLM provider base URL (required for vllm/ollama)
-        llm_model: LLM model name (e.g., 'Qwen/Qwen3-Coder-30B-A3B')
+        llm_provider: LLM provider for entity extraction ('openai', 'vllm', 'ollama', 'gemini')
+        llm_base_url: LLM provider base URL (required for vllm/ollama; ignored for gemini)
+        llm_model: LLM model name (e.g., 'Qwen/Qwen3-Coder-30B-A3B', 'gemini-2.5-flash')
         embedding_provider: Embedding provider ('openai', 'vllm', 'ollama')
         embedding_base_url: Embedding provider base URL (required for vllm/ollama)
         embedding_model: Embedding model name (e.g., 'text-embedding-3-small')
@@ -188,8 +191,8 @@ class GraphitiConfig:
     host: str = "localhost"
     port: int = 8000
     # LLM and embedding provider configuration
-    llm_provider: str = "openai"           # "openai" | "vllm" | "ollama"
-    llm_base_url: Optional[str] = None     # e.g., "http://host:8000/v1"
+    llm_provider: str = "openai"           # "openai" | "vllm" | "ollama" | "gemini"
+    llm_base_url: Optional[str] = None     # e.g., "http://host:8000/v1"; unused for gemini
     llm_model: Optional[str] = None        # e.g., "Qwen/Qwen3-Coder-30B-A3B"
     llm_max_tokens: Optional[int] = None   # Cap output tokens (e.g. 4096 for 8192-ctx models)
     embedding_provider: str = "openai"     # "openai" | "vllm" | "ollama"
@@ -205,10 +208,10 @@ class GraphitiConfig:
             raise ValueError(f"timeout must be positive, got {self.timeout}")
         if self.graph_store not in ("neo4j", "falkordb"):
             raise ValueError(f"graph_store must be 'neo4j' or 'falkordb', got '{self.graph_store}'")
-        if self.llm_provider not in VALID_PROVIDERS:
-            raise ValueError(f"llm_provider must be one of {VALID_PROVIDERS}, got '{self.llm_provider}'")
-        if self.embedding_provider not in VALID_PROVIDERS:
-            raise ValueError(f"embedding_provider must be one of {VALID_PROVIDERS}, got '{self.embedding_provider}'")
+        if self.llm_provider not in VALID_LLM_PROVIDERS:
+            raise ValueError(f"llm_provider must be one of {VALID_LLM_PROVIDERS}, got '{self.llm_provider}'")
+        if self.embedding_provider not in VALID_EMBEDDING_PROVIDERS:
+            raise ValueError(f"embedding_provider must be one of {VALID_EMBEDDING_PROVIDERS}, got '{self.embedding_provider}'")
         if self.llm_provider in ("vllm", "ollama") and not self.llm_base_url:
             raise ValueError(f"llm_base_url is required when llm_provider is '{self.llm_provider}'")
         if self.embedding_provider in ("vllm", "ollama") and not self.embedding_base_url:
@@ -575,25 +578,45 @@ class GraphitiClient:
         if self.config.embedding_provider == "openai":
             return None
         from graphiti_core.embedder import OpenAIEmbedder, OpenAIEmbedderConfig
-        return OpenAIEmbedder(
-            config=OpenAIEmbedderConfig(
-                base_url=self.config.embedding_base_url,
-                embedding_model=self.config.embedding_model,
-                api_key="local-key",  # Local inference ignores API key; placeholder required
-            )
+        embedder_kwargs = dict(
+            base_url=self.config.embedding_base_url,
+            embedding_model=self.config.embedding_model,
+            api_key="local-key",  # Local inference ignores API key; placeholder required
         )
+        # Pass explicit embedding dimensions through when set (e.g. 1024 for
+        # nomic-embed-text-v1.5 with Matryoshka). Prevents silent dim mismatch
+        # if the embedder's default dim differs from what FalkorDB was seeded with.
+        if self.config.embedding_dimensions is not None:
+            embedder_kwargs["embedding_dim"] = self.config.embedding_dimensions
+        return OpenAIEmbedder(config=OpenAIEmbedderConfig(**embedder_kwargs))
 
     def _build_llm_client(self):
-        """Build OpenAI-compatible LLM client for non-OpenAI providers.
+        """Build LLM client for non-OpenAI providers.
 
         Returns:
-            An OpenAIGenericClient configured for the local inference endpoint,
-            or None if the LLM provider is "openai" (use Graphiti defaults).
+            A GeminiClient for 'gemini' provider, or an OpenAIGenericClient for
+            'vllm'/'ollama' (OpenAI-compatible local inference endpoints), or
+            None if the provider is 'openai' (use Graphiti defaults).
         """
         if self.config.llm_provider == "openai":
             return None
-        from graphiti_core.llm_client.openai_generic_client import OpenAIGenericClient
         from graphiti_core.llm_client import LLMConfig
+        if self.config.llm_provider == "gemini":
+            # Lazy import — only required when the [google-genai] extra is installed
+            from graphiti_core.llm_client.gemini_client import GeminiClient
+            api_key = os.environ.get("GOOGLE_API_KEY")
+            if not api_key:
+                raise RuntimeError(
+                    "llm_provider is 'gemini' but GOOGLE_API_KEY is not set. "
+                    "Export GOOGLE_API_KEY before initialising Graphiti."
+                )
+            return GeminiClient(
+                config=LLMConfig(
+                    api_key=api_key,
+                    model=self.config.llm_model or "gemini-2.5-flash",
+                ),
+            )
+        from graphiti_core.llm_client.openai_generic_client import OpenAIGenericClient
         kwargs = {}
         if self.config.llm_max_tokens is not None:
             kwargs["max_tokens"] = self.config.llm_max_tokens
@@ -2420,6 +2443,7 @@ def _try_lazy_init() -> Optional[GraphitiClient]:
             embedding_provider=settings.embedding_provider,
             embedding_base_url=settings.embedding_base_url,
             embedding_model=settings.embedding_model,
+            embedding_dimensions=settings.embedding_dimensions,
         )
 
         _factory = GraphitiClientFactory(config)

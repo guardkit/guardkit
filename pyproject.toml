@@ -46,6 +46,11 @@ autobuild = [
 falkordb = [
     "graphiti-core[falkordb]",
 ]
+# Google Gemini LLM client for Graphiti entity extraction
+# Required when .guardkit/graphiti.yaml sets llm_provider: gemini
+gemini = [
+    "graphiti-core[google-genai]",
+]
 dev = [
     "pytest>=7.4.3",
     "pytest-cov>=4.1.0",
@@ -55,6 +60,7 @@ dev = [
 all = [
     "claude-agent-sdk>=0.1.0",
     "graphiti-core[falkordb]",
+    "graphiti-core[google-genai]",
     "pytest>=7.4.3",
     "pytest-cov>=4.1.0",
     "pytest-asyncio>=0.23.0",
