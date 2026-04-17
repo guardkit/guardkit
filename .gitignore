@@ -89,6 +89,9 @@ obj/
 .guardkit/graphiti-query-log.jsonl
 .guardkit/graphiti-query-log.jsonl.1
 
+# Graphiti seeding state (local-only)
+.guardkit/seeding/
+
 # Temporary files
 *.tmp
 *.temp
