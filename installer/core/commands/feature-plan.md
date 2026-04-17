@@ -954,14 +954,27 @@ Return ClarificationContext with review preferences."""
 
 **STEP 1: Check Graphiti Availability (MCP-First — Tier 0)**
 
-Check whether `mcp__graphiti__search_nodes` is available in the current session's tool list.
+Check whether `mcp__graphiti__search_nodes` is available in the current session.
 
-**IF** MCP tools are available:
+**IMPORTANT — Deferred tools**: In Claude Code sessions, MCP tools are often
+listed in the system reminder as "deferred" (loadable via `ToolSearch`) rather
+than appearing directly in the immediate tool list. Treat deferred tools as
+**available**.
+
+If `mcp__graphiti__search_nodes` is **not** in the immediate tool list, scan
+the session's deferred-tool list (system reminder block). If present there,
+load schemas first:
+
+```
+ToolSearch(query: "select:mcp__graphiti__search_nodes,mcp__graphiti__search_memory_facts")
+```
+
+**IF** MCP tools are available (immediately or after ToolSearch load):
   - SET `graphiti_available = true`
   - SET `graphiti_access_method = "mcp"`
   - **Skip Tier 1 and Tier 2** — proceed directly to Step 2
 
-**IF** MCP tools are NOT available:
+**IF** MCP tools are absent from BOTH the immediate AND deferred-tool lists:
   - Fall through to Tier 1: Read `.guardkit/graphiti.yaml` using the Read tool
   - **IF** file exists and `enabled: true`: SET `graphiti_available = true`, `graphiti_access_method = "cli"`
   - **IF** file does not exist or `enabled: false`: SET `graphiti_available = false`

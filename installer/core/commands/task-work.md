@@ -1707,10 +1707,26 @@ check script via bash as described below.
 
 **STEP 0: Check for MCP Tools (Preferred Path — Zero Overhead)**
 
-Check whether `mcp__graphiti__search_nodes` is available in the current session's tool list
+Check whether `mcp__graphiti__search_nodes` is available in the current session
 (see `docs/internals/commands-lib/graphiti-preamble.md` Tier 0).
 
-**IF** MCP tools are available:
+**IMPORTANT — Deferred tools**: In Claude Code sessions, MCP tools are often
+listed in the system reminder as "deferred" (loadable via `ToolSearch`) rather
+than appearing directly in the immediate tool list. Treat deferred tools as
+**available**.
+
+If `mcp__graphiti__search_nodes` is **not** in the immediate tool list, scan
+the session's deferred-tool list (system reminder block). If present there,
+load schemas first:
+
+```
+ToolSearch(query: "select:mcp__graphiti__search_nodes,mcp__graphiti__search_memory_facts")
+```
+
+Only fall through to Tier 1 if the tools are absent from BOTH the immediate
+tool list AND the deferred-tool list.
+
+**IF** MCP tools are available (immediately or after ToolSearch load):
 
 SET `graphiti_access_method = "mcp"`
 
