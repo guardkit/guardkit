@@ -221,3 +221,5 @@ guardkit init [template-name]        # Initialize project
 ```
 
 Templates: react-typescript | fastapi-python | nextjs-fullstack | react-fastapi-monorepo | python-library | nats-asyncio-service | langchain-deepagents | langchain-deepagents-orchestrator | langchain-deepagents-weighted-evaluation | dotnet-railway-fastendpoints | default
+
+Template layout explained in [docs/guides/template-two-layer-model.md](docs/guides/template-two-layer-model.md).

@@ -873,6 +873,38 @@ def _resolve_extends_chain(template_name: str) -> List[str]:
     return chain
 
 
+def _count_pattern_layer_files(template_names: List[str]) -> int:
+    """Count ``.template`` and ``.j2`` files across the ``templates/`` dirs of
+    each resolved template in ``template_names``.
+
+    Deduplicates by resolved source path to avoid double-counting when two
+    templates in an extends chain point to the same cached directory.
+    Best-effort: any OSError during traversal is logged at debug level and
+    that directory is skipped — this never blocks init.
+    """
+    seen: set[Path] = set()
+    count = 0
+    for name in template_names:
+        tpl_dir = _resolve_template_source_dir(name)
+        if tpl_dir is None:
+            continue
+        patterns_dir = tpl_dir / "templates"
+        if not patterns_dir.is_dir():
+            continue
+        try:
+            for suffix in ("*.template", "*.j2"):
+                for p in patterns_dir.rglob(suffix):
+                    resolved = p.resolve()
+                    if resolved not in seen:
+                        seen.add(resolved)
+                        count += 1
+        except OSError as e:
+            logger.debug(
+                f"Could not count pattern-layer files in {patterns_dir}: {e}"
+            )
+    return count
+
+
 def _merge_manifests(
     base: Dict[str, Any], extension: Dict[str, Any]
 ) -> Dict[str, Any]:
@@ -1605,6 +1637,27 @@ async def _cmd_init(
                 "  [yellow]Not yet seeded:[/yellow] system knowledge "
                 "(templates, rules, role constraints, implementation modes)"
             )
+
+    try:
+        pattern_chain = _resolve_extends_chain(template)
+        if base_only and len(pattern_chain) > 1:
+            pattern_chain = pattern_chain[:1]
+        pattern_layer_count = _count_pattern_layer_files(pattern_chain)
+    except Exception as e:
+        logger.debug(f"Could not compute pattern-layer count: {e}")
+        pattern_layer_count = 0
+
+    if pattern_layer_count > 0:
+        console.print(
+            f"\n  [cyan]Pattern layer:[/cyan] {pattern_layer_count} scaffold "
+            "file(s) present in template (not rendered at init time)"
+        )
+        console.print(
+            "    [dim]Tip: these are consumed by AutoBuild / future "
+            "`guardkit render`;\n"
+            "         see docs/guides/template-two-layer-model.md[/dim]"
+        )
+
     console.print(f"\nNext steps:")
     if not skip_graphiti and not system_seeded:
         console.print(f"  1. Seed system knowledge: guardkit graphiti seed-system")

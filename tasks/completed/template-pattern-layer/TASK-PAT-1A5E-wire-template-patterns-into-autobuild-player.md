@@ -1,22 +1,27 @@
 ---
 id: TASK-PAT-1A5E
 title: Wire template scaffold files into AutoBuild Player context as stack-pattern guidance
-status: backlog
+status: closed
 created: 2026-04-11T15:15:00Z
-updated: 2026-04-11T15:15:00Z
+updated: 2026-04-18T00:00:00Z
 priority: high
-tags: [autobuild, player, templates, patterns, software-factory, architecture, feature-plan-required]
+tags: [autobuild, player, templates, patterns, software-factory, architecture, feature-plan-required, closed, superseded]
 parent_review: TASK-REV-A5F8
 feature_id: FEAT-1A5E
 implementation_mode: task-work
 complexity: 8
 needs_feature_plan: true
 depends_on: []
+superseded_by: FEAT-TPL-PLAYER
+closed_by: TASK-TPL-004
+closed_reason: "Implemented under FEAT-TPL-PLAYER. The /feature-plan flow decomposed this scope into TASK-TPL-001 (extract template resolver), TASK-TPL-002 (template pattern loader + TemplatePatternContext), TASK-TPL-003 (domain-hint selector), TASK-TPL-004 (wire into AutoBuildContextLoader), TASK-TPL-005 (unit tests), TASK-TPL-006 (integration test), and TASK-TPL-007 (documentation). All seven subtasks are in_review under tasks/backlog/template-pattern-player-context/. The Player now receives a TemplatePatternContext block at AutoBuild context-load time with template resolution, domain-hint pattern selection, and graceful degradation. Token budget impact and instrumentation are addressed via TASK-TPL-004 logging and TASK-TPL-007 docs."
 ---
 
 # Task: Wire template scaffold files into AutoBuild Player context as stack-pattern guidance
 
-> ⚠️ **Needs `/feature-plan` before implementation.** This task is scope-sized for a feature, not a single `/task-work` run. The scoping below is indicative; do not begin implementation until `/feature-plan "wire template patterns into AutoBuild Player"` has run and a design checkpoint has been approved.
+> **Closed: superseded by FEAT-TPL-PLAYER.** The architectural fix proposed here was scoped via `/feature-plan` into the seven-task FEAT-TPL-PLAYER feature at [tasks/backlog/template-pattern-player-context/](../template-pattern-player-context/), all subtasks now in_review. See `closed_reason` in frontmatter for the mapping. The original scoping notes below are kept for historical context only.
+
+> ⚠️ ~~**Needs `/feature-plan` before implementation.** This task is scope-sized for a feature, not a single `/task-work` run. The scoping below is indicative; do not begin implementation until `/feature-plan "wire template patterns into AutoBuild Player"` has run and a design checkpoint has been approved.~~ — `/feature-plan` ran, producing FEAT-TPL-PLAYER.
 
 ## Background
 

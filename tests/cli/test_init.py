@@ -2559,3 +2559,208 @@ class TestInitSystemSeedingAutoOffer:
             assert result.exit_code == 0
             # "seed-system" SHOULD be in next steps
             assert "seed-system" in result.output
+
+
+# ============================================================================
+# Pattern-Layer Summary Tests (TASK-INIT-D4E7)
+# ============================================================================
+
+
+class TestPatternLayerCount:
+    """Unit tests for _count_pattern_layer_files helper."""
+
+    def test_counts_template_suffix_files(self, tmp_path, monkeypatch):
+        """Template with .template files in templates/ returns correct count."""
+        from guardkit.cli import init as init_mod
+
+        tpl_dir = tmp_path / "tpl-a"
+        (tpl_dir / "templates" / "sub").mkdir(parents=True)
+        (tpl_dir / "templates" / "a.template").write_text("x")
+        (tpl_dir / "templates" / "sub" / "b.template").write_text("y")
+
+        monkeypatch.setattr(
+            init_mod,
+            "_resolve_template_source_dir",
+            lambda name: tpl_dir if name == "tpl-a" else None,
+        )
+
+        assert init_mod._count_pattern_layer_files(["tpl-a"]) == 2
+
+    def test_counts_j2_suffix_files(self, tmp_path, monkeypatch):
+        """Template with .j2 files in templates/ returns correct count."""
+        from guardkit.cli import init as init_mod
+
+        tpl_dir = tmp_path / "tpl-b"
+        (tpl_dir / "templates").mkdir(parents=True)
+        (tpl_dir / "templates" / "goal.md.j2").write_text("x")
+        (tpl_dir / "templates" / "pipeline.py.j2").write_text("y")
+        (tpl_dir / "templates" / "notes.md").write_text("z")  # should NOT count
+
+        monkeypatch.setattr(
+            init_mod,
+            "_resolve_template_source_dir",
+            lambda name: tpl_dir if name == "tpl-b" else None,
+        )
+
+        assert init_mod._count_pattern_layer_files(["tpl-b"]) == 2
+
+    def test_empty_templates_dir_returns_zero(self, tmp_path, monkeypatch):
+        """Template with empty templates/ subdirectory returns zero."""
+        from guardkit.cli import init as init_mod
+
+        tpl_dir = tmp_path / "tpl-c"
+        (tpl_dir / "templates").mkdir(parents=True)
+
+        monkeypatch.setattr(
+            init_mod,
+            "_resolve_template_source_dir",
+            lambda name: tpl_dir if name == "tpl-c" else None,
+        )
+
+        assert init_mod._count_pattern_layer_files(["tpl-c"]) == 0
+
+    def test_no_templates_dir_returns_zero(self, tmp_path, monkeypatch):
+        """Template without templates/ subdirectory returns zero."""
+        from guardkit.cli import init as init_mod
+
+        tpl_dir = tmp_path / "tpl-d"
+        tpl_dir.mkdir(parents=True)
+        (tpl_dir / "agents").mkdir()  # has other stuff, but no templates/
+
+        monkeypatch.setattr(
+            init_mod,
+            "_resolve_template_source_dir",
+            lambda name: tpl_dir if name == "tpl-d" else None,
+        )
+
+        assert init_mod._count_pattern_layer_files(["tpl-d"]) == 0
+
+    def test_unreadable_templates_dir_does_not_crash(self, tmp_path, monkeypatch):
+        """OSError during traversal is swallowed and logged."""
+        from guardkit.cli import init as init_mod
+
+        tpl_dir = tmp_path / "tpl-e"
+        (tpl_dir / "templates").mkdir(parents=True)
+        (tpl_dir / "templates" / "a.template").write_text("x")
+
+        monkeypatch.setattr(
+            init_mod,
+            "_resolve_template_source_dir",
+            lambda name: tpl_dir if name == "tpl-e" else None,
+        )
+
+        class _RaisingPath:
+            """Proxy Path that raises OSError on rglob."""
+
+            def __init__(self, inner):
+                self._inner = inner
+
+            def __truediv__(self, other):
+                return _RaisingPath(self._inner / other)
+
+            def is_dir(self):
+                return self._inner.is_dir()
+
+            def rglob(self, pattern):
+                raise OSError("simulated permission denied")
+
+        def _resolve(name):
+            if name != "tpl-e":
+                return None
+
+            class _Wrapper:
+                def __truediv__(self, other):
+                    return _RaisingPath(tpl_dir / other)
+
+            return _Wrapper()
+
+        monkeypatch.setattr(init_mod, "_resolve_template_source_dir", _resolve)
+
+        assert init_mod._count_pattern_layer_files(["tpl-e"]) == 0
+
+    def test_dedupes_across_chain(self, tmp_path, monkeypatch):
+        """Two template names resolving to the same dir are counted once."""
+        from guardkit.cli import init as init_mod
+
+        tpl_dir = tmp_path / "tpl-shared"
+        (tpl_dir / "templates").mkdir(parents=True)
+        (tpl_dir / "templates" / "a.template").write_text("x")
+        (tpl_dir / "templates" / "b.j2").write_text("y")
+
+        monkeypatch.setattr(
+            init_mod, "_resolve_template_source_dir", lambda name: tpl_dir
+        )
+
+        # Both chain entries point at the same dir; should count files once.
+        assert init_mod._count_pattern_layer_files(["alias-1", "alias-2"]) == 2
+
+
+class TestInitPatternLayerSummary:
+    """Test that `guardkit init` summary surfaces pattern-layer count."""
+
+    def _setup_graphiti_mocks(self, patches):
+        """Helper to set up standard Graphiti mocks."""
+        patches["seed"].return_value = MagicMock(success=True, results=[])
+        client = MagicMock()
+        client.enabled = True
+        client.initialize = AsyncMock(return_value=True)
+        client.close = AsyncMock()
+        patches["client_class"].return_value = client
+
+    def test_summary_emits_line_when_pattern_layer_present(
+        self, tmp_path, monkeypatch
+    ):
+        """Summary emits pattern-layer line when templates/ has .template/.j2 files."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        with patch("guardkit.cli.init._count_pattern_layer_files", return_value=7), \
+             patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
+             patch("guardkit.cli.init.GraphitiClient") as mock_client_class:
+
+            self._setup_graphiti_mocks({"seed": mock_seed, "client_class": mock_client_class})
+            result = runner.invoke(cli, ["init", "--skip-graphiti"])
+
+            # Collapse whitespace to tolerate rich-console line wrapping.
+            normalized = " ".join(result.output.split())
+
+            assert result.exit_code == 0
+            assert "Pattern layer:" in normalized
+            assert "7 scaffold file(s)" in normalized
+            assert "not rendered at init time" in normalized
+            assert "docs/guides/template-two-layer-model.md" in normalized
+
+    def test_summary_omits_line_when_no_pattern_layer(self, tmp_path, monkeypatch):
+        """Summary does NOT emit pattern-layer line when count is zero."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        with patch("guardkit.cli.init._count_pattern_layer_files", return_value=0), \
+             patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
+             patch("guardkit.cli.init.GraphitiClient") as mock_client_class:
+
+            self._setup_graphiti_mocks({"seed": mock_seed, "client_class": mock_client_class})
+            result = runner.invoke(cli, ["init", "--skip-graphiti"])
+
+            assert result.exit_code == 0
+            assert "Pattern layer:" not in result.output
+
+    def test_summary_does_not_crash_when_count_raises(self, tmp_path, monkeypatch):
+        """Init remains exit-0 if pattern-layer counting raises unexpectedly."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        with patch(
+            "guardkit.cli.init._count_pattern_layer_files",
+            side_effect=RuntimeError("boom"),
+        ), patch(
+            "guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock
+        ) as mock_seed, patch(
+            "guardkit.cli.init.GraphitiClient"
+        ) as mock_client_class:
+
+            self._setup_graphiti_mocks({"seed": mock_seed, "client_class": mock_client_class})
+            result = runner.invoke(cli, ["init", "--skip-graphiti"])
+
+            assert result.exit_code == 0
+            assert "Pattern layer:" not in result.output

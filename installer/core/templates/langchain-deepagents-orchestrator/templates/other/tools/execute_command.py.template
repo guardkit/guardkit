@@ -4,6 +4,6 @@ Provides ``from {{ProjectName}}.execute_command import execute_command`` compati
 with the smoke-test import paths defined in the project specification.
 """
 
-from {{ProjectName}}.orchestrator_tools import execute_command
+from .orchestrator_tools import execute_command
 
 __all__ = ["execute_command"]

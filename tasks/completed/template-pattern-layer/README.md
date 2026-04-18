@@ -1,10 +1,20 @@
 # Feature: Template Pattern Layer for AutoBuild
 
 **Feature ID**: FEAT-1A5E
+**Status**: Closed (superseded) — 2026-04-18
+**Superseded by**: FEAT-TPL-PLAYER ([tasks/backlog/template-pattern-player-context/](../../backlog/template-pattern-player-context/), all 7 subtasks `in_review`)
 **Parent review**: [TASK-REV-A5F8](../../in_review/TASK-REV-A5F8-analyse-d0c1-followups-scaffolding-and-exemplar.md)
 **Review report**: [.claude/reviews/TASK-REV-A5F8-review-report.md](../../../.claude/reviews/TASK-REV-A5F8-review-report.md)
 **Created**: 2026-04-11
 **Priority**: High (for TASK-PAT-1A5E), Medium/Low for the rest
+
+## Disposition summary
+
+| Original task | Outcome |
+|---------------|---------|
+| TASK-PAT-1A5E | Closed — implemented under FEAT-TPL-PLAYER (TASK-TPL-001..004) |
+| TASK-DOC-C3D7 | Completed by TASK-TPL-007 |
+| TASK-REN-B9F2 | Closed (won't do) — Decision D6 in FEAT-TPL-PLAYER |
 
 ## Problem
 

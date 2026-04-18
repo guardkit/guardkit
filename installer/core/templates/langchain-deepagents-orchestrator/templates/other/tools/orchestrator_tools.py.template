@@ -2,7 +2,7 @@
 
 Provides four tools used by the orchestrator agent: analyse_context, plan_pipeline,
 execute_command, and verify_output. All tools use the @tool(parse_docstring=True)
-decorator from {{ProjectName}}.tools, return strings, and never raise exceptions.
+decorator from langchain_core.tools, return strings, and never raise exceptions.
 
 In production these would wrap GuardKit slash commands; here they are simplified
 implementations suitable for the exemplar.
@@ -14,7 +14,7 @@ import json
 import logging
 from pathlib import Path
 
-from {{ProjectName}}.tools import tool
+from langchain_core.tools import tool
 
 logger = logging.getLogger(__name__)
 

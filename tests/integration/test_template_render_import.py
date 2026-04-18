@@ -9,12 +9,20 @@ Purpose (TASK-LCL-003, FEAT-LTL1):
     but no existing test renders the template and imports it, so the bug shipped.
 
 Interface contract:
-    - Consumes the raw ``.template`` files under ``installer/core/templates/<name>/``.
-      It does NOT call ``guardkit init`` (that CLI deliberately skips ``.template``
-      scaffold files — see ``guardkit.cli.init.apply_template``). If the installer
-      ever grows a first-class ``.template`` renderer (``guardkit render`` or an
-      importable ``render_template(...)`` API), swap the local ``_render_template``
-      helper for it — see ``_RENDER_IMPL`` sentinel.
+    - Consumes the raw ``.template`` files (base-template convention) AND
+      ``.j2`` files (extension-template convention, e.g.
+      ``langchain-deepagents-weighted-evaluation``) under
+      ``installer/core/templates/<name>/``. Substitution is literal
+      ``{{Key}} -> value`` in both cases — this test does NOT evaluate Jinja
+      expressions, so any ``.j2`` file containing real Jinja (``{% for %}``,
+      filters, ``| default(...)``) must be skipped via the layout's ``None``
+      target. See ``_LCDWE_LAYOUT`` for a worked example.
+    - It does NOT call ``guardkit init`` (that CLI deliberately skips
+      ``.template`` scaffold files — see ``guardkit.cli.init.apply_template``).
+      If the installer ever grows a first-class ``.template`` / ``.j2``
+      renderer (``guardkit render`` or an importable ``render_template(...)``
+      API), swap the local ``_render_template`` helper for it — see
+      ``_RENDER_IMPL`` sentinel.
     - For each template in ``TEMPLATES``, the test renders ``.template`` files into
       a ``tmp_path`` scratch tree with ``{{ProjectName}}=scratch`` and invokes a
       subprocess ``python -c "import scratch.<entry>"`` per declared entrypoint.
@@ -167,6 +175,88 @@ _LCD_LAYOUT = [
 ]
 
 
+# Layout for langchain-deepagents-orchestrator.
+# Unlike the base template, this one uses **bare** imports (``from prompts
+# import ...``, ``from agents import ...``, ``from tools import ...``,
+# ``from lib.X import ...``) — not ``{{ProjectName}}.X``. So the rendered tree
+# must place these packages at the **scratch project root**, not under a
+# ``scratch/`` subpackage. The subprocess harness runs ``python -c "... import
+# <ep>"`` with cwd inserted into ``sys.path``, so root-level packages resolve.
+#
+# Package-init import bugs in this template were fixed in TASK-FIX-7B2D:
+#   - ``prompts/__init__.py.template`` previously used
+#     ``from {{ProjectName}}.orchestrator_prompts import ...`` (same-package
+#     flatten); now uses ``from .orchestrator_prompts``.
+#   - ``agents/__init__.py.template`` previously had a double-placeholder typo
+#     ``from {{ProjectName}}.{{ProjectName}} import ...``; now uses
+#     ``from .agents import ...``.
+#   - ``tools/__init__.py.template`` previously used
+#     ``from {{ProjectName}}.orchestrator_tools import ...``; now uses
+#     ``from .orchestrator_tools``.
+#   - ``tools/orchestrator_tools.py.template`` previously had
+#     ``from {{ProjectName}}.tools import tool`` — the TASK-LCL-001 class bug
+#     surfacing in the orchestrator sibling; now uses
+#     ``from langchain_core.tools import tool`` (matching the base template
+#     after TASK-LCL-001).
+# All four are now regression-protected by the ``prompts``, ``agents``, and
+# ``tools`` entrypoints on the ``langchain-deepagents-orchestrator``
+# ``TemplateCase`` below.
+_LCDO_LAYOUT = [
+    # Top-level entrypoint module. Not used as a smoke-test entrypoint because
+    # ``agent.py`` has heavy module-level wiring (argparse, dotenv, yaml config
+    # loading, domain file reads) that is exercised by the template's own
+    # runtime tests, not by this render+import smoke.
+    ("templates/other/other/agent.py.template", "agent.py"),
+    # Project configuration files (kept at scratch-project root so agent.py's
+    # config loader would find them if it were run).
+    ("templates/other/other/pyproject.toml.template", "pyproject.toml"),
+    ("templates/other/other/orchestrator-config.yaml.template", "orchestrator-config.yaml"),
+    ("templates/other/other/langgraph.json.template", "langgraph.json"),
+    ("templates/other/other/AGENTS.md.template", "AGENTS.md"),
+    # Package directories at the scratch ROOT (not under ``scratch/``) — see
+    # layout docstring above for why.
+    ("templates/other/agents/", "agents/"),
+    ("templates/other/prompts/", "prompts/"),
+    ("templates/other/tools/", "tools/"),
+    ("templates/other/lib/", "lib/"),
+    # Domain assets (consumed by agent.py's _load_domain_prompt).
+    ("templates/other/example-domain/", "domains/example-domain/"),
+    # Skip testing scaffold — same rationale as the base template.
+    ("templates/testing/", None),
+]
+
+
+# Layout for langchain-deepagents-weighted-evaluation.
+# This extension template uses ``.j2`` suffix (not ``.template``) for its
+# scaffold files. The substitution here is still literal ``{{Key}}`` → value;
+# ``.j2`` is incidental to the file-suffix convention chosen by the extension.
+#
+# The template ``extends: langchain-deepagents`` at install time, meaning the
+# full rendered project also includes the base template's ``lib/`` and
+# ``scratch/`` packages. This smoke test renders extensions **standalone** —
+# it does NOT compose the ``extends`` chain — so entrypoints that depend on
+# inherited modules (e.g. ``scaffold/orchestrator.py.j2`` imports from
+# ``{{ProjectName}}.config.adversarial_config`` which is not a ``.j2``/``.template``
+# file) are out of scope. We pick clean leaf modules as entrypoints instead.
+_LCDWE_LAYOUT = [
+    # Scaffold modules under ``scratch/scaffold/`` — the ``.j2`` files use
+    # ``{{ProjectName}}.scaffold.X`` imports, which after ``ProjectName=scratch``
+    # substitution become ``scratch.scaffold.X``. Python 3 treats ``scratch/``
+    # and ``scratch/scaffold/`` as implicit namespace packages (PEP 420), so no
+    # ``__init__.py`` is required.
+    ("scaffold/", "scratch/scaffold/"),
+    # Env example at project root.
+    ("templates/other/other/.env.example.template", ".env.example"),
+    # Skip ``templates/goal.md.j2`` — contains real Jinja expressions
+    # (``{% for %}``, ``| default(...)`` filters) beyond simple ``{{Key}}``
+    # substitution. Rendering it with ``_render_text`` leaves Jinja syntax
+    # unresolved in the output. Handling these would require a genuine Jinja2
+    # evaluator in the test path, which is out of scope for a render+import
+    # smoke test.
+    ("templates/goal.md.j2", None),
+]
+
+
 TEMPLATES: List[TemplateCase] = [
     TemplateCase(
         name="langchain-deepagents",
@@ -177,21 +267,14 @@ TEMPLATES: List[TemplateCase] = [
         #   - player imports deepagents.{backends,middleware}, plus
         #     {{ProjectName}}.{player_prompts, search_data,
         #     scaffold.orchestrator_pattern}. The transitive ``search_data.py``
-        #     contains ``from {{ProjectName}}.tools import tool`` — after
-        #     render that becomes ``from scratch.tools import tool`` which is
-        #     the bug TASK-LCL-001 fixes. Marked xfail until LCL-001 lands.
+        #     previously contained ``from {{ProjectName}}.tools import tool``
+        #     which rendered to ``from scratch.tools import tool`` — the
+        #     TASK-LCL-001 bug. That was fixed in commit dbc47bc5 (template
+        #     now imports ``from langchain_core.tools import tool``), so the
+        #     entrypoint is no longer xfail-marked.
         entrypoints=[
             EntrypointCase(module="scratch.coach"),
-            EntrypointCase(
-                module="scratch.player",
-                xfail_reason=(
-                    "Blocked on TASK-LCL-001: search_data.py.template has "
-                    "`from {{ProjectName}}.tools import tool` which renders to "
-                    "`from scratch.tools import tool` (should be "
-                    "`from langchain_core.tools import tool`). Remove this "
-                    "xfail once LCL-001 merges."
-                ),
-            ),
+            EntrypointCase(module="scratch.player"),
         ],
         runtime_deps=[
             "langchain",
@@ -200,6 +283,87 @@ TEMPLATES: List[TemplateCase] = [
         ],
         placeholders=dict(_DEFAULT_PLACEHOLDERS),
         layout=_LCD_LAYOUT,
+    ),
+    TemplateCase(
+        name="langchain-deepagents-orchestrator",
+        # Entrypoint selection follows the base template's rationale — avoid
+        # ``agent.py`` (heavy module-level config/domain wiring) and prefer
+        # leaf library modules plus a package ``__init__`` that reproduces the
+        # TASK-LCL-001-class failure surfaces documented in ``_LCDO_LAYOUT``.
+        #
+        #   - ``lib.session_logging``: stdlib-only vendored helper. Clean
+        #     control case — if this fails, the render pipeline itself is
+        #     broken for this template.
+        #   - ``prompts``: importing the package executes ``prompts/__init__.py``,
+        #     which re-exports the three role prompts via relative imports
+        #     (``from .orchestrator_prompts``, ``.implementer_prompts``,
+        #     ``.evaluator_prompts``) after TASK-FIX-7B2D. Covers bug 1 from
+        #     that task.
+        #   - ``agents``: importing the package executes ``agents/__init__.py``,
+        #     which re-exports the factory functions via ``from .agents``
+        #     after TASK-FIX-7B2D (bug 2 — the double-placeholder typo).
+        #     Transitively imports ``prompts``, ``tools``, ``lib.factory_guards``
+        #     plus the ``deepagents`` and ``langgraph`` SDKs (declared in
+        #     ``runtime_deps``), exercising the full package-init chain.
+        #   - ``tools``: importing the package executes ``tools/__init__.py``,
+        #     which re-exports the four orchestrator tools via relative import
+        #     (``from .orchestrator_tools``) after TASK-FIX-7B2D (bug 3).
+        #     Transitively imports ``langchain_core.tools`` — bug 5, the
+        #     TASK-LCL-001 class regression in the orchestrator sibling.
+        entrypoints=[
+            EntrypointCase(module="lib.session_logging"),
+            EntrypointCase(module="prompts"),
+            EntrypointCase(module="agents"),
+            EntrypointCase(module="tools"),
+        ],
+        runtime_deps=[
+            "langchain",
+            "langchain_anthropic",
+            "deepagents",
+            "langgraph",
+        ],
+        placeholders=dict(_DEFAULT_PLACEHOLDERS),
+        layout=_LCDO_LAYOUT,
+    ),
+    TemplateCase(
+        name="langchain-deepagents-weighted-evaluation",
+        # This extension template uses ``.j2`` (Jinja) file suffix instead of
+        # ``.template``. Only its scaffold modules have simple-substitution
+        # placeholders; the top-level ``templates/goal.md.j2`` uses real Jinja
+        # and is skipped in the layout.
+        #
+        # Entrypoint selection: pick leaf scaffold modules whose module-level
+        # imports are all stdlib, so they exercise the render+import loop
+        # without pulling in dependencies that are only available when the
+        # ``extends: langchain-deepagents`` chain is composed at install time
+        # (this smoke test renders extensions **standalone**).
+        #
+        #   - ``scratch.scaffold.goal_schema``: pure-stdlib dataclasses and
+        #     markdown parsing helpers. Clean case.
+        #   - ``scratch.scaffold.pipeline``: pure-stdlib dataclasses at module
+        #     level; project-relative imports are lazy (inside method bodies).
+        #     Clean case.
+        #
+        # Out of scope: ``scaffold.orchestrator`` has module-level imports from
+        # ``{{ProjectName}}.config``/``prompts`` and ``lib.*`` that depend on
+        # the base template's rendered files. Testing that chain belongs to a
+        # future extends-composition smoke test, not this standalone one.
+        entrypoints=[
+            EntrypointCase(module="scratch.scaffold.goal_schema"),
+            EntrypointCase(module="scratch.scaffold.pipeline"),
+        ],
+        # Runtime deps are declared for parity with the base template; the
+        # chosen scaffold entrypoints only use stdlib at module load, so these
+        # would only be exercised transitively. Declared so the skip-on-missing
+        # semantics match sibling templates.
+        runtime_deps=[
+            "langchain",
+            "langchain_anthropic",
+            "deepagents",
+            "langgraph",
+        ],
+        placeholders=dict(_DEFAULT_PLACEHOLDERS),
+        layout=_LCDWE_LAYOUT,
     ),
 ]
 
@@ -259,14 +423,20 @@ def _resolve_target(
         return None
 
     # Exact file mapping (source_prefix was a file)
-    if best_prefix.endswith(".template"):
+    if best_prefix.endswith(".template") or best_prefix.endswith(".j2"):
         dest_str = best_target
     else:
-        # Directory mapping — replace the prefix and strip .template suffix
+        # Directory mapping — replace the prefix and strip the template suffix.
+        # ``.template`` is the base-template convention (simple ``{{Key}}`` sub).
+        # ``.j2`` is used by extension templates that normally require Jinja2
+        # evaluation; this test only does literal ``{{Key}}`` substitution, so
+        # files with real Jinja expressions must be skipped via layout ``None``.
         suffix = src_str[len(best_prefix):]
         dest_str = best_target + suffix
         if dest_str.endswith(".template"):
             dest_str = dest_str[: -len(".template")]
+        elif dest_str.endswith(".j2"):
+            dest_str = dest_str[: -len(".j2")]
 
     return Path(dest_str)
 
@@ -287,8 +457,18 @@ def _render_template(
     """
     _RENDER_IMPL = "local"  # noqa: F841 — sentinel for future grep
 
+    # Pick up both ``.template`` (base-template convention) and ``.j2``
+    # (extension-template convention, e.g. langchain-deepagents-weighted-evaluation).
+    # NOTE: substitution is literal ``{{Key}} -> value``, not Jinja evaluation.
+    # Files that contain real Jinja expressions (``{% for %}``, filters, ``|
+    # default(...)``) must be skipped via the layout's ``None`` target or they
+    # will render with unresolved Jinja syntax.
+    template_files = sorted(
+        list(template_root.rglob("*.template")) + list(template_root.rglob("*.j2"))
+    )
+
     rendered: List[Path] = []
-    for template_path in sorted(template_root.rglob("*.template")):
+    for template_path in template_files:
         src_rel = template_path.relative_to(template_root)
         dest_rel = _resolve_target(src_rel, case.layout)
         if dest_rel is None:
@@ -329,7 +509,22 @@ def _run_import_check(
         pytest process.
     """
     import_statements = "; ".join(f"import {ep}" for ep in entrypoints)
-    script = f"import sys; sys.path.insert(0, '.'); {import_statements}"
+    # Purge the guardkit repo root from sys.path before inserting cwd. The
+    # repo is (typically) installed as an editable install via a ``.pth`` file
+    # in site-packages, which puts top-level directories at the repo root
+    # (``lib/``, ``guardkit/``, ...) on sys.path. That shadows identically
+    # named packages rendered into the scratch project — notably the
+    # langchain-deepagents-orchestrator template's ``lib/`` which would
+    # otherwise resolve to guardkit-py's own ``lib/__init__.py`` rather than
+    # the scratch tree. Exact-match filter is sufficient because Python's
+    # editable installs use exact-path ``.pth`` entries.
+    repo_root_literal = repr(str(REPO_ROOT))
+    script = (
+        "import sys; "
+        f"sys.path[:] = [p for p in sys.path if p != {repo_root_literal}]; "
+        "sys.path.insert(0, '.'); "
+        f"{import_statements}"
+    )
 
     env = os.environ.copy()
     # Keep PYTHONPATH minimal — we want ``import scratch.X`` to resolve via
@@ -546,6 +741,25 @@ class TestResolveTarget:
             Path("docs/something.md.template"), layout
         )
         assert result is None
+
+    def test_exact_j2_file_mapping(self) -> None:
+        # ``.j2`` suffix works the same as ``.template`` for exact file
+        # mappings: the target is used verbatim (no suffix stripping needed
+        # because the target already declares the final filename).
+        layout = [("scaffold/goal_schema.py.j2", "scratch/scaffold/goal_schema.py")]
+        result = _resolve_target(
+            Path("scaffold/goal_schema.py.j2"), layout
+        )
+        assert result == Path("scratch/scaffold/goal_schema.py")
+
+    def test_directory_mapping_strips_j2_suffix(self) -> None:
+        # Directory mappings auto-strip the template suffix from rendered
+        # filenames; ``.j2`` behaves identically to ``.template``.
+        layout = [("scaffold/", "scratch/scaffold/")]
+        result = _resolve_target(
+            Path("scaffold/pipeline.py.j2"), layout
+        )
+        assert result == Path("scratch/scaffold/pipeline.py")
 
 
 class TestRenderText:

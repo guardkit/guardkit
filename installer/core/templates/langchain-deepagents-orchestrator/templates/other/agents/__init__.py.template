@@ -8,7 +8,7 @@ Exports factory functions for all four agent roles:
 - :func:`builder_async_subagent` — returns an AsyncSubAgent spec.
 """
 
-from {{ProjectName}}.{{ProjectName}} import builder_async_subagent, create_orchestrator, evaluator_subagent, implementer_subagent
+from .agents import builder_async_subagent, create_orchestrator, evaluator_subagent, implementer_subagent
 
 __all__ = [
     "create_orchestrator",
