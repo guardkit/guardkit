@@ -12,11 +12,19 @@ A step-by-step guide to your first working adversarial cooperation pipeline.
 | LangGraph | >= 0.2 | Graph orchestration |
 | LLM provider | vLLM recommended | OpenAI-compatible endpoint; see [model-compatibility.md](reference/model-compatibility.md) |
 
-Install dependencies:
+Install dependencies (extras pull in every LangChain integration named in code):
 
 ```bash
-pip install -r requirements.txt
+pip install .[providers]
 ```
+
+The default install (`pip install .`) ships `langchain-anthropic` so the
+out-of-the-box `provider: "api"` configuration works with zero extras. Use
+`.[providers]` whenever you switch the Player or Coach factory to
+`provider: "local"` (vLLM / openai-compatible) or to `langchain-google-genai`,
+otherwise you will hit `ModuleNotFoundError` at first `init_chat_model()` call.
+See `pyproject.toml` `[project.optional-dependencies]` and TASK-REV-LES1 /
+LES1 §3 LCOI.
 
 ## Quick Start (5 minutes)
 

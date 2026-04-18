@@ -9,6 +9,7 @@ Implements TASK-TI-014: Configurable Adversarial Intensity (full/light/solo).
 from __future__ import annotations
 
 import logging
+import os
 import pathlib
 import random
 from enum import Enum
@@ -131,10 +132,22 @@ def load_adversarial_config(
         except Exception as e:
             logger.warning("Failed to load adversarial config: %s", e)
 
+    # Env override for intensity (applied before bucket selection so the right
+    # INTENSITY_OVERRIDES are picked). See .env.example for documented vars.
+    if _env_intensity := os.environ.get("ADVERSARIAL_INTENSITY"):
+        config["intensity"] = _env_intensity
+
     # Apply intensity overrides
     intensity = config.get("intensity", AdversarialIntensity.FULL.value)
     overrides = INTENSITY_OVERRIDES.get(intensity, {})
     _deep_merge(config, overrides)
+
+    # Env overrides for knobs (applied after intensity bucket — shell wins
+    # over INTENSITY_OVERRIDES so e.g. ACCEPTANCE_THRESHOLD beats solo's 0.0).
+    if _env_threshold := os.environ.get("ACCEPTANCE_THRESHOLD"):
+        config["acceptance_threshold"] = float(_env_threshold)
+    if _env_retries := os.environ.get("MAX_RETRIES"):
+        config["max_retries"] = int(_env_retries)
 
     # Apply mode-specific criteria weight overrides if a mode is active.
     # mode_overrides lives under coach.mode_overrides in agent-config.yaml.

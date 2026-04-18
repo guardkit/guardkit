@@ -34,6 +34,8 @@ from {{ProjectName}}.prompts.adversarial_base import (
     PLAYER_SYSTEM_PROMPT,
     build_player_prompt_with_domain,
 )
+from lib.session_logging import configure_logging, write_session_log
+from lib.retry_context import build_context_manifest, build_retry_input
 
 logger = logging.getLogger(__name__)
 
@@ -422,25 +424,6 @@ def _parse_cli_args() -> argparse.Namespace:
     return args
 
 
-def _configure_logging(*, debug: bool = False, verbose: bool = False) -> None:
-    """Configure logging early in dispatch, before any agent work.
-
-    Without this, logger.info() calls are swallowed silently — every
-    dispatch path (not just greenfield) must configure logging.
-    Uses force=True to ensure configuration takes effect even when
-    the root logger already has handlers (e.g., from framework setup).
-    See: specialist-agent testing sessions, Category A bugs.
-    """
-    if debug:
-        logging.basicConfig(
-            level=logging.DEBUG, format="%(name)s: %(message)s", force=True,
-        )
-    elif verbose:
-        logging.basicConfig(
-            level=logging.INFO, format="%(name)s: %(message)s", force=True,
-        )
-
-
 def _get_domain() -> str:
     """Get domain name from --domain CLI arg or DOMAIN env var."""
     return _parse_cli_args().domain
@@ -474,43 +457,18 @@ def _safe_json_str(data: dict) -> str:
     return json.dumps(data, indent=2)
 
 
-def _build_context_manifest(target: dict[str, Any], context: str) -> str:
-    """Build a context manifest from the target and prefetched context.
+# ---------------------------------------------------------------------------
+# Thin wrappers — canonical implementations live in lib/ (TASK-LCL-008).
+# These exist to preserve the in-tree test surface (existing tests reference
+# _build_context_manifest / _build_retry_input / _write_session_log /
+# _configure_logging on this module). Do NOT re-inline logic here — keep
+# changes in lib/session_logging.py or lib/retry_context.py so the
+# orchestrator template can continue to vendor a single source of truth.
+# ---------------------------------------------------------------------------
 
-    Includes the filename list and any scope/constraint metadata from the
-    original target so that retry iterations retain structural context.
-    Without this, models fabricate filenames when the corpus is large.
-    See: specialist-agent testing sessions, Category C bugs.
-
-    Args:
-        target: Original target specification dict.
-        context: Prefetched domain context string.
-
-    Returns:
-        Manifest string suitable for inclusion in retry prompts.
-    """
-    parts: list[str] = []
-
-    # Include file list from target if available
-    files = target.get("files", target.get("documents", []))
-    if files:
-        parts.append("### Document manifest\n")
-        for f in files:
-            name = f if isinstance(f, str) else f.get("name", f.get("path", str(f)))
-            parts.append(f"- {name}")
-        parts.append("")
-
-    # Include scope/constraints from target
-    scope = target.get("scope", target.get("constraints", ""))
-    if scope:
-        parts.append(f"### Scope\n{scope}\n")
-
-    # If no structured metadata, extract a summary from context length
-    if not parts and context:
-        ctx_lines = context.strip().splitlines()
-        parts.append(f"Context: {len(ctx_lines)} lines of domain context provided in original input.")
-
-    return "\n".join(parts)
+def _configure_logging(*, debug: bool = False, verbose: bool = False) -> None:
+    """Delegate to lib.session_logging.configure_logging."""
+    configure_logging(debug=debug, verbose=verbose)
 
 
 def _write_session_log(
@@ -518,54 +476,13 @@ def _write_session_log(
     result: PipelineResult,
     log_dir: str = "session-logs",
 ) -> None:
-    """Write session log unconditionally — before success/failure branching.
+    """Delegate to lib.session_logging.write_session_log."""
+    write_session_log(target_id, result, log_dir=log_dir)
 
-    Failed runs MUST produce diagnostic output. Without session logs on
-    failure, debugging is guesswork. This function is called for every
-    pipeline execution regardless of outcome.
-    See: specialist-agent testing sessions, Category A bugs.
 
-    Args:
-        target_id: Identifier for the target being processed.
-        result: PipelineResult from the pipeline execution.
-        log_dir: Directory for session log files.
-    """
-    import json
-    from datetime import datetime
-
-    log_path = pathlib.Path(log_dir)
-    log_path.mkdir(parents=True, exist_ok=True)
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = log_path / f"{target_id}_{timestamp}.json"
-
-    verdict_data = None
-    if result.verdict is not None:
-        verdict_data = {
-            "decision": result.verdict.decision,
-            "composite_score": result.verdict.composite_score,
-            "issues": result.verdict.issues,
-            "quality_assessment": result.verdict.quality_assessment,
-            "criterion_scores": [
-                {"name": cs.name, "score": cs.score, "feedback": cs.feedback}
-                for cs in result.verdict.criterion_scores
-            ],
-        }
-
-    log_entry = {
-        "target_id": target_id,
-        "timestamp": datetime.now().isoformat(),
-        "success": result.success,
-        "attempts": result.attempts,
-        "error": result.error,
-        "verdict": verdict_data,
-    }
-
-    try:
-        log_file.write_text(json.dumps(log_entry, indent=2))
-        logger.info("Session log written: %s", log_file)
-    except Exception as e:
-        logger.warning("Failed to write session log: %s", e)
+def _build_context_manifest(target: dict[str, Any], context: str) -> str:
+    """Delegate to lib.retry_context.build_context_manifest."""
+    return build_context_manifest(target, context)
 
 
 def _build_retry_input(
@@ -574,47 +491,16 @@ def _build_retry_input(
     *,
     context_manifest: str | None = None,
 ) -> dict:
-    """Build retry input for the Player using user role only (TASK-REV-R2A1).
+    """Delegate to lib.retry_context.build_retry_input.
 
-    create_agent() unconditionally prepends system_prompt on every ainvoke()
-    call. NEVER pass system role messages — use user role for reinforcement.
-
-    Args:
-        player_content: The Player's previous output.
-        issues: List of Coach feedback issues or error messages.
-        context_manifest: Optional structural context from the original input.
-            Should include at minimum a filename manifest listing all documents
-            in the corpus. Without this, models fabricate filenames on retry
-            iterations when the corpus is large (15+ documents).
-            See: specialist-agent testing sessions, Category C bugs.
+    The lib function enforces the ainvoke() message contract (TASK-REV-R2A1):
+    the returned payload uses ``"role": "user"`` and never a system-role
+    message, because ``create_agent()`` prepends ``system_prompt``
+    unconditionally and vLLM rejects dual system messages with HTTP 400.
     """
-    feedback = "; ".join(issues)
-
-    parts = [
-        "IMPORTANT: Your previous output was rejected by the Coach.\n",
-        f"Feedback: {feedback}\n\n",
-    ]
-
-    if context_manifest:
-        parts.append(
-            "## Available Context (from original input)\n\n"
-            f"{context_manifest}\n\n"
-        )
-
-    parts.append(
-        "Apply targeted revisions focusing on the lowest-scoring "
-        "criteria. Do NOT discard existing work.\n\n"
-        f"Previous output:\n{player_content}"
+    return build_retry_input(
+        player_content, issues, context_manifest=context_manifest,
     )
-
-    return {
-        "messages": [
-            {
-                "role": "user",
-                "content": "".join(parts),
-            },
-        ],
-    }
 
 
 # ---------------------------------------------------------------------------

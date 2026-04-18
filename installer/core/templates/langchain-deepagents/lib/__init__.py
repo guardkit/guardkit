@@ -27,6 +27,10 @@ Exports:
     StageTimingRecord: Timing record dataclass.
     log_error_context: Log error snippets for rapid diagnosis.
     configure_logging: Convenience function for observability logger setup.
+    write_session_log: Unconditional per-run JSON diagnostic dump (Category A fix).
+    configure_logging: Bootstrap logging with force=True for orchestrator dispatch.
+    build_context_manifest: Distil target + context into retry-safe structural manifest (Category C fix).
+    build_retry_input: Shape Player revision payload as single user-role message (TASK-REV-R2A1).
     CheckResult: Outcome of a single preflight check.
     PreflightReport: Aggregated preflight validation report.
     run_preflight: Run all preflight checks against a project directory.
@@ -75,9 +79,10 @@ from .observability import (
     StageTimingRecord,
     TokenTracker,
     TokenUsage,
-    configure_logging,
     log_error_context,
 )
+from .session_logging import configure_logging, write_session_log
+from .retry_context import build_context_manifest, build_retry_input
 from .preflight import (
     CheckResult,
     PreflightReport,
@@ -139,6 +144,8 @@ __all__ = [
     "WebhookCheckpointHook",
     "assert_no_system_messages",
     "assert_tool_inventory",
+    "build_context_manifest",
+    "build_retry_input",
     "configure_logging",
     "create_checkpoint_hook",
     "create_restricted_agent",
@@ -148,6 +155,7 @@ __all__ = [
     "parse_range",
     "validate_config",
     "validate_field",
+    "write_session_log",
     "CheckResult",
     "PreflightReport",
     "format_report",

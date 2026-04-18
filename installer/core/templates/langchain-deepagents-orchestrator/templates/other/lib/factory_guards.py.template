@@ -1,0 +1,73 @@
+"""Factory guard utilities for tool-inventory enforcement.
+
+This module is **vendored** from the ``langchain-deepagents`` base template's
+``lib/factory_guards.py``. The orchestrator template is standalone — it does
+**not** depend on the base template being installed — so the guard surface is
+duplicated here intentionally. Keep the error type name (``ToolLeakageError``)
+and the message shape (``"Tool inventory mismatch: unexpected=...; missing=..."``)
+in sync with the base template so downstream logging / alerting can parse
+leakage reports consistently across template families.
+
+Why this exists:
+    DeepAgents' ``SubAgentMiddleware`` spawns sub-graphs that inherit the
+    framework's middleware-tool injection. A ``SubAgent`` spec declared with
+    ``tools=[]`` only controls *user*-provided tools — middleware tools
+    (``write_file``, ``edit_file``, ``execute``, ``write_todos`` …) can still
+    be injected. This is the TASK-REV-32D2 F2 bug class. The helpers here let
+    the factory fail loud at construction if the realised tool inventory of a
+    subagent does not match the contract.
+
+Future work:
+    If the orchestrator template ever adopts ``extends: langchain-deepagents``,
+    this vendored file should be deleted in favour of importing from the base
+    template's ``lib/factory_guards.py`` to restore a single source of truth.
+
+Dependencies: stdlib only.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+class ToolLeakageError(Exception):
+    """Raised when an agent's tool inventory does not match the expected set."""
+
+
+def assert_tool_inventory(
+    agent: Any,
+    expected_tools: set[str],
+    *,
+    context: str = "",
+) -> None:
+    """Assert that ``agent.tools`` has exactly the expected names.
+
+    Call this at factory exit (not just in tests) to catch tool leakage
+    before the agent is used.
+
+    Args:
+        agent: Any object exposing a ``.tools`` iterable whose elements have
+            a ``.name`` attribute (falls back to ``str(tool)``).
+        expected_tools: Exact set of tool names the agent should expose.
+        context: Optional prefix for the error message (e.g. a subagent name).
+
+    Raises:
+        ToolLeakageError: If unexpected or missing tools are detected, with a
+            diff showing which tools were added/removed.
+    """
+    actual_tools = {getattr(t, "name", str(t)) for t in agent.tools}
+
+    if actual_tools != expected_tools:
+        unexpected = actual_tools - expected_tools
+        missing = expected_tools - actual_tools
+        parts = []
+        if unexpected:
+            parts.append(f"unexpected={sorted(unexpected)}")
+        if missing:
+            parts.append(f"missing={sorted(missing)}")
+        prefix = f"{context}: " if context else ""
+        raise ToolLeakageError(
+            f"{prefix}Tool inventory mismatch: {'; '.join(parts)}. "
+            f"Expected: {sorted(expected_tools)}, "
+            f"Actual: {sorted(actual_tools)}"
+        )

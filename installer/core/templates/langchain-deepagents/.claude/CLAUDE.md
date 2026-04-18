@@ -53,9 +53,14 @@ The following are NOT in this base template — use `langchain-deepagents-weight
 ## Quick Start
 
 ```bash
-pip install -r requirements.txt
+pip install .[providers]
 pytest tests/ -v
 ```
+
+`.[providers]` installs every LangChain integration named in code (anthropic, openai, google-genai).
+The base `dependencies` also include `langchain-anthropic` so a zero-extras install of the default
+provider still works. See `pyproject.toml` `[project.optional-dependencies]` and TASK-REV-LES1 /
+LES1 §3 LCOI for why every integration must be declared.
 
 ## Detailed Guidance
 
@@ -65,6 +70,17 @@ Rules load automatically when you work on relevant files:
 - **Testing**: `.claude/rules/testing.md`
 - **Patterns**: `.claude/rules/patterns/`
 - **Guidance**: `.claude/rules/guidance/`
+
+### Pattern rule conventions
+
+Pattern rule files in `.claude/rules/patterns/` end with `Source: <path>` lines
+(e.g. `Source: scaffold/orchestrator_pattern.py.template`). These paths are
+**post-render** — they refer to the layout a user sees in their rendered
+project, not paths inside this template's source tree. In the template source
+tree the referenced files live under `templates/other/...` (e.g.
+`templates/other/scaffold/orchestrator_pattern.py.template`); once the template
+is applied to a user project, those files appear at the paths cited in the rule
+files. Do not "correct" `Source:` paths to match the template tree.
 
 ## Cross-Domain Evidence
 

@@ -45,13 +45,13 @@
     "Adversarial Cooperation",
     "Domain-Driven Configuration",
     "Factory",
-    "HITL Checkpoints",
+    "HITL Hooks",
     "Memory Injection",
-    "Sprint Contracts",
+    "Sprint Contract Hooks",
     "Tool Delegation",
     "Weighted Evaluation"
   ],
-  "patterns_note": "HITL Checkpoints, Sprint Contracts, Adversarial Cooperation, Domain-Driven Configuration, Factory, Memory Injection, and Tool Delegation are inherited from the base template. Weighted Evaluation is added by this extension.",
+  "patterns_note": "Adversarial Cooperation, Domain-Driven Configuration, Factory, Memory Injection, and Tool Delegation are inherited from the base template, which also ships the HITL Checkpoints and Sprint Contracts pattern libraries (lib/checkpoint_hooks.py, lib/sprint_contract.py). This extension adds Weighted Evaluation, plus HITL Hooks and Sprint Contract Hooks (hooks/hitl.py, hooks/sprint_contract.py) that wire the base libraries into the weighted evaluation flow.",
   "layers": [
     "Entrypoint",
     "Agents",

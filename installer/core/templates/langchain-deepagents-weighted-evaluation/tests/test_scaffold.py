@@ -54,6 +54,50 @@ def _load_module(name: str, file_path: pathlib.Path):
     return module
 
 
+_BASE_LIB_ROOT = (
+    TEMPLATE_ROOT.parent / "langchain-deepagents" / "lib"
+)
+
+
+def _preload_base_lib_module(mod_name: str) -> None:
+    """Preload a base-template ``lib/<mod_name>.py`` under ``lib.<mod_name>``.
+
+    The weighted-evaluation orchestrator imports ``from lib.session_logging``
+    and ``from lib.retry_context`` (TASK-LCL-008). In the rendered project
+    those resolve via the user's ``lib/`` package, but in this in-tree test
+    environment ``lib`` is not on ``sys.path``. Preloading the real modules
+    into ``sys.modules`` lets the scaffold's imports succeed and delegating
+    wrappers execute against the canonical implementations from the base
+    template (not stubs — that would defeat the behaviour tests below).
+    """
+    import sys
+    import types
+
+    # Ensure a parent ``lib`` package entry exists so ``from lib.x import y``
+    # finds ``lib.x`` on the module path.
+    if "lib" not in sys.modules:
+        pkg = types.ModuleType("lib")
+        pkg.__path__ = []
+        sys.modules["lib"] = pkg
+
+    full_name = f"lib.{mod_name}"
+    if full_name in sys.modules:
+        return
+
+    file_path = _BASE_LIB_ROOT / f"{mod_name}.py"
+    loader = importlib.machinery.SourceFileLoader(full_name, str(file_path))
+    spec = importlib.util.spec_from_file_location(
+        full_name, str(file_path), loader=loader,
+    )
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[full_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(full_name, None)
+        raise
+
+
 def _load_j2_module(name: str, file_path: pathlib.Path):
     """Load a Jinja2 template (.j2) as a Python module after replacing placeholders.
 
@@ -64,6 +108,12 @@ def _load_j2_module(name: str, file_path: pathlib.Path):
     import re
     import sys
     import tempfile
+
+    # Preload base-template lib modules that the scaffold imports from. This
+    # runs before any stripping below so the scaffold's ``from lib.xxx import``
+    # lines remain intact and resolve against the real implementations.
+    _preload_base_lib_module("session_logging")
+    _preload_base_lib_module("retry_context")
 
     content = file_path.read_text()
 
@@ -85,6 +135,9 @@ def _load_j2_module(name: str, file_path: pathlib.Path):
     lines = content.splitlines()
     filtered = []
     skip_continuation = False
+    # Preserve ``from lib.session_logging`` / ``from lib.retry_context`` —
+    # those are TASK-LCL-008 extractions and resolve via _preload_base_lib_module.
+    _preserved_lib_modules = ("session_logging", "retry_context")
     for line in lines:
         if skip_continuation:
             if line.strip().endswith(")"):
@@ -95,6 +148,11 @@ def _load_j2_module(name: str, file_path: pathlib.Path):
                 skip_continuation = True
             continue
         if "from lib." in line:
+            if any(
+                f"from lib.{m}" in line for m in _preserved_lib_modules
+            ):
+                filtered.append(line)
+                continue
             if not line.strip().endswith(")"):
                 skip_continuation = True
             continue
@@ -192,6 +250,7 @@ class TestDirectoryStructure:
             "hooks/hitl.py",
             "hooks/sprint_contract.py",
             "config/adversarial_config.py",
+            "templates/other/other/.env.example.template",
         ],
     )
     def test_required_files_exist(self, filepath: str):
@@ -397,6 +456,34 @@ class TestAdversarialConfig:
     def test_light_mode_disables_hitl(self, adv_config):
         """Light mode should disable HITL."""
         assert adv_config.INTENSITY_OVERRIDES["light"]["hitl"]["enabled"] is False
+
+    def test_env_override_acceptance_threshold(self, adv_config, monkeypatch):
+        """ACCEPTANCE_THRESHOLD env var overrides config (and beats intensity bucket)."""
+        monkeypatch.setenv("ACCEPTANCE_THRESHOLD", "0.95")
+        config = adv_config.load_adversarial_config()
+        assert config["acceptance_threshold"] == 0.95
+
+    def test_env_override_intensity_selects_bucket(self, adv_config, monkeypatch):
+        """ADVERSARIAL_INTENSITY env var changes intensity AND triggers correct overrides."""
+        monkeypatch.setenv("ADVERSARIAL_INTENSITY", "light")
+        config = adv_config.load_adversarial_config()
+        assert config["intensity"] == "light"
+        # light bucket sets max_retries=1
+        assert config["max_retries"] == 1
+
+    def test_env_override_max_retries(self, adv_config, monkeypatch):
+        """MAX_RETRIES env var overrides config."""
+        monkeypatch.setenv("MAX_RETRIES", "7")
+        config = adv_config.load_adversarial_config()
+        assert config["max_retries"] == 7
+
+    def test_env_threshold_beats_solo_intensity(self, adv_config, monkeypatch):
+        """Env ACCEPTANCE_THRESHOLD wins over solo bucket's 0.0 auto-accept."""
+        monkeypatch.setenv("ADVERSARIAL_INTENSITY", "solo")
+        monkeypatch.setenv("ACCEPTANCE_THRESHOLD", "0.8")
+        config = adv_config.load_adversarial_config()
+        assert config["intensity"] == "solo"
+        assert config["acceptance_threshold"] == 0.8
 
 
 class TestCoachPrompt:

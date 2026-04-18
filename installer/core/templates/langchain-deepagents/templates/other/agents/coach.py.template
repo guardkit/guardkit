@@ -11,10 +11,11 @@ D5 INVARIANT: Coach has NO tools — enforced by factory signature (no tools par
 from langchain.agents import create_agent
 from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
-from {{ProjectName}}.backends import FilesystemBackend
+from deepagents.backends import FilesystemBackend
+from deepagents.middleware import MemoryMiddleware
+from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
+
 from {{ProjectName}}.coach_prompts import COACH_SYSTEM_PROMPT
-from {{ProjectName}}.middleware import MemoryMiddleware
-from {{ProjectName}}.middleware.patch_tool_calls import PatchToolCallsMiddleware
 
 
 def create_coach(model, domain_prompt: str):

@@ -20,8 +20,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from {{ProjectName}} import create_deep_agent
-from {{ProjectName}}.backends import FilesystemBackend
+from deepagents import create_deep_agent
+from deepagents.backends import FilesystemBackend
 
 from {{ProjectName}}.lib.factory_guards import (
     assert_no_system_messages,

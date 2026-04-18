@@ -9,10 +9,16 @@ A pipeline orchestrator agent using DeepAgents two-model architecture.
 ## Quick Start
 
 ```bash
-pip install -r requirements.txt
+pip install .[providers]
 # Configure models in orchestrator-config.yaml
 python -m langgraph dev
 ```
+
+`.[providers]` installs every LangChain integration this template can be configured
+to use (openai, google-genai). The base `dependencies` include `langchain-anthropic`
+so a zero-extras install of the default provider still works. See `pyproject.toml`
+`[project.optional-dependencies]` and TASK-REV-LES1 / LES1 §3 LCOI for why every
+integration must be declared.
 
 ## Key Patterns
 

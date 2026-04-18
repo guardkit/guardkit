@@ -1,6 +1,6 @@
 """Tests for agent factory functions in {{ProjectName}}/player.py and {{ProjectName}}/coach.py."""
 
-from {{ProjectName}}.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 

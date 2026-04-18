@@ -9,6 +9,15 @@ Provides factory functions for all four agent roles:
 
 Each SubAgent factory accepts a ``model`` string in ``provider:model`` format
 so the entrypoint can configure models from the YAML config file.
+
+Tool-inventory contract (TASK-REV-LES1 HIGH-1):
+    After ``create_deep_agent()`` returns, ``create_orchestrator()`` asserts
+    the *realised* tool inventory of each sync subagent against its allowlist.
+    This catches the TASK-REV-32D2 F2 bug class (DeepAgents'
+    ``SubAgentMiddleware`` injecting middleware tools into subagents declared
+    with ``tools=[]``). The Builder is an ``AsyncSubAgent`` targeting a remote
+    LangGraph deployment — its tool surface is owned by the remote graph and
+    is therefore skipped.
 """
 
 from __future__ import annotations
@@ -20,6 +29,7 @@ from typing import Any
 from deepagents import AsyncSubAgent, SubAgent, create_deep_agent
 from langgraph.graph.state import CompiledStateGraph
 
+from lib.factory_guards import ToolLeakageError, assert_tool_inventory
 from prompts import EVALUATOR_SYSTEM_PROMPT, IMPLEMENTER_SYSTEM_PROMPT, ORCHESTRATOR_SYSTEM_PROMPT
 from tools import analyse_context, execute_command, plan_pipeline, verify_output
 
@@ -27,6 +37,17 @@ logger = logging.getLogger(__name__)
 
 # The four orchestrator tools shared between the orchestrator and implementer.
 _ORCHESTRATOR_TOOLS = [analyse_context, plan_pipeline, execute_command, verify_output]
+
+# Tool allowlists (TASK-REV-LES1 HIGH-1).
+# These are the *realised* tool inventories each sync subagent is contracted
+# to expose. Asserted post-construction in ``create_orchestrator()``.
+IMPLEMENTER_ALLOWED_TOOLS: set[str] = {
+    "analyse_context",
+    "plan_pipeline",
+    "execute_command",
+    "verify_output",
+}
+EVALUATOR_ALLOWED_TOOLS: set[str] = set()
 
 
 def implementer_subagent(model: str) -> SubAgent:
@@ -131,6 +152,100 @@ def builder_async_subagent(
     return spec  # type: ignore[return-value]
 
 
+def _extract_subagent_tools(
+    graph: CompiledStateGraph,
+    subagent_name: str,
+) -> set[str] | None:
+    """Introspect a compiled orchestrator graph for a subagent's tool inventory.
+
+    DeepAgents' ``SubAgentMiddleware`` compiles each ``SubAgent`` spec into a
+    sub-graph node on the parent ``CompiledStateGraph``. This helper walks the
+    graph's ``nodes`` mapping looking for a node that matches ``subagent_name``
+    and exposes a ``.tools`` iterable, then returns the set of tool names.
+
+    The introspection is intentionally duck-typed: it tries ``node.tools`` first
+    and ``node.runnable.tools`` second to cover both the public LangGraph node
+    surface and the wrapped-Pregel layout. Returning ``None`` (rather than
+    raising) signals that the layout could not be resolved — the caller should
+    log a warning and proceed, not silently pass the assertion.
+
+    Args:
+        graph: The ``CompiledStateGraph`` returned from ``create_deep_agent()``.
+        subagent_name: The ``name`` field of the ``SubAgent`` spec.
+
+    Returns:
+        Set of tool names on the resolved subagent node, or ``None`` if no
+        matching node with an iterable ``.tools`` attribute was found.
+    """
+    nodes = getattr(graph, "nodes", None) or {}
+    node = nodes.get(subagent_name)
+    if node is None:
+        return None
+
+    tools = getattr(node, "tools", None)
+    if tools is None:
+        runnable = getattr(node, "runnable", None)
+        if runnable is not None:
+            tools = getattr(runnable, "tools", None)
+
+    if tools is None:
+        return None
+
+    try:
+        return {getattr(t, "name", str(t)) for t in tools}
+    except TypeError:
+        # .tools was present but not iterable.
+        return None
+
+
+def _validate_subagent_tools(
+    graph: CompiledStateGraph,
+    subagent_name: str,
+    expected_tools: set[str],
+) -> None:
+    """Assert a subagent's realised tool inventory matches its allowlist.
+
+    Args:
+        graph: The compiled orchestrator graph.
+        subagent_name: ``SubAgent`` name to locate on ``graph.nodes``.
+        expected_tools: Exact set of tool names the subagent must expose.
+
+    Raises:
+        ToolLeakageError: If the subagent was located and its tool inventory
+            does not match ``expected_tools``.
+
+    If the subagent cannot be located (DeepAgents layout changed, or the
+    subagent is wrapped in a way this helper does not recognise), a warning
+    is logged and the assertion is skipped rather than silently passing. The
+    accompanying test suite patches ``create_deep_agent`` with a
+    ``nodes``-compatible mock so this fallback is not exercised in CI.
+    """
+    actual_tools = _extract_subagent_tools(graph, subagent_name)
+    if actual_tools is None:
+        logger.warning(
+            "Could not introspect subagent %r tool inventory on compiled graph; "
+            "skipping tool-leakage assertion. Check DeepAgents version and the "
+            "graph.nodes layout.",
+            subagent_name,
+        )
+        return
+
+    if actual_tools != expected_tools:
+        unexpected = actual_tools - expected_tools
+        missing = expected_tools - actual_tools
+        parts = []
+        if unexpected:
+            parts.append(f"unexpected={sorted(unexpected)}")
+        if missing:
+            parts.append(f"missing={sorted(missing)}")
+        raise ToolLeakageError(
+            f"Subagent {subagent_name!r}: Tool inventory mismatch: "
+            f"{'; '.join(parts)}. "
+            f"Expected: {sorted(expected_tools)}, "
+            f"Actual: {sorted(actual_tools)}"
+        )
+
+
 def create_orchestrator(
     reasoning_model: str,
     implementation_model: str,
@@ -183,5 +298,11 @@ def create_orchestrator(
         skills=None,
         context_schema=None,
     )
+
+    # Post-construction tool-inventory assertions (TASK-REV-LES1 HIGH-1).
+    # The Builder is an AsyncSubAgent targeting a remote LangGraph deployment;
+    # its tool surface is owned by the remote graph and is therefore skipped.
+    _validate_subagent_tools(graph, "implementer", IMPLEMENTER_ALLOWED_TOOLS)
+    _validate_subagent_tools(graph, "evaluator", EVALUATOR_ALLOWED_TOOLS)
 
     return graph

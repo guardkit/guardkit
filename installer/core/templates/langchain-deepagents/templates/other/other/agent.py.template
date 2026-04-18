@@ -5,7 +5,7 @@ import os
 import pathlib
 
 import yaml
-from {{ProjectName}}.chat_models import init_chat_model
+from langchain.chat_models import init_chat_model
 
 from {{ProjectName}}.coach import create_coach
 from {{ProjectName}}.player import create_player
