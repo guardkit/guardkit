@@ -59,12 +59,15 @@ llm_provider: gemini
 llm_model: gemini-2.5-pro
 llm_max_tokens: 4096   # Caps output; prevents 16K default exceeding 32K context.
 
-# Embeddings stay local on GB10:8001. Must be explicit at 1024 dims —
-# missing/mismatched dims silently break vector search.
+# Embeddings stay local on GB10:8001. The dimension is resolved from
+# guardkit's KNOWN_EMBEDDING_DIMS based on embedding_model (768 for
+# nomic-embed-text-v1.5). Set embedding_dimensions explicitly only to
+# override the resolver (e.g. Matryoshka truncation). See
+# .claude/reviews/TASK-REV-E8D1-review-report.md for the drift
+# investigation that removed the previous hard-coded value.
 embedding_provider: vllm
 embedding_base_url: http://promaxgb10-41b1:8001/v1
 embedding_model: nomic-embed-text-v1.5
-embedding_dimensions: 1024
 
 # FalkorDB on the NAS (unchanged).
 graph_store: falkordb
@@ -204,8 +207,10 @@ Use this when onboarding a new repo to the shared FalkorDB / Gemini setup.
 - [ ] `GOOGLE_API_KEY` present in `<repo>/.env`, billing enabled on the key's
       project.
 - [ ] `<repo>/.guardkit/graphiti.yaml` matches the Python-client shape above,
-      preserving the repo's own `project_id` and with explicit
-      `embedding_dimensions: 1024`.
+      preserving the repo's own `project_id`. Do **not** set
+      `embedding_dimensions` — guardkit resolves it from
+      `KNOWN_EMBEDDING_DIMS` based on `embedding_model`. See
+      `.claude/reviews/TASK-REV-E8D1-review-report.md`.
 - [ ] `<repo>/.mcp.json` (where present) `graphiti` entry matches the
       MCP-launch shape above, `CONFIG_PATH` pointing at the correct
       `config-<repo>.yaml`. Do not touch other MCP entries (e.g.

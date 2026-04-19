@@ -167,7 +167,8 @@ class TestGenerateMcpServerConfig:
         assert config["llm"]["model"] == "test-model"
         assert config["llm"]["max_tokens"] == 4096
         assert config["embedder"]["model"] == "nomic-embed-text-v1.5"
-        assert config["embedder"]["dimensions"] == 1024
+        # Resolver (tier 2) maps nomic-embed-text-v1.5 to 768.
+        assert config["embedder"]["dimensions"] == 768
         assert config["database"]["provider"] == "falkordb"
         assert config["graphiti"]["group_id"] == "myproject"
 
@@ -200,10 +201,13 @@ class TestGenerateMcpServerConfig:
         config = generate_mcp_server_config("proj", settings)
         assert "${OPENAI_API_KEY}" in config["llm"]["providers"]["openai"]["api_key"]
 
-    def test_dimensions_defaults_to_1024_when_not_set(self):
+    def test_dimensions_resolves_from_known_model_when_not_set(self):
+        # _make_settings defaults to embedding_model="nomic-embed-text-v1.5",
+        # which is in KNOWN_EMBEDDING_DIMS as 768. The resolver (tier 2)
+        # returns 768 rather than the legacy hardcoded 1024.
         settings = _make_settings(embedding_dimensions=None)
         config = generate_mcp_server_config("proj", settings)
-        assert config["embedder"]["dimensions"] == 1024
+        assert config["embedder"]["dimensions"] == 768
 
     def test_dimensions_uses_explicit_value_when_set(self):
         settings = _make_settings(embedding_dimensions=768)
@@ -290,7 +294,9 @@ class TestGenerateMcpJsonEntry:
         assert entry["env"]["CONFIG_PATH"] == str(tmp_path / "config.yaml")
         assert entry["env"]["LLM_API_URL"] == "http://llm:8000/v1"
         assert entry["env"]["EMBEDDING_API_URL"] == "http://emb:8001/v1"
-        assert entry["env"]["EMBEDDING_DIM"] == "1024"
+        # Resolver returns 768 for nomic-embed-text-v1.5 (tier 2 via
+        # KNOWN_EMBEDDING_DIMS), not the legacy hardcoded 1024.
+        assert entry["env"]["EMBEDDING_DIM"] == "768"
         assert entry["env"]["OPENAI_API_KEY"] == "not-needed-vllm-local"
 
     def test_main_py_in_args(self, tmp_path):
@@ -300,10 +306,11 @@ class TestGenerateMcpJsonEntry:
         assert "--transport" in entry["args"]
         assert "stdio" in entry["args"]
 
-    def test_embedding_dim_defaults_to_1024(self, tmp_path):
+    def test_embedding_dim_resolves_from_known_model(self, tmp_path):
+        # _make_settings defaults model to "nomic-embed-text-v1.5" (768-dim).
         settings = _make_settings(embedding_dimensions=None)
         entry = generate_mcp_json_entry("proj", tmp_path, tmp_path / "cfg.yaml", settings)
-        assert entry["env"]["EMBEDDING_DIM"] == "1024"
+        assert entry["env"]["EMBEDDING_DIM"] == "768"
 
     def test_embedding_dim_uses_explicit_value(self, tmp_path):
         settings = _make_settings(embedding_dimensions=768)

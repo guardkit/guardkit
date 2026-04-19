@@ -1,4 +1,7 @@
 {
+  "enabledPlugins": {
+    "langchain-skills@langchain-skills": true
+  },
   "name": "guardkit",
   "version": "1.0.0",
   "description": "Lightweight task workflow with quality gates and architectural review",
@@ -138,7 +141,9 @@
       }
     }
   },
-  "enabledPlugins": {
-    "langchain-skills@langchain-skills": true
+  "permissions": {
+    "additionalDirectories": [
+      "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/reviews"
+    ]
   }
 }

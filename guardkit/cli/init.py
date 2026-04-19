@@ -249,6 +249,34 @@ def discover_graphiti_mcp_path(prompt_if_missing: bool = True) -> Optional[Path]
     return None
 
 
+def _resolve_embedding_dimensions(settings: Any) -> int:
+    """Resolve the embedding dimension to use for MCP config.
+
+    Precedence:
+      1. Explicit ``settings.embedding_dimensions`` if not None.
+      2. ``KNOWN_EMBEDDING_DIMS.get(settings.embedding_model)`` if the model
+         is known.
+      3. ``1536`` (OpenAI ada-002 / text-embedding-3-small default, which
+         matches the default model assumed when ``settings.embedding_model``
+         is unset).
+
+    Pure function — no logging, no I/O. Callers that need to warn the
+    operator when the tier-3 fallback fires should do so at the call site.
+    """
+    from guardkit.knowledge.graphiti_client import KNOWN_EMBEDDING_DIMS
+
+    explicit = getattr(settings, "embedding_dimensions", None)
+    if explicit is not None:
+        return explicit
+
+    model = getattr(settings, "embedding_model", None) or ""
+    known = KNOWN_EMBEDDING_DIMS.get(model)
+    if known is not None:
+        return known
+
+    return 1536
+
+
 def generate_mcp_server_config(
     project_id: str,
     settings: Any,
@@ -270,7 +298,7 @@ def generate_mcp_server_config(
     llm_max_tokens = getattr(settings, "llm_max_tokens", None) or 4096
     embedding_base_url = getattr(settings, "embedding_base_url", None) or "http://localhost:8001/v1"
     embedding_model = getattr(settings, "embedding_model", None) or "text-embedding-ada-002"
-    embedding_dimensions = getattr(settings, "embedding_dimensions", None) or 1024
+    embedding_dimensions = _resolve_embedding_dimensions(settings)
     falkordb_host = getattr(settings, "falkordb_host", None) or "localhost"
     falkordb_port = getattr(settings, "falkordb_port", None) or 6379
 
@@ -375,7 +403,7 @@ def generate_mcp_json_entry(
     uv_cmd = _find_uv_command()
     llm_base_url = getattr(settings, "llm_base_url", None) or "http://localhost:8000/v1"
     embedding_base_url = getattr(settings, "embedding_base_url", None) or "http://localhost:8001/v1"
-    embedding_dimensions = getattr(settings, "embedding_dimensions", None) or 1024
+    embedding_dimensions = _resolve_embedding_dimensions(settings)
 
     return {
         "type": "stdio",
@@ -1594,19 +1622,19 @@ async def _cmd_init(
                     console.print(f"  [green]Generated .mcp.json with Graphiti MCP config[/green]")
                     console.print(f"  [green]Written MCP server config: {config_path}[/green]")
                     mcp_configured = True
-                    # Warn if embedding dimensions may be inconsistent between Python client and MCP
+                    # Warn only when the resolver fell back to the tier-3
+                    # default (1536) because the model is unknown. Tier 1
+                    # (explicit) and tier 2 (known model) cases are silent.
                     explicit_dims = getattr(settings, "embedding_dimensions", None)
                     if explicit_dims is None:
                         model = getattr(settings, "embedding_model", None) or ""
                         from guardkit.knowledge.graphiti_client import KNOWN_EMBEDDING_DIMS
-                        known_dim = KNOWN_EMBEDDING_DIMS.get(model)
-                        if known_dim is not None and known_dim != 1024:
+                        if model and model not in KNOWN_EMBEDDING_DIMS:
                             console.print(
-                                f"  [yellow]Warning: embedding_dimensions not set in .guardkit/graphiti.yaml.[/yellow]\n"
-                                f"  [yellow]MCP server will use 1024 dimensions (default), but model "
-                                f"'{model}' default is {known_dim}.[/yellow]\n"
-                                f"  [dim]If this FalkorDB was seeded with 1024-dim vectors (Matryoshka), "
-                                f"add 'embedding_dimensions: 1024' to .guardkit/graphiti.yaml.[/dim]"
+                                f"  [yellow]Warning: embedding model '{model}' not in KNOWN_EMBEDDING_DIMS; "
+                                f"defaulting to 1536.[/yellow]\n"
+                                f"  [dim]Add 'embedding_dimensions: <dim>' to .guardkit/graphiti.yaml, "
+                                f"or extend KNOWN_EMBEDDING_DIMS, to silence this warning.[/dim]"
                             )
                 else:
                     console.print("  [yellow]Warning: Could not write .mcp.json[/yellow]")

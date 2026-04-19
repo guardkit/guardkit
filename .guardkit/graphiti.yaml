@@ -77,12 +77,9 @@ embedding_base_url: http://promaxgb10-41b1:8001/v1
 # Supported by openai, vllm, and ollama providers
 embedding_model: nomic-embed-text-v1.5
 
-# Explicit embedding vector dimensions.
-# nomic-embed-text-v1.5 supports Matryoshka dimensions: 64, 128, 256, 512, 768 (default), 1024.
-# This FalkorDB was seeded with 1024-dim vectors (Matryoshka enabled via task-transform param).
-# Setting this ensures the Python client and MCP server both use the same dimension,
-# preventing vector search failures from dimension mismatches.
-embedding_dimensions: 1024
+# Embedding dimension is resolved from KNOWN_EMBEDDING_DIMS
+# based on embedding_model above. Set explicitly only to override
+# (e.g., for Matryoshka truncation).
 
 # Group IDs for organizing knowledge
 # These create separate namespaces in the knowledge graph
