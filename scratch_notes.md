@@ -237,3 +237,23 @@ guardkit__task_outcomes: Implementation task creation and execution plan
 TASK-REV-D1AE Status
 Marked completed with decision: implement. Implementation tasks linked in frontmatter.
 
+
+
+
+
+
+
+
+
+
+Done. Two artifacts produced:
+
+SCOPE-system-arch-pattern-layer-rendering.md — the input brief for /system-arch. 9 sections covering: problem statement, current state (two-layer model, LCL-003 prototype, Jinja boundary, FEAT-1A5E), the four-option design space with A/C complementarity argument, the manifest.json pattern_layer schema proposal as straw man, the library-first sequencing plan with confidence test, six explicit Architect deliverables (library API, manifest schema, command surface, FEAT-1A5E interaction contract, migration plan, scope boundaries), evidence pointers with line numbers, and a stated-non-goals section.
+
+TASK-REV-R4CD cancelled — moved to tasks/cancelled/ with status: cancelled, superseded_by pointing to the scope doc, and a three-point cancellation rationale in frontmatter.
+
+Next step to run:
+
+
+/system-arch --context docs/research/pattern-layer-rendering/SCOPE-system-arch-pattern-layer-rendering.md
+The scope doc explicitly requests design only (no code, no feature-plan work in that session). Implementation comes back through /feature-plan once the Architect's outputs (DESIGN-PAT-RENDER-001-architecture.md + ADRs) are in hand — likely split across three feature-plans: the library, the manifest schema + migration, and the guardkit render CLI, with FEAT-1A5E continuing on its own track sharing the same primitive.

@@ -1,4 +1,15 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(rm /Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/agents/autobuild-coach.md)",
+      "Read(//Users/richardwoollcott/.agentecflow/agents/**)",
+      "Bash(awk '{print $NF, $5, \"bytes\"}')"
+    ],
+    "additionalDirectories": [
+      "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/reviews",
+      "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/agents"
+    ]
+  },
   "enabledPlugins": {
     "langchain-skills@langchain-skills": true
   },
@@ -140,10 +151,5 @@
         "max_files_per_task": 5
       }
     }
-  },
-  "permissions": {
-    "additionalDirectories": [
-      "/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/reviews"
-    ]
   }
 }
