@@ -2238,6 +2238,82 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
     - Estimates duration based on complexity
     - Creates the `.guardkit/features/` directory if needed
 
+10.5. ✅ **AC-quality review (warn-mode v1)** — post-step AC linter
+
+    **Runs unconditionally.** There is no opt-in flag; the linter always
+    executes. What's gentle is the v1 *posture* (warn, not block), not
+    the activation.
+
+    **Purpose:** Surface acceptance criteria the Coach will not be able
+    to auto-verify (prose ACs like `"handles edge cases correctly"` or
+    `"backward-compatible defaults ensure no breakage"`). These silently
+    fall through `criteria_classifier.classify_criterion()` to its
+    low-confidence fallback branch and get skipped by Coach — the
+    problem surfaces 30+ tasks later as post-approval smoke failures.
+    The linter closes that feedback loop.
+
+    **How it works:**
+    1. After Step 10 writes task markdown and the structured YAML, the
+       post-step collects each generated task's `id` + `acceptance_criteria`.
+    2. Calls
+       `guardkit.orchestrator.quality_gates.ac_linter.lint_plan_warnings(tasks)`,
+       which delegates per task to
+       `criteria_classifier.classify_with_warnings()`.
+    3. Any criterion classified at confidence <
+       `UNVERIFIABLE_CONFIDENCE_THRESHOLD` (currently 0.6) produces a
+       single `UnverifiableACWarning` with the criterion text, owning
+       `task_id`, and the classifier's own reason string.
+    4. `ac_linter.format_warning_summary()` renders a plain-text block
+       grouped by task, which is printed to planner output immediately
+       before the completion summary (Step 11 below).
+
+    **Architectural guardrail — single source of truth:** the linter
+    module contains NO regexes, pattern constants, or thresholds of its
+    own. It reads `ClassifiedCriterion.confidence` and `.reason` and
+    aggregates them — nothing more. If the linter and the classifier
+    ever disagree on whether an AC is verifiable, that is a bug in the
+    linter. The fix is to delete the divergence, not reconcile it.
+    Keeping classification centralized is what makes the v1-warn →
+    v2-block promotion a one-line change to
+    `UNVERIFIABLE_CONFIDENCE_THRESHOLD` (plus a callsite policy flip),
+    rather than a cross-file rewrite.
+
+    **Rollout posture — v1 is warn-only.** The summary is surfaced;
+    planner output is emitted regardless of warning count; exit code is
+    unaffected. Block-mode is explicitly deferred to v2 after the
+    cohort (jarvis / forge / study-tutor) lands. **Do not pre-tune the
+    classifier's `_MANUAL_PATTERNS` / `_FILE_CONTENT_PATTERNS` during
+    v1** — the point of warn-mode is to observe which prose phrasings
+    show up in practice; hand-tuning before that data arrives biases
+    the v2 cut point.
+
+    **Optional LLM refinement roundtrip (capped):** If the user
+    accepts, the planner may offer up to 2 LLM roundtrips per flagged
+    AC to suggest a verifiable rewrite. The suggested rewrites are
+    surfaced as a diff before any task file is re-written; the user
+    confirms before persisting. This cap exists to bound cost — do not
+    remove it without explicit decision.
+
+    **Example output block:**
+    ```
+    AC-quality review: 2 unverifiable acceptance criteria detected
+    (warn-mode, non-blocking).
+
+      TASK-FP-0002:
+        - - [ ] handles edge cases correctly
+          reason: No strong pattern match, defaulting to file_content
+        - - [ ] backward-compatible defaults ensure no breakage
+          reason: No strong pattern match, defaulting to file_content
+    ```
+
+    **Non-goals (do NOT do any of these):**
+    - Do not add a frontmatter opt-in flag — would re-create the YTM
+      silent-exclusion failure in reverse.
+    - Do not cascade into Coach prompt changes — the Coach reads
+      `acceptance_criteria` as-is; improvement comes from better
+      inputs, not wider Coach scope.
+    - Do not introduce a second classification path in the linter.
+
 ### What NOT to Do
 
 ❌ **DO NOT** perform the review analysis yourself - you MUST use `/task-review` command

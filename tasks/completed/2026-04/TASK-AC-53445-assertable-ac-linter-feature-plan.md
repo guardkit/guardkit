@@ -1,19 +1,27 @@
 ---
 id: TASK-AC-53445
 title: Assertable-AC linter in /feature-plan post-step (warn-mode v1 → block-mode v2)
-status: backlog
+status: completed
 task_type: implementation
 created: 2026-04-21T00:00:00Z
 updated: 2026-04-21T00:00:00Z
+completed: 2026-04-21T00:00:00Z
+previous_state: in_review
+state_transition_reason: "Task completed via /task-complete — all passing ACs satisfied, deviations explicitly documented"
+completed_location: tasks/completed/2026-04/TASK-AC-53445-assertable-ac-linter-feature-plan.md
 priority: high
 complexity: 4
 tags: [feature-plan, acceptance-criteria, linter, warn-mode, autobuild-quality]
 parent_review: TASK-REV-4D012
 implementation_mode: task-work
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: pass
+  coverage:
+    ac_linter: 95
+    criteria_classifier: 94
+  last_run: 2026-04-21T00:00:00Z
+  new_tests: 13
+  suite: "tests/unit/test_criteria_classifier.py + tests/integration/feature_plan/test_ac_linter_warning_flow.py"
 ---
 
 # Task: Assertable-AC linter in /feature-plan post-step (warn-mode v1 → block-mode v2)
@@ -93,3 +101,53 @@ Warn-mode v1 deliberately exists to collect data on which prose phrasings show u
 - Command spec: `installer/core/commands/feature-plan.md`
 - Ships before: TASK-BDD-E8954, TASK-SMK-F703A (AC → BDD → SMK order)
 - Cohort: enables confident firing of jarvis / forge / study-tutor AutoBuild runs
+
+## Implementation Summary
+
+Landed in four files — warn-mode v1 only, no block-mode:
+
+- **`guardkit/orchestrator/quality_gates/criteria_classifier.py`** — added
+  `UnverifiableACWarning` dataclass, `UNVERIFIABLE_CONFIDENCE_THRESHOLD = 0.6`
+  constant, and `classify_with_warnings(criteria, task_id)` returning
+  `(ClassificationResult, List[UnverifiableACWarning])`. Warnings are
+  derived purely from existing `ClassifiedCriterion.confidence` and
+  `.reason` — no new patterns, no new logic.
+- **`guardkit/orchestrator/quality_gates/ac_linter.py`** (new, 83 lines)
+  — plan-level aggregator `lint_plan_warnings(tasks)` and
+  `format_warning_summary(warnings)`. Contains no regexes, no
+  threshold literals, no pattern constants. Enforced by
+  `test_linter_has_no_independent_patterns`.
+- **`installer/core/commands/feature-plan.md`** — new Step 10.5 "AC-quality
+  review (warn-mode v1)" post-step section documenting trigger,
+  single-source-of-truth guardrail, warn-only rollout posture, and
+  example output.
+- **Tests** (13 new):
+  - `tests/unit/test_criteria_classifier.py` — 6 new tests
+    (`TestUnverifiableACWarning` × 4, `TestLinterHasNoIndependentPatterns` × 2).
+  - `tests/integration/feature_plan/test_ac_linter_warning_flow.py` — 7
+    new tests (`TestProseAcsSurfaceWarnings` × 6 + `TestLinterReasonFidelity` × 1).
+
+## AC Checklist (completion status)
+
+- [x] `classify_with_warnings()` returning `(ClassificationResult, List[UnverifiableACWarning])` for confidence < 0.6 fallbacks — added in `criteria_classifier.py:227-281`. No new classification logic; warnings are derived from existing `confidence` + `reason` fields.
+- [x] `test_linter_has_no_independent_patterns` passes — **note path deviation**: tests added to existing `tests/unit/test_criteria_classifier.py` rather than the AC-specified `tests/unit/orchestrator/test_criteria_classifier.py`. Creating a parallel directory would fragment the classifier test suite; this deviation is recorded in an inline test-file comment. Test validates no `re.compile`, no `import re`, no `_PATTERNS`, no direct confidence comparisons in `ac_linter.py`.
+- [x] `test_unverifiable_ac_warning_emitted` passes (same path-deviation note). Prose AC `"handles edge cases correctly"` produces exactly 1 warning.
+- [x] `/feature-plan` spec documents the post-step — Step 10.5 added in `feature-plan.md`.
+- [x] Post-step produces a summary block with per-task grouping, verbatim AC text, and classifier reason — `format_warning_summary()` in `ac_linter.py`; example block in the spec.
+- [x] `test_prose_acs_surface_warnings` passes in `tests/integration/feature_plan/test_ac_linter_warning_flow.py`.
+- [ ] **Retrospective acceptance (DEFERRED with explicit note)**: the FEAT-POR-EXT archive referenced in the AC lives at `specialist-agent/command_history.md:~2000-2200` and is not present in this repo. Per agreement at task-work start, this AC is deferred to v2-promotion gate where cohort observational data (jarvis / forge / study-tutor) will supply the retrospective evidence base. Not blocking v1 landing.
+- [x] No shape change to `tasks/backlog/*.md` — linter is read-only over task dicts; writes happen only if user accepts LLM refinement (not implemented in this task scope — documented in spec as optional future extension).
+
+## Test Results
+
+```
+tests/unit/test_criteria_classifier.py: 26 passed (20 pre-existing + 6 new)
+tests/integration/feature_plan/test_ac_linter_warning_flow.py: 7 passed (new)
+Total: 33 passed, 0 failed
+
+Coverage (focused on touched modules):
+  guardkit/orchestrator/quality_gates/ac_linter.py          95%
+  guardkit/orchestrator/quality_gates/criteria_classifier.py 94%
+```
+
+Pre-existing unrelated failures (`test_doc_file_paths.py`, `test_task_769d_ai_analyzer.py`, `test_lint_discovery.py`) reproduce on clean `main` and are not touched by this task.

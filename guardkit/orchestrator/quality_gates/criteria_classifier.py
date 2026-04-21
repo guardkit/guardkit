@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 
 class CriterionType(Enum):
@@ -220,3 +220,72 @@ def classify_acceptance_criteria(criteria: List[str]) -> ClassificationResult:
         if text.strip():
             result.criteria.append(classify_criterion(text))
     return result
+
+
+# Confidence below this value means the classifier reached its fallback
+# branch (lines 188-194 and 197-202 of classify_criterion). Those branches
+# are where prose ACs land — they produce a type assignment but no real
+# signal that the AC is verifiable.
+#
+# This threshold is the SOLE knob shared between warn-mode v1 and any
+# future block-mode v2. Do not introduce a second threshold elsewhere;
+# v1 → v2 promotion is a one-line change here (plus callsite policy).
+UNVERIFIABLE_CONFIDENCE_THRESHOLD = 0.6
+
+
+@dataclass
+class UnverifiableACWarning:
+    """A warning that an acceptance criterion is unlikely to be Coach-verifiable.
+
+    Derived purely from an existing ``ClassifiedCriterion`` — this struct
+    adds no new signal beyond what the classifier already produced.
+    """
+
+    ac_text: str
+    task_id: str
+    reason: str
+    suggested_rewrite_hint: Optional[str] = None
+
+
+def classify_with_warnings(
+    criteria: List[str],
+    task_id: str,
+) -> Tuple[ClassificationResult, List[UnverifiableACWarning]]:
+    """Classify criteria and emit warnings for low-confidence fallbacks.
+
+    Warn-mode v1 entry point for the AC linter. Emits one
+    :class:`UnverifiableACWarning` per criterion whose classification
+    confidence is below :data:`UNVERIFIABLE_CONFIDENCE_THRESHOLD`.
+
+    This function adds **no new classification logic**. It delegates to
+    :func:`classify_acceptance_criteria`, reads the resulting
+    ``confidence`` and ``reason`` fields, and aggregates warnings. If the
+    linter and the classifier ever disagree on whether an AC is
+    verifiable, that is a bug in this function — fix by deleting code
+    here, not by adding patterns.
+
+    Parameters
+    ----------
+    criteria : List[str]
+        Raw acceptance-criterion text strings.
+    task_id : str
+        The owning task ID, stamped into each warning for downstream
+        per-task aggregation.
+
+    Returns
+    -------
+    Tuple[ClassificationResult, List[UnverifiableACWarning]]
+        The usual classification result plus any warnings.
+    """
+    result = classify_acceptance_criteria(criteria)
+    warnings: List[UnverifiableACWarning] = []
+    for classified in result.criteria:
+        if classified.confidence < UNVERIFIABLE_CONFIDENCE_THRESHOLD:
+            warnings.append(
+                UnverifiableACWarning(
+                    ac_text=classified.text,
+                    task_id=task_id,
+                    reason=classified.reason,
+                )
+            )
+    return result, warnings

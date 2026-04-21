@@ -5,14 +5,22 @@ Validates classification against real-world criteria from:
 - FEAT-SKEL-001 (successful run - TASK-SKEL-001 through TASK-SKEL-004)
 """
 
+import inspect
+import re
+from pathlib import Path
+
 import pytest
 
+from guardkit.orchestrator.quality_gates import ac_linter
 from guardkit.orchestrator.quality_gates.criteria_classifier import (
+    UNVERIFIABLE_CONFIDENCE_THRESHOLD,
     ClassifiedCriterion,
     ClassificationResult,
     CriterionType,
+    UnverifiableACWarning,
     classify_acceptance_criteria,
     classify_criterion,
+    classify_with_warnings,
 )
 
 
@@ -197,3 +205,133 @@ class TestClassificationResult:
         result = classify_acceptance_criteria([])
         assert result.total_count == 0
         assert result.verifiable_count == 0
+
+
+# --- Assertable-AC Linter (warn-mode v1) ---
+#
+# NOTE: AC lines 67-68 of TASK-AC-53445 specify path
+# tests/unit/orchestrator/test_criteria_classifier.py, but the existing
+# classifier tests live here (tests/unit/test_criteria_classifier.py).
+# Per that task's resolution, new linter tests are colocated with the
+# existing suite rather than fragmenting into a parallel directory.
+
+
+class TestUnverifiableACWarning:
+    """Warn-mode v1 behaviour: emit warnings without blocking."""
+
+    def test_unverifiable_ac_warning_emitted(self):
+        """Prose AC produces exactly one warning at 0.3-confidence fallback.
+
+        Directly validates AC line 68 of TASK-AC-53445.
+        """
+        _result, warnings = classify_with_warnings(
+            ["- [ ] handles edge cases correctly"],
+            task_id="TASK-TEST-0001",
+        )
+        assert len(warnings) == 1
+        w = warnings[0]
+        assert isinstance(w, UnverifiableACWarning)
+        assert "handles edge cases correctly" in w.ac_text
+        assert w.task_id == "TASK-TEST-0001"
+        assert w.reason  # non-empty, sourced verbatim from classifier
+
+    def test_verifiable_acs_produce_no_warnings(self):
+        """Well-formed ACs (file-content or command) must not warn."""
+        _result, warnings = classify_with_warnings(
+            [
+                "- [ ] `pyproject.toml` contains `name = \"ac-linter\"`",
+                "- [ ] `pytest tests/` passes all tests",
+            ],
+            task_id="TASK-TEST-0002",
+        )
+        assert warnings == []
+
+    def test_mixed_plan_warnings_are_task_scoped(self):
+        """Warnings carry the supplied task_id verbatim."""
+        _result, warnings = classify_with_warnings(
+            [
+                "- [ ] `pyproject.toml` exists with correct metadata",
+                "- [ ] backward-compatible defaults ensure no breakage",
+            ],
+            task_id="TASK-AC-53445",
+        )
+        assert len(warnings) == 1
+        assert warnings[0].task_id == "TASK-AC-53445"
+
+    def test_threshold_is_exclusive_upper_bound(self):
+        """Exactly-at-threshold confidence does NOT warn.
+
+        Guards against accidentally upgrading 0.6 file-path fallbacks
+        (criteria_classifier.py:170-177) into warnings.
+        """
+        assert UNVERIFIABLE_CONFIDENCE_THRESHOLD == 0.6
+        # A bare-file-path AC classifies at 0.6 via the fallback branch.
+        _result, warnings = classify_with_warnings(
+            ["- [ ] something-or-other in `config.py`"],
+            task_id="TASK-TEST-0003",
+        )
+        # The file-path fallback scores exactly 0.6 and must remain quiet.
+        # If this starts warning, the threshold has drifted.
+        assert warnings == []
+
+
+class TestLinterHasNoIndependentPatterns:
+    """Architectural guardrail from TASK-AC-53445.
+
+    The linter module must be a report-mode wrapper around the
+    classifier. If this test fails, the linter has grown a parallel
+    classification path — delete it, don't reconcile.
+
+    Directly validates AC line 67 of TASK-AC-53445.
+    """
+
+    @pytest.fixture
+    def linter_source(self) -> str:
+        """Raw source of ac_linter module — the thing we're asserting about."""
+        return inspect.getsource(ac_linter)
+
+    def test_linter_has_no_independent_patterns(self, linter_source):
+        """Grep the linter module for regex / heuristic patterns.
+
+        Allowed: delegation to classify_with_warnings / classify_criterion.
+        Forbidden: re.compile, pattern constants, confidence thresholds,
+        or a standalone `import re`.
+        """
+        # No regex compilation.
+        assert "re.compile" not in linter_source, (
+            "ac_linter must not compile regexes — delegate to criteria_classifier"
+        )
+
+        # No standalone re import (matches `import re` at start of line or
+        # after a newline; does not match `from re import ...` either).
+        assert not re.search(r"(?:^|\n)\s*import re(?:\s|$)", linter_source), (
+            "ac_linter must not import re — it has no business matching patterns"
+        )
+        assert not re.search(r"(?:^|\n)\s*from re\s", linter_source), (
+            "ac_linter must not import from re — it has no business matching patterns"
+        )
+
+        # No pattern-list constants.
+        assert "_PATTERNS" not in linter_source, (
+            "ac_linter must not define _PATTERNS constants — "
+            "classification lives in criteria_classifier"
+        )
+
+        # No locally-defined confidence threshold. The sole knob is
+        # UNVERIFIABLE_CONFIDENCE_THRESHOLD in criteria_classifier; any
+        # float comparison here would indicate a parallel heuristic.
+        assert not re.search(r"confidence\s*[<>]=?\s*0\.\d", linter_source), (
+            "ac_linter must not compare confidence directly — "
+            "that threshold belongs to criteria_classifier"
+        )
+        # No assignment of a local threshold constant. (Distinct from
+        # merely mentioning the classifier's constant in a docstring.)
+        assert not re.search(
+            r"^[A-Z_]*THRESHOLD[A-Z_]*\s*=", linter_source, re.MULTILINE
+        ), "ac_linter must not declare its own threshold constant"
+
+    def test_linter_delegates_to_classifier(self, linter_source):
+        """Positive assertion: the linter *does* call through to the classifier."""
+        assert "classify_with_warnings" in linter_source, (
+            "ac_linter must delegate to classify_with_warnings"
+        )
