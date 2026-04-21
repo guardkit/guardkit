@@ -915,6 +915,163 @@ Capture results:
 - Update project metrics
 
 
+## Development Modes (TDD / BDD / Standard)
+
+**"Implementation and testing are inseparable"** — every task flows through implementation, testing, and verification in a single workflow. Quality is built-in, not bolted on.
+
+The `--mode` flag on `/task-work` selects how Phase 3 is executed. All three modes share the same quality gates (Phase 2.5 arch review, Phase 4 tests, Phase 4.5 test enforcement, Phase 5 code review) — only the internal sequencing of Phase 3 differs.
+
+### Mode Selection
+
+```bash
+/task-work TASK-XXX                  # Standard (default)
+/task-work TASK-XXX --mode=tdd       # Test-Driven Development
+/task-work TASK-XXX --mode=bdd       # Behavior-Driven Development (requires Require-Kit)
+```
+
+| Mode | When to use | Primary artefact |
+|------|-------------|------------------|
+| **Standard** | Most tasks; implementation and tests co-evolve | Implementation + comprehensive tests written together |
+| **TDD** | Pure logic with clear contracts; high-risk refactors | Failing tests first; minimal code to pass; then refactor |
+| **BDD** | Features with user-visible behaviour; agentic systems with Require-Kit | Gherkin scenarios → step definitions → feature implementation |
+
+### Standard Mode (Default)
+
+Traditional approach where implementation and tests are created together:
+
+```python
+def implement_standard_mode(context):
+    # Step 1: Generate implementation and tests together
+    implementation = generate_implementation(context.requirements)
+    tests = generate_comprehensive_tests(context.criteria)
+
+    # Step 2: Write files
+    write_implementation_files(implementation)
+    write_test_files(tests)
+
+    # Step 3: Execute tests
+    results = run_test_suite(context.stack)
+
+    # Step 4: Evaluate quality
+    return evaluate_quality_gates(results)
+```
+
+### TDD Mode (Red-Green-Refactor)
+
+Tests lead the design. Failing tests are written first; production code is the minimum needed to make them pass; refactor is applied only when all tests are green.
+
+```python
+def implement_tdd_mode(context):
+    # RED: Create failing tests first
+    tests = generate_failing_tests(context.requirements)
+    write_test_files(tests)
+    red_results = run_test_suite(context.stack)
+    assert all_tests_failing(red_results), "Tests should fail initially"
+
+    # GREEN: Minimal implementation to pass
+    implementation = generate_minimal_implementation(tests)
+    write_implementation_files(implementation)
+    green_results = run_test_suite(context.stack)
+
+    # Fix until all tests pass
+    while not all_tests_passing(green_results):
+        fixes = analyze_failures(green_results)
+        apply_fixes(fixes)
+        green_results = run_test_suite(context.stack)
+
+    # REFACTOR: Improve code quality, tests stay green
+    refactored = refactor_implementation(implementation)
+    write_implementation_files(refactored)
+    final_results = run_test_suite(context.stack)
+
+    return evaluate_quality_gates(final_results)
+```
+
+**TDD recovery — Test Import Errors are expected in the RED phase**:
+
+```python
+if "ImportError" in error_message and mode == "tdd":
+    # Expected — tests reference code that doesn't exist yet
+    print("🔴 RED Phase: Import errors expected")
+    print("Creating minimal implementation stubs...")
+    create_stub_implementation(missing_imports)
+```
+
+### BDD Mode (Behaviour-Driven)
+
+Starts from user-observable behaviour captured as Gherkin scenarios. Requires Require-Kit for scenario parsing.
+
+```python
+def implement_bdd_mode(context):
+    # Step 1: Parse Gherkin scenarios from task or features/ directory
+    scenarios = parse_gherkin_files(context.scenarios)
+
+    # Step 2: Generate step definitions
+    step_defs = generate_step_definitions(scenarios)
+    write_step_definitions(step_defs)
+
+    # Step 3: Implement features to satisfy scenarios
+    implementation = generate_feature_implementation(step_defs)
+    write_implementation_files(implementation)
+
+    # Step 4: Run scenarios (pytest-bdd / cucumber / specflow)
+    scenario_results = run_bdd_tests(context.stack)
+
+    # Step 5: Add unit tests for internal logic
+    unit_tests = generate_unit_tests(implementation)
+    write_test_files(unit_tests)
+
+    # Step 6: Run full suite (scenarios + units)
+    all_results = run_full_test_suite(context.stack)
+
+    return evaluate_quality_gates(all_results)
+```
+
+### Progress Indicators by Mode
+
+User-facing progress output is mode-aware. This gives operators a fast visual read on which phase of the cycle is running.
+
+**TDD progress indicator:**
+```
+🔴 RED Phase - Writing failing tests...
+   ✍️ Created 8 test cases
+   ❌ All tests failing (expected)
+
+🟢 GREEN Phase - Implementing code...
+   ✅ 6/8 tests passing
+   🔧 Fixing remaining failures...
+   ✅ 8/8 tests passing
+
+🔵 REFACTOR Phase - Improving code...
+   ♻️ Extracting methods
+   ♻️ Adding type hints
+   ♻️ Improving naming
+   ✅ All tests still passing
+```
+
+**BDD progress indicator:**
+```
+📖 Loading BDD Scenarios...
+   Found 3 feature files
+   Parsed 12 scenarios
+
+🎭 Generating Step Definitions...
+   Created 24 step definitions
+
+🏗️ Implementing Features...
+   Building authentication service
+   Building user repository
+   Building session manager
+
+🧪 Running Scenarios...
+   ✅ 12/12 scenarios passing
+
+📝 Adding Unit Tests...
+   Generated 15 unit tests
+   ✅ All tests passing
+```
+
+
 ## Quality Gates
 
 ### Automatic Blocking Conditions
