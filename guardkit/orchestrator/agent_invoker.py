@@ -5262,6 +5262,33 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         design_file = TaskArtifactPaths.design_results_path(task_id, self.worktree_path)
         return self._read_json_artifact(design_file)
 
+    def _run_bdd_oracle(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """Run task-level BDD oracle (TASK-BDD-E8954).
+
+        Activation is by artefact presence: if no ``features/*.feature`` file
+        in the worktree carries a ``@task:<TASK-ID>`` tag (or pytest-bdd is
+        not importable), this returns ``None`` and behaviour is identical to
+        before BDD wiring existed. Errors during execution are swallowed and
+        logged — BDD failures must never break task-work result writing.
+        """
+        try:
+            from guardkit.orchestrator.quality_gates.bdd_runner import (
+                run_bdd_for_task,
+            )
+
+            result = run_bdd_for_task(task_id, self.worktree_path)
+        except Exception as exc:  # noqa: BLE001 — protect task-work writer
+            logger.warning(
+                "BDD oracle raised %s for %s; treating as skipped.",
+                exc.__class__.__name__,
+                task_id,
+            )
+            return None
+
+        if result is None:
+            return None
+        return result.to_dict()
+
     def _write_task_work_results(
         self,
         task_id: str,
@@ -5394,6 +5421,16 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             # Merge complexity score from pre-loop
             if "complexity_score" in design_data:
                 results["complexity_score"] = design_data["complexity_score"]
+
+        # TASK-BDD-E8954: BDD oracle. Activation is by artefact presence — if a
+        # features/*.feature file exists with a @task:<TASK-ID> tag and
+        # pytest-bdd is installable, run the scenarios and persist a three-state
+        # bdd_results block. Silently skipped (returns None) otherwise so the
+        # default behaviour for tasks without BDD scaffolding is identical to
+        # before this wiring landed.
+        bdd_results = self._run_bdd_oracle(task_id)
+        if bdd_results is not None:
+            results["bdd_results"] = bdd_results
 
         # Filter invalid path entries before validation (TASK-FIX-PV01)
         # Ensures _validate_file_count_constraint sees only real file paths,

@@ -46,6 +46,11 @@ from guardkit.orchestrator.feature_loader import (
     FeatureNotFoundError,
     FeatureValidationError,
 )
+from guardkit.orchestrator.smoke_gates import (
+    SmokeGateResult,
+    run_smoke_gate,
+    should_fire_for_wave,
+)
 from guardkit.orchestrator.feature_validator import (
     validate_feature_preflight,
     format_preflight_report,
@@ -124,12 +129,17 @@ class WaveExecutionResult:
         Results for each task
     all_succeeded : bool
         Whether all tasks in wave succeeded
+    smoke_gate_result : Optional[SmokeGateResult]
+        Outcome of the feature-level smoke gate fired after this wave, if
+        the feature had ``smoke_gates`` configured AND ``should_fire_for_wave``
+        matched this wave. ``None`` when no gate fired. See TASK-SMK-F703A.
     """
 
     wave_number: int
     task_ids: List[str]
     results: List[TaskExecutionResult]
     all_succeeded: bool
+    smoke_gate_result: Optional["SmokeGateResult"] = None
 
 
 @dataclass
@@ -1369,6 +1379,34 @@ The detailed specifications are in the task markdown file.
                 )
                 break
 
+            # Feature-level smoke gate (TASK-SMK-F703A). Fires AFTER a wave
+            # completes successfully and BEFORE the next wave starts, catching
+            # composition failures the per-task Player-Coach loop is blind to.
+            # Placement is between-waves, never per-task — per-task smoke is
+            # the per-task Coach with extra steps.
+            if feature.smoke_gates is not None and should_fire_for_wave(
+                feature.smoke_gates, wave_number
+            ):
+                smoke_result = run_smoke_gate(
+                    feature.smoke_gates,
+                    cwd=Path(worktree.path),
+                    wave_number=wave_number,
+                )
+                wave_result.smoke_gate_result = smoke_result
+                if not smoke_result.passed:
+                    reason = (
+                        f"timed out after {smoke_result.timeout}s"
+                        if smoke_result.timed_out
+                        else f"exit={smoke_result.exit_code}, "
+                             f"expected={feature.smoke_gates.expected_exit}"
+                    )
+                    console.print(
+                        f"[red]✗ Smoke gate failed after wave {wave_number}[/red] "
+                        f"({reason}). Subsequent waves not started; worktree "
+                        f"preserved at {worktree.path}."
+                    )
+                    break
+
         return wave_results
 
     async def _execute_wave_parallel(
@@ -2135,12 +2173,20 @@ The detailed specifications are in the task markdown file.
             for r in wave.results
         )
 
+        # Detect smoke gate failure (TASK-SMK-F703A). A failed smoke gate
+        # halts execution with all tasks-run-so-far passing, so the default
+        # "paused" branch would mis-classify the outcome.
+        smoke_gate_failed = any(
+            wr.smoke_gate_result is not None and not wr.smoke_gate_result.passed
+            for wr in wave_results
+        )
+
         # Determine final status
         final_status: Literal["completed", "failed", "paused"]
-        if tasks_failed == 0 and tasks_completed == len(feature.tasks):
+        if tasks_failed == 0 and tasks_completed == len(feature.tasks) and not smoke_gate_failed:
             final_status = "completed"
             success = True
-        elif tasks_failed > 0:
+        elif tasks_failed > 0 or smoke_gate_failed:
             final_status = "failed"
             success = False
         else:
@@ -2170,7 +2216,15 @@ The detailed specifications are in the task markdown file.
             tasks_failed=tasks_failed,
             wave_results=wave_results,
             worktree=worktree,
-            error=None if success else f"{tasks_failed} task(s) failed",
+            error=(
+                None
+                if success
+                else (
+                    "smoke gate failed between waves"
+                    if smoke_gate_failed and tasks_failed == 0
+                    else f"{tasks_failed} task(s) failed"
+                )
+            ),
         )
 
         # TASK-ABE-003: Generate structured review summary
@@ -2402,6 +2456,32 @@ The detailed specifications are in the task markdown file.
                 table.add_row(task.id, status_text, str(turns), decision)
 
             console.print(table)
+
+        # Smoke gate summary (TASK-SMK-F703A). Only rendered when at least
+        # one wave fired a smoke gate, so features without smoke_gates stay
+        # visually identical to today.
+        fired = [wr for wr in wave_results if wr.smoke_gate_result is not None]
+        if fired:
+            console.print("\n[bold]Smoke Gates:[/bold]")
+            for wr in fired:
+                sgr = wr.smoke_gate_result
+                if sgr.passed:
+                    console.print(
+                        f"  [green]✓[/green] After wave {wr.wave_number}: "
+                        f"[dim]{sgr.command}[/dim] (exit={sgr.exit_code})"
+                    )
+                elif sgr.timed_out:
+                    console.print(
+                        f"  [red]✗[/red] After wave {wr.wave_number} "
+                        f"[red](timed out after {sgr.timeout}s)[/red]: "
+                        f"[dim]{sgr.command}[/dim]"
+                    )
+                else:
+                    console.print(
+                        f"  [red]✗[/red] After wave {wr.wave_number} "
+                        f"[red](exit={sgr.exit_code})[/red]: "
+                        f"[dim]{sgr.command}[/dim]"
+                    )
 
         # Next steps
         console.print("\n[bold]Next Steps:[/bold]")

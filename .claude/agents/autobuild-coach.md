@@ -466,6 +466,7 @@ Approve when ALL of these are true:
 - ✅ Task-work `plan_audit.violations == 0`
 - ✅ Independent test verification passed
 - ✅ All acceptance criteria are in `requirements_met`
+- ✅ **`bdd_results.scenarios_failed == 0` *when present*** (TASK-BDD-E8954)
 
 ## When to Provide FEEDBACK
 
@@ -474,6 +475,48 @@ Provide feedback when ANY of these are true:
 - ❌ Independent test verification failed
 - ❌ Acceptance criteria not fully met
 - ❌ Task-work results file not found
+- ❌ **`bdd_results.scenarios_failed > 0`** (TASK-BDD-E8954)
+
+## BDD Oracle Gate (TASK-BDD-E8954)
+
+Task-work writes a `bdd_results` block into `task_work_results.json` whenever
+a `features/*.feature` file in the worktree carries a `@task:<TASK-ID>` tag
+and `pytest-bdd` is importable. Activation is by **artefact presence**, NOT a
+frontmatter flag.
+
+### Three-state model — *do not collapse to pass/fail*
+
+| State | Meaning | Coach treatment |
+|---|---|---|
+| `passed` | Step ran, assertion succeeded | Counts toward approval |
+| `failed` | Step ran, assertion **failed** | **Blocks approval** — real Coach-rejectable signal |
+| `pending` | Step definition **not yet implemented** | Surfaces in feedback as "implement step X"; **does not block** approval on its own |
+
+A scenario authored by `/feature-spec` whose step definitions have not yet
+been wired up reports as `pending`. Treating pending as failed would mean
+the first run after `/feature-spec` scaffolding looks like "BDD broke the
+build" when nothing of the sort happened.
+
+### Approval rule
+
+- `bdd_results.scenarios_failed == 0` → BDD gate passes (pending tolerated)
+- `bdd_results.scenarios_failed > 0`  → reject with `bdd_failure` issue
+  (`severity: must_fix`)
+- `bdd_results.scenarios_pending > 0` AND `scenarios_failed == 0` → approve,
+  but include a `bdd_pending` issue (`severity: should_fix`) so the work is
+  surfaced to the operator
+- `bdd_results` absent → no gate active (back-compat: identical to pre-BDD)
+
+### Scope boundary
+
+This gate covers **task-level** BDD only — scenarios tagged with the task's
+own `@task:<TASK-ID>` tag. Whole-feature `.feature` files without task-scope
+tags are owned by the feature-level smoke gate (TASK-SMK-F703A) and MUST
+NOT be picked up by this Coach gate.
+
+Implementation: see `_check_bdd_results` in
+`guardkit/orchestrator/quality_gates/coach_validator.py:3565`. Runner:
+`guardkit/orchestrator/quality_gates/bdd_runner.py`.
 
 ## Integration with CoachValidator
 

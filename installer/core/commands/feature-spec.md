@@ -466,6 +466,40 @@ This summary can be passed to `/feature-plan` as a context file:
 
 ---
 
+## Task-scope tag convention (TASK-BDD-E8954)
+
+When a scenario should run as a Coach-blocking oracle for a specific task,
+tag it with `@task:<TASK-ID>`. The task-level BDD runner
+(`guardkit/orchestrator/quality_gates/bdd_runner.py`, called from
+``/task-work`` Phase 4) discovers `features/*.feature` files containing the
+tag, executes them via `pytest --gherkin-terminal-reporter`, and writes a
+three-state outcome (`scenarios_passed` / `scenarios_failed` /
+`scenarios_pending`) to `task_work_results.json` under `bdd_results`.
+
+```gherkin
+Feature: Login
+
+  @task:TASK-AUTH-001
+  Scenario: User logs in with valid credentials
+    Given a registered user
+    When the user logs in
+    Then the user is greeted by name
+```
+
+Rules:
+
+- **Activation is by artefact presence** — no frontmatter flag is required
+  or accepted. If `features/*.feature` carries the tag and `pytest-bdd` is
+  installable, the runner runs.
+- **Pending ≠ failed.** A scenario whose step definitions are not yet
+  implemented reports as `pending` and surfaces in Coach feedback as
+  actionable work; it does NOT block approval.
+- **Untagged whole-feature `.feature` files are out of scope.** Those are
+  feature-level smoke (TASK-SMK-F703A territory) and are intentionally not
+  picked up by the task-level runner.
+
+---
+
 ## Domain Language
 
 Write scenarios in the language of the business domain, not the implementation. This is the sharpest quality distinction between good and bad Gherkin.

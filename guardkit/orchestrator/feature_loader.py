@@ -20,7 +20,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator, ValidationError
 import yaml
@@ -317,6 +317,75 @@ class FeatureExecution:
     archived_to: Optional[str] = None
 
 
+class SmokeGates(BaseModel):
+    """Optional feature-level smoke gate configuration (TASK-SMK-F703A).
+
+    Implements R3 from TASK-REV-4D012: a single subprocess invocation run
+    inside the shared worktree after a specified wave completes, catching
+    composition failures that the per-task Player-Coach loop cannot see.
+
+    The gate runs BETWEEN WAVES, not between tasks — per-task smoke is the
+    per-task Coach with extra steps.
+
+    Attributes
+    ----------
+    after_wave : Union[int, List[int], Literal["all"]]
+        Which wave(s) to fire after. ``1`` = after topological level 1
+        completes. ``[1, 3]`` = after waves 1 and 3. ``"all"`` = after
+        every wave. Wave numbers are 1-indexed and come from
+        ``orchestration.parallel_groups`` — this field never computes
+        waves itself.
+    command : str
+        Shell command to execute in the shared worktree (e.g.
+        ``"pytest features/FEAT-X.feature"`` or a custom smoke script).
+    expected_exit : int
+        Exit code that signals success. Default: 0.
+    timeout : int
+        Seconds before the subprocess is killed. Bounded [1, 600] to keep
+        ``/feature-build`` deterministic. Default: 120.
+    """
+
+    # ``extra="forbid"`` ensures malformed configuration (typos, unknown
+    # keys) is rejected before ``/feature-build`` starts, per AC.
+    model_config = ConfigDict(extra="forbid")
+
+    after_wave: Union[int, List[int], Literal["all"]]
+    command: str = Field(min_length=1)
+    expected_exit: int = 0
+    timeout: int = Field(default=120, ge=1, le=600)
+
+    @field_validator("after_wave", mode="before")
+    @classmethod
+    def _validate_after_wave(cls, v: Any) -> Any:
+        """Reject invalid after_wave shapes before Pydantic's type coercion.
+
+        ``mode="before"`` runs on the raw input, so we can reject ``True``
+        before it is coerced to ``1`` (bool is a subclass of int in Python).
+        """
+        if isinstance(v, bool):
+            raise ValueError("after_wave must be int, list of ints, or 'all'")
+        if isinstance(v, int):
+            if v < 1:
+                raise ValueError("after_wave must be >= 1 (waves are 1-indexed)")
+            return v
+        if isinstance(v, list):
+            if not v:
+                raise ValueError("after_wave list cannot be empty")
+            for item in v:
+                if isinstance(item, bool) or not isinstance(item, int):
+                    raise ValueError(
+                        "after_wave list must contain positive integers"
+                    )
+                if item < 1:
+                    raise ValueError(
+                        "after_wave list must contain positive integers"
+                    )
+            return v
+        if v == "all":
+            return v
+        raise ValueError("after_wave must be int, list of ints, or 'all'")
+
+
 class Feature(BaseModel):
     """
     Represents a complete feature definition from YAML.
@@ -359,6 +428,7 @@ class Feature(BaseModel):
     tasks: List[FeatureTask] = Field(default_factory=list)
     orchestration: FeatureOrchestration = Field(default_factory=FeatureOrchestration)
     execution: FeatureExecution = Field(default_factory=FeatureExecution)
+    smoke_gates: Optional[SmokeGates] = None
     file_path: Optional[Path] = None
 
 
@@ -381,6 +451,18 @@ class FeatureParseError(ValueError):
 
 class FeatureValidationError(ValueError):
     """Raised when feature fails validation."""
+
+    pass
+
+
+class SchemaValidationError(FeatureParseError):
+    """Raised when a feature YAML schema section is malformed.
+
+    Subclass of ``FeatureParseError`` so existing ``except FeatureParseError``
+    handlers continue to work. Used specifically for schema-level violations
+    (e.g. malformed ``smoke_gates``) that must be surfaced before
+    ``/feature-build`` starts — see TASK-SMK-F703A.
+    """
 
     pass
 
@@ -554,6 +636,18 @@ class FeatureLoader:
                 f"Invalid orchestration data:\n{e}"
             ) from e
 
+        # Parse optional smoke_gates (TASK-SMK-F703A). Key absent → None.
+        # Malformed key → SchemaValidationError before /feature-build starts.
+        smoke_gates_data = data.get("smoke_gates")
+        smoke_gates: Optional[SmokeGates] = None
+        if smoke_gates_data is not None:
+            try:
+                smoke_gates = SmokeGates.model_validate(smoke_gates_data)
+            except ValidationError as e:
+                raise SchemaValidationError(
+                    f"Invalid smoke_gates configuration:\n{e}"
+                ) from e
+
         # Parse execution (may not exist) - keep as dataclass
         exec_data = data.get("execution", {})
         execution = FeatureExecution(
@@ -592,6 +686,7 @@ class FeatureLoader:
                 "tasks": tasks,
                 "orchestration": orchestration,
                 "execution": execution,
+                "smoke_gates": smoke_gates,
             })
         except ValidationError as e:
             raise FeatureParseError(
@@ -1039,6 +1134,12 @@ class FeatureLoader:
         for task_dict in data["tasks"]:
             if "file_path" in task_dict:
                 task_dict["file_path"] = str(task_dict["file_path"])
+
+        # Drop ``smoke_gates`` when not configured to keep YAML minimal.
+        # A missing key and a null key are equivalent on load, so avoid
+        # emitting ``smoke_gates: null`` into feature files.
+        if data.get("smoke_gates") is None:
+            data.pop("smoke_gates", None)
 
         # Manually serialize execution (dataclass)
         data["execution"] = {

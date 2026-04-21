@@ -65,6 +65,13 @@ from guardkit.orchestrator.quality_gates.exceptions import (
     DesignPhaseError,
     CheckpointRejectedError,
 )
+from guardkit.orchestrator.quality_gates.bdd_runner import (
+    BDDResult,
+    FailureDetail as BDDFailureDetail,
+    PendingDetail as BDDPendingDetail,
+    run_bdd_for_task,
+    task_tag as bdd_task_tag,
+)
 
 __all__ = [
     # Pre-loop quality gates
@@ -93,4 +100,10 @@ __all__ = [
     "QualityGateBlocked",
     "DesignPhaseError",
     "CheckpointRejectedError",
+    # BDD runner (TASK-BDD-E8954)
+    "BDDResult",
+    "BDDFailureDetail",
+    "BDDPendingDetail",
+    "run_bdd_for_task",
+    "bdd_task_tag",
 ]

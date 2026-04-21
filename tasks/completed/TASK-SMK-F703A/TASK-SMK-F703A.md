@@ -1,10 +1,14 @@
 ---
 id: TASK-SMK-F703A
 title: Feature-level smoke gates between autobuild waves (not between tasks)
-status: backlog
+status: completed
 task_type: implementation
 created: 2026-04-21T00:00:00Z
-updated: 2026-04-21T00:00:00Z
+updated: 2026-04-21T12:00:00Z
+completed: 2026-04-21T12:00:00Z
+completed_location: tasks/completed/TASK-SMK-F703A/
+previous_state: in_review
+state_transition_reason: "All AC-named tests passing, docs shipped, no regressions"
 priority: medium
 complexity: 5
 tags: [feature-build, autobuild, smoke-test, regression-gate, between-waves]
@@ -13,9 +17,23 @@ implementation_mode: task-work
 depends_on:
   - TASK-BDD-E8954
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passing
+  coverage: "all 10 AC-named tests pass; 25 new tests total; 322 tests in touched areas pass with zero regressions"
+  last_run: 2026-04-21T12:00:00Z
+organized_files:
+  - TASK-SMK-F703A.md
+deliverables:
+  - guardkit/orchestrator/smoke_gates.py
+  - guardkit/orchestrator/feature_loader.py (schema extension)
+  - guardkit/orchestrator/feature_orchestrator.py (wave hook)
+  - tests/unit/models/test_feature_yaml_schema.py
+  - tests/unit/orchestrator/test_smoke_wave_boundary.py
+  - tests/unit/orchestrator/test_autobuild_smoke_placement.py
+  - tests/integration/autobuild/test_smoke_gate_blocks_wave.py
+  - tests/integration/autobuild/test_smoke_gate_noop.py
+  - tests/integration/autobuild/test_smoke_gate_bdd_integration.py
+  - docs/guides/feature-smoke-gates.md
+  - docs/schemas/feature-yaml.md
 ---
 
 # Task: Feature-level smoke gates between autobuild waves

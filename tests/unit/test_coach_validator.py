@@ -5380,3 +5380,7 @@ class TestCriteriaClassifierRouting:
         # Fallback: all original criteria pass through unchanged
         assert validation.criteria_total == 2
         assert validation.all_criteria_met is True
+
+# Note: BDD oracle gate tests for CoachValidator (TASK-BDD-E8954) live under
+# tests/unit/orchestrator/quality_gates/test_coach_validator.py — that path
+# is named explicitly in the task's acceptance criteria.

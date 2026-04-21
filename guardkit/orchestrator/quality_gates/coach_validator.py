@@ -887,8 +887,38 @@ class CoachValidator:
             task, task_work_results
         )
 
+        # 5.7. BDD oracle gate (TASK-BDD-E8954): when present in task_work_results,
+        # scenarios_failed > 0 blocks approval. scenarios_pending is informational
+        # and surfaces in feedback without blocking — see bdd_runner module docstring
+        # for the three-state model and rationale for not collapsing pending into
+        # failed.
+        bdd_blocking, bdd_non_blocking = self._check_bdd_results(task_work_results)
+        if bdd_blocking:
+            logger.info(
+                f"Coach rejected {task_id} turn {turn}: bdd_results.scenarios_failed > 0"
+            )
+            return self._feedback_result(
+                task_id=task_id,
+                turn=turn,
+                quality_gates=gates_status,
+                independent_tests=test_result,
+                requirements=requirements,
+                issues=bdd_blocking + bdd_non_blocking,
+                rationale=(
+                    "BDD scenarios failed: "
+                    f"{task_work_results.get('bdd_results', {}).get('scenarios_failed', 0)} "
+                    "scenario(s) reported assertion failure during pytest-bdd execution."
+                ),
+                context_used=context,
+            )
+
         # Combine all non-blocking issues
-        all_issues = zero_test_issues + seam_test_issues + consumer_context_issues
+        all_issues = (
+            zero_test_issues
+            + seam_test_issues
+            + consumer_context_issues
+            + bdd_non_blocking
+        )
 
         # 6. All checks passed - approve
         if conditional_approval:
@@ -3531,6 +3561,97 @@ class CoachValidator:
             }]
 
         return []
+
+    def _check_bdd_results(
+        self,
+        task_work_results: Dict[str, Any],
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """Inspect ``task_work_results['bdd_results']`` for the BDD oracle gate.
+
+        Implements the three-state model from TASK-BDD-E8954:
+
+        * ``scenarios_failed > 0``  → blocking ``must_fix`` issue (Coach rejects).
+        * ``scenarios_pending > 0`` → non-blocking informational issue (Coach
+          surfaces it as actionable work but does NOT reject on pending alone).
+        * Absent ``bdd_results`` key → no gate active, returns ``([], [])``.
+
+        Parameters
+        ----------
+        task_work_results : Dict[str, Any]
+            Parsed contents of ``task_work_results.json``.
+
+        Returns
+        -------
+        Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]
+            ``(blocking_issues, non_blocking_issues)`` — both lists may be empty.
+        """
+        bdd_results = task_work_results.get("bdd_results")
+        if not bdd_results:
+            return [], []
+
+        scenarios_failed = int(bdd_results.get("scenarios_failed", 0) or 0)
+        scenarios_pending = int(bdd_results.get("scenarios_pending", 0) or 0)
+        scenarios_passed = int(bdd_results.get("scenarios_passed", 0) or 0)
+        failures = bdd_results.get("failures", []) or []
+        pending = bdd_results.get("pending", []) or []
+        feature_files = bdd_results.get("feature_files", []) or []
+
+        blocking: List[Dict[str, Any]] = []
+        non_blocking: List[Dict[str, Any]] = []
+
+        if scenarios_failed > 0:
+            failure_summaries: List[str] = []
+            for f in failures[:5]:
+                scenario = f.get("scenario_name", "<unknown>")
+                step = f.get("failing_step", "")
+                reason = f.get("reason", "")
+                summary = f"{scenario}"
+                if step:
+                    summary += f" — step: {step}"
+                if reason:
+                    summary += f" — {reason[:160]}"
+                failure_summaries.append(summary)
+
+            blocking.append({
+                "severity": "must_fix",
+                "category": "bdd_failure",
+                "description": (
+                    f"BDD oracle: {scenarios_failed} scenario(s) failed "
+                    f"during pytest-bdd execution. "
+                    f"Implementation does not satisfy the Gherkin specification."
+                ),
+                "scenarios_failed": scenarios_failed,
+                "scenarios_passed": scenarios_passed,
+                "scenarios_pending": scenarios_pending,
+                "feature_files": feature_files,
+                "failure_examples": failure_summaries,
+            })
+
+        if scenarios_pending > 0:
+            pending_summaries: List[str] = []
+            for p in pending[:5]:
+                scenario = p.get("scenario_name", "<unknown>")
+                step = p.get("pending_step", "")
+                summary = f"{scenario}"
+                if step:
+                    summary += f" — implement: {step}"
+                pending_summaries.append(summary)
+
+            non_blocking.append({
+                "severity": "should_fix",
+                "category": "bdd_pending",
+                "description": (
+                    f"BDD oracle: {scenarios_pending} scenario(s) reference "
+                    f"step definitions that are not yet implemented. "
+                    f"These do NOT block approval but should be implemented "
+                    f"to make the scenarios runnable."
+                ),
+                "scenarios_pending": scenarios_pending,
+                "feature_files": feature_files,
+                "pending_examples": pending_summaries,
+            })
+
+        return blocking, non_blocking
 
     def _validate_consumer_context(
         self,
