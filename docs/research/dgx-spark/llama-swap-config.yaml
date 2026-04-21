@@ -1,0 +1,141 @@
+# llama-swap config for the GuardKit dark factory on GB10
+# =========================================================
+# Single front door at :9000 serving all agents.
+# - Forever group: Graphiti LLM + embeddings (delegated to existing vLLM services)
+# - Builders group: AutoBuild Coder + Jarvis/Architect/Coach reasoner (swap)
+#
+# All endpoints: OpenAI /v1/chat/completions, /v1/embeddings
+#                Anthropic /v1/messages, /v1/messages/count_tokens
+# Route by the "model" field in each request.
+#
+# Reference: docs/research/dgx-spark/llama-swap-setup.md
+
+healthCheckTimeout: 600          # 10 min — GPT-OSS 120B cold-load can take ~4 min
+globalTTL: 1800                  # 30 min idle → unload swap members
+startPort: 5800                  # llama-swap auto-assigns internal ports from here
+includeAliasesInList: true
+logLevel: info
+
+# Uncomment to require API key for all requests
+# apiKeys:
+#   - "${env.LLAMASWAP_API_KEY}"
+
+models:
+  # ============================================================
+  # FOREVER GROUP — delegated to existing vLLM services.
+  # Lifecycle managed by existing vllm-graphiti.sh / vllm-embed.sh.
+  # llama-swap treats these as external; never starts or stops them.
+  # ============================================================
+
+  "qwen-graphiti":
+    name: "Graphiti entity extraction (Qwen2.5-14B FP8, delegated to vLLM)"
+    proxy: http://127.0.0.1:8000
+    checkEndpoint: /health
+    ttl: 0
+    aliases:
+      - "neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic"
+      - "graphiti-llm"
+
+  "nomic-embed":
+    name: "Embeddings (nomic-embed-text-v1.5, delegated to vLLM)"
+    proxy: http://127.0.0.1:8001
+    checkEndpoint: /health
+    ttl: 0
+    aliases:
+      - "nomic-embed-text-v1.5"
+      - "nomic-ai/nomic-embed-text-v1.5"
+      - "embeddings"
+
+  # ============================================================
+  # BUILDERS GROUP — llama.cpp-managed, swap as needed.
+  # Native /v1/messages support for Claude Agent SDK (AutoBuild).
+  # ============================================================
+
+  "qwen-coder-next":
+    name: "AutoBuild Player (Qwen3-Coder-Next FP8)"
+    cmd: |
+      llama-server
+      --port ${PORT}
+      --host 0.0.0.0
+      --model /opt/llama-swap/models/qwen3-coder-next/Qwen3-Coder-Next-FP8.gguf
+      --alias qwen-coder-next
+      --ctx-size 131072
+      --batch-size 2048
+      --ubatch-size 2048
+      --threads 16
+      -ngl 999
+      --no-mmap
+      --flash-attn on
+      --cache-type-k q8_0
+      --cache-type-v q8_0
+      --jinja
+      --reasoning off
+      --temp 0.1
+      --top-p 0.95
+    checkEndpoint: /health
+    ttl: 1800
+    concurrencyLimit: 4
+    aliases:
+      - "Qwen/Qwen3-Coder-Next-FP8"
+      - "autobuild-player"
+      - "claude-sonnet-4-6"      # Claude Agent SDK default-model fallback
+      - "claude-opus-4-7"        # ditto
+
+  "gpt-oss-120b":
+    name: "Jarvis / Architect / Coach (GPT-OSS 120B MXFP4)"
+    cmd: |
+      llama-server
+      --port ${PORT}
+      --host 0.0.0.0
+      --model /opt/llama-swap/models/gpt-oss-120b/gpt-oss-120b-q4_mxfp4.gguf
+      --alias gpt-oss-120b
+      --ctx-size 131072
+      --batch-size 2048
+      --ubatch-size 2048
+      --threads 16
+      -ngl 999
+      --no-mmap
+      --flash-attn on
+      --cache-type-k q8_0
+      --cache-type-v q8_0
+      --jinja
+      --chat-template-kwargs '{"reasoning_effort":"medium"}'
+      --temp 0.6
+      --top-p 0.95
+    checkEndpoint: /health
+    ttl: 1800
+    concurrencyLimit: 2
+    aliases:
+      - "openai/gpt-oss-120b"
+      - "jarvis-reasoner"
+      - "architect-reasoner"
+      - "coach"
+
+groups:
+  # Always-on: Graphiti + embeddings
+  # persistent=true: builders group can't evict these
+  # swap=false: run together, no eviction within group
+  "forever":
+    persistent: true
+    swap: false
+    exclusive: false
+    members:
+      - "qwen-graphiti"
+      - "nomic-embed"
+
+  # Swappable builders: one at a time
+  # swap=true: only one loaded within this group
+  # exclusive=true: loading a builder doesn't touch forever group
+  "builders":
+    swap: true
+    exclusive: true
+    members:
+      - "qwen-coder-next"
+      - "gpt-oss-120b"
+
+# Preload Coder-Next on startup so the first AutoBuild request
+# doesn't pay the ~2-4 min cold-load cost
+hooks:
+  on_startup:
+    preload:
+      - "qwen-coder-next"

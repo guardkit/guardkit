@@ -47,20 +47,20 @@ max_concurrent_episodes: 3
 # LLM provider for Graphiti entity extraction
 # Options: openai (default), vllm, ollama, gemini
 #
-# Gemini 2.5 Pro (paid tier) — moved off local GB10 vLLM to free GPU for fine-tuning.
-# Graphiti only calls the LLM during ingestion/seeding, not queries.
+# GB10 local vLLM (FP8) — default. Free; no per-request cost.
+# Switch to Gemini only while GB10 is busy training (see fallback below).
+# Cost note (2026-04-20): Gemini 2.5 Pro accumulated ~£10/day during normal
+# Graphiti ingestion. See: .guardkit/llm-provider-switching.md (this repo).
+#
+# --- GB10 (vLLM, FP8) — ACTIVE ---
+llm_provider: vllm
+llm_base_url: http://promaxgb10-41b1:8000/v1
+llm_model: neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic
+#
+# --- Fallback: Google Gemini (cloud, paid) — uncomment when GB10 training ---
 # Requires GOOGLE_API_KEY env var and `pip install guardkit-py[gemini]`.
-# Paid tier chosen after free-tier 429s during seeding (Wave 2 smoke test, 2026-04-17).
-# See: docs/guides/graphiti-gemini-rollout-setup.md
-#
-# --- Google Gemini (cloud) ---
-llm_provider: gemini
-llm_model: gemini-2.5-pro
-#
-# --- Fallback: GB10 (vLLM, FP8) — uncomment to revert ---
-#llm_provider: vllm
-#llm_base_url: http://promaxgb10-41b1:8000/v1
-#llm_model: neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic
+#llm_provider: gemini
+#llm_model: gemini-2.5-pro
 #
 # --- Fallback: MacBook Pro M2 Max (Ollama, Q4_K_M) ---
 #llm_provider: ollama
