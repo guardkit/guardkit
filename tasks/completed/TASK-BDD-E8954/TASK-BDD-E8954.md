@@ -1,12 +1,16 @@
 ---
 id: TASK-BDD-E8954
 title: "BDD oracle wiring: task-work reads task-level features/*.feature and writes bdd_results"
-status: in_progress
+status: completed
 task_type: implementation
 created: 2026-04-21T00:00:00Z
 updated: 2026-04-21T00:00:00Z
-previous_state: backlog
-state_transition_reason: "Automatic transition for task-work execution"
+completed: 2026-04-21T00:00:00Z
+completed_location: tasks/completed/TASK-BDD-E8954/
+organized_files:
+  - TASK-BDD-E8954.md
+previous_state: in_review
+state_transition_reason: "Task completion validated; all 9 AC tests pass"
 priority: high
 complexity: 5
 tags: [task-work, autobuild-coach, pytest-bdd, feature-spec, opt-in-by-artefact]
@@ -15,9 +19,19 @@ implementation_mode: task-work
 depends_on:
   - TASK-AC-53445
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  coverage: 83
+  last_run: 2026-04-21T00:00:00Z
+  ac_tests:
+    - tests/unit/orchestrator/quality_gates/test_bdd_runner.py::TestRunBddForTask::test_no_feature_file_returns_none
+    - tests/unit/orchestrator/quality_gates/test_bdd_runner.py::TestRunBddForTask::test_failing_scenario_recorded
+    - tests/unit/orchestrator/quality_gates/test_bdd_runner.py::TestRunBddForTask::test_pending_step_recorded_distinctly
+    - tests/integration/task_work/test_bdd_integration.py::test_bdd_results_written_to_task_work_json
+    - tests/unit/orchestrator/quality_gates/test_coach_validator.py::test_bdd_failure_rejects
+    - tests/unit/orchestrator/quality_gates/test_coach_validator.py::test_bdd_pending_approves_with_feedback
+    - tests/integration/autobuild/test_bdd_end_to_end.py::test_feature_file_with_failing_scenario_causes_coach_feedback
+    - tests/integration/autobuild/test_bdd_end_to_end.py::test_no_feature_file_behaves_as_today
+    - tests/integration/autobuild/test_bdd_scope_boundary.py::test_feature_level_feature_not_run_by_bdd_runner
 ---
 
 # Task: BDD oracle wiring — task-work reads task-level features/*.feature and writes bdd_results
@@ -86,18 +100,18 @@ A frontmatter flag could be forgotten by the Player; operators would think BDD r
 
 ## Acceptance Criteria
 
-- [ ] `guardkit/orchestrator/quality_gates/bdd_runner.py` module exists with a `run_bdd_for_task(task_id, worktree_path) -> BDDResult | None` function. Returns `None` when no matching `.feature` file exists.
-- [ ] `BDDResult` dataclass has three outcome counters: `scenarios_passed`, `scenarios_failed`, `scenarios_pending`, plus per-scenario detail (`failures: List[FailureDetail]`, `pending: List[PendingDetail]`).
-- [ ] `tests/unit/orchestrator/quality_gates/test_bdd_runner.py::test_no_feature_file_returns_none` passes.
-- [ ] `tests/unit/orchestrator/quality_gates/test_bdd_runner.py::test_failing_scenario_recorded` passes — an assertion failure produces `BDDResult(scenarios_failed=1)`.
-- [ ] `tests/unit/orchestrator/quality_gates/test_bdd_runner.py::test_pending_step_recorded_distinctly` passes — a scenario with no step definition produces `BDDResult(scenarios_pending=1, scenarios_failed=0)`.
-- [ ] `task-work` wiring: `tests/integration/task_work/test_bdd_integration.py::test_bdd_results_written_to_task_work_json` passes — `bdd_results` object in `task_work_results.json` includes all three counters.
-- [ ] `autobuild-coach.md` updated: approval gates list includes `bdd_results.scenarios_failed == 0` *when present*. **Pending scenarios do not block approval** but surface in Coach feedback as actionable work. Line reference noted in PR description.
-- [ ] `CoachValidator` updated accordingly: `tests/unit/orchestrator/quality_gates/test_coach_validator.py::test_bdd_failure_rejects` passes (asserts Coach rejects on `scenarios_failed > 0`).
-- [ ] `tests/unit/orchestrator/quality_gates/test_coach_validator.py::test_bdd_pending_approves_with_feedback` passes (asserts Coach approves when `scenarios_failed == 0` even if `scenarios_pending > 0`, with pending items in feedback).
-- [ ] `tests/integration/autobuild/test_bdd_end_to_end.py::test_feature_file_with_failing_scenario_causes_coach_feedback` passes — demo feature with one failing scenario → Coach rejects with specific `bdd_results` feedback.
-- [ ] `tests/integration/autobuild/test_bdd_end_to_end.py::test_no_feature_file_behaves_as_today` passes — task without any matching `.feature` file behaves identically to today.
-- [ ] `tests/integration/autobuild/test_bdd_scope_boundary.py::test_feature_level_feature_not_run_by_bdd_runner` passes — a whole-feature `.feature` with no task-scope tags is **not** run by R2.
+- [x] `guardkit/orchestrator/quality_gates/bdd_runner.py` module exists with a `run_bdd_for_task(task_id, worktree_path) -> BDDResult | None` function. Returns `None` when no matching `.feature` file exists.
+- [x] `BDDResult` dataclass has three outcome counters: `scenarios_passed`, `scenarios_failed`, `scenarios_pending`, plus per-scenario detail (`failures: List[FailureDetail]`, `pending: List[PendingDetail]`).
+- [x] `tests/unit/orchestrator/quality_gates/test_bdd_runner.py::test_no_feature_file_returns_none` passes.
+- [x] `tests/unit/orchestrator/quality_gates/test_bdd_runner.py::test_failing_scenario_recorded` passes — an assertion failure produces `BDDResult(scenarios_failed=1)`.
+- [x] `tests/unit/orchestrator/quality_gates/test_bdd_runner.py::test_pending_step_recorded_distinctly` passes — a scenario with no step definition produces `BDDResult(scenarios_pending=1, scenarios_failed=0)`.
+- [x] `task-work` wiring: `tests/integration/task_work/test_bdd_integration.py::test_bdd_results_written_to_task_work_json` passes — `bdd_results` object in `task_work_results.json` includes all three counters.
+- [x] `autobuild-coach.md` updated: approval gates list includes `bdd_results.scenarios_failed == 0` *when present*. **Pending scenarios do not block approval** but surface in Coach feedback as actionable work. Line reference noted in PR description.
+- [x] `CoachValidator` updated accordingly: `tests/unit/orchestrator/quality_gates/test_coach_validator.py::test_bdd_failure_rejects` passes (asserts Coach rejects on `scenarios_failed > 0`).
+- [x] `tests/unit/orchestrator/quality_gates/test_coach_validator.py::test_bdd_pending_approves_with_feedback` passes (asserts Coach approves when `scenarios_failed == 0` even if `scenarios_pending > 0`, with pending items in feedback).
+- [x] `tests/integration/autobuild/test_bdd_end_to_end.py::test_feature_file_with_failing_scenario_causes_coach_feedback` passes — demo feature with one failing scenario → Coach rejects with specific `bdd_results` feedback.
+- [x] `tests/integration/autobuild/test_bdd_end_to_end.py::test_no_feature_file_behaves_as_today` passes — task without any matching `.feature` file behaves identically to today.
+- [x] `tests/integration/autobuild/test_bdd_scope_boundary.py::test_feature_level_feature_not_run_by_bdd_runner` passes — a whole-feature `.feature` with no task-scope tags is **not** run by R2.
 
 ## Implementation Notes
 
@@ -120,3 +134,43 @@ A frontmatter flag could be forgotten by the Player; operators would think BDD r
 - Agent def: `installer/core/agents/autobuild-coach.md` (target of gate addition)
 - Source of criteria routing (context): `guardkit/orchestrator/quality_gates/criteria_classifier.py`
 - Sibling task: `TASK-SMK-F703A` (feature-level smoke gate — do not collide)
+
+## Implementation Summary (for review)
+
+**New module**: `guardkit/orchestrator/quality_gates/bdd_runner.py` (167 LOC,
+83% line coverage)
+- `BDDResult`, `FailureDetail`, `PendingDetail` dataclasses with three-state
+  counters as specified.
+- `run_bdd_for_task(task_id, worktree_path) -> BDDResult | None` — returns
+  `None` on silent skip (no matching `.feature`, or pytest-bdd not installable,
+  or pytest collected zero scenarios).
+- Discovery is a cheap text scan for the literal `@task:<TASK-ID>` tag.
+- Subprocess invocation isolated as a mockable seam (`_invoke_pytest_bdd`).
+- Output parsing uses pytest's JUnit XML; pending vs failure classification
+  is text-based on the `StepDefinitionNotFoundError` marker.
+
+**task-work wiring**: `guardkit/orchestrator/agent_invoker.py`
+- New `_run_bdd_oracle()` helper called from `_write_task_work_results()`.
+- Errors swallowed with a warning log so BDD failures cannot break the
+  results writer (defence in depth for the pre-loop path).
+- Adds `bdd_results` key to `task_work_results.json` only when present.
+
+**CoachValidator gate**: `guardkit/orchestrator/quality_gates/coach_validator.py`
+- New `_check_bdd_results()` returns `(blocking, non_blocking)` issues.
+- `validate()` now rejects on `bdd_results.scenarios_failed > 0` after the
+  requirements check, before approval. Pending-only scenarios merge into
+  the existing `all_issues` list as `should_fix bdd_pending` and approval
+  proceeds.
+
+**Agent docs updated**:
+- `installer/core/agents/autobuild-coach.md` — new "BDD Oracle Gate" section
+  + amended When to APPROVE / FEEDBACK lists.
+- `.claude/agents/autobuild-coach.md` — same update (local copy mirrors).
+- `installer/core/commands/feature-spec.md` — new "Task-scope tag convention"
+  section documenting `@task:<TASK-ID>`.
+
+**Quality gates**: All 9 named AC tests pass. 826 tests pass across the BDD
++ Coach + AgentInvoker scope with zero regressions. Two pre-existing failures
+in `tests/integration/test_quality_gate_validation.py` and
+`tests/integration/quality_gates/` are unrelated (verified via stash test —
+they reproduce on the baseline branch).
