@@ -2337,17 +2337,151 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
     - `.feature` file exists, zero `@task:` tags anywhere → print
       notice.
 
-    **Rollout posture — interim.** This nudge is an interim ergonomics
-    step. When TASK-FP-LINK ships (automatic scenario-to-task tagging in
-    `/feature-plan`), this nudge should only fire when LINK was unable
-    to tag any scenarios (e.g., low-confidence matches the user skipped
-    interactively). Coordinate the interaction in TASK-FP-LINK's
-    implementation — do not delete this step pre-emptively.
+    **Rollout posture — fallback for unmatched scenarios.** Step 11
+    (TASK-FP-LNKB-19AC) now runs the linker automatically. The nudge here
+    remains as a **fallback** for two cases: (a) the feature file was
+    hand-authored without going through `/feature-spec` → `/feature-plan`,
+    so Step 11 never ran against it, and (b) Step 11 ran but the user
+    skipped every scenario interactively or every proposal fell below
+    threshold. In both cases the `.feature` file still has zero `@task:`
+    tags, R2 is silently dormant, and the nudge is the only signal. When
+    Step 11 has tagged at least one scenario, this nudge returns `None`
+    automatically (the helper scans the file for `@task:` presence).
 
     **Non-goals (do NOT do any of these):**
-    - Do not rewrite the `.feature` file — that is TASK-FP-LINK's job.
-    - Do not attempt scenario-to-task matching here.
+    - Do not rewrite the `.feature` file — that is Step 11's job (via
+      `bdd_linker.apply_mapping`).
+    - Do not attempt scenario-to-task matching here — that is the
+      `bdd-linker` subagent's job (invoked by Step 11).
     - Do not change R1 or R3 surfaces.
+
+11. 🔗 **BDD scenario linking** — automatic `@task:<TASK-ID>` tagging
+    (TASK-FP-LNKB-19AC)
+
+    **Purpose:** Wire up R2 activation deterministically. For every task
+    just created, invite the `bdd-linker` subagent to map the feature's
+    scenarios onto the tasks and rewrite the `.feature` file with
+    `@task:<TASK-ID>` tags. This closes the loop between `/feature-spec`
+    (writes scenarios), `/feature-plan` (writes tasks), and the R2 BDD
+    oracle (`guardkit/orchestrator/quality_gates/bdd_runner.py`, runs
+    tagged scenarios during `/task-work` Phase 4).
+
+    **Feature-file discovery convention:**
+    - Nested layout (default `/feature-spec` output):
+      `features/{feature_slug}/{feature_slug}.feature`
+    - Flat fallback: `features/{feature_slug}.feature`
+    - If neither exists → **skip this step silently**. Hand-written
+      features without `/feature-spec` scaffolding are covered by the
+      Step 10.6 nudge.
+
+    **How it works:**
+
+    1. Import the orchestrator:
+       `from installer.core.commands.lib.bdd_linking_phase import run_linking_phase, MatcherResponseError`.
+    2. Build the task list as `List[TaskInfo]` from the tasks you just
+       wrote (only `task_id`, `title`, `description`, `acceptance_criteria`
+       are consumed — frontmatter like `wave` and `conductor_workspace` is
+       irrelevant).
+    3. Define the `matcher` callback that invokes the subagent:
+
+       ```python
+       def matcher(request: MatchingRequest) -> str:
+           # Invoke the bdd-linker subagent via the Task tool.
+           return Task.invoke(
+               subagent_type="bdd-linker",
+               description="Match scenarios to tasks for feature {feature_slug}",
+               prompt=request.to_json(),
+           )
+       ```
+
+       The orchestrator parses the subagent's JSON response via
+       `parse_matcher_response`; malformed responses raise
+       `MatcherResponseError` with a specific message (invalid JSON,
+       missing field, empty task_id). Surface these to the user and offer
+       a retry — **do not silently swallow them**, as that would look
+       like "the agent chose to tag nothing" and leave R2 dormant.
+
+    4. Call `run_linking_phase(project_root, feature_slug, tasks, matcher,
+       interactive=not flags.no_questions, confidence_threshold=flags.bdd_link_threshold)`.
+
+    5. Print the returned `PhaseResult.summary` (already emitted by the
+       orchestrator in `print()` form; no additional prose required).
+
+    **Interactive mode** (the default, `flags.no_questions` is False):
+
+    The orchestrator renders a `rich` table of the subagent's proposals
+    (one row per scenario, columns: `#`, `Scenario`, `Proposed Task`,
+    `Confidence`, `Status`) and prompts for input. Grammar:
+
+    - `A` / Enter → accept all proposals as-is (default).
+    - `E N TASK-ID` → edit scenario `N` to point to `TASK-ID` instead.
+    - `S N` → skip scenario `N` (leave untagged).
+    - `D` → done (finalise with current state; equivalent to Enter once
+      edits have been made).
+
+    Unrecognised commands show a help line and re-prompt. An EOF on
+    stdin (non-interactive environment) finalises with current state.
+
+    **Non-interactive mode** (`--no-questions`):
+
+    The orchestrator skips the review and passes the subagent's proposals
+    straight to `apply_mapping`. Below-threshold matches are reported as
+    `skipped_low_confidence` in the summary; unmatched scenarios are
+    reported as `unmatched_scenarios`. No stdin is consumed.
+
+    **Summary** (printed unconditionally for non-silent runs):
+
+    ```
+    [Step 11] linked 3 scenario(s) to task(s); 0 already tagged; 1 below threshold (0.60); 1 untagged (of 5 total)
+    ```
+
+    **Silent-skip conditions** (PhaseResult.status ∈ {...} → emit nothing):
+
+    - `no_feature_file`: no `.feature` file in either layout.
+    - `no_scenarios`: file exists but has no `Feature:` or no scenarios.
+    - `all_tagged`: every scenario already carries an `@task:` tag (the
+      idempotency path — re-runs are no-ops).
+
+    **Threshold configuration:**
+
+    The default threshold is
+    `installer.core.commands.lib.bdd_linker.DEFAULT_CONFIDENCE_THRESHOLD`
+    (0.6). Override via `--bdd-link-threshold=0.X` for power users. Raising
+    the threshold drops marginal proposals into `skipped_low_confidence`;
+    lowering it lets more edge cases through but makes interactive review
+    noisier. Do not require the flag for the default behaviour — 0.6 was
+    chosen to let solid fits through while still catching obvious
+    mismatches.
+
+    **Idempotency:**
+
+    Scenarios that already carry any `@task:` tag are omitted from the
+    matching request (via `build_matching_request(..., skip_already_tagged=True)`)
+    and are never re-tagged by `apply_mapping`. Running `/feature-plan`
+    twice against the same inputs yields `status="all_tagged"` on the
+    second pass — the matcher is not invoked, no file is rewritten, and
+    the transcript stays quiet.
+
+    **Coordination with Step 10.6 (BDD oracle nudge):**
+
+    After Step 11 has tagged at least one scenario, the `.feature` file
+    contains `@task:` and `bdd_oracle_nudge.check_bdd_oracle_activation`
+    returns `None` — so the nudge disappears automatically. The nudge
+    remains useful as a fallback for hand-authored feature files and for
+    the "every proposal skipped interactively" edge case.
+
+    **Non-goals (do NOT do any of these):**
+    - Do not implement scenario-to-task matching yourself — that is
+      strictly the `bdd-linker` subagent's job. This step is a
+      coordinator, not a matcher.
+    - Do not bypass `apply_mapping` by rewriting the `.feature` file
+      directly — you would lose the atomicity/idempotency guarantees.
+    - Do not invent a separate `/feature-link-bdd` command. Step 11 is
+      the only entry point; a standalone command is a deliberate
+      non-goal of TASK-FP-LNKB-19AC.
+    - Do not cache or alter the subagent's JSON — pass it through
+      `parse_matcher_response` exactly as received so error reporting
+      stays specific.
 
 ### What NOT to Do
 

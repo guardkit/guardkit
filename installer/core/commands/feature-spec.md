@@ -498,6 +498,32 @@ Rules:
   feature-level smoke (TASK-SMK-F703A territory) and are intentionally not
   picked up by the task-level runner.
 
+### Automated tagging via `/feature-plan` (TASK-FP-LNKB-19AC)
+
+You rarely need to write `@task:` tags by hand. When `/feature-plan` runs
+against a feature that has a scaffolded `.feature` file (either
+`features/{slug}/{slug}.feature` or `features/{slug}.feature`), its
+**Step 11: Link BDD scenarios to tasks** invokes the `bdd-linker` subagent
+with a `MatchingRequest` describing the scenarios and the tasks just
+created, parses the subagent's `TaskMatch[]` response, and calls
+`bdd_linker.apply_mapping` to insert the `@task:<TASK-ID>` lines
+atomically. Interactive mode lets you accept/edit/skip each proposed
+mapping; `--no-questions` mode applies every above-threshold match
+unattended and reports below-threshold or unmatched scenarios in the
+step summary.
+
+Hand-tagging remains valid for:
+
+- Feature files not produced by `/feature-spec` / `/feature-plan` (ad-hoc
+  feature files in `features/` that should still activate R2).
+- Scenarios Step 11 flagged as below threshold that you've decided
+  belong to a task after all — just add the tag by hand; Step 11 is
+  idempotent and will leave it alone on the next run.
+
+See `installer/core/commands/feature-plan.md` § "Step 11" for the full
+workflow, and `installer/core/agents/bdd-linker.md` for the matching
+subagent's contract.
+
 ---
 
 ## Domain Language

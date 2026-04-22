@@ -1,10 +1,14 @@
 ---
 id: TASK-FP-LINK
 title: Implement R2 linking step in /feature-plan — rewrite features/*.feature with @task:<TASK-ID> tags after task creation
-status: backlog
+status: completed
 task_type: implementation
 created: 2026-04-22T00:00:00Z
 updated: 2026-04-22T00:00:00Z
+completed: 2026-04-22T00:00:00Z
+completed_location: tasks/completed/TASK-FP-LINK/
+previous_state: in_progress
+state_transition_reason: "Part A (mechanical library) delivered; Part B split to sibling task TASK-FP-LNKB-19AC"
 priority: high
 complexity: 7
 tags: [feature-plan, r2, bdd-oracle, pipeline-gap, task-bdd-e8954-followon, linker]
@@ -15,6 +19,16 @@ wave: 2
 conductor_workspace: r2-pipeline-closure-wave2-linker
 depends_on:
   - TASK-BDD-JBKF
+scope_split:
+  part_a: "This task — bdd_linker library + gherkin-official dep + unit tests"
+  part_b: "TASK-FP-LNKB-19AC — bdd-linker subagent + /feature-plan Step 11 + e2e tests + docs"
+deliverables:
+  - installer/core/commands/lib/bdd_linker.py (96% line coverage)
+  - tests/unit/commands/feature_plan/test_bdd_linker.py (34 tests)
+  - pyproject.toml (gherkin-official>=29.0.0 added)
+  - tasks/backlog/r2-pipeline-closure-and-forge-cohort/TASK-FP-LNKB-19AC-*.md (follow-on)
+organized_files:
+  - TASK-FP-LINK.md
 ---
 
 # Task: Implement R2 linking step in /feature-plan
@@ -26,6 +40,29 @@ depends_on:
 Evidence: zero production `.feature` files in the repo contain `@task:` tags. The pattern exists only in test fixtures. TASK-BDD-E8954 explicitly deferred the emission step as a "natural follow-on." On the jarvis run, a thoughtful feature author wrote 15+ well-formed scenarios and still did not add a single task tag — not because they are negligent, but because the workflow never asks.
 
 This task closes the gap by adding a post-task-creation pass to `/feature-plan` that reads the generated `.feature` file, maps scenarios to tasks, and rewrites the file with `@task:<TASK-ID>` tags inserted above matched scenarios.
+
+## Scope Split (2026-04-22)
+
+This task was split during planning into two parts to separate the mechanical
+library work (well-bounded, fully unit-testable) from the orchestration layer
+(subagent + command prose + e2e tests). This task (**TASK-FP-LINK**) now
+covers **Part A** only:
+
+- Add `gherkin-official` dependency.
+- Deliver `installer/core/commands/lib/bdd_linker.py` with parsing, idempotency
+  detection, matching-request construction, and atomic rewrite.
+- Full unit test coverage.
+
+**Part B** lives in sibling task **TASK-FP-LNKB-19AC**:
+
+- New `bdd-linker` subagent.
+- New `/feature-plan` "Step 11: Link BDD scenarios to tasks" phase.
+- Interactive UX and `--no-questions` handling.
+- Integration tests proving `bdd_runner.find_feature_files_with_tag` picks up
+  the rewritten files.
+- Documentation updates in `feature-plan.md`, `feature-spec.md`, and
+  `autobuild-coach.md`.
+- Validation against FEAT-JARVIS-001 ground-truth subset (TASK-BDD-JBKF).
 
 ## Scope
 

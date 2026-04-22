@@ -514,9 +514,23 @@ own `@task:<TASK-ID>` tag. Whole-feature `.feature` files without task-scope
 tags are owned by the feature-level smoke gate (TASK-SMK-F703A) and MUST
 NOT be picked up by this Coach gate.
 
+### Where `@task:` tags come from
+
+You **do not need to author or suggest** `@task:` tags. The normal pipeline
+is `/feature-spec` (writes the `.feature` file) → `/feature-plan` (writes
+the tasks) → **`/feature-plan` Step 11** (TASK-FP-LNKB-19AC, invokes the
+`bdd-linker` subagent and rewrites the `.feature` file with the tags
+atomically via `bdd_linker.apply_mapping`). By the time a Player-Coach
+loop runs for a task, the tags are already in place or deliberately
+absent. If `bdd_results` is missing from `task_work_results.json`, treat
+that as "no BDD gate for this task" (back-compat behaviour) — it is not
+a Coach-raisable concern and it is not the Coach's job to ask the user
+to hand-tag scenarios.
+
 Implementation: see `_check_bdd_results` in
 `guardkit/orchestrator/quality_gates/coach_validator.py:3565`. Runner:
-`guardkit/orchestrator/quality_gates/bdd_runner.py`.
+`guardkit/orchestrator/quality_gates/bdd_runner.py`. Linker phase:
+`installer/core/commands/lib/bdd_linking_phase.py`.
 
 ## Integration with CoachValidator
 

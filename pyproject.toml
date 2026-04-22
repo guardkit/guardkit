@@ -32,6 +32,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "httpx>=0.25.0",
     "graphiti-core>=0.5.0",
+    "gherkin-official>=29.0.0",
 ]
 
 [project.optional-dependencies]
