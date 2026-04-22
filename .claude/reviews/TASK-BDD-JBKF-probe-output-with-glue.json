@@ -1,0 +1,48 @@
+{
+  "probes": [
+    {
+      "task_id": "TASK-J001-001",
+      "tag": "@task:TASK-J001-001",
+      "features_dir": "/Users/richardwoollcott/Projects/appmilla_github/jarvis/features/project-scaffolding-supervisor-sessions",
+      "tagged_files_found": [
+        "features/project-scaffolding-supervisor-sessions/project-scaffolding-supervisor-sessions.feature"
+      ],
+      "pytest_bdd_importable_in_target_env": true,
+      "bdd_result_is_none": false,
+      "bdd_result": {
+        "scenarios_passed": 0,
+        "scenarios_failed": 0,
+        "scenarios_pending": 0,
+        "failures": [],
+        "pending": [],
+        "feature_files": [
+          "features/project-scaffolding-supervisor-sessions/project-scaffolding-supervisor-sessions.feature"
+        ],
+        "tag": "@task:TASK-J001-001"
+      },
+      "raw_output_tail": "ImportError while loading conftest '/Users/richardwoollcott/Projects/appmilla_github/jarvis/features/project-scaffolding-supervisor-sessions/conftest.py'.\nfeatures/project-scaffolding-supervisor-sessions/conftest.py:13: in <module>\n    scenarios(\"project-scaffolding-supervisor-sessions.feature\")\n.venv-r2-probe/lib/python3.14/site-packages/pytest_bdd/scenario.py:448: in scenarios\n    features_base_dir = get_features_base_dir(caller_path)\n                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n.venv-r2-probe/lib/python3.14/site-packages/pytest_bdd/scenario.py:388: in get_features_base_dir\n    d = get_from_ini(\"bdd_features_base_dir\")\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n.venv-r2-probe/lib/python3.14/site-packages/pytest_bdd/scenario.py:400: in get_from_ini\n    config = CONFIG_STACK[-1]\n             ^^^^^^^^^^^^^^^^\nE   IndexError: list index out of range"
+    },
+    {
+      "task_id": "TASK-J001-006",
+      "tag": "@task:TASK-J001-006",
+      "features_dir": "/Users/richardwoollcott/Projects/appmilla_github/jarvis/features/project-scaffolding-supervisor-sessions",
+      "tagged_files_found": [
+        "features/project-scaffolding-supervisor-sessions/project-scaffolding-supervisor-sessions.feature"
+      ],
+      "pytest_bdd_importable_in_target_env": true,
+      "bdd_result_is_none": false,
+      "bdd_result": {
+        "scenarios_passed": 0,
+        "scenarios_failed": 0,
+        "scenarios_pending": 0,
+        "failures": [],
+        "pending": [],
+        "feature_files": [
+          "features/project-scaffolding-supervisor-sessions/project-scaffolding-supervisor-sessions.feature"
+        ],
+        "tag": "@task:TASK-J001-006"
+      },
+      "raw_output_tail": "ImportError while loading conftest '/Users/richardwoollcott/Projects/appmilla_github/jarvis/features/project-scaffolding-supervisor-sessions/conftest.py'.\nfeatures/project-scaffolding-supervisor-sessions/conftest.py:13: in <module>\n    scenarios(\"project-scaffolding-supervisor-sessions.feature\")\n.venv-r2-probe/lib/python3.14/site-packages/pytest_bdd/scenario.py:448: in scenarios\n    features_base_dir = get_features_base_dir(caller_path)\n                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n.venv-r2-probe/lib/python3.14/site-packages/pytest_bdd/scenario.py:388: in get_features_base_dir\n    d = get_from_ini(\"bdd_features_base_dir\")\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n.venv-r2-probe/lib/python3.14/site-packages/pytest_bdd/scenario.py:400: in get_from_ini\n    config = CONFIG_STACK[-1]\n             ^^^^^^^^^^^^^^^^\nE   IndexError: list index out of range"
+    }
+  ]
+}

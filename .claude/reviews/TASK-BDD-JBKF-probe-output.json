@@ -1,0 +1,48 @@
+{
+  "probes": [
+    {
+      "task_id": "TASK-J001-001",
+      "tag": "@task:TASK-J001-001",
+      "features_dir": "/Users/richardwoollcott/Projects/appmilla_github/jarvis/features/project-scaffolding-supervisor-sessions",
+      "tagged_files_found": [
+        "features/project-scaffolding-supervisor-sessions/project-scaffolding-supervisor-sessions.feature"
+      ],
+      "pytest_bdd_importable_in_target_env": true,
+      "bdd_result_is_none": false,
+      "bdd_result": {
+        "scenarios_passed": 0,
+        "scenarios_failed": 0,
+        "scenarios_pending": 0,
+        "failures": [],
+        "pending": [],
+        "feature_files": [
+          "features/project-scaffolding-supervisor-sessions/project-scaffolding-supervisor-sessions.feature"
+        ],
+        "tag": "@task:TASK-J001-001"
+      },
+      "raw_output_tail": "=============================== warnings summary ===============================\n.venv-r2-probe/lib/python3.14/site-packages/_pytest/config/__init__.py:1434\n  /Users/richardwoollcott/Projects/appmilla_github/jarvis/.venv-r2-probe/lib/python3.14/site-packages/_pytest/config/__init__.py:1434: PytestConfigWarning: Unknown config option: asyncio_mode\n  \n    self._warn_or_fail_if_strict(f\"Unknown config option: {key}\\n\")\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n1 warning in 0.00s\n\nERROR: not found: /Users/richardwoollcott/Projects/appmilla_github/jarvis/features/project-scaffolding-supervisor-sessions/project-scaffolding-supervisor-sessions.feature\n(no match in any of [<Dir project-scaffolding-supervisor-sessions>])"
+    },
+    {
+      "task_id": "TASK-J001-006",
+      "tag": "@task:TASK-J001-006",
+      "features_dir": "/Users/richardwoollcott/Projects/appmilla_github/jarvis/features/project-scaffolding-supervisor-sessions",
+      "tagged_files_found": [
+        "features/project-scaffolding-supervisor-sessions/project-scaffolding-supervisor-sessions.feature"
+      ],
+      "pytest_bdd_importable_in_target_env": true,
+      "bdd_result_is_none": false,
+      "bdd_result": {
+        "scenarios_passed": 0,
+        "scenarios_failed": 0,
+        "scenarios_pending": 0,
+        "failures": [],
+        "pending": [],
+        "feature_files": [
+          "features/project-scaffolding-supervisor-sessions/project-scaffolding-supervisor-sessions.feature"
+        ],
+        "tag": "@task:TASK-J001-006"
+      },
+      "raw_output_tail": "=============================== warnings summary ===============================\n.venv-r2-probe/lib/python3.14/site-packages/_pytest/config/__init__.py:1434\n  /Users/richardwoollcott/Projects/appmilla_github/jarvis/.venv-r2-probe/lib/python3.14/site-packages/_pytest/config/__init__.py:1434: PytestConfigWarning: Unknown config option: asyncio_mode\n  \n    self._warn_or_fail_if_strict(f\"Unknown config option: {key}\\n\")\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n1 warning in 0.00s\n\nERROR: not found: /Users/richardwoollcott/Projects/appmilla_github/jarvis/features/project-scaffolding-supervisor-sessions/project-scaffolding-supervisor-sessions.feature\n(no match in any of [<Dir project-scaffolding-supervisor-sessions>])"
+    }
+  ]
+}
