@@ -51,3 +51,8 @@ installer/core/commands/agent-validate.py
 # Diagnostic helper for verifying Graphiti / FalkorDB connectivity from
 # any project directory. Kept by TASK-FIX-8B4F.
 installer/core/commands/lib/graphiti_diagnose.py
+# R1 AC linter producer: feature-plan.md Step 8 shells out to this via
+# `python3 ~/.agentecflow/bin/generate-feature-yaml`. Added by
+# TASK-FIX-B1E4 so the deterministic Step 8 → producer → linter chain
+# holds without relying on Claude-as-runtime path resolution.
+installer/core/commands/lib/generate_feature_yaml.py

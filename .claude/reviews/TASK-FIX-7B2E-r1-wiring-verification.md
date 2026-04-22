@@ -324,3 +324,60 @@ linter does at least fire some of the time under the current spec.
   session-log dump, not a structured report — further re-runs should
   capture planner stdout only (no agent UI chrome) to make retroactive
   grepping easier.
+
+---
+
+## Post-remediation re-verification
+
+**Remediation:** TASK-FIX-3C9D landed 2026-04-22, choosing Option B —
+the AC-linter callsite was moved from descriptive Step 10.5 prose in
+`feature-plan.md` into the producer script
+`installer/core/commands/lib/generate_feature_yaml.py` that Step 8 of
+the `/feature-plan` flow already executes. The runtime path and the
+documented path now share a single imperative line; there is no longer
+a "runner without producer" gap for the Claude-as-runtime interpreter
+to have to bridge.
+
+### Structural re-verification (deterministic)
+
+Re-running the static checks from §"Static evidence" against the
+remediated code:
+
+| # | Indicator | Post-remediation status |
+|---|---|---|
+| 6 | Imperative callsite for `lint_plan_warnings` | ✅ **Wired.** `generate_feature_yaml.py` `main()` calls `lint_plan_warnings(linter_tasks)` and prints `format_warning_summary()` to stdout in non-quiet mode (see lines around the "AC-quality review (warn-mode v1)" comment). |
+| 8 | Runtime Python caller of `lint_plan_warnings` outside tests/linter | ✅ **One match.** `installer/core/commands/lib/generate_feature_yaml.py`. |
+| 10 | End-to-end test that exercises the wiring, not the linter library in isolation | ✅ **Added.** `tests/integration/feature_plan/test_generate_feature_yaml_linter.py` drives `generate_feature_yaml.py` via subprocess with prose-AC JSON input and asserts `AC-quality review:` appears in stdout, with at least 2 warnings reported, and with the header correctly suppressed in `--quiet` mode. |
+
+The pre-existing test suite (`test_criteria_classifier.py` +
+`test_ac_linter_warning_flow.py`) remains green (101/101 passed at
+verification time) — the linter library is unchanged.
+
+### What this changes about activation determinism
+
+Before: activation depended on Claude interpreting descriptive Step
+10.5 prose as instruction. §"Retro grep of FEAT-JARVIS-001" showed
+that interpretation is not reliable across sessions (0 matches in
+jarvis planner stdout, 6/6 matches in the 2026-04-22 fixture run on
+the same unchanged spec).
+
+After: activation is a Python function call in a script that the
+`/feature-plan` command spec imperatively executes as Step 8. No
+Claude-as-runtime interpretation is required to reach the linter.
+Every `/feature-plan` run that reaches Step 8 reaches the linter.
+
+### Remaining caveat — `/feature-plan` dynamic re-verification
+
+This post-remediation section covers the *structural* guarantee
+(imperative callsite exists; subprocess-level E2E test exercises it).
+The full *dynamic* re-verification — running the actual
+`/feature-plan` slash command against
+`tests/fixtures/r1-verification/prose-ac-spec.md` in at least two
+different Claude sessions and grepping planner stdout for
+`AC-quality review:` — is the Wave 1 R1 gate check on TASK-COH-RUN1.
+That check remains pending and is the proper close-out for the
+originally filed AC-1 of TASK-FIX-3C9D. Structurally, however, R1 is
+now **wired deterministically** — any negative dynamic result would
+indicate a *different* problem (e.g. Step 8 not being executed at
+all), not non-deterministic Claude-as-runtime activation of a
+descriptive post-step.

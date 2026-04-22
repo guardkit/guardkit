@@ -2238,63 +2238,55 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
     - Estimates duration based on complexity
     - Creates the `.guardkit/features/` directory if needed
 
-10.5. ✅ **AC-quality review (warn-mode v1)** — post-step AC linter
+10.5. ✅ **AC-quality review (warn-mode v1)** — runs transitively via step 8
 
-    **Runs unconditionally.** There is no opt-in flag; the linter always
-    executes. What's gentle is the v1 *posture* (warn, not block), not
-    the activation.
+    **No separate step here.** The AC linter's imperative callsite
+    lives in `installer/core/commands/lib/generate_feature_yaml.py`
+    (the producer step 8 executes). That script invokes
+    `guardkit.orchestrator.quality_gates.ac_linter.lint_plan_warnings`
+    over the task dicts it just emitted and prints
+    `format_warning_summary()` to stdout before exiting. The runtime
+    path and the documented path are the same line — no
+    "runner-without-producer" gap to re-open. See TASK-FIX-3C9D.
 
-    **Purpose:** Surface acceptance criteria the Coach will not be able
-    to auto-verify (prose ACs like `"handles edge cases correctly"` or
-    `"backward-compatible defaults ensure no breakage"`). These silently
-    fall through `criteria_classifier.classify_criterion()` to its
-    low-confidence fallback branch and get skipped by Coach — the
-    problem surfaces 30+ tasks later as post-approval smoke failures.
-    The linter closes that feedback loop.
-
-    **How it works:**
-    1. After Step 10 writes task markdown and the structured YAML, the
-       post-step collects each generated task's `id` + `acceptance_criteria`.
-    2. Calls
-       `guardkit.orchestrator.quality_gates.ac_linter.lint_plan_warnings(tasks)`,
-       which delegates per task to
-       `criteria_classifier.classify_with_warnings()`.
-    3. Any criterion classified at confidence <
-       `UNVERIFIABLE_CONFIDENCE_THRESHOLD` (currently 0.6) produces a
-       single `UnverifiableACWarning` with the criterion text, owning
-       `task_id`, and the classifier's own reason string.
-    4. `ac_linter.format_warning_summary()` renders a plain-text block
-       grouped by task, which is printed to planner output immediately
-       before the completion summary (Step 11 below).
-
-    **Architectural guardrail — single source of truth:** the linter
-    module contains NO regexes, pattern constants, or thresholds of its
-    own. It reads `ClassifiedCriterion.confidence` and `.reason` and
-    aggregates them — nothing more. If the linter and the classifier
-    ever disagree on whether an AC is verifiable, that is a bug in the
-    linter. The fix is to delete the divergence, not reconcile it.
-    Keeping classification centralized is what makes the v1-warn →
-    v2-block promotion a one-line change to
-    `UNVERIFIABLE_CONFIDENCE_THRESHOLD` (plus a callsite policy flip),
-    rather than a cross-file rewrite.
+    **Purpose (unchanged from TASK-AC-53445):** Surface acceptance
+    criteria the Coach will not be able to auto-verify (prose ACs like
+    `"handles edge cases correctly"` or `"backward-compatible defaults
+    ensure no breakage"`). These silently fall through
+    `criteria_classifier.classify_criterion()` to its low-confidence
+    fallback branch and get skipped by Coach — the problem surfaces
+    30+ tasks later as post-approval smoke failures. The linter closes
+    that feedback loop.
 
     **Rollout posture — v1 is warn-only.** The summary is surfaced;
-    planner output is emitted regardless of warning count; exit code is
-    unaffected. Block-mode is explicitly deferred to v2 after the
-    cohort (jarvis / forge / study-tutor) lands. **Do not pre-tune the
-    classifier's `_MANUAL_PATTERNS` / `_FILE_CONTENT_PATTERNS` during
-    v1** — the point of warn-mode is to observe which prose phrasings
-    show up in practice; hand-tuning before that data arrives biases
-    the v2 cut point.
+    planner output is emitted regardless of warning count; exit code
+    is unaffected. Block-mode is explicitly deferred to v2 after the
+    cohort (jarvis / forge / study-tutor) lands. Promotion to v2 is a
+    one-line change to `UNVERIFIABLE_CONFIDENCE_THRESHOLD` in
+    `criteria_classifier` plus a callsite policy flip in
+    `generate_feature_yaml.py`. **Do not pre-tune the classifier's
+    `_MANUAL_PATTERNS` / `_FILE_CONTENT_PATTERNS` during v1** — the
+    point of warn-mode is to observe which prose phrasings show up in
+    practice; hand-tuning before that data arrives biases the v2
+    cut-point.
 
-    **Optional LLM refinement roundtrip (capped):** If the user
-    accepts, the planner may offer up to 2 LLM roundtrips per flagged
-    AC to suggest a verifiable rewrite. The suggested rewrites are
-    surfaced as a diff before any task file is re-written; the user
-    confirms before persisting. This cap exists to bound cost — do not
-    remove it without explicit decision.
+    **Architectural guardrail — single source of truth:** the
+    `ac_linter` module contains NO regexes, pattern constants, or
+    thresholds of its own; it reads `ClassifiedCriterion.confidence`
+    and `.reason` from `criteria_classifier` and aggregates them. If
+    the linter and the classifier ever disagree on whether an AC is
+    verifiable, that is a bug in the linter — delete the divergence,
+    do not reconcile.
 
-    **Example output block:**
+    **Optional LLM refinement roundtrip (capped):** A future
+    enhancement may offer up to 2 LLM roundtrips per flagged AC to
+    suggest a verifiable rewrite, presented as a diff for user
+    confirmation before any task file is re-written. This cap exists
+    to bound cost — do not remove it without explicit decision. Its
+    activation must read from the same imperative callsite in
+    `generate_feature_yaml.py`, not from this prose.
+
+    **Example output block appended to step 8's stdout:**
     ```
     AC-quality review: 2 unverifiable acceptance criteria detected
     (warn-mode, non-blocking).
@@ -2313,6 +2305,49 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
       `acceptance_criteria` as-is; improvement comes from better
       inputs, not wider Coach scope.
     - Do not introduce a second classification path in the linter.
+    - Do not re-home the linter call out of `generate_feature_yaml.py`
+      into a separate post-step. Collapsing runner-without-producer is
+      the whole point of TASK-FIX-3C9D; re-splitting them re-opens the
+      non-determinism it closed.
+
+10.6. ℹ️ **BDD oracle (R2) activation nudge** — interim ergonomics
+      (TASK-FP-NDG1)
+
+    **Purpose:** If the repo already has `features/*.feature` file(s) but
+    none of them carry `@task:<TASK-ID>` tags, the R2 task-level BDD
+    oracle (TASK-BDD-E8954) will silently skip every task during
+    autobuild. Users are one edit away from activating R2 but there is no
+    signal telling them so — print one.
+
+    **How it works:**
+    1. After Step 10.5 runs the AC linter, call
+       `installer.core.commands.lib.bdd_oracle_nudge.check_bdd_oracle_activation(project_root, quiet=flags.no_questions)`.
+    2. If it returns a notice string, print the notice verbatim to
+       planner output, immediately after any AC-linter block and before
+       the Step 11 completion summary.
+    3. If it returns `None`, emit nothing.
+
+    **Suppression:** honour `--no-questions` (and any equivalent quiet
+    flag) by passing `quiet=True`, so CI runs do not spam the banner.
+
+    **Branches (from AC):**
+    - No `features/*.feature` file in project root   → no notice.
+    - `.feature` file exists, at least one `@task:` tag present
+      (including partial activation across multiple files) → no notice.
+    - `.feature` file exists, zero `@task:` tags anywhere → print
+      notice.
+
+    **Rollout posture — interim.** This nudge is an interim ergonomics
+    step. When TASK-FP-LINK ships (automatic scenario-to-task tagging in
+    `/feature-plan`), this nudge should only fire when LINK was unable
+    to tag any scenarios (e.g., low-confidence matches the user skipped
+    interactively). Coordinate the interaction in TASK-FP-LINK's
+    implementation — do not delete this step pre-emptively.
+
+    **Non-goals (do NOT do any of these):**
+    - Do not rewrite the `.feature` file — that is TASK-FP-LINK's job.
+    - Do not attempt scenario-to-task matching here.
+    - Do not change R1 or R3 surfaces.
 
 ### What NOT to Do
 
@@ -2386,6 +2421,9 @@ Claude executes internally:
 
   8. Generate structured feature file (if --no-structured not set)
      - Execute generate-feature-yaml script to produce FEAT-XXXX.yaml
+     - Script transitively runs the AC-quality linter (Step 10.5):
+       prints `AC-quality review: N unverifiable acceptance criteria
+       detected` to stdout in non-quiet mode (warn-only, non-blocking)
 
   8.5. Run pre-flight validation: guardkit feature validate FEAT-XXXX
      - Report any intra-wave deps, invalid task_type, missing files inline
@@ -2437,6 +2475,10 @@ Claude executes internally:
          ... (one --task arg per subtask)
      - Script outputs: FEAT-D6E7 and writes .guardkit/features/FEAT-D6E7.yaml
      - --discover resolves file_path from actual files created in Step 7
+     - Script ALSO runs the AC-quality linter (Step 10.5) and appends
+       `AC-quality review: N unverifiable acceptance criteria detected`
+       to stdout (warn-only, non-blocking). This is the deterministic
+       R1 callsite; see TASK-FIX-3C9D.
      (Skip this step if --no-structured flag is set)
 
   8.5. Run pre-flight validation on the generated feature YAML (always run when structured output was generated):

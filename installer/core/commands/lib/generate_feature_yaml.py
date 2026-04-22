@@ -36,6 +36,15 @@ try:
 except ImportError:
     FEATURELOADER_AVAILABLE = False
 
+try:
+    from guardkit.orchestrator.quality_gates.ac_linter import (
+        format_warning_summary,
+        lint_plan_warnings,
+    )
+    AC_LINTER_AVAILABLE = True
+except ImportError:
+    AC_LINTER_AVAILABLE = False
+
 
 @dataclass
 class TaskSpec:
@@ -482,13 +491,20 @@ def main():
     # Parse tasks
     task_specs = []
 
+    # Collect (id, acceptance_criteria) pairs for the AC-quality linter.
+    # The --task string form does not carry ACs; the --tasks-json form does.
+    # Linter input is plan-wide, so we accumulate across both sources.
+    linter_tasks: List[Dict[str, object]] = []
+
     if args.tasks:
         for task_str in args.tasks:
-            task_specs.append(parse_task_string(
+            spec = parse_task_string(
                 task_str,
                 feature_slug=args.feature_slug,
                 task_base_path=args.task_base_path
-            ))
+            )
+            task_specs.append(spec)
+            linter_tasks.append({"id": spec.id, "acceptance_criteria": []})
 
     if args.tasks_json:
         # Try to parse as JSON string or file
@@ -503,8 +519,13 @@ def main():
                 task_id = t.get("id", t.get("task_id", ""))
                 task_name = t.get("name", t.get("title", ""))
                 complexity = t.get("complexity", 5)
-                ac_count = len(t.get("acceptance_criteria", []))
+                acceptance_criteria = t.get("acceptance_criteria", []) or []
+                ac_count = len(acceptance_criteria)
                 mode = "direct" if complexity <= 3 and ac_count < 2 else "task-work"
+                linter_tasks.append({
+                    "id": task_id,
+                    "acceptance_criteria": acceptance_criteria,
+                })
                 # Derive file_path using centralized helper (includes task name in filename)
                 file_path = ""
                 if args.feature_slug:
@@ -681,6 +702,15 @@ def main():
     else:
         # Quiet mode - just output the feature ID and path
         print(f"{feature_id}:{output_path}")
+
+    # AC-quality review (warn-mode v1) — imperative callsite for R1.
+    # This is the deterministic runtime home of the AC linter; feature-plan.md
+    # invokes this script as step 8, so the header is guaranteed to appear
+    # whenever tasks flow through this producer. See TASK-FIX-3C9D.
+    if AC_LINTER_AVAILABLE and not args.quiet:
+        warnings = lint_plan_warnings(linter_tasks)
+        print()
+        print(format_warning_summary(warnings))
 
 
 if __name__ == "__main__":

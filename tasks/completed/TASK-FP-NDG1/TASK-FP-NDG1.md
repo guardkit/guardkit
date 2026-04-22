@@ -1,10 +1,16 @@
 ---
 id: TASK-FP-NDG1
 title: Add /feature-plan nudge when features/*.feature exists without any @task tags (interim R2 ergonomics)
-status: backlog
+status: completed
 task_type: implementation
 created: 2026-04-22T00:00:00Z
 updated: 2026-04-22T00:00:00Z
+completed: 2026-04-22T00:00:00Z
+previous_state: in_review
+state_transition_reason: "task-complete — all 6 AC satisfied, 9/9 unit tests pass"
+completed_location: tasks/completed/TASK-FP-NDG1/
+organized_files:
+  - TASK-FP-NDG1.md
 priority: medium
 complexity: 2
 tags: [feature-plan, r2, ergonomics, nudge, interim, bdd-oracle]

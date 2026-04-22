@@ -1,10 +1,16 @@
 ---
 id: TASK-FIX-3C9D
 title: Wire the AC linter into /feature-plan execution (not just its spec prose)
-status: backlog
+status: completed
 task_type: implementation
 created: 2026-04-22T00:00:00Z
 updated: 2026-04-22T00:00:00Z
+completed: 2026-04-22T00:00:00Z
+completed_location: tasks/completed/TASK-FIX-3C9D/
+previous_state: in_review
+state_transition_reason: "Option B landed; structural ACs satisfied, full cross-session dynamic re-verification deferred to TASK-COH-RUN1 R1 gate"
+organized_files:
+  - TASK-FIX-3C9D-wire-ac-linter-into-feature-plan.md
 priority: high
 complexity: 3
 tags: [autobuild, r1, remediation, ac-linter, feature-plan, runner-without-producer, non-deterministic-activation]
