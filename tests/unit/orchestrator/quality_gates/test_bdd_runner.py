@@ -158,6 +158,62 @@ class TestFindFeatureFilesWithTag:
 
         assert [p.name for p in matches] == ["a.feature", "b.feature"]
 
+    def test_discovers_nested_feature_layout(self, worktree: Path):
+        # AC (TASK-FIX-F584 secondary): jarvis's /feature-spec scaffold
+        # emits `features/<feature-slug>/<feature-slug>.feature`. The runner
+        # must discover these with the default features_subdir="features";
+        # the pre-fix non-recursive glob silent-skipped them via path (1).
+        nested_dir = worktree / "features" / "project-scaffolding-supervisor-sessions"
+        nested_dir.mkdir()
+        (nested_dir / "project-scaffolding-supervisor-sessions.feature").write_text(
+            _PASS_FEATURE, encoding="utf-8"
+        )
+
+        matches = find_feature_files_with_tag(worktree / "features", "@task:TASK-001")
+
+        assert len(matches) == 1
+        assert matches[0].name == "project-scaffolding-supervisor-sessions.feature"
+        assert matches[0].parent.name == "project-scaffolding-supervisor-sessions"
+
+    def test_filters_out_vendored_and_dotdirs(self, worktree: Path):
+        # AC (TASK-FIX-F584 blast-radius mitigation): switching to rglob
+        # must NOT pull in .feature files vendored under dotdirs (.venv,
+        # .git, .tox) or known non-dot vendored dirs (node_modules,
+        # __pycache__, site-packages). Only project-scope feature files
+        # should be returned.
+        features_dir = worktree / "features"
+
+        # Project-scope: should be found.
+        project_nested = features_dir / "real-feature"
+        project_nested.mkdir()
+        (project_nested / "real.feature").write_text(_PASS_FEATURE, encoding="utf-8")
+
+        # Dotdirs: .venv/, .git/, .tox/, nested combinations.
+        for dotdir in (".venv", ".git", ".tox"):
+            p = features_dir / dotdir / "deep" / "nested"
+            p.mkdir(parents=True)
+            (p / "vendored.feature").write_text(_PASS_FEATURE, encoding="utf-8")
+
+        # Non-dot vendored: node_modules/, __pycache__/, site-packages/.
+        for vendored in ("node_modules", "__pycache__", "site-packages"):
+            p = features_dir / vendored / "pkg"
+            p.mkdir(parents=True)
+            (p / "vendored.feature").write_text(_PASS_FEATURE, encoding="utf-8")
+
+        matches = find_feature_files_with_tag(features_dir, "@task:TASK-001")
+
+        # Only the project-scope file should be matched; the 6 vendored
+        # files (all containing the @task:TASK-001 tag via _PASS_FEATURE)
+        # must be filtered out.
+        assert len(matches) == 1, (
+            f"Filter leaked vendored files: {[str(p) for p in matches]}"
+        )
+        assert matches[0].name == "real.feature"
+        # Defensive: confirm no vendored path component is in the result.
+        for part in matches[0].relative_to(features_dir).parts:
+            assert not part.startswith(".")
+            assert part not in {"node_modules", "__pycache__", "site-packages"}
+
 
 # ---------------------------------------------------------------------------
 # JUnit XML parsing
@@ -430,6 +486,211 @@ class TestRunBddForTask:
         assert call["tag"] == "@task:TASK-001"
         assert call["cwd"] == worktree
         assert any(p.name == "login.feature" for p in call["feature_files"])
+
+
+# ---------------------------------------------------------------------------
+# Runner-error surfacing (TASK-FIX-F584)
+#
+# pytest exit codes other than 0 and 5 (NO_TESTS) with no parsed testcases
+# indicate the runner itself failed (usage error, internal error, interrupt,
+# timeout, conftest import error). The pre-fix behaviour returned
+# ``BDDResult(0, 0, 0, [], [])`` which Coach silently approved — a false
+# green. The fix surfaces a synthetic FailureDetail so Coach's
+# ``scenarios_failed > 0`` rule blocks approval.
+# ---------------------------------------------------------------------------
+
+
+class TestRunnerErrorSurfacing:
+    def _run_with_error(
+        self,
+        worktree: Path,
+        monkeypatch,
+        *,
+        returncode: int,
+        stderr: str = "",
+        stdout: str = "",
+    ) -> BDDResult:
+        _write_feature(worktree, "login.feature", _PASS_FEATURE)
+        monkeypatch.setattr(bdd_runner, "has_pytest_bdd", lambda **_: True)
+        # Empty junit_xml — runner errored before producing any testcases.
+        monkeypatch.setattr(
+            bdd_runner,
+            "_invoke_pytest_bdd",
+            _Patcher("", returncode=returncode, stderr=stderr, stdout=stdout),
+        )
+        result = run_bdd_for_task("TASK-001", worktree)
+        assert isinstance(result, BDDResult), (
+            f"Runner error (exit={returncode}) must surface as BDDResult, "
+            f"not None. Returning None here would silent-skip via path (3), "
+            f"which Coach treats as BDD-not-applicable — also wrong for an "
+            f"explicit @task:-tagged opt-in."
+        )
+        return result
+
+    def test_runner_error_exit_4_usage_error_surfaces_as_failure(
+        self, worktree: Path, monkeypatch
+    ):
+        # AC (TASK-FIX-F584 primary): reproduction of Outcome D from
+        # .claude/reviews/TASK-BDD-JBKF-r2-backfill-evidence.md. pytest
+        # exit=4 ("not found" / usage error) with empty junit_xml must
+        # NOT be silently approved as (0, 0, 0).
+        stderr = (
+            "ERROR: not found: /worktree/features/login.feature\n"
+            "(no match in any of [<Dir features>])\n"
+        )
+        result = self._run_with_error(
+            worktree, monkeypatch, returncode=4, stderr=stderr
+        )
+
+        assert result.scenarios_failed == 1
+        assert result.scenarios_passed == 0
+        assert result.scenarios_pending == 0
+        assert len(result.failures) == 1
+        f = result.failures[0]
+        assert isinstance(f, FailureDetail)
+        assert f.scenario_name == "pytest_runner_error"
+        assert "pytest_runner_error: exit=4" in f.reason
+        # Stderr snippet should be embedded so Coach feedback names the cause.
+        assert "not found" in f.reason
+
+    def test_runner_error_exit_3_internal_error_surfaces_as_failure(
+        self, worktree: Path, monkeypatch
+    ):
+        # AC (TASK-FIX-F584): returncode 3 (pytest internal error) must
+        # surface, not silent-skip.
+        result = self._run_with_error(
+            worktree,
+            monkeypatch,
+            returncode=3,
+            stderr="INTERNALERROR> Traceback ...",
+        )
+
+        assert result.scenarios_failed == 1
+        assert "pytest_runner_error: exit=3" in result.failures[0].reason
+
+    def test_runner_error_exit_2_interrupted_surfaces_as_failure(
+        self, worktree: Path, monkeypatch
+    ):
+        # AC (TASK-FIX-F584): returncode 2 (interrupted via SIGINT /
+        # KeyboardInterrupt) must surface, not silent-skip.
+        result = self._run_with_error(
+            worktree,
+            monkeypatch,
+            returncode=2,
+            stderr="!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!",
+        )
+
+        assert result.scenarios_failed == 1
+        assert "pytest_runner_error: exit=2" in result.failures[0].reason
+
+    def test_returncode_5_still_silent_skips(self, worktree: Path, monkeypatch):
+        # REGRESSION GUARD: the returncode == 5 (NO_TESTS_COLLECTED) silent-
+        # skip path must remain intact. "Feature tag in a comment but no
+        # scenario tagged" is a legitimate skip; conflating it with usage
+        # errors would over-fire and block Coach on benign empty runs.
+        _write_feature(worktree, "login.feature", _PASS_FEATURE)
+        monkeypatch.setattr(bdd_runner, "has_pytest_bdd", lambda **_: True)
+        monkeypatch.setattr(
+            bdd_runner,
+            "_invoke_pytest_bdd",
+            _Patcher("", returncode=5),
+        )
+
+        result = run_bdd_for_task("TASK-001", worktree)
+
+        assert result is None
+
+    def test_runner_error_reason_snippet_is_capped(
+        self, worktree: Path, monkeypatch
+    ):
+        # Defensive: long stderr must be truncated so BDDResult stays
+        # compact. Bound is _RUNNER_ERROR_REASON_MAX = 200.
+        giant_stderr = "x" * 5000
+        result = self._run_with_error(
+            worktree, monkeypatch, returncode=4, stderr=giant_stderr
+        )
+
+        reason = result.failures[0].reason
+        # "pytest_runner_error: exit=4; " prefix plus capped snippet.
+        assert len(reason) < 300, f"reason not capped: len={len(reason)}"
+        assert reason.endswith("...")
+
+    def test_runner_error_with_empty_streams_still_surfaces(
+        self, worktree: Path, monkeypatch
+    ):
+        # Defensive: even with no stderr/stdout at all, runner-error must
+        # surface (just without the snippet).
+        result = self._run_with_error(
+            worktree, monkeypatch, returncode=4, stderr="", stdout=""
+        )
+
+        assert result.scenarios_failed == 1
+        assert result.failures[0].reason == "pytest_runner_error: exit=4"
+
+
+# ---------------------------------------------------------------------------
+# Coach-rejection end-to-end (TASK-FIX-F584)
+#
+# The primary motivation for the runner-error fix is that Coach's approval
+# rule is ``bdd_results.scenarios_failed == 0`` — so the fix is only useful
+# if a runner-error BDDResult actually causes Coach to reject. This test
+# exercises the hand-off: runner produces a synthetic failure, result is
+# serialised via to_dict() (as the agent_invoker does when writing
+# task_work_results.json), and Coach's `_check_bdd_results` must classify
+# it as a blocking issue.
+#
+# Graphiti-captured approval rule (from guardkit/orchestrator/quality_gates/
+# bdd_runner.py module docstring and coach_validator.py line 3573):
+#
+#   "scenarios_failed > 0 → blocking must_fix issue (Coach rejects)."
+# ---------------------------------------------------------------------------
+
+
+class TestCoachRejectsRunnerError:
+    def test_coach_rejects_synthetic_runner_error_result(
+        self, worktree: Path, monkeypatch, tmp_path: Path
+    ):
+        # AC (TASK-FIX-F584): end-to-end that the post-fix BDDResult
+        # (with scenarios_failed > 0 on runner error) causes Coach's
+        # approval validator to reject.
+        _write_feature(worktree, "login.feature", _PASS_FEATURE)
+        monkeypatch.setattr(bdd_runner, "has_pytest_bdd", lambda **_: True)
+        monkeypatch.setattr(
+            bdd_runner,
+            "_invoke_pytest_bdd",
+            _Patcher("", returncode=4, stderr="ERROR: not found"),
+        )
+
+        # 1. Runner produces a BDDResult with runner-error synthetic failure.
+        bdd_result = run_bdd_for_task("TASK-001", worktree)
+        assert isinstance(bdd_result, BDDResult)
+        assert bdd_result.scenarios_failed > 0  # cites Graphiti rule above
+
+        # 2. Serialise as the agent_invoker would before Coach consumes.
+        task_work_results = {"bdd_results": bdd_result.to_dict()}
+
+        # 3. Coach's _check_bdd_results must classify as blocking.
+        from guardkit.orchestrator.quality_gates.coach_validator import (
+            CoachValidator,
+        )
+
+        validator = CoachValidator(worktree_path=str(tmp_path))
+        blocking, non_blocking = validator._check_bdd_results(task_work_results)
+
+        # Blocking issue must be emitted — this is the direct counter to
+        # Outcome D (silent false approval on runner error).
+        assert len(blocking) == 1
+        issue = blocking[0]
+        assert issue["severity"] == "must_fix"
+        assert issue["category"] == "bdd_failure"
+        assert issue["scenarios_failed"] == bdd_result.scenarios_failed
+        # The synthetic failure scenario name should surface in the
+        # examples, so Coach feedback names the runner error explicitly
+        # rather than saying "scenario assertion failed".
+        assert any(
+            "pytest_runner_error" in example
+            for example in issue["failure_examples"]
+        )
 
 
 # ---------------------------------------------------------------------------

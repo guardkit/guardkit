@@ -51,8 +51,29 @@ _PENDING_MARKERS: Tuple[str, ...] = (
 # than a runner failure.
 _PYTEST_EXIT_NO_TESTS = 5
 
+# Documented pytest exit codes for runner errors. Any non-zero exit code other
+# than 5 (NO_TESTS) is treated as a runner error and surfaced as a synthetic
+# failure so Coach's `scenarios_failed == 0` approval rule catches it rather
+# than silently approving an unrun test suite. See TASK-FIX-F584.
+_PYTEST_EXIT_TEST_FAILURES = 1     # tests collected, some failed — normal path
+_PYTEST_EXIT_INTERRUPTED = 2       # user/system interrupt (SIGINT, KeyboardInterrupt)
+_PYTEST_EXIT_INTERNAL_ERROR = 3    # pytest internal error (usually a crash)
+_PYTEST_EXIT_USAGE_ERROR = 4       # pytest usage error (e.g. "not found", bad argv)
+
 # Cap raw output captured into BDDResult to keep result JSON small.
 _MAX_RAW_OUTPUT_CHARS = 8_000
+
+# Cap runner-error reason snippets to keep synthetic FailureDetail compact.
+_RUNNER_ERROR_REASON_MAX = 200
+
+# Directory names excluded from recursive feature discovery. Dotdirs (anything
+# whose name starts with ``.``) are filtered separately — this set covers the
+# non-dot vendored dirs we do not want to walk. See TASK-FIX-F584.
+_EXCLUDED_DIR_NAMES: frozenset[str] = frozenset({
+    "node_modules",
+    "__pycache__",
+    "site-packages",
+})
 
 
 @dataclass
@@ -120,11 +141,24 @@ def find_feature_files_with_tag(features_dir: Path, tag: str) -> List[Path]:
     The check is a cheap text scan, not a Gherkin parse — if ``tag`` appears
     anywhere in the file we treat it as a candidate. pytest-bdd performs the
     real per-scenario filtering at runtime via the ``-m`` marker expression.
+
+    Recursive discovery: jarvis's ``/feature-spec`` scaffold produces nested
+    layouts like ``features/<feature-slug>/<feature-slug>.feature``; we walk
+    the tree rather than the top level only. Dotdirs (``.venv``, ``.git``,
+    ``.tox``, ...) and known vendored dirs (``node_modules``, ``__pycache__``,
+    ``site-packages``) are excluded so vendored ``.feature`` files shipped
+    with third-party packages are not mistaken for project scenarios.
     """
     matches: List[Path] = []
     if not features_dir.is_dir():
         return matches
-    for fp in sorted(features_dir.glob("*.feature")):
+    for fp in sorted(features_dir.rglob("*.feature")):
+        rel_parts = fp.relative_to(features_dir).parts
+        if any(
+            part.startswith(".") or part in _EXCLUDED_DIR_NAMES
+            for part in rel_parts
+        ):
+            continue
         try:
             text = fp.read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
@@ -286,6 +320,36 @@ class _PytestInvocation:
     junit_xml: str
 
 
+def _synthesise_runner_error_failure(
+    invocation: "_PytestInvocation",
+    feature_files: Sequence[Path],
+) -> FailureDetail:
+    """Produce a synthetic FailureDetail for a pytest runner error.
+
+    Invoked from :func:`run_bdd_for_task` when pytest exits with a non-zero
+    code other than 5 (NO_TESTS) and no testcases were parsed — i.e. the
+    runner itself failed (usage error, internal error, interrupt, timeout,
+    conftest import error). Surfacing a synthetic failure drives Coach's
+    ``scenarios_failed > 0`` rule so runner errors block approval rather than
+    silently passing as ``(0, 0, 0, [], [])``. See TASK-FIX-F584.
+    """
+    snippet = (invocation.stderr or invocation.stdout or "").strip()
+    if len(snippet) > _RUNNER_ERROR_REASON_MAX:
+        snippet = snippet[: _RUNNER_ERROR_REASON_MAX - 3] + "..."
+    reason = f"pytest_runner_error: exit={invocation.returncode}"
+    if snippet:
+        reason = f"{reason}; {snippet}"
+    first_file = (
+        str(feature_files[0]) if feature_files else "<runner>"
+    )
+    return FailureDetail(
+        feature_file=first_file,
+        scenario_name="pytest_runner_error",
+        failing_step="",
+        reason=reason,
+    )
+
+
 def _build_pytest_argv(
     feature_files: Sequence[Path],
     tag: str,
@@ -439,6 +503,31 @@ def run_bdd_for_task(
             invocation.returncode,
         )
         return None
+
+    # Runner-error surfacing (TASK-FIX-F584). If pytest exited with any
+    # non-zero code OTHER than 5 (NO_TESTS) and produced no parsed testcases,
+    # something went wrong inside pytest itself (usage error, internal error,
+    # interrupt, timeout, conftest import error, ...). Returning
+    # ``BDDResult(0, 0, 0, [], [])`` here would be silently approved by
+    # Coach's ``scenarios_failed == 0`` rule — that is strictly a silent-
+    # false-approval bug. Instead, surface a synthetic FailureDetail so
+    # ``scenarios_failed >= 1`` and Coach rejects with a named runner error.
+    if (
+        passed == 0
+        and not failures
+        and not pending
+        and invocation.returncode not in (0, _PYTEST_EXIT_NO_TESTS)
+    ):
+        failures = [_synthesise_runner_error_failure(invocation, matching)]
+        logger.warning(
+            "BDD runner for %s: pytest exited with %d and produced no "
+            "testcases; surfacing as synthetic failure. First %d chars of "
+            "stderr/stdout: %r",
+            task_id,
+            invocation.returncode,
+            _RUNNER_ERROR_REASON_MAX,
+            (invocation.stderr or invocation.stdout or "")[:_RUNNER_ERROR_REASON_MAX],
+        )
 
     raw_chunks = [invocation.stdout, invocation.stderr]
     raw_output = "\n".join(chunk for chunk in raw_chunks if chunk).strip()
