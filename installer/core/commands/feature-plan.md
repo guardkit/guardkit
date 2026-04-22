@@ -2355,6 +2355,55 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
       `bdd-linker` subagent's job (invoked by Step 11).
     - Do not change R1 or R3 surfaces.
 
+10.7. ℹ️ **Feature-level smoke-gate (R3) activation nudge** — opt-in
+      ergonomics (TASK-FP-NDG2)
+
+    **Purpose:** If the generated feature YAML has ``>= 2`` waves but no
+    top-level ``smoke_gates:`` key, the R3 feature-level smoke oracle (see
+    TASK-SMK-F703A) will not fire between waves during autobuild. That
+    gate is the one that catches composition failures (e.g. the
+    PEX-014..020 "13/13 green + e2e broken" pattern) per-task Coach
+    approval cannot see — so silently omitting it on exactly the features
+    that need it most is the wrong default. Authors are one edit away
+    from activating R3; print a notice telling them so.
+
+    Twin to Step 10.6 (TASK-FP-NDG1). Same shape, same suppression hook.
+
+    **How it works:**
+    1. After the feature YAML is written (Step 8 producer), and after
+       Step 10.6's BDD-oracle nudge has (or has not) printed, call
+       `installer.core.commands.lib.smoke_gates_nudge.check_smoke_gates_activation(feature_yaml_path, quiet=flags.no_questions)`
+       where ``feature_yaml_path`` is the path to the file just written
+       (typically ``.guardkit/features/{feature_id}.yaml``).
+    2. If it returns a notice string, print the notice verbatim to
+       planner output, before the Step 11 linking block and the final
+       completion summary.
+    3. If it returns ``None``, emit nothing.
+
+    **Suppression:** honour ``--no-questions`` (and any equivalent quiet
+    flag) by passing ``quiet=True``, so CI runs do not spam the banner.
+
+    **Branches (from AC):**
+    - ``smoke_gates:`` present (any value, including empty) → no notice.
+      The author has signalled awareness; further prodding is noise.
+    - Fewer than 2 waves (single-wave feature) → no notice.
+      Single-wave features have nothing to gate between — the smoke
+      oracle fires between waves, not tasks.
+    - ``>= 2`` waves and no ``smoke_gates:`` key → print notice.
+    - YAML missing, unreadable, malformed, or not a mapping → no notice.
+      The helper must never be the reason ``/feature-plan`` surfaces a
+      traceback.
+
+    **Non-goals (do NOT do any of these):**
+    - Do not auto-generate smoke-gate commands. Authors know their
+      stack; the notice gives ``python -c "import your_package"`` as an
+      example, not a generator.
+    - Do not block ``/feature-build`` from running without smoke gates
+      — that is a much larger policy change and deliberately out of
+      scope here.
+    - Do not rewrite the feature YAML. This step is pure output.
+    - Do not change R1 or R2 surfaces.
+
 11. 🔗 **BDD scenario linking** — automatic `@task:<TASK-ID>` tagging
     (TASK-FP-LNKB-19AC)
 
