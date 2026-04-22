@@ -45,6 +45,22 @@ try:
 except ImportError:
     AC_LINTER_AVAILABLE = False
 
+try:
+    from installer.core.commands.lib.bdd_oracle_nudge import (
+        check_bdd_oracle_activation,
+    )
+    BDD_ORACLE_NUDGE_AVAILABLE = True
+except ImportError:
+    BDD_ORACLE_NUDGE_AVAILABLE = False
+
+try:
+    from installer.core.commands.lib.smoke_gates_nudge import (
+        check_smoke_gates_activation,
+    )
+    SMOKE_GATES_NUDGE_AVAILABLE = True
+except ImportError:
+    SMOKE_GATES_NUDGE_AVAILABLE = False
+
 
 @dataclass
 class TaskSpec:
@@ -711,6 +727,34 @@ def main():
         warnings = lint_plan_warnings(linter_tasks)
         print()
         print(format_warning_summary(warnings))
+
+    # R2 BDD-oracle activation nudge — imperative callsite (TASK-FIX-RWOP1.2).
+    # Fires when `features/*.feature` exists with zero @task:<TASK-ID> tags, so
+    # authors who are one edit away from activating R2 see a banner. Same
+    # producer-runs-nudge shape as the AC linter above. See feature-plan.md
+    # Step 10.6 and TASK-FP-NDG1.
+    if BDD_ORACLE_NUDGE_AVAILABLE and not args.quiet:
+        bdd_oracle_notice = check_bdd_oracle_activation(
+            project_root=Path(args.base_path),
+            quiet=args.quiet,
+        )
+        if bdd_oracle_notice:
+            print()
+            print(bdd_oracle_notice)
+
+    # R3 feature-level smoke-gates activation nudge — imperative callsite
+    # (TASK-FIX-RWOP1.2). Fires when the just-written feature YAML has >=2
+    # waves but no top-level `smoke_gates:` key. Twin to the BDD-oracle nudge
+    # above; same producer-runs-nudge shape. See feature-plan.md Step 10.7
+    # and TASK-FP-NDG2.
+    if SMOKE_GATES_NUDGE_AVAILABLE and not args.quiet:
+        smoke_gates_notice = check_smoke_gates_activation(
+            feature_yaml_path=output_path,
+            quiet=args.quiet,
+        )
+        if smoke_gates_notice:
+            print()
+            print(smoke_gates_notice)
 
 
 if __name__ == "__main__":

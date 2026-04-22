@@ -2310,25 +2310,25 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
       the whole point of TASK-FIX-3C9D; re-splitting them re-opens the
       non-determinism it closed.
 
-10.6. ℹ️ **BDD oracle (R2) activation nudge** — interim ergonomics
-      (TASK-FP-NDG1)
+10.6. ℹ️ **BDD oracle (R2) activation nudge** — runs transitively via step 8
+      (TASK-FP-NDG1, wired via TASK-FIX-RWOP1.2)
 
-    **Purpose:** If the repo already has `features/*.feature` file(s) but
-    none of them carry `@task:<TASK-ID>` tags, the R2 task-level BDD
-    oracle (TASK-BDD-E8954) will silently skip every task during
-    autobuild. Users are one edit away from activating R2 but there is no
-    signal telling them so — print one.
+    **No separate step here.** The R2 BDD-oracle nudge's imperative
+    callsite lives in `installer/core/commands/lib/generate_feature_yaml.py`
+    (the producer step 8 executes). That script calls
+    `installer.core.commands.lib.bdd_oracle_nudge.check_bdd_oracle_activation`
+    after the AC-linter block and prints the returned notice string (if
+    any) to stdout before exiting. Honours `--quiet` as `quiet=True`. The
+    runtime path and the documented path are the same line — no
+    "runner-without-producer" gap to re-open. See TASK-FIX-RWOP1.2
+    (applies the TASK-FIX-3C9D pattern to the R2 nudge).
 
-    **How it works:**
-    1. After Step 10.5 runs the AC linter, call
-       `installer.core.commands.lib.bdd_oracle_nudge.check_bdd_oracle_activation(project_root, quiet=flags.no_questions)`.
-    2. If it returns a notice string, print the notice verbatim to
-       planner output, immediately after any AC-linter block and before
-       the Step 11 completion summary.
-    3. If it returns `None`, emit nothing.
-
-    **Suppression:** honour `--no-questions` (and any equivalent quiet
-    flag) by passing `quiet=True`, so CI runs do not spam the banner.
+    **Purpose (unchanged from TASK-FP-NDG1):** If the repo already has
+    `features/*.feature` file(s) but none of them carry `@task:<TASK-ID>`
+    tags, the R2 task-level BDD oracle (TASK-BDD-E8954) will silently skip
+    every task during autobuild. Users are one edit away from activating
+    R2 but without a signal telling them so they will not know — this
+    prints one.
 
     **Branches (from AC):**
     - No `features/*.feature` file in project root   → no notice.
@@ -2354,58 +2354,60 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
     - Do not attempt scenario-to-task matching here — that is the
       `bdd-linker` subagent's job (invoked by Step 11).
     - Do not change R1 or R3 surfaces.
+    - Do not re-home the nudge call out of `generate_feature_yaml.py` into
+      a separate post-step. Collapsing runner-without-producer is the
+      whole point of TASK-FIX-RWOP1.2; re-splitting it re-opens the
+      non-determinism it closed.
 
-10.7. ℹ️ **Feature-level smoke-gate (R3) activation nudge** — opt-in
-      ergonomics (TASK-FP-NDG2)
+10.7. ℹ️ **Feature-level smoke-gate (R3) activation nudge** — runs
+      transitively via step 8 (TASK-FP-NDG2, wired via TASK-FIX-RWOP1.2)
 
-    **Purpose:** If the generated feature YAML has ``>= 2`` waves but no
-    top-level ``smoke_gates:`` key, the R3 feature-level smoke oracle (see
-    TASK-SMK-F703A) will not fire between waves during autobuild. That
-    gate is the one that catches composition failures (e.g. the
-    PEX-014..020 "13/13 green + e2e broken" pattern) per-task Coach
-    approval cannot see — so silently omitting it on exactly the features
-    that need it most is the wrong default. Authors are one edit away
-    from activating R3; print a notice telling them so.
+    **No separate step here.** The R3 smoke-gates nudge's imperative
+    callsite lives in `installer/core/commands/lib/generate_feature_yaml.py`
+    (the producer step 8 executes), immediately after the R2 BDD-oracle
+    nudge (Step 10.6). That script calls
+    `installer.core.commands.lib.smoke_gates_nudge.check_smoke_gates_activation`
+    against the feature YAML it just wrote and prints the returned notice
+    string (if any) to stdout before exiting. Honours `--quiet` as
+    `quiet=True`. Twin to Step 10.6 — same producer-runs-nudge shape, same
+    suppression hook, no runner-without-producer gap to re-open. See
+    TASK-FIX-RWOP1.2.
 
-    Twin to Step 10.6 (TASK-FP-NDG1). Same shape, same suppression hook.
-
-    **How it works:**
-    1. After the feature YAML is written (Step 8 producer), and after
-       Step 10.6's BDD-oracle nudge has (or has not) printed, call
-       `installer.core.commands.lib.smoke_gates_nudge.check_smoke_gates_activation(feature_yaml_path, quiet=flags.no_questions)`
-       where ``feature_yaml_path`` is the path to the file just written
-       (typically ``.guardkit/features/{feature_id}.yaml``).
-    2. If it returns a notice string, print the notice verbatim to
-       planner output, before the Step 11 linking block and the final
-       completion summary.
-    3. If it returns ``None``, emit nothing.
-
-    **Suppression:** honour ``--no-questions`` (and any equivalent quiet
-    flag) by passing ``quiet=True``, so CI runs do not spam the banner.
+    **Purpose (unchanged from TASK-FP-NDG2):** If the generated feature
+    YAML has `>= 2` waves but no top-level `smoke_gates:` key, the R3
+    feature-level smoke oracle (see TASK-SMK-F703A) will not fire between
+    waves during autobuild. That gate is the one that catches composition
+    failures (e.g. the PEX-014..020 "13/13 green + e2e broken" pattern)
+    per-task Coach approval cannot see — so silently omitting it on
+    exactly the features that need it most is the wrong default. Authors
+    are one edit away from activating R3; this prints a notice telling
+    them so.
 
     **Branches (from AC):**
-    - ``smoke_gates:`` present (any value, including empty) → no notice.
+    - `smoke_gates:` present (any value, including empty) → no notice.
       The author has signalled awareness; further prodding is noise.
     - Fewer than 2 waves (single-wave feature) → no notice.
       Single-wave features have nothing to gate between — the smoke
       oracle fires between waves, not tasks.
-    - ``>= 2`` waves and no ``smoke_gates:`` key → print notice.
+    - `>= 2` waves and no `smoke_gates:` key → print notice.
     - YAML missing, unreadable, malformed, or not a mapping → no notice.
-      The helper must never be the reason ``/feature-plan`` surfaces a
+      The helper must never be the reason `/feature-plan` surfaces a
       traceback.
 
     **Non-goals (do NOT do any of these):**
     - Do not auto-generate smoke-gate commands. Authors know their
-      stack; the notice gives ``python -c "import your_package"`` as an
+      stack; the notice gives `python -c "import your_package"` as an
       example, not a generator.
-    - Do not block ``/feature-build`` from running without smoke gates
+    - Do not block `/feature-build` from running without smoke gates
       — that is a much larger policy change and deliberately out of
       scope here.
     - Do not rewrite the feature YAML. This step is pure output.
     - Do not change R1 or R2 surfaces.
+    - Do not re-home the nudge call out of `generate_feature_yaml.py`
+      into a separate post-step. Same reasoning as Step 10.6.
 
 11. 🔗 **BDD scenario linking** — automatic `@task:<TASK-ID>` tagging
-    (TASK-FP-LNKB-19AC)
+    (TASK-FP-LNKB-19AC, wired via TASK-FIX-RWOP1.1)
 
     **Purpose:** Wire up R2 activation deterministically. For every task
     just created, invite the `bdd-linker` subagent to map the feature's
@@ -2415,122 +2417,158 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
     oracle (`guardkit/orchestrator/quality_gates/bdd_runner.py`, runs
     tagged scenarios during `/task-work` Phase 4).
 
-    **Feature-file discovery convention:**
+    **Feature-file discovery convention** (used internally by the
+    `prepare` script — you do not need to compute it yourself):
     - Nested layout (default `/feature-spec` output):
       `features/{feature_slug}/{feature_slug}.feature`
     - Flat fallback: `features/{feature_slug}.feature`
-    - If neither exists → **skip this step silently**. Hand-written
-      features without `/feature-spec` scaffolding are covered by the
-      Step 10.6 nudge.
+    - If neither exists → `prepare` exits with `status=skipped`,
+      reason `no_feature_file`. Hand-written features without
+      `/feature-spec` scaffolding are covered by the Step 10.6 nudge.
 
-    **How it works:**
+    **Wiring shape (Path B — TASK-FIX-RWOP1.1):**
 
-    1. Import the orchestrator:
-       `from installer.core.commands.lib.bdd_linking_phase import run_linking_phase, MatcherResponseError`.
-    2. Build the task list as `List[TaskInfo]` from the tasks you just
-       wrote (only `task_id`, `title`, `description`, `acceptance_criteria`
-       are consumed — frontmatter like `wave` and `conductor_workspace` is
-       irrelevant).
-    3. Define the `matcher` callback that invokes the subagent:
+    Step 11 is invoked by /feature-plan as **two `Execute:` shell calls
+    bracketing one `INVOKE Task(...)` invocation of the `bdd-linker`
+    subagent**. The producer script lives at
+    `installer/core/commands/lib/feature_plan_bdd_link.py` and is
+    installed as `~/.agentecflow/bin/feature-plan-bdd-link` via the
+    manifest `installer/core/commands/bin-entries.txt`. The shape
+    matches the R1 fix from TASK-FIX-3C9D (a thin CLI shim around the
+    existing deterministic library) so Coach and downstream auditors see
+    a uniform "imperative `Execute:` → producer script" pattern.
 
-       ```python
-       def matcher(request: MatchingRequest) -> str:
-           # Invoke the bdd-linker subagent via the Task tool.
-           return Task.invoke(
-               subagent_type="bdd-linker",
-               description="Match scenarios to tasks for feature {feature_slug}",
-               prompt=request.to_json(),
-           )
+    **How to invoke (do exactly this — do not import Python modules
+    inline; the runner-without-producer pattern this replaces was the
+    root cause of TASK-REV-RWOP1 Finding #1):**
+
+    1. **Step 11.1 — Prepare the matching request.** Choose temp paths
+       for the request and response files (use `mktemp` or the
+       `${TMPDIR:-/tmp}` convention).
+
+       Execute:
+       ```bash
+       REQ_FILE=$(mktemp -t bdd-link-req-XXXXXX.json)
+       RESP_FILE=$(mktemp -t bdd-link-resp-XXXXXX.json)
+       python3 ~/.agentecflow/bin/feature-plan-bdd-link prepare \
+           --project-root . \
+           --feature-slug "$FEATURE_SLUG" \
+           --feature-yaml ".guardkit/features/${FEATURE_ID}.yaml" \
+           --output "$REQ_FILE"
        ```
 
-       The orchestrator parses the subagent's JSON response via
-       `parse_matcher_response`; malformed responses raise
-       `MatcherResponseError` with a specific message (invalid JSON,
-       missing field, empty task_id). Surface these to the user and offer
-       a retry — **do not silently swallow them**, as that would look
-       like "the agent chose to tag nothing" and leave R2 dormant.
+       The `prepare` subcommand emits a single-line JSON status object
+       to stdout. Branch on `status`:
 
-    4. Call `run_linking_phase(project_root, feature_slug, tasks, matcher,
-       interactive=not flags.no_questions, confidence_threshold=flags.bdd_link_threshold)`.
+       - `{"status": "skipped", "reason": "no_feature_file" | "no_scenarios" | "all_tagged" | "no_tasks", ...}`
+         → silently skip the rest of Step 11 (no further `Execute:`,
+         no `INVOKE Task(...)`, no summary line). These are the
+         idempotency / no-op paths.
+       - `{"status": "ready", "request_path": "...", "scenarios_to_match": N, "task_count": M, ...}`
+         → proceed to Step 11.2.
 
-    5. Print the returned `PhaseResult.summary` (already emitted by the
-       orchestrator in `print()` form; no additional prose required).
+       Non-zero exit code is a hard error (missing feature YAML,
+       malformed YAML, etc.). Surface stderr to the user and stop.
 
-    **Interactive mode** (the default, `flags.no_questions` is False):
+    2. **Step 11.2 — Invoke the `bdd-linker` subagent.** Read the
+       request payload from `$REQ_FILE` and pass it as the agent's
+       prompt. The agent returns a JSON array of `TaskMatch` objects
+       per `installer/core/agents/bdd-linker.md` § "Output Contract".
 
-    The orchestrator renders a `rich` table of the subagent's proposals
-    (one row per scenario, columns: `#`, `Scenario`, `Proposed Task`,
-    `Confidence`, `Status`) and prompts for input. Grammar:
+       INVOKE:
+       ```
+       Task(
+           subagent_type="bdd-linker",
+           description=f"Match scenarios to tasks for feature {feature_slug}",
+           prompt=<contents of $REQ_FILE>,
+       )
+       ```
 
-    - `A` / Enter → accept all proposals as-is (default).
-    - `E N TASK-ID` → edit scenario `N` to point to `TASK-ID` instead.
-    - `S N` → skip scenario `N` (leave untagged).
-    - `D` → done (finalise with current state; equivalent to Enter once
-      edits have been made).
+       Write the agent's response (the raw JSON array) to `$RESP_FILE`.
+       Do not edit, summarise, or wrap the agent's output — `apply` will
+       parse it via `parse_matcher_response` which already handles all
+       the realistic shapes (raw array, dict-with-`matches`-key, JSON
+       string).
 
-    Unrecognised commands show a help line and re-prompt. An EOF on
-    stdin (non-interactive environment) finalises with current state.
+    3. **Step 11.3 — Apply the matches.** Execute:
+       ```bash
+       python3 ~/.agentecflow/bin/feature-plan-bdd-link apply \
+           --project-root . \
+           --feature-slug "$FEATURE_SLUG" \
+           --task-matches-file "$RESP_FILE"
+       ```
 
-    **Non-interactive mode** (`--no-questions`):
+       Stdout will contain the one-line `[Step 11]` summary, e.g.:
+       ```
+       [Step 11] linked 3 scenario(s) to task(s); 0 already tagged; 1 below threshold (0.60); 1 untagged (of 5 total)
+       ```
 
-    The orchestrator skips the review and passes the subagent's proposals
-    straight to `apply_mapping`. Below-threshold matches are reported as
-    `skipped_low_confidence` in the summary; unmatched scenarios are
-    reported as `unmatched_scenarios`. No stdin is consumed.
+       Exit code conventions:
+       - `0` — success (file rewritten if any matches cleared the
+         threshold).
+       - `1` — input error (missing file, etc.). Surface stderr and stop.
+       - `2` — **matcher response error** (`MatcherResponseError`):
+         the agent returned malformed JSON, missing fields, or an empty
+         `task_id`. Surface the stderr message to the user and offer to
+         re-invoke Step 11.2 with the same `$REQ_FILE`. **Do not
+         silently swallow this** — that is exactly the silent-failure
+         mode the runner-without-producer audit (TASK-REV-RWOP1) was
+         created to eliminate.
 
-    **Summary** (printed unconditionally for non-silent runs):
-
-    ```
-    [Step 11] linked 3 scenario(s) to task(s); 0 already tagged; 1 below threshold (0.60); 1 untagged (of 5 total)
-    ```
-
-    **Silent-skip conditions** (PhaseResult.status ∈ {...} → emit nothing):
-
-    - `no_feature_file`: no `.feature` file in either layout.
-    - `no_scenarios`: file exists but has no `Feature:` or no scenarios.
-    - `all_tagged`: every scenario already carries an `@task:` tag (the
-      idempotency path — re-runs are no-ops).
+    4. **Cleanup** (optional): remove `$REQ_FILE` and `$RESP_FILE` after
+       Step 11.3 succeeds. The script does not depend on them
+       afterwards.
 
     **Threshold configuration:**
 
     The default threshold is
     `installer.core.commands.lib.bdd_linker.DEFAULT_CONFIDENCE_THRESHOLD`
-    (0.6). Override via `--bdd-link-threshold=0.X` for power users. Raising
-    the threshold drops marginal proposals into `skipped_low_confidence`;
-    lowering it lets more edge cases through but makes interactive review
-    noisier. Do not require the flag for the default behaviour — 0.6 was
-    chosen to let solid fits through while still catching obvious
-    mismatches.
+    (0.6). Override on either subcommand with `--confidence-threshold=0.X`
+    when the user passes `--bdd-link-threshold=0.X` to /feature-plan.
+    Pass the same value to both `prepare` (so the agent sees the
+    threshold in its payload) and `apply` (so the file rewrite honours
+    it). Raising the threshold drops marginal proposals into
+    `skipped_low_confidence`; lowering lets more edge cases through.
+    Do not require the flag for the default behaviour — 0.6 was chosen
+    to let solid fits through while still catching obvious mismatches.
 
     **Idempotency:**
 
-    Scenarios that already carry any `@task:` tag are omitted from the
-    matching request (via `build_matching_request(..., skip_already_tagged=True)`)
-    and are never re-tagged by `apply_mapping`. Running `/feature-plan`
-    twice against the same inputs yields `status="all_tagged"` on the
-    second pass — the matcher is not invoked, no file is rewritten, and
-    the transcript stays quiet.
+    `prepare` returns `status=skipped, reason=all_tagged` when every
+    scenario already carries an `@task:` tag — the matcher is not
+    invoked, no file is rewritten, and the transcript stays quiet on
+    re-runs. Within a single run, scenarios that are already tagged are
+    omitted from the matching request (via
+    `build_matching_request(..., skip_already_tagged=True)`) and are
+    never re-tagged by `apply_mapping`.
 
     **Coordination with Step 10.6 (BDD oracle nudge):**
 
     After Step 11 has tagged at least one scenario, the `.feature` file
     contains `@task:` and `bdd_oracle_nudge.check_bdd_oracle_activation`
     returns `None` — so the nudge disappears automatically. The nudge
-    remains useful as a fallback for hand-authored feature files and for
-    the "every proposal skipped interactively" edge case.
+    remains useful as a fallback for hand-authored feature files and
+    when `prepare` returned `no_feature_file`.
 
     **Non-goals (do NOT do any of these):**
     - Do not implement scenario-to-task matching yourself — that is
-      strictly the `bdd-linker` subagent's job. This step is a
+      strictly the `bdd-linker` subagent's job. Step 11 is a
       coordinator, not a matcher.
     - Do not bypass `apply_mapping` by rewriting the `.feature` file
-      directly — you would lose the atomicity/idempotency guarantees.
+      directly — you would lose the atomicity / idempotency guarantees.
     - Do not invent a separate `/feature-link-bdd` command. Step 11 is
-      the only entry point; a standalone command is a deliberate
+      the only entry point; a standalone slash-command is a deliberate
       non-goal of TASK-FP-LNKB-19AC.
-    - Do not cache or alter the subagent's JSON — pass it through
-      `parse_matcher_response` exactly as received so error reporting
-      stays specific.
+    - Do not cache or alter the subagent's JSON — write it to
+      `$RESP_FILE` exactly as received so `apply`'s
+      `parse_matcher_response` produces specific error messages.
+    - Do not import `run_linking_phase` from
+      `installer.core.commands.lib.bdd_linking_phase` and compose a
+      Python matcher callback inline. That was the original
+      implementation shape and TASK-REV-RWOP1 Finding #1 documents why
+      it was unreachable from production. The in-process orchestrator
+      is preserved as the reference implementation for tests; the
+      production path is the `feature-plan-bdd-link` CLI shim above.
 
 ### What NOT to Do
 
@@ -2607,6 +2645,9 @@ Claude executes internally:
      - Script transitively runs the AC-quality linter (Step 10.5):
        prints `AC-quality review: N unverifiable acceptance criteria
        detected` to stdout in non-quiet mode (warn-only, non-blocking)
+     - Script transitively runs the BDD-oracle nudge (Step 10.6) and
+       smoke-gates nudge (Step 10.7): prints banners to stdout in
+       non-quiet mode (warn-only, non-blocking)
 
   8.5. Run pre-flight validation: guardkit feature validate FEAT-XXXX
      - Report any intra-wave deps, invalid task_type, missing files inline
@@ -2662,6 +2703,10 @@ Claude executes internally:
        `AC-quality review: N unverifiable acceptance criteria detected`
        to stdout (warn-only, non-blocking). This is the deterministic
        R1 callsite; see TASK-FIX-3C9D.
+     - Script transitively runs the BDD-oracle nudge (Step 10.6) and
+       smoke-gates nudge (Step 10.7): prints banners to stdout in
+       non-quiet mode (warn-only, non-blocking). Deterministic R2/R3
+       callsites; see TASK-FIX-RWOP1.2.
      (Skip this step if --no-structured flag is set)
 
   8.5. Run pre-flight validation on the generated feature YAML (always run when structured output was generated):

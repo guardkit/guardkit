@@ -20,7 +20,33 @@ depends_on:
   - TASK-FP-LINK
   - TASK-FP-NDG1
   - TASK-FP-NDG2
+  - TASK-FIX-RWOP1.1
+  - TASK-FIX-RWOP1.2
 ---
+
+> **2026-04-22 update (TASK-REV-RWOP1):** Added `TASK-FIX-RWOP1.1`
+> (wire Step 11 BDD-scenario linking / `@task:` tagging) and
+> `TASK-FIX-RWOP1.2` (fold Step 10.6 + 10.7 nudges into
+> `generate_feature_yaml.py`) as new hard dependencies. The
+> runner-without-producer sweep
+> ([docs/reviews/TASK-REV-RWOP1-runner-without-producer-orphan-sweep.md](../../../docs/reviews/TASK-REV-RWOP1-runner-without-producer-orphan-sweep.md))
+> found the Step 11 auto-tagging mechanism + both fallback nudges
+> are orphan. Running this cohort without those fixes would reproduce
+> the R1 contamination pattern in R2 shape (features ship un-`@task:`-
+> tagged → BDD oracle collects zero scenarios → silent green).
+>
+> **New pre-flight additions** (beyond the R1/R2/R3 checks below):
+>
+> - **R2 pre-flight (additive):** for each cohort member, grep the
+>   generated `.feature` files for `@task:` tags. Require at least
+>   one `@task:` tag per scenario in a feature that has tasks, OR
+>   the R2 nudge banner ("BDD oracle activation…") fired as a console
+>   warning in the captured `/feature-plan` stdout. Either signal is
+>   acceptable evidence of R2 activation; silence is not.
+> - **R3 pre-flight (additive):** similarly grep for the R3 smoke-
+>   gates nudge banner when the cohort member's feature YAML has no
+>   smoke-gate configuration. Silence indicates R3 nudge is still
+>   not firing — block the run.
 
 # Task: Fire forge + study-tutor cohort runs with R1/R2/R3 activation verified
 

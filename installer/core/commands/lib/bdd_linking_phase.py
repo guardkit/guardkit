@@ -1,5 +1,27 @@
 """/feature-plan Step 11 orchestrator: link BDD scenarios to tasks (TASK-FP-LNKB-19AC).
 
+.. note::
+
+    **Not currently invoked from production code (TASK-FIX-RWOP1.1).**
+
+    ``run_linking_phase`` is the in-process reference implementation of
+    Step 11. It is kept here because its primitives (``discover_feature_file``,
+    ``parse_matcher_response``) are reused by the production entry-point
+    and because the integration tests in
+    ``tests/integration/feature_plan/test_bdd_linking.py`` exercise the
+    full orchestration path against mock matchers.
+
+    The production runtime invokes Step 11 via the CLI shim
+    ``installer/core/commands/lib/feature_plan_bdd_link.py``
+    (``~/.agentecflow/bin/feature-plan-bdd-link``), driven from
+    ``installer/core/commands/feature-plan.md`` Step 11 as two
+    ``Execute:`` lines bracketing an ``INVOKE Task(bdd-linker, ...)``
+    invocation. That split exists so the matcher (the ``bdd-linker``
+    subagent) can run between ``prepare`` and ``apply`` without
+    requiring Claude-as-runtime to compose a Python matcher callback
+    inline. See TASK-REV-RWOP1 Finding #1 and TASK-FIX-RWOP1.1 for the
+    full rationale.
+
 This module wires the mechanical `bdd_linker` library (TASK-FP-LINK) into the
 /feature-plan auto-detection pipeline. It handles everything deterministic
 about the phase — feature-file discovery, matching-request construction,

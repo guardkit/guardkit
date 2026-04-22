@@ -56,3 +56,10 @@ installer/core/commands/lib/graphiti_diagnose.py
 # TASK-FIX-B1E4 so the deterministic Step 8 → producer → linter chain
 # holds without relying on Claude-as-runtime path resolution.
 installer/core/commands/lib/generate_feature_yaml.py
+# R2 BDD linker producer: feature-plan.md Step 11 shells out to this via
+# `python3 ~/.agentecflow/bin/feature-plan-bdd-link prepare` / `apply`,
+# bracketing an `INVOKE Task(bdd-linker, ...)` invocation. Added by
+# TASK-FIX-RWOP1.1 to close the runner-without-producer orphan
+# documented in TASK-REV-RWOP1 Finding #1 — same shape as TASK-FIX-3C9D
+# applied to R1.
+installer/core/commands/lib/feature_plan_bdd_link.py
