@@ -123,41 +123,33 @@ class PlanAuditor:
     def _load_plan(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Load saved implementation plan from disk.
 
-        Prefers a workspace-root-relative lookup so callers that operate
-        outside the current working directory (for example, AgentInvoker
-        writing task_work_results.json from a worktree that is not cwd)
-        still resolve the right plan. Falls back to the cwd-relative
-        ``plan_persistence.load_plan`` when no workspace-root copy exists.
+        Looks for the plan under ``{workspace_root}/docs/state/{task_id}/``,
+        preferring markdown over legacy JSON. Returns None when no plan is
+        on disk — callers treat that as "skip audit".
         """
         ws_md = self.workspace_root / "docs" / "state" / task_id / "implementation_plan.md"
         ws_json = self.workspace_root / "docs" / "state" / task_id / "implementation_plan.json"
 
-        # Prefer workspace-root-relative lookup when a plan is there.
-        if ws_md.exists() or ws_json.exists():
-            try:
-                if ws_md.exists():
-                    from .plan_markdown_parser import (
-                        PlanMarkdownParser,
-                        PlanMarkdownParserError,
-                    )
-                    try:
-                        parser = PlanMarkdownParser()
-                        return parser.parse_file(ws_md)
-                    except PlanMarkdownParserError:
-                        # Fall through to JSON or minimal shape.
-                        pass
-                if ws_json.exists():
-                    return json.loads(ws_json.read_text())
-                return {"plan": {}}
-            except Exception:
-                return {"plan": {}}
-
-        # Nothing at workspace root — defer to cwd-relative loader.
-        try:
-            from .plan_persistence import load_plan
-            return load_plan(task_id)
-        except ImportError:
+        if not (ws_md.exists() or ws_json.exists()):
             return None
+
+        try:
+            if ws_md.exists():
+                from .plan_markdown_parser import (
+                    PlanMarkdownParser,
+                    PlanMarkdownParserError,
+                )
+                try:
+                    parser = PlanMarkdownParser()
+                    return parser.parse_file(ws_md)
+                except PlanMarkdownParserError:
+                    # Fall through to JSON or minimal shape.
+                    pass
+            if ws_json.exists():
+                return json.loads(ws_json.read_text())
+            return {"plan": {}}
+        except Exception:
+            return {"plan": {}}
 
     def _analyze_implementation(
         self,

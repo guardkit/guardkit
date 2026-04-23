@@ -703,21 +703,10 @@ class TaskWorkInterface:
         DesignPhaseError
             If execution fails
         """
-        # Note: This import path may need adjustment based on actual
-        # task-work implementation location
-        try:
-            from installer.core.commands.lib.plan_persistence import (
-                load_plan,
-                plan_exists,
-            )
-        except ImportError as e:
-            logger.warning(f"Could not import plan_persistence: {e}")
-            raise ImportError("task-work executor not available") from e
-
-        # For now, we'll read the saved plan directly
-        # In the future, this could invoke the actual task-work executor
-
-        # Check if plan exists for this task
+        # We read the saved plan directly (plan_persistence was deleted in
+        # TASK-FIX-RWOP1.3.3 — its load_plan / plan_exists helpers were
+        # imported here but never called; the file-read path below is the
+        # only one that ever ran).
         plan_path = self._get_plan_path(task_id)
         complexity_path = self._get_complexity_path(task_id)
 
