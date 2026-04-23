@@ -140,8 +140,13 @@ operations; everything is `git mv` + edits, so rollback is mechanical.
 
 ### Accepted outcomes
 
-- Coverage gap for live lint-ac policy until RWOP1.6 lands (the from-spec
-  coverage it replaces was already defending dead code).
+- ~~Coverage gap for live lint-ac policy until RWOP1.6 lands (the from-spec
+  coverage it replaces was already defending dead code).~~
+  **Closed 2026-04-23 by TASK-FIX-RWOP1.6** —
+  `tests/integration/feature_plan/test_generate_feature_yaml_lint_ac_compliance.py`
+  now asserts both lint-AC presence (via round-trip against the producer's
+  `--tasks-json` input) and no-standalone-QG-task (against the generated
+  feature YAML), each with a negative-control case to prevent vacuous pass.
 - Anyone with private `--from-spec` usage gets a 90-day complaint window
   before `_scratch/` is deleted.
 - The adjacent flags `--target`, `--generate-adrs`, `--generate-quality-gates`

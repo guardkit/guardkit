@@ -1,10 +1,22 @@
 ---
 id: TASK-FIX-RWOP1.6
 title: Add lint-ac coverage for the live (non-from-spec) feature-plan path
-status: backlog
+status: completed
 task_type: feature
 created: 2026-04-23T00:00:00Z
 updated: 2026-04-23T00:00:00Z
+completed: 2026-04-23T00:00:00Z
+previous_state: in_review
+state_transition_reason: "All ACs satisfied, 4/4 new tests passing, full feature_plan suite green (60/60)"
+test_results:
+  status: pass
+  coverage: null
+  last_run: 2026-04-23T00:00:00Z
+  passed: 4
+  failed: 0
+  suite: "tests/integration/feature_plan/"
+  suite_passed: 60
+  suite_failed: 0
 priority: medium
 complexity: 4
 tags: [coverage-gap, feature-plan, lint-compliance, post-rwop1.5, rwop1]
@@ -15,10 +27,6 @@ related_to: TASK-FIX-RWOP1.5
 related_tasks:
   - TASK-FIX-RWOP1.5
   - TASK-FIX-RWOP1.2  # Live nudge-injection producer that this task asserts against
-test_results:
-  status: pending
-  coverage: null
-  last_run: null
 ---
 
 # Task: Add lint-ac coverage for the live (non-from-spec) feature-plan path
@@ -96,20 +104,20 @@ asserted only by code review.
 
 ## Acceptance Criteria
 
-- [ ] New test file at
+- [x] New test file at
       `tests/integration/feature_plan/test_generate_feature_yaml_lint_ac_compliance.py`
       with at least two test functions: one for lint-AC presence, one for
       no-standalone-QG-task.
-- [ ] Each test function has both a positive case (compliant fixture passes)
+- [x] Each test function has both a positive case (compliant fixture passes)
       and a negative-control case (a deliberately-broken fixture is rejected
       by the assertion logic — proves the test isn't vacuous).
-- [ ] Tests pass locally with the current `generate_feature_yaml.py`. If they
+- [x] Tests pass locally with the current `generate_feature_yaml.py`. If they
       *fail*, do not modify the producer to make them pass — file a follow-up
       task documenting the actual lint-AC gap and complete this task without
       that file (the test is still a net-positive guardrail).
-- [ ] Decision doc for RWOP1.5 updated: strike the "Coverage gap until
+- [x] Decision doc for RWOP1.5 updated: strike the "Coverage gap until
       RWOP1.6 lands" entry.
-- [ ] No existing tests regress.
+- [x] No existing tests regress.
 
 ## Implementation Notes
 
@@ -148,4 +156,4 @@ asserted only by code review.
   [tests/integration/feature_plan/test_generate_feature_yaml_nudges.py](../../../tests/integration/feature_plan/test_generate_feature_yaml_nudges.py)
 - Parent review:
   [docs/reviews/TASK-REV-RWOP1-runner-without-producer-orphan-sweep.md](../../../docs/reviews/TASK-REV-RWOP1-runner-without-producer-orphan-sweep.md)
-- Feature guide: [IMPLEMENTATION-GUIDE.md](IMPLEMENTATION-GUIDE.md)
+- Feature guide: [IMPLEMENTATION-GUIDE.md](../../backlog/feat-rwop1-orphan-cleanup/IMPLEMENTATION-GUIDE.md)
