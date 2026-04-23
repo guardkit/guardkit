@@ -127,6 +127,16 @@ from .agent_invocation_tracker import (
 # Phase Gate Validator (TASK-ENF4)
 from .phase_gate_validator import (
     PhaseGateValidator,
+)
+
+# Agent Invocation Validator (TASK-ENF1, TASK-FIX-RWOP1.3.1)
+# ValidationError here is the agent-invocation validator's exception — the
+# package-level ValidationError export now binds to that module so
+# AgentInvoker._write_task_work_results can catch it via the stable public
+# surface. phase_gate_validator.ValidationError remains available via its
+# own module import path.
+from .agent_invocation_validator import (
+    validate_agent_invocations,
     ValidationError,
 )
 
@@ -229,5 +239,8 @@ __all__ = [
 
     # Phase Gate Validator
     "PhaseGateValidator",
+
+    # Agent Invocation Validator
+    "validate_agent_invocations",
     "ValidationError",
 ]

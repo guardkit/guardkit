@@ -633,6 +633,57 @@ class CoachValidator:
                 context_used=context,
             )
 
+        # 1.5. Agent-invocations gate (TASK-FIX-RWOP1.3.1).
+        # AgentInvoker._write_task_work_results folds
+        # validate_agent_invocations into the producer path and persists the
+        # verdict under "agent_invocations_validation". A "violation" status
+        # means the Player emitted results for phases it never actually
+        # invoked — task-blocking because the rest of the Player report is
+        # no longer trustworthy. "validator_error" does not block: the
+        # validator's own failure shouldn't stop Coach from evaluating the
+        # other gates.
+        agent_invocations_validation = task_work_results.get(
+            "agent_invocations_validation"
+        )
+        if (
+            isinstance(agent_invocations_validation, dict)
+            and agent_invocations_validation.get("status") == "violation"
+        ):
+            missing_phases = agent_invocations_validation.get("missing_phases") or []
+            missing_phases_str = ", ".join(missing_phases) if missing_phases else "unknown"
+            logger.warning(
+                f"Agent-invocations gate rejected {task_id}: "
+                f"missing phases {missing_phases_str}"
+            )
+            return self._feedback_result(
+                task_id=task_id,
+                turn=turn,
+                issues=[{
+                    "severity": "must_fix",
+                    "category": "agent_invocations_violation",
+                    "description": (
+                        f"task-work results claim phases were completed "
+                        f"without matching agent invocations. Missing phases: "
+                        f"{missing_phases_str}. The Player report cannot be "
+                        f"trusted until all required agents are invoked."
+                    ),
+                    "details": {
+                        "missing_phases": missing_phases,
+                        "expected_phases": agent_invocations_validation.get(
+                            "expected_phases"
+                        ),
+                        "actual_invocations": agent_invocations_validation.get(
+                            "actual_invocations"
+                        ),
+                    },
+                }],
+                rationale=(
+                    f"Agent-invocations protocol violation: missing phases "
+                    f"{missing_phases_str}"
+                ),
+                context_used=context,
+            )
+
         # 2. Verify quality gates passed with profile
         gates_status = self.verify_quality_gates(
             task_work_results, profile=profile, skip_arch_review=skip_arch_review

@@ -4254,113 +4254,68 @@ def determine_next_state(phase_45_results, coverage_results):
 
 ### Step 6.5: Validate Agent Invocations (CRITICAL - Prevent False Reporting)
 
-🚨 **MANDATORY CHECKPOINT - DO NOT SKIP** 🚨
+**Purpose**: Guarantee that the `agent_invocations` list the Player emits into `task_work_results.json` matches the phases the workflow required. Without this gate the Player can emit any phase set (or none) and Coach will trust it — false reporting becomes a free move.
 
-**Purpose**: Verify that all required agents were actually invoked via the Task tool before generating completion reports. This prevents false reporting where agents are listed as "used" when they were never called.
+**This is the ONLY deterministic checkpoint that prevents false reporting.** The framing from earlier spec revisions is still true — what changed is that the check now *actually runs*. It is no longer an in-loop instruction the Claude runtime is asked to execute mid-flight; it is wired into the producer script so it fires on every results-file write.
 
-**CRITICAL**: This validation MUST run before Step 7 (report generation). If validation fails, task MUST be moved to BLOCKED state and report generation MUST be skipped.
+**Producer-side wire (TASK-FIX-RWOP1.3.1)**. The gate is folded into `AgentInvoker._write_task_work_results` in `guardkit/orchestrator/agent_invoker.py`. Every write path into `.guardkit/autobuild/{task_id}/task_work_results.json` runs this sequence before the file hits disk:
 
-**VALIDATE** using the agent invocation tracker:
+1. Read the `agent_invocations` list the Player emitted (or reconstruct it from the stream parser's `phases` dict as a fallback).
+2. Build a throwaway `AgentInvocationTracker` from that list.
+3. Call `validate_agent_invocations(tracker, workflow_mode)` from `installer/core/commands/lib/agent_invocation_validator.py`.
+4. Write the verdict into `task_work_results["agent_invocations_validation"]` with shape:
 
-```python
-from installer.core.commands.lib.agent_invocation_validator import (
-    validate_agent_invocations,
-    ValidationError
-)
-from installer.core.commands.lib.task_utils import move_task_to_blocked
-
-try:
-    # Validate that all required agents were invoked
-    validate_agent_invocations(tracker, workflow_mode)
-    print("✅ Validation Passed: All required agents invoked\n")
-except ValidationError as e:
-    # Display detailed error message
-    print(str(e))
-    print("\n" + "=" * 55)
-    print("BLOCKING TASK DUE TO PROTOCOL VIOLATION")
-    print("=" * 55 + "\n")
-
-    # Move task to BLOCKED state
-    move_task_to_blocked(
-        task_id,
-        reason="Agent invocation protocol violation - required agents not invoked"
-    )
-
-    # Exit without generating completion report
-    exit(1)
+```json
+{
+  "status": "passed" | "violation" | "validator_error" | "no_data",
+  "expected_phases": 5,
+  "actual_invocations": 3,
+  "missing_phases": ["4", "5"],
+  "violation_message": "PROTOCOL VIOLATION: ..."
+}
 ```
 
-**Workflow Mode Phase Counts**:
+The gate never blocks artefact emission — a validator crash records `validator_error` and the results file is still written. That keeps the validator a gate, not a blocker.
+
+**Status meanings**:
+
+- `passed` — all expected phases have completed invocations; Coach proceeds to quality-gate evaluation.
+- `violation` — at least one expected phase is missing; Coach rejects the turn.
+- `validator_error` — the validator itself raised; informational, Coach does *not* reject on this status alone.
+- `no_data` — neither an explicit `agent_invocations` list nor parser-captured phase markers were present on the input. Typical for synthetic fixture writes or pre-phase pipeline failures; Coach does not reject. Real-world Player misbehaviour is caught earlier by the SDK stream-parse path.
+
+**Coach-side enforcement**. `guardkit/orchestrator/quality_gates/coach_validator.py` treats `status == "violation"` as a task-blocking finding. The turn is rejected with a `must_fix` issue in the `agent_invocations_violation` category whose feedback names the missing phases, so the Player's next turn knows which phases to actually invoke. `validator_error` and `no_data` are deliberately *not* blockers — the validator's own failure (or missing input) shouldn't stop Coach from evaluating everything else.
+
+**Workflow Mode Phase Counts** (enforced by `get_expected_phases` in `agent_invocation_validator.py`):
+
 - `standard`: 5 phases (Planning, Arch Review, Implementation, Testing, Code Review)
 - `micro`: 3 phases (Implementation, Testing, Quick Review)
 - `design-only`: 3 phases (Planning, Arch Review, Complexity)
-- `implement-only`: 3 phases (Implementation, Testing, Code Review)
+- `implement-only`: 3 phases (Implementation, Testing, Code Review) — the autobuild Player default
 
-**Expected Behavior**:
+**Example violation block** on disk after a Player emits `task_work_results.json` claiming implement-only completion but only actually running Phase 3:
 
-✅ **VALIDATION PASSES** (all phases completed):
-- Displays: "✅ Validation Passed: All required agents invoked"
-- Proceeds to Step 7 (Generate Report)
-- Task moves to IN_REVIEW state (if quality gates passed)
-
-❌ **VALIDATION FAILS** (missing phases):
-- Displays detailed error showing:
-  - Expected vs actual invocation count
-  - List of missing phases with descriptions
-  - Full agent invocations log
-- Moves task to BLOCKED state with reason
-- Exits WITHOUT generating completion report
-- Human must review why phases were skipped
-
-**Example Error Output** (missing phases):
-
-```
-═══════════════════════════════════════════════════════
-❌ PROTOCOL VIOLATION: Agent invocation incomplete
-═══════════════════════════════════════════════════════
-
-Expected: 5 agent invocations
-Actual: 3 completed invocations
-
-Missing phases:
-  - Phase 3 (Implementation)
-  - Phase 4 (Testing)
-
-Cannot generate completion report until all agents are invoked.
-Review the AGENT INVOCATIONS LOG above to see which phases were skipped.
-
-AGENT INVOCATIONS LOG:
-✅ Phase 2 (Planning): python-api-specialist (completed in 45s)
-✅ Phase 2.5B (Arch Review): architectural-reviewer (completed in 30s)
-❌ Phase 3: SKIPPED (Not invoked)
-❌ Phase 4: SKIPPED (Not invoked)
-✅ Phase 5 (Review): code-reviewer (completed in 20s)
-
-TASK WILL BE MOVED TO BLOCKED STATE
-Reason: Protocol violation - required agents not invoked
-═══════════════════════════════════════════════════════
+```json
+{
+  "task_id": "TASK-XXX",
+  "quality_gates": { "...": "..." },
+  "agent_invocations_validation": {
+    "status": "violation",
+    "expected_phases": 3,
+    "actual_invocations": 1,
+    "missing_phases": ["4", "5"],
+    "violation_message": "❌ PROTOCOL VIOLATION: Agent invocation incomplete\nExpected: 3 agent invocations\nActual: 1 completed invocations\nMissing phases:\n  - Phase 4 (Testing)\n  - Phase 5 (Code Review)"
+  }
+}
 ```
 
-**IMPORTANT NOTES**:
+Coach reads that block and returns a feedback decision with rationale `"Agent-invocations protocol violation: missing phases 4, 5"`.
 
-1. **This is the ONLY checkpoint that prevents false reporting**
-   - If this step is skipped, completion reports can be generated even when agents weren't invoked
-   - This violates the core principle of agent invocation enforcement
+**Re-run surface**. The enrichment block at `agent_invoker.py:_create_player_report_from_task_work` re-runs the gate against the enriched `task_work_data` before the final on-disk rewrite, so the last version Coach reads always carries the freshest verdict.
 
-2. **Validation is workflow-aware**
-   - Different workflow modes have different expected phase counts
-   - Micro workflows skip Phase 2 and 2.5B (only 3 phases)
-   - Design-only workflows only run Phases 2, 2.5B, 2.7
+**Canonical fix shape**: this is the same producer-runs-gate pattern as [TASK-FIX-3C9D](../../tasks/completed/TASK-FIX-3C9D/TASK-FIX-3C9D-wire-ac-linter-into-feature-plan.md) (AC linter folded into `generate_feature_yaml.py`). Both close the "runner without producer" gap by moving the check from aspirational prose into the script that actually writes the artefact.
 
-3. **BLOCKED state requires human review**
-   - When validation fails, task goes to BLOCKED
-   - Human must investigate why phases were skipped
-   - Common causes: direct implementation without agent invocation, manual testing bypass
-
-4. **No exceptions or overrides**
-   - Validation cannot be bypassed
-   - If workflow needs different phase count, update `get_expected_phases()` function
-   - Do NOT skip this step under any circumstances
+**What happens if this step is skipped**: the Python runtime never raises; `task_work_results.json` lacks `agent_invocations_validation`; Coach's gate short-circuits to "no violation" and the Player's claims go unverified. Do not remove the hook in `_write_task_work_results` without moving the gate to another producer.
 
 ### Step 7: Generate Report (REQUIRED)
 

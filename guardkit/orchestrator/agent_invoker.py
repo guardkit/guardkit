@@ -53,8 +53,39 @@ from guardkit.orchestrator.schemas import (
     VerificationResult,
 )
 
+# TASK-FIX-RWOP1.3.1: Agent-invocations validation on the producer path.
+# task-work.md Step 6.5 declares validate_agent_invocations as "the ONLY
+# checkpoint that prevents false reporting". Folding it into
+# _write_task_work_results is the producer-runs-gate pattern from
+# TASK-FIX-3C9D: without this wiring the Player can emit a results file
+# claiming any phases were completed and no deterministic check catches it
+# before Coach reads the file.
+from installer.core.commands.lib import (
+    AgentInvocationTracker,
+    validate_agent_invocations,
+    ValidationError as AgentInvocationValidationError,
+)
+from installer.core.commands.lib.agent_invocation_validator import (
+    get_expected_phases,
+    identify_missing_phases,
+)
+
 # Logger for agent invocations
 logger = logging.getLogger(__name__)
+
+# Reverse-map TaskWorkStreamParser phase keys (phase_2.5) to the validator's
+# canonical phase IDs (2.5B). The parser regex caps at \d+(?:\.\d+)?, so
+# "Phase 2.5B" in task-work output becomes "phase_2.5" in the parser —
+# this map reconstructs the ID that get_expected_phase_list('standard')
+# emits in agent_invocation_validator.
+_PARSER_PHASE_TO_VALIDATOR_PHASE = {
+    "phase_2": "2",
+    "phase_2.5": "2.5B",
+    "phase_2.7": "2.7",
+    "phase_3": "3",
+    "phase_4": "4",
+    "phase_5": "5",
+}
 
 
 # =========================================================================
@@ -2779,6 +2810,20 @@ Follow the decision format specified in your agent definition.
                     task_work_data["tests_written"] = report["tests_written"]
                     updated = True
 
+                # TASK-FIX-RWOP1.3.1: re-run the agent-invocations gate against
+                # the enriched data. Idempotent when phases/invocations haven't
+                # changed — but this is the last on-disk rewrite before Coach
+                # reads the file, so it MUST carry the freshest validation
+                # block (not a stale one from _write_task_work_results's
+                # initial write, which may have raced pre-enrichment).
+                workflow_mode = task_work_data.get("workflow_mode") or "implement-only"
+                new_validation = self._compute_agent_invocations_validation(
+                    task_work_data, workflow_mode
+                )
+                if task_work_data.get("agent_invocations_validation") != new_validation:
+                    task_work_data["agent_invocations_validation"] = new_validation
+                    updated = True
+
                 if updated:
                     with open(task_work_results_path, "w") as f:
                         json.dump(task_work_data, f, indent=2)
@@ -5289,6 +5334,139 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             return None
         return result.to_dict()
 
+    @staticmethod
+    def _extract_invocations_from_result_data(
+        result_data: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Reconstruct the agent_invocations list validate_agent_invocations expects.
+
+        Prefers an explicit ``agent_invocations`` key (if the Player emitted one
+        per task-work.md Step 3.5); otherwise falls back to the parser's
+        ``phases`` dict and reverse-maps phase_{N} → validator phase ID.
+        """
+        explicit = result_data.get("agent_invocations")
+        if (
+            isinstance(explicit, list)
+            and explicit
+            and all(isinstance(x, dict) for x in explicit)
+        ):
+            return explicit
+
+        invocations: List[Dict[str, Any]] = []
+        phases = result_data.get("phases") or {}
+        for phase_key, phase_data in phases.items():
+            if not isinstance(phase_data, dict):
+                continue
+            if not phase_data.get("completed"):
+                continue
+            phase_id = _PARSER_PHASE_TO_VALIDATOR_PHASE.get(phase_key)
+            if phase_id is None and isinstance(phase_key, str) and phase_key.startswith("phase_"):
+                phase_id = phase_key[len("phase_"):]
+            if phase_id is None:
+                continue
+            invocations.append({
+                "phase": phase_id,
+                "agent": phase_data.get("text") or "unknown",
+                "status": "completed",
+            })
+        return invocations
+
+    def _compute_agent_invocations_validation(
+        self,
+        results: Dict[str, Any],
+        workflow_mode: str,
+    ) -> Dict[str, Any]:
+        """Run validate_agent_invocations against ``results``; return a gate block.
+
+        Shape::
+
+            {"status": "passed" | "violation" | "validator_error",
+             "expected_phases": int | None,
+             "actual_invocations": int | None,
+             "missing_phases": list[str],
+             "violation_message": str | None}
+
+        Never raises. A validator crash yields ``validator_error`` so Coach can
+        decide — the validator is a gate, not a blocker of artefact emission
+        (per TASK-FIX-RWOP1.3.1 Implementation Notes).
+        """
+        try:
+            invocations = self._extract_invocations_from_result_data(results)
+
+            # No invocation evidence at all — the Player didn't emit
+            # `agent_invocations` and the stream parser didn't capture any
+            # phase markers. That can happen for non-SDK fixture writes
+            # (tests, synthetic seeds) or for a pipeline failure before any
+            # phase ran. Record `no_data` so Coach neither blocks nor
+            # approves on spurious grounds — a genuine Player misbehaviour
+            # will be caught by upstream stream-parse errors.
+            if not invocations:
+                expected = get_expected_phases(workflow_mode)
+                return {
+                    "status": "no_data",
+                    "expected_phases": expected,
+                    "actual_invocations": 0,
+                    "missing_phases": [],
+                    "violation_message": None,
+                }
+
+            # Populate tracker.invocations directly — record_invocation() and
+            # mark_complete() call display_log() which prints to stdout,
+            # which would flood autobuild logs on every producer write.
+            # The validator only reads tracker.invocations; it doesn't care
+            # how the list was populated.
+            tracker = AgentInvocationTracker()
+            for inv in invocations:
+                phase = inv.get("phase")
+                if phase is None:
+                    continue
+                tracker.invocations.append({
+                    "phase": phase,
+                    "agent": inv.get("agent") or "unknown",
+                    "phase_description": f"Phase {phase}",
+                    "agent_source": "unknown",
+                    "status": inv.get("status", "completed"),
+                })
+
+            expected = get_expected_phases(workflow_mode)
+            actual = sum(
+                1 for inv in tracker.invocations if inv.get("status") == "completed"
+            )
+
+            try:
+                validate_agent_invocations(tracker, workflow_mode)
+                return {
+                    "status": "passed",
+                    "expected_phases": expected,
+                    "actual_invocations": actual,
+                    "missing_phases": [],
+                    "violation_message": None,
+                }
+            except AgentInvocationValidationError as exc:
+                missing = [
+                    m["phase"]
+                    for m in identify_missing_phases(tracker, workflow_mode)
+                ]
+                return {
+                    "status": "violation",
+                    "expected_phases": expected,
+                    "actual_invocations": actual,
+                    "missing_phases": missing,
+                    "violation_message": str(exc),
+                }
+        except Exception as exc:  # noqa: BLE001 — gate must never block artefacts
+            logger.warning(
+                "agent_invocations validator raised %s; recording validator_error.",
+                exc.__class__.__name__,
+            )
+            return {
+                "status": "validator_error",
+                "expected_phases": None,
+                "actual_invocations": None,
+                "missing_phases": [],
+                "violation_message": f"{exc.__class__.__name__}: {exc}",
+            }
+
     def _write_task_work_results(
         self,
         task_id: str,
@@ -5449,6 +5627,17 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             task_id=task_id,
             documentation_level=documentation_level,
             files_created=results["files_created"],
+        )
+
+        # TASK-FIX-RWOP1.3.1: agent_invocations gate on the producer side.
+        # task-work.md Step 6.5 calls this "the ONLY checkpoint that prevents
+        # false reporting" — it runs after all enrichment and before the file
+        # hits disk, so Coach sees the validation block when it reads the
+        # results. Autobuild Player path invokes task-work --implement-only
+        # (Phases 3/4/5), so workflow_mode defaults to "implement-only".
+        workflow_mode = result_data.get("workflow_mode") or "implement-only"
+        results["agent_invocations_validation"] = (
+            self._compute_agent_invocations_validation(results, workflow_mode)
         )
 
         # Write results to file
