@@ -1247,43 +1247,22 @@ Example:
 ```
 
 **VALIDATE** BDD mode requirements (TASK-BDD-FIX1):
-```python
-if mode == "bdd":
-    from installer.core.commands.lib.feature_detection import supports_bdd
 
-    if not supports_bdd():
-        print("""
-❌ ERROR: BDD mode requires RequireKit installation
-
-  Repository: https://github.com/requirekit/require-kit
-  Installation:
-    cd ~/Projects/require-kit
-    ./installer/scripts/install.sh
-
-  Alternative modes:
-    /task-work {task_id} --mode=tdd      # Test-first development
-    /task-work {task_id} --mode=standard # Default workflow
-        """)
-        exit(1)
-```
+When `--mode=bdd`, confirm RequireKit is installed by checking for the
+presence of `~/.agentecflow/require-kit.marker.json` (preferred) or the
+legacy `require-kit.marker`. If neither exists, print the RequireKit
+installation instructions (repository: `https://github.com/requirekit/require-kit`,
+installer: `cd ~/Projects/require-kit && ./installer/scripts/install.sh`)
+and suggest `--mode=tdd` or `--mode=standard` as alternatives, then exit.
 
 **VALIDATE** flag mutual exclusivity:
-```python
-from installer.core.commands.lib.flag_validator import validate_flags
 
-flags = {
-    "design_only": design_only,
-    "implement_only": implement_only,
-    "micro": micro,
-    "docs_flag": docs_flag  # TASK-036
-}
+Reject combinations that don't make sense together:
+- `--design-only` with `--implement-only` (pick one workflow mode)
+- `--micro` with `--design-only` or `--implement-only` (micro mode has its own phase set)
 
-try:
-    validate_flags(flags)
-except FlagConflictError as e:
-    print(str(e))
-    exit(1)
-```
+When a conflict is detected, print which flags conflict and what the user
+probably meant, then exit non-zero.
 
 **DISPLAY** active flags (if any):
 ```python
@@ -1501,11 +1480,11 @@ Proceed with state transition? [Y/n]:
 **READ** task file from final location: `{file_path}`
 
 **FEATURE DETECTION** - Check for require-kit:
-```python
-from lib.feature_detection import supports_requirements, supports_epics, supports_bdd
 
-REQUIREMENTS_AVAILABLE = supports_requirements()  # True if require-kit installed
-```
+RequireKit is considered available when `~/.agentecflow/require-kit.marker.json`
+(or the legacy `require-kit.marker`) exists. Set `REQUIREMENTS_AVAILABLE`
+from that check so the next step can conditionally load
+requirements/BDD/epic/feature fields.
 
 **EXTRACT** required context:
 ```python
@@ -1864,23 +1843,6 @@ All Graphiti operations follow the 3-tier graceful degradation pattern
 
 Task-work NEVER blocks or fails due to Graphiti errors.
 
-**Alternative: Direct Python Import (if running in-process)**
-
-If the task-work executor has direct Python access (not via Claude Code bash):
-```python
-from installer.core.commands.lib.graphiti_context_loader import (
-    is_graphiti_enabled,
-    load_task_context_sync,
-)
-
-if is_graphiti_enabled():
-    graphiti_context = load_task_context_sync(
-        task_id=task_id,
-        task_data={...},
-        phase="plan"
-    )
-```
-
 **Example Flows**:
 
 MCP path (preferred — when Graphiti MCP tools are in session):
@@ -2033,31 +1995,22 @@ task_context["documentation_level"] = documentation_level
 
 **Agent selection results** are shown in the invocation log after task completion.
 
-### Step 3.5: Initialize Tracking and Validation (NEW - TASK-ENF2, TASK-ENF4)
+### Step 3.5: Initialize Invocation Tracker
 
-**INITIALIZE INVOCATION TRACKER AND PHASE GATE VALIDATOR**:
+**INITIALIZE INVOCATION TRACKER**:
 ```python
-from installer.core.commands.lib import (
-    AgentInvocationTracker,
-    add_pending_phases,
-    PhaseGateValidator
-)
+from installer.core.commands.lib import AgentInvocationTracker
 
 # Initialize tracker for execution visibility
 tracker = AgentInvocationTracker()
-add_pending_phases(tracker, workflow_mode="standard")  # or "micro"
-
-# Initialize phase gate validator
-validator = PhaseGateValidator(tracker)
 ```
 
-**Purpose**:
-- **Tracker**: Records which agents are invoked, their sources, and execution status
-- **Validator**: Ensures agents are properly invoked before allowing phase progression
+**Purpose**: Records which agents are invoked, their sources, and execution
+status. The post-phase verification happens later via
+`validate_agent_invocations` in Step 6.5, not per-phase.
 
-**See**:
-- TASK-ENF2: Agent invocation tracking
-- TASK-ENF4: Phase gate validation checkpoints
+**See**: TASK-ENF2 (invocation tracking), TASK-FIX-RWOP1.3.1 (validator wire
+into the autobuild producer path).
 
 ### Step 4: INVOKE TASK TOOL FOR EACH PHASE (REQUIRED - DO NOT SKIP)
 
@@ -2377,117 +2330,14 @@ Phase 2.1: Library Context Gathering
 (Phase 1.8 skipped - no parent feature)
 ```
 
-#### Phase 2.1: Library Context Gathering (NEW)
+#### Phase 2.1: Library Context (Context7 MCP)
 
-**Purpose**: Proactively fetch library documentation for detected libraries before implementation planning. This prevents stub implementations by ensuring the AI has concrete API knowledge (imports, initialization, method signatures, return types).
-
-**Trigger**: Always execute (detection is fast, no-op if no libraries found)
-
-**Skip Conditions**:
-- `--no-library-context` flag is set
-- `--implement-only` flag is set (uses saved design)
-
-**Workflow**:
-
-**STEP 1: Detect Libraries**
-
-```python
-from installer.core.commands.lib.library_detector import detect_library_mentions
-
-libraries = detect_library_mentions(
-    task_context.get("title", ""),
-    task_context.get("description", "")
-)
-```
-
-**IF** no libraries detected:
-```
-DISPLAY: "📚 No library dependencies detected"
-PROCEED to Phase 2
-```
-
-**STEP 2: Resolve and Fetch**
-
-**IF** libraries detected:
-
-```python
-from installer.core.commands.lib.library_context import gather_library_context
-
-library_context = gather_library_context(libraries)
-task_context["library_context"] = library_context
-```
-
-**DISPLAY**:
-```
-📚 Library Context Gathered:
-  • pydantic
-    Import: from pydantic import BaseModel, Field
-    Methods: model_validate(), model_dump(), model_json_schema()
-
-Proceed with planning? [Y/n]:
-```
-
-**WAIT** for user confirmation (default: Yes after 5 seconds)
-
-**STEP 3: Inject into Planning Context**
-
-Add `library_context` to Phase 2 agent prompt. The planning agent receives library documentation to write working code, not stubs.
-
-**ERROR HANDLING**:
-
-If Context7 resolution fails for a library:
-```
-⚠️  Could not resolve: some-internal-lib
-    Error: Not found in Context7 registry
-    Proceeding with training data for this library.
-```
-Continue workflow - do not block on resolution failures.
-
-**Example Flow**:
-
-```
-/task-work TASK-a3f8
-
-Phase 1.6: Clarifying Questions (complexity: 5)
-...
-Phase 2.1: Library Context Gathering
-
-📚 Library Context Gathering:
-  Detected: pydantic, httpx
-
-📚 Resolving via Context7...
-  ✓ pydantic → /pydantic/pydantic
-  ✓ httpx → /encode/httpx
-
-📚 Fetching documentation...
-  ✓ pydantic: BaseModel, Field, model_validate()
-  ✓ httpx: AsyncClient, request(), response handling
-
-📚 Library Context Gathered:
-  • pydantic
-    Import: from pydantic import BaseModel, Field
-    Methods: model_validate(), model_dump(), model_json_schema()
-  • httpx
-    Import: from httpx import AsyncClient
-    Methods: get(), post(), request()
-
-Proceed with planning? [Y/n]: Y
-
-Phase 2: Planning implementation with library context...
-```
-
-**Flag: --no-library-context**
-
-Skip Phase 2.1 entirely:
-
-```bash
-/task-work TASK-XXX --no-library-context
-```
-
-Use when:
-- Libraries are well-known (training data sufficient)
-- Context7 is unavailable
-- Faster iteration needed
+Before invoking the planning agent, Claude consults the Context7 MCP
+directly for any libraries named or strongly implied by the task
+description. See the "Context7 MCP Integration" section later in this
+document for the call pattern (`mcp__context7__resolve-library-id` →
+`mcp__context7__get-library-docs`). When Context7 is unavailable or the
+library isn't registered, proceed with training data — do not block.
 
 #### Phase 2: Implementation Planning
 
@@ -2520,9 +2370,6 @@ stack: {stack}
 phase: 2
 {if clarification_context:}
 clarification_context: {clarification_context}
-{endif}
-{if library_context:}
-library_context: {list(library_context.keys())}
 {endif}
 {if task_context.graphiti_context:}
 graphiti_context: available ({task_context.graphiti_access_method or "cli"})
@@ -2563,30 +2410,6 @@ which knowledge graph items above influenced your plan decisions. Example:
   - Fact "JWT preferred over sessions": guided token strategy
 {else:}
 No knowledge graph context available — planning from task description only.
-{endif}
-
-{if library_context:}
-LIBRARY CONTEXT (from Phase 2.1):
-The following libraries were detected in this task. Use this documentation
-to write WORKING code, not stubs:
-
-{for lib_name, ctx in library_context.items():}
-### {lib_name}
-Import: `{ctx.import_statement}`
-{if ctx.initialization:}
-Initialization:
-```{stack}
-{ctx.initialization}
-```
-{endif}
-Key Methods: {', '.join(ctx.key_methods)}
-
-{ctx.documentation_snippet}
-
-{endfor}
-
-IMPORTANT: Use the actual API calls shown above. Do NOT write placeholder
-comments like "# In production, this would call..." or stub implementations.
 {endif}
 
 {if mode == 'bdd':}
@@ -2630,20 +2453,9 @@ Proceeding to Phase 2.5A...
 ═══════════════════════════════════════════════════════
 ```
 
-**PHASE GATE VALIDATION** (NEW - TASK-ENF4):
-```python
-from installer.core.commands.lib import PhaseGateValidator, ValidationError
-
-try:
-    validator.validate_phase_completion("2", "Implementation Planning")
-except ValidationError as e:
-    print(str(e))
-    move_task_to_blocked(task_id, reason="Phase 2 gate violation - agent not invoked")
-    exit(1)
-```
-
-**IF validation passes**: Proceed to Phase 2.5A
-**IF validation fails**: Task moved to BLOCKED, execution stops
+**Phase gate validation is deferred to Step 6.5** (post-phase
+`validate_agent_invocations` check, shipped in TASK-FIX-RWOP1.3.1). No
+per-phase blocking check is needed here.
 
 #### Phase 2.5A: Pattern Suggestion (Conditional - Skip for simple tasks)
 
@@ -2840,18 +2652,7 @@ Proceeding to Phase 2.7...
 ═══════════════════════════════════════════════════════
 ```
 
-**PHASE GATE VALIDATION** (NEW - TASK-ENF4):
-```python
-try:
-    validator.validate_phase_completion("2.5B", "Architectural Review")
-except ValidationError as e:
-    print(str(e))
-    move_task_to_blocked(task_id, reason="Phase 2.5B gate violation - agent not invoked")
-    exit(1)
-```
-
-**IF validation passes**: Proceed to Phase 2.7
-**IF validation fails**: Task moved to BLOCKED, execution stops
+Phase gate validation is deferred to Step 6.5 (see Phase 2 note).
 
 #### Phase 2.7: Complexity Evaluation (NEW - Auto-proceed mode routing)
 
@@ -2998,8 +2799,9 @@ prompt: "Execute Phase 2.7 for TASK-XXX:
          - Save to: docs/state/{task_id}/implementation_plan.json
 
          STEP 2: CALCULATE COMPLEXITY SCORE
-         - Use ComplexityCalculator to evaluate plan (1-10 scale)
-         - Factors: file count, pattern familiarity, risk level, dependencies
+         - Assign a 1-10 complexity score based on file count, pattern
+           familiarity, risk level, and dependencies (reason qualitatively;
+           there is no dedicated calculator module).
          - Save to: docs/state/{task_id}/complexity_score.json
 
          STEP 3: DETECT FORCE-REVIEW TRIGGERS
@@ -3100,7 +2902,6 @@ prompt: "Execute Phase 2.8 Quick Review for TASK-XXX:
          - Brief risk summary (if any)
 
          STEP 3: START 10-SECOND COUNTDOWN
-         - Use QuickReviewHandler from review_modes.py
          - Display countdown timer (10...9...8...)
          - Listen for user input:
            * ENTER pressed → Return 'escalate' (escalate to full review)
@@ -3337,200 +3138,18 @@ Your choice [A/M/V/C]:
     - **MOVE** task file from in_progress/ to backlog/
     - **EXIT** task-work command
 
-#### Phase 2.9: Workflow Routing (NEW - Design-First Workflow Support)
+#### Phase 2.9: Workflow Routing
 
-**PURPOSE**: Route to appropriate workflow based on flags from Step 0
-
-**EVALUATE** workflow mode:
-
-```python
-# Check which workflow to execute
-if design_only:
-    # DESIGN-ONLY workflow: Stop here, save design, move to design_approved state
-    workflow_mode = "design_only"
-elif implement_only:
-    # IMPLEMENT-ONLY workflow: Verify prerequisites, skip to Phase 3
-    workflow_mode = "implement_only"
-else:
-    # STANDARD workflow: Continue to Phase 3 as normal
-    workflow_mode = "standard"
-```
-
-**PATH A: DESIGN-ONLY Workflow** (--design-only flag):
-
-```python
-if workflow_mode == "design_only":
-    print("\n🎨 Design-Only Workflow Complete")
-    print("=" * 67)
-
-    # Import plan persistence module
-    from installer.core.commands.lib.plan_persistence import save_plan
-
-    # Save implementation plan to disk.
-    # The planning agent's Phase 2 output already contains the file list,
-    # dependency list, duration/LOC estimate, phase breakdown, test summary,
-    # and risks — consume those fields directly as the plan record. There is
-    # no Python extractor chain; the Player assembles the dict from the
-    # agent's structured reply.
-    plan_data = {
-        "files_to_create": <from phase_2 agent output>,
-        "files_to_modify": <from phase_2 agent output>,
-        "external_dependencies": <from phase_2 agent output>,
-        "estimated_duration": <from phase_2 agent output>,
-        "estimated_loc": <from phase_2 agent output>,
-        "phases": <from phase_2 agent output>,
-        "test_summary": <from phase_2 agent output>,
-        "risks": <from phase_2 agent output>,
-    }
-
-    architectural_review = {
-        "overall_score": arch_score,
-        "status": arch_status,
-        "principles": {
-            "solid": solid_score,
-            "dry": dry_score,
-            "yagni": yagni_score
-        },
-        "recommendations": arch_recommendations
-    }
-
-    plan_path = save_plan(task_id, plan_data, architectural_review)
-    print(f"✅ Implementation plan saved: {plan_path}")
-
-    # Update task frontmatter with design metadata
-    design_metadata = {
-        "status": "approved",
-        "approved_at": datetime.now().isoformat(),
-        "approved_by": "human",  # or "auto" if auto-approved
-        "implementation_plan_version": "v1",
-        "architectural_review_score": arch_score,
-        "complexity_score": complexity_score.total_score,
-        "design_session_id": f"design-{task_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-        "design_notes": "Design approved via --design-only workflow"
-    }
-
-    # Add design section to task frontmatter
-    # ... (update task file with design metadata)
-
-    # Move task to design_approved state
-    # ... (move file from current state to tasks/design_approved/)
-
-    # Display success report
-    print("\n✅ Design Phase Complete - " + task_id)
-    print()
-    print("🎨 Design Approval Summary:")
-    print(f"- Architectural Review: {arch_score}/100 ({arch_status})")
-    print(f"- Complexity Score: {complexity_score.total_score}/10 ({complexity_score.level})")
-    print(f"- Approval Status: APPROVED")
-    print(f"- Approved By: {design_metadata['approved_by']}")
-    print(f"- Approved At: {design_metadata['approved_at']}")
-    print()
-    print("📋 Implementation Plan:")
-    print(f"- Files to create: {len(plan_data['files_to_create'])}")
-    print(f"- External dependencies: {len(plan_data['external_dependencies'])}")
-    print(f"- Estimated duration: {plan_data['estimated_duration']}")
-    print(f"- Estimated LOC: {plan_data.get('estimated_loc', 'N/A')}")
-    print()
-    print("🔄 State Transition:")
-    print(f"From: {current_state}")
-    print("To: DESIGN_APPROVED")
-    print("Reason: Design approved via --design-only workflow")
-    print()
-    print("📋 Next Steps:")
-    print("1. Review the saved implementation plan")
-    print("2. Schedule implementation session")
-    print(f"3. Run: /task-work {task_id} --implement-only")
-    print()
-    print("💾 Design artifacts saved to task metadata")
-
-    # EXIT - Do not proceed to Phase 3
-    exit(0)
-```
-
-**PATH B: IMPLEMENT-ONLY Workflow** (--implement-only flag):
-
-```python
-elif workflow_mode == "implement_only":
-    print("\n🚀 Implement-Only Workflow: Loading Approved Design")
-    print("=" * 67)
-
-    # Import phase execution module
-    from installer.core.commands.lib.phase_execution import execute_implementation_phases, StateValidationError
-    from installer.core.commands.lib.plan_persistence import load_plan, plan_exists
-
-    # Verify task is in design_approved state
-    if current_state != "design_approved":
-        raise StateValidationError(
-            f"❌ Cannot execute --implement-only workflow\n\n"
-            f"Task {task_id} is in '{current_state}' state.\n"
-            f"Required state: design_approved\n\n"
-            f"To approve design first, run:\n"
-            f"  /task-work {task_id} --design-only\n\n"
-            f"Or run complete workflow without flags:\n"
-            f"  /task-work {task_id}"
-        )
-
-    # Verify design metadata exists
-    design_metadata = task_context.get("design", {})
-    if not design_metadata or design_metadata.get("status") != "approved":
-        raise PhaseExecutionError(
-            f"❌ Design metadata missing or invalid for {task_id}\n\n"
-            f"Task is in design_approved state, but design metadata is incomplete.\n"
-            f"Re-run design phase: /task-work {task_id} --design-only"
-        )
-
-    # Verify implementation plan exists
-    if not plan_exists(task_id):
-        raise PhaseExecutionError(
-            f"❌ Implementation plan not found for {task_id}\n\n"
-            f"Design was approved but plan file is missing.\n"
-            f"Re-run design phase: /task-work {task_id} --design-only"
-        )
-
-    # Load implementation plan
-    saved_plan = load_plan(task_id)
-    plan_data = saved_plan["plan"]
-
-    # Display implementation start context
-    print()
-    print(f"TASK: {task_id} - {task_context['title']}")
-    print()
-    print("APPROVED DESIGN:")
-    print(f"  Design approved: {design_metadata.get('approved_at', 'unknown')}")
-    print(f"  Approved by: {design_metadata.get('approved_by', 'unknown')}")
-    print(f"  Architectural score: {design_metadata.get('architectural_review_score', 'N/A')}/100")
-    print(f"  Complexity score: {design_metadata.get('complexity_score', 'N/A')}/10")
-    print()
-    print("IMPLEMENTATION PLAN:")
-    print(f"  Files to create: {len(plan_data.get('files_to_create', []))}")
-    print(f"  External dependencies: {len(plan_data.get('external_dependencies', []))}")
-    print(f"  Estimated duration: {plan_data.get('estimated_duration', 'N/A')}")
-    print(f"  Test strategy: {plan_data.get('test_summary', 'N/A')}")
-    print()
-    print("Beginning implementation phases (3 → 4 → 4.5 → 5)...")
-    print("=" * 67)
-    print()
-
-    # Move task from design_approved to in_progress
-    # ... (move file from tasks/design_approved/ to tasks/in_progress/)
-
-    # SKIP Phases 1-2.8, jump directly to Phase 3
-    # (Phases 1-2.8 results are already in saved_plan)
-
-    # Continue to Phase 3 with loaded plan
-    # ... (Phase 3 execution continues below)
-```
-
-**PATH C: STANDARD Workflow** (no flags):
-
-```python
-else:  # workflow_mode == "standard"
-    print("\n🔄 Standard Workflow: Proceeding to Implementation")
-    print("Design phases complete, continuing to implementation...\n")
-
-    # No special handling needed - continue to Phase 3 as normal
-    # This is the existing behavior (backward compatible)
-```
+GuardKit's only supported workflow today is the standard end-to-end run:
+continue from Phase 2.8 straight into Phase 3. Earlier drafts of this
+spec described `--design-only` / `--implement-only` flags with their own
+save/load plumbing (`plan_persistence.save_plan` / `load_plan`,
+`execute_implementation_phases`, `StateValidationError`); those modules
+and flags were never fully wired and were removed in TASK-FIX-RWOP1.3.3.
+If you need to run design and implementation on different days, commit
+the plan file (`docs/state/{task_id}/implementation_plan.md`) and resume
+from a fresh `/task-work` invocation — Phase 2 re-loads the plan if it's
+present.
 
 #### Phase 3-BDD: BDD Test Generation (BDD Mode Only)
 
@@ -3611,18 +3230,7 @@ Proceeding to Phase 3...
 ═══════════════════════════════════════════════════════
 ```
 
-**PHASE GATE VALIDATION**:
-```python
-try:
-    validator.validate_phase_completion("3-BDD", "BDD Test Generation")
-except ValidationError as e:
-    print(str(e))
-    move_task_to_blocked(task_id, reason="Phase 3-BDD gate violation - agent not invoked")
-    exit(1)
-```
-
-**IF validation passes**: Proceed to Phase 3
-**IF validation fails**: Task moved to BLOCKED, execution stops
+Phase gate validation is deferred to Step 6.5 (see Phase 2 note).
 
 **ELSE** (standard or TDD mode):
 Skip Phase 3-BDD, proceed directly to Phase 3
@@ -3681,18 +3289,7 @@ Proceeding to Phase 4...
 ═══════════════════════════════════════════════════════
 ```
 
-**PHASE GATE VALIDATION** (NEW - TASK-ENF4):
-```python
-try:
-    validator.validate_phase_completion("3", "Implementation")
-except ValidationError as e:
-    print(str(e))
-    move_task_to_blocked(task_id, reason="Phase 3 gate violation - agent not invoked")
-    exit(1)
-```
-
-**IF validation passes**: Proceed to Phase 4
-**IF validation fails**: Task moved to BLOCKED, execution stops
+Phase gate validation is deferred to Step 6.5 (see Phase 2 note).
 
 #### Phase 4: Testing
 
@@ -3782,18 +3379,7 @@ Proceeding to Phase 4.5...
 ═══════════════════════════════════════════════════════
 ```
 
-**PHASE GATE VALIDATION** (NEW - TASK-ENF4):
-```python
-try:
-    validator.validate_phase_completion("4", "Testing")
-except ValidationError as e:
-    print(str(e))
-    move_task_to_blocked(task_id, reason="Phase 4 gate violation - agent not invoked")
-    exit(1)
-```
-
-**IF validation passes**: Proceed to Phase 4.5
-**IF validation fails**: Task moved to BLOCKED, execution stops
+Phase gate validation is deferred to Step 6.5 (see Phase 2 note).
 
 #### Phase 4.5: Fix Loop (Ensure All Tests Pass)
 
@@ -3971,18 +3557,7 @@ Proceeding to Phase 5.5...
 ═══════════════════════════════════════════════════════
 ```
 
-**PHASE GATE VALIDATION** (NEW - TASK-ENF4):
-```python
-try:
-    validator.validate_phase_completion("5", "Code Review")
-except ValidationError as e:
-    print(str(e))
-    move_task_to_blocked(task_id, reason="Phase 5 gate violation - agent not invoked")
-    exit(1)
-```
-
-**IF validation passes**: Proceed to Phase 5.5
-**IF validation fails**: Task moved to BLOCKED, execution stops
+Phase gate validation is deferred to Step 6.5 (see Phase 2 note).
 
 #### Phase 5.5: Plan Audit (Hubbard's Step 6)
 

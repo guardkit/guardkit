@@ -865,9 +865,12 @@ Next Steps:
 - Continue to Phase 3 if approved
 
 **Integration Points**:
-- Import: `from installer.core.commands.lib.phase_execution import execute_phases`
-- Import: `from installer.core.commands.lib.plan_persistence import save_plan, load_plan, plan_exists`
-- Import: `from installer.core.commands.lib.flag_validator import validate_flags`
+- `installer.core.commands.lib.phase_execution.execute_phase_5_5_plan_audit`
+  is the only live lib entry point (Phase 5.5 wire, shipped in
+  TASK-FIX-RWOP1.3.2). The `plan_persistence` / `flag_validator` /
+  `execute_phases` helpers referenced by earlier drafts of this doc were
+  removed in TASK-FIX-RWOP1.3.3 — their design-only / implement-only
+  workflows were never wired.
 
 **State Transitions**:
 - `backlog` → `design_approved` (design-only approval)

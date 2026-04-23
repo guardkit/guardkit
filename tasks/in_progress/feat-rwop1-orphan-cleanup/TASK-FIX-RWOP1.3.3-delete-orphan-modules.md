@@ -96,3 +96,140 @@ The explicit, long-standing design-drift marker is `lib/__init__.py:41-48`: the 
 - Parent review: [TASK-REV-RWOP1](../../../docs/reviews/TASK-REV-RWOP1-runner-without-producer-orphan-sweep.md)
 - Dependencies: [TASK-FIX-RWOP1.3.1](TASK-FIX-RWOP1.3.1-wire-agent-invocation-validator.md), [TASK-FIX-RWOP1.3.2](TASK-FIX-RWOP1.3.2-wire-phase-5-5-plan-audit.md) — both must land first
 - Sibling: [TASK-FIX-RWOP1.3.4](TASK-FIX-RWOP1.3.4-soften-pseudo-code-prose.md) (can land in parallel — they don't touch the same files)
+
+## Completion Notes (2026-04-23)
+
+Landed in four batches; each batch committed separately with pytest sanity
+between them.
+
+### Modules deleted outright (31 files + 1 subpackage)
+
+**Batch 1 — pure orphans (6):**
+- `flag_validator.py`, `feature_detection.py` (commands/lib copy only;
+  `installer/core/lib/feature_detection.py` retained),
+  `graphiti_context_loader.py`, `library_detector.py`, `library_context.py`,
+  `phase_gate_validator.py`
+
+**Batch 2 — complexity + review_modes cluster (21):**
+- Complexity: `complexity_calculator.py`, `complexity_factors.py`,
+  `complexity_models.py`, `review_router.py`, `agent_utils.py`
+- Review modes: `review_modes.py` (file) + `review_modes/` subpackage
+  (5 files), `review_mode_executor.py`
+- Task tooling: `task_review_orchestrator.py`, `task_breakdown.py`,
+  `breakdown_strategies.py`, `task_split_advisor.py`, `split_models.py`,
+  `visualization.py`
+- Plan-modification cluster: `version_manager.py`, `change_tracker.py`,
+  `modification_session.py`, `modification_applier.py`,
+  `modification_persistence.py`, `pager_display.py`
+- Caught-in-chain: `qa_manager.py` (imported only by `review_modes.py`)
+
+**Batch 3 — plan-persistence cluster (5):**
+- `plan_persistence.py`, `plan_modifier.py`, `refinement_handler.py`,
+  `checkpoint_display.py`, `plan_markdown_renderer.py`
+
+### Modules retained with narrowed surface
+
+- **`AgentInvocationTracker`** (`agent_invocation_tracker.py`): class
+  retained for the RWOP1.3.1 `validate_agent_invocations` input shape;
+  the sibling `add_pending_phases()` function was removed (its only
+  consumer was the unwired PhaseGateValidator).
+- **`plan_audit.py`** (RWOP1.3.2 wire): `_load_plan` now inlines the
+  workspace-root lookup instead of deferring to the deleted
+  `plan_persistence.load_plan`.
+- **`phase_execution.py`**: rewritten from ~1385 → ~260 lines. Retains
+  `execute_phase_5_5_plan_audit` + interactive helpers plus a local
+  inlined `_plan_exists` helper. Deleted: `execute_phases`,
+  `execute_design_phases`, `execute_implementation_phases`,
+  `execute_standard_phases`, `execute_phase_1_6_clarification` + helpers,
+  `get_clarification_for_prompt`, `execute_phase_3`,
+  `analyze_task_context`, and the lib-local `StateValidationError` (the
+  live `StateValidationError` in `guardkit.orchestrator.exceptions` is
+  unrelated).
+- **`plan_markdown_parser.py`**: kept for `plan_audit._load_plan`. The
+  write-side counterpart `plan_markdown_renderer.py` was deleted with
+  the plan-persistence cluster.
+- **`task_utils.py`**: `move_task_to_blocked()` function removed per
+  task spec row #7; the rest of the module stays (other lib modules use
+  `update_task_frontmatter`, `read_task_file`).
+- **`lib/__init__.py`**: reduced from 204 → 75 lines. Public surface is
+  now `error_messages`, `greenfield_qa_session`, `agent_discovery`,
+  `agent_invocation_tracker`, `agent_invocation_validator` only. The
+  long-standing `# TEMPORARY FIX: Commented out` block for review_modes
+  imports was promoted to deletion (AC).
+
+### Test files removed (35) + surgical edits (2)
+
+Orphan-only unit/integration/e2e tests for the deleted modules, plus
+caught-in-chain fixture modules (`tests/e2e/` top-level files,
+`tests/stacks/` whole directory, `tests/fixtures/data_fixtures.py` /
+`factory_fixtures.py` / `mock_fixtures.py`,
+`tests/unit/commands/review_modes/` whole directory, ~20 individual test
+files across `tests/unit/` and `tests/integration/`).
+
+Surgical test edits:
+- `tests/unit/test_graphiti_structured_logging.py`: removed
+  `TestGraphitiContextLoaderLogging` class only; four other classes
+  (feature_plan_context, autobuild_context_loader, interactive_capture,
+  consistent_log_format) still cover live Graphiti code.
+- `tests/integration/conftest.py`: removed imports of the deleted
+  fixture modules.
+
+### Spec prose updates
+
+- **`installer/core/commands/task-work.md`**: all pseudo-Python
+  references to deleted modules either removed or converted to
+  Claude-runtime intent prose. Phase 2.1 (library-context gathering,
+  ~110 lines) collapsed to a pointer at the existing Context7 MCP
+  section. Phase 2.9 (design-first workflow routing, ~185 lines of
+  pseudo-code) replaced with one paragraph explaining the modules were
+  deleted and what to do instead. Six per-phase
+  `PhaseGateValidator` / `move_task_to_blocked` blocks replaced with a
+  one-line "deferred to Step 6.5" note (validation now happens
+  post-write via `validate_agent_invocations`, RWOP1.3.1).
+- **`installer/core/agents/task-manager-ext.md`**: the
+  `plan_persistence` / `flag_validator` / `execute_phases` import block
+  in "Integration Points" replaced with a note pointing at
+  `execute_phase_5_5_plan_audit` as the one live lib entry.
+
+### Out-of-scope orphan chains (flagged for future cleanup)
+
+Found during inventory but left alone to keep this task focused — none
+touched by Batch 1-4:
+
+- `template_merger.py` + `template_versioning.py`: zero non-lib callers.
+  Independent of the deleted cluster (different `TemplateVersionManager`
+  class).
+- `micro_task_workflow.py` + `micro_task_detector.py`: only
+  doc-referenced (`task-manager-ext.md`). The `--micro` flag is
+  Claude-prose-driven.
+- `api_call_preview.py`: no non-test callers.
+- `spec_drift_detector.py`: only referenced in `code-reviewer-ext.md`
+  doc. Still has `from feature_detection import supports_requirements`
+  — the import is latent (module is itself orphan, nothing triggers it
+  at runtime).
+- Older agent docs (e.g. `complexity-evaluator.md`, other sections of
+  `task-manager-ext.md`) still describe workflows involving deleted
+  modules. The agents themselves are effectively dead (no runtime
+  invocation path). TASK-FIX-RWOP1.3.4 covers broader pseudo-code
+  prose softening.
+
+### LOC / test impact
+
+- Commits: 4 (Batches 1 / 2 / 3 / 4 prose) all on main
+- LOC removed: ~44,000 net deletions across four commits (~25,800 in
+  Batch 2 alone, dominated by the complexity + review_modes cluster)
+- Test files removed: 35; test files surgically edited: 2
+- Full pytest suite: 322 pre-existing failures, 0 new regressions
+  across all four batches. Target-region tests (agent invocations
+  gate, plan audit, phase 5.5, agent invocation validator) all pass.
+
+### Verification
+
+- AC grep: `grep -rn "from installer.core.commands.lib\." installer/
+  guardkit/ | grep -v tests/` filtered for deleted-subsystem names
+  returns empty ✓
+- Package import sanity:
+  `from installer.core.commands.lib import AgentInvocationTracker,
+  validate_agent_invocations, ValidationError` ✓
+  `from installer.core.commands.lib.phase_execution import
+  execute_phase_5_5_plan_audit` ✓
