@@ -1601,8 +1601,10 @@ ERROR: Scenario {scenario_id} not found at {scenario_file}
     # Add scenarios to task context
     task_context["gherkin_scenarios"] = scenarios
 
-    # Detect BDD framework for this project
-    task_context["bdd_framework"] = detect_bdd_framework(Path.cwd())
+    # Detect BDD framework for this project using the prose rules below
+    # ("BDD FRAMEWORK DETECTION") — there is no Python helper; the Player
+    # inspects the project's dependency manifest qualitatively.
+    task_context["bdd_framework"] = <detected framework name, see prose below>
 
     # Display loaded scenarios
     print(f"\n✅ Loaded {len(scenarios)} BDD scenarios from RequireKit:")
@@ -1611,55 +1613,19 @@ ERROR: Scenario {scenario_id} not found at {scenario_file}
     print(f"   Framework: {task_context['bdd_framework']}\n")
 ```
 
-**BDD FRAMEWORK DETECTION FUNCTION**:
-```python
-def detect_bdd_framework(project_path: Path) -> str:
-    """
-    Detect BDD testing framework based on project files.
+**BDD FRAMEWORK DETECTION**:
 
-    Args:
-        project_path: Path to project root directory
+Detect the BDD framework from the project's package/requirements file. This is a qualitative inspection performed by the Player LLM when the task enters BDD mode — there is no deterministic Python driver backing this step.
 
-    Returns:
-        Framework name (pytest-bdd, specflow, cucumber-js, cucumber)
-    """
-    # Python - check requirements.txt
-    if (project_path / "requirements.txt").exists():
-        with open(project_path / "requirements.txt") as f:
-            if "pytest-bdd" in f.read():
-                return "pytest-bdd"
+| Marker found | Location | Framework |
+|---|---|---|
+| `pytest-bdd` | `pyproject.toml` or `requirements.txt` | `pytest-bdd` |
+| `SpecFlow` | any `*.csproj` | `specflow` |
+| `@cucumber/cucumber` | `package.json` `devDependencies` | `cucumber-js` |
+| `cucumber` gem | `Gemfile` | `cucumber` |
+| (no marker) | — | `pytest-bdd` (default fallback) |
 
-    # Python - check pyproject.toml
-    if (project_path / "pyproject.toml").exists():
-        with open(project_path / "pyproject.toml") as f:
-            if "pytest-bdd" in f.read():
-                return "pytest-bdd"
-
-    # .NET - check .csproj files
-    csproj_files = list(project_path.glob("*.csproj"))
-    if csproj_files:
-        with open(csproj_files[0]) as f:
-            if "SpecFlow" in f.read():
-                return "specflow"
-
-    # TypeScript/JavaScript - check package.json
-    if (project_path / "package.json").exists():
-        with open(project_path / "package.json") as f:
-            import json
-            pkg = json.load(f)
-            dev_deps = pkg.get("devDependencies", {})
-            if "@cucumber/cucumber" in dev_deps:
-                return "cucumber-js"
-
-    # Ruby - check Gemfile
-    if (project_path / "Gemfile").exists():
-        with open(project_path / "Gemfile") as f:
-            if "cucumber" in f.read():
-                return "cucumber"
-
-    # Default fallback
-    return "pytest-bdd"
-```
+Record the detected framework on `task_context["bdd_framework"]` so later phases know which test-runner prose to use.
 
 **VALIDATE** essential fields exist:
 - `title`: Must be present
@@ -3400,16 +3366,21 @@ if workflow_mode == "design_only":
     # Import plan persistence module
     from installer.core.commands.lib.plan_persistence import save_plan
 
-    # Save implementation plan to disk
+    # Save implementation plan to disk.
+    # The planning agent's Phase 2 output already contains the file list,
+    # dependency list, duration/LOC estimate, phase breakdown, test summary,
+    # and risks — consume those fields directly as the plan record. There is
+    # no Python extractor chain; the Player assembles the dict from the
+    # agent's structured reply.
     plan_data = {
-        "files_to_create": extract_files_to_create(phase_2_output),
-        "files_to_modify": extract_files_to_modify(phase_2_output),
-        "external_dependencies": extract_dependencies(phase_2_output),
-        "estimated_duration": extract_duration(phase_2_output),
-        "estimated_loc": extract_loc(phase_2_output),
-        "phases": extract_phases(phase_2_output),
-        "test_summary": extract_test_summary(phase_2_output),
-        "risks": extract_risks(phase_2_output)
+        "files_to_create": <from phase_2 agent output>,
+        "files_to_modify": <from phase_2 agent output>,
+        "external_dependencies": <from phase_2 agent output>,
+        "estimated_duration": <from phase_2 agent output>,
+        "estimated_loc": <from phase_2 agent output>,
+        "phases": <from phase_2 agent output>,
+        "test_summary": <from phase_2 agent output>,
+        "risks": <from phase_2 agent output>,
     }
 
     architectural_review = {
@@ -3790,7 +3761,7 @@ DOCUMENTATION BEHAVIOR (documentation_level={documentation_level}):
 - standard: Return results with brief test descriptions. CONSTRAINT: Generate ONLY 2 files maximum.
 - comprehensive: Generate detailed test report with rationale for each test (13+ files allowed)
 
-Cross-reference: installer/core/agents/test-orchestrator.md (MANDATORY RULE #1)"
+See installer/core/agents/test-orchestrator.md for the testing-agent prompt style. The authoritative compilation/test pass bar is enforced by Coach's independent pytest run in `coach_validator`, not by this prompt."
 ```
 
 **WAIT** for agent to complete before proceeding.
@@ -3826,28 +3797,19 @@ except ValidationError as e:
 
 #### Phase 4.5: Fix Loop (Ensure All Tests Pass)
 
-🚨 **ABSOLUTE REQUIREMENT - ZERO TOLERANCE FOR TEST FAILURES** 🚨
-
-The task-work command has **ZERO TOLERANCE** for compilation errors or test failures.
-This phase MUST NOT complete until:
-- Code compiles with ZERO errors (100% build success)
-- ALL tests pass (100% test pass rate)
-- NO tests are skipped, ignored, or commented out
-
-**Cross-reference**: See test-orchestrator.md for quality gate enforcement details.
+**Phase 4.5 is LLM-driven guidance, not a deterministic runtime loop.** The Player is expected to read the testing agent's output qualitatively, decide whether another fix cycle is warranted, and re-invoke the implementation + testing agents up to three times. The `max_attempts = 3` bound is an instruction to the Player, not a counter evaluated by a Python driver. The deterministic pass bar is enforced independently by Coach via its own `coach_validator` pytest run on the final worktree — the retry-loop prose below is guidance for the Player, not a gate.
 
 **EVALUATE** test results from Phase 4:
 
-```python
-compilation_errors = extract_compilation_errors(phase_4_output)
-test_failures = extract_test_failures(phase_4_output)
-coverage = extract_coverage(phase_4_output)
+Inspect the testing agent's reply qualitatively and look for:
 
-max_attempts = 3
-attempt = 1
-```
+- **Compilation errors** — common patterns include `error:`, `error TS\d+`, `.cs(\d+,\d+):`, `Traceback`, or a non-zero exit code on the stack-specific build command.
+- **Test failures** — markers like `FAILED`, `AssertionError`, `Test.*failed`, or the framework summary line reporting one or more failures.
+- **Coverage percentages** — line coverage and branch coverage reported by the coverage tool (if the stack emits coverage; some stacks/modes skip this).
 
-**WHILE** (compilation_errors > 0 OR test_failures > 0) AND attempt <= max_attempts:
+If the reply reports clean compilation **and** zero test failures, exit the guidance and proceed to Phase 5. Otherwise the Player may take up to three fix attempts (after that, escalate to BLOCKED per the guidance below). Coach's independent run remains the source of truth for the pass bar.
+
+**FIX-ATTEMPT GUIDANCE** (up to 3 attempts):
 
 1. **DISPLAY** Failure Report:
    ```
@@ -3914,20 +3876,15 @@ attempt = 1
 
 5. **WAIT** for test execution to complete
 
-6. **RE-EVALUATE** results:
-   ```python
-   compilation_errors = extract_compilation_errors(retest_output)
-   test_failures = extract_test_failures(retest_output)
-   attempt += 1
-   ```
+6. **RE-INSPECT** the new testing-agent output: look again for compilation errors and test failures using the same qualitative markers from the EVALUATE step above. Increment the attempt counter the Player is tracking in its own reasoning.
 
-7. **IF** compilation_errors == 0 AND test_failures == 0:
+7. **IF** the latest output reports clean compilation **and** zero test failures:
    ```
    ✅ All tests passing! Proceeding to code review.
    ```
-   **BREAK** out of loop → Proceed to Phase 5
+   Exit the guidance → Proceed to Phase 5.
 
-8. **ELSE IF** attempt > max_attempts:
+8. **ELSE IF** three fix attempts have already been made:
    ```
    ❌ CRITICAL: Unable to achieve passing tests after 3 attempts
 
@@ -3941,16 +3898,14 @@ attempt = 1
 
    Diagnostics have been saved to task file.
    ```
-   **BREAK** out of loop → Move to BLOCKED state
+   Exit the guidance → Move to BLOCKED state.
 
 9. **ELSE**:
-   **CONTINUE** loop (attempt next fix)
-
-**END WHILE**
+   Continue with the next fix attempt.
 
 **Result of Phase 4.5**:
-- ✅ **SUCCESS**: All tests passing → Proceed to Phase 5
-- ❌ **BLOCKED**: Max attempts exhausted → Move to BLOCKED state, skip Phase 5
+- ✅ **SUCCESS**: All tests passing → Proceed to Phase 5. Coach re-verifies independently.
+- ❌ **BLOCKED**: Three attempts exhausted without passing → Move to BLOCKED, skip Phase 5. Coach confirms blockage via its own run.
 
 #### Phase 5: Code Review
 
@@ -4193,48 +4148,18 @@ Based on final results after Phase 4.5, **EVALUATE**:
 
 ### Step 6: Determine Next State (REQUIRED)
 
-🚨 **CRITICAL ENFORCEMENT LOGIC - NO EXCEPTIONS** 🚨
+**Task state routing is Coach-driven, not Player-driven.** In autobuild, the Player writes the qualitative summary of Phase 4.5 into `task_work_results.json` (compilation status, test pass/fail counts, coverage). Coach reads that payload, runs its own independent pytest pass in `coach_validator`, and decides the next state. In interactive `/task-work` sessions without Coach, the same routing logic is applied qualitatively by Claude against the same thresholds.
 
-Based on Phase 4.5 results and quality gates, the following logic MUST be enforced:
+**Routing rules** (applied by Coach in autobuild, applied qualitatively by Claude otherwise):
 
-**BLOCKING LOGIC** (explicit Python pseudocode to prevent IN_REVIEW with failures):
+| Condition observed in results | Next state | Rationale |
+|---|---|---|
+| Compilation errors remain after fix guidance | `blocked` | Code must build before it can be reviewed. |
+| Any test failure remains (pass rate < 100 %) | `blocked` | Zero-tolerance gate; enforced by Coach's own pytest run. |
+| Line coverage below 80 % (or branch below 75 %) | `in_progress` — re-invoke testing agent for more tests | Coverage is a reviewable gate, not a terminal one. |
+| Clean compile, all tests passing, coverage thresholds met | `in_review` | Only path out of IN_PROGRESS. |
 
-```python
-# ABSOLUTE REQUIREMENT: Task CANNOT move to IN_REVIEW unless ALL conditions met
-def determine_next_state(phase_45_results, coverage_results):
-    """
-    Determines next task state with ZERO TOLERANCE for failures.
-
-    Returns:
-        state: "in_review" | "blocked" | "in_progress"
-        reason: Human-readable explanation
-    """
-    compilation_errors = phase_45_results.compilation_errors
-    test_failures = phase_45_results.test_failures
-    test_pass_rate = phase_45_results.passed / phase_45_results.total
-    line_coverage = coverage_results.lines
-    branch_coverage = coverage_results.branches
-
-    # GATE 1: Compilation must succeed (MANDATORY)
-    if compilation_errors > 0:
-        return "blocked", f"BLOCKED: {compilation_errors} compilation errors remain after 3 fix attempts"
-
-    # GATE 2: All tests must pass - NO EXCEPTIONS (MANDATORY)
-    if test_failures > 0 or test_pass_rate < 1.0:
-        return "blocked", f"BLOCKED: {test_failures} test failures remain (pass rate: {test_pass_rate*100:.1f}%)"
-
-    # GATE 3: Coverage thresholds must be met (MANDATORY)
-    if line_coverage < 80:
-        # Re-invoke testing agent to add more tests
-        return "in_progress", f"Coverage too low ({line_coverage}%), generating additional tests"
-
-    if branch_coverage < 75:
-        # Re-invoke testing agent to add more tests
-        return "in_progress", f"Branch coverage too low ({branch_coverage}%), generating additional tests"
-
-    # ALL GATES PASSED - ONLY path to IN_REVIEW
-    return "in_review", "All quality gates passed: 100% tests passing, coverage thresholds met"
-```
+The thresholds above (≥ 80 % line, ≥ 75 % branch) are the same numbers `coach_validator` applies — the Player's self-report and Coach's independent verification are expected to agree; if they disagree, Coach's verdict wins.
 
 **STATE TRANSITION RULES**:
 

@@ -1,10 +1,16 @@
 ---
 id: TASK-FIX-RWOP1.3.4
 title: Soften pseudo-code function references in task-work.md to LLM-intent prose
-status: backlog
+status: completed
 task_type: documentation
 created: 2026-04-22T12:00:00Z
-updated: 2026-04-22T12:00:00Z
+updated: 2026-04-23T12:00:00Z
+completed: 2026-04-23T12:00:00Z
+completed_location: tasks/completed/TASK-FIX-RWOP1.3.4/
+organized_files:
+  - TASK-FIX-RWOP1.3.4-soften-pseudo-code-prose.md
+previous_state: in_review
+state_transition_reason: "All acceptance criteria met; prose rewrites verified via grep"
 priority: medium
 complexity: 3
 tags: [runner-without-producer, task-work, delete-prose, cleanup, rwop1]
@@ -15,9 +21,10 @@ related_tasks:
   - TASK-FIX-RWOP1.3
   - TASK-FIX-RWOP1.3.3
 test_results:
-  status: pending
+  status: n/a
   coverage: null
-  last_run: null
+  last_run: 2026-04-23T12:00:00Z
+  note: "Documentation-only task; verification is the grep-based AC checks recorded in completion notes."
 ---
 
 # Task: Rewrite pseudo-code function calls in `task-work.md` as LLM-intent prose
@@ -85,3 +92,55 @@ Add a corresponding AC:
 - Parent triage: [docs/reviews/TASK-FIX-RWOP1.3-task-work-triage.md](../../../docs/reviews/TASK-FIX-RWOP1.3-task-work-triage.md)
 - Parent review: [TASK-REV-RWOP1](../../../docs/reviews/TASK-REV-RWOP1-runner-without-producer-orphan-sweep.md)
 - Can land in parallel with: [TASK-FIX-RWOP1.3.3](TASK-FIX-RWOP1.3.3-delete-orphan-modules.md) (different files, no shared surface)
+
+## Completion Notes (2026-04-23)
+
+### Edits applied
+
+All 6 rewrites landed. Files touched:
+- `installer/core/commands/task-work.md` — 5 prose rewrites + 1 cross-reference softening.
+- `guardkit/orchestrator/prompts/autobuild_execution_protocol.md` — Phase 4.5 `WHILE … attempt` pseudo-code reframed as Player guidance, with a back-link to task-work.md Phase 4.5 so the two files stay synced.
+
+| # | Block | Before | After |
+|---|---|---|---|
+| 1 | BDD framework detection (task-work.md §Phase 1.5) | `def detect_bdd_framework(project_path: Path) -> str: …` (~47 lines of Python) | Markdown table mapping each manifest marker to the framework name, plus one sentence noting the Player performs the inspection qualitatively. |
+| 2 | Phase 4.5 `extract_compilation_errors` / `extract_test_failures` / `extract_coverage` | Three undefined Python calls + `max_attempts = 1` counter init | Bulleted prose describing the qualitative markers the Player looks for in the testing agent's reply; coverage bullet notes some stacks/modes skip coverage. |
+| 3 | Phase 4.5 `WHILE (…) AND attempt <= max_attempts` loop | Python while-loop with `attempt += 1` accounting and `BREAK` semantics | "Fix-attempt guidance (up to 3 attempts)" framing; step 6 reworded to "re-inspect" + "increment the counter the Player is tracking in its own reasoning"; steps 7-9 reworded in plain English; closing "Result of Phase 4.5" now cites Coach's independent re-verification. |
+| 4 | Step 6 `determine_next_state` | Python function with GATE 1/2/3 `if` branches returning tuples | Prose lead saying routing is Coach-driven + a plain-English routing table + sentence stating thresholds (≥ 80 % line, ≥ 75 % branch) are the same numbers `coach_validator` applies and Coach's verdict wins on disagreement. |
+| 5 | Phase 2.9 `save_plan` dict builder | `"files_to_create": extract_files_to_create(phase_2_output)` × 8 helpers that do not exist | Comment explaining the planning agent's Phase 2 output already contains each field; values shown as `<from phase_2 agent output>` placeholders. `save_plan(…)` call itself retained (backed by `installer/core/commands/lib/plan_persistence.py`, still present pre-RWOP1.3.3). |
+| — | Phase 4 cross-reference bullet | `Cross-reference: installer/core/agents/test-orchestrator.md (MANDATORY RULE #1)` | `See installer/core/agents/test-orchestrator.md for the testing-agent prompt style. The authoritative compilation/test pass bar is enforced by Coach's independent pytest run in coach_validator, not by this prompt.` |
+| 6 | Autobuild execution protocol §Phase 4.5 (lines ~229-244) | Same `WHILE (compilation_errors > 0 OR test_failures > 0) AND attempt <= 3:` pseudo-code | Four-bullet Player guidance matching task-work.md's voice + closing paragraph explicitly naming Coach's `coach_validator` pytest pass as the deterministic gate + cross-link back to task-work.md. |
+
+### Acceptance criteria — verification
+
+- [x] **AC 1 — All 5 prose blocks rewritten, intent preserved, no implication of a Python driver.** Verified by diff of the 6 edit blocks above.
+- [x] **AC 2 — `grep -E "extract_compilation_errors|extract_test_failures|extract_coverage|determine_next_state|detect_bdd_framework" installer/core/commands/task-work.md` returns zero matches.** Confirmed — `grep -c` returns `0`.
+- [x] **AC 3 — Spec reads coherently end-to-end.** Walked the Phase 1.5 / Phase 2.9 / Phase 4 / Phase 4.5 / Step 6 regions in order; no orphaned call sites, no dangling "def … " fragments. The one preserved `detect_bdd_framework(Path.cwd())` call site was also softened to `<detected framework name, see prose below>` with an inline comment pointing at the prose table.
+- [x] **AC 4 — Phase 4.5 prose clearly states Coach's independent pytest run is the deterministic gate.** Verified — lead paragraph of Phase 4.5 in task-work.md now says verbatim: "The deterministic pass bar is enforced independently by Coach via its own `coach_validator` pytest run on the final worktree — the retry-loop prose below is guidance for the Player, not a gate." The autobuild protocol carries a matching sentence.
+- [x] **AC 5 — No regression in test-orchestrator.md cross-reference.** The cross-reference line was retained (not deleted) and resoftened to explicit framing ("see test-orchestrator.md for the testing-agent prompt style"). `test-orchestrator.md` itself is unchanged by this task; its MANDATORY RULE framing is still intact there, which is fine — the frame is just no longer the authoritative gate per post-RWOP1.3.1/3.2 wiring.
+- [x] **AC 6 (added 2026-04-23) — `autobuild_execution_protocol.md` Phase 4.5 prose rewritten; `grep "WHILE.*attempt" guardkit/orchestrator/prompts/` returns zero matches.** Confirmed — `grep -c` returns `0`.
+
+### Wiring-rate recalc (per AC in parent triage doc)
+
+Parent triage Appendix A baseline: **43 walked · 15 wired · 22 orphan · 6 producer-ambiguous · 34.9 %**.
+
+Fresh walk after RWOP1.3.1 + RWOP1.3.2 + RWOP1.3.4 land (RWOP1.3.3 module deletion still pending):
+
+| Bucket | Delta vs. baseline | New count |
+|---|---|---|
+| Walked | −5 (DELETE-PROSE rows excluded from imperative count — same methodology as `/feature-spec`'s Claude-runtime exclusion) | 38 |
+| Wired | +2 (`validate_agent_invocations` via RWOP1.3.1; `execute_phase_5_5_plan_audit` via RWOP1.3.2) | 17 |
+| Orphan | −2 (WIRE) −5 (DELETE-PROSE) = −7 | 15 |
+| Producer-ambiguous | 0 (Phase 4.5 retry guidance reclassified from DELETE-PROSE into PA once softened, as backstopped by Coach) | 6 |
+
+**Current interim wiring rate: 17 / (17 + 15 + 6) = 17 / 38 ≈ 44.7 %.**
+
+The 15 orphans that remain are the 15-ish `lib/` subsystems that RWOP1.3.3 is scoped to delete (`flag_validator`, `feature_detection`, `graphiti_context_loader`, `AgentInvocationTracker`, `library_detector`, `library_context`, `PhaseGateValidator`, `QuickReviewHandler`, `plan_persistence`, `phase_execution.execute_implementation_phases`, `commit_state_files`, `ComplexityCalculator`, plus a few stragglers). Once RWOP1.3.3 lands, those rows drop out of the walk.
+
+**Projected post-RWOP1.3.3 landing: 17 / (17 + 0 + 3) = 17 / 20 = 85.0 %** (matching the triage doc's low-end projection). If the 2 newly-wired producers are re-classified from PA to wired (they are Coach-consumed, not Coach-producing), the figure rises to **19 / 20 = 95.0 %**.
+
+**RWOP1.3 target: ≥ 75 %.** RWOP1.3.4-alone gets us to 44.7 % (cohort-blocker progress tracked, above target only on full-cohort landing). The ≥ 75 % AC on the parent triage holds as projected once RWOP1.3.3 lands — no re-forecast needed.
+
+### Sync note (task-work.md ↔ autobuild_execution_protocol.md)
+
+The Phase 4.5 prose is intentionally duplicated across the two artefacts — one is the spec and one is the runtime-injected Player prompt. Both now carry an explicit cross-link so future readers see the sync. Any future Phase 4.5 edit must land in both files or the two will drift.

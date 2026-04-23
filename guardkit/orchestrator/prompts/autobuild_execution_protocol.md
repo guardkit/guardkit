@@ -226,22 +226,14 @@ If tests fail or coverage is below threshold, enter the fix loop.
 
 ### Fix Loop Workflow
 
-```
-WHILE (compilation_errors > 0 OR test_failures > 0) AND attempt <= 3:
-    1. Analyze failure details
-    2. Fix the root cause in implementation code
-    3. Re-run compilation check
-    4. Re-run test suite
-    5. Check results
+Phase 4.5 is Player guidance, not a runtime loop. You are expected to:
 
-    IF all tests pass AND coverage >= thresholds:
-        BREAK → Proceed to Phase 5
-    ELSE:
-        attempt += 1
+1. Read the testing agent's output and identify compilation errors and test failures qualitatively (look for build-error markers, `FAILED`, assertion lines, framework summary lines, non-zero exit codes).
+2. If issues remain, fix the root cause in implementation code (not the tests — see the rules above) and re-invoke the testing agent.
+3. You may take up to **three fix attempts**. The "3" is an instruction to you, not a runtime counter; track it in your own reasoning.
+4. After each re-run, re-inspect the output. If compilation is clean and all tests pass, proceed to Phase 5. If you have exhausted three attempts without passing, stop and report BLOCKED with diagnostics (see below).
 
-IF attempt > 3:
-    REPORT as BLOCKED with diagnostics
-```
+Coach enforces the pass bar independently: regardless of what this protocol reports, `coach_validator` runs its own pytest pass on the final worktree and that run is the deterministic gate. Keep this section as the Player's guidance; the ground truth comes from Coach's own execution. See `installer/core/commands/task-work.md` Phase 4.5 for the matching spec-side prose — the two files are intentionally synced.
 
 ### Blocked State Diagnostics
 
