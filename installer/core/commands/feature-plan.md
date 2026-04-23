@@ -24,10 +24,6 @@ Both accept natural language descriptions, but they serve different purposes in 
 | `--defaults` | Use clarification defaults throughout workflow |
 | `--answers="..."` | Inline answers (propagated to task-review and subtask creation) |
 | `--no-structured` | Disable structured YAML feature file output (enabled by default) |
-| `--from-spec path/to/spec.md` | Parse Research-to-Implementation Template |
-| `--target interactive\|local-model\|auto` | Set output verbosity for target executor |
-| `--generate-adrs` | Generate ADR files from Decision Log |
-| `--generate-quality-gates` | Generate per-feature quality gate YAML |
 
 ### AutoBuild Integration (Default Behavior)
 
@@ -226,128 +222,6 @@ Option 1: FastAPI + MCP SDK (Recommended)
 ✅ **Consistent workflows** - AutoBuild constraints prevent common mistakes
 ✅ **Knowledge accumulation** - Each feature enriches the knowledge graph
 ✅ **Reduced rework** - Warnings from past failures prevent repeated errors
-
-### From-Spec Mode Execution Flow
-
-When `--from-spec` is provided, `/feature-plan` switches to Research-to-Implementation Template parsing mode. This mode bypasses the standard review flow and directly generates tasks from a pre-designed specification.
-
-**Module Dependencies:**
-
-The from-spec mode uses the following modules from `guardkit.planning.spec_parser`:
-
-- `parse_research_template(Path)` → `ParsedSpec` - Parses the Research-to-Implementation Template
-- `resolve_target(str)` → `TargetConfig` - Resolves target verbosity configuration
-- `enrich_task(Task, TargetConfig, str)` → `EnrichedTask` - Adds target-specific details
-- `render_task_markdown(EnrichedTask)` → `str` - Renders task as markdown
-- `generate_adrs(List[Decision], str)` → `List[Path]` - Creates ADR files
-- `generate_quality_gates(str, List[Task])` → `Path` - Creates quality gate YAML
-- `extract_warnings(List[Warning], str)` → `Path` - Extracts warnings to file
-- `generate_seed_script(str, List[Path], Path, Path)` → `Path` - Creates seed.sh script
-
-**Execution Steps:**
-
-When `--from-spec path/to/spec.md` is provided:
-
-1. **Read Spec File**: Load the Research-to-Implementation Template from the given path
-2. **Parse Template**: Call `parse_research_template(Path(spec_path))` to extract:
-   - Tasks with acceptance criteria
-   - Decision log entries
-   - Warnings and risks
-   - Quality gate definitions
-3. **Resolve Target** (if `--target` specified): Call `resolve_target(target_value)` to get verbosity configuration:
-   - `interactive`: Full detail for human execution
-   - `local-model`: Optimized for Claude-level models
-   - `auto`: Minimal detail for autonomous systems
-4. **Enrich Tasks**: For each task in `parsed_spec.tasks`:
-   - Call `enrich_task(task, target_config, feature_id)` to add target-specific details
-   - Apply verbosity settings based on target configuration
-5. **Render Tasks**: For each enriched task:
-   - Call `render_task_markdown(enriched_task)` to generate markdown content
-   - Write to `tasks/design_approved/TASK-XXX-{slug}.md`
-6. **Generate ADRs** (if `--generate-adrs`):
-   - Call `generate_adrs(parsed_spec.decisions, feature_id)`
-   - Creates `.guardkit/adrs/ADR-{feature_id}-{slug}.md` for each decision
-7. **Generate Quality Gates** (if `--generate-quality-gates`):
-   - Call `generate_quality_gates(feature_id, parsed_spec.tasks)`
-   - Creates `.guardkit/quality-gates/{feature_id}.yaml` with per-task thresholds
-8. **Extract Warnings** (if warnings exist):
-   - Call `extract_warnings(parsed_spec.warnings, feature_id)`
-   - Creates `.guardkit/warnings/{feature_id}.md` with risk documentation
-9. **Generate Seed Script**:
-   - Call `generate_seed_script(feature_id, adr_paths, spec_path, warnings_path)`
-   - Creates `.guardkit/seed/{feature_id}-seed.sh` for knowledge graph seeding
-
-**Example Usage:**
-
-```bash
-# Basic from-spec mode
-/feature-plan --from-spec docs/research/FEAT-GR-003-spec.md
-
-# With target optimization
-/feature-plan --from-spec docs/research/FEAT-GR-003-spec.md --target local-model
-
-# With all optional outputs
-/feature-plan --from-spec docs/research/FEAT-GR-003-spec.md \
-              --target interactive \
-              --generate-adrs \
-              --generate-quality-gates
-```
-
-**Output Example:**
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FEATURE PLANNING: From Research-to-Implementation Template
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Step 1: Parsing spec file...
-✅ Spec parsed: 5 tasks, 3 decisions, 2 warnings
-
-Step 2: Resolving target configuration...
-✅ Target: local-model (optimized verbosity)
-
-Step 3: Enriching tasks...
-✅ Enriched 5 tasks with target-specific details
-
-Step 4: Rendering task files...
-✅ Created tasks/design_approved/TASK-FP002-001-task-title.md
-✅ Created tasks/design_approved/TASK-FP002-002-task-title.md
-✅ Created tasks/design_approved/TASK-FP002-003-task-title.md
-✅ Created tasks/design_approved/TASK-FP002-004-task-title.md
-✅ Created tasks/design_approved/TASK-FP002-005-task-title.md
-
-Step 5: Generating ADRs...
-✅ Created .guardkit/adrs/ADR-FP002-001-decision-title.md
-✅ Created .guardkit/adrs/ADR-FP002-002-decision-title.md
-✅ Created .guardkit/adrs/ADR-FP002-003-decision-title.md
-
-Step 6: Generating quality gates...
-✅ Created .guardkit/quality-gates/FEAT-FP002.yaml
-
-Step 7: Extracting warnings...
-✅ Created .guardkit/warnings/FEAT-FP002.md
-
-Step 8: Generating seed script...
-✅ Created .guardkit/seed/FEAT-FP002-seed.sh
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ FEATURE PLANNING COMPLETE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📋 Tasks: 5 (in design_approved state)
-📁 ADRs: 3
-⚠️  Warnings: 2
-🔒 Quality gates: Configured
-
-Next steps:
-  1. Review tasks in tasks/design_approved/
-  2. Run seed script: bash .guardkit/seed/FEAT-FP002-seed.sh
-  3. Begin implementation: /task-work TASK-FP002-001 --implement-only
-```
-
-**Backward Compatibility:**
-
-This mode is **fully backward compatible**. Existing `/feature-plan` usage (without `--from-spec`) continues to work with the standard review flow. The from-spec mode is a new, parallel execution path that only activates when the `--from-spec` flag is present.
 
 ### Feature YAML Schema Reference
 
