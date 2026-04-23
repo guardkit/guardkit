@@ -25,12 +25,6 @@ installer_lib_path = Path(__file__).parent.parent.parent / "installer" / "core" 
 if installer_lib_path.exists() and str(installer_lib_path) not in sys.path:
     sys.path.insert(0, str(installer_lib_path))
 
-# Import test fixtures from other modules
-from tests.fixtures.data_fixtures import *  # noqa: F403, F401
-from tests.fixtures.mock_fixtures import *  # noqa: F403, F401
-from tests.fixtures.factory_fixtures import *  # noqa: F403, F401
-
-
 def pytest_configure(config):
     """Register custom markers for integration tests."""
     config.addinivalue_line(
