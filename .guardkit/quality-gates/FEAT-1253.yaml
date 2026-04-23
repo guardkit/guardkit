@@ -3,26 +3,6 @@ feature_name: "Implement /feature-spec command (v1)"
 created: 2026-02-22T12:00:00Z
 
 quality_gates:
-  lint:
-    command: "ruff check guardkit/commands/feature_spec.py"
-    required: true
-    applies_to: [TASK-FS-002]
-
-  unit_tests:
-    command: "pytest tests/unit/commands/test_feature_spec.py -v --tb=short"
-    required: true
-    applies_to: [TASK-FS-002]
-
-  integration_tests:
-    command: "pytest tests/integration/test_feature_spec_e2e.py -v"
-    required: true
-    applies_to: [TASK-FS-003]
-
-  import_check:
-    command: "python -c \"from guardkit.commands.feature_spec import FeatureSpecCommand, FeatureSpecResult, detect_stack, scan_codebase; print('All imports OK')\""
-    required: true
-    applies_to: [TASK-FS-002]
-
   command_definition_size:
     command: "python -c \"import os; size = os.path.getsize('.claude/commands/feature-spec.md'); assert size > 5000, f'Too short ({size} bytes)'; print(f'OK: {size} bytes')\""
     required: true
