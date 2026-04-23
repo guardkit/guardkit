@@ -1,10 +1,13 @@
 ---
 id: TASK-FIX-RWOP1.7
 title: Align wider --from-spec docs/metadata footprint with the RWOP1.5 quarantine
-status: backlog
+status: completed
 task_type: cleanup
 created: 2026-04-23T00:00:00Z
-updated: 2026-04-23T00:00:00Z
+updated: 2026-04-23T13:15:00Z
+completed: 2026-04-23T13:15:00Z
+previous_state: in_review
+state_transition_reason: "Task completion via /task-complete"
 priority: low
 complexity: 3
 tags: [docs-cleanup, from-spec, post-rwop1.5, hygiene, rwop1]
@@ -15,9 +18,10 @@ related_to: TASK-FIX-RWOP1.5
 related_tasks:
   - TASK-FIX-RWOP1.5
 test_results:
-  status: pending
+  status: passed
   coverage: null
-  last_run: null
+  last_run: 2026-04-23T12:55:00Z
+  notes: "Targeted feature_plan + commands integration: 432 passed, 0 failed. Full suite not re-run due to pre-existing unrelated hangs; scope was docs/metadata/fixture cleanup with no live .py consumers."
 ---
 
 # Task: Align wider --from-spec docs/metadata footprint with the RWOP1.5 quarantine
@@ -106,22 +110,22 @@ The full residual surface (per RWOP1.5's grep at quarantine time):
 
 ## Acceptance Criteria
 
-- [ ] `docs/guides/two-phase-workflow.md`: either deleted (with redirect
+- [x] `docs/guides/two-phase-workflow.md`: either deleted (with redirect
       noted) or rewritten so a reader doing `grep "from-spec"` on the file
-      gets zero hits.
-- [ ] `docs/reference/feature-plan.md`: zero hits for `--from-spec`,
-      `--target`, `--generate-adrs`, `--generate-quality-gates` after edit.
-- [ ] `.guardkit/features/FEAT-FP-002.yaml`: carries `status: superseded_by_rwop1.5`
+      gets zero hits. → **Deleted** (option (a); no guides index exists, so no redirect needed).
+- [x] `docs/reference/feature-plan.md`: zero hits for `--from-spec`,
+      `--target`, `--generate-adrs`, `--generate-quality-gates` after edit. → **Verified** by post-edit grep.
+- [x] `.guardkit/features/FEAT-FP-002.yaml`: carries `status: superseded_by_rwop1.5`
       (or equivalent) frontmatter field with a one-line note pointing at the
       RWOP1.5 decision doc.
-- [ ] `tests/fixtures/sample-research-spec.md`: removed via `git rm`; test
-      suite still passes (verifies no surviving consumers).
-- [ ] Final dependency grep documented in this task's completion summary
+- [x] `tests/fixtures/sample-research-spec.md`: removed via `git rm`; test
+      suite still passes (verifies no surviving consumers). → 432 tests passed in targeted integration + commands runs; no `.py` consumers found outside `_scratch/`.
+- [x] Final dependency grep documented in this task's completion summary
       shows the from-spec footprint reduced to: the parent review doc,
       historical research doc, historical FP002 task tracking files, the
       `_scratch/planning/` quarantine (which is expected), and the RWOP1.5
       decision doc itself (also expected).
-- [ ] No code changes outside docs/metadata/test-fixture deletions. If a
+- [x] No code changes outside docs/metadata/test-fixture deletions. If a
       code change feels necessary, stop and re-scope.
 
 ## Implementation Notes
@@ -157,3 +161,45 @@ The full residual surface (per RWOP1.5's grep at quarantine time):
 - Sibling follow-up: [TASK-FIX-RWOP1.6-add-lint-ac-coverage-for-live-feature-plan.md](TASK-FIX-RWOP1.6-add-lint-ac-coverage-for-live-feature-plan.md)
 - Parent review: [docs/reviews/TASK-REV-RWOP1-runner-without-producer-orphan-sweep.md](../../../docs/reviews/TASK-REV-RWOP1-runner-without-producer-orphan-sweep.md)
 - Feature guide: [IMPLEMENTATION-GUIDE.md](IMPLEMENTATION-GUIDE.md)
+
+## Completion Summary
+
+### Actions taken (task's prescribed order)
+
+1. **`docs/reference/feature-plan.md` — stripped.** Removed the "Research-to-Implementation Flags (FEAT-FP-002)" table section (originally lines 30-38), the dedicated `--from-spec` / `--target` / `--generate-adrs` / `--generate-quality-gates` sub-sections with their examples and YAML snippets (~150-300), "Task Metadata Fields (Local-Model Mode)" (~148-198), Example 2 "From Research Specification", and the "From-Spec Flow Output" sample. Also deleted the "Research-to-Implementation Template" entry from See Also. Final file is 154 lines (was 497). Post-strip grep: 0 hits for the four flags in this file.
+
+2. **`.guardkit/features/FEAT-FP-002.yaml` — annotated, not deleted.** Changed `status: completed` → `status: superseded_by_rwop1.5` with a `superseded_note` pointing at `.claude/reviews/TASK-FIX-RWOP1.5-from-spec-decision.md` and noting the `_scratch/planning/` quarantine. Preserved `original_status: completed` to keep the historical record. Task list, orchestration, and execution blocks untouched.
+
+3. **`tests/fixtures/sample-research-spec.md` — deleted via `git rm`.** Pre-delete grep confirmed no `.py` consumers outside `_scratch/`; only references were in this task's tracking docs, the RWOP1.5 decision doc, the preserved research doc, and FP002 task tracking. Targeted test run of `tests/integration/feature_plan/` + `tests/unit/commands/` after deletion: **432 passed, 0 failed**. Full suite in progress, results below.
+
+4. **`docs/guides/two-phase-workflow.md` — deleted outright (chose option (a)).** Judgement call rationale per task implementation notes "default to delete": the entire guide's structure was load-bearing on `--from-spec` (Overview framing, research-template invocation, Flag Reference of the four removed flags, Complete Workflow Example all from-spec-based, Troubleshooting from-spec-specific). The Phase 2 / Player-Coach / feature-build content that could have stood alone is already covered by `installer/core/commands/feature-build.md` and `.claude/rules/autobuild.md`. A rewrite would leave roughly one intro paragraph of orphaned content pointing at docs that already exist. No `docs/guides/README.md` index exists, so no redirect to add. All inbound links are in historical/task-tracking files (RWOP1.5 parent, FP002 task tracking, review docs) — per task scope these are explicitly preserved as historical record.
+
+### Final dependency grep (per AC)
+
+Post-cleanup grep for `--from-spec|--target |--generate-adrs|--generate-quality-gates` across `*.md`, `*.py`, `*.yaml`, `*.yml`, excluding `_scratch/`:
+
+**Expected/preserved residuals (match task's "leave as historical" rules):**
+- `.claude/reviews/TASK-FIX-RWOP1.5-from-spec-decision.md` — RWOP1.5 decision doc (expected)
+- `.guardkit/features/FEAT-FP-002.yaml` — superseded annotation references the flag names by design (expected)
+- `docs/research/system-level-understanding/FEAT-FP-002-two-phase-feature-plan-enhancements.md` — historical research doc (explicitly preserved)
+- `docs/research/feature-spec/*.md`, `docs/research/guardkit-agent/Claude_Agent_SDK_Two_Command_Feature_Workflow.md` — research docs on adjacent features; same "don't rewrite the past" principle as the FEAT-FP-002 research doc
+- `docs/reviews/TASK-REV-RWOP1-runner-without-producer-orphan-sweep.md` — parent review that identified the pattern (expected)
+- `tasks/backlog/two-phase-feature-plan/*.md`, `tasks/in_review/TASK-FP002-*.md`, `tasks/completed/2026-03/feature-spec-command/IMPLEMENTATION-GUIDE.md` — historical task tracking (explicitly preserved)
+- `tasks/backlog/feat-rwop1-orphan-cleanup/*.md`, `tasks/in_progress/feat-rwop1-orphan-cleanup/TASK-FIX-RWOP1.7...md`, `tasks/in_review/TASK-FIX-RWOP1.6-...md`, `tasks/completed/2026-04/TASK-FIX-RWOP1.{3,5}-...md` — current RWOP1 task tracking (expected)
+- `tests/integration/feature_plan/test_generate_feature_yaml_lint_ac_compliance.py` — RWOP1.6 test file; hit is in the module docstring explaining *why* the test exists (documents the quarantine, does not advertise the flag as live). Functionally equivalent to a historical task-tracking reference.
+
+**False-positive filtering:** `installer/core/agents/build-validator-ext.md` and `test_api/.claude/agents/build-validator-ext.md` matched on `--target builder` / `--target runner` — that's `docker build --target`, unrelated to the feature-plan flags.
+
+**No residuals** in `docs/guides/`, `docs/reference/`, live `installer/core/commands/` specs, or live `guardkit/` Python. User-facing documentation surface now consistent with the RWOP1.5 quarantine.
+
+### Test verification
+
+- Targeted suite (`tests/integration/feature_plan/` + `tests/unit/commands/`): 432 passed, 0 failed (5.28s) after fixture deletion. This exercises the live `/feature-plan` producer path.
+- One pre-existing failure in `tests/cli/test_graphiti_list.py::test_list_handles_disabled_graphiti` (MagicMock config issue producing `graph_store must be 'neo4j' or 'falkordb', got '<MagicMock ...>'`) was verified via `git stash && pytest` on the pre-change working tree to confirm it pre-exists this task and is unrelated to the fixture deletion. Out of scope.
+
+### Scope discipline
+
+- No code changes (per AC).
+- No edits to the explicitly preserved files (FP002 task tracking, historical research doc, parent review doc, RWOP1.5 decision doc).
+- No rehoming of `_scratch/planning/` content.
+- No new guides/reference content added — strict removal task.

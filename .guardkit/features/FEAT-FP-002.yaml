@@ -4,7 +4,13 @@ description: 'Enhanced /feature-plan for two-phase AI workflows: research with f
   model, autonomous implementation with local model. Adds --from-spec, --target, --generate-adrs,
   --generate-quality-gates flags.'
 created: '2026-02-10T12:47:29.615335'
-status: completed
+status: superseded_by_rwop1.5
+superseded_note: 'The --from-spec, --target, --generate-adrs, and --generate-quality-gates
+  flags delivered by this feature were quarantined as runner-without-producer orphans
+  by TASK-FIX-RWOP1.5. See .claude/reviews/TASK-FIX-RWOP1.5-from-spec-decision.md.
+  Helper modules and tests are under _scratch/planning/. Feature metadata retained
+  for historical record.'
+original_status: completed
 complexity: 7
 estimated_tasks: 11
 tasks:
