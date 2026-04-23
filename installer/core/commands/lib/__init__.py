@@ -36,17 +36,6 @@ from .agent_utils import (
     extract_task_metadata_from_frontmatter
 )
 
-# Review modes (TASK-003B-2, TASK-003B-3)
-# TEMPORARY FIX: Commented out due to missing classes in review_modes package
-# from .review_modes import (
-#     QuickReviewResult,
-#     QuickReviewDisplay,
-#     QuickReviewHandler,
-#     FullReviewResult,
-#     FullReviewDisplay,
-#     FullReviewHandler,
-# )
-
 # Pager display (TASK-003B-3)
 from .pager_display import (
     PagerStrategy,
@@ -86,13 +75,6 @@ from .version_manager import (
     VersionManager,
 )
 
-# Flag validation (TASK-003E Phase 5 Day 2)
-from .flag_validator import (
-    FlagValidator,
-    FlagConflictError,
-    validate_flags,
-)
-
 # Error message formatters (TASK-003E Phase 5 Day 2)
 from .error_messages import (
     format_file_error,
@@ -121,20 +103,12 @@ from .agent_discovery import (
 # Agent Invocation Tracker (TASK-ENF2)
 from .agent_invocation_tracker import (
     AgentInvocationTracker,
-    add_pending_phases,
-)
-
-# Phase Gate Validator (TASK-ENF4)
-from .phase_gate_validator import (
-    PhaseGateValidator,
 )
 
 # Agent Invocation Validator (TASK-ENF1, TASK-FIX-RWOP1.3.1)
-# ValidationError here is the agent-invocation validator's exception — the
-# package-level ValidationError export now binds to that module so
-# AgentInvoker._write_task_work_results can catch it via the stable public
-# surface. phase_gate_validator.ValidationError remains available via its
-# own module import path.
+# ValidationError here is the agent-invocation validator's exception, bound at
+# package level so AgentInvoker._write_task_work_results can catch it via the
+# stable public surface.
 from .agent_invocation_validator import (
     validate_agent_invocations,
     ValidationError,
@@ -174,14 +148,6 @@ __all__ = [
     "log_complexity_calculation",
     "extract_task_metadata_from_frontmatter",
 
-    # Review modes (TEMPORARY FIX: Commented out)
-    # "QuickReviewResult",
-    # "QuickReviewDisplay",
-    # "QuickReviewHandler",
-    # "FullReviewResult",
-    # "FullReviewDisplay",
-    # "FullReviewHandler",
-
     # Pager display
     "PagerStrategy",
     "UnixPagerStrategy",
@@ -209,11 +175,6 @@ __all__ = [
     "PlanVersion",
     "VersionManager",
 
-    # Flag validation
-    "FlagValidator",
-    "FlagConflictError",
-    "validate_flags",
-
     # Error message formatters
     "format_file_error",
     "format_validation_error",
@@ -235,10 +196,6 @@ __all__ = [
 
     # Agent Invocation Tracker
     "AgentInvocationTracker",
-    "add_pending_phases",
-
-    # Phase Gate Validator
-    "PhaseGateValidator",
 
     # Agent Invocation Validator
     "validate_agent_invocations",

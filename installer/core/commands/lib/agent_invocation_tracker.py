@@ -240,33 +240,3 @@ class AgentInvocationTracker:
             "unknown": "❓"
         }
         return source_icons.get(source, "❓")
-
-
-def add_pending_phases(tracker: AgentInvocationTracker, workflow_mode: str = "standard"):
-    """
-    Add pending phase placeholders to tracker for visual clarity.
-
-    Args:
-        tracker: Agent invocation tracker instance
-        workflow_mode: Workflow mode to determine which phases to add
-    """
-    # Define all phases for standard workflow
-    all_phases = [
-        ("2", "Planning", "TBD"),
-        ("2.5B", "Arch Review", "architectural-reviewer"),
-        ("3", "Implementation", "TBD"),
-        ("4", "Testing", "TBD"),
-        ("5", "Review", "code-reviewer")
-    ]
-
-    # For micro workflow, only add relevant phases
-    if workflow_mode == "micro":
-        all_phases = [
-            ("3", "Implementation", "TBD"),
-            ("4", "Testing", "TBD"),
-            ("5", "Review", "code-reviewer")
-        ]
-
-    # Add pending phases that haven't been invoked yet
-    for phase, desc, agent in all_phases:
-        tracker.add_pending_phase(phase, desc, agent)
