@@ -1,8 +1,9 @@
 ---
 id: TASK-REV-RWOP1
 title: Re-review TASK-AC-53445 under "runner without producer" lens — find other Step-10.5-like orphans in feature-plan/feature-spec/task-work specs
-status: backlog
+status: completed
 task_type: review
+spawned_feature: FEAT-RWOP1
 review_mode: architectural
 review_depth: comprehensive
 decision_required: true
@@ -18,7 +19,54 @@ related_tasks:
   - TASK-AC-53445
   - TASK-FIX-7B2E
   - TASK-FIX-3C9D
+  - TASK-COH-RUN1
+  - TASK-FIX-RWOP1.1
+  - TASK-FIX-RWOP1.2
+  - TASK-FIX-RWOP1.3
+  - TASK-FIX-RWOP1.4
+  - TASK-FIX-RWOP1.5
 parent_review: TASK-REV-4D190
+review_results:
+  mode: architectural
+  depth: comprehensive
+  imperatives_walked: 74
+  wired: 25
+  orphan: 41
+  producer_ambiguous: 8
+  wiring_rate_percent: 33.8
+  per_file:
+    feature_plan:
+      imperatives: 21
+      wired: 9
+      orphan: 11
+      producer_ambiguous: 1
+      wiring_rate: 0.429
+      verdict: needs-deeper-audit
+    feature_spec:
+      imperatives_hard_module: 10
+      wired: 1
+      orphan: 8
+      producer_ambiguous: 1
+      wiring_rate: 0.100
+      verdict: needs-deeper-audit
+    task_work:
+      imperatives: 43
+      wired: 15
+      orphan: 22
+      producer_ambiguous: 6
+      wiring_rate: 0.349
+      verdict: needs-deeper-audit
+  overall_verdict: fix-before-cohort
+  cohort_impact: Running TASK-COH-RUN1 now would reproduce R1 contamination in R2 shape. Two new hard dependencies added to TASK-COH-RUN1 (RWOP1.1, RWOP1.2) + R2/R3 pre-flight checks (grep for @task: tags + nudge banners).
+  remediation_tasks:
+    - TASK-FIX-RWOP1.1
+    - TASK-FIX-RWOP1.2
+    - TASK-FIX-RWOP1.3
+    - TASK-FIX-RWOP1.4
+    - TASK-FIX-RWOP1.5
+  graphiti_episode: 'Design rule candidate CONFIRMED: runner-without-producer anti-pattern recurs across R1/R2/R3 command specs (TASK-REV-RWOP1)'
+  report_path: docs/reviews/TASK-REV-RWOP1-runner-without-producer-orphan-sweep.md
+  completed_at: 2026-04-22T00:00:00Z
 test_results:
   status: pending
   coverage: null
