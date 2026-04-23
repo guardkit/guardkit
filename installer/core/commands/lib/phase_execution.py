@@ -1059,7 +1059,9 @@ def _fallback_phase_3_result(task_id: str) -> Dict[str, Any]:
 
 def execute_phase_5_5_plan_audit(
     task_id: str,
-    task_context: Dict[str, Any]
+    task_context: Dict[str, Any],
+    non_interactive: bool = False,
+    workspace_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """
     Phase 5.5: Audit implementation against saved plan.
@@ -1070,15 +1072,33 @@ def execute_phase_5_5_plan_audit(
     Args:
         task_id: Task identifier
         task_context: Task context from task file
+        non_interactive: When True, run the auditor without prompting,
+            without printing the report, and without mutating task
+            metadata or creating follow-up tasks. Use this from the
+            autobuild producer path (``AgentInvoker._write_task_work_results``)
+            where the Player must not be asked for a decision and Coach
+            consumes the returned report via ``task_work_results.plan_audit``.
+            Default: False (historical interactive /task-work behaviour).
+        workspace_root: Optional workspace root for plan lookup and
+            file scanning. When None, uses the current working directory.
+            AgentInvoker passes ``self.worktree_path`` so the audit
+            resolves plans from the right worktree even when orchestrator
+            cwd differs. Default: None.
 
     Returns:
         Dictionary with audit results:
         {
             "approved": bool,
-            "report": PlanAuditReport,
+            "report": PlanAuditReport | None,
             "decision": str,
-            "skipped": bool
+            "skipped": bool,
+            "error": str (only on auditor failure)
         }
+
+        The non-interactive path derives ``approved`` from severity:
+        severity == "high" → False, else True. The ``decision`` is
+        ``"non_interactive"`` on success, ``"skipped"`` when no plan
+        exists, and ``"error"`` when the auditor raised.
 
     Example:
         >>> result = execute_phase_5_5_plan_audit("TASK-025", context)
@@ -1089,15 +1109,43 @@ def execute_phase_5_5_plan_audit(
     from .plan_persistence import plan_exists
     from .metrics.plan_audit_metrics import PlanAuditMetricsTracker
 
+    # Workspace-aware plan-existence check: the cwd-relative plan_exists
+    # doesn't see plans written into a worktree that isn't our cwd, so
+    # consult the workspace root first when one was passed in.
+    if workspace_root is not None:
+        ws_md = workspace_root / "docs" / "state" / task_id / "implementation_plan.md"
+        ws_json = workspace_root / "docs" / "state" / task_id / "implementation_plan.json"
+        plan_on_disk = ws_md.exists() or ws_json.exists() or plan_exists(task_id)
+    else:
+        plan_on_disk = plan_exists(task_id)
+
     # Check if plan exists
-    if not plan_exists(task_id):
-        print("⚠️  No implementation plan found - skipping audit")
+    if not plan_on_disk:
+        if not non_interactive:
+            print("⚠️  No implementation plan found - skipping audit")
         return {"approved": True, "report": None, "decision": "skipped", "skipped": True}
 
     try:
-        # Run audit
-        auditor = PlanAuditor()
+        # Run audit (workspace-rooted when provided so the auditor scans
+        # the worktree, not the orchestrator's cwd).
+        auditor = PlanAuditor(workspace_root=workspace_root or Path("."))
         report = auditor.audit_implementation(task_id)
+
+        if non_interactive:
+            # Producer path: return the raw audit report without the
+            # interactive prompt, stdout dump, task-metadata mutation,
+            # or follow-up task creation. All of those are UX affordances
+            # for the manual /task-work flow; autobuild Coach only needs
+            # the deterministic verdict. Metrics are also skipped here —
+            # the interactive handler owns metric recording so we don't
+            # double-count every producer write.
+            approved = report.severity != "high"
+            return {
+                "approved": approved,
+                "report": report,
+                "decision": "non_interactive",
+                "skipped": False,
+            }
 
         # Display report
         print("\n" + format_audit_report(report))
@@ -1124,6 +1172,14 @@ def execute_phase_5_5_plan_audit(
         }
 
     except PlanAuditError as e:
+        if non_interactive:
+            return {
+                "approved": True,
+                "report": None,
+                "decision": "error",
+                "skipped": False,
+                "error": str(e),
+            }
         print(f"⚠️  Audit error: {e}")
         print("Defaulting to approve (non-blocking)")
         return {"approved": True, "report": None, "decision": "error", "skipped": False}

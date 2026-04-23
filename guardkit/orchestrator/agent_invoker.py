@@ -70,6 +70,16 @@ from installer.core.commands.lib.agent_invocation_validator import (
     identify_missing_phases,
 )
 
+# TASK-FIX-RWOP1.3.2: Plan-audit gate on the producer path. The
+# deterministic auditor in installer.core.commands.lib.plan_audit compares
+# the saved plan against actual files/deps/LOC; without this wire the
+# `plan_audit` block in task_work_results.json is the Player's self-report
+# and can trivially claim "violations: []" while the worktree has extras.
+# The producer fold makes Coach see the auditor's verdict, not the Player's.
+from installer.core.commands.lib.phase_execution import (
+    execute_phase_5_5_plan_audit,
+)
+
 # Logger for agent invocations
 logger = logging.getLogger(__name__)
 
@@ -2824,6 +2834,17 @@ Follow the decision format specified in your agent definition.
                     task_work_data["agent_invocations_validation"] = new_validation
                     updated = True
 
+                # TASK-FIX-RWOP1.3.2: re-run the plan-audit gate against the
+                # enriched worktree state. After the file-existence fallback
+                # and promise recovery paths above, the worktree may have
+                # gained files the Player didn't report; the auditor scans
+                # the actual filesystem, so re-running here gives Coach the
+                # freshest verdict.
+                new_plan_audit = self._compute_plan_audit_verdict(task_id)
+                if task_work_data.get("plan_audit") != new_plan_audit:
+                    task_work_data["plan_audit"] = new_plan_audit
+                    updated = True
+
                 if updated:
                     with open(task_work_results_path, "w") as f:
                         json.dump(task_work_data, f, indent=2)
@@ -5467,6 +5488,151 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 "violation_message": f"{exc.__class__.__name__}: {exc}",
             }
 
+    def _compute_plan_audit_verdict(self, task_id: str) -> Dict[str, Any]:
+        """Run the deterministic plan auditor; return a Coach-consumable block.
+
+        Mirrors ``_compute_agent_invocations_validation``'s shape contract:
+        produces a stable dict that the Coach gate reads directly. Four
+        statuses:
+
+        - ``passed``: plan exists, audit ran, severity != high
+        - ``violation``: plan exists, audit ran, severity == high
+        - ``skipped``: no saved plan at worktree-relative path
+        - ``auditor_error``: auditor crashed (non-blocking for Coach)
+
+        The block also carries back-compat ``violations`` (int) so the
+        existing ``plan_audit.violations == 0`` gate in coach_validator
+        keeps working and test fixtures that set ``violations=N``
+        continue to exercise the same path. The auditor's deterministic
+        fields (severity, extra_files, missing_files, loc_variance_pct)
+        are exposed for Coach feedback so the Player can correct course.
+
+        Never raises: auditor exceptions become ``auditor_error`` so the
+        producer always writes the artefact (same invariant as the
+        agent_invocations gate).
+        """
+        try:
+            result = execute_phase_5_5_plan_audit(
+                task_id=task_id,
+                task_context={},
+                non_interactive=True,
+                workspace_root=self.worktree_path,
+            )
+        except Exception as exc:  # noqa: BLE001 — gate must never block artefacts
+            logger.warning(
+                "plan_audit auditor raised %s; recording auditor_error.",
+                exc.__class__.__name__,
+            )
+            return {
+                "status": "auditor_error",
+                "severity": None,
+                "violations": 0,
+                "extra_files": [],
+                "missing_files": [],
+                "extra_dependencies": [],
+                "missing_dependencies": [],
+                "loc_variance_pct": None,
+                "discrepancies_count": 0,
+                "message": f"{exc.__class__.__name__}: {exc}",
+            }
+
+        if result.get("skipped"):
+            return {
+                "status": "skipped",
+                "severity": None,
+                "violations": 0,
+                "extra_files": [],
+                "missing_files": [],
+                "extra_dependencies": [],
+                "missing_dependencies": [],
+                "loc_variance_pct": None,
+                "discrepancies_count": 0,
+                "message": "no implementation plan on disk",
+            }
+
+        if result.get("decision") == "error":
+            return {
+                "status": "auditor_error",
+                "severity": None,
+                "violations": 0,
+                "extra_files": [],
+                "missing_files": [],
+                "extra_dependencies": [],
+                "missing_dependencies": [],
+                "loc_variance_pct": None,
+                "discrepancies_count": 0,
+                "message": result.get("error") or "auditor returned error",
+            }
+
+        report = result.get("report")
+        if report is None:
+            # Defensive: non-skipped, non-error, but no report — treat as
+            # auditor_error rather than fabricating a passed verdict.
+            return {
+                "status": "auditor_error",
+                "severity": None,
+                "violations": 0,
+                "extra_files": [],
+                "missing_files": [],
+                "extra_dependencies": [],
+                "missing_dependencies": [],
+                "loc_variance_pct": None,
+                "discrepancies_count": 0,
+                "message": "auditor returned no report",
+            }
+
+        # Extract deterministic fields from the report's discrepancy list.
+        extra_files: List[str] = []
+        missing_files: List[str] = []
+        extra_deps: List[str] = []
+        missing_deps: List[str] = []
+        loc_variance_pct: Optional[float] = None
+
+        for disc in report.discrepancies:
+            if disc.category == "files" and "extra" in disc.message:
+                extra_files = list(disc.actual) if isinstance(disc.actual, list) else []
+            elif disc.category == "files" and (
+                "missing" in disc.message or "not created" in disc.message
+            ):
+                missing_files = list(disc.planned) if isinstance(disc.planned, list) else []
+            elif disc.category == "dependencies" and "extra" in disc.message:
+                extra_deps = list(disc.actual) if isinstance(disc.actual, list) else []
+            elif disc.category == "dependencies" and (
+                "missing" in disc.message or "not added" in disc.message
+            ):
+                missing_deps = list(disc.planned) if isinstance(disc.planned, list) else []
+            elif disc.category == "loc":
+                loc_variance_pct = disc.variance
+
+        severity = report.severity
+        # High severity → block the turn; medium/low → informational only.
+        # `violations` is a back-compat count consumed by existing Coach
+        # code (`violations == 0 → pass`). Count high-severity items so
+        # severity-high maps to violations>0 without breaking the legacy
+        # fixture contract that hand-sets violations=N.
+        high_count = sum(
+            1 for d in report.discrepancies if d.severity == "high"
+        )
+        violations = high_count
+        status = "violation" if severity == "high" else "passed"
+
+        return {
+            "status": status,
+            "severity": severity,
+            "violations": violations,
+            "extra_files": extra_files,
+            "missing_files": missing_files,
+            "extra_dependencies": extra_deps,
+            "missing_dependencies": missing_deps,
+            "loc_variance_pct": loc_variance_pct,
+            "discrepancies_count": len(report.discrepancies),
+            "message": (
+                f"severity={severity}, {len(report.discrepancies)} discrepanc(ies)"
+                + (f", {len(extra_files)} extra file(s)" if extra_files else "")
+                + (f", {len(missing_files)} missing file(s)" if missing_files else "")
+            ),
+        }
+
     def _write_task_work_results(
         self,
         task_id: str,
@@ -5639,6 +5805,14 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         results["agent_invocations_validation"] = (
             self._compute_agent_invocations_validation(results, workflow_mode)
         )
+
+        # TASK-FIX-RWOP1.3.2: plan_audit gate on the producer side. The
+        # deterministic auditor OVERRIDES any Player-supplied plan_audit
+        # block (the Player-prose block is untrustworthy — it could claim
+        # violations=[] while the worktree has extras). Coach reads
+        # plan_audit.severity and plan_audit.violations from this block,
+        # not from the Player's self-report.
+        results["plan_audit"] = self._compute_plan_audit_verdict(task_id)
 
         # Write results to file
         results_file.write_text(json.dumps(results, indent=2))

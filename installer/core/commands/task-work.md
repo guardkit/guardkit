@@ -4031,43 +4031,46 @@ except ValidationError as e:
 
 #### Phase 5.5: Plan Audit (Hubbard's Step 6)
 
-**NEW PHASE** - Implements John Hubbard's Step 6 (Audit) from his proven 6-step workflow.
+Implements John Hubbard's Step 6 (Audit) from his proven 6-step workflow. Closes a critical gap in AI-Engineer Lite (ThoughtWorks: "Agents frequently don't follow all instructions").
+
+**Two execution paths** — the same deterministic auditor feeds both:
+
+- **Interactive `/task-work`** (human at terminal): Claude invokes the auditor, displays the report, and prompts the developer for an A/R/E/C decision with a 30-second timeout (auto-approve on timeout).
+- **Autobuild producer** (Player ↔ Coach): The auditor runs **non-interactively** inside `AgentInvoker._write_task_work_results` (TASK-FIX-RWOP1.3.2). Its verdict is written to `task_work_results.json plan_audit` and **overrides** any Player-supplied block. Coach reads the deterministic verdict, not the Player's self-report. No prompt fires; severity drives Coach's decision.
 
 **When to execute:**
-- Always execute after Phase 5 (Code Review)
-- Only if implementation plan exists (skip for tasks without plans)
-- Applies to both --implement-only and standard workflows
-- NOT executed in --micro mode
+- Always after Phase 5 (Code Review) in standard and `--implement-only` workflows
+- Skip if no implementation plan exists (auditor writes `status: "skipped"`)
+- NOT executed in `--micro` mode (no plan generated)
 
 **Objective:**
-Verify that actual implementation matches the approved architectural plan. Catch scope creep, validate complexity estimates, and ensure AI followed instructions.
+Verify that actual implementation matches the approved architectural plan. Catch scope creep, validate complexity estimates, and ensure the Player followed the plan — without trusting the Player's self-report.
 
-**Research Support:**
-- John Hubbard's 6-step workflow: "Audit - check the code against Plan.md"
-- ThoughtWorks research: "Agent frequently doesn't follow all instructions" - Birgitta Böckeler
-- Closes critical gap in AI-Engineer Lite identified in SDD research analysis
+**Why the autobuild fold matters:** `guardkit/orchestrator/quality_gates/coach_validator.py` reads `task_work_results["plan_audit"]` to gate turn approval. Before TASK-FIX-RWOP1.3.2 the producer of that field was the Player LLM's prose output — the Player could trivially emit `"violations": []` regardless of whether the actual implementation deviated from the plan. Folding `execute_phase_5_5_plan_audit(..., non_interactive=True, workspace_root=self.worktree_path)` into the producer path makes Coach see the deterministic auditor's verdict.
 
-**Process:**
-1. **Load saved implementation plan** from `docs/state/{task_id}/implementation_plan.md`
-2. **Analyze actual implementation:**
-   - Scan for created/modified files
-   - Count lines of code (LOC)
-   - Extract dependencies from package files (requirements.txt, package.json, *.csproj)
-   - Calculate implementation duration (if available in metadata)
+**Process (both paths share steps 1-4):**
+1. **Load saved implementation plan** from `docs/state/{task_id}/implementation_plan.md` (falls back to `.json` for legacy plans). The loader is workspace-root-aware, so the autobuild path resolves plans relative to the worktree, not the orchestrator's cwd.
+2. **Analyze actual implementation by scanning the filesystem:**
+   - Scan for files matching `src/**/*.py`, `installer/**/*.py`, `src/**/*.ts`, `src/**/*.tsx`, `*.cs`, etc.
+   - Count lines of code (LOC) for planned files
+   - Extract dependencies from package files (`requirements.txt`, `pyproject.toml`, `package.json`, `*.csproj`)
+   - Calculate implementation duration (if available in task metadata)
 3. **Compare planned vs actual:**
-   - **Files**: List extra files, missing files
-   - **Dependencies**: List extra deps, missing deps
-   - **LOC**: Calculate % variance
-   - **Duration**: Calculate % variance
-4. **Generate audit report** with severity (low/medium/high)
-5. **Display report and prompt** for human decision
+   - **Files**: list extra files, missing files
+   - **Dependencies**: list extra deps, missing deps
+   - **LOC**: calculate % variance
+   - **Duration**: calculate % variance
+4. **Generate audit report** with severity (low/medium/high) using the thresholds below.
+5. **Route by path:**
+   - Interactive: display report, prompt `[A]pprove/[R]evise/[E]scalate/[C]ancel` with 30 s timeout.
+   - Autobuild: skip prompt, stdout print, and metadata mutation. Write the verdict block to `task_work_results.plan_audit` (overriding any Player-supplied block); Coach rejects the turn when `severity == "high"`.
 
 **Severity Calculation:**
 - **Low**: <10% variance, 0 extra files, all metrics within acceptable range
 - **Medium**: 10-30% variance, 1-2 extra files, or 1-2 extra dependencies
 - **High**: >30% variance, 3+ extra files, 3+ extra dependencies, or major deviations
 
-**Human Decision Options:**
+**Human Decision Options (interactive `/task-work` only):**
 - **[A]pprove**: Accept implementation as-is, proceed to IN_REVIEW
   - Updates task metadata with audit results
   - Non-blocking default (allows unattended operation)
@@ -4082,7 +4085,13 @@ Verify that actual implementation matches the approved architectural plan. Catch
   - Complete rejection of implementation
   - Requires full rework
 
-**Timeout Behavior:**
+**Autobuild Coach Decision (no prompt):**
+- `severity == "high"` → Coach rejects the turn with a `must_fix` `plan_audit` issue naming the extras. The Player's next turn has actionable feedback to correct course.
+- `severity in {low, medium}` with non-zero legacy `violations` → Coach rejects with `should_fix` (back-compat with pre-severity fixtures).
+- `status == "skipped"` or `status == "auditor_error"` → non-blocking (the auditor not running is not evidence of a task failing, and the agent_invocations gate covers the "Player skipped phases entirely" case).
+- `status == "passed"` → gate clears; Coach evaluates remaining quality gates.
+
+**Interactive Timeout Behavior:**
 - 30-second timeout for human response
 - **Auto-approves if no input** (non-blocking default)
 - Allows unattended operation while preserving human control option
@@ -4139,33 +4148,32 @@ Choice [A]pprove/[R]evise/[E]scalate/[C]ancel (30s timeout = auto-approve): _
 ```
 
 **Implementation:**
-Phase 5.5 is implemented in `installer/core/commands/lib/phase_execution.py`:
-- Function: `execute_phase_5_5_plan_audit(task_id, task_context)`
-- Core logic: `installer/core/commands/lib/plan_audit.py`
-- Metrics tracking: `installer/core/commands/lib/metrics/plan_audit_metrics.py`
+- Interactive entry point: `execute_phase_5_5_plan_audit(task_id, task_context)` in `installer/core/commands/lib/phase_execution.py`
+- Non-interactive producer entry point (autobuild): `execute_phase_5_5_plan_audit(task_id, task_context, non_interactive=True, workspace_root=...)`
+- Core auditor: `installer/core/commands/lib/plan_audit.py` (workspace-root-aware plan loading)
+- Producer wire: `AgentInvoker._compute_plan_audit_verdict()` and the fold in `_write_task_work_results` (TASK-FIX-RWOP1.3.2)
+- Coach consumer: `verify_quality_gates` and `_feedback_from_gates` in `guardkit/orchestrator/quality_gates/coach_validator.py`
+- Metrics tracking (interactive path only): `installer/core/commands/lib/metrics/plan_audit_metrics.py`
 
 **Skip Behavior:**
-If no implementation plan exists (e.g., task created before Phase 2.7 was implemented), Phase 5.5 is automatically skipped:
-```
-⚠️  No implementation plan found - skipping audit
-```
+If no implementation plan exists on disk, Phase 5.5 emits `status: "skipped"` and the gate passes without review. Interactive path prints a `⚠️  No implementation plan found - skipping audit` message; autobuild path silently writes the skipped block to `task_work_results.plan_audit`.
 
 **Success Criteria:**
 - Audit completes in < 5 seconds
-- Discrepancies accurately detected
-- Human decision properly handled
-- Task metadata updated correctly
-- Metrics tracked for future improvement
+- Discrepancies accurately detected (files, dependencies, LOC, duration)
+- Interactive: human decision properly handled, task metadata updated, metrics tracked
+- Autobuild: deterministic verdict written to `task_work_results.plan_audit`, Player self-report overridden
 
-**Error Handling:**
-- If plan doesn't exist: Skip audit, proceed to IN_REVIEW
-- If audit fails: Log error, default to approve (non-blocking)
-- If decision timeout: Auto-approve with warning
+**Error Handling (never blocks artefact emission):**
+- Plan doesn't exist: `status: "skipped"`, gate passes
+- Auditor crashes: `status: "auditor_error"` with exception message, gate passes (non-blocking — matches the `validator_error` invariant on the agent_invocations gate)
+- Interactive decision timeout: auto-approve with warning
 
 **Benefits:**
 - ✅ Catches scope creep automatically (saves review time)
+- ✅ Deterministic — the Player can't self-certify a clean audit when the worktree has extras
 - ✅ Validates complexity estimates (improves future planning)
-- ✅ Ensures AI follows plan (detects hallucinations)
+- ✅ Ensures AI follows plan (detects hallucinations and scope creep)
 - ✅ Closes Hubbard's Step 6 gap (100% workflow alignment)
 - ✅ Creates feedback loop for estimation improvement
 

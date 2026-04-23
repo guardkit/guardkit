@@ -1167,9 +1167,39 @@ class CoachValidator:
             logger.debug("Plan audit not required per task type profile, skipping")
         else:
             plan_audit = task_work_results.get("plan_audit", {})
+            # TASK-FIX-RWOP1.3.2: the producer writes a status-typed block
+            # (passed | violation | skipped | auditor_error). "skipped"
+            # means no plan on disk — don't fail the gate on absent data.
+            # "auditor_error" means the deterministic auditor itself crashed;
+            # non-blocking for the same reason validator_error is
+            # non-blocking on the agent_invocations gate — a gate failing
+            # to run is not evidence of a task failing. severity == "high"
+            # is the new authoritative block signal; the legacy violations
+            # count is preserved as a back-compat OR-gate for fixtures and
+            # older Player reports that don't emit severity.
+            plan_audit_status = plan_audit.get("status")
+            severity = plan_audit.get("severity")
             violations = plan_audit.get("violations", 0)
-            plan_audit_passed = violations == 0
-            logger.debug(f"Extracted plan_audit_passed={plan_audit_passed} (violations={violations})")
+
+            if plan_audit_status in ("skipped", "auditor_error"):
+                plan_audit_passed = True
+                logger.debug(
+                    f"Plan audit status={plan_audit_status} — treated as pass "
+                    f"(non-blocking informational status)"
+                )
+            elif severity == "high":
+                plan_audit_passed = False
+                logger.debug(
+                    f"Plan audit rejected: severity=high "
+                    f"(violations={violations}, status={plan_audit_status})"
+                )
+            else:
+                plan_audit_passed = violations == 0
+                logger.debug(
+                    f"Extracted plan_audit_passed={plan_audit_passed} "
+                    f"(violations={violations}, severity={severity}, "
+                    f"status={plan_audit_status})"
+                )
 
         # Determine effective arch_review_required (False if skip_arch_review=True)
         effective_arch_review_required = profile.arch_review_required and not skip_arch_review
@@ -4058,12 +4088,53 @@ class CoachValidator:
 
         if gates.plan_audit_required and not gates.plan_audit_passed:
             plan_audit = task_work_results.get("plan_audit", {})
+            # TASK-FIX-RWOP1.3.2: name the deterministic auditor's findings
+            # in feedback so the Player's next turn can correct course.
+            # Description is escalated to must_fix when severity == "high"
+            # (the producer-side block signal); lower severities keep the
+            # historical should_fix so legacy violations-only paths behave
+            # unchanged.
+            severity = plan_audit.get("severity")
+            extra_files = plan_audit.get("extra_files") or []
+            missing_files = plan_audit.get("missing_files") or []
+            extra_deps = plan_audit.get("extra_dependencies") or []
+            issue_severity = "must_fix" if severity == "high" else "should_fix"
+            parts: List[str] = ["Plan audit detected"]
+            if severity:
+                parts.append(f"{severity}-severity")
+            parts.append("discrepancies")
+            if extra_files:
+                preview = ", ".join(extra_files[:3])
+                if len(extra_files) > 3:
+                    preview += f", ... (+{len(extra_files) - 3} more)"
+                parts.append(f"— {len(extra_files)} extra file(s): {preview}")
+            if missing_files:
+                preview = ", ".join(missing_files[:3])
+                if len(missing_files) > 3:
+                    preview += f", ... (+{len(missing_files) - 3} more)"
+                parts.append(f"— {len(missing_files)} missing file(s): {preview}")
+            if extra_deps:
+                preview = ", ".join(extra_deps[:3])
+                parts.append(f"— extra dep(s): {preview}")
+
             issues.append({
-                "severity": "should_fix",
+                "severity": issue_severity,
                 "category": "plan_audit",
-                "description": "Plan audit detected violations",
+                "description": " ".join(parts),
                 "details": {
+                    "status": plan_audit.get("status"),
+                    "severity": severity,
                     "violations": plan_audit.get("violations", 0),
+                    "extra_files": extra_files,
+                    "missing_files": missing_files,
+                    "extra_dependencies": extra_deps,
+                    "missing_dependencies": plan_audit.get(
+                        "missing_dependencies"
+                    ) or [],
+                    "loc_variance_pct": plan_audit.get("loc_variance_pct"),
+                    "discrepancies_count": plan_audit.get(
+                        "discrepancies_count", 0
+                    ),
                 },
             })
 

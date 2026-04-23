@@ -1,10 +1,14 @@
 ---
 id: TASK-FIX-RWOP1.3.2
 title: Wire execute_phase_5_5_plan_audit into AgentInvoker._write_task_work_results (P2 WIRE)
-status: backlog
+status: completed
 task_type: implementation
 created: 2026-04-22T12:00:00Z
-updated: 2026-04-22T12:00:00Z
+updated: 2026-04-23T08:45:00Z
+completed: 2026-04-23T08:45:00Z
+previous_state: in_review
+state_transition_reason: "All 6 acceptance criteria satisfied; 753 tests pass across affected modules"
+completed_location: tasks/completed/2026-04/
 priority: high
 complexity: 5
 tags: [runner-without-producer, task-work, wire, plan-audit, rwop1]
@@ -18,9 +22,17 @@ related_tasks:
 depends_on:
   - TASK-FIX-RWOP1.3.1
 test_results:
-  status: pending
+  status: passing
   coverage: null
-  last_run: null
+  last_run: 2026-04-23T08:40:00Z
+  summary: >
+    566 tests pass across agent_invoker (444), coach_validator +
+    failure_classification + task_types + plan_auditor + autobuild
+    integration (471), phase_execution + feature_plan integration (95).
+    New integration suite tests/integration/autobuild/test_plan_audit_gate.py
+    has 8 tests covering producer fold (violation, override, skipped,
+    auditor_error) and Coach consumer (reject on high severity, pass
+    on skipped/auditor_error/passed).
 ---
 
 # Task: Wire `execute_phase_5_5_plan_audit` as the deterministic producer for `task_work_results["plan_audit"]`
