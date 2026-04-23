@@ -80,6 +80,17 @@ from installer.core.commands.lib.phase_execution import (
     execute_phase_5_5_plan_audit,
 )
 
+# TASK-FIX-RWOP1.4a: Assumption-confidence warn-mode gate on the producer
+# path. feature-spec.md:337 claims the Coach verifies low-confidence
+# assumptions before accepting a spec, but before this wire no producer
+# wrote a Coach-consumable verdict — same "runner without producer" shape
+# as TASK-FIX-RWOP1.3.1 (R5 precedent). Coach surfaces the block as a
+# non-blocking warning (warn-mode per TASK-FIX-RWOP1.4 Part A).
+#
+# The checker is imported lazily inside _write_task_work_results because a
+# top-level import triggers guardkit.orchestrator.quality_gates.__init__,
+# which pulls in pre_loop → task_work_interface → agent_invoker (circular).
+
 # Logger for agent invocations
 logger = logging.getLogger(__name__)
 
@@ -5813,6 +5824,20 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         # plan_audit.severity and plan_audit.violations from this block,
         # not from the Player's self-report.
         results["plan_audit"] = self._compute_plan_audit_verdict(task_id)
+
+        # TASK-FIX-RWOP1.4a: assumption-confidence warn-mode gate on the
+        # producer side. Coach reads unconfirmed_low_confidence_assumptions
+        # and surfaces it as a non-blocking warning (see feature-spec.md:337
+        # for the prose claim this wire validates). Same fix-shape as the
+        # 1.3.1 agent_invocations gate; warn-mode per TASK-FIX-RWOP1.4
+        # Part A decision — escalation to block-mode is a separate task.
+        # Lazy import — see the comment on the top-of-file import block.
+        from guardkit.orchestrator.quality_gates.assumption_confidence_checker import (
+            check_unconfirmed_low_confidence_assumptions,
+        )
+        results["unconfirmed_low_confidence_assumptions"] = (
+            check_unconfirmed_low_confidence_assumptions(self.worktree_path)
+        )
 
         # Write results to file
         results_file.write_text(json.dumps(results, indent=2))

@@ -938,6 +938,17 @@ class CoachValidator:
             task, task_work_results
         )
 
+        # 5.65. Unconfirmed low-confidence assumptions (TASK-FIX-RWOP1.4a).
+        # Warn-mode gate: feature-spec.md:337 says Coach verifies
+        # low-confidence assumptions before accepting a spec. The producer
+        # (AgentInvoker._write_task_work_results) writes the block;
+        # here we surface it as a non-blocking warning so the human
+        # reviewing the merge sees it. Escalation to block-mode is a
+        # separate task driven by evidence that warn-mode is being ignored.
+        assumption_issues = self._check_unconfirmed_assumptions(
+            task_work_results
+        )
+
         # 5.7. BDD oracle gate (TASK-BDD-E8954): when present in task_work_results,
         # scenarios_failed > 0 blocks approval. scenarios_pending is informational
         # and surfaces in feedback without blocking — see bdd_runner module docstring
@@ -968,6 +979,7 @@ class CoachValidator:
             zero_test_issues
             + seam_test_issues
             + consumer_context_issues
+            + assumption_issues
             + bdd_non_blocking
         )
 
@@ -3945,6 +3957,74 @@ class CoachValidator:
             }]
 
         return []
+
+    def _check_unconfirmed_assumptions(
+        self,
+        task_work_results: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """TASK-FIX-RWOP1.4a: surface unconfirmed low-confidence assumptions.
+
+        Reads the ``unconfirmed_low_confidence_assumptions`` block written
+        by ``AgentInvoker._write_task_work_results`` (producer) and, if it
+        names any rows, returns a single non-blocking warning issue naming
+        the rows. Warn-mode: Coach still approves the turn; the warning
+        rides along so the human reviewing the merge can act on it.
+
+        Empty ``unconfirmed`` list, ``status: "ok"``, a missing block, or
+        a ``status: "checker_error"`` producer fault all return ``[]`` —
+        the gate never blocks on its own bookkeeping.
+
+        Parameters
+        ----------
+        task_work_results : Dict[str, Any]
+            Full task-work results dict loaded from disk.
+
+        Returns
+        -------
+        List[Dict[str, Any]]
+            One warning issue when unconfirmed rows exist, otherwise
+            an empty list.
+        """
+        block = task_work_results.get("unconfirmed_low_confidence_assumptions")
+        if not isinstance(block, dict):
+            return []
+
+        if block.get("status") != "warning":
+            # "ok" means no unconfirmed rows; "checker_error" is producer
+            # self-reported — neither should surface a spec warning.
+            return []
+
+        unconfirmed = block.get("unconfirmed") or []
+        if not unconfirmed:
+            return []
+
+        row_count = len(unconfirmed)
+        # Keep the description terse; put the full row list in details so
+        # the human reviewer can navigate to the YAML without re-parsing
+        # the JSON.
+        row_ids = [r.get("id", "unknown") for r in unconfirmed]
+        logger.info(
+            "Unconfirmed low-confidence assumptions: %d row(s) across %d file(s). "
+            "IDs: %s",
+            row_count,
+            block.get("files_scanned", 0),
+            ", ".join(row_ids),
+        )
+        return [{
+            "severity": "warning",
+            "category": "unconfirmed_low_confidence_assumptions",
+            "description": (
+                f"{row_count} low-confidence assumption(s) in features/**/"
+                f"_assumptions.yaml have no 'human_response: confirmed' entry. "
+                f"feature-spec.md:337 says the Coach verifies these before "
+                f"accepting a spec — please review before merging. "
+                f"Unconfirmed IDs: {', '.join(row_ids)}."
+            ),
+            "details": {
+                "files_scanned": block.get("files_scanned", 0),
+                "unconfirmed": unconfirmed,
+            },
+        }]
 
     def _feedback_result(
         self,

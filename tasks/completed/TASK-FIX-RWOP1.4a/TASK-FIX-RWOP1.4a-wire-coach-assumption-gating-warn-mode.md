@@ -1,10 +1,16 @@
 ---
 id: TASK-FIX-RWOP1.4a
 title: Wire Coach low-confidence assumption gating into coach_validator (warn-mode)
-status: backlog
+status: completed
 task_type: feature
 created: 2026-04-22T00:00:00Z
-updated: 2026-04-22T00:00:00Z
+updated: 2026-04-23T00:00:00Z
+completed: 2026-04-23T00:00:00Z
+completed_location: tasks/completed/TASK-FIX-RWOP1.4a/
+previous_state: in_review
+state_transition_reason: "All acceptance criteria met; human review confirmed via /task-complete"
+organized_files:
+  - TASK-FIX-RWOP1.4a-wire-coach-assumption-gating-warn-mode.md
 priority: medium
 complexity: 4
 tags: [runner-without-producer, feature-spec, coach-gating, assumptions, warn-mode, rwop1]
@@ -18,9 +24,12 @@ related_tasks:
   - TASK-FIX-RWOP1.4
   - TASK-FIX-3C9D  # R1 precedent — same shape, different verifier
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  suite: tests/integration/autobuild/test_assumption_confidence_gate.py
+  passed: 6
+  failed: 0
+  last_run: 2026-04-23T00:00:00Z
+  notes: "R5 precedent test (tests/integration/autobuild/test_agent_invocations_gate.py) and test_agent_invoker.py::TestWriteTaskWorkResults also re-run green (29 related tests total)."
 ---
 
 # Task: Wire Coach low-confidence assumption gating (warn-mode)
@@ -60,12 +69,22 @@ This is the R5-positioned twin of the R1 AC-linter failure class that [TASK-FIX-
 
 ## Acceptance Criteria
 
-- [ ] New validator module (or method on an existing quality-gate module — pick what matches the TASK-FIX-3C9D shape) locates `_assumptions.yaml` files and extracts unconfirmed low-confidence rows.
-- [ ] `coach_validator.py` reads the field and emits a warning (not a failure) in the Coach decision record.
-- [ ] One end-to-end test covers both the warning-emitted and warning-empty branches.
-- [ ] Post-execution rerun of the runner-without-producer grep for `feature-spec.md` per the parent review's method; the Phase 5 Coach gating claim is no longer runner-without-producer.
-- [ ] `installer/core/commands/feature-spec.md:337` prose is left as-is (the WIRE decision validates the existing claim; no rewrite needed).
-- [ ] No existing tests regress.
+- [x] New validator module (or method on an existing quality-gate module — pick what matches the TASK-FIX-3C9D shape) locates `_assumptions.yaml` files and extracts unconfirmed low-confidence rows.
+  - Landed: `guardkit/orchestrator/quality_gates/assumption_confidence_checker.py` (free function `check_unconfirmed_low_confidence_assumptions`).
+  - Shape matches the TASK-FIX-RWOP1.3.1 R5 precedent — producer writes a block into `task_work_results.json`, Coach reads it.
+- [x] `coach_validator.py` reads the field and emits a warning (not a failure) in the Coach decision record.
+  - Landed: new `_check_unconfirmed_assumptions` soft-gate method, same pattern as `_check_seam_test_recommendation` / `_check_bdd_results`. Appended to `all_issues` at the approval path (line ~973) — Coach still approves the turn; warning rides along with `severity: "warning"` and `category: "unconfirmed_low_confidence_assumptions"`.
+- [x] One end-to-end test covers both the warning-emitted and warning-empty branches.
+  - Landed: `tests/integration/autobuild/test_assumption_confidence_gate.py` mirrors `test_agent_invocations_gate.py`. Six tests cover: unconfirmed row flagged, all-confirmed empty, no features/ dir, Coach warning-on-approval path, Coach ok → no warning, Coach checker_error → no warning. All pass.
+- [x] Post-execution rerun of the runner-without-producer grep for `feature-spec.md` per the parent review's method; the Phase 5 Coach gating claim is no longer runner-without-producer.
+  - Grep of `coach_validator.py` for `_assumptions.yaml` now returns line 4018 (the warning description string inside `_check_unconfirmed_assumptions`). Producer side: `agent_invoker.py` lines 5835-5840 import and call the checker.
+- [x] `installer/core/commands/feature-spec.md:337` prose is left as-is (the WIRE decision validates the existing claim; no rewrite needed).
+  - No edits to `feature-spec.md`.
+- [x] No existing tests regress.
+  - `tests/integration/autobuild/test_agent_invocations_gate.py` (R5 precedent): 7/7 pass.
+  - `tests/integration/autobuild/test_assumption_confidence_gate.py` (new): 6/6 pass.
+  - `tests/unit/test_agent_invoker.py::TestWriteTaskWorkResults` (producer unit tests): 22/22 pass.
+  - 50 pre-existing failures in `tests/integration/quality_gates/` and one in `test_agent_invoker.py::TestInvokeTaskWorkImplement` reproduce on `main` without this branch's changes (verified via `git stash`) — unrelated to this task.
 
 ## Implementation Notes
 
