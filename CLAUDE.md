@@ -170,6 +170,7 @@ installer/core/             # Global resources (agents, commands, templates)
 | Stack Templates | `installer/core/templates/*/` |
 | Rules & Patterns | `.claude/rules/` |
 | Instrumentation Guide | `docs/guides/autobuild-instrumentation-guide.md` |
+| AutoBuild Stall Runbook | `docs/guides/autobuild-instrumentation-guide.md#if-autobuild-stalls-immediately` |
 | MCP Integration | `docs/deep-dives/mcp-integration/` |
 | Graphiti Knowledge | `.claude/rules/graphiti-knowledge.md` |
 | Installation | `pip install guardkit-py` or `./installer/scripts/install.sh` |

@@ -1,9 +1,12 @@
 ---
 id: TASK-DOC-7A06
 title: AutoBuild stall-diagnosis runbook + knowledge-graph seeding for player-invocation stalls
-status: backlog
+status: completed
 created: 2026-04-24T12:55:00Z
-updated: 2026-04-24T12:55:00Z
+updated: 2026-04-24T13:40:00Z
+completed: 2026-04-24T13:40:00Z
+completed_location: tasks/completed/TASK-DOC-7A06/
+previous_state: in_progress
 priority: low
 tags: [docs, runbook, autobuild, graphiti, knowledge-graph]
 parent_review: TASK-REV-E4F5
@@ -13,6 +16,7 @@ wave: 1
 conductor_workspace: autobuild-sdk-stall-resilience-w1-4
 complexity: 2
 depends_on: []
+graphiti_seed_uuid: 932dcd2f-0a1a-4b29-b614-2f83b7cd59a8
 ---
 
 # Task: Runbook + knowledge-graph seed for player-invocation stalls
@@ -36,39 +40,35 @@ seed only. No Coach quality gates on code coverage.
 
 ## Acceptance Criteria
 
-- [ ] `docs/guides/autobuild-instrumentation-guide.md` gains a section
-      **"If AutoBuild stalls immediately"** with a 3-line triage table:
-      | Symptom (from summary) | Likely cause | Quick check |
-      |---|---|---|
-      | `player_invocation_stall` + auth error | Not logged into Claude on this host | `claude` CLI login |
-      | `player_invocation_stall` + "Unknown message type" | SDK version skew | `pip show claude-agent-sdk` vs. working host |
-      | `player_invocation_stall` + stream/timeout | Network or endpoint config | `ANTHROPIC_BASE_URL` + vllm-serve.sh (see TASK-REV-8A08) |
-- [ ] Cross-link from within the runbook back to TASK-REV-E4F5 review report
-      and TASK-REV-8A08 review report.
-- [ ] Graphiti graph seed via `guardkit graphiti add-context --inline` (or
-      the equivalent command from the Python client):
-      - `group_id: guardkit__project_decisions`
-      - content: _"Player-invocation stall (3× SDK error before any work) must
-        be classified distinctly from coach-feedback stall at the final-summary
-        layer. Observed twice: TASK-REV-8A08 (FEAT-486D, SDK stream timeout)
-        and TASK-REV-E4F5 (FEAT-FORGE-002, SDK auth + version skew). The
-        orchestrator captures the signal in `player_result.error` /
-        synthetic-report `recovery_metadata` but does not consult it at
-        summary-time."_
-- [ ] Verify the seed arrives in the graph: `guardkit graphiti search
-      "player invocation stall"` returns the new fact.
-- [ ] Coordinate with TASK-FIX-7A01: **before pinning** `claude-agent-sdk` to
-      a version that parses `rate_limit_event`, verify whether any PyPI
-      release exists. If not, file
-      `https://github.com/anthropics/claude-agent-sdk-python/issues/new` with:
-      - the Run 2 transcript's error quote
-      - the approximate SDK version where it first failed
-      - a minimal repro (a small Python snippet streaming one `rate_limit_event`
-        message type through the SDK's parser).
-      Link the opened issue from TASK-FIX-7A01's Notes section. (This bullet
-      is optional — only if the upstream gap is confirmed.)
-- [ ] Update `CLAUDE.md`'s "Key References" table so the runbook section is
-      discoverable.
+- [x] `docs/guides/autobuild-instrumentation-guide.md` gains a section
+      **"If AutoBuild stalls immediately"** with a 3-line triage table
+      (added as first subsection under `## Troubleshooting` so it's the
+      first thing stall-diagnosers hit; also linked from the Table of
+      Contents).
+- [x] Cross-link from within the runbook back to TASK-REV-E4F5 review report
+      and TASK-REV-8A08 review report (plus cross-link to TASK-FIX-7A01 for
+      the active SDK-pin fix).
+- [x] Graphiti graph seed into `guardkit__project_decisions`. Seeded via
+      the Python client path (equivalent to the CLI's `add_episode` —
+      `guardkit graphiti add-context` only accepts file paths, not inline
+      payloads, so the "`--inline` or the equivalent command from the
+      Python client" phrasing in the original brief routed to the latter).
+      Episode uuid: `932dcd2f-0a1a-4b29-b614-2f83b7cd59a8`.
+- [x] Verified seed is findable: `guardkit graphiti search "player
+      invocation stall"` returns score-2.00 hit ("Player-invocation stall
+      must be classified distinctly from coach-feedback stall") plus
+      related extracted facts (`player_result.error`,
+      `recovery_metadata`, SDK-auth tie to TASK-REV-E4F5).
+- [x] R7 (upstream `claude-agent-sdk-python` issue): **not needed**.
+      Verified `claude-agent-sdk` 0.1.66 (latest PyPI at 2026-04-24) now
+      parses `rate_limit_event` — `RateLimitEvent`, `RateLimitInfo`,
+      `RateLimitStatus`, `RateLimitType` are exported from
+      `claude_agent_sdk.__init__` and referenced in
+      `_internal/message_parser.py`. Upstream gap is closed. No issue
+      filed. (This bullet in the brief was explicitly optional — "only if
+      the upstream gap is confirmed".)
+- [x] Update `CLAUDE.md`'s "Key References" table — new
+      **AutoBuild Stall Runbook** row pointing at the section anchor.
 
 ## Files
 

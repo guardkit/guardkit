@@ -17,7 +17,9 @@
 - [Adaptive Concurrency](#adaptive-concurrency)
 - [vLLM / Local Backend Specifics](#vllm--local-backend-specifics)
 - [Secret Redaction](#secret-redaction)
+- [Bootstrap Hard-Fail Gate (`bootstrap_failure_mode`)](#bootstrap-hard-fail-gate-bootstrap_failure_mode)
 - [Troubleshooting](#troubleshooting)
+  - [If AutoBuild stalls immediately](#if-autobuild-stalls-immediately)
 
 ---
 
@@ -803,7 +805,124 @@ Pass the custom redactor to `redact_tool_exec_event()` to apply it.
 
 ---
 
+## Bootstrap Hard-Fail Gate (`bootstrap_failure_mode`)
+
+When AutoBuild creates a shared worktree it runs an environment bootstrap (detect `pyproject.toml` / `package.json` / `*.csproj` / etc., run the matching install). By default this phase is **non-blocking** — if every install fails the orchestrator prints a yellow-⚠ line and proceeds into Wave 1 anyway.
+
+For the forge/GB10 case this turned into a foot-gun: `forge` required Python ≥3.13 but the GB10 host ran 3.12, every `pip install -e .` failed, and AutoBuild still marched into Wave 1. Review [TASK-REV-E4F5](../../.claude/reviews/TASK-REV-E4F5-review-report.md) recommendation R4a asked for an opt-in gate that turns this into a loud error instead of a silent warning. [TASK-FIX-7A04](../../tasks/in_progress/autobuild-sdk-stall-resilience/TASK-FIX-7A04-bootstrap-hardfail-gate.md) implements it.
+
+### Configuration
+
+Set in `.guardkit/config.yaml` (feature-level), override per-invocation on the CLI:
+
+```yaml
+# .guardkit/config.yaml
+autobuild:
+  bootstrap:
+    failure_mode: warn   # "warn" (default) or "block"
+    optional_stacks: []  # stacks that should NOT count toward the essential-stack check
+```
+
+```bash
+# CLI override — wins over the yaml value
+guardkit autobuild feature FEAT-XXX --bootstrap-failure-mode block
+```
+
+### Modes
+
+| Mode | Behavior when 0/N installs succeed | Behavior when partial success | Behavior when all succeed |
+|---|---|---|---|
+| `warn` (default) | yellow-⚠ line, continue to Wave 1 | yellow-⚠ line, continue | green-✓ line, continue |
+| `block` | raise `FeatureOrchestrationError` before Wave 1 | yellow-⚠ line, continue | green-✓ line, continue |
+
+`block` fires only on **total-failure** (`installs_failed == installs_attempted`) of at least one **essential** stack (i.e. a detected stack not listed in `optional_stacks`). Partial success is never blocking — the orchestrator is still making progress.
+
+### When to use `block`
+
+- **Dedicated AutoBuild hosts** (e.g. GB10-class boxes running `claude-agent-sdk`) where a silent-broken environment will just produce Coach-runs-against-wrong-interpreter failures a wave later. The loud error at `_bootstrap_environment` beats a cryptic pytest failure two turns in.
+- **`requires-python` constraints that don't match the host** (the forge/GB10 case). The hard-fail message carries the `requires-python` value and the PEP-668 stderr tail, so the fix is usually a one-line host upgrade.
+- **CI / scheduled feature builds** where an unattended run with a broken venv is worse than a hard failure that gets picked up by the next agent.
+
+### When to stay on `warn`
+
+- **Developer machines** where you expect to manually reconcile a partial install (e.g. you're iterating on a new stack and the install genuinely may not work yet).
+- **Features that intentionally span optional stacks**. Use `optional_stacks:` to downgrade specific stacks rather than flipping the whole feature back to `warn`.
+
+### Error message shape
+
+On hard-fail the error includes the attempted stacks, the manifest path, `requires-python` (when declared), a PEP-668 marker (when the install tripped `externally-managed-environment`), the stderr tail, and a hint:
+
+```
+FeatureOrchestrationError: Bootstrap hard-fail: 0/1 install(s) succeeded for essential stack(s): python.
+Manifest: /worktree/pyproject.toml
+Manifest requires-python: >=3.13
+Detected PEP 668 externally-managed-environment failure.
+Install stderr (tail):
+error: externally-managed-environment
+…
+Hint: set `bootstrap_failure_mode: warn` in .guardkit/config.yaml (or pass `--bootstrap-failure-mode warn`) to downgrade this to a non-blocking warning.
+```
+
+### `requires-python` pre-check
+
+The MacBook Pro `jarvis` FEAT-J002 run surfaced a neighboring failure mode: pip's error for an interpreter/`requires-python` mismatch is opaque (`Package 'jarvis' requires a different Python: 3.14.2 not in '<3.13,>=3.12'`) and easy to miss in the install log. To cut that diagnostic round-trip the orchestrator runs a **pre-pip `requires-python` check** (amendment from [TASK-REV-JMBP](../../.claude/reviews/TASK-REV-JMBP-review-report.md) Workstream E).
+
+How it works:
+
+1. For every Python manifest, read `requires-python` from `[project]` (PEP 621) or `[tool.poetry].python` (legacy Poetry).
+2. Compare against the active interpreter's version via `packaging.specifiers.SpecifierSet`.
+3. If any manifest fails the check, act based on `bootstrap_failure_mode`:
+   - `warn` — emit a structured `⚠ Python X does not satisfy requires-python=`Y`` line per mismatch, then continue to pip (pip remains authoritative).
+   - `block` — raise **before** pip runs, with a multi-line remediation hint that names `uv`, `pyenv`, and `conda` install commands for a compatible minor version.
+
+The pre-check is a silent no-op when:
+
+- A manifest declares no `requires-python` constraint.
+- The specifier string is malformed (pip stays authoritative).
+- `packaging.specifiers` is unavailable at import time.
+
+Example `block`-mode error:
+
+```
+FeatureOrchestrationError: Bootstrap requires-python mismatch (pre-pip).
+Python 3.14.2 does not satisfy requires-python=`<3.13,>=3.12` for /worktree/pyproject.toml.
+Install a compatible interpreter with one of:
+  • uv python install 3.12
+  • pyenv install 3.12 && pyenv local 3.12
+  • conda create -n <name> python=3.12 && conda activate <name>
+Hint: set `bootstrap_failure_mode: warn` in .guardkit/config.yaml (or pass `--bootstrap-failure-mode warn`) to downgrade this to a non-blocking warning.
+```
+
+### Related work
+
+- Wave 2 task [TASK-FIX-7A05](../../tasks/backlog/autobuild-sdk-stall-resilience/TASK-FIX-7A05-wire-venv-to-coach-pytest.md) wires the bootstrap venv into the Coach pytest interpreter, closing the rest of the GB10 class-of-defect (venv-was-built-but-Coach-ignored-it).
+- Review: [TASK-REV-E4F5](../../.claude/reviews/TASK-REV-E4F5-review-report.md) findings F6 and F7.
+- Amendment: [TASK-REV-JMBP](../../.claude/reviews/TASK-REV-JMBP-review-report.md) Workstream E (requires-python pre-check).
+
+---
+
 ## Troubleshooting
+
+### If AutoBuild stalls immediately
+
+**Symptom**: AutoBuild exits or stalls within the first few seconds — no `task.started` event emitted, or the final-summary classification reads `player_invocation_stall` rather than a mid-loop coach-feedback stall.
+
+This class-of-defect — *Player invocation systematically errored before any work happened, and the orchestrator misnamed the problem at summary-time* — has been observed twice:
+
+- [TASK-REV-8A08](../../.claude/reviews/TASK-REV-8A08-review-report.md) on FEAT-486D / TASK-AD-004 (SDK stream timeout)
+- [TASK-REV-E4F5](../../.claude/reviews/TASK-REV-E4F5-review-report.md) on FEAT-FORGE-002 (SDK auth + version skew)
+
+Use this triage table to self-diagnose before opening a review:
+
+| Symptom (from summary)                                    | Likely cause                                     | Quick check                                                                  |
+|-----------------------------------------------------------|--------------------------------------------------|------------------------------------------------------------------------------|
+| `player_invocation_stall` + auth error                    | Not logged into Claude on this host              | `claude` CLI login                                                           |
+| `player_invocation_stall` + "Unknown message type"        | SDK version skew (e.g. `rate_limit_event`)       | `pip show claude-agent-sdk` — compare to working host                        |
+| `player_invocation_stall` + stream/timeout                | Network or endpoint config                       | `ANTHROPIC_BASE_URL` + `vllm-serve.sh` — see [TASK-REV-8A08](../../.claude/reviews/TASK-REV-8A08-review-report.md) |
+
+**Where the signal lives**: `player_result.error` in the Player turn artefact, and `recovery_metadata` on synthetic reports. The orchestrator currently captures the signal at the call site but does not consult it at final-summary time; treat the summary's stall category as a starting guess, not an authoritative diagnosis, and open `player_result.error` first.
+
+**Related fix work**: [TASK-FIX-7A01](../../tasks/in_review/TASK-FIX-7A01-pin-sdk-log-version.md) pins `claude-agent-sdk` to a known-good band and logs the version at startup, which removes the SDK-skew failure mode from this table. Until that lands, the `pip show claude-agent-sdk` check is the fastest way to confirm or rule out version skew.
 
 ### No Events in File
 
