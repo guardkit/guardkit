@@ -72,8 +72,65 @@ sudo systemctl daemon-reload
 sudo systemctl restart logid
 That creates the override file directly, reloads systemd, and restarts logid. Your mouse button should start working right away.
 
+---
 
+## Durable fix (2026-04-24)
 
+The `Restart=on-failure` override above is not sufficient. After a reboot on 2026-04-24 the side button was dead again — `logid` came up, found the keyboard, tried 5 times for the mouse on `/dev/hidraw1`, gave up, and kept running half-bound. Because it didn't crash, `Restart=on-failure` never triggered.
+
+Root cause is in logid itself: it scans hidraw too early and gives up after 5 retries. The fix is to delay logid's start until Bluetooth/input has settled.
+
+### Current override
+
+`/etc/systemd/system/logid.service.d/override.conf`:
+
+```ini
+[Unit]
+After=bluetooth.service systemd-user-sessions.service
+Wants=bluetooth.service
+
+[Service]
+ExecStartPre=/bin/sleep 10
+Restart=always
+RestartSec=5
+```
+
+What each line does:
+- `ExecStartPre=/bin/sleep 10` — the actual fix. Gives Bluetooth/USB 10s to settle before logid scans hidraw. This is the cheapest reliable workaround for the 5-retry-then-quit behaviour in logid.
+- `After=bluetooth.service` + `Wants=bluetooth.service` — belt-and-braces ordering so systemd schedules logid after Bluetooth is up.
+- `Restart=always` (was `on-failure`) — if logid ever exits for any reason it comes back. The old `on-failure` didn't help because logid didn't fail on the bad boot, it just half-succeeded.
+
+### To reapply from scratch
+
+```bash
+sudo tee /etc/systemd/system/logid.service.d/override.conf > /dev/null <<'EOF'
+[Unit]
+After=bluetooth.service systemd-user-sessions.service
+Wants=bluetooth.service
+
+[Service]
+ExecStartPre=/bin/sleep 10
+Restart=always
+RestartSec=5
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl restart logid
+sleep 13 && journalctl -u logid --no-pager -n 10
+```
+
+Expected output — both devices found on first try:
+
+```
+logid[...]: [INFO] Device found: MX Master 3S on /dev/hidraw1:255
+logid[...]: [INFO] Device found: MX Keys Wireless Keyboard on /dev/hidraw2:255
+```
+
+### If the side button is dead after a reboot
+
+1. `journalctl -u logid --no-pager -n 20` — look for `Failed to add device /dev/hidraw1 after 5 tries`.
+2. Quick fix: `sudo systemctl restart logid` (by now the mouse is awake, so it binds).
+3. If it keeps happening, bump the sleep in the override from 10 → 15 or 20 seconds.
 
 
 
