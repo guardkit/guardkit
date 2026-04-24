@@ -50,6 +50,11 @@ from guardkit.orchestrator.docker_fixtures import (
     is_known_service,
 )
 from guardkit.orchestrator.paths import TaskArtifactPaths
+from guardkit.orchestrator.phase_specialists import (
+    PHASE_DESCRIPTIONS,
+    detect_stack_template,
+    render_missing_phase_list,
+)
 from guardkit.orchestrator.schemas import STATUS_ALIASES
 from guardkit.models.task_types import TaskType, QualityGateProfile, get_profile, TASK_TYPE_ALIASES
 
@@ -649,11 +654,64 @@ class CoachValidator:
             isinstance(agent_invocations_validation, dict)
             and agent_invocations_validation.get("status") == "violation"
         ):
-            missing_phases = agent_invocations_validation.get("missing_phases") or []
-            missing_phases_str = ", ".join(missing_phases) if missing_phases else "unknown"
+            raw_missing = agent_invocations_validation.get("missing_phases") or []
+            # The validator may emit missing_phases either as a list of phase
+            # IDs or as a list of {"phase": "...", "description": "..."} dicts.
+            # Normalise to a flat list of phase IDs for downstream formatting.
+            missing_phases: List[str] = []
+            if raw_missing and isinstance(raw_missing[0], dict):
+                missing_phases = [
+                    str(m.get("phase", ""))
+                    for m in raw_missing
+                    if m.get("phase")
+                ]
+            else:
+                missing_phases = [str(m) for m in raw_missing]
+            missing_phases_sorted = sorted(missing_phases)
+            missing_phases_str = (
+                ", ".join(missing_phases_sorted)
+                if missing_phases_sorted
+                else "unknown"
+            )
+            # TASK-FIX-7A07 AC-3: Build a phase-with-description rendering and
+            # resolve the stack-specific Phase-3 specialist name so the
+            # Player's next turn has actionable guidance on *which*
+            # sub-agent to invoke via the Task tool.
+            missing_phases_with_names = ", ".join(
+                f"{p} ({PHASE_DESCRIPTIONS.get(p, 'Unknown')})"
+                for p in missing_phases_sorted
+            ) if missing_phases_sorted else "unknown"
+            stack_template = detect_stack_template(self.worktree_path)
+            specialist_lines = render_missing_phase_list(
+                missing_phases_sorted, stack_template
+            )
+            specialist_block = "\n".join(f"- {line}" for line in specialist_lines)
+            expected_phases_val = agent_invocations_validation.get(
+                "expected_phases"
+            )
+            actual_invocations_val = agent_invocations_validation.get(
+                "actual_invocations"
+            )
+            expected_str = (
+                str(expected_phases_val)
+                if expected_phases_val is not None
+                else "?"
+            )
+            actual_str = (
+                str(actual_invocations_val)
+                if actual_invocations_val is not None
+                else "?"
+            )
             logger.warning(
                 f"Agent-invocations gate rejected {task_id}: "
                 f"missing phases {missing_phases_str}"
+            )
+            enriched_description = (
+                f"Task-work produced a report with {actual_str} of "
+                f"{expected_str} required agent invocations. "
+                f"Missing phases: {missing_phases_with_names}. "
+                f"Invoke these agents via the Task tool before re-emitting "
+                f"the report:\n{specialist_block}"
             )
             return self._feedback_result(
                 task_id=task_id,
@@ -661,20 +719,11 @@ class CoachValidator:
                 issues=[{
                     "severity": "must_fix",
                     "category": "agent_invocations_violation",
-                    "description": (
-                        f"task-work results claim phases were completed "
-                        f"without matching agent invocations. Missing phases: "
-                        f"{missing_phases_str}. The Player report cannot be "
-                        f"trusted until all required agents are invoked."
-                    ),
+                    "description": enriched_description,
                     "details": {
-                        "missing_phases": missing_phases,
-                        "expected_phases": agent_invocations_validation.get(
-                            "expected_phases"
-                        ),
-                        "actual_invocations": agent_invocations_validation.get(
-                            "actual_invocations"
-                        ),
+                        "missing_phases": missing_phases_sorted,
+                        "expected_phases": expected_phases_val,
+                        "actual_invocations": actual_invocations_val,
                     },
                 }],
                 rationale=(

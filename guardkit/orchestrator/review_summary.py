@@ -41,6 +41,8 @@ class TaskSummaryRow:
     sdk_invocations: int
     sdk_ceiling_hits: int
     error: Optional[str] = None
+    # TASK-FIX-7A07: Sub-type label for unrecoverable_stall exits.
+    decision_subtype: Optional[str] = None
 
 
 @dataclass
@@ -114,12 +116,83 @@ class ReviewSummaryGenerator:
         return "\n\n".join(sections) + "\n"
 
     def _render_header(self, result: FeatureOrchestrationResult) -> str:
-        status_badge = "COMPLETED" if result.success else result.status.upper()
+        # TASK-FIX-7A07 AC-6: Prefer the MIXED_PARTIAL_FAILURE verdict when
+        # the feature has a majority of approved tasks but ≥1 unrecoverable
+        # stall AND ≥1 preempted/cancelled exit. This clarifies what
+        # happened without changing success semantics (still a failure).
+        status_badge = self._compute_feature_verdict(result)
         generated_at = datetime.now().strftime("%Y-%m-%d %H:%M UTC")
+        headline = self._compute_verdict_headline(result, status_badge)
+        sections = [
+            f"# Autobuild Review Summary: {result.feature_id}",
+            "",
+            f"**Status:** {status_badge}  ",
+            f"**Generated:** {generated_at}",
+        ]
+        if headline:
+            sections.append("")
+            sections.append(f"**Verdict:** {headline}")
+        return "\n".join(sections)
+
+    def _compute_feature_verdict(
+        self, result: FeatureOrchestrationResult
+    ) -> str:
+        """Determine the top-line verdict label.
+
+        Rules (TASK-FIX-7A07 AC-6):
+
+        1. If the feature succeeded overall → ``COMPLETED``.
+        2. MIXED_PARTIAL_FAILURE fires when **all** of the following hold:
+           - ≥ 50% of observed tasks approved
+           - ≥ 1 task exited ``unrecoverable_stall``
+           - ≥ 1 task exited ``cancelled`` (preempted under
+             ``stop_on_failure``)
+        3. Otherwise, fall back to the upper-case feature status (typically
+           ``FAILED`` or ``PAUSED``).
+        """
+        if result.success:
+            return "COMPLETED"
+        all_tasks = self._flatten_task_results(result)
+        total = len(all_tasks)
+        if total == 0:
+            return result.status.upper()
+        approved = sum(1 for r in all_tasks if r.success)
+        stalled = sum(
+            1 for r in all_tasks
+            if r.final_decision == "unrecoverable_stall"
+        )
+        preempted = sum(
+            1 for r in all_tasks
+            if r.final_decision == "cancelled"
+        )
+        approved_ratio = approved / total
+        if approved_ratio >= 0.5 and stalled >= 1 and preempted >= 1:
+            return "MIXED_PARTIAL_FAILURE"
+        return result.status.upper()
+
+    def _compute_verdict_headline(
+        self,
+        result: FeatureOrchestrationResult,
+        status_badge: str,
+    ) -> Optional[str]:
+        """Return a one-line headline accompanying the verdict label."""
+        if status_badge != "MIXED_PARTIAL_FAILURE":
+            return None
+        all_tasks = self._flatten_task_results(result)
+        total = len(all_tasks)
+        approved = sum(1 for r in all_tasks if r.success)
+        stalled = sum(
+            1 for r in all_tasks
+            if r.final_decision == "unrecoverable_stall"
+        )
+        preempted = sum(
+            1 for r in all_tasks
+            if r.final_decision == "cancelled"
+        )
         return (
-            f"# Autobuild Review Summary: {result.feature_id}\n\n"
-            f"**Status:** {status_badge}  \n"
-            f"**Generated:** {generated_at}"
+            f"{approved} of {total} observed tasks approved; "
+            f"{stalled} stalled; "
+            f"{preempted} preempted under stop_on_failure"
         )
 
     def _render_feature_metrics(self, result: FeatureOrchestrationResult) -> str:
@@ -161,9 +234,19 @@ class ReviewSummaryGenerator:
                 notes = f"ceiling hits: {row.sdk_ceiling_hits}" + (
                     f"; {notes}" if notes else ""
                 )
+            # TASK-FIX-7A07 AC-4: Render the sub-type alongside the legacy
+            # final_decision token so downstream consumers still see the
+            # legacy label AND the new sub-type label. Format:
+            #   unrecoverable_stall | coach_agent_invocations_stall
+            decision_cell = row.final_decision
+            if (
+                row.final_decision == "unrecoverable_stall"
+                and row.decision_subtype
+            ):
+                decision_cell = f"{row.final_decision} | {row.decision_subtype}"
             lines.append(
                 f"| {row.task_id} | {row.wave} | {row.turns} "
-                f"| {outcome} | {row.final_decision} | {notes} |"
+                f"| {outcome} | {decision_cell} | {notes} |"
             )
         return "\n".join(lines)
 
@@ -281,6 +364,9 @@ class ReviewSummaryGenerator:
                         sdk_invocations=task_result.sdk_total_invocations,
                         sdk_ceiling_hits=task_result.sdk_ceiling_hits,
                         error=task_result.error,
+                        decision_subtype=getattr(
+                            task_result, "decision_subtype", None
+                        ),
                     )
                 )
         return rows

@@ -1,0 +1,19 @@
+{
+  "task_id": "TASK-J002-008",
+  "turn": 6,
+  "decision": "feedback",
+  "feedback": "Agent-invocations protocol violation: missing phases 4, 5",
+  "issues": [
+    {
+      "severity": "must_fix",
+      "category": "agent_invocations_violation",
+      "description": "task-work results claim phases were completed without matching agent invocations. Missing phases: 4, 5. The Player report cannot be trusted until all required agents are invoked.",
+      "details": {
+        "missing_phases": ["4", "5"],
+        "expected_phases": 3,
+        "actual_invocations": 1
+      }
+    }
+  ],
+  "rationale": "Agent-invocations protocol violation: missing phases 4, 5"
+}

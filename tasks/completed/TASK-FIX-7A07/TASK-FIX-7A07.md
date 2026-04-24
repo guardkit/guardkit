@@ -1,11 +1,13 @@
 ---
 id: TASK-FIX-7A07
 title: Classify coach_agent_invocations_stall and refine recovery feedback
-status: in_progress
+status: completed
 created: 2026-04-24T14:00:00Z
-updated: 2026-04-24T17:00:00Z
-previous_state: backlog
-state_transition_reason: "Automatic transition for task-work execution"
+updated: 2026-04-24T18:45:00Z
+completed: 2026-04-24T18:45:00Z
+previous_state: in_review
+state_transition_reason: "All 9 ACs verified; 34/34 new tests + 97/97 existing stall tests pass"
+completed_location: tasks/completed/TASK-FIX-7A07/
 priority: high
 tags: [autobuild, stall-classification, coach-validation, agent-invocations-gate, diagnostics, summary-renderer]
 parent_review: TASK-REV-JMBP
@@ -56,12 +58,12 @@ Forensic findings from TASK-REV-JMBP (see [docs/reviews/TASK-REV-JMBP-jarvis-aut
 
 ## Acceptance Criteria
 
-- [ ] **AC-1 — new stall classifier branch.** Add a new `decision_label =
+- [x] **AC-1 — new stall classifier branch.** Add a new `decision_label =
       "coach_agent_invocations_stall"` to the existing classifier framework introduced by
       TASK-FIX-7A02. Fires when: all N recent turns (`N == stall_threshold`, currently 3) have
       `turn_record.coach_result.issues[0].category == "agent_invocations_violation"`
       (OR equivalent schema-stable predicate — see Implementation Notes for the resilient check).
-- [ ] **AC-2 — summary-hint renderer update.** In `autobuild._render_unrecoverable_stall_summary`
+- [x] **AC-2 — summary-hint renderer update.** In `autobuild._render_unrecoverable_stall_summary`
       (currently `autobuild.py:4538-4561`), add a new branch *before* the generic fallback:
       when decision_label == `coach_agent_invocations_stall`, emit:
 
@@ -75,7 +77,7 @@ Forensic findings from TASK-REV-JMBP (see [docs/reviews/TASK-REV-JMBP-jarvis-aut
       > (b) set `implementation_mode: direct` in the task frontmatter if the task's complexity
       > does not warrant the specialist pipeline."
 
-- [ ] **AC-3 — enriched Coach feedback in the gate itself.** In `coach_validator.py:658-685`
+- [x] **AC-3 — enriched Coach feedback in the gate itself.** In `coach_validator.py:658-685`
       (`agent_invocations_violation` issue construction), enrich the `description` field to cite
       the **specific sub-agent names** the Player should invoke — not just phase numbers. Derive
       the stack-specific Phase-3 specialist from the existing stack-profile detection
@@ -91,7 +93,7 @@ Forensic findings from TASK-REV-JMBP (see [docs/reviews/TASK-REV-JMBP-jarvis-aut
 
       Render the list filtered to *only the missing phases*, not the entire 3–5 set.
 
-- [ ] **AC-4 — per-task stall sub-type in `review-summary.md`.** In the feature-level review-summary
+- [x] **AC-4 — per-task stall sub-type in `review-summary.md`.** In the feature-level review-summary
       renderer (grep for where the "Per-Task Outcomes" table is produced), replace the generic
       `unrecoverable_stall` label in the `Decision` column with the classifier output, e.g.:
 
@@ -105,14 +107,14 @@ Forensic findings from TASK-REV-JMBP (see [docs/reviews/TASK-REV-JMBP-jarvis-aut
       summary by keeping the legacy `unrecoverable_stall` token as the top-level decision field
       and introducing a new `decision_subtype` alongside.
 
-- [ ] **AC-5 — md5-signature normalisation robustness.** Update
+- [x] **AC-5 — md5-signature normalisation robustness.** Update
       `autobuild._normalize_feedback_for_stall` (line ~3234) so that for feedback where
       `issues[0].category == "agent_invocations_violation"`, the normaliser **sorts
       `missing_phases` lexicographically** before folding into the hash input. Add a regression
       test using a fixture with two turns whose Coach feedback differs only by missing_phases
       ordering; both must produce identical md5 signatures.
 
-- [ ] **AC-6 — `mixed_partial_failure` feature-level verdict.** In the feature-level summary
+- [x] **AC-6 — `mixed_partial_failure` feature-level verdict.** In the feature-level summary
       renderer, introduce a new top-line verdict branch: when ≥ 50% of observed tasks approved
       AND ≥ 1 task exited `unrecoverable_stall` AND ≥ 1 task exited before waves completed
       (preempted under `stop_on_failure: True`), emit `MIXED_PARTIAL_FAILURE` in place of
@@ -120,7 +122,7 @@ Forensic findings from TASK-REV-JMBP (see [docs/reviews/TASK-REV-JMBP-jarvis-aut
       7 preempted under stop_on_failure". Keep the overall exit code non-zero (this is still
       a failure — the verdict is about clarity, not about success).
 
-- [ ] **AC-7 — unit tests covering all branches.**
+- [x] **AC-7 — unit tests covering all branches.**
       1. 3× identical `agent_invocations_violation` feedback → decision_label
          `coach_agent_invocations_stall`, new hint emitted.
       2. 3× identical `agent_invocations_violation` feedback with reordered `missing_phases`
@@ -134,7 +136,7 @@ Forensic findings from TASK-REV-JMBP (see [docs/reviews/TASK-REV-JMBP-jarvis-aut
       6. Feature-level mixed_partial_failure branch (AC-6) — 14/16 approve + 2 stall fixture
          produces the new verdict.
 
-- [ ] **AC-8 — Graphiti seeding.** In the Phase-5 `capture_review_to_graphiti` path (or equivalent
+- [x] **AC-8 — Graphiti seeding.** In the Phase-5 `capture_review_to_graphiti` path (or equivalent
       outcome-persistence hook for the autobuild feature-level finish), when the
       `coach_agent_invocations_stall` label is emitted, persist a fact to
       `guardkit__project_decisions` describing the classification. One-episode-per-feature-run is
@@ -142,11 +144,80 @@ Forensic findings from TASK-REV-JMBP (see [docs/reviews/TASK-REV-JMBP-jarvis-aut
       conventions and the review's Graphiti preamble §"Knowledge-graph remediation
       recommendations" for the episode shape.
 
-- [ ] **AC-9 — replay the jarvis-FEAT002-run-1 evidence as an integration test.** Using the
+- [x] **AC-9 — replay the jarvis-FEAT002-run-1 evidence as an integration test.** Using the
       preserved `task_work_results.json` + `coach_turn_{5,6}.json` artefacts from the jarvis
       worktree (copy minimal fixture versions into `tests/fixtures/`; do *not* reference the
       external jarvis path), assert that the new classifier produces
       `coach_agent_invocations_stall` rather than the current misattribution.
+
+## Implementation Summary
+
+All 9 ACs delivered (2026-04-24). Test results: **34 new tests pass, 97
+stall-related tests pass overall, zero regressions**. Pre-existing failures
+in `test_design_context_integration.py` and
+`test_autobuild_timeout_budget.py` are unrelated (confirmed via git stash).
+
+**Files changed**:
+
+- `guardkit/orchestrator/phase_specialists.py` — **new module** (AC-3 helper).
+  Resolves Phase → specialist agent name using a best-effort
+  `.claude/settings.json` → `project.template` lookup with a named-fallback
+  (`GENERIC_PHASE_3_FALLBACK = "the stack-specific Phase-3 specialist"`) when
+  detection fails — do not hardcode.
+- `guardkit/orchestrator/autobuild.py` —
+  1. Added `StallClassification` dataclass + `classify_stall()` function +
+     `_extract_agent_invocations_violation()` predicate (AC-1). Sub-types:
+     `STALL_COACH_AGENT_INVOCATIONS`, `STALL_CONTEXT_POLLUTION`,
+     `STALL_FEEDBACK_GENERIC`. Co-fires join with `" + "`.
+  2. Added `_context_pollution_no_checkpoint_fired` instance flag set in
+     `_loop_phase` (line ~2007 path) and reset at loop entry.
+  3. Rewrote `_build_summary_details` unrecoverable_stall branch to call
+     `classify_stall()` first and emit the AC-2 actionable hint naming
+     sub-agents and `implementation_mode: direct` fallback.
+  4. Added `stall_classification` field to `OrchestrationResult` populated
+     at result construction.
+  5. Made `_normalize_feedback_for_stall` accept an optional `turn_record`;
+     when a violation is present, replaces feedback text with a
+     `|CANONICAL|` JSON marker containing sorted `missing_phases` (AC-5).
+  6. Threaded the turn_record into `_is_feedback_stalled` → the `_loop_phase`
+     call site now passes `turn_record=turn_record`.
+- `guardkit/orchestrator/quality_gates/coach_validator.py` — Rewrote the
+  `agent_invocations_violation` issue-construction (AC-3). Description now
+  cites phase-with-description, names the stack-specific Phase-3 specialist,
+  `test-orchestrator` for Phase 4, `code-reviewer` for Phase 5, and sorts
+  `missing_phases` before rendering. Defensive against dict-form
+  `missing_phases` shapes.
+- `guardkit/orchestrator/feature_orchestrator.py` —
+  1. Added `decision_subtype` + `decision_subtype_co_fires` to
+     `TaskExecutionResult`; populated from `result.stall_classification` in
+     `_execute_task`.
+  2. Added `_seed_stall_episodes_to_graphiti()` helper and call site in
+     `orchestrate()` post-review-summary. One episode per feature run
+     named `coach_agent_invocations_stall_{feature_id}` into group
+     `guardkit__project_decisions`. Silent no-op when Graphiti
+     unavailable; exceptions isolated from feature result (AC-8).
+- `guardkit/orchestrator/review_summary.py` —
+  1. Added `decision_subtype` field to `TaskSummaryRow`.
+  2. Updated `_render_task_table` to render
+     `unrecoverable_stall | coach_agent_invocations_stall[ + ...]` in the
+     Decision column (AC-4) while preserving the legacy token.
+  3. Added `_compute_feature_verdict()` + `_compute_verdict_headline()`:
+     emits `MIXED_PARTIAL_FAILURE` when ≥ 50% tasks approved AND ≥ 1 stall
+     AND ≥ 1 cancelled (AC-6); feature success semantics unchanged.
+- `tests/fixtures/jarvis_feat_j002_replay/` — minimised fixture
+  (`task_work_results.json`, `coach_turn_5.json`, `coach_turn_6.json`,
+  `README.md`) reconstructed from the jarvis FEAT-J002 MBP run; zero
+  Player/Coach prose copied (AC-9).
+- `tests/unit/test_coach_agent_invocations_stall_classification.py` —
+  **new test file** with 34 tests across 9 classes covering all 9 ACs
+  including `TestJarvisFeatJ002Replay` (AC-9 replay), co-fire classification,
+  md5 robustness, review-summary verdict rendering, and 7A02 regression.
+
+**Test results**: 34/34 new tests pass; 97/97 existing stall tests pass
+(run as `pytest tests/unit/test_autobuild_stall_detection.py
+tests/unit/test_player_invocation_stall_classification.py
+tests/unit/test_coach_agent_invocations_stall_classification.py
+tests/unit/test_run3_stall_fixes.py --no-cov`).
 
 ## Files (expected touch list)
 

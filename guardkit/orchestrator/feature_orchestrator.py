@@ -116,6 +116,15 @@ class TaskExecutionResult:
     sdk_ceiling_hits: int = 0                                       # TASK-VPR-003
     sdk_total_invocations: int = 0                                  # TASK-VPR-003
     sdk_turns_per_invocation: List[int] = field(default_factory=list)  # TASK-VPR-003
+    # TASK-FIX-7A07: Stall sub-type label(s). Populated only when
+    # final_decision == "unrecoverable_stall". Example values:
+    # - "coach_agent_invocations_stall"
+    # - "coach_agent_invocations_stall + context_pollution_stall_no_checkpoint"
+    # - "coach_feedback_stall"
+    # None for approved / other decisions.
+    decision_subtype: Optional[str] = None
+    # TASK-FIX-7A07: List of every sub-type that co-fired (structured form).
+    decision_subtype_co_fires: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -1552,6 +1561,98 @@ The detailed specifications are in the task markdown file.
             self.enable_context = False
             return False
 
+    def _seed_stall_episodes_to_graphiti(
+        self,
+        orchestration_result: "FeatureOrchestrationResult",
+    ) -> None:
+        """Seed Graphiti with stall-classification observations from this run.
+
+        TASK-FIX-7A07 AC-8: When the feature run produced any task with a
+        ``coach_agent_invocations_stall`` sub-type, persist a single episode
+        to the ``guardkit__project_decisions`` group naming the affected
+        tasks. One episode per feature run — not per task — to avoid
+        spamming the graph with near-duplicate observations.
+
+        Silent no-op when Graphiti is disabled or unavailable; callers must
+        not rely on this seeding for correctness. Exceptions are caught by
+        the caller (``orchestrate``) so they never affect the feature
+        orchestration result.
+        """
+        if not self.enable_context:
+            return
+        client = get_graphiti()
+        if client is None:
+            return
+
+        # Filter to tasks that exhibited the coach_agent_invocations_stall
+        # sub-type. Defensive against older TaskExecutionResult shapes that
+        # predate the decision_subtype field.
+        affected: List[TaskExecutionResult] = []
+        for wave in orchestration_result.wave_results:
+            for task_result in wave.results:
+                subtype = getattr(task_result, "decision_subtype", None) or ""
+                if "coach_agent_invocations_stall" in subtype:
+                    affected.append(task_result)
+        if not affected:
+            return
+
+        lines = [
+            "Observed coach_agent_invocations_stall classification "
+            f"(TASK-FIX-7A07) in feature run {orchestration_result.feature_id}.",
+            "",
+            "Affected tasks (task_id → decision_subtype → total_turns):",
+        ]
+        for t in affected:
+            subtype = getattr(t, "decision_subtype", None) or "coach_agent_invocations_stall"
+            lines.append(f"- {t.task_id} → {subtype} → {t.total_turns} turns")
+        lines.extend([
+            "",
+            "Mechanism: Coach's agent-invocations gate rejected the Player's "
+            "task-work results for the stall threshold (3) consecutive turns "
+            "with identical missing-phases signature. The Player completed "
+            "the work inline without invoking sub-agents via the Task tool.",
+            "",
+            "Remediation options: (a) ensure Player's system prompt mandates "
+            "Task-tool invocation for the missing phases (TASK-FIX-7A08), "
+            "(b) set implementation_mode: direct for tasks that do not "
+            "warrant the specialist pipeline.",
+        ])
+        episode_body = "\n".join(lines)
+
+        # Best-effort async add. Many orchestrate() contexts already have an
+        # event loop; isolate the seeding into a fresh loop to avoid
+        # interfering with the caller.
+        try:
+            import asyncio as _asyncio
+
+            async def _add() -> None:
+                await client.add_episode(
+                    name=f"coach_agent_invocations_stall_{orchestration_result.feature_id}",
+                    episode_body=episode_body,
+                    source_description=(
+                        "Autobuild feature-run observation (TASK-FIX-7A07)"
+                    ),
+                    group_id="guardkit__project_decisions",
+                )
+
+            try:
+                loop = _asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop is None:
+                _asyncio.run(_add())
+            else:
+                # If a loop is already running (unexpected from orchestrate)
+                # schedule as task without blocking.
+                loop.create_task(_add())
+            logger.info(
+                "Seeded Graphiti stall episode for feature %s (%d tasks)",
+                orchestration_result.feature_id,
+                len(affected),
+            )
+        except Exception as exc:
+            logger.debug("Graphiti episode add failed (non-fatal): %s", exc)
+
     def _pre_init_graphiti(self) -> None:
         """
         Pre-initialize Graphiti factory before parallel task dispatch.
@@ -2324,6 +2425,16 @@ The detailed specifications are in the task markdown file.
                 if tr.sdk_turns_used is not None
             ]
 
+            # TASK-FIX-7A07: Hoist stall sub-classification into the
+            # TaskExecutionResult so the review-summary renderer and Graphiti
+            # seeding hook can surface per-task decision_subtype without
+            # re-walking the turn_history.
+            decision_subtype: Optional[str] = None
+            decision_co_fires: List[str] = []
+            if result.stall_classification is not None:
+                decision_subtype = result.stall_classification.decision_subtype
+                decision_co_fires = list(result.stall_classification.co_fires)
+
             return TaskExecutionResult(
                 task_id=task.id,
                 success=result.success,
@@ -2334,6 +2445,8 @@ The detailed specifications are in the task markdown file.
                 sdk_ceiling_hits=sdk_ceiling_hits,
                 sdk_total_invocations=sdk_total_invocations,
                 sdk_turns_per_invocation=sdk_turns_list,
+                decision_subtype=decision_subtype,
+                decision_subtype_co_fires=decision_co_fires,
             )
 
         except (Exception, asyncio.CancelledError) as e:
@@ -2532,6 +2645,14 @@ The detailed specifications are in the task markdown file.
                 )
         except Exception as exc:
             logger.warning("Review summary generation failed: %s", exc)
+
+        # TASK-FIX-7A07 AC-8: Seed coach_agent_invocations_stall observations
+        # into Graphiti so the next review-of-review pass can cite prior
+        # incidents. One episode per feature run — do not spam per-task.
+        try:
+            self._seed_stall_episodes_to_graphiti(orchestration_result)
+        except Exception as exc:
+            logger.warning("Graphiti stall episode seeding failed: %s", exc)
 
         return orchestration_result
 

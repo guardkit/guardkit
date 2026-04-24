@@ -69,6 +69,10 @@ from guardkit.worktrees import (
 
 # Import local orchestrator components
 from guardkit.orchestrator.agent_invoker import AgentInvoker, AgentInvocationResult
+from guardkit.orchestrator.phase_specialists import (
+    detect_stack_template,
+    render_missing_phase_list,
+)
 from guardkit.orchestrator.progress import ProgressDisplay
 from guardkit.orchestrator.exceptions import (
     AgentInvocationError,
@@ -251,6 +255,224 @@ FAILURE_CATEGORY_MAP: Dict[str, str] = {
     "design_extraction_failed": "other",
 }
 """Map final_decision strings to FailureCategory controlled vocabulary values."""
+
+
+# ============================================================================
+# Stall Classification (TASK-FIX-7A07)
+# ============================================================================
+
+# Known stall sub-type labels. The top-level ``final_decision`` stays
+# ``unrecoverable_stall`` for backward compatibility with downstream consumers;
+# ``decision_subtype`` is the new dimension that names *which* stall mechanism
+# fired. Sub-types can co-fire (joined with " + ") — see ``classify_stall``.
+STALL_COACH_AGENT_INVOCATIONS = "coach_agent_invocations_stall"
+"""Stall sub-type: Coach's agent-invocations gate rejected the Player for N
+consecutive turns with identical missing-phases signature. TASK-FIX-7A07."""
+
+STALL_CONTEXT_POLLUTION = "context_pollution_stall_no_checkpoint"
+"""Stall sub-type: context-pollution rollback fired but no passing checkpoint
+existed. TASK-AB-SD01."""
+
+STALL_FEEDBACK_GENERIC = "coach_feedback_stall"
+"""Stall sub-type: identical Coach feedback for N turns with zero criteria
+progress, and no more specific sub-type matched."""
+
+
+@dataclass(frozen=True)
+class StallClassification:
+    """Sub-classification of an ``unrecoverable_stall`` exit.
+
+    The top-level ``final_decision`` label stays ``"unrecoverable_stall"`` for
+    backward compatibility. This dataclass carries the finer-grained sub-type
+    information that the summary renderer, review-summary-per-task renderer,
+    and Graphiti seeding hook all consume (TASK-FIX-7A07).
+
+    Attributes
+    ----------
+    decision_label : str
+        Primary stall sub-type (one of ``STALL_COACH_AGENT_INVOCATIONS``,
+        ``STALL_CONTEXT_POLLUTION``, ``STALL_FEEDBACK_GENERIC``).
+    decision_subtype : str
+        Composite label when multiple sub-types co-fire, joined by " + "
+        (e.g. ``"coach_agent_invocations_stall + context_pollution_stall_no_checkpoint"``).
+        Equal to ``decision_label`` when only one sub-type fired.
+    missing_phases : List[str]
+        Missing phase identifiers from the Coach's agent-invocations gate
+        (only populated for ``coach_agent_invocations_stall``).
+    expected_phases : Optional[int]
+        Expected phase count (only populated for the agent-invocations case).
+    actual_invocations : Optional[int]
+        Actual invocation count (only populated for the agent-invocations case).
+    co_fires : List[str]
+        All sub-type labels that co-fired on this task. Useful for the
+        review-summary per-task table and Graphiti seeding.
+    """
+
+    decision_label: str
+    decision_subtype: str
+    missing_phases: List[str]
+    expected_phases: Optional[int]
+    actual_invocations: Optional[int]
+    co_fires: List[str]
+
+
+def _extract_agent_invocations_violation(
+    turn_record: "TurnRecord",
+) -> Optional[Dict[str, Any]]:
+    """Return the ``agent_invocations_violation`` issue dict for this turn,
+    or ``None`` if no such issue is present.
+
+    Walks into ``turn_record.coach_result.report["issues"]`` and returns the
+    first issue whose ``category == "agent_invocations_violation"``. This is
+    the schema-stable predicate used by ``classify_stall`` to detect the
+    coach-agent-invocations sub-type across consecutive turns.
+
+    Defensive against malformed TurnRecords (Mock objects in tests,
+    partial state during error paths) — any shape mismatch returns ``None``
+    rather than raising.
+
+    Parameters
+    ----------
+    turn_record : TurnRecord
+        Completed turn record.
+
+    Returns
+    -------
+    Optional[Dict[str, Any]]
+        The violation issue dict (with keys ``missing_phases``, ``details``,
+        etc.) if present, else ``None``.
+    """
+    if turn_record.coach_result is None:
+        return None
+    try:
+        report = getattr(turn_record.coach_result, "report", None) or {}
+    except (AttributeError, TypeError):
+        return None
+    if not isinstance(report, dict):
+        return None
+    issues = report.get("issues")
+    if not isinstance(issues, list):
+        return None
+    for issue in issues:
+        if (
+            isinstance(issue, dict)
+            and issue.get("category") == "agent_invocations_violation"
+        ):
+            return issue
+    return None
+
+
+def classify_stall(
+    turn_history: List["TurnRecord"],
+    final_decision: str,
+    threshold: int = 3,
+    context_pollution_fired: bool = False,
+) -> Optional[StallClassification]:
+    """Classify the sub-type of an ``unrecoverable_stall`` exit (TASK-FIX-7A07).
+
+    Returns ``None`` for any ``final_decision`` other than
+    ``"unrecoverable_stall"`` — callers should only invoke this when the
+    orchestrator exited via that code path.
+
+    Classification rules:
+
+    1. **coach_agent_invocations_stall** — fires when the trailing ``threshold``
+       turns all carry an ``agent_invocations_violation`` issue. The detector
+       walks ``coach_result.report["issues"]`` for the schema-stable category
+       match; it does NOT string-match on feedback text.
+    2. **context_pollution_stall_no_checkpoint** — fires when the caller
+       signals that context-pollution rollback fired but no passing checkpoint
+       existed (``context_pollution_fired=True``). This is detected at the
+       orchestrator level because it's signalled by the early-exit at
+       ``autobuild.py:_loop_phase`` line ~2007, not by turn-record content.
+    3. **coach_feedback_stall** — the default fallback: identical feedback
+       with zero criteria progress, no more specific sub-type matched.
+
+    Sub-types can co-fire (e.g. both the agent-invocations stall AND the
+    context-pollution stall can apply to the same task when the Player's
+    inline-pytest pattern both pollutes the context and bypasses sub-agent
+    invocation). ``decision_subtype`` joins co-fires with " + ".
+
+    Parameters
+    ----------
+    turn_history : List[TurnRecord]
+        Complete turn history for the run.
+    final_decision : str
+        The orchestrator's top-level decision. Must be ``"unrecoverable_stall"``
+        for classification to proceed.
+    threshold : int, optional
+        Number of trailing turns to require for classification (default: 3,
+        matching ``_is_feedback_stalled``).
+    context_pollution_fired : bool, optional
+        Whether the context-pollution "no passing checkpoint" exit fired for
+        this task. Set by the caller based on which code path exited the loop.
+
+    Returns
+    -------
+    Optional[StallClassification]
+        Classification details, or ``None`` when ``final_decision`` is not
+        ``"unrecoverable_stall"``.
+    """
+    if final_decision != "unrecoverable_stall":
+        return None
+
+    co_fires: List[str] = []
+    missing_phases: List[str] = []
+    expected_phases: Optional[int] = None
+    actual_invocations: Optional[int] = None
+
+    # Check coach_agent_invocations_stall: trailing N turns all have
+    # agent_invocations_violation category.
+    if len(turn_history) >= threshold:
+        recent = turn_history[-threshold:]
+        violations = [
+            _extract_agent_invocations_violation(tr) for tr in recent
+        ]
+        if all(v is not None for v in violations):
+            co_fires.append(STALL_COACH_AGENT_INVOCATIONS)
+            # Use the most recent violation for the phase details.
+            latest = violations[-1]
+            raw_missing = latest.get("missing_phases") or (
+                latest.get("details", {}).get("missing_phases")
+                if isinstance(latest.get("details"), dict)
+                else []
+            ) or []
+            # Normalise to List[str]; ``missing_phases`` is sometimes stored
+            # as ``[{"phase": "4", "description": "Testing"}, ...]``.
+            if raw_missing and isinstance(raw_missing[0], dict):
+                missing_phases = sorted(
+                    str(m.get("phase", "")) for m in raw_missing if m.get("phase")
+                )
+            else:
+                missing_phases = sorted(str(m) for m in raw_missing)
+            details = (
+                latest.get("details") if isinstance(latest.get("details"), dict) else {}
+            )
+            expected_phases = latest.get("expected_phases") or details.get(
+                "expected_phases"
+            )
+            actual_invocations = latest.get("actual_invocations") or details.get(
+                "actual_invocations"
+            )
+
+    if context_pollution_fired:
+        co_fires.append(STALL_CONTEXT_POLLUTION)
+
+    # Default fallback.
+    if not co_fires:
+        co_fires.append(STALL_FEEDBACK_GENERIC)
+
+    decision_label = co_fires[0]
+    decision_subtype = " + ".join(co_fires)
+
+    return StallClassification(
+        decision_label=decision_label,
+        decision_subtype=decision_subtype,
+        missing_phases=missing_phases,
+        expected_phases=expected_phases,
+        actual_invocations=actual_invocations,
+        co_fires=co_fires,
+    )
 
 
 # ============================================================================
@@ -493,6 +715,9 @@ class OrchestrationResult:
     ablation_mode: bool = False  # Track if result was from ablation mode
     recovery_count: int = 0  # Number of state recovery attempts
     design_context: Optional["DesignContext"] = None  # Phase 0 design extraction result
+    # TASK-FIX-7A07: Sub-classification of ``unrecoverable_stall`` exits.
+    # None when final_decision is something other than unrecoverable_stall.
+    stall_classification: Optional["StallClassification"] = None
 
 
 # ============================================================================
@@ -736,6 +961,11 @@ class AutoBuildOrchestrator:
         self.recovery_count: int = 0  # Track number of state recovery attempts
         # Stall detection: track (feedback_signature, criteria_passed_count) per turn (TASK-AB-SD01)
         self._feedback_history: List[Tuple[str, int]] = []
+        # TASK-FIX-7A07: Signal from _loop_phase that context-pollution rollback
+        # fired but no passing checkpoint existed. Consumed by classify_stall()
+        # to emit the context_pollution_stall_no_checkpoint sub-type. Reset
+        # per _loop_phase invocation.
+        self._context_pollution_no_checkpoint_fired: bool = False
         # Accumulated peak criteria count across turns — criteria verified in turn N
         # remain counted in turn N+1 to prevent false stall detection (TASK-FIX-AE7E)
         self._max_criteria_passed: int = 0
@@ -1033,6 +1263,16 @@ class AutoBuildOrchestrator:
 
             # Build result
             success = final_decision == "approved"
+            # TASK-FIX-7A07: Compute stall sub-classification for the result
+            # so downstream consumers (review-summary, Graphiti seeding) can
+            # surface the per-task decision_subtype without re-walking the
+            # turn_history each.
+            stall_classification = classify_stall(
+                turn_history,
+                final_decision,
+                threshold=3,
+                context_pollution_fired=self._context_pollution_no_checkpoint_fired,
+            )
             result = OrchestrationResult(
                 task_id=task_id,
                 success=success,
@@ -1046,6 +1286,7 @@ class AutoBuildOrchestrator:
                 pre_loop_result=pre_loop_result,
                 ablation_mode=self.ablation_mode,
                 recovery_count=self.recovery_count,
+                stall_classification=stall_classification,
             )
 
             # Emit lifecycle event based on outcome (TASK-INST-004)
@@ -1757,6 +1998,10 @@ class AutoBuildOrchestrator:
         # TASK-RFX-5FED: Store worktree path for local turn state file access
         self._active_worktree_path = worktree.path
 
+        # TASK-FIX-7A07: Reset stall-classification signals at loop entry so
+        # classify_stall() sees fresh state per task.
+        self._context_pollution_no_checkpoint_fired = False
+
         # Track loop start time for SDK-level timeout remaining budget (TASK-ABFIX-006)
         import time as _time
         loop_start = _time.monotonic()
@@ -2004,6 +2249,11 @@ class AutoBuildOrchestrator:
                                     f"context pollution detected but no passing checkpoint exists. "
                                     f"Exiting loop early to avoid wasting turns."
                                 )
+                                # TASK-FIX-7A07: Signal classifier that this was
+                                # the context-pollution code path so the
+                                # per-task decision_subtype can reflect it
+                                # alongside any agent-invocations co-fire.
+                                self._context_pollution_no_checkpoint_fired = True
                                 return turn_history, "unrecoverable_stall"
 
                 # Check for player-invocation stall first (TASK-FIX-7A02).
@@ -2027,7 +2277,11 @@ class AutoBuildOrchestrator:
                     criteria_passed = self._count_criteria_passed(turn_record)
                     # Accumulate peak: criteria verified in prior turns stay counted (TASK-FIX-AE7E)
                     self._max_criteria_passed = max(criteria_passed, self._max_criteria_passed)
-                    if self._is_feedback_stalled(turn_record.feedback, self._max_criteria_passed):
+                    if self._is_feedback_stalled(
+                        turn_record.feedback,
+                        self._max_criteria_passed,
+                        turn_record=turn_record,
+                    ):
                         logger.error(
                             f"Feedback stall detected for {task_id}: "
                             f"identical feedback with no criteria progress "
@@ -3246,7 +3500,11 @@ class AutoBuildOrchestrator:
             return True
         return False
 
-    def _normalize_feedback_for_stall(self, feedback: str) -> str:
+    def _normalize_feedback_for_stall(
+        self,
+        feedback: str,
+        turn_record: Optional["TurnRecord"] = None,
+    ) -> str:
         """
         Normalize feedback text for stall detection by stripping volatile details.
 
@@ -3254,19 +3512,71 @@ class AutoBuildOrchestrator:
         percentages, durations, and counts that vary between turns but represent
         the same underlying error category.
 
+        TASK-FIX-7A07 AC-5: For ``agent_invocations_violation`` feedback, also
+        fold a canonicalised representation of the violation's ``missing_phases``
+        list (sorted) into the normalised output. Otherwise, a Player that
+        reorders phase keys across turns could produce textually-different
+        but semantically-identical feedback and bypass the stall detector.
+
         Parameters
         ----------
         feedback : str
             Raw Coach feedback text
+        turn_record : Optional[TurnRecord]
+            Completed turn record. When present, the method inspects the
+            Coach's structured report for an ``agent_invocations_violation``
+            issue and folds its sorted ``missing_phases`` into the signature
+            input. When absent, falls back to text-only normalisation
+            (preserves TASK-AB-SD01 behaviour for non-violation feedback).
 
         Returns
         -------
         str
             Normalized feedback with volatile details replaced by placeholders
+            and, where applicable, a canonical violation fingerprint appended.
         """
         result = feedback
         for pattern, replacement in self._STALL_NORMALIZE_PATTERNS:
             result = pattern.sub(replacement, result)
+
+        # Fold canonical violation fingerprint when the feedback came from
+        # the agent-invocations gate. Without this, reordering of the
+        # missing_phases list in the underlying violation would produce
+        # two md5 signatures that differ despite being semantically identical.
+        # When a violation is present we REPLACE the feedback text with the
+        # canonical marker rather than appending to it — otherwise variant
+        # renderings ("missing phases 4, 5" vs "missing phases 5, 4") still
+        # propagate into the hash input.
+        if turn_record is not None:
+            violation = _extract_agent_invocations_violation(turn_record)
+            if violation is not None:
+                details = (
+                    violation.get("details")
+                    if isinstance(violation.get("details"), dict)
+                    else {}
+                )
+                raw_missing = (
+                    violation.get("missing_phases")
+                    or details.get("missing_phases")
+                    or []
+                )
+                if raw_missing and isinstance(raw_missing[0], dict):
+                    normalised_missing = sorted(
+                        str(m.get("phase", ""))
+                        for m in raw_missing
+                        if m.get("phase")
+                    )
+                else:
+                    normalised_missing = sorted(str(m) for m in raw_missing)
+                canonical = {
+                    "category": "agent_invocations_violation",
+                    "missing_phases": normalised_missing,
+                    "expected_phases": violation.get("expected_phases")
+                    or details.get("expected_phases"),
+                    "actual_invocations": violation.get("actual_invocations")
+                    or details.get("actual_invocations"),
+                }
+                result = "|CANONICAL|" + json.dumps(canonical, sort_keys=True)
         return result
 
     def _is_feedback_stalled(
@@ -3274,6 +3584,7 @@ class AutoBuildOrchestrator:
         feedback: str,
         criteria_passed_count: int,
         threshold: int = 3,
+        turn_record: Optional["TurnRecord"] = None,
     ) -> bool:
         """
         Detect repeated identical feedback with zero criteria progress (TASK-AB-SD01).
@@ -3294,13 +3605,18 @@ class AutoBuildOrchestrator:
             Number of acceptance criteria currently passing
         threshold : int, optional
             Number of consecutive identical turns before stall (default: 3)
+        turn_record : Optional[TurnRecord]
+            Current turn record used to fold canonical violation fingerprint
+            into the signature when the feedback came from the
+            agent-invocations gate (TASK-FIX-7A07 AC-5). When None, falls
+            back to text-only normalisation.
 
         Returns
         -------
         bool
             True if feedback stall detected, False otherwise
         """
-        normalized = self._normalize_feedback_for_stall(feedback)
+        normalized = self._normalize_feedback_for_stall(feedback, turn_record)
         feedback_sig = hashlib.md5(
             normalized.strip().lower().encode()
         ).hexdigest()[:8]
@@ -4695,6 +5011,83 @@ class AutoBuildOrchestrator:
                 tr.feedback for tr in turn_history
                 if tr.feedback and tr.decision == "feedback"
             ]
+            # TASK-FIX-7A07: Delegate stall sub-classification to the shared
+            # classify_stall() helper. The new coach_agent_invocations_stall
+            # branch takes precedence over the legacy SDK-API-error fallback
+            # and the generic task-blaming hint \u2014 it names the specific
+            # sub-agents the Player should invoke via the Task tool rather
+            # than blaming the task's acceptance criteria.
+            classification = classify_stall(
+                turn_history,
+                final_decision,
+                threshold=3,
+                context_pollution_fired=getattr(
+                    self, "_context_pollution_no_checkpoint_fired", False
+                ),
+            )
+            if (
+                classification is not None
+                and STALL_COACH_AGENT_INVOCATIONS in classification.co_fires
+            ):
+                worktree_root = (
+                    self._worktree_manager.worktrees_dir
+                    if self._worktree_manager is not None
+                    else None
+                )
+                stack_template = detect_stack_template(worktree_root)
+                task_id_str = (
+                    turn_history[-1].player_result.task_id
+                    if turn_history and turn_history[-1].player_result
+                    else "{task_id}"
+                )
+                missing_phases_list = classification.missing_phases or ["4", "5"]
+                specialist_lines = render_missing_phase_list(
+                    missing_phases_list, stack_template
+                )
+                specialist_block = "\n".join(
+                    f"  - {line}" for line in specialist_lines
+                )
+                n_turns = len(turn_history)
+                exp = classification.expected_phases
+                actual = classification.actual_invocations
+                co_fire_suffix = ""
+                if len(classification.co_fires) > 1:
+                    others = [
+                        cf for cf in classification.co_fires
+                        if cf != STALL_COACH_AGENT_INVOCATIONS
+                    ]
+                    co_fire_suffix = (
+                        f"\nCo-fired stall sub-types: {', '.join(others)}."
+                    )
+                return (
+                    f"Unrecoverable stall detected after {n_turns} turn(s) "
+                    f"[{classification.decision_subtype}].\n"
+                    f"Coach's agent-invocations gate rejected the Player's "
+                    f"task-work results for {n_turns} consecutive turns "
+                    f"(missing phases: {sorted(missing_phases_list)}; "
+                    f"expected {exp if exp is not None else '?'}, "
+                    f"actual {actual if actual is not None else '?'}).\n"
+                    f"The Player appears to have completed the work inline "
+                    f"without invoking the required sub-agents via the "
+                    f"Task tool. Inspect "
+                    f"`.guardkit/autobuild/{task_id_str}/task_work_results.json "
+                    f"\u2192 agent_invocations_validation`.\n"
+                    f"Remediation options:\n"
+                    f"  (a) ensure the Player's system prompt mandates "
+                    f"Task-tool invocation for the missing phases "
+                    f"(see TASK-FIX-7A08). Required specialists:\n"
+                    f"{specialist_block}\n"
+                    f"  (b) set `implementation_mode: direct` in the task "
+                    f"frontmatter if the task's complexity does not warrant "
+                    f"the specialist pipeline."
+                    f"{co_fire_suffix}\n"
+                    f"Worktree preserved for inspection."
+                )
+
+            # Fallback: Check if the stall was caused by SDK API errors
+            # (TASK-FIX-d5e6). This preserves TASK-REV-8A08's diagnostic for
+            # the case where Coach feedback text happens to carry the
+            # "SDK API error" substring but the Player reports were real.
             if recent_feedback and all(
                 "SDK API error" in fb for fb in recent_feedback[-3:]
             ):
@@ -4702,6 +5095,15 @@ class AutoBuildOrchestrator:
                     "Stall caused by SDK API errors \u2014 check "
                     "ANTHROPIC_BASE_URL configuration and SDK model name "
                     "compatibility (see vllm-serve.sh SERVED_MODEL_NAME)."
+                )
+            elif (
+                classification is not None
+                and STALL_CONTEXT_POLLUTION in classification.co_fires
+            ):
+                stall_hint = (
+                    "Context pollution detected but no passing checkpoint "
+                    "existed to roll back to \u2014 review the Player's "
+                    "early turns for regression patterns."
                 )
             else:
                 stall_hint = (
