@@ -1,9 +1,13 @@
 ---
 id: TASK-FIX-7A05
 title: Wire bootstrap venv into Coach pytest invocation (use correct interpreter)
-status: backlog
+status: completed
 created: 2026-04-24T12:55:00Z
-updated: 2026-04-24T12:55:00Z
+updated: 2026-04-24T15:30:00Z
+completed: 2026-04-24T15:30:00Z
+previous_state: in_progress
+state_transition_reason: "Completed via /task-complete"
+completed_location: tasks/completed/TASK-FIX-7A05/
 priority: medium
 tags: [autobuild, coach, pytest, environment-bootstrap, interpreter-correctness]
 parent_review: TASK-REV-E4F5
@@ -41,28 +45,28 @@ hazard that will bite the next feature that depends on a non-global Python.
 
 ## Acceptance Criteria
 
-- [ ] `CoachVerification` / `coach_verification.py` accepts an explicit
+- [x] `CoachVerification` / `coach_verification.py` accepts an explicit
       interpreter path (from `BootstrapResult.venv_python` or from
       `.guardkit/bootstrap_state.json`). Default remains PATH-resolved
       for backwards-compat only when no bootstrap venv exists.
-- [ ] `_run_tests` invokes pytest via `[venv_python, "-m", "pytest", ...]`
+- [x] `_run_tests` invokes pytest via `[venv_python, "-m", "pytest", ...]`
       instead of `["pytest", ...]` whenever a venv interpreter is known.
-- [ ] Interpreter resolution order:
+- [x] Interpreter resolution order:
       1. Explicit param passed by orchestrator
       2. `.guardkit/venv/bin/python` if it exists in the worktree
       3. `sys.executable` fallback
-- [ ] Orchestrator plumbing: `feature_orchestrator.py` threads the
+- [x] Orchestrator plumbing: `feature_orchestrator.py` threads the
       `BootstrapResult.venv_python` into per-task Coach instantiation so
       all verification happens in the intended environment.
-- [ ] The startup / per-wave log clearly states which interpreter Coach will
+- [x] The startup / per-wave log clearly states which interpreter Coach will
       use for that wave.
-- [ ] Unit tests:
+- [x] Unit tests:
       1. Bootstrap produced venv → Coach uses `venv/bin/python -m pytest`
       2. No bootstrap venv (e.g. non-Python project) → Coach uses
          `sys.executable -m pytest` or PATH `pytest` (preserve current
          behavior for that case)
       3. Integration test asserting the argv shape passed to `subprocess.run`.
-- [ ] Existing tests that exercise Coach still pass (no regression on
+- [x] Existing tests that exercise Coach still pass (no regression on
       non-Python stacks).
 
 ## Files

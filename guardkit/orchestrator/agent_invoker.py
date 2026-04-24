@@ -886,6 +886,7 @@ class AgentInvoker:
         cancellation_event: Optional[threading.Event] = None,
         timeout_multiplier: Optional[float] = None,
         emitter: Optional[Any] = None,
+        venv_python: Optional[str] = None,
     ):
         """Initialize AgentInvoker.
 
@@ -912,8 +913,14 @@ class AgentInvoker:
             emitter: Optional EventEmitter for instrumentation telemetry.
                 Defaults to NullEmitter() when not provided (zero behaviour change
                 for existing callers). (TASK-INST-005b)
+            venv_python: Optional path to the Python interpreter Coach should
+                use when invoking pytest. Typically
+                ``BootstrapResult.venv_python`` threaded from the feature
+                orchestrator. When None, CoachVerifier falls back to
+                filesystem discovery and then PATH pytest. (TASK-FIX-7A05)
         """
         self.worktree_path = Path(worktree_path)
+        self._venv_python: Optional[str] = venv_python
         self.max_turns_per_agent = max_turns_per_agent
         self.sdk_timeout_seconds = sdk_timeout_seconds
         self._sdk_timeout_is_override = sdk_timeout_seconds != DEFAULT_SDK_TIMEOUT
@@ -2067,7 +2074,9 @@ Follow the decision format specified in your agent definition.
             allowing the workflow to continue while logging the issue.
         """
         try:
-            verifier = CoachVerifier(self.worktree_path)
+            verifier = CoachVerifier(
+                self.worktree_path, venv_python=self._venv_python
+            )
             verification = verifier.verify_player_report(player_report)
 
             if verification.discrepancies:

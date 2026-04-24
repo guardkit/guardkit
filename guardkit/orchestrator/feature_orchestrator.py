@@ -529,6 +529,12 @@ class FeatureOrchestrator:
         # Wave progress display (initialized during setup phase)
         self._wave_display: Optional[WaveProgressDisplay] = None
 
+        # TASK-FIX-7A05: Python interpreter produced by the most recent
+        # bootstrap (set in :meth:`_bootstrap_environment`). Threaded into
+        # every AutoBuildOrchestrator so Coach's pytest runs against the
+        # same interpreter the Player's install targeted.
+        self._bootstrap_venv_python: Optional[str] = None
+
         logger.info(
             f"FeatureOrchestrator initialized: repo={self.repo_root}, "
             f"max_turns={self.max_turns}, stop_on_failure={self.stop_on_failure}, "
@@ -1159,6 +1165,29 @@ class FeatureOrchestrator:
             # TASK-FIX-7A04: Evaluate hard-fail gate. In "warn" mode this is a
             # no-op; in "block" mode we raise on total-failure + essential-stack.
             self._maybe_hardfail_bootstrap(result)
+
+            # TASK-FIX-7A05: capture the bootstrap interpreter so downstream
+            # AutoBuildOrchestrator / Coach pytest invocations use it
+            # instead of whatever ``pytest`` is on the shell PATH. Logged at
+            # INFO so the startup / per-wave log clearly states which
+            # interpreter Coach will verify against.
+            if result.venv_python:
+                self._bootstrap_venv_python = result.venv_python
+                console.print(
+                    f"[cyan]⚙[/cyan] Coach will verify using interpreter: "
+                    f"{result.venv_python}"
+                )
+                logger.info(
+                    "Coach pytest interpreter set from bootstrap venv: %s",
+                    result.venv_python,
+                )
+            else:
+                # Non-Python project (or Python project without a venv)
+                # preserves prior PATH-pytest behavior for Coach.
+                logger.debug(
+                    "Bootstrap produced no venv interpreter — Coach will use "
+                    "PATH pytest / sys.executable fallback"
+                )
 
             return result
         except FeatureOrchestrationError:
@@ -2258,6 +2287,7 @@ The detailed specifications are in the task markdown file.
                 wave_size=wave_size,  # Parallel wave context for Coach isolation (TASK-ABFIX-005)
                 emitter=self._emitter,  # Forward emitter to task orchestrator (TASK-INST-013)
                 progress_logger=progress_logger,  # TASK-FIX-OBS2: Per-task progress logging
+                venv_python=self._bootstrap_venv_python,  # TASK-FIX-7A05
             )
 
             # Execute task orchestration

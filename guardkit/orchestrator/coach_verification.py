@@ -15,11 +15,43 @@ ensuring the Coach can trust Player reports.
 import logging
 import re
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_venv_python(
+    worktree_path: Path,
+    explicit: Optional[Union[str, Path]],
+) -> Optional[Path]:
+    """Resolve the Python interpreter Coach should use for pytest.
+
+    Resolution order (AC-TASK-FIX-7A05):
+      1. Explicit path passed by the orchestrator (typically from
+         BootstrapResult.venv_python).
+      2. ``<worktree>/.guardkit/venv/bin/python`` when it exists on disk
+         (recovery path when the explicit param wasn't threaded through).
+      3. None — caller falls back to PATH ``pytest`` / ``sys.executable``
+         behaviour for non-Python projects.
+    """
+    if explicit:
+        candidate = Path(explicit)
+        if candidate.exists():
+            return candidate
+        logger.debug(
+            "CoachVerifier: explicit venv_python %s does not exist — "
+            "falling through to filesystem discovery",
+            candidate,
+        )
+
+    filesystem = worktree_path / ".guardkit" / "venv" / "bin" / "python"
+    if filesystem.exists():
+        return filesystem
+
+    return None
 
 
 @dataclass
@@ -85,14 +117,30 @@ class CoachVerifier:
         ...     print(f"Discrepancies found: {result.discrepancies}")
     """
 
-    def __init__(self, worktree_path: Path):
+    def __init__(
+        self,
+        worktree_path: Path,
+        venv_python: Optional[Union[str, Path]] = None,
+    ):
         """Initialize CoachVerifier.
 
         Args:
             worktree_path: Path to the isolated git worktree
+            venv_python: Optional explicit Python interpreter to run pytest
+                with. Typically sourced from
+                ``BootstrapResult.venv_python`` so Coach verifies against
+                the same interpreter the Player's bootstrap produced.
+                Resolution follows :func:`_resolve_venv_python`.
         """
         self.worktree_path = Path(worktree_path)
         self._cached_test_result: Optional[TestResult] = None
+        self._venv_python: Optional[Path] = _resolve_venv_python(
+            self.worktree_path, venv_python
+        )
+        if self._venv_python is not None:
+            logger.debug(
+                "CoachVerifier using interpreter %s for pytest", self._venv_python
+            )
 
     def verify_player_report(self, player_report: Dict[str, Any]) -> HonestyVerification:
         """Verify all verifiable claims in Player report.
@@ -257,8 +305,14 @@ class CoachVerifier:
         if test_paths is None and self._cached_test_result is not None:
             return self._cached_test_result
 
-        # Build base pytest command
-        cmd = ["pytest", "--tb=no", "-q"]
+        # Build base pytest command. When a venv interpreter is known
+        # (explicit param or discovered via _resolve_venv_python), invoke
+        # pytest through it so Coach verifies against the same interpreter
+        # the bootstrap produced (AC-TASK-FIX-7A05).
+        if self._venv_python is not None:
+            cmd = [str(self._venv_python), "-m", "pytest", "--tb=no", "-q"]
+        else:
+            cmd = ["pytest", "--tb=no", "-q"]
         if test_paths:
             cmd.extend(test_paths)
 
@@ -279,7 +333,14 @@ class CoachVerifier:
         except FileNotFoundError:
             logger.warning("pytest not found, trying python -m pytest")
             test_result = None
-            for python_cmd in ["python3", "python"]:
+            # When a venv interpreter was resolved but missing at run time,
+            # skip the PATH fallback — it would silently validate against
+            # the wrong interpreter (the exact bug TASK-FIX-7A05 closes).
+            fallback_interpreters: List[str] = (
+                [str(self._venv_python)] if self._venv_python is not None
+                else [sys.executable, "python3", "python"]
+            )
+            for python_cmd in fallback_interpreters:
                 try:
                     fallback_cmd = [python_cmd, "-m", "pytest", "--tb=no", "-q"]
                     if test_paths:
@@ -300,7 +361,11 @@ class CoachVerifier:
                 except FileNotFoundError:
                     continue
             if test_result is None:
-                logger.error("Failed to run tests: neither python3 nor python found")
+                logger.error(
+                    "Failed to run tests: no usable Python interpreter found "
+                    "(tried: %s)",
+                    ", ".join(fallback_interpreters),
+                )
                 test_result = TestResult(passed=False, test_count=0, output="")
         except subprocess.TimeoutExpired:
             logger.error(f"Test execution timed out after {timeout}s")
@@ -396,5 +461,6 @@ __all__ = [
     "Discrepancy",
     "HonestyVerification",
     "TestResult",
+    "_resolve_venv_python",
     "format_verification_context",
 ]

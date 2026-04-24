@@ -603,6 +603,7 @@ class AutoBuildOrchestrator:
         wave_size: int = 1,
         emitter: Optional[Any] = None,
         progress_logger: Optional[Any] = None,
+        venv_python: Optional[str] = None,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -722,6 +723,10 @@ class AutoBuildOrchestrator:
         self.ablation_mode = ablation_mode
         self._emitter = emitter if emitter is not None else NullEmitter()  # TASK-INST-004
         self._existing_worktree = existing_worktree  # For feature mode (TASK-FBC-001)
+        # TASK-FIX-7A05: Python interpreter Coach uses for pytest. Sourced
+        # from BootstrapResult.venv_python in the feature orchestrator so
+        # Coach verifies against the same interpreter the bootstrap built.
+        self._venv_python: Optional[str] = venv_python
         # Hardcoded reset turns per architectural review (TASK-BRF-001): [3, 5]
         self.perspective_reset_turns: List[int] = [3, 5] if enable_perspective_reset else []
         self._turn_history: List[TurnRecord] = []
@@ -1142,6 +1147,7 @@ class AutoBuildOrchestrator:
                         use_task_work_delegation=True,
                         cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
                         timeout_multiplier=self.timeout_multiplier,  # TASK-FIX-VL05
+                        venv_python=self._venv_python,  # TASK-FIX-7A05
                     )
                 # TASK-FIX-OBS2: Attach progress logger to agent invoker
                 if self._progress_logger and self._agent_invoker:
@@ -1169,6 +1175,7 @@ class AutoBuildOrchestrator:
                     sdk_timeout_seconds=self.sdk_timeout,
                     use_task_work_delegation=True,
                     cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
+                    venv_python=self._venv_python,  # TASK-FIX-7A05
                 )
             # TASK-FIX-OBS2: Attach progress logger to agent invoker
             if self._progress_logger and self._agent_invoker:
@@ -4785,6 +4792,7 @@ class AutoBuildOrchestrator:
                     sdk_timeout_seconds=self.sdk_timeout,
                     use_task_work_delegation=True,
                     cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
+                    venv_python=self._venv_python,  # TASK-FIX-7A05
                 )
             # TASK-FIX-OBS2: Attach progress logger to agent invoker
             if self._progress_logger and self._agent_invoker:
