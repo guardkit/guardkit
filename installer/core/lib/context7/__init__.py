@@ -1,15 +1,19 @@
 """
-MCP (Model Context Protocol) Integration Package
+Context7 Documentation Client Package
 
-This package provides utilities for interacting with MCP servers, including:
-- Context7 client for library documentation
-- Progressive disclosure for token optimization
-- Response monitoring and token tracking
-- Design patterns integration
+This package provides GuardKit's client for Upstash's Context7 MCP server
+(library documentation retrieval), plus the general-purpose MCP request/response
+monitoring utilities used across GuardKit's MCP integrations.
+
+The package was previously named ``installer.core.lib.mcp``. It was renamed to
+``installer.core.lib.context7`` under TASK-FIX-MCPS.3 to eliminate a namespace
+collision with Anthropic's ``mcp`` PyPI package (the Model Context Protocol
+SDK, a transitive dependency of ``claude-agent-sdk``). See
+``.claude/rules/namespace-hygiene.md``.
 
 Exports:
     - DetailLevel: Enum for controlling documentation detail level
-    - Context7Client: Client for Context7 MCP server
+    - Context7Client: Client for Context7 MCP server (Upstash)
     - MCPMonitor: Monitor for tracking MCP request/response metrics
     - MCPRequest: Dataclass representing an MCP request
     - MCPResponse: Dataclass representing an MCP response
