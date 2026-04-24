@@ -11,7 +11,8 @@ click>=8.0.0
 rich>=13.0.0
 
 # Claude Agent SDK for AutoBuild
-claude-agent-sdk>=0.1.0
+# Floor 0.1.49 = first release with typed RateLimitEvent (TASK-FIX-7A01 / F1 in TASK-REV-E4F5)
+claude-agent-sdk>=0.1.49,<0.2
 
 # FastAPI dependencies
 fastapi==0.104.1

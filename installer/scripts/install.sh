@@ -2,6 +2,12 @@
 
 # Agentecflow - Global Installation Script
 # Creates the complete ~/.agentecflow structure matching production setup
+#
+# The Python-package install step always uses `pip install -e --upgrade` so
+# that re-running this script on a host with a stale claude-agent-sdk lifts
+# the SDK to the currently-pinned band (TASK-FIX-7A01 / TASK-REV-E4F5 F1).
+# Without --upgrade, pip treats an already-satisfied requirement as done
+# even when the pinned floor has moved.
 
 set -e
 
@@ -460,18 +466,20 @@ install_python_package() {
 
     print_info "Installing from: $repo_root"
 
-    # Install with [autobuild] extras to include claude-agent-sdk
-    # Try installing with --break-system-packages (PEP 668 compliance for Python 3.11+)
+    # Install with [autobuild] extras to include claude-agent-sdk.
+    # --upgrade ensures re-runs refresh a stale SDK against the pinned band
+    # (TASK-FIX-7A01 / TASK-REV-E4F5 F1). --break-system-packages is PEP 668
+    # compliance for Python 3.11+.
     set +e  # Temporarily allow errors
-    python3 -m pip install -e "$repo_root[autobuild]" --break-system-packages --no-warn-script-location 2>&1
+    python3 -m pip install -e "$repo_root[autobuild]" --upgrade --break-system-packages --no-warn-script-location 2>&1
     local install_status=$?
     set -e  # Re-enable exit on error
 
     if [ $install_status -ne 0 ]; then
-        # Fallback to --user install
+        # Fallback to --user install (also --upgrade for the same reason)
         print_info "Retrying with --user flag..."
         set +e
-        python3 -m pip install -e "$repo_root[autobuild]" --user --no-warn-script-location 2>&1
+        python3 -m pip install -e "$repo_root[autobuild]" --upgrade --user --no-warn-script-location 2>&1
         install_status=$?
         set -e
 

@@ -786,6 +786,17 @@ class AutoBuildOrchestrator:
                 "This mode is for testing only and will produce inferior results."
             )
 
+        # TASK-FIX-7A01 / TASK-REV-E4F5 F5: emit resolved claude-agent-sdk version
+        # at startup so version-skew incidents (Run 2 `rate_limit_event` bug) are
+        # diagnosable from autobuild logs without a separate `pip show` round-trip.
+        # Always emits exactly one INFO line — falls back to an error form if
+        # the SDK isn't importable / metadata is missing.
+        try:
+            from importlib.metadata import version as _pkg_version
+            logger.info(f"claude-agent-sdk version: {_pkg_version('claude-agent-sdk')}")
+        except Exception as _sdk_ver_err:
+            logger.info(f"claude-agent-sdk version: unknown (SDK not importable: {_sdk_ver_err})")
+
         # Initialize dependencies (DI or defaults)
         self._worktree_manager = worktree_manager or WorktreeManager(
             repo_root=self.repo_root

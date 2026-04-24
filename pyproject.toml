@@ -40,7 +40,10 @@ dependencies = [
 # Requires Python 3.10+ (same as guardkit)
 # Docs: https://platform.claude.com/docs/en/agent-sdk/python
 autobuild = [
-    "claude-agent-sdk>=0.1.0",
+    # Lower bound 0.1.49 = first release with typed RateLimitEvent parsing
+    # (TASK-FIX-7A01 / TASK-REV-E4F5 F1). Upper bound <0.2 reflects upstream's
+    # 0.1.x series as the stable surface; re-audit before bumping past 0.2.
+    "claude-agent-sdk>=0.1.49,<0.2",
 ]
 # FalkorDB graph store backend (alternative to Neo4j)
 # Installs graphiti-core with FalkorDB support
@@ -59,7 +62,7 @@ dev = [
     "httpx>=0.25.1",
 ]
 all = [
-    "claude-agent-sdk>=0.1.0",
+    "claude-agent-sdk>=0.1.49,<0.2",
     "graphiti-core[falkordb]",
     "graphiti-core[google-genai]",
     "pytest>=7.4.3",
