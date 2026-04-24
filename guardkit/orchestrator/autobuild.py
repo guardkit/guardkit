@@ -247,6 +247,7 @@ FAILURE_CATEGORY_MAP: Dict[str, str] = {
     "configuration_error": "env_failure",
     "pre_loop_blocked": "other",
     "unrecoverable_stall": "other",
+    "player_invocation_stall": "env_failure",
     "design_extraction_failed": "other",
 }
 """Map final_decision strings to FailureCategory controlled vocabulary values."""
@@ -484,7 +485,7 @@ class OrchestrationResult:
     task_id: str
     success: bool
     total_turns: int
-    final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "rate_limited", "design_extraction_failed"]
+    final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "rate_limited", "design_extraction_failed"]
     turn_history: List[TurnRecord]
     worktree: Worktree
     error: Optional[str] = None
@@ -1700,7 +1701,7 @@ class AutoBuildOrchestrator:
         requires_infrastructure: Optional[List[str]] = None,
         consumer_context: Optional[list] = None,
         time_budget_seconds: Optional[float] = None,
-    ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "timeout", "configuration_error", "design_extraction_failed", "timeout_budget_exhausted"]]:
+    ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "design_extraction_failed", "timeout_budget_exhausted"]]:
         """
         Phase 3: Execute Player↔Coach adversarial loop.
 
@@ -2004,6 +2005,22 @@ class AutoBuildOrchestrator:
                                     f"Exiting loop early to avoid wasting turns."
                                 )
                                 return turn_history, "unrecoverable_stall"
+
+                # Check for player-invocation stall first (TASK-FIX-7A02).
+                # This takes precedence over feedback stall: when the Player
+                # never produced a real report for N consecutive turns, the
+                # feedback stall signal (Coach rejecting synthetic reports)
+                # is a symptom of the SDK-layer failure, not a task-content
+                # problem. Classifying separately surfaces the real
+                # underlying cause (auth/SDK env) rather than falsely
+                # blaming the task's acceptance criteria.
+                if self._is_player_invocation_stalled(turn_history):
+                    logger.error(
+                        f"Player-invocation stall detected for {task_id}: "
+                        f"{len(turn_history)} turn(s), latest {3} consecutively "
+                        f"failed at the SDK layer. Exiting loop early."
+                    )
+                    return turn_history, "player_invocation_stall"
 
                 # Check for repeated feedback stall (TASK-AB-SD01 Mechanism 2)
                 if turn_record.decision == "feedback" and turn_record.feedback:
@@ -2527,7 +2544,7 @@ class AutoBuildOrchestrator:
     def _finalize_phase(
         self,
         worktree: Worktree,
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "configuration_error", "pre_loop_blocked", "design_extraction_failed"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "configuration_error", "pre_loop_blocked", "design_extraction_failed"],
         turn_history: List[TurnRecord],
     ) -> None:
         """
@@ -3332,6 +3349,84 @@ class AutoBuildOrchestrator:
                 f"Extended threshold: {extended_threshold} turns."
             )
             return False
+
+        return False
+
+    def _is_player_invocation_stalled(
+        self,
+        turn_history: List[TurnRecord],
+        threshold: int = 3,
+    ) -> bool:
+        """
+        Detect N consecutive turns where the Player never produced a real report
+        (TASK-FIX-7A02).
+
+        Distinct from feedback stall: feedback stall fires when Coach keeps
+        rejecting identical *real* Player output. This fires when the Player
+        itself never ran to completion at the SDK layer — either because
+        ``player_result.error`` is non-None, or because the orchestrator had
+        to build a synthetic recovery report (``report["_synthetic"] is True``).
+
+        Both conditions mean the downstream task-blaming hint
+        (``"Review task_type classification..."``) is a misdiagnosis — the task
+        is fine, the Player never ran.
+
+        Parameters
+        ----------
+        turn_history : List[TurnRecord]
+            Complete turn history for the current run.
+        threshold : int, optional
+            Number of trailing turns that must all be player-invocation failures
+            before declaring stall (default: 3, matches ``_is_feedback_stalled``).
+
+        Returns
+        -------
+        bool
+            True when the trailing ``threshold`` turns are all player-invocation
+            failures, False otherwise.
+        """
+        if len(turn_history) < threshold:
+            return False
+
+        recent = turn_history[-threshold:]
+        for tr in recent:
+            if not self._is_player_invocation_failure(tr):
+                return False
+
+        first_error = (
+            recent[0].player_result.error
+            if recent[0].player_result and recent[0].player_result.error
+            else None
+        )
+        logger.warning(
+            f"Player-invocation stall: {threshold} trailing turns failed at "
+            f"the SDK layer (first-turn error: {first_error!r})"
+        )
+        return True
+
+    @staticmethod
+    def _is_player_invocation_failure(turn_record: TurnRecord) -> bool:
+        """
+        Return True when this turn's Player never produced a real report
+        (TASK-FIX-7A02).
+
+        Two cases:
+        1. Player errored and recovery failed → ``turn_record.decision == "error"``
+           with ``player_result.error`` set and no recovery.
+        2. Player errored and state-recovery succeeded → the substituted
+           ``player_result.report`` carries ``"_synthetic": True``.
+
+        Both mean the Player never produced a real report for this turn.
+        """
+        if turn_record.player_result is None:
+            return False
+
+        if turn_record.player_result.error:
+            return True
+
+        report = turn_record.player_result.report or {}
+        if report.get("_synthetic") is True:
+            return True
 
         return False
 
@@ -4506,7 +4601,7 @@ class AutoBuildOrchestrator:
     def _build_summary_details(
         self,
         turn_history: List[TurnRecord],
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "design_extraction_failed"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "design_extraction_failed"],
     ) -> str:
         """
         Build detailed summary text for final report.
@@ -4553,8 +4648,49 @@ class AutoBuildOrchestrator:
                 f"Review implementation and provide manual guidance."
             )
 
+        elif final_decision == "player_invocation_stall":
+            # Signal-based classification (TASK-FIX-7A02): Player never produced
+            # a real report for N consecutive turns (SDK-layer failure or
+            # synthetic-recovery report). Quote the first-turn error and list
+            # the affected turn numbers so the summary points at the env, not
+            # the task.
+            player_error_turns = [
+                tr for tr in turn_history
+                if self._is_player_invocation_failure(tr)
+            ]
+            first_turn = player_error_turns[0] if player_error_turns else None
+            first_error = (
+                first_turn.player_result.error
+                if first_turn and first_turn.player_result and first_turn.player_result.error
+                else (
+                    first_turn.player_result.report.get("_recovery_metadata", {}).get(
+                        "detection_method"
+                    ) if first_turn and first_turn.player_result else None
+                ) or "unavailable"
+            )
+            affected_turns = ", ".join(str(tr.turn) for tr in player_error_turns)
+            n_failed = len(player_error_turns)
+            return (
+                f"Player-invocation stall detected after {len(turn_history)} turn(s).\n"
+                f"Player failed {n_failed}\u00d7 at the SDK layer before producing "
+                f"any work (turns: {affected_turns}).\n"
+                f"Underlying error (turn {first_turn.turn if first_turn else '?'}): "
+                f"{first_error!r}\n"
+                f"Worktree preserved for inspection.\n"
+                f"Suggested checks:\n"
+                f"  (a) `claude` is logged in on this host "
+                f"(claude auth status / claude login)\n"
+                f"  (b) `pip show claude-agent-sdk` matches the working "
+                f"environment (version + install path)."
+            )
+
         elif final_decision == "unrecoverable_stall":
-            # Check if the stall was caused by SDK API errors (TASK-FIX-d5e6)
+            # Check if the stall was caused by SDK API errors (TASK-FIX-d5e6).
+            # TASK-FIX-7A02: This is now the *fallback* path — the new
+            # signal-based branch (player_invocation_stall) takes precedence
+            # when detected. This branch preserves TASK-REV-8A08's diagnostic
+            # for the case where Coach feedback text happens to carry the
+            # "SDK API error" substring but the Player reports were real.
             recent_feedback = [
                 tr.feedback for tr in turn_history
                 if tr.feedback and tr.decision == "feedback"
@@ -4641,7 +4777,7 @@ class AutoBuildOrchestrator:
 
     def _build_error_message(
         self,
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "design_extraction_failed"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "design_extraction_failed"],
         turn_history: List[TurnRecord],
     ) -> str:
         """
