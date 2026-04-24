@@ -888,3 +888,142 @@ class TestJarvisFeatJ002Replay:
         assert c.missing_phases == ["4", "5"]
         assert c.expected_phases == 3
         assert c.actual_invocations == 1
+
+
+# ---------------------------------------------------------------------------
+# TASK-FIX-7A08 AC: forge-run-3 post-prompt-fix replay
+# ---------------------------------------------------------------------------
+
+
+class TestForgeRun3PostFixReplay:
+    """TASK-FIX-7A08: when the Player follows the new prompt mandate
+    (i.e., invokes Phase 3/4/5 specialists via Task), the fixture reflects
+    ``agent_invocations_validation.status == "passed"`` with 3/3 required
+    invocations, AND the Coach's agent-invocations gate does NOT reject
+    (no ``agent_invocations_violation`` issue is emitted), AND
+    ``classify_stall`` over 3 such turns does NOT classify as
+    ``coach_agent_invocations_stall``.
+
+    Derived from forge-run-3 (docs/reviews/bdd-acceptance-wired-up/forge-run-3.md)
+    turn 1 of TASK-NFI-003 (lines 1084-1111) and TASK-NFI-007 (lines 1178-1205),
+    minimised and forward-rolled to post-fix behaviour.
+    """
+
+    FIXTURE_DIR = (
+        Path(__file__).parent.parent
+        / "fixtures"
+        / "forge_run_3_replay"
+    )
+
+    def test_fixtures_exist(self):
+        assert (self.FIXTURE_DIR / "nfi_003_turn_1_post_fix.json").exists()
+        assert (self.FIXTURE_DIR / "nfi_007_turn_1_post_fix.json").exists()
+
+    def _load_fixture(self, name: str) -> Dict[str, Any]:
+        return json.loads((self.FIXTURE_DIR / name).read_text(encoding="utf-8"))
+
+    def test_nfi_003_fixture_reports_3_of_3_required_invocations(self):
+        """The AC-named invariant: fixture must report 3/3 with status=passed."""
+        data = self._load_fixture("nfi_003_turn_1_post_fix.json")
+        validation = data["agent_invocations_validation"]
+        assert validation["status"] == "passed"
+        assert validation["expected_phases"] == 3
+        assert validation["actual_invocations"] == 3
+        assert validation["missing_phases"] == []
+
+    def test_nfi_007_fixture_reports_3_of_3_required_invocations(self):
+        data = self._load_fixture("nfi_007_turn_1_post_fix.json")
+        validation = data["agent_invocations_validation"]
+        assert validation["status"] == "passed"
+        assert validation["expected_phases"] == 3
+        assert validation["actual_invocations"] == 3
+        assert validation["missing_phases"] == []
+
+    def test_fixtures_name_the_mandated_specialists(self):
+        """The Player's agent_invocations must name the specialists that the
+        new prompt mandates — anything else would mean the fixture is simulating
+        the wrong post-fix state."""
+        specialist_names = {
+            inv["agent"]
+            for fname in (
+                "nfi_003_turn_1_post_fix.json",
+                "nfi_007_turn_1_post_fix.json",
+            )
+            for inv in self._load_fixture(fname)["agent_invocations"]
+        }
+        # Phase-4 and Phase-5 specialists are fixed across stacks.
+        assert "test-orchestrator" in specialist_names
+        assert "code-reviewer" in specialist_names
+
+    def _build_post_fix_turn(self, fixture_name: str, turn: int) -> TurnRecord:
+        """Build a TurnRecord representing a successful post-fix turn —
+        Coach approves because the agent-invocations gate passes, so no
+        ``agent_invocations_violation`` issue is present."""
+        data = self._load_fixture(fixture_name)
+        task_id = data["task_id"]
+        player_result = AgentInvocationResult(
+            task_id=task_id,
+            turn=turn,
+            agent_type="player",
+            success=True,
+            report={
+                "files_modified": data["files_modified"],
+                "files_created": data["files_created"],
+                "tests_passed": data["tests_passed"],
+                "test_count": data["quality_gates"]["tests_pass"]["total"],
+                "implementation_notes": data["implementation_notes"],
+                # The validator's verdict the Player persisted to disk:
+                "agent_invocations_validation": data["agent_invocations_validation"],
+            },
+            duration_seconds=12.0,
+            error=None,
+        )
+        coach_result = AgentInvocationResult(
+            task_id=task_id,
+            turn=turn,
+            agent_type="coach",
+            success=True,
+            report={
+                "decision": "approved",
+                "feedback": "All quality gates passed.",
+                "issues": [],  # no violation → the classifier must stay quiet
+            },
+            duration_seconds=0.4,
+            error=None,
+        )
+        return TurnRecord(
+            turn=turn,
+            player_result=player_result,
+            coach_result=coach_result,
+            decision="approved",
+            feedback="All quality gates passed.",
+            timestamp=f"2026-04-24T19:0{turn}:00Z",
+        )
+
+    def test_post_fix_turn_has_no_agent_invocations_violation(self):
+        """``_extract_agent_invocations_violation`` must return None for a
+        turn built from the post-fix fixture (no violation issue emitted)."""
+        turn = self._build_post_fix_turn("nfi_003_turn_1_post_fix.json", turn=1)
+        assert _extract_agent_invocations_violation(turn) is None
+
+    def test_classify_stall_quiet_over_three_post_fix_turns(self):
+        """Three consecutive post-fix turns — each with passed validation and
+        Coach approval — must NOT classify as coach_agent_invocations_stall.
+        If this assertion ever flips, the prompt fix has regressed or the
+        classifier has drifted."""
+        history = [
+            self._build_post_fix_turn("nfi_003_turn_1_post_fix.json", turn=1),
+            self._build_post_fix_turn("nfi_007_turn_1_post_fix.json", turn=2),
+            self._build_post_fix_turn("nfi_003_turn_1_post_fix.json", turn=3),
+        ]
+        c = classify_stall(history, "unrecoverable_stall")
+        # Either no classification at all, or a non-coach-agent-invocations
+        # classification. The specific invariant is: the agent-invocations
+        # branch must not fire.
+        if c is not None:
+            assert c.decision_label != STALL_COACH_AGENT_INVOCATIONS, (
+                "After the TASK-FIX-7A08 prompt change, three turns with "
+                "passed agent_invocations_validation should NOT trigger the "
+                "coach_agent_invocations_stall classification."
+            )
+            assert STALL_COACH_AGENT_INVOCATIONS not in c.co_fires

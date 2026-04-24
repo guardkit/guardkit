@@ -69,9 +69,30 @@ Skip this section entirely. Proceed to Phase 3 as normal.
 
 ## Phase 3: Implementation
 
-You are implementing a task. Follow these instructions exactly.
+You are implementing a task. **You MUST delegate implementation to the
+stack-specific specialist via the `Task` tool** — do not write the
+implementation code inline yourself.
 
-### Implementation Requirements
+### Mandatory specialist invocation
+
+Invoke the stack-specific Phase-3 specialist:
+
+```
+Task(
+  subagent_type="{phase_3_specialist}",
+  description="Implement {task_id}",
+  prompt="Implement the changes described in the implementation plan at
+          .claude/task-plans/{task_id}-implementation-plan.md.
+          Follow the architecture and patterns specified.
+          Do NOT create stub implementations (see Anti-Stub Rules)."
+)
+```
+
+Wait for the specialist's report before proceeding to Phase 4. Record every
+file the specialist creates or modifies — that list must appear in your
+player report (`files_created`, `files_modified`).
+
+### What the specialist must deliver
 
 1. **Read the implementation plan** from `.claude/task-plans/{task_id}-implementation-plan.md`
 2. **Implement all files** listed in the plan — create source files and test files
@@ -145,47 +166,31 @@ All implementation code MUST include proper error handling:
 
 ## Phase 4: Testing
 
-After implementation, verify your code works.
+**You MUST delegate test execution to `{phase_4_specialist}` via the `Task`
+tool. Do NOT run `pytest`, `npm test`, or `dotnet test` inline yourself.**
+Inline test execution is the defect — it skips the specialist pipeline the
+Coach's agent-invocations gate is checking for, and the Coach will reject
+your turn.
 
-### Mandatory Compilation Check
+### Mandatory specialist invocation
 
-You MUST verify code compiles/builds BEFORE running tests:
-
-**Python**:
-```bash
-python -m py_compile <file.py>
+```
+Task(
+  subagent_type="{phase_4_specialist}",
+  description="Run tests for {task_id}",
+  prompt="Verify compilation, run the full test suite with coverage, and
+          report pass/fail counts and coverage percentages for the detected
+          stack (Python: pytest with --cov; TypeScript: npm test --coverage;
+          .NET: dotnet test --collect XPlat Code Coverage). Use the exact
+          output markers:
+            - 'N tests passed' / 'N tests failed'
+            - 'Coverage: N.N%'
+          Do NOT skip, comment out, or mark tests with [Ignore]."
+)
 ```
 
-**TypeScript**:
-```bash
-npx tsc --noEmit
-```
-
-**.NET**:
-```bash
-dotnet build --no-restore
-```
-
-If compilation fails, fix errors BEFORE proceeding to test execution.
-
-### Test Execution
-
-Run the full test suite:
-
-**Python**:
-```bash
-pytest tests/ -v --cov=src --cov-report=term --cov-report=json
-```
-
-**TypeScript/JavaScript**:
-```bash
-npm test -- --coverage
-```
-
-**.NET**:
-```bash
-dotnet test --collect:"XPlat Code Coverage" --logger:"json"
-```
+Wait for the specialist's report. The specialist owns stack detection, build
+commands, and coverage measurement — you do not invoke those tools yourself.
 
 ### Quality Gate Thresholds
 
@@ -247,9 +252,27 @@ If max attempts exhausted, report:
 
 ## Phase 5: Code Review
 
-Review implementation for quality and correctness.
+**You MUST delegate code review to `{phase_5_specialist}` via the `Task`
+tool. Do NOT perform the review inline yourself.** Inline review skips the
+specialist pipeline and the Coach's agent-invocations gate will reject your
+turn.
 
-### Review Checklist
+### Mandatory specialist invocation
+
+```
+Task(
+  subagent_type="{phase_5_specialist}",
+  description="Review {task_id} implementation",
+  prompt="Review the implementation for SOLID, DRY, YAGNI compliance,
+          error handling, test quality, and stack-specific conventions.
+          Emit 'Quality gates: PASSED' or 'Quality gates: FAILED'
+          as the final marker."
+)
+```
+
+Wait for the specialist's report before emitting your player report.
+
+### Review Checklist the specialist must apply
 
 1. **Code Quality**: Clean, readable, well-structured
 2. **Error Handling**: Proper exception handling, no silent failures
@@ -424,44 +447,14 @@ If any acceptance criteria are missing from `completion_promises`, add them now 
 
 ## Output Markers
 
-The following output formats are parsed programmatically by TaskWorkStreamParser. You MUST use these exact formats:
+Parsed programmatically by TaskWorkStreamParser. Use these exact formats:
 
-### Phase Progress
-```
-Phase N: Description
-```
-Example: `Phase 3: Implementation`
-
-### Phase Completion
-```
-✓ Phase N complete
-```
-
-### Test Results
-```
-N tests passed
-N tests failed
-```
-
-### Coverage
-```
-Coverage: N.N%
-```
-
-### Quality Gates
-```
-Quality gates: PASSED
-```
-or
-```
-Quality gates: FAILED
-```
-
-### Architectural Review (if applicable)
-```
-Architectural Score: N/100
-SOLID: N, DRY: N, YAGNI: N
-```
+- `Phase N: Description` (e.g. `Phase 3: Implementation`)
+- `✓ Phase N complete`
+- `N tests passed` / `N tests failed`
+- `Coverage: N.N%`
+- `Quality gates: PASSED` or `Quality gates: FAILED`
+- `Architectural Score: N/100` plus `SOLID: N, DRY: N, YAGNI: N` (if applicable)
 
 ---
 
@@ -557,9 +550,6 @@ When reviewing, the Coach MUST:
 
 ## Summary
 
-This protocol defines the complete execution loop for the AutoBuild Player agent:
-1. **Phase 3**: Implement according to plan
-2. **Phase 4**: Run tests, verify quality gates
-3. **Phase 4.5**: Fix loop if tests fail (max 3 attempts)
-4. **Phase 5**: Code review
-5. **Report**: Write PLAYER_REPORT_SCHEMA JSON to `.guardkit/autobuild/`
+Phase 3 → `{phase_3_specialist}`; Phase 4 → `{phase_4_specialist}`;
+Phase 5 → `{phase_5_specialist}`. All via `Task`. Then emit
+PLAYER_REPORT_SCHEMA JSON to `.guardkit/autobuild/`.
