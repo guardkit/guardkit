@@ -1,9 +1,13 @@
 ---
 id: TASK-FIX-7A04
 title: Add bootstrap_failure_mode gate so 0/N install success can hard-fail (+ requires-python pre-check)
-status: backlog
+status: completed
 created: 2026-04-24T12:55:00Z
-updated: 2026-04-24T14:00:00Z
+updated: 2026-04-24T15:05:00Z
+completed: 2026-04-24T15:05:00Z
+completed_location: tasks/completed/TASK-FIX-7A04/
+previous_state: in_review
+state_transition_reason: "task-complete — ACs satisfied, tests green, reviewed"
 priority: medium
 tags: [autobuild, environment-bootstrap, orchestrator, configuration, requires-python, preflight]
 parent_review: TASK-REV-E4F5
@@ -39,11 +43,11 @@ no such configuration exists today.
 
 ## Acceptance Criteria
 
-- [ ] New configuration knob `bootstrap_failure_mode: "block" | "warn"`,
+- [x] New configuration knob `bootstrap_failure_mode: "block" | "warn"`,
       default `"warn"` (preserves current behavior for existing users).
       Readable from feature-level config / CLI flag. Where it should live:
       `.guardkit/config.yaml` at the repo root, with a CLI override.
-- [ ] When `mode == "block"` AND `installs_attempted > 0` AND
+- [x] When `mode == "block"` AND `installs_attempted > 0` AND
       `installs_failed == installs_attempted` (i.e. zero partial success)
       AND at least one detected stack is declared essential (default: all
       detected stacks are essential unless explicitly marked optional):
@@ -53,16 +57,16 @@ no such configuration exists today.
         - the `requires-python` (if any) from the manifest
         - a hint: _"Set `bootstrap_failure_mode: warn` to override."_
       - do **not** proceed to Wave 1.
-- [ ] When `mode == "warn"` (default), behavior is unchanged from today
+- [x] When `mode == "warn"` (default), behavior is unchanged from today
       (yellow-⚠ line, continue). **No existing test should regress.**
-- [ ] When `mode == "block"` AND bootstrap succeeded (or partially succeeded
+- [x] When `mode == "block"` AND bootstrap succeeded (or partially succeeded
       with ≥1 install) → behavior unchanged from today.
-- [ ] Unit tests:
+- [x] Unit tests:
       1. `mode=block` + zero success + essential stack → raises
       2. `mode=block` + partial success → proceeds (warning logged)
       3. `mode=warn` + zero success → proceeds (today's behavior)
       4. Config plumbing: CLI flag overrides yaml default.
-- [ ] Documentation: a short section in
+- [x] Documentation: a short section in
       `docs/guides/autobuild-instrumentation-guide.md` explaining the flag
       and when to use `block` (coordinate with TASK-DOC-7A06).
 
@@ -74,7 +78,7 @@ is opaque ("Package 'jarvis' requires a different Python: 3.14.2 not in
 '<3.13,>=3.12'"), and users hitting it lose diagnostic time. Pre-checking
 *before* pip avoids the pip-stderr dump and gives clean guidance.
 
-- [ ] **AC-REQPY-PRECHECK** — Before invoking `pip install -e .` (or
+- [x] **AC-REQPY-PRECHECK** — Before invoking `pip install -e .` (or
       equivalent) for any Python-stack bootstrap target, read the manifest's
       `requires-python` specifier (from `pyproject.toml` `[project]` or
       `tool.poetry.python`) and compare against `sys.version_info` of the
@@ -94,11 +98,11 @@ is opaque ("Package 'jarvis' requires a different Python: 3.14.2 not in
       Skip the pre-check gracefully if `packaging.specifiers` is unavailable
       or the manifest has no `requires-python` (fall through to pip and let
       it be authoritative).
-- [ ] Unit test covering: active interpreter satisfies / doesn't satisfy
+- [x] Unit test covering: active interpreter satisfies / doesn't satisfy
       specifier; `mode=block` blocks with the remediation hint; `mode=warn`
       proceeds with a structured warning line; missing `requires-python`
       skips the check silently.
-- [ ] Integration-style fixture: replay the jarvis pyproject.toml
+- [x] Integration-style fixture: replay the jarvis pyproject.toml
       (`<3.13,>=3.12`) against Python 3.14 → assert block path fires with
       the expected message; against Python 3.12 → assert proceed path.
 
@@ -139,3 +143,41 @@ is opaque ("Package 'jarvis' requires a different Python: 3.14.2 not in
   an incompatible Python (3.14 vs `<3.13,>=3.12`). See the review's
   Workstream E for the rationale — folded here rather than filed as a
   separate task because the same gate surface handles both semantics.
+
+## Completion Notes (2026-04-24)
+
+- `bootstrap_failure_mode` config surface added via module-level
+  `load_bootstrap_config()` (`.guardkit/config.yaml` → `autobuild.bootstrap`)
+  with CLI override `--bootstrap-failure-mode {block,warn}` on
+  `guardkit autobuild feature`.
+- `BootstrapResult` extended with `failure_details: List[BootstrapFailureDetail]`
+  capturing per-install stderr excerpt, PEP-668 flag, manifest path, and
+  `requires-python` value. `_run_install` / `_run_single_command` kept their
+  `bool` return signature so the existing 167 environment-bootstrap tests did
+  not regress — stderr/PEP-668 are stashed on `self._last_failure_*` scratch
+  state and consumed by `bootstrap()`.
+- TASK-REV-JMBP Workstream E pre-check implemented via
+  `check_requires_python_precheck()` + `format_requires_python_remediation()`;
+  wired into `_bootstrap_environment` **before** pip runs so a mismatch raises
+  (block) or logs a structured ⚠ line (warn) without pip's opaque
+  "requires a different Python" message being the user's first signal.
+  Remediation hint picks a minor-version example (3.8-3.15 range) from the
+  specifier and names `uv` / `pyenv` / `conda`. `[tool.poetry].python` is
+  honored in addition to PEP-621 `[project].requires-python`.
+- 30 tests added in `tests/orchestrator/test_bootstrap_gating.py` covering
+  the 4-branch ACs, optional-stacks filter, config-loader robustness, message
+  formatter, 6 pre-check cases (including jarvis-like `<3.13,>=3.12` replay
+  against 3.14.2 = block and 3.12.6 = proceed), block/warn-mode behavior
+  branches, and an e2e assertion that `bootstrapper.bootstrap()` is not
+  invoked when the pre-check blocks.
+- Docs: new section in `docs/guides/autobuild-instrumentation-guide.md`
+  covering both modes, when to use `block`, the error-message shape, and a
+  dedicated sub-section for the requires-python pre-check with the
+  block-mode example output.
+- No regression on any test I touched: 179/179 in the bootstrap/env test
+  suites green after the final state. The 11 unit failures elsewhere on
+  `main` (test_task_769d_ai_analyzer, test_doc_file_paths, test_agent_invoker,
+  test_generator_close_fix) are pre-existing — confirmed by stashing and
+  re-running.
+- Scope compliance with IMPLEMENTATION-GUIDE W1-3: no Coach-instantiation
+  changes touched in `feature_orchestrator.py` (W2-2's territory).
