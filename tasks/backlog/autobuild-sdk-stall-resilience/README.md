@@ -3,9 +3,14 @@
 **Feature ID**: FEAT-7A00
 **Parent review**: [TASK-REV-E4F5](../../in_review/TASK-REV-E4F5-analyse-forge-autobuild-failures-gb10.md) —
 architectural review of forge FEAT-FORGE-002 autobuild failures on GB10
+**Sibling review**: [TASK-REV-JMBP](../../in_review/TASK-REV-JMBP-analyse-jarvis-FEAT-J002-autobuild-failure-on-macbook-pro.md) —
+architectural review of jarvis FEAT-J002 autobuild failure on MacBook Pro (2026-04-24; added
+TASK-FIX-7A07 and amended TASK-FIX-7A04 per its Workstream D decision D1)
 **Review report**: [.claude/reviews/TASK-REV-E4F5-review-report.md](../../../.claude/reviews/TASK-REV-E4F5-review-report.md)
+**Sibling review report**: [docs/reviews/TASK-REV-JMBP-jarvis-autobuild-mbp-review.md](../../../docs/reviews/TASK-REV-JMBP-jarvis-autobuild-mbp-review.md)
 **Status**: Backlog
 **Created**: 2026-04-24
+**Updated**: 2026-04-24 (+TASK-FIX-7A07)
 
 ## Problem Statement
 
@@ -43,11 +48,12 @@ incident but worth closing):
 
 ## Solution Approach
 
-Six subtasks across two waves, addressing all five weaknesses:
+Seven subtasks across two waves, addressing all five original weaknesses *plus*
+the `coach_agent_invocations_stall` classification gap surfaced by TASK-REV-JMBP:
 
 - **Wave 1** (4 parallel, disjoint files) — the primary fixes
-- **Wave 2** (2 parallel-with-rebase, same-file dependencies) — the
-  summary/interpreter wiring layered on Wave 1
+- **Wave 2** (3 parallel-with-rebase, same-file dependencies) — the
+  summary/interpreter/feedback-refinement layer on Wave 1
 
 See [IMPLEMENTATION-GUIDE.md](./IMPLEMENTATION-GUIDE.md) for the execution
 strategy (Conductor workspaces, testing depth, verification plan).
@@ -56,12 +62,13 @@ strategy (Conductor workspaces, testing depth, verification plan).
 
 | Task | Title | Wave | Mode | Complexity | Review ref |
 |---|---|---|---|---|---|
-| [TASK-FIX-7A01](./TASK-FIX-7A01-pin-sdk-log-version.md) | Pin claude-agent-sdk + log version at startup | 1 | task-work | 3 | R1 / F1 |
-| [TASK-FIX-7A03](./TASK-FIX-7A03-defensive-sdk-message-handling.md) | Defensive SDK message handling in streaming loop | 1 | task-work | 4 | R3 / F2 |
-| [TASK-FIX-7A04](./TASK-FIX-7A04-bootstrap-hardfail-gate.md) | Bootstrap hard-fail gate (`bootstrap_failure_mode`) | 1 | task-work | 4 | R4a / F6 |
-| [TASK-DOC-7A06](./TASK-DOC-7A06-runbook-and-graph-seed.md) | Stall runbook + knowledge-graph seed | 1 | direct | 2 | R5+R6+R7 |
-| [TASK-FIX-7A02](./TASK-FIX-7A02-player-invocation-stall-classification.md) | `player_invocation_stall` classification at summary layer | 2 | task-work | 5 | R2 / F3+F4 |
-| [TASK-FIX-7A05](./TASK-FIX-7A05-wire-venv-to-coach-pytest.md) | Wire bootstrap venv into Coach pytest | 2 | task-work | 5 | R4b / F7 |
+| [TASK-FIX-7A01](./TASK-FIX-7A01-pin-sdk-log-version.md) | Pin claude-agent-sdk + log version at startup | 1 | task-work | 3 | E4F5 R1 / F1 |
+| [TASK-FIX-7A03](./TASK-FIX-7A03-defensive-sdk-message-handling.md) | Defensive SDK message handling in streaming loop | 1 | task-work | 4 | E4F5 R3 / F2 |
+| [TASK-FIX-7A04](./TASK-FIX-7A04-bootstrap-hardfail-gate.md) | Bootstrap hard-fail gate (`bootstrap_failure_mode`) + requires-python pre-check | 1 | task-work | 4 | E4F5 R4a / F6; **+JMBP W-E** |
+| [TASK-DOC-7A06](./TASK-DOC-7A06-runbook-and-graph-seed.md) | Stall runbook + knowledge-graph seed | 1 | direct | 2 | E4F5 R5+R6+R7 |
+| [TASK-FIX-7A02](./TASK-FIX-7A02-player-invocation-stall-classification.md) | `player_invocation_stall` classification at summary layer | 2 | task-work | 5 | E4F5 R2 / F3+F4 |
+| [TASK-FIX-7A05](./TASK-FIX-7A05-wire-venv-to-coach-pytest.md) | Wire bootstrap venv into Coach pytest | 2 | task-work | 5 | E4F5 R4b / F7 |
+| [TASK-FIX-7A07](./TASK-FIX-7A07-coach-agent-invocations-stall-classification.md) | `coach_agent_invocations_stall` classification + recovery feedback + mixed_partial_failure verdict | 2 | task-work | 5 | **JMBP D1 / W-B+C+F** |
 
 ## Success Criteria (feature-level)
 
@@ -70,15 +77,26 @@ The feature is done when:
 - FEAT-FORGE-002 Wave 1 completes on GB10 (requires TASK-FIX-7A01's SDK
   upgrade to be applied on that host — the task covers the code change;
   the host upgrade is a manual verification step).
-- Replaying the two saved transcripts through the final-summary code
+- Replaying the two saved GB10 transcripts through the final-summary code
   produces `player_invocation_stall` with the new hint, not the
   task-blaming generic hint.
+- Replaying the jarvis-FEAT002-run-1 preserved evidence (J002-008, J002-013
+  task_work_results + coach_turn_{5,6}) through the summary renderer
+  produces `coach_agent_invocations_stall` with the enriched Coach feedback
+  naming the specific sub-agents to invoke, and review-summary.md
+  distinguishes the two stall types and any co-fire (e.g.
+  `coach_agent_invocations_stall + context_pollution`).
 - `guardkit.orchestrator` unit tests cover: unknown-SDK-message per-message
   drop; `ValueError` error-class preservation; `bootstrap_failure_mode=block`
-  hard-fail; Coach interpreter selection via bootstrap venv.
-- Runbook section exists and links back to TASK-REV-E4F5 and TASK-REV-8A08.
-- Graphiti knowledge graph contains the "player-invocation-stall
-  distinction" fact under `guardkit__project_decisions`.
+  hard-fail; `requires-python` pre-check; Coach interpreter selection via
+  bootstrap venv; coach_agent_invocations_stall classifier (including
+  missing_phases ordering robustness); mixed_partial_failure verdict.
+- Runbook section exists and links back to TASK-REV-E4F5, TASK-REV-JMBP,
+  and TASK-REV-8A08.
+- Graphiti knowledge graph contains: the "player-invocation-stall
+  distinction" fact (7A02), the "coach-agent-invocations-stall distinction"
+  fact (7A07), and the bimodal `implementation_mode` routing rule (7A07)
+  under `guardkit__project_decisions`.
 
 ## Prior Art
 
@@ -87,8 +105,16 @@ The feature is done when:
   hint branch did fire because Coach feedback included the substring;
   here it doesn't.
 - **TASK-REV-MCPS** (2026-04-24) — namespace-hygiene rule, separate
-  class-of-defect. Confirmed not triggered here (Player reaches streaming,
-  so import succeeded).
+  class-of-defect. Confirmed not triggered on the GB10 forge runs; for
+  the MBP jarvis run, the MCPS fixes (TASK-FIX-MCPS.1/.2) were
+  **empirically validated** — the first invocation hit the collision, the
+  post-fix re-invocation completed Wave 1 cleanly.
+- **TASK-REV-JMBP** (2026-04-24) — sibling architectural review filed
+  after 7A0x was scoped. Its Workstream D decision D1 added TASK-FIX-7A07
+  and amended TASK-FIX-7A04 rather than opening a parallel feature. The
+  `coach_agent_invocations_stall` class it identifies is symmetric with
+  `player_invocation_stall` (TASK-FIX-7A02) — together they constitute
+  the core stall taxonomy for autobuild.
 
 ## Notes
 

@@ -104,6 +104,28 @@ workspaces have merged or at least produced reviewable PRs.
   - `tests/orchestrator/test_coach_interpreter_selection.py` (new)
 - Gate: argv-shape test + non-Python-stack regression test.
 
+### W2-3 · TASK-FIX-7A07 — Coach-agent-invocations-stall classification (added per TASK-REV-JMBP)
+
+- Workspace: `autobuild-sdk-stall-resilience-w2-3`
+- Command: `/task-work TASK-FIX-7A07`
+- Depends on: **TASK-FIX-7A02** (consumes 7A02's classifier framework —
+  adds the symmetric `coach_agent_invocations_stall` decision label into
+  the same enum/module 7A02 establishes). Also touches `autobuild.py`'s
+  summary-renderer region, so rebase on 7A02's changes there.
+- Touches:
+  - `guardkit/orchestrator/autobuild.py` (classifier hook + summary renderer
+    + stall-detector md5 normaliser around 3234 + review-summary per-task
+    renderer)
+  - `guardkit/orchestrator/quality_gates/coach_validator.py` (enriched
+    feedback description in `agent_invocations_violation` at 658–685)
+  - `tests/orchestrator/test_stall_classification.py` (extend 7A02's file)
+  - `tests/fixtures/jarvis_feat_j002_replay/` (new — minimised replay
+    fixture from preserved jarvis worktree)
+- Gate: all 8 ACs; replaying J002-008/J002-013 fixtures produces
+  `coach_agent_invocations_stall` with enriched Coach feedback naming
+  `test-orchestrator` and `code-reviewer` (and stack-specific Phase-3
+  specialist); missing_phases ordering regression test passes.
+
 ## Feature-Level Verification
 
 After all subtasks merge, verify feature-level acceptance with:
@@ -132,11 +154,14 @@ Time ─────────────────────────
 
 Wave 1:  ├──W1-1 (R1)──────────────┤
          ├──W1-2 (R3)──────────────┤       ← all parallel Conductor workspaces
-         ├──W1-3 (R4a)─────────────┤
-         ├──W1-4 (R5+R6 docs)──┤
+         ├──W1-3 (R4a+JMBP-E)──────┤          (W1-3 amended per TASK-REV-JMBP
+         ├──W1-4 (R5+R6 docs)──┤              to add requires-python pre-check)
 
 Wave 2:                               ├──W2-1 (R2)───────────┤  ← rebase autobuild.py
                                       ├──W2-2 (R4b)──────────┤  ← rebase feature_orch.py
+                                      ├──W2-3 (JMBP-D1)──────┤  ← rebase autobuild.py
+                                                                  (depends on W2-1's
+                                                                   classifier framework)
 ```
 
 ## Rollback / Risk Management
@@ -153,15 +178,22 @@ Wave 2:                               ├──W2-1 (R2)────────
 - **TASK-FIX-7A01** could overly constrain users if the upper bound is
   too tight. Pin to `<0.2` (or whatever the next-major-risk boundary is
   per SDK CHANGELOG) rather than a patch-level cap.
+- **TASK-FIX-7A07** is cosmetic/diagnostic — it does not change gate
+  semantics, does not relax the anti-fraud posture, and cannot
+  regress substantively-correct approvals (it only refines the feedback
+  emitted on rejection and the summary-layer classifier). Risk: low.
 
 ## Completion
 
-When all six subtasks are in `completed/`:
+When all seven subtasks are in `completed/`:
 
 ```bash
 /task-complete TASK-REV-E4F5
+/task-complete TASK-REV-JMBP
 ```
 
-…and update the review task's `status: review_complete` → `completed`,
+…and update both review tasks' `status: review_complete` → `completed`,
 plus capture feature-level outcome to Graphiti under
-`guardkit__task_outcomes` (FEAT-7A00).
+`guardkit__task_outcomes` (FEAT-7A00). The JMBP completion episode should
+cite the empirical re-run verification (replay fixture) as evidence the
+classification reaches the right decision label.

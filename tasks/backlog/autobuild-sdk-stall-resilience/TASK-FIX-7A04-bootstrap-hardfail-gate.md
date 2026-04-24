@@ -1,12 +1,13 @@
 ---
 id: TASK-FIX-7A04
-title: Add bootstrap_failure_mode gate so 0/N install success can hard-fail
+title: Add bootstrap_failure_mode gate so 0/N install success can hard-fail (+ requires-python pre-check)
 status: backlog
 created: 2026-04-24T12:55:00Z
-updated: 2026-04-24T12:55:00Z
+updated: 2026-04-24T14:00:00Z
 priority: medium
-tags: [autobuild, environment-bootstrap, orchestrator, configuration]
+tags: [autobuild, environment-bootstrap, orchestrator, configuration, requires-python, preflight]
 parent_review: TASK-REV-E4F5
+additional_review: TASK-REV-JMBP
 feature_id: FEAT-7A00
 implementation_mode: task-work
 wave: 1
@@ -65,6 +66,42 @@ no such configuration exists today.
       `docs/guides/autobuild-instrumentation-guide.md` explaining the flag
       and when to use `block` (coordinate with TASK-DOC-7A06).
 
+### Amendment per TASK-REV-JMBP Workstream E (added 2026-04-24)
+
+The MacBook Pro jarvis FEAT-J002 run surfaced a second hazard that fits the
+same gate: pip's error message for an interpreter/requires-python mismatch
+is opaque ("Package 'jarvis' requires a different Python: 3.14.2 not in
+'<3.13,>=3.12'"), and users hitting it lose diagnostic time. Pre-checking
+*before* pip avoids the pip-stderr dump and gives clean guidance.
+
+- [ ] **AC-REQPY-PRECHECK** — Before invoking `pip install -e .` (or
+      equivalent) for any Python-stack bootstrap target, read the manifest's
+      `requires-python` specifier (from `pyproject.toml` `[project]` or
+      `tool.poetry.python`) and compare against `sys.version_info` of the
+      active interpreter. If the active interpreter does not satisfy the
+      specifier:
+        - In `mode == "warn"`: emit a structured warning
+          "Python {active_version} does not satisfy requires-python=
+          `{specifier}`; pip install is expected to fail" and continue
+          (pip will emit its own error shortly after).
+        - In `mode == "block"`: raise `FeatureOrchestrationError` with a
+          message suggesting remediation:
+          "Install a compatible interpreter with one of:
+          `uv python install 3.12`, `pyenv install 3.12.6 && pyenv local 3.12.6`,
+          or `conda create -n <name> python=3.12 && conda activate <name>`"
+          (list the top N suggestions; do not try to auto-detect the
+          available package manager).
+      Skip the pre-check gracefully if `packaging.specifiers` is unavailable
+      or the manifest has no `requires-python` (fall through to pip and let
+      it be authoritative).
+- [ ] Unit test covering: active interpreter satisfies / doesn't satisfy
+      specifier; `mode=block` blocks with the remediation hint; `mode=warn`
+      proceeds with a structured warning line; missing `requires-python`
+      skips the check silently.
+- [ ] Integration-style fixture: replay the jarvis pyproject.toml
+      (`<3.13,>=3.12`) against Python 3.14 → assert block path fires with
+      the expected message; against Python 3.12 → assert proceed path.
+
 ## Files
 
 - `guardkit/orchestrator/feature_orchestrator.py` (both call sites:
@@ -97,3 +134,8 @@ no such configuration exists today.
   incident (actual Coach wiring is TASK-FIX-7A05).
 - Pairs with TASK-FIX-7A05 (Wave 2). They both touch `feature_orchestrator.py`
   so W2 must rebase on W1.
+- **Amendment from TASK-REV-JMBP**: the `requires-python` pre-check
+  addresses a MacBook Pro incident where the orchestrator proceeded past
+  an incompatible Python (3.14 vs `<3.13,>=3.12`). See the review's
+  Workstream E for the rationale — folded here rather than filed as a
+  separate task because the same gate surface handles both semantics.
