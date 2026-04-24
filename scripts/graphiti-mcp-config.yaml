@@ -1,0 +1,85 @@
+# Graphiti MCP Server Configuration — GuardKit (GB10 HTTP deployment)
+#
+# This config drives a standalone graphiti-mcp container running on the GB10.
+# All GuardKit-related .mcp.json files point at http://promaxgb10-41b1:8004/mcp/
+# and this file is the single source of truth for how that server is wired.
+#
+# Mounted into the container at /app/mcp/config/config.yaml by graphiti-mcp.sh.
+# See: guardkit/scripts/graphiti-mcp.sh
+#
+# Networking assumption: container runs with `--network host` on the GB10, so
+# localhost:8000 and localhost:8001 inside the container resolve to the
+# vllm-graphiti and vllm-embedding containers on the same host. FalkorDB lives
+# on the Synology NAS `whitestocks` and is reached via Tailscale.
+
+server:
+  transport: "http"
+  host: "0.0.0.0"
+  port: 8004
+
+llm:
+  # Local vLLM on the GB10 (Qwen2.5-14B FP8). Graphiti only calls the LLM during
+  # ingestion/seeding, not queries, so this runs when capturing knowledge and is
+  # idle during read-only search. See: guardkit/scripts/vllm-graphiti.sh
+  #
+  # History: briefly moved to Gemini 2.5 Pro while profiling GB10 cost/usage;
+  # moved back 2026-04-24 once vLLM workload was understood.
+  provider: "openai"
+  model: ${LLM_MODEL:neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic}
+  max_tokens: 4096
+
+  providers:
+    openai:
+      api_key: ${OPENAI_API_KEY:not-needed-vllm-local}
+      api_url: ${LLM_API_URL:http://localhost:8000/v1}
+
+embedder:
+  # Local vLLM nomic-embed-text-v1.5 on GB10 (port 8001). 1024 dims matches the
+  # FalkorDB index. See: guardkit/scripts/vllm-embed.sh
+  provider: "openai"
+  model: "nomic-embed-text-v1.5"
+  dimensions: 1024
+
+  providers:
+    openai:
+      api_key: ${OPENAI_API_KEY:not-needed-vllm-local}
+      api_url: ${EMBEDDING_API_URL:http://localhost:8001/v1}
+
+database:
+  provider: "falkordb"
+  providers:
+    falkordb:
+      uri: ${FALKORDB_URI:redis://whitestocks:6379}
+      password: ""
+      database: "default_db"
+
+graphiti:
+  # Default group_id for MCP add_memory calls when no explicit group_id is passed.
+  # IMPORTANT: Claude Code should always pass explicit group_ids rather than relying
+  # on this default. See .claude/rules/graphiti-knowledge-graph.md for the correct
+  # group IDs to use for each type of knowledge.
+  #
+  # Group ID namespacing convention (matches Python client GraphitiClient.get_group_id()):
+  #   - System groups (no prefix):  product_knowledge, command_workflows, architecture_decisions
+  #   - Project groups (prefixed):  guardkit__project_overview, guardkit__project_architecture, etc.
+  group_id: "product_knowledge"
+  user_id: "rich"
+  entity_types:
+    - name: "Preference"
+      description: "User preferences, choices, opinions, or selections"
+    - name: "Requirement"
+      description: "Specific needs, features, or functionality that must be fulfilled"
+    - name: "Procedure"
+      description: "Standard operating procedures and sequential instructions"
+    - name: "Location"
+      description: "Physical or virtual places where activities occur"
+    - name: "Event"
+      description: "Time-bound activities, occurrences, or experiences"
+    - name: "Organization"
+      description: "Companies, institutions, groups, or formal entities"
+    - name: "Document"
+      description: "Information content in various forms (books, articles, reports, etc.)"
+    - name: "Topic"
+      description: "Subject of conversation, interest, or knowledge domain"
+    - name: "Object"
+      description: "Physical items, tools, devices, or possessions"

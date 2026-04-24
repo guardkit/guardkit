@@ -1,0 +1,426 @@
+# Graphiti on GB10 — Deployment & Operations Runbook
+
+This guide describes the **HTTP-centralised** Graphiti MCP deployment used across
+all GuardKit-related repos on `rich@appmilla.com`'s workstation. Everything runs
+as Docker containers on the DGX Spark GB10 (`promaxgb10-41b1`). Every client
+(Claude Code on Mac, Claude Code on GB10, Claude Desktop) reaches the same HTTP
+MCP endpoint — there is no per-client graphiti install, no per-repo stdio
+subprocess, and no hard-coded file paths in `.mcp.json`.
+
+**Supersedes**: [graphiti-gemini-rollout-setup.md](graphiti-gemini-rollout-setup.md)
+(retained for history). Gemini is no longer the LLM — the local vLLM on GB10 is.
+
+---
+
+## Topology
+
+```
+┌─────────────────────────┐    ┌──────────────────────────────┐
+│  MacBook                │    │  Claude Desktop (Mac)        │
+│  Claude Code  .mcp.json │    │  claude_desktop_config.json  │
+│  → http://promaxgb10…   │    │  → npx mcp-remote → http…    │
+└───────────┬─────────────┘    └───────────┬──────────────────┘
+            │                              │
+            │   Tailscale (HTTPS MCP on port 8004)
+            │                              │
+            ▼                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  GB10  (promaxgb10-41b1)                                    │
+│                                                             │
+│   ┌──────────────────┐  ┌──────────────────┐                │
+│   │ vllm-graphiti    │  │ vllm-embedding   │                │
+│   │   :8000 (LLM)    │  │   :8001 (embed)  │                │
+│   │   Qwen2.5-14B FP8│  │   nomic-embed    │                │
+│   └────────┬─────────┘  └────────┬─────────┘                │
+│            │                     │                          │
+│            │   localhost (--network host)                   │
+│            │                     │                          │
+│   ┌────────▼─────────────────────▼──────────────┐           │
+│   │ graphiti-mcp :8004  (HTTP MCP server)       │           │
+│   │   standalone image, mounts guardkit config  │           │
+│   └────────────────────┬────────────────────────┘           │
+│                        │                                    │
+└────────────────────────┼────────────────────────────────────┘
+                         │  Tailscale
+                         ▼
+            ┌──────────────────────────┐
+            │  whitestocks (Synology)  │
+            │  FalkorDB  :6379         │
+            └──────────────────────────┘
+```
+
+Same GPU hosts both vLLM services plus the MCP container. FalkorDB lives on the
+Synology NAS (`whitestocks`) reached over Tailscale.
+
+---
+
+## File map
+
+| Path | Role |
+|------|------|
+| `guardkit/scripts/graphiti-mcp-config.yaml` | **Single source of truth** for LLM, embedder, FalkorDB, group IDs, entity types. Mounted read-only into the MCP container. |
+| `guardkit/scripts/graphiti-mcp-build.sh` | One-time: clones `getzep/graphiti` read-only and builds `graphiti-mcp-standalone:local` from `Dockerfile.standalone`. |
+| `guardkit/scripts/graphiti-mcp.sh` | Starts the MCP container (`--network host`, port 8004), mounts the config above. |
+| `guardkit/scripts/vllm-graphiti.sh` | Starts the Qwen2.5-14B LLM container on port 8000. |
+| `guardkit/scripts/vllm-embed.sh` | Starts the nomic-embed container on port 8001. |
+| `guardkit/scripts/graphiti-stack-up.sh` | Daily start: boots all three in order with health-gated waits. |
+| `guardkit/scripts/graphiti-stack-down.sh` | Daily stop: shuts all three down in reverse order. |
+| `~/Projects/appmilla_github/graphiti/` | Upstream graphiti repo checkout — **read-only**, used only as Docker build context. Never edited. |
+| `<repo>/.mcp.json` (×15) | Claude Code MCP config per repo. All now point at `http://promaxgb10-41b1:8004/mcp/`. |
+| `~/Library/Application Support/Claude/claude_desktop_config.json` | Claude Desktop config. Uses `mcp-remote` to bridge stdio → HTTP. |
+
+### Repos whose `.mcp.json` point at the stack
+
+```
+guardkit                                   specialist-agent
+jarvis (+ FEAT-J002 worktree)              dotnet-functional-fastendpoints-exemplar
+study-tutor                                lpa-platform
+youtube-transcript-mcp                     nats-core
+deepagents-player-coach-exemplar           nats-infrastructure
+require-kit                                forge
+agentic-dataset-factory                    architect-agent_delete_me
+```
+
+`study-tutor` and `specialist-agent` also declare a second MCP server alongside
+`graphiti` — those entries are preserved untouched.
+
+---
+
+## Config relationships
+
+There is exactly **one** Graphiti config that matters at runtime:
+`guardkit/scripts/graphiti-mcp-config.yaml`. Everything else references it.
+
+```
+graphiti-mcp-config.yaml     ◄── LLM URL, embedder URL, FalkorDB URI, group IDs
+        │                        live here. Edit here to change behaviour.
+        │  mounted at /app/mcp/config/config.yaml
+        ▼
+graphiti-mcp container  ─────────►  http://0.0.0.0:8004/mcp/
+        ▲
+        │  every client points here
+        │
+        ├── Claude Code   .mcp.json     type:"http" url:"…:8004/mcp/"
+        └── Claude Desktop              npx mcp-remote …:8004/mcp/
+```
+
+Key env-overridable fields inside the YAML (all have sensible defaults so the
+file is valid as-is):
+
+| Field | Default | Override via |
+|-------|---------|-------------|
+| `llm.model` | `neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic` | `LLM_MODEL` env |
+| `llm.providers.openai.api_url` | `http://localhost:8000/v1` | `LLM_API_URL` env |
+| `embedder.providers.openai.api_url` | `http://localhost:8001/v1` | `EMBEDDING_API_URL` env |
+| `database.providers.falkordb.uri` | `redis://whitestocks:6379` | `FALKORDB_URI` env |
+| `server.port` | `8004` | set in YAML (must match `docker run` port) |
+
+`localhost` inside the container works because `graphiti-mcp.sh` uses
+`--network host` — the MCP container shares the GB10's network namespace, so
+`localhost:8000` resolves to the vLLM LLM container on the same host.
+
+---
+
+## One-time GB10 setup
+
+Prerequisites on the GB10:
+- Docker with NVIDIA runtime (already in use by `vllm-*` scripts)
+- Tailscale up (so `whitestocks` resolves and other machines can reach GB10)
+- The `guardkit` repo cloned at `/Users/richardwoollcott/Projects/appmilla_github/guardkit` (matches the paths used by the existing `vllm-*.sh` scripts)
+
+Then, once:
+
+```bash
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
+
+# Clones getzep/graphiti (read-only) and builds graphiti-mcp-standalone:local.
+# ~5 minutes. Re-run with --pull to update graphiti, --no-cache to force rebuild.
+./scripts/graphiti-mcp-build.sh
+```
+
+This is the only step that writes to the `graphiti/` checkout — and it only
+clones; it never modifies anything inside.
+
+---
+
+## Daily startup
+
+```bash
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
+./scripts/graphiti-stack-up.sh
+```
+
+What happens, in order:
+
+1. `vllm-graphiti.sh` → LLM container on :8000. Script waits for
+   `http://localhost:8000/health` (up to 300s — model load dominates).
+2. `vllm-embed.sh` → embedder on :8001. Waits for `/health` (up to 120s).
+3. `graphiti-mcp.sh` → MCP HTTP server on :8004. Waits for `/mcp/` to respond
+   (up to 60s — a 4xx without a session is treated as "up").
+
+Final output gives URLs for sanity-checking:
+
+```
+LLM:    http://promaxgb10-41b1:8000/v1
+Embed:  http://promaxgb10-41b1:8001/v1
+MCP:    http://promaxgb10-41b1:8004/mcp/
+```
+
+Skip flags (when rebooting after a GB10 OS update you may only need parts):
+
+```bash
+SKIP_LLM=1   ./scripts/graphiti-stack-up.sh   # LLM already running
+SKIP_EMBED=1 ./scripts/graphiti-stack-up.sh
+SKIP_MCP=1   ./scripts/graphiti-stack-up.sh   # start just the vLLM pair
+```
+
+After the stack is up, **restart Claude Code / Claude Desktop** on any machine
+that had a stale MCP connection.
+
+---
+
+## Daily shutdown
+
+```bash
+./scripts/graphiti-stack-down.sh
+```
+
+Stops in reverse order — MCP first (so clients see it disappear cleanly),
+then embed, then LLM. Each container is `docker stop`ped and `docker rm`oved,
+so next start-up is a clean slate.
+
+Partial shutdown (e.g. freeing the GPU for a different job while keeping the
+knowledge graph query path available — note that queries do not need the LLM,
+only ingestion does):
+
+```bash
+./scripts/graphiti-stack-down.sh --keep-embed --keep-llm  # stop only MCP
+./scripts/graphiti-stack-down.sh --keep-embed             # stop MCP + LLM
+```
+
+---
+
+## Training-mode switchover (freeing the GB10 LLM GPU)
+
+When the GB10 needs to host fine-tuning or training-data generation, you can
+stop running the Graphiti LLM locally and route just the LLM calls to a
+different backend. The MCP container, embedder, FalkorDB, and every
+`.mcp.json` / Claude Desktop entry stay exactly as they are — clients keep
+hitting `http://promaxgb10-41b1:8004/mcp/` throughout. Only the outbound
+hop from the MCP container changes.
+
+### Why this works (and its one caveat)
+
+Graphiti only calls the LLM during **ingestion** (seeding, capture, turn-state
+writes). **Queries** — which happen constantly during Claude Code sessions —
+go directly to the embedder and FalkorDB and never touch the LLM. So the only
+thing affected by routing the LLM elsewhere is the latency and reliability of
+`add_memory` calls.
+
+**Caveat — JSON schema enforcement.** The local vLLM setup uses
+`--structured-outputs-config.backend xgrammar`, which enforces Graphiti's
+`response_format=json_schema` at the token level. Ollama does not — it prompts
+the model and hopes. Expect occasional JSON parse failures on ingestion when
+using `--llm=mac`; Graphiti retries, so short bursts are fine, but don't run
+large seeding jobs against Ollama. If you need reliable ingestion during a
+long fine-tune, use `--llm=custom` with a paid API (Gemini / Anthropic)
+instead.
+
+### Switch to MacBook Ollama
+
+Prerequisites: Ollama running on the MacBook, serving a ~14B instruct model.
+The defaults assume `http://richards-macbook-pro.tailebf801.ts.net:8000/v1`
+and `qwen2.5:14b-instruct` — override via `MAC_LLM_API_URL` /
+`MAC_LLM_MODEL` if yours differ.
+
+```bash
+# On GB10: stop everything cleanly, then bring the stack back up in mac-LLM mode
+./scripts/graphiti-stack-down.sh
+./scripts/graphiti-stack-up.sh --llm=mac
+```
+
+`--llm=mac` implies `SKIP_LLM=1` — the `vllm-graphiti` container is not
+started, freeing the GPU slice it would have claimed. The MCP container
+starts with `LLM_API_URL` / `LLM_MODEL` env vars that override the YAML
+defaults.
+
+### Switch to a paid API (Gemini / Anthropic / OpenAI)
+
+Use `--llm=custom` when you need reliable JSON-mode ingestion during a long
+training window, or if the MacBook is off/unreachable:
+
+```bash
+# Gemini example (was the pre-2026-04-24 setup)
+GRAPHITI_LLM_API_URL=https://generativelanguage.googleapis.com/v1beta/openai/ \
+GRAPHITI_LLM_MODEL=gemini-2.5-pro \
+OPENAI_API_KEY=$GOOGLE_API_KEY \
+./scripts/graphiti-stack-up.sh --llm=custom
+```
+
+Any OpenAI-compatible endpoint works — Anthropic's OpenAI-compat shim,
+OpenAI itself, Groq, etc. `--llm=custom` also skips `vllm-graphiti`.
+
+### Switch back to full GB10
+
+```bash
+./scripts/graphiti-stack-down.sh
+./scripts/graphiti-stack-up.sh       # default == --llm=gb10
+```
+
+### Partial switch (MCP container already running)
+
+If the stack is up and you just want to re-point the LLM without touching
+the embedder:
+
+```bash
+LLM_API_URL=http://richards-macbook-pro.tailebf801.ts.net:8000/v1 \
+LLM_MODEL=qwen2.5:14b-instruct \
+./scripts/graphiti-mcp.sh            # restarts just the MCP container
+
+# (optionally free the GPU)
+docker stop vllm-graphiti && docker rm vllm-graphiti
+```
+
+The old `graphiti-endpoint-toggle.sh` (shell-env-based toggling) no longer
+applies — env has to reach the container, not the shell. The script is
+retained as a deprecation stub that prints the replacement commands.
+
+---
+
+## Updating the config
+
+Change `guardkit/scripts/graphiti-mcp-config.yaml`, then:
+
+```bash
+./scripts/graphiti-mcp.sh    # restarts the MCP container with the new mount
+```
+
+No rebuild needed — the config is a bind mount, so edits take effect on
+container restart. The vLLM containers do not read this file and don't need
+restarting unless you change their own scripts.
+
+---
+
+## Updating graphiti itself (rare)
+
+```bash
+./scripts/graphiti-mcp-build.sh --pull      # git pull + docker build
+./scripts/graphiti-mcp.sh                   # restart with new image
+```
+
+Only do this when you actually want to track upstream graphiti changes.
+`graphiti-core` is pinned inside the Dockerfile (currently `0.28.1`) — the
+upstream repo is only used for `main.py` and server code.
+
+---
+
+## Client configuration summary
+
+### Claude Code `.mcp.json` (every repo)
+
+```json
+{
+  "mcpServers": {
+    "graphiti": {
+      "type": "http",
+      "url": "http://promaxgb10-41b1:8004/mcp/"
+    }
+  }
+}
+```
+
+That's the whole file. No `.env` sourcing, no hard-coded `uv` path, no
+per-machine paths. Works identically on Mac and GB10.
+
+### Claude Desktop `claude_desktop_config.json`
+
+Claude Desktop is stdio-only, so it uses `mcp-remote` (from npm) as a local
+stdio↔HTTP proxy:
+
+```json
+"graphiti": {
+  "command": "/opt/homebrew/bin/npx",
+  "args": ["-y", "mcp-remote", "http://promaxgb10-41b1:8004/mcp/"]
+}
+```
+
+Absolute path to `npx` because Claude Desktop launches subprocesses with a
+minimal PATH and won't find `nvm`-managed Node.
+
+---
+
+## Troubleshooting
+
+### Claude Code reports "Graphiti MCP is not configured"
+
+1. Is the container up on the GB10?
+   ```bash
+   docker ps --filter name=graphiti-mcp
+   ```
+2. Can you reach the endpoint from the client machine?
+   ```bash
+   curl -v http://promaxgb10-41b1:8004/mcp/
+   ```
+   Expect a 4xx (FastMCP wants a session) — that's fine; a connection error is
+   not.
+3. Tailscale up on both ends?
+   ```bash
+   tailscale status | grep promaxgb10
+   ```
+4. Restart Claude Code — `.mcp.json` is read at launch.
+
+### MCP container crashes on startup
+
+```bash
+docker logs graphiti-mcp
+```
+
+Most common causes:
+- `Failed to connect to FalkorDB` — check `whitestocks:6379` is reachable
+  from the GB10: `redis-cli -h whitestocks ping` (install redis-tools if
+  needed) or check Tailscale.
+- `Failed to connect to LLM` — vLLM container for port 8000 isn't ready yet.
+  Start-up script should handle this via health gates, but a very slow
+  first-run download can push past 300s. Re-run `graphiti-stack-up.sh` once
+  the LLM is ready; it's idempotent.
+- `YAML parse error` — you edited `graphiti-mcp-config.yaml` and broke it.
+
+### Embedder dimension mismatch
+
+If you see errors like `dimension mismatch: expected 1024, got 768`, something
+changed the embedder model and the FalkorDB vector index now disagrees. The
+`vllm-embed.sh` script prints a post-start verification curl — run it and
+confirm dimension matches `embedder.dimensions` in
+`graphiti-mcp-config.yaml`.
+
+### Port 8004 in use
+
+Change `GRAPHITI_MCP_PORT` on the GB10 script call **and**
+`server.port` in `graphiti-mcp-config.yaml` **and** the URL in every
+`.mcp.json` / `claude_desktop_config.json`. Easier to just find the process
+hogging 8004 and stop it.
+
+---
+
+## Why this layout
+
+Four design calls are worth knowing, because each resolves a real past
+problem:
+
+1. **HTTP transport, not stdio.** Stdio requires graphiti installed on every
+   client machine and bakes Mac-specific paths into each `.mcp.json`. Moving
+   to HTTP on the GB10 means one install, one config, and `.mcp.json` files
+   that are identical and machine-agnostic.
+2. **Config lives in `guardkit/scripts/`, not inside the graphiti repo.**
+   The graphiti checkout is vendored source — we clone it, we don't own it,
+   and we never edit files inside. All GuardKit-specific settings live in
+   `guardkit`, which is where you expect them.
+3. **Standalone image + `--network host`.** The official combined image
+   bundles FalkorDB, which we don't want (FalkorDB lives on `whitestocks`).
+   The standalone image connects to external FalkorDB. Host networking
+   lets the MCP container talk to vLLM via `localhost` without exposing a
+   Docker bridge DNS layer.
+4. **Local vLLM for the LLM.** Graphiti only calls the LLM during ingestion
+   (seeding, capture, turn-state writes), not during queries. Moving back
+   from Gemini to local vLLM eliminates per-call cost and keeps the
+   workload on hardware we already run.

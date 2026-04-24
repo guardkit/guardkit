@@ -1,28 +1,32 @@
 #!/usr/bin/env bash
-# Toggle Graphiti LLM endpoint between GB10 and MacBook
-# Usage: source scripts/graphiti-endpoint-toggle.sh [gb10|macbook]
+# graphiti-endpoint-toggle.sh — DEPRECATED
 #
-# This sets the LLM_API_URL environment variable. The MCP server config
-# (config-guardkit.yaml) uses ${LLM_API_URL:...} with env var fallback,
-# so restarting the MCP server (or Claude Code) after setting this is sufficient.
+# This script toggled the Graphiti LLM endpoint via shell env vars when the
+# MCP server ran as a stdio subprocess per-session. Since the HTTP/Docker
+# migration (2026-04-24), env must reach the container, not the shell — so
+# toggling happens at container start.
 #
-# Note: This only affects the LLM endpoint. The embedding model always
-# stays on GB10 (promaxgb10-41b1:8001).
+# Replacement: ./scripts/graphiti-stack-up.sh --llm=gb10|mac|custom
+# See:         docs/guides/graphiti-gb10-deployment.md (Training-mode switchover)
 
-case "${1:-}" in
-  gb10)
-    export LLM_API_URL="http://promaxgb10-41b1:8000/v1"
-    echo "Graphiti LLM -> GB10 (promaxgb10-41b1:8000, vLLM)"
-    ;;
-  macbook)
-    export LLM_API_URL="http://richards-macbook-pro.tailebf801.ts.net:8000/v1"
-    echo "Graphiti LLM -> MacBook (richards-macbook-pro.tailebf801.ts.net:8000, Ollama)"
-    ;;
-  *)
-    echo "Usage: source $0 [gb10|macbook]"
-    echo "  gb10    - Point Graphiti LLM at GB10 (vLLM, FP8)"
-    echo "  macbook - Point Graphiti LLM at MacBook Pro M2 Max (Ollama, Q4_K_M)"
-    echo ""
-    echo "Current LLM_API_URL: ${LLM_API_URL:-<not set>}"
-    ;;
-esac
+cat <<'EOF' >&2
+This script is deprecated.
+
+To route the Graphiti LLM somewhere other than the GB10's local vLLM:
+
+  ./scripts/graphiti-stack-up.sh --llm=mac        # MacBook Ollama
+  ./scripts/graphiti-stack-up.sh --llm=custom     # Gemini/Anthropic/etc.
+                                                  # (set GRAPHITI_LLM_API_URL +
+                                                  #  GRAPHITI_LLM_MODEL first)
+
+Or, if the MCP container is already running and you just want to point its
+LLM somewhere else, restart it with env overrides:
+
+  LLM_API_URL=http://<host>:<port>/v1 \
+  LLM_MODEL=<model-name> \
+  ./scripts/graphiti-mcp.sh
+
+Full documentation: docs/guides/graphiti-gb10-deployment.md
+EOF
+
+exit 1
