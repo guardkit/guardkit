@@ -18,11 +18,13 @@ from pathlib import Path
 from typing import List, Dict, Optional, Set
 import re
 import yaml
-import sys
 
-# Import feature detection for graceful degradation
-sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
-from feature_detection import supports_requirements
+# TASK-FIX-MCPS.1: Structural imports only — never mutate sys.path at import time.
+# See .claude/rules/namespace-hygiene.md and docs/reviews/TASK-REV-MCPS-namespace-collision-review.md §3.1.
+try:
+    from installer.core.lib.feature_detection import supports_requirements
+except ImportError:
+    from feature_detection import supports_requirements
 
 
 @dataclass
