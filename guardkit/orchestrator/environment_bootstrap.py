@@ -48,6 +48,21 @@ logger = logging.getLogger(__name__)
 
 PEP668_SENTINEL = "externally-managed-environment"
 
+# Truncate stderr excerpts attached to failure-detail records. Full stderr is
+# still logged at WARNING by the install helpers — this cap only bounds what
+# rides along on the in-memory BootstrapResult (e.g. for error messages).
+_STDERR_EXCERPT_MAX_CHARS = 2000
+
+
+def _tail_excerpt(stderr: Optional[str], max_chars: int = _STDERR_EXCERPT_MAX_CHARS) -> str:
+    """Return the trailing ``max_chars`` of ``stderr``, or an empty string."""
+    if not stderr:
+        return ""
+    stripped = stderr.strip()
+    if len(stripped) <= max_chars:
+        return stripped
+    return "…" + stripped[-max_chars:]
+
 
 # ============================================================================
 # Data Models
@@ -242,6 +257,81 @@ class DetectedManifest:
 
         return [["npm", "install", name] for name in deps]
 
+    def get_requires_python(self) -> Optional[str]:
+        """
+        Return the ``requires-python`` constraint for this manifest, or None.
+
+        Checks, in order:
+          1. PEP 621 ``[project].requires-python`` (standard modern layout)
+          2. Poetry ``[tool.poetry].python`` (legacy Poetry layout)
+
+        Only Python pyproject.toml manifests declare this; other stacks and
+        requirements.txt / poetry.lock return None. Parse errors are swallowed
+        (None returned) — this feeds both failure diagnostics and the pre-pip
+        requires-python gate (TASK-REV-JMBP Workstream E).
+        """
+        if self.stack != "python" or self.path.name != "pyproject.toml":
+            return None
+        try:
+            try:
+                import tomllib  # Python 3.11+
+            except ImportError:
+                import tomli as tomllib  # type: ignore[import,no-redef]
+            data = tomllib.loads(self.path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+
+        value = data.get("project", {}).get("requires-python")
+        if isinstance(value, str) and value.strip():
+            return value
+
+        # Poetry legacy layout: [tool.poetry] python = ">=3.9,<4.0"
+        poetry_value = data.get("tool", {}).get("poetry", {}).get("python")
+        if isinstance(poetry_value, str) and poetry_value.strip():
+            return poetry_value
+
+        return None
+
+
+@dataclass
+class BootstrapFailureDetail:
+    """
+    Per-install failure metadata surfaced on ``BootstrapResult.failure_details``.
+
+    Captured for each failing install so callers (e.g. the feature-orchestrator
+    hard-fail gate) can render an actionable error message naming the exact
+    interpreter / manifest mismatch rather than a generic ``0/N succeeded`` line.
+
+    Attributes
+    ----------
+    stack : str
+        Stack identifier (``python``, ``node``, …).
+    manifest_path : str
+        Absolute path of the manifest whose install failed.
+    stderr_excerpt : str
+        Trailing stderr excerpt from the failed install command (truncated to a
+        readable length — callers should not assume the full stderr is present).
+    is_pep668 : bool
+        True when the stderr matches the PEP 668 ``externally-managed-environment``
+        sentinel. The gate uses this to distinguish interpreter-constraint
+        failures from generic install failures.
+    requires_python : Optional[str]
+        ``requires-python`` constraint (e.g. ``>=3.13``) extracted from the
+        manifest when available (Python stack only, via ``pyproject.toml``).
+        None for other stacks or when the manifest does not declare one.
+    essential : bool
+        True when this failure counted toward ``installs_failed`` (i.e. the
+        stack was considered essential at bootstrap time). False when the
+        failure was filtered into ``non_relevant_failures``.
+    """
+
+    stack: str
+    manifest_path: str
+    stderr_excerpt: str
+    is_pep668: bool = False
+    requires_python: Optional[str] = None
+    essential: bool = True
+
 
 @dataclass
 class BootstrapResult:
@@ -270,6 +360,11 @@ class BootstrapResult:
         Count of failures from non-relevant stacks (non-blocking).
     skipped_stacks : List[str]
         Stacks that were skipped or had non-blocking failures.
+    failure_details : List[BootstrapFailureDetail]
+        Per-install failure metadata (stack, manifest, stderr excerpt,
+        PEP-668 flag, requires-python). Populated for both essential and
+        non-relevant failures; ``essential=True`` entries are the ones that
+        drove ``installs_failed``.
     """
 
     success: bool
@@ -283,6 +378,7 @@ class BootstrapResult:
     venv_python: Optional[str] = None
     non_relevant_failures: int = 0
     skipped_stacks: List[str] = field(default_factory=list)
+    failure_details: List[BootstrapFailureDetail] = field(default_factory=list)
 
 
 # ============================================================================
@@ -645,6 +741,13 @@ class EnvironmentBootstrapper:
         self._state_file = state_file or (root / ".guardkit" / "bootstrap_state.json")
         self._retry_cooldown_seconds = retry_cooldown_seconds
         self._venv_python: Optional[Path] = None
+        # Diagnostics captured by _run_install / _run_single_command for the
+        # MOST RECENT call only — consumed by bootstrap() to populate
+        # BootstrapResult.failure_details. Kept as private scratch state so
+        # the helpers can retain their bool return type (and existing tests
+        # that assert ``is True`` / ``is False`` don't regress).
+        self._last_failure_stderr: str = ""
+        self._last_failure_is_pep668: bool = False
 
     def bootstrap(
         self,
@@ -721,6 +824,19 @@ class EnvironmentBootstrapper:
         installs_failed = 0
         non_relevant_failures = 0
         skipped_stacks: List[str] = []
+        failure_details: List[BootstrapFailureDetail] = []
+
+        def _record_failure(manifest: DetectedManifest, essential: bool) -> None:
+            failure_details.append(
+                BootstrapFailureDetail(
+                    stack=manifest.stack,
+                    manifest_path=str(manifest.path),
+                    stderr_excerpt=self._last_failure_stderr,
+                    is_pep668=self._last_failure_is_pep668,
+                    requires_python=manifest.get_requires_python(),
+                    essential=essential,
+                )
+            )
 
         for manifest in manifests:
             is_essential = (
@@ -732,6 +848,7 @@ class EnvironmentBootstrapper:
                 installs_attempted += 1
                 success = self._run_install(manifest)
                 if not success:
+                    _record_failure(manifest, is_essential)
                     if is_essential:
                         installs_failed += 1
                     else:
@@ -752,6 +869,7 @@ class EnvironmentBootstrapper:
                         installs_attempted += 1
                         success = self._run_single_command(cmd, manifest.path.parent)
                         if not success:
+                            _record_failure(manifest, is_essential)
                             if is_essential:
                                 installs_failed += 1
                             else:
@@ -793,6 +911,7 @@ class EnvironmentBootstrapper:
             venv_python=str(self._venv_python) if self._venv_python else None,
             non_relevant_failures=non_relevant_failures,
             skipped_stacks=sorted(skipped_stacks),
+            failure_details=failure_details,
         )
 
     def _compute_hash(self, manifests: List[DetectedManifest]) -> str:
@@ -986,6 +1105,12 @@ class EnvironmentBootstrapper:
         local virtualenv is created and the command is retried with the venv
         Python.
 
+        On failure, the stderr excerpt and PEP-668 flag are stashed on
+        ``self._last_failure_stderr`` / ``self._last_failure_is_pep668`` so
+        :meth:`bootstrap` can surface them in
+        :attr:`BootstrapResult.failure_details`. The method itself returns
+        only ``bool`` so existing callers (and their mocks) remain stable.
+
         Parameters
         ----------
         manifest : DetectedManifest
@@ -997,6 +1122,10 @@ class EnvironmentBootstrapper:
             True if the command succeeded (exit code 0), False otherwise.
             Never raises — all errors are caught and logged.
         """
+        # Reset per-call diagnostics so a later failure-detail reader can't
+        # see stale values from a previous install.
+        self._last_failure_stderr = ""
+        self._last_failure_is_pep668 = False
         cmd = list(manifest.install_command)
         is_python_cmd = cmd and cmd[0] == sys.executable
 
@@ -1065,16 +1194,21 @@ class EnvironmentBootstrapper:
                     retry_proc.stderr or "(empty)",
                     retry_proc.stdout or "(empty)",
                 )
+                self._last_failure_stderr = _tail_excerpt(retry_proc.stderr)
+                self._last_failure_is_pep668 = True
                 return False
 
+            stderr_text = proc.stderr or ""
             logger.warning(
                 "Install failed for %s (%s) with exit code %d:\nstderr: %s\nstdout: %s",
                 manifest.stack,
                 manifest.path.name,
                 proc.returncode,
-                proc.stderr or "(empty)",
+                stderr_text or "(empty)",
                 proc.stdout or "(empty)",
             )
+            self._last_failure_stderr = _tail_excerpt(stderr_text)
+            self._last_failure_is_pep668 = self._is_pep668_error(stderr_text)
             return False
         except subprocess.CalledProcessError as exc:
             logger.warning(
@@ -1083,6 +1217,7 @@ class EnvironmentBootstrapper:
                 manifest.path.name,
                 exc,
             )
+            self._last_failure_stderr = str(exc)
             return False
         except OSError as exc:
             logger.warning(
@@ -1091,6 +1226,7 @@ class EnvironmentBootstrapper:
                 manifest.path.name,
                 exc,
             )
+            self._last_failure_stderr = str(exc)
             return False
         except subprocess.TimeoutExpired as exc:
             logger.warning(
@@ -1099,6 +1235,7 @@ class EnvironmentBootstrapper:
                 manifest.path.name,
                 exc,
             )
+            self._last_failure_stderr = f"install timed out after 300s: {exc}"
             return False
 
     def _run_single_command(self, cmd: List[str], cwd: Path) -> bool:
@@ -1110,6 +1247,10 @@ class EnvironmentBootstrapper:
 
         On PEP 668 failure for Python pip commands, a project-local
         virtualenv is created and the command is retried.
+
+        Failure diagnostics (stderr excerpt, PEP-668 flag) are stashed on
+        ``self._last_failure_stderr`` / ``self._last_failure_is_pep668`` for
+        :meth:`bootstrap` to consume; see :meth:`_run_install` for rationale.
 
         Parameters
         ----------
@@ -1124,6 +1265,9 @@ class EnvironmentBootstrapper:
             True if the command succeeded (exit code 0), False otherwise.
             Never raises — all errors are caught and logged.
         """
+        self._last_failure_stderr = ""
+        self._last_failure_is_pep668 = False
+
         run_cmd = list(cmd)
         is_python_cmd = run_cmd and run_cmd[0] == sys.executable
 
@@ -1174,28 +1318,196 @@ class EnvironmentBootstrapper:
                     " ".join(retry_cmd),
                     retry_proc.stderr or retry_proc.stdout,
                 )
+                self._last_failure_stderr = _tail_excerpt(retry_proc.stderr)
+                self._last_failure_is_pep668 = True
                 return False
 
+            stderr_text = proc.stderr or ""
             logger.warning(
                 "Command failed (exit %d): %s\n%s",
                 proc.returncode,
                 " ".join(run_cmd),
-                proc.stderr or proc.stdout,
+                stderr_text or proc.stdout,
             )
+            self._last_failure_stderr = _tail_excerpt(stderr_text)
+            self._last_failure_is_pep668 = self._is_pep668_error(stderr_text)
             return False
         except subprocess.CalledProcessError as exc:
             logger.warning(
                 "Command raised CalledProcessError: %s: %s", " ".join(run_cmd), exc
             )
+            self._last_failure_stderr = str(exc)
             return False
         except OSError as exc:
             logger.warning("Command raised OSError: %s: %s", " ".join(run_cmd), exc)
+            self._last_failure_stderr = str(exc)
             return False
         except subprocess.TimeoutExpired as exc:
             logger.warning(
                 "Command timed out (300s): %s: %s", " ".join(run_cmd), exc
             )
+            self._last_failure_stderr = f"command timed out after 300s: {exc}"
             return False
+
+
+# ============================================================================
+# requires-python pre-check (TASK-REV-JMBP Workstream E)
+# ============================================================================
+
+
+@dataclass
+class RequiresPythonMismatch:
+    """
+    Per-manifest mismatch between the active interpreter and a manifest's
+    ``requires-python`` specifier. Emitted by
+    :func:`check_requires_python_precheck`.
+
+    Attributes
+    ----------
+    manifest_path : str
+        Absolute path of the manifest that declared the constraint.
+    specifier : str
+        The raw specifier string (e.g. ``">=3.12,<3.13"``).
+    active_version : str
+        The active interpreter version actually detected (``"3.14.2"`` shape).
+    """
+
+    manifest_path: str
+    specifier: str
+    active_version: str
+
+
+def _active_python_version() -> str:
+    """Return the active interpreter version in ``major.minor.micro`` form."""
+    info = sys.version_info
+    return f"{info.major}.{info.minor}.{info.micro}"
+
+
+def check_requires_python_precheck(
+    manifests: List[DetectedManifest],
+    *,
+    active_version: Optional[str] = None,
+) -> List[RequiresPythonMismatch]:
+    """
+    Compare each manifest's ``requires-python`` against the active interpreter.
+
+    Runs BEFORE any pip invocation so the orchestrator can surface a clean
+    "your interpreter doesn't match" signal rather than relying on pip's
+    "requires a different Python: X not in '...'" line (which arrives after
+    a resolver pass and is easy to miss).
+
+    Behavior contract:
+
+    - Manifests without a ``requires-python`` constraint are silently skipped
+      (pip remains authoritative for those).
+    - Non-Python manifests are skipped.
+    - If :mod:`packaging.specifiers` is unavailable, the pre-check is a no-op
+      (empty list) — callers must still run the bootstrap, which lets pip be
+      authoritative. This matches the AC-REQPY-PRECHECK "skip gracefully"
+      requirement.
+    - Invalid specifier strings are skipped with a debug log; pip will still
+      get a chance to error.
+
+    Parameters
+    ----------
+    manifests : List[DetectedManifest]
+        Manifests produced by :class:`ProjectEnvironmentDetector`.
+    active_version : Optional[str]
+        Override for the active Python version (test fixtures inject a
+        fabricated version like ``"3.14.2"``). Defaults to
+        :func:`_active_python_version`.
+
+    Returns
+    -------
+    List[RequiresPythonMismatch]
+        One entry per manifest whose specifier is not satisfied by the
+        active interpreter. Empty list = no mismatches or pre-check unable to
+        run.
+    """
+    try:
+        from packaging.specifiers import InvalidSpecifier, SpecifierSet
+    except ImportError:
+        logger.debug(
+            "packaging.specifiers unavailable — skipping requires-python pre-check"
+        )
+        return []
+
+    current = active_version or _active_python_version()
+    mismatches: List[RequiresPythonMismatch] = []
+
+    for manifest in manifests:
+        specifier = manifest.get_requires_python()
+        if not specifier:
+            continue
+        try:
+            spec_set = SpecifierSet(specifier)
+        except InvalidSpecifier as exc:
+            logger.debug(
+                "Invalid requires-python %r in %s: %s — falling through to pip",
+                specifier,
+                manifest.path,
+                exc,
+            )
+            continue
+        if current not in spec_set:
+            mismatches.append(
+                RequiresPythonMismatch(
+                    manifest_path=str(manifest.path),
+                    specifier=specifier,
+                    active_version=current,
+                )
+            )
+
+    return mismatches
+
+
+def format_requires_python_remediation(
+    mismatch: RequiresPythonMismatch,
+) -> str:
+    """
+    Format a multi-line remediation hint for a single mismatch.
+
+    The hint names several package managers (uv / pyenv / conda) without
+    trying to auto-detect which one is available — the user decides. This
+    matches AC-REQPY-PRECHECK's "do not try to auto-detect the available
+    package manager" requirement.
+    """
+    # Pick a minor-only example version from the specifier when possible
+    # (e.g. specifier ">=3.12,<3.13" → suggest "3.12"). Fall back to a
+    # plain string otherwise. This keeps suggestions concrete rather than
+    # reprinting the specifier.
+    example = _example_version_from_specifier(mismatch.specifier) or "<pinned>"
+    return (
+        f"Python {mismatch.active_version} does not satisfy "
+        f"requires-python=`{mismatch.specifier}` for {mismatch.manifest_path}.\n"
+        f"Install a compatible interpreter with one of:\n"
+        f"  • uv python install {example}\n"
+        f"  • pyenv install {example} && pyenv local {example}\n"
+        f"  • conda create -n <name> python={example} && conda activate <name>"
+    )
+
+
+def _example_version_from_specifier(specifier: str) -> Optional[str]:
+    """Pick a plausible ``major.minor`` install target from a specifier."""
+    try:
+        from packaging.specifiers import SpecifierSet
+        from packaging.version import Version
+    except ImportError:
+        return None
+    try:
+        spec_set = SpecifierSet(specifier)
+    except Exception:
+        return None
+    # Try candidate versions covering the usual supported range; return the
+    # first that satisfies the specifier.
+    candidates = [f"3.{minor}" for minor in range(8, 16)]
+    for candidate in candidates:
+        try:
+            if Version(candidate) in spec_set:
+                return candidate
+        except Exception:
+            continue
+    return None
 
 
 # ============================================================================
@@ -1206,6 +1518,10 @@ __all__ = [
     "PEP668_SENTINEL",
     "DetectedManifest",
     "BootstrapResult",
+    "BootstrapFailureDetail",
     "ProjectEnvironmentDetector",
     "EnvironmentBootstrapper",
+    "RequiresPythonMismatch",
+    "check_requires_python_precheck",
+    "format_requires_python_remediation",
 ]

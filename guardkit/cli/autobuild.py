@@ -641,6 +641,18 @@ def status(ctx, task_id: str, verbose: bool):
     help="Seconds between per-task progress log snapshots (default: 60)",
     show_default=True,
 )
+@click.option(
+    "--bootstrap-failure-mode",
+    "bootstrap_failure_mode",
+    default=None,
+    type=click.Choice(["block", "warn"]),
+    help=(
+        "Bootstrap hard-fail gate (TASK-FIX-7A04). "
+        "'block' raises an error when every essential-stack install fails; "
+        "'warn' (default) only logs. Overrides autobuild.bootstrap.failure_mode "
+        "in .guardkit/config.yaml."
+    ),
+)
 @click.pass_context
 @handle_cli_errors
 def feature(
@@ -662,6 +674,7 @@ def feature(
     max_parallel_strategy: str,
     skip_validation: bool,
     task_log_interval: int,
+    bootstrap_failure_mode: Optional[str],
 ):
     """
     Execute AutoBuild for all tasks in a feature.
@@ -779,7 +792,8 @@ def feature(
         f"resume={resume}, fresh={fresh}, refresh={refresh}, "
         f"sdk_timeout={sdk_timeout}, enable_pre_loop={enable_pre_loop}, "
         f"timeout_multiplier={timeout_multiplier}, max_parallel={max_parallel}, "
-        f"max_parallel_strategy={max_parallel_strategy})"
+        f"max_parallel_strategy={max_parallel_strategy}, "
+        f"bootstrap_failure_mode={bootstrap_failure_mode})"
     )
 
     # Create instrumentation emitter (TASK-INST-013)
@@ -807,6 +821,7 @@ def feature(
             skip_validation=skip_validation,
             emitter=emitter,
             task_log_interval=task_log_interval,
+            bootstrap_failure_mode=bootstrap_failure_mode,
         )
 
         # Execute feature orchestration

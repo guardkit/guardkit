@@ -59,6 +59,10 @@ from guardkit.orchestrator.environment_bootstrap import (
     ProjectEnvironmentDetector,
     EnvironmentBootstrapper,
     BootstrapResult,
+    BootstrapFailureDetail,
+    RequiresPythonMismatch,
+    check_requires_python_precheck,
+    format_requires_python_remediation,
 )
 from guardkit.tasks.task_loader import TaskLoader
 from guardkit.orchestrator.parallel_strategy import (
@@ -204,6 +208,134 @@ class DependencyError(FeatureOrchestrationError):
 
 
 # ============================================================================
+# Bootstrap failure-mode config loader (TASK-FIX-7A04)
+# ============================================================================
+
+BOOTSTRAP_FAILURE_MODES = ("block", "warn")
+DEFAULT_BOOTSTRAP_FAILURE_MODE = "warn"
+
+
+def load_bootstrap_config(
+    repo_root: Path,
+    override_failure_mode: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Load bootstrap configuration from ``.guardkit/config.yaml``.
+
+    Reads the ``autobuild.bootstrap`` section. Recognized keys:
+
+    - ``failure_mode`` — ``"block"`` or ``"warn"`` (default: ``"warn"``).
+    - ``optional_stacks`` — list of stack identifiers that should NOT be
+      considered essential when deciding whether to hard-fail. Defaults to
+      ``[]`` (all detected stacks are essential).
+
+    The CLI flag override takes precedence over the yaml value. Invalid
+    values (unknown mode strings, unexpected types) fall back to the default
+    with a warning — this loader never raises.
+
+    Parameters
+    ----------
+    repo_root : Path
+        Repository root. The loader reads ``repo_root/.guardkit/config.yaml``.
+    override_failure_mode : Optional[str]
+        CLI-provided override. When not None and valid, wins over the yaml.
+
+    Returns
+    -------
+    Dict[str, Any]
+        Dict with keys ``failure_mode`` (str) and ``optional_stacks``
+        (List[str]). Always populated with defaults.
+    """
+    result: Dict[str, Any] = {
+        "failure_mode": DEFAULT_BOOTSTRAP_FAILURE_MODE,
+        "optional_stacks": [],
+    }
+
+    config_path = repo_root / ".guardkit" / "config.yaml"
+    if config_path.exists():
+        try:
+            import yaml
+
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                autobuild_cfg = data.get("autobuild", {})
+                if isinstance(autobuild_cfg, dict):
+                    bootstrap_cfg = autobuild_cfg.get("bootstrap", {})
+                    if isinstance(bootstrap_cfg, dict):
+                        yaml_mode = bootstrap_cfg.get("failure_mode")
+                        if isinstance(yaml_mode, str) and yaml_mode in BOOTSTRAP_FAILURE_MODES:
+                            result["failure_mode"] = yaml_mode
+                        elif yaml_mode is not None:
+                            logger.warning(
+                                "Ignoring invalid autobuild.bootstrap.failure_mode=%r "
+                                "in %s (valid: %s)",
+                                yaml_mode,
+                                config_path,
+                                ", ".join(BOOTSTRAP_FAILURE_MODES),
+                            )
+                        optional_stacks = bootstrap_cfg.get("optional_stacks")
+                        if isinstance(optional_stacks, list):
+                            result["optional_stacks"] = [
+                                s for s in optional_stacks if isinstance(s, str)
+                            ]
+        except Exception as exc:
+            logger.warning("Failed to load %s: %s", config_path, exc)
+
+    # CLI override wins over yaml.
+    if override_failure_mode is not None:
+        if override_failure_mode in BOOTSTRAP_FAILURE_MODES:
+            result["failure_mode"] = override_failure_mode
+        else:
+            logger.warning(
+                "Ignoring invalid bootstrap_failure_mode override %r (valid: %s)",
+                override_failure_mode,
+                ", ".join(BOOTSTRAP_FAILURE_MODES),
+            )
+
+    return result
+
+
+def _format_bootstrap_hardfail_message(
+    result: BootstrapResult,
+    essential_stacks: List[str],
+) -> str:
+    """
+    Build the error message raised when the bootstrap hard-fail gate trips.
+
+    Includes: attempted stacks, the PEP-668 stderr excerpt from the first
+    essential failure (when present), the manifest's ``requires-python``
+    constraint (when declared), and a hint for overriding the gate.
+
+    The first essential-stack failure is the "lead" detail chosen because
+    zero-success means all essential installs failed; the first is
+    representative and keeps the message bounded.
+    """
+    lines: List[str] = [
+        f"Bootstrap hard-fail: 0/{result.installs_attempted} install(s) succeeded "
+        f"for essential stack(s): {', '.join(essential_stacks)}.",
+    ]
+
+    essential_failures = [d for d in result.failure_details if d.essential]
+    if essential_failures:
+        lead = essential_failures[0]
+        lines.append(f"Manifest: {lead.manifest_path}")
+        if lead.requires_python:
+            lines.append(f"Manifest requires-python: {lead.requires_python}")
+        if lead.is_pep668:
+            lines.append("Detected PEP 668 externally-managed-environment failure.")
+        if lead.stderr_excerpt:
+            lines.append("Install stderr (tail):")
+            lines.append(lead.stderr_excerpt)
+
+    lines.append(
+        "Hint: set `bootstrap_failure_mode: warn` in .guardkit/config.yaml "
+        "(or pass `--bootstrap-failure-mode warn`) to downgrade this to a "
+        "non-blocking warning."
+    )
+    return "\n".join(lines)
+
+
+# ============================================================================
 # FeatureOrchestrator
 # ============================================================================
 
@@ -270,6 +402,7 @@ class FeatureOrchestrator:
         skip_validation: bool = False,
         emitter: Optional[Any] = None,
         task_log_interval: int = 60,
+        bootstrap_failure_mode: Optional[str] = None,
     ):
         """
         Initialize FeatureOrchestrator.
@@ -324,6 +457,13 @@ class FeatureOrchestrator:
         task_log_interval : int, optional
             Seconds between per-task progress log snapshots (default: 60).
             Each parallel task writes to .guardkit/autobuild/{task_id}/progress.log.
+        bootstrap_failure_mode : Optional[str], optional
+            Override for the bootstrap hard-fail gate (TASK-FIX-7A04).
+            One of ``"block"`` or ``"warn"``. When None, reads from
+            ``.guardkit/config.yaml`` (``autobuild.bootstrap.failure_mode``),
+            defaulting to ``"warn"`` (preserve current behavior). ``"block"``
+            raises :class:`FeatureOrchestrationError` when bootstrap attempts
+            at least one install and every essential-stack install failed.
 
         Raises
         ------
@@ -369,6 +509,14 @@ class FeatureOrchestrator:
         self._emitter = emitter if emitter is not None else NullEmitter()  # TASK-INST-004
         self.task_log_interval = task_log_interval  # TASK-FIX-OBS2
         self.features_dir = features_dir or self.repo_root / ".guardkit" / "features"
+
+        # TASK-FIX-7A04: Resolve bootstrap failure-mode from CLI override or yaml.
+        bootstrap_cfg = load_bootstrap_config(
+            self.repo_root,
+            override_failure_mode=bootstrap_failure_mode,
+        )
+        self.bootstrap_failure_mode: str = bootstrap_cfg["failure_mode"]
+        self.bootstrap_optional_stacks: List[str] = list(bootstrap_cfg["optional_stacks"])
 
         # Raise file descriptor limit for parallel task execution
         self._raise_fd_limit()
@@ -954,7 +1102,10 @@ class FeatureOrchestrator:
         Detect and install project dependencies in the worktree.
 
         Called after worktree creation (Phase 1.5) and between waves.
-        Non-blocking: failed installs log warnings but do not raise.
+        Default behavior is non-blocking: failed installs log warnings.
+        When ``bootstrap_failure_mode`` is ``"block"`` and every essential
+        stack's install failed, raises :class:`FeatureOrchestrationError`
+        before Wave 1 starts (TASK-FIX-7A04 / review TASK-REV-E4F5).
 
         Parameters
         ----------
@@ -966,6 +1117,12 @@ class FeatureOrchestrator:
         Optional[BootstrapResult]
             Bootstrap result, or None when no manifests were found or an
             unexpected error occurred.
+
+        Raises
+        ------
+        FeatureOrchestrationError
+            When ``bootstrap_failure_mode == "block"`` and the gate evaluates
+            to hard-fail (see :meth:`_should_hardfail_bootstrap`).
         """
         try:
             detector = ProjectEnvironmentDetector(worktree.path)
@@ -977,6 +1134,12 @@ class FeatureOrchestrator:
 
             stacks = sorted(set(m.stack for m in manifests))
             console.print(f"[cyan]\u2699[/cyan] Bootstrapping environment: {', '.join(stacks)}")
+
+            # TASK-REV-JMBP Workstream E: pre-check requires-python before pip
+            # runs so the error path names the interpreter mismatch up front
+            # rather than leaving users to decode pip's "requires a different
+            # Python" line.
+            self._maybe_hardfail_requires_python(manifests)
 
             bootstrapper = EnvironmentBootstrapper(worktree.path)
             result = bootstrapper.bootstrap(manifests)
@@ -993,11 +1156,110 @@ class FeatureOrchestrator:
                     f"{result.installs_attempted - result.installs_failed}/{result.installs_attempted} succeeded"
                 )
 
+            # TASK-FIX-7A04: Evaluate hard-fail gate. In "warn" mode this is a
+            # no-op; in "block" mode we raise on total-failure + essential-stack.
+            self._maybe_hardfail_bootstrap(result)
+
             return result
+        except FeatureOrchestrationError:
+            # Hard-fail from the gate \u2014 propagate so the orchestrator stops
+            # before Wave 1. Don't swallow in the generic except below.
+            raise
         except Exception as e:
             logger.warning(f"Environment bootstrap failed: {e}")
             console.print(f"[yellow]\u26a0[/yellow] Environment bootstrap failed: {e}")
             return None
+
+    def _maybe_hardfail_bootstrap(self, result: BootstrapResult) -> None:
+        """
+        Raise :class:`FeatureOrchestrationError` when the bootstrap gate trips.
+
+        Gate trips when ALL of the following hold:
+        - ``self.bootstrap_failure_mode == "block"``
+        - ``result.installs_attempted > 0``
+        - ``result.installs_failed == result.installs_attempted`` (zero
+          essential-stack successes \u2014 matches F6/R4a in TASK-REV-E4F5)
+        - At least one detected stack is essential (i.e. not listed in
+          ``self.bootstrap_optional_stacks``)
+
+        In ``"warn"`` mode the method is a no-op, preserving current behavior.
+        """
+        if self.bootstrap_failure_mode != "block":
+            return
+        if result.installs_attempted == 0:
+            return
+        if result.installs_failed != result.installs_attempted:
+            return
+
+        essential_stacks = [
+            s for s in result.stacks_detected
+            if s not in self.bootstrap_optional_stacks
+        ]
+        if not essential_stacks:
+            # Every detected stack was declared optional \u2014 don't block.
+            logger.info(
+                "Bootstrap failed for all attempted installs but every stack "
+                "(%s) is listed as optional \u2014 not hard-failing.",
+                ", ".join(result.stacks_detected),
+            )
+            return
+
+        raise FeatureOrchestrationError(
+            _format_bootstrap_hardfail_message(result, essential_stacks)
+        )
+
+    def _maybe_hardfail_requires_python(self, manifests: list) -> None:
+        """
+        Run the requires-python pre-check (TASK-REV-JMBP Workstream E).
+
+        In ``mode == "warn"`` each mismatch is logged as a structured warning
+        line (``Python X does not satisfy requires-python=``) and execution
+        continues — pip will issue its own error shortly after and remains
+        authoritative. In ``mode == "block"`` the first mismatch raises
+        :class:`FeatureOrchestrationError` with a remediation hint naming
+        ``uv`` / ``pyenv`` / ``conda`` installation commands.
+
+        Manifests without a ``requires-python`` constraint, non-Python
+        manifests, and environments missing ``packaging.specifiers`` are all
+        silently skipped — pip remains the authority for those cases.
+        """
+        mismatches = check_requires_python_precheck(manifests)
+        if not mismatches:
+            return
+
+        if self.bootstrap_failure_mode == "block":
+            # Raise on the first mismatch so the error message is focused.
+            # The remediation hint is the primary actionable signal for the
+            # MacBook/jarvis class of incident (TASK-REV-JMBP).
+            hint = format_requires_python_remediation(mismatches[0])
+            extra_msg = (
+                ""
+                if len(mismatches) == 1
+                else (
+                    f"\n(+{len(mismatches) - 1} additional manifest(s) with "
+                    f"unsatisfied requires-python — fix the active "
+                    f"interpreter and re-run.)"
+                )
+            )
+            raise FeatureOrchestrationError(
+                f"Bootstrap requires-python mismatch (pre-pip).\n{hint}"
+                f"{extra_msg}\n"
+                f"Hint: set `bootstrap_failure_mode: warn` in "
+                f".guardkit/config.yaml (or pass "
+                f"`--bootstrap-failure-mode warn`) to downgrade this to a "
+                f"non-blocking warning."
+            )
+
+        # warn mode: structured per-mismatch warning, then fall through to
+        # pip so it can be authoritative.
+        for m in mismatches:
+            warning = (
+                f"Python {m.active_version} does not satisfy "
+                f"requires-python=`{m.specifier}` for {m.manifest_path}; "
+                f"pip install is expected to fail."
+            )
+            logger.warning(warning)
+            console.print(f"[yellow]⚠[/yellow] {warning}")
 
     def _create_stub_implementation_plan(
         self,
