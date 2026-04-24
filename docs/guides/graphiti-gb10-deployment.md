@@ -60,13 +60,14 @@ Synology NAS (`whitestocks`) reached over Tailscale.
 |------|------|
 | `guardkit/scripts/graphiti-mcp-config.yaml` | **Single source of truth** for LLM, embedder, FalkorDB, group IDs, entity types. Mounted read-only into the MCP container. |
 | `guardkit/scripts/graphiti-mcp-build.sh` | One-time: clones `getzep/graphiti` read-only and builds `graphiti-mcp-standalone:local` from `Dockerfile.standalone`. |
-| `guardkit/scripts/graphiti-mcp.sh` | Starts the MCP container (`--network host`, port 8004), mounts the config above. |
+| `guardkit/scripts/graphiti-mcp.sh` | Starts the MCP container (`--network host`, port 8004), mounts the config above and the bootstrap below. |
+| `guardkit/scripts/graphiti-mcp-bootstrap.py` | Mounted into the container at `/app/mcp/bootstrap.py` and used as the entrypoint. Monkey-patches MCP's DNS rebinding protection off before importing graphiti's main. See [Known upstream quirks](#known-upstream-quirks). |
 | `guardkit/scripts/vllm-graphiti.sh` | Starts the Qwen2.5-14B LLM container on port 8000. |
 | `guardkit/scripts/vllm-embed.sh` | Starts the nomic-embed container on port 8001. |
 | `guardkit/scripts/graphiti-stack-up.sh` | Daily start: boots all three in order with health-gated waits. |
 | `guardkit/scripts/graphiti-stack-down.sh` | Daily stop: shuts all three down in reverse order. |
 | `~/Projects/appmilla_github/graphiti/` | Upstream graphiti repo checkout — **read-only**, used only as Docker build context. Never edited. |
-| `<repo>/.mcp.json` (×15) | Claude Code MCP config per repo. All now point at `http://promaxgb10-41b1:8004/mcp/`. |
+| `<repo>/.mcp.json` (×15) | Claude Code MCP config per repo. All now point at `http://promaxgb10-41b1:8004/mcp`. |
 | `~/Library/Application Support/Claude/claude_desktop_config.json` | Claude Desktop config. Uses `mcp-remote` to bridge stdio → HTTP. |
 
 ### Repos whose `.mcp.json` point at the stack
@@ -96,12 +97,12 @@ graphiti-mcp-config.yaml     ◄── LLM URL, embedder URL, FalkorDB URI, grou
         │                        live here. Edit here to change behaviour.
         │  mounted at /app/mcp/config/config.yaml
         ▼
-graphiti-mcp container  ─────────►  http://0.0.0.0:8004/mcp/
+graphiti-mcp container  ─────────►  http://0.0.0.0:8004/mcp
         ▲
         │  every client points here
         │
-        ├── Claude Code   .mcp.json     type:"http" url:"…:8004/mcp/"
-        └── Claude Desktop              npx mcp-remote …:8004/mcp/
+        ├── Claude Code   .mcp.json     type:"http" url:"…:8004/mcp"
+        └── Claude Desktop              npx mcp-remote …:8004/mcp
 ```
 
 Key env-overridable fields inside the YAML (all have sensible defaults so the
@@ -126,12 +127,12 @@ file is valid as-is):
 Prerequisites on the GB10:
 - Docker with NVIDIA runtime (already in use by `vllm-*` scripts)
 - Tailscale up (so `whitestocks` resolves and other machines can reach GB10)
-- The `guardkit` repo cloned at `/Users/richardwoollcott/Projects/appmilla_github/guardkit` (matches the paths used by the existing `vllm-*.sh` scripts)
+- The `guardkit` repo cloned at `~/Projects/appmilla_github/guardkit` (matches the paths used by the existing `vllm-*.sh` scripts)
 
 Then, once:
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
+cd ~/Projects/appmilla_github/guardkit
 
 # Clones getzep/graphiti (read-only) and builds graphiti-mcp-standalone:local.
 # ~5 minutes. Re-run with --pull to update graphiti, --no-cache to force rebuild.
@@ -146,7 +147,7 @@ clones; it never modifies anything inside.
 ## Daily startup
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
+cd ~/Projects/appmilla_github/guardkit
 ./scripts/graphiti-stack-up.sh
 ```
 
@@ -155,15 +156,18 @@ What happens, in order:
 1. `vllm-graphiti.sh` → LLM container on :8000. Script waits for
    `http://localhost:8000/health` (up to 300s — model load dominates).
 2. `vllm-embed.sh` → embedder on :8001. Waits for `/health` (up to 120s).
-3. `graphiti-mcp.sh` → MCP HTTP server on :8004. Waits for `/mcp/` to respond
-   (up to 60s — a 4xx without a session is treated as "up").
+3. `graphiti-mcp.sh` → MCP HTTP server on :8004. Waits for `/mcp/` (trailing
+   slash) to respond within 60s — a 3xx/4xx is treated as "up" because FastMCP
+   redirects the slash form to `/mcp` (no slash) and also requires an MCP
+   session for the canonical endpoint. Clients should use `/mcp` directly;
+   see the trailing-slash note in [Known upstream quirks](#known-upstream-quirks).
 
 Final output gives URLs for sanity-checking:
 
 ```
 LLM:    http://promaxgb10-41b1:8000/v1
 Embed:  http://promaxgb10-41b1:8001/v1
-MCP:    http://promaxgb10-41b1:8004/mcp/
+MCP:    http://promaxgb10-41b1:8004/mcp
 ```
 
 Skip flags (when rebooting after a GB10 OS update you may only need parts):
@@ -206,7 +210,7 @@ When the GB10 needs to host fine-tuning or training-data generation, you can
 stop running the Graphiti LLM locally and route just the LLM calls to a
 different backend. The MCP container, embedder, FalkorDB, and every
 `.mcp.json` / Claude Desktop entry stay exactly as they are — clients keep
-hitting `http://promaxgb10-41b1:8004/mcp/` throughout. Only the outbound
+hitting `http://promaxgb10-41b1:8004/mcp` throughout. Only the outbound
 hop from the MCP container changes.
 
 ### Why this works (and its one caveat)
@@ -314,6 +318,73 @@ upstream repo is only used for `main.py` and server code.
 
 ---
 
+## Migration: propagating the 2026-04-24 fix to clients
+
+One-time sweep after pulling the guardkit changes that fixed
+[Known upstream quirks #2](#known-upstream-quirks) (trailing-slash MCP URL).
+The server-side monkey-patch for quirk #1 is already live as soon as the
+GB10 stack is restarted; these commands are only about rewriting client
+configs so they stop hitting the 307 redirect.
+
+All commands are idempotent — running them twice is safe.
+
+### On the Mac
+
+**1. Sweep the sibling repos' `.mcp.json` files:**
+
+```bash
+cd ~/Projects/appmilla_github
+for d in jarvis study-tutor youtube-transcript-mcp deepagents-player-coach-exemplar \
+         require-kit agentic-dataset-factory specialist-agent \
+         dotnet-functional-fastendpoints-exemplar lpa-platform \
+         nats-core nats-infrastructure forge architect-agent_delete_me; do
+  [ -f "$d/.mcp.json" ] && sed -i '' 's#:8004/mcp/#:8004/mcp#' "$d/.mcp.json" \
+    && echo "fixed $d"
+done
+```
+
+`guardkit` is already fixed in this commit; skip it in the list to keep the
+output clean. Repos you haven't cloned locally are skipped automatically.
+
+**2. Update Claude Desktop:**
+
+```bash
+sed -i '' 's#:8004/mcp/#:8004/mcp#' \
+  "$HOME/Library/Application Support/Claude/claude_desktop_config.json"
+```
+
+Restart Claude Desktop after this — it reads the config at launch.
+
+**3. Restart any running Claude Code sessions** on the Mac so they re-read
+`.mcp.json` for each repo.
+
+### On the GB10
+
+The `guardkit` repo on the GB10 is already fixed. If you later clone any of
+the other sibling repos to the GB10 and their `.mcp.json` still has the
+trailing slash (e.g. the Mac sweep ran first and hasn't been pulled yet),
+the Linux-sed form is:
+
+```bash
+sed -i 's#:8004/mcp/#:8004/mcp#' <repo>/.mcp.json
+```
+
+(Linux GNU sed takes no argument after `-i`; macOS BSD sed requires `''`.)
+
+### Verification
+
+From each client machine after restart, inside Claude Code:
+
+```
+/mcp
+```
+
+Expect `graphiti: connected`. If you see `graphiti: failed` or the server
+missing from the list, see [Troubleshooting](#troubleshooting) — most likely
+a stale config that didn't get rewritten.
+
+---
+
 ## Client configuration summary
 
 ### Claude Code `.mcp.json` (every repo)
@@ -323,7 +394,7 @@ upstream repo is only used for `main.py` and server code.
   "mcpServers": {
     "graphiti": {
       "type": "http",
-      "url": "http://promaxgb10-41b1:8004/mcp/"
+      "url": "http://promaxgb10-41b1:8004/mcp"
     }
   }
 }
@@ -340,7 +411,7 @@ stdio↔HTTP proxy:
 ```json
 "graphiti": {
   "command": "/opt/homebrew/bin/npx",
-  "args": ["-y", "mcp-remote", "http://promaxgb10-41b1:8004/mcp/"]
+  "args": ["-y", "mcp-remote", "http://promaxgb10-41b1:8004/mcp"]
 }
 ```
 
@@ -359,7 +430,7 @@ minimal PATH and won't find `nvm`-managed Node.
    ```
 2. Can you reach the endpoint from the client machine?
    ```bash
-   curl -v http://promaxgb10-41b1:8004/mcp/
+   curl -v http://promaxgb10-41b1:8004/mcp
    ```
    Expect a 4xx (FastMCP wants a session) — that's fine; a connection error is
    not.
@@ -393,6 +464,35 @@ changed the embedder model and the FalkorDB vector index now disagrees. The
 confirm dimension matches `embedder.dimensions` in
 `graphiti-mcp-config.yaml`.
 
+### Container up, but client gets "MCP server not connected" / curl gets 421
+
+The server is binding to 0.0.0.0 correctly, but MCP's DNS rebinding protection
+rejects the Host header. This is the upstream bug described in
+[Known upstream quirks](#known-upstream-quirks). Two things to check:
+
+1. The container is running `bootstrap.py`, not `main.py`:
+   ```bash
+   docker inspect graphiti-mcp --format '{{.Config.Cmd}}'
+   # expect: [uv run --no-sync bootstrap.py]
+   ```
+2. The bootstrap file exists and is mounted:
+   ```bash
+   docker exec graphiti-mcp cat /app/mcp/bootstrap.py | head -5
+   ```
+
+If either is missing, `graphiti-mcp.sh` didn't find `graphiti-mcp-bootstrap.py`
+next to it. Re-pull guardkit.
+
+If the container is correct but the 421 persists, upstream may have renamed
+`TransportSecurityMiddleware._validate_host`. See the "When this might break
+silently" note in the Known upstream quirks section.
+
+### Client uses `/mcp/` and silently fails
+
+See [Known upstream quirks #2](#known-upstream-quirks). The trailing slash
+triggers a 307 redirect Claude Code's HTTP MCP transport doesn't follow.
+Drop the slash in every `.mcp.json` and the Claude Desktop config.
+
 ### Port 8004 in use
 
 Change `GRAPHITI_MCP_PORT` on the GB10 script call **and**
@@ -424,3 +524,71 @@ problem:
    (seeding, capture, turn-state writes), not during queries. Moving back
    from Gemini to local vLLM eliminates per-call cost and keeps the
    workload on hardware we already run.
+
+---
+
+## Known upstream quirks
+
+Two issues in the upstream graphiti-mcp-server / MCP SDK stack caused real
+diagnostic round-trips (2026-04-24). They're documented here because the
+workarounds look arbitrary in isolation, but each has a specific cause.
+
+### 1. DNS rebinding protection locks the MCP to localhost-only
+
+**Symptom.** `curl http://promaxgb10-41b1:8004/mcp` returns
+`421 Invalid Host header`. Localhost (`http://localhost:8004/mcp`,
+`http://127.0.0.1:8004/mcp`) works fine. A remote Claude Code session (Mac)
+reports *"no Graphiti MCP server is currently connected"* with no logs on
+either end pointing at a cause.
+
+**Cause.** In `graphiti_mcp_server.py` the `FastMCP(...)` constructor is called
+*without* a `host=` argument, so it defaults to `"127.0.0.1"`. The MCP SDK's
+FastMCP class has a dedicated branch (`mcp/server/fastmcp/server.py`, circa
+line 178) that — when it sees a localhost default — auto-enables DNS
+rebinding protection and builds a `TransportSecuritySettings` object with
+`allowed_hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*"]`. Graphiti later
+mutates `mcp.settings.host = "0.0.0.0"` at line 900 to make uvicorn bind all
+interfaces — but the `transport_security` object is already frozen. Uvicorn
+accepts the connection, the MCP middleware rejects the Host header. This is
+an upstream bug in graphiti-mcp-server; `--host` / env vars cannot fix it
+because the settings object is built before they apply.
+
+**Workaround.** `graphiti-mcp-bootstrap.py` monkey-patches
+`TransportSecurityMiddleware._validate_host` / `_validate_origin` to return
+True, and is used as the container entrypoint by `graphiti-mcp.sh`. The
+deployment is Tailscale-only (not on the public internet) and the rebinding
+threat model — a browser tricked into issuing same-origin requests at a
+localhost-bound MCP — doesn't apply. If the upstream bug is ever fixed,
+the monkey-patch becomes a no-op and can be removed.
+
+**When this might break silently.** If a `graphiti-mcp-build.sh --pull`
+brings in an upstream rename of `TransportSecurityMiddleware` or its methods,
+the monkey-patch will stop applying. Symptom: the 421 returns. Check
+`grep -rn "_validate_host" /app/mcp/.venv/lib/python3.11/site-packages/mcp/`
+inside the container to see what the method is called now, and update
+`graphiti-mcp-bootstrap.py` to match.
+
+### 2. MCP endpoint URL must NOT have a trailing slash
+
+**Symptom.** Client configs that use `http://promaxgb10-41b1:8004/mcp/`
+silently fail to connect, with no error on either end. The same endpoint
+reached without the trailing slash (`/mcp`) works.
+
+**Cause.** FastMCP's streamable HTTP transport serves the MCP endpoint at
+`/mcp` and 307-redirects `/mcp/` to `/mcp`. It also rewrites the Location
+header host to its internally-recorded host (`localhost`) rather than the
+inbound Host — so even clients that do follow 307-on-POST would be pointed
+at `http://localhost:8004/mcp`, which is the client's own loopback from any
+remote machine. Claude Code's HTTP MCP transport does not follow 307 on
+POST (standard safety behaviour; the RFC makes POST-preserving redirects
+optional and many clients refuse them).
+
+**Workaround.** All `.mcp.json` and Claude Desktop configs must point at
+`/mcp` with no trailing slash. The health check in `graphiti-stack-up.sh`
+still probes `/mcp/` because a 307 proves the server is listening —
+"ready" in that script means "reachable", not "correctly addressed".
+
+**Don't forget.** Every `.mcp.json` across the 15 listed repos and
+`claude_desktop_config.json` on the Mac need the trailing slash dropped. See
+[Migration: propagating the 2026-04-24 fix to clients](#migration-propagating-the-2026-04-24-fix-to-clients)
+below for copy-paste commands.

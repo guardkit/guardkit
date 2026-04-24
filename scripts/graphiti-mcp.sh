@@ -7,7 +7,8 @@
 #   - vllm-embedding  on localhost:8001 (embedder)
 #   - FalkorDB        on whitestocks:6379 via Tailscale (host network)
 #
-# Exposes MCP at: http://promaxgb10-41b1:8004/mcp/
+# Exposes MCP at: http://promaxgb10-41b1:8004/mcp  (note: no trailing slash —
+# the /mcp/ form 307-redirects to /mcp, which breaks Claude Code's POST handling)
 #
 # Port allocation (DGX Spark GB10):
 #   8000 — vllm-graphiti        (vllm-graphiti.sh)     Qwen2.5-14B LLM
@@ -28,7 +29,9 @@
 # LLM routing (passed through to the container; the YAML config reads these):
 #   LLM_API_URL      OpenAI-compatible LLM endpoint (default from YAML: localhost:8000/v1)
 #   LLM_MODEL        model identifier (default from YAML: Qwen2.5-14B FP8)
-#   OPENAI_API_KEY   only needed for paid providers (Gemini/Anthropic/OpenAI)
+#   OPENAI_API_KEY   required by graphiti-core's reranker even for local vLLM
+#                    (the OpenAI SDK refuses to construct without one). Defaults
+#                    to a dummy string here; only override for paid providers.
 # See graphiti-stack-up.sh --llm=mac|custom for the common switchover flow.
 
 set -euo pipefail
@@ -86,9 +89,11 @@ fi
 if [ -n "${LLM_MODEL:-}" ]; then
   DOCKER_ENV_ARGS+=(-e "LLM_MODEL=$LLM_MODEL")
 fi
-if [ -n "${OPENAI_API_KEY:-}" ]; then
-  DOCKER_ENV_ARGS+=(-e "OPENAI_API_KEY=$OPENAI_API_KEY")
-fi
+# Always pass OPENAI_API_KEY. graphiti-core instantiates OpenAIRerankerClient()
+# with no args, which reads from env directly and rejects empty strings — so
+# local vLLM would crash on startup without this. vLLM ignores the value; only
+# override when routing to a paid provider.
+DOCKER_ENV_ARGS+=(-e "OPENAI_API_KEY=${OPENAI_API_KEY:-not-needed-vllm-local}")
 if [ -n "${EMBEDDING_API_URL:-}" ]; then
   DOCKER_ENV_ARGS+=(-e "EMBEDDING_API_URL=$EMBEDDING_API_URL")
 fi
@@ -104,7 +109,7 @@ echo "========================================"
 echo "  Image:   $IMAGE"
 echo "  Port:    $PORT"
 echo "  Config:  $CONFIG_FILE"
-echo "  URL:     http://promaxgb10-41b1:${PORT}/mcp/"
+echo "  URL:     http://promaxgb10-41b1:${PORT}/mcp"
 echo "  LLM:     ${LLM_API_URL:-<YAML default: localhost:8000/v1>}"
 echo "  Model:   ${LLM_MODEL:-<YAML default: Qwen2.5-14B FP8>}"
 echo "========================================"
@@ -118,20 +123,33 @@ fi
 # --network host so the container reaches vLLM on localhost and FalkorDB via
 # the host's Tailscale DNS. With host networking, the container binds $PORT on
 # the host directly — the config file's `server.port` must match.
+BOOTSTRAP_FILE="$SCRIPT_DIR/graphiti-mcp-bootstrap.py"
+if [ ! -f "$BOOTSTRAP_FILE" ]; then
+  echo "ERROR: Bootstrap not found: $BOOTSTRAP_FILE" >&2
+  exit 1
+fi
+
+# bootstrap.py monkey-patches MCP's DNS rebinding protection off before
+# importing graphiti's main(). Needed because graphiti-mcp-server constructs
+# FastMCP() with the default host=127.0.0.1, which auto-enables protection
+# with a localhost-only Host allow-list; any non-loopback client (Tailscale
+# hostname, bare IP) then gets 421. See the bootstrap file for full context.
 docker run "${RUN_FLAGS[@]}" \
   --name "$CONTAINER_NAME" \
   --network host \
   -v "$CONFIG_FILE:/app/mcp/config/config.yaml:ro" \
+  -v "$BOOTSTRAP_FILE:/app/mcp/bootstrap.py:ro" \
   -e CONFIG_PATH=/app/mcp/config/config.yaml \
   -e MCP_SERVER_HOST=0.0.0.0 \
   -e PYTHONUNBUFFERED=1 \
   "${DOCKER_ENV_ARGS[@]}" \
-  "$IMAGE"
+  "$IMAGE" \
+  uv run --no-sync bootstrap.py
 
 if [ "$FOREGROUND" = "0" ]; then
   echo "Container started: $CONTAINER_NAME"
   echo ""
   echo "  Logs:    docker logs -f $CONTAINER_NAME"
   echo "  Health:  curl http://localhost:${PORT}/health"
-  echo "  MCP:     http://promaxgb10-41b1:${PORT}/mcp/"
+  echo "  MCP:     http://promaxgb10-41b1:${PORT}/mcp"
 fi

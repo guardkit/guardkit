@@ -20,7 +20,7 @@ set -euo pipefail
 
 # --- Configuration ---
 IMAGE_TAG="${GRAPHITI_MCP_IMAGE:-graphiti-mcp-standalone:local}"
-GRAPHITI_REPO_DIR="${GRAPHITI_REPO_DIR:-/Users/richardwoollcott/Projects/appmilla_github/graphiti}"
+GRAPHITI_REPO_DIR="${GRAPHITI_REPO_DIR:-$HOME/Projects/appmilla_github/graphiti}"
 GRAPHITI_REPO_URL="${GRAPHITI_REPO_URL:-https://github.com/getzep/graphiti.git}"
 
 DO_PULL=0
