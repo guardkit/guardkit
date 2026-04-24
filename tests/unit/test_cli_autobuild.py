@@ -641,12 +641,20 @@ def test_task_command_empty_acceptance_criteria(
 # ============================================================================
 
 
-def test_check_sdk_available_returns_bool():
-    """Test _check_sdk_available returns a boolean value."""
+def test_check_sdk_available_returns_tuple():
+    """Test _check_sdk_available returns a (bool, Optional[str]) tuple."""
     from guardkit.cli.autobuild import _check_sdk_available
 
     result = _check_sdk_available()
-    assert isinstance(result, bool)
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+    available, err = result
+    assert isinstance(available, bool)
+    # When available is True, err must be None; when False, err must be a string.
+    if available:
+        assert err is None
+    else:
+        assert isinstance(err, str) and err
 
 
 @patch("guardkit.cli.autobuild._check_sdk_available")
@@ -654,7 +662,7 @@ def test_require_sdk_exits_with_code_1_when_unavailable(mock_check):
     """Test _require_sdk exits with code 1 when SDK unavailable."""
     from guardkit.cli.autobuild import _require_sdk
 
-    mock_check.return_value = False
+    mock_check.return_value = (False, "No module named 'claude_agent_sdk'")
 
     with pytest.raises(SystemExit) as exc_info:
         _require_sdk()
@@ -667,31 +675,37 @@ def test_require_sdk_does_not_exit_when_available(mock_check):
     """Test _require_sdk does not exit when SDK is available."""
     from guardkit.cli.autobuild import _require_sdk
 
-    mock_check.return_value = True
+    mock_check.return_value = (True, None)
 
     # Should not raise SystemExit
     _require_sdk()  # No exception expected
 
 
 @patch("guardkit.cli.autobuild._check_sdk_available")
-def test_require_sdk_prints_helpful_message(mock_check, capsys):
-    """Test _require_sdk prints installation instructions when SDK unavailable."""
+def test_require_sdk_surfaces_underlying_error(mock_check, capsys):
+    """Test _require_sdk surfaces the underlying ImportError message (TASK-FIX-MCPS.2).
+
+    The banner used to be hard-coded, hiding submodule-shadow failures like
+    ``No module named 'mcp.types'``. The fix from TASK-REV-MCPS requires the
+    real message to reach the console along with a pointer to the
+    namespace-hygiene rule.
+    """
     from guardkit.cli.autobuild import _require_sdk
 
-    mock_check.return_value = False
+    mock_check.return_value = (False, "No module named 'mcp.types'")
 
     with pytest.raises(SystemExit):
         _require_sdk()
 
-    # Rich console output goes to stdout
-    # Note: Rich console may not work with capsys in all cases
-    # This test validates the exit behavior mainly
+    captured = capsys.readouterr().out
+    assert "No module named 'mcp.types'" in captured
+    assert "namespace-hygiene" in captured
 
 
 @patch("guardkit.cli.autobuild._check_sdk_available")
 def test_task_command_exits_early_without_sdk(mock_check, cli_runner):
     """Test task command exits with code 1 when SDK unavailable."""
-    mock_check.return_value = False
+    mock_check.return_value = (False, "No module named 'claude_agent_sdk'")
 
     result = cli_runner.invoke(task, ["TASK-AB-001"])
 
@@ -703,7 +717,7 @@ def test_task_command_exits_early_without_sdk(mock_check, cli_runner):
 @patch("guardkit.cli.autobuild._check_sdk_available")
 def test_task_command_prints_installation_instructions_without_sdk(mock_check, cli_runner):
     """Test task command shows installation instructions when SDK unavailable."""
-    mock_check.return_value = False
+    mock_check.return_value = (False, "No module named 'claude_agent_sdk'")
 
     result = cli_runner.invoke(task, ["TASK-AB-001"])
 
@@ -736,7 +750,7 @@ def test_feature_command_exits_early_without_sdk(mock_check, cli_runner):
     """Test feature command exits with code 1 when SDK unavailable."""
     from guardkit.cli.autobuild import feature
 
-    mock_check.return_value = False
+    mock_check.return_value = (False, "No module named 'claude_agent_sdk'")
 
     result = cli_runner.invoke(feature, ["FEAT-A1B2"])
 

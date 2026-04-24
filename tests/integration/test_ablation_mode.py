@@ -297,7 +297,7 @@ def test_ablation_flag_passed_to_orchestrator():
     runner = CliRunner()
 
     # Mock SDK check to avoid import error
-    with patch('guardkit.cli.autobuild._check_sdk_available', return_value=True):
+    with patch('guardkit.cli.autobuild._check_sdk_available', return_value=(True, None)):
         # Mock the orchestrator to verify ablation_mode parameter
         with patch('guardkit.cli.autobuild.AutoBuildOrchestrator') as mock_orch_class:
             mock_orch_instance = MagicMock()
@@ -342,7 +342,7 @@ def test_ablation_warning_banner_displayed():
     runner = CliRunner()
 
     # Mock SDK check to avoid import error
-    with patch('guardkit.cli.autobuild._check_sdk_available', return_value=True):
+    with patch('guardkit.cli.autobuild._check_sdk_available', return_value=(True, None)):
         with patch('guardkit.cli.autobuild.AutoBuildOrchestrator') as mock_orch_class:
             mock_orch_instance = MagicMock()
             mock_orch_instance.orchestrate.return_value = MagicMock(

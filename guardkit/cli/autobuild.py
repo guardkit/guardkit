@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 
-def _check_sdk_available() -> bool:
+def _check_sdk_available() -> tuple[bool, str | None]:
     """
     Check if Claude Agent SDK is available.
 
@@ -65,15 +65,18 @@ def _check_sdk_available() -> bool:
 
     Returns
     -------
-    bool
-        True if SDK is importable, False otherwise.
+    tuple[bool, str | None]
+        ``(True, None)`` when the SDK imports cleanly.
+        ``(False, str(error))`` when the import fails; the second element is
+        the underlying ``ImportError`` message so callers can surface it
+        (e.g. ``"No module named 'mcp.types'"`` in a namespace-shadow incident).
     """
     try:
         from claude_agent_sdk import query  # noqa: F401
 
-        return True
-    except ImportError:
-        return False
+        return (True, None)
+    except ImportError as e:
+        return (False, str(e))
 
 
 def _require_sdk() -> None:
@@ -82,24 +85,39 @@ def _require_sdk() -> None:
 
     This function should be called at the start of commands that
     require the Claude Agent SDK. If the SDK is not available,
-    it prints installation instructions and exits with code 1.
+    it prints the underlying ``ImportError`` message and installation
+    guidance before exiting with code 1. Surfacing the real error
+    avoids the opaque "SDK not available" banner that hid the
+    ``No module named 'mcp.types'`` symptom in TASK-REV-MCPS.
 
     Raises
     ------
     SystemExit
         Exits with code 1 if SDK is not available.
     """
-    if not _check_sdk_available():
-        console.print("[red]Error: Claude Agent SDK not available[/red]")
+    available, err = _check_sdk_available()
+    if not available:
+        console.print("[red]Error: Claude Agent SDK import failed[/red]")
         console.print()
-        console.print("AutoBuild requires the Claude Agent SDK.")
+        console.print(f"[yellow]Underlying error:[/yellow] {err}")
         console.print()
-        console.print("To install:")
-        console.print("  [cyan]pip install claude-agent-sdk[/cyan]")
-        console.print("  # OR")
-        console.print("  [cyan]pip install guardkit-py[autobuild][/cyan]")
+        console.print("Most common causes:")
+        console.print(
+            "  • Missing install: "
+            "[cyan]pip install claude-agent-sdk[/cyan] or "
+            "[cyan]pip install guardkit-py[autobuild][/cyan]"
+        )
+        console.print(
+            "  • A namespace collision (an internal module shadows a "
+            "transitive dep)."
+        )
+        console.print(
+            "    If the error above names a submodule like 'mcp.types' or "
+            "'anyio.X',"
+        )
+        console.print("    see .claude/rules/namespace-hygiene.md.")
         console.print()
-        console.print("For more info: [dim]guardkit doctor[/dim]")
+        console.print("For more diagnostics: [dim]guardkit doctor[/dim]")
         sys.exit(1)
 
 

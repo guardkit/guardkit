@@ -479,7 +479,7 @@ def test_cli_feature_command_missing_argument():
     assert result.exit_code == 2  # Missing argument
 
 
-@patch("guardkit.cli.autobuild._check_sdk_available", return_value=True)
+@patch("guardkit.cli.autobuild._check_sdk_available", return_value=(True, None))
 @patch("guardkit.cli.autobuild.FeatureOrchestrator")
 def test_cli_feature_command_invokes_orchestrator(mock_orchestrator_class, mock_sdk_check):
     """Test feature command creates and invokes orchestrator."""
@@ -510,7 +510,7 @@ def test_cli_feature_command_invokes_orchestrator(mock_orchestrator_class, mock_
     )
 
 
-@patch("guardkit.cli.autobuild._check_sdk_available", return_value=True)
+@patch("guardkit.cli.autobuild._check_sdk_available", return_value=(True, None))
 @patch("guardkit.cli.autobuild.FeatureOrchestrator")
 def test_cli_feature_command_with_specific_task(mock_orchestrator_class, mock_sdk_check):
     """Test feature command with --task option."""
@@ -540,7 +540,7 @@ def test_cli_feature_command_with_specific_task(mock_orchestrator_class, mock_sd
     )
 
 
-@patch("guardkit.cli.autobuild._check_sdk_available", return_value=True)
+@patch("guardkit.cli.autobuild._check_sdk_available", return_value=(True, None))
 @patch("guardkit.cli.autobuild.FeatureOrchestrator")
 def test_cli_feature_command_handles_not_found_error(mock_orchestrator_class, mock_sdk_check):
     """Test feature command handles FeatureNotFoundError."""
@@ -558,7 +558,7 @@ def test_cli_feature_command_handles_not_found_error(mock_orchestrator_class, mo
     assert "not found" in result.output.lower()
 
 
-@patch("guardkit.cli.autobuild._check_sdk_available", return_value=True)
+@patch("guardkit.cli.autobuild._check_sdk_available", return_value=(True, None))
 @patch("guardkit.cli.autobuild.FeatureOrchestrator")
 def test_cli_feature_command_handles_validation_error(mock_orchestrator_class, mock_sdk_check):
     """Test feature command handles FeatureValidationError."""
@@ -576,7 +576,7 @@ def test_cli_feature_command_handles_validation_error(mock_orchestrator_class, m
     assert "validation" in result.output.lower()
 
 
-@patch("guardkit.cli.autobuild._check_sdk_available", return_value=True)
+@patch("guardkit.cli.autobuild._check_sdk_available", return_value=(True, None))
 @patch("guardkit.cli.autobuild.FeatureOrchestrator")
 def test_cli_feature_command_handles_orchestration_error(mock_orchestrator_class, mock_sdk_check):
     """Test feature command handles FeatureOrchestrationError."""
@@ -594,7 +594,7 @@ def test_cli_feature_command_handles_orchestration_error(mock_orchestrator_class
     assert "error" in result.output.lower()
 
 
-@patch("guardkit.cli.autobuild._check_sdk_available", return_value=True)
+@patch("guardkit.cli.autobuild._check_sdk_available", return_value=(True, None))
 @patch("guardkit.cli.autobuild.FeatureOrchestrator")
 def test_cli_feature_command_failure_exit_code(mock_orchestrator_class, mock_sdk_check):
     """Test feature command returns exit code 2 on failure."""
@@ -696,7 +696,7 @@ def test_orchestrator_accepts_fresh_only(temp_repo, mock_worktree_manager):
     assert orchestrator.fresh is True
 
 
-@patch("guardkit.cli.autobuild._check_sdk_available", return_value=True)
+@patch("guardkit.cli.autobuild._check_sdk_available", return_value=(True, None))
 def test_cli_feature_command_rejects_resume_and_fresh_together(mock_sdk_check):
     """Test CLI rejects --resume and --fresh used together."""
     from click.testing import CliRunner
@@ -709,7 +709,7 @@ def test_cli_feature_command_rejects_resume_and_fresh_together(mock_sdk_check):
     assert "Cannot use both --resume and --fresh" in result.output
 
 
-@patch("guardkit.cli.autobuild._check_sdk_available", return_value=True)
+@patch("guardkit.cli.autobuild._check_sdk_available", return_value=(True, None))
 @patch("guardkit.cli.autobuild.FeatureOrchestrator")
 def test_cli_feature_command_with_fresh_flag(mock_orchestrator_class, mock_sdk_check):
     """Test feature command with --fresh flag passes fresh=True."""
@@ -738,7 +738,7 @@ def test_cli_feature_command_with_fresh_flag(mock_orchestrator_class, mock_sdk_c
     assert call_kwargs.get("fresh") is True
 
 
-@patch("guardkit.cli.autobuild._check_sdk_available", return_value=True)
+@patch("guardkit.cli.autobuild._check_sdk_available", return_value=(True, None))
 @patch("guardkit.cli.autobuild.FeatureOrchestrator")
 def test_cli_feature_command_with_resume_flag(mock_orchestrator_class, mock_sdk_check):
     """Test feature command with --resume flag passes resume=True."""
