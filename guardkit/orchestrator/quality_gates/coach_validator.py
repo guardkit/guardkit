@@ -1342,6 +1342,21 @@ class CoachValidator:
 
         from guardkit.orchestrator.sdk_utils import check_assistant_message_error
 
+        # TASK-FIX-7A09: MessageParseError is raised by the SDK's internal
+        # parser when it hits a message type it doesn't recognise (e.g.
+        # rate_limit_event on a newer API than the installed SDK knows
+        # about). The class lives in the private _errors module because it
+        # is not part of claude_agent_sdk.__all__. Graceful-fallback import
+        # mirrors agent_invoker.py:2174 so test fixtures that mock
+        # claude_agent_sdk as a MagicMock do not crash on the _errors
+        # submodule.
+        try:
+            from claude_agent_sdk._errors import MessageParseError
+        except ImportError:
+            class MessageParseError(Exception):  # type: ignore[no-redef]
+                """Sentinel when SDK does not expose _errors submodule."""
+                pass
+
         start_time = time.time()
         prompt = f"Run the following test command and report the output:\n\n```bash\n{test_cmd}\n```\n\nProvide the full test output."
 
@@ -1371,8 +1386,38 @@ class CoachValidator:
             bash_output: Optional[str] = None
             bash_is_error: Optional[bool] = None
 
+            # TASK-FIX-7A09: Mirror the per-message defensive stream
+            # iteration from agent_invoker._invoke_with_role
+            # (TASK-FIX-7A03) onto the Coach independent-test SDK path.
+            # Parse-type exceptions on individual messages
+            # (MessageParseError from the SDK's internal parser hitting
+            # an unknown message type; ValueError from "Unsupported
+            # plugin type" etc.) are logged and skipped so one bad
+            # message does not abort the whole test-verification turn.
+            # Transport-level exceptions (ProcessError,
+            # CLIJSONDecodeError, CLINotFoundError) are NOT caught here
+            # — they bubble through to the outer except cascade where
+            # their structured diagnostic info (exit_code, stderr) is
+            # surfaced to the caller.
+            unparseable_count = 0
             async with asyncio.timeout(self.test_timeout):
-                async for message in query(prompt=prompt, options=options):
+                gen = query(prompt=prompt, options=options)
+                gen_iter = gen.__aiter__()
+                while True:
+                    try:
+                        message = await gen_iter.__anext__()
+                    except StopAsyncIteration:
+                        break
+                    except (MessageParseError, ValueError) as parse_err:
+                        unparseable_count += 1
+                        logger.warning(
+                            f"TASK-FIX-7A09: Skipping unparseable SDK "
+                            f"message in coach test stream "
+                            f"(error_class="
+                            f"{type(parse_err).__name__}): {parse_err}"
+                        )
+                        continue
+
                     err = check_assistant_message_error(message)
                     if err:
                         duration = time.time() - start_time
@@ -1405,6 +1450,12 @@ class CoachValidator:
                                     elif is_err is False:
                                         bash_is_error = False
                                     # None: parse output text to determine pass/fail
+
+            if unparseable_count > 0:
+                logger.warning(
+                    f"TASK-FIX-7A09: coach test stream completed with "
+                    f"{unparseable_count} unparseable message(s) dropped"
+                )
 
             duration = time.time() - start_time
 
@@ -1471,9 +1522,44 @@ class CoachValidator:
                 duration_seconds=duration,
                 raw_output=f"Timeout after {self.test_timeout}s",
             )
-        except (CLINotFoundError, ProcessError, CLIJSONDecodeError, Exception) as e:
+        # TASK-FIX-7A09: Split the former catch-all into explicit handlers
+        # so transport-level failures carry structured diagnostic info
+        # (exit_code, stderr, error_class) through to the fallback log in
+        # run_independent_tests. The original exceptions are re-raised
+        # untouched — ProcessError already carries .exit_code and .stderr,
+        # CLIJSONDecodeError carries .line and .original_error — so the
+        # caller can introspect type/attributes without string-matching.
+        except CLINotFoundError as e:
             duration = time.time() - start_time
-            logger.error(f"SDK coach test execution failed: {e}")
+            logger.error(
+                f"SDK coach test execution failed "
+                f"(error_class=CLINotFoundError): {e}"
+            )
+            raise
+        except ProcessError as e:
+            duration = time.time() - start_time
+            stderr_val = getattr(e, "stderr", None)
+            stderr_head = stderr_val[:500] if isinstance(stderr_val, str) else None
+            logger.error(
+                f"SDK coach test execution failed "
+                f"(error_class=ProcessError, "
+                f"exit_code={getattr(e, 'exit_code', None)}, "
+                f"stderr_head={stderr_head!r}): {e}"
+            )
+            raise
+        except CLIJSONDecodeError as e:
+            duration = time.time() - start_time
+            logger.error(
+                f"SDK coach test execution failed "
+                f"(error_class=CLIJSONDecodeError): {e}"
+            )
+            raise
+        except Exception as e:
+            duration = time.time() - start_time
+            logger.error(
+                f"SDK coach test execution failed "
+                f"(error_class={type(e).__name__}): {e}"
+            )
             raise
 
     def _is_custom_api_base(self) -> bool:
@@ -1730,9 +1816,33 @@ class CoachValidator:
                     )
                     return result
                 except Exception as e:
-                    logger.warning(
-                        f"SDK test execution failed, falling back to subprocess: {e}"
+                    # TASK-FIX-7A09: Surface the SDK transport failure
+                    # shape instead of the opaque {e}. ProcessError (the
+                    # observed shape in forge-run-3) carries .exit_code
+                    # and .stderr; all exception types carry a class
+                    # name. Structured logging lets the summary-layer
+                    # classifier (TASK-FIX-7A02, TASK-FIX-7A07) route
+                    # transport-level failures in future incidents
+                    # without string-matching the opaque prefix.
+                    error_class = type(e).__name__
+                    exit_code = getattr(e, "exit_code", None)
+                    stderr_val = getattr(e, "stderr", None)
+                    stderr_head = (
+                        stderr_val[:500]
+                        if isinstance(stderr_val, str) and stderr_val
+                        else None
                     )
+                    parts = [f"error_class={error_class}"]
+                    if exit_code is not None:
+                        parts.append(f"exit_code={exit_code}")
+                    ctx = ", ".join(parts)
+                    msg = (
+                        f"SDK test execution failed ({ctx}), "
+                        f"falling back to subprocess."
+                    )
+                    if stderr_head:
+                        msg += f" stderr: {stderr_head}"
+                    logger.warning(msg)
                     # Fall through to subprocess path below
 
             # Parallel wave isolation (TASK-ABFIX-005): run tests in temp directory
