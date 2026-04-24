@@ -2146,6 +2146,24 @@ Follow the decision format specified in your agent definition.
             )
             raise AgentInvocationError(diagnosis) from e
 
+        # TASK-FIX-7A03: MessageParseError is raised by the SDK's internal
+        # parser (claude_agent_sdk/_internal/message_parser.py) when it hits
+        # a message type it doesn't recognise (e.g. rate_limit_event on a
+        # newer API than the installed SDK knows about). The class is in
+        # the private _errors module because it is not part of
+        # claude_agent_sdk.__all__. Separate import with graceful fallback
+        # so test fixtures that mock claude_agent_sdk as a non-package
+        # MagicMock (and thus cannot resolve _errors submodule imports) do
+        # not crash unrelated tests. In the production deployment path the
+        # real SDK resolves this import and the fallback sentinel is dead
+        # code.
+        try:
+            from claude_agent_sdk._errors import MessageParseError
+        except ImportError:
+            class MessageParseError(Exception):  # type: ignore[no-redef]
+                """Sentinel when SDK does not expose _errors submodule."""
+                pass
+
         from guardkit.orchestrator.sdk_utils import check_assistant_message_error
 
         # TASK-INST-005b: Instrumentation state for event emission
@@ -2214,7 +2232,34 @@ Follow the decision format specified in your agent definition.
                                 progress_logger=self._progress_logger,
                             ):
                                 gen = query(prompt=prompt, options=options)
-                                async for message in gen:
+                                # TASK-FIX-7A03: Iterate via explicit __anext__
+                                # calls so a MessageParseError / ValueError on a
+                                # single stream message (e.g. rate_limit_event
+                                # from a newer API than the installed SDK knows
+                                # about) can be logged + skipped instead of
+                                # aborting the whole turn. Production SDK async
+                                # generators terminate after the first uncaught
+                                # exception, so the subsequent __anext__ call
+                                # will observe StopAsyncIteration and we exit
+                                # the loop cleanly with whatever messages we
+                                # already collected.
+                                unparseable_count = 0
+                                gen_iter = gen.__aiter__()
+                                while True:
+                                    try:
+                                        message = await gen_iter.__anext__()
+                                    except StopAsyncIteration:
+                                        break
+                                    except (MessageParseError, ValueError) as parse_err:
+                                        unparseable_count += 1
+                                        logger.warning(
+                                            f"TASK-FIX-7A03: Skipping unparseable "
+                                            f"SDK message in {agent_type} stream "
+                                            f"(error_class="
+                                            f"{type(parse_err).__name__}): "
+                                            f"{parse_err}"
+                                        )
+                                        continue
                                     response_messages.append(message)
                                     err = check_assistant_message_error(message)
                                     if err:
@@ -2242,6 +2287,29 @@ Follow the decision format specified in your agent definition.
                                             pass  # safe to ignore during drain
                                         gen = None  # exhausted; skip aclose() in finally
                                         break
+
+                                # TASK-FIX-7A03: Post-stream resilience bookkeeping.
+                                # Zero successful parses + any unparseables → treat
+                                # as a structured parse failure so TASK-FIX-7A02 can
+                                # classify this as player_invocation_stall rather
+                                # than the old opaque "SDK invocation failed" shape.
+                                # Partial success (≥1 parsed) emits a summary WARNING
+                                # and the turn continues with whatever was parsed.
+                                if unparseable_count > 0:
+                                    if not response_messages:
+                                        raise AgentInvocationError(
+                                            f"{unparseable_count} messages unparseable "
+                                            f"in {agent_type} stream "
+                                            f"(no valid messages received)",
+                                            error_class="MessageParseError",
+                                        )
+                                    logger.warning(
+                                        f"TASK-FIX-7A03: {agent_type} stream "
+                                        f"completed with {unparseable_count} "
+                                        f"unparseable message(s) dropped; "
+                                        f"{len(response_messages)} message(s) "
+                                        f"parsed successfully"
+                                    )
                     except (Exception, asyncio.CancelledError) as exc:
                         if isinstance(exc, asyncio.CancelledError):
                             logger.debug(f"CancelledError caught at _invoke_with_role: {exc}")
@@ -2300,6 +2368,13 @@ Follow the decision format specified in your agent definition.
             raise SDKTimeoutError(
                 f"Agent invocation exceeded {self.sdk_timeout_seconds}s timeout"
             )
+        except AgentInvocationError:
+            # TASK-FIX-7A03: Already-structured AgentInvocationError must
+            # pass through untouched — otherwise the blanket Exception
+            # handler below would re-wrap it and overwrite its error_class
+            # (e.g. the MessageParseError classification emitted by the
+            # all-unparseable-stream branch would be lost in transit).
+            raise
         except CLINotFoundError as e:
             raise AgentInvocationError(
                 "Claude Code CLI not installed. "
@@ -2313,9 +2388,31 @@ Follow the decision format specified in your agent definition.
             raise AgentInvocationError(
                 f"Failed to parse SDK response: {e}"
             ) from e
-        except Exception as e:
+        except ValueError as e:
+            # TASK-FIX-7A03: Typed ValueError clause — preserves
+            # type(e).__name__ as error_class so TASK-FIX-7A02 can
+            # classify parse-type failures (MessageParseError subclasses
+            # ClaudeSDKError not ValueError, so the ValueErrors that land
+            # here are the SDK's own ValueError raises — e.g. "Unsupported
+            # plugin type" — plus any other ValueError bubbling up from
+            # the streaming body).
             raise AgentInvocationError(
-                f"SDK invocation failed for {agent_type}: {str(e)}"
+                f"SDK value error for {agent_type} "
+                f"({type(e).__name__}): {e}",
+                error_class=type(e).__name__,
+            ) from e
+        except Exception as e:
+            # TASK-FIX-7A03: Final safety net — augment the error string
+            # with type(e).__name__ so the surfaced message is no longer
+            # opaque, and populate error_class so downstream classification
+            # (TASK-FIX-7A02) gets the signal for exception types we didn't
+            # anticipate. (Previously this produced messages like "SDK
+            # invocation failed for player: Unknown message type:
+            # rate_limit_event" with no indication it was a parse error.)
+            raise AgentInvocationError(
+                f"SDK invocation failed for {agent_type} "
+                f"({type(e).__name__}): {str(e)}",
+                error_class=type(e).__name__,
             ) from e
 
     def _emit_llm_call_event(

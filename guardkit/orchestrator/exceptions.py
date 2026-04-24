@@ -215,9 +215,20 @@ class AgentInvokerError(Exception):
 
 
 class AgentInvocationError(AgentInvokerError):
-    """Raised when SDK invocation fails."""
+    """Raised when SDK invocation fails.
 
-    pass
+    Attributes:
+        error_class: Type name of the wrapped exception
+            (e.g. ``"MessageParseError"``, ``"ValueError"``). Preserved
+            so downstream classification (TASK-FIX-7A02) can distinguish
+            parse-type failures from CLI / process / rate-limit failures
+            without string-matching the error message. ``None`` when the
+            error did not originate from a wrapped exception.
+    """
+
+    def __init__(self, message: str, error_class: Optional[str] = None):
+        super().__init__(message)
+        self.error_class = error_class
 
 
 class PlayerReportNotFoundError(AgentInvokerError):
