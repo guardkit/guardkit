@@ -4755,7 +4755,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 CLINotFoundError,
                 ProcessError,
                 CLIJSONDecodeError,
-                # TASK-FB-FIX-013: Import message types for proper ContentBlock iteration
+                # Import message types for proper ContentBlock iteration
                 AssistantMessage,
                 TextBlock,
                 ToolUseBlock,
@@ -4852,7 +4852,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                         async for message in _tw_gen:
                             # TASK-FBSDK-011: Track message counts
                             message_count += 1
-                            # TASK-FB-FIX-013: Properly iterate ContentBlocks instead of str()
+                            # Properly iterate ContentBlocks instead of str()
                             # message.content is a list[ContentBlock], not a string
                             # Mirrors TASK-FB-FIX-005 pattern from task_work_interface.py
                             if isinstance(message, AssistantMessage):

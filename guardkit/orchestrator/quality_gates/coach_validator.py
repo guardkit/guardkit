@@ -3037,13 +3037,13 @@ class CoachValidator:
         """
         Convert task ID to a pattern-matching prefix.
 
-        Converts task IDs like "TASK-FHA-002" to "task_fha_002" for
+        Converts task IDs like "TASK-XXX-YYYY" to "task_xxx_yyyy" for
         matching against test file naming conventions.
 
         Parameters
         ----------
         task_id : str
-            Task identifier (e.g., "TASK-FHA-002")
+            Task identifier (e.g., "TASK-XXX-YYYY")
 
         Returns
         -------

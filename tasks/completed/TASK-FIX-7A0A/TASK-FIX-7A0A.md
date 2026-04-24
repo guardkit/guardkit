@@ -1,9 +1,13 @@
 ---
 id: TASK-FIX-7A0A
 title: CI lint — every hardcoded TASK-ID literal in orchestrator code resolves
-status: backlog
+status: completed
 created: 2026-04-24T18:30:00Z
-updated: 2026-04-24T18:30:00Z
+updated: 2026-04-24T19:25:00Z
+completed: 2026-04-24T19:25:00Z
+completed_location: tasks/completed/TASK-FIX-7A0A/
+previous_state: in_review
+state_transition_reason: "Task completed — lint test passes on clean repo, all ACs met"
 priority: medium
 task_type: implementation
 tags: [ci, lint, task-id-references, hygiene, autobuild]
@@ -32,7 +36,7 @@ current live reference is valid — the lint's first CI run should pass).
 
 ## Acceptance Criteria
 
-- [ ] New test file `tests/rules/test_no_dead_task_id_references.py`:
+- [x] New test file `tests/rules/test_no_dead_task_id_references.py`:
   - Greps `guardkit/orchestrator/**/*.py` for the regex
     `TASK-(?:FIX|REV|DOC|POL|CFG|NFI|IMP|VER|SEC|E\d+|[A-Z]{2,4})-[A-Z0-9]{4}`
     (extend character class as needed — the IDs are hash-based per
@@ -45,11 +49,11 @@ current live reference is valid — the lint's first CI run should pass).
     `tasks/completed/**/TASK-<id>/*.md`, or
     `docs/state/TASK-<id>/*`.
   - Emits a readable failure listing `{file}:{line}` for every unresolved ID.
-- [ ] Test passes on a clean repo with 7A08 filed (verify both `autobuild.py:5078`
+- [x] Test passes on a clean repo with 7A08 filed (verify both `autobuild.py:5078`
       and `feature_orchestrator.py:1616` resolve).
-- [ ] Test is included in the default `pytest` discovery (no special marker
+- [x] Test is included in the default `pytest` discovery (no special marker
       required) and runs in the standard CI path.
-- [ ] Documentation note added to `.claude/rules/hash-based-ids.md` (or a new
+- [x] Documentation note added to `.claude/rules/hash-based-ids.md` (or a new
       sibling rule) briefly stating the lint exists and what it enforces.
 
 ## Implementation Notes

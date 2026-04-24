@@ -68,7 +68,7 @@ class OrchestratorProtocol(Protocol):
         Parameters
         ----------
         task_id : str
-            Task identifier (e.g., "TASK-AB-001")
+            Task identifier (e.g., "TASK-XXX-YYYY")
         requirements : str
             Task requirements description
         acceptance_criteria : List[str]

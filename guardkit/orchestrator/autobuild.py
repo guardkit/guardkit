@@ -26,7 +26,7 @@ Example:
     ... )
     >>>
     >>> result = orchestrator.orchestrate(
-    ...     task_id="TASK-AB-001",
+    ...     task_id="TASK-XXX-YYYY",
     ...     requirements="Implement OAuth2 authentication",
     ...     acceptance_criteria=[
     ...         "Support authorization code flow",
@@ -678,7 +678,7 @@ class OrchestrationResult:
     Attributes
     ----------
     task_id : str
-        Task identifier (e.g., "TASK-AB-001")
+        Task identifier (e.g., "TASK-XXX-YYYY")
     success : bool
         True if Coach approved, False if max_turns or error
     total_turns : int
@@ -695,7 +695,7 @@ class OrchestrationResult:
     Examples
     --------
     >>> result = OrchestrationResult(
-    ...     task_id="TASK-AB-001",
+    ...     task_id="TASK-XXX-YYYY",
     ...     success=True,
     ...     total_turns=2,
     ...     final_decision="approved",
@@ -784,7 +784,7 @@ class AutoBuildOrchestrator:
     ... )
     >>>
     >>> result = orchestrator.orchestrate(
-    ...     task_id="TASK-AB-001",
+    ...     task_id="TASK-XXX-YYYY",
     ...     requirements="Implement feature X",
     ...     acceptance_criteria=["Criterion 1", "Criterion 2"],
     ... )
@@ -1086,7 +1086,7 @@ class AutoBuildOrchestrator:
         Parameters
         ----------
         task_id : str
-            Task identifier (e.g., "TASK-AB-001")
+            Task identifier (e.g., "TASK-XXX-YYYY")
         requirements : str
             Task requirements description
         acceptance_criteria : List[str]
@@ -1118,7 +1118,7 @@ class AutoBuildOrchestrator:
         Examples
         --------
         >>> result = orchestrator.orchestrate(
-        ...     task_id="TASK-AB-001",
+        ...     task_id="TASK-XXX-YYYY",
         ...     requirements="Implement OAuth2 flow",
         ...     acceptance_criteria=["Support auth code flow", "Handle refresh"],
         ... )
@@ -3968,7 +3968,7 @@ class AutoBuildOrchestrator:
 
         Examples:
             TASK-GE-001 -> FEAT-GE
-            TASK-ABC-123 -> FEAT-ABC
+            TASK-XXX-123 -> FEAT-XXX
             TASK-FP002-001 -> FEAT-FP002
             TASK-001 -> FEAT-UNKNOWN
 
@@ -5684,14 +5684,14 @@ def finalize_autobuild(
     Examples
     --------
     >>> result = finalize_autobuild(
-    ...     task_id="TASK-AB-001",
-    ...     worktree_path=Path(".guardkit/worktrees/TASK-AB-001"),
+    ...     task_id="TASK-XXX-YYYY",
+    ...     worktree_path=Path(".guardkit/worktrees/TASK-XXX-YYYY"),
     ...     loop_result=orchestration_result,
     ... )
     >>> print(result["status"])
     'in_review'
     >>> print(result["next_steps"])
-    ['Review changes: cd .guardkit/worktrees/TASK-AB-001', ...]
+    ['Review changes: cd .guardkit/worktrees/TASK-XXX-YYYY', ...]
     """
     # Map final_decision to task status
     if loop_result.final_decision == "approved":

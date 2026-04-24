@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 TASK_SCHEMA = """
 Task Schema:
-  id: str (required)        # e.g., "TASK-AUTH-001"
+  id: str (required)        # e.g., "TASK-XXX-YYYY"
   file_path: str (required) # Path to task markdown file
   name: str                 # Human-readable name (defaults to id)
   complexity: int           # 1-10 (default: 5)
@@ -96,7 +96,7 @@ def _find_similar_ids(target: str, candidates: set, max_distance: int = 2) -> Li
     for candidate in candidates:
         candidate_lower = candidate.lower()
 
-        # Check prefix match (e.g., TASK-AUTH-001 matches TASK-AUTH-002)
+        # Check prefix match (e.g., TASK-XXX-001 matches TASK-XXX-002)
         # Extract prefix up to last number segment
         target_prefix = target_lower.rsplit("-", 1)[0] if "-" in target_lower else target_lower
         candidate_prefix = candidate_lower.rsplit("-", 1)[0] if "-" in candidate_lower else candidate_lower
@@ -196,7 +196,7 @@ class FeatureTask(BaseModel):
     Attributes
     ----------
     id : str
-        Task identifier (e.g., "TASK-AUTH-001")
+        Task identifier (e.g., "TASK-XXX-YYYY")
     name : str
         Human-readable task name
     file_path : Path
