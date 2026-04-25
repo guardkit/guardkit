@@ -431,6 +431,7 @@ class CoachValidator:
         coach_test_execution: str = "sdk",
         matching_strategy: str = "auto",
         wave_size: int = 1,
+        turn: int = 1,
     ):
         """
         Initialize CoachValidator.
@@ -469,6 +470,9 @@ class CoachValidator:
         self.task_id = task_id
         self._coach_test_execution = coach_test_execution
         self.wave_size = max(1, int(wave_size))
+        # TASK-DIAG-F4A2: Turn number for sdk_debug preservation paths.
+        # Default 1 keeps backwards-compat for callers that don't pass it.
+        self._turn = max(1, int(turn))
         # Resolve matching strategy: constructor arg > env var > "auto"
         _VALID_STRATEGIES = ("auto", "text", "semantic")
         env_strategy = os.environ.get("GUARDKIT_MATCHING_STRATEGY", "").lower()
@@ -1382,6 +1386,22 @@ class CoachValidator:
                 options_kwargs["model"] = model
             options = ClaudeAgentOptions(**options_kwargs)
 
+            # TASK-DIAG-F4A2: Preserve coach independent-test prompt + stream
+            # under sdk_debug/turn_<n>/coach/test_run/ when
+            # GUARDKIT_AUTOBUILD_PRESERVE_DEBUG is set. No-op otherwise.
+            from guardkit.orchestrator.sdk_debug import (
+                preserve_prompt as _sdk_preserve_prompt,
+                preserve_event as _sdk_preserve_event,
+            )
+            _sdk_debug_dir = _sdk_preserve_prompt(
+                workspace_root=self.worktree_path,
+                task_id=self.task_id or "unknown",
+                turn=self._turn,
+                role="coach_test",
+                prompt=prompt,
+                options=options,
+            )
+
             collected_text: List[str] = []
             bash_output: Optional[str] = None
             bash_is_error: Optional[bool] = None
@@ -1417,6 +1437,9 @@ class CoachValidator:
                             f"{type(parse_err).__name__}): {parse_err}"
                         )
                         continue
+
+                    # TASK-DIAG-F4A2: Preserve event to JSONL (no-op if disabled)
+                    _sdk_preserve_event(_sdk_debug_dir, message)
 
                     err = check_assistant_message_error(message)
                     if err:

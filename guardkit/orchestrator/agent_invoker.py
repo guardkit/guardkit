@@ -1503,6 +1503,8 @@ class AgentInvoker:
                     allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
                     permission_mode="acceptEdits",
                     resume_session_id=self._last_session_id,
+                    task_id=task_id,
+                    turn=turn,
                 )
 
                 # Load and validate Player report
@@ -1632,6 +1634,8 @@ class AgentInvoker:
                 agent_type="coach",
                 allowed_tools=["Read", "Bash", "Grep", "Glob"],
                 permission_mode="bypassPermissions",
+                task_id=task_id,
+                turn=turn,
             )
 
             # Load and validate Coach decision
@@ -2109,6 +2113,8 @@ Follow the decision format specified in your agent definition.
         permission_mode: Literal["acceptEdits", "bypassPermissions"],
         model: Optional[str] = None,
         resume_session_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+        turn: Optional[int] = None,
     ) -> None:
         """Low-level SDK invocation with role-based permissions.
 
@@ -2205,6 +2211,24 @@ Follow the decision format specified in your agent definition.
             task_id_match = re.search(r"TASK-[A-Z0-9-]+", prompt)
             heartbeat_task_id = task_id_match.group(0) if task_id_match else "unknown"
 
+            # TASK-DIAG-F4A2: Preserve rendered prompt + SDK options under
+            # sdk_debug/turn_<n>/[coach/] when GUARDKIT_AUTOBUILD_PRESERVE_DEBUG
+            # is set. Helper is a no-op otherwise.
+            from guardkit.orchestrator.sdk_debug import (
+                preserve_prompt as _sdk_preserve_prompt,
+            )
+            _debug_task_id = task_id or heartbeat_task_id
+            _debug_turn = turn if turn is not None else 1
+            _debug_role = "coach" if agent_type == "coach" else "player"
+            _sdk_debug_dir = _sdk_preserve_prompt(
+                workspace_root=self.worktree_path,
+                task_id=_debug_task_id,
+                turn=_debug_turn,
+                role=_debug_role,
+                prompt=prompt,
+                options=options,
+            )
+
             # TASK-FIX-ASPF-004: Monitor cancellation event and kill SDK
             # subprocess when the feature-level timeout fires. Without this,
             # asyncio.wait_for only cancels the asyncio wrapper while the
@@ -2270,6 +2294,12 @@ Follow the decision format specified in your agent definition.
                                         )
                                         continue
                                     response_messages.append(message)
+                                    # TASK-DIAG-F4A2: Preserve each event to JSONL
+                                    if _sdk_debug_dir is not None:
+                                        from guardkit.orchestrator.sdk_debug import (
+                                            preserve_event as _sdk_preserve_event,
+                                        )
+                                        _sdk_preserve_event(_sdk_debug_dir, message)
                                     err = check_assistant_message_error(message)
                                     if err:
                                         raise AgentInvocationError(
@@ -3882,6 +3912,8 @@ Follow the decision format specified in your agent definition.
                 allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
                 permission_mode="acceptEdits",
                 resume_session_id=self._last_session_id,
+                task_id=task_id,
+                turn=turn,
             )
 
             # Add small delay to allow filesystem buffering to complete
@@ -4761,6 +4793,22 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 )
             options = ClaudeAgentOptions(**_tw_options_kwargs)
 
+            # TASK-DIAG-F4A2: Preserve rendered task-work prompt + options
+            # under sdk_debug/turn_<n>/ when GUARDKIT_AUTOBUILD_PRESERVE_DEBUG
+            # is set. Helper is a no-op otherwise.
+            from guardkit.orchestrator.sdk_debug import (
+                preserve_prompt as _sdk_preserve_prompt,
+                preserve_event as _sdk_preserve_event,
+            )
+            _sdk_debug_dir = _sdk_preserve_prompt(
+                workspace_root=self.worktree_path,
+                task_id=task_id,
+                turn=turn,
+                role="player",
+                prompt=prompt,
+                options=options,
+            )
+
             # TASK-FBSDK-011: Log SDK configuration before invocation
             logger.info(f"[{task_id}] SDK invocation starting")
             logger.info(f"[{task_id}] Working directory: {self.worktree_path}")
@@ -4807,6 +4855,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                         async for message in _tw_gen:
                             # TASK-FBSDK-011: Track message counts
                             message_count += 1
+                            # TASK-DIAG-F4A2: Preserve event to JSONL (no-op if disabled)
+                            _sdk_preserve_event(_sdk_debug_dir, message)
                             # Properly iterate ContentBlocks instead of str()
                             # message.content is a list[ContentBlock], not a string
                             # Mirrors TASK-FB-FIX-005 pattern from task_work_interface.py

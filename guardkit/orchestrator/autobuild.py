@@ -4677,6 +4677,7 @@ class AutoBuildOrchestrator:
                 coach_test_execution=coach_test_execution,
                 matching_strategy=matching_strategy,
                 wave_size=wave_size,
+                turn=turn,
             )
             validation_result = validator.validate(
                 task_id=task_id,

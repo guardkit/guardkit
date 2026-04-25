@@ -1,9 +1,13 @@
 ---
 id: TASK-DIAG-F4A2
 title: Preserve rendered Player prompt + SDK message stream under .guardkit/autobuild/<task>/sdk_debug/
-status: backlog
+status: completed
 created: 2026-04-25T00:00:00Z
-updated: 2026-04-25T00:00:00Z
+updated: 2026-04-25T12:30:00Z
+completed: 2026-04-25T12:30:00Z
+completed_location: tasks/completed/2026-04/
+previous_state: in_review
+state_transition_reason: "All AC met: helper module shipped, Player+Coach paths wired, 36 unit tests passing, coverage 87% on changed module, no regressions in targeted suite."
 priority: high
 task_type: implementation
 parent_review: TASK-REV-F4A1
@@ -14,9 +18,13 @@ related_to:
   - TASK-REV-F4A1
   - TASK-FIX-7A08
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  coverage: 87
+  last_run: 2026-04-25T12:00:00Z
+  module_under_test: guardkit/orchestrator/sdk_debug.py
+  test_file: tests/orchestrator/test_sdk_debug_preservation.py
+  tests_passed: 36
+  tests_failed: 0
 ---
 
 # Task: Preserve rendered Player prompt + SDK message stream under sdk_debug/
