@@ -89,13 +89,18 @@ def test_no_dead_task_id_references_in_orchestrator() -> None:
 
 
 def test_known_live_references_resolve() -> None:
-    """Spot-check the two references from the forge-run-3 incident so that a
-    future refactor that relocates them still trips this assertion if the
-    referenced task is ever removed."""
+    """Spot-check live references so that a future refactor that relocates
+    them still trips this assertion if the referenced task is ever removed.
 
-    assert _task_id_resolves("TASK-FIX-7A08"), (
-        "TASK-FIX-7A08 must resolve — it is the reference this lint was "
-        "seeded to protect (see TASK-FIX-7A0A)."
+    Historical context: TASK-FIX-7A08 was reverted by TASK-REV-F4A1 because
+    the prompt-mandate fix-class did not change Player behaviour across three
+    fresh runs on two repos. The canary references for the lint mechanism
+    are now the surviving phase-2 task (7A09) and this rule's own task (7A0A).
+    """
+
+    assert _task_id_resolves("TASK-FIX-7A09"), (
+        "TASK-FIX-7A09 must resolve — it is a surviving phase-2 reference "
+        "whose removal would indicate code rot."
     )
     assert _task_id_resolves("TASK-FIX-7A0A"), (
         "TASK-FIX-7A0A (this task) must be filed somewhere under tasks/."

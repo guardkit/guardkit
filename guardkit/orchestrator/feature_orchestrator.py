@@ -1613,7 +1613,7 @@ The detailed specifications are in the task markdown file.
             "the work inline without invoking sub-agents via the Task tool.",
             "",
             "Remediation options: (a) ensure Player's system prompt mandates "
-            "Task-tool invocation for the missing phases (TASK-FIX-7A08), "
+            "Task-tool invocation for the missing phases, "
             "(b) set implementation_mode: direct for tasks that do not "
             "warrant the specialist pipeline.",
         ])
