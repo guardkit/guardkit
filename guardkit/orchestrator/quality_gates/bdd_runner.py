@@ -442,11 +442,16 @@ def run_bdd_for_task(
 ) -> Optional[BDDResult]:
     """Run task-scoped BDD scenarios for ``task_id`` in ``worktree_path``.
 
-    Returns ``None`` (silently skipped) when any of:
+    Returns ``None`` (legitimately skipped) when:
 
     * No ``features/*.feature`` file exists in the worktree, or
-    * No matching ``.feature`` file contains ``@task:<TASK-ID>``, or
-    * ``pytest_bdd`` is not importable in the target environment.
+    * No matching ``.feature`` file contains ``@task:<TASK-ID>``.
+
+    When tagged feature files DO exist but ``pytest_bdd`` is not importable
+    in the target environment, returns a synthetic :class:`BDDResult` with
+    ``scenarios_failed=1`` so Coach blocks rather than silently approving on
+    a vacuously-true ``scenarios_failed == 0`` rule. See TASK-FIX-BDDM-1
+    (and the F584 sibling for the runner-error shape).
 
     Returns a :class:`BDDResult` otherwise.
     """
@@ -464,13 +469,42 @@ def run_bdd_for_task(
         return None
 
     if not has_pytest_bdd(python_executable=python_executable):
-        logger.info(
-            "BDD runner: pytest-bdd not importable; skipping %d candidate "
-            "feature file(s) for %s.",
+        # TASK-FIX-BDDM-1: Surface as synthetic blocker rather than silently
+        # skipping. Returning None here was approved by Coach's
+        # ``scenarios_failed == 0`` rule — vacuously true when no result
+        # exists — so a misconfigured worktree (tagged feature files present
+        # but pytest-bdd not installed) ran AutoBuild with zero BDD oracle
+        # verification. Same shape as F584's ``pytest_runner_error``.
+        logger.warning(
+            "BDD runner: pytest-bdd not importable but %d candidate "
+            "feature file(s) for %s exist; surfacing as synthetic failure "
+            "so Coach blocks. Add pytest-bdd to the project's pyproject.toml.",
             len(matching),
             task_id,
         )
-        return None
+        reason = (
+            "pytest_bdd_not_importable: tagged feature files exist for "
+            f"{task_id} but pytest-bdd is not installed in the worktree "
+            "environment. Add 'pytest-bdd>=8.1,<9' (or compatible) to the "
+            "project's pyproject.toml dependencies and reinstall."
+        )
+        return BDDResult(
+            scenarios_passed=0,
+            scenarios_failed=1,
+            scenarios_pending=0,
+            failures=[FailureDetail(
+                feature_file=str(matching[0].relative_to(worktree_path)),
+                scenario_name="pytest_bdd_not_importable",
+                failing_step="",
+                reason=reason,
+            )],
+            pending=[],
+            feature_files=[
+                str(p.relative_to(worktree_path)) for p in matching
+            ],
+            tag=tag,
+            raw_output="",
+        )
 
     junit_xml_path = worktree_path / ".guardkit" / "bdd" / f"{task_id}_junit.xml"
     junit_xml_path.parent.mkdir(parents=True, exist_ok=True)

@@ -386,14 +386,79 @@ class TestRunBddForTask:
         assert result is None
         assert invoker.calls == []
 
-    def test_pytest_bdd_unavailable_returns_none(self, worktree: Path, monkeypatch):
+    def test_pytest_bdd_unavailable_with_tags_returns_synthetic_blocker(
+        self, worktree: Path, monkeypatch, caplog
+    ):
+        # AC (TASK-FIX-BDDM-1, R1+R2): when tagged feature files exist but
+        # pytest-bdd is not importable, the runner must surface a synthetic
+        # BDDResult(scenarios_failed=1) so Coach's `scenarios_failed == 0`
+        # rule blocks rather than vacuously approving. The pre-fix path
+        # returned None, which Coach silently approved.
         _write_feature(worktree, "login.feature", _PASS_FEATURE)
+        monkeypatch.setattr(bdd_runner, "has_pytest_bdd", lambda **_: False)
+        invoker = _Patcher(_PASSED_JUNIT)
+        monkeypatch.setattr(bdd_runner, "_invoke_pytest_bdd", invoker)
+
+        with caplog.at_level("WARNING", logger=bdd_runner.logger.name):
+            result = run_bdd_for_task("TASK-001", worktree)
+
+        # Subprocess never invoked — the synthetic blocker is constructed
+        # without running pytest at all.
+        assert invoker.calls == []
+
+        # Synthetic blocker surfaces as scenarios_failed=1 with a single
+        # FailureDetail naming pytest_bdd_not_importable.
+        assert isinstance(result, BDDResult)
+        assert result.scenarios_failed == 1
+        assert result.scenarios_passed == 0
+        assert result.scenarios_pending == 0
+        assert len(result.failures) == 1
+
+        failure = result.failures[0]
+        assert failure.scenario_name == "pytest_bdd_not_importable"
+        assert failure.failing_step == ""
+        # The reason must include both the task ID (so feedback is
+        # actionable per-task) and the pyproject remediation hint.
+        assert "TASK-001" in failure.reason
+        assert "pytest-bdd" in failure.reason
+        assert "pyproject" in failure.reason
+        # feature_file is recorded relative to the worktree.
+        assert failure.feature_file == "features/login.feature"
+
+        # Tag and feature_files mirror the standard happy path so Coach
+        # feedback can name the affected file(s).
+        assert result.tag == "@task:TASK-001"
+        assert result.feature_files == ["features/login.feature"]
+
+        # Log was promoted from INFO to WARNING (per AC).
+        warning_records = [
+            r for r in caplog.records
+            if r.levelname == "WARNING" and "pytest-bdd not importable" in r.getMessage()
+        ]
+        assert warning_records, (
+            f"Expected WARNING log about pytest-bdd not importable; "
+            f"got: {[(r.levelname, r.getMessage()) for r in caplog.records]}"
+        )
+
+    def test_pytest_bdd_unavailable_no_tags_still_skips(
+        self, worktree: Path, monkeypatch
+    ):
+        # AC (TASK-FIX-BDDM-1, regression-safety): the legitimate-skip
+        # path at find_feature_files_with_tag → empty must remain
+        # unchanged. pytest-bdd absence only synthesises a blocker when
+        # tagged feature files actually exist; absence + no tags is still
+        # a legitimate "no BDD oracle for this task" skip and must
+        # return None so Coach is not falsely blocked.
+        _write_feature(worktree, "homepage.feature", _UNTAGGED_FEATURE)
         monkeypatch.setattr(bdd_runner, "has_pytest_bdd", lambda **_: False)
         invoker = _Patcher(_PASSED_JUNIT)
         monkeypatch.setattr(bdd_runner, "_invoke_pytest_bdd", invoker)
 
         result = run_bdd_for_task("TASK-001", worktree)
 
+        # The early-return at the no-matching-files branch fires before
+        # the pytest-bdd availability check — so result is None and no
+        # synthetic blocker is constructed.
         assert result is None
         assert invoker.calls == []
 
@@ -689,6 +754,54 @@ class TestCoachRejectsRunnerError:
         # rather than saying "scenario assertion failed".
         assert any(
             "pytest_runner_error" in example
+            for example in issue["failure_examples"]
+        )
+
+    def test_synthetic_blocker_routes_through_coach_validator(
+        self, worktree: Path, monkeypatch, tmp_path: Path
+    ):
+        # AC (TASK-FIX-BDDM-1): end-to-end that the synthetic
+        # pytest-bdd-not-importable BDDResult reaches Coach as a
+        # bdd_failure blocking issue (must_fix). Without this routing,
+        # the new synthetic blocker would be technically constructed
+        # but not actually block — same silent-bypass class as the
+        # original bug.
+        _write_feature(worktree, "login.feature", _PASS_FEATURE)
+        monkeypatch.setattr(bdd_runner, "has_pytest_bdd", lambda **_: False)
+        # Patch the subprocess seam too, so an accidental code path
+        # that tries to invoke pytest would surface as an obvious test
+        # error rather than silently passing.
+        invoker = _Patcher(_PASSED_JUNIT)
+        monkeypatch.setattr(bdd_runner, "_invoke_pytest_bdd", invoker)
+
+        # 1. Runner produces synthetic BDDResult (the patched code path).
+        bdd_result = run_bdd_for_task("TASK-001", worktree)
+        assert isinstance(bdd_result, BDDResult)
+        assert bdd_result.scenarios_failed == 1
+        assert invoker.calls == []  # pytest-bdd absent → never invoked
+
+        # 2. Serialise as the agent_invoker would before Coach consumes
+        # task_work_results.json.
+        task_work_results = {"bdd_results": bdd_result.to_dict()}
+
+        # 3. Coach's _check_bdd_results must classify as blocking.
+        from guardkit.orchestrator.quality_gates.coach_validator import (
+            CoachValidator,
+        )
+
+        validator = CoachValidator(worktree_path=str(tmp_path))
+        blocking, _non_blocking = validator._check_bdd_results(task_work_results)
+
+        assert len(blocking) == 1
+        issue = blocking[0]
+        assert issue["severity"] == "must_fix"
+        assert issue["category"] == "bdd_failure"
+        assert issue["scenarios_failed"] == 1
+        # The synthetic-blocker scenario name surfaces in the examples
+        # so Coach feedback says "pytest_bdd_not_importable" rather
+        # than the generic "scenario assertion failed".
+        assert any(
+            "pytest_bdd_not_importable" in example
             for example in issue["failure_examples"]
         )
 
