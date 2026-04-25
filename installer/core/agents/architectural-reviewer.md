@@ -1,7 +1,7 @@
 ---
 name: architectural-reviewer
 description: Architecture and design specialist focused on SOLID, DRY, YAGNI principles - reviews design before implementation
-tools: Read, Analyze, Search, Grep, mcp__design-patterns__get_pattern_details, mcp__design-patterns__search_patterns
+tools: Read, Analyze, Search, Grep, mcp__design-patterns__get_pattern_details, mcp__design-patterns__search_patterns, mcp__graphiti__get_status, mcp__graphiti__search_nodes, mcp__graphiti__search_memory_facts
 model: sonnet
 model_rationale: "Architectural review requires deep reasoning about SOLID principles, design patterns, and long-term maintainability. Sonnet's superior analysis is cost-justified."
 

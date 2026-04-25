@@ -15,7 +15,7 @@ capabilities:
   - Refactoring recommendations
 keywords: [code-review, quality, maintainability, security, best-practices, refactoring]
 
-tools: Read, Write, Search, Grep
+tools: Read, Write, Search, Grep, mcp__graphiti__get_status, mcp__graphiti__search_nodes, mcp__graphiti__search_memory_facts
 collaborates_with:
   - architectural-reviewer
   - test-verifier
