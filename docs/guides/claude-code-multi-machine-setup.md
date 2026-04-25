@@ -14,12 +14,16 @@ the Graphiti server stack itself; this doc covers the Claude Code client side.
 
 1. Install Anthropic Skills with `npx skills add ...` — **never** add
    `langchain-skills` to `enabledPlugins`. It is not a plugin.
-2. Don't put machine-specific absolute paths (`/Users/...`, `/home/...`) in
+2. Install `gh` and run `gh auth login` on each machine — without it, every
+   `git push` from the GB10 fails with `could not read Username for
+   'https://github.com'`. If you use a fine-grained PAT, **set Contents:
+   Read and write** per repo, otherwise pushes 403.
+3. Don't put machine-specific absolute paths (`/Users/...`, `/home/...`) in
    committed `.claude/settings.json`. Use `.claude/settings.local.json` for
    per-machine overrides — it's gitignored.
-3. `.mcp.json` for Graphiti must be `http://promaxgb10-41b1:8004/mcp` —
+4. `.mcp.json` for Graphiti must be `http://promaxgb10-41b1:8004/mcp` —
    no trailing slash.
-4. Run `/doctor` on each machine after cloning a repo. Apply the fixes below
+5. Run `/doctor` on each machine after cloning a repo. Apply the fixes below
    if it complains.
 
 ---
@@ -145,6 +149,132 @@ Otherwise re-run `npx skills add ...` above — it's idempotent.
 - **MacBook**: skills installed (per project history)
 - **GB10**: skills installed today — 11 skills under `~/.agents/skills/`,
   symlinked into `~/.claude/skills/`. Node v24.15.0 LTS via nvm v0.40.1.
+
+---
+
+## GitHub CLI (gh) — both machines
+
+Why it matters: Claude Code session pushes go through the same `git push`
+mechanism as terminal pushes, which means the user's git credential setup
+on each machine determines whether autonomous agents can ship work or get
+stuck at "auth failed". On the GB10 specifically, no GitHub SSH key is
+configured (`ssh -T git@github.com` returns "Permission denied (publickey)"),
+no `~/.netrc`, no credential helper — so without `gh`, every `git push` to
+github.com fails with `fatal: could not read Username for 'https://github.com'`.
+
+`gh` solves this by registering itself as a credential helper for HTTPS
+remotes. Once `gh auth login` succeeds, `git push` Just Works for every repo
+the token covers.
+
+### Install — GB10 (Ubuntu 24.04 noble, aarch64/arm64)
+
+The official Debian/Ubuntu apt repository auto-detects architecture via
+`dpkg --print-architecture`, so the same one-liner ships arm64 packages on
+the GB10. Source:
+[github.com/cli/cli/blob/trunk/docs/install_linux.md](https://github.com/cli/cli/blob/trunk/docs/install_linux.md).
+
+```bash
+(type -p wget >/dev/null || (sudo apt update && sudo apt install wget -y)) \
+    && sudo mkdir -p -m 755 /etc/apt/keyrings \
+    && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+    && cat $out | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+    && sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && sudo mkdir -p -m 755 /etc/apt/sources.list.d \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && sudo apt update \
+    && sudo apt install gh -y
+```
+
+Subsequent updates: `sudo apt update && sudo apt install gh`.
+
+### Install — MacBook
+
+```bash
+brew install gh
+```
+
+### Authenticate
+
+```bash
+gh auth login
+```
+
+Prompts:
+- GitHub.com (not Enterprise)
+- HTTPS (not SSH)
+- "Authenticate Git with your GitHub credentials?" → **Yes**
+- Login method:
+  - **"Login with a web browser"** if a browser is reachable (GB10 over
+    SSH from a Mac: copy the one-time code, open the URL on your laptop,
+    paste the code, approve)
+  - **"Paste an authentication token"** if headless and you already have
+    a PAT — see "Tokens" below for what scopes to use
+
+Verify with `gh auth status`. A healthy entry shows:
+```
+github.com
+  ✓ Logged in to github.com account <username> (keyring)
+  - Active account: true
+  - Git operations protocol: https
+  - Token: github_pat_11... (or ghp_... for classic)
+```
+
+Then `git push` to any github.com remote will succeed without further
+prompting — `gh` registers itself as a credential helper and supplies the
+token transparently.
+
+### Tokens — fine-grained PAT vs classic PAT (the gotcha that cost us 30 min on 2026-04-25)
+
+GitHub offers two PAT types and they behave **very differently** for
+multi-repo workflows:
+
+| | Fine-grained PAT (`github_pat_11...`) | Classic PAT (`ghp_...`) |
+|---|---|---|
+| Per-repo selection | ✅ explicit allowlist | ❌ all your repos |
+| Per-permission granularity | ✅ Contents / Issues / Pull-requests / etc. each Read or R+W | ❌ flat scopes (`repo`, `workflow`, etc.) |
+| `git push` requires | **Contents: Read and write** on each target repo | `repo` scope |
+| Default Contents permission on creation | **Read only** | n/a |
+
+**The trap**: a fresh fine-grained PAT created via the "what scopes do
+I need?" UI defaults Contents to *Read*. `git fetch` works, `gh repo view`
+works, the API can confirm your account has admin rights — but `git push`
+returns:
+
+```
+remote: Permission to <org>/<repo>.git denied to <username>.
+fatal: ... The requested URL returned error: 403
+```
+
+And `gh api -X POST repos/<org>/<repo>/...` returns:
+
+```
+"Resource not accessible by personal access token" (HTTP 403)
+```
+
+That second message is GitHub's specific wording for **fine-grained PAT
+missing a permission**. If you see "Resource not accessible by personal
+access token", the answer is always to add the missing permission — it is
+NOT an account-level access problem.
+
+**Fix**: edit the token at https://github.com/settings/personal-access-tokens,
+set **Contents: Read and write** for each target repo, save. The keychain
+entry stays valid; no need to re-run `gh auth login`. (If you want the
+agent to open issues/PRs, also set Issues: R+W and Pull requests: R+W.)
+
+**Recommended for this setup**: classic PAT with `repo` + `workflow`
+scopes for the GB10's day-to-day token. Fine-grained PATs are great for
+narrow agent-specific tokens (e.g. a CI bot scoped to one repo), but for
+a "I work across guardkit/guardkit, guardkit/forge, guardkit/nats-core,
+guardkit/nats-infrastructure, ..." workflow they're more friction than
+they're worth.
+
+### Per-machine state (as of 2026-04-25)
+
+- **MacBook**: gh installed long-term (per Homebrew history)
+- **GB10**: gh `2.x` installed today via the apt repo above; logged in as
+  `RichWoollcott` via fine-grained PAT after correcting the Contents
+  permission. Both `guardkit/guardkit` and `guardkit/forge` push-tested
+  green.
 
 ---
 
