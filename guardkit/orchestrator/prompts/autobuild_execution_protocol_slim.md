@@ -19,20 +19,11 @@ Skip if `requires_infrastructure` is absent.
 
 ## Phase 3: Implementation
 
-**Delegate to `{phase_3_specialist}` via the `Task` tool — do not write code inline.**
-
-```
-Task(subagent_type="{phase_3_specialist}", description="Implement {task_id}",
-     prompt="Implement the plan at .claude/task-plans/{task_id}-implementation-plan.md. No stubs.")
-```
-
-Wait for the specialist's report. The specialist must:
-
-1. Read the implementation plan
-2. Implement all files in the plan
+1. Read the implementation plan from `.claude/task-plans/{task_id}-implementation-plan.md`
+2. Implement all files listed in the plan
 3. Follow detected stack conventions (type hints, strict mode, async patterns)
 4. Create production-quality code with error handling
-5. Not create stubs (no `pass`, `raise NotImplementedError`, `return {}`, or TODO-only bodies)
+5. Do NOT create stubs (no `pass`, `raise NotImplementedError`, `return {}`, or TODO-only bodies)
 
 File count constraints: minimal/standard = max 2 files, comprehensive = unlimited.
 
@@ -42,22 +33,19 @@ Modes: Standard = implement + test together. TDD = RED → GREEN → REFACTOR.
 
 ## Phase 4: Testing
 
-**Delegate to `{phase_4_specialist}` via the `Task` tool — do NOT run
-`pytest`, `npm test`, or `dotnet test` inline.**
+Compile first:
+- Python: `python -m py_compile <file.py>`
+- TypeScript: `npx tsc --noEmit`
+- .NET: `dotnet build --no-restore`
 
-```
-Task(subagent_type="{phase_4_specialist}", description="Run tests for {task_id}",
-     prompt="Compile + run full test suite with coverage for the detected stack.
-             Report using markers: N tests passed / N tests failed / Coverage: N.N%.
-             Do not skip or ignore tests.")
-```
-
-The specialist owns compile + test commands (py_compile/tsc/dotnet build and
-pytest/npm test/dotnet test). You do not invoke them yourself.
+Run tests:
+- Python: `pytest tests/ -v --cov=src --cov-report=term --cov-report=json`
+- TypeScript: `npm test -- --coverage`
+- .NET: `dotnet test --collect:"XPlat Code Coverage" --logger:"json"`
 
 Quality gates: Compilation 100%, Tests 100%, Line coverage ≥80%, Branch coverage ≥75%.
 
-Report format (the specialist's output, parsed programmatically):
+Report format (parsed programmatically):
 ```
 N tests passed
 N tests failed
@@ -77,17 +65,10 @@ If all pass: proceed to Phase 5. If attempt > 3: report BLOCKED with diagnostics
 
 ## Phase 5: Code Review
 
-**Delegate to `{phase_5_specialist}` via the `Task` tool — do NOT perform the
-review inline.**
+Check: unused imports, missing error handling, hardcoded secrets, SOLID/DRY/YAGNI compliance.
+Run linter if available (Python: `ruff check .`, TypeScript: `npm run lint`).
 
-```
-Task(subagent_type="{phase_5_specialist}", description="Review {task_id}",
-     prompt="Check unused imports, error handling, secrets, SOLID/DRY/YAGNI.
-             Run linter if available.
-             Emit 'Quality gates: PASSED' or 'Quality gates: FAILED'.")
-```
-
-Wait for the specialist's output: `Quality gates: PASSED` or `Quality gates: FAILED`
+Output: `Quality gates: PASSED` or `Quality gates: FAILED`
 
 ---
 

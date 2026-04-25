@@ -7588,19 +7588,13 @@ class TestBuildInlineImplementProtocol:
         assert "BDD Mode" not in protocol
 
     def test_protocol_includes_coverage_thresholds(self, worktree_path):
-        """Protocol must specify coverage quality gates.
-
-        TASK-FIX-7A08: Phase 4 now delegates to test-orchestrator via Task —
-        the coverage gates are enforced through the delegated prompt rather
-        than a dedicated subheading. The thresholds (≥80% line, ≥75%
-        branch) and the "Quality gate" language must still appear.
-        """
+        """Protocol must specify coverage quality gates."""
         invoker = AgentInvoker(worktree_path=worktree_path)
         protocol = invoker._build_inline_implement_protocol("TASK-001")
 
         assert "80%" in protocol  # Line coverage threshold
         assert "75%" in protocol  # Branch coverage threshold
-        assert "Quality Gate" in protocol  # still asserted as a concept
+        assert "Coverage Quality Gates" in protocol
 
 
 class TestInvokeTaskWorkImplementInlineProtocol:

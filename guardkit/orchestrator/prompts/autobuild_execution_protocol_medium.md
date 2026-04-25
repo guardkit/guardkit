@@ -21,22 +21,6 @@ Skip if `requires_infrastructure` is absent.
 
 ## Phase 3: Implementation
 
-**You MUST delegate implementation to `{phase_3_specialist}` via the `Task`
-tool.** Do not write code inline.
-
-```
-Task(
-  subagent_type="{phase_3_specialist}",
-  description="Implement {task_id}",
-  prompt="Implement the changes in .claude/task-plans/{task_id}-implementation-plan.md.
-          Follow plan architecture. No stubs (see Anti-Stub Rules)."
-)
-```
-
-Wait for the specialist's report before proceeding to Phase 4.
-
-What the specialist must deliver:
-
 1. Read the implementation plan from `.claude/task-plans/{task_id}-implementation-plan.md`
 2. Implement all files listed in the plan
 3. Follow detected stack conventions (type hints, strict mode, async patterns)
@@ -89,23 +73,15 @@ All implementation code MUST include proper error handling:
 
 ## Phase 4: Testing
 
-**You MUST delegate test execution to `{phase_4_specialist}` via the `Task`
-tool. Do NOT run `pytest`, `npm test`, or `dotnet test` inline yourself.**
-Inline test execution is the defect this protocol exists to prevent.
+Compile first:
+- Python: `python -m py_compile <file.py>`
+- TypeScript: `npx tsc --noEmit`
+- .NET: `dotnet build --no-restore`
 
-```
-Task(
-  subagent_type="{phase_4_specialist}",
-  description="Run tests for {task_id}",
-  prompt="Verify compilation, run the full test suite with coverage for the
-          detected stack, and report pass/fail counts and coverage using the
-          output markers (N tests passed / N tests failed / Coverage: N.N%).
-          Do NOT skip, comment out, or mark tests with [Ignore]."
-)
-```
-
-The specialist owns stack detection, compile commands, test commands, and
-coverage measurement. You do not invoke those tools yourself.
+Run tests:
+- Python: `pytest tests/ -v --cov=src --cov-report=term --cov-report=json`
+- TypeScript: `npm test -- --coverage`
+- .NET: `dotnet test --collect:"XPlat Code Coverage" --logger:"json"`
 
 Quality gates: Compilation 100%, Tests 100%, Line coverage ≥80%, Branch coverage ≥75%.
 
@@ -137,21 +113,8 @@ If max attempts exhausted, report:
 
 ## Phase 5: Code Review
 
-**You MUST delegate code review to `{phase_5_specialist}` via the `Task`
-tool. Do NOT perform the review inline yourself.**
-
-```
-Task(
-  subagent_type="{phase_5_specialist}",
-  description="Review {task_id} implementation",
-  prompt="Review for SOLID/DRY/YAGNI compliance, error handling, test
-          quality, unused imports, hardcoded secrets, and stack conventions.
-          Run linter if available (ruff / npm run lint).
-          Emit 'Quality gates: PASSED' or 'Quality gates: FAILED'."
-)
-```
-
-Review criteria the specialist must apply:
+Check: unused imports, missing error handling, hardcoded secrets, SOLID/DRY/YAGNI compliance.
+Run linter if available (Python: `ruff check .`, TypeScript: `npm run lint`).
 
 ### SOLID Principles Check
 

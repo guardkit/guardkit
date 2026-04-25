@@ -40,11 +40,6 @@ from guardkit.orchestrator.instrumentation.llm_instrumentation import (
 from guardkit.orchestrator.instrumentation.redaction import SecretRedactor
 from guardkit.orchestrator.instrumentation.schemas import LLMCallEvent, ToolExecEvent
 from guardkit.orchestrator.paths import TaskArtifactPaths
-from guardkit.orchestrator.phase_specialists import (
-    STATIC_PHASE_SPECIALISTS,
-    detect_stack_template,
-    phase_3_specialist_for_stack,
-)
 from guardkit.orchestrator.prompts import load_protocol
 from guardkit.orchestrator.coach_verification import (
     CoachVerifier,
@@ -4406,19 +4401,6 @@ Follow the decision format specified in your agent definition.
         protocol_content = protocol_content.replace("{task_id}", task_id)
         protocol_content = protocol_content.replace("{turn}", str(turn))
         protocol_content = protocol_content.replace("{worktree_path}", str(self.worktree_path))
-        # TASK-FIX-7A08: mandate Task-tool invocation for Phase 3/4/5 by
-        # substituting specialist names from phase_specialists.py (single
-        # source of truth — same module the Coach feedback consumes).
-        stack_template = detect_stack_template(self.worktree_path)
-        protocol_content = protocol_content.replace(
-            "{phase_3_specialist}", phase_3_specialist_for_stack(stack_template)
-        )
-        protocol_content = protocol_content.replace(
-            "{phase_4_specialist}", STATIC_PHASE_SPECIALISTS["4"]
-        )
-        protocol_content = protocol_content.replace(
-            "{phase_5_specialist}", STATIC_PHASE_SPECIALISTS["5"]
-        )
 
         # --- Section 7: Implementation plan locations ---
         plan_paths = TaskArtifactPaths.implementation_plan_paths(
@@ -4506,12 +4488,6 @@ Follow the decision format specified in your agent definition.
         The inline prompt covers Phases 3 (Implementation), 4 (Testing),
         4.5 (Fix Loop), and 5 (Code Review).
 
-        TASK-FIX-7A08: Each phase mandates Task-tool invocation of the
-        relevant specialist. Specialist names are sourced from
-        phase_specialists.py (same single-source-of-truth the Coach feedback
-        and the .md protocol loader consume) — do NOT hardcode agent names
-        here.
-
         Args:
             task_id: Task identifier (e.g., "TASK-001")
             mode: Development mode ("standard", "tdd", or "bdd")
@@ -4519,11 +4495,6 @@ Follow the decision format specified in your agent definition.
         Returns:
             Inline protocol prompt string (target: ≤20KB)
         """
-        # TASK-FIX-7A08: resolve specialist names from phase_specialists.py
-        stack_template = detect_stack_template(self.worktree_path)
-        phase_3_specialist = phase_3_specialist_for_stack(stack_template)
-        phase_4_specialist = STATIC_PHASE_SPECIALISTS["4"]
-        phase_5_specialist = STATIC_PHASE_SPECIALISTS["5"]
         # Build plan locations list for the prompt
         plan_paths = TaskArtifactPaths.implementation_plan_paths(
             task_id, self.worktree_path
@@ -4577,85 +4548,69 @@ Implementation must make BDD step definitions pass:
 {mode_instructions}
 ## Phase 3: Implementation
 
-**You MUST delegate implementation to `{phase_3_specialist}` via the `Task`
-tool. Do NOT write implementation code inline — the Coach's
-agent-invocations gate rejects turns that skip the specialist.**
-
-```
-Task(
-  subagent_type="{phase_3_specialist}",
-  description="Implement {task_id}",
-  prompt="Read the implementation plan at one of:
+1. **Read the implementation plan** from one of these locations (check in order):
 {plan_locations}
-          Implement every file in the plan.
-          Follow the plan's architecture and patterns.
-          Write production-quality code with proper error handling.
-          Create no stub implementations."
-)
-```
 
-Wait for the specialist's report. Record every file the specialist creates
-or modifies — that list must appear in your player report
-(`files_created`, `files_modified`).
+2. **Implement the code changes** described in the plan:
+   - Create new files as specified
+   - Modify existing files as specified
+   - Follow the architecture and patterns from the plan
+   - Write production-quality code with proper error handling
+
+3. **Track your changes** - note every file you create or modify.
 
 ## Phase 4: Testing
 
-**You MUST delegate test execution to `{phase_4_specialist}` via the `Task`
-tool. Do NOT run `pytest`, `npm test`, `dotnet test`, `python -m py_compile`,
-`tsc`, or `dotnet build` inline yourself.** Inline test execution is the
-defect this protocol exists to prevent.
+1. **Verify compilation/build** first - ensure no syntax errors:
+   - Python: `python -m py_compile <file>` or import check
+   - TypeScript: `npx tsc --noEmit`
+   - .NET: `dotnet build`
 
-```
-Task(
-  subagent_type="{phase_4_specialist}",
-  description="Run tests for {task_id}",
-  prompt="Verify compilation, run the full test suite with coverage for the
-          detected stack, and report using the exact output markers:
-            - 'N tests passed' / 'N tests failed'
-            - 'Coverage: N.N%'
-          Quality gates: compilation 100%, tests 100%, line coverage ≥80%,
-          branch coverage ≥75%. Do NOT skip, comment out, or mark tests
-          with [Ignore]."
-)
-```
+2. **Run the test suite**:
+   - Python: `pytest tests/ -v --tb=short`
+   - TypeScript: `npm test`
+   - .NET: `dotnet test`
 
-The specialist owns stack detection, compile commands, test commands, and
-coverage measurement. You do not invoke those tools yourself.
+3. **Measure coverage** (if available):
+   - Python: `pytest tests/ -v --cov --cov-report=term`
+   - TypeScript: `npm test -- --coverage`
 
-Use the test-orchestrator's output to emit the phase markers in your own
-summary (see Output Format below).
+4. **Coverage Quality Gates**:
+   - Line coverage MUST be >=80%
+   - Branch coverage MUST be >=75%
+   - If below threshold, write additional tests before proceeding
+
+5. **Report results clearly** in your output using these exact formats:
+   - `Phase 3: Implementation` (when you start implementing)
+   - `Phase 4: Testing` (when you start testing)
+   - `X tests passed` and `Y tests failed` (test counts)
+   - `Coverage: Z.Z%` (coverage percentage)
+   - `Phase 5: Code Review` (when you start review)
+   - `Quality gates: PASSED` or `Quality gates: FAILED`
 
 ## Phase 4.5: Fix Loop
 
-If `{phase_4_specialist}` reports test failures:
+If tests fail after Phase 4:
 
 1. Analyze the failure output carefully
-2. Re-invoke `{phase_3_specialist}` to make targeted fixes to the
-   implementation (not the tests)
-3. Re-invoke `{phase_4_specialist}` to re-run the full test suite
-4. **Maximum 3 fix attempts** — if still failing after 3 attempts, report failure
+2. Make targeted fixes to resolve failures
+3. Re-run the full test suite
+4. **Maximum 3 fix attempts** - if still failing after 3 attempts, report failure
 5. Do NOT skip, comment out, or ignore failing tests
 6. Do NOT modify test assertions unless they are provably incorrect
 
 Quality Gate: ALL tests MUST pass (0 failures) before proceeding to Phase 5.
 
-## Phase 5: Code Review
+## Phase 5: Code Review (Lightweight)
 
-**You MUST delegate code review to `{phase_5_specialist}` via the `Task`
-tool. Do NOT perform the review inline.**
-
-```
-Task(
-  subagent_type="{phase_5_specialist}",
-  description="Review {task_id} implementation",
-  prompt="Review for SOLID/DRY/YAGNI compliance, error handling, test
-          quality, unused imports, hardcoded secrets, and stack
-          conventions. Run linter if available (ruff / npm run lint).
-          Emit 'Quality gates: PASSED' or 'Quality gates: FAILED'."
-)
-```
-
-Wait for the specialist's report before emitting your player report.
+1. Check for obvious code quality issues:
+   - Unused imports
+   - Missing error handling on external calls
+   - Hardcoded secrets or credentials
+2. Run linter if available:
+   - Python: `ruff check .` or `flake8`
+   - TypeScript: `npm run lint`
+3. Note any issues found
 
 ## Output Format
 
