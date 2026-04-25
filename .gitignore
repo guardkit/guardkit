@@ -138,3 +138,6 @@ site/
 
 # OS generated files
 *.orig*.py,cover
+
+# Per-machine Claude Code overrides
+.claude/settings.local.json

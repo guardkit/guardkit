@@ -1,13 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(rm /home/richardwoollcott/Projects/appmilla_github/guardkit/.claude/agents/autobuild-coach.md)",
-      "Read(//home/richardwoollcott/.agentecflow/agents/**)",
       "Bash(awk '{print $NF, $5, \"bytes\"}')"
-    ],
-    "additionalDirectories": [
-      "/home/richardwoollcott/Projects/appmilla_github/guardkit/.claude/reviews",
-      "/home/richardwoollcott/Projects/appmilla_github/guardkit/.claude/agents"
     ]
   },
   "name": "guardkit",
