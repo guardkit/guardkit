@@ -123,6 +123,9 @@ def _make_orchestrator(
     orchestrator._feature_id = None
     orchestrator._max_criteria_passed = 0
     orchestrator._agent_invoker = Mock()
+    # TASK-OSI-006: skip orchestrator-side Phase 4/5 in unit tests by
+    # forcing implementation_mode to "direct" on the Mock invoker.
+    orchestrator._agent_invoker._get_implementation_mode.return_value = "direct"
     orchestrator._worktree_manager = Mock()
     orchestrator._checkpoint_manager = None
     orchestrator._last_player_context_status = None

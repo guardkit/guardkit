@@ -1,0 +1,29 @@
+{
+  "task_id": "TASK-OSI-006",
+  "audit_mode": "light",
+  "severity": "low",
+  "status": "passed",
+  "planned": {
+    "files": 2,
+    "loc_added": 85,
+    "deps": 0,
+    "duration_min": 90
+  },
+  "actual": {
+    "files": 3,
+    "loc_added": 128,
+    "deps": 0,
+    "files_modified": [
+      "guardkit/orchestrator/autobuild.py",
+      "tests/unit/test_autobuild_timeout_budget.py",
+      "tasks/in_progress/TASK-OSI-006-turn-loop-wiring.md"
+    ]
+  },
+  "variances": {
+    "loc_pct": 50.6,
+    "loc_threshold": 50,
+    "files_extra": ["tests/unit/test_autobuild_timeout_budget.py"],
+    "files_extra_reason": "Plan section 5 explicitly anticipated this fixture update; not scope creep."
+  },
+  "notes": "LOC variance ~50% driven by per-branch docstring comments and defensive try/except around each _inject_specialist_records_into_task_work_results call (one for budget-skip path, one for normal path). No new dependencies. Test fixture change was pre-described in the plan."
+}
