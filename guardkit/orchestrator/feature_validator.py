@@ -208,6 +208,90 @@ def validate_feature_preflight(
     return result
 
 
+def validate_feature_environment(
+    feature: Feature,
+    repo_root: Path,
+    worktree_python: Optional[str] = None,
+) -> PreFlightValidationResult:
+    """Env-level preflight: catch pytest-bdd ↔ tagged feature files gaps.
+
+    Iterates ``feature.tasks`` and, for each task whose tag appears in any
+    ``features/**/*.feature`` file, lazily probes the worktree environment
+    for ``pytest_bdd``. Emits an error covering all affected tasks if the
+    probe fails — moves the same outcome that ``bdd_runner.run_bdd_for_task``
+    would surface inside the Player-Coach loop to before any SDK turn runs,
+    keeping cost neutral.
+
+    Function is purely additive — when no tagged feature files exist or
+    pytest-bdd is importable, no issue is emitted and call sites observe
+    no behavioural change.
+
+    Parameters
+    ----------
+    feature : Feature
+        Loaded feature to validate
+    repo_root : Path
+        Repository root directory (must contain ``features/`` for the
+        check to fire)
+    worktree_python : Optional[str]
+        Optional path to a Python interpreter to probe; ``None`` falls
+        back to the current interpreter (matches ``has_pytest_bdd``'s
+        default)
+
+    Returns
+    -------
+    PreFlightValidationResult
+        Errors covering tasks whose tagged scenarios cannot run, or an
+        empty result when the env is healthy / nothing to check.
+    """
+    from guardkit.orchestrator.quality_gates.bdd_runner import (
+        find_feature_files_with_tag,
+        has_pytest_bdd,
+        task_tag,
+    )
+
+    result = PreFlightValidationResult()
+    features_dir = repo_root / "features"
+    if not features_dir.is_dir():
+        return result
+
+    pytest_bdd_ok: Optional[bool] = None  # lazy probe; only check if needed
+    affected_tasks: List[str] = []
+
+    for task in feature.tasks:
+        tagged = find_feature_files_with_tag(features_dir, task_tag(task.id))
+        if not tagged:
+            continue
+        if pytest_bdd_ok is None:
+            pytest_bdd_ok = has_pytest_bdd(python_executable=worktree_python)
+        if not pytest_bdd_ok:
+            affected_tasks.append(task.id)
+
+    if affected_tasks:
+        displayed = ", ".join(affected_tasks[:5])
+        if len(affected_tasks) > 5:
+            displayed = f"{displayed}, ..."
+        result.errors.append(
+            ValidationIssue(
+                task_id=displayed,
+                field="environment",
+                severity="error",
+                message=(
+                    f"{len(affected_tasks)} task(s) have tagged feature files "
+                    "but pytest-bdd is not importable in the worktree env. "
+                    "AutoBuild would surface this as a Coach-blocking failure "
+                    "(R1)."
+                ),
+                suggestion=(
+                    f"Add 'pytest-bdd>=8.1,<9' to {repo_root}/pyproject.toml "
+                    "dependencies and reinstall the worktree env."
+                ),
+            )
+        )
+
+    return result
+
+
 def format_preflight_report(result: PreFlightValidationResult) -> str:
     """Format pre-flight validation result as a human-readable report.
 

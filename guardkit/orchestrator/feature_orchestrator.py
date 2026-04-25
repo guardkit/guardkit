@@ -53,6 +53,7 @@ from guardkit.orchestrator.smoke_gates import (
 )
 from guardkit.orchestrator.feature_validator import (
     validate_feature_preflight,
+    validate_feature_environment,
     format_preflight_report,
 )
 from guardkit.orchestrator.environment_bootstrap import (
@@ -731,6 +732,13 @@ class FeatureOrchestrator:
         # Pre-flight frontmatter validation (TASK-FIX-7537)
         if not self.skip_validation:
             preflight_result = validate_feature_preflight(feature, self.repo_root)
+
+            # Env-level preflight: catch pytest-bdd ↔ tagged feature gap before
+            # any SDK turn burns (TASK-FIX-BDDM-2). Purely additive — folds
+            # any errors/warnings into the same report-and-bail path below.
+            env_result = validate_feature_environment(feature, self.repo_root)
+            preflight_result.errors.extend(env_result.errors)
+            preflight_result.warnings.extend(env_result.warnings)
 
             # Display warnings (alias suggestions) even if valid
             if preflight_result.has_warnings:
