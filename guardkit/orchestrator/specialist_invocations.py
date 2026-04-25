@@ -18,17 +18,41 @@ References:
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional
 
 if TYPE_CHECKING:
     from guardkit.orchestrator.agent_invoker import AgentInvoker
 
 logger = logging.getLogger(__name__)
+
+# Directories under the worktree root where a task markdown may live.
+# rglob is used inside each so feature-grouped subfolders (e.g.
+# ``tasks/in_progress/orchestrator-side-specialist-invocation/``) are
+# also searched.
+_TASK_SEARCH_DIRS: tuple[str, ...] = (
+    "tasks/in_progress",
+    "tasks/backlog",
+    "tasks/in_review",
+    "tasks/blocked",
+)
+
+# Defaults used when ``phase_4_summary.json`` is missing, malformed, or
+# the run failed/skipped. Kept as a module constant so the same defaults
+# apply to every code path that produces a phase_4 block.
+_PHASE_4_AGENT_FIELD_DEFAULTS: dict[str, Any] = {
+    "tests_run": 0,
+    "tests_failed": 0,
+    "coverage_pct": 0.0,
+    "output_summary": "",
+    "quality_gates_passed": False,
+}
 
 
 # Reverse lookup of guardkit.orchestrator.phase_specialists.STATIC_PHASE_SPECIALISTS
@@ -189,3 +213,341 @@ async def run_specialist(
         result_file=conventional_result_file if status == "passed" else None,
         error=error_message,
     )
+
+
+def _load_task_context(worktree_path: Path, task_id: str) -> str:
+    """Best-effort read of the task markdown's Description + Acceptance.
+
+    Searches ``tasks/{in_progress,backlog,in_review,blocked}`` recursively
+    for a file whose name starts with ``{task_id}``. Returns the
+    Description and Acceptance Criteria sections concatenated. Falls
+    back to a one-line stub on any failure — this helper never raises.
+    """
+    fallback = f"Task context unavailable for {task_id}"
+    try:
+        task_file: Optional[Path] = None
+        for rel in _TASK_SEARCH_DIRS:
+            search_root = worktree_path / rel
+            if not search_root.exists():
+                continue
+            for candidate in search_root.rglob(f"{task_id}*.md"):
+                if candidate.is_file():
+                    task_file = candidate
+                    break
+            if task_file is not None:
+                break
+
+        if task_file is None:
+            return fallback
+
+        text = task_file.read_text(encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001 — best-effort context load
+        logger.debug(
+            "_load_task_context: failed to read task markdown for %s: %s",
+            task_id,
+            exc,
+        )
+        return fallback
+
+    description = _extract_section(text, "Description")
+    acceptance = _extract_section(text, "Acceptance Criteria")
+
+    if not description and not acceptance:
+        return fallback
+
+    parts: list[str] = []
+    if description:
+        parts.append("## Description\n" + description.strip())
+    if acceptance:
+        parts.append("## Acceptance Criteria\n" + acceptance.strip())
+    return "\n\n".join(parts)
+
+
+def _extract_section(text: str, heading: str) -> str:
+    """Return the body of a ``## {heading}`` section, or ``""`` if absent.
+
+    Captures everything after the heading up to the next ``## `` heading
+    or end-of-file. Tolerates trailing whitespace on the heading line.
+    """
+    pattern = re.compile(
+        rf"^##\s+{re.escape(heading)}\s*$(.*?)(?=^##\s+|\Z)",
+        re.DOTALL | re.MULTILINE,
+    )
+    match = pattern.search(text)
+    if match is None:
+        return ""
+    return match.group(1).strip()
+
+
+def _load_phase_3_summary(worktree_path: Path, task_id: str) -> str:
+    """Format a short bulleted summary from ``task_work_results.json``.
+
+    Pulls ``files_created``, ``files_modified``, ``test_files_created``
+    when present. Returns a sentinel string on any failure — this helper
+    never raises.
+    """
+    fallback = "Phase 3 summary unavailable."
+    try:
+        # Local import avoids pulling the path module at module load
+        # time and matches the existing TYPE_CHECKING convention used
+        # elsewhere in this file.
+        from guardkit.orchestrator.paths import TaskArtifactPaths
+
+        results_path = TaskArtifactPaths.task_work_results_path(
+            task_id, worktree_path
+        )
+        if not results_path.exists():
+            return fallback
+        data = json.loads(results_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 — best-effort summary load
+        logger.debug(
+            "_load_phase_3_summary: failed to read task_work_results for %s: %s",
+            task_id,
+            exc,
+        )
+        return fallback
+
+    if not isinstance(data, dict):
+        return fallback
+
+    lines: list[str] = []
+    for label, key in (
+        ("Files created", "files_created"),
+        ("Files modified", "files_modified"),
+        ("Test files created", "test_files_created"),
+    ):
+        value = data.get(key)
+        if isinstance(value, list) and value:
+            preview = ", ".join(str(v) for v in value[:5])
+            suffix = "" if len(value) <= 5 else f" (+{len(value) - 5} more)"
+            lines.append(f"- {label} ({len(value)}): {preview}{suffix}")
+
+    if not lines:
+        return fallback
+
+    return "\n".join(lines)
+
+
+def _build_test_orchestrator_prompt(
+    task_id: str,
+    task_context: str,
+    phase_3_summary: str,
+    summary_path: Path,
+) -> str:
+    """Render the focused prompt the test-orchestrator specialist receives.
+
+    The agent definition (``installer/core/agents/test-orchestrator.md``)
+    already encodes the execution protocol. This prompt only carries
+    task-specific context plus the structured-output contract the
+    orchestrator expects to read from disk afterwards.
+    """
+    summary_relative = summary_path.as_posix()
+    prompt = (
+        f"You are the test-orchestrator specialist for task {task_id}.\n\n"
+        "Task context (from the task markdown):\n"
+        f"{task_context}\n\n"
+        "Phase 3 implementation summary (from task_work_results.json):\n"
+        f"{phase_3_summary}\n\n"
+        "Your job:\n"
+        "1. Detect the project's test runner (pytest, npm test, dotnet test, etc.).\n"
+        "2. Run the test suite for the changed code with coverage where supported.\n"
+        "3. Write a structured JSON summary to:\n"
+        f"   {summary_relative}\n"
+        "   The JSON object MUST contain these keys:\n"
+        "     - tests_run (int): total tests executed\n"
+        "     - tests_failed (int): count of failing tests\n"
+        "     - coverage_pct (float): line coverage as a percentage 0-100\n"
+        "     - output_summary (str): one-line summary, under 200 chars\n"
+        "     - quality_gates_passed (bool): true only if all gates green\n"
+        "Do not duplicate your system protocol in your response — just run "
+        "the suite and write the JSON file. The orchestrator reads the file "
+        "directly; conversational output is not used."
+    )
+    # Keep the prompt under ~2000 chars per the task spec.
+    if len(prompt) > 2000:
+        # Trim the task_context first (largest variable section).
+        overflow = len(prompt) - 2000
+        trimmed_context = task_context[: max(0, len(task_context) - overflow - 32)]
+        prompt = prompt.replace(
+            task_context, trimmed_context + "\n[...truncated]"
+        )
+    return prompt
+
+
+def _read_phase_4_summary(summary_path: Path) -> dict[str, Any]:
+    """Read ``phase_4_summary.json`` and merge over the field defaults.
+
+    Returns a dict with all five agent-derived keys populated. Missing
+    or malformed input degrades to the defaults — this helper never
+    raises. Type-checks each field individually so a single bad value
+    does not poison the whole dict.
+    """
+    merged: dict[str, Any] = dict(_PHASE_4_AGENT_FIELD_DEFAULTS)
+    try:
+        if not summary_path.exists():
+            return merged
+        data = json.loads(summary_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 — never raise
+        logger.warning(
+            "_read_phase_4_summary: failed to load %s: %s", summary_path, exc
+        )
+        return merged
+
+    if not isinstance(data, dict):
+        return merged
+
+    for key, default in _PHASE_4_AGENT_FIELD_DEFAULTS.items():
+        if key not in data:
+            continue
+        value = data[key]
+        if isinstance(default, bool) and isinstance(value, bool):
+            merged[key] = value
+        elif isinstance(default, int) and not isinstance(default, bool):
+            if isinstance(value, bool):
+                # bool is a subclass of int — reject explicitly.
+                continue
+            if isinstance(value, int):
+                merged[key] = value
+        elif isinstance(default, float):
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                merged[key] = float(value)
+        elif isinstance(default, str) and isinstance(value, str):
+            merged[key] = value
+    return merged
+
+
+def _write_specialist_results(
+    specialist_results_path: Path,
+    phase_4_block: dict[str, Any],
+) -> None:
+    """Idempotent merge-write of ``specialist_results.json``.
+
+    Preserves an existing ``phase_5`` block when the file already exists
+    and is well-formed; overwrites with a fresh dict on parse failure
+    (logging a warning) so downstream consumers always see a usable
+    file. Never raises.
+    """
+    try:
+        specialist_results_path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:  # noqa: BLE001 — never raise
+        logger.warning(
+            "_write_specialist_results: failed to ensure dir %s: %s",
+            specialist_results_path.parent,
+            exc,
+        )
+        return
+
+    existing: dict[str, Any] = {}
+    if specialist_results_path.exists():
+        try:
+            loaded = json.loads(
+                specialist_results_path.read_text(encoding="utf-8")
+            )
+            if isinstance(loaded, dict):
+                existing = loaded
+            else:
+                logger.warning(
+                    "_write_specialist_results: %s did not contain a JSON "
+                    "object; overwriting.",
+                    specialist_results_path,
+                )
+        except Exception as exc:  # noqa: BLE001 — overwrite on parse fail
+            logger.warning(
+                "_write_specialist_results: %s unparseable (%s); overwriting.",
+                specialist_results_path,
+                exc,
+            )
+            existing = {}
+
+    merged: dict[str, Any] = {"phase_4": phase_4_block}
+    if "phase_5" in existing:
+        merged["phase_5"] = existing["phase_5"]
+
+    try:
+        specialist_results_path.write_text(
+            json.dumps(merged, indent=2), encoding="utf-8"
+        )
+    except Exception as exc:  # noqa: BLE001 — never raise
+        logger.warning(
+            "_write_specialist_results: failed to write %s: %s",
+            specialist_results_path,
+            exc,
+        )
+
+
+async def invoke_test_orchestrator(
+    worktree_path: Path,
+    task_id: str,
+    sdk_timeout: int,
+    agent_invoker: "AgentInvoker",
+    cancellation_event: Optional[threading.Event] = None,
+    *,
+    turn: Optional[int] = None,
+) -> SpecialistInvocationResult:
+    """Run the Phase 4 test-orchestrator specialist under orchestrator control.
+
+    Loads task context and a Phase 3 summary, builds a focused prompt,
+    delegates SDK invocation to :func:`run_specialist`, then writes the
+    ``phase_4`` block to ``.guardkit/autobuild/{task_id}/specialist_results.json``
+    while preserving any pre-existing ``phase_5`` block. The function
+    never raises — the autobuild turn loop owns recovery.
+
+    Args:
+        worktree_path: Worktree the specialist operates against.
+        task_id: AutoBuild task ID; used for path resolution and prompt
+            framing.
+        sdk_timeout: Per-invocation SDK timeout in seconds.
+        agent_invoker: :class:`AgentInvoker` whose ``_invoke_with_role``
+            performs the SDK call (via :func:`run_specialist`).
+        cancellation_event: Optional :class:`threading.Event` that
+            signals cancellation to the SDK monitor.
+        turn: Optional autobuild turn number forwarded for instrumentation.
+
+    Returns:
+        The :class:`SpecialistInvocationResult` produced by
+        :func:`run_specialist`, unmodified. The on-disk
+        ``specialist_results.json`` reflects the run regardless of
+        outcome.
+    """
+    autobuild_dir = (
+        Path(worktree_path) / ".guardkit" / "autobuild" / task_id
+    )
+    summary_path = autobuild_dir / "phase_4_summary.json"
+    specialist_results_path = autobuild_dir / "specialist_results.json"
+
+    task_context = _load_task_context(Path(worktree_path), task_id)
+    phase_3_summary = _load_phase_3_summary(Path(worktree_path), task_id)
+    prompt = _build_test_orchestrator_prompt(
+        task_id=task_id,
+        task_context=task_context,
+        phase_3_summary=phase_3_summary,
+        summary_path=summary_path,
+    )
+
+    run_result = await run_specialist(
+        specialist_name="test-orchestrator",
+        worktree_path=Path(worktree_path),
+        task_id=task_id,
+        sdk_timeout=sdk_timeout,
+        prompt=prompt,
+        allowed_tools=["Read", "Write", "Bash", "Search"],
+        agent_invoker=agent_invoker,
+        cancellation_event=cancellation_event,
+        turn=turn,
+    )
+
+    if run_result.status == "passed":
+        agent_fields = _read_phase_4_summary(summary_path)
+    else:
+        agent_fields = dict(_PHASE_4_AGENT_FIELD_DEFAULTS)
+
+    phase_4_block: dict[str, Any] = {
+        "status": run_result.status,
+        "duration_seconds": run_result.duration_seconds,
+        "error": run_result.error,
+        **agent_fields,
+    }
+
+    _write_specialist_results(specialist_results_path, phase_4_block)
+
+    return run_result

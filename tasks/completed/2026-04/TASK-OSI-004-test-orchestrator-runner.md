@@ -1,9 +1,12 @@
 ---
 id: TASK-OSI-004
 title: "test-orchestrator orchestrator-side runner"
-status: backlog
+status: completed
 created: 2026-04-25T00:00:00Z
 updated: 2026-04-25T00:00:00Z
+completed: 2026-04-25T00:00:00Z
+previous_state: in_review
+state_transition_reason: "All ACs satisfied; 4 new + 5 regression unit tests + 7 OSI-002 integration tests pass"
 priority: high
 task_type: feature
 parent_review: TASK-REV-119C1
@@ -32,38 +35,40 @@ TASK-OSI-002's merge step always has data to read.
 
 ## Acceptance Criteria
 
-- [ ] `specialist_invocations.py` exports
+- [x] `specialist_invocations.py` exports
       `invoke_test_orchestrator(worktree_path: Path, task_id: str,
       sdk_timeout: int, agent_invoker: AgentInvoker, cancellation_event:
       asyncio.Event) -> SpecialistInvocationResult` with a real
       implementation (not a stub — see anti-stub rule).
-- [ ] Function builds a structured prompt that includes (a) the task's
+- [x] Function builds a structured prompt that includes (a) the task's
       requirements/acceptance criteria from the task markdown, (b) a
       summary of files changed in Phase 3 (read from
       `task_work_results.json`'s Phase 3 entry), and (c) instructions to
       run the project's test suite and produce a structured result.
-- [ ] Function calls `run_specialist` with `allowed_tools=["Read",
+- [x] Function calls `run_specialist` with `allowed_tools=["Read",
       "Write", "Bash", "Search"]` (matches `test-orchestrator.md`
       frontmatter line 18).
-- [ ] On success, writes `specialist_results.json` to
+- [x] On success, writes `specialist_results.json` to
       `.guardkit/autobuild/{task_id}/` with a `phase_4` block containing:
       `status="passed"`, `duration_seconds`, `error=None`, and Phase
       4-specific fields: `tests_run`, `tests_failed`, `coverage_pct`,
       `output_summary`, `quality_gates_passed`.
-- [ ] On failure (SDK exception, timeout, non-success result), writes
+- [x] On failure (SDK exception, timeout, non-success result), writes
       `specialist_results.json` with a `phase_4` block containing
       `status="failed"` and `error` populated. Does NOT raise into
       caller.
-- [ ] If `specialist_results.json` already exists for this turn (e.g.
+- [x] If `specialist_results.json` already exists for this turn (e.g.
       from a prior interrupted run), the new write overwrites the
       `phase_4` block while preserving any `phase_5` block (idempotent
       partial write).
-- [ ] Unit tests (with stub SDK) cover: (a) success path writes correct
+- [x] Unit tests (with stub SDK) cover: (a) success path writes correct
       schema, (b) failure path writes failure block without raising,
       (c) timeout path writes `status="failed"` + `error="timeout"`,
       (d) idempotent partial write preserves existing `phase_5` block.
-- [ ] All modified files pass project-configured lint/format checks
-      with zero errors.
+      Tests: `tests/unit/orchestrator/test_specialist_invocations.py`
+- [x] All modified files pass project-configured lint/format checks
+      with zero errors. (Project has no configured ruff/black/flake8/mypy;
+      `python3 -m py_compile` clean for both modified files.)
 
 ## Implementation Notes
 
