@@ -490,7 +490,14 @@ Rules:
 
 - **Activation is by artefact presence** — no frontmatter flag is required
   or accepted. If `features/*.feature` carries the tag and `pytest-bdd` is
-  installable, the runner runs.
+  declared in the project's `pyproject.toml` (or otherwise installed in the
+  worktree env), the runner runs. The runner does an *import* probe, not an
+  install probe — `pytest_bdd` must be importable from the worktree's
+  Python env at runtime, which in practice means it has to be a project
+  dependency. See [BDD workflow guide § Runtime Prerequisites](../../../docs/guides/bdd-workflow-for-agentic-systems.md#runtime-prerequisites)
+  for the canonical example and the three-layer enforcement model
+  (`TASK-FIX-BDDM-1` in-loop blocker + `TASK-FIX-BDDM-2` pre-flight
+  validator + this docs layer).
 - **Pending ≠ failed.** A scenario whose step definitions are not yet
   implemented reports as `pending` and surfaces in Coach feedback as
   actionable work; it does NOT block approval.

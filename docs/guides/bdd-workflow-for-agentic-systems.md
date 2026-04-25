@@ -70,6 +70,47 @@ If your feature doesn't meet these criteria, use Standard or TDD mode instead.
    # Should show the marker file if properly installed
    ```
 
+### Runtime Prerequisites
+
+The R2 BDD oracle (the AutoBuild quality gate that runs `pytest-bdd`
+against `@task:`-tagged scenarios in `features/*.feature`) requires
+**`pytest-bdd` to be declared in the project's `pyproject.toml`** — or
+otherwise installed in the worktree env via another mechanism
+(`requirements.txt`, conda env, etc). Without it, AutoBuild surfaces a
+`pytest_bdd_not_importable` Coach-blocking failure for any task with
+tagged scenarios.
+
+This requirement applies as soon as **any** `.feature` file in the
+project gains a `@task:` tag — there is no opt-in flag and no
+"if you're using BDD" hedge.
+
+**Canonical example** — the `forge` project declares it in
+`pyproject.toml:34`:
+
+```toml
+# pyproject.toml
+[project]
+dependencies = [
+    "pytest-bdd>=8.1,<9",
+    # ...
+]
+```
+
+**Enforcement layering** — this requirement is enforced by three layers
+of defence (in order of activation):
+
+1. **In-loop oracle blocker** (`TASK-FIX-BDDM-1`) — `bdd_runner` raises
+   a synthetic `pytest_bdd_not_importable` failure when tagged scenarios
+   exist but `pytest_bdd` cannot be imported. This is the runtime gate
+   that fails the turn so silent-bypass becomes impossible.
+2. **Pre-flight feature validator** (`TASK-FIX-BDDM-2`) — `/feature-spec`
+   refuses to scaffold tagged feature files when the project's
+   `pyproject.toml` does not declare `pytest-bdd`. This is the authoring
+   gate that prevents the mismatched-setup pattern at scaffold time.
+3. **Documentation** (this section) — belt-and-braces guidance for
+   authors who land on the BDD workflow without going through
+   `/feature-spec`.
+
 ### Required Knowledge
 
 Before using BDD mode, familiarize yourself with:
