@@ -390,8 +390,16 @@ class TestCoachValidatorEnrichedDescription:
 
     def test_enriched_description_names_specialists(self, tmp_path, monkeypatch):
         """Build a minimal CoachValidator, feed it synthetic task-work results,
-        and assert the resulting feedback issue description includes the
-        phase-specialist lines AC-3 prescribes."""
+        and assert the agent-invocations advisory issue still names the
+        phase-specialist lines AC-3 prescribes.
+
+        TASK-REV-F6E1 F3c update: the violation no longer early-returns.
+        The advisory rides along with whatever outcome-gate decision is
+        produced. AC-3's contract — that the enriched description names
+        the specialists and counts — is preserved on the
+        `agent_invocations_advisory` issue (severity=warning, category
+        renamed from _violation to _advisory).
+        """
         from guardkit.orchestrator.quality_gates.coach_validator import (
             CoachValidator,
         )
@@ -420,20 +428,32 @@ class TestCoachValidatorEnrichedDescription:
             task=task_payload,
         )
 
-        # The violation gate should have returned feedback, not approval.
-        assert decision.decision == "feedback"
-        # First issue must carry the enriched description (AC-3).
-        issue = decision.issues[0]
-        assert issue["category"] == "agent_invocations_violation"
+        # F3c: the advisory rides along regardless of the outcome-gate
+        # decision (approve or feedback). Locate it by category — there
+        # may be other issues from outcome gates (test failure, missing
+        # criteria, etc.) when the synthetic fixture lacks full data.
+        advisory_issues = [
+            i for i in (decision.issues or [])
+            if i.get("category") == "agent_invocations_advisory"
+        ]
+        assert advisory_issues, (
+            f"Expected an agent_invocations_advisory issue, got "
+            f"categories={[i.get('category') for i in (decision.issues or [])]}"
+        )
+        issue = advisory_issues[0]
+        assert issue.get("severity") == "warning"
         desc = issue["description"]
-        # Cites expected/actual counts (AC-3).
+        # Cites expected/actual counts (AC-3 preserved).
         assert "1 of 3" in desc or "1 of" in desc
-        # Names Phase 4 and Phase 5 specialists (AC-3).
+        # Names Phase 4 and Phase 5 specialists (AC-3 preserved).
         assert "test-orchestrator" in desc
         assert "code-reviewer" in desc
         # Phase descriptions included.
         assert "Testing" in desc
         assert "Code Review" in desc
+        # Old blocking category must NOT appear — F3c stops producing it.
+        categories = {i.get("category") for i in (decision.issues or [])}
+        assert "agent_invocations_violation" not in categories
 
 
 # ---------------------------------------------------------------------------

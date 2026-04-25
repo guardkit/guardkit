@@ -173,12 +173,14 @@ class TestCoachRejectsOnViolation:
         )
         return results_path
 
-    def test_coach_rejects_violation_naming_missing_phases(
+    def test_violation_surfaces_as_advisory_not_blocker(
         self, worktree: Path
     ):
-        # Player report missing code-reviewer (Phase 5) and test-agent
-        # (Phase 4) — the scenario called out in the task's integration
-        # test requirement.
+        # TASK-REV-F6E1 F3c: a "violation" status no longer early-returns
+        # with feedback. The Coach builds an `agent_invocations_advisory`
+        # issue (severity=warning) and threads it through whatever
+        # decision the outcome gates produce. Process drift stays
+        # visible; outcome verification is no longer short-circuited.
         violation_block = {
             "status": "violation",
             "expected_phases": 3,
@@ -195,18 +197,119 @@ class TestCoachRejectsOnViolation:
             task={"id": TASK_ID, "acceptance_criteria": ["trivial AC"]},
         )
 
-        assert result.decision == "feedback"
-        assert result.issues, "feedback decision must carry issues"
+        # Coach proceeds past the gate. Either outcome gates approve
+        # (decision=approve, advisory carried in issues) or they produce
+        # their own feedback (decision=feedback, advisory prepended). The
+        # gate is no longer the *cause* of any feedback, so the
+        # blocking-shape category must not appear.
+        categories = {i.get("category") for i in (result.issues or [])}
+        assert "agent_invocations_violation" not in categories, (
+            "F3c: agent_invocations_validation must not produce a "
+            "blocking 'agent_invocations_violation' category any more — "
+            "it surfaces as 'agent_invocations_advisory' (warning)"
+        )
+        assert "agent_invocations_advisory" in categories, (
+            "F3c: violation status must surface as an advisory issue"
+        )
 
-        categories = {i.get("category") for i in result.issues}
-        assert "agent_invocations_violation" in categories
-
-        # Feedback must name the missing phases so the Player can
-        # correct course.
-        joined = " ".join(
-            i.get("description", "") for i in result.issues
-        ) + " " + (result.rationale or "")
+        # The advisory must still name the missing phases so the
+        # Player has actionable guidance for the next turn.
+        advisory = next(
+            i for i in result.issues
+            if i.get("category") == "agent_invocations_advisory"
+        )
+        assert advisory.get("severity") == "warning"
+        joined = advisory.get("description", "")
         assert "4" in joined and "5" in joined
+        assert advisory.get("details", {}).get("missing_phases") == ["4", "5"]
+
+    def test_violation_with_clean_outcome_gates_approves(
+        self, worktree: Path, monkeypatch
+    ):
+        # TASK-REV-F6E1 F3c regression fixture: when agent_invocations
+        # reports violation BUT outcome gates pass (tests pass, AC met,
+        # no zero-test anomaly, no BDD failure), Coach must approve. The
+        # advisory rides along in result.issues as a non-blocking
+        # warning. This is the exact shape forge-run-6 was hitting and
+        # the gate was wrongly short-circuiting.
+        from guardkit.orchestrator.quality_gates.coach_validator import (
+            QualityGateStatus,
+            IndependentTestResult,
+            RequirementsValidation,
+        )
+
+        # Seed: violation block + outcome-clean task_work_results.
+        violation_block = {
+            "status": "violation",
+            "expected_phases": 3,
+            "actual_invocations": 2,
+            "missing_phases": ["3"],
+            "violation_message": "missing phases: Implementation",
+        }
+        self._seed_results(worktree, violation_block)
+
+        # Force the outcome gates to behave as "all clean" so the test
+        # pins the gate-routing behaviour, not the verifier internals.
+        # all_gates_passed is computed in __post_init__ from the
+        # individual flags + required flags — no need to pass it.
+        clean_gates = QualityGateStatus(
+            tests_passed=True,
+            coverage_met=True,
+            arch_review_passed=True,
+            plan_audit_passed=True,
+            tests_required=True,
+            coverage_required=True,
+            arch_review_required=False,
+            plan_audit_required=False,
+        )
+        clean_tests = IndependentTestResult(
+            tests_passed=True,
+            test_command="pytest -q",
+            test_output_summary="all tests passed",
+            duration_seconds=1.0,
+        )
+        clean_reqs = RequirementsValidation(
+            criteria_total=1,
+            criteria_met=1,
+            all_criteria_met=True,
+            missing=[],
+        )
+        monkeypatch.setattr(
+            CoachValidator,
+            "verify_quality_gates",
+            lambda self, *a, **kw: clean_gates,
+        )
+        monkeypatch.setattr(
+            CoachValidator,
+            "run_independent_tests",
+            lambda self, *a, **kw: clean_tests,
+        )
+        monkeypatch.setattr(
+            CoachValidator,
+            "validate_requirements",
+            lambda self, *a, **kw: clean_reqs,
+        )
+
+        validator = CoachValidator(worktree_path=str(worktree))
+        result = validator.validate(
+            task_id=TASK_ID,
+            turn=1,
+            task={"id": TASK_ID, "acceptance_criteria": ["trivial AC"]},
+        )
+
+        # The headline: outcome-clean + process-violation → APPROVE.
+        # Pre-F3c this asserted feedback. F3c flips the polarity.
+        assert result.decision == "approve", (
+            f"F3c: violation + outcome-clean must approve, got "
+            f"{result.decision} with rationale={result.rationale!r} "
+            f"and issues={[i.get('category') for i in (result.issues or [])]}"
+        )
+
+        # Advisory must be present so process drift stays visible to
+        # the Player even on approval.
+        categories = {i.get("category") for i in (result.issues or [])}
+        assert "agent_invocations_advisory" in categories
+        assert "agent_invocations_violation" not in categories
 
     def test_coach_does_not_reject_on_passed_block(self, worktree: Path):
         passed_block = {

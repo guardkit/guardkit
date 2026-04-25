@@ -642,15 +642,37 @@ class CoachValidator:
                 context_used=context,
             )
 
-        # 1.5. Agent-invocations gate (TASK-FIX-RWOP1.3.1).
+        # 1.5. Agent-invocations gate (TASK-FIX-RWOP1.3.1, TASK-REV-F6E1 F3c).
+        #
         # AgentInvoker._write_task_work_results folds
         # validate_agent_invocations into the producer path and persists the
-        # verdict under "agent_invocations_validation". A "violation" status
-        # means the Player emitted results for phases it never actually
-        # invoked — task-blocking because the rest of the Player report is
-        # no longer trustworthy. "validator_error" does not block: the
-        # validator's own failure shouldn't stop Coach from evaluating the
-        # other gates.
+        # verdict under "agent_invocations_validation".
+        #
+        # Pre-F3c (RWOP1.3.1 → forge-run-6): a "violation" status caused this
+        # method to early-return with feedback, short-circuiting positions
+        # 2–4 (quality_gates, independent_tests, AC verification). The
+        # consequence — observed across forge-run-3/4/5/6 — was that the
+        # Coach never once ran AC verification when the gate fired, so
+        # the recent BDD-AC bridge work could not actually deliver its
+        # quality signal.
+        #
+        # Post-F3c: a "violation" is captured as a non-blocking advisory
+        # (severity=warning, category=agent_invocations_advisory) and
+        # threaded into the issues list of whatever decision the
+        # outcome-based gates produce. The Player still sees the process
+        # observation ("you should invoke X via Task tool") so structural
+        # drift toward Player-inline implementation stays visible — but
+        # the gate no longer prevents the outcome-checks from running.
+        #
+        # Stall classifiers that match `category == "agent_invocations_violation"`
+        # (autobuild stall sub-typing) intentionally no longer trigger:
+        # this gate stops being a stall driver. Promote back to blocker
+        # only after evidence shows the advisory-mode signal is being
+        # systematically ignored AND that absence correlates with quality
+        # drops in AC verification. See
+        # docs/reviews/forge-run-6-fix-or-revert/TASK-REV-F6E1-decision-report.md
+        # § Revision 3 for the diagnostic and rationale.
+        agent_invocations_advisory: Optional[Dict[str, Any]] = None
         agent_invocations_validation = task_work_results.get(
             "agent_invocations_validation"
         )
@@ -706,36 +728,37 @@ class CoachValidator:
                 if actual_invocations_val is not None
                 else "?"
             )
-            logger.warning(
-                f"Agent-invocations gate rejected {task_id}: "
-                f"missing phases {missing_phases_str}"
+            logger.info(
+                f"Agent-invocations advisory for {task_id}: "
+                f"missing phases {missing_phases_str} "
+                f"(non-blocking; outcome gates will run)"
             )
-            enriched_description = (
-                f"Task-work produced a report with {actual_str} of "
-                f"{expected_str} required agent invocations. "
+            advisory_description = (
+                f"Advisory (non-blocking): task-work produced a report with "
+                f"{actual_str} of {expected_str} expected agent invocations. "
                 f"Missing phases: {missing_phases_with_names}. "
-                f"Invoke these agents via the Task tool before re-emitting "
-                f"the report:\n{specialist_block}"
+                f"Consider invoking these agents via the Task tool to "
+                f"strengthen stack-specific quality:\n{specialist_block}"
             )
-            return self._feedback_result(
-                task_id=task_id,
-                turn=turn,
-                issues=[{
-                    "severity": "must_fix",
-                    "category": "agent_invocations_violation",
-                    "description": enriched_description,
-                    "details": {
-                        "missing_phases": missing_phases_sorted,
-                        "expected_phases": expected_phases_val,
-                        "actual_invocations": actual_invocations_val,
-                    },
-                }],
-                rationale=(
-                    f"Agent-invocations protocol violation: missing phases "
-                    f"{missing_phases_str}"
-                ),
-                context_used=context,
-            )
+            agent_invocations_advisory = {
+                "severity": "warning",
+                "category": "agent_invocations_advisory",
+                "description": advisory_description,
+                "details": {
+                    "missing_phases": missing_phases_sorted,
+                    "expected_phases": expected_phases_val,
+                    "actual_invocations": actual_invocations_val,
+                },
+            }
+
+        # F3c helper: prepend the advisory to any issues list so process
+        # observations ride along with whatever outcome-based decision
+        # downstream gates produce.
+        advisory_issues: List[Dict[str, Any]] = (
+            [agent_invocations_advisory]
+            if agent_invocations_advisory is not None
+            else []
+        )
 
         # 2. Verify quality gates passed with profile
         gates_status = self.verify_quality_gates(
@@ -750,6 +773,7 @@ class CoachValidator:
                 gates=gates_status,
                 task_work_results=task_work_results,
                 context_used=context,
+                extra_issues=advisory_issues,
             )
 
         # 3. Independent test verification (trust but verify)
@@ -922,7 +946,7 @@ class CoachValidator:
                     turn=turn,
                     quality_gates=gates_status,
                     independent_tests=test_result,
-                    issues=[{
+                    issues=advisory_issues + [{
                         "severity": "must_fix",
                         "category": "test_verification",
                         "description": description,
@@ -945,7 +969,7 @@ class CoachValidator:
                 quality_gates=gates_status,
                 independent_tests=test_result,
                 requirements=requirements,
-                issues=[{
+                issues=advisory_issues + [{
                     "severity": "must_fix",
                     "category": "missing_requirement",
                     "description": f"Not all acceptance criteria met",
@@ -972,7 +996,7 @@ class CoachValidator:
                 quality_gates=gates_status,
                 independent_tests=test_result,
                 requirements=requirements,
-                issues=zero_test_issues,
+                issues=advisory_issues + zero_test_issues,
                 rationale=(
                     "Zero-test anomaly detected: quality gates reported as passed but "
                     "no tests were executed. Tests are required for this task type. "
@@ -1018,7 +1042,7 @@ class CoachValidator:
                 quality_gates=gates_status,
                 independent_tests=test_result,
                 requirements=requirements,
-                issues=bdd_blocking + bdd_non_blocking,
+                issues=advisory_issues + bdd_blocking + bdd_non_blocking,
                 rationale=(
                     "BDD scenarios failed: "
                     f"{task_work_results.get('bdd_results', {}).get('scenarios_failed', 0)} "
@@ -1027,9 +1051,12 @@ class CoachValidator:
                 context_used=context,
             )
 
-        # Combine all non-blocking issues
+        # Combine all non-blocking issues. The agent_invocations advisory
+        # (F3c) rides along here on the approval path so the Player still
+        # sees the process observation even when outcome gates approve.
         all_issues = (
-            zero_test_issues
+            advisory_issues
+            + zero_test_issues
             + seam_test_issues
             + consumer_context_issues
             + assumption_issues
@@ -4265,6 +4292,7 @@ class CoachValidator:
         gates: QualityGateStatus,
         task_work_results: Dict[str, Any],
         context_used: Optional[str] = None,
+        extra_issues: Optional[List[Dict[str, Any]]] = None,
     ) -> CoachValidationResult:
         """
         Create feedback result from failed quality gates.
@@ -4282,13 +4310,18 @@ class CoachValidator:
             Quality gate status with requirement flags
         task_work_results : Dict[str, Any]
             Task-work results for additional context
+        extra_issues : Optional[List[Dict[str, Any]]]
+            Issues to prepend to the gate-derived issues list. Used by
+            F3c to thread the agent_invocations advisory through gate
+            failures so process observations ride along with outcome
+            feedback.
 
         Returns
         -------
         CoachValidationResult
             Feedback result with gate-specific issues
         """
-        issues = []
+        issues: List[Dict[str, Any]] = list(extra_issues) if extra_issues else []
 
         # Extract from quality_gates for test details
         quality_gates = task_work_results.get("quality_gates", {})
