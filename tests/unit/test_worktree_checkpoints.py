@@ -370,6 +370,122 @@ def test_find_last_passing_checkpoint_none_passing(checkpoint_manager, mock_git_
 
 
 # ============================================================================
+# Prior-Run Checkpoint Filtering Tests (TASK-FIX-F4A3)
+# ============================================================================
+#
+# These tests verify that checkpoints loaded from a prior orchestration session
+# (e.g. on [R]esume) are excluded from the consecutive-failures threshold in
+# should_rollback(). Without this filter, the first orchestrator turn of a
+# resumed run would short-circuit to unrecoverable_stall whenever the prior
+# run had left ≥3 failing checkpoints in checkpoints.json — which corrupts
+# transcripts (forge-run-4) by suppressing the enriched
+# coach_agent_invocations_stall block that would otherwise fire.
+
+
+def test_should_rollback_ignores_prior_run_failures(checkpoint_manager):
+    """3 prior-run failing checkpoints + 0 current-run → no rollback.
+
+    AC: On a resumed worktree where checkpoints.json already contains 3
+    failing checkpoints from a prior run, the first orchestrator turn of
+    the new run does not trigger context-pollution short-circuit.
+    """
+    checkpoint_manager.checkpoints = [
+        Checkpoint(turn=1, commit_hash="p1", timestamp="t", tests_passed=False,
+                   test_count=10, message="prior", from_prior_run=True),
+        Checkpoint(turn=2, commit_hash="p2", timestamp="t", tests_passed=False,
+                   test_count=10, message="prior", from_prior_run=True),
+        Checkpoint(turn=3, commit_hash="p3", timestamp="t", tests_passed=False,
+                   test_count=10, message="prior", from_prior_run=True),
+    ]
+
+    assert checkpoint_manager.should_rollback() is False
+
+
+def test_should_rollback_fires_on_current_run_failures_after_prior_run(checkpoint_manager):
+    """3 prior-run failing + 3 current-run failing → rollback fires.
+
+    AC: If the new run also produces 3 consecutive failing checkpoints,
+    pollution detection still fires (no false negatives).
+    """
+    checkpoint_manager.checkpoints = [
+        # Prior run (excluded from threshold)
+        Checkpoint(turn=1, commit_hash="p1", timestamp="t", tests_passed=False,
+                   test_count=10, message="prior", from_prior_run=True),
+        Checkpoint(turn=2, commit_hash="p2", timestamp="t", tests_passed=False,
+                   test_count=10, message="prior", from_prior_run=True),
+        Checkpoint(turn=3, commit_hash="p3", timestamp="t", tests_passed=False,
+                   test_count=10, message="prior", from_prior_run=True),
+        # Current run (counts toward threshold)
+        Checkpoint(turn=4, commit_hash="c1", timestamp="t", tests_passed=False,
+                   test_count=10, message="current", from_prior_run=False),
+        Checkpoint(turn=5, commit_hash="c2", timestamp="t", tests_passed=False,
+                   test_count=10, message="current", from_prior_run=False),
+        Checkpoint(turn=6, commit_hash="c3", timestamp="t", tests_passed=False,
+                   test_count=10, message="current", from_prior_run=False),
+    ]
+
+    assert checkpoint_manager.should_rollback() is True
+
+
+def test_should_rollback_pure_current_run_failures_unchanged(checkpoint_manager):
+    """0 prior-run + 3 current-run failing → rollback fires (existing behaviour).
+
+    AC: Existing behaviour preserved when no prior-run checkpoints are present.
+    """
+    checkpoint_manager.checkpoints = [
+        Checkpoint(turn=1, commit_hash="c1", timestamp="t", tests_passed=False,
+                   test_count=10, message="current", from_prior_run=False),
+        Checkpoint(turn=2, commit_hash="c2", timestamp="t", tests_passed=False,
+                   test_count=10, message="current", from_prior_run=False),
+        Checkpoint(turn=3, commit_hash="c3", timestamp="t", tests_passed=False,
+                   test_count=10, message="current", from_prior_run=False),
+    ]
+
+    assert checkpoint_manager.should_rollback() is True
+
+
+def test_load_checkpoints_tags_loaded_entries_as_prior_run(temp_worktree, mock_git_executor):
+    """Checkpoints loaded from disk at session-start are tagged from_prior_run=True.
+
+    Back-compat: old checkpoints.json without the field still loads correctly
+    (the field defaults to False on the dataclass, then _load_checkpoints
+    overrides to True for everything it reads).
+    """
+    checkpoints_file = (
+        temp_worktree / ".guardkit" / "autobuild" / "TASK-001" / "checkpoints.json"
+    )
+    checkpoints_file.parent.mkdir(parents=True, exist_ok=True)
+    # Old-format JSON: no `from_prior_run` field.
+    with open(checkpoints_file, "w") as f:
+        json.dump(
+            {
+                "task_id": "TASK-001",
+                "checkpoints": [
+                    {
+                        "turn": 1,
+                        "commit_hash": "abc",
+                        "timestamp": "t",
+                        "tests_passed": False,
+                        "test_count": 10,
+                        "message": "old",
+                    },
+                ],
+                "last_updated": "t",
+            },
+            f,
+        )
+
+    manager = WorktreeCheckpointManager(
+        worktree_path=temp_worktree,
+        task_id="TASK-001",
+        git_executor=mock_git_executor,
+    )
+
+    assert len(manager.checkpoints) == 1
+    assert manager.checkpoints[0].from_prior_run is True
+
+
+# ============================================================================
 # Persistence Tests
 # ============================================================================
 

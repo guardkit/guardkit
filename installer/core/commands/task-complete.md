@@ -294,39 +294,61 @@ Read `.guardkit/graphiti.yaml` — if file exists and `enabled: true`, proceed t
 
 **IF** Graphiti is enabled:
 
-Write a temporary file with the task outcome, then seed via CLI:
+Use the dedicated `capture-outcome` subcommand which wraps the
+`capture_task_outcome` Python API and writes to the `task_outcomes` group
+with structured fields (TASK-FIX-CLI7). The subcommand parses the just-
+moved task file directly — no temp files needed:
 
 ```bash
-# Write outcome to temp file
-cat > /tmp/guardkit-task-outcome-{task_id}.md << 'OUTCOME_EOF'
-# Task Completion: {task_id}
+# Frontmatter-driven (preferred): pulls task_id, title, requirements,
+# summary, lessons, related ADRs from the task file's frontmatter +
+# `## Implementation Summary` / `## Implementation Notes` / `## Notes`
+# sections. CLI flags override anything that's parsed.
+guardkit graphiti capture-outcome \
+  --from-task-file tasks/completed/{YYYY-MM}/{task_id}-{slug}.md \
+  --timeout 300
+```
 
-{task_id}: {title}. Complexity: {complexity}/10. Approach: {approach}. Result: {outcome}. Lessons: {lessons}.
-OUTCOME_EOF
+The `--timeout 300` sizes the per-episode timeout for local-LLM entity
+extraction (60-300 s typical on local LLMs; the default 120 s is the
+GraphitiClient internal default, which is too tight for vLLM/ollama).
 
-# Seed to knowledge graph via CLI
-guardkit graphiti add-context /tmp/guardkit-task-outcome-{task_id}.md \
-  --group task_outcomes
+**IF** the task file lacks an `## Implementation Summary` section, fall
+back to the explicit-flag form:
 
-# Clean up temp file
-rm -f /tmp/guardkit-task-outcome-{task_id}.md
+```bash
+guardkit graphiti capture-outcome \
+  --task-id {task_id} \
+  --task-title "{title}" \
+  --summary "{one-paragraph outcome summary}" \
+  --approach "{approach used}" \
+  --lessons "{lesson 1}" --lessons "{lesson 2}" \
+  --related-adr {parent_review_or_adr_id} \
+  --timeout 300
 ```
 
 **IF** CLI write succeeds:
+The subcommand prints:
 ```
-DISPLAY: "[Graphiti] Task outcome captured via CLI"
+✅ Outcome captured: OUT-XXXXXXXX
+   Group: task_outcomes
 ```
+plus the inner client's `Episode profile [...]: nodes=N, edges=M,
+invalidated=K` log line. A non-zero `nodes`/`edges` count confirms the
+LLM extraction actually ran (not just a queued raw episode).
 
-**IF** CLI write fails:
+**IF** Graphiti is unavailable or disabled (default non-blocking
+behaviour):
 ```
-DISPLAY: "[Graphiti] Warning: Could not capture task outcome via CLI ({error})"
-         "  (Non-critical — task completion continues)"
+DISPLAY (yellow): "Graphiti unavailable or disabled — outcome NOT captured (no write to task_outcomes group)"
+                   "  (use --strict to exit non-zero in this case)"
 ```
+Task completion proceeds. To make this case fail-fast (e.g. in CI), pass
+`--strict` to the subcommand.
 
 **IF** Graphiti is not enabled (config missing or `enabled: false`):
-```
-DISPLAY: "[Graphiti] Knowledge capture skipped (not configured)"
-```
+The subcommand reaches the same "unavailable or disabled" branch above
+and emits the same warning. Task completion proceeds.
 
 ### Step 3: Summary
 

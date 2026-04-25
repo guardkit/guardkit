@@ -1,0 +1,93 @@
+id: FEAT-AB59
+name: Orchestrator-side specialist invocation for AutoBuild Phases 4 and 5
+description: Move test-orchestrator (Phase 4) and code-reviewer (Phase 5) invocation
+  from Player's discretion to AutoBuildOrchestrator's deterministic turn loop. Refuted
+  Player-prompt fix-class (TASK-FIX-7A08) replaced with structural orchestrator-side
+  ownership. F4A1 follow-up; sibling of completed TASK-DIAG-F4A2 and TASK-FIX-F4A3.
+created: '2026-04-25T07:43:59.854228'
+status: planned
+complexity: 6
+estimated_tasks: 7
+tasks:
+- id: TASK-OSI-001
+  name: Module skeleton specialist_invocations.py
+  file_path: tasks/backlog/orchestrator-side-specialist-invocation/TASK-OSI-001-module-skeleton-specialist-invocations.md
+  complexity: 2
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 22
+- id: TASK-OSI-002
+  name: Validation gate refactor credit orchestrator-invoked phases
+  file_path: tasks/backlog/orchestrator-side-specialist-invocation/TASK-OSI-002-validation-gate-refactor.md
+  complexity: 4
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-OSI-003
+  name: Prompt trim remove Phase 4/5 instructions from Player protocol
+  file_path: tasks/backlog/orchestrator-side-specialist-invocation/TASK-OSI-003-prompt-trim-phase-4-5.md
+  complexity: 3
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+- id: TASK-OSI-004
+  name: test-orchestrator orchestrator-side runner
+  file_path: tasks/backlog/orchestrator-side-specialist-invocation/TASK-OSI-004-test-orchestrator-runner.md
+  complexity: 5
+  dependencies:
+  - TASK-OSI-001
+  - TASK-OSI-002
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-OSI-005
+  name: code-reviewer orchestrator-side runner
+  file_path: tasks/backlog/orchestrator-side-specialist-invocation/TASK-OSI-005-code-reviewer-runner.md
+  complexity: 5
+  dependencies:
+  - TASK-OSI-004
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-OSI-006
+  name: Turn-loop wiring insert orchestrator Phase 4/5 in autobuild.py
+  file_path: tasks/backlog/orchestrator-side-specialist-invocation/TASK-OSI-006-turn-loop-wiring.md
+  complexity: 6
+  dependencies:
+  - TASK-OSI-004
+  - TASK-OSI-005
+  - TASK-OSI-003
+  - TASK-OSI-002
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 113
+- id: TASK-OSI-007
+  name: Stub-SDK harness and behavioural verification tests
+  file_path: tasks/backlog/orchestrator-side-specialist-invocation/TASK-OSI-007-stub-sdk-harness-and-tests.md
+  complexity: 5
+  dependencies:
+  - TASK-OSI-006
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+orchestration:
+  parallel_groups:
+  - - TASK-OSI-001
+    - TASK-OSI-002
+    - TASK-OSI-003
+  - - TASK-OSI-004
+  - - TASK-OSI-005
+  - - TASK-OSI-006
+  - - TASK-OSI-007
+  estimated_duration_minutes: 443
+  recommended_parallel: 3

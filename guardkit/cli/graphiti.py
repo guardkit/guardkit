@@ -6,6 +6,7 @@ Commands:
 - graphiti status: Show Graphiti connection and seeding status
 - graphiti verify: Run test queries to verify seeded knowledge
 - graphiti add-context: Add context from files to Graphiti
+- graphiti capture-outcome: Capture a task-completion outcome to task_outcomes
 
 Example:
     $ guardkit graphiti seed
@@ -13,12 +14,14 @@ Example:
     $ guardkit graphiti status
     $ guardkit graphiti verify
     $ guardkit graphiti add-context docs/architecture/
+    $ guardkit graphiti capture-outcome --from-task-file tasks/completed/2026-04/TASK-XXX.md
 """
 
 import asyncio
 import json
 import logging
 import os
+import re
 import time
 import warnings
 from pathlib import Path
@@ -28,7 +31,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from guardkit.knowledge.graphiti_client import GraphitiClient, GraphitiConfig
+from guardkit.knowledge.graphiti_client import GraphitiClient, GraphitiConfig, get_graphiti
 from guardkit.knowledge.config import load_graphiti_config, GraphitiSettings
 
 
@@ -1991,3 +1994,456 @@ def list_knowledge(category: str):
         guardkit graphiti list all
     """
     _run_async(_cmd_list(category))
+
+
+# ============================================================================
+# capture-outcome: Task outcome write to `task_outcomes` group (TASK-FIX-CLI7)
+# ============================================================================
+#
+# Purpose: CLI surface for the `task_outcomes` write path. Closes the gap
+# documented in installer/core/commands/task-complete.md where the spec
+# referenced a non-existent `add-context --group task_outcomes` flag.
+# Wraps `guardkit.knowledge.outcome_manager.capture_task_outcome` (the same
+# Python entry point the MCP `add_memory` tool would route to internally).
+
+
+_TASK_ID_RE = re.compile(r"^TASK-[A-Z0-9.\-]+$")
+
+
+def _parse_task_file_for_outcome(path: Path) -> dict:
+    """Best-effort frontmatter+body parse for `--from-task-file`.
+
+    Extracts the structured fields `capture_task_outcome` needs from a
+    GuardKit task file. Missing sections fall back to sensible defaults;
+    explicit CLI flags always override what's parsed.
+
+    Returns a dict with keys: ``task_id``, ``task_title``, ``requirements``,
+    ``summary``, ``approach_used``, ``lessons_learned``, ``feature_id``,
+    ``related_adr_ids``, ``complexity``.
+    """
+    import yaml
+
+    raw = path.read_text(encoding="utf-8")
+    parts = raw.split("---", 2)
+    if len(parts) < 3:
+        raise ValueError(
+            f"{path} is not a valid task file: missing YAML frontmatter delimiters"
+        )
+
+    try:
+        front = yaml.safe_load(parts[1]) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(f"{path} has invalid YAML frontmatter: {exc}")
+    body = parts[2]
+
+    result: dict = {
+        "task_id": front.get("id"),
+        "task_title": front.get("title"),
+        "complexity": front.get("complexity"),
+        "feature_id": front.get("feature_id"),
+        "requirements": None,
+        "summary": None,
+        "approach_used": None,
+        "lessons_learned": [],
+        "related_adr_ids": [],
+    }
+
+    # Build related_adr_ids from frontmatter `parent_review` and `related_to`.
+    related = []
+    parent = front.get("parent_review")
+    if isinstance(parent, str) and _TASK_ID_RE.match(parent):
+        related.append(parent)
+    related_to = front.get("related_to") or []
+    if isinstance(related_to, list):
+        for item in related_to:
+            if isinstance(item, str) and _TASK_ID_RE.match(item) and item not in related:
+                related.append(item)
+    result["related_adr_ids"] = related
+
+    # Section extraction: split body on `## ` headings, keep a {heading: text} map.
+    sections: dict = {}
+    current_heading = None
+    current_lines: list = []
+    for line in body.splitlines():
+        if line.startswith("## "):
+            if current_heading is not None:
+                sections[current_heading] = "\n".join(current_lines).strip()
+            current_heading = line[3:].strip()
+            current_lines = []
+        else:
+            if current_heading is not None:
+                current_lines.append(line)
+    if current_heading is not None:
+        sections[current_heading] = "\n".join(current_lines).strip()
+
+    # requirements: prefer ## Why, then ## Description, then title
+    requirements_text = sections.get("Why") or sections.get("Description") or ""
+    if requirements_text:
+        # Collapse to a single-paragraph string (capped to keep episode tidy)
+        result["requirements"] = " ".join(requirements_text.split())[:2000]
+
+    # summary: prefer ## Implementation Summary, then first paragraph of ## Description
+    summary_text = sections.get("Implementation Summary") or sections.get("Description") or ""
+    if summary_text:
+        # First non-empty paragraph
+        paragraphs = [p.strip() for p in summary_text.split("\n\n") if p.strip()]
+        if paragraphs:
+            result["summary"] = " ".join(paragraphs[0].split())[:2000]
+
+    # approach_used: prefer ## Implementation Notes
+    approach_text = sections.get("Implementation Notes") or ""
+    if approach_text:
+        paragraphs = [p.strip() for p in approach_text.split("\n\n") if p.strip()]
+        if paragraphs:
+            result["approach_used"] = " ".join(paragraphs[0].split())[:1500]
+
+    # lessons_learned: bullet items from ## Notes (one bullet per lesson)
+    notes_text = sections.get("Notes") or ""
+    lessons: list = []
+    for raw_line in notes_text.splitlines():
+        stripped = raw_line.strip()
+        if stripped.startswith("- "):
+            lessons.append(stripped[2:].strip())
+    result["lessons_learned"] = lessons
+
+    return result
+
+
+async def _cmd_capture_outcome(
+    from_task_file: Optional[str],
+    task_id: Optional[str],
+    task_title: Optional[str],
+    requirements: Optional[str],
+    summary: Optional[str],
+    success: bool,
+    approach: Optional[str],
+    patterns: tuple,
+    lessons: tuple,
+    problems: tuple,
+    tests_written: Optional[int],
+    coverage: Optional[float],
+    review_cycles: Optional[int],
+    feature_id: Optional[str],
+    related_adr: tuple,
+    timeout: float,
+    dry_run: bool,
+    strict: bool,
+    verbose: bool,
+) -> None:
+    """Async implementation of capture-outcome command."""
+    from datetime import datetime
+    from guardkit.knowledge.outcome_manager import capture_task_outcome
+    from guardkit.knowledge.entities.outcome import OutcomeType
+
+    # Surface the inner client's "[Graphiti] Captured ..." and
+    # "Episode profile [...]: nodes=N, edges=M" log lines so the operator can
+    # tell a real write apart from a silent no-op (the Python API returns the
+    # same outcome_id in both cases).
+    if verbose:
+        log_level = logging.DEBUG
+    else:
+        log_level = logging.INFO
+    for name in (
+        "guardkit.knowledge.graphiti_client",
+        "guardkit.knowledge.outcome_manager",
+    ):
+        logger_obj = logging.getLogger(name)
+        logger_obj.setLevel(log_level)
+        if not logger_obj.handlers:
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+            logger_obj.addHandler(handler)
+            logger_obj.propagate = False
+
+    # Step 1: Load task file if --from-task-file given (CLI flags override
+    # parsed values, never the reverse).
+    parsed: dict = {}
+    if from_task_file:
+        try:
+            parsed = _parse_task_file_for_outcome(Path(from_task_file))
+        except (FileNotFoundError, ValueError) as exc:
+            console.print(f"[red]Error reading task file: {exc}[/red]")
+            raise SystemExit(2)
+
+    task_id = task_id or parsed.get("task_id")
+    task_title = task_title or parsed.get("task_title")
+    requirements = requirements or parsed.get("requirements")
+    summary = summary or parsed.get("summary")
+    approach = approach or parsed.get("approach_used")
+    feature_id = feature_id or parsed.get("feature_id")
+
+    lessons_list = list(lessons) if lessons else parsed.get("lessons_learned") or []
+    related_adr_list = list(related_adr) if related_adr else parsed.get("related_adr_ids") or []
+    patterns_list = list(patterns) if patterns else None
+    problems_list = list(problems) if problems else None
+
+    # Validate required fields
+    missing = []
+    if not task_id:
+        missing.append("--task-id (or --from-task-file with `id` in frontmatter)")
+    if not task_title:
+        missing.append("--task-title (or --from-task-file with `title` in frontmatter)")
+    if not summary:
+        missing.append(
+            "--summary (or --from-task-file with `## Implementation Summary` "
+            "or `## Description` section)"
+        )
+    if missing:
+        console.print(f"[red]Error: missing required field(s): {', '.join(missing)}[/red]")
+        raise SystemExit(2)
+
+    # Fall back: use title as requirements when neither flag nor task file provided one.
+    if not requirements:
+        requirements = task_title
+
+    # Dry-run: print what *would* be sent and exit 0.
+    if dry_run:
+        console.print("[yellow]DRY RUN — would capture outcome (group: task_outcomes):[/yellow]")
+        console.print(f"  task_id:       {task_id}")
+        console.print(f"  task_title:    {task_title}")
+        console.print(f"  success:       {success}")
+        console.print(f"  summary:       {(summary or '')[:120]}{'...' if summary and len(summary) > 120 else ''}")
+        console.print(f"  approach:      {(approach or '')[:120]}{'...' if approach and len(approach) > 120 else ''}")
+        console.print(f"  patterns:      {patterns_list or '(none)'}")
+        console.print(f"  lessons:       {len(lessons_list)} item(s)")
+        console.print(f"  problems:      {len(problems_list or [])} item(s)")
+        console.print(f"  tests_written: {tests_written}")
+        console.print(f"  coverage:      {coverage}")
+        console.print(f"  feature_id:    {feature_id}")
+        console.print(f"  related_adrs:  {related_adr_list or '(none)'}")
+        console.print(f"  timeout:       {timeout}s")
+        return
+
+    # Step 2: get the factory-managed thread-local client and initialize it.
+    #
+    # IMPORTANT: must NOT call _get_client_and_config() here. That helper
+    # builds a fresh GraphitiClient outside the factory's thread-local
+    # store. capture_task_outcome() internally calls get_graphiti() which
+    # always goes through the factory — so the inner write would land on
+    # a *different* (uninitialised) client instance and silently no-op,
+    # while this CLI happily prints "captured" because the Python API
+    # returns the generated outcome_id even when degraded. Sharing the
+    # factory client closes that gap.
+    client = get_graphiti()
+    if client is None:
+        msg = (
+            "Graphiti unavailable (config missing or disabled) — outcome NOT "
+            "captured (no write to task_outcomes group)"
+        )
+        if strict:
+            console.print(f"[red]{msg}[/red]")
+            raise SystemExit(1)
+        console.print(f"[yellow]{msg}[/yellow]")
+        console.print("[dim]  (use --strict to exit non-zero in this case)[/dim]")
+        return
+
+    if timeout is not None:
+        client.default_timeout_override = float(timeout)
+
+    try:
+        initialized = await client.initialize()
+    except Exception as exc:
+        console.print(f"[red]Error connecting to Graphiti: {exc}[/red]")
+        raise SystemExit(1)
+
+    try:
+        if not initialized or not client.enabled:
+            msg = (
+                "Graphiti unavailable or disabled — outcome NOT captured "
+                "(no write to task_outcomes group)"
+            )
+            if strict:
+                console.print(f"[red]{msg}[/red]")
+                raise SystemExit(1)
+            console.print(f"[yellow]{msg}[/yellow]")
+            console.print("[dim]  (use --strict to exit non-zero in this case)[/dim]")
+            return
+
+        outcome_id = await capture_task_outcome(
+            outcome_type=OutcomeType.TASK_COMPLETED if success else OutcomeType.TASK_FAILED,
+            task_id=task_id,
+            task_title=task_title,
+            task_requirements=requirements,
+            success=success,
+            summary=summary,
+            approach_used=approach,
+            patterns_used=patterns_list,
+            problems_encountered=problems_list,
+            lessons_learned=lessons_list or None,
+            tests_written=tests_written,
+            test_coverage=coverage,
+            review_cycles=review_cycles,
+            completed_at=datetime.now(),
+            feature_id=feature_id,
+            related_adr_ids=related_adr_list or None,
+        )
+        console.print(f"[green]✅ Outcome captured: {outcome_id}[/green]")
+        console.print(f"   Group: task_outcomes")
+        console.print(
+            "[dim]   See log lines above for episode profile (nodes/edges) "
+            "or [Graphiti] timeout warning if extraction did not complete.[/dim]"
+        )
+    finally:
+        await client.close()
+
+
+@graphiti.command("capture-outcome")
+@click.option(
+    "--from-task-file",
+    type=click.Path(exists=True, dir_okay=False, readable=True),
+    default=None,
+    help=(
+        "Parse a GuardKit task .md file (frontmatter + sections) to populate "
+        "task_id, title, requirements, summary, lessons, etc. CLI flags override."
+    ),
+)
+@click.option("--task-id", default=None, help="Task ID (e.g. TASK-FIX-CLI7).")
+@click.option("--task-title", default=None, help="Human-readable task title.")
+@click.option(
+    "--requirements",
+    default=None,
+    help="Original task requirements/description. Falls back to title.",
+)
+@click.option("--summary", default=None, help="Brief summary of the outcome.")
+@click.option(
+    "--success/--failure",
+    default=True,
+    help="Whether the outcome was successful (TASK_COMPLETED vs TASK_FAILED).",
+)
+@click.option("--approach", default=None, help="Description of the approach taken.")
+@click.option(
+    "--patterns",
+    multiple=True,
+    help="Design pattern(s) applied. Repeat for multiple.",
+)
+@click.option(
+    "--lessons",
+    multiple=True,
+    help="Lesson(s) learned. Repeat for multiple.",
+)
+@click.option(
+    "--problems",
+    multiple=True,
+    help="Problem(s) encountered. Repeat for multiple.",
+)
+@click.option("--tests-written", type=int, default=None, help="Number of tests written.")
+@click.option("--coverage", type=float, default=None, help="Test coverage percentage (0-100).")
+@click.option("--review-cycles", type=int, default=None, help="Number of review cycles.")
+@click.option("--feature-id", default=None, help="Related feature ID (FEAT-XXX).")
+@click.option(
+    "--related-adr",
+    multiple=True,
+    help="Related ADR or task ID. Repeat for multiple.",
+)
+@click.option(
+    "--timeout",
+    type=float,
+    default=300.0,
+    show_default=True,
+    help=(
+        "Per-episode timeout in seconds. Local LLM extraction can take "
+        "60-300s; the default 300s is sized for that. Bump higher if "
+        "extraction times out (warning visible in stderr)."
+    ),
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would be written without contacting Graphiti.",
+)
+@click.option(
+    "--strict",
+    is_flag=True,
+    help=(
+        "Exit non-zero (1) if the Graphiti client is unavailable or disabled. "
+        "Default: exit 0 with a warning (matches task-complete.md non-blocking "
+        "semantics)."
+    ),
+)
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Surface DEBUG-level logging from the Graphiti client.",
+)
+def capture_outcome(
+    from_task_file,
+    task_id,
+    task_title,
+    requirements,
+    summary,
+    success,
+    approach,
+    patterns,
+    lessons,
+    problems,
+    tests_written,
+    coverage,
+    review_cycles,
+    feature_id,
+    related_adr,
+    timeout,
+    dry_run,
+    strict,
+    verbose,
+):
+    """Capture a task-completion outcome to the ``task_outcomes`` group.
+
+    Wraps the ``capture_task_outcome`` Python API. Distinguishes a real
+    write from a silent no-op by surfacing the inner client's INFO-level
+    log lines (``[Graphiti] Captured task outcome OUT-XXXXXXXX`` and
+    ``Episode profile [...]: nodes=N, edges=M``).
+
+    \b
+    Examples:
+        # Frontmatter-driven (preferred):
+        guardkit graphiti capture-outcome \\
+            --from-task-file tasks/completed/2026-04/TASK-FIX-F4A3-...md
+
+        # Frontmatter + per-flag overrides:
+        guardkit graphiti capture-outcome \\
+            --from-task-file tasks/completed/2026-04/TASK-FIX-F4A3-...md \\
+            --tests-written 4 --coverage 100.0 --timeout 300
+
+        # Pure explicit-flag form (no task file):
+        guardkit graphiti capture-outcome \\
+            --task-id TASK-XXX --task-title "..." --summary "..." \\
+            --lessons "lesson 1" --lessons "lesson 2"
+
+        # Dry-run to verify what would be sent:
+        guardkit graphiti capture-outcome \\
+            --from-task-file tasks/completed/2026-04/TASK-XXX.md --dry-run
+
+    \b
+    Notes:
+        - Writes to group_id ``task_outcomes`` via the Python API; no other
+          parser type in ``add-context`` routes to this group.
+        - LLM entity extraction can take 60-300 s on local LLMs; the
+          default ``--timeout 300`` is sized for that.
+        - When Graphiti is unavailable, default behaviour is to warn and
+          exit 0 (matches ``task-complete.md`` non-blocking semantics).
+          Use ``--strict`` to exit 1 instead.
+    """
+    _run_async(
+        _cmd_capture_outcome(
+            from_task_file=from_task_file,
+            task_id=task_id,
+            task_title=task_title,
+            requirements=requirements,
+            summary=summary,
+            success=success,
+            approach=approach,
+            patterns=patterns,
+            lessons=lessons,
+            problems=problems,
+            tests_written=tests_written,
+            coverage=coverage,
+            review_cycles=review_cycles,
+            feature_id=feature_id,
+            related_adr=related_adr,
+            timeout=timeout,
+            dry_run=dry_run,
+            strict=strict,
+            verbose=verbose,
+        )
+    )

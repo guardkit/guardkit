@@ -173,6 +173,7 @@ installer/core/             # Global resources (agents, commands, templates)
 | AutoBuild Stall Runbook | `docs/guides/autobuild-instrumentation-guide.md#if-autobuild-stalls-immediately` |
 | MCP Integration | `docs/deep-dives/mcp-integration/` |
 | Graphiti Knowledge | `.claude/rules/graphiti-knowledge.md` |
+| Multi-Machine Setup | `docs/guides/claude-code-multi-machine-setup.md` (skills, plugin gotchas, cross-platform paths) |
 | Installation | `pip install guardkit-py` or `./installer/scripts/install.sh` |
 
 ## Clarifying Questions

@@ -113,6 +113,13 @@ class Checkpoint:
         tests_passed: Whether tests passed at this checkpoint
         test_count: Number of tests run (0 if no tests)
         message: Checkpoint commit message
+        from_prior_run: True if this checkpoint was loaded from a prior
+            orchestration session's ``checkpoints.json`` (e.g. on ``[R]esume``).
+            Such checkpoints are preserved for forensic inspection but do not
+            count toward the consecutive-failures threshold in
+            ``should_rollback()``. Always False for checkpoints written by the
+            current run. Defaults to False so old JSON files without this
+            field deserialise correctly (TASK-FIX-F4A3).
     """
 
     turn: int
@@ -121,6 +128,7 @@ class Checkpoint:
     tests_passed: bool
     test_count: int = 0
     message: str = ""
+    from_prior_run: bool = False
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for JSON serialization.
@@ -479,6 +487,11 @@ class WorktreeCheckpointManager:
         The primary indicator is consecutive test failures, suggesting accumulated
         broken state.
 
+        Checkpoints loaded from a prior orchestration session (``from_prior_run``)
+        are excluded — they cannot be evidence of pollution accumulating in the
+        current run, and counting them would trigger a spurious context-pollution
+        short-circuit on turn 1 of any ``[R]esume`` (TASK-FIX-F4A3).
+
         Args:
             consecutive_failures: Number of consecutive failures to trigger rollback
                                  (default: 3, allows recovery from incomplete sessions)
@@ -486,11 +499,13 @@ class WorktreeCheckpointManager:
         Returns:
             True if rollback should be triggered, False otherwise
         """
-        if len(self.checkpoints) < consecutive_failures:
+        current_run = [cp for cp in self.checkpoints if not cp.from_prior_run]
+
+        if len(current_run) < consecutive_failures:
             return False
 
-        # Check last N checkpoints for consecutive failures
-        recent = self.checkpoints[-consecutive_failures:]
+        # Check last N current-run checkpoints for consecutive failures
+        recent = current_run[-consecutive_failures:]
         all_failing = all(not cp.tests_passed for cp in recent)
 
         if all_failing:
@@ -612,10 +627,25 @@ class WorktreeCheckpointManager:
             checkpoints_data = data.get("checkpoints", [])
             self.checkpoints = [Checkpoint.from_dict(cp) for cp in checkpoints_data]
 
-            logger.info(
-                f"Loaded {len(self.checkpoints)} checkpoints from "
-                f"{self._checkpoints_file}"
-            )
+            # Anything loaded from disk at session-start is by definition from a
+            # prior orchestration session — tag accordingly so the pollution
+            # detector excludes them (TASK-FIX-F4A3). The persisted value is
+            # ignored: a checkpoint that was "current" in the previous session
+            # is "prior" in this one.
+            for cp in self.checkpoints:
+                cp.from_prior_run = True
+
+            prior_run_count = len(self.checkpoints)
+            if prior_run_count > 0:
+                logger.info(
+                    f"Loaded {prior_run_count} checkpoints from "
+                    f"{self._checkpoints_file} "
+                    f"(tagged from_prior_run; excluded from pollution detection)"
+                )
+            else:
+                logger.info(
+                    f"Loaded 0 checkpoints from {self._checkpoints_file}"
+                )
 
         except json.JSONDecodeError as e:
             logger.warning(f"Invalid JSON in checkpoint file: {e}")
