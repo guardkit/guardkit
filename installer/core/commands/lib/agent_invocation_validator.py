@@ -34,9 +34,13 @@ def get_expected_phases(workflow_mode: str) -> int:
     Micro: 3 phases (Planning, Implementation, Quick Review)
     Design-only: 3 phases (Planning, Arch Review, Complexity)
     Implement-only: 3 phases (Implementation, Testing, Code Review)
+    Direct: 1 phase (Implementation only — direct-mode tasks bypass
+        task-work delegation; Phase 4/5 are owned by the orchestrator
+        when wired, otherwise relaxed per ``_write_direct_mode_results``).
 
     Args:
-        workflow_mode: One of 'standard', 'micro', 'design-only', 'implement-only'
+        workflow_mode: One of 'standard', 'micro', 'design-only',
+            'implement-only', 'direct'
 
     Returns:
         Expected number of agent invocations for the workflow mode
@@ -48,6 +52,8 @@ def get_expected_phases(workflow_mode: str) -> int:
         3
         >>> get_expected_phases('design-only')
         3
+        >>> get_expected_phases('direct')
+        1
         >>> get_expected_phases('unknown')
         5
     """
@@ -55,7 +61,8 @@ def get_expected_phases(workflow_mode: str) -> int:
         "standard": 5,
         "micro": 3,
         "design-only": 3,
-        "implement-only": 3
+        "implement-only": 3,
+        "direct": 1,
     }
     return phase_counts.get(workflow_mode, 5)
 
@@ -65,7 +72,8 @@ def get_expected_phase_list(workflow_mode: str) -> List[str]:
     Get list of expected phase identifiers for a workflow mode.
 
     Args:
-        workflow_mode: One of 'standard', 'micro', 'design-only', 'implement-only'
+        workflow_mode: One of 'standard', 'micro', 'design-only',
+            'implement-only', 'direct'
 
     Returns:
         List of phase identifiers expected for this workflow mode
@@ -75,12 +83,15 @@ def get_expected_phase_list(workflow_mode: str) -> List[str]:
         ['2', '2.5B', '3', '4', '5']
         >>> get_expected_phase_list('micro')
         ['3', '4', '5']
+        >>> get_expected_phase_list('direct')
+        ['3']
     """
     phase_lists = {
         "standard": ['2', '2.5B', '3', '4', '5'],
         "micro": ['3', '4', '5'],
         "design-only": ['2', '2.5B', '2.7'],
-        "implement-only": ['3', '4', '5']
+        "implement-only": ['3', '4', '5'],
+        "direct": ['3'],
     }
     return phase_lists.get(workflow_mode, ['2', '2.5B', '3', '4', '5'])
 

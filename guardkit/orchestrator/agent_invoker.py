@@ -5655,6 +5655,198 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 "violation_message": f"{exc.__class__.__name__}: {exc}",
             }
 
+    # TASK-OSI-002: Validation-gate refactor — credit orchestrator-invoked
+    # specialists. When TASK-OSI-004/005 land, the orchestrator runs Phase 4
+    # (test-orchestrator) and Phase 5 (code-reviewer) directly and writes
+    # `specialist_results.json` into the autobuild dir. This method merges
+    # those records into `task_work_results.json`'s `agent_invocations` list
+    # tagged `source: "orchestrator"` and re-runs the validation gate so the
+    # on-disk block credits the orchestrator-owned phases. Player-emitted
+    # Phase 4/5 entries are dropped — orchestrator records are the single
+    # source of truth for those phases (structural double-count prevention).
+    _ORCHESTRATOR_SPECIALIST_PHASES: Tuple[Tuple[str, str, str], ...] = (
+        ("4", "phase_4", "test-orchestrator"),
+        ("5", "phase_5", "code-reviewer"),
+    )
+
+    def _inject_specialist_records_into_task_work_results(
+        self, task_id: str
+    ) -> Optional[Path]:
+        """Merge orchestrator-invoked Phase 4/5 records into task_work_results.
+
+        Reads ``.guardkit/autobuild/{task_id}/specialist_results.json``
+        (produced by TASK-OSI-004 / TASK-OSI-005) and merges Phase 4/5
+        entries into ``task_work_results.json``'s ``agent_invocations``
+        list, tagging each merged entry ``source: "orchestrator"``.
+
+        Player-emitted Phase 4/5 entries (``source`` absent or
+        ``source == "player"``) are dropped during the merge. Other phases
+        in the existing list are preserved verbatim. After the merge the
+        method re-runs ``_compute_agent_invocations_validation`` and writes
+        the updated ``agent_invocations_validation`` block back to disk.
+
+        If ``specialist_results.json`` is absent, the method logs a warning
+        and inserts skipped Phase 4/5 records so the gate still produces a
+        well-formed validation block — never raises (same invariant as the
+        producer-side gate in ``_write_task_work_results``).
+
+        Returns:
+            Path to the rewritten ``task_work_results.json``, or ``None``
+            if that file is missing (nothing to merge into).
+        """
+        results_path = TaskArtifactPaths.task_work_results_path(
+            task_id, self.worktree_path
+        )
+        if not results_path.exists():
+            logger.warning(
+                "task_work_results.json not found at %s; skipping "
+                "specialist record injection",
+                results_path,
+            )
+            return None
+
+        try:
+            task_work_data = json.loads(results_path.read_text())
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning(
+                "Failed to read task_work_results.json at %s: %s",
+                results_path,
+                exc,
+            )
+            return None
+
+        autobuild_dir = TaskArtifactPaths.autobuild_dir(
+            task_id, self.worktree_path
+        )
+        specialist_results_path = autobuild_dir / "specialist_results.json"
+        specialist_data: Optional[Dict[str, Any]] = None
+        if specialist_results_path.exists():
+            try:
+                specialist_data = json.loads(
+                    specialist_results_path.read_text()
+                )
+                if not isinstance(specialist_data, dict):
+                    logger.warning(
+                        "specialist_results.json at %s is not a JSON object; "
+                        "treating as absent",
+                        specialist_results_path,
+                    )
+                    specialist_data = None
+            except (json.JSONDecodeError, OSError) as exc:
+                logger.warning(
+                    "Failed to read specialist_results.json at %s: %s; "
+                    "treating as absent",
+                    specialist_results_path,
+                    exc,
+                )
+                specialist_data = None
+        else:
+            logger.warning(
+                "specialist_results.json not found at %s; inserting skipped "
+                "Phase 4/5 records to keep the gate block structured",
+                specialist_results_path,
+            )
+
+        # Drop Player-emitted Phase 4/5 entries — orchestrator records
+        # below are the single source of truth for those phases.
+        existing = task_work_data.get("agent_invocations")
+        if not isinstance(existing, list):
+            existing = []
+
+        orchestrator_phase_ids = {
+            phase_id for phase_id, _, _ in self._ORCHESTRATOR_SPECIALIST_PHASES
+        }
+        filtered: List[Dict[str, Any]] = []
+        for inv in existing:
+            if not isinstance(inv, dict):
+                continue
+            phase = str(inv.get("phase", ""))
+            source = inv.get("source")
+            if phase in orchestrator_phase_ids and source != "orchestrator":
+                # Drop Player-emitted (or untagged) Phase 4/5 — replaced
+                # below by orchestrator-sourced records.
+                continue
+            filtered.append(inv)
+
+        # Build the orchestrator-sourced records.
+        orchestrator_records: List[Dict[str, Any]] = []
+        for phase_id, phase_key, agent_name in self._ORCHESTRATOR_SPECIALIST_PHASES:
+            block = (specialist_data or {}).get(phase_key)
+            if not isinstance(block, dict):
+                # Either specialist_results.json is absent or this phase's
+                # block is missing/malformed — synthesize a skipped record.
+                missing_reason = (
+                    "specialist_results.json not found"
+                    if specialist_data is None
+                    else f"specialist_results.json missing {phase_key} block"
+                )
+                orchestrator_records.append({
+                    "phase": phase_id,
+                    "agent": agent_name,
+                    "status": "skipped",
+                    "source": "orchestrator",
+                    "error": missing_reason,
+                })
+                continue
+
+            block_status = block.get("status", "skipped")
+            # Map specialist outcome ("passed"/"failed"/"skipped") to the
+            # invocation tracker's vocabulary. Only "passed" credits the
+            # phase as completed; "failed" and "skipped" leave it
+            # uncredited so a real specialist failure surfaces as a gate
+            # violation rather than a silent pass.
+            if block_status == "passed":
+                invocation_status = "completed"
+            elif block_status == "failed":
+                invocation_status = "failed"
+            else:
+                invocation_status = "skipped"
+
+            record: Dict[str, Any] = {
+                "phase": phase_id,
+                "agent": agent_name,
+                "status": invocation_status,
+                "source": "orchestrator",
+            }
+            if "duration_seconds" in block:
+                record["duration_seconds"] = block["duration_seconds"]
+            if block.get("error"):
+                record["error"] = block["error"]
+            orchestrator_records.append(record)
+
+        merged = filtered + orchestrator_records
+        task_work_data["agent_invocations"] = merged
+
+        # Re-run the gate against the merged ledger so the on-disk
+        # validation block credits orchestrator-invoked phases. Direct-mode
+        # tasks (workflow_mode=="direct") expect Phase 3 only — see
+        # `get_expected_phases("direct")` — and so will not trigger a
+        # false Phase 4/5 violation when specialist_results.json is absent.
+        workflow_mode = task_work_data.get("workflow_mode") or "implement-only"
+        new_validation = self._compute_agent_invocations_validation(
+            task_work_data, workflow_mode
+        )
+        task_work_data["agent_invocations_validation"] = new_validation
+
+        try:
+            results_path.write_text(json.dumps(task_work_data, indent=2))
+        except OSError as exc:
+            logger.warning(
+                "Failed to write merged task_work_results.json at %s: %s",
+                results_path,
+                exc,
+            )
+            return None
+
+        logger.info(
+            "Injected orchestrator specialist records into %s "
+            "(merged=%d, validation=%s)",
+            results_path,
+            len(merged),
+            new_validation.get("status"),
+        )
+        return results_path
+
     def _compute_plan_audit_verdict(self, task_id: str) -> Dict[str, Any]:
         """Run the deterministic plan auditor; return a Coach-consumable block.
 
