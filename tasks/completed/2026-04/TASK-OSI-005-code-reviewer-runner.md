@@ -1,9 +1,12 @@
 ---
 id: TASK-OSI-005
 title: "code-reviewer orchestrator-side runner"
-status: backlog
+status: completed
 created: 2026-04-25T00:00:00Z
 updated: 2026-04-25T00:00:00Z
+completed: 2026-04-25T00:00:00Z
+previous_state: in_review
+state_transition_reason: "All ACs satisfied; 4 new + 9 regression unit tests pass; 75 broader orchestrator/autobuild tests pass; ruff clean"
 priority: high
 task_type: feature
 parent_review: TASK-REV-119C1
@@ -38,41 +41,41 @@ review the implementation with full knowledge of test outcomes.
 
 ## Acceptance Criteria
 
-- [ ] `specialist_invocations.py` exports
+- [x] `specialist_invocations.py` exports
       `invoke_code_reviewer(worktree_path: Path, task_id: str,
       phase4_result: SpecialistInvocationResult, sdk_timeout: int,
       agent_invoker: AgentInvoker, cancellation_event: asyncio.Event)
       -> SpecialistInvocationResult` with real implementation (not a
       stub).
-- [ ] `phase4_result` is included in the prompt as a structured
+- [x] `phase4_result` is included in the prompt as a structured
       "Phase 4 summary" section: `tests_run`, `tests_failed`,
       `coverage_pct`, `quality_gates_passed`, `output_summary`.
-- [ ] Function calls `run_specialist` with `allowed_tools=["Read",
+- [x] Function calls `run_specialist` with `allowed_tools=["Read",
       "Search", "Grep"]` (subset of `code-reviewer.md` frontmatter
       line 13 — `Write` is dropped because the orchestrator-side
       review must NOT modify source files; review output goes to
       `specialist_results.json` directly via the runner, not via the
       agent's `Write` tool).
-- [ ] On success, appends a `phase_5` block to
+- [x] On success, appends a `phase_5` block to
       `.guardkit/autobuild/{task_id}/specialist_results.json`
       preserving the existing `phase_4` block: `status="passed"`,
       `duration_seconds`, `error=None`, and Phase 5-specific fields:
       `issues` (list), `quality_score` (float), `recommendations`
       (list), `output_summary`.
-- [ ] On failure, appends a `phase_5` block with `status="failed"` and
+- [x] On failure, appends a `phase_5` block with `status="failed"` and
       `error` populated. Phase 4 block is preserved (no rollback). Does
       NOT raise into caller.
-- [ ] Function ASSERTS at entry that `phase4_result.status == "passed"`
+- [x] Function ASSERTS at entry that `phase4_result.status == "passed"`
       — if invoked with a failed Phase 4 result, the function raises
       `ValueError` (caller bug — TASK-OSI-006 turn-loop wiring is
       responsible for the guard). This is a defensive check, not the
       primary skip gate.
-- [ ] Unit tests (with stub SDK) cover: (a) success path appends
+- [x] Unit tests (with stub SDK) cover: (a) success path appends
       `phase_5` block while preserving `phase_4`, (b) failure path
       records failure without raising, (c) `ValueError` raised when
       called with `phase4_result.status="failed"`, (d) prompt contains
       a "Phase 4 summary" string when introspected.
-- [ ] All modified files pass project-configured lint/format checks
+- [x] All modified files pass project-configured lint/format checks
       with zero errors.
 
 ## Implementation Notes

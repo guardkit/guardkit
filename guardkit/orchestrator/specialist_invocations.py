@@ -2,15 +2,18 @@
 
 This module houses the orchestrator-driven specialist invocations that
 replace the Player LLM's discretionary ``Task(subagent_type=...)`` calls.
-Wave 1 of the OSI feature ships only the skeleton — the result dataclass
-and the shared :func:`run_specialist` helper. The specialist-specific
-runners (``invoke_test_orchestrator``, ``invoke_code_reviewer``) land in
-TASK-OSI-004 and TASK-OSI-005 respectively and call :func:`run_specialist`
-to delegate into :class:`AgentInvoker._invoke_with_role` via composition.
+Wave 1 of the OSI feature shipped the skeleton — the result dataclass
+and the shared :func:`run_specialist` helper. Wave 2 added
+:func:`invoke_test_orchestrator` (Phase 4) and Wave 3 adds
+:func:`invoke_code_reviewer` (Phase 5). Both runners call
+:func:`run_specialist` to delegate into
+:class:`AgentInvoker._invoke_with_role` via composition.
 
 References:
 
 * TASK-OSI-001 — this module skeleton.
+* TASK-OSI-004 — :func:`invoke_test_orchestrator`.
+* TASK-OSI-005 — :func:`invoke_code_reviewer`.
 * TASK-REV-119C1 — review that scoped the orchestrator-side invocation
   redesign and locked in the contract documented in
   ``tasks/in_progress/orchestrator-side-specialist-invocation/IMPLEMENTATION-GUIDE.md``.
@@ -52,6 +55,19 @@ _PHASE_4_AGENT_FIELD_DEFAULTS: dict[str, Any] = {
     "coverage_pct": 0.0,
     "output_summary": "",
     "quality_gates_passed": False,
+}
+
+# Phase 5 agent-derived field defaults. The orchestrator-side code-reviewer
+# specialist runs without ``Write`` (review must NOT modify source files), so
+# the runner can't read structured review output from a sidecar file the way
+# Phase 4 does with ``phase_4_summary.json``. These defaults keep the §4.1
+# specialist_results.json schema well-formed while real review content flows
+# through the SDK message stream / instrumentation.
+_PHASE_5_AGENT_FIELD_DEFAULTS: dict[str, Any] = {
+    "issues": [],
+    "quality_score": 0.0,
+    "recommendations": [],
+    "output_summary": "Review completed by orchestrator-invoked code-reviewer.",
 }
 
 
@@ -416,22 +432,24 @@ def _read_phase_4_summary(summary_path: Path) -> dict[str, Any]:
     return merged
 
 
-def _write_specialist_results(
+def _merge_specialist_block(
     specialist_results_path: Path,
-    phase_4_block: dict[str, Any],
+    phase_key: str,
+    phase_block: dict[str, Any],
 ) -> None:
-    """Idempotent merge-write of ``specialist_results.json``.
+    """Idempotent merge-write of one phase block into ``specialist_results.json``.
 
-    Preserves an existing ``phase_5`` block when the file already exists
-    and is well-formed; overwrites with a fresh dict on parse failure
-    (logging a warning) so downstream consumers always see a usable
-    file. Never raises.
+    Preserves all other top-level keys when the file already exists and is
+    well-formed; overwrites the file with a fresh dict on parse failure
+    (logging a warning) so downstream consumers always see a usable file.
+    Never raises. Used by both :func:`invoke_test_orchestrator` (writes
+    ``phase_4``) and :func:`invoke_code_reviewer` (writes ``phase_5``).
     """
     try:
         specialist_results_path.parent.mkdir(parents=True, exist_ok=True)
     except Exception as exc:  # noqa: BLE001 — never raise
         logger.warning(
-            "_write_specialist_results: failed to ensure dir %s: %s",
+            "_merge_specialist_block: failed to ensure dir %s: %s",
             specialist_results_path.parent,
             exc,
         )
@@ -447,21 +465,20 @@ def _write_specialist_results(
                 existing = loaded
             else:
                 logger.warning(
-                    "_write_specialist_results: %s did not contain a JSON "
+                    "_merge_specialist_block: %s did not contain a JSON "
                     "object; overwriting.",
                     specialist_results_path,
                 )
         except Exception as exc:  # noqa: BLE001 — overwrite on parse fail
             logger.warning(
-                "_write_specialist_results: %s unparseable (%s); overwriting.",
+                "_merge_specialist_block: %s unparseable (%s); overwriting.",
                 specialist_results_path,
                 exc,
             )
             existing = {}
 
-    merged: dict[str, Any] = {"phase_4": phase_4_block}
-    if "phase_5" in existing:
-        merged["phase_5"] = existing["phase_5"]
+    merged = dict(existing)
+    merged[phase_key] = phase_block
 
     try:
         specialist_results_path.write_text(
@@ -469,10 +486,123 @@ def _write_specialist_results(
         )
     except Exception as exc:  # noqa: BLE001 — never raise
         logger.warning(
-            "_write_specialist_results: failed to write %s: %s",
+            "_merge_specialist_block: failed to write %s: %s",
             specialist_results_path,
             exc,
         )
+
+
+def _write_specialist_results(
+    specialist_results_path: Path,
+    phase_4_block: dict[str, Any],
+) -> None:
+    """Phase 4 wrapper around :func:`_merge_specialist_block`.
+
+    Preserved as a named helper so :func:`invoke_test_orchestrator` reads
+    naturally; the merge mechanics live in
+    :func:`_merge_specialist_block`. Never raises.
+    """
+    _merge_specialist_block(specialist_results_path, "phase_4", phase_4_block)
+
+
+def _read_phase_4_block(specialist_results_path: Path) -> dict[str, Any]:
+    """Read the ``phase_4`` block from ``specialist_results.json``.
+
+    Returns the agent-derived fields merged over
+    :data:`_PHASE_4_AGENT_FIELD_DEFAULTS`. Missing file, malformed JSON,
+    missing/wrong-typed phase_4 entry all degrade to defaults — this
+    helper never raises. Used by :func:`invoke_code_reviewer` to render
+    the Phase 4 summary into the code-reviewer prompt.
+    """
+    merged: dict[str, Any] = dict(_PHASE_4_AGENT_FIELD_DEFAULTS)
+    try:
+        if not specialist_results_path.exists():
+            return merged
+        data = json.loads(specialist_results_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 — never raise
+        logger.warning(
+            "_read_phase_4_block: failed to load %s: %s",
+            specialist_results_path,
+            exc,
+        )
+        return merged
+
+    if not isinstance(data, dict):
+        return merged
+    block = data.get("phase_4")
+    if not isinstance(block, dict):
+        return merged
+
+    for key, default in _PHASE_4_AGENT_FIELD_DEFAULTS.items():
+        if key not in block:
+            continue
+        value = block[key]
+        if isinstance(default, bool) and isinstance(value, bool):
+            merged[key] = value
+        elif isinstance(default, int) and not isinstance(default, bool):
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, int):
+                merged[key] = value
+        elif isinstance(default, float):
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                merged[key] = float(value)
+        elif isinstance(default, str) and isinstance(value, str):
+            merged[key] = value
+    return merged
+
+
+def _build_code_reviewer_prompt(
+    task_id: str,
+    task_context: str,
+    phase_4_summary: dict[str, Any],
+) -> str:
+    """Render the prompt the code-reviewer specialist receives.
+
+    The agent definition (``installer/core/agents/code-reviewer.md``)
+    already encodes the review checklist. This prompt only carries
+    task-specific context plus the structured Phase 4 summary so the
+    reviewer can ground its review in the actual test outcomes.
+
+    The string ``"Phase 4 summary"`` is part of the prompt contract — the
+    unit test introspects for it (TASK-OSI-005 AC d).
+    """
+    summary_lines = (
+        f"- tests_run: {phase_4_summary.get('tests_run', 0)}\n"
+        f"- tests_failed: {phase_4_summary.get('tests_failed', 0)}\n"
+        f"- coverage_pct: {phase_4_summary.get('coverage_pct', 0.0)}\n"
+        f"- quality_gates_passed: "
+        f"{phase_4_summary.get('quality_gates_passed', False)}\n"
+        f"- output_summary: {phase_4_summary.get('output_summary', '')}"
+    )
+
+    prompt = (
+        f"You are the code-reviewer specialist for task {task_id}.\n\n"
+        "Task context (from the task markdown):\n"
+        f"{task_context}\n\n"
+        "Phase 4 summary (test-orchestrator outcome):\n"
+        f"{summary_lines}\n\n"
+        "Your job:\n"
+        "1. Review the implementation in the worktree against the task's "
+        "acceptance criteria using Read/Search/Grep.\n"
+        "2. Apply the review checklist from your agent definition (build, "
+        "requirements, code quality, testing, security, performance, "
+        "documentation).\n"
+        "3. Report findings via your normal response stream — the "
+        "orchestrator records the review outcome in specialist_results.json.\n"
+        "Do NOT modify source files: the Write tool is intentionally "
+        "withheld from this invocation."
+    )
+
+    # Keep the prompt under ~2000 chars to match the test-orchestrator runner's
+    # cap. Trim the variable-length task_context first.
+    if len(prompt) > 2000:
+        overflow = len(prompt) - 2000
+        trimmed_context = task_context[: max(0, len(task_context) - overflow - 32)]
+        prompt = prompt.replace(
+            task_context, trimmed_context + "\n[...truncated]"
+        )
+    return prompt
 
 
 async def invoke_test_orchestrator(
@@ -549,5 +679,106 @@ async def invoke_test_orchestrator(
     }
 
     _write_specialist_results(specialist_results_path, phase_4_block)
+
+    return run_result
+
+
+async def invoke_code_reviewer(
+    worktree_path: Path,
+    task_id: str,
+    phase4_result: SpecialistInvocationResult,
+    sdk_timeout: int,
+    agent_invoker: "AgentInvoker",
+    cancellation_event: Optional[threading.Event] = None,
+    *,
+    turn: Optional[int] = None,
+) -> SpecialistInvocationResult:
+    """Run the Phase 5 code-reviewer specialist under orchestrator control.
+
+    Loads task context plus the Phase 4 outcome from
+    ``specialist_results.json``, builds a prompt that includes a structured
+    "Phase 4 summary" section, delegates SDK invocation to
+    :func:`run_specialist`, then appends a ``phase_5`` block to
+    ``.guardkit/autobuild/{task_id}/specialist_results.json`` while
+    preserving the existing ``phase_4`` block. The function never raises
+    into the caller on SDK / tool failures — the autobuild turn loop owns
+    recovery.
+
+    Defensive guard: if ``phase4_result.status != "passed"`` the function
+    raises :class:`ValueError`. The turn-loop wiring (TASK-OSI-006) is
+    responsible for skipping this runner when Phase 4 failed; this assert
+    catches caller bugs early rather than silently writing a phase_5
+    block based on a stale Phase 4 outcome.
+
+    The orchestrator-side ``code-reviewer`` runs without ``Write``: review
+    output goes to the ``phase_5`` block written by this runner, not via
+    the agent's tools (review must NOT modify source files). Per-field
+    semantic content (issues, recommendations, quality_score) defaults to
+    placeholders — real review content flows through the SDK message
+    stream and instrumentation. See
+    :data:`_PHASE_5_AGENT_FIELD_DEFAULTS`.
+
+    Args:
+        worktree_path: Worktree the specialist reviews.
+        task_id: AutoBuild task ID; used for path resolution and prompt
+            framing.
+        phase4_result: Outcome of :func:`invoke_test_orchestrator`. Must
+            have ``status == "passed"`` — see defensive guard above.
+        sdk_timeout: Per-invocation SDK timeout in seconds.
+        agent_invoker: :class:`AgentInvoker` whose ``_invoke_with_role``
+            performs the SDK call (via :func:`run_specialist`).
+        cancellation_event: Optional :class:`threading.Event` that signals
+            cancellation to the SDK monitor inside ``_invoke_with_role``.
+        turn: Optional autobuild turn number forwarded for instrumentation.
+
+    Returns:
+        :class:`SpecialistInvocationResult` with ``phase="5"``. The
+        on-disk ``specialist_results.json`` reflects the run regardless
+        of outcome (success writes a passed phase_5 block; SDK failure
+        writes a failed phase_5 block with ``error`` populated and the
+        existing phase_4 block preserved).
+
+    Raises:
+        ValueError: When ``phase4_result.status != "passed"``. Caller bug.
+    """
+    if phase4_result.status != "passed":
+        raise ValueError(
+            "invoke_code_reviewer requires phase4_result.status='passed' "
+            f"(got '{phase4_result.status}'). The turn-loop wiring "
+            "(TASK-OSI-006) is responsible for skipping the code-reviewer "
+            "when Phase 4 did not pass; this guard catches caller bugs."
+        )
+
+    autobuild_dir = Path(worktree_path) / ".guardkit" / "autobuild" / task_id
+    specialist_results_path = autobuild_dir / "specialist_results.json"
+
+    task_context = _load_task_context(Path(worktree_path), task_id)
+    phase_4_summary = _read_phase_4_block(specialist_results_path)
+    prompt = _build_code_reviewer_prompt(
+        task_id=task_id,
+        task_context=task_context,
+        phase_4_summary=phase_4_summary,
+    )
+
+    run_result = await run_specialist(
+        specialist_name="code-reviewer",
+        worktree_path=Path(worktree_path),
+        task_id=task_id,
+        sdk_timeout=sdk_timeout,
+        prompt=prompt,
+        allowed_tools=["Read", "Search", "Grep"],
+        agent_invoker=agent_invoker,
+        cancellation_event=cancellation_event,
+        turn=turn,
+    )
+
+    phase_5_block: dict[str, Any] = {
+        "status": run_result.status,
+        "duration_seconds": run_result.duration_seconds,
+        "error": run_result.error,
+        **_PHASE_5_AGENT_FIELD_DEFAULTS,
+    }
+
+    _merge_specialist_block(specialist_results_path, "phase_5", phase_5_block)
 
     return run_result

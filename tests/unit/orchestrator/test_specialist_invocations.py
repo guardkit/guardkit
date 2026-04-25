@@ -22,6 +22,7 @@ import pytest
 
 from guardkit.orchestrator.specialist_invocations import (
     SpecialistInvocationResult,
+    invoke_code_reviewer,
     invoke_test_orchestrator,
     run_specialist,
 )
@@ -500,3 +501,281 @@ async def test_invoke_test_orchestrator_preserves_existing_phase_5_block(
     assert on_disk["phase_4"]["status"] == "passed"
     assert on_disk["phase_4"]["tests_run"] == 3
     assert on_disk["phase_4"]["coverage_pct"] == 90.0
+
+
+# =============================================================================
+# invoke_code_reviewer (TASK-OSI-005)
+# =============================================================================
+#
+# These tests exercise the orchestrator-side Phase 5 runner. The SDK
+# boundary is the AgentInvoker._invoke_with_role mock — code-reviewer
+# runs without ``Write``, so review output flows through the runner's
+# phase_5 block (default placeholders) rather than via a sidecar file.
+# We test (a) success path appends phase_5 while preserving phase_4,
+# (b) SDK failure records a failed phase_5 block without raising,
+# (c) caller bug — ValueError when phase4_result.status != "passed",
+# (d) prompt contains the contractual "Phase 4 summary" string.
+
+
+_TASK_ID_OSI_005 = "TASK-OSI-005-FAKE"
+
+
+def _make_passed_phase4_result() -> SpecialistInvocationResult:
+    """Build a SpecialistInvocationResult that satisfies the entry guard."""
+    return SpecialistInvocationResult(
+        specialist_name="test-orchestrator",
+        phase="4",
+        status="passed",
+        duration_seconds=1.5,
+        result_file=None,
+        error=None,
+    )
+
+
+def _make_failed_phase4_result() -> SpecialistInvocationResult:
+    """Build a SpecialistInvocationResult that should trigger the guard."""
+    return SpecialistInvocationResult(
+        specialist_name="test-orchestrator",
+        phase="4",
+        status="failed",
+        duration_seconds=0.5,
+        result_file=None,
+        error="SDK exploded",
+    )
+
+
+def _seed_specialist_results_with_phase_4(
+    worktree: Path,
+    task_id: str,
+    phase_4_block: dict | None = None,
+) -> Path:
+    """Place a minimal specialist_results.json with a ``phase_4`` block.
+
+    Mirrors what :func:`invoke_test_orchestrator` would have written on a
+    successful Phase 4 run.
+    """
+    autobuild_dir = worktree / ".guardkit" / "autobuild" / task_id
+    autobuild_dir.mkdir(parents=True, exist_ok=True)
+    results_path = autobuild_dir / "specialist_results.json"
+    block = phase_4_block or {
+        "status": "passed",
+        "duration_seconds": 1.5,
+        "error": None,
+        "tests_run": 12,
+        "tests_failed": 0,
+        "coverage_pct": 87.3,
+        "output_summary": "all tests green",
+        "quality_gates_passed": True,
+    }
+    results_path.write_text(
+        json.dumps({"phase_4": block}, indent=2),
+        encoding="utf-8",
+    )
+    return results_path
+
+
+@pytest.mark.asyncio
+async def test_invoke_code_reviewer_success_appends_phase_5_block_with_correct_schema(
+    tmp_path: Path,
+) -> None:
+    """Success path: phase_5 block carries status/duration/error plus the
+    Phase 5-specific defaults (issues, quality_score, recommendations,
+    output_summary). Phase 4 block is preserved unchanged. Prompt carries
+    the structured "Phase 4 summary" section the AC mandates.
+    """
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    seeded_phase_4 = {
+        "status": "passed",
+        "duration_seconds": 1.5,
+        "error": None,
+        "tests_run": 12,
+        "tests_failed": 0,
+        "coverage_pct": 87.3,
+        "output_summary": "all tests green",
+        "quality_gates_passed": True,
+    }
+    results_path = _seed_specialist_results_with_phase_4(
+        tmp_path, _TASK_ID_OSI_005, seeded_phase_4
+    )
+
+    invoker = _make_fake_agent_invoker()
+
+    result = await invoke_code_reviewer(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_OSI_005,
+        phase4_result=_make_passed_phase4_result(),
+        sdk_timeout=42,
+        agent_invoker=invoker,
+    )
+
+    assert isinstance(result, SpecialistInvocationResult)
+    assert result.specialist_name == "code-reviewer"
+    assert result.phase == "5"
+    assert result.status == "passed"
+    assert result.error is None
+
+    # Specialist invoked with the read-only review tool subset and the
+    # coach role (review must NOT modify source files).
+    invoker._invoke_with_role.assert_awaited_once()
+    kwargs = invoker._invoke_with_role.await_args.kwargs
+    assert kwargs["allowed_tools"] == ["Read", "Search", "Grep"]
+    assert kwargs["agent_type"] == "coach"
+    assert kwargs["permission_mode"] == "bypassPermissions"
+    # Prompt carries task-specific context and the AC-mandated Phase 4
+    # summary section with field values from the seeded block.
+    assert _TASK_ID_OSI_005 in kwargs["prompt"]
+    assert "Make the fake thing work." in kwargs["prompt"]
+    assert "Fake AC 1" in kwargs["prompt"]
+    assert "Phase 4 summary" in kwargs["prompt"]
+    assert "tests_run: 12" in kwargs["prompt"]
+    assert "coverage_pct: 87.3" in kwargs["prompt"]
+    assert "quality_gates_passed: True" in kwargs["prompt"]
+    assert "all tests green" in kwargs["prompt"]
+    # Write tool MUST NOT be granted to the orchestrator-side reviewer.
+    assert "Write" not in kwargs["allowed_tools"]
+
+    # On-disk merge: phase_4 preserved verbatim, phase_5 appended.
+    on_disk = json.loads(results_path.read_text(encoding="utf-8"))
+    assert "phase_4" in on_disk
+    assert "phase_5" in on_disk
+    assert on_disk["phase_4"] == seeded_phase_4
+
+    block = on_disk["phase_5"]
+    assert block["status"] == "passed"
+    assert block["error"] is None
+    assert block["duration_seconds"] >= 0
+    # Phase 5-specific defaults from _PHASE_5_AGENT_FIELD_DEFAULTS.
+    assert block["issues"] == []
+    assert isinstance(block["quality_score"], float)
+    assert block["recommendations"] == []
+    assert isinstance(block["output_summary"], str)
+    assert block["output_summary"]  # non-empty placeholder
+
+
+@pytest.mark.asyncio
+async def test_invoke_code_reviewer_failure_writes_failed_block_without_raising(
+    tmp_path: Path,
+) -> None:
+    """SDK exception path: runner returns failed result, writes a failed
+    phase_5 block, preserves phase_4, and does NOT propagate the
+    exception. The phase_4 preservation is critical — a flaky review
+    must not roll back a successful test run.
+    """
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    seeded_phase_4 = {
+        "status": "passed",
+        "duration_seconds": 1.5,
+        "error": None,
+        "tests_run": 7,
+        "tests_failed": 0,
+        "coverage_pct": 81.0,
+        "output_summary": "ok",
+        "quality_gates_passed": True,
+    }
+    results_path = _seed_specialist_results_with_phase_4(
+        tmp_path, _TASK_ID_OSI_005, seeded_phase_4
+    )
+
+    invoker = _make_fake_agent_invoker(
+        invoke_side_effect=RuntimeError("SDK exploded"),
+    )
+
+    result = await invoke_code_reviewer(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_OSI_005,
+        phase4_result=_make_passed_phase4_result(),
+        sdk_timeout=42,
+        agent_invoker=invoker,
+    )
+
+    assert result.status == "failed"
+    assert result.error is not None
+    assert "SDK exploded" in result.error
+    # Cleanup invariant inherited from run_specialist.
+    invoker._kill_child_claude_processes.assert_called_once()
+
+    on_disk = json.loads(results_path.read_text(encoding="utf-8"))
+    # phase_4 preserved verbatim — no rollback on Phase 5 failure.
+    assert on_disk["phase_4"] == seeded_phase_4
+
+    phase_5 = on_disk["phase_5"]
+    assert phase_5["status"] == "failed"
+    assert phase_5["error"] is not None
+    assert "SDK exploded" in phase_5["error"]
+    # Phase 5 placeholder fields still well-formed even on failure.
+    assert phase_5["issues"] == []
+    assert isinstance(phase_5["quality_score"], float)
+    assert phase_5["recommendations"] == []
+    assert isinstance(phase_5["output_summary"], str)
+
+
+@pytest.mark.asyncio
+async def test_invoke_code_reviewer_raises_value_error_when_phase_4_failed(
+    tmp_path: Path,
+) -> None:
+    """Defensive guard: caller bug surfaces as ValueError, not as a
+    silent phase_5 write keyed off a stale Phase 4 outcome. The SDK is
+    NOT invoked and the on-disk specialist_results.json is NOT mutated.
+    """
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    seeded_phase_4 = {
+        "status": "failed",
+        "duration_seconds": 0.5,
+        "error": "tests blew up",
+        "tests_run": 0,
+        "tests_failed": 0,
+        "coverage_pct": 0.0,
+        "output_summary": "",
+        "quality_gates_passed": False,
+    }
+    results_path = _seed_specialist_results_with_phase_4(
+        tmp_path, _TASK_ID_OSI_005, seeded_phase_4
+    )
+    invoker = _make_fake_agent_invoker()
+
+    with pytest.raises(ValueError) as exc_info:
+        await invoke_code_reviewer(
+            worktree_path=tmp_path,
+            task_id=_TASK_ID_OSI_005,
+            phase4_result=_make_failed_phase4_result(),
+            sdk_timeout=42,
+            agent_invoker=invoker,
+        )
+
+    # Error message names the offending status so the caller can debug.
+    assert "phase4_result.status" in str(exc_info.value)
+    assert "passed" in str(exc_info.value)
+    # SDK NOT invoked — guard runs before any side effect.
+    invoker._invoke_with_role.assert_not_awaited()
+    invoker._kill_child_claude_processes.assert_not_called()
+    # On-disk file unchanged — no phase_5 block written.
+    on_disk = json.loads(results_path.read_text(encoding="utf-8"))
+    assert on_disk == {"phase_4": seeded_phase_4}
+    assert "phase_5" not in on_disk
+
+
+@pytest.mark.asyncio
+async def test_invoke_code_reviewer_prompt_contains_phase_4_summary_string(
+    tmp_path: Path,
+) -> None:
+    """AC (d): the prompt MUST contain the literal string "Phase 4 summary"
+    when introspected. This is the single most important piece of context
+    for the code-reviewer — without it the review is blind to test
+    outcomes. Pinned as a separate test so future prompt edits can't
+    silently drop the contract.
+    """
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    _seed_specialist_results_with_phase_4(tmp_path, _TASK_ID_OSI_005)
+    invoker = _make_fake_agent_invoker()
+
+    await invoke_code_reviewer(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_OSI_005,
+        phase4_result=_make_passed_phase4_result(),
+        sdk_timeout=42,
+        agent_invoker=invoker,
+    )
+
+    invoker._invoke_with_role.assert_awaited_once()
+    rendered_prompt = invoker._invoke_with_role.await_args.kwargs["prompt"]
+    assert "Phase 4 summary" in rendered_prompt
