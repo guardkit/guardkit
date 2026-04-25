@@ -520,8 +520,11 @@ class TestPromptBuilderIntegration:
 
         # Verify protocol content is included
         assert "Phase 3: Implementation" in prompt
-        assert "Phase 4: Testing" in prompt
-        assert "Phase 5: Code Review" in prompt
+        # TASK-OSI-003: Phase 4 (test execution) and Phase 5 (code review)
+        # are owned by the AutoBuildOrchestrator. The trimmed protocol tells
+        # the Player so explicitly instead of carrying Phase 4/5 instructions.
+        assert "Phases 4 and 5: Owned by the AutoBuildOrchestrator" in prompt
+        assert "Phase 4.5" in prompt
 
     def test_autobuild_implementation_prompt_substitutes_placeholders(
         self, agent_invoker, protocol_cache_reset

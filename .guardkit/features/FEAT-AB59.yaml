@@ -20,19 +20,19 @@ tasks:
   estimated_minutes: 22
 - id: TASK-OSI-002
   name: Validation gate refactor credit orchestrator-invoked phases
-  file_path: tasks/backlog/orchestrator-side-specialist-invocation/TASK-OSI-002-validation-gate-refactor.md
+  file_path: tasks/completed/2026-04/TASK-OSI-002-validation-gate-refactor.md
   complexity: 4
   dependencies: []
-  status: pending
+  status: completed
   description: ''
   implementation_mode: task-work
   estimated_minutes: 50
 - id: TASK-OSI-003
   name: Prompt trim remove Phase 4/5 instructions from Player protocol
-  file_path: tasks/backlog/orchestrator-side-specialist-invocation/TASK-OSI-003-prompt-trim-phase-4-5.md
+  file_path: tasks/completed/2026-04/TASK-OSI-003-prompt-trim-phase-4-5.md
   complexity: 3
   dependencies: []
-  status: pending
+  status: completed
   description: ''
   implementation_mode: direct
   estimated_minutes: 33

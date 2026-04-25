@@ -1,11 +1,12 @@
 ---
 id: TASK-OSI-003
 title: "Prompt trim: remove Phase 4/5 instructions from Player protocol"
-status: in_progress
+status: completed
 created: 2026-04-25T00:00:00Z
-updated: 2026-04-25T12:00:00Z
-previous_state: backlog
-state_transition_reason: "Automatic transition for task-work execution"
+updated: 2026-04-25T14:00:00Z
+completed: 2026-04-25T14:00:00Z
+previous_state: in_review
+completed_location: tasks/completed/2026-04/
 priority: high
 task_type: refactor
 parent_review: TASK-REV-119C1
@@ -32,27 +33,27 @@ that TASK-OSI-002's source-tag dedup is the backstop for.
 
 ## Acceptance Criteria
 
-- [ ] `guardkit/orchestrator/prompts/autobuild_execution_protocol.md` no
+- [x] `guardkit/orchestrator/prompts/autobuild_execution_protocol.md` no
       longer instructs the Player to invoke `test-orchestrator` or
       `code-reviewer` via the `Task` tool for Phases 4 and 5.
-- [ ] `guardkit/orchestrator/prompts/autobuild_execution_protocol_medium.md`
+- [x] `guardkit/orchestrator/prompts/autobuild_execution_protocol_medium.md`
       receives the same trim if it exists.
-- [ ] `guardkit/orchestrator/prompts/autobuild_execution_protocol_slim.md`
+- [x] `guardkit/orchestrator/prompts/autobuild_execution_protocol_slim.md`
       receives the same trim if it exists.
-- [ ] A single replacement paragraph informs the Player: "Phases 4
+- [x] A single replacement paragraph informs the Player: "Phases 4
       (test execution) and 5 (code review) are executed by the
       AutoBuildOrchestrator after your Phase 3 completes. You do not
       need to invoke `test-orchestrator` or `code-reviewer` directly.
       Focus your turn on Phases 1, 2, 3, and (optionally) Phase 4.5
       (test-fix loop) for your own feedback."
-- [ ] Phase 3 specialist guidance (e.g., "consider using
+- [x] Phase 3 specialist guidance (e.g., "consider using
       `python-api-specialist`") remains as a soft recommendation —
       this is out of scope for the trim.
-- [ ] Phase 4.5 fix-loop guidance is preserved: the Player still runs
+- [x] Phase 4.5 fix-loop guidance is preserved: the Player still runs
       tests inline for its own feedback during implementation; the
       orchestrator runs `test-orchestrator` afterwards as the gate
       input.
-- [ ] All modified files pass project-configured lint/format checks
+- [x] All modified files pass project-configured lint/format checks
       with zero errors.
 
 ## Implementation Notes

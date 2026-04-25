@@ -113,34 +113,31 @@ class TestExecutionProtocolContent:
         assert "Phase 3" in execution_protocol
         assert "Implementation" in execution_protocol
 
-    def test_contains_phase_4(self, execution_protocol):
-        """Execution protocol must contain Phase 4 testing section."""
-        assert "Phase 4" in execution_protocol
-        assert "Testing" in execution_protocol
+    def test_phases_4_and_5_owned_by_orchestrator(self, execution_protocol):
+        """TASK-OSI-003: Phases 4 (test execution) and 5 (code review) are
+        owned by the AutoBuildOrchestrator. The protocol must announce this
+        explicitly to the Player rather than carry Phase 4/5 instructions."""
+        assert "Phases 4 and 5: Owned by the AutoBuildOrchestrator" in execution_protocol
+        assert "test-orchestrator" in execution_protocol
+        assert "code-reviewer" in execution_protocol
 
     def test_contains_phase_4_5(self, execution_protocol):
         """Execution protocol must contain Phase 4.5 fix loop."""
         assert "Phase 4.5" in execution_protocol
         assert "Test Enforcement Loop" in execution_protocol or "Fix Loop" in execution_protocol
 
-    def test_contains_phase_5(self, execution_protocol):
-        """Execution protocol must contain Phase 5 code review."""
-        assert "Phase 5" in execution_protocol
-        assert "Code Review" in execution_protocol
-
     def test_contains_player_report_schema(self, execution_protocol):
         """Execution protocol must contain PLAYER_REPORT_SCHEMA."""
         assert "PLAYER_REPORT_SCHEMA" in execution_protocol
 
-    def test_contains_quality_gate_thresholds(self, execution_protocol):
-        """Execution protocol must contain all quality gate threshold values."""
-        # Coverage thresholds
-        assert "80%" in execution_protocol  # Line coverage
-        assert "75%" in execution_protocol  # Branch coverage
-        # Test pass threshold
-        assert "100%" in execution_protocol
-        # Compilation check
-        assert "Compilation" in execution_protocol or "compilation" in execution_protocol
+    def test_quality_gate_thresholds_owned_by_orchestrator(self, execution_protocol):
+        """TASK-OSI-003: Quality gate thresholds (line/branch coverage,
+        pass rate, compilation) lived in Phase 4 prior to the trim. They
+        are now owned by the AutoBuildOrchestrator's `test-orchestrator`
+        and `coach_validator` runs, so the Player protocol no longer
+        carries the threshold values — only the pointer that
+        Phases 4 and 5 are orchestrator-owned."""
+        assert "Phases 4 and 5: Owned by the AutoBuildOrchestrator" in execution_protocol
 
     def test_contains_anti_stub_rules(self, execution_protocol):
         """Execution protocol must contain anti-stub rules with stub definition."""
@@ -289,17 +286,17 @@ class TestOutputMarkerCompatibility:
         assert self.PHASE_MARKER_PATTERN.search(design_protocol) is not None
 
     def test_coverage_format_matches(self, execution_protocol):
-        """'Coverage: N.N%' format matches COVERAGE_PATTERN."""
-        # Test various formats with actual numbers
+        """'Coverage: N.N%' format matches COVERAGE_PATTERN.
+
+        TASK-OSI-003: Coverage threshold values themselves were carried
+        in Phase 4 prior to the trim and are now orchestrator-owned. The
+        pattern still needs to match orchestrator output, so the regex
+        contract is verified independently of the protocol body.
+        """
+        # Test various formats with actual numbers (regex contract)
         assert self.COVERAGE_PATTERN.search("Coverage: 85.7%") is not None
         assert self.COVERAGE_PATTERN.search("coverage: 80%") is not None
         assert self.COVERAGE_PATTERN.search("Coverage:90.5%") is not None
-
-        # Verify protocol contains coverage format specification
-        # The protocol contains "Coverage: N.N%" as a template, not actual numbers
-        assert "Coverage:" in execution_protocol
-        # Check that the table references coverage thresholds
-        assert "80%" in execution_protocol  # Line coverage threshold
 
     def test_quality_gates_format_matches(self, execution_protocol):
         """'Quality gates: PASSED' matches QUALITY_GATES_PASSED_PATTERN."""

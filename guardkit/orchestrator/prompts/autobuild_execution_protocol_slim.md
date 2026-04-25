@@ -31,44 +31,18 @@ Modes: Standard = implement + test together. TDD = RED → GREEN → REFACTOR.
 
 ---
 
-## Phase 4: Testing
+## Phases 4 and 5: Owned by the AutoBuildOrchestrator
 
-Compile first:
-- Python: `python -m py_compile <file.py>`
-- TypeScript: `npx tsc --noEmit`
-- .NET: `dotnet build --no-restore`
-
-Run tests:
-- Python: `pytest tests/ -v --cov=src --cov-report=term --cov-report=json`
-- TypeScript: `npm test -- --coverage`
-- .NET: `dotnet test --collect:"XPlat Code Coverage" --logger:"json"`
-
-Quality gates: Compilation 100%, Tests 100%, Line coverage ≥80%, Branch coverage ≥75%.
-
-Report format (parsed programmatically):
-```
-N tests passed
-N tests failed
-Coverage: N.N%
-```
+Phases 4 (test execution) and 5 (code review) are executed by the AutoBuildOrchestrator after your Phase 3 completes. You do not need to invoke `test-orchestrator` or `code-reviewer` directly. Focus your turn on Phases 1, 2, 3, and (optionally) Phase 4.5 (test-fix loop) for your own feedback.
 
 ---
 
 ## Phase 4.5: Fix Loop
 
-Max 3 attempts. Fix implementation, NOT tests. Do NOT skip/comment out/ignore tests.
+Run tests inline (e.g., `pytest`, `npm test`, `dotnet test`) for your own feedback — do not invoke `test-orchestrator`. Max 3 attempts. Fix implementation, NOT tests. Do NOT skip/comment out/ignore tests.
 
-Loop: analyze failure → fix code → recompile → retest → check results.
-If all pass: proceed to Phase 5. If attempt > 3: report BLOCKED with diagnostics.
-
----
-
-## Phase 5: Code Review
-
-Check: unused imports, missing error handling, hardcoded secrets, SOLID/DRY/YAGNI compliance.
-Run linter if available (Python: `ruff check .`, TypeScript: `npm run lint`).
-
-Output: `Quality gates: PASSED` or `Quality gates: FAILED`
+Loop: run tests inline → analyze failure → fix code → re-run tests inline → check results.
+If all pass: finish your turn. If attempt > 3: report BLOCKED with diagnostics.
 
 ---
 

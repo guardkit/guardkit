@@ -55,7 +55,7 @@ export MONGODB_URL=mongodb://localhost:27018
 
 ### Cleanup
 
-After Phase 4 (test execution) completes — whether tests pass or fail — tear down all containers you started:
+When your turn finishes — after Phase 3 and any Phase 4.5 fix-loop iterations — tear down all containers you started:
 
 ```bash
 docker rm -f guardkit-test-pg guardkit-test-redis guardkit-test-mongo 2>/dev/null || true
@@ -143,72 +143,9 @@ All implementation code MUST include proper error handling:
 
 ---
 
-## Phase 4: Testing
+## Phases 4 and 5: Owned by the AutoBuildOrchestrator
 
-After implementation, verify your code works.
-
-### Mandatory Compilation Check
-
-You MUST verify code compiles/builds BEFORE running tests:
-
-**Python**:
-```bash
-python -m py_compile <file.py>
-```
-
-**TypeScript**:
-```bash
-npx tsc --noEmit
-```
-
-**.NET**:
-```bash
-dotnet build --no-restore
-```
-
-If compilation fails, fix errors BEFORE proceeding to test execution.
-
-### Test Execution
-
-Run the full test suite:
-
-**Python**:
-```bash
-pytest tests/ -v --cov=src --cov-report=term --cov-report=json
-```
-
-**TypeScript/JavaScript**:
-```bash
-npm test -- --coverage
-```
-
-**.NET**:
-```bash
-dotnet test --collect:"XPlat Code Coverage" --logger:"json"
-```
-
-### Quality Gate Thresholds
-
-| Gate | Threshold | Action if Failed |
-|---|---|---|
-| Compilation | 100% (zero errors) | Fix immediately |
-| Tests Pass | 100% (all must pass) | Enter fix loop |
-| Line Coverage | >= 80% | Add more tests |
-| Branch Coverage | >= 75% | Add more tests |
-
-ALL gates must pass. There is ZERO TOLERANCE for test failures.
-
-### Test Result Reporting
-
-After running tests, report results in this exact format (parsed programmatically):
-
-```
-N tests passed
-N tests failed
-Coverage: N.N%
-```
-
-Where N is replaced with actual numbers.
+Phases 4 (test execution) and 5 (code review) are executed by the AutoBuildOrchestrator after your Phase 3 completes. You do not need to invoke `test-orchestrator` or `code-reviewer` directly. Focus your turn on Phases 1, 2, 3, and (optionally) Phase 4.5 (test-fix loop) for your own feedback.
 
 ---
 
@@ -226,14 +163,14 @@ If tests fail or coverage is below threshold, enter the fix loop.
 
 ### Fix Loop Workflow
 
-Phase 4.5 is Player guidance, not a runtime loop. You are expected to:
+Phase 4.5 is Player guidance, not a runtime loop. Run tests inline (e.g., `pytest`, `npm test`, `dotnet test`) directly — you do not invoke `test-orchestrator`. You are expected to:
 
-1. Read the testing agent's output and identify compilation errors and test failures qualitatively (look for build-error markers, `FAILED`, assertion lines, framework summary lines, non-zero exit codes).
-2. If issues remain, fix the root cause in implementation code (not the tests — see the rules above) and re-invoke the testing agent.
+1. Read the output of your inline test run and identify compilation errors and test failures qualitatively (look for build-error markers, `FAILED`, assertion lines, framework summary lines, non-zero exit codes).
+2. If issues remain, fix the root cause in implementation code (not the tests — see the rules above) and re-run the tests inline.
 3. You may take up to **three fix attempts**. The "3" is an instruction to you, not a runtime counter; track it in your own reasoning.
-4. After each re-run, re-inspect the output. If compilation is clean and all tests pass, proceed to Phase 5. If you have exhausted three attempts without passing, stop and report BLOCKED with diagnostics (see below).
+4. After each re-run, re-inspect the output. If compilation is clean and all tests pass, finish your turn. If you have exhausted three attempts without passing, stop and report BLOCKED with diagnostics (see below).
 
-Coach enforces the pass bar independently: regardless of what this protocol reports, `coach_validator` runs its own pytest pass on the final worktree and that run is the deterministic gate. Keep this section as the Player's guidance; the ground truth comes from Coach's own execution. See `installer/core/commands/task-work.md` Phase 4.5 for the matching spec-side prose — the two files are intentionally synced.
+The AutoBuildOrchestrator runs `test-orchestrator` after your turn as the gate input, and Coach enforces the pass bar independently: regardless of what this protocol reports, `coach_validator` runs its own pytest pass on the final worktree and that run is the deterministic gate. Keep this section as the Player's guidance; the ground truth comes from Coach's own execution. See `installer/core/commands/task-work.md` Phase 4.5 for the matching spec-side prose — the two files are intentionally synced.
 
 ### Blocked State Diagnostics
 
@@ -242,57 +179,6 @@ If max attempts exhausted, report:
 - Remaining test failures with assertion details
 - Coverage metrics
 - What was attempted and why it didn't work
-
----
-
-## Phase 5: Code Review
-
-Review implementation for quality and correctness.
-
-### Review Checklist
-
-1. **Code Quality**: Clean, readable, well-structured
-2. **Error Handling**: Proper exception handling, no silent failures
-3. **Test Quality**: Meaningful assertions, edge cases covered
-4. **Architecture**: Follows SOLID/DRY/YAGNI principles
-5. **Stack Conventions**: Follows language-specific best practices
-
-### SOLID Principles Check
-
-Verify the implementation follows SOLID principles:
-
-- **S - Single Responsibility**: Each module/class has one reason to change. A module that handles both data validation AND database writes violates SRP.
-- **O - Open/Closed**: Code is open for extension, closed for modification. Use strategy patterns, plugins, or configuration instead of modifying existing code.
-- **L - Liskov Substitution**: If the code uses inheritance, subtypes must be substitutable for base types without breaking behavior.
-- **I - Interface Segregation**: Interfaces (protocols/ABCs) should be small and focused. No client should depend on methods it doesn't use.
-- **D - Dependency Inversion**: High-level modules should depend on abstractions, not concretions. Use dependency injection.
-
-### DRY Check
-
-Verify no logic duplication:
-- No copy-pasted code blocks with minor variations
-- Shared logic extracted into helper functions or base classes
-- Constants defined once (not magic numbers repeated)
-- Configuration centralized (not scattered across files)
-
-### YAGNI Check
-
-Verify no over-engineering:
-- No features beyond what acceptance criteria require
-- No "just in case" abstractions or configuration points
-- No premature optimization
-- No generic frameworks where specific implementations suffice
-
-### Quality Assessment
-
-After review, output:
-```
-Quality gates: PASSED
-```
-or
-```
-Quality gates: FAILED
-```
 
 ---
 
@@ -557,9 +443,10 @@ When reviewing, the Coach MUST:
 
 ## Summary
 
-This protocol defines the complete execution loop for the AutoBuild Player agent:
+This protocol defines the execution loop for the AutoBuild Player agent:
 1. **Phase 3**: Implement according to plan
-2. **Phase 4**: Run tests, verify quality gates
-3. **Phase 4.5**: Fix loop if tests fail (max 3 attempts)
-4. **Phase 5**: Code review
-5. **Report**: Write PLAYER_REPORT_SCHEMA JSON to `.guardkit/autobuild/`
+2. **Phase 4.5** (optional): Inline test-fix loop for your own feedback (max 3 attempts)
+3. **Phase 5.5**: Plan audit
+4. **Report**: Write PLAYER_REPORT_SCHEMA JSON to `.guardkit/autobuild/`
+
+Phases 4 (test execution) and 5 (code review) are run by the AutoBuildOrchestrator after your turn — they are not your responsibility.
