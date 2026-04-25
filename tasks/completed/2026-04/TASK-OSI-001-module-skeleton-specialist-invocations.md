@@ -1,9 +1,12 @@
 ---
 id: TASK-OSI-001
 title: "Module skeleton: specialist_invocations.py"
-status: backlog
+status: completed
 created: 2026-04-25T00:00:00Z
 updated: 2026-04-25T00:00:00Z
+completed: 2026-04-25T00:00:00Z
+previous_state: in_review
+state_transition_reason: "All acceptance criteria satisfied; tests + lint clean"
 priority: high
 task_type: scaffolding
 parent_review: TASK-REV-119C1
@@ -31,24 +34,24 @@ rather than duplicating SDK invocation logic.
 
 ## Acceptance Criteria
 
-- [ ] Module exists at `guardkit/orchestrator/specialist_invocations.py`.
-- [ ] Exports `SpecialistInvocationResult` dataclass with fields:
+- [x] Module exists at `guardkit/orchestrator/specialist_invocations.py`.
+- [x] Exports `SpecialistInvocationResult` dataclass with fields:
       `specialist_name: str`, `phase: str`, `status: Literal["passed",
       "failed", "skipped"]`, `duration_seconds: float`, `result_file:
       Optional[Path]`, `error: Optional[str]`.
-- [ ] Exports `run_specialist` async function with signature
+- [x] Exports `run_specialist` async function with signature
       `(specialist_name: str, worktree_path: Path, task_id: str,
       sdk_timeout: int, prompt: str, allowed_tools: list[str],
       agent_invoker: AgentInvoker) -> SpecialistInvocationResult`.
-- [ ] `run_specialist` body delegates to
+- [x] `run_specialist` body delegates to
       `AgentInvoker._invoke_with_role` via composition (no duplication of
       SDK invocation logic) and returns a populated
       `SpecialistInvocationResult`.
-- [ ] On exception or timeout, `run_specialist` calls
+- [x] On exception or timeout, `run_specialist` calls
       `AgentInvoker._kill_child_claude_processes` in a try/finally and
       returns `status="failed"` with `error` populated — NEVER raises.
-- [ ] Module has a top-level docstring naming this task and TASK-REV-119C1.
-- [ ] All modified files pass project-configured lint/format checks with
+- [x] Module has a top-level docstring naming this task and TASK-REV-119C1.
+- [x] All modified files pass project-configured lint/format checks with
       zero errors.
 
 ## Implementation Notes
