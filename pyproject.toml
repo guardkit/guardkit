@@ -59,6 +59,12 @@ dev = [
     "pytest>=7.4.3",
     "pytest-cov>=4.1.0",
     "pytest-asyncio>=0.23.0",
+    # pytest-bdd: GuardKit dogfoods the dependency it requires of all consumers
+    # of the BDD oracle (TASK-FIX-BDDM-1 strict-fail behaviour). Added per
+    # TASK-OPS-BDDM-10 / FEAT-BDDM (2026-04-26). Lower bound 8.1 = forge's pin
+    # (forge/pyproject.toml:34); upper bound <9 reflects pytest-bdd's 8.x
+    # series as the stable surface — re-audit before bumping.
+    "pytest-bdd>=8.1,<9",
     "httpx>=0.25.1",
 ]
 all = [
@@ -68,6 +74,8 @@ all = [
     "pytest>=7.4.3",
     "pytest-cov>=4.1.0",
     "pytest-asyncio>=0.23.0",
+    # See dev group above (TASK-OPS-BDDM-10 / FEAT-BDDM).
+    "pytest-bdd>=8.1,<9",
     "httpx>=0.25.1",
 ]
 
