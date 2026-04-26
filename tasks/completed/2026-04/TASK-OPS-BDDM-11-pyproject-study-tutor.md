@@ -1,11 +1,13 @@
 ---
 id: TASK-OPS-BDDM-11
 title: 'study-tutor: add pytest-bdd to pyproject (proactive remediation)'
-status: in_review
+status: completed
 created: '2026-04-25T00:00:00Z'
 updated: '2026-04-26T00:00:00Z'
-previous_state: in_progress
-state_transition_reason: 'All ACs satisfied; pytest-bdd 8.1.0 installed, import verified, study-tutor test suite green (23 passed)'
+completed: '2026-04-26T00:00:00Z'
+previous_state: in_review
+state_transition_reason: 'All 5 ACs verified; pytest-bdd 8.1.0 installed in study-tutor, import succeeds, full test suite green (23 passed). study-tutor commit 2ba03ec.'
+completed_location: 'tasks/completed/2026-04/TASK-OPS-BDDM-11-pyproject-study-tutor.md'
 priority: low
 complexity: 1
 task_type: bugfix
@@ -76,4 +78,4 @@ that lands tomorrow or in twelve months.
 - `pyproject.toml` — added `"pytest-bdd>=8.1,<9"` to `[project.optional-dependencies].dev` with 6-line TASK-OPS-BDDM-11 / FEAT-BDDM comment block.
 
 **guardkit** (this task file):
-- Status `backlog` → `in_progress` → `in_review`; ACs marked; verification recorded.
+- Status `backlog` → `in_progress` → `in_review` → `completed`; ACs marked; verification recorded; archived to `tasks/completed/2026-04/`.
