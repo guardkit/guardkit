@@ -89,6 +89,16 @@ files. Do not "correct" `Source:` paths to match the template tree.
 | Training data generation | Schema conformance, metadata accuracy | agentic-dataset-factory: 11 runs, 85% acceptance |
 | Code synthesis | Test pass/fail, compilation | GuardKit AutoBuild: 100% task completion |
 
+## Python Pinning
+
+`requires-python = ">=3.11"` (open upper bound) is the portfolio canonical for
+this template family. Don't add a closed upper bound (`<3.X`) unless you have a
+specifically-documented reason — stale upper bounds become latent stall
+trapdoors when a new Python minor ships in a developer's PATH. See
+[`docs/guides/portfolio-python-pinning.md`](../../../../../docs/guides/portfolio-python-pinning.md)
+for rationale and the calendar-cadence revisit policy.
+
 ## See Also
 
 - **Extension template**: [`langchain-deepagents-weighted-evaluation`](../langchain-deepagents-weighted-evaluation/) — weighted multi-criteria evaluation for subjective domains
+- **Portfolio Python pinning**: [`docs/guides/portfolio-python-pinning.md`](../../../../../docs/guides/portfolio-python-pinning.md) — `requires-python` standard for the portfolio

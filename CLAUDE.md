@@ -174,6 +174,7 @@ installer/core/             # Global resources (agents, commands, templates)
 | MCP Integration | `docs/deep-dives/mcp-integration/` |
 | Graphiti Knowledge | `.claude/rules/graphiti-knowledge.md` |
 | Multi-Machine Setup | `docs/guides/claude-code-multi-machine-setup.md` (skills, plugin gotchas, cross-platform paths) |
+| Portfolio Python Pinning | `docs/guides/portfolio-python-pinning.md` (LangChain DeepAgents portfolio `requires-python` standard) |
 | Installation | `pip install guardkit-py` or `./installer/scripts/install.sh` |
 
 ## Clarifying Questions

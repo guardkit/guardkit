@@ -142,7 +142,19 @@ The base template does not include a `SKILL.md` because its simpler variable set
 See `.claude/rules/` for conditional loading rules (when available).
 See `SKILL.md` for template variables and configuration options.
 
+## Python Pinning
+
+`requires-python = ">=3.11"` (open upper bound) is the portfolio canonical for
+this template family. This template inherits the pin via `extends:
+langchain-deepagents`. Don't add a closed upper bound (`<3.X`) to your
+rendered project unless you have a specifically-documented reason — stale
+upper bounds become latent stall trapdoors when a new Python minor ships in a
+developer's PATH. See
+[`docs/guides/portfolio-python-pinning.md`](../../../../../docs/guides/portfolio-python-pinning.md)
+for rationale and the calendar-cadence revisit policy.
+
 ## See Also
 
 - **Getting started**: [`docs/GETTING_STARTED.md`](../../langchain-deepagents/docs/GETTING_STARTED.md) in the base template — prerequisites, SDK constraints, tool separation rules, and common pitfalls
 - **Base template**: [`langchain-deepagents`](../../langchain-deepagents/) — binary evaluation for verifiable domains
+- **Portfolio Python pinning**: [`docs/guides/portfolio-python-pinning.md`](../../../../../docs/guides/portfolio-python-pinning.md) — `requires-python` standard for the portfolio

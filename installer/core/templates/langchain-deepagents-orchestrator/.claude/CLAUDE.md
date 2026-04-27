@@ -43,3 +43,12 @@ work on relevant files.
 **Language**: Python
 **Frameworks**: LangChain, LangGraph, DeepAgents
 **Architecture**: Two-Model Pipeline Orchestrator
+
+## Python Pinning
+
+`requires-python = ">=3.11"` (open upper bound) is the portfolio canonical for
+this template family. Don't add a closed upper bound (`<3.X`) unless you have a
+specifically-documented reason — stale upper bounds become latent stall
+trapdoors when a new Python minor ships in a developer's PATH. See
+[`docs/guides/portfolio-python-pinning.md`](../../../../../docs/guides/portfolio-python-pinning.md)
+for rationale and the calendar-cadence revisit policy.

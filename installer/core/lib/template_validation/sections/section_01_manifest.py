@@ -5,9 +5,10 @@ Validates template metadata, placeholders, and quality scores.
 """
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Tuple
 
 from ..models import (
     SectionResult,
@@ -17,6 +18,27 @@ from ..models import (
     Finding,
     Recommendation,
 )
+
+# Most recent stable Python minor as of last review (TASK-ABSR-E5F6).
+# A closed `requires-python` upper bound that excludes this minor (or any
+# released minor between this and the lower bound) becomes a stall trapdoor
+# the moment the affected interpreter ships in a developer's PATH.
+# See docs/guides/portfolio-python-pinning.md for rationale and update cadence.
+LATEST_STABLE_PYTHON_MINOR: Tuple[int, int] = (3, 14)
+
+# Templates whose downstream rendered projects should follow the LangChain
+# DeepAgents portfolio canonical pin. A template matches if its name starts
+# with one of these prefixes OR its manifest declares `extends` pointing at
+# one of these.
+_LANGCHAIN_DEEPAGENTS_TEMPLATE_NAMES = {
+    "langchain-deepagents",
+    "langchain-deepagents-orchestrator",
+    "langchain-deepagents-weighted-evaluation",
+}
+
+# Captures the upper-bound clause of a PEP 440 requires-python constraint:
+# matches `<3.13`, `< 3.13`, `<3.13.0` etc. and ignores other clauses.
+_REQUIRES_PYTHON_UPPER_RE = re.compile(r"<\s*(\d+)\.(\d+)(?:\.\d+)?")
 
 
 class ManifestAnalysisSection:
@@ -102,6 +124,11 @@ class ManifestAnalysisSection:
         quality_score, qual_issues, qual_findings = self._validate_quality_scores(manifest)
         issues.extend(qual_issues)
         findings.extend(qual_findings)
+
+        # 1.6 Python pin (LangChain DeepAgents portfolio standardisation)
+        pin_issues, pin_findings = self._validate_python_pin(manifest, template_path)
+        issues.extend(pin_issues)
+        findings.extend(pin_findings)
 
         # Calculate overall score
         overall_score = self._calculate_section_score([
@@ -411,6 +438,113 @@ class ManifestAnalysisSection:
                 score -= 1.0
 
         return max(0.0, score), issues, findings
+
+    def _validate_python_pin(
+        self,
+        manifest: Dict[str, Any],
+        template_path: Path,
+    ) -> Tuple[List[ValidationIssue], List[Finding]]:
+        """Warn (informational) when a LangChain DeepAgents-derived template ships a
+        ``requires-python`` constraint with a closed upper bound that already
+        excludes a released, stable Python minor.
+
+        Rationale: see ``docs/guides/portfolio-python-pinning.md``. A stale
+        upper bound is a latent stall trapdoor — when the next default Python
+        ships on a developer's machine, the resolver silently rejects it and
+        the failure surfaces as a misleading downstream stall.
+
+        This check is **non-blocking**: it emits LOW-severity issues so the
+        pin is visible during validation runs without rejecting the template.
+        """
+        issues: List[ValidationIssue] = []
+        findings: List[Finding] = []
+
+        if not self._is_langchain_deepagents_derived(manifest):
+            return issues, findings
+
+        # Two surfaces carry the pin and both can drift:
+        # 1. manifest's ``language_version`` field (metadata, displayed in UIs)
+        # 2. the rendered project's ``pyproject.toml.template`` files
+        sources: List[Tuple[str, str]] = []
+
+        manifest_pin = manifest.get("language_version")
+        if isinstance(manifest_pin, str) and manifest_pin.strip():
+            sources.append(("manifest.json:language_version", manifest_pin))
+
+        for template_pyproject in template_path.rglob("pyproject.toml.template"):
+            pin = self._extract_requires_python(template_pyproject)
+            if pin is not None:
+                rel = template_pyproject.relative_to(template_path)
+                sources.append((f"{rel}:requires-python", pin))
+
+        for location, pin in sources:
+            stale = self._stale_upper_bound(pin)
+            if stale is None:
+                continue
+            major, minor = stale
+            issues.append(ValidationIssue(
+                severity=IssueSeverity.LOW,
+                category=IssueCategory.METADATA,
+                message=(
+                    f"requires-python upper bound `<{major}.{minor}` excludes "
+                    f"Python {LATEST_STABLE_PYTHON_MINOR[0]}."
+                    f"{LATEST_STABLE_PYTHON_MINOR[1]} (latest stable). "
+                    f"LangChain DeepAgents portfolio canonical is `>=3.11` "
+                    f"(open upper bound). See "
+                    f"docs/guides/portfolio-python-pinning.md."
+                ),
+                location=location,
+            ))
+
+        return issues, findings
+
+    @staticmethod
+    def _is_langchain_deepagents_derived(manifest: Dict[str, Any]) -> bool:
+        """Match if the template is itself a LangChain DeepAgents template or
+        declares ``extends`` chained from one."""
+        name = manifest.get("name", "")
+        if isinstance(name, str) and name in _LANGCHAIN_DEEPAGENTS_TEMPLATE_NAMES:
+            return True
+        extends = manifest.get("extends", "")
+        if isinstance(extends, str) and extends in _LANGCHAIN_DEEPAGENTS_TEMPLATE_NAMES:
+            return True
+        return False
+
+    @staticmethod
+    def _extract_requires_python(pyproject_template: Path) -> Optional[str]:
+        """Read ``requires-python`` from a pyproject.toml.template file.
+
+        Returns the raw constraint string (e.g. ``">=3.11,<3.13"``) or None if
+        the file is unreadable or carries no requires-python clause.
+        """
+        try:
+            text = pyproject_template.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return None
+        match = re.search(
+            r"^\s*requires-python\s*=\s*['\"]([^'\"]+)['\"]",
+            text,
+            re.MULTILINE,
+        )
+        return match.group(1) if match else None
+
+    @staticmethod
+    def _stale_upper_bound(constraint: str) -> Optional[Tuple[int, int]]:
+        """Return the upper-bound (major, minor) if it excludes the latest
+        stable Python minor, otherwise None.
+
+        ``<3.14`` excludes 3.14 → returns (3, 14).
+        ``<3.15`` excludes nothing currently released → returns None.
+        ``>=3.11`` (no upper bound) → returns None.
+        """
+        match = _REQUIRES_PYTHON_UPPER_RE.search(constraint)
+        if match is None:
+            return None
+        major, minor = int(match.group(1)), int(match.group(2))
+        # `<X.Y` excludes X.Y itself, so it's stale iff X.Y <= latest stable.
+        if (major, minor) <= LATEST_STABLE_PYTHON_MINOR:
+            return major, minor
+        return None
 
     def _calculate_section_score(self, subscores: List[float]) -> float:
         """Calculate weighted average of subscores"""
