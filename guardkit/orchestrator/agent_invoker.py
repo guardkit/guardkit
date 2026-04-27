@@ -2973,9 +2973,16 @@ Follow the decision format specified in your agent definition.
                 # reads the file, so it MUST carry the freshest validation
                 # block (not a stale one from _write_task_work_results's
                 # initial write, which may have raced pre-enrichment).
+                # TASK-ABSR-1357: thread task_type so declarative tasks don't
+                # trigger a non-actionable Phase-3 advisory.
                 workflow_mode = task_work_data.get("workflow_mode") or "implement-only"
+                task_type = (
+                    task_work_data.get("task_type")
+                    if isinstance(task_work_data.get("task_type"), str)
+                    else self._lookup_task_type(task_id)
+                )
                 new_validation = self._compute_agent_invocations_validation(
-                    task_work_data, workflow_mode
+                    task_work_data, workflow_mode, task_type=task_type
                 )
                 if task_work_data.get("agent_invocations_validation") != new_validation:
                     task_work_data["agent_invocations_validation"] = new_validation
@@ -3179,6 +3186,24 @@ Follow the decision format specified in your agent definition.
             for task_file in task_dir.rglob(f"{task_id}*.md"):
                 return task_file
 
+        return None
+
+    def _lookup_task_type(self, task_id: str) -> Optional[str]:
+        """Resolve a task's ``task_type`` from its frontmatter.
+
+        Used to thread ``task_type`` into the agent_invocations gate so
+        declarative tasks in implement-only mode don't trigger a Phase-3
+        advisory (TASK-ABSR-1357). Best-effort: returns None on missing
+        file, missing frontmatter, or unparseable YAML — the gate falls
+        back to today's behaviour for any non-string result.
+        """
+        task_file = self._find_task_file(task_id)
+        if task_file is None:
+            return None
+        meta = self._load_task_metadata(task_file)
+        value = meta.get("task_type") if isinstance(meta, dict) else None
+        if isinstance(value, str) and value:
+            return value
         return None
 
     def _load_task_metadata(self, task_file: Path) -> Dict[str, Any]:
@@ -5563,6 +5588,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         self,
         results: Dict[str, Any],
         workflow_mode: str,
+        task_type: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Run validate_agent_invocations against ``results``; return a gate block.
 
@@ -5577,7 +5603,17 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         Never raises. A validator crash yields ``validator_error`` so Coach can
         decide — the validator is a gate, not a blocker of artefact emission
         (per TASK-FIX-RWOP1.3.1 Implementation Notes).
+
+        ``task_type`` is propagated so declarative tasks in
+        ``implement-only`` mode expect 2 phases (Testing, Code Review)
+        instead of 3 — there is no Phase-3 stack-specific specialist to
+        invoke when the schema *is* the implementation (TASK-ABSR-1357).
+        Falls back to ``results.get("task_type")`` when not supplied.
         """
+        if task_type is None:
+            task_type_from_results = results.get("task_type")
+            if isinstance(task_type_from_results, str):
+                task_type = task_type_from_results
         try:
             invocations = self._extract_invocations_from_result_data(results)
 
@@ -5589,7 +5625,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             # approves on spurious grounds — a genuine Player misbehaviour
             # will be caught by upstream stream-parse errors.
             if not invocations:
-                expected = get_expected_phases(workflow_mode)
+                expected = get_expected_phases(workflow_mode, task_type)
                 return {
                     "status": "no_data",
                     "expected_phases": expected,
@@ -5616,13 +5652,13 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                     "status": inv.get("status", "completed"),
                 })
 
-            expected = get_expected_phases(workflow_mode)
+            expected = get_expected_phases(workflow_mode, task_type)
             actual = sum(
                 1 for inv in tracker.invocations if inv.get("status") == "completed"
             )
 
             try:
-                validate_agent_invocations(tracker, workflow_mode)
+                validate_agent_invocations(tracker, workflow_mode, task_type)
                 return {
                     "status": "passed",
                     "expected_phases": expected,
@@ -5633,7 +5669,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             except AgentInvocationValidationError as exc:
                 missing = [
                     m["phase"]
-                    for m in identify_missing_phases(tracker, workflow_mode)
+                    for m in identify_missing_phases(
+                        tracker, workflow_mode, task_type
+                    )
                 ]
                 return {
                     "status": "violation",
@@ -5822,9 +5860,16 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         # tasks (workflow_mode=="direct") expect Phase 3 only — see
         # `get_expected_phases("direct")` — and so will not trigger a
         # false Phase 4/5 violation when specialist_results.json is absent.
+        # TASK-ABSR-1357: thread task_type so declarative tasks in
+        # implement-only mode expect [4, 5] (not [3, 4, 5]).
         workflow_mode = task_work_data.get("workflow_mode") or "implement-only"
+        task_type = (
+            task_work_data.get("task_type")
+            if isinstance(task_work_data.get("task_type"), str)
+            else self._lookup_task_type(task_id)
+        )
         new_validation = self._compute_agent_invocations_validation(
-            task_work_data, workflow_mode
+            task_work_data, workflow_mode, task_type=task_type
         )
         task_work_data["agent_invocations_validation"] = new_validation
 
@@ -6160,9 +6205,26 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         # hits disk, so Coach sees the validation block when it reads the
         # results. Autobuild Player path invokes task-work --implement-only
         # (Phases 3/4/5), so workflow_mode defaults to "implement-only".
+        # TASK-ABSR-1357: thread task_type so declarative tasks in
+        # implement-only mode expect [4, 5] only — there is no Phase-3
+        # stack-specific specialist to invoke when the schema *is* the
+        # implementation. Persist task_type into the on-disk results so
+        # downstream re-runs (specialist injection / enrichment writeback)
+        # can pick it up via the fallback in
+        # ``_compute_agent_invocations_validation`` without re-reading
+        # the task file.
         workflow_mode = result_data.get("workflow_mode") or "implement-only"
+        task_type = (
+            result_data.get("task_type")
+            if isinstance(result_data.get("task_type"), str)
+            else self._lookup_task_type(task_id)
+        )
+        if task_type is not None:
+            results["task_type"] = task_type
         results["agent_invocations_validation"] = (
-            self._compute_agent_invocations_validation(results, workflow_mode)
+            self._compute_agent_invocations_validation(
+                results, workflow_mode, task_type=task_type
+            )
         )
 
         # TASK-FIX-RWOP1.3.2: plan_audit gate on the producer side. The
