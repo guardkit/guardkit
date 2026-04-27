@@ -924,6 +924,33 @@ Use this triage table to self-diagnose before opening a review:
 
 **Related fix work**: [TASK-FIX-7A01](../../tasks/in_review/TASK-FIX-7A01-pin-sdk-log-version.md) pins `claude-agent-sdk` to a known-good band and logs the version at startup, which removes the SDK-skew failure mode from this table. Until that lands, the `pip show claude-agent-sdk` check is the fastest way to confirm or rule out version skew.
 
+### Environment-class conditional approval (`environment_conditional_approval`)
+
+When a user explicitly opts into `bootstrap_failure_mode: warn` and the bootstrap install silently fails, Coach's independent pytest run will hit `ImportError` / `ModuleNotFoundError` even though Player's gates passed inside the (broken) venv. Without intervention this presents as a feedback loop on a purely environmental fault — Player has nothing to fix.
+
+The fifth conditional-approval clause in `CoachValidator.validate` covers this case. It fires when **all** of the following are true:
+
+- `failure_class == "infrastructure"` and `failure_confidence == "ambiguous"` (the `_INFRA_AMBIGUOUS` patterns: `ImportError`, `ModuleNotFoundError`, `No module named`)
+- `gates_status.all_gates_passed == True` (Player did everything right inside the venv it had)
+- `task.requires_infrastructure` is empty / unset (the existing `requires_infrastructure + Docker unavailable` branch already handles the declared-deps case)
+- `<worktree>/.guardkit/bootstrap_state.json` exists and reports `success: False` (read by the `_bootstrap_likely_broken` helper — missing file or `success: true` is treated as "unknown / can't prove env failure" and the clause **does not** fire)
+
+When the clause fires, the `CoachValidationResult` is tagged with `environment_conditional_approval: True` (visible in the JSON payload's top-level `environment_conditional_approval` key, alongside the longer-standing `approved_without_independent_tests` flag). Logs emit at `WARNING` level:
+
+```
+Conditional approval for {task_id}: environment-class infrastructure failure
+(infrastructure/ambiguous) on a known-broken bootstrap; all Player gates passed.
+Marking approved with environment flag.
+```
+
+The clause is deliberately narrow:
+
+- A real `ImportError` on a **healthy** bootstrap (Player imported a non-existent module) does NOT match — `bootstrap_state.json` reports `success: True`, so the helper returns False, so the clause doesn't fire, and the existing feedback path runs as before.
+- A code defect (`failure_class == "code"`) on a broken bootstrap also doesn't match — only the infrastructure/ambiguous classification triggers the clause.
+- It pairs with the smart-default `bootstrap_failure_mode: block` work (TASK-ABSR-A1B2) and the `environment_stall` sub-type detection (TASK-ABSR-C3D4): when this clause fires, neither stall happens; when the clause doesn't fire (e.g. `block` mode aborted the run at preflight), neither does the stall.
+
+**Origin**: belt-and-braces layer for [TASK-ABSR-A1B2](../../tasks/completed/2026-04/TASK-ABSR-A1B2-bootstrap-block-smart-default.md)'s smart-default, motivated by the FEAT-J004-702C / TASK-J004-004 stall. See [TASK-ABSR-2468](../../tasks/completed/TASK-ABSR-2468/TASK-ABSR-2468.md).
+
 ### No Events in File
 
 **Symptom**: `.guardkit/autobuild/{task_id}/events.jsonl` is empty or missing.

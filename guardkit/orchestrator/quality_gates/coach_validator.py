@@ -264,6 +264,7 @@ class CoachValidationResult:
     context_used: Optional[str] = None
     approved_without_independent_tests: bool = False
     is_configuration_error: bool = False
+    environment_conditional_approval: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -325,6 +326,7 @@ class CoachValidationResult:
             "context_used": self.context_used,
             "approved_without_independent_tests": self.approved_without_independent_tests,
             "is_configuration_error": self.is_configuration_error,
+            "environment_conditional_approval": self.environment_conditional_approval,
         }
 
 
@@ -800,6 +802,7 @@ class CoachValidator:
             )
 
         conditional_approval = False
+        environment_conditional_approval = False
         failure_class = None
         if not test_result.tests_passed:
             failure_class, failure_confidence = self._classify_test_failure(
@@ -828,6 +831,23 @@ class CoachValidator:
                 self.wave_size,
             )
 
+            # TASK-ABSR-2468: belt-and-braces clause for environment-class
+            # ambiguous infrastructure failures (ImportError /
+            # ModuleNotFoundError without service-client context) when the
+            # worktree's bootstrap install is observably broken and all
+            # Player gates passed. Pairs with the bootstrap_failure_mode
+            # smart default from TASK-ABSR-A1B2: when a user opts into
+            # ``warn`` mode and ships on a half-installed venv, this clause
+            # prevents the feedback-stall trapdoor from firing on what is
+            # purely an environment problem.
+            environment_conditional_approval = (
+                failure_class == "infrastructure"
+                and failure_confidence == "ambiguous"
+                and gates_status.all_gates_passed
+                and not requires_infra
+                and self._bootstrap_likely_broken(task)
+            )
+
             conditional_approval = (
                 failure_class == "infrastructure"
                 and failure_confidence == "high"
@@ -851,10 +871,17 @@ class CoachValidator:
                 failure_class == "code"
                 and self.is_parallel
                 and gates_status.all_gates_passed
-            )
+            ) or environment_conditional_approval
 
             if conditional_approval:
-                if failure_class == "collection_error":
+                if environment_conditional_approval:
+                    logger.warning(
+                        f"Conditional approval for {task_id}: environment-class "
+                        f"infrastructure failure ({failure_class}/{failure_confidence}) "
+                        f"on a known-broken bootstrap; all Player gates passed. "
+                        f"Marking approved with environment flag."
+                    )
+                elif failure_class == "collection_error":
                     logger.warning(
                         f"Conditional approval for {task_id}: test collection errors in "
                         f"independent verification, all Player gates passed. "
@@ -1087,6 +1114,7 @@ class CoachValidator:
             context=context,
             conditional_approval=conditional_approval,
             failure_class=failure_class,
+            environment_conditional_approval=environment_conditional_approval,
         )
 
         return CoachValidationResult(
@@ -1100,6 +1128,7 @@ class CoachValidator:
             rationale=rationale,
             context_used=context,
             approved_without_independent_tests=conditional_approval,
+            environment_conditional_approval=environment_conditional_approval,
         )
 
     def read_quality_gate_results(self, task_id: str) -> Dict[str, Any]:
@@ -3633,6 +3662,41 @@ class CoachValidator:
         )
         return bool(bootstrap & _ASYNCPG_SIGNALS)
 
+    def _bootstrap_likely_broken(
+        self, task: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """Return True if the worktree bootstrap state file reports failure.
+
+        Reads ``<worktree>/.guardkit/bootstrap_state.json`` (written by
+        :class:`environment_bootstrap.EnvironmentBootstrap`). Conservative
+        default: returns False on missing file, parse errors, non-dict
+        payloads, or ``success: True`` — never approve when the bootstrap
+        state is unknown.
+
+        Parameters
+        ----------
+        task : Optional[Dict[str, Any]]
+            Task metadata. Currently unused; accepted for forward
+            compatibility and signature symmetry with sibling predicate
+            helpers (``_is_psycopg2_asyncpg_mismatch``).
+
+        Returns
+        -------
+        bool
+            True only when ``bootstrap_state.json`` exists, parses as a
+            JSON object, and reports ``success: False``.
+        """
+        state_file = self.worktree_path / ".guardkit" / "bootstrap_state.json"
+        try:
+            if not state_file.exists():
+                return False
+            data = json.loads(state_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False
+        if not isinstance(data, dict):
+            return False
+        return data.get("success") is False
+
     def _summarize_test_output(self, output: str, max_length: int = 1000) -> str:
         """
         Summarize test output for reporting.
@@ -3708,6 +3772,7 @@ class CoachValidator:
         context: Optional[str] = None,
         conditional_approval: bool = False,
         failure_class: Optional[str] = None,
+        environment_conditional_approval: bool = False,
     ) -> str:
         """
         Build an accurate rationale message for approval based on actual verification status.
@@ -3737,7 +3802,14 @@ class CoachValidator:
         parts = ["All quality gates passed."]
 
         if conditional_approval:
-            if failure_class == "collection_error":
+            if environment_conditional_approval:
+                parts.append(
+                    "Independent tests failed with environment-class infrastructure error "
+                    "(ImportError/ModuleNotFoundError) on a known-broken bootstrap. "
+                    "All Player quality gates passed. Conditionally approved with "
+                    "environment flag — independent tests skipped."
+                )
+            elif failure_class == "collection_error":
                 parts.append(
                     "Conditionally approved — test collection errors in independent verification. "
                     "All Player quality gates passed."

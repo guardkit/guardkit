@@ -5068,6 +5068,25 @@ class AutoBuildOrchestrator:
                 if last_coach and last_coach.coach_result
                 else None
             )
+            if coach_report and coach_report.get("environment_conditional_approval"):
+                # TASK-ABSR-2468: environment-class conditional approval
+                # — the worktree's bootstrap was observably broken and
+                # Player did everything right in the (broken) venv. Label
+                # this distinctly so the human reviewer doesn't read it as
+                # a generic "infra deps not configured" approval.
+                return (
+                    f"APPROVED with environment flag "
+                    f"(known-broken bootstrap, independent tests skipped) "
+                    f"after {len(turn_history)} turn(s).\n"
+                    f"Worktree preserved at: {self._worktree_manager.worktrees_dir}\n"
+                    f"Review and merge manually when ready.\n"
+                    f"Note: Independent tests failed with environment-class "
+                    f"infrastructure error (ImportError/ModuleNotFoundError) on "
+                    f"a worktree whose bootstrap install is reported broken. "
+                    f"Player's gates passed; the failure is environmental. "
+                    f"Verify the implementation against a healthy bootstrap "
+                    f"before merging."
+                )
             if coach_report and coach_report.get("approved_without_independent_tests"):
                 return (
                     f"APPROVED (infra-dependent, independent tests skipped) "
