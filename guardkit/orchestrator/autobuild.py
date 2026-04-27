@@ -46,6 +46,7 @@ import hashlib
 import json
 import logging
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -277,6 +278,14 @@ STALL_FEEDBACK_GENERIC = "coach_feedback_stall"
 """Stall sub-type: identical Coach feedback for N turns with zero criteria
 progress, and no more specific sub-type matched."""
 
+STALL_ENVIRONMENT = "environment_stall"
+"""Stall sub-type: trailing N turns all show ``all_gates_passed=True`` (Player
+quality gates clean) but ``independent_tests.tests_passed=False`` with a
+``test_verification`` issue whose ``failure_classification == "infrastructure"``
+and an identical ``failure_confidence``. Indicates the worktree environment is
+broken (e.g. Python interpreter mismatch with ``requires-python``) rather than
+a code defect or task-type misclassification. TASK-ABSR-C3D4."""
+
 
 @dataclass(frozen=True)
 class StallClassification:
@@ -357,6 +366,60 @@ def _extract_agent_invocations_violation(
         if (
             isinstance(issue, dict)
             and issue.get("category") == "agent_invocations_violation"
+        ):
+            return issue
+    return None
+
+
+def _extract_environment_stall_signal(
+    turn_record: "TurnRecord",
+) -> Optional[Dict[str, Any]]:
+    """Return the ``test_verification`` issue dict for this turn when the
+    environment-stall pattern matches, or ``None`` otherwise (TASK-ABSR-C3D4).
+
+    Pattern requires:
+      - ``coach_result.report["validation_results"]["quality_gates"]["all_gates_passed"]`` is True
+      - ``coach_result.report["validation_results"]["independent_tests"]["tests_passed"]`` is False
+      - ``coach_result.report["issues"]`` contains an entry with
+        ``category == "test_verification"`` and
+        ``failure_classification == "infrastructure"``
+
+    Defensive against malformed TurnRecords (Mock objects in tests, partial
+    state during error paths) — any shape mismatch returns ``None`` rather
+    than raising.
+    """
+    if turn_record.coach_result is None:
+        return None
+    try:
+        report = getattr(turn_record.coach_result, "report", None) or {}
+    except (AttributeError, TypeError):
+        return None
+    if not isinstance(report, dict):
+        return None
+
+    validation_results = report.get("validation_results")
+    if not isinstance(validation_results, dict):
+        return None
+    quality_gates = validation_results.get("quality_gates")
+    if not isinstance(quality_gates, dict):
+        return None
+    if quality_gates.get("all_gates_passed") is not True:
+        return None
+
+    independent_tests = validation_results.get("independent_tests")
+    if not isinstance(independent_tests, dict):
+        return None
+    if independent_tests.get("tests_passed") is not False:
+        return None
+
+    issues = report.get("issues")
+    if not isinstance(issues, list):
+        return None
+    for issue in issues:
+        if (
+            isinstance(issue, dict)
+            and issue.get("category") == "test_verification"
+            and issue.get("failure_classification") == "infrastructure"
         ):
             return issue
     return None
@@ -457,6 +520,23 @@ def classify_stall(
 
     if context_pollution_fired:
         co_fires.append(STALL_CONTEXT_POLLUTION)
+
+    # Check environment_stall: trailing N turns all show all_gates_passed=True
+    # but independent_tests failed with infrastructure-class failure_classification
+    # AND identical failure_confidence across the window. agent_invocations and
+    # context_pollution take precedence per the AC, so only check when neither
+    # has fired (TASK-ABSR-C3D4).
+    if not co_fires and len(turn_history) >= threshold:
+        recent = turn_history[-threshold:]
+        env_signals = [
+            _extract_environment_stall_signal(tr) for tr in recent
+        ]
+        if all(signal is not None for signal in env_signals):
+            confidences = [
+                signal.get("failure_confidence") for signal in env_signals
+            ]
+            if len(set(confidences)) == 1:
+                co_fires.append(STALL_ENVIRONMENT)
 
     # Default fallback.
     if not co_fires:
@@ -5040,6 +5120,98 @@ class AutoBuildOrchestrator:
 
         return "\n".join(feedback_lines)
 
+    def _build_environment_stall_diagnostic(
+        self,
+        turn_history: List["TurnRecord"],
+    ) -> Optional[str]:
+        """Build the environment_stall diagnostic message (TASK-ABSR-C3D4).
+
+        Returns ``None`` when the worktree has no Python manifest — callers
+        fall through to the generic stall message in that case. Reading the
+        bootstrap state file and the manifest is best-effort: missing or
+        unparseable inputs are silently omitted rather than raising.
+        """
+        n_turns = len(turn_history)
+
+        # Resolve the worktree root for this task. The orchestrator clears
+        # ``_active_worktree_path`` on finalize, so reconstruct from the
+        # worktrees dir and the last turn's task_id.
+        worktree_root: Optional[Path] = None
+        if self._worktree_manager is not None and turn_history:
+            last = turn_history[-1]
+            if last.player_result and last.player_result.task_id:
+                candidate = (
+                    self._worktree_manager.worktrees_dir
+                    / last.player_result.task_id
+                )
+                if candidate.exists():
+                    worktree_root = candidate
+
+        # Per the task spec: enrich only the Python-project case. If there is
+        # no pyproject.toml, fall through to the generic diagnostic.
+        if worktree_root is None or not (worktree_root / "pyproject.toml").exists():
+            return None
+
+        parts = [
+            f"Unrecoverable stall detected after {n_turns} turn(s) [{STALL_ENVIRONMENT}].",
+            "Stall driven by repeated infrastructure-class failures while all Player gates passed.",
+        ]
+
+        # Bootstrap state — best-effort.
+        bootstrap_state_path = worktree_root / ".guardkit" / "bootstrap_state.json"
+        if bootstrap_state_path.exists():
+            try:
+                state = json.loads(
+                    bootstrap_state_path.read_text(encoding="utf-8")
+                )
+                if isinstance(state, dict):
+                    fields: List[str] = []
+                    if "success" in state:
+                        fields.append(f"success={state.get('success')}")
+                    if "installs_attempted" in state:
+                        fields.append(
+                            f"installs_attempted={state.get('installs_attempted')}"
+                        )
+                    if "installs_failed" in state:
+                        fields.append(
+                            f"installs_failed={state.get('installs_failed')}"
+                        )
+                    if fields:
+                        parts.append("Bootstrap state: " + ", ".join(fields))
+            except (OSError, json.JSONDecodeError, ValueError):
+                pass
+
+        # Active interpreter version.
+        parts.append(f"Active Python interpreter: {platform.python_version()}")
+
+        # requires-python from the manifest, via DetectedManifest helper.
+        try:
+            from guardkit.orchestrator.environment_bootstrap import (
+                DetectedManifest,
+            )
+
+            manifest = DetectedManifest(
+                path=worktree_root / "pyproject.toml",
+                stack="python",
+                is_lock_file=False,
+                install_command=[],
+            )
+            requires_python = manifest.get_requires_python()
+        except Exception:
+            requires_python = None
+        if requires_python:
+            parts.append(f"Manifest requires-python: {requires_python}")
+
+        parts.append(
+            "Remediation: Set `bootstrap_failure_mode: block` in "
+            "`.guardkit/config.yaml` (or pass `--bootstrap-failure-mode block`). "
+            "Install a compatible interpreter with `uv python install <X>`, "
+            "`pyenv install <X>`, or `conda create -n <name> python=<X>`."
+        )
+        parts.append("Worktree preserved for inspection.")
+
+        return "\n".join(parts)
+
     def _build_summary_details(
         self,
         turn_history: List[TurnRecord],
@@ -5228,6 +5400,20 @@ class AutoBuildOrchestrator:
                     f"{co_fire_suffix}\n"
                     f"Worktree preserved for inspection."
                 )
+
+            # environment_stall branch: emit env-aware diagnostic naming the
+            # bootstrap state, active interpreter, and requires-python
+            # constraint. Falls through to the generic message when the
+            # worktree has no Python manifest (TASK-ABSR-C3D4).
+            if (
+                classification is not None
+                and STALL_ENVIRONMENT in classification.co_fires
+            ):
+                env_message = self._build_environment_stall_diagnostic(
+                    turn_history
+                )
+                if env_message is not None:
+                    return env_message
 
             # Fallback: Check if the stall was caused by SDK API errors
             # (TASK-FIX-d5e6). This preserves TASK-REV-8A08's diagnostic for
