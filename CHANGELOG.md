@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+#### AutoBuild: `bootstrap_failure_mode` smart default (TASK-ABSR-A1B2)
+
+When neither `.guardkit/config.yaml` (`autobuild.bootstrap.failure_mode`) nor
+the `--bootstrap-failure-mode` CLI flag set an explicit value, GuardKit now
+resolves the bootstrap failure-mode from detected manifests:
+
+- **`block`** when any manifest declares a `requires-python` constraint —
+  matches the case where pip would otherwise fail with an interpreter
+  mismatch and (for `task_type=declarative` + `implementation_mode=task-work`
+  tasks) trap the run in a feedback-stall trapdoor.
+- **`warn`** otherwise (preserves prior behaviour for projects without a
+  `requires-python` declaration).
+
+**Why**: closes the failure class identified in TASK-REV-FA04 — silent
+continuation past a Python interpreter mismatch that produced
+`installs_failed=1, installs_attempted=1` and stalled FEAT-J004-702C. With
+the smart default in place, the existing requires-python pre-check raises
+`FeatureOrchestrationError` before Wave 1 starts, naming `uv python install`,
+`pyenv install`, and `conda create` as remediation paths.
+
+**Impact**: any consumer with `requires-python` declared in their manifests
+who relied on the previous warn-by-default behaviour will now see a hard
+stop at preflight when their active interpreter doesn't satisfy the
+constraint.
+
+**Opt-out**: set `bootstrap_failure_mode: warn` explicitly in
+`.guardkit/config.yaml` under `autobuild.bootstrap`, or pass
+`--bootstrap-failure-mode warn` on the command line. Both routes are
+documented in the existing remediation hint emitted by the gate.
+
+The `BOOTSTRAP_FAILURE_MODES = ("block", "warn")` tuple is unchanged — the
+smart default is *which* of those two is returned by default, not a new
+mode.
+
 #### Installer: Manifest-Driven CLI Symlinks (TASK-ISH-D09E)
 
 `installer/scripts/install.sh` no longer blindly walks `installer/core/commands/`

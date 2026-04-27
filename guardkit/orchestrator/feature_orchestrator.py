@@ -31,7 +31,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, Iterable, List, Literal, Optional
 
 from rich.console import Console
 from rich.panel import Panel
@@ -225,6 +225,47 @@ BOOTSTRAP_FAILURE_MODES = ("block", "warn")
 DEFAULT_BOOTSTRAP_FAILURE_MODE = "warn"
 
 
+def compute_default_bootstrap_failure_mode(manifests: Iterable[Any]) -> str:
+    """
+    Compute the smart default for ``bootstrap_failure_mode`` from detected manifests.
+
+    Returns ``"block"`` when any manifest in ``manifests`` declares a
+    non-empty ``requires-python`` constraint (via ``get_requires_python()``)
+    and ``"warn"`` otherwise. The premise: if a manifest declares an
+    interpreter constraint, a pip install with the wrong interpreter will
+    fail downstream — better to hard-fail at preflight than silently
+    continue into a feedback-stall trapdoor (TASK-REV-FA04 / TASK-ABSR-A1B2).
+
+    Manifests that don't expose ``get_requires_python()`` (or whose
+    accessor returns ``None`` / empty) are silently ignored — this is
+    correct for non-Python stacks and for ``requirements.txt`` /
+    lock-file manifests.
+
+    Parameters
+    ----------
+    manifests : Iterable[Any]
+        Detected manifests. Each item may expose
+        ``get_requires_python() -> Optional[str]``.
+
+    Returns
+    -------
+    str
+        Either ``"block"`` or ``"warn"`` (always one of
+        :data:`BOOTSTRAP_FAILURE_MODES`).
+    """
+    for m in manifests:
+        getter = getattr(m, "get_requires_python", None)
+        if getter is None:
+            continue
+        try:
+            constraint = getter()
+        except Exception:
+            continue
+        if constraint:
+            return "block"
+    return "warn"
+
+
 def load_bootstrap_config(
     repo_root: Path,
     override_failure_mode: Optional[str] = None,
@@ -234,14 +275,28 @@ def load_bootstrap_config(
 
     Reads the ``autobuild.bootstrap`` section. Recognized keys:
 
-    - ``failure_mode`` — ``"block"`` or ``"warn"`` (default: ``"warn"``).
+    - ``failure_mode`` — ``"block"`` or ``"warn"`` (default: see below).
     - ``optional_stacks`` — list of stack identifiers that should NOT be
       considered essential when deciding whether to hard-fail. Defaults to
       ``[]`` (all detected stacks are essential).
 
-    The CLI flag override takes precedence over the yaml value. Invalid
-    values (unknown mode strings, unexpected types) fall back to the default
-    with a warning — this loader never raises.
+    Precedence (highest first):
+
+    1. CLI override (``override_failure_mode``) when valid.
+    2. Explicit yaml value when valid.
+    3. Smart default — applied later (in
+       :meth:`FeatureOrchestrator._bootstrap_environment`) once manifests
+       have been detected. See
+       :func:`compute_default_bootstrap_failure_mode`.
+
+    Invalid values (unknown mode strings, unexpected types) fall back to
+    the documented baseline default with a warning — this loader never
+    raises.
+
+    The returned dict carries a ``failure_mode_explicit`` flag so the
+    orchestrator can tell whether the resolved value came from a real
+    user choice (yaml / CLI) or from the baseline. The smart default
+    only applies when ``failure_mode_explicit`` is ``False``.
 
     Parameters
     ----------
@@ -253,12 +308,17 @@ def load_bootstrap_config(
     Returns
     -------
     Dict[str, Any]
-        Dict with keys ``failure_mode`` (str) and ``optional_stacks``
-        (List[str]). Always populated with defaults.
+        Dict with keys:
+        - ``failure_mode`` (str) — resolved baseline mode.
+        - ``optional_stacks`` (List[str]).
+        - ``failure_mode_explicit`` (bool) — True when yaml or CLI set
+          ``failure_mode`` explicitly. When False, the orchestrator should
+          apply the smart default after manifest detection.
     """
     result: Dict[str, Any] = {
         "failure_mode": DEFAULT_BOOTSTRAP_FAILURE_MODE,
         "optional_stacks": [],
+        "failure_mode_explicit": False,
     }
 
     config_path = repo_root / ".guardkit" / "config.yaml"
@@ -275,6 +335,7 @@ def load_bootstrap_config(
                         yaml_mode = bootstrap_cfg.get("failure_mode")
                         if isinstance(yaml_mode, str) and yaml_mode in BOOTSTRAP_FAILURE_MODES:
                             result["failure_mode"] = yaml_mode
+                            result["failure_mode_explicit"] = True
                         elif yaml_mode is not None:
                             logger.warning(
                                 "Ignoring invalid autobuild.bootstrap.failure_mode=%r "
@@ -295,6 +356,7 @@ def load_bootstrap_config(
     if override_failure_mode is not None:
         if override_failure_mode in BOOTSTRAP_FAILURE_MODES:
             result["failure_mode"] = override_failure_mode
+            result["failure_mode_explicit"] = True
         else:
             logger.warning(
                 "Ignoring invalid bootstrap_failure_mode override %r (valid: %s)",
@@ -521,12 +583,18 @@ class FeatureOrchestrator:
         self.features_dir = features_dir or self.repo_root / ".guardkit" / "features"
 
         # TASK-FIX-7A04: Resolve bootstrap failure-mode from CLI override or yaml.
+        # TASK-ABSR-A1B2: When neither yaml nor CLI provided a value, the
+        # final mode is decided by ``compute_default_bootstrap_failure_mode``
+        # *after* manifest detection (in ``_bootstrap_environment``).
         bootstrap_cfg = load_bootstrap_config(
             self.repo_root,
             override_failure_mode=bootstrap_failure_mode,
         )
         self.bootstrap_failure_mode: str = bootstrap_cfg["failure_mode"]
         self.bootstrap_optional_stacks: List[str] = list(bootstrap_cfg["optional_stacks"])
+        self._bootstrap_failure_mode_explicit: bool = bool(
+            bootstrap_cfg.get("failure_mode_explicit", False)
+        )
 
         # Raise file descriptor limit for parallel task execution
         self._raise_fd_limit()
@@ -1158,6 +1226,14 @@ class FeatureOrchestrator:
             stacks = sorted(set(m.stack for m in manifests))
             console.print(f"[cyan]\u2699[/cyan] Bootstrapping environment: {', '.join(stacks)}")
 
+            # TASK-ABSR-A1B2: Smart-default bootstrap failure mode after
+            # manifest detection. Runs only when the user didn't set an
+            # explicit value via yaml or CLI. Decided here (rather than at
+            # __init__) so the function has access to the manifest list.
+            # Logged at INFO once per orchestration run so the resolved
+            # default \u2014 and which manifests drove it \u2014 is visible.
+            self._resolve_smart_default_failure_mode(manifests)
+
             # TASK-REV-JMBP Workstream E: pre-check requires-python before pip
             # runs so the error path names the interpreter mismatch up front
             # rather than leaving users to decode pip's "requires a different
@@ -1215,6 +1291,49 @@ class FeatureOrchestrator:
             logger.warning(f"Environment bootstrap failed: {e}")
             console.print(f"[yellow]\u26a0[/yellow] Environment bootstrap failed: {e}")
             return None
+
+    def _resolve_smart_default_failure_mode(self, manifests: List[Any]) -> None:
+        """
+        Apply the smart default for ``bootstrap_failure_mode`` (TASK-ABSR-A1B2).
+
+        When the user did not set ``failure_mode`` explicitly via
+        ``.guardkit/config.yaml`` or ``--bootstrap-failure-mode``, decide
+        the mode from the detected manifests: ``"block"`` when any manifest
+        declares a ``requires-python`` constraint, ``"warn"`` otherwise.
+
+        Once applied, the resolved value is treated as explicit so a
+        second invocation (between waves) does not re-evaluate.
+
+        The decision is logged at ``INFO`` so a developer reading the
+        startup log can see which mode is active and which manifest(s)
+        drove a ``"block"`` resolution.
+        """
+        if self._bootstrap_failure_mode_explicit:
+            return
+
+        smart_mode = compute_default_bootstrap_failure_mode(manifests)
+        triggers = [
+            str(getattr(m, "path", "<unknown manifest>"))
+            for m in manifests
+            if getattr(m, "get_requires_python", lambda: None)()
+        ]
+
+        if triggers:
+            logger.info(
+                "Bootstrap failure-mode smart default = %r (manifests "
+                "declaring requires-python: %s)",
+                smart_mode,
+                ", ".join(triggers),
+            )
+        else:
+            logger.info(
+                "Bootstrap failure-mode smart default = %r (no manifests "
+                "declare requires-python)",
+                smart_mode,
+            )
+
+        self.bootstrap_failure_mode = smart_mode
+        self._bootstrap_failure_mode_explicit = True
 
     def _maybe_hardfail_bootstrap(self, result: BootstrapResult) -> None:
         """

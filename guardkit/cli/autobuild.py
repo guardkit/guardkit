@@ -649,8 +649,10 @@ def status(ctx, task_id: str, verbose: bool):
     help=(
         "Bootstrap hard-fail gate (TASK-FIX-7A04). "
         "'block' raises an error when every essential-stack install fails; "
-        "'warn' (default) only logs. Overrides autobuild.bootstrap.failure_mode "
-        "in .guardkit/config.yaml."
+        "'warn' only logs. The smart default (TASK-ABSR-A1B2) applies "
+        "'block' when any manifest declares requires-python and 'warn' "
+        "otherwise. Overrides autobuild.bootstrap.failure_mode in "
+        ".guardkit/config.yaml."
     ),
 )
 @click.pass_context
