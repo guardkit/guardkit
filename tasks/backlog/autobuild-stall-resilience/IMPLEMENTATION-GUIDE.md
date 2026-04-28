@@ -1,5 +1,24 @@
 # IMPLEMENTATION-GUIDE — autobuild-stall-resilience (FEAT-ABSR-9C6E)
 
+> ## ⚠️ READ THIS FIRST — Active backlog vs. historical content
+>
+> **Active backlog** (the tasks to run now, 7 tasks, parents both TASK-REV-FA04 and TASK-REV-9D13):
+> - **Wave 1 (CRITICAL/HIGH)**: `TASK-ABSR-CEIL`, `TASK-ABSR-WALL`, `TASK-ABSR-FRSH`, `TASK-ABSR-DIAG`
+> - **Wave 2**: `TASK-ABSR-MAXT`, `TASK-ABSR-MTBC`
+> - **Wave 3 (post-talk)**: `TASK-ABSR-CMPL`
+>
+> Skip to **[Active Backlog Plan](#waves-1-3-of-the-active-backlog--added-2026-04-28-from-task-rev-9d13-v2)** below.
+>
+> **Historical / completed** (do NOT `/task-work` these — they're in `tasks/completed/`):
+> - FA04 Wave 1: `TASK-ABSR-A1B2`, `TASK-ABSR-C3D4`, `TASK-ABSR-E5F6`, `TASK-ABSR-7890` ✓
+> - FA04 Wave 2: `TASK-ABSR-2468`, `TASK-ABSR-1357` ✓
+>
+> The sections immediately below (Goal, Wave Plan mermaid, Wave 1 / Wave 2 tables) describe the **completed FA04 work** for historical context. Scroll to the "Waves 1-3 of the active backlog" header below for the current plan.
+
+---
+
+## Historical context (FA04 — all 6 tasks completed 2026-04-27/28)
+
 **Parent review**: [TASK-REV-FA04](../../../.claude/reviews/TASK-REV-FA04-report.md)
 **Origin incident**: Jarvis FEAT-J004-702C / TASK-J004-004 `unrecoverable_stall` (2026-04-27)
 **Constraint**: DDD South West deadline — must not be blocked by AutoBuild stalls.
@@ -8,18 +27,18 @@
 
 Close the failure class identified in TASK-REV-FA04: `task_type=declarative` ∧ `implementation_mode=task-work` ∧ broken bootstrap (Python interpreter mismatch with `requires-python`) ∧ a regression test that does `import <package>` ⇒ feedback-stall trapdoor with misleading diagnostic. Wave 1 closes the immediate incident; Wave 2 adds the belt-and-braces layer.
 
-## Wave Plan
+## Wave Plan (FA04 — historical, all complete)
 
 ```mermaid
 flowchart LR
-    subgraph wave1 ["Wave 1 (parallel — closes the incident)"]
+    subgraph wave1 ["FA04 Wave 1 ✓ COMPLETED (parallel — closes the incident)"]
         direction TB
         A1[TASK-ABSR-A1B2<br/>R1 — Smart-default block<br/>complexity 4 · task-work]
         C3[TASK-ABSR-C3D4<br/>R2 — environment_stall sub-type<br/>complexity 5 · task-work]
         E5[TASK-ABSR-E5F6<br/>R7 — Template pin standardisation<br/>complexity 2 · direct]
         N7[TASK-ABSR-7890<br/>R6 — Player↔Coach divergence investigation<br/>complexity 3 · direct/review]
     end
-    subgraph wave2 ["Wave 2 (belt-and-braces)"]
+    subgraph wave2 ["FA04 Wave 2 ✓ COMPLETED (belt-and-braces)"]
         direction TB
         N2[TASK-ABSR-2468<br/>R3 — Coach env conditional approval<br/>complexity 6 · task-work]
         N1[TASK-ABSR-1357<br/>R4 — Suppress declarative Phase-3 advisory<br/>complexity 3 · task-work]
@@ -33,7 +52,7 @@ flowchart LR
     A1 -.->|independent| N1
 ```
 
-### Wave 1 — close the incident class (4 tasks, parallelisable)
+### FA04 Wave 1 — ✓ COMPLETED — close the incident class (4 tasks)
 
 | Task | Title | Mode | Complexity | Workspace |
 |---|---|---|---|---|
@@ -45,7 +64,7 @@ flowchart LR
 **Wave 1 entry conditions**: none — all four are independent.
 **Wave 1 exit criteria**: A1B2 + C3D4 merged (incident closed); E5F6 + 7890 merged or filed (portfolio guidance + investigation report available).
 
-### Wave 2 — belt-and-braces (2 tasks, parallelisable after Wave 1)
+### FA04 Wave 2 — ✓ COMPLETED — belt-and-braces (2 tasks)
 
 | Task | Title | Mode | Complexity | Workspace |
 |---|---|---|---|---|

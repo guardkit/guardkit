@@ -448,6 +448,14 @@ jq -s 'map(select(.event_type == "tool.exec")) | sort_by(-.latency_ms) | .[:5] |
   .guardkit/autobuild/TASK-001/events.jsonl
 ```
 
+### Heartbeat Labels
+
+Heartbeat log lines emitted by `async_heartbeat` (`[<task_id>] <phase> in progress... (<N>s elapsed)`) use distinct phase labels so operators can disambiguate which agent is running:
+
+- **`task-work implementation`** — the actual `task-work` Player invocation (the real implementation work).
+- **`Player invocation`** / **`Coach invocation`** — direct `_invoke_with_role` calls without a delegation wrapper (legacy call sites).
+- **`specialist:<name> invocation`** — orchestrator-driven specialists run via `run_specialist` (`specialist:test-orchestrator invocation` for Phase 4, `specialist:code-reviewer invocation` for Phase 5). These run as `agent_type=player`/`coach` under the hood but surface a distinct label so they aren't conflated with the actual Player. (TASK-ABSR-DIAG.)
+
 ### Failure Analysis
 
 ```bash
@@ -953,6 +961,12 @@ The clause is deliberately narrow:
 - It pairs with the smart-default `bootstrap_failure_mode: block` work (TASK-ABSR-A1B2) and the `environment_stall` sub-type detection (TASK-ABSR-C3D4): when this clause fires, neither stall happens; when the clause doesn't fire (e.g. `block` mode aborted the run at preflight), neither does the stall.
 
 **Origin**: belt-and-braces layer for [TASK-ABSR-A1B2](../../tasks/completed/2026-04/TASK-ABSR-A1B2-bootstrap-block-smart-default.md)'s smart-default, motivated by the FEAT-J004-702C / TASK-J004-004 stall. See [TASK-ABSR-2468](../../tasks/completed/TASK-ABSR-2468/TASK-ABSR-2468.md).
+
+### Environment variable tunables
+
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `GUARDKIT_MIN_TURN_BUDGET` | `600` | Overrides `MIN_TURN_BUDGET_SECONDS` (the wall-clock floor required before `_loop_phase` starts a new turn). Lower (e.g. `300`) on tasks where Coach feedback is small and short turn-2/3 retries are still useful; the orchestrator will exit with `timeout_budget_exhausted` only when the remaining budget falls below this floor. Read once at module load. See [TASK-ABSR-MTBC](../../tasks/completed/TASK-ABSR-MTBC/TASK-ABSR-MTBC-env-overridable-min-turn-budget.md). |
 
 ### No Events in File
 

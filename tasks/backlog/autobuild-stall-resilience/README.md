@@ -40,17 +40,19 @@ Plus three quality-of-life improvements: standardise the LangChain DeepAgents te
 | 2 | TASK-ABSR-2468 | Coach conditional-approval for environment-class infra failures | task-work | 6 | ✓ completed |
 | 2 | TASK-ABSR-1357 | Suppress declarative-task Phase-3 advisory | task-work | 3 | ✓ completed |
 
-### Waves 3-5 (9D13-driven, backlog 2026-04-28)
+### Waves 1-3 of the active backlog (9D13-driven, backlog 2026-04-28)
+
+> **Wave numbering note**: These autobuild waves are 1-indexed in the **active backlog**. Historically these are the 3rd-5th waves of FEAT-ABSR-9C6E (FA04 occupied Waves 1-2, all completed). Each task's frontmatter records `historical_wave` for traceability; `wave` is the current execution order autobuild uses.
 
 | Wave | ID | Title | Mode | Complexity | Status | Priority |
 |---|---|---|---|---|---|---|
-| 3 | [TASK-ABSR-CEIL](TASK-ABSR-CEIL-skip-phase4-5-on-sdk-ceiling-hit.md) | Skip Phase 4/5 specialists on Player SDK-ceiling hit | task-work | 3 | backlog | **CRITICAL** |
-| 3 | [TASK-ABSR-WALL](TASK-ABSR-WALL-cap-specialist-timeout-at-remaining-wall.md) | Cap specialist `sdk_timeout` at remaining wall budget | task-work | 4 | backlog | **CRITICAL** |
-| 3 | [TASK-ABSR-FRSH](TASK-ABSR-FRSH-refresh-remaining-budget-post-player.md) | Refresh `remaining_budget` post-Player before specialist guard | task-work | 3 | backlog | HIGH |
-| 3 | [TASK-ABSR-DIAG](TASK-ABSR-DIAG-heartbeat-label-fix.md) | Heartbeat label fix for orchestrator-invoked specialists | task-work | 3 | backlog | MED |
-| 4 | [TASK-ABSR-MAXT](TASK-ABSR-MAXT-complexity-scale-sdk-max-turns.md) | Complexity-scale `TASK_WORK_SDK_MAX_TURNS` | task-work | 4 | backlog | MED |
-| 4 | [TASK-ABSR-MTBC](TASK-ABSR-MTBC-env-overridable-min-turn-budget.md) | Make `MIN_TURN_BUDGET_SECONDS` env-overridable | direct | 1 | backlog | LOW |
-| 5 | [TASK-ABSR-CMPL](TASK-ABSR-CMPL-phase-25-complexity-heuristic.md) | Phase-2.5 effective-complexity heuristic (AC + dep + consumer counts) | task-work | 5 | backlog | MED (post-talk) |
+| 1 | [TASK-ABSR-CEIL](TASK-ABSR-CEIL-skip-phase4-5-on-sdk-ceiling-hit.md) | Skip Phase 4/5 specialists on Player SDK-ceiling hit | task-work | 3 | backlog | **CRITICAL** |
+| 1 | [TASK-ABSR-WALL](TASK-ABSR-WALL-cap-specialist-timeout-at-remaining-wall.md) | Cap specialist `sdk_timeout` at remaining wall budget | task-work | 4 | backlog | **CRITICAL** |
+| 1 | [TASK-ABSR-FRSH](TASK-ABSR-FRSH-refresh-remaining-budget-post-player.md) | Refresh `remaining_budget` post-Player before specialist guard | task-work | 3 | backlog | HIGH |
+| 1 | [TASK-ABSR-DIAG](../../completed/TASK-ABSR-DIAG/TASK-ABSR-DIAG.md) | Heartbeat label fix for orchestrator-invoked specialists | task-work | 3 | **completed** | MED |
+| 2 | [TASK-ABSR-MAXT](TASK-ABSR-MAXT-complexity-scale-sdk-max-turns.md) | Complexity-scale `TASK_WORK_SDK_MAX_TURNS` | task-work | 4 | backlog | MED |
+| 2 | [TASK-ABSR-MTBC](../../completed/2026-04/TASK-ABSR-MTBC-env-overridable-min-turn-budget.md) | Make `MIN_TURN_BUDGET_SECONDS` env-overridable | direct | 1 | **completed** | LOW |
+| 3 | [TASK-ABSR-CMPL](TASK-ABSR-CMPL-phase-25-complexity-heuristic.md) | Phase-2.5 effective-complexity heuristic (AC + dep + consumer counts) | task-work | 5 | backlog | MED (post-talk) |
 
 **Separately filed** (review task, not under FEAT-ABSR-9C6E):
 - [TASK-REV-COSE](../TASK-REV-COSE-diagnose-coach-sdk-test-execution-opaque-stderr.md) — Diagnose Coach SDK-test-execution opaque-stderr (sidequest, low priority)

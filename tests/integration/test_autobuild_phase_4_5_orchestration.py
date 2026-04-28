@@ -175,6 +175,8 @@ async def _drive_orchestrator_phase_4_5(
     worktree_path: Path,
     task_id: str,
     agent_invoker: AgentInvoker,
+    *,
+    sdk_ceiling_hit: bool = False,
 ) -> None:
     """Replicate the orchestrator-side Phase 4/5 wiring under test.
 
@@ -187,7 +189,15 @@ async def _drive_orchestrator_phase_4_5(
     helper the production wiring uses (``_get_implementation_mode``)
     rather than taking it as a parameter, so the impl_mode branch is
     exercised for real instead of mocked.
+
+    ``sdk_ceiling_hit`` mirrors ``player_result.sdk_ceiling_hit`` from
+    the production wiring (TASK-ABSR-CEIL). When True (and the
+    ``GUARDKIT_INVOKE_SPECIALISTS_ON_CEILING_HIT`` circuit-breaker env
+    var is not set), the orchestrator skips both specialists and writes
+    skipped blocks for Phase 4 and Phase 5 instead of invoking them.
     """
+    import os as _os
+
     from guardkit.orchestrator import specialist_invocations as _si
 
     impl_mode = agent_invoker._get_implementation_mode(task_id)
@@ -196,6 +206,39 @@ async def _drive_orchestrator_phase_4_5(
         # Production wiring's early skip — no specialist invocation,
         # no injector call. Coach's gate handling for direct mode is
         # covered by other tests.
+        return
+
+    # TASK-ABSR-CEIL: when Player hit the SDK turn ceiling, the codebase
+    # is provably partial. Skip Phase 4/5 and write skipped blocks. The
+    # env var ``GUARDKIT_INVOKE_SPECIALISTS_ON_CEILING_HIT=1`` is the
+    # emergency backout that restores the prior behaviour.
+    ceiling_skip_disabled = (
+        _os.environ.get(
+            "GUARDKIT_INVOKE_SPECIALISTS_ON_CEILING_HIT", "0"
+        ) == "1"
+    )
+    if sdk_ceiling_hit and not ceiling_skip_disabled:
+        specialist_results_path = (
+            worktree_path / ".guardkit" / "autobuild" / task_id
+            / "specialist_results.json"
+        )
+        for _phase_key, _defaults in (
+            ("phase_4", _si._PHASE_4_AGENT_FIELD_DEFAULTS),
+            ("phase_5", _si._PHASE_5_AGENT_FIELD_DEFAULTS),
+        ):
+            _si._merge_specialist_block(
+                specialist_results_path,
+                _phase_key,
+                {
+                    "status": "skipped",
+                    "duration_seconds": 0.0,
+                    "error": "specialist_skipped: sdk_ceiling_hit",
+                    **_defaults,
+                },
+            )
+        agent_invoker._inject_specialist_records_into_task_work_results(
+            task_id
+        )
         return
 
     phase4_result = await _si.invoke_test_orchestrator(
@@ -435,3 +478,97 @@ async def test_player_emitted_phase_4_markers_are_dropped(
         f"surviving Phase 4 entry was not orchestrator-tagged: "
         f"{phase_4_entries[0]!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# TASK-ABSR-CEIL: skip orchestrator Phase 4/5 when Player hit SDK ceiling.
+# ---------------------------------------------------------------------------
+
+
+def _read_specialist_results(worktree: Path, task_id: str) -> dict[str, Any]:
+    """Load ``specialist_results.json`` from the autobuild dir."""
+    path = (
+        worktree / ".guardkit" / "autobuild" / task_id
+        / "specialist_results.json"
+    )
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+@pytest.mark.integration
+async def test_sdk_ceiling_hit_skips_specialists(
+    worktree: Path,
+    agent_invoker: AgentInvoker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Player ``sdk_ceiling_hit`` short-circuits both specialists.
+
+    When the Player's ``AgentInvocationResult.sdk_ceiling_hit`` is True
+    the codebase is provably partial — running test-orchestrator on it
+    just thrashes for the full SDK timeout, exhausts the per-task wall
+    budget, and forecloses turn-N+1. The orchestrator must:
+
+    * Skip both ``invoke_test_orchestrator`` and ``invoke_code_reviewer``.
+    * Write ``skipped`` blocks for ``phase_4`` and ``phase_5`` to
+      ``specialist_results.json``, both tagged
+      ``"specialist_skipped: sdk_ceiling_hit"``.
+    * Run the gate-credit injector so Coach reads a well-formed ledger.
+    """
+    monkeypatch.delenv(
+        "GUARDKIT_INVOKE_SPECIALISTS_ON_CEILING_HIT", raising=False
+    )
+
+    recorder = StubSDKRecorder(worktree, TASK_ID)
+    mock_sdk = build_mock_sdk_module(recorder)
+
+    with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
+        await _drive_orchestrator_phase_4_5(
+            worktree, TASK_ID, agent_invoker, sdk_ceiling_hit=True
+        )
+
+    # Neither specialist may fire when the Player hit the ceiling.
+    assert recorder.invocations == [], (
+        f"specialist invoked despite sdk_ceiling_hit: "
+        f"{recorder.invocations!r}"
+    )
+
+    specialist_results = _read_specialist_results(worktree, TASK_ID)
+    assert specialist_results["phase_4"]["status"] == "skipped"
+    assert (
+        specialist_results["phase_4"]["error"]
+        == "specialist_skipped: sdk_ceiling_hit"
+    )
+    assert specialist_results["phase_5"]["status"] == "skipped"
+    assert (
+        specialist_results["phase_5"]["error"]
+        == "specialist_skipped: sdk_ceiling_hit"
+    )
+
+
+@pytest.mark.integration
+async def test_sdk_ceiling_hit_circuit_breaker_env_var(
+    worktree: Path,
+    agent_invoker: AgentInvoker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Env var ``GUARDKIT_INVOKE_SPECIALISTS_ON_CEILING_HIT=1`` restores invocation.
+
+    Emergency backout for the new short-circuit: when the env var is
+    set, the orchestrator behaves exactly like before TASK-ABSR-CEIL —
+    both specialists are invoked despite the ceiling hit.
+    """
+    monkeypatch.setenv("GUARDKIT_INVOKE_SPECIALISTS_ON_CEILING_HIT", "1")
+
+    recorder = StubSDKRecorder(worktree, TASK_ID)
+    mock_sdk = build_mock_sdk_module(recorder)
+
+    with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
+        await _drive_orchestrator_phase_4_5(
+            worktree, TASK_ID, agent_invoker, sdk_ceiling_hit=True
+        )
+
+    assert len(recorder.invocations) == 2, (
+        f"expected exactly two SDK calls under env-var override, got "
+        f"{len(recorder.invocations)}: {recorder.invocations!r}"
+    )
+    assert recorder.invocations[0].agent_type == "test-orchestrator"
+    assert recorder.invocations[1].agent_type == "code-reviewer"

@@ -1419,7 +1419,10 @@ class TestInvokeTaskWorkImplement:
             # TASK-REV-BB80: Uses dedicated TASK_WORK_SDK_MAX_TURNS constant
             # NOT max_turns_per_agent, because task-work needs many internal turns
             # TASK-FIX-ASPF-005: Increased from 50 to 100 for scaffolding headroom
-            assert options_kwargs["max_turns"] == 100
+            # TASK-ABSR-MAXT: Now per-task complexity-scaled via _calculate_sdk_max_turns.
+            # The fixture worktree has no task frontmatter, so the helper falls back to
+            # complexity=5 (multiplier 1.5x → 100 * 1.5 = 150).
+            assert options_kwargs["max_turns"] == 150
             # TASK-POF-004: Changed from ["user", "project"] to ["project"]
             # Inline protocol eliminates need for user setting_sources
             assert options_kwargs["setting_sources"] == ["project"]
@@ -8700,3 +8703,128 @@ class TestKillChildClaudeProcesses:
 
             # Should not raise
             invoker._kill_child_processes_pgrep(100)
+
+
+# =========================================================================
+# Heartbeat Label Override Tests (TASK-ABSR-DIAG)
+# =========================================================================
+#
+# _invoke_with_role accepts an optional heartbeat_label_override kwarg that
+# replaces the default ``f"{agent_type.capitalize()} invocation"`` label
+# threaded into async_heartbeat. run_specialist uses this so Phase-4 / 5
+# orchestrator-invoked specialists are visually distinct from the actual
+# task-work Player in heartbeat logs.
+
+
+def _build_fake_sdk_module():
+    """Return a mocked claude_agent_sdk module that yields a single result."""
+    MockResultMessage = type("ResultMessage", (), {})
+
+    async def mock_query_gen(*args, **kwargs):
+        yield MockResultMessage()
+
+    mock_sdk = MagicMock()
+    mock_sdk.query = mock_query_gen
+    mock_sdk.ClaudeAgentOptions = MagicMock()
+    mock_sdk.CLINotFoundError = type("CLINotFoundError", (Exception,), {})
+    mock_sdk.ProcessError = type("ProcessError", (Exception,), {})
+    mock_sdk.CLIJSONDecodeError = type("CLIJSONDecodeError", (Exception,), {})
+    mock_sdk.AssistantMessage = type("AssistantMessage", (), {})
+    mock_sdk.ResultMessage = MockResultMessage
+    return mock_sdk
+
+
+class _CapturingHeartbeat:
+    """Async-context-manager double that records the ``phase`` kwarg.
+
+    Drop-in for ``guardkit.orchestrator.agent_invoker.async_heartbeat``.
+    Stores the most recent ``phase`` argument on the class so tests can
+    introspect what label _invoke_with_role threaded through.
+    """
+
+    captured_phase = None
+
+    def __init__(self, task_id, phase, *args, **kwargs):
+        type(self).captured_phase = phase
+
+    async def __aenter__(self):
+        return None
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class TestHeartbeatLabelOverride:
+    """Verify TASK-ABSR-DIAG: _invoke_with_role honours the override kwarg."""
+
+    @pytest.mark.asyncio
+    async def test_invoke_with_role_uses_override_when_provided(
+        self, agent_invoker
+    ):
+        """When heartbeat_label_override is set, async_heartbeat receives
+        it verbatim as the phase label.
+        """
+        _CapturingHeartbeat.captured_phase = None
+
+        import sys
+        with patch.dict(sys.modules, {"claude_agent_sdk": _build_fake_sdk_module()}), \
+             patch(
+                 "guardkit.orchestrator.agent_invoker.async_heartbeat",
+                 _CapturingHeartbeat,
+             ):
+            await agent_invoker._invoke_with_role(
+                prompt="Test prompt",
+                agent_type="player",
+                allowed_tools=["Read"],
+                permission_mode="acceptEdits",
+                heartbeat_label_override="specialist:foo invocation",
+            )
+
+        assert _CapturingHeartbeat.captured_phase == "specialist:foo invocation"
+
+    @pytest.mark.asyncio
+    async def test_invoke_with_role_default_phase_when_no_override(
+        self, agent_invoker
+    ):
+        """Without an override, the phase label preserves the legacy
+        ``f"{agent_type.capitalize()} invocation"`` shape — guards against
+        an accidental regression of the default-label behaviour.
+        """
+        _CapturingHeartbeat.captured_phase = None
+
+        import sys
+        with patch.dict(sys.modules, {"claude_agent_sdk": _build_fake_sdk_module()}), \
+             patch(
+                 "guardkit.orchestrator.agent_invoker.async_heartbeat",
+                 _CapturingHeartbeat,
+             ):
+            await agent_invoker._invoke_with_role(
+                prompt="Test prompt",
+                agent_type="player",
+                allowed_tools=["Read"],
+                permission_mode="acceptEdits",
+            )
+
+        assert _CapturingHeartbeat.captured_phase == "Player invocation"
+
+    @pytest.mark.asyncio
+    async def test_invoke_with_role_default_phase_for_coach(
+        self, agent_invoker
+    ):
+        """Same default-shape guard for agent_type='coach'."""
+        _CapturingHeartbeat.captured_phase = None
+
+        import sys
+        with patch.dict(sys.modules, {"claude_agent_sdk": _build_fake_sdk_module()}), \
+             patch(
+                 "guardkit.orchestrator.agent_invoker.async_heartbeat",
+                 _CapturingHeartbeat,
+             ):
+            await agent_invoker._invoke_with_role(
+                prompt="Test prompt",
+                agent_type="coach",
+                allowed_tools=["Read"],
+                permission_mode="bypassPermissions",
+            )
+
+        assert _CapturingHeartbeat.captured_phase == "Coach invocation"

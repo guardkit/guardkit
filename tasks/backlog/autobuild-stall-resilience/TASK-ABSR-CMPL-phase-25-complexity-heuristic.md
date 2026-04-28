@@ -10,7 +10,8 @@ parent_review: TASK-REV-9D13
 feature_id: FEAT-ABSR-9C6E
 implementation_mode: task-work
 task_type: feature
-wave: 5
+wave: 3
+historical_wave: 5
 complexity: 5
 depends_on:
   - TASK-ABSR-MAXT

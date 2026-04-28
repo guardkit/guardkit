@@ -208,6 +208,42 @@ async def test_run_specialist_restores_state_on_failure(tmp_path: Path) -> None:
     assert invoker._cancellation_event is original_event
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "specialist_name",
+    ["test-orchestrator", "code-reviewer"],
+)
+async def test_run_specialist_heartbeat_label_includes_specialist_name(
+    tmp_path: Path, specialist_name: str
+) -> None:
+    """run_specialist must thread a ``heartbeat_label_override`` kwarg
+    containing ``"specialist:{name}"`` into ``_invoke_with_role`` so
+    orchestrator-driven specialists are visually distinct from the
+    actual task-work Player in heartbeat logs (TASK-ABSR-DIAG).
+    """
+    invoker = _make_fake_agent_invoker()
+
+    await run_specialist(
+        specialist_name=specialist_name,
+        worktree_path=tmp_path,
+        task_id="TASK-ABSR-DIAG",
+        sdk_timeout=42,
+        prompt="do the thing",
+        allowed_tools=["Read"],
+        agent_invoker=invoker,
+    )
+
+    invoker._invoke_with_role.assert_awaited_once()
+    kwargs = invoker._invoke_with_role.await_args.kwargs
+    assert "heartbeat_label_override" in kwargs, (
+        "run_specialist must pass heartbeat_label_override to _invoke_with_role"
+    )
+    override = kwargs["heartbeat_label_override"]
+    assert isinstance(override, str)
+    assert f"specialist:{specialist_name}" in override
+    assert "invocation" in override
+
+
 # =============================================================================
 # invoke_test_orchestrator (TASK-OSI-004)
 # =============================================================================

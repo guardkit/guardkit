@@ -951,7 +951,11 @@ class AgentInvoker:
                 f"effective max={int(MAX_SDK_TIMEOUT * self.timeout_multiplier)}s)"
             )
 
-        # TASK-FIX-7718: Auto-reduce SDK max turns for local backends
+        # TASK-FIX-7718: Auto-reduce SDK max turns for local backends.
+        # TASK-ABSR-MAXT: This field is now used only by the legacy direct-mode
+        # path (`_invoke_player_direct`). The task-work invocation path uses the
+        # per-task complexity-scaled value from `_calculate_sdk_max_turns(task_id)`
+        # instead, so each task gets a turn budget proportional to its complexity.
         if not _SDK_MAX_TURNS_IS_OVERRIDE and self.timeout_multiplier > 1.0:
             self._effective_sdk_max_turns = min(TASK_WORK_SDK_MAX_TURNS, 100)
             logger.info(
@@ -2115,6 +2119,7 @@ Follow the decision format specified in your agent definition.
         resume_session_id: Optional[str] = None,
         task_id: Optional[str] = None,
         turn: Optional[int] = None,
+        heartbeat_label_override: Optional[str] = None,
     ) -> None:
         """Low-level SDK invocation with role-based permissions.
 
@@ -2132,6 +2137,12 @@ Follow the decision format specified in your agent definition.
             resume_session_id: Optional SDK session ID to resume from.
                 If provided, passed as ``resume`` kwarg to ClaudeAgentOptions.
                 If None, starts a fresh session. (TASK-RFX-B20B)
+            heartbeat_label_override: Optional explicit phase label for
+                ``async_heartbeat``. When provided, replaces the default
+                ``f"{agent_type.capitalize()} invocation"`` label. Used by
+                :func:`run_specialist` so orchestrator-invoked specialists
+                surface as ``"specialist:{name} invocation"`` instead of
+                masquerading as Player/Coach invocations (TASK-ABSR-DIAG).
 
         Raises:
             AgentInvocationError: If SDK invocation fails
@@ -2259,9 +2270,13 @@ Follow the decision format specified in your agent definition.
                 with measure_latency() as latency:
                     try:
                         async with asyncio.timeout(self.sdk_timeout_seconds):
+                            phase_label = (
+                                heartbeat_label_override
+                                or f"{agent_type.capitalize()} invocation"
+                            )
                             async with async_heartbeat(
                                 heartbeat_task_id,
-                                f"{agent_type.capitalize()} invocation",
+                                phase_label,
                                 progress_logger=self._progress_logger,
                             ):
                                 gen = query(prompt=prompt, options=options)
@@ -3876,6 +3891,63 @@ Follow the decision format specified in your agent definition.
 
         return effective_timeout
 
+    def _calculate_sdk_max_turns(self, task_id: str) -> int:
+        """Calculate dynamic SDK max turns based on task complexity.
+
+        TASK-ABSR-MAXT: Mirrors `_calculate_sdk_timeout`'s complexity scaling so
+        the SDK turn budget grows with task complexity instead of remaining a flat
+        hardcoded constant. Without this, complex tasks routinely run out of
+        conversation turns even when wall-time budget remains.
+
+        Behaviour:
+        - If the user provided a `GUARDKIT_SDK_MAX_TURNS` env-var override
+          (`_SDK_MAX_TURNS_IS_OVERRIDE`), returns `TASK_WORK_SDK_MAX_TURNS`
+          unchanged (env-var-wins semantics, matches `_calculate_sdk_timeout`'s
+          handling of `_sdk_timeout_is_override`).
+        - Otherwise, loads the task's complexity from frontmatter via
+          `TaskLoader.load_task`, clamps to `[1, 10]`, and returns
+          `int(TASK_WORK_SDK_MAX_TURNS * (1.0 + complexity / 10.0))`.
+        - Defaults to complexity 5 (1.5x multiplier) on any load error.
+
+        Args:
+            task_id: Task identifier (e.g., "TASK-001")
+
+        Returns:
+            Effective max turns for the task-work SDK invocation.
+        """
+        base = TASK_WORK_SDK_MAX_TURNS
+
+        if _SDK_MAX_TURNS_IS_OVERRIDE:
+            logger.info(
+                f"[{task_id}] Max turns: {base} "
+                f"(env override GUARDKIT_SDK_MAX_TURNS, skipping complexity scaling)"
+            )
+            return base
+
+        try:
+            from guardkit.tasks.task_loader import TaskLoader
+
+            task_data = TaskLoader.load_task(task_id, self.worktree_path)
+            frontmatter = task_data.get("frontmatter", {})
+            complexity = frontmatter.get("complexity", 5)
+            complexity = max(1, min(10, int(complexity)))
+        except Exception as e:
+            logger.debug(
+                f"[{task_id}] Could not load task for max-turns calculation: {e}. "
+                "Using default complexity=5"
+            )
+            complexity = 5
+
+        multiplier = 1.0 + (complexity / 10.0)
+        effective_max_turns = int(base * multiplier)
+
+        logger.info(
+            f"[{task_id}] Max turns: {effective_max_turns} "
+            f"(base={base}, complexity={complexity} x{multiplier:.1f})"
+        )
+
+        return effective_max_turns
+
     async def _invoke_player_direct(
         self,
         task_id: str,
@@ -4795,6 +4867,11 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
 
         from guardkit.orchestrator.sdk_utils import check_assistant_message_error
 
+        # TASK-ABSR-MAXT: Complexity-scale max_turns (mirrors _calculate_sdk_timeout).
+        # Computed once per invocation so the same value flows into the SDK options,
+        # the parsed result, and the returned TaskWorkResult.
+        effective_max_turns = self._calculate_sdk_max_turns(task_id)
+
         try:
             _tw_options_kwargs = dict(
                 cwd=str(self.worktree_path),
@@ -4804,8 +4881,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 # TASK-REV-BB80: Use dedicated constant, NOT self.max_turns_per_agent
                 # max_turns_per_agent is for adversarial turns (default: 5)
                 # task-work needs ~50 internal turns for all phases
-                # TASK-FIX-7718: Use effective turns (auto-reduced for local backends)
-                max_turns=self._effective_sdk_max_turns,
+                # TASK-ABSR-MAXT: Complexity-scaled per-task (was self._effective_sdk_max_turns)
+                max_turns=effective_max_turns,
                 # TASK-POF-004: Use "project" only - inline protocol replaces
                 # skill invocation, no need to load user commands (~839KB savings)
                 setting_sources=["project"],
@@ -5026,8 +5103,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
 
             # TASK-VPR-003: Inject SDK turn metrics into parsed result
             # These flow through to task_work_results.json for Coach and reporting
+            # TASK-ABSR-MAXT: Report the complexity-scaled value actually passed to the SDK
             parsed_result["sdk_turns_used"] = sdk_turns_used
-            parsed_result["sdk_max_turns"] = self._effective_sdk_max_turns
+            parsed_result["sdk_max_turns"] = effective_max_turns
 
             # Write task_work_results.json for Coach validation
             self._write_task_work_results(task_id, parsed_result, documentation_level)
@@ -5037,7 +5115,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 success=True,
                 output=parsed_result,
                 sdk_turns_used=sdk_turns_used,
-                sdk_max_turns=self._effective_sdk_max_turns,
+                sdk_max_turns=effective_max_turns,
                 session_id=sdk_session_id,  # TASK-RFX-B20B
             )
 

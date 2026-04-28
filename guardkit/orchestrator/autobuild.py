@@ -180,7 +180,8 @@ logger = logging.getLogger(__name__)
 # Minimum wall-clock budget (seconds) required before starting a new turn.
 # If the remaining task budget falls below this, _loop_phase exits gracefully
 # with "timeout_budget_exhausted" instead of waiting for asyncio.TimeoutError.
-MIN_TURN_BUDGET_SECONDS: int = 600
+# Override via GUARDKIT_MIN_TURN_BUDGET (TASK-ABSR-MTBC); default unchanged.
+MIN_TURN_BUDGET_SECONDS: int = int(os.environ.get("GUARDKIT_MIN_TURN_BUDGET", "600"))
 
 # Budget (seconds) granted to Coach when Player succeeds near the timeout
 # boundary (i.e., when the cancellation event is set but Player returned
@@ -1066,6 +1067,10 @@ class AutoBuildOrchestrator:
         self._timeout_event: Optional[threading.Event] = timeout_event  # Feature-level timeout signal (TASK-ABFIX-006)
         self._progress_logger = progress_logger  # TASK-FIX-OBS2: Per-task progress logging
         self._task_timeout: Optional[int] = task_timeout  # Feature task budget in seconds (TASK-ABFIX-006)
+        # Loop-start monotonic time, set in _loop_phase when a per-turn budget is active.
+        # Used by _execute_turn to refresh the pre-specialist budget guard after the Player
+        # phase consumes wall (TASK-ABSR-FRSH).
+        self._loop_start_time: Optional[float] = None
         self.wave_size: int = max(1, int(wave_size))  # Parallel wave context (TASK-ABFIX-005)
         # Per-turn context status tracking for progress display (TASK-FIX-GCW5)
         self._last_player_context_status: Optional[ContextStatus] = None
@@ -2103,6 +2108,9 @@ class AutoBuildOrchestrator:
 
         # Track loop start time for per-turn budget (TASK-ABFIX-004)
         loop_start_time: Optional[float] = time.monotonic() if time_budget_seconds is not None else None
+        # Expose to _execute_turn so the pre-specialist budget guard can refresh
+        # remaining_budget post-Player (TASK-ABSR-FRSH).
+        self._loop_start_time = loop_start_time
 
         with self._progress_display:
             for turn in range(start_turn, self.max_turns + 1):
@@ -2384,6 +2392,32 @@ class AutoBuildOrchestrator:
             # Reached max turns without approval
             logger.warning(f"Max turns ({self.max_turns}) exceeded for {task_id}")
             return turn_history, "max_turns_exceeded"
+
+    def _cap_specialist_timeout(
+        self, remaining_budget: Optional[float]
+    ) -> int:
+        """Cap orchestrator-invoked specialist sdk_timeout at remaining wall (TASK-ABSR-WALL).
+
+        Mirrors the Player-side cap in ``AgentInvoker._calculate_sdk_timeout`` so a
+        single specialist (Phase 4 test-orchestrator or Phase 5 code-reviewer)
+        cannot consume the entire remaining wall budget when ``self.sdk_timeout``
+        exceeds what's left.
+
+        Reserves ``COACH_GRACE_PERIOD_SECONDS`` so Coach still has a window to
+        validate after the specialist returns. Floors at 60 s to prevent
+        pathologically-low values from blocking specialists entirely.
+
+        Set ``GUARDKIT_SPECIALIST_TIMEOUT_CAP=disable`` to short-circuit the
+        cap (emergency backout).
+        """
+        base = self.sdk_timeout or 1200
+        if os.environ.get("GUARDKIT_SPECIALIST_TIMEOUT_CAP") == "disable":
+            return base
+        if remaining_budget is None:
+            return base
+        reserved = remaining_budget - COACH_GRACE_PERIOD_SECONDS
+        cap = max(60, int(reserved))
+        return min(base, cap)
 
     def _execute_turn(
         self,
@@ -2721,23 +2755,88 @@ class AutoBuildOrchestrator:
             if _si is not None:
                 impl_mode = self._agent_invoker._get_implementation_mode(task_id)
 
-                # Coarse budget guard (AC#6) — if the start-of-turn budget was
-                # already below MIN_TURN_BUDGET_SECONDS, skip specialists and
-                # write a `specialist_skipped` phase_4 block so the gate still
-                # produces a well-formed validation block.
-                budget_ok = (
+                # TASK-ABSR-CEIL: when Player hit the SDK turn ceiling the
+                # codebase is provably partial — running test-orchestrator
+                # on it just thrashes for the full SDK timeout, exhausts
+                # the per-task wall budget, and forecloses turn-N+1 with
+                # timeout_budget_exhausted. Skip Phase 4/5 and route
+                # straight to Coach so the next turn can fix the missing
+                # ACs. Set GUARDKIT_INVOKE_SPECIALISTS_ON_CEILING_HIT=1 to
+                # restore the prior behaviour (emergency backout).
+                sdk_ceiling_hit = getattr(
+                    player_result, "sdk_ceiling_hit", False
+                )
+                ceiling_skip_disabled = (
+                    os.environ.get(
+                        "GUARDKIT_INVOKE_SPECIALISTS_ON_CEILING_HIT", "0"
+                    ) == "1"
+                )
+
+                # Refresh remaining_budget after the Player phase. The value
+                # threaded in via `remaining_budget` is the start-of-turn
+                # value computed at line ~2125; the Player can consume
+                # substantial wall before this guard runs, so recompute from
+                # the loop-start monotonic time (TASK-ABSR-FRSH, R3).
+                if (
                     remaining_budget is None
-                    or remaining_budget >= MIN_TURN_BUDGET_SECONDS
+                    or self._loop_start_time is None
+                    or self._task_timeout is None
+                ):
+                    post_player_remaining: Optional[float] = remaining_budget
+                else:
+                    post_player_remaining = float(self._task_timeout) - (
+                        time.monotonic() - self._loop_start_time
+                    )
+
+                # Coarse budget guard (AC#6) — if the post-Player remaining
+                # budget is below MIN_TURN_BUDGET_SECONDS, skip specialists
+                # and write a `specialist_skipped` phase_4 block so the gate
+                # still produces a well-formed validation block.
+                budget_ok = (
+                    post_player_remaining is None
+                    or post_player_remaining >= MIN_TURN_BUDGET_SECONDS
                 )
 
                 if impl_mode == "direct":
                     logger.info(
                         f"[{task_id}] Skipping orchestrator Phase 4/5 (direct mode)"
                     )
+                elif sdk_ceiling_hit and not ceiling_skip_disabled:
+                    logger.info(
+                        f"[{task_id}] Skipping orchestrator Phase 4/5 "
+                        "(Player hit SDK turn ceiling — codebase is partial)"
+                    )
+                    specialist_results_path = (
+                        Path(worktree.path) / ".guardkit" / "autobuild" / task_id
+                        / "specialist_results.json"
+                    )
+                    for _phase_key, _defaults in (
+                        ("phase_4", _si._PHASE_4_AGENT_FIELD_DEFAULTS),
+                        ("phase_5", _si._PHASE_5_AGENT_FIELD_DEFAULTS),
+                    ):
+                        _si._merge_specialist_block(
+                            specialist_results_path,
+                            _phase_key,
+                            {
+                                "status": "skipped",
+                                "duration_seconds": 0.0,
+                                "error": "specialist_skipped: sdk_ceiling_hit",
+                                **_defaults,
+                            },
+                        )
+                    try:
+                        self._agent_invoker._inject_specialist_records_into_task_work_results(
+                            task_id
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            f"[{task_id}] _inject_specialist_records_into_task_work_results "
+                            f"raised after sdk_ceiling_hit skip: {exc}"
+                        )
                 elif not budget_ok:
                     logger.info(
                         f"[{task_id}] Skipping orchestrator Phase 4/5 "
-                        f"(remaining_budget={remaining_budget}s < "
+                        f"(post_player_remaining={post_player_remaining}s < "
                         f"{MIN_TURN_BUDGET_SECONDS}s)"
                     )
                     specialist_results_path = (
@@ -2750,7 +2849,10 @@ class AutoBuildOrchestrator:
                         {
                             "status": "skipped",
                             "duration_seconds": 0.0,
-                            "error": "specialist_skipped: budget exhausted",
+                            "error": (
+                                f"specialist_skipped: budget exhausted "
+                                f"(post_player_remaining={post_player_remaining}s)"
+                            ),
                             **_si._PHASE_4_AGENT_FIELD_DEFAULTS,
                         },
                     )
@@ -2774,11 +2876,14 @@ class AutoBuildOrchestrator:
                         asyncio.set_event_loop(_loop)
 
                     # Phase 4: test-orchestrator
+                    # TASK-ABSR-WALL: cap specialist sdk_timeout at remaining wall
                     phase4_result = _loop.run_until_complete(
                         _si.invoke_test_orchestrator(
                             worktree_path=worktree.path,
                             task_id=task_id,
-                            sdk_timeout=self.sdk_timeout,
+                            sdk_timeout=self._cap_specialist_timeout(
+                                remaining_budget=remaining_budget
+                            ),
                             agent_invoker=self._agent_invoker,
                             cancellation_event=self._cancellation_event,
                             turn=turn,
@@ -2787,12 +2892,16 @@ class AutoBuildOrchestrator:
 
                     # Phase 5: code-reviewer (only if Phase 4 passed)
                     if phase4_result.status == "passed":
+                        # TASK-ABSR-WALL: cap may differ from Phase 4 because
+                        # Phase 4 may have consumed wall — that's correct.
                         _loop.run_until_complete(
                             _si.invoke_code_reviewer(
                                 worktree_path=worktree.path,
                                 task_id=task_id,
                                 phase4_result=phase4_result,
-                                sdk_timeout=self.sdk_timeout,
+                                sdk_timeout=self._cap_specialist_timeout(
+                                    remaining_budget=remaining_budget
+                                ),
                                 agent_invoker=self._agent_invoker,
                                 cancellation_event=self._cancellation_event,
                                 turn=turn,

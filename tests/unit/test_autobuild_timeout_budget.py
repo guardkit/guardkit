@@ -12,6 +12,8 @@ Tests cover:
 8. _loop_phase: "approve" decision propagates before post-turn cancellation check
 """
 
+import importlib
+import os
 import threading
 import time
 from pathlib import Path
@@ -116,6 +118,7 @@ def _make_orchestrator(
     orchestrator._cancellation_event = cancellation_event
     orchestrator._timeout_event = None
     orchestrator._task_timeout = None
+    orchestrator._loop_start_time = None  # TASK-ABSR-FRSH
     orchestrator._cumulative_source_files = set()
     orchestrator._cumulative_requirements_addressed = set()
     orchestrator.wave_size = 1
@@ -169,6 +172,23 @@ class TestTimeoutBudgetConstants:
         """Grace period should be smaller than the min turn budget so that
         we can still grant Coach time even after exhausting the per-turn check."""
         assert COACH_GRACE_PERIOD_SECONDS < MIN_TURN_BUDGET_SECONDS
+
+    def test_min_turn_budget_env_override(self):
+        """GUARDKIT_MIN_TURN_BUDGET overrides the 600 s default at module load (TASK-ABSR-MTBC)."""
+        import guardkit.orchestrator.autobuild as autobuild_module
+
+        with patch.dict(os.environ, {"GUARDKIT_MIN_TURN_BUDGET": "300"}):
+            importlib.reload(autobuild_module)
+            try:
+                assert autobuild_module.MIN_TURN_BUDGET_SECONDS == 300
+            finally:
+                # Restore module to default state so other tests see the
+                # canonical 600 s value regardless of run order.
+                pass
+
+        # patch.dict has now removed the override; reload back to default.
+        importlib.reload(autobuild_module)
+        assert autobuild_module.MIN_TURN_BUDGET_SECONDS == 600
 
 
 # ============================================================================
@@ -754,3 +774,258 @@ class TestFeatureOrchestratorBudgetPropagation:
         assert "time_budget_seconds" in call_kwargs.kwargs or (
             len(call_kwargs.args) >= 6  # positional args fallback
         )
+
+
+# ============================================================================
+# Tests: _cap_specialist_timeout (TASK-ABSR-WALL)
+# ============================================================================
+
+
+class TestCapSpecialistTimeout:
+    """Cap orchestrator-invoked specialist sdk_timeout at remaining wall.
+
+    The cap mirrors the Player-side cap in
+    ``AgentInvoker._calculate_sdk_timeout`` so a single specialist cannot
+    consume the entire remaining wall budget when ``self.sdk_timeout``
+    exceeds what's left.
+    """
+
+    def _orchestrator(
+        self, worktree_path, mock_worktree, sdk_timeout: int = 1200
+    ) -> AutoBuildOrchestrator:
+        orch = _make_orchestrator(worktree_path, mock_worktree)
+        orch.sdk_timeout = sdk_timeout
+        return orch
+
+    def test_uses_full_when_ample_remaining(
+        self, worktree_path, mock_worktree
+    ):
+        """Ample remaining_budget → returns base sdk_timeout unchanged."""
+        orch = self._orchestrator(worktree_path, mock_worktree, sdk_timeout=1200)
+        # 2400 remaining - 120 grace = 2280 reserved; min(1200, 2280) = 1200
+        assert orch._cap_specialist_timeout(remaining_budget=2400.0) == 1200
+
+    def test_caps_when_low_remaining(
+        self, worktree_path, mock_worktree
+    ):
+        """Low remaining_budget → cap to remaining minus COACH_GRACE_PERIOD."""
+        orch = self._orchestrator(worktree_path, mock_worktree, sdk_timeout=1200)
+        # 800 remaining - 120 grace = 680 reserved; min(1200, 680) = 680
+        assert orch._cap_specialist_timeout(remaining_budget=800.0) == 680
+
+    def test_floor_at_60s(self, worktree_path, mock_worktree):
+        """Pathologically-low remaining → floor at 60 s, never zero/negative."""
+        orch = self._orchestrator(worktree_path, mock_worktree, sdk_timeout=1200)
+        # 100 remaining - 120 grace = -20 reserved; floor 60; min(1200, 60) = 60
+        assert orch._cap_specialist_timeout(remaining_budget=100.0) == 60
+        # Even at remaining=0 the floor still holds.
+        assert orch._cap_specialist_timeout(remaining_budget=0.0) == 60
+
+    def test_no_budget_passes_base(
+        self, worktree_path, mock_worktree
+    ):
+        """remaining_budget=None → return base sdk_timeout (no cap)."""
+        orch = self._orchestrator(worktree_path, mock_worktree, sdk_timeout=1200)
+        assert orch._cap_specialist_timeout(remaining_budget=None) == 1200
+
+    def test_circuit_breaker_env_var(
+        self, worktree_path, mock_worktree, monkeypatch
+    ):
+        """GUARDKIT_SPECIALIST_TIMEOUT_CAP=disable → return base regardless."""
+        orch = self._orchestrator(worktree_path, mock_worktree, sdk_timeout=1200)
+        monkeypatch.setenv("GUARDKIT_SPECIALIST_TIMEOUT_CAP", "disable")
+        # Without the env var this would be capped to 60.
+        assert orch._cap_specialist_timeout(remaining_budget=100.0) == 1200
+
+    def test_falls_back_when_sdk_timeout_unset(
+        self, worktree_path, mock_worktree
+    ):
+        """Defensive: if sdk_timeout is None, treat base as 1200."""
+        orch = self._orchestrator(worktree_path, mock_worktree, sdk_timeout=1200)
+        orch.sdk_timeout = None  # simulate missing config
+        # No budget → base 1200
+        assert orch._cap_specialist_timeout(remaining_budget=None) == 1200
+        # Ample budget → still base
+        assert orch._cap_specialist_timeout(remaining_budget=2400.0) == 1200
+
+
+# ============================================================================
+# Tests: post-Player budget refresh before pre-specialist guard (TASK-ABSR-FRSH)
+# ============================================================================
+
+
+class TestPostPlayerBudgetRefresh:
+    """Pre-specialist guard recomputes remaining_budget from loop_start_time.
+
+    The value threaded into ``_execute_turn`` via ``remaining_budget`` is the
+    start-of-turn budget. The Player phase can consume substantial wall
+    before the pre-specialist guard runs, so the guard re-derives
+    ``post_player_remaining`` from ``self._task_timeout - (time.monotonic() -
+    self._loop_start_time)`` and uses that for the
+    ``MIN_TURN_BUDGET_SECONDS`` comparison (TASK-ABSR-FRSH, R3).
+    """
+
+    def test_post_player_budget_refresh_triggers_skip(
+        self, worktree_path, mock_worktree
+    ):
+        """Stale start-of-turn budget passes the guard, post-Player refresh
+        catches it: ``specialist_skipped: budget exhausted`` is emitted with
+        the recomputed value, not the stale start-of-turn value.
+
+        Setup:
+          - ``_task_timeout`` = 2400s (turn budget)
+          - ``_loop_start_time`` = 0.0
+          - Player phase consumes wall: ``time.monotonic`` returns 1900.0
+            when the post-Player guard runs.
+          - ``remaining_budget`` (start-of-turn) = 1500.0 — comfortably
+            above ``MIN_TURN_BUDGET_SECONDS`` (600), so the OLD code would
+            NOT have skipped specialists.
+          - post_player_remaining = 2400 - 1900 = 500.0 — below 600, so
+            the NEW code MUST skip specialists.
+
+        Asserts:
+          AC-002: post-Player computation triggers the skip path.
+          AC-003: emitted error message contains the recomputed value
+                  ("post_player_remaining=500"), not the stale start-of-turn
+                  value (1500).
+        """
+        orchestrator = _make_orchestrator(worktree_path, mock_worktree)
+
+        # Override the default "direct" mode so the orchestrator-side
+        # Phase 4/5 budget guard actually runs.
+        orchestrator._agent_invoker._get_implementation_mode.return_value = (
+            "task-work"
+        )
+        orchestrator._agent_invoker._inject_specialist_records_into_task_work_results = (
+            Mock()
+        )
+
+        orchestrator._task_timeout = 2400
+        orchestrator._loop_start_time = 0.0
+
+        stale_remaining_budget = 1500.0  # well above MIN_TURN_BUDGET_SECONDS
+
+        player_success = _make_player_result(success=True)
+
+        captured_blocks: List[Dict[str, Any]] = []
+
+        def fake_merge(path, phase, block):
+            captured_blocks.append(
+                {"path": path, "phase": phase, "block": block}
+            )
+
+        with patch.object(
+            orchestrator, "_invoke_player_safely", return_value=player_success
+        ), patch.object(
+            orchestrator,
+            "_invoke_coach_safely",
+            return_value=_make_coach_result(),
+        ), patch.object(
+            orchestrator, "_build_player_summary", return_value="ok"
+        ), patch(
+            "guardkit.orchestrator.specialist_invocations._merge_specialist_block",
+            side_effect=fake_merge,
+        ), patch(
+            "guardkit.orchestrator.autobuild.time"
+        ) as mock_time:
+            # Player has consumed 1900s of wall by the time the
+            # post-Player guard reads the clock.
+            mock_time.monotonic = Mock(return_value=1900.0)
+
+            orchestrator._execute_turn(
+                turn=1,
+                task_id="TASK-AB-001",
+                requirements="do stuff",
+                worktree=mock_worktree,
+                previous_feedback=None,
+                remaining_budget=stale_remaining_budget,
+            )
+
+        # AC-002: a phase_4 specialist_skipped block was written.
+        skip_blocks = [b for b in captured_blocks if b["phase"] == "phase_4"]
+        assert len(skip_blocks) == 1, (
+            f"expected one phase_4 skip block, got {captured_blocks!r}"
+        )
+        block = skip_blocks[0]["block"]
+        assert block["status"] == "skipped"
+
+        # AC-003: error references post_player_remaining, not the stale
+        # start-of-turn value.
+        error = block["error"]
+        assert "specialist_skipped: budget exhausted" in error
+        assert "post_player_remaining=500" in error, (
+            f"expected post_player_remaining=500 in error, got {error!r}"
+        )
+        # The stale start-of-turn value (1500) MUST NOT appear in the
+        # message — that is the bug this fix prevents.
+        assert "1500" not in error, (
+            f"stale start-of-turn budget leaked into error: {error!r}"
+        )
+
+    def test_post_player_budget_passes_when_wall_remaining(
+        self, worktree_path, mock_worktree
+    ):
+        """When Player consumed little wall, the recomputed budget still
+        exceeds ``MIN_TURN_BUDGET_SECONDS`` and specialists run normally
+        (no skip block written).
+        """
+        orchestrator = _make_orchestrator(worktree_path, mock_worktree)
+
+        # Force "direct" mode so the orchestrator-side Phase 4/5 block
+        # is bypassed entirely after the (passing) budget guard. This
+        # keeps the test focused on the guard rather than the
+        # specialist invocation machinery.
+        orchestrator._agent_invoker._get_implementation_mode.return_value = (
+            "direct"
+        )
+
+        orchestrator._task_timeout = 2400
+        orchestrator._loop_start_time = 0.0
+
+        player_success = _make_player_result(success=True)
+
+        captured_blocks: List[Dict[str, Any]] = []
+
+        def fake_merge(path, phase, block):
+            captured_blocks.append(
+                {"path": path, "phase": phase, "block": block}
+            )
+
+        with patch.object(
+            orchestrator, "_invoke_player_safely", return_value=player_success
+        ), patch.object(
+            orchestrator,
+            "_invoke_coach_safely",
+            return_value=_make_coach_result(),
+        ), patch.object(
+            orchestrator, "_build_player_summary", return_value="ok"
+        ), patch(
+            "guardkit.orchestrator.specialist_invocations._merge_specialist_block",
+            side_effect=fake_merge,
+        ), patch(
+            "guardkit.orchestrator.autobuild.time"
+        ) as mock_time:
+            # Only 100s of wall consumed — comfortable headroom.
+            mock_time.monotonic = Mock(return_value=100.0)
+
+            orchestrator._execute_turn(
+                turn=1,
+                task_id="TASK-AB-001",
+                requirements="do stuff",
+                worktree=mock_worktree,
+                previous_feedback=None,
+                remaining_budget=2300.0,
+            )
+
+        # No phase_4 skip block was written — the guard passed.
+        skip_blocks = [
+            b
+            for b in captured_blocks
+            if b["phase"] == "phase_4"
+            and b["block"].get("status") == "skipped"
+            and "budget exhausted" in str(b["block"].get("error", ""))
+        ]
+        assert skip_blocks == [], (
+            f"unexpected budget-exhausted skip block: {skip_blocks!r}"
+        )
+

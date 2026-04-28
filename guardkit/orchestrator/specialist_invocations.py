@@ -187,6 +187,14 @@ async def run_specialist(
     error_message: Optional[str] = None
     status: Literal["passed", "failed", "skipped"] = "passed"
 
+    # TASK-ABSR-DIAG: Surface orchestrator-invoked specialists in heartbeat
+    # logs as "specialist:{name} invocation" instead of inheriting the
+    # generic "Player invocation" / "Coach invocation" label from
+    # agent_type.capitalize(). Without this, a Phase-4 test-orchestrator
+    # invocation (agent_type="player") logs identically to the actual
+    # task-work Player and operators reading run history conflate them.
+    heartbeat_label_override = f"specialist:{specialist_name} invocation"
+
     try:
         await agent_invoker._invoke_with_role(
             prompt=prompt,
@@ -195,6 +203,7 @@ async def run_specialist(
             permission_mode=permission_mode,
             task_id=task_id,
             turn=turn,
+            heartbeat_label_override=heartbeat_label_override,
         )
     except Exception as exc:  # noqa: BLE001 — runner must never raise
         status = "failed"

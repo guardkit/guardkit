@@ -1,22 +1,36 @@
 ---
 id: TASK-ABSR-DIAG
 title: Fix heartbeat label confusion for orchestrator-invoked specialists
-status: backlog
+status: completed
 created: 2026-04-28T00:00:00Z
 updated: 2026-04-28T00:00:00Z
+completed: 2026-04-28T00:00:00Z
+previous_state: in_review
+completed_location: tasks/completed/TASK-ABSR-DIAG/
 priority: medium
 tags: [autobuild, diagnostics, observability, FEAT-ABSR-9C6E, R6.b]
 parent_review: TASK-REV-9D13
 feature_id: FEAT-ABSR-9C6E
 implementation_mode: task-work
 task_type: feature
-wave: 3
+wave: 1
+historical_wave: 3
 complexity: 3
 depends_on: []
 test_results:
-  status: pending
+  status: passed
   coverage: null
-  last_run: null
+  last_run: 2026-04-28T00:00:00Z
+  notes: |
+    AC-008: pytest tests/unit/orchestrator/test_specialist_invocations.py
+    tests/unit/test_agent_invoker*.py — 588 passed, 1 pre-existing failure
+    on main (test_invoke_task_work_implement_mode_passed) unrelated to this
+    task. Three new tests added (TestHeartbeatLabelOverride class +
+    parametrized run_specialist test) all pass.
+    AC-009: mypy strict produces identical 103-error count on main and on
+    this branch — zero new errors introduced.
+    AC-010: ruff produces identical 21-error count on main and on this
+    branch — zero new lint findings.
 ---
 
 # TASK-ABSR-DIAG — Fix heartbeat label confusion for specialists
