@@ -24,6 +24,7 @@ Example:
 
 import asyncio
 import logging
+import os
 import resource
 import shutil
 import threading
@@ -574,7 +575,18 @@ class FeatureOrchestrator:
         self.sdk_timeout = sdk_timeout
         self.enable_pre_loop = enable_pre_loop
         self.enable_context = enable_context
-        self.task_timeout = int(task_timeout * self.timeout_multiplier)
+        # TASK-ABSR-FLOR: Floor task_timeout at 3000s before the multiplier.
+        # Run-3 J004-011 used 2235s of the 2400s default budget (92%) and Coach
+        # then ran in a poisoned worktree, producing parallel_contention. The
+        # 3000s floor gives 765s of wall headroom for per-turn rate variance.
+        # Override (or disable, by setting to 0) via the
+        # GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR env var. Read at construction
+        # time (not module import) so tests can monkeypatch the env per-test.
+        task_timeout_floor = int(
+            os.environ.get("GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR", "3000")
+        )
+        floored_task_timeout = max(task_timeout_floor, task_timeout)
+        self.task_timeout = int(floored_task_timeout * self.timeout_multiplier)
         self.max_parallel = max_parallel
         self._parallel_config = parallel_config if parallel_config is not None else ParallelConfig.from_legacy(max_parallel)
         self.skip_validation = skip_validation

@@ -46,16 +46,27 @@ Plus three quality-of-life improvements: standardise the LangChain DeepAgents te
 
 | Wave | ID | Title | Mode | Complexity | Status | Priority |
 |---|---|---|---|---|---|---|
-| 1 | [TASK-ABSR-CEIL](TASK-ABSR-CEIL-skip-phase4-5-on-sdk-ceiling-hit.md) | Skip Phase 4/5 specialists on Player SDK-ceiling hit | task-work | 3 | backlog | **CRITICAL** |
-| 1 | [TASK-ABSR-WALL](TASK-ABSR-WALL-cap-specialist-timeout-at-remaining-wall.md) | Cap specialist `sdk_timeout` at remaining wall budget | task-work | 4 | backlog | **CRITICAL** |
-| 1 | [TASK-ABSR-FRSH](TASK-ABSR-FRSH-refresh-remaining-budget-post-player.md) | Refresh `remaining_budget` post-Player before specialist guard | task-work | 3 | backlog | HIGH |
-| 1 | [TASK-ABSR-DIAG](../../completed/TASK-ABSR-DIAG/TASK-ABSR-DIAG.md) | Heartbeat label fix for orchestrator-invoked specialists | task-work | 3 | **completed** | MED |
-| 2 | [TASK-ABSR-MAXT](TASK-ABSR-MAXT-complexity-scale-sdk-max-turns.md) | Complexity-scale `TASK_WORK_SDK_MAX_TURNS` | task-work | 4 | backlog | MED |
-| 2 | [TASK-ABSR-MTBC](../../completed/2026-04/TASK-ABSR-MTBC-env-overridable-min-turn-budget.md) | Make `MIN_TURN_BUDGET_SECONDS` env-overridable | direct | 1 | **completed** | LOW |
-| 3 | [TASK-ABSR-CMPL](TASK-ABSR-CMPL-phase-25-complexity-heuristic.md) | Phase-2.5 effective-complexity heuristic (AC + dep + consumer counts) | task-work | 5 | backlog | MED (post-talk) |
+| 1 | [TASK-ABSR-CEIL](../../completed/2026-04/TASK-ABSR-CEIL-skip-phase4-5-on-sdk-ceiling-hit.md) | Skip Phase 4/5 specialists on Player SDK-ceiling hit | task-work | 3 | ✓ **completed** (87c27e60) | CRITICAL |
+| 1 | [TASK-ABSR-WALL](../../completed/2026-04/TASK-ABSR-WALL-cap-specialist-timeout-at-remaining-wall.md) | Cap specialist `sdk_timeout` at remaining wall budget | task-work | 4 | ✓ **completed** (87c27e60) | CRITICAL |
+| 1 | [TASK-ABSR-FRSH](../../completed/2026-04/TASK-ABSR-FRSH-refresh-remaining-budget-post-player.md) | Refresh `remaining_budget` post-Player before specialist guard | task-work | 3 | ✓ **completed** (87c27e60) | HIGH |
+| 1 | [TASK-ABSR-DIAG](../../completed/TASK-ABSR-DIAG/TASK-ABSR-DIAG.md) | Heartbeat label fix for orchestrator-invoked specialists | task-work | 3 | ✓ **completed** | MED |
+| 2 | [TASK-ABSR-MAXT](../../completed/2026-04/TASK-ABSR-MAXT-complexity-scale-sdk-max-turns.md) | Complexity-scale `TASK_WORK_SDK_MAX_TURNS` | task-work | 4 | ✓ **completed** (87c27e60) | MED |
+| 2 | [TASK-ABSR-MTBC](../../completed/2026-04/TASK-ABSR-MTBC-env-overridable-min-turn-budget.md) | Make `MIN_TURN_BUDGET_SECONDS` env-overridable | direct | 1 | ✓ **completed** | LOW |
+| 3 | [TASK-ABSR-CMPL](TASK-ABSR-CMPL-phase-25-complexity-heuristic.md) | Phase-2.5 effective-complexity heuristic (AC + dep + consumer counts) | task-work | 5 | backlog | **HIGH** (escalated 2026-04-28 by TASK-REV-WORS — direct evidence of underestimation in J004-012) |
 
-**Separately filed** (review task, not under FEAT-ABSR-9C6E):
+### Wave 6 (WORS-driven, backlog 2026-04-28 — emergency unblock)
+
+| Wave | ID | Title | Mode | Complexity | Status | Priority |
+|---|---|---|---|---|---|---|
+| 1 | [TASK-ABSR-FLOR](../../completed/2026-04/TASK-ABSR-FLOR-maxt-floor-and-task-timeout-floor.md) | MAXT ceiling floor 150 + task_timeout floor 3000s | task-work | 3 | ✓ **completed 2026-04-28** | **CRITICAL** (DDD-SouthWest blocker) |
+| 4 | [TASK-ABSR-WTKS](TASK-ABSR-WTKS-worktree-isolation-per-parallel-task.md) | Worktree isolation per parallel task — design-first, post-demo | task-work (--design-only) | 7 | backlog | MED (defer post-demo) |
+
+**Status (2026-04-28 12:30 UTC)**: all six R1-R6 fixes from TASK-REV-9D13 v2 merged in commit `87c27e60` at 06:49 UTC. Despite all 6 fixes merged, run-3 of FEAT-J004-702C (started 08:27 UTC, post-merge) still failed at Wave 4 with both J004-011 + J004-012 timing out. Diagnosed in [TASK-REV-WORS report v2](../../../.claude/reviews/TASK-REV-WORS-report.md) — the failure mode is structurally different from the J004-013 stall (TASK-REV-9D13). Fault tree: J004-012 hit MAXT ceiling at 141/140 due to complexity-heuristic underestimation; the half-edited worktree poisoned J004-011's parallel test run. **TASK-ABSR-FLOR ships emergency unblock** (~10 LOC, 30 min impl); **TASK-ABSR-CMPL escalated to HIGH** (strategic fix); **TASK-ABSR-WTKS opens design-first track** for the structural class-of-defect (shared-worktree poisoning post-ceiling).
+
+**Separately filed** (review tasks, not under FEAT-ABSR-9C6E):
 - [TASK-REV-COSE](../TASK-REV-COSE-diagnose-coach-sdk-test-execution-opaque-stderr.md) — Diagnose Coach SDK-test-execution opaque-stderr (sidequest, low priority)
+- [TASK-REV-WORS](../../in_review/TASK-REV-WORS-diagnose-J004-702C-run3-double-wave4-failure.md) — ✓ **review_complete (v2)** — Wave-4 double-failure diagnostic with C4 + 4 sequence diagrams
+- [TASK-REV-OCRC](../TASK-REV-OCRC-orchestrator-cancellation-residual-cleanup.md) — Orchestrator cancellation residual cleanup (sidequest from TASK-REV-WORS, low priority)
 
 ## Out-of-scope reminder
 

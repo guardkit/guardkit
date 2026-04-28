@@ -1029,3 +1029,49 @@ class TestPostPlayerBudgetRefresh:
             f"unexpected budget-exhausted skip block: {skip_blocks!r}"
         )
 
+
+# ============================================================================
+# Tests: TASK-ABSR-FLOR — task_timeout floor in FeatureOrchestrator
+# ============================================================================
+#
+# Implementation choice (AC-003): option (b) — env-var-driven floor read at
+# FeatureOrchestrator.__init__ time. Default `GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR`
+# is 3000s. The floor is applied BEFORE the timeout multiplier so these tests
+# can assert the floored value directly by pinning `timeout_multiplier=1.0`.
+
+
+class TestTaskTimeoutFloor:
+    """Tests for the 3000s task_timeout floor (TASK-ABSR-FLOR AC-003/AC-005)."""
+
+    def test_task_timeout_floor_applied_when_below_3000(self, tmp_path, monkeypatch):
+        """task_timeout=2400 should be floored to 3000 (the binding case from run-3 J004-011)."""
+        # Pin a clean env so the floor reads its 3000 default.
+        monkeypatch.delenv("GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR", raising=False)
+        from guardkit.orchestrator.feature_orchestrator import FeatureOrchestrator
+
+        mock_wm = MagicMock()
+        mock_wm.worktrees_dir = tmp_path / "worktrees"
+
+        orchestrator = FeatureOrchestrator(
+            repo_root=tmp_path,
+            task_timeout=2400,
+            timeout_multiplier=1.0,  # pin so floored input is the assertion
+            worktree_manager=mock_wm,
+        )
+        assert orchestrator.task_timeout == 3000
+
+    def test_task_timeout_floor_not_applied_when_above_3000(self, tmp_path, monkeypatch):
+        """task_timeout=4000 should remain 4000 — floor only raises low values."""
+        monkeypatch.delenv("GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR", raising=False)
+        from guardkit.orchestrator.feature_orchestrator import FeatureOrchestrator
+
+        mock_wm = MagicMock()
+        mock_wm.worktrees_dir = tmp_path / "worktrees"
+
+        orchestrator = FeatureOrchestrator(
+            repo_root=tmp_path,
+            task_timeout=4000,
+            timeout_multiplier=1.0,
+            worktree_manager=mock_wm,
+        )
+        assert orchestrator.task_timeout == 4000

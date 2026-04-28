@@ -8828,3 +8828,52 @@ class TestHeartbeatLabelOverride:
             )
 
         assert _CapturingHeartbeat.captured_phase == "Coach invocation"
+
+
+# ==================== TASK-ABSR-FLOR: MAXT Floor Tests ====================
+#
+# These tests cover the 150-turn floor applied to `_calculate_sdk_max_turns`
+# (AC-001/AC-002/AC-004 of TASK-ABSR-FLOR). The floor protects J004-012-shaped
+# tasks where the complexity heuristic underestimates actual work. The
+# `GUARDKIT_SDK_MAX_TURNS` env-var override bypasses the floor (user's value
+# wins, matching `_calculate_sdk_timeout`'s override semantics).
+
+
+class TestCalculateSDKMaxTurnsFloor:
+    """Tests for the 150-turn floor in _calculate_sdk_max_turns (TASK-ABSR-FLOR)."""
+
+    def test_calculate_sdk_max_turns_applies_floor_for_low_complexity(self, worktree_path):
+        """c=1 (formula → 110) and c=4 (formula → 140) should both be floored to 150."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+
+        _create_task_file(worktree_path, "TASK-FLOR-01", complexity=1)
+        assert invoker._calculate_sdk_max_turns("TASK-FLOR-01") == 150
+
+        _create_task_file(worktree_path, "TASK-FLOR-02", complexity=4)
+        assert invoker._calculate_sdk_max_turns("TASK-FLOR-02") == 150
+
+    def test_calculate_sdk_max_turns_no_floor_for_high_complexity(self, worktree_path):
+        """c=7 → 170 (formula), c=10 → 200 (formula). Floor doesn't bind."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+
+        _create_task_file(worktree_path, "TASK-FLOR-03", complexity=7)
+        assert invoker._calculate_sdk_max_turns("TASK-FLOR-03") == 170
+
+        _create_task_file(worktree_path, "TASK-FLOR-04", complexity=10)
+        assert invoker._calculate_sdk_max_turns("TASK-FLOR-04") == 200
+
+    def test_calculate_sdk_max_turns_env_override_bypasses_floor(self, worktree_path, monkeypatch):
+        """GUARDKIT_SDK_MAX_TURNS=100 → returns 100 with no floor applied.
+
+        The env override is captured at module import time, so monkeypatch the
+        module-level state directly to simulate the override condition.
+        """
+        import guardkit.orchestrator.agent_invoker as agent_invoker_module
+        monkeypatch.setattr(agent_invoker_module, "TASK_WORK_SDK_MAX_TURNS", 100)
+        monkeypatch.setattr(agent_invoker_module, "_SDK_MAX_TURNS_IS_OVERRIDE", True)
+
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        # Even at complexity 1 (which would otherwise floor to 150), the
+        # override path returns the unscaled, unfloored base value.
+        _create_task_file(worktree_path, "TASK-FLOR-05", complexity=1)
+        assert invoker._calculate_sdk_max_turns("TASK-FLOR-05") == 100

@@ -301,6 +301,15 @@ _SDK_MAX_TURNS_EXPLICIT = os.environ.get("GUARDKIT_SDK_MAX_TURNS")
 TASK_WORK_SDK_MAX_TURNS = int(_SDK_MAX_TURNS_EXPLICIT) if _SDK_MAX_TURNS_EXPLICIT is not None else 100
 _SDK_MAX_TURNS_IS_OVERRIDE = _SDK_MAX_TURNS_EXPLICIT is not None
 
+# TASK-ABSR-FLOR: Floor for the complexity-scaled SDK max-turn ceiling. Run-3
+# J004-012 hit `int(100 * 1.4) = 140` mid-Phase-3 (`task_work_results.json`,
+# `ceiling_hit=true`) and was cut off with capabilities.py left half-edited.
+# The 150-turn floor adds 9 turns of headroom for J004-012-shaped tasks where
+# the complexity heuristic underestimates actual work. Floor only applies when
+# the user has NOT set `GUARDKIT_SDK_MAX_TURNS` (env-var-wins semantics — see
+# `_calculate_sdk_max_turns`). Strategic fix is TASK-ABSR-CMPL.
+SDK_MAX_TURNS_FLOOR = 150
+
 # =========================================================================
 # TASK-PSN-003: Promise format reinforcement near SDK turn ceiling
 # =========================================================================
@@ -3939,11 +3948,19 @@ Follow the decision format specified in your agent definition.
             complexity = 5
 
         multiplier = 1.0 + (complexity / 10.0)
-        effective_max_turns = int(base * multiplier)
+        scaled = int(base * multiplier)
+
+        # TASK-ABSR-FLOR: floor the scaled value to SDK_MAX_TURNS_FLOOR (150).
+        # Only applied here — the env-override branch above returned early, so
+        # an explicit GUARDKIT_SDK_MAX_TURNS bypasses the floor (user's value
+        # wins, matching `_calculate_sdk_timeout`'s override semantics).
+        effective_max_turns = max(SDK_MAX_TURNS_FLOOR, scaled)
+        floor_applied = effective_max_turns > scaled
 
         logger.info(
             f"[{task_id}] Max turns: {effective_max_turns} "
-            f"(base={base}, complexity={complexity} x{multiplier:.1f})"
+            f"(base={base}, complexity={complexity} x{multiplier:.1f}"
+            f"{f', floored from {scaled} to {SDK_MAX_TURNS_FLOOR}' if floor_applied else ''})"
         )
 
         return effective_max_turns

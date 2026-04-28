@@ -3,10 +3,12 @@ id: TASK-ABSR-CMPL
 title: Phase-2.5 complexity heuristic — factor AC count, dep count, consumer count
 status: backlog
 created: 2026-04-28T00:00:00Z
-updated: 2026-04-28T00:00:00Z
-priority: medium
-tags: [phase-2.5, complexity-evaluation, planning, FEAT-ABSR-9C6E, R6.a]
+updated: 2026-04-28T12:30:00Z
+priority: high
+tags: [phase-2.5, complexity-evaluation, planning, FEAT-ABSR-9C6E, R6.a, escalated-by-WORS]
 parent_review: TASK-REV-9D13
+related_reviews:
+  - TASK-REV-WORS  # 2026-04-28 — escalated priority. J004-012 (heuristic c=4) needed >140 turns. Direct evidence of underestimation.
 feature_id: FEAT-ABSR-9C6E
 implementation_mode: task-work
 task_type: feature
