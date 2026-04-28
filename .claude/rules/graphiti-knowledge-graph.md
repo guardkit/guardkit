@@ -47,10 +47,17 @@ These contain GuardKit-project-specific context seeded by `guardkit graphiti cap
 | `guardkit__task_outcomes` | Task completion outcomes and lessons learned |
 | `guardkit__turn_states` | Feature-build turn state history |
 
+> **Convention: no hyphens in group IDs.** Always use underscores in project IDs
+> and group IDs (e.g. `specialist_agent`, not `specialist-agent`). Hyphens break
+> FalkorDB's RediSearch fulltext queries — see `guardkit/docs/fixes/migrate-hyphens.py`
+> for details. This applies to all repos, not just GuardKit.
+
 > **Why the prefix?** The `guardkit__` prefix ensures isolation when multiple projects
 > share the same FalkorDB instance. Each project's knowledge stays in its own namespace.
 > System groups are intentionally shared — they contain GuardKit product knowledge
 > that all projects benefit from.
+>
+> **No hyphens.** Use underscores only — hyphens break RediSearch fulltext queries.
 
 ---
 
@@ -60,6 +67,7 @@ Use both search tools together and pass all relevant group_ids:
 
 ```python
 # Search all GuardKit knowledge
+# NOTE: Never use hyphens in group_ids — they break FalkorDB RediSearch queries.
 group_ids = [
     # System groups (GuardKit product knowledge)
     "product_knowledge",
@@ -110,3 +118,4 @@ When using `mcp__graphiti__add_memory`, choose the group_id based on content typ
 - Graph database: FalkorDB at `whitestocks:6379` (Synology NAS via Tailscale)
 - LLM backend: vLLM at `promaxgb10-41b1:8000` (Qwen2.5-14B for extraction)
 - Embedding: vLLM at `promaxgb10-41b1:8001` (nomic-embed-text-v1.5, 1024 dims)
+- **No hyphens in group_ids** — use underscores only (hyphens break RediSearch)

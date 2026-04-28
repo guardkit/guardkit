@@ -353,9 +353,20 @@ sed -i '' 's#:8004/mcp/#:8004/mcp#' \
   "$HOME/Library/Application Support/Claude/claude_desktop_config.json"
 ```
 
-Restart Claude Desktop after this — it reads the config at launch.
+**3. Ensure `--allow-http` is present in the Claude Desktop config:**
 
-**3. Restart any running Claude Code sessions** on the Mac so they re-read
+As of 2026-04-27, `mcp-remote` enforces HTTPS for non-localhost URLs.
+The args array must include `"--allow-http"` after the URL. If missing,
+the bridge process exits silently and Claude Desktop shows no Graphiti
+server at all. Check with:
+
+```bash
+grep -A5 'mcp-remote' "$HOME/Library/Application Support/Claude/claude_desktop_config.json"
+```
+
+Restart Claude Desktop after any config change — it reads the config at launch.
+
+**4. Restart any running Claude Code sessions** on the Mac so they re-read
 `.mcp.json` for each repo.
 
 ### On the GB10
@@ -411,12 +422,19 @@ stdio↔HTTP proxy:
 ```json
 "graphiti": {
   "command": "/opt/homebrew/bin/npx",
-  "args": ["-y", "mcp-remote", "http://promaxgb10-41b1:8004/mcp"]
+  "args": ["-y", "mcp-remote", "http://promaxgb10-41b1:8004/mcp", "--allow-http"]
 }
 ```
 
 Absolute path to `npx` because Claude Desktop launches subprocesses with a
 minimal PATH and won't find `nvm`-managed Node.
+
+`--allow-http` is required because `mcp-remote` enforces HTTPS for
+non-localhost URLs by default. Without it the process exits silently with
+`Error: Non-HTTPS URLs are only allowed for localhost or when --allow-http
+flag is provided` — Claude Desktop shows no error, the server just never
+appears. This is safe here because the connection runs over Tailscale
+(encrypted WireGuard tunnel).
 
 ---
 
@@ -486,6 +504,26 @@ next to it. Re-pull guardkit.
 If the container is correct but the 421 persists, upstream may have renamed
 `TransportSecurityMiddleware._validate_host`. See the "When this might break
 silently" note in the Known upstream quirks section.
+
+### Claude Desktop shows no Graphiti server (no logs at all)
+
+If the Claude Desktop MCP logs show other servers connecting but zero
+Graphiti log lines, the `mcp-remote` bridge is crashing before it reaches
+the MCP handshake. The most common cause (as of 2026-04-27) is a missing
+`--allow-http` flag — `mcp-remote` now enforces HTTPS for non-localhost
+URLs. Add `"--allow-http"` to the args array in
+`claude_desktop_config.json`. See the
+[Claude Desktop config](#claude-desktop-claude_desktop_configjson) section
+for the correct format.
+
+To confirm, run `mcp-remote` manually:
+
+```bash
+/opt/homebrew/bin/npx -y mcp-remote http://promaxgb10-41b1:8004/mcp
+```
+
+If it prints `Non-HTTPS URLs are only allowed for localhost`, that's the
+problem.
 
 ### Client uses `/mcp/` and silently fails
 

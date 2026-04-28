@@ -25,6 +25,25 @@
 #   git clone https://github.com/eugr/spark-vllm-docker.git ~/Projects/spark-vllm-docker
 #   cd ~/Projects/spark-vllm-docker && ./build-and-copy.sh
 #
+# ALTERNATIVE: llama-swap path (recommended for co-existence with Graphiti)
+# =========================================================================
+# This script launches a dedicated vLLM container that claims memory via
+# --gpu-memory-utilization percentage. At 0.70 (default for qwen35), it grabs
+# ~85GB and CANNOT co-exist with Graphiti vLLM on :8000.
+#
+# With llama-swap on :9000, the dataset factory can use GPT-OSS 120B (~63GB
+# actual footprint) via llama.cpp while Graphiti stays up on :8000. No manual
+# model lifecycle management needed.
+#
+# To use the llama-swap path instead of this script:
+#   export OPENAI_BASE_URL=http://promaxgb10-41b1:9000/v1
+#   export OPENAI_API_KEY=dummy
+#   # Then run factory with model=gpt-oss-120b (or dataset-factory alias)
+#
+# See: docs/research/dgx-spark/dark-factory-economics-and-model-serving.md §3.11
+# See: docs/research/dgx-spark/llama-swap-setup.md
+# =========================================================================
+#
 # Port allocation (DGX Spark GB10):
 #   8000 — Graphiti LLM      (vllm-graphiti.sh)       Qwen2.5-14B
 #   8001 — Embedding model   (vllm-embed.sh)          nomic-embed-text-v1.5

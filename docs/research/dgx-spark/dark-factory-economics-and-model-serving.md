@@ -98,6 +98,107 @@ This unlocks llama.cpp as a direct drop-in for the Claude Agent SDK used by Auto
 
 **Known bug to track:** Issue #20090 (March 2026) — thinking content blocks are silently dropped during Anthropic→OpenAI conversion. Does not affect non-thinking models like Qwen3-Coder-Next or Qwen2.5-14B-Instruct. Affects Qwen3.5-family and GPT-OSS-family if thinking is enabled. Workaround: disable thinking via `--reasoning off` or `--chat-template-kwargs '{"enable_thinking":false}'`.
 
+### 3.7 martinB78's full-stack guide — authoritative benchmarks and the dynamic VRAM launcher
+
+> **Review source:** Claude Desktop session 2026-04-24 — review of two NVIDIA forum posts requested by Rich.
+> Forum posts: ["Managing Local LLM Orchestration"](https://forums.developer.nvidia.com/t/managing-local-llm-orchestration/363264) (March 2026) and ["Running a Full LLM Stack on DGX Spark GB10"](https://forums.developer.nvidia.com/t/running-a-full-llm-stack-on-dgx-spark-gb10-your-application-litellm-llama-swap-vllm-llama-cpp-ollama/367580) (April 23, 2026).
+
+**martinB78** published a complete, working multi-model stack tutorial with Docker Compose, llama-swap, LiteLLM, vLLM, llama.cpp, and Ollama — including authoritative `llama-benchy` benchmark results from April 22, 2026. His benchmark table is the most current single-source performance reference for GB10.
+
+Key benchmark findings relevant to GuardKit model selection:
+
+| Model | Engine | pp2048 (tok/s) | tg128 (tok/s) | Notes |
+|---|---|---|---|---|
+| Nemotron-3-Nano-4B-FP8 | vLLM | 8179 | 39.8 | Potential future Jarvis fast-classifier |
+| Nemotron-3-Nano-30B-A3B-NVFP4 | vLLM | 7417 | 55.9 | Fastest 30B generation on Spark |
+| Qwen3.6-35B-A3B-FP8 | vLLM | 4969 | 49.5 | Slightly faster prefill than 3.5 |
+| **Qwen3-Coder-Next-FP8-Dynamic** | vLLM | 3946 | **32.9** | **Current AutoBuild Player candidate** |
+| **Qwen3-Coder-Next-int4-AutoRound** | vLLM | 4425 | **66.7** | **2× faster generation, ~35 GB — test candidate** |
+| **GPT-OSS-120B (MXFP4)** | vLLM (mxfp4) | 4703 | **56.4** | **Current reasoner candidate — fastest 120B on Spark** |
+
+**Critical finding: Qwen3-Coder-Next int4-AutoRound at 66.7 tok/s is double the FP8 version's 32.9 tok/s**, at roughly 35 GB instead of 60 GB. If int4 quality is sufficient for AutoBuild, this is strictly better. Needs an A/B test against a real AutoBuild task before committing.
+
+**The dynamic VRAM launcher pattern.** martinB78 documented a failure mode on GB10 unified memory: after a model container exits, CUDA doesn't immediately return all memory to the free pool. vLLM's startup check fails because it sees stale memory usage. His solution is a wrapper script that queries actual free VRAM via `nvidia-smi` at launch time and computes a safe `--gpu-memory-utilization` value dynamically, clamped between 0.60 and 0.85 with a 3 GiB safety margin. Essential for any L-tier model swap. See companion setup guide §12 for the implementation.
+
+**GitHub repo:** `mARTin-B78/dgx-spark_lite-llm_llama-swap_vllm_llama-cpp_ollama` — worth cloning as reference.
+
+### 3.8 The LiteLLM routing layer — griffith.mark's three-stage model
+
+> **Review source:** Same Claude Desktop session 2026-04-24.
+
+**griffith.mark** defined three stages of LLM orchestration that map to GuardKit's trajectory: Stage 1 (manual model picker — past this), Stage 2 (ops-driven routing via llama-swap — implementing now), Stage 3 (intelligent task-aware selection — this is what Jarvis's intent router does).
+
+llama-swap manages model lifecycle (start/stop/swap); LiteLLM manages routing (aliases, fallbacks, observability). Adding LiteLLM on top in Phase 4 provides: cloud fallback for interactive `/system-arch` sessions, usage dashboard replacing the Gemini/Anthropic billing consoles, and `claude-*` wildcard catch-all routing.
+
+**Updated target architecture (Phase 2):**
+
+```
+Agents (Jarvis, Forge, AutoBuild, architect-agent)
+        ↓
+   LiteLLM :14000          ← Phase 4: unified API, cloud fallbacks, usage DB
+        ↓
+  llama-swap :9000          ← Phase 1: VRAM orchestration, swap lifecycle
+     /    |    \
+vLLM   llama.cpp  llama.cpp
+:8000    (swap)     (swap)
+:8001
+```
+
+### 3.9 sparkrun and the community tooling landscape
+
+> **Review source:** Same Claude Desktop session 2026-04-24.
+
+**dbsci** (author of sparkrun, sparkrun.dev) noted that sparkrun now includes automatic LiteLLM proxy configuration, dynamic config updates, a Claude Code plugin, and model alias support. Worth monitoring but not adopting yet — described as "soft launch" with undocumented features.
+
+### 3.10 Qwen3.6-27B — the "one model, no swap" thesis
+
+> **Review source:** Same Claude Desktop session 2026-04-24 — LinkedIn post analysis.
+
+Qwen3.6-27B released April 24, 2026. Dense 27B (not MoE), Apache 2.0, natively multimodal. At ~27 GB FP8, it would fit alongside Graphiti + embeddings with zero swap overhead. Being dense, it avoids the JSON contamination bugs that affected MoE models — meaningful advantage for Graphiti entity extraction.
+
+**Test plan:** Add as a third builders-group member. Validate against Graphiti extraction, AutoBuild Player, and Coach reasoning. If all pass, promote to always-on and demote swap members to on-demand-only.
+
+### 3.11 Dataset factory co-existence with Graphiti — the unlock that changes daily workflow
+
+> **Review source:** Claude Desktop session 2026-04-25 — Rich circled back to the agentic-dataset-factory use case.
+> Script reviewed: `scripts/vllm-agentic-factory.sh`
+
+**The problem today.** The agentic-dataset-factory's default preset (Qwen3.5-35B-A3B FP8) runs via vLLM at `GPU_UTIL=0.70`, which claims ~85 GB of the 121.7 GB CUDA-visible pool. Graphiti's vLLM runs at `GPU_UTIL=0.40`, claiming ~49 GB. Total: ~134 GB on a 121.7 GB pool. **They cannot co-exist.** This forces a manual lifecycle dance: stop Graphiti → start factory → run generation (potentially hours) → stop factory → restart Graphiti. During generation runs, knowledge graph operations are unavailable.
+
+**Why vLLM's percentage allocation is the bottleneck, not the models.** Qwen3.5-35B-A3B FP8's actual weights are ~20 GB (3.5B active MoE params). vLLM at `GPU_UTIL=0.70` allocates 85 GB because it claims 70% of total CUDA memory — most of that is pre-allocated KV cache that may never get used during dataset generation.
+
+**llama-swap + llama.cpp eliminates the conflict entirely.** With llama.cpp, each model takes only what it actually needs:
+
+| Component | Actual footprint | Group |
+|---|---|---|
+| Graphiti (Qwen2.5-14B FP8) | ~14 GB | Forever (vLLM on :8000) |
+| nomic-embed | ~1 GB | Forever (vLLM on :8001) |
+| GPT-OSS 120B MXFP4 (dataset factory) | ~63 GB | Builders (llama.cpp via llama-swap) |
+| **Total** | **~78 GB** | **43 GB headroom for KV cache** |
+
+Graphiti stays up the entire time. Seed docs into the knowledge graph *while* a dataset generation run is in progress.
+
+With Qwen3.6-27B (if it passes multi-purpose validation):
+
+| Component | Actual footprint | Total |
+|---|---|---|
+| Graphiti + embed + Qwen3.6-27B FP8 | 14 + 1 + 27 | **~42 GB — 79 GB headroom** |
+
+At 42 GB total, there would be enough headroom to potentially run the dataset factory AND AutoBuild simultaneously.
+
+**GPT-OSS 120B is actually an upgrade for dataset factory quality.** The factory's Player-Coach adversarial loop currently runs on Qwen3.5-35B-A3B (3.5B active params per token). GPT-OSS 120B is a dramatically stronger reasoner. martinB78's benchmarks show GPT-OSS 120B at 56.4 tok/s generation, comparable to Qwen3.5-35B-A3B's 49.1 tok/s, so throughput is not sacrificed.
+
+**Tool calling compatibility.** The Player agent requires tool calling (`rag_retrieval`, `write_output`). GPT-OSS 120B via llama.cpp handles tool calls natively via `--jinja` with Anthropic-format `tool_use`/`tool_result` blocks. The factory code needs: point at llama-swap :9000 and set model to `gpt-oss-120b`. Smoke test against `architect-agent-probe` domain to validate tool call round-trip.
+
+**What this means for the daily workflow:**
+
+| Before (vLLM exclusive) | After (llama-swap) |
+|---|---|
+| Stop Graphiti → start factory → wait → stop factory → restart Graphiti | Just run the factory; Graphiti never goes down |
+| Can't seed docs during dataset generation | Seed docs any time |
+| Manual model lifecycle management | llama-swap handles swap automatically |
+| Limited to one workload at a time | Factory + Graphiti + embeddings concurrently |
+
 ## 4. The llama-swap discovery
 
 `mostlygeek/llama-swap` is a Go binary that sits in front of any OpenAI-or-Anthropic-compatible inference server (llama.cpp, vLLM, TabbyAPI, SGLang). One YAML config lists all models; llama-swap becomes the single `/v1` endpoint the rest of the system talks to.
@@ -182,12 +283,48 @@ All agents, tools, and pipelines point at `http://promaxgb10-41b1:9000` as their
 3. Smoke-test `/v1/messages` endpoint with tool calls
 4. A/B test AutoBuild on one real task: existing vLLM on :8002 vs. llama.cpp via llama-swap on :9000. Compare Player-Coach turn counts, tool call success, and time-to-complete
 
+### Phase 2b — A/B test Coder-Next int4-AutoRound vs FP8
+
+1. Download `Intel/Qwen3-Coder-Next-int4-AutoRound` alongside the FP8 GGUF
+2. Add as an alternative builders-group member in llama-swap config
+3. Run the same AutoBuild task against both quantisations; compare Player-Coach turn counts, tool call success rate, and time-to-complete
+4. If int4 matches FP8 within 10-15% on quality, prefer it: 66.7 tok/s vs 32.9 tok/s, ~35 GB vs ~60 GB (per martinB78's benchmarks, §3.7)
+
+### Phase 2c — Dataset factory migration to llama-swap
+
+> Added 2026-04-25 based on `vllm-agentic-factory.sh` review (§3.11).
+
+1. Point `agentic-dataset-factory` at `http://promaxgb10-41b1:9000` with model `gpt-oss-120b`
+2. Smoke test against `architect-agent-probe` domain — validate `rag_retrieval` and `write_output` tool calls round-trip correctly via llama.cpp's `--jinja` tool handling
+3. Run one full domain and verify Coach quality is at least as good as Qwen3.5-35B-A3B (expect improvement given 120B vs 3.5B active params)
+4. Confirm Graphiti remains responsive on :8000 during the entire factory run
+5. Retire `vllm-agentic-factory.sh` as the primary path; keep as documented fallback
+
 ### Phase 3 — Migrate AutoBuild and Jarvis endpoints
 
 1. Point AutoBuild at `ANTHROPIC_BASE_URL=http://promaxgb10-41b1:9000`
 2. Point Jarvis intent routing at the same front door with OpenAI-style requests
 3. Retain vLLM-based Coder-Next on :8002 as a fallback path for one sprint before decommissioning
 4. Monitor the llama-swap web UI (`/ui`) to track swap frequency and identify Forge loop ordering that causes excess swap churn
+
+### Phase 4 — Add LiteLLM routing layer
+
+> Added 2026-04-24 based on forum review (§3.8).
+
+1. Stand up LiteLLM on port 14000, configured to route to llama-swap on :9000
+2. Add cloud fallback routes for `gemini-3.1-pro` (interactive sessions only)
+3. Add `claude-*` wildcard catch-all routing to local Coder-Next
+4. Enable usage logging DB (SQLite initially)
+5. Point all agents at `http://promaxgb10-41b1:14000` instead of :9000
+
+### Phase 5 — Evaluate Qwen3.6-27B as multi-purpose workhorse
+
+> Added 2026-04-24 based on same-day release analysis (§3.10).
+
+1. Wait for community benchmarks and GB10-specific validation (1-2 weeks post-release)
+2. Add as a third builders-group member in llama-swap config
+3. Validate against each of the three roles: Graphiti extraction, AutoBuild Player, Coach reasoning
+4. If all three pass, promote to always-on in the forever group
 
 ## 7. Cost impact projection
 
@@ -214,15 +351,20 @@ The GB10 investment amortises within the first month of full-fleet operation aga
 5. **Swap is fine if sequential work is fine.** The Forge is sequential by design. Chasing concurrent multi-model serving would be a solution looking for a problem.
 6. **Memory bandwidth, not capacity, is the silent constraint.** 273 GB/s shared across all active models. Two big models generating simultaneously means both drop to 60–70% of solo throughput. Plan the fleet accordingly.
 7. **Nagging doubts prove correct.** The £29 cost spike felt like a disproportionate reaction to 3 days of tinkering — but extrapolation showed it was catastrophic at scale. Always chase the cost signal.
+8. **vLLM's percentage allocation prevents co-existence, not model size.** The dataset factory couldn't co-exist with Graphiti because vLLM claims memory by percentage of total VRAM, not by actual model weight size. Qwen3.5-35B-A3B's weights are ~20 GB but vLLM at 0.70 claims ~85 GB. llama.cpp only takes what the model actually needs, enabling concurrent workloads that vLLM's allocation model makes impossible.
 
 ## 9. Related documents
 
 - `.guardkit/llm-provider-switching.md` — repo-level Graphiti provider toggle (GB10 vLLM / MacBook Ollama / Gemini fallback)
 - `scripts/vllm-serve.sh` — existing vLLM preset manager; continues to manage underlying services
 - `scripts/vllm-graphiti.sh` — existing Graphiti vLLM launcher with xgrammar JSON enforcement; unchanged
+- `scripts/vllm-agentic-factory.sh` — existing dataset factory vLLM launcher; superseded by llama-swap path for co-existence with Graphiti (§3.11), kept as documented fallback
 - `docs/research/dgx-spark/llama-swap-setup.md` — companion setup guide (installation, config.yaml for the fleet, smoke tests, troubleshooting)
 - `docs/research/dgx-spark/DGX Spark, Nemotron3, and NVFP4: Getting to 65+ tps | by Thomas P. Braun | Avarok.pdf` — NVFP4 background
-- NVIDIA Developer Forums — "Best LLM engine for several parallel models?", "Code assist and RAG in single node", "Best Local LLM for Ralph Loop", "Implementation Guide: DGX Spark with Qwen3.5-35B-A3B via llama.cpp for Claude Code"
+- NVIDIA Developer Forums — "Best LLM engine for several parallel models?", "Code assist and RAG in single node", "Best Local LLM for Ralph Loop", "Implementation Guide: DGX Spark with Qwen3.5-35B-A3B via llama.cpp for Claude Code", ["Managing Local LLM Orchestration"](https://forums.developer.nvidia.com/t/managing-local-llm-orchestration/363264) (reviewed 2026-04-24), ["Running a Full LLM Stack on DGX Spark GB10"](https://forums.developer.nvidia.com/t/running-a-full-llm-stack-on-dgx-spark-gb10-your-application-litellm-llama-swap-vllm-llama-cpp-ollama/367580) (reviewed 2026-04-24)
+- martinB78's reference repo — <https://github.com/mARTin-B78/dgx-spark_lite-llm_llama-swap_vllm_llama-cpp_ollama>
+- sparkrun — <https://sparkrun.dev> (dbsci, monitoring for future adoption)
+- LiteLLM — <https://docs.litellm.ai/> (Phase 4 routing layer)
 - Spark Arena leaderboard — <https://spark-arena.com/leaderboard>
 - llama-swap — <https://github.com/mostlygeek/llama-swap>
 - llama.cpp Anthropic API PR — <https://github.com/ggml-org/llama.cpp/pull/17570>

@@ -94,6 +94,13 @@ uv run --with "huggingface_hub>=0.24" --with hf_transfer \
   Qwen3-Coder-Next-FP8.gguf \
   --local-dir /opt/llama-swap/models/qwen3-coder-next
 
+# Qwen3-Coder-Next (int4-AutoRound) — ~35 GB, 2× faster generation
+# Added 2026-04-24: martinB78's benchmarks show 66.7 tok/s vs 32.9 tok/s FP8.
+# Test against FP8 before switching — if quality matches, this is strictly better.
+uv run --with "huggingface_hub>=0.24" --with hf_transfer \
+  huggingface-cli download Intel/Qwen3-Coder-Next-int4-AutoRound \
+  --local-dir /opt/llama-swap/models/qwen3-coder-next-int4
+
 # GPT-OSS 120B (MXFP4) — ~63 GB, use the Blackwell-optimised build
 uv run --with "huggingface_hub>=0.24" --with hf_transfer \
   huggingface-cli download sowilow/gpt-oss-120b-DGX-Spark-GGUF \
@@ -477,15 +484,119 @@ Even though everything is local, watch for:
 
 llama-swap sits **on top** of the existing infrastructure, not as a replacement. If llama-swap has issues, the underlying scripts and services continue to work; you can point agents directly at :8000/:8001/:8002 as before.
 
-## 12. Future enhancements
+## 12. Dynamic VRAM launcher for large models
+
+> Added 2026-04-24 based on martinB78's full-stack guide review (see research doc §3.7).
+> Source: ["Running a Full LLM Stack on DGX Spark GB10"](https://forums.developer.nvidia.com/t/running-a-full-llm-stack-on-dgx-spark-gb10-your-application-litellm-llama-swap-vllm-llama-cpp-ollama/367580)
+
+When swapping large models (GPT-OSS 120B, Qwen3.5-122B) on GB10's unified memory, a recurring failure occurs: after the previous model container exits, CUDA doesn't immediately return all memory to the free pool. vLLM's startup check `free_memory >= gpu_memory_utilization × total` fails with a hardcoded high utilisation value.
+
+Save as `/opt/llama-swap/scripts/launch-large-model.sh`:
+
+```bash
+#!/bin/bash
+# Dynamically sets --gpu-memory-utilization based on actually-free VRAM at launch time.
+# Adapted from martinB78's dgx-spark full-stack guide (April 2026).
+# Usage: launch-large-model.sh PORT HOST MODEL_PATH MODEL_NAME
+set -euo pipefail
+
+PORT="${1}"; HOST="${2}"; MODEL_PATH="${3}"; MODEL_NAME="${4}"
+
+MEM_LINE=$(nvidia-smi --query-gpu=memory.free,memory.total --format=csv,noheaders,nounits | head -1)
+FREE_MIB=$(echo "$MEM_LINE" | awk -F',' '{gsub(/ /,"",$1); print $1+0}')
+TOTAL_MIB=$(echo "$MEM_LINE" | awk -F',' '{gsub(/ /,"",$2); print $2+0}')
+
+# GB10: nvidia-smi reports 128 GiB (131072 MiB); CUDA sees 121.69 GiB (124610 MiB).
+GMEM=$(awk -v f="$FREE_MIB" -v t_nv="$TOTAL_MIB" 'BEGIN {
+    cuda_t = 124610; safety = 3072;
+    overhead = (t_nv > cuda_t) ? t_nv - cuda_t : 0;
+    cuda_free = f - overhead - safety;
+    if (cuda_free < 0) cuda_free = 0;
+    u = cuda_free / cuda_t;
+    if (u > 0.85) u = 0.85; if (u < 0.60) u = 0.60;
+    printf "%.2f", u;
+}')
+
+[ -z "$GMEM" ] || [ "$FREE_MIB" = "0" ] && GMEM="0.75"
+echo "[auto-gmem] free=${FREE_MIB}MiB / total=${TOTAL_MIB}MiB → util=${GMEM}"
+
+exec llama-server --port "${PORT}" --host "${HOST}" \
+    --model "${MODEL_PATH}" --alias "${MODEL_NAME}" \
+    --ctx-size 131072 --batch-size 2048 --ubatch-size 2048 \
+    --threads 16 -ngl 999 --no-mmap --flash-attn on \
+    --cache-type-k q8_0 --cache-type-v q8_0 --jinja --temp 0.6 --top-p 0.95
+```
+
+```bash
+chmod +x /opt/llama-swap/scripts/launch-large-model.sh
+```
+
+Reference from `config.yaml` for any L-tier model:
+
+```yaml
+  "gpt-oss-120b":
+    cmd: /opt/llama-swap/scripts/launch-large-model.sh ${PORT} 0.0.0.0 /opt/llama-swap/models/gpt-oss-120b/gpt-oss-120b-q4_mxfp4.gguf gpt-oss-120b
+    cmdStop: "pkill -f 'llama-server.*gpt-oss-120b'"
+```
+
+## 13. LiteLLM routing layer (Phase 4)
+
+> Added 2026-04-24 based on griffith.mark's three-stage model and martinB78's full-stack guide review.
+> See research doc §3.8 for the rationale.
+
+LiteLLM sits in front of llama-swap and adds routing intelligence, cloud fallbacks, and usage logging. This is Phase 4 — implement after llama-swap is stable.
+
+```bash
+pip install litellm[proxy] --break-system-packages
+```
+
+Save as `/opt/litellm/config.yaml`:
+
+```yaml
+model_list:
+  - model_name: qwen-coder-next
+    litellm_params:
+      model: openai/qwen-coder-next
+      api_base: "http://localhost:9000/v1"
+      api_key: "dummy"
+  - model_name: gpt-oss-120b
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: "http://localhost:9000/v1"
+      api_key: "dummy"
+      supports_reasoning: true
+  - model_name: claude-sonnet-4-6        # Claude Agent SDK catch-all
+    litellm_params:
+      model: openai/qwen-coder-next
+      api_base: "http://localhost:9000/v1"
+      api_key: "dummy"
+  - model_name: gemini-3.1-pro           # Cloud fallback — interactive only
+    litellm_params:
+      model: gemini/gemini-3.1-pro
+      api_key: "os.environ/GEMINI_API_KEY"
+
+litellm_settings:
+  drop_params: true
+```
+
+Start: `litellm --config /opt/litellm/config.yaml --port 14000 --host 0.0.0.0`
+
+Monitor at `http://promaxgb10-41b1:14000/ui` for per-model token counts, latency, and cost breakdown.
+
+## 14. Future enhancements
 
 - **Fine-tuned specialist models** — once Gemma 4 31B fine-tunes land (GCSE tutor validated first on Bedrock, then other specialists), register them as additional members of the builders group
 - **Preload tuning** — if Jarvis becomes the most-invoked agent, swap the preload target to `gpt-oss-120b` instead of `qwen-coder-next`
 - **Peer federation** — if a second machine is added (second GB10, Mac Studio), enable llama-swap peers so agents on either node see a unified model list
 - **API key enforcement** — once multi-user (James, Mark with scoped access), add `apiKeys` and per-key rate limits to separate concerns
 - **Concurrency tuning from real data** — after two weeks of Forge runs, analyse the web UI metrics for actual parallelism patterns and adjust `concurrencyLimit` per model
+- **Qwen3-Coder-Next int4-AutoRound A/B test** — martinB78's benchmarks show 66.7 tok/s vs 32.9 tok/s FP8, at ~35 GB vs ~60 GB. If quality matches, switch to int4 as the default Player model (Phase 2b)
+- **Qwen3.6-27B multi-purpose evaluation** — once community benchmarks are available, test as a single always-loaded model for coding + reasoning + extraction (Phase 5)
+- **Dataset factory via llama-swap** — point agentic-dataset-factory at :9000 with model=gpt-oss-120b for co-existence with Graphiti (Phase 2c, see research doc §3.11)
+- **sparkrun adoption** — monitor dbsci's sparkrun for maturity
+- **martinB78's Docker-based model serving** — evaluate `--network container:llama-swap` pattern for cleaner network isolation
 
-## 13. Rollback
+## 15. Rollback
 
 If llama-swap misbehaves:
 
