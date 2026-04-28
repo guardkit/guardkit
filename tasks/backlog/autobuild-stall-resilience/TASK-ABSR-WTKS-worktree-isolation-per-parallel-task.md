@@ -1,9 +1,11 @@
 ---
 id: TASK-ABSR-WTKS
 title: Worktree isolation per parallel task — design-first, post-demo
-status: backlog
+status: design_approved
 created: 2026-04-28T12:30:00Z
-updated: 2026-04-28T12:30:00Z
+updated: 2026-04-28T15:30:00Z
+previous_state: backlog
+state_transition_reason: "Phase 2.8 human checkpoint approved (--design-only)"
 priority: medium
 tags: [autobuild, worktree-isolation, parallel-contention, FEAT-ABSR-9C6E, design-first, post-demo, structural]
 parent_review: TASK-REV-WORS
@@ -18,6 +20,23 @@ test_results:
   status: pending
   coverage: null
   last_run: null
+design:
+  status: approved
+  approved_at: "2026-04-28T15:30:00Z"
+  approved_by: "human"
+  implementation_plan: ".claude/task-plans/TASK-ABSR-WTKS-implementation-plan.md"
+  implementation_plan_version: "v1"
+  architectural_review_score: 76
+  architectural_review_breakdown:
+    solid: 74
+    dry: 82
+    yagni: 72
+  complexity_score: 7
+  recommended_option: "C+A (two-phase: Option C tactical guard, then Option A per-task subworktrees)"
+  diverged_from_starting_point: true
+  divergence_rationale: "Option E (B+C) rejected — Option B's git stash/reset is worktree-wide, not per-task scopable; macOS lacks overlayfs; bash subprocesses always see shared filesystem."
+  estimated_effort_days: "6-8"
+  design_notes: "Phase 2.5B review APPROVE WITH RECOMMENDATIONS. M1/M2/M3 corrections applied to design doc before approval."
 ---
 
 # TASK-ABSR-WTKS — Worktree isolation per parallel task (design-first)

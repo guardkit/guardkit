@@ -1,12 +1,12 @@
 ---
 id: TASK-REV-OCRC
 title: Diagnose orchestrator cancellation residual cleanup — `Task TASK-J004-013 not found in any state`
-status: backlog
+status: review_complete
 task_type: review
 review_mode: diagnostic
-review_depth: standard
+review_depth: quick
 created: 2026-04-28T12:30:00Z
-updated: 2026-04-28T12:30:00Z
+updated: 2026-04-28T13:05:00Z
 priority: low
 tags: [autobuild, review, sidequest, cancellation-bug, orchestrator-hygiene, FEAT-ABSR-9C6E-related]
 parent_review: TASK-REV-WORS
@@ -20,6 +20,15 @@ test_results:
   status: pending
   coverage: null
   last_run: null
+review_results:
+  mode: diagnostic
+  depth: quick
+  verdict: real-bug-confirmed
+  findings_count: 3
+  recommendations_count: 3
+  decision: file-follow-up-implementation-task
+  report_path: .claude/reviews/TASK-REV-OCRC-report.md
+  completed_at: 2026-04-28T13:05:00Z
 ---
 
 # TASK-REV-OCRC — Diagnose orchestrator cancellation residual cleanup
