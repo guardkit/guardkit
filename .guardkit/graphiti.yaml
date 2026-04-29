@@ -44,6 +44,24 @@ timeout: 30.0
 # Range: 1-10 (1 = sequential, 3 = default)
 max_concurrent_episodes: 3
 
+# Maximum parallel entity-extraction LLM calls per episode.
+# Sets graphiti-core's SEMAPHORE_LIMIT env var inside `add-context`.  When a
+# large doc is split into many chunks (full_doc parser), each add_episode()
+# fires several /v1/chat/completions calls in parallel for entity/edge
+# extraction.  This value caps that fan-out.
+#
+# MUST stay <= the upstream LLM server's per-model concurrency cap.
+#   - For llama-swap on DGX Spark: match the qwen-graphiti model's
+#     `concurrencyLimit` in /opt/llama-swap/config/config.yaml.
+#     Currently 4 → set this to 4 (or 8 if both bumped together).
+#   - For vLLM: match the model's --max-num-seqs.
+# Setting this too high triggers HTTP 429 throttling and causes the OpenAI
+# client to back-off + retry — operation succeeds but wall-time multiplies
+# and logs fill with "Retrying request" / "Rate limit exceeded" warnings.
+# Range: 1-20 (5 = default)
+# Background: TASK-OPS-9F2A
+chunk_extraction_concurrency: 4
+
 # LLM provider for Graphiti entity extraction
 # Options: openai (default), vllm, ollama, gemini
 #

@@ -1,10 +1,12 @@
 ---
 id: TASK-OPS-9F2A
 title: Tune Graphiti chunked-extraction concurrency to avoid llama-swap 429 throttling
-status: backlog
+status: completed
 task_type: feature
 created: 2026-04-29T07:35:00Z
-updated: 2026-04-29T07:35:00Z
+updated: 2026-04-29T08:35:00Z
+completed: 2026-04-29T08:35:00Z
+completed_location: tasks/completed/2026-04/
 priority: medium
 tags: [graphiti, llama-swap, concurrency, throughput, ops, dgx-spark]
 complexity: 4
@@ -15,9 +17,19 @@ related_docs:
   - .claude/rules/graphiti-knowledge.md
   - .claude/rules/graphiti-knowledge-graph.md
 test_results:
-  status: pending
+  status: passing
   coverage: null
-  last_run: null
+  last_run: 2026-04-29T08:30:00Z
+  notes: |
+    71 config tests pass. 55 add-context tests pass. 1 pre-existing unrelated
+    failure in test_add_episode_group_specific_timeouts (240/360 timeout drift
+    from TASK-REV-2266) — verified failing on main without these changes.
+follow_ups:
+  - description: |
+      Re-run `add-context` against production llama-swap on a 20 KB doc to
+      confirm zero "Rate limit" log lines and bounded wall-time. Requires
+      GB10 server access — the only acceptance criterion not closeable in code.
+    blocked_by: production-server-access
 ---
 
 # Task: Tune Graphiti chunked-extraction concurrency to avoid llama-swap 429 throttling
@@ -127,3 +139,70 @@ Recommended: combination of (1) bumped to `concurrencyLimit: 8` +
   Both have `concurrencyLimit: 2` which is appropriate for their
   current usage (single-user agent + single-user tutor). Revisit if
   fleet expands.
+
+## Implementation (2026-04-29)
+
+Picked option 2 (client-side semaphore via config) layered on the
+existing implicit option 1 (kept llama-swap `concurrencyLimit: 4` for
+`qwen-graphiti`; client now matches it instead of overshooting at 5).
+
+### Code changes
+
+- [guardkit/knowledge/config.py](guardkit/knowledge/config.py)
+  — add `chunk_extraction_concurrency: int = 5` to `GraphitiSettings`,
+  load from YAML, `CHUNK_EXTRACTION_CONCURRENCY` env override, validate
+  range 1-20.
+- [guardkit/cli/graphiti.py](guardkit/cli/graphiti.py)
+  — `_cmd_add_context` now reads
+  `settings.chunk_extraction_concurrency` and uses it for
+  `SEMAPHORE_LIMIT` instead of the hardcoded `"5"`. `load_graphiti_config()`
+  is called *before* graphiti-core imports (it only touches PyYAML).
+- [.guardkit/graphiti.yaml](.guardkit/graphiti.yaml)
+  — set `chunk_extraction_concurrency: 4` to match the production
+  llama-swap `qwen-graphiti` `concurrencyLimit: 4`. Inline doc explains
+  the two-layer agreement and how to tune.
+- [docs/research/dgx-spark/RUNBOOK-v3-production-deployment.md](docs/research/dgx-spark/RUNBOOK-v3-production-deployment.md)
+  — Phase 5.2 `qwen-graphiti` block now has a tuning-notes header
+  explaining `concurrencyLimit` semantics, the client-server two-layer
+  agreement, and the `-np` ↔ `concurrencyLimit` ↔
+  `chunk_extraction_concurrency` capacity chain.
+
+### Test changes
+
+- [tests/knowledge/test_config.py](tests/knowledge/test_config.py)
+  — added 5 unit tests: default value (5), custom value, below-range
+  rejection (0 → ValueError), above-range rejection (21 → ValueError),
+  bool-as-int rejection. Plus YAML-load and env-var-override tests.
+- [tests/unit/cli/commands/test_graphiti_add_context.py](tests/unit/cli/commands/test_graphiti_add_context.py)
+  — updated `test_semaphore_limit_set_before_initialize` to mock
+  `load_graphiti_config` so the assertion is independent of the
+  project's `.guardkit/graphiti.yaml`. Added
+  `test_semaphore_limit_reads_from_config` proving the env var
+  reflects `chunk_extraction_concurrency`.
+
+### Acceptance criteria status
+
+- [x] Issue reproduced (during the TASK-RUN-D6F4 validation that
+      surfaced this — 8 rate-limit hits, 37 retries on a 20 KB doc).
+- [x] Chosen option implemented — client-side semaphore made
+      configurable via `.guardkit/graphiti.yaml`.
+- [ ] Re-run validation against production llama-swap to confirm zero
+      "Rate limit" log lines on the same 20 KB doc. **REQUIRES
+      PRODUCTION SERVER ACCESS** — open this once GB10 is reachable.
+- [x] Semaphore configurable via `.guardkit/graphiti.yaml` (not
+      hardcoded). Confirmed by `test_semaphore_limit_reads_from_config`.
+- [x] RUNBOOK Phase 5.2 commentary updated.
+
+### Tuning guidance left in code
+
+The two layers must agree:
+- Server: `concurrencyLimit` in `/opt/llama-swap/config/config.yaml`
+  for `qwen-graphiti`.
+- Client: `chunk_extraction_concurrency` in `.guardkit/graphiti.yaml`.
+
+Set the client equal to or just below the server limit. Both are
+bounded above by the on-server `-np N` (parallel slot count).
+Increasing throughput meaningfully = bump `-np` AND
+`concurrencyLimit` AND `chunk_extraction_concurrency` together,
+re-checking VRAM headroom (each extra slot ≈ 1-2 GB KV cache for
+Qwen2.5-14B Q8).

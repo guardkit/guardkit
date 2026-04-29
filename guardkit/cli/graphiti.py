@@ -960,10 +960,19 @@ async def _cmd_add_context(
     """Async implementation of add-context command."""
     # Set SEMAPHORE_LIMIT before graphiti-core is imported (lazy import in
     # client.initialize()).  graphiti-core reads this env var at module load
-    # time to cap parallel queries in semaphore_gather().  Save the original
-    # value so we can restore it after the command finishes.
+    # time to cap parallel queries in semaphore_gather() — which also bounds
+    # parallel entity-extraction LLM calls fired during a single add_episode
+    # for chunked documents.  Setting it too high triggers HTTP 429 from
+    # upstream LLM servers (e.g. llama-swap concurrencyLimit); setting it too
+    # low under-utilises capacity.  Read from the project's graphiti config
+    # so the value can be tuned via .guardkit/graphiti.yaml or the
+    # CHUNK_EXTRACTION_CONCURRENCY env var.  See TASK-OPS-9F2A.
+    #
+    # Note: load_graphiti_config() does NOT import graphiti-core (only PyYAML),
+    # so it is safe to call before SEMAPHORE_LIMIT is set.
+    settings_for_semaphore = load_graphiti_config()
     original_semaphore = os.environ.get("SEMAPHORE_LIMIT")
-    os.environ["SEMAPHORE_LIMIT"] = "5"
+    os.environ["SEMAPHORE_LIMIT"] = str(settings_for_semaphore.chunk_extraction_concurrency)
 
     try:
         # Suppress noisy INFO-level log messages during add-context:

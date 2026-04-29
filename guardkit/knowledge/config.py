@@ -21,6 +21,7 @@ Environment Variables:
     - EMBEDDING_PROVIDER: Embedding provider ('openai', 'vllm', 'ollama')
     - EMBEDDING_BASE_URL: Embedding provider base URL (e.g., 'http://host:8001/v1')
     - MAX_CONCURRENT_EPISODES: Max concurrent episode creation calls during seeding (1-10)
+    - CHUNK_EXTRACTION_CONCURRENCY: Max parallel LLM extraction calls per episode (1-20)
 
     # Deprecated (kept for backwards compatibility):
     - GRAPHITI_HOST: Deprecated - use NEO4J_URI instead
@@ -72,6 +73,11 @@ class GraphitiSettings:
             MCP server config generation. Use to ensure consistent dimensions across access
             methods (e.g. 1024 for nomic-embed-text-v1.5 with Matryoshka).
         max_concurrent_episodes: Max concurrent episode creation calls during seeding (1-10)
+        chunk_extraction_concurrency: Max parallel entity-extraction LLM calls per episode (1-20).
+            Sets graphiti-core's SEMAPHORE_LIMIT env var inside `add-context`. Should match (or
+            stay below) the upstream LLM server's per-model concurrency cap to avoid 429 throttling.
+            For llama-swap, align with the matching `concurrencyLimit` for the graphiti model.
+            Default 5 preserves prior hardcoded behaviour. Range: 1-20.
         host: Deprecated - use neo4j_uri instead
         port: Deprecated - use neo4j_uri instead
 
@@ -111,6 +117,10 @@ class GraphitiSettings:
     embedding_dimensions: Optional[int] = None  # explicit dimensions (e.g. 1024 for Matryoshka)
     # Concurrency control for parallel episode seeding
     max_concurrent_episodes: int = 3      # Max concurrent episode creation calls (1-10)
+    # Max parallel entity-extraction LLM calls per episode (graphiti-core SEMAPHORE_LIMIT).
+    # Should align with the upstream LLM server's per-model concurrency cap (e.g. llama-swap
+    # `concurrencyLimit`) to avoid 429 throttling on chunked add-context runs (TASK-OPS-9F2A).
+    chunk_extraction_concurrency: int = 5
     # Deprecated fields for backwards compatibility
     host: str = "localhost"
     port: int = 8000
@@ -167,6 +177,10 @@ class GraphitiSettings:
             raise TypeError(f"max_concurrent_episodes must be int, got {type(self.max_concurrent_episodes).__name__}")
         if self.max_concurrent_episodes < 1 or self.max_concurrent_episodes > 10:
             raise ValueError(f"max_concurrent_episodes must be between 1 and 10, got {self.max_concurrent_episodes}")
+        if not isinstance(self.chunk_extraction_concurrency, int) or isinstance(self.chunk_extraction_concurrency, bool):
+            raise TypeError(f"chunk_extraction_concurrency must be int, got {type(self.chunk_extraction_concurrency).__name__}")
+        if self.chunk_extraction_concurrency < 1 or self.chunk_extraction_concurrency > 20:
+            raise ValueError(f"chunk_extraction_concurrency must be between 1 and 20, got {self.chunk_extraction_concurrency}")
 
         # Convert timeout to float if int
         if isinstance(self.timeout, int):
@@ -392,6 +406,7 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
         'embedding_model': 'text-embedding-3-small',
         'embedding_dimensions': None,
         'max_concurrent_episodes': 3,
+        'chunk_extraction_concurrency': 5,
         'host': 'localhost',  # Deprecated
         'port': 8000,  # Deprecated
     }
@@ -424,6 +439,7 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
                     'embedding_model': str,
                     'embedding_dimensions': int,
                     'max_concurrent_episodes': int,
+                    'chunk_extraction_concurrency': int,
                     'host': str,
                     'port': int,
                 }
@@ -475,6 +491,7 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
         'EMBEDDING_MODEL': ('embedding_model', str),
         'EMBEDDING_DIMENSIONS': ('embedding_dimensions', int),
         'MAX_CONCURRENT_EPISODES': ('max_concurrent_episodes', int),
+        'CHUNK_EXTRACTION_CONCURRENCY': ('chunk_extraction_concurrency', int),
         # Deprecated env vars (kept for backwards compatibility)
         'GRAPHITI_HOST': ('host', str),
         'GRAPHITI_PORT': ('port', int),

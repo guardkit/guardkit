@@ -121,6 +121,33 @@ class TestGraphitiSettings:
         with pytest.raises((ValueError, TypeError)):
             GraphitiSettings(enabled="true")
 
+    def test_settings_default_chunk_extraction_concurrency(self):
+        """Test chunk_extraction_concurrency defaults to 5 (TASK-OPS-9F2A)."""
+        settings = GraphitiSettings()
+        assert settings.chunk_extraction_concurrency == 5
+
+    def test_settings_custom_chunk_extraction_concurrency(self):
+        """Test chunk_extraction_concurrency accepts custom values in range."""
+        settings = GraphitiSettings(chunk_extraction_concurrency=4)
+        assert settings.chunk_extraction_concurrency == 4
+        settings = GraphitiSettings(chunk_extraction_concurrency=20)
+        assert settings.chunk_extraction_concurrency == 20
+
+    def test_settings_chunk_extraction_concurrency_below_range_raises(self):
+        """Test chunk_extraction_concurrency < 1 raises ValueError."""
+        with pytest.raises(ValueError, match="chunk_extraction_concurrency must be between 1 and 20"):
+            GraphitiSettings(chunk_extraction_concurrency=0)
+
+    def test_settings_chunk_extraction_concurrency_above_range_raises(self):
+        """Test chunk_extraction_concurrency > 20 raises ValueError."""
+        with pytest.raises(ValueError, match="chunk_extraction_concurrency must be between 1 and 20"):
+            GraphitiSettings(chunk_extraction_concurrency=21)
+
+    def test_settings_chunk_extraction_concurrency_bool_raises(self):
+        """Test chunk_extraction_concurrency bool raises TypeError (bool is subclass of int)."""
+        with pytest.raises(TypeError, match="chunk_extraction_concurrency must be int"):
+            GraphitiSettings(chunk_extraction_concurrency=True)
+
 
 class TestGetConfigPath:
     """Test get_config_path function."""
@@ -335,6 +362,30 @@ timeout: 30.0
                     assert config.host == "override.host"
                     assert config.port == 9999
                     assert config.timeout == 90.0
+
+    def test_env_override_chunk_extraction_concurrency(self):
+        """TASK-OPS-9F2A: CHUNK_EXTRACTION_CONCURRENCY env var overrides config."""
+        yaml_content = """
+chunk_extraction_concurrency: 5
+"""
+
+        with patch.dict(os.environ, {"CHUNK_EXTRACTION_CONCURRENCY": "8"}):
+            with patch('builtins.open', mock_open(read_data=yaml_content)):
+                with patch('pathlib.Path.exists', return_value=True):
+                    config = load_graphiti_config()
+
+                    assert config.chunk_extraction_concurrency == 8
+
+    def test_load_chunk_extraction_concurrency_from_yaml(self):
+        """TASK-OPS-9F2A: chunk_extraction_concurrency loads from YAML."""
+        yaml_content = """
+chunk_extraction_concurrency: 4
+"""
+
+        with patch('builtins.open', mock_open(read_data=yaml_content)):
+            with patch('pathlib.Path.exists', return_value=True):
+                config = load_graphiti_config()
+                assert config.chunk_extraction_concurrency == 4
 
     def test_env_override_invalid_value_ignored(self):
         """Test invalid environment variable values are ignored."""

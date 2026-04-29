@@ -758,8 +758,9 @@ class TestSemaphoreLimitAndDelay:
         self, tmp_file, mock_graphiti_client, mock_parser_registry,
         mock_parser, sample_parse_result
     ):
-        """AC-001: SEMAPHORE_LIMIT is set to 5 before client.initialize()."""
+        """AC-001: SEMAPHORE_LIMIT is set from config before client.initialize()."""
         import os
+        from guardkit.knowledge.config import GraphitiSettings
         mock_parser.parse.return_value = sample_parse_result
         captured_values = []
 
@@ -771,20 +772,63 @@ class TestSemaphoreLimitAndDelay:
 
         mock_graphiti_client.initialize = AsyncMock(side_effect=capturing_init)
 
-        with patch("guardkit.cli.graphiti.GraphitiClient", return_value=mock_graphiti_client):
-            with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
-                await _cmd_add_context(
-                    path=str(tmp_file),
-                    parser_type=None,
-                    force=False,
-                    dry_run=False,
-                    pattern="**/*.md",
-                    verbose=False,
-                    quiet=False,
-                    delay=0,
-                )
+        # Pin chunk_extraction_concurrency to default (5) to make the assertion
+        # independent of the project's .guardkit/graphiti.yaml.
+        default_settings = GraphitiSettings()
+
+        with patch("guardkit.cli.graphiti.load_graphiti_config", return_value=default_settings):
+            with patch("guardkit.cli.graphiti.GraphitiClient", return_value=mock_graphiti_client):
+                with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                    await _cmd_add_context(
+                        path=str(tmp_file),
+                        parser_type=None,
+                        force=False,
+                        dry_run=False,
+                        pattern="**/*.md",
+                        verbose=False,
+                        quiet=False,
+                        delay=0,
+                    )
 
         assert captured_values == ["5"]
+
+    @pytest.mark.asyncio
+    async def test_semaphore_limit_reads_from_config(
+        self, tmp_file, mock_graphiti_client, mock_parser_registry,
+        mock_parser, sample_parse_result
+    ):
+        """TASK-OPS-9F2A: SEMAPHORE_LIMIT honours chunk_extraction_concurrency setting."""
+        import os
+        from guardkit.knowledge.config import GraphitiSettings
+        mock_parser.parse.return_value = sample_parse_result
+        captured_values = []
+
+        original_init = mock_graphiti_client.initialize
+
+        async def capturing_init():
+            captured_values.append(os.environ.get("SEMAPHORE_LIMIT"))
+            return await original_init()
+
+        mock_graphiti_client.initialize = AsyncMock(side_effect=capturing_init)
+
+        # Tuned for a llama-swap qwen-graphiti with concurrencyLimit: 8
+        tuned_settings = GraphitiSettings(chunk_extraction_concurrency=8)
+
+        with patch("guardkit.cli.graphiti.load_graphiti_config", return_value=tuned_settings):
+            with patch("guardkit.cli.graphiti.GraphitiClient", return_value=mock_graphiti_client):
+                with patch("guardkit.cli.graphiti.ParserRegistry", return_value=mock_parser_registry):
+                    await _cmd_add_context(
+                        path=str(tmp_file),
+                        parser_type=None,
+                        force=False,
+                        dry_run=False,
+                        pattern="**/*.md",
+                        verbose=False,
+                        quiet=False,
+                        delay=0,
+                    )
+
+        assert captured_values == ["8"]
 
     @pytest.mark.asyncio
     async def test_semaphore_limit_restored_after_command(

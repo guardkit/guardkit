@@ -335,6 +335,28 @@ hooks:
 models:
   # ===========================================================================
   # GRAPHITI — entity extraction + Jarvis intent routing
+  #
+  # concurrencyLimit tuning notes (TASK-OPS-9F2A):
+  #   This caps parallel /v1/chat/completions requests llama-swap will accept
+  #   for this model.  Excess requests get HTTP 429 ("Rate limit exceeded").
+  #
+  #   Graphiti's full_doc parser splits large docs into many chunks and fires
+  #   their entity-extraction LLM calls in parallel inside a single
+  #   add_episode().  If the client's parallel fan-out (graphiti-core's
+  #   SEMAPHORE_LIMIT, exposed in GuardKit as `chunk_extraction_concurrency`
+  #   in .guardkit/graphiti.yaml) exceeds this concurrencyLimit, callers see
+  #   spammy "Retrying request" log lines and 2-3x wall time inflation.
+  #
+  #   Two layers must agree:
+  #     - Server (here):     concurrencyLimit
+  #     - Client (graphiti): chunk_extraction_concurrency
+  #   Set the client equal to or just below the server limit.
+  #
+  #   Capacity bound: -np N below sets the on-server parallel slot count.
+  #   Each extra slot costs ~1-2 GB KV cache for Qwen2.5-14B Q8.  Currently
+  #   -np 2 → on-server ceiling is 2; concurrencyLimit: 4 leaves a small
+  #   buffer for admin probes.  To raise throughput meaningfully, increase
+  #   both -np and concurrencyLimit together (and re-check VRAM headroom).
   # ===========================================================================
   "qwen-graphiti":
     cmd: >
@@ -527,6 +549,8 @@ else
 fi
 ```
 
+> **Operational note (TASK-OPS-7CB1, 2026-04-29):** llama-swap's `Restart=on-failure` only covers the parent. If individual model children die unexpectedly (e.g. SIGKILL from a parent cgroup, segfault under load, or — observed on 2026-04-28→29 — an unexplained four-way exit), `hooks.on_startup.preload` does NOT auto-revive them; matrix.sets only resurrects them when traffic hits. Phase 5.6 below installs a periodic keep-alive that closes this gap.
+
 ### 5.5 Verify VRAM footprint
 
 ```bash
@@ -552,6 +576,72 @@ nvidia-smi --query-compute-apps=used_memory --format=csv,noheader | \
 Workhorse and tutor run ~3 GB above the original estimate combined — likely
 KV-cache contribution at 64K and 32K context respectively. 60 GB headroom
 remains on a 128 GB GB10.
+
+### 5.6 Install the keep-alive timer (TASK-OPS-7CB1)
+
+llama-swap does not auto-revive crashed model children — only the parent gets
+`Restart=on-failure` from the systemd unit (Phase 10.2), and matrix.sets only
+resurrects a child when traffic next reaches it. The keep-alive timer fires
+every 5 minutes, asks `/running` for the configured-but-not-running set, and
+sends a one-shot warmup to each missing model. The probe request returns
+immediately (1-token chat / single-token embed), so it does not pin any
+`concurrencyLimit` slot.
+
+```bash
+REPO=~/Projects/appmilla_github/guardkit
+
+# 1. Install the script alongside llama-swap binaries (or leave in repo and
+#    point the unit file at the repo path — that's what the shipped unit
+#    already does).
+sudo install -m 0755 "$REPO/scripts/llama-swap-keepalive.sh" \
+    /usr/local/bin/llama-swap-keepalive.sh
+
+# 2. Drop the unit + timer (the shipped versions reference the repo path; the
+#    install command below overwrites with the binary path for production).
+sudo install -m 0644 "$REPO/scripts/llama-swap-keepalive.service" \
+    /etc/systemd/system/llama-swap-keepalive.service
+sudo install -m 0644 "$REPO/scripts/llama-swap-keepalive.timer" \
+    /etc/systemd/system/llama-swap-keepalive.timer
+
+# Adjust ExecStart in the installed copy to use /usr/local/bin
+sudo sed -i 's|ExecStart=.*llama-swap-keepalive\.sh|ExecStart=/usr/local/bin/llama-swap-keepalive.sh|' \
+    /etc/systemd/system/llama-swap-keepalive.service
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now llama-swap-keepalive.timer
+
+# Verify
+systemctl list-timers llama-swap-keepalive.timer
+journalctl -u llama-swap-keepalive.service -n 30 --no-pager
+```
+
+**Expected output of first manual run (after killing one child):**
+
+```
+[llama-swap-keepalive] Reviving: nomic-embed
+[llama-swap-keepalive]   nomic-embed: revived (HTTP 200)
+```
+
+**To verify keep-alive does not hold a slot,** kill a child, run keep-alive,
+then fire 8 parallel requests against the revived model — none should 429:
+
+```bash
+sudo kill -9 $(pgrep -f "alias nomic-embed")
+sudo systemctl start llama-swap-keepalive.service
+for i in $(seq 1 8); do
+    (curl -s --max-time 10 http://localhost:9000/v1/embeddings \
+        -H "Content-Type: application/json" \
+        -d '{"model":"nomic-embed","input":"slot test"}' \
+        -o /dev/null -w "req $i: %{http_code}\n") &
+done; wait
+```
+
+**See also**: TASK-OPS-7CB1 captures the original observation (one four-way
+exit on 2026-04-28→29 with no kernel/CUDA/OOM evidence) and an operational
+finding that the running stack was hosted inside a VS Code Chromium scope
+rather than under the systemd unit installed in Phase 10.2. The keep-alive
+patches the symptom; the structural fix (use the systemd unit, run outside
+the GUI session) is captured in Phase 10.2 below.
 
 ---
 
@@ -873,6 +963,26 @@ echo "  sudo systemctl start llama-swap"
 echo "  sudo systemctl status llama-swap"
 echo "  journalctl -u llama-swap -f"
 ```
+
+> **Operational warning (TASK-OPS-7CB1, 2026-04-29):** Once you create this
+> unit, **start it via `sudo systemctl start llama-swap` rather than running
+> the binary from a shell** — and especially not from a VS Code integrated
+> terminal. The 2026-04-28 production cutover ran the binary directly from
+> a VS Code terminal; the resulting process tree (parent + four
+> `llama-server` children) all inherited VS Code's Chromium cgroup
+> (`app-org.chromium.Chromium-<pid>.scope`). Anything in that scope is
+> subject to VS Code's lifecycle (window reload, Chromium memory pressure,
+> child reaping), which leaves no kernel-visible evidence and bypasses
+> `Restart=on-failure`. Verify with:
+>
+> ```bash
+> systemctl status llama-swap                 # must be active (running)
+> cat /proc/$(pgrep -x llama-swap)/cgroup     # must be /system.slice/llama-swap.service
+> ```
+>
+> If `/proc/$pid/cgroup` shows a `chromium` or `app-` scope, kill llama-swap
+> and start it via `sudo systemctl start llama-swap` so it lives under the
+> system slice and gets restart supervision.
 
 ### 10.3 Record final state
 
