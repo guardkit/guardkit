@@ -4,6 +4,7 @@
 
 **Machine:** Dell DGX Spark GB10 (`promaxgb10-41b1`), 128 GB unified memory
 **Predecessors:** `RESULTS-v2-all-llamacpp-validation.md` (all tests passed), `POST-VALIDATION-model-strategy-revision.md`
+**Execution results:** [`RESULTS-v3-production-deployment.md`](RESULTS-v3-production-deployment.md) — see "Runbook gaps discovered while executing" for the live-execution gap analysis that was folded back into this revision (TASK-RUN-D6F4).
 **Expected duration:** ~1 hour
 
 **Target architecture:**
@@ -26,9 +27,12 @@ llama-swap :9000 (single front door — all agents point here)
 ```bash
 echo "=== Checking v2 validated models ==="
 
-GRAPHITI_GGUF=$(find ~/.cache/huggingface -name "*qwen2.5*14*Q8*" -o -name "*Qwen2.5*14*Q8*" 2>/dev/null | head -1)
-EMBED_GGUF=$(find ~/.cache/huggingface -name "*nomic*f16*" -o -name "*nomic*F16*" 2>/dev/null | head -1)
-MOE_GGUF=$(find ~/.cache/huggingface -name "*qwen3.6*35*Q4*" -o -name "*Qwen3.6*35*Q4*" 2>/dev/null | head -1)
+# Use -iname (case-insensitive) — actual files on disk are lowercase
+# (e.g. qwen2.5-14b-instruct-q8_0-...gguf), runbook v3 originally globbed
+# for capital Q8/F16/Q4 and missed everything. Fixed in TASK-RUN-D6F4.
+GRAPHITI_GGUF=$(find ~/.cache/huggingface -iname "*qwen2.5*14*q8*.gguf" 2>/dev/null | head -1)
+EMBED_GGUF=$(find ~/.cache/huggingface -iname "*nomic*f16*.gguf" 2>/dev/null | head -1)
+MOE_GGUF=$(find ~/.cache/huggingface -iname "*qwen3.6*35*q4*.gguf" 2>/dev/null | head -1)
 
 echo "Graphiti:  ${GRAPHITI_GGUF:-NOT FOUND}"
 echo "Embed:     ${EMBED_GGUF:-NOT FOUND}"
@@ -232,7 +236,11 @@ done
 ### 4.2 Kill any remaining llama-server processes
 
 ```bash
-pkill -f "llama-server" 2>/dev/null && echo "Killed stray llama-server processes" || echo "No stray processes"
+# Use -x (exact basename match) rather than -f (full command line). With -f,
+# pkill matches the bash script running this block (the script text contains
+# the literal string "llama-server") and self-kills before doing anything.
+# Fixed in TASK-RUN-D6F4.
+pkill -x llama-server 2>/dev/null && echo "Killed stray llama-server processes" || echo "No stray processes"
 sleep 2
 
 # Verify ports are free
@@ -294,9 +302,35 @@ cat > /opt/llama-swap/config/config.yaml << EOF
 #   Total:                              ~60 GB / 128 GB (64 GB headroom)
 # =============================================================================
 
-healthCheckTimeout: 300
+# 600s timeout (was 300s) gives the 21 GB workhorse and 19 GB tutor enough
+# cold-start budget on first preload — see TASK-RUN-D6F4 / RESULTS-v3 Gap #1.
+healthCheckTimeout: 600
 startPort: 5800
 logLevel: info
+
+# Coexistence matrix — declares all four models can be resident
+# simultaneously. Without this, llama-swap v208 evicts the previously
+# running model on every request to a different one (ttl: 0 only governs
+# *idle* eviction, not request-driven eviction). First execution without
+# this block produced a load → kill → load → kill thrash loop on parallel
+# polling. Added in TASK-RUN-D6F4 / RESULTS-v3 Gap #1.
+matrix:
+  vars:
+    qg: qwen-graphiti
+    ne: nomic-embed
+    qw: qwen36-workhorse
+    gt: gemma4-tutor
+  sets:
+    all: "qg & ne & qw & gt"
+
+# Preload all four models at startup so cold-start is deterministic.
+hooks:
+  on_startup:
+    preload:
+      - qwen-graphiti
+      - nomic-embed
+      - qwen36-workhorse
+      - gemma4-tutor
 
 models:
   # ===========================================================================
@@ -426,9 +460,11 @@ echo "Config written to /opt/llama-swap/config/config.yaml"
 ```bash
 echo "=== Starting llama-swap ==="
 
+# llama-swap v208 uses single-dash flags (-config, -listen). Double-dash
+# variants are silently rejected. Fixed in TASK-RUN-D6F4 / RESULTS-v3 Gap #3.
 nohup llama-swap \
-    --config /opt/llama-swap/config/config.yaml \
-    --listen :9000 \
+    -config /opt/llama-swap/config/config.yaml \
+    -listen :9000 \
     > /opt/llama-swap/logs/llama-swap.log 2>&1 &
 
 SWAP_PID=$!
@@ -502,7 +538,20 @@ nvidia-smi --query-compute-apps=used_memory --format=csv,noheader | \
     awk -F' ' '{sum += $1} END {print "Total VRAM: " sum " MiB (" sum/1024 " GiB)"}'
 ```
 
-**Expected:** ~60 GB total for all four models.
+**Expected:** ~65 GB total for all four models, broken down as
+(measured 2026-04-28, see RESULTS-v3 Follow-up #3):
+
+| Model                          | VRAM   |
+|--------------------------------|--------|
+| Qwen2.5-14B Q8_0 (Graphiti)    | 21.3 GB |
+| nomic-embed f16 (embeddings)   |  0.9 GB |
+| Qwen3.6-35B-A3B Q4_K_XL (workhorse) | 23.7 GB |
+| Gemma 4 26B-A4B Q4_K_M (tutor) | 19.1 GB |
+| **Total**                      | **~65 GB** |
+
+Workhorse and tutor run ~3 GB above the original estimate combined — likely
+KV-cache contribution at 64K and 32K context respectively. 60 GB headroom
+remains on a 128 GB GB10.
 
 ---
 
@@ -682,8 +731,35 @@ sed -i 's|api_url: ${EMBEDDING_API_URL:http://localhost:8001/v1}|api_url: ${EMBE
 sed -i 's|dimensions: 1024|dimensions: 768|' "$CONFIG_FILE"
 
 echo ""
-echo "=== Verify changes ==="
+echo "=== Verify MCP changes ==="
 grep -n "api_url\|dimensions" "$CONFIG_FILE"
+
+# ---------------------------------------------------------------------------
+# Also patch the Python client config used by `guardkit graphiti add-context`
+# and `guardkit graphiti seed`. The MCP container reads the file above; the
+# Python client reads .guardkit/graphiti.yaml. Without this second patch,
+# Phase 8 fails with `openai._base_client:Retrying request` followed by
+# `Episode creation failed: Connection error.` because the Python client
+# is still pointed at the old vLLM ports 8000/8001.
+# Added in TASK-RUN-D6F4 / RESULTS-v3 Gap #2.
+# ---------------------------------------------------------------------------
+
+CLIENT_CONFIG="$HOME/Projects/appmilla_github/guardkit/.guardkit/graphiti.yaml"
+CLIENT_BACKUP="${CLIENT_CONFIG}.pre-llamacpp.bak"
+
+if [ -f "$CLIENT_CONFIG" ]; then
+    cp "$CLIENT_CONFIG" "$CLIENT_BACKUP"
+    echo "Backed up Python client config to: $CLIENT_BACKUP"
+
+    sed -i 's|http://promaxgb10-41b1:8000/v1|http://promaxgb10-41b1:9000/v1|g' "$CLIENT_CONFIG"
+    sed -i 's|http://promaxgb10-41b1:8001/v1|http://promaxgb10-41b1:9000/v1|g' "$CLIENT_CONFIG"
+
+    echo ""
+    echo "=== Verify Python client changes ==="
+    grep -n "promaxgb10-41b1" "$CLIENT_CONFIG" || echo "(no promaxgb10-41b1 references — using local hostnames?)"
+else
+    echo "WARNING: $CLIENT_CONFIG not found — Phase 8 may fail with connection errors"
+fi
 ```
 
 ### 7.2 Restart Graphiti MCP server
@@ -780,7 +856,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/local/bin/llama-swap --config /opt/llama-swap/config/config.yaml --listen :9000
+ExecStart=/usr/local/bin/llama-swap -config /opt/llama-swap/config/config.yaml -listen :9000
 Restart=on-failure
 RestartSec=10
 StandardOutput=append:/opt/llama-swap/logs/llama-swap.log

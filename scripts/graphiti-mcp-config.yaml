@@ -31,19 +31,19 @@ llm:
   providers:
     openai:
       api_key: ${OPENAI_API_KEY:not-needed-vllm-local}
-      api_url: ${LLM_API_URL:http://localhost:8000/v1}
+      api_url: ${LLM_API_URL:http://localhost:9000/v1}
 
 embedder:
   # Local vLLM nomic-embed-text-v1.5 on GB10 (port 8001). 1024 dims matches the
   # FalkorDB index. See: guardkit/scripts/vllm-embed.sh
   provider: "openai"
   model: "nomic-embed-text-v1.5"
-  dimensions: 1024
+  dimensions: 768
 
   providers:
     openai:
       api_key: ${OPENAI_API_KEY:not-needed-vllm-local}
-      api_url: ${EMBEDDING_API_URL:http://localhost:8001/v1}
+      api_url: ${EMBEDDING_API_URL:http://localhost:9000/v1}
 
 database:
   provider: "falkordb"
