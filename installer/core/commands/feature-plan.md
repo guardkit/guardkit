@@ -2268,6 +2268,46 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
       The helper must never be the reason `/feature-plan` surfaces a
       traceback.
 
+    **Smoke gates — canonical schema reference** (TASK-FIX-B5BF):
+
+    The nudge tells authors to "add a `smoke_gates:` block" and points
+    here for the canonical shape. `smoke_gates` is **one object per
+    feature**, not a dict-of-waves; the source-of-truth model is
+    `SmokeGates` in `guardkit/orchestrator/feature_loader.py` (TASK-SMK-F703A).
+
+    ```yaml
+    # smoke_gates is ONE object per feature. after_wave selects which
+    # wave(s) the single command fires after.
+    smoke_gates:
+      after_wave: [2, 3]          # int | list[int] | "all"
+      command: |                  # single shell command (multi-line OK)
+        set -e
+        pytest tests/smoke -x
+      expected_exit: 0            # optional, default 0
+      timeout: 120                # optional, default 120s, bounds [1, 600]
+    ```
+
+    Field semantics:
+    - `after_wave` — required. `int` (e.g. `3`), `list[int]` (e.g.
+      `[2, 3]`), or the literal string `"all"`. Wave numbers are
+      1-indexed and must come from `orchestration.parallel_groups`;
+      this field never computes waves itself.
+    - `command` — required, non-empty string. Executed in the shared
+      worktree via subprocess. Multi-line `|` block scalars are
+      supported and recommended for `set -e` + multi-step pipelines.
+    - `expected_exit` — optional, defaults to `0`. Exit code that
+      signals success.
+    - `timeout` — optional, defaults to `120` (seconds). Bounded
+      `[1, 600]` to keep `/feature-build` deterministic.
+
+    The model is configured with `extra="forbid"`, so unknown keys
+    (e.g. `after_wave_1:`, `commands:` plural) raise
+    `SchemaValidationError` in `FeatureLoader._parse_feature` before
+    `/feature-build` starts. The `smoke_gates_nudge` example block is
+    pinned to this schema by
+    `tests/unit/commands/test_smoke_gates_nudge.py::test_notice_example_validates_against_smoke_gates_schema`
+    so the nudge cannot drift away from the canonical shape.
+
     **Non-goals (do NOT do any of these):**
     - Do not auto-generate smoke-gate commands. Authors know their
       stack; the notice gives `python -c "import your_package"` as an

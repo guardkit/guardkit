@@ -126,8 +126,10 @@ def test_returns_notice_when_two_waves_without_smoke_gates(
     assert "Feature-level smoke gates (R3) not configured" in result
     assert "2 waves" in result  # actual wave count interpolated
     assert "smoke_gates:" in result  # copy-pasteable example
-    assert "after_wave_1:" in result
-    assert "after_wave_2:" in result
+    # New (TASK-FIX-B5BF): example uses canonical flat-object schema, not
+    # the old after_wave_N dict-of-waves shape that failed validation.
+    assert "after_wave:" in result
+    assert "command:" in result
     assert "feature-plan.md" in result  # canonical doc pointer
 
 
@@ -235,3 +237,66 @@ def test_returns_none_when_parallel_groups_not_a_list(yaml_path: Path) -> None:
         "orchestration:\n  parallel_groups: not-a-list\n",
     )
     assert check_smoke_gates_activation(yaml_path) is None
+
+
+# ---------------------------------------------------------------------------
+# AC-4 (TASK-FIX-B5BF): The example block in the nudge MUST round-trip
+# through SmokeGates.model_validate cleanly. Pins the example string to the
+# Pydantic schema so this class of drift cannot recur.
+# ---------------------------------------------------------------------------
+
+
+def test_notice_example_validates_against_smoke_gates_schema(
+    yaml_path: Path,
+) -> None:
+    """The "Minimal example" block emitted by the nudge must parse as YAML
+    and validate against the canonical ``SmokeGates`` model.
+
+    Regression for TASK-FIX-B5BF: previously the example used an
+    ``after_wave_N`` dict-of-waves shape with ``- command`` lists, which
+    raised ``SchemaValidationError`` against ``SmokeGates`` (which has
+    ``extra="forbid"`` plus required ``after_wave``/``command`` fields).
+    Authors who copied the example verbatim hit ``FeatureLoader._parse_feature``
+    failures before ``/feature-build`` ever started.
+    """
+    import yaml as yaml_module
+
+    from guardkit.orchestrator.feature_loader import SmokeGates
+
+    _write(yaml_path, _TWO_WAVE_NO_SMOKE)
+    notice = check_smoke_gates_activation(yaml_path)
+    assert notice is not None
+
+    # Slice between the "Minimal example:" line and the "See ..." pointer.
+    lines = notice.splitlines()
+    start = next(
+        (i + 1 for i, line in enumerate(lines) if "Minimal example:" in line),
+        None,
+    )
+    assert start is not None, "Notice missing 'Minimal example:' anchor"
+
+    end = next(
+        (
+            i
+            for i, line in enumerate(lines[start:], start=start)
+            if line.lstrip().startswith("See ")
+        ),
+        None,
+    )
+    assert end is not None, "Notice missing 'See ...' anchor after example"
+
+    raw_block = lines[start:end]
+    # The notice indents the example by 4 spaces for visual alignment;
+    # strip that prefix so YAML sees a top-level mapping.
+    dedented = "\n".join(
+        line[4:] if line.startswith("    ") else line for line in raw_block
+    )
+
+    parsed = yaml_module.safe_load(dedented)
+    assert isinstance(parsed, dict), "Example must parse as a YAML mapping"
+    assert "smoke_gates" in parsed, "Example must contain a smoke_gates key"
+
+    # Load-bearing check: the SmokeGates model has extra="forbid" and
+    # requires after_wave + command. If this raises, the nudge is once
+    # again handing users a config that fails AutoBuild validation.
+    SmokeGates.model_validate(parsed["smoke_gates"])
