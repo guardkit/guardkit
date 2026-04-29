@@ -1,0 +1,20 @@
+[Unit]
+Description=llama-swap keep-alive (revive crashed model children)
+Documentation=file:///home/richardwoollcott/Projects/appmilla_github/guardkit/tasks/completed/2026-04/TASK-OPS-7CB1-investigate-overnight-llama-server-crashes.md
+# Don't fight with llama-swap during its own startup
+After=network.target
+Wants=network.target
+
+[Service]
+Type=oneshot
+# Run as a normal user; only needs HTTP access to localhost:9000 + /var/lock
+User=richardwoollcott
+Group=richardwoollcott
+ExecStart=/home/richardwoollcott/Projects/appmilla_github/guardkit/scripts/llama-swap-keepalive.sh
+# Hard cap so a stuck cold-start can't pin the timer
+TimeoutStartSec=400
+StandardOutput=journal
+StandardError=journal
+# A keep-alive failing transiently (revive timeout, llama-swap not yet up)
+# should not poison the timer
+SuccessExitStatus=0 1 3

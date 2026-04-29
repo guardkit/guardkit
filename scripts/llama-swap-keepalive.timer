@@ -1,0 +1,16 @@
+[Unit]
+Description=Run llama-swap keep-alive every 5 minutes
+Documentation=file:///home/richardwoollcott/Projects/appmilla_github/guardkit/tasks/completed/2026-04/TASK-OPS-7CB1-investigate-overnight-llama-server-crashes.md
+Requires=llama-swap-keepalive.service
+
+[Timer]
+# First fire 2 minutes after boot so llama-swap has time to come up
+OnBootSec=2min
+# Then every 5 minutes
+OnUnitActiveSec=5min
+# Persistent so a missed run (host suspended) fires on resume
+Persistent=true
+Unit=llama-swap-keepalive.service
+
+[Install]
+WantedBy=timers.target
