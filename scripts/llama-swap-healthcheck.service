@@ -1,0 +1,19 @@
+[Unit]
+Description=llama-swap weekly health check (audit keep-alive timer + journal)
+Documentation=file:///home/richardwoollcott/Projects/appmilla_github/guardkit/docs/research/dgx-spark/VALIDATION-OPS-7CB1-9F2A-results.md
+After=network.target llama-swap.service llama-swap-keepalive.timer
+Wants=network.target
+
+[Service]
+Type=oneshot
+User=richardwoollcott
+Group=richardwoollcott
+ExecStart=/home/richardwoollcott/Projects/appmilla_github/guardkit/scripts/llama-swap-healthcheck.sh
+TimeoutStartSec=120
+StandardOutput=journal
+StandardError=journal
+# Health-check exit codes: 0=healthy, 1=attention, 2=critical.
+# Treat all three as "service ran successfully" — the report itself
+# captures the verdict; we don't want a 1/2 to mark the unit broken
+# (that would suppress future runs on some restart policies).
+SuccessExitStatus=0 1 2

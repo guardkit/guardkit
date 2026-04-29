@@ -362,12 +362,17 @@ llama-swap-keepalive.timer  enabled  active (waiting)
    ~3-5 min outage if needed sooner; documented in Phase 10.2 of the
    runbook.
 
-2. **7-day recurrence quantification deferred.** The original
-   2026-04-28→29 four-way exit has not recurred since the keep-alive
-   was installed. A scheduled health-check agent will look back over
-   the journal in 2 weeks to confirm the timer has been firing cleanly
-   and quantify any fresh recurrences (see VALIDATION-OPS-7CB1-9F2A
-   commit history; agent scheduled 2026-05-13).
+2. **7-day recurrence quantification automated via weekly health check.**
+   The original 2026-04-28→29 four-way exit has not recurred since the
+   keep-alive was installed. Rather than scheduling a one-off remote
+   agent (which has no path to host-side `journalctl` / `systemctl`),
+   a local weekly health check runs every Monday at 09:00 BST,
+   audits the keep-alive's last 7 days of activity (timer fires,
+   no-op vs revival splits, failed revivals, fresh crash deltas),
+   and writes `/opt/llama-swap/logs/healthcheck-YYYYMMDD.log` plus a
+   journal entry tagged `llama-swap-healthcheck.service`. Three-state
+   exit code (HEALTHY / ATTENTION / CRITICAL). Install steps are
+   captured in [RUNBOOK Phase 5.7](RUNBOOK-v3-production-deployment.md#L580).
 
 ### Validation chain (full lineage)
 
@@ -378,7 +383,9 @@ llama-swap-keepalive.timer  enabled  active (waiting)
 2026-04-29  VALIDATION-D6F4 → all 6 PASS, surfaced 2 operational findings
 2026-04-29  TASK-OPS-7CB1 (keep-alive) + TASK-OPS-9F2A (concurrency) implemented
 2026-04-29  VALIDATION-OPS-7CB1-9F2A (this doc) → both PASS, keep-alive installed
-2026-05-13  scheduled agent will verify journal health and look for recurrences
+2026-04-29  Weekly health-check timer added (Phase 5.7, runs Mon 09:00) —
+            replaces scheduled remote agent (cloud has no path to host)
+2026-05-04  First scheduled health-check report — first Mon after install
 ```
 
 ## Cross-References

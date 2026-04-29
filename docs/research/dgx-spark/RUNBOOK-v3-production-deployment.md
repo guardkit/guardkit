@@ -643,6 +643,79 @@ rather than under the systemd unit installed in Phase 10.2. The keep-alive
 patches the symptom; the structural fix (use the systemd unit, run outside
 the GUI session) is captured in Phase 10.2 below.
 
+### 5.7 Install the weekly health check (TASK-OPS-7CB1 follow-up)
+
+The keep-alive timer reacts to crashes within 5 minutes. On its own that's
+enough to keep the stack serving — but if model children start crashing
+repeatedly (e.g. a fresh upstream regression), nobody notices until they
+look at the journal. The weekly health check audits the keep-alive's last
+7 days of activity and writes a structured report to
+`/opt/llama-swap/logs/healthcheck-YYYYMMDD.log`. Status field summary:
+
+- `HEALTHY` (exit 0) — timer firing, no fresh crashes, all four models up
+- `ATTENTION` (exit 1) — revivals happened (recovered fine, but worth a
+  glance) or VRAM drifted
+- `CRITICAL` (exit 2) — timer not firing, llama-swap unreachable, models
+  missing, or repeated keep-alive failures
+
+The runs are non-noisy because they only escalate on **new** crash events
+since the last run (delta-tracked via `last_exit_count` state file).
+
+```bash
+REPO=~/Projects/appmilla_github/guardkit
+
+# 1. Install the script
+sudo install -m 0755 "$REPO/scripts/llama-swap-healthcheck.sh" \
+    /usr/local/bin/llama-swap-healthcheck.sh
+
+# 2. Install the unit + timer
+sudo install -m 0644 "$REPO/scripts/llama-swap-healthcheck.service" \
+    /etc/systemd/system/llama-swap-healthcheck.service
+sudo install -m 0644 "$REPO/scripts/llama-swap-healthcheck.timer" \
+    /etc/systemd/system/llama-swap-healthcheck.timer
+
+# 3. Repoint ExecStart at /usr/local/bin (was the repo path in the
+#    shipped unit so it's runnable for development)
+sudo sed -i 's|ExecStart=.*llama-swap-healthcheck\.sh|ExecStart=/usr/local/bin/llama-swap-healthcheck.sh|' \
+    /etc/systemd/system/llama-swap-healthcheck.service
+
+# 4. Seed the state file with the current cumulative crash count, so the
+#    first real run reports zero "new" events instead of replaying every
+#    historical exit. Skip this step if you want the first report to
+#    enumerate all prior events.
+sudo mkdir -p /opt/llama-swap/logs/healthcheck-state
+sudo chown -R $USER:$USER /opt/llama-swap/logs/healthcheck-state
+grep -c "process exited but not StateStopping" /opt/llama-swap/logs/llama-swap.log \
+    > /opt/llama-swap/logs/healthcheck-state/last_exit_count
+
+# 5. daemon-reload + enable + start now (immediate first run useful for
+#    smoke-testing; skip --now if you'd rather wait for the next Monday)
+sudo systemctl daemon-reload
+sudo systemctl enable --now llama-swap-healthcheck.timer
+
+# 6. Verify
+systemctl is-enabled llama-swap-healthcheck.timer
+systemctl is-active  llama-swap-healthcheck.timer
+systemctl list-timers llama-swap-healthcheck.timer --no-pager
+journalctl -u llama-swap-healthcheck.service -n 50 --no-pager
+ls -la /opt/llama-swap/logs/healthcheck-*.log | tail -3
+```
+
+**To run it manually any time** (without waiting for Monday 09:00):
+
+```bash
+sudo systemctl start llama-swap-healthcheck.service
+journalctl -u llama-swap-healthcheck.service -n 100 --no-pager
+```
+
+**Why local + not a remote agent**: the original plan was to schedule a
+remote agent (Anthropic cloud) to do this audit, but a remote agent has
+no path to `journalctl` / `systemctl` / `nvidia-smi` on
+`promaxgb10-41b1`. A local systemd timer runs where the data lives, no
+GitHub creds, no MCP, no cloud — and survives daily OS updates and
+reboots the same way the keep-alive does (`Persistent=true` +
+`WantedBy=timers.target`).
+
 ---
 
 ## Phase 6: Validate All Endpoints

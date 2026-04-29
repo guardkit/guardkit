@@ -1,0 +1,16 @@
+[Unit]
+Description=Run llama-swap-healthcheck weekly (Mondays 09:00 local)
+Documentation=file:///home/richardwoollcott/Projects/appmilla_github/guardkit/docs/research/dgx-spark/VALIDATION-OPS-7CB1-9F2A-results.md
+Requires=llama-swap-healthcheck.service
+
+[Timer]
+# Every Monday at 09:00 local time. OnCalendar honours the host's
+# timezone (Europe/London on this machine), so reads naturally.
+OnCalendar=Mon 09:00
+# Persistent so a missed run (host suspended Monday morning) fires on
+# next boot/resume — same pattern as llama-swap-keepalive.timer
+Persistent=true
+Unit=llama-swap-healthcheck.service
+
+[Install]
+WantedBy=timers.target
