@@ -108,4 +108,3 @@ group_ids:
 
 # Deprecated fields (kept for backwards compatibility)
 host: localhost
-port: 8000
