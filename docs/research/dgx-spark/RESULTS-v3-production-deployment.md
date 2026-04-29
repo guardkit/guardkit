@@ -7,7 +7,11 @@
 **llama.cpp:** v8954 (516e8d7a8)
 **llama-swap:** v208 (e8d4384cd2099d02394ad48e465cae2b9b4c95f1)
 **Gap fixes:** [`TASK-RUN-D6F4`](../../../tasks/completed/2026-04/TASK-RUN-D6F4-fix-dgx-runbook-v3-gaps.md) — folded the six gaps below back into the runbook
-**Post-fix validation:** [`VALIDATION-D6F4-gap-fix-results.md`](VALIDATION-D6F4-gap-fix-results.md) — 2026-04-29, all six gaps verified PASS against live deployment; surfaced two operational follow-ups: [`TASK-OPS-7CB1`](../../../tasks/backlog/TASK-OPS-7CB1-investigate-overnight-llama-server-crashes.md) (overnight crashes), [`TASK-OPS-9F2A`](../../../tasks/backlog/TASK-OPS-9F2A-tune-graphiti-extraction-concurrency.md) (429 throttling)
+**Post-fix validation chain:**
+1. [`VALIDATION-D6F4-gap-fix-results.md`](VALIDATION-D6F4-gap-fix-results.md) — 2026-04-29, all six D6F4 gaps PASS against live deployment; surfaced two operational follow-ups
+2. [`VALIDATION-OPS-7CB1-9F2A-results.md`](VALIDATION-OPS-7CB1-9F2A-results.md) — 2026-04-29, both follow-ups validated and the keep-alive timer installed on host:
+   - [`TASK-OPS-7CB1`](../../../tasks/completed/2026-04/TASK-OPS-7CB1-investigate-overnight-llama-server-crashes.md) **PASS** — keep-alive timer revives crashed children (single-model in 5s, four-model in 30s); now installed and active under systemd
+   - [`TASK-OPS-9F2A`](../../../tasks/completed/2026-04/TASK-OPS-9F2A-tune-graphiti-extraction-concurrency.md) **PASS** — `chunk_extraction_concurrency: 4` eliminates HTTP 429 throttling (yesterday: 8 rate-limits + 37 retries on 18 KB doc; today: 0/0 across 35-min full-doc run)
 
 ---
 

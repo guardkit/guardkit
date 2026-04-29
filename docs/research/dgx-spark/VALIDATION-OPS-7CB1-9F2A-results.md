@@ -295,6 +295,92 @@ benefits from more parallelism, bounded by the underlying
 np:2 is the right place to be — the extra two client slots absorb
 brief network hiccups without overwhelming the server.
 
+## Production state summary as of 2026-04-29 ~10:00 BST
+
+Consolidated view of every gap that was found during the live runbook
+execution and how it has been verified closed against the running
+production deployment.
+
+### Eight gaps total, eight PASS
+
+| # | Gap | Source | Fix | Verification |
+|---|-----|--------|-----|--------------|
+| D6F4-1 | matrix.sets eviction | RESULTS-v3 §"Runbook gap #1" | Phase 5.2 `matrix.sets all` + `hooks.on_startup.preload` | 30 rounds × 4 models, 0 PID changes |
+| D6F4-2 | `.guardkit/graphiti.yaml` not patched | RESULTS-v3 §"Runbook gap #2" | Phase 7.1 sed-block extended | 600s `add-context`, 0 connection errors |
+| D6F4-3 | `--config`/`--listen` flag style | RESULTS-v3 §"Runbook gap #3" | Single-dash everywhere | grep audit + live process |
+| D6F4-4 | GGUF glob casing | RESULTS-v3 §"Runbook gap #4" | `find -iname` | re-ran Phase 0.1, 8 hits vs 0 |
+| D6F4-5 | `pkill -f` self-kill | RESULTS-v3 §"Runbook gap #5" | `pkill -x llama-server` | sandbox + live demonstration of `-f` self-kill |
+| D6F4-6 | VRAM ~5 GB above estimate | RESULTS-v3 §"Runbook gap #6" | Phase 5.5 expected total → ~65 GB | nvidia-smi: 65.16 GiB |
+| OPS-7CB1 | Crashed children not auto-revived | VALIDATION-D6F4 Finding #1 | Phase 5.6: keep-alive script + 5min timer | 4-model SIGKILL → revived in 30s; timer installed and active |
+| OPS-9F2A | Chunked-extraction 429 throttling | VALIDATION-D6F4 Finding #2 | `chunk_extraction_concurrency: 4` (config) | 9-chunk doc: 0/0 vs yesterday's 8/37 |
+
+### Current live state on `promaxgb10-41b1`
+
+**llama-swap and models:**
+
+```
+PID 4081448  llama-swap (started 2026-04-28 18:22)
+├── PID 922424  qwen-graphiti     21.8 GB  (revived during 7CB1 test, stable since)
+├── PID 922423  nomic-embed        1.0 GB
+├── PID 922425  qwen36-workhorse  23.8 GB
+└── PID 922422  gemma4-tutor      19.1 GB
+                                  ─────────
+                          Total:  65.07 GiB
+```
+
+All four `state=ready` per `GET http://localhost:9000/running`.
+
+**Keep-alive timer:**
+
+```
+llama-swap-keepalive.timer  enabled  active (waiting)
+  ExecStart= /usr/local/bin/llama-swap-keepalive.sh
+  Interval:  every 5 minutes (OnUnitActiveSec=5min)
+  Boot fire: 2 min after every boot (OnBootSec=2min, Persistent=true)
+  Wants:     timers.target → auto-enabled across daily OS updates and reboots
+```
+
+**Graphiti client (`add-context`):**
+
+```
+.guardkit/graphiti.yaml:
+  llm_base_url:               http://promaxgb10-41b1:9000/v1
+  embedding_base_url:         http://promaxgb10-41b1:9000/v1
+  chunk_extraction_concurrency: 4   ← matches qwen-graphiti.concurrencyLimit: 4
+```
+
+### Open operational considerations
+
+1. **llama-swap parent is in VS Code Chromium scope, not under systemd.**
+   The Phase 10.2 systemd unit is `enabled` but currently `inactive`
+   because the running parent (PID 4081448) was launched via `nohup`
+   from a VS Code terminal during the 2026-04-28 cutover. The
+   keep-alive timer covers crashed *children* regardless of where the
+   parent lives; a parent crash would still need manual intervention.
+   On the next reboot the systemd unit takes over naturally and the
+   whole stack lives under `/system.slice/`. Manual migration is a
+   ~3-5 min outage if needed sooner; documented in Phase 10.2 of the
+   runbook.
+
+2. **7-day recurrence quantification deferred.** The original
+   2026-04-28→29 four-way exit has not recurred since the keep-alive
+   was installed. A scheduled health-check agent will look back over
+   the journal in 2 weeks to confirm the timer has been firing cleanly
+   and quantify any fresh recurrences (see VALIDATION-OPS-7CB1-9F2A
+   commit history; agent scheduled 2026-05-13).
+
+### Validation chain (full lineage)
+
+```
+2026-04-28  RUNBOOK-v3 produced
+2026-04-28  Live deployment → RESULTS-v3 captured 6 gaps
+2026-04-28  TASK-RUN-D6F4 folded the 6 gaps back into the runbook
+2026-04-29  VALIDATION-D6F4 → all 6 PASS, surfaced 2 operational findings
+2026-04-29  TASK-OPS-7CB1 (keep-alive) + TASK-OPS-9F2A (concurrency) implemented
+2026-04-29  VALIDATION-OPS-7CB1-9F2A (this doc) → both PASS, keep-alive installed
+2026-05-13  scheduled agent will verify journal health and look for recurrences
+```
+
 ## Cross-References
 
 - **Originating validation:** [`VALIDATION-D6F4-gap-fix-results.md`](VALIDATION-D6F4-gap-fix-results.md)
