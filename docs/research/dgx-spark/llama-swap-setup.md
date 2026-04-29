@@ -293,7 +293,9 @@ docker run -d \
 
 ### Binary (systemd)
 
-Create `/etc/systemd/system/llama-swap.service`:
+> **Production note (2026-04-29):** the deployed unit on `promaxgb10-41b1` is a **user unit** at `~/.config/systemd/user/llama-swap.service`, not the system unit shown below — see [`llama-swap-systemd-supervision.md`](./llama-swap-systemd-supervision.md) for the actual deployed unit, the `-watch-config` flag wiring, validation results, and the pending one-shot sudo cleanup of a legacy stale system unit. New installs may pick either user-unit or system-unit form; the deployed-on-prod version is currently the user unit.
+
+System unit form (alternative — single-user box, no desktop session):
 
 ```ini
 [Unit]
@@ -305,8 +307,9 @@ Wants=network-online.target
 Type=simple
 User=richardwoollcott
 ExecStart=/usr/local/bin/llama-swap \
-  --config /opt/llama-swap/config/config.yaml \
-  --listen 0.0.0.0:9000
+  -config /opt/llama-swap/config/config.yaml \
+  -listen :9000 \
+  -watch-config
 Restart=always
 RestartSec=10
 # Let the subprocess tree (llama-server instances) live outside the unit
@@ -321,6 +324,10 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now llama-swap
 sudo systemctl status llama-swap
 ```
+
+> **Flag notes** (corrections from the 2026-04-29 deployment):
+> - `llama-swap` v208 expects single-dash flags (`-config`, `-listen`), not GNU double-dash. `--config` will fail to parse.
+> - `-watch-config` makes llama-swap re-read the config file when its mtime changes — eliminates the need for a manual `kill -HUP <llama-swap pid>` after every config edit. Strongly recommended.
 
 ## 7. Smoke tests
 
