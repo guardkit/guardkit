@@ -73,7 +73,7 @@ chunk_extraction_concurrency: 4
 # --- GB10 (vLLM, FP8) — ACTIVE ---
 llm_provider: vllm
 llm_base_url: http://promaxgb10-41b1:9000/v1
-llm_model: neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic
+llm_model: qwen-graphiti
 #
 # --- Fallback: Google Gemini (cloud, paid) — uncomment when GB10 training ---
 # Requires GOOGLE_API_KEY env var and `pip install guardkit-py[gemini]`.
@@ -93,7 +93,7 @@ embedding_base_url: http://promaxgb10-41b1:9000/v1
 
 # Embedding model for semantic search
 # Supported by openai, vllm, and ollama providers
-embedding_model: nomic-embed-text-v1.5
+embedding_model: nomic-embed
 
 # Embedding dimension is resolved from KNOWN_EMBEDDING_DIMS
 # based on embedding_model above. Set explicitly only to override
