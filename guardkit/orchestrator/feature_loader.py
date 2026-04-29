@@ -343,6 +343,11 @@ class SmokeGates(BaseModel):
     timeout : int
         Seconds before the subprocess is killed. Bounded [1, 600] to keep
         ``/feature-build`` deterministic. Default: 120.
+    exit5_is_hard_fail : bool
+        Treat pytest exit code 5 (no tests collected) as a hard failure.
+        Default ``False`` — exit 5 is treated as a soft "gate not wired"
+        warning and the feature build continues. Set to ``True`` for strict
+        gate enforcement (TASK-FIX-SG05).
     """
 
     # ``extra="forbid"`` ensures malformed configuration (typos, unknown
@@ -353,6 +358,7 @@ class SmokeGates(BaseModel):
     command: str = Field(min_length=1)
     expected_exit: int = 0
     timeout: int = Field(default=120, ge=1, le=600)
+    exit5_is_hard_fail: bool = False
 
     @field_validator("after_wave", mode="before")
     @classmethod

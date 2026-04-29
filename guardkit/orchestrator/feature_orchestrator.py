@@ -1925,18 +1925,38 @@ The detailed specifications are in the task markdown file.
                 )
                 wave_result.smoke_gate_result = smoke_result
                 if not smoke_result.passed:
-                    reason = (
-                        f"timed out after {smoke_result.timeout}s"
-                        if smoke_result.timed_out
-                        else f"exit={smoke_result.exit_code}, "
-                             f"expected={feature.smoke_gates.expected_exit}"
-                    )
-                    console.print(
-                        f"[red]✗ Smoke gate failed after wave {wave_number}[/red] "
-                        f"({reason}). Subsequent waves not started; worktree "
-                        f"preserved at {worktree.path}."
-                    )
+                    # TASK-FIX-SG05: distinct wording for exit 5 (gate not
+                    # wired) so post-mortems can immediately tell a marker
+                    # mis-config apart from a real regression.
+                    if smoke_result.gate_not_wired:
+                        console.print(
+                            f"[red]✗ Smoke gate unwired after wave {wave_number}[/red] "
+                            f"(exit=5 — no tests collected); treating as hard failure "
+                            f"(exit5_is_hard_fail=True). Subsequent waves not started; "
+                            f"worktree preserved at {worktree.path}."
+                        )
+                    else:
+                        reason = (
+                            f"timed out after {smoke_result.timeout}s"
+                            if smoke_result.timed_out
+                            else f"exit={smoke_result.exit_code}, "
+                                 f"expected={feature.smoke_gates.expected_exit}"
+                        )
+                        console.print(
+                            f"[red]✗ Smoke gate failed after wave {wave_number}[/red] "
+                            f"({reason}). Subsequent waves not started; worktree "
+                            f"preserved at {worktree.path}."
+                        )
                     break
+                elif smoke_result.gate_not_wired:
+                    # Soft-warn path: build continues, but the operator sees
+                    # the same actionable hint emitted at WARNING in the log.
+                    console.print(
+                        f"[yellow]⚠ Smoke gate unwired after wave {wave_number}[/yellow] "
+                        f"(exit=5 — no tests collected); treating as config gap, not "
+                        f"regression. Verify markers are registered in pyproject.toml "
+                        f"and that at least one test carries the marker expression."
+                    )
 
         return wave_results
 
