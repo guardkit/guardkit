@@ -374,6 +374,28 @@ llama-swap-keepalive.timer  enabled  active (waiting)
    exit code (HEALTHY / ATTENTION / CRITICAL). Install steps are
    captured in [RUNBOOK Phase 5.7](RUNBOOK-v3-production-deployment.md#L580).
 
+   **Installed and active on the host as of 2026-04-29 10:15 BST.** The
+   `--now` install fire ran clean:
+
+   ```
+   [1] Keep-alive timer state         enabled, active
+   [2] Keep-alive runs (last 7d)      total=8, no-op=8, revivals=0, failures=0
+                                       (effective window 0d 0h since just installed)
+   [3] Revival events                 No revival events.
+   [4] Child-process exits            cumulative=10, new since last=0
+                                       (state file seeded at install per Phase 5.7)
+   [5] Current model state            4/4 ready, VRAM 65.14 GiB
+
+   Summary: HEALTHY (exit 0)
+   Next run: Mon 2026-05-04 09:00:00 BST
+   ```
+
+   Report file: `/opt/llama-swap/logs/healthcheck-20260429.log` (2361 B).
+   The baseline seed step in Phase 5.7 (writing the cumulative crash
+   count to `last_exit_count` at install time) means the first
+   scheduled run won't replay yesterday's overnight crash + the four
+   SIGKILL test events as "new" — the delta is zero.
+
 ### Validation chain (full lineage)
 
 ```
