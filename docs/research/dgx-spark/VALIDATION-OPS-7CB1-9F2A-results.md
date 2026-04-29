@@ -150,21 +150,50 @@ deployment: 30 seconds. Cold-start could be longer on a fresh boot
 
 ### Operational note — installation status
 
-The `.service`/`.timer` units are **staged in repo but not yet
-installed on the host** as of this validation. Phase 5.6 of the runbook
-documents the install steps; the script itself has been verified
-working end-to-end via direct invocation. Installing the systemd units
-is a one-time operator action remaining for the next maintenance
-window:
+**Installed and active on the host as of 2026-04-29 09:38 BST.** Phase 5.6
+of the runbook was followed verbatim, the `.timer` unit was enabled with
+`--now` (so it both auto-starts on every boot via `WantedBy=timers.target`
+and fired immediately).
+
+Installed file inventory:
 
 ```
-sudo install -m 0755 scripts/llama-swap-keepalive.sh /usr/local/bin/
-sudo install -m 0644 scripts/llama-swap-keepalive.service /etc/systemd/system/
-sudo install -m 0644 scripts/llama-swap-keepalive.timer /etc/systemd/system/
-sudo sed -i 's|ExecStart=.*llama-swap-keepalive\.sh|ExecStart=/usr/local/bin/llama-swap-keepalive.sh|' \
-    /etc/systemd/system/llama-swap-keepalive.service
-sudo systemctl daemon-reload && sudo systemctl enable --now llama-swap-keepalive.timer
+-rwxr-xr-x  /usr/local/bin/llama-swap-keepalive.sh           (root:root, 5261 B)
+-rw-r--r--  /etc/systemd/system/llama-swap-keepalive.service (root:root, 772 B)
+-rw-r--r--  /etc/systemd/system/llama-swap-keepalive.timer   (root:root, 543 B)
+lrwxrwxrwx  /etc/systemd/system/timers.target.wants/llama-swap-keepalive.timer
+              → /etc/systemd/system/llama-swap-keepalive.timer
 ```
+
+Effective `ExecStart` after install-time sed-rewrite:
+```
+ExecStart=/usr/local/bin/llama-swap-keepalive.sh
+```
+
+First-run journal (immediate fire from `enable --now`):
+
+```
+Apr 29 09:38:13 promaxgb10-41b1 systemd[1]: Starting llama-swap-keepalive.service...
+Apr 29 09:38:13 promaxgb10-41b1 llama-swap-keepalive.sh[1040751]: [llama-swap-keepalive] All configured models are ready; nothing to revive.
+Apr 29 09:38:13 promaxgb10-41b1 systemd[1]: llama-swap-keepalive.service: Deactivated successfully.
+Apr 29 09:38:13 promaxgb10-41b1 systemd[1]: Finished llama-swap-keepalive.service.
+```
+
+Timer schedule confirmed by `systemctl list-timers`:
+
+```
+NEXT                           LEFT     LAST                          PASSED  UNIT
+Wed 2026-04-29 09:43:13 BST    4min 33s Wed 2026-04-29 09:38:13 BST   26s ago llama-swap-keepalive.timer
+```
+
+(5-min interval honoured, matches `OnUnitActiveSec=5min` in the unit.)
+
+Boot/update behaviour confirmed by unit definition:
+- `OnBootSec=2min` — timer first-fires 2 min after every boot
+- `Persistent=true` — missed runs (suspended host) catch up on resume
+- `WantedBy=timers.target` — auto-enabled across daily OS updates and reboots
+- `Documentation=` field links the service back to TASK-OPS-7CB1 for
+  future operators reading `systemctl status`
 
 ### Bonus finding (out of scope but recorded)
 
