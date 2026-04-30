@@ -1075,3 +1075,208 @@ class TestTaskTimeoutFloor:
             worktree_manager=mock_wm,
         )
         assert orchestrator.task_timeout == 4000
+
+
+# ============================================================================
+# Tests: TASK-ATR-002 — Phase 5 cap input refreshed between specialists
+# ============================================================================
+
+
+class TestSpecialistBudgetRefresh:
+    """Phase 5 ``_cap_specialist_timeout`` input is refreshed after Phase 4.
+
+    The original ``remaining_budget`` is the start-of-turn value and does not
+    reflect wall consumed by Phase 4 (test-orchestrator). Reusing it for
+    Phase 5 (code-reviewer) over-allocates time Phase 5 doesn't actually have
+    and lets the post-specialist Coach validation overrun the feature
+    ``task_timeout``. The fix subtracts ``phase4_elapsed`` before computing
+    the Phase 5 cap (TASK-ATR-002).
+    """
+
+    def _stage_orchestrator(self, worktree_path, mock_worktree, sdk_timeout=1200):
+        orch = _make_orchestrator(worktree_path, mock_worktree)
+        orch._agent_invoker._get_implementation_mode.return_value = "task-work"
+        orch._agent_invoker._inject_specialist_records_into_task_work_results = Mock()
+        orch._task_timeout = 2400
+        orch._loop_start_time = 0.0
+        orch.sdk_timeout = sdk_timeout
+        return orch
+
+    def _wrap_cap(self, orchestrator):
+        """Wrap ``_cap_specialist_timeout`` so each call's input is captured."""
+        cap_inputs: List[Optional[float]] = []
+        original_cap = orchestrator._cap_specialist_timeout
+
+        def capture_cap(remaining_budget=None):
+            cap_inputs.append(remaining_budget)
+            return original_cap(remaining_budget=remaining_budget)
+
+        orchestrator._cap_specialist_timeout = capture_cap
+        return cap_inputs
+
+    def test_phase5_cap_input_refreshed_after_phase4_wall(
+        self, worktree_path, mock_worktree
+    ):
+        """Phase 4 takes 200s wall → Phase 5 cap input is start - 200s ± 5s."""
+        orchestrator = self._stage_orchestrator(worktree_path, mock_worktree)
+        cap_inputs = self._wrap_cap(orchestrator)
+
+        from guardkit.orchestrator import specialist_invocations as _si
+
+        async def fake_invoke_test_orchestrator(**kwargs):
+            result = Mock()
+            result.status = "passed"
+            return result
+
+        async def fake_invoke_code_reviewer(**kwargs):
+            return Mock()
+
+        # time.monotonic side-effects (in call order):
+        #   1) pre-specialist guard: post_player_remaining = 2400 - 0 = 2400 (passes)
+        #   2) _phase4_start: 0.0
+        #   3) post-Phase-4 elapsed read: 200.0  → elapsed = 200s
+        time_seq = [0.0, 0.0, 200.0]
+
+        with patch.object(
+            orchestrator,
+            "_invoke_player_safely",
+            return_value=_make_player_result(success=True),
+        ), patch.object(
+            orchestrator,
+            "_invoke_coach_safely",
+            return_value=_make_coach_result(),
+        ), patch.object(
+            orchestrator, "_build_player_summary", return_value="ok"
+        ), patch.object(
+            _si, "invoke_test_orchestrator", side_effect=fake_invoke_test_orchestrator
+        ), patch.object(
+            _si, "invoke_code_reviewer", side_effect=fake_invoke_code_reviewer
+        ), patch(
+            "guardkit.orchestrator.autobuild.time"
+        ) as mock_time:
+            mock_time.monotonic = Mock(side_effect=time_seq)
+
+            orchestrator._execute_turn(
+                turn=1,
+                task_id="TASK-AB-001",
+                requirements="do stuff",
+                worktree=mock_worktree,
+                previous_feedback=None,
+                remaining_budget=2000.0,
+            )
+
+        # Two cap calls: Phase 4, Phase 5
+        assert len(cap_inputs) == 2, f"expected 2 cap calls, got {cap_inputs!r}"
+        # Phase 4 uses the start-of-turn budget unchanged
+        assert cap_inputs[0] == 2000.0
+        # Phase 5 cap input is start_budget - phase4_elapsed (within 5s tolerance)
+        phase5_input = cap_inputs[1]
+        assert phase5_input is not None
+        assert abs(phase5_input - (2000.0 - 200.0)) < 5.0, (
+            f"expected Phase 5 cap input ~1800.0, got {phase5_input}"
+        )
+
+    def test_phase5_remaining_is_none_when_remaining_budget_is_none(
+        self, worktree_path, mock_worktree
+    ):
+        """remaining_budget=None → Phase 5 also receives None (no double-default)."""
+        orchestrator = self._stage_orchestrator(worktree_path, mock_worktree)
+        # Disable the post-Player budget guard by clearing _task_timeout so
+        # the guard short-circuits to remaining_budget (which is None) and
+        # skips the time.monotonic computation. budget_ok is then True
+        # (post_player_remaining is None) so Phase 4/5 still run.
+        orchestrator._task_timeout = None
+        cap_inputs = self._wrap_cap(orchestrator)
+
+        from guardkit.orchestrator import specialist_invocations as _si
+
+        async def fake_invoke_test_orchestrator(**kwargs):
+            result = Mock()
+            result.status = "passed"
+            return result
+
+        async def fake_invoke_code_reviewer(**kwargs):
+            return Mock()
+
+        with patch.object(
+            orchestrator,
+            "_invoke_player_safely",
+            return_value=_make_player_result(success=True),
+        ), patch.object(
+            orchestrator,
+            "_invoke_coach_safely",
+            return_value=_make_coach_result(),
+        ), patch.object(
+            orchestrator, "_build_player_summary", return_value="ok"
+        ), patch.object(
+            _si, "invoke_test_orchestrator", side_effect=fake_invoke_test_orchestrator
+        ), patch.object(
+            _si, "invoke_code_reviewer", side_effect=fake_invoke_code_reviewer
+        ):
+            orchestrator._execute_turn(
+                turn=1,
+                task_id="TASK-AB-001",
+                requirements="do stuff",
+                worktree=mock_worktree,
+                previous_feedback=None,
+                remaining_budget=None,
+            )
+
+        # Both cap calls receive None — the refresh logic must NOT default
+        # to a base wall value when budget is unset.
+        assert len(cap_inputs) == 2, f"expected 2 cap calls, got {cap_inputs!r}"
+        assert cap_inputs[0] is None
+        assert cap_inputs[1] is None
+
+    def test_phase5_remaining_floored_at_zero_when_phase4_overruns(
+        self, worktree_path, mock_worktree
+    ):
+        """Phase 4 elapsed > remaining_budget → Phase 5 sees 0.0 (floored)."""
+        orchestrator = self._stage_orchestrator(worktree_path, mock_worktree)
+        cap_inputs = self._wrap_cap(orchestrator)
+
+        from guardkit.orchestrator import specialist_invocations as _si
+
+        async def fake_invoke_test_orchestrator(**kwargs):
+            result = Mock()
+            result.status = "passed"
+            return result
+
+        async def fake_invoke_code_reviewer(**kwargs):
+            return Mock()
+
+        # Phase 4 burns more wall (1500s) than the start-of-turn budget (1000s).
+        # phase5_remaining must floor at 0.0, not go negative.
+        time_seq = [0.0, 0.0, 1500.0]
+
+        with patch.object(
+            orchestrator,
+            "_invoke_player_safely",
+            return_value=_make_player_result(success=True),
+        ), patch.object(
+            orchestrator,
+            "_invoke_coach_safely",
+            return_value=_make_coach_result(),
+        ), patch.object(
+            orchestrator, "_build_player_summary", return_value="ok"
+        ), patch.object(
+            _si, "invoke_test_orchestrator", side_effect=fake_invoke_test_orchestrator
+        ), patch.object(
+            _si, "invoke_code_reviewer", side_effect=fake_invoke_code_reviewer
+        ), patch(
+            "guardkit.orchestrator.autobuild.time"
+        ) as mock_time:
+            mock_time.monotonic = Mock(side_effect=time_seq)
+
+            orchestrator._execute_turn(
+                turn=1,
+                task_id="TASK-AB-001",
+                requirements="do stuff",
+                worktree=mock_worktree,
+                previous_feedback=None,
+                remaining_budget=1000.0,
+            )
+
+        assert len(cap_inputs) == 2
+        # Phase 5 receives the 0.0 floor, not a negative value.
+        assert cap_inputs[1] == 0.0

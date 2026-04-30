@@ -2877,6 +2877,7 @@ class AutoBuildOrchestrator:
 
                     # Phase 4: test-orchestrator
                     # TASK-ABSR-WALL: cap specialist sdk_timeout at remaining wall
+                    _phase4_start = time.monotonic()
                     phase4_result = _loop.run_until_complete(
                         _si.invoke_test_orchestrator(
                             worktree_path=worktree.path,
@@ -2890,17 +2891,29 @@ class AutoBuildOrchestrator:
                         )
                     )
 
+                    # TASK-ATR-002: refresh remaining_budget post-Phase-4 so the
+                    # Phase 5 cap reflects actual wall consumed by Phase 4.
+                    # The original `remaining_budget` is the start-of-turn
+                    # value; reusing it here would over-allocate Phase 5 by
+                    # the wall Phase 4 already burned, risking post-specialist
+                    # Coach overrun of the feature task_timeout.
+                    if remaining_budget is not None:
+                        _phase4_elapsed = time.monotonic() - _phase4_start
+                        phase5_remaining: Optional[float] = max(
+                            0.0, remaining_budget - _phase4_elapsed
+                        )
+                    else:
+                        phase5_remaining = None
+
                     # Phase 5: code-reviewer (only if Phase 4 passed)
                     if phase4_result.status == "passed":
-                        # TASK-ABSR-WALL: cap may differ from Phase 4 because
-                        # Phase 4 may have consumed wall — that's correct.
                         _loop.run_until_complete(
                             _si.invoke_code_reviewer(
                                 worktree_path=worktree.path,
                                 task_id=task_id,
                                 phase4_result=phase4_result,
                                 sdk_timeout=self._cap_specialist_timeout(
-                                    remaining_budget=remaining_budget
+                                    remaining_budget=phase5_remaining
                                 ),
                                 agent_invoker=self._agent_invoker,
                                 cancellation_event=self._cancellation_event,
