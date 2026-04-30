@@ -1,5 +1,12 @@
 """Orchestrator components for GuardKit AutoBuild feature."""
 
+from guardkit.orchestrator.sdk_utils import install_sdk_message_reader_dedup_filter
+
+# Dedup the upstream "Fatal error in message reader" line that fires on
+# every Coach SDK gate (TASK-FIX-A7B5 AC-004). Idempotent — safe to
+# call here even if downstream code installs again.
+install_sdk_message_reader_dedup_filter()
+
 from guardkit.orchestrator.agent_invoker import (
     AgentInvoker,
     AgentInvocationResult,
