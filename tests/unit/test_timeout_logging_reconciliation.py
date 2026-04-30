@@ -357,8 +357,11 @@ def test_build_error_message_timeout_is_distinct_from_cancelled(
 
 
 @pytest.mark.asyncio
-async def test_feature_orchestrator_passes_timeout_event_to_execute_task(tmp_path):
+async def test_feature_orchestrator_passes_timeout_event_to_execute_task(tmp_path, monkeypatch):
     """feature_orchestrator creates timeout_event per task and passes it to _execute_task."""
+    # Disable TASK-ABSR-FLOR floor so task_timeout=1 isn't lifted to 3000s.
+    monkeypatch.setenv("GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR", "0")
+
     from guardkit.orchestrator.feature_orchestrator import (
         FeatureOrchestrator,
         FeatureOrchestrationResult,
@@ -441,9 +444,12 @@ async def test_feature_orchestrator_passes_timeout_event_to_execute_task(tmp_pat
 
 @pytest.mark.asyncio
 async def test_feature_orchestrator_timeout_logs_feature_level_attribution(
-    tmp_path, caplog
+    tmp_path, caplog, monkeypatch
 ):
     """feature_orchestrator logs 'TIMEOUT (feature-level):' when asyncio.TimeoutError fires."""
+    # Disable TASK-ABSR-FLOR floor so task_timeout=1 isn't lifted to 3000s.
+    monkeypatch.setenv("GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR", "0")
+
     from guardkit.orchestrator.feature_orchestrator import (
         FeatureOrchestrator,
     )

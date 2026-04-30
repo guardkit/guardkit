@@ -150,6 +150,8 @@ def create_test_feature(
 id: {task_data['id']}
 title: {task_data.get('name', task_data['id'])}
 status: pending
+task_type: feature
+complexity: {task_data.get('complexity', 5)}
 ---
 
 # {task_data.get('name', task_data['id'])}
@@ -240,6 +242,7 @@ def create_mock_orchestrate(
         acceptance_criteria,
         base_branch="main",
         task_file_path=None,
+        **kwargs,
     ):
         time.sleep(delay)  # Simulate work
 

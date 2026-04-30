@@ -1519,8 +1519,12 @@ def test_execute_task_forwards_enable_context_false(
 # ============================================================================
 
 
-def test_task_timeout_default_value(temp_repo, mock_worktree_manager):
+def test_task_timeout_default_value(temp_repo, mock_worktree_manager, monkeypatch):
     """Test that task_timeout defaults to 2400 seconds (40 min)."""
+    # TASK-ABSR-FLOR floors task_timeout at 3000s; disable here so the
+    # raw default 2400 surfaces (the floor itself is exercised by
+    # test_autobuild_timeout_budget).
+    monkeypatch.setenv("GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR", "0")
     orchestrator = FeatureOrchestrator(
         repo_root=temp_repo,
         worktree_manager=mock_worktree_manager,
@@ -1528,8 +1532,9 @@ def test_task_timeout_default_value(temp_repo, mock_worktree_manager):
     assert orchestrator.task_timeout == 2400
 
 
-def test_task_timeout_custom_value(temp_repo, mock_worktree_manager):
+def test_task_timeout_custom_value(temp_repo, mock_worktree_manager, monkeypatch):
     """Test that task_timeout accepts a custom value."""
+    monkeypatch.setenv("GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR", "0")
     orchestrator = FeatureOrchestrator(
         repo_root=temp_repo,
         worktree_manager=mock_worktree_manager,
@@ -1541,8 +1546,11 @@ def test_task_timeout_custom_value(temp_repo, mock_worktree_manager):
 @pytest.mark.asyncio
 async def test_task_timeout_triggers_on_slow_task(
     temp_repo, parallel_feature, mock_worktree, mock_worktree_manager,
+    monkeypatch,
 ):
     """Test that a task exceeding task_timeout is correctly timed out."""
+    # Disable TASK-ABSR-FLOR floor so task_timeout=1 isn't lifted to 3000s.
+    monkeypatch.setenv("GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR", "0")
     orchestrator = FeatureOrchestrator(
         repo_root=temp_repo,
         worktree_manager=mock_worktree_manager,
@@ -1606,8 +1614,10 @@ async def test_successful_tasks_unaffected_by_timeout(
 @pytest.mark.asyncio
 async def test_timeout_mixed_with_success(
     temp_repo, parallel_feature, mock_worktree, mock_worktree_manager,
+    monkeypatch,
 ):
     """Test that timeout on one task doesn't affect successful siblings."""
+    monkeypatch.setenv("GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR", "0")
     orchestrator = FeatureOrchestrator(
         repo_root=temp_repo,
         worktree_manager=mock_worktree_manager,
@@ -1653,8 +1663,10 @@ async def test_timeout_mixed_with_success(
 @pytest.mark.asyncio
 async def test_timeout_updates_wave_display(
     temp_repo, parallel_feature, mock_worktree, mock_worktree_manager,
+    monkeypatch,
 ):
     """Test that timeout triggers correct display update."""
+    monkeypatch.setenv("GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR", "0")
     orchestrator = FeatureOrchestrator(
         repo_root=temp_repo,
         worktree_manager=mock_worktree_manager,
@@ -1694,8 +1706,10 @@ async def test_timeout_updates_wave_display(
 @pytest.mark.asyncio
 async def test_timeout_updates_feature_state(
     temp_repo, parallel_feature, mock_worktree, mock_worktree_manager,
+    monkeypatch,
 ):
     """Test that timeout correctly updates the feature state."""
+    monkeypatch.setenv("GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR", "0")
     orchestrator = FeatureOrchestrator(
         repo_root=temp_repo,
         worktree_manager=mock_worktree_manager,
