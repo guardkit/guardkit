@@ -233,14 +233,24 @@ class TestSdkTimeoutPropagation:
         assert interface.sdk_timeout_seconds == 900
 
     def test_task_work_interface_default_timeout(self, mock_worktree):
-        """TaskWorkInterface uses default 900s when not specified (TASK-FIX-SDKT)."""
+        """TaskWorkInterface uses DEFAULT_SDK_TIMEOUT (1200s) when not specified.
+
+        Default was raised from 900s -> 1200s in commit e0449c547
+        ("increase default timeout for autobuild") to give complexity-6+
+        tasks adequate headroom for the full Phase 3-5 pipeline.
+        """
+        from guardkit.orchestrator.quality_gates.task_work_interface import (
+            DEFAULT_SDK_TIMEOUT,
+        )
+
         # Arrange & Act
         interface = TaskWorkInterface(
             worktree_path=mock_worktree.path,
         )
 
-        # Assert
-        assert interface.sdk_timeout_seconds == 900
+        # Assert: default tracks the module-level constant (currently 1200)
+        assert interface.sdk_timeout_seconds == DEFAULT_SDK_TIMEOUT
+        assert interface.sdk_timeout_seconds == 1200
 
     @pytest.mark.asyncio
     async def test_sdk_timeout_passed_to_execute_design_phase(
@@ -336,7 +346,10 @@ class TestEnablePreLoopCascade:
         )
 
         # Feature YAML has enable_pre_loop=True
-        sample_feature.autobuild_config = {"enable_pre_loop": True}
+        # Bypass Pydantic __setattr__: Feature is a Pydantic v2 BaseModel with
+        # extra="ignore", so undeclared attributes can't be assigned directly.
+        # Production reads via getattr(feature, "autobuild_config", None).
+        object.__setattr__(sample_feature, "autobuild_config", {"enable_pre_loop": True})
 
         # Task frontmatter has enable_pre_loop=True
         task_data = {
@@ -365,7 +378,10 @@ class TestEnablePreLoopCascade:
         )
 
         # Feature YAML has enable_pre_loop=True
-        sample_feature.autobuild_config = {"enable_pre_loop": True}
+        # Bypass Pydantic __setattr__: Feature is a Pydantic v2 BaseModel with
+        # extra="ignore", so undeclared attributes can't be assigned directly.
+        # Production reads via getattr(feature, "autobuild_config", None).
+        object.__setattr__(sample_feature, "autobuild_config", {"enable_pre_loop": True})
 
         # Task frontmatter has enable_pre_loop=False
         task_data = {
@@ -394,7 +410,7 @@ class TestEnablePreLoopCascade:
         )
 
         # Feature YAML has enable_pre_loop=False
-        sample_feature.autobuild_config = {"enable_pre_loop": False}
+        object.__setattr__(sample_feature, "autobuild_config", {"enable_pre_loop": False})
 
         # Task frontmatter has no enable_pre_loop
         task_data = {
@@ -409,10 +425,16 @@ class TestEnablePreLoopCascade:
         # Assert: Feature YAML value used
         assert result is False
 
-    def test_default_true_when_no_config(
+    def test_default_false_when_no_config(
         self, temp_repo_with_feature, sample_feature, mock_worktree_manager
     ):
-        """Default True used when nothing configured."""
+        """Default is False when nothing configured (feature-build default).
+
+        FeatureOrchestrator defaults enable_pre_loop=False because tasks
+        scheduled by /feature-plan already have detailed implementation
+        specs — pre-loop redesign is opt-in for feature-build. See
+        ``_resolve_enable_pre_loop`` step 4 in feature_orchestrator.py.
+        """
         # Arrange
         orchestrator = FeatureOrchestrator(
             repo_root=temp_repo_with_feature,
@@ -421,7 +443,7 @@ class TestEnablePreLoopCascade:
         )
 
         # No autobuild_config on feature
-        sample_feature.autobuild_config = None
+        object.__setattr__(sample_feature, "autobuild_config", None)
 
         # No autobuild config in task
         task_data = {
@@ -431,13 +453,13 @@ class TestEnablePreLoopCascade:
         # Act
         result = orchestrator._resolve_enable_pre_loop(sample_feature, task_data)
 
-        # Assert: Default is True
-        assert result is True
+        # Assert: Default for feature-build is False
+        assert result is False
 
     def test_empty_autobuild_config_uses_default(
         self, temp_repo_with_feature, sample_feature, mock_worktree_manager
     ):
-        """Empty autobuild config falls through to default."""
+        """Empty autobuild config falls through to feature-build default (False)."""
         # Arrange
         orchestrator = FeatureOrchestrator(
             repo_root=temp_repo_with_feature,
@@ -446,7 +468,7 @@ class TestEnablePreLoopCascade:
         )
 
         # Empty autobuild_config on feature
-        sample_feature.autobuild_config = {}
+        object.__setattr__(sample_feature, "autobuild_config", {})
 
         # Empty autobuild in task
         task_data = {
@@ -458,8 +480,8 @@ class TestEnablePreLoopCascade:
         # Act
         result = orchestrator._resolve_enable_pre_loop(sample_feature, task_data)
 
-        # Assert: Default is True
-        assert result is True
+        # Assert: Default for feature-build is False
+        assert result is False
 
 
 # ============================================================================
@@ -517,7 +539,7 @@ class TestConfigCombinations:
         )
 
         # Feature has enable_pre_loop=False
-        sample_feature.autobuild_config = {"enable_pre_loop": False}
+        object.__setattr__(sample_feature, "autobuild_config", {"enable_pre_loop": False})
 
         task = sample_feature.tasks[0]
 
@@ -602,9 +624,11 @@ Test requirements.
         )
 
         # Feature has autobuild config
-        sample_feature.autobuild_config = {
-            "enable_pre_loop": False,
-        }
+        object.__setattr__(
+            sample_feature,
+            "autobuild_config",
+            {"enable_pre_loop": False},
+        )
 
         # Mock AutoBuildOrchestrator
         with patch("guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator") as mock_orch_class:
@@ -651,7 +675,7 @@ class TestEdgeCases:
     def test_missing_autobuild_section_in_task(
         self, temp_repo_with_feature, sample_feature, mock_worktree_manager
     ):
-        """Missing autobuild section in task frontmatter uses default."""
+        """Missing autobuild section in task frontmatter falls through to default (False)."""
         # Arrange
         orchestrator = FeatureOrchestrator(
             repo_root=temp_repo_with_feature,
@@ -660,7 +684,7 @@ class TestEdgeCases:
         )
 
         # No autobuild_config on feature
-        sample_feature.autobuild_config = None
+        object.__setattr__(sample_feature, "autobuild_config", None)
 
         # Task data with no autobuild section at all
         task_data = {
@@ -673,13 +697,13 @@ class TestEdgeCases:
         # Act
         result = orchestrator._resolve_enable_pre_loop(sample_feature, task_data)
 
-        # Assert: Default True
-        assert result is True
+        # Assert: Default for feature-build is False
+        assert result is False
 
     def test_empty_frontmatter_uses_default(
         self, temp_repo_with_feature, sample_feature, mock_worktree_manager
     ):
-        """Empty frontmatter dict uses default values."""
+        """Empty frontmatter dict falls through to feature-build default (False)."""
         # Arrange
         orchestrator = FeatureOrchestrator(
             repo_root=temp_repo_with_feature,
@@ -687,7 +711,7 @@ class TestEdgeCases:
             enable_pre_loop=None,
         )
 
-        sample_feature.autobuild_config = None
+        object.__setattr__(sample_feature, "autobuild_config", None)
 
         # Completely empty frontmatter
         task_data = {"frontmatter": {}}
@@ -695,8 +719,8 @@ class TestEdgeCases:
         # Act
         result = orchestrator._resolve_enable_pre_loop(sample_feature, task_data)
 
-        # Assert: Default True
-        assert result is True
+        # Assert: Default for feature-build is False
+        assert result is False
 
     def test_pre_loop_quality_gates_stores_sdk_timeout(self, mock_worktree):
         """PreLoopQualityGates stores and exposes sdk_timeout."""

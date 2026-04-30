@@ -723,6 +723,10 @@ class TestFeatureOrchestratorBudgetPropagation:
         fo._emitter = Mock()
         fo._wave_display = None
         fo._worktree_manager = Mock()
+        # __init__ initialises this to None; bypassing __init__ above means
+        # we have to set it explicitly so _execute_task can pass it through
+        # to AutoBuildOrchestrator (TASK-FIX-7A05).
+        fo._bootstrap_venv_python = None
 
         task = FeatureTask(
             id="TASK-T-001",
@@ -742,6 +746,10 @@ class TestFeatureOrchestratorBudgetPropagation:
         mock_orchestrate_result.error = None
         mock_orchestrate_result.recovery_count = 0
         mock_orchestrate_result.turn_history = []
+        # Production checks `is not None`; an autospec'd Mock would be truthy
+        # and trip the `list(stall_classification.co_fires)` path in
+        # _execute_task. Force None for the no-stall case.
+        mock_orchestrate_result.stall_classification = None
 
         with patch("guardkit.orchestrator.feature_orchestrator.TaskLoader.load_task") as mock_load:
             mock_load.return_value = {
