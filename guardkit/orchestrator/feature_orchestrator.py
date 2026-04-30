@@ -23,6 +23,7 @@ Example:
 """
 
 import asyncio
+import json
 import logging
 import os
 import resource
@@ -224,6 +225,23 @@ class DependencyError(FeatureOrchestrationError):
 
 BOOTSTRAP_FAILURE_MODES = ("block", "warn")
 DEFAULT_BOOTSTRAP_FAILURE_MODE = "warn"
+
+
+# ============================================================================
+# Late-approval reconciliation (TASK-ATR-003)
+# ============================================================================
+#
+# `asyncio.to_thread` cannot be hard-cancelled; when the feature timer fires
+# while the worker thread is mid-`subprocess.run(pytest)`, the thread keeps
+# running and may write `coach_turn_<N>.json` with `decision=approve` *after*
+# `asyncio.gather` has already collected `TimeoutError`. The two layers
+# disagree on the same task. `LATE_APPROVAL_GRACE_S` is the window inside
+# which a Coach approval is treated as authoritative over the timer fire.
+#
+# Mirrors the env-var pattern of `MIN_TURN_BUDGET_SECONDS` in autobuild.py.
+LATE_APPROVAL_GRACE_S: int = int(
+    os.environ.get("GUARDKIT_LATE_APPROVAL_GRACE", "60")
+)
 
 
 def compute_default_bootstrap_failure_mode(manifests: Iterable[Any]) -> str:
@@ -2156,6 +2174,81 @@ The detailed specifications are in the task markdown file.
             # Process results and handle exceptions
             for task_id, result in zip(task_id_mapping, parallel_results):
                 if isinstance(result, asyncio.TimeoutError):
+                    # TASK-ATR-003: Reconcile late-arriving Coach approvals.
+                    # `asyncio.to_thread` cannot be hard-cancelled; the worker
+                    # thread may have written `coach_turn_<N>.json` with
+                    # `decision=approve` after the timer fired. If that write
+                    # landed within LATE_APPROVAL_GRACE_S, treat the task as
+                    # APPROVED_LATE rather than TIMEOUT.
+                    timer_fire_time = time.time()
+                    late_decision = self._check_late_approval(
+                        task_id, timer_fire_time
+                    )
+                    if late_decision == "approve":
+                        total_turns = self._read_total_turns(task_id) or 0
+                        # Re-stat the latest coach_turn for audit logging:
+                        # path + mtime delta. Failures are non-fatal — the
+                        # reclassification proceeds even if logging fields
+                        # can't be gathered.
+                        coach_audit_path: Optional[Path] = None
+                        coach_mtime_delta: Optional[float] = None
+                        try:
+                            audit_dir = (
+                                self.repo_root / ".guardkit"
+                                / "autobuild" / task_id
+                            )
+                            audit_files = sorted(
+                                audit_dir.glob("coach_turn_*.json"),
+                                key=lambda p: p.stat().st_mtime,
+                                reverse=True,
+                            )
+                            if audit_files:
+                                coach_audit_path = audit_files[0]
+                                coach_mtime_delta = abs(
+                                    coach_audit_path.stat().st_mtime
+                                    - timer_fire_time
+                                )
+                        except Exception:
+                            pass
+                        delta_str = (
+                            f"{coach_mtime_delta:.2f}s"
+                            if coach_mtime_delta is not None
+                            else "unknown"
+                        )
+                        path_str = (
+                            str(coach_audit_path)
+                            if coach_audit_path is not None
+                            else "unknown"
+                        )
+                        logger.info(
+                            f"[{task_id}] APPROVED_LATE: Coach approved within "
+                            f"{LATE_APPROVAL_GRACE_S}s of timer fire; "
+                            f"reclassifying. total_turns={total_turns}, "
+                            f"mtime_delta={delta_str}, source={path_str}"
+                        )
+                        late_result = TaskExecutionResult(
+                            task_id=task_id,
+                            success=True,
+                            total_turns=total_turns,
+                            final_decision="approved_late",
+                            error=None,
+                            decision_subtype=(
+                                f"late_approval_window={LATE_APPROVAL_GRACE_S}s"
+                            ),
+                        )
+                        results.append(late_result)
+                        if self._wave_display:
+                            self._wave_display.update_task_status(
+                                task_id, "success",
+                                "Coach approved late",
+                                turns=total_turns,
+                                decision="approved_late",
+                            )
+                        self._update_feature(
+                            feature, task_id, late_result, wave_number
+                        )
+                        continue
+
                     sdk_timeout = self.sdk_timeout or 1200
                     # TASK-ATR-001: Use per-task resolved timeout for messages
                     effective_task_timeout = per_task_timeouts.get(task_id, self.task_timeout)
@@ -2787,6 +2880,96 @@ The detailed specifications are in the task markdown file.
             final_decision="error",
             error=str(error),
         )
+
+    # ------------------------------------------------------------------
+    # Late-approval reconciliation helpers (TASK-ATR-003)
+    # ------------------------------------------------------------------
+
+    def _check_late_approval(
+        self, task_id: str, timer_fire_time: float
+    ) -> Optional[str]:
+        """
+        Read-only peek at the latest ``coach_turn_*.json`` for a task.
+
+        Returns the Coach ``decision`` string if the file's mtime is within
+        ``LATE_APPROVAL_GRACE_S`` seconds of ``timer_fire_time`` — i.e. the
+        Coach decision was written close enough to the feature timer fire
+        that we should treat it as the authoritative outcome for the task,
+        even though the per-wave ``asyncio.gather`` already collected a
+        ``TimeoutError``. Returns ``None`` for any error or absence; never
+        raises.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier whose autobuild dir to inspect.
+        timer_fire_time : float
+            Wall time (``time.time()``) the feature timer fired. The mtime
+            delta is the absolute difference, so a Coach write that landed
+            slightly *after* the timer fire is included.
+
+        Returns
+        -------
+        Optional[str]
+            ``"approve"`` / ``"feedback"`` / ``"reject"`` if a recent
+            ``coach_turn_*.json`` was found within the grace window;
+            ``None`` otherwise.
+        """
+        try:
+            autobuild_dir = (
+                self.repo_root / ".guardkit" / "autobuild" / task_id
+            )
+            if not autobuild_dir.exists():
+                return None
+            coach_files = sorted(
+                autobuild_dir.glob("coach_turn_*.json"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            if not coach_files:
+                return None
+            latest = coach_files[0]
+            mtime_delta = abs(latest.stat().st_mtime - timer_fire_time)
+            if mtime_delta > LATE_APPROVAL_GRACE_S:
+                return None
+            return json.loads(latest.read_text()).get("decision")
+        except Exception as exc:
+            logger.debug(
+                f"[{task_id}] _check_late_approval skipped: {exc}"
+            )
+            return None
+
+    def _read_total_turns(self, task_id: str) -> Optional[int]:
+        """
+        Recover ``turn_number`` from the latest ``turn_state_turn_*.json``.
+
+        Used by the late-approval reclassification path so the synthesised
+        ``TaskExecutionResult`` carries an accurate ``total_turns`` even
+        though the gather slot held a ``TimeoutError`` and the worker
+        thread's return value was discarded. Returns ``None`` on any
+        error; never raises.
+        """
+        try:
+            autobuild_dir = (
+                self.repo_root / ".guardkit" / "autobuild" / task_id
+            )
+            if not autobuild_dir.exists():
+                return None
+            state_files = sorted(
+                autobuild_dir.glob("turn_state_turn_*.json"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            if not state_files:
+                return None
+            data = json.loads(state_files[0].read_text())
+            value = data.get("turn_number")
+            return int(value) if value is not None else None
+        except Exception as exc:
+            logger.debug(
+                f"[{task_id}] _read_total_turns skipped: {exc}"
+            )
+            return None
 
     def _finalize_phase(
         self,

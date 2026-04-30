@@ -19,7 +19,10 @@ Test Coverage:
 import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch, AsyncMock
+import json
+import os
 import tempfile
+import time
 import yaml
 import asyncio
 import logging
@@ -3371,3 +3374,401 @@ async def test_success_path_no_diagnostics_logging(temp_repo, parallel_feature, 
     # No CANCELLED diagnostics should appear for successful tasks
     cancelled_logs = [r for r in caplog.records if "CANCELLED" in r.message and "CancelledError" in r.message]
     assert len(cancelled_logs) == 0
+
+
+# ============================================================================
+# TASK-ATR-003: Late-approval reconciliation
+# ============================================================================
+
+
+class TestLateApprovalReconciliation:
+    """
+    Unit tests for ``_check_late_approval`` and ``_read_total_turns``.
+
+    Scenario: ``asyncio.gather`` collects ``TimeoutError`` for a task while
+    the worker thread (still running ``subprocess.run(pytest)``) writes
+    ``coach_turn_<N>.json`` with ``decision=approve`` 68ms after the timer
+    fires. The feature layer should reclassify TIMEOUT → APPROVED_LATE
+    when the Coach write landed within ``LATE_APPROVAL_GRACE_S``.
+    """
+
+    @staticmethod
+    def _write_coach_turn(
+        repo_root: Path,
+        task_id: str,
+        turn: int,
+        decision: str,
+        mtime_offset_s: float,
+    ) -> Path:
+        """Helper: write ``coach_turn_<turn>.json`` with controlled mtime.
+
+        ``mtime_offset_s`` is added to ``time.time()`` — negative for
+        files that landed *before* the timer fire, positive for files
+        landed slightly *after*.
+        """
+        autobuild_dir = repo_root / ".guardkit" / "autobuild" / task_id
+        autobuild_dir.mkdir(parents=True, exist_ok=True)
+        path = autobuild_dir / f"coach_turn_{turn}.json"
+        path.write_text(json.dumps({"decision": decision}))
+        target_mtime = time.time() + mtime_offset_s
+        os.utime(path, (target_mtime, target_mtime))
+        return path
+
+    @staticmethod
+    def _write_turn_state(
+        repo_root: Path, task_id: str, turn: int, turn_number: int
+    ) -> Path:
+        """Helper: write ``turn_state_turn_<turn>.json`` with turn_number."""
+        autobuild_dir = repo_root / ".guardkit" / "autobuild" / task_id
+        autobuild_dir.mkdir(parents=True, exist_ok=True)
+        path = autobuild_dir / f"turn_state_turn_{turn}.json"
+        path.write_text(json.dumps({"turn_number": turn_number}))
+        return path
+
+    def test_approve_within_grace_returns_approve(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """Fresh coach_turn_N.json (mtime now-30s) returns 'approve'."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo, worktree_manager=mock_worktree_manager,
+        )
+        self._write_coach_turn(
+            temp_repo, "TASK-T-001", turn=2,
+            decision="approve", mtime_offset_s=-30.0,
+        )
+        result = orchestrator._check_late_approval(
+            "TASK-T-001", timer_fire_time=time.time(),
+        )
+        assert result == "approve"
+
+    def test_approve_outside_grace_returns_none(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """Stale coach_turn_N.json (mtime now-90s) outside 60s grace → None."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo, worktree_manager=mock_worktree_manager,
+        )
+        self._write_coach_turn(
+            temp_repo, "TASK-T-001", turn=2,
+            decision="approve", mtime_offset_s=-90.0,
+        )
+        result = orchestrator._check_late_approval(
+            "TASK-T-001", timer_fire_time=time.time(),
+        )
+        assert result is None
+
+    def test_feedback_decision_returned_verbatim(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """Helper returns whatever decision is in the file. The CALLER
+        is responsible for only reclassifying on 'approve'. This keeps
+        the helper a pure file-peek (AC: read-only, never raises)."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo, worktree_manager=mock_worktree_manager,
+        )
+        self._write_coach_turn(
+            temp_repo, "TASK-T-001", turn=2,
+            decision="feedback", mtime_offset_s=-30.0,
+        )
+        result = orchestrator._check_late_approval(
+            "TASK-T-001", timer_fire_time=time.time(),
+        )
+        assert result == "feedback"
+
+    def test_missing_autobuild_dir_returns_none(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """No `.guardkit/autobuild/<task>` dir → None (no raise)."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo, worktree_manager=mock_worktree_manager,
+        )
+        result = orchestrator._check_late_approval(
+            "TASK-NEVER-RAN", timer_fire_time=time.time(),
+        )
+        assert result is None
+
+    def test_no_coach_turn_files_returns_none(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """Autobuild dir exists but no `coach_turn_*.json` → None."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo, worktree_manager=mock_worktree_manager,
+        )
+        autobuild_dir = (
+            temp_repo / ".guardkit" / "autobuild" / "TASK-T-001"
+        )
+        autobuild_dir.mkdir(parents=True, exist_ok=True)
+        result = orchestrator._check_late_approval(
+            "TASK-T-001", timer_fire_time=time.time(),
+        )
+        assert result is None
+
+    def test_malformed_json_returns_none(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """Malformed coach_turn_*.json doesn't raise; returns None."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo, worktree_manager=mock_worktree_manager,
+        )
+        autobuild_dir = (
+            temp_repo / ".guardkit" / "autobuild" / "TASK-T-001"
+        )
+        autobuild_dir.mkdir(parents=True, exist_ok=True)
+        bad = autobuild_dir / "coach_turn_2.json"
+        bad.write_text("{not valid json")
+        result = orchestrator._check_late_approval(
+            "TASK-T-001", timer_fire_time=time.time(),
+        )
+        assert result is None
+
+    def test_picks_latest_coach_turn_file(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """Multiple coach_turn_*.json → uses latest by mtime."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo, worktree_manager=mock_worktree_manager,
+        )
+        self._write_coach_turn(
+            temp_repo, "TASK-T-001", turn=1,
+            decision="feedback", mtime_offset_s=-120.0,
+        )
+        self._write_coach_turn(
+            temp_repo, "TASK-T-001", turn=2,
+            decision="approve", mtime_offset_s=-10.0,
+        )
+        result = orchestrator._check_late_approval(
+            "TASK-T-001", timer_fire_time=time.time(),
+        )
+        assert result == "approve"
+
+    def test_read_total_turns_returns_turn_number(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """`_read_total_turns` recovers turn_number from latest turn_state."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo, worktree_manager=mock_worktree_manager,
+        )
+        self._write_turn_state(
+            temp_repo, "TASK-T-001", turn=1, turn_number=1,
+        )
+        self._write_turn_state(
+            temp_repo, "TASK-T-001", turn=2, turn_number=2,
+        )
+        assert orchestrator._read_total_turns("TASK-T-001") == 2
+
+    def test_read_total_turns_missing_dir_returns_none(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """No autobuild dir → None (no raise)."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo, worktree_manager=mock_worktree_manager,
+        )
+        assert orchestrator._read_total_turns("TASK-NEVER-RAN") is None
+
+    def test_read_total_turns_malformed_returns_none(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """Malformed turn_state file → None."""
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo, worktree_manager=mock_worktree_manager,
+        )
+        autobuild_dir = (
+            temp_repo / ".guardkit" / "autobuild" / "TASK-T-001"
+        )
+        autobuild_dir.mkdir(parents=True, exist_ok=True)
+        (autobuild_dir / "turn_state_turn_1.json").write_text("{bad")
+        assert orchestrator._read_total_turns("TASK-T-001") is None
+
+
+@pytest.mark.asyncio
+async def test_timeout_with_late_approval_reclassifies_as_approved_late(
+    temp_repo, parallel_feature, mock_worktree, mock_worktree_manager,
+    caplog, monkeypatch,
+):
+    """
+    Integration: simulated TimeoutError + pre-written Coach approved file.
+
+    The wave-loop's TimeoutError branch should detect the late approval
+    via ``_check_late_approval``, reclassify as APPROVED_LATE with
+    success=True, and emit the audit log line.
+    """
+    # Disable TASK-ABSR-FLOR floor so task_timeout=1 isn't lifted to 3000s
+    monkeypatch.setenv("GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR", "0")
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        task_timeout=1,
+    )
+
+    # Pre-write a Coach approval that landed within the grace window.
+    autobuild_dir = (
+        temp_repo / ".guardkit" / "autobuild" / "TASK-P-001"
+    )
+    autobuild_dir.mkdir(parents=True, exist_ok=True)
+    coach_path = autobuild_dir / "coach_turn_2.json"
+    coach_path.write_text(json.dumps({"decision": "approve"}))
+    target_mtime = time.time() - 5.0
+    os.utime(coach_path, (target_mtime, target_mtime))
+    # Turn-state for total_turns recovery
+    state_path = autobuild_dir / "turn_state_turn_2.json"
+    state_path.write_text(json.dumps({"turn_number": 2}))
+
+    def mock_slow(task, feature, worktree, cancellation_event=None,
+                  timeout_event=None, time_budget_seconds=None,
+                  wave_size=1, **kwargs):
+        import time as _t
+        _t.sleep(5)  # exceeds task_timeout=1 → TimeoutError
+        return TaskExecutionResult(
+            task_id=task.id, success=True, total_turns=2,
+            final_decision="approved",
+        )
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_slow):
+        with caplog.at_level(
+            logging.INFO,
+            logger="guardkit.orchestrator.feature_orchestrator",
+        ):
+            results = await orchestrator._execute_wave_parallel(
+                1, ["TASK-P-001"], parallel_feature, mock_worktree,
+            )
+
+    assert len(results) == 1
+    r = results[0]
+    assert r.success is True
+    assert r.final_decision == "approved_late"
+    assert r.total_turns == 2
+    assert "late_approval_window=" in (r.decision_subtype or "")
+
+    # Audit log line must mention task_id, mtime_delta, and the source path.
+    audit_lines = [
+        rec.message for rec in caplog.records
+        if "APPROVED_LATE" in rec.message
+    ]
+    assert any("TASK-P-001" in line for line in audit_lines)
+    assert any("mtime_delta=" in line for line in audit_lines)
+    assert any("source=" in line for line in audit_lines)
+
+
+@pytest.mark.asyncio
+async def test_timeout_without_late_approval_still_records_timeout(
+    temp_repo, parallel_feature, mock_worktree, mock_worktree_manager,
+    monkeypatch,
+):
+    """Regression: TimeoutError without a coach_turn file → TIMEOUT (unchanged)."""
+    monkeypatch.setenv("GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR", "0")
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        task_timeout=1,
+    )
+
+    def mock_slow(task, feature, worktree, cancellation_event=None,
+                  timeout_event=None, time_budget_seconds=None,
+                  wave_size=1, **kwargs):
+        import time as _t
+        _t.sleep(5)
+        return TaskExecutionResult(
+            task_id=task.id, success=True, total_turns=1,
+            final_decision="approved",
+        )
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_slow):
+        results = await orchestrator._execute_wave_parallel(
+            1, ["TASK-P-001"], parallel_feature, mock_worktree,
+        )
+
+    assert len(results) == 1
+    r = results[0]
+    assert r.success is False
+    assert r.final_decision == "timeout"
+
+
+@pytest.mark.asyncio
+async def test_timeout_with_stale_coach_approval_records_timeout(
+    temp_repo, parallel_feature, mock_worktree, mock_worktree_manager,
+    monkeypatch,
+):
+    """Regression: coach_turn approve outside grace window → TIMEOUT."""
+    monkeypatch.setenv("GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR", "0")
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        task_timeout=1,
+    )
+
+    # Stale Coach approval (mtime well outside 60s grace)
+    autobuild_dir = (
+        temp_repo / ".guardkit" / "autobuild" / "TASK-P-001"
+    )
+    autobuild_dir.mkdir(parents=True, exist_ok=True)
+    coach_path = autobuild_dir / "coach_turn_2.json"
+    coach_path.write_text(json.dumps({"decision": "approve"}))
+    target_mtime = time.time() - 600.0
+    os.utime(coach_path, (target_mtime, target_mtime))
+
+    def mock_slow(task, feature, worktree, cancellation_event=None,
+                  timeout_event=None, time_budget_seconds=None,
+                  wave_size=1, **kwargs):
+        import time as _t
+        _t.sleep(5)
+        return TaskExecutionResult(
+            task_id=task.id, success=True, total_turns=1,
+            final_decision="approved",
+        )
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_slow):
+        results = await orchestrator._execute_wave_parallel(
+            1, ["TASK-P-001"], parallel_feature, mock_worktree,
+        )
+
+    assert len(results) == 1
+    r = results[0]
+    assert r.success is False
+    assert r.final_decision == "timeout"
+
+
+@pytest.mark.asyncio
+async def test_timeout_with_late_feedback_decision_records_timeout(
+    temp_repo, parallel_feature, mock_worktree, mock_worktree_manager,
+    monkeypatch,
+):
+    """
+    Regression: only `decision=approve` reclassifies. A late `feedback`
+    Coach decision must still record TIMEOUT (conservative-correct;
+    matches the AC's out-of-scope note).
+    """
+    monkeypatch.setenv("GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR", "0")
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        task_timeout=1,
+    )
+
+    autobuild_dir = (
+        temp_repo / ".guardkit" / "autobuild" / "TASK-P-001"
+    )
+    autobuild_dir.mkdir(parents=True, exist_ok=True)
+    coach_path = autobuild_dir / "coach_turn_2.json"
+    coach_path.write_text(json.dumps({"decision": "feedback"}))
+    target_mtime = time.time() - 5.0
+    os.utime(coach_path, (target_mtime, target_mtime))
+
+    def mock_slow(task, feature, worktree, cancellation_event=None,
+                  timeout_event=None, time_budget_seconds=None,
+                  wave_size=1, **kwargs):
+        import time as _t
+        _t.sleep(5)
+        return TaskExecutionResult(
+            task_id=task.id, success=True, total_turns=1,
+            final_decision="approved",
+        )
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_slow):
+        results = await orchestrator._execute_wave_parallel(
+            1, ["TASK-P-001"], parallel_feature, mock_worktree,
+        )
+
+    assert len(results) == 1
+    r = results[0]
+    assert r.success is False
+    assert r.final_decision == "timeout"
