@@ -1996,6 +1996,7 @@ The detailed specifications are in the task markdown file.
         task_id_mapping = []  # Track which task_id corresponds to which async task
         cancellation_events: Dict[str, threading.Event] = {}  # Per-task cancellation (TASK-ASF-007)
         timeout_events: Dict[str, threading.Event] = {}  # Per-task feature-level timeout (TASK-ABFIX-006)
+        per_task_timeouts: Dict[str, int] = {}  # Resolved per-task timeout (TASK-ATR-001)
 
         # Track wave start time for per-task budget propagation (TASK-ABFIX-004)
         wave_start_time = time.monotonic()
@@ -2072,9 +2073,22 @@ The detailed specifications are in the task markdown file.
 
             # Add to parallel execution queue, wrapped with per-task timeout.
             # Compute remaining budget at the moment this task is queued (TASK-ABFIX-004).
+            # Per-task timeout may be overridden via frontmatter.autobuild.task_timeout (TASK-ATR-001).
             # wave_size = total tasks in the wave, used by Coach for isolation (TASK-ABFIX-005).
+            try:
+                task_data_for_timeout = TaskLoader.load_task(task_id, repo_root=self.repo_root)
+                effective_task_timeout = self._resolve_task_timeout(task_data_for_timeout, task_id)
+            except Exception as e:
+                logger.warning(
+                    f"[{task_id}] Could not pre-load task data for timeout "
+                    f"resolution: {e}; using feature-level "
+                    f"task_timeout={self.task_timeout}s"
+                )
+                effective_task_timeout = self.task_timeout
+            per_task_timeouts[task_id] = effective_task_timeout
+
             elapsed_at_queue = time.monotonic() - wave_start_time
-            task_budget = max(0.0, self.task_timeout - elapsed_at_queue)
+            task_budget = max(0.0, effective_task_timeout - elapsed_at_queue)
             tasks_to_execute.append(
                 asyncio.wait_for(
                     asyncio.to_thread(
@@ -2083,8 +2097,9 @@ The detailed specifications are in the task markdown file.
                         timeout_event=timeout_event,
                         time_budget_seconds=task_budget,
                         wave_size=len(task_ids),
+                        effective_task_timeout=effective_task_timeout,
                     ),
-                    timeout=self.task_timeout,
+                    timeout=effective_task_timeout,
                 )
             )
             task_id_mapping.append(task_id)
@@ -2110,9 +2125,15 @@ The detailed specifications are in the task markdown file.
                     tasks_to_execute.append(bounded())
 
             # TASK-CEF-004: Log gather start for cancellation diagnostics
+            # TASK-ATR-001: Show per-task timeouts (may differ via frontmatter override)
+            timeouts_summary = ", ".join(
+                f"{tid}={per_task_timeouts.get(tid, self.task_timeout)}s"
+                for tid in task_id_mapping
+            )
             logger.info(
                 f"Starting parallel gather for wave {wave_number}: "
-                f"tasks={task_id_mapping}, task_timeout={self.task_timeout}s"
+                f"tasks={task_id_mapping}, task_timeout={self.task_timeout}s "
+                f"(per-task=[{timeouts_summary}])"
             )
 
             parallel_results = None
@@ -2136,9 +2157,11 @@ The detailed specifications are in the task markdown file.
             for task_id, result in zip(task_id_mapping, parallel_results):
                 if isinstance(result, asyncio.TimeoutError):
                     sdk_timeout = self.sdk_timeout or 1200
+                    # TASK-ATR-001: Use per-task resolved timeout for messages
+                    effective_task_timeout = per_task_timeouts.get(task_id, self.task_timeout)
                     timeout_msg = (
-                        f"Task {task_id} timed out after {self.task_timeout}s "
-                        f"({self.task_timeout // 60} min)"
+                        f"Task {task_id} timed out after {effective_task_timeout}s "
+                        f"({effective_task_timeout // 60} min)"
                     )
                     # TASK-FIX-OBS2: Read last state from per-task progress log
                     progress_log = (
@@ -2152,7 +2175,7 @@ The detailed specifications are in the task markdown file.
                         except Exception:
                             pass
                     logger.warning(
-                        f"TIMEOUT (feature-level): task_timeout={self.task_timeout}s expired "
+                        f"TIMEOUT (feature-level): task_timeout={effective_task_timeout}s expired "
                         f"for {task_id}. SDK timeout budget was {sdk_timeout}s per invocation."
                         f"{last_state}"
                     )
@@ -2464,6 +2487,67 @@ The detailed specifications are in the task markdown file.
         logger.debug("enable_pre_loop using default for feature-build: False")
         return False
 
+    def _resolve_task_timeout(
+        self,
+        task_data: Dict[str, Any],
+        task_id: str,
+    ) -> int:
+        """
+        Resolve the per-task feature-level timeout (TASK-ATR-001).
+
+        Resolution order:
+            1. ``frontmatter.autobuild.task_timeout`` (per-task override)
+            2. ``self.task_timeout`` (feature-level default; multiplier and
+               feature-level floor have already been applied at construction)
+
+        When the override is present, the raw frontmatter value is multiplied
+        by ``self.timeout_multiplier`` and floored at
+        ``MIN_TURN_BUDGET_SECONDS * self.max_turns`` to guarantee at least
+        one minimum-budget turn per max-turn slot. Non-positive or non-integer
+        overrides are rejected with a warning and the feature-level default
+        is used instead.
+
+        Successful overrides are logged at INFO so operators can audit the
+        per-task budget that was applied.
+        """
+        frontmatter = task_data.get("frontmatter", {}) or {}
+        autobuild_cfg = frontmatter.get("autobuild", {}) or {}
+        if "task_timeout" not in autobuild_cfg:
+            return self.task_timeout
+
+        raw = autobuild_cfg.get("task_timeout")
+        try:
+            override_int = int(raw)
+        except (TypeError, ValueError):
+            logger.warning(
+                f"[{task_id}] Invalid frontmatter.autobuild.task_timeout="
+                f"{raw!r} (must be a positive integer); falling back to "
+                f"feature-level task_timeout={self.task_timeout}s"
+            )
+            return self.task_timeout
+
+        if override_int <= 0:
+            logger.warning(
+                f"[{task_id}] frontmatter.autobuild.task_timeout="
+                f"{override_int}s must be > 0; falling back to "
+                f"feature-level task_timeout={self.task_timeout}s"
+            )
+            return self.task_timeout
+
+        from guardkit.orchestrator.autobuild import MIN_TURN_BUDGET_SECONDS
+
+        multiplied = int(override_int * self.timeout_multiplier)
+        floor = MIN_TURN_BUDGET_SECONDS * self.max_turns
+        resolved = max(multiplied, floor)
+
+        logger.info(
+            f"[{task_id}] Per-task task_timeout override active: "
+            f"frontmatter={override_int}s × multiplier={self.timeout_multiplier} "
+            f"= {multiplied}s, floored at {floor}s → {resolved}s "
+            f"(feature default was {self.task_timeout}s)"
+        )
+        return resolved
+
     def _execute_task(
         self,
         task: FeatureTask,
@@ -2473,6 +2557,7 @@ The detailed specifications are in the task markdown file.
         timeout_event: Optional[threading.Event] = None,
         time_budget_seconds: Optional[float] = None,
         wave_size: int = 1,
+        effective_task_timeout: Optional[int] = None,
     ) -> TaskExecutionResult:
         """
         Execute single task using AutoBuildOrchestrator with shared worktree.
@@ -2494,6 +2579,12 @@ The detailed specifications are in the task markdown file.
         wave_size : int, optional
             Number of tasks executing in parallel in the current wave (default: 1).
             Passed to AutoBuildOrchestrator for Coach test isolation (TASK-ABFIX-005).
+        effective_task_timeout : Optional[int], optional
+            Per-task feature-level timeout resolved at queue site (TASK-ATR-001).
+            When provided, this value (which may include a frontmatter override)
+            is forwarded to AutoBuildOrchestrator so the SDK-timeout logging
+            line reflects the actual envelope wrapping the task. When None,
+            falls back to ``self.task_timeout``.
 
         Returns
         -------
@@ -2542,7 +2633,11 @@ The detailed specifications are in the task markdown file.
                 feature_id=feature.id,
                 cancellation_event=cancellation_event,  # Cooperative cancellation (TASK-ASF-007)
                 timeout_event=timeout_event,  # Feature-level timeout signal (TASK-ABFIX-006)
-                task_timeout=self.task_timeout,  # Feature task budget for SDK timeout logging (TASK-ABFIX-006)
+                task_timeout=(  # TASK-ATR-001: prefer queue-site resolved value (frontmatter override aware)
+                    effective_task_timeout
+                    if effective_task_timeout is not None
+                    else self.task_timeout
+                ),
                 timeout_multiplier=self.timeout_multiplier,  # TASK-FIX-VL05
                 wave_size=wave_size,  # Parallel wave context for Coach isolation (TASK-ABFIX-005)
                 emitter=self._emitter,  # Forward emitter to task orchestrator (TASK-INST-013)

@@ -408,7 +408,7 @@ async def test_feature_orchestrator_passes_timeout_event_to_execute_task(tmp_pat
     # Track what timeout_event was passed to _execute_task
     captured_timeout_events = []
 
-    def mock_execute_task_slow(task, feat, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task_slow(task, feat, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         captured_timeout_events.append(timeout_event)
         time.sleep(5)  # Exceed the 1s task_timeout
         return TaskExecutionResult(
@@ -490,7 +490,7 @@ async def test_feature_orchestrator_timeout_logs_feature_level_attribution(
         execution=FeatureExecution(),
     )
 
-    def mock_execute_task_slow(task, feat, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task_slow(task, feat, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         time.sleep(5)
         return TaskExecutionResult(
             task_id=task.id, success=True, total_turns=1, final_decision="approved",

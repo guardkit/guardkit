@@ -1102,7 +1102,7 @@ async def test_execute_wave_parallel_executes_concurrently(temp_repo, parallel_f
     # Mock _execute_task to track concurrent execution
     execution_order = []
 
-    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         execution_order.append(f"start_{task.id}")
         # Simulate some work
         import time
@@ -1140,7 +1140,7 @@ async def test_execute_wave_parallel_all_tasks_complete_before_return(temp_repo,
 
     completed_tasks = []
 
-    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         import time
         time.sleep(0.02)  # Simulate work
         completed_tasks.append(task.id)
@@ -1174,7 +1174,7 @@ async def test_execute_wave_parallel_exception_isolation(temp_repo, parallel_fea
         worktree_manager=mock_worktree_manager,
     )
 
-    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         if task.id == "TASK-P-001":
             raise Exception("Task P-001 failed")
         return TaskExecutionResult(
@@ -1546,7 +1546,7 @@ async def test_task_timeout_triggers_on_slow_task(
         task_timeout=1,  # 1 second timeout for fast test
     )
 
-    def mock_execute_task_slow(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task_slow(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         """Simulate a task that takes too long."""
         import time
         time.sleep(5)  # Will exceed the 1s timeout
@@ -1581,7 +1581,7 @@ async def test_successful_tasks_unaffected_by_timeout(
         task_timeout=60,  # Generous timeout
     )
 
-    def mock_execute_task_fast(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task_fast(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         """Simulate a fast task that finishes well within timeout."""
         return TaskExecutionResult(
             task_id=task.id,
@@ -1611,7 +1611,7 @@ async def test_timeout_mixed_with_success(
         task_timeout=1,  # 1 second timeout
     )
 
-    def mock_execute_task_mixed(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task_mixed(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         """One task times out, the other succeeds."""
         import time
         if task.id == "TASK-P-001":
@@ -1662,7 +1662,7 @@ async def test_timeout_updates_wave_display(
     mock_display = MagicMock()
     orchestrator._wave_display = mock_display
 
-    def mock_execute_task_slow(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task_slow(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         import time
         time.sleep(5)
         return TaskExecutionResult(
@@ -1699,7 +1699,7 @@ async def test_timeout_updates_feature_state(
         task_timeout=1,
     )
 
-    def mock_execute_task_slow(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task_slow(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         import time
         time.sleep(5)
         return TaskExecutionResult(
@@ -1719,6 +1719,428 @@ async def test_timeout_updates_feature_state(
             error_result = call_args[0][2]  # Third positional arg is the result
             assert error_result.success is False
             assert error_result.final_decision == "timeout"
+
+
+# ============================================================================
+# Per-Task task_timeout Frontmatter Override Tests (TASK-ATR-001)
+# ============================================================================
+
+
+class TestResolveTaskTimeout:
+    """Unit tests for FeatureOrchestrator._resolve_task_timeout."""
+
+    def _make_orchestrator(self, temp_repo, mock_worktree_manager,
+                           task_timeout=2400, max_turns=5,
+                           timeout_multiplier=None):
+        kwargs = dict(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            task_timeout=task_timeout,
+            max_turns=max_turns,
+        )
+        if timeout_multiplier is not None:
+            kwargs["timeout_multiplier"] = timeout_multiplier
+        return FeatureOrchestrator(**kwargs)
+
+    def test_no_override_returns_feature_default(
+        self, temp_repo, mock_worktree_manager,
+    ):
+        """Absent frontmatter override → feature-level task_timeout used."""
+        orch = self._make_orchestrator(
+            temp_repo, mock_worktree_manager, timeout_multiplier=1.0,
+        )
+        task_data = {"frontmatter": {"autobuild": {}}}
+        assert orch._resolve_task_timeout(task_data, "TASK-T-001") == orch.task_timeout
+
+    def test_no_autobuild_section_returns_feature_default(
+        self, temp_repo, mock_worktree_manager,
+    ):
+        """Frontmatter without autobuild section → feature-level used."""
+        orch = self._make_orchestrator(
+            temp_repo, mock_worktree_manager, timeout_multiplier=1.0,
+        )
+        task_data = {"frontmatter": {}}
+        assert orch._resolve_task_timeout(task_data, "TASK-T-001") == orch.task_timeout
+
+    def test_override_present_and_above_floor(
+        self, temp_repo, mock_worktree_manager,
+    ):
+        """Override > floor and multiplier=1 → override returned as-is."""
+        orch = self._make_orchestrator(
+            temp_repo, mock_worktree_manager, timeout_multiplier=1.0,
+            max_turns=5,
+        )
+        # MIN_TURN_BUDGET_SECONDS=600 default, max_turns=5 → floor 3000s
+        task_data = {"frontmatter": {"autobuild": {"task_timeout": 4500}}}
+        assert orch._resolve_task_timeout(task_data, "TASK-T-001") == 4500
+
+    def test_override_below_safety_floor_is_floored(
+        self, temp_repo, mock_worktree_manager,
+    ):
+        """Override below MIN_TURN_BUDGET * max_turns → floored to that minimum."""
+        orch = self._make_orchestrator(
+            temp_repo, mock_worktree_manager, timeout_multiplier=1.0,
+            max_turns=5,
+        )
+        # 1500 < 600*5=3000 → resolved to 3000
+        task_data = {"frontmatter": {"autobuild": {"task_timeout": 1500}}}
+        assert orch._resolve_task_timeout(task_data, "TASK-T-001") == 3000
+
+    def test_override_zero_rejected_falls_back_to_default(
+        self, temp_repo, mock_worktree_manager, caplog,
+    ):
+        """Zero override is rejected with WARNING; feature default used."""
+        orch = self._make_orchestrator(
+            temp_repo, mock_worktree_manager, timeout_multiplier=1.0,
+        )
+        task_data = {"frontmatter": {"autobuild": {"task_timeout": 0}}}
+        with caplog.at_level(logging.WARNING):
+            resolved = orch._resolve_task_timeout(task_data, "TASK-T-001")
+        assert resolved == orch.task_timeout
+        assert any("must be > 0" in r.message for r in caplog.records)
+
+    def test_override_negative_rejected_falls_back_to_default(
+        self, temp_repo, mock_worktree_manager, caplog,
+    ):
+        """Negative override is rejected with WARNING; feature default used."""
+        orch = self._make_orchestrator(
+            temp_repo, mock_worktree_manager, timeout_multiplier=1.0,
+        )
+        task_data = {"frontmatter": {"autobuild": {"task_timeout": -100}}}
+        with caplog.at_level(logging.WARNING):
+            resolved = orch._resolve_task_timeout(task_data, "TASK-T-001")
+        assert resolved == orch.task_timeout
+        assert any("must be > 0" in r.message for r in caplog.records)
+
+    def test_override_non_integer_rejected_falls_back_to_default(
+        self, temp_repo, mock_worktree_manager, caplog,
+    ):
+        """Non-integer override rejected with WARNING; feature default used."""
+        orch = self._make_orchestrator(
+            temp_repo, mock_worktree_manager, timeout_multiplier=1.0,
+        )
+        task_data = {"frontmatter": {"autobuild": {"task_timeout": "not-a-number"}}}
+        with caplog.at_level(logging.WARNING):
+            resolved = orch._resolve_task_timeout(task_data, "TASK-T-001")
+        assert resolved == orch.task_timeout
+        assert any("must be a positive integer" in r.message for r in caplog.records)
+
+    def test_override_applies_timeout_multiplier(
+        self, temp_repo, mock_worktree_manager,
+    ):
+        """Override is multiplied by timeout_multiplier (Coach-driven scaling)."""
+        orch = self._make_orchestrator(
+            temp_repo, mock_worktree_manager, timeout_multiplier=2.0,
+            max_turns=5,
+        )
+        # 4500 * 2 = 9000 (well above 600*5=3000 floor)
+        task_data = {"frontmatter": {"autobuild": {"task_timeout": 4500}}}
+        assert orch._resolve_task_timeout(task_data, "TASK-T-001") == 9000
+
+    def test_override_logs_at_info_when_applied(
+        self, temp_repo, mock_worktree_manager, caplog,
+    ):
+        """Successful override is logged at INFO so operators can audit."""
+        orch = self._make_orchestrator(
+            temp_repo, mock_worktree_manager, timeout_multiplier=1.0,
+        )
+        task_data = {"frontmatter": {"autobuild": {"task_timeout": 4500}}}
+        with caplog.at_level(logging.INFO):
+            orch._resolve_task_timeout(task_data, "TASK-T-001")
+        info_records = [
+            r for r in caplog.records
+            if r.levelname == "INFO" and "Per-task task_timeout override" in r.message
+        ]
+        assert len(info_records) == 1
+        assert "TASK-T-001" in info_records[0].message
+        assert "4500" in info_records[0].message
+
+
+@pytest.mark.asyncio
+async def test_wave_loop_uses_per_task_timeout_from_frontmatter(
+    temp_repo, parallel_feature, mock_worktree, mock_worktree_manager,
+):
+    """asyncio.wait_for receives per-task overridden timeout (TASK-ATR-001)."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        task_timeout=2400,
+        timeout_multiplier=1.0,
+        max_turns=5,
+    )
+
+    # Write task file with per-task override
+    task = parallel_feature.tasks[0]  # TASK-P-001
+    task_file = temp_repo / task.file_path
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text(
+        "---\n"
+        f"id: {task.id}\n"
+        f"title: {task.name}\n"
+        "status: pending\n"
+        "autobuild:\n"
+        "  task_timeout: 4500\n"
+        "---\n\n"
+        "# Task\n\n## Requirements\nx\n\n## Acceptance Criteria\n- y\n"
+    )
+
+    def mock_execute_task_fast(task, feature, worktree, cancellation_event=None,
+                               timeout_event=None, time_budget_seconds=None,
+                               wave_size=1, **kwargs):
+        return TaskExecutionResult(
+            task_id=task.id, success=True, total_turns=1,
+            final_decision="approved",
+        )
+
+    captured_timeouts = []
+    real_wait_for = asyncio.wait_for
+
+    async def spy_wait_for(awaitable, timeout):
+        captured_timeouts.append(timeout)
+        return await real_wait_for(awaitable, timeout)
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task_fast):
+        with patch("guardkit.orchestrator.feature_orchestrator.asyncio.wait_for",
+                   side_effect=spy_wait_for):
+            await orchestrator._execute_wave_parallel(
+                1, [task.id], parallel_feature, mock_worktree
+            )
+
+    assert captured_timeouts, "expected at least one wait_for call"
+    assert captured_timeouts[0] == 4500, (
+        f"wait_for received {captured_timeouts[0]}, expected 4500 from frontmatter override"
+    )
+
+
+@pytest.mark.asyncio
+async def test_wave_loop_falls_back_to_feature_timeout_when_override_absent(
+    temp_repo, parallel_feature, mock_worktree, mock_worktree_manager,
+):
+    """asyncio.wait_for receives feature-level timeout when no override present."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        task_timeout=3600,
+        timeout_multiplier=1.0,
+    )
+
+    # Existing task file from temp_repo fixture has no autobuild section.
+    # Re-confirm no override is set:
+    task = parallel_feature.tasks[0]
+    task_file = temp_repo / task.file_path
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text(
+        "---\n"
+        f"id: {task.id}\n"
+        f"title: {task.name}\n"
+        "status: pending\n"
+        "---\n\n"
+        "# Task\n\n## Requirements\nx\n\n## Acceptance Criteria\n- y\n"
+    )
+
+    def mock_execute_task_fast(task, feature, worktree, cancellation_event=None,
+                               timeout_event=None, time_budget_seconds=None,
+                               wave_size=1, **kwargs):
+        return TaskExecutionResult(
+            task_id=task.id, success=True, total_turns=1,
+            final_decision="approved",
+        )
+
+    captured_timeouts = []
+    real_wait_for = asyncio.wait_for
+
+    async def spy_wait_for(awaitable, timeout):
+        captured_timeouts.append(timeout)
+        return await real_wait_for(awaitable, timeout)
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task_fast):
+        with patch("guardkit.orchestrator.feature_orchestrator.asyncio.wait_for",
+                   side_effect=spy_wait_for):
+            await orchestrator._execute_wave_parallel(
+                1, [task.id], parallel_feature, mock_worktree
+            )
+
+    assert captured_timeouts, "expected at least one wait_for call"
+    # Feature default 3600s with no multiplier and no FLOOR override env →
+    # constructor floor max(3000, 3600)=3600 → orchestrator.task_timeout=3600
+    assert captured_timeouts[0] == orchestrator.task_timeout
+
+
+@pytest.mark.asyncio
+async def test_wave_loop_per_task_override_does_not_leak_to_siblings(
+    temp_repo, parallel_feature, mock_worktree, mock_worktree_manager,
+):
+    """A frontmatter override on one task does not affect siblings in the wave."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        task_timeout=3600,
+        timeout_multiplier=1.0,
+    )
+
+    # Task 1: override
+    t1 = parallel_feature.tasks[0]
+    (temp_repo / t1.file_path).parent.mkdir(parents=True, exist_ok=True)
+    (temp_repo / t1.file_path).write_text(
+        "---\n"
+        f"id: {t1.id}\ntitle: {t1.name}\nstatus: pending\n"
+        "autobuild:\n  task_timeout: 5400\n"
+        "---\n\n# Task\n\n## Requirements\nx\n\n## Acceptance Criteria\n- y\n"
+    )
+    # Task 2: no override
+    t2 = parallel_feature.tasks[1]
+    (temp_repo / t2.file_path).parent.mkdir(parents=True, exist_ok=True)
+    (temp_repo / t2.file_path).write_text(
+        "---\n"
+        f"id: {t2.id}\ntitle: {t2.name}\nstatus: pending\n"
+        "---\n\n# Task\n\n## Requirements\nx\n\n## Acceptance Criteria\n- y\n"
+    )
+
+    def mock_execute_task_fast(task, feature, worktree, cancellation_event=None,
+                               timeout_event=None, time_budget_seconds=None,
+                               wave_size=1, **kwargs):
+        return TaskExecutionResult(
+            task_id=task.id, success=True, total_turns=1,
+            final_decision="approved",
+        )
+
+    captured_timeouts = []
+    real_wait_for = asyncio.wait_for
+
+    async def spy_wait_for(awaitable, timeout):
+        captured_timeouts.append(timeout)
+        return await real_wait_for(awaitable, timeout)
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task_fast):
+        with patch("guardkit.orchestrator.feature_orchestrator.asyncio.wait_for",
+                   side_effect=spy_wait_for):
+            await orchestrator._execute_wave_parallel(
+                1, [t1.id, t2.id], parallel_feature, mock_worktree
+            )
+
+    assert len(captured_timeouts) == 2, (
+        f"expected 2 wait_for calls, got {len(captured_timeouts)}"
+    )
+    assert captured_timeouts[0] == 5400  # t1 override
+    assert captured_timeouts[1] == orchestrator.task_timeout  # t2 default
+
+
+@pytest.mark.asyncio
+async def test_wave_loop_taskloader_failure_falls_back_to_feature_timeout(
+    temp_repo, parallel_feature, mock_worktree, mock_worktree_manager,
+):
+    """If pre-loading task data raises, fall back to feature-level timeout."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        task_timeout=3600,
+        timeout_multiplier=1.0,
+    )
+    task = parallel_feature.tasks[0]
+
+    def mock_execute_task_fast(task, feature, worktree, cancellation_event=None,
+                               timeout_event=None, time_budget_seconds=None,
+                               wave_size=1, **kwargs):
+        return TaskExecutionResult(
+            task_id=task.id, success=True, total_turns=1,
+            final_decision="approved",
+        )
+
+    captured_timeouts = []
+    real_wait_for = asyncio.wait_for
+
+    async def spy_wait_for(awaitable, timeout):
+        captured_timeouts.append(timeout)
+        return await real_wait_for(awaitable, timeout)
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task_fast):
+        with patch(
+            "guardkit.orchestrator.feature_orchestrator.TaskLoader.load_task",
+            side_effect=FileNotFoundError("simulated"),
+        ):
+            with patch("guardkit.orchestrator.feature_orchestrator.asyncio.wait_for",
+                       side_effect=spy_wait_for):
+                await orchestrator._execute_wave_parallel(
+                    1, [task.id], parallel_feature, mock_worktree
+                )
+
+    assert captured_timeouts == [orchestrator.task_timeout]
+
+
+def test_execute_task_forwards_effective_task_timeout_to_autobuild(
+    temp_repo, sample_feature, mock_worktree, mock_worktree_manager,
+):
+    """_execute_task threads effective_task_timeout through to AutoBuildOrchestrator."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        sdk_timeout=600,
+    )
+    task = sample_feature.tasks[0]
+    task_file = temp_repo / task.file_path
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text(
+        "---\n"
+        f"id: {task.id}\ntitle: {task.name}\nstatus: pending\n"
+        "---\n\n# Task\n\nbody\n"
+    )
+
+    with patch("guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator") as mock_orch_class:
+        mock_orch = MagicMock()
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.total_turns = 1
+        mock_result.final_decision = "approved"
+        mock_result.error = None
+        mock_result.turn_history = []
+        mock_result.recovery_count = 0
+        mock_result.stall_classification = None
+        mock_orch.orchestrate.return_value = mock_result
+        mock_orch_class.return_value = mock_orch
+
+        orchestrator._execute_task(
+            task, sample_feature, mock_worktree,
+            effective_task_timeout=4500,
+        )
+
+        call_kwargs = mock_orch_class.call_args[1]
+        assert call_kwargs.get("task_timeout") == 4500
+
+
+def test_execute_task_falls_back_to_self_task_timeout_when_effective_missing(
+    temp_repo, sample_feature, mock_worktree, mock_worktree_manager,
+):
+    """_execute_task falls back to self.task_timeout when effective_task_timeout is None."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+    task = sample_feature.tasks[0]
+    task_file = temp_repo / task.file_path
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text(
+        "---\n"
+        f"id: {task.id}\ntitle: {task.name}\nstatus: pending\n"
+        "---\n\n# Task\n\nbody\n"
+    )
+
+    with patch("guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator") as mock_orch_class:
+        mock_orch = MagicMock()
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.total_turns = 1
+        mock_result.final_decision = "approved"
+        mock_result.error = None
+        mock_result.turn_history = []
+        mock_result.recovery_count = 0
+        mock_result.stall_classification = None
+        mock_orch.orchestrate.return_value = mock_result
+        mock_orch_class.return_value = mock_orch
+
+        orchestrator._execute_task(task, sample_feature, mock_worktree)
+
+        call_kwargs = mock_orch_class.call_args[1]
+        assert call_kwargs.get("task_timeout") == orchestrator.task_timeout
 
 
 # ============================================================================
@@ -2378,7 +2800,7 @@ class TestCooperativeCancellation:
 
         captured_events = {}
 
-        def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+        def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
             captured_events[task.id] = cancellation_event
             return TaskExecutionResult(
                 task_id=task.id,
@@ -2415,7 +2837,7 @@ class TestCooperativeCancellation:
 
         captured_events = {}
 
-        def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+        def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
             captured_events[task.id] = cancellation_event
             return TaskExecutionResult(
                 task_id=task.id,
@@ -2447,7 +2869,7 @@ class TestCooperativeCancellation:
 
         captured_events = {}
 
-        def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+        def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
             captured_events[task.id] = cancellation_event
             if task.id == "TASK-P-001":
                 raise RuntimeError("Simulated failure")
@@ -2564,7 +2986,7 @@ async def test_cancelled_error_produces_cancelled_result(temp_repo, parallel_fea
         worktree_manager=mock_worktree_manager,
     )
 
-    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         if task.id == "TASK-P-001":
             raise asyncio.CancelledError()
         return TaskExecutionResult(
@@ -2667,7 +3089,7 @@ async def test_timeout_error_handling_unchanged(temp_repo, parallel_feature, moc
         task_timeout=600,
     )
 
-    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         if task.id == "TASK-P-001":
             raise asyncio.TimeoutError()
         return TaskExecutionResult(
@@ -2695,7 +3117,7 @@ async def test_regular_exception_handling_unchanged(temp_repo, parallel_feature,
         worktree_manager=mock_worktree_manager,
     )
 
-    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         if task.id == "TASK-P-001":
             raise RuntimeError("Something went wrong")
         return TaskExecutionResult(
@@ -2724,7 +3146,7 @@ async def test_normal_result_handling_unchanged(temp_repo, parallel_feature, moc
         worktree_manager=mock_worktree_manager,
     )
 
-    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         return TaskExecutionResult(
             task_id=task.id,
             success=True,
@@ -2751,7 +3173,7 @@ async def test_cancelled_error_updates_wave_display(temp_repo, parallel_feature,
     )
     orchestrator._wave_display = MagicMock()
 
-    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         raise asyncio.CancelledError()
 
     with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
@@ -2777,7 +3199,7 @@ async def test_cancelled_error_calls_update_feature(temp_repo, parallel_feature,
         worktree_manager=mock_worktree_manager,
     )
 
-    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         raise asyncio.CancelledError()
 
     with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
@@ -2810,7 +3232,7 @@ async def test_isinstance_check_order(temp_repo, parallel_feature, mock_worktree
     # On Python 3.9+, CancelledError is NOT an Exception subclass
     # This test validates the check order handles this correctly
 
-    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         raise asyncio.CancelledError()
 
     with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
@@ -2836,7 +3258,7 @@ async def test_gather_start_logged_with_wave_and_task_ids(temp_repo, parallel_fe
         worktree_manager=mock_worktree_manager,
     )
 
-    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         return TaskExecutionResult(
             task_id=task.id, success=True, total_turns=1, final_decision="approved",
         )
@@ -2864,7 +3286,7 @@ async def test_cancelled_error_logs_elapsed_time(temp_repo, parallel_feature, mo
         worktree_manager=mock_worktree_manager,
     )
 
-    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         raise asyncio.CancelledError()
 
     with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
@@ -2889,7 +3311,7 @@ async def test_cancelled_error_logs_cancellation_event_state(temp_repo, parallel
         worktree_manager=mock_worktree_manager,
     )
 
-    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         raise asyncio.CancelledError()
 
     with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
@@ -2912,7 +3334,7 @@ async def test_cancelled_error_logs_timeout_event_state(temp_repo, parallel_feat
         worktree_manager=mock_worktree_manager,
     )
 
-    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         raise asyncio.CancelledError()
 
     with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
@@ -2935,7 +3357,7 @@ async def test_success_path_no_diagnostics_logging(temp_repo, parallel_feature, 
         worktree_manager=mock_worktree_manager,
     )
 
-    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1):
+    def mock_execute_task(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):
         return TaskExecutionResult(
             task_id=task.id, success=True, total_turns=1, final_decision="approved",
         )

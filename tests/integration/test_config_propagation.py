@@ -713,6 +713,194 @@ class TestEdgeCases:
 
 
 # ============================================================================
+# TestTaskTimeoutOverridePropagation - TASK-ATR-001 Per-Task Timeout Override
+# ============================================================================
+
+
+@pytest.mark.integration
+class TestTaskTimeoutOverridePropagation:
+    """
+    Integration tests for per-task ``autobuild.task_timeout`` frontmatter override
+    (TASK-ATR-001). Verifies the override flows from frontmatter through the
+    wave-gather loop into ``asyncio.wait_for``.
+    """
+
+    @pytest.mark.asyncio
+    async def test_per_task_override_reaches_asyncio_wait_for(
+        self, temp_repo_with_feature, sample_feature, mock_worktree, mock_worktree_manager,
+        monkeypatch,
+    ):
+        """A task with ``autobuild.task_timeout: 4500`` is wrapped with 4500s."""
+        import asyncio
+        from guardkit.orchestrator import feature_orchestrator as fo
+        from guardkit.orchestrator.feature_orchestrator import (
+            FeatureOrchestrator,
+            TaskExecutionResult,
+        )
+
+        # Disable construction-time floor so default task_timeout=2400 stays at 2400
+        monkeypatch.setenv("GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR", "0")
+
+        # Rewrite first task file with the override
+        task = sample_feature.tasks[0]
+        task_file = temp_repo_with_feature / task.file_path
+        task_file.write_text(
+            "---\n"
+            f"id: {task.id}\n"
+            f"title: {task.name}\n"
+            "status: pending\n"
+            "autobuild:\n"
+            "  task_timeout: 4500\n"
+            "---\n\n"
+            "# Task\n\n## Requirements\nTest requirements.\n\n"
+            "## Acceptance Criteria\n- Test criteria\n"
+        )
+
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo_with_feature,
+            worktree_manager=mock_worktree_manager,
+            task_timeout=2400,
+            timeout_multiplier=1.0,
+            max_turns=5,
+        )
+
+        def fast_execute(task, feature, worktree, cancellation_event=None,
+                         timeout_event=None, time_budget_seconds=None,
+                         wave_size=1, **kwargs):
+            return TaskExecutionResult(
+                task_id=task.id, success=True, total_turns=1,
+                final_decision="approved",
+            )
+
+        captured = []
+        real_wait_for = asyncio.wait_for
+
+        async def spy_wait_for(awaitable, timeout):
+            captured.append(timeout)
+            return await real_wait_for(awaitable, timeout)
+
+        with patch.object(orchestrator, "_execute_task", side_effect=fast_execute):
+            with patch.object(fo.asyncio, "wait_for", side_effect=spy_wait_for):
+                await orchestrator._execute_wave_parallel(
+                    1, [task.id], sample_feature, mock_worktree,
+                )
+
+        assert captured == [4500], (
+            f"Expected wait_for to receive 4500s from frontmatter override, "
+            f"got {captured}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_per_task_override_applies_timeout_multiplier(
+        self, temp_repo_with_feature, sample_feature, mock_worktree, mock_worktree_manager,
+        monkeypatch,
+    ):
+        """Override is multiplied by ``timeout_multiplier`` (Coach scaling)."""
+        import asyncio
+        from guardkit.orchestrator import feature_orchestrator as fo
+        from guardkit.orchestrator.feature_orchestrator import (
+            FeatureOrchestrator,
+            TaskExecutionResult,
+        )
+
+        monkeypatch.setenv("GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR", "0")
+
+        task = sample_feature.tasks[0]
+        task_file = temp_repo_with_feature / task.file_path
+        task_file.write_text(
+            "---\n"
+            f"id: {task.id}\n"
+            f"title: {task.name}\n"
+            "status: pending\n"
+            "autobuild:\n"
+            "  task_timeout: 4500\n"
+            "---\n\n"
+            "# Task\n\n## Requirements\nTest requirements.\n\n"
+            "## Acceptance Criteria\n- Test criteria\n"
+        )
+
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo_with_feature,
+            worktree_manager=mock_worktree_manager,
+            task_timeout=2400,
+            timeout_multiplier=2.0,  # x2 backend scaling
+            max_turns=5,
+        )
+
+        def fast_execute(task, feature, worktree, cancellation_event=None,
+                         timeout_event=None, time_budget_seconds=None,
+                         wave_size=1, **kwargs):
+            return TaskExecutionResult(
+                task_id=task.id, success=True, total_turns=1,
+                final_decision="approved",
+            )
+
+        captured = []
+        real_wait_for = asyncio.wait_for
+
+        async def spy_wait_for(awaitable, timeout):
+            captured.append(timeout)
+            return await real_wait_for(awaitable, timeout)
+
+        with patch.object(orchestrator, "_execute_task", side_effect=fast_execute):
+            with patch.object(fo.asyncio, "wait_for", side_effect=spy_wait_for):
+                await orchestrator._execute_wave_parallel(
+                    1, [task.id], sample_feature, mock_worktree,
+                )
+
+        # 4500 * 2.0 = 9000 (above 600*5=3000 floor)
+        assert captured == [9000]
+
+    @pytest.mark.asyncio
+    async def test_no_override_uses_feature_level_task_timeout(
+        self, temp_repo_with_feature, sample_feature, mock_worktree, mock_worktree_manager,
+        monkeypatch,
+    ):
+        """Without override, the feature-level ``task_timeout`` is used unchanged."""
+        import asyncio
+        from guardkit.orchestrator import feature_orchestrator as fo
+        from guardkit.orchestrator.feature_orchestrator import (
+            FeatureOrchestrator,
+            TaskExecutionResult,
+        )
+
+        monkeypatch.setenv("GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR", "0")
+
+        # Default task fixture has no autobuild section — confirmed by
+        # temp_repo_with_feature fixture which writes a minimal frontmatter.
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo_with_feature,
+            worktree_manager=mock_worktree_manager,
+            task_timeout=3600,
+            timeout_multiplier=1.0,
+        )
+        task = sample_feature.tasks[0]
+
+        def fast_execute(task, feature, worktree, cancellation_event=None,
+                         timeout_event=None, time_budget_seconds=None,
+                         wave_size=1, **kwargs):
+            return TaskExecutionResult(
+                task_id=task.id, success=True, total_turns=1,
+                final_decision="approved",
+            )
+
+        captured = []
+        real_wait_for = asyncio.wait_for
+
+        async def spy_wait_for(awaitable, timeout):
+            captured.append(timeout)
+            return await real_wait_for(awaitable, timeout)
+
+        with patch.object(orchestrator, "_execute_task", side_effect=fast_execute):
+            with patch.object(fo.asyncio, "wait_for", side_effect=spy_wait_for):
+                await orchestrator._execute_wave_parallel(
+                    1, [task.id], sample_feature, mock_worktree,
+                )
+
+        assert captured == [orchestrator.task_timeout]
+
+
+# ============================================================================
 # Run Tests
 # ============================================================================
 
