@@ -64,6 +64,7 @@ from guardkit.orchestrator.environment_bootstrap import (
     BootstrapResult,
     BootstrapFailureDetail,
     RequiresPythonMismatch,
+    UvSourcesRequireUvError,
     check_requires_python_precheck,
     format_requires_python_remediation,
 )
@@ -1317,6 +1318,19 @@ class FeatureOrchestrator:
             # Hard-fail from the gate \u2014 propagate so the orchestrator stops
             # before Wave 1. Don't swallow in the generic except below.
             raise
+        except UvSourcesRequireUvError as e:
+            # TASK-FIX-F09A2: pyproject declares [tool.uv.sources] but uv is
+            # missing from PATH. pip can't honour those overrides, so silently
+            # falling back would produce a broken env. Promote to a hard-fail
+            # before any pip work runs. The exception message names the file
+            # and the two actionable fixes (install uv, or remove the block) \u2014
+            # do NOT add the warn-mode hint here: warn-mode is the wrong
+            # escape hatch for an install-system mismatch.
+            logger.error("Bootstrap hard-fail (uv-sources require uv): %s", e)
+            console.print(
+                f"[red]\u2717[/red] Bootstrap hard-fail: uv-sources require uv\n{e}"
+            )
+            raise FeatureOrchestrationError(str(e)) from e
         except Exception as e:
             logger.warning(f"Environment bootstrap failed: {e}")
             console.print(f"[yellow]\u26a0[/yellow] Environment bootstrap failed: {e}")

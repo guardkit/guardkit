@@ -45,6 +45,7 @@ from guardkit.orchestrator.environment_bootstrap import (
     DetectedManifest,
     EnvironmentBootstrapper,
     ProjectEnvironmentDetector,
+    UvSourcesRequireUvError,
 )
 
 
@@ -247,6 +248,202 @@ class TestProjectEnvironmentDetectorPython:
         detector = ProjectEnvironmentDetector(root=tmp_path)
         manifests = detector.detect()
         assert manifests == []
+
+
+# ============================================================================
+# TestPyprojectUvSourcesDetection (TASK-FIX-F09A2)
+# ============================================================================
+
+
+_PYPROJECT_NO_UV = """\
+[project]
+name = "demo"
+version = "0.1.0"
+"""
+
+_PYPROJECT_WITH_UV_SOURCES = """\
+[project]
+name = "demo"
+version = "0.1.0"
+dependencies = ["sibling-pkg"]
+
+[tool.uv.sources]
+sibling-pkg = { path = "../sibling-pkg", editable = true }
+"""
+
+
+@requires_toml
+class TestPyprojectUvSourcesDetection:
+    """
+    TASK-FIX-F09A2 behaviour matrix for pyproject.toml detection.
+
+    Each test pins one row of:
+
+        pyproject [tool.uv.sources] | uv.lock | uv on PATH | install command
+        ----------------------------|---------|------------|------------------
+        absent                      | absent  | any        | pip install -e .  (unchanged)
+        absent                      | present | yes        | uv pip sync uv.lock
+        absent                      | present | no         | pip install -e .  (+ warn)
+        present                     | any     | yes        | uv pip install -e .
+        present                     | any     | no         | UvSourcesRequireUvError
+
+    ``shutil.which`` is monkeypatched to deterministically control the
+    "uv on PATH" axis without depending on the developer's environment.
+    """
+
+    def test_no_uv_sources_no_lock_uses_pip_unchanged(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Row 1: no uv-sources, no uv.lock — preserve the pre-F09A2 behaviour."""
+        (tmp_path / "pyproject.toml").write_text(_PYPROJECT_NO_UV)
+        # Even with uv on PATH, no uv-sources / no lock means plain pip.
+        monkeypatch.setattr(
+            "guardkit.orchestrator.environment_bootstrap.shutil.which",
+            lambda name: "/usr/local/bin/uv" if name == "uv" else None,
+        )
+
+        detector = ProjectEnvironmentDetector(root=tmp_path)
+        manifests = detector.detect()
+
+        assert len(manifests) == 1
+        assert manifests[0].install_command == [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "-e",
+            ".",
+        ]
+
+    def test_uv_lock_present_with_uv_on_path_uses_uv_sync(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Row 2: no uv-sources, uv.lock present, uv on PATH → uv pip sync uv.lock."""
+        (tmp_path / "pyproject.toml").write_text(_PYPROJECT_NO_UV)
+        (tmp_path / "uv.lock").write_text("# uv lock\n")
+        monkeypatch.setattr(
+            "guardkit.orchestrator.environment_bootstrap.shutil.which",
+            lambda name: "/usr/local/bin/uv" if name == "uv" else None,
+        )
+
+        detector = ProjectEnvironmentDetector(root=tmp_path)
+        manifests = detector.detect()
+
+        assert len(manifests) == 1
+        assert manifests[0].install_command == ["uv", "pip", "sync", "uv.lock"]
+
+    def test_uv_lock_present_without_uv_on_path_falls_back_with_warning(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Row 3: no uv-sources, uv.lock present, no uv → pip + warn log."""
+        (tmp_path / "pyproject.toml").write_text(_PYPROJECT_NO_UV)
+        (tmp_path / "uv.lock").write_text("# uv lock\n")
+        monkeypatch.setattr(
+            "guardkit.orchestrator.environment_bootstrap.shutil.which",
+            lambda name: None,
+        )
+
+        detector = ProjectEnvironmentDetector(root=tmp_path)
+        with caplog.at_level(
+            logging.WARNING, logger="guardkit.orchestrator.environment_bootstrap"
+        ):
+            manifests = detector.detect()
+
+        assert len(manifests) == 1
+        assert manifests[0].install_command == [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "-e",
+            ".",
+        ]
+        # Warning should mention uv.lock + the install URL so operators know
+        # how to upgrade to lockfile fidelity.
+        warnings = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("uv.lock" in m and "astral.sh/uv" in m for m in warnings), (
+            f"expected uv.lock warning in {warnings!r}"
+        )
+
+    def test_uv_sources_present_with_uv_on_path_uses_uv_install(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Row 4: [tool.uv.sources] present, uv on PATH → uv pip install -e ."""
+        (tmp_path / "pyproject.toml").write_text(_PYPROJECT_WITH_UV_SOURCES)
+        monkeypatch.setattr(
+            "guardkit.orchestrator.environment_bootstrap.shutil.which",
+            lambda name: "/usr/local/bin/uv" if name == "uv" else None,
+        )
+
+        detector = ProjectEnvironmentDetector(root=tmp_path)
+        manifests = detector.detect()
+
+        assert len(manifests) == 1
+        assert manifests[0].install_command == ["uv", "pip", "install", "-e", "."]
+
+    def test_uv_sources_present_with_lock_and_uv_still_uses_uv_install(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Row 4 variant: uv-sources present + uv.lock present → uv pip install (matrix says 'any')."""
+        (tmp_path / "pyproject.toml").write_text(_PYPROJECT_WITH_UV_SOURCES)
+        (tmp_path / "uv.lock").write_text("# uv lock\n")
+        monkeypatch.setattr(
+            "guardkit.orchestrator.environment_bootstrap.shutil.which",
+            lambda name: "/usr/local/bin/uv" if name == "uv" else None,
+        )
+
+        detector = ProjectEnvironmentDetector(root=tmp_path)
+        manifests = detector.detect()
+
+        # Matrix row 4 ("present | any | yes") wins over row 2 ("absent | present | yes").
+        assert manifests[0].install_command == ["uv", "pip", "install", "-e", "."]
+
+    def test_uv_sources_present_without_uv_hard_fails(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Row 5: [tool.uv.sources] present, uv missing → UvSourcesRequireUvError."""
+        (tmp_path / "pyproject.toml").write_text(_PYPROJECT_WITH_UV_SOURCES)
+        monkeypatch.setattr(
+            "guardkit.orchestrator.environment_bootstrap.shutil.which",
+            lambda name: None,
+        )
+
+        detector = ProjectEnvironmentDetector(root=tmp_path)
+        with pytest.raises(UvSourcesRequireUvError) as exc_info:
+            detector.detect()
+
+        message = str(exc_info.value)
+        # Actionable error: must name the file, must list both fixes.
+        assert "pyproject.toml" in message
+        assert "[tool.uv.sources]" in message
+        assert "astral.sh/uv" in message
+        assert "removing" in message.lower()
+        # Must NOT route operators to the wrong escape hatch.
+        assert "bootstrap_failure_mode" not in message
+        assert "warn" not in message.lower()
+
+    def test_pep668_fallback_inherits_uv_command(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """
+        PEP-668 fallback retry uses the install_command captured at detect()
+        time — for a uv-sources project that means the venv retry runs
+        ``uv pip install -e .`` too, not plain pip. Detection happens once;
+        the bootstrap retry path inherits the result.
+        """
+        (tmp_path / "pyproject.toml").write_text(_PYPROJECT_WITH_UV_SOURCES)
+        monkeypatch.setattr(
+            "guardkit.orchestrator.environment_bootstrap.shutil.which",
+            lambda name: "/usr/local/bin/uv" if name == "uv" else None,
+        )
+
+        detector = ProjectEnvironmentDetector(root=tmp_path)
+        manifests = detector.detect()
+        # The single detected install_command is what _run_install/retry both use.
+        assert manifests[0].install_command == ["uv", "pip", "install", "-e", "."]
 
 
 # ============================================================================

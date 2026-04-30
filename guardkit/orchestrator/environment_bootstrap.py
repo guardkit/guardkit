@@ -36,6 +36,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import shutil
 import subprocess
 import sys
 import time
@@ -382,6 +383,115 @@ class BootstrapResult:
 
 
 # ============================================================================
+# uv-sources detection (TASK-FIX-F09A2)
+# ============================================================================
+#
+# When a Python project's pyproject.toml declares ``[tool.uv.sources]`` (uv's
+# sibling-source override mechanism), plain ``pip install -e .`` does NOT
+# honour those overrides — only ``uv`` itself does. The forge / jarvis layout
+# (a sibling-source pin to a private wheel) is the canonical case. The
+# detection here teaches the bootstrap to prefer the right install command
+# instead of leaving every consuming repo to ship its own preflight script.
+#
+# Behaviour matrix (applied to a directory with pyproject.toml):
+#
+#   pyproject [tool.uv.sources] | uv.lock | uv on PATH | install command
+#   ----------------------------|---------|------------|------------------
+#   absent                      | absent  | any        | pip install -e .  (unchanged)
+#   absent                      | present | yes        | uv pip sync uv.lock
+#   absent                      | present | no         | pip install -e .  (+ warn)
+#   present                     | any     | yes        | uv pip install -e .
+#   present                     | any     | no         | HARD-FAIL (UvSourcesRequireUvError)
+
+
+class UvSourcesRequireUvError(RuntimeError):
+    """
+    Raised at detection time when a pyproject.toml declares
+    ``[tool.uv.sources]`` but ``uv`` is not on PATH.
+
+    Plain pip cannot honour the sibling-source overrides, so installing would
+    silently produce a broken environment. The orchestrator catches this and
+    surfaces it as a hard-fail before any pip work runs.
+    """
+
+
+def _uv_on_path() -> bool:
+    """Return True when ``uv`` is resolvable via PATH."""
+    return shutil.which("uv") is not None
+
+
+def _pyproject_has_uv_sources(pyproject_path: Path) -> bool:
+    """
+    Return True when ``pyproject_path`` declares a ``[tool.uv.sources]`` table.
+
+    Parse failures are swallowed (returns False) — the existing
+    ``_python_pyproject_is_complete`` helper takes the same conservative
+    stance, and a malformed pyproject is pip's problem to surface, not
+    detection's.
+    """
+    try:
+        try:
+            import tomllib  # Python 3.11+
+        except ImportError:
+            import tomli as tomllib  # type: ignore[import,no-redef]
+        data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.debug(
+            "Could not parse %s for uv-sources detection: %s", pyproject_path, exc
+        )
+        return False
+    sources = data.get("tool", {}).get("uv", {}).get("sources")
+    return isinstance(sources, dict) and bool(sources)
+
+
+def _resolve_python_pyproject_install_command(
+    directory: Path, pyproject_path: Path
+) -> List[str]:
+    """
+    Choose the install command for a Python ``pyproject.toml`` manifest.
+
+    Implements the matrix at the top of this section. The ``uv.lock`` /
+    no-uv-on-path row emits a warning so operators know they're falling
+    back to pip when a uv lockfile was available.
+
+    Raises
+    ------
+    UvSourcesRequireUvError
+        When pyproject declares ``[tool.uv.sources]`` and ``uv`` is missing
+        from PATH. The error message names the file and lists the two
+        actionable fixes (install uv, or remove the block).
+    """
+    has_uv_sources = _pyproject_has_uv_sources(pyproject_path)
+    has_uv_lock = (directory / "uv.lock").exists()
+    uv_available = _uv_on_path()
+
+    if has_uv_sources and not uv_available:
+        raise UvSourcesRequireUvError(
+            f"{pyproject_path} declares [tool.uv.sources] but `uv` is not on PATH. "
+            "pip cannot honour these sibling-source overrides — installing "
+            "would silently produce a broken environment. "
+            "Fix by installing uv (https://astral.sh/uv) or removing the "
+            "[tool.uv.sources] block from pyproject.toml."
+        )
+
+    if has_uv_sources:
+        return ["uv", "pip", "install", "-e", "."]
+
+    if has_uv_lock and uv_available:
+        return ["uv", "pip", "sync", "uv.lock"]
+
+    if has_uv_lock and not uv_available:
+        logger.warning(
+            "%s/uv.lock present but `uv` is not on PATH — falling back to "
+            "`pip install -e .`. Install uv (https://astral.sh/uv) for full "
+            "lockfile fidelity.",
+            directory,
+        )
+
+    return [sys.executable, "-m", "pip", "install", "-e", "."]
+
+
+# ============================================================================
 # ProjectEnvironmentDetector
 # ============================================================================
 
@@ -549,12 +659,16 @@ class ProjectEnvironmentDetector:
             locked_stacks.add("python")
 
         if (directory / "pyproject.toml").exists() and "python" not in locked_stacks:
+            pyproject_path = (directory / "pyproject.toml").resolve()
+            install_command = _resolve_python_pyproject_install_command(
+                directory, pyproject_path
+            )
             results.append(
                 DetectedManifest(
-                    path=(directory / "pyproject.toml").resolve(),
+                    path=pyproject_path,
                     stack="python",
                     is_lock_file=False,
-                    install_command=[sys.executable, "-m", "pip", "install", "-e", "."],
+                    install_command=install_command,
                 )
             )
             locked_stacks.add("python")  # prevent requirements.txt from also running
@@ -1522,6 +1636,7 @@ __all__ = [
     "ProjectEnvironmentDetector",
     "EnvironmentBootstrapper",
     "RequiresPythonMismatch",
+    "UvSourcesRequireUvError",
     "check_requires_python_precheck",
     "format_requires_python_remediation",
 ]
