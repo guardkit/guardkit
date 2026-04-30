@@ -1,10 +1,12 @@
 ---
 id: TASK-FIX-A7B2
 title: Tighten conditional-approval rule to distinguish source-file contention from infra contention
-status: backlog
+status: completed
 task_type: bugfix
 created: 2026-04-30T00:00:00Z
-updated: 2026-04-30T00:00:00Z
+updated: 2026-04-30T20:30:00Z
+completed: 2026-04-30T20:30:00Z
+completed_location: tasks/completed/TASK-FIX-A7B2/
 priority: high
 complexity: 6
 dependencies: []
@@ -18,9 +20,13 @@ related_tasks:
 related_features: [autobuild, coach-validator]
 tags: [autobuild, coach-validator, conditional-approval, parallel-contention, false-positive]
 test_results:
-  status: pending
+  status: passed
   coverage: null
-  last_run: null
+  last_run: 2026-04-30T20:20:00Z
+  details:
+    new_unit_tests: 19      # tests/unit/test_coach_source_file_contention.py
+    direct_regression: 53   # coach_parallel_isolation + parallel_wave_isolation + coach path + grace period
+    feature_orchestrator: 134
 ---
 
 # Task: Tighten conditional-approval rule to distinguish source-file contention from infra contention
@@ -101,3 +107,46 @@ report for the failure timeline.
   filed alongside this one). The two tasks are complementary: A7B3
   prevents the conflict from being scheduled; this task ensures that when
   it does happen, the false-conditional-approval doesn't mask it.
+
+## Implementation Summary
+
+Threaded a wave-level shared file-edit map (`Dict[task_id, frozenset[str]]`
+plus a `threading.Lock`) from `feature_orchestrator._execute_wave_parallel`
+through `AutoBuildOrchestrator` (populated post-Player) to a new
+`peer_changed_files` constructor kwarg on `CoachValidator`. The Coach's
+new `_detect_source_file_contention()` helper intersects this task's
+edits against each peer's edits; when overlap is non-empty, the
+`parallel_contention` and parallel-`code` branches in the
+conditional-approval expression at `coach_validator.py:851-874` are
+gated out — Coach returns feedback whose description names the
+overlapping files, and the existing Player-Coach loop drives the
+serialised retry naturally (peers complete, wave shrinks, contention
+clears).
+
+The TASK-ABFIX-005 isolation-snapshot path is untouched; the new check
+is an additional constraint, not a new approval path. All six AC are
+satisfied by the implementation. Evidence: 19 new unit tests in
+`tests/unit/test_coach_source_file_contention.py` (including AC-005's
+synthetic two-task wave editing the same `features/foo/test_foo.py`),
+and 53 directly-related regression tests still green.
+
+## Approach
+
+Surgical, additive change. Three files touched in the orchestrator
+tree, one new test file, two minor test-fixture updates for the new
+ctor kwarg and the seeded `_wave_changed_files`/`_wave_files_lock`
+attributes. The lock is per-wave; readers snapshot under the lock so
+Coach gets a stable view without holding the lock during validation.
+
+## Notes
+
+- Lessons: the FEAT-70A4 failure mode in study-tutor demonstrated that
+  TASK-ABFIX-005's isolation snapshot is fundamentally unable to
+  recover from real source-file contention because the snapshot runs
+  AFTER both peers have committed inconsistent state to the shared
+  branch. A pre-commit overlap check at the orchestrator/Coach seam is
+  the right layer — it sits between the Player's write and Coach's
+  decision, exactly where the wave-state truth lives.
+- A complementary plan-time check (TASK-FIX-A7B3) would prevent the
+  conflict from being scheduled in the first place; the two tasks are
+  layered defences.

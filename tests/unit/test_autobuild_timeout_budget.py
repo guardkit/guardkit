@@ -122,6 +122,9 @@ def _make_orchestrator(
     orchestrator._cumulative_source_files = set()
     orchestrator._cumulative_requirements_addressed = set()
     orchestrator.wave_size = 1
+    # TASK-FIX-A7B2: wave-shared file-edit map (None = single-task path)
+    orchestrator._wave_changed_files = None
+    orchestrator._wave_files_lock = None
     orchestrator._turn_history = []
     orchestrator._feature_id = None
     orchestrator._max_criteria_passed = 0

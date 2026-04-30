@@ -434,6 +434,7 @@ class CoachValidator:
         matching_strategy: str = "auto",
         wave_size: int = 1,
         turn: int = 1,
+        peer_changed_files: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize CoachValidator.
@@ -465,6 +466,16 @@ class CoachValidator:
             When >1, the Coach runs independent tests in an isolated temp directory
             to prevent spurious failures from concurrent worktree mutations, and
             applies more lenient failure classification for contention-related errors.
+        peer_changed_files : Optional[Dict[str, Iterable[str]]]
+            Snapshot of files edited by other in-flight tasks in the same parallel
+            wave, keyed by peer task id. When this Coach classifies a failure as
+            ``parallel_contention`` (or as ``code`` in a parallel wave), it checks
+            whether this task's own edits overlap with any peer's edits. Overlap
+            means the failure is real source-file contention, not transient infra
+            contention, so the conditional approval rule from TASK-ABFIX-005 must
+            NOT fire — instead Coach returns feedback and the existing
+            Player-Coach loop retries on the next turn (by which point peers have
+            completed and the wave is naturally serialised). See TASK-FIX-A7B2.
         """
         self.worktree_path = Path(worktree_path)
         self.test_command = test_command
@@ -475,6 +486,19 @@ class CoachValidator:
         # TASK-DIAG-F4A2: Turn number for sdk_debug preservation paths.
         # Default 1 keeps backwards-compat for callers that don't pass it.
         self._turn = max(1, int(turn))
+        # TASK-FIX-A7B2: Wave-peer file-edit snapshot for source-file contention
+        # detection. Normalised to ``Dict[str, frozenset[str]]`` so the overlap
+        # check is a cheap set intersection.
+        self._peer_changed_files: Dict[str, frozenset] = {}
+        if peer_changed_files:
+            for peer_id, files in peer_changed_files.items():
+                if not peer_id or peer_id == self.task_id:
+                    continue
+                if not files:
+                    continue
+                self._peer_changed_files[peer_id] = frozenset(
+                    str(f) for f in files if f
+                )
         # Resolve matching strategy: constructor arg > env var > "auto"
         _VALID_STRATEGIES = ("auto", "text", "semantic")
         env_strategy = os.environ.get("GUARDKIT_MATCHING_STRATEGY", "").lower()
@@ -500,6 +524,56 @@ class CoachValidator:
     def is_parallel(self) -> bool:
         """Return True when this Coach is running in a parallel wave (wave_size > 1)."""
         return self.wave_size > 1
+
+    def _detect_source_file_contention(
+        self,
+        task_work_results: Dict[str, Any],
+    ) -> Dict[str, frozenset]:
+        """Detect source-file contention with in-flight peer tasks (TASK-FIX-A7B2).
+
+        Returns a mapping ``peer_task_id -> frozenset[overlapping_file]`` for
+        every peer that edited at least one file this task also edited within
+        the same parallel wave. An empty mapping means there is no source-file
+        contention — the failure is either genuinely transient (e.g. infra
+        flakiness, partial __init__.py write race) or unrelated to peer edits,
+        so the existing TASK-ABFIX-005 conditional approval path remains safe.
+
+        A non-empty mapping means the parallel_contention is real source-file
+        contention (e.g. two tasks writing conflicting step definitions to a
+        shared BDD glue file). The TASK-ABFIX-005 isolation snapshot cannot
+        defend against this case because the snapshot captures the
+        already-corrupted shared file. Conditional approval would mask real
+        correctness damage, so the caller must fall through to feedback and
+        let the existing Player-Coach retry machinery serialise the next
+        attempt (by which point peers have completed and the wave is
+        effectively single-tasked).
+
+        Parameters
+        ----------
+        task_work_results : Dict[str, Any]
+            Player's task_work_results.json payload. Reads ``files_created``
+            and ``files_modified`` to determine this task's edit set.
+
+        Returns
+        -------
+        Dict[str, frozenset[str]]
+            Map from peer task id to set of overlapping file paths. Empty when
+            no peer edits overlap, when this task has no recorded edits, or
+            when no peer snapshot was supplied.
+        """
+        if not self._peer_changed_files:
+            return {}
+        own = set(task_work_results.get("files_created", []) or [])
+        own.update(task_work_results.get("files_modified", []) or [])
+        if not own:
+            return {}
+        own_normalised = {str(f) for f in own if f}
+        overlaps: Dict[str, frozenset] = {}
+        for peer_id, peer_files in self._peer_changed_files.items():
+            shared = peer_files & own_normalised
+            if shared:
+                overlaps[peer_id] = frozenset(shared)
+        return overlaps
 
     def _get_coach_test_model(self) -> Optional[str]:
         """Return the model for Coach SDK test invocations, or None to use CLI default.
@@ -848,6 +922,32 @@ class CoachValidator:
                 and self._bootstrap_likely_broken(task)
             )
 
+            # TASK-FIX-A7B2: Detect source-file contention with peer wave tasks.
+            # The TASK-ABFIX-005 conditional approval for parallel_contention /
+            # parallel-code failures assumes the contention is transient
+            # infrastructure (e.g. partial __init__.py write race) that a retry
+            # in isolation can clear. When two parallel tasks edit the SAME
+            # source file (e.g. shared BDD glue), the contention is real
+            # source-level damage — both tasks committed inconsistent state to
+            # the shared branch BEFORE either snapshot was taken, so the
+            # isolation snapshot captures the already-corrupted file. Granting
+            # conditional approval in that case masks the corruption and the
+            # failure surfaces only at wave-2 verification.
+            #
+            # When overlap is detected, fall through to feedback so the
+            # existing Player-Coach retry machinery serialises the next
+            # attempt — by which point peers have completed and the wave is
+            # effectively single-tasked, eliminating the contention.
+            source_file_contention_overlaps: Dict[str, frozenset] = {}
+            is_parallel_contention_class = (
+                failure_class == "parallel_contention"
+                or (failure_class == "code" and self.is_parallel)
+            )
+            if is_parallel_contention_class and self._peer_changed_files:
+                source_file_contention_overlaps = (
+                    self._detect_source_file_contention(task_work_results)
+                )
+
             conditional_approval = (
                 failure_class == "infrastructure"
                 and failure_confidence == "high"
@@ -862,15 +962,19 @@ class CoachValidator:
                 # failures in a parallel wave when all Player quality gates passed.
                 # "parallel_contention" is set by _classify_test_failure() when
                 # wave_size > 1 and the failure looks like it could be contention.
+                # TASK-FIX-A7B2: Only when no source-file overlap with peers.
                 failure_class == "parallel_contention"
                 and gates_status.all_gates_passed
+                and not source_file_contention_overlaps
             ) or (
                 # TASK-ABFIX-005: Also grant conditional approval for any "code"
                 # failure in a parallel wave (recommendation 3b from TASK-REV-A17A).
                 # The failure might be a false positive caused by concurrent mutations.
+                # TASK-FIX-A7B2: Only when no source-file overlap with peers.
                 failure_class == "code"
                 and self.is_parallel
                 and gates_status.all_gates_passed
+                and not source_file_contention_overlaps
             ) or environment_conditional_approval
 
             if conditional_approval:
@@ -918,6 +1022,48 @@ class CoachValidator:
                     rationale = (
                         "Tests failed because psycopg2 was imported in an asyncpg "
                         "project"
+                    )
+                elif (
+                    is_parallel_contention_class
+                    and source_file_contention_overlaps
+                ):
+                    # TASK-FIX-A7B2: Source-file contention with at least one
+                    # peer in the same wave. Name the overlapping files so the
+                    # Player can resolve the conflict on retry. The retry will
+                    # be naturally serialised — by the time the Player runs
+                    # its next turn, peers have completed and the wave is
+                    # effectively single-tasked.
+                    error_output = (test_result.test_output_summary or "").strip()
+                    if len(error_output) > 500:
+                        error_output = error_output[:497] + "..."
+                    overlap_lines = []
+                    for peer_id in sorted(source_file_contention_overlaps):
+                        files = sorted(source_file_contention_overlaps[peer_id])
+                        overlap_lines.append(
+                            f"  - {peer_id}: {', '.join(files)}"
+                        )
+                    overlap_block = "\n".join(overlap_lines)
+                    base = (
+                        f"Tests failed due to source-file contention with peer "
+                        f"task(s) in this parallel wave (wave_size={self.wave_size}). "
+                        f"Both this task and the peer(s) below edited the same "
+                        f"source file(s); the resulting shared-branch state is "
+                        f"inconsistent and an isolation-snapshot retry cannot "
+                        f"recover it. Resolve the conflict on the next turn — "
+                        f"by then the peer(s) will have completed and the wave "
+                        f"is effectively serialised.\n"
+                        f"Overlapping files by peer:\n{overlap_block}\n"
+                        f"Test command: {test_result.test_command}."
+                    )
+                    description = (
+                        f"{base} Error detail: {error_output}"
+                        if error_output
+                        else base
+                    )
+                    rationale = (
+                        "Tests failed due to source-file contention with peer "
+                        "wave tasks (real correctness damage, not transient "
+                        "infra contention) — see TASK-FIX-A7B2"
                     )
                 elif failure_class == "parallel_contention":
                     error_output = (test_result.test_output_summary or "").strip()

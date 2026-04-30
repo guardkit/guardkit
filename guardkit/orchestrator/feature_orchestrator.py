@@ -2016,6 +2016,12 @@ The detailed specifications are in the task markdown file.
         cancellation_events: Dict[str, threading.Event] = {}  # Per-task cancellation (TASK-ASF-007)
         timeout_events: Dict[str, threading.Event] = {}  # Per-task feature-level timeout (TASK-ABFIX-006)
         per_task_timeouts: Dict[str, int] = {}  # Resolved per-task timeout (TASK-ATR-001)
+        # TASK-FIX-A7B2: Wave-shared map of per-task file edits, populated as
+        # each Player finishes. Coach reads peer entries to detect source-file
+        # contention and refuse the TASK-ABFIX-005 conditional approval when
+        # the contention is real source-file damage (not transient infra).
+        wave_changed_files: Dict[str, Any] = {}
+        wave_files_lock: threading.Lock = threading.Lock()
 
         # Track wave start time for per-task budget propagation (TASK-ABFIX-004)
         wave_start_time = time.monotonic()
@@ -2117,6 +2123,8 @@ The detailed specifications are in the task markdown file.
                         time_budget_seconds=task_budget,
                         wave_size=len(task_ids),
                         effective_task_timeout=effective_task_timeout,
+                        wave_changed_files=wave_changed_files,  # TASK-FIX-A7B2
+                        wave_files_lock=wave_files_lock,  # TASK-FIX-A7B2
                     ),
                     timeout=effective_task_timeout,
                 )
@@ -2652,6 +2660,8 @@ The detailed specifications are in the task markdown file.
         time_budget_seconds: Optional[float] = None,
         wave_size: int = 1,
         effective_task_timeout: Optional[int] = None,
+        wave_changed_files: Optional[Dict[str, Any]] = None,
+        wave_files_lock: Optional[threading.Lock] = None,
     ) -> TaskExecutionResult:
         """
         Execute single task using AutoBuildOrchestrator with shared worktree.
@@ -2737,6 +2747,8 @@ The detailed specifications are in the task markdown file.
                 emitter=self._emitter,  # Forward emitter to task orchestrator (TASK-INST-013)
                 progress_logger=progress_logger,  # TASK-FIX-OBS2: Per-task progress logging
                 venv_python=self._bootstrap_venv_python,  # TASK-FIX-7A05
+                wave_changed_files=wave_changed_files,  # TASK-FIX-A7B2
+                wave_files_lock=wave_files_lock,  # TASK-FIX-A7B2
             )
 
             # Execute task orchestration

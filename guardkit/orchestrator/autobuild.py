@@ -911,6 +911,8 @@ class AutoBuildOrchestrator:
         emitter: Optional[Any] = None,
         progress_logger: Optional[Any] = None,
         venv_python: Optional[str] = None,
+        wave_changed_files: Optional[Dict[str, Any]] = None,
+        wave_files_lock: Optional[threading.Lock] = None,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -1072,6 +1074,14 @@ class AutoBuildOrchestrator:
         # phase consumes wall (TASK-ABSR-FRSH).
         self._loop_start_time: Optional[float] = None
         self.wave_size: int = max(1, int(wave_size))  # Parallel wave context (TASK-ABFIX-005)
+        # TASK-FIX-A7B2: Wave-shared map of per-task file edits, populated as
+        # each Player finishes. Coach reads peer entries (everyone but self) to
+        # detect source-file contention and refuse the TASK-ABFIX-005
+        # conditional approval when the contention is real (not transient infra).
+        # Both default to None for single-task use; FeatureOrchestrator supplies
+        # them in parallel waves.
+        self._wave_changed_files: Optional[Dict[str, Any]] = wave_changed_files
+        self._wave_files_lock: Optional[threading.Lock] = wave_files_lock
         # Per-turn context status tracking for progress display (TASK-FIX-GCW5)
         self._last_player_context_status: Optional[ContextStatus] = None
         self._last_coach_context_status: Optional[ContextStatus] = None
@@ -2682,6 +2692,22 @@ class AutoBuildOrchestrator:
             )
             self._cumulative_source_files.update(current_files)
 
+            # TASK-FIX-A7B2: Publish this task's edits to the wave-shared map
+            # so peer Coaches in this parallel wave can detect source-file
+            # contention. Update under lock to keep the snapshot stable for
+            # readers. Each turn overwrites the prior entry — Coach sees the
+            # latest cumulative edit set, which is the right granularity for
+            # contention detection (any overlap, ever, between two in-flight
+            # tasks in the same wave is real source-file contention).
+            if (
+                self._wave_changed_files is not None
+                and self._wave_files_lock is not None
+            ):
+                with self._wave_files_lock:
+                    self._wave_changed_files[task_id] = frozenset(
+                        str(f) for f in current_files if f
+                    )
+
             current_addressed = set(
                 player_result.report.get("requirements_addressed", [])
             )
@@ -3014,6 +3040,9 @@ class AutoBuildOrchestrator:
         self._progress_display.start_turn(turn, "Coach Validation")
 
         logger.debug(f"Invoking Coach for turn {turn}")
+        # TASK-FIX-A7B2: Snapshot peer edits for source-file contention check.
+        peer_changed_files_snapshot = self._snapshot_peer_changed_files(task_id)
+
         coach_result = self._invoke_coach_safely(
             task_id=task_id,
             turn=turn,
@@ -3027,6 +3056,7 @@ class AutoBuildOrchestrator:
             consumer_context=consumer_context,
             remaining_budget=coach_remaining_budget,
             wave_size=self.wave_size,
+            peer_changed_files=peer_changed_files_snapshot,
         )
         # Snapshot context status after coach invocation (TASK-FIX-GCW5)
         coach_context_status = self._last_coach_context_status
@@ -4845,6 +4875,30 @@ class AutoBuildOrchestrator:
                 error=f"Recoverable: {str(e)}",
             )
 
+    def _snapshot_peer_changed_files(
+        self, task_id: str
+    ) -> Optional[Dict[str, frozenset]]:
+        """Return a stable snapshot of peer-task file edits in this wave.
+
+        TASK-FIX-A7B2. Returns ``None`` when no wave-shared map is configured
+        (single-task path) so the Coach knows there is no peer information to
+        evaluate. Returns an empty dict when configured but no peer has
+        published yet (this is the first task to finish in the wave). Returns
+        a dict of ``peer_task_id -> frozenset[file]`` otherwise. The current
+        task's own entry is excluded.
+        """
+        if (
+            self._wave_changed_files is None
+            or self._wave_files_lock is None
+        ):
+            return None
+        with self._wave_files_lock:
+            return {
+                peer_id: files
+                for peer_id, files in self._wave_changed_files.items()
+                if peer_id != task_id
+            }
+
     def _invoke_coach_safely(
         self,
         task_id: str,
@@ -4859,6 +4913,7 @@ class AutoBuildOrchestrator:
         consumer_context: Optional[list] = None,
         remaining_budget: Optional[float] = None,
         wave_size: int = 1,
+        peer_changed_files: Optional[Dict[str, Any]] = None,
     ) -> AgentInvocationResult:
         """
         Invoke Coach agent with comprehensive error handling.
@@ -5005,6 +5060,7 @@ class AutoBuildOrchestrator:
                 matching_strategy=matching_strategy,
                 wave_size=wave_size,
                 turn=turn,
+                peer_changed_files=peer_changed_files,  # TASK-FIX-A7B2
             )
             validation_result = validator.validate(
                 task_id=task_id,
