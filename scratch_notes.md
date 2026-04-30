@@ -257,3 +257,78 @@ Next step to run:
 
 /system-arch --context docs/research/pattern-layer-rendering/SCOPE-system-arch-pattern-layer-rendering.md
 The scope doc explicitly requests design only (no code, no feature-plan work in that session). Implementation comes back through /feature-plan once the Architect's outputs (DESIGN-PAT-RENDER-001-architecture.md + ADRs) are in hand — likely split across three feature-plans: the library, the manifest schema + migration, and the guardkit render CLI, with FEAT-1A5E continuing on its own track sharing the same primitive.
+
+
+
+
+
+
+In the guardkit repo — 5 upstream tasks (high → low priority)
+Task	Priority	What
+TASK-FIX-A7B1	high	smoke_gates: honour bootstrap venv interpreter
+TASK-FIX-A7B2	high	tighten parallel_contention conditional approval (detect source-file conflicts)
+TASK-FIX-A7B3	medium	/feature-plan: warn/auto-serialise on wave-internal source overlap
+TASK-FIX-A7B4	medium	Coach should BLOCK (not warn) on planned-but-unimplemented seam tests
+TASK-FIX-A7B5	low	investigate Claude Agent SDK message-reader transport failures
+All five live at /home/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/TASK-FIX-A7B*.md, follow the local convention (external_reference block, task_type: bugfix, AC-NNN numbering), and cite verified file:line refs in active guardkit source. No git operations performed — they're sitting in the repo's own backlog ready for the guardkit team to pick up.
+
+
+
+
+
+
+
+Once the forge-side regression check (re-run guardkit autobuild feature FEAT-FORGE-009 --verbose --fresh without       
+  .guardkit/preflight.sh) goes green, the forge cleanup task to remove .guardkit/preflight.sh and the runbook pre-step
+  note can be filed — happy to /schedule an agent in 2 weeks to remind you to verify and open that PR if you want.       
+                                                                  
+✻ Cooked for 1m 39s                 
+                                                                                          
+※ recap: You ran /task-work TASK-FIX-F09A2 to teach GuardKit's bootstrap to honour [tool.uv.sources] and prefer uv when  
+  available. Implementation is committed (c23df11c) and the task sits in tasks/in_review. Next: re-run guardkit autobuild
+   feature FEAT-FORGE-009 against forge without the preflight script to confirm bootstrap succeeds. (disable recaps in   
+  /config)                                                                                                               
+                              
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Summary                                                                                                                
+                                                                                                                         
+  - TASK-FIX-A7B5 → COMPLETED. File at tasks/completed/TASK-FIX-A7B5/TASK-FIX-A7B5.md.                                   
+  - AC-004 shipped: upstream-logger dedup filter (first-match WARNING, subsequent DEBUG, idempotent install on           
+  orchestrator package import).                                                                                          
+  - AC-001/002/003 deferred to TASK-FIX-A7B7 (tasks/backlog/) with depends_on: [TASK-REV-COSE].
+  - Investigation note: docs/reviews/TASK-FIX-A7B5-sdk-message-reader-investigation.md.                                  
+  - 8 unit tests passing in tests/unit/test_sdk_message_reader_dedup.py.                                                 
+  - Graphiti episodes captured: task outcome (guardkit__task_outcomes) + reusable architectural decision about filtering 
+  upstream-logger noise at the consumer boundary (guardkit__project_decisions).                                          
+  - Commit: dd77179e fix: dedup upstream SDK message-reader transport-noise log line (TASK-FIX-A7B5) — 7 files, 494      
+  insertions, 94 deletions.                                                                                              
+                                                                  
+  Want me to /schedule an agent in ~3 weeks to check whether TASK-REV-COSE has landed and unblock TASK-FIX-A7B7? 

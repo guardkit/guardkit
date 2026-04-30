@@ -61,6 +61,18 @@ try:
 except ImportError:
     SMOKE_GATES_NUDGE_AVAILABLE = False
 
+try:
+    from installer.core.commands.lib.wave_overlap_detector import (
+        compute_wave_overlaps,
+        format_overlap_warning_summary,
+        infer_task_files,
+        serialize_overlapping_groups,
+        warnings_to_dict,
+    )
+    WAVE_OVERLAP_DETECTOR_AVAILABLE = True
+except ImportError:
+    WAVE_OVERLAP_DETECTOR_AVAILABLE = False
+
 
 @dataclass
 class TaskSpec:
@@ -498,6 +510,15 @@ def main():
              "Globs for {task_id}*.md in the feature directory."
     )
 
+    parser.add_argument(
+        "--auto-serialise-overlap",
+        action="store_true",
+        help="When tasks within a parallel-execution wave appear to edit overlapping "
+             "files (inferred from task descriptions and ACs), split the offending "
+             "wave into a sequential follow-on entry instead of warning. "
+             "Default: warn-only. See TASK-FIX-A7B3."
+    )
+
     args = parser.parse_args()
 
     # --lenient overrides --strict default
@@ -512,6 +533,12 @@ def main():
     # Linter input is plan-wide, so we accumulate across both sources.
     linter_tasks: List[Dict[str, object]] = []
 
+    # Collect per-task prose for the wave-overlap detector (TASK-FIX-A7B3).
+    # The detector's inference reads name + description + ACs to infer
+    # source-file edit sets. The --task string form carries name only, so
+    # those tasks will only contribute paths the user typed into the title.
+    overlap_tasks: List[Dict[str, object]] = []
+
     if args.tasks:
         for task_str in args.tasks:
             spec = parse_task_string(
@@ -521,6 +548,12 @@ def main():
             )
             task_specs.append(spec)
             linter_tasks.append({"id": spec.id, "acceptance_criteria": []})
+            overlap_tasks.append({
+                "id": spec.id,
+                "name": spec.name,
+                "description": "",
+                "acceptance_criteria": [],
+            })
 
     if args.tasks_json:
         # Try to parse as JSON string or file
@@ -540,6 +573,12 @@ def main():
                 mode = "direct" if complexity <= 3 and ac_count < 2 else "task-work"
                 linter_tasks.append({
                     "id": task_id,
+                    "acceptance_criteria": acceptance_criteria,
+                })
+                overlap_tasks.append({
+                    "id": task_id,
+                    "name": task_name,
+                    "description": t.get("description", ""),
                     "acceptance_criteria": acceptance_criteria,
                 })
                 # Derive file_path using centralized helper (includes task name in filename)
@@ -621,6 +660,26 @@ def main():
 
     # Build parallel groups
     parallel_groups = build_parallel_groups(task_specs)
+
+    # Wave-overlap detection (TASK-FIX-A7B3) — imperative producer callsite.
+    # Runs after parallel_groups is computed so it sees the actual wave layout
+    # the YAML will carry. Default behaviour is warn-only at the end of stdout
+    # (alongside the AC linter / R2 / R3 banners). With
+    # --auto-serialise-overlap, the planner rewrites the offending wave into
+    # a sequential follow-on entry and notes the split.
+    overlap_warnings: List = []
+    auto_serialise_notes: List[str] = []
+    if WAVE_OVERLAP_DETECTOR_AVAILABLE:
+        task_files = {
+            t["id"]: infer_task_files(t)
+            for t in overlap_tasks
+            if t.get("id")
+        }
+        overlap_warnings = compute_wave_overlaps(parallel_groups, task_files)
+        if overlap_warnings and args.auto_serialise_overlap:
+            parallel_groups, auto_serialise_notes = serialize_overlapping_groups(
+                parallel_groups, overlap_warnings
+            )
 
     # Calculate totals
     total_minutes = sum(t.estimated_minutes for t in task_specs)
@@ -727,6 +786,21 @@ def main():
         warnings = lint_plan_warnings(linter_tasks)
         print()
         print(format_warning_summary(warnings))
+
+    # Wave-overlap warning banner — imperative callsite for TASK-FIX-A7B3.
+    # Always fires when overlaps were detected above; mode (warn vs auto-
+    # serialise) is reflected in the banner copy. Auto-serialise also prints
+    # the per-wave split notes so the user can see which tasks moved.
+    if WAVE_OVERLAP_DETECTOR_AVAILABLE and not args.quiet and overlap_warnings:
+        print()
+        print(format_overlap_warning_summary(
+            overlap_warnings,
+            auto_serialise=args.auto_serialise_overlap,
+        ))
+        if auto_serialise_notes:
+            print()
+            for note in auto_serialise_notes:
+                print(f"   {note}")
 
     # R2 BDD-oracle activation nudge — imperative callsite (TASK-FIX-RWOP1.2).
     # Fires when `features/*.feature` exists with zero @task:<TASK-ID> tags, so
