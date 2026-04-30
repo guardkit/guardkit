@@ -70,6 +70,63 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# TASK-FIX-A7B4: Markers that satisfy a `## Seam Tests` block in a task
+# description. Filename-based detection (the soft gate at
+# ``_check_seam_test_recommendation``) tolerates "integration" too, but the
+# blocking gate requires explicit marker decoration so a plain integration test
+# can't silently satisfy a contract obligation. Match the established marker
+# precedent: `seam`, `contract`, `boundary`.
+_SEAM_PYTEST_MARKERS = ("seam", "contract", "boundary")
+
+# Header pattern: any markdown header level (`#` to `######`) whose title is
+# exactly "Seam Tests" (case-insensitive, trailing whitespace allowed). The
+# closing `$` plus `re.MULTILINE` matches the header line in isolation so we
+# don't false-trigger on prose like "## Seam Tests are useful because…".
+_SEAM_TESTS_HEADER_RE = re.compile(
+    r"^\s*#{1,6}\s+seam\s+tests\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _extract_seam_tests_section(description: Optional[str]) -> Optional[str]:
+    """Extract the body of a ``## Seam Tests`` markdown section.
+
+    Returns the section body (everything between the ``## Seam Tests`` header
+    and the next sibling-or-higher header, or EOF) when the section exists
+    AND has non-whitespace content. Returns ``None`` for any of:
+
+    * ``description`` is empty / None
+    * No ``Seam Tests`` header is present
+    * The header exists but the body is whitespace-only (empty stub block)
+
+    The "non-empty body" rule is what TASK-FIX-A7B4 AC-001 calls "precise"
+    detection: a developer who wants to acknowledge "no seam tests for this
+    task" can leave the section empty (or omit it) without tripping the gate.
+    """
+    if not description:
+        return None
+    match = _SEAM_TESTS_HEADER_RE.search(description)
+    if not match:
+        return None
+    # Find the level of the matched header so we know what closes the section.
+    header_line = match.group(0)
+    header_level = len(header_line.lstrip().split(" ", 1)[0])  # count of '#'
+
+    # Body starts after the header line.
+    body_start = match.end()
+    rest = description[body_start:]
+    # The section closes at the next header of equal-or-higher level.
+    closing_re = re.compile(
+        rf"^\s*#{{1,{header_level}}}\s+\S",
+        re.MULTILINE,
+    )
+    close_match = closing_re.search(rest)
+    body = rest[: close_match.start()] if close_match else rest
+    if not body.strip():
+        return None
+    return body
+
+
 # Stopwords for keyword extraction in fuzzy text matching
 STOPWORDS = {
     "the", "and", "is", "or", "a", "an", "for", "with", "to", "in", "of",
@@ -1220,6 +1277,36 @@ class CoachValidator:
                     "BDD scenarios failed: "
                     f"{task_work_results.get('bdd_results', {}).get('scenarios_failed', 0)} "
                     "scenario(s) reported assertion failure during pytest-bdd execution."
+                ),
+                context_used=context,
+            )
+
+        # 5.8. Seam tests blocking gate (TASK-FIX-A7B4).
+        # Distinct from the soft `_check_seam_test_recommendation` above:
+        # this gate fires only when the task description itself contains a
+        # non-empty `## Seam Tests` section AND the Player wrote zero tests
+        # carrying @pytest.mark.{seam,contract,boundary}. Detected before
+        # approval, after the BDD blocker, so the rest of this turn's gates
+        # have already filtered out lower-quality failure modes.
+        seam_blocking = self._check_seam_tests_implemented(task, task_work_results)
+        if seam_blocking:
+            logger.info(
+                f"Coach rejected {task_id} turn {turn}: "
+                "task description specifies seam tests but Player wrote none"
+            )
+            return self._feedback_result(
+                task_id=task_id,
+                turn=turn,
+                quality_gates=gates_status,
+                independent_tests=test_result,
+                requirements=requirements,
+                issues=advisory_issues + seam_blocking,
+                rationale=(
+                    "Seam tests gate: task description specifies a "
+                    "non-empty `## Seam Tests` section but no "
+                    "@pytest.mark.{seam,contract,boundary} tests were "
+                    "written. Implement the seam test stub before "
+                    "resubmitting."
                 ),
                 context_used=context,
             )
@@ -4386,6 +4473,121 @@ class CoachValidator:
             }]
 
         return []
+
+    def _check_seam_tests_implemented(
+        self,
+        task: Dict[str, Any],
+        task_work_results: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """TASK-FIX-A7B4: Block when ``## Seam Tests`` was specified but unimplemented.
+
+        Distinct from ``_check_seam_test_recommendation`` (a soft, profile-driven
+        suggestion). This gate is explicit-contract-driven:
+
+        * The task description carries an authoritative ``## Seam Tests``
+          markdown block with code stubs (typically authored by ``/task-create``
+          or ``/feature-plan`` for cross-task contracts).
+        * The Player is expected to materialise those stubs as
+          ``@pytest.mark.seam`` (or ``contract``/``boundary``) tests in the
+          worktree.
+        * If the section is non-empty in the task description but no tests
+          carrying one of those markers are visible in the Player's
+          ``tests_written`` files, Coach blocks the turn.
+
+        The detection is precise so existing tasks aren't retroactively broken:
+
+        * No ``## Seam Tests`` header → no gate (returns ``[]``).
+        * Header present but body is whitespace-only → no gate.
+        * Header + non-empty body + at least one marker-decorated test in
+          the worktree → no gate (the contract is honoured).
+        * Header + non-empty body + zero marker-decorated tests → blocking
+          ``must_fix`` issue.
+
+        Marker matching reads the actual file content under ``self.worktree_path``
+        rather than the soft gate's filename heuristic. A file named
+        ``test_integration_api.py`` that contains no ``@pytest.mark.seam`` /
+        ``contract`` / ``boundary`` decorator does NOT satisfy the contract —
+        the AC says "tests collected with the marker", not "any test that
+        sounds boundary-ish".
+        """
+        description = task.get("description")
+        section = _extract_seam_tests_section(description)
+        if section is None:
+            return []
+
+        tests_written = task_work_results.get("tests_written", []) or []
+        marker_test_count = self._count_seam_marker_tests(tests_written)
+
+        if marker_test_count > 0:
+            return []
+
+        # Build the feedback payload. AC-005 requires the message to point at
+        # the stub in the task description so the Player has a concrete
+        # follow-up. We surface a short snippet (up to ~400 chars) of the
+        # section body — enough to identify the stubs without flooding the
+        # turn artifact.
+        section_snippet = section.strip()
+        if len(section_snippet) > 400:
+            section_snippet = section_snippet[:400].rstrip() + "…"
+
+        marker_list = ", ".join(f"@pytest.mark.{m}" for m in _SEAM_PYTEST_MARKERS)
+        logger.info(
+            "Seam tests gate: task description has a non-empty ## Seam Tests "
+            "section but no %s tests were written (tests_written=%s)",
+            marker_list,
+            tests_written,
+        )
+        return [{
+            "severity": "must_fix",
+            "category": "seam_tests_unimplemented",
+            "description": (
+                "Task description specifies a `## Seam Tests` section but no "
+                f"tests carrying {marker_list} markers were written. "
+                "Implement the seam test stub from the task description "
+                "(below) as a marker-decorated test in the worktree before "
+                "resubmitting.\n\n"
+                "Stub from task description:\n"
+                "----------\n"
+                f"{section_snippet}\n"
+                "----------"
+            ),
+        }]
+
+    def _count_seam_marker_tests(self, tests_written: List[str]) -> int:
+        """Count tests in ``tests_written`` decorated with a seam-class marker.
+
+        Reads each file relative to ``self.worktree_path`` and counts
+        occurrences of ``@pytest.mark.seam`` / ``contract`` / ``boundary``.
+        Files that don't exist or aren't readable are silently skipped — the
+        gate is generous: a single positive sighting in any file is enough
+        to satisfy the contract. We don't try to assert that the markers
+        reference the task's modules; that's a deeper analysis the AC
+        explicitly de-scopes ("tolerate any of seam/contract/boundary
+        markers").
+        """
+        if not tests_written:
+            return 0
+
+        marker_pattern = re.compile(
+            r"@pytest\.mark\.(?:" + "|".join(_SEAM_PYTEST_MARKERS) + r")\b"
+        )
+        count = 0
+        for rel_path in tests_written:
+            if not rel_path or not isinstance(rel_path, str):
+                continue
+            try:
+                # Allow absolute paths but treat relative paths as
+                # worktree-rooted. Path("/abs") joined with anything ignores
+                # the prefix when the joined path is absolute, so this
+                # handles both shapes.
+                candidate = self.worktree_path / rel_path
+                if not candidate.is_file():
+                    continue
+                content = candidate.read_text(encoding="utf-8", errors="replace")
+            except (OSError, UnicodeDecodeError):
+                continue
+            count += len(marker_pattern.findall(content))
+        return count
 
     def _check_unconfirmed_assumptions(
         self,

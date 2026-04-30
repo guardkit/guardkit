@@ -5071,6 +5071,9 @@ class AutoBuildOrchestrator:
                     "requires_infrastructure": requires_infrastructure or [],
                     "_docker_available": validator._is_docker_available(),
                     "consumer_context": consumer_context or [],
+                    # TASK-FIX-A7B4: pass the raw task description so Coach can
+                    # inspect description-driven blocks (## Seam Tests, etc.).
+                    "description": requirements or "",
                 },
                 skip_arch_review=skip_arch_review,
                 context=context_prompt if context_prompt else None,
