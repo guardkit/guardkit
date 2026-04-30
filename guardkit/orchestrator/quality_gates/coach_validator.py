@@ -2414,10 +2414,12 @@ class CoachValidator:
 
         env = build_venv_env(self.worktree_path)
         if env is not None:
-            logger.info(
-                "Prepended virtualenv PATH: %s",
-                self.worktree_path / ".venv" / "bin",
-            )
+            # The first PATH entry is what build_venv_env prepended —
+            # either ``.guardkit/venv/bin`` (bootstrap) or ``.venv/bin``
+            # (legacy). Log the actual value so post-mortems can tell
+            # which interpreter Coach verified against.
+            prepended = env["PATH"].split(os.pathsep, 1)[0]
+            logger.info("Prepended virtualenv PATH: %s", prepended)
 
         elapsed_total = 0.0
         for criterion in command_criteria:

@@ -40,7 +40,7 @@ def test_whole_feature_bdd_runs_as_smoke_gate(
 
     recorded: dict = {}
 
-    def fake_run(cmd, *, shell, cwd, capture_output, text, timeout):
+    def fake_run(cmd, *, shell, cwd, capture_output, text, timeout, env=None):
         recorded["cmd"] = cmd
         recorded["shell"] = shell
         recorded["cwd"] = cwd
@@ -81,7 +81,7 @@ def test_whole_feature_bdd_failure_propagates_exit_code(
     worktree = tmp_path / "worktree"
     (worktree / "features").mkdir(parents=True)
 
-    def fake_run(cmd, *, shell, cwd, capture_output, text, timeout):
+    def fake_run(cmd, *, shell, cwd, capture_output, text, timeout, env=None):
         return subprocess.CompletedProcess(
             args=cmd, returncode=1, stdout="", stderr="1 failed"
         )

@@ -36,7 +36,7 @@ def _patch_subprocess_returncode(
 ) -> None:
     """Replace subprocess.run with a stub that returns ``returncode``."""
 
-    def fake_run(cmd, *, shell, cwd, capture_output, text, timeout):
+    def fake_run(cmd, *, shell, cwd, capture_output, text, timeout, env=None):
         return subprocess.CompletedProcess(
             args=cmd, returncode=returncode, stdout="", stderr=""
         )

@@ -76,9 +76,13 @@ def normalise_pip_command(cmd: str) -> str:
 def build_venv_env(worktree_path: Path) -> Optional[Dict[str, str]]:
     """Build environment dict with virtualenv PATH prepended.
 
-    If the worktree contains a ``.venv/bin`` directory, returns an
-    environment dict with that directory prepended to PATH. Otherwise
-    returns None (inherit parent environment).
+    Consults the bootstrap venv at ``.guardkit/venv/bin`` first (created by
+    ``environment_bootstrap``), then falls back to the operator-managed
+    ``.venv/bin``. The bootstrap location is preferred when both exist
+    because that is the interpreter Coach was configured to verify against
+    (TASK-FIX-A7B1, sibling of TASK-FIX-7A05).
+
+    Returns None when neither venv exists (inherit parent environment).
 
     Parameters
     ----------
@@ -90,12 +94,19 @@ def build_venv_env(worktree_path: Path) -> Optional[Dict[str, str]]:
     Optional[Dict[str, str]]
         Environment dict with modified PATH, or None.
     """
-    venv_bin = worktree_path / ".venv" / "bin"
-    if venv_bin.is_dir():
-        env = os.environ.copy()
-        env["PATH"] = str(venv_bin) + os.pathsep + env.get("PATH", "")
-        return env
-    return None
+    bootstrap_venv_bin = worktree_path / ".guardkit" / "venv" / "bin"
+    legacy_venv_bin = worktree_path / ".venv" / "bin"
+
+    if bootstrap_venv_bin.is_dir():
+        venv_bin = bootstrap_venv_bin
+    elif legacy_venv_bin.is_dir():
+        venv_bin = legacy_venv_bin
+    else:
+        return None
+
+    env = os.environ.copy()
+    env["PATH"] = str(venv_bin) + os.pathsep + env.get("PATH", "")
+    return env
 
 
 @dataclass(frozen=True)

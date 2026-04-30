@@ -312,6 +312,41 @@ class TestCommandModels:
         env = build_venv_env(tmp_path)
         assert env is None
 
+    def test_build_venv_env_with_bootstrap_venv(self, tmp_path):
+        """AC-004: build_venv_env consults ``.guardkit/venv/bin`` (TASK-FIX-A7B1).
+
+        The bootstrap creates the venv at ``<worktree>/.guardkit/venv/bin``
+        rather than ``<worktree>/.venv/bin``. Without this branch,
+        build_venv_env returns None for bootstrapped worktrees and the
+        Coach pytest invocation falls back to whatever ``pytest`` is on
+        the parent PATH — losing the verification interpreter
+        ``environment_bootstrap`` was meant to install.
+        """
+        bootstrap_bin = tmp_path / ".guardkit" / "venv" / "bin"
+        bootstrap_bin.mkdir(parents=True)
+
+        env = build_venv_env(tmp_path)
+        assert env is not None
+        assert env["PATH"].startswith(str(bootstrap_bin))
+
+    def test_build_venv_env_prefers_bootstrap_over_legacy(self, tmp_path):
+        """AC-004: bootstrap venv wins when both ``.guardkit/venv`` and ``.venv`` exist.
+
+        The bootstrap-managed venv is the interpreter Coach was
+        configured to verify against — preferring it makes Coach and the
+        smoke gate agree on which interpreter to use.
+        """
+        bootstrap_bin = tmp_path / ".guardkit" / "venv" / "bin"
+        bootstrap_bin.mkdir(parents=True)
+        legacy_bin = tmp_path / ".venv" / "bin"
+        legacy_bin.mkdir(parents=True)
+
+        env = build_venv_env(tmp_path)
+        assert env is not None
+        assert env["PATH"].startswith(str(bootstrap_bin)), (
+            "Bootstrap venv must be preferred over legacy .venv when both exist"
+        )
+
     def test_assert_worktree_path_valid(self, worktree_path):
         """_assert_worktree_path should accept valid worktree paths."""
         _assert_worktree_path(worktree_path)  # Should not raise

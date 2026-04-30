@@ -1940,6 +1940,7 @@ The detailed specifications are in the task markdown file.
                     feature.smoke_gates,
                     cwd=Path(worktree.path),
                     wave_number=wave_number,
+                    venv_python=self._bootstrap_venv_python,
                 )
                 wave_result.smoke_gate_result = smoke_result
                 if not smoke_result.passed:

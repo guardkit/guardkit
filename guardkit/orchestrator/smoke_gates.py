@@ -14,9 +14,11 @@ second wave concept here would contradict the task's non-goals.
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 from guardkit.orchestrator.feature_loader import SmokeGates
 
@@ -125,6 +127,7 @@ def run_smoke_gate(
     config: SmokeGates,
     cwd: Path,
     wave_number: int,
+    venv_python: Optional[str] = None,
 ) -> SmokeGateResult:
     """Execute a smoke gate and return a structured result.
 
@@ -143,6 +146,14 @@ def run_smoke_gate(
     wave_number : int
         1-indexed wave number that just completed. Recorded in the result
         for the final summary.
+    venv_python : Optional[str]
+        Path to the bootstrap venv interpreter (e.g.
+        ``<worktree>/.guardkit/venv/bin/python``). When provided, the
+        subprocess inherits an environment with that directory prepended
+        to PATH so a bare ``python`` in the smoke command resolves to the
+        venv interpreter rather than failing on Ubuntu 24+ where only
+        ``python3`` exists in system PATH (TASK-FIX-A7B1). Falls back to
+        the parent environment when None.
 
     Returns
     -------
@@ -159,6 +170,15 @@ def run_smoke_gate(
         config.expected_exit,
     )
 
+    env: Optional[dict] = None
+    if venv_python:
+        venv_bin = str(Path(venv_python).parent)
+        env = os.environ.copy()
+        env["PATH"] = venv_bin + os.pathsep + env.get("PATH", "")
+        logger.debug(
+            "Smoke gate PATH-prepended with bootstrap venv: %s", venv_bin
+        )
+
     try:
         proc = subprocess.run(
             config.command,
@@ -167,6 +187,7 @@ def run_smoke_gate(
             capture_output=True,
             text=True,
             timeout=config.timeout,
+            env=env,
         )
     except subprocess.TimeoutExpired as exc:
         logger.warning(
