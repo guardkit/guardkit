@@ -2849,7 +2849,11 @@ class CoachValidator:
         """
         Match acceptance criteria to Player completion promises by criterion ID.
 
-        Each acceptance criterion at index *i* maps to ``AC-{i+1:03d}``.
+        Acceptance criteria carrying a natural label (e.g. ``**AC-LOAD-01**``
+        or ``AC-LOAD-01:``) match against promises emitted with that same
+        label. Unlabelled criteria fall back to index-based IDs of the form
+        ``AC-{i+1:03d}`` (TASK-CVAC-001 — preserves backwards compatibility
+        with task definitions that have no AC IDs in the markdown).
         A criterion is verified when a matching promise has status ``complete``.
 
         Parameters
@@ -2864,6 +2868,16 @@ class CoachValidator:
         RequirementsValidation
             Structured validation result
         """
+        # Pre-extract natural-label IDs from criteria markdown (TASK-CVAC-001).
+        # Each entry parallels acceptance_criteria[i]; ``None`` when the
+        # criterion has no extractable AC ID and the index-based fallback
+        # should be used.
+        extracted_ids: List[Optional[str]] = []
+        for criterion_text in acceptance_criteria:
+            cleaned = self._strip_criterion_prefix(criterion_text)
+            _, extracted_id = self._extract_ac_id(cleaned)
+            extracted_ids.append(extracted_id)
+
         # Build promise map: criterion_id -> promise dict
         promise_map: Dict[str, Dict[str, Any]] = {}
         for p in completion_promises:
@@ -2875,7 +2889,7 @@ class CoachValidator:
         missing: List[str] = []
 
         for i, criterion_text in enumerate(acceptance_criteria):
-            criterion_id = f"AC-{i+1:03d}"
+            criterion_id = extracted_ids[i] or f"AC-{i+1:03d}"
             promise = promise_map.get(criterion_id)
 
             raw_status = promise.get("status", "") if promise else ""
@@ -2990,6 +3004,65 @@ class CoachValidator:
             cleaned = cleaned[ac_match.end():].strip()
 
         return cleaned
+
+    @staticmethod
+    def _extract_ac_id(cleaned: str) -> Tuple[str, Optional[str]]:
+        """
+        Extract an acceptance-criterion ID from criterion text (TASK-CVAC-001).
+
+        Recognises four formats:
+
+        1. ``**AC-LOAD-01** — text``  (markdown bold + compound + em-dash)
+        2. ``**AC-001** — text``      (markdown bold + simple + em-dash)
+        3. ``AC-LOAD-01: text``       (compound + colon, no bold)
+        4. ``AC-001: text``           (simple + colon, no bold)
+
+        Separators accepted: ``:`` (colon), ``—`` (em-dash, U+2014),
+        and ``-`` (hyphen). The ID body matches ``AC`` followed by one or
+        more dash-separated alphanumeric uppercase segments.
+
+        Parameters
+        ----------
+        cleaned : str
+            Criterion text. Typically input is post-``_strip_criterion_prefix``
+            (checkbox/bullet/numbered prefix already removed). Tolerates
+            leading whitespace.
+
+        Returns
+        -------
+        tuple[str, Optional[str]]
+            ``(text_without_id_prefix, extracted_id)`` when an AC ID is
+            matched. ``(cleaned, None)`` when no AC ID is matched (the
+            input is preserved unchanged).
+
+        Notes
+        -----
+        Conservative on edge cases:
+
+        - Unmatched bold marker (e.g. ``**AC-LOAD-01: text`` with only an
+          opening ``**``) does not match — the regex requires a paired
+          closing ``**`` for the bold form.
+        - Plain prose mentioning an AC ID without a separator (e.g.
+          ``**AC-LOAD-01** is implemented``) does not match — a separator
+          (``:``, em-dash, or hyphen) is required.
+        """
+        work = cleaned.lstrip()
+
+        # Try markdown-bold-wrapped IDs first (more specific).
+        m = re.match(
+            r'^\*\*(AC(?:-[A-Z0-9]+)+)\*\*\s*[:—\-]\s*', work,
+        )
+        if m:
+            return work[m.end():], m.group(1)
+
+        # Plain compound or simple IDs with explicit separator.
+        m = re.match(
+            r'^(AC(?:-[A-Z0-9]+)+)\s*[:—\-]\s*', work,
+        )
+        if m:
+            return work[m.end():], m.group(1)
+
+        return cleaned, None
 
     @staticmethod
     def _extract_keywords(text: str) -> set:
@@ -3108,6 +3181,13 @@ class CoachValidator:
         effective_strategy = self._resolve_matching_strategy()
         keyword_threshold = 0.50 if effective_strategy == "semantic" else 0.70
 
+        # Pre-extract natural-label AC IDs from criteria markdown (TASK-CVAC-001).
+        extracted_ids: List[Optional[str]] = []
+        for criterion_text in acceptance_criteria:
+            pre_cleaned = self._strip_criterion_prefix(criterion_text)
+            _, extracted_id = self._extract_ac_id(pre_cleaned)
+            extracted_ids.append(extracted_id)
+
         # Strip prefixes and normalize requirements_met
         stripped_met = [self._strip_criterion_prefix(r) for r in requirements_met]
         stripped_met = [self._strip_markdown_formatting(r) for r in stripped_met]
@@ -3117,10 +3197,13 @@ class CoachValidator:
         missing: List[str] = []
 
         for i, criterion_text in enumerate(acceptance_criteria):
-            criterion_id = f"AC-{i+1:03d}"
+            criterion_id = extracted_ids[i] or f"AC-{i+1:03d}"
 
-            # Strip prefix from criterion
+            # Strip prefix from criterion (also strips compound AC ID
+            # prefix when present, so the matching text is the
+            # description body alone).
             stripped_criterion = self._strip_criterion_prefix(criterion_text)
+            stripped_criterion, _ = self._extract_ac_id(stripped_criterion)
             stripped_criterion = self._strip_markdown_formatting(stripped_criterion)
             normalized = stripped_criterion.lower().strip()
 
@@ -3322,9 +3405,16 @@ class CoachValidator:
         RequirementsValidation
             Validation result with all criteria rejected
         """
+        # Pre-extract natural-label AC IDs from criteria markdown (TASK-CVAC-001)
+        extracted_ids: List[Optional[str]] = []
+        for criterion_text in acceptance_criteria:
+            cleaned = self._strip_criterion_prefix(criterion_text)
+            _, extracted_id = self._extract_ac_id(cleaned)
+            extracted_ids.append(extracted_id)
+
         criteria_results = []
         for i, criterion_text in enumerate(acceptance_criteria):
-            criterion_id = f"AC-{i+1:03d}"
+            criterion_id = extracted_ids[i] or f"AC-{i+1:03d}"
             criteria_results.append(CriterionResult(
                 criterion_id=criterion_id,
                 criterion_text=criterion_text,
