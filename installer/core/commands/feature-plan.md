@@ -2614,6 +2614,17 @@ Claude executes internally:
      - Report any intra-wave deps, invalid task_type, missing files inline
      - Non-blocking: continue to step 9 regardless
 
+  8.6. Validate hand-injected smoke_gates (TASK-FPSG-002 / L3b)
+     - Run only if smoke_gates was added to the feature YAML after
+       generate-feature-yaml printed its R3 nudge.
+     - Execute: python3 ~/.agentecflow/bin/generate-feature-yaml \
+                --validate-smoke-gates --feature-id FEAT-XXXX \
+                --base-path <repo root>
+     - Non-zero exit: display the validator's stderr inline; the agent
+       MUST fix the YAML before proceeding to step 9.
+     - Zero exit (or no smoke_gates / non-pytest command): continue to step 9.
+     - Honours --quiet (suppresses success messages, never errors).
+
   9. Shows completion summary
 ```
 
@@ -2685,10 +2696,33 @@ Claude executes internally:
      - Continue regardless of errors (non-blocking - user may fix manually)
      - Only skip this step if --no-structured flag is set (no YAML generated)
 
+  8.6. Validate hand-injected smoke_gates (TASK-FPSG-002 / L3b — only
+       when smoke_gates was added to FEAT-D6E7.yaml after step 8 ran):
+     - Execute: python3 ~/.agentecflow/bin/generate-feature-yaml \
+                  --validate-smoke-gates --feature-id FEAT-D6E7 \
+                  --base-path <repo root>
+     - Loads .guardkit/features/FEAT-D6E7.yaml, parses the positional
+       pytest argv from smoke_gates.command, and resolves each path
+       against <repo root>. Skips silently when smoke_gates is absent
+       or when command does not invoke pytest.
+     - On any missing path, the validator prints (to stderr):
+       smoke_gates.command references non-existent path:
+         tests/cli   (repo root: /Users/.../forge)
+       Available test roots: tests/forge, tests/integration, tests/unit
+       The agent MUST fix the YAML before proceeding to step 9 — leaving
+       a stale path here is the regression captured by TASK-REV-DEA8
+       (forge run, 2026-05-02): pytest exited 4 ~17 minutes into the
+       autobuild run after Wave 1.
+     - Zero exit: continue to step 9.
+     - Honours --quiet (suppresses success messages, never errors).
+     - Same parser/message helper as 8.5's `feature validate` and the
+       FeatureLoader load-time pre-flight (TASK-FPSG-005), so all three
+       defense layers report the same defect with byte-identical wording.
+
   9. Shows completion summary including:
      📁 Feature file: .guardkit/features/FEAT-D6E7.yaml
      ⚡ AutoBuild ready: /feature-build FEAT-D6E7
-     (If validation errors found in 8.5, append a reminder to fix them before running feature-build)
+     (If validation errors found in 8.5 or 8.6, append a reminder to fix them before running feature-build)
 ```
 
 This is a **coordination command** - it orchestrates existing commands rather than implementing new logic. Follow the execution flow exactly as specified.

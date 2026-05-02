@@ -383,6 +383,122 @@ def validate_task_paths(feature: FeatureFile, base_dir: Path) -> List[str]:
     return errors
 
 
+def validate_smoke_gates_paths(
+    feature_id: str,
+    base_path: Path,
+    quiet: bool = False,
+) -> int:
+    """Validate hand-injected ``smoke_gates.command`` paths exist on disk.
+
+    Loads ``<base_path>/.guardkit/features/<feature_id>.yaml`` and, if it
+    declares a ``smoke_gates.command`` that invokes pytest, resolves every
+    positional pytest argv path against ``base_path``. Used by
+    ``generate-feature-yaml --validate-smoke-gates`` (Step 8.6 of
+    ``/feature-plan``) so a stale ``tests/cli`` path injected after
+    generation surfaces immediately, not 17 minutes into autobuild.
+
+    Path-existence delegates to the shared
+    ``guardkit.lib.pytest_argv`` helpers so this validator emits the same
+    error wording as ``FeatureLoader._parse_feature`` pre-flight
+    (TASK-FPSG-005) and ``guardkit feature validate`` (TASK-FPSG-004).
+
+    Args:
+        feature_id: Feature ID to validate (e.g. ``FEAT-DEA8``). The
+            corresponding YAML must exist under
+            ``<base_path>/.guardkit/features/``.
+        base_path: Repo root used both to locate the YAML and to resolve
+            ``smoke_gates.command`` paths.
+        quiet: When True, suppress success messages on stdout but still
+            emit error messages on stderr (so CI surfaces failures even
+            in quiet mode).
+
+    Returns:
+        ``0`` on success — including when there is nothing to validate
+        (no ``smoke_gates`` block, no ``command``, or non-pytest command).
+        Non-zero on failure (missing YAML, malformed YAML, or any
+        non-existent path inside ``smoke_gates.command``).
+    """
+    yaml_path = base_path / ".guardkit" / "features" / f"{feature_id}.yaml"
+
+    if not yaml_path.is_file():
+        print(
+            f"❌ Feature YAML not found: {yaml_path}",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        import yaml
+    except ImportError:
+        print(
+            "❌ PyYAML is required for --validate-smoke-gates",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        text = yaml_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"❌ Cannot read {yaml_path}: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        print(f"❌ Cannot parse {yaml_path}: {exc}", file=sys.stderr)
+        return 1
+
+    if not isinstance(data, dict):
+        print(
+            f"❌ {yaml_path} root is not a YAML mapping",
+            file=sys.stderr,
+        )
+        return 1
+
+    smoke_gates = data.get("smoke_gates")
+    if not isinstance(smoke_gates, dict):
+        if not quiet:
+            print("✓ No smoke_gates block — nothing to validate")
+        return 0
+
+    command = smoke_gates.get("command")
+    if not isinstance(command, str) or not command.strip():
+        if not quiet:
+            print("✓ No smoke_gates.command — nothing to validate")
+        return 0
+
+    # Lazy imports keep this module loadable even when guardkit is not
+    # on sys.path (e.g. legacy callers that exec the script in isolation).
+    from guardkit.lib.pytest_argv import (
+        format_smoke_gate_path_error,
+        parse_positional_paths,
+    )
+    from installer.core.commands.lib.smoke_gates_nudge import (
+        discover_test_roots,
+    )
+
+    paths = parse_positional_paths(command)
+    if not paths:
+        if not quiet:
+            print(
+                "✓ smoke_gates.command does not invoke pytest — nothing to validate"
+            )
+        return 0
+
+    missing = [p for p in paths if not (base_path / p).exists()]
+    if not missing:
+        if not quiet:
+            print("✓ smoke_gates.command paths OK")
+        return 0
+
+    available_roots = discover_test_roots(base_path)
+    print(
+        format_smoke_gate_path_error(missing, base_path, available_roots),
+        file=sys.stderr,
+    )
+    return 1
+
+
 def write_yaml(feature: FeatureFile, output_path: Path) -> None:
     """Write feature to YAML file."""
     try:
@@ -427,8 +543,8 @@ def main():
 
     parser.add_argument(
         "--name", "-n",
-        required=True,
-        help="Feature name"
+        required=False,
+        help="Feature name (required for generation; ignored by --validate-smoke-gates)"
     )
 
     parser.add_argument(
@@ -519,7 +635,39 @@ def main():
              "Default: warn-only. See TASK-FIX-A7B3."
     )
 
+    parser.add_argument(
+        "--validate-smoke-gates",
+        action="store_true",
+        help="Validation-only mode: load .guardkit/features/<--feature-id>.yaml and "
+             "verify that every positional pytest path inside smoke_gates.command "
+             "exists under --base-path. Skips feature generation entirely. "
+             "Exits non-zero on any missing path. See TASK-FPSG-002 / "
+             "feature-plan.md Step 8.6."
+    )
+
     args = parser.parse_args()
+
+    # --validate-smoke-gates short-circuits everything else.
+    if args.validate_smoke_gates:
+        if not args.feature_id:
+            print(
+                "Error: --validate-smoke-gates requires --feature-id FEAT-XXXX",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        sys.exit(
+            validate_smoke_gates_paths(
+                feature_id=args.feature_id,
+                base_path=Path(args.base_path),
+                quiet=args.quiet,
+            )
+        )
+
+    # Generation mode — --name becomes mandatory now that we know we're
+    # not validating.
+    if not args.name:
+        print("Error: --name is required for feature generation", file=sys.stderr)
+        sys.exit(2)
 
     # --lenient overrides --strict default
     if args.lenient:
@@ -825,6 +973,7 @@ def main():
         smoke_gates_notice = check_smoke_gates_activation(
             feature_yaml_path=output_path,
             quiet=args.quiet,
+            repo_root=Path(args.base_path),
         )
         if smoke_gates_notice:
             print()
