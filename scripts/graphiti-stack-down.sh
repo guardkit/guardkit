@@ -1,28 +1,43 @@
 #!/usr/bin/env bash
-# graphiti-stack-down.sh — Stop the Graphiti-on-GB10 stack.
+# graphiti-stack-down.sh — Stop the Graphiti stack on the GB10.
 #
-# Stops in reverse order (MCP → embed → LLM) so clients see the MCP server
-# disappear first and don't issue requests into a half-torn-down stack.
+# Preconditions:
+#   - None. Safe to run from any state (stack up, stack down, never started).
+#
+# Postconditions on success:
+#   - The graphiti-mcp container is stopped and removed (if it existed).
+#   - Re-running this script against the already-down state is a no-op
+#     (idempotent — exits 0 with no error output).
+#
+# Exit codes:
+#   0  graphiti-mcp not running, or successfully stopped + removed
+#   1  unknown CLI argument
+#
+# What this script does NOT touch:
+#   - llama-swap on :9000. It is managed by systemd timers
+#     (llama-swap-keepalive.timer, llama-swap-healthcheck.timer) and is
+#     deliberately shared by graphiti-mcp, jarvis, autobuild, and others.
+#     Stop it via systemd if you really mean to (rare; see RUNBOOK-INFRA-ORCHESTRATION).
+#   - FalkorDB on whitestocks:6379. It is on the NAS, not local to the GB10.
 #
 # Usage:
 #   ./scripts/graphiti-stack-down.sh
-#   ./scripts/graphiti-stack-down.sh --keep-llm     # leave vllm-graphiti running
-#   ./scripts/graphiti-stack-down.sh --keep-embed   # leave vllm-embedding running
+#
+# History:
+#   Pre-2026-04-29 this script also stopped vllm-graphiti (port 8000) and
+#   vllm-embedding (port 8001). Those were superseded by llama-swap on :9000
+#   (managed by systemd, never by this script) and removed from teardown.
 
 set -euo pipefail
 
-KEEP_LLM=0
-KEEP_EMBED=0
 for arg in "$@"; do
   case "$arg" in
-    --keep-llm)   KEEP_LLM=1 ;;
-    --keep-embed) KEEP_EMBED=1 ;;
     -h|--help)
-      sed -n '2,12p' "$0"
+      sed -n '2,30p' "$0"
       exit 0
       ;;
     *)
-      echo "Unknown arg: $arg"
+      echo "ERROR: unknown arg: $arg" >&2
       exit 1
       ;;
   esac
@@ -31,7 +46,7 @@ done
 stop_container() {
   local name="$1"
   if docker ps -aq --filter "name=^${name}$" | grep -q .; then
-    echo "Stopping $name..."
+    echo "  Stopping $name..."
     docker stop "$name" >/dev/null 2>&1 || true
     docker rm "$name" >/dev/null 2>&1 || true
     echo "  ✓ $name removed"
@@ -47,17 +62,7 @@ echo "════════════════════════�
 
 stop_container "graphiti-mcp"
 
-if [ "$KEEP_EMBED" = "0" ]; then
-  stop_container "vllm-embedding"
-else
-  echo "  vllm-embedding — KEPT (--keep-embed)"
-fi
-
-if [ "$KEEP_LLM" = "0" ]; then
-  stop_container "vllm-graphiti"
-else
-  echo "  vllm-graphiti — KEPT (--keep-llm)"
-fi
-
 echo ""
 echo "Stack down."
+echo "  (llama-swap on :9000 is managed by systemd and was not touched.)"
+echo "  (FalkorDB on whitestocks:6379 lives on the NAS and was not touched.)"
