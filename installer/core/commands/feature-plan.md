@@ -2308,6 +2308,53 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
     `tests/unit/commands/test_smoke_gates_nudge.py::test_notice_example_validates_against_smoke_gates_schema`
     so the nudge cannot drift away from the canonical shape.
 
+    **Path verification — REQUIRED before authoring.**
+
+    Before writing any path inside `smoke_gates.command` (the
+    positional pytest argv, e.g. `pytest tests/foo tests/bar -x`) or
+    any test file path referenced in per-task implementation notes,
+    the path **MUST be verified** against the *target* repo's actual
+    `tests/` tree. Verification means one of:
+
+    - Use the `Read` tool against the candidate path, or
+    - Use `Bash` to run `ls tests/` (or `ls tests/<group>/`) in the
+      target repo and confirm the directory exists.
+
+    Smoke-gate paths **MUST verify** to test **roots** (existing
+    directories like `tests/unit/`, `tests/smoke/`), not specific
+    test files yet to be created by the feature.
+
+    **Do NOT** copy `tests/<group>/` paths from another repo's
+    template or from a sibling project's feature spec. Test layouts
+    are per-repo conventions; a path that exists in one repo is
+    almost never present at the same location in another.
+
+    Example failure (TASK-REV-DEA8 — appmilla_github/forge,
+    2026-05-02): the agent wrote
+    `pytest tests/cli tests/forge -x -k "..."` for a forge feature.
+    `tests/cli/` does not exist in forge (it is a guardkit-shaped
+    path); pytest exited 4; the entire 11-task feature run was
+    blocked after Wave 1. Verifying the path against the forge
+    `tests/` tree before authoring would have caught this in seconds.
+
+    **`after_wave` temporal-sequencing — REQUIRED.** If the gate's
+    `command` references a test path that does NOT exist on disk
+    right now, identify which task in the wave plan creates that
+    path (look for it in another task's acceptance criteria). The
+    gate's `after_wave` value must be ≥ that creation task's wave.
+    Setting `after_wave` earlier than the creating wave is a
+    chicken-and-egg failure that fires the gate before its tests
+    exist (pytest exit 4). Reference: study-tutor FEAT-FD32 Run 2 —
+    gate set `after_wave: [2, 3]` against a path created by Wave 3
+    (TASK-GR-SMOK, AC-SMOK-01).
+
+    This rule is the positive companion to the "do not auto-generate"
+    non-goal below: authors still author their own gate command, but
+    every path inside it must have been verified — both spatially
+    (does the path exist in the target repo) and temporally (does
+    the path exist by the time `after_wave` fires) — before the
+    YAML is written.
+
     **Non-goals (do NOT do any of these):**
     - Do not auto-generate smoke-gate commands. Authors know their
       stack; the notice gives `python -c "import your_package"` as an
