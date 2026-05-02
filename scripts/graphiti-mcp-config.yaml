@@ -8,9 +8,10 @@
 # See: guardkit/scripts/graphiti-mcp.sh
 #
 # Networking assumption: container runs with `--network host` on the GB10, so
-# localhost:8000 and localhost:8001 inside the container resolve to the
-# vllm-graphiti and vllm-embedding containers on the same host. FalkorDB lives
-# on the Synology NAS `whitestocks` and is reached via Tailscale.
+# localhost:9000 inside the container resolves to llama-swap on the same host.
+# llama-swap (managed by systemd timers, not by this stack) serves both LLM
+# (`qwen-graphiti`) and embeddings (`nomic-embed`) on a single port. FalkorDB
+# lives on the Synology NAS `whitestocks` and is reached via Tailscale.
 
 server:
   transport: "http"
@@ -18,31 +19,36 @@ server:
   port: 8004
 
 llm:
-  # Local vLLM on the GB10 (Qwen2.5-14B FP8). Graphiti only calls the LLM during
-  # ingestion/seeding, not queries, so this runs when capturing knowledge and is
-  # idle during read-only search. See: guardkit/scripts/vllm-graphiti.sh
+  # llama-swap on the GB10 serves the `qwen-graphiti` model on :9000.
+  # Graphiti only calls the LLM during ingestion/seeding, not queries, so this
+  # is idle during read-only search.
   #
-  # History: briefly moved to Gemini 2.5 Pro while profiling GB10 cost/usage;
-  # moved back 2026-04-24 once vLLM workload was understood.
+  # History:
+  #   - vLLM (Qwen2.5-14B FP8) on :8000 (retired 2026-04-29; scripts archived
+  #     under scripts/archive-vllm/).
+  #   - Briefly Gemini 2.5 Pro while profiling GB10 cost/usage (2026-04-20).
+  #   - llama-swap on :9000 since 2026-04-29 — single port for LLM + embed.
   provider: "openai"
-  model: ${LLM_MODEL:neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic}
+  model: ${LLM_MODEL:qwen-graphiti}
   max_tokens: 4096
 
   providers:
     openai:
-      api_key: ${OPENAI_API_KEY:not-needed-vllm-local}
+      api_key: ${OPENAI_API_KEY:not-needed-llama-swap-local}
       api_url: ${LLM_API_URL:http://localhost:9000/v1}
 
 embedder:
-  # Local vLLM nomic-embed-text-v1.5 on GB10 (port 8001). 1024 dims matches the
-  # FalkorDB index. See: guardkit/scripts/vllm-embed.sh
+  # llama-swap serves `nomic-embed` on :9000. The model returns 768-dim vectors
+  # (verified 2026-05-01: curl :9000/v1/embeddings); the FalkorDB index must
+  # match this dimension. If you swap the embedding model, drop the FalkorDB
+  # index first or queries will silently return zero hits.
   provider: "openai"
-  model: "nomic-embed-text-v1.5"
+  model: "nomic-embed"
   dimensions: 768
 
   providers:
     openai:
-      api_key: ${OPENAI_API_KEY:not-needed-vllm-local}
+      api_key: ${OPENAI_API_KEY:not-needed-llama-swap-local}
       api_url: ${EMBEDDING_API_URL:http://localhost:9000/v1}
 
 database:

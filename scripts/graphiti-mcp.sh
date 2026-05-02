@@ -3,19 +3,28 @@
 #
 # Runs the standalone graphiti-mcp container (built by graphiti-mcp-build.sh)
 # with --network host so it can reach:
-#   - vllm-graphiti   on localhost:8000 (LLM)
-#   - vllm-embedding  on localhost:8001 (embedder)
-#   - FalkorDB        on whitestocks:6379 via Tailscale (host network)
+#   - llama-swap (LLM + embed) on localhost:9000  — single endpoint serving
+#                                                   `qwen-graphiti` and `nomic-embed`,
+#                                                   managed by systemd timers and
+#                                                   never modified by this script.
+#   - FalkorDB                  on whitestocks:6379 via Tailscale (host network)
 #
 # Exposes MCP at: http://promaxgb10-41b1:8004/mcp  (note: no trailing slash —
 # the /mcp/ form 307-redirects to /mcp, which breaks Claude Code's POST handling)
 #
-# Port allocation (DGX Spark GB10):
-#   8000 — vllm-graphiti        (vllm-graphiti.sh)     Qwen2.5-14B LLM
-#   8001 — vllm-embedding       (vllm-embed.sh)        nomic-embed-text-v1.5
-#   8002 — vllm-serve           AutoBuild LLM
-#   8003 — vllm-nemotron3-nano
-#   8004 — graphiti-mcp         (this script)          HTTP MCP server
+# Healthcheck override:
+#   The vendored graphiti Dockerfile bakes `curl -f http://localhost:8000/health`
+#   into HEALTHCHECK, but our deployment binds :8004 (so :8000 stays free for
+#   other services on the GB10) and graphiti-mcp has no /health endpoint —
+#   FastMCP just answers /mcp/ with 307 to negotiate a session. We override
+#   the healthcheck at `docker run` time to probe :8004/mcp/ and accept
+#   2xx/3xx/4xx as "serving".
+#
+# Port allocation (DGX Spark GB10), as of 2026-05-01:
+#   8000 — (free; was vllm-graphiti pre-llama-swap migration)
+#   8001 — (free; was vllm-embedding pre-llama-swap migration)
+#   8004 — graphiti-mcp                              this script
+#   9000 — llama-swap (qwen-graphiti, nomic-embed)   managed by systemd
 #
 # Usage:
 #   ./scripts/graphiti-mcp.sh                 # start detached
@@ -27,9 +36,9 @@
 #   GRAPHITI_MCP_CONFIG=<absolute path to config yaml>
 #
 # LLM routing (passed through to the container; the YAML config reads these):
-#   LLM_API_URL      OpenAI-compatible LLM endpoint (default from YAML: localhost:8000/v1)
-#   LLM_MODEL        model identifier (default from YAML: Qwen2.5-14B FP8)
-#   OPENAI_API_KEY   required by graphiti-core's reranker even for local vLLM
+#   LLM_API_URL      OpenAI-compatible LLM endpoint (YAML default: localhost:9000/v1)
+#   LLM_MODEL        model identifier              (YAML default: qwen-graphiti)
+#   OPENAI_API_KEY   required by graphiti-core's reranker even for local LLMs
 #                    (the OpenAI SDK refuses to construct without one). Defaults
 #                    to a dummy string here; only override for paid providers.
 # See graphiti-stack-up.sh --llm=mac|custom for the common switchover flow.
@@ -110,8 +119,8 @@ echo "  Image:   $IMAGE"
 echo "  Port:    $PORT"
 echo "  Config:  $CONFIG_FILE"
 echo "  URL:     http://promaxgb10-41b1:${PORT}/mcp"
-echo "  LLM:     ${LLM_API_URL:-<YAML default: localhost:8000/v1>}"
-echo "  Model:   ${LLM_MODEL:-<YAML default: Qwen2.5-14B FP8>}"
+echo "  LLM:     ${LLM_API_URL:-<YAML default: localhost:9000/v1>}"
+echo "  Model:   ${LLM_MODEL:-<YAML default: qwen-graphiti>}"
 echo "========================================"
 echo ""
 
@@ -134,6 +143,11 @@ fi
 # FastMCP() with the default host=127.0.0.1, which auto-enables protection
 # with a localhost-only Host allow-list; any non-loopback client (Tailscale
 # hostname, bare IP) then gets 421. See the bootstrap file for full context.
+#
+# --health-* flags override the upstream Dockerfile's HEALTHCHECK (which
+# probes :8000/health, a port we don't bind). We probe the actual MCP
+# endpoint and accept 2xx/3xx/4xx as "serving" — graphiti-mcp returns 307
+# on /mcp/ without a session, which is healthy.
 docker run "${RUN_FLAGS[@]}" \
   --name "$CONTAINER_NAME" \
   --network host \
@@ -142,6 +156,11 @@ docker run "${RUN_FLAGS[@]}" \
   -e CONFIG_PATH=/app/mcp/config/config.yaml \
   -e MCP_SERVER_HOST=0.0.0.0 \
   -e PYTHONUNBUFFERED=1 \
+  --health-cmd "curl -s -o /dev/null --max-time 3 -w '%{http_code}' http://localhost:${PORT}/mcp/ | grep -qE '^[234][0-9]{2}$'" \
+  --health-interval 10s \
+  --health-timeout 5s \
+  --health-start-period 15s \
+  --health-retries 3 \
   "${DOCKER_ENV_ARGS[@]}" \
   "$IMAGE" \
   uv run --no-sync bootstrap.py
