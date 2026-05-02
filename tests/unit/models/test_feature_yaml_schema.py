@@ -173,6 +173,12 @@ def test_schema_validation_error_is_feature_parse_error() -> None:
 def test_smoke_gates_after_wave_int(tmp_path: Path) -> None:
     """``after_wave: 1`` loads as an int."""
     features_dir = tmp_path / ".guardkit" / "features"
+    # TASK-FPSG-005: pre-flight validates pytest positionals exist under
+    # repo_root, so the feature file must really be on disk for this
+    # int-handling test to load cleanly.
+    feature_dir = tmp_path / "features"
+    feature_dir.mkdir(parents=True, exist_ok=True)
+    (feature_dir / "FEAT-TEST.feature").touch()
     body = _BASE_FEATURE + textwrap.dedent(
         """
         smoke_gates:

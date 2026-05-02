@@ -473,6 +473,20 @@ class SchemaValidationError(FeatureParseError):
     pass
 
 
+class SmokeGatePathError(SchemaValidationError):
+    """Raised when ``smoke_gates.command`` references a non-existent path.
+
+    Subclass of ``SchemaValidationError`` (and therefore
+    ``FeatureParseError``) so existing handlers in the orchestrator
+    pre-flight chain continue to work, but distinguishable for tests
+    and post-mortem triage that want to tell a path-existence miss
+    apart from a Pydantic schema violation. See TASK-FPSG-005 (L4 —
+    defense-in-depth) and the parent review TASK-REV-DEA8.
+    """
+
+    pass
+
+
 # ============================================================================
 # FeatureLoader
 # ============================================================================
@@ -554,7 +568,7 @@ class FeatureLoader:
 
         # Parse into Feature dataclass
         try:
-            feature = FeatureLoader._parse_feature(data)
+            feature = FeatureLoader._parse_feature(data, repo_root=repo_root)
             feature.file_path = feature_file
             return feature
         except FeatureParseError:
@@ -579,7 +593,10 @@ class FeatureLoader:
             ) from e
 
     @staticmethod
-    def _parse_feature(data: Dict[str, Any]) -> Feature:
+    def _parse_feature(
+        data: Dict[str, Any],
+        repo_root: Optional[Path] = None,
+    ) -> Feature:
         """
         Parse feature dictionary into Feature dataclass.
 
@@ -587,6 +604,11 @@ class FeatureLoader:
         ----------
         data : Dict[str, Any]
             Raw YAML data
+        repo_root : Optional[Path]
+            Repository root used for ``smoke_gates.command`` path-existence
+            pre-flight (TASK-FPSG-005). When ``None``, path validation is
+            skipped — used only by callers that have no repo context (e.g.
+            in-memory parsing for tests).
 
         Returns
         -------
@@ -653,6 +675,15 @@ class FeatureLoader:
                 raise SchemaValidationError(
                     f"Invalid smoke_gates configuration:\n{e}"
                 ) from e
+            # TASK-FPSG-005 (L4 — defense-in-depth): path-existence
+            # pre-flight. Catches stale `tests/cli`-style paths at load
+            # time, before the orchestrator bootstraps the worktree and
+            # blows ~17 minutes on Wave 1 only to fail on the smoke gate.
+            # Skipped when repo_root is unavailable (in-memory parses).
+            if repo_root is not None:
+                FeatureLoader._validate_smoke_gates_paths(
+                    smoke_gates, repo_root
+                )
 
         # Parse execution (may not exist) - keep as dataclass
         exec_data = data.get("execution", {})
@@ -698,6 +729,74 @@ class FeatureLoader:
             raise FeatureParseError(
                 f"Invalid feature data:\n{e}"
             ) from e
+
+    @staticmethod
+    def _validate_smoke_gates_paths(
+        smoke_gates: SmokeGates,
+        repo_root: Path,
+    ) -> None:
+        """Pre-flight: assert ``smoke_gates.command`` paths exist under ``repo_root``.
+
+        L4 of the four-layer smoke-gate validation chain (TASK-FPSG-005).
+        L3a–L3d catch the YAML at authoring time (``feature-plan`` Step 8.5,
+        ``--validate-smoke-gates``, ``feature validate``); this layer is the
+        runtime safety net that fires when a YAML is hand-edited after
+        ``/feature-plan`` finishes and slipped past every authoring check.
+
+        Without this check, a stale ``tests/cli`` path is only discovered
+        once ``run_smoke_gate`` runs after Wave 1 — typically ~17 minutes
+        of wasted compute on the worktree bootstrap and Wave 1 tasks.
+
+        Path resolution uses ``repo_root`` to match the ``cwd`` that
+        ``run_smoke_gate`` will use at execution time
+        (see ``feature_orchestrator.py``: ``cwd=Path(worktree.path)`` —
+        the worktree shares the same git tree as ``repo_root``, so paths
+        that exist in one exist in the other).
+
+        Non-pytest commands (e.g. ``python3 .guardkit/smoke/foo.py``)
+        are a no-op: the shared parser returns ``[]`` and nothing is
+        validated. This matches TASK-FPSG-002's ``--validate-smoke-gates``
+        behaviour — only pytest paths are checked.
+
+        Parameters
+        ----------
+        smoke_gates : SmokeGates
+            Already-validated Pydantic model (Pydantic guarantees
+            ``command`` is a non-empty string).
+        repo_root : Path
+            Repository root the paths are resolved against.
+
+        Raises
+        ------
+        SmokeGatePathError
+            When at least one positional pytest path does not exist
+            under ``repo_root``. Message includes every missing path,
+            the repo root, and the available test roots so the agent
+            has enough context to fix the YAML in one edit.
+        """
+        # Imports kept local so the lib/ helper stays decoupled from
+        # the orchestrator import graph (avoids a circular import if
+        # the helper ever needs to reference ``SmokeGates``).
+        from guardkit.lib.pytest_argv import (
+            format_smoke_gate_path_error,
+            parse_positional_paths,
+        )
+        from installer.core.commands.lib.smoke_gates_nudge import (
+            discover_test_roots,
+        )
+
+        paths = parse_positional_paths(smoke_gates.command)
+        if not paths:
+            return
+
+        missing = [p for p in paths if not (repo_root / p).exists()]
+        if not missing:
+            return
+
+        available_roots = discover_test_roots(repo_root)
+        raise SmokeGatePathError(
+            format_smoke_gate_path_error(missing, repo_root, available_roots)
+        )
 
     @staticmethod
     def _parse_task(task_data: Dict[str, Any]) -> FeatureTask:
