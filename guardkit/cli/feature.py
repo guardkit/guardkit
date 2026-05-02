@@ -146,12 +146,27 @@ def _output_human_success(feature_id: str) -> None:
     console.print(f"[green]\u2713[/green] Feature {feature_id} is valid")
 
 
+_SMOKE_GATE_PATH_ERROR_PREFIX = (
+    "smoke_gates.command references non-existent path"
+)
+
+
 def _output_human_errors(
     feature_id: str,
     schema_errors: List[str],
     structural_errors: List[str],
 ) -> None:
-    """Print validation errors with red crosses."""
+    """Print validation errors with red crosses.
+
+    Smoke-gate path errors (TASK-FPSG-004 / L3d) are emitted through
+    plain ``click.echo`` rather than Rich's ``console.print`` so the
+    formatted message stays byte-identical with what
+    ``generate-feature-yaml --validate-smoke-gates`` (L3b) writes to
+    stderr. Rich wraps long lines (e.g. tmp_path repo roots) at the
+    terminal width, which would otherwise break byte-equality across
+    the two defense layers \u2014 agents comparing wording would see two
+    different messages.
+    """
     console.print(f"[red]\u2717[/red] Feature {feature_id} has validation errors:\n")
 
     if schema_errors:
@@ -164,7 +179,11 @@ def _output_human_errors(
             console.print()
         console.print("[bold]Structural errors:[/bold]")
         for error in structural_errors:
-            console.print(f"  [red]\u2717[/red] {error}")
+            if error.startswith(_SMOKE_GATE_PATH_ERROR_PREFIX):
+                # Verbatim emission keeps L3d byte-identical with L3b.
+                click.echo(error)
+            else:
+                console.print(f"  [red]\u2717[/red] {error}")
 
 
 @feature.command()
@@ -217,8 +236,13 @@ def validate(feature_id: str, output_json_flag: bool) -> None:
     structural_errors: List[str] = []
     if not schema_errors:
         try:
+            # TASK-FPSG-004 (L3d): pass ``validate_paths=False`` so a
+            # bad ``smoke_gates.command`` path does NOT raise inside
+            # ``_parse_feature`` — the error is collected by
+            # ``validate_feature`` and rendered alongside any other
+            # structural errors (orchestration, dependencies, etc.).
             loaded_feature = FeatureLoader.load_feature(
-                feature_id, repo_root=repo_root
+                feature_id, repo_root=repo_root, validate_paths=False
             )
             structural_errors = FeatureLoader.validate_feature(
                 loaded_feature, repo_root=repo_root

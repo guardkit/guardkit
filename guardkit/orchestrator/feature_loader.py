@@ -514,6 +514,7 @@ class FeatureLoader:
         feature_id: str,
         repo_root: Optional[Path] = None,
         features_dir: Optional[Path] = None,
+        validate_paths: bool = True,
     ) -> Feature:
         """
         Load feature file from .guardkit/features/.
@@ -526,6 +527,14 @@ class FeatureLoader:
             Repository root directory (default: current directory)
         features_dir : Optional[Path]
             Override features directory (for testing)
+        validate_paths : bool
+            When True (default), the L4 pre-flight check raises
+            :class:`SmokeGatePathError` if ``smoke_gates.command``
+            references a non-existent path. When False, the pre-flight
+            is skipped so callers (e.g. ``cli/feature.py validate``)
+            can let :func:`validate_feature` aggregate path errors with
+            other structural errors instead of failing fast at parse
+            time. See TASK-FPSG-004 (L3d).
 
         Returns
         -------
@@ -568,7 +577,11 @@ class FeatureLoader:
 
         # Parse into Feature dataclass
         try:
-            feature = FeatureLoader._parse_feature(data, repo_root=repo_root)
+            feature = FeatureLoader._parse_feature(
+                data,
+                repo_root=repo_root,
+                validate_paths=validate_paths,
+            )
             feature.file_path = feature_file
             return feature
         except FeatureParseError:
@@ -596,6 +609,7 @@ class FeatureLoader:
     def _parse_feature(
         data: Dict[str, Any],
         repo_root: Optional[Path] = None,
+        validate_paths: bool = True,
     ) -> Feature:
         """
         Parse feature dictionary into Feature dataclass.
@@ -609,6 +623,14 @@ class FeatureLoader:
             pre-flight (TASK-FPSG-005). When ``None``, path validation is
             skipped — used only by callers that have no repo context (e.g.
             in-memory parsing for tests).
+        validate_paths : bool
+            When True (default), runs the L4 pre-flight which raises
+            :class:`SmokeGatePathError` for stale ``smoke_gates.command``
+            paths. When False, the pre-flight is skipped so a downstream
+            :func:`validate_feature` call can aggregate path errors with
+            other structural errors. Used by ``cli/feature.py validate``
+            (TASK-FPSG-004 L3d) so the user sees every structural issue
+            in one report instead of bouncing off a fail-fast raise.
 
         Returns
         -------
@@ -679,8 +701,11 @@ class FeatureLoader:
             # pre-flight. Catches stale `tests/cli`-style paths at load
             # time, before the orchestrator bootstraps the worktree and
             # blows ~17 minutes on Wave 1 only to fail on the smoke gate.
-            # Skipped when repo_root is unavailable (in-memory parses).
-            if repo_root is not None:
+            # Skipped when repo_root is unavailable (in-memory parses)
+            # or when ``validate_paths`` is False (TASK-FPSG-004 L3d:
+            # ``cli/feature.py validate`` aggregates path errors with
+            # other structural errors instead of raising).
+            if repo_root is not None and validate_paths:
                 FeatureLoader._validate_smoke_gates_paths(
                     smoke_gates, repo_root
                 )
@@ -935,7 +960,76 @@ class FeatureLoader:
                 if task_type_error:
                     errors.append(task_type_error)
 
+        # TASK-FPSG-004 (L3d): smoke-gate command path validation. Same
+        # rules as TASK-FPSG-002's --validate-smoke-gates and L4
+        # pre-flight; the message is produced via the shared
+        # ``format_smoke_gate_path_error`` formatter so the error wording
+        # is byte-identical regardless of which defense layer surfaces
+        # it. This collects-without-raising path lets callers (e.g.
+        # ``cli/feature.py validate``) aggregate path errors alongside
+        # orchestration / dependency / task_type errors in one report.
+        smoke_gate_path_error = FeatureLoader._validate_smoke_gate_paths_for_validate(
+            feature, repo_root
+        )
+        if smoke_gate_path_error:
+            errors.append(smoke_gate_path_error)
+
         return errors
+
+    @staticmethod
+    def _validate_smoke_gate_paths_for_validate(
+        feature: Feature,
+        repo_root: Path,
+    ) -> Optional[str]:
+        """Collect-without-raising smoke-gate path check for ``validate_feature``.
+
+        Mirrors :meth:`_validate_smoke_gates_paths` (which raises) but
+        returns the formatted error message instead, so it can be added
+        to the :func:`validate_feature` errors list. Output is generated
+        by the shared ``format_smoke_gate_path_error`` formatter, so the
+        message body is byte-identical to L3b (``--validate-smoke-gates``)
+        and L4 (``_parse_feature`` pre-flight). See TASK-FPSG-004 (L3d).
+
+        Parameters
+        ----------
+        feature : Feature
+            Already-parsed feature.
+        repo_root : Path
+            Repo root the command paths are resolved against.
+
+        Returns
+        -------
+        Optional[str]
+            Formatted error message when at least one path is missing,
+            ``None`` when there is nothing to validate (no smoke_gates
+            block, no command, non-pytest command, or all paths exist).
+        """
+        if feature.smoke_gates is None:
+            return None
+
+        # Lazy imports — match the pattern used in
+        # ``_validate_smoke_gates_paths`` (avoids circular imports if the
+        # helper ever needs to reference ``SmokeGates``).
+        from guardkit.lib.pytest_argv import (
+            format_smoke_gate_path_error,
+            parse_positional_paths,
+        )
+        from installer.core.commands.lib.smoke_gates_nudge import (
+            discover_test_roots,
+        )
+
+        paths = parse_positional_paths(feature.smoke_gates.command)
+        if not paths:
+            return None
+
+        missing = [p for p in paths if not (repo_root / p).exists()]
+        if not missing:
+            return None
+
+        available_roots = discover_test_roots(repo_root)
+        return format_smoke_gate_path_error(
+            missing, repo_root, available_roots
+        )
 
     @staticmethod
     def _detect_circular_dependencies(feature: Feature) -> Optional[List[str]]:

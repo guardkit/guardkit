@@ -935,6 +935,7 @@ print_help() {
     echo "Commands:"
     echo "  init [template]     Initialize GuardKit in current directory"
     echo "  autobuild <cmd>     Autonomous task implementation (Player-Coach)"
+    echo "  feature <cmd>       Feature YAML management (validate, etc.)"
     echo "  graphiti <cmd>      Knowledge graph management"
     echo "  doctor              Check system health and configuration"
     echo "  version             Show version information"
@@ -943,6 +944,9 @@ print_help() {
     echo "AutoBuild Commands:"
     echo "  autobuild task TASK-XXX     Execute Player-Coach loop for a task"
     echo "  autobuild status TASK-XXX   Check worktree status"
+    echo ""
+    echo "Feature Commands:"
+    echo "  feature validate FEAT-XXXX  Validate feature YAML (schema + smoke-gate paths)"
     echo ""
     echo "Graphiti Commands:"
     echo "  graphiti status             Show connection and seeding status"
@@ -1043,6 +1047,41 @@ case "$1" in
             echo "Example:"
             echo "  /feature-build TASK-XXX"
             echo "  /feature-build FEAT-XXX"
+            exit 1
+        fi
+        ;;
+    feature)
+        # Feature YAML management — delegates to guardkit-py feature.
+        # Required by TASK-FPSG-004 (L3d) so /feature-plan Step 8.5
+        # (``guardkit feature validate FEAT-XXXX``) actually reaches
+        # cli/feature.py instead of silently no-opping with
+        # "Unknown command: feature".
+        GUARDKIT_PY=""
+        if command -v guardkit-py &> /dev/null; then
+            GUARDKIT_PY="$(command -v guardkit-py)"
+        elif [ -x "/Library/Frameworks/Python.framework/Versions/Current/bin/guardkit-py" ]; then
+            GUARDKIT_PY="/Library/Frameworks/Python.framework/Versions/Current/bin/guardkit-py"
+        elif [ -x "$HOME/.local/bin/guardkit-py" ]; then
+            GUARDKIT_PY="$HOME/.local/bin/guardkit-py"
+        elif [ -x "/usr/local/bin/guardkit-py" ]; then
+            GUARDKIT_PY="/usr/local/bin/guardkit-py"
+        else
+            GUARDKIT_PY=$(python3 -c "import shutil; p=shutil.which('guardkit-py'); print(p if p else '')" 2>/dev/null)
+        fi
+
+        if [ -n "$GUARDKIT_PY" ] && [ -x "$GUARDKIT_PY" ]; then
+            shift  # Remove 'feature' from args
+            exec "$GUARDKIT_PY" feature "$@"
+        else
+            echo -e "${YELLOW}Feature CLI requires guardkit-py package${NC}"
+            echo ""
+            echo "The guardkit feature command requires the guardkit Python package."
+            echo ""
+            echo "To install:"
+            echo "  pip install -e /path/to/guardkit  # From guardkit repository"
+            echo ""
+            echo "Example:"
+            echo "  guardkit feature validate FEAT-AC1A"
             exit 1
         fi
         ;;
