@@ -23,7 +23,12 @@ the Graphiti server stack itself; this doc covers the Claude Code client side.
    per-machine overrides — it's gitignored.
 4. `.mcp.json` for Graphiti must be `http://promaxgb10-41b1:8004/mcp` —
    no trailing slash.
-5. Run `/doctor` on each machine after cloning a repo. Apply the fixes below
+5. Install [`uv`](https://astral.sh/uv) on every machine that runs
+   `guardkit autobuild`. Any target repo whose `pyproject.toml` declares
+   `[tool.uv.sources]` (sibling-path / git overrides) **hard-fails at
+   bootstrap** without `uv` on PATH — pip cannot honour those overrides
+   and silently producing a broken venv would be worse than failing fast.
+6. Run `/doctor` on each machine after cloning a repo. Apply the fixes below
    if it complains.
 
 ---
@@ -278,6 +283,82 @@ they're worth.
 
 ---
 
+## uv (Astral Python package manager) — both machines
+
+Why it matters: GuardKit's environment bootstrap (`environment_bootstrap.py`)
+inspects every target repo's `pyproject.toml`. If it finds a
+`[tool.uv.sources]` table — used to point a dep at a sibling worktree, a
+local path, or a git ref instead of PyPI — it raises
+`UvSourcesRequireUvError` *before any pip work runs* unless `uv` is on
+PATH. Plain pip silently ignores `[tool.uv.sources]`, which would fetch
+`nats-core` (or whatever) from PyPI instead of `../nats-core`, producing
+a venv where imports succeed but the wrong code runs. Failing fast at
+bootstrap is the correct behaviour; the fix is to install uv. (The
+hard-fail was introduced in TASK-FIX-F09A2; TASK-FIX-FD32 later
+adjusted the `uv.lock` install command but did not change this gate.)
+
+Affected repos in this fleet: any with `[tool.uv.sources]` in
+`pyproject.toml`. As of 2026-05-02 that includes `forge` (overrides
+`nats-core` to `../nats-core`). Grep before assuming a repo is exempt:
+
+```bash
+# Run from ~/Projects/appmilla_github
+for d in */pyproject.toml; do
+  grep -l "^\[tool\.uv\.sources\]" "$d" 2>/dev/null && echo "  ↑ needs uv on host"
+done
+```
+
+`install.sh` does **not** install uv — it never has. You must install it
+explicitly on each host that runs `guardkit autobuild`.
+
+### Install — GB10 (Ubuntu 24.04 noble, aarch64/arm64)
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# uv installs to ~/.local/bin/ — load it into the current shell:
+source ~/.local/bin/env
+# New shells pick it up automatically (the installer writes to ~/.bashrc).
+which uv && uv --version
+```
+
+### Install — MacBook
+
+```bash
+brew install uv
+# or, matching the GB10 method:
+curl -LsSf https://astral.sh/uv/install.sh | sh
+which uv && uv --version
+```
+
+### Symptom if you skipped this
+
+`guardkit autobuild feature FEAT-XXX` (or `task TASK-XXX`) exits at the
+worktree-bootstrap phase with:
+
+```
+ERROR ... Bootstrap hard-fail (uv-sources require uv): /.../pyproject.toml
+declares [tool.uv.sources] but `uv` is not on PATH. pip cannot honour
+these sibling-source overrides — installing would silently produce a
+broken environment. Fix by installing uv (https://astral.sh/uv) or
+removing the [tool.uv.sources] block from pyproject.toml.
+```
+
+If `which uv` works in your interactive shell but autobuild still errors,
+the venv guardkit was launched from has a stripped PATH — confirm with
+`env | grep '^PATH=' ` in the same shell that runs `guardkit`, and either
+re-launch from a shell that has uv on PATH or symlink uv into a directory
+that's already on the bootstrap PATH (e.g. `/usr/local/bin`).
+
+### Per-machine state (as of 2026-05-02)
+
+- **MacBook**: uv installed long-term (Homebrew).
+- **GB10**: uv **not yet installed**; surfaces as the FEAT-DEA8 bootstrap
+  hard-fail in
+  `forge/docs/history/autobuild-FEAT-FORGE-010-fail-run-1-history.md`.
+  Install via the curl one-liner above before the next autobuild run.
+
+---
+
 ## .claude/settings.json hygiene
 
 Project `.claude/settings.json` is **committed to git** — it applies on every
@@ -428,6 +509,11 @@ curl -s -o /dev/null -w "%{http_code}\n" http://promaxgb10-41b1:8004/mcp
 # 4. Inside Claude Code: confirm MCP is connected
 /mcp
 # Expect: graphiti: connected
+
+# 5. uv on PATH? (only required on hosts that run `guardkit autobuild`
+#    against repos with [tool.uv.sources] — see the uv section above)
+which uv && uv --version
+# Missing = autobuild will hard-fail at bootstrap on affected repos.
 ```
 
 ---
