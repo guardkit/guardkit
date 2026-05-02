@@ -20,6 +20,45 @@ nothing or returns stale results from other sessions. **Always pass all relevant
 
 ---
 
+## Known transport limitation: HTTP MCP coerces write `group_id` (TASK-FIX-B1F7)
+
+The HTTP MCP transport at `http://promaxgb10-41b1:8004/mcp` accepts a
+`group_id` parameter on `mcp__graphiti__add_memory` calls but silently
+overrides it with the server-side default (typically `product_knowledge`).
+**Search calls (`search_nodes`, `search_memory_facts`) honour `group_ids`
+correctly** — only writes are affected.
+
+**Detection.** The MCP response message reveals the actual group used:
+
+```
+Episode 'X' queued for processing in group 'product_knowledge'
+                                            ^^^^^^^^^^^^^^^^^
+                                            actual group, may differ
+                                            from what was requested
+```
+
+`/task-complete` parses this string via
+`installer/core/commands/lib/graphiti_response_parser.py` and falls back
+to the Python CLI (`guardkit graphiti capture-outcome`) for task-outcome
+writes when override is detected. CLI writes use the Python
+`GraphitiClient` directly and respect `group_id`.
+
+**Workaround for ad-hoc writes** (outside `/task-complete`):
+
+- Prefer the CLI for any write that must land in a specific group:
+  `guardkit graphiti capture-outcome --from-task-file <path> --timeout 300`.
+- For inline `mcp__graphiti__add_memory` calls, inspect the response
+  message after each write — if the actual group differs from the
+  requested group, the write landed in the wrong namespace and future
+  scoped searches will not find it.
+
+**Status.** This is an upstream `graphiti-mcp` HTTP-server issue (not in
+this repo's `infra/`; the server runs on `promaxgb10-41b1`). A separate
+infra task should configure the server to honour client-supplied
+`group_id` or patch the upstream server to forward the parameter.
+
+---
+
 ## Group ID Reference
 
 Knowledge is stored in two scopes:

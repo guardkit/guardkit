@@ -343,6 +343,54 @@ results = await client.search(
    ```
 5. Check MCP server logs in Claude Code (View → Output → MCP)
 
+### MCP write `group_id` coercion (HTTP transport)
+
+**Symptom**: Episodes written via `mcp__graphiti__add_memory` land in
+`product_knowledge` (or another server-default group) instead of the
+`group_id` the caller passed. Subsequent searches scoped to the
+requested group return no results.
+
+**Cause**: The HTTP MCP transport at `http://promaxgb10-41b1:8004/mcp`
+silently overrides the client-supplied `group_id` parameter with a
+server-side default. Search calls are unaffected — only writes leak
+into the wrong namespace.
+
+**Detection**: The MCP response message reveals the actual group used:
+
+```
+"Episode 'X' queued for processing in group 'product_knowledge'"
+                                            ^^^^^^^^^^^^^^^^^
+                                            actual, may differ from
+                                            what was requested
+```
+
+If this string differs from the requested `group_id`, the write was
+overridden.
+
+**Workaround**:
+
+- `/task-complete` auto-detects the override (via
+  `installer/core/commands/lib/graphiti_response_parser.py`) and falls
+  back to the Python CLI for task-outcome writes:
+  ```bash
+  guardkit graphiti capture-outcome --from-task-file <path> --timeout 300
+  ```
+  The CLI bypasses the MCP server and writes directly via
+  `GraphitiClient`, which honours `group_id`.
+- For ad-hoc writes outside `/task-complete`, prefer the CLI for any
+  episode that must land in a specific group. Inline
+  `mcp__graphiti__add_memory` calls are still subject to the override.
+- For inline architectural-decision writes (Write 2 in `/task-complete`),
+  there is no equivalent CLI surface — the user is warned and decides
+  whether to file a follow-up.
+
+**Status**: This is an upstream `graphiti-mcp` HTTP-server issue. The
+server runs on `promaxgb10-41b1` (not in this repo's `infra/`). A
+separate infra task should configure the server to honour client-
+supplied `group_id` or patch the upstream server to forward the
+parameter from the JSON body to the underlying `add_episode` call.
+See: TASK-FIX-B1F7.
+
 ### Group ID mismatch — no results returned
 
 **Symptom**: Searches return empty results even though knowledge was seeded.

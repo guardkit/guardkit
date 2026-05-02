@@ -285,6 +285,91 @@ DISPLAY: "[Graphiti] Warning: Could not capture task outcome ({error})"
 
 ---
 
+### Step 2a: Detect group_id Override and Fall Back to CLI (TASK-FIX-B1F7)
+
+The Graphiti MCP HTTP server at `http://promaxgb10-41b1:8004/mcp`
+silently overrides the `group_id` parameter with a server-side default
+(typically `product_knowledge`). The actual group used is reported in
+the response message: `Episode '...' queued for processing in group
+'<actual>'`. Untreated, this means project-specific knowledge (task
+outcomes, project decisions) leaks into the shared `product_knowledge`
+namespace.
+
+After **Write 1** completes, parse the response message and check for
+override using the parser at
+`installer/core/commands/lib/graphiti_response_parser.py`:
+
+```python
+from installer.core.commands.lib.graphiti_response_parser import detect_group_override
+
+result = detect_group_override(
+    requested_group_id="guardkit__task_outcomes",
+    response_message=write_1_response.message,
+)
+```
+
+**IF** `result.overridden` is True:
+
+```
+DISPLAY (yellow): "[Graphiti] {result.warning}"
+```
+
+Then re-issue the same task-outcome write via the CLI (which uses the
+Python `GraphitiClient` directly and respects `group_id`):
+
+```bash
+guardkit graphiti capture-outcome \
+  --from-task-file tasks/completed/{YYYY-MM}/{task_id}-{slug}.md \
+  --timeout 300
+```
+
+```
+DISPLAY: "[Graphiti] MCP group overridden → re-sent via CLI to correct group"
+```
+
+**IF** the CLI re-issue itself fails:
+```
+DISPLAY (yellow): "[Graphiti] CLI fallback also failed ({error})"
+                  "  (Non-critical — task completion continues)"
+```
+
+**IF** `result.overridden` is False (or `result.actual` is None — the
+response did not match the expected pattern, treated as a safe no-op):
+proceed normally.
+
+**Same check for Write 2** (architectural decisions →
+`guardkit__project_decisions`):
+
+```python
+result = detect_group_override(
+    requested_group_id="guardkit__project_decisions",
+    response_message=write_2_response.message,
+)
+```
+
+**IF** `result.overridden` is True for Write 2:
+
+```
+DISPLAY (yellow): "[Graphiti] {result.warning}"
+                  "  (No CLI equivalent for inline architectural-decision writes —"
+                  "   decision episode is misfiled in '{result.actual}'. Manual"
+                  "   re-capture required if this decision must be queryable in"
+                  "   '{result.requested}'.)"
+```
+
+There is no `guardkit graphiti capture-decision` subcommand today, so
+Write 2 cannot auto-fall-back. The warning is the surface for the user
+to decide whether to file a follow-up.
+
+**Step 2a is non-blocking** — any failure (parse error, CLI failure,
+override-with-no-fallback) emits a warning and continues. Task
+completion is not affected.
+
+**See also**: `.claude/rules/graphiti-knowledge-graph.md` "Known
+transport limitation" and TASK-FIX-B1F7 for context.
+
+---
+
 **Tier 1/2 — CLI Fallback** (when MCP not available):
 
 **IF** `mcp__graphiti__add_memory` is NOT available:
