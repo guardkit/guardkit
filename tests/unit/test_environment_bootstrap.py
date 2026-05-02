@@ -282,7 +282,7 @@ class TestPyprojectUvSourcesDetection:
         pyproject [tool.uv.sources] | uv.lock | uv on PATH | install command
         ----------------------------|---------|------------|------------------
         absent                      | absent  | any        | pip install -e .  (unchanged)
-        absent                      | present | yes        | uv pip sync uv.lock
+        absent                      | present | yes        | uv sync --frozen
         absent                      | present | no         | pip install -e .  (+ warn)
         present                     | any     | yes        | uv pip install -e .
         present                     | any     | no         | UvSourcesRequireUvError
@@ -318,7 +318,7 @@ class TestPyprojectUvSourcesDetection:
     def test_uv_lock_present_with_uv_on_path_uses_uv_sync(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Row 2: no uv-sources, uv.lock present, uv on PATH → uv pip sync uv.lock."""
+        """Row 2: no uv-sources, uv.lock present, uv on PATH → uv sync --frozen."""
         (tmp_path / "pyproject.toml").write_text(_PYPROJECT_NO_UV)
         (tmp_path / "uv.lock").write_text("# uv lock\n")
         monkeypatch.setattr(
@@ -330,7 +330,7 @@ class TestPyprojectUvSourcesDetection:
         manifests = detector.detect()
 
         assert len(manifests) == 1
-        assert manifests[0].install_command == ["uv", "pip", "sync", "uv.lock"]
+        assert manifests[0].install_command == ["uv", "sync", "--frozen"]
 
     def test_uv_lock_present_without_uv_on_path_falls_back_with_warning(
         self,

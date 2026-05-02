@@ -398,7 +398,7 @@ class BootstrapResult:
 #   pyproject [tool.uv.sources] | uv.lock | uv on PATH | install command
 #   ----------------------------|---------|------------|------------------
 #   absent                      | absent  | any        | pip install -e .  (unchanged)
-#   absent                      | present | yes        | uv pip sync uv.lock
+#   absent                      | present | yes        | uv sync --frozen
 #   absent                      | present | no         | pip install -e .  (+ warn)
 #   present                     | any     | yes        | uv pip install -e .
 #   present                     | any     | no         | HARD-FAIL (UvSourcesRequireUvError)
@@ -478,7 +478,11 @@ def _resolve_python_pyproject_install_command(
         return ["uv", "pip", "install", "-e", "."]
 
     if has_uv_lock and uv_available:
-        return ["uv", "pip", "sync", "uv.lock"]
+        # `uv sync --frozen` is project-aware (reads pyproject.toml + uv.lock)
+        # and `--frozen` guarantees the orchestrator never silently re-locks.
+        # `uv pip sync` only accepts requirements.txt / pylock.toml — it
+        # cannot parse uv's native `uv.lock` format. (TASK-FIX-FD32)
+        return ["uv", "sync", "--frozen"]
 
     if has_uv_lock and not uv_available:
         logger.warning(
