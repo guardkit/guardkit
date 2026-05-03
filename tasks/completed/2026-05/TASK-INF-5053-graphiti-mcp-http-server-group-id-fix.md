@@ -1,9 +1,13 @@
 ---
 id: TASK-INF-5053
 title: "Fix upstream graphiti-mcp HTTP server to honour client-supplied group_id"
-status: backlog
+status: completed
 created: 2026-05-02T16:30:00Z
-updated: 2026-05-02T16:30:00Z
+updated: 2026-05-03T10:30:00Z
+completed: 2026-05-03T10:30:00Z
+previous_state: in_review
+state_transition_reason: "Task completed via /task-complete. Documented and closed per AC #2 option (c) — bug premise invalidated by direct verification against running server. Real issue (LLM endpoint misrouting) tracked as TASK-INF-5054."
+completed_location: tasks/completed/2026-05/
 priority: medium
 task_type: feature
 tags:
@@ -15,6 +19,7 @@ tags:
 complexity: 5
 estimated_minutes: 180
 parent_task: TASK-FIX-B1F7
+follow_up: TASK-INF-5054
 ---
 
 # Task: Fix upstream `graphiti-mcp` HTTP server to honour client `group_id`
@@ -194,3 +199,90 @@ group names, this task may downgrade to "verify the fix landed and
 update docs" rather than a server-side investigation. Try writes to
 `guardkit__project_decisions`, `guardkit__feature_specs`, and a fresh
 unused group name to see if the coercion fires under any of them.
+
+## Resolution (2026-05-02, /task-work session)
+
+**Outcome: documented and closed (AC #2 option c).** The override bug
+described in the original premise does not exist in the running
+server. The full audit is in `docs/state/TASK-INF-5053/audit.md`;
+key findings:
+
+- Image `graphiti-mcp-standalone:local` (sha `2f486a69120c`) built
+  2026-04-24, container restarted 2026-05-02T10:34Z. No code changes
+  between the TASK-FIX-B1F7 reproducer (claimed 14:45Z) and this
+  investigation.
+- Source at `/app/mcp/src/graphiti_mcp_server.py:374-375` uses
+  standard "client wins, fall back to default" routing
+  (`effective_group_id = group_id or config.graphiti.group_id`).
+- Live probe with `group_id="guardkit__test_inf5053"` returned
+  response `Episode 'TASK-INF-5053 probe2' queued for processing in
+  group 'guardkit__test_inf5053'` and the server log confirmed
+  `services.queue_service - INFO - Processing episode None for
+  group guardkit__test_inf5053`. No coercion observed.
+- The "Observation 2026-05-02" note already in this task body
+  corroborates: the same TASK-FIX-B1F7 author failed to reproduce
+  the bug during their own completion.
+
+**The actual root cause** of the symptom that motivated TASK-FIX-B1F7
+("episode never appears under requested group on subsequent search")
+is silent LLM-extraction failure: graphiti-core 0.28.1's `OpenAIClient`
+calls `https://api.openai.com/v1/responses` instead of the configured
+local LLM endpoint, because the MCP server's LLM factory `openai`
+branch (`/app/mcp/src/services/factories.py:109-141`) silently
+ignores `config.providers.openai.api_url`. Filed as **TASK-INF-5054**
+(`tasks/backlog/TASK-INF-5054-graphiti-mcp-llm-endpoint-misrouting.md`).
+
+### Acceptance criteria — final status
+
+- [x] **AC #1 — Locate deployment artefacts.** Container is
+      `graphiti-mcp` on `promaxgb10-41b1`, image
+      `graphiti-mcp-standalone:local`, bootstrap and config mounted
+      from this repo's `scripts/graphiti-mcp-{bootstrap.py,config.yaml}`.
+      Documented in audit.
+- [x] **AC #2 — Identify override mechanism.** None exists. Pivoted to
+      option (c): document and close.
+- [x] **AC #3 — Apply server-side fix.** Not applicable — no bug to
+      fix. Documentation updated to reflect actual behaviour.
+- [x] **AC #4 — Verify end-to-end.** Probe sent and confirmed against
+      both the response message AND the server log. Test group
+      `guardkit__test_inf5053` was used. The probe episode failed
+      background extraction (TASK-INF-5054), so `get_episodes`
+      returns nothing — but that's a separate issue and does not
+      affect group_id routing verification.
+- [x] **AC #5 — Update documentation.** Updated
+      `.claude/rules/graphiti-knowledge-graph.md` (replaced "Known
+      transport limitation" section) and
+      `docs/guides/graphiti-claude-code-integration.md` (replaced
+      "MCP write group_id coercion" troubleshooting subsection with
+      "Episode written but not retrievable on search (LLM-extraction
+      failure)" pointing at TASK-INF-5054).
+- [x] **AC #6 — Decide fate of client-side mitigation.** Kept as
+      defence-in-depth (option a). `installer/core/commands/task-complete.md`
+      Step 2a heading and prose updated to reframe it from
+      "addressing a known live bug" to "cheap regression insurance,
+      no live bug observed". The 11-test parser suite remains the
+      automated guard.
+
+### Files modified
+
+- `.claude/rules/graphiti-knowledge-graph.md` — replaced "Known
+  transport limitation" section.
+- `docs/guides/graphiti-claude-code-integration.md` — replaced "MCP
+  write group_id coercion" troubleshooting subsection.
+- `installer/core/commands/task-complete.md` — softened Step 2a
+  heading + status note.
+- `tasks/in_progress/TASK-INF-5053-...md` (this file) — added this
+  Resolution section.
+- `tasks/backlog/TASK-INF-5054-graphiti-mcp-llm-endpoint-misrouting.md`
+  (NEW) — separate task for the real LLM-endpoint problem.
+- `docs/state/TASK-INF-5053/audit.md` (NEW) — full investigation
+  audit trail.
+
+### Test cleanup
+
+The probe episode `TASK-INF-5053 probe2` (group
+`guardkit__test_inf5053`) never persisted past the queue (extraction
+failed), so there is no node/edge to delete. No cleanup action needed.
+Once TASK-INF-5054 is fixed and writes persist, this group can be
+formally cleared via `mcp__graphiti__delete_episode` if any orphan
+records exist.
