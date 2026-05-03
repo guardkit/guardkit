@@ -263,6 +263,48 @@ The scope doc explicitly requests design only (no code, no feature-plan work in 
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+The task file reads cleanly end-to-end. Status stays backlog, decision is locked in, GB10-execution constraint is documented,
+  patch shape is concrete.
+
+  Final summary of what changed in the task file:
+
+  - Frontmatter: added remediation_decision: option_b_openai_generic and execution_location: promaxgb10-41b1 (work directly on
+  the GB10, not via SSH from a Mac dev machine). Bumped updated.
+  - New "Decision (2026-05-03): Option (b)" section: locks in the choice with the local-only-LLM constraint as the deciding
+  factor, plus a comparison table showing why (a) is insufficient and (c) is a hack.
+  - First AC item: flipped to [x] since the path is now chosen, with rationale referencing the Decision section.
+  - New "Execute on the GB10 directly" subsection under Implementation Notes: explains why (Docker daemon locality, vendored
+  repo path, log-access proximity) plus a 9-step suggested order of operations.
+  - "Where the patch lands" subsection: rewrote with a concrete case 'openai_generic': snippet, the matching YAML provider
+  block, and a note that the patch is local-only with documentation in graphiti-mcp-build.sh (no upstream contribution right
+  now).
+  - Files section: removed "possibly" / "OR" hedging now that the path is chosen.
+
+  Status remains backlog — file stays at tasks/backlog/TASK-INF-5054-graphiti-mcp-llm-endpoint-misrouting.md. Pick it up on the
+  GB10 when you're ready.
+
+✻ Cogitated for 2m 9s
+
+※ recap: Goal: fix graphiti-mcp silently dropping MCP writes by adding an openai_generic provider so it calls
+  chat.completions.create against local LLMs. Task TASK-INF-5054 is updated with the decision and stays in backlog. Next: pick
+  it up on the GB10.
+
+
+
+
+
+
 In the guardkit repo — 5 upstream tasks (high → low priority)
 Task	Priority	What
 TASK-FIX-A7B1	high	smoke_gates: honour bootstrap venv interpreter
