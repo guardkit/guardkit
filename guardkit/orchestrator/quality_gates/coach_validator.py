@@ -2879,11 +2879,42 @@ class CoachValidator:
             extracted_ids.append(extracted_id)
 
         # Build promise map: criterion_id -> promise dict
+        # TASK-CVAC-002: Also key each promise by the AC ID extracted from
+        # its ``criterion_text`` field, when that differs from the explicit
+        # ``criterion_id``. This makes Coach robust to Player still emitting
+        # index-based ``criterion_id`` (e.g. ``AC-001``) for criteria whose
+        # markdown carries a natural label (e.g. ``**AC-SEED-01** — text``).
+        # ``setdefault`` semantics: explicit ``criterion_id`` wins when both
+        # keys would map to a promise, so promises that already use the
+        # natural label directly are unaffected.
         promise_map: Dict[str, Dict[str, Any]] = {}
+        # Maps fallback-key -> the promise's original ``criterion_id`` (used
+        # only for the diagnostic log emitted at lookup time).
+        fallback_origins: Dict[str, str] = {}
         for p in completion_promises:
             cid = p.get("criterion_id") or p.get("ac_id", "")
             if cid:
                 promise_map[cid] = p
+            text_id: Optional[str] = None
+            criterion_text_field = p.get("criterion_text")
+            if criterion_text_field:
+                cleaned_text = self._strip_criterion_prefix(
+                    criterion_text_field
+                )
+                # FEAT-FD32 reproducer: Player commonly emits a half-stripped
+                # bold marker in ``criterion_text`` (``AC-SEED-01** — text``)
+                # because the field travels through several
+                # markdown-flattening hops on the way out of SDK Claude.
+                # ``_extract_ac_id`` is deliberately strict about unmatched
+                # ``**`` (TASK-CVAC-001 contract — see
+                # ``test_unmatched_bold_marker``), so we collapse stray
+                # ``**`` here before extraction. This widens recovery
+                # without weakening ``_extract_ac_id``'s caller contract.
+                normalized_text = cleaned_text.replace("**", "")
+                _, text_id = self._extract_ac_id(normalized_text)
+            if text_id and text_id != cid and text_id not in promise_map:
+                promise_map[text_id] = p
+                fallback_origins[text_id] = cid
 
         criteria_results: List[CriterionResult] = []
         missing: List[str] = []
@@ -2891,6 +2922,19 @@ class CoachValidator:
         for i, criterion_text in enumerate(acceptance_criteria):
             criterion_id = extracted_ids[i] or f"AC-{i+1:03d}"
             promise = promise_map.get(criterion_id)
+
+            # TASK-CVAC-002: Surface contract drift when Coach's lookup
+            # succeeded only via the criterion_text fallback. Operators can
+            # grep these to identify Player-prompt versions still emitting
+            # index-based IDs against natural-label criteria.
+            if promise and criterion_id in fallback_origins:
+                logger.debug(
+                    "%s: matched via criterion_text fallback "
+                    "(promise.criterion_id=%r, extracted_text_id=%r)",
+                    criterion_id,
+                    fallback_origins[criterion_id],
+                    criterion_id,
+                )
 
             raw_status = promise.get("status", "") if promise else ""
             normalized_status = STATUS_ALIASES.get(raw_status, raw_status)

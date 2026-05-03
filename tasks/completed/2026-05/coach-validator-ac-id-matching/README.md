@@ -142,3 +142,13 @@ A reproduction fixture mirroring TASK-GR-LOAD's exact AC shape:
 - `coach-validator-ac-id-matching/`
   - `README.md` (this file)
   - `TASK-CVAC-001-extract-and-match-compound-ac-ids.md`
+  - `TASK-CVAC-002-promise-text-fallback-matching.md` — follow-up
+    closing the inverse failure mode discovered in study-tutor
+    FEAT-FD32 Run 4 (2026-05-03). After CVAC-001, Coach extracted
+    natural-label IDs but Player still emitted index-based
+    `criterion_id` for the same criteria. CVAC-002 adds a Coach-side
+    fallback: re-key each promise by the AC ID extracted from its
+    own `criterion_text`, with `setdefault` semantics so explicit
+    `criterion_id` always wins. Includes a stray-`**` normaliser to
+    handle Player's mangled-bold criterion_text shape without
+    weakening `_extract_ac_id`'s strict contract.
