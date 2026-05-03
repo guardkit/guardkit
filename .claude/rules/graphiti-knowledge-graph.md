@@ -20,42 +20,44 @@ nothing or returns stale results from other sessions. **Always pass all relevant
 
 ---
 
-## Known transport limitation: HTTP MCP coerces write `group_id` (TASK-FIX-B1F7)
+## HTTP MCP transport: `group_id` is honoured (TASK-INF-5053)
 
-The HTTP MCP transport at `http://promaxgb10-41b1:8004/mcp` accepts a
-`group_id` parameter on `mcp__graphiti__add_memory` calls but silently
-overrides it with the server-side default (typically `product_knowledge`).
-**Search calls (`search_nodes`, `search_memory_facts`) honour `group_ids`
-correctly** — only writes are affected.
+> **Status, 2026-05-02 (TASK-INF-5053):** an earlier task (TASK-FIX-B1F7)
+> reported that the HTTP MCP server at `http://promaxgb10-41b1:8004/mcp`
+> silently overrode client-supplied `group_id` to `product_knowledge`.
+> Verification against the running server invalidated that diagnosis —
+> the server source at `/app/mcp/src/graphiti_mcp_server.py:374-375`
+> uses the standard "client wins, fall back to default" pattern
+> (`effective_group_id = group_id or config.graphiti.group_id`), and
+> live probes confirm the response message reports the same group the
+> caller sent. See `docs/state/TASK-INF-5053/audit.md` for the full
+> audit trail (image SHA, source line numbers, probe response, server
+> log correlation).
+>
+> The symptom that motivated TASK-FIX-B1F7 ("episode never appears under
+> requested group on subsequent search") is real, but its root cause is
+> background **LLM-extraction failure**, not group_id coercion: episodes
+> are correctly routed to the requested group, then dropped by the queue
+> worker because graphiti-core 0.28.1's `OpenAIClient` calls the new
+> OpenAI Responses API at `api.openai.com/v1/responses` instead of the
+> configured local LLM endpoint. Tracked separately as
+> **TASK-INF-5054** (graphiti-mcp LLM endpoint misrouting).
 
-**Detection.** The MCP response message reveals the actual group used:
-
-```
-Episode 'X' queued for processing in group 'product_knowledge'
-                                            ^^^^^^^^^^^^^^^^^
-                                            actual group, may differ
-                                            from what was requested
-```
-
-`/task-complete` parses this string via
-`installer/core/commands/lib/graphiti_response_parser.py` and falls back
+**Defence-in-depth still in place.** `/task-complete` continues to
+parse the MCP response message via
+`installer/core/commands/lib/graphiti_response_parser.py` and fall back
 to the Python CLI (`guardkit graphiti capture-outcome`) for task-outcome
-writes when override is detected. CLI writes use the Python
-`GraphitiClient` directly and respect `group_id`.
+writes if a divergence is ever detected. The fallback is harmless when
+no divergence fires (which is the current state) and would defend
+against a future regression. Do not remove it without filing a task.
 
-**Workaround for ad-hoc writes** (outside `/task-complete`):
-
-- Prefer the CLI for any write that must land in a specific group:
-  `guardkit graphiti capture-outcome --from-task-file <path> --timeout 300`.
-- For inline `mcp__graphiti__add_memory` calls, inspect the response
-  message after each write — if the actual group differs from the
-  requested group, the write landed in the wrong namespace and future
-  scoped searches will not find it.
-
-**Status.** This is an upstream `graphiti-mcp` HTTP-server issue (not in
-this repo's `infra/`; the server runs on `promaxgb10-41b1`). A separate
-infra task should configure the server to honour client-supplied
-`group_id` or patch the upstream server to forward the parameter.
+**For ad-hoc inline writes,** trust the response message: it accurately
+reflects the queued group. There is no need to compare requested vs
+actual group_id manually. If a write does not appear in subsequent
+searches scoped to the same group, the issue is almost certainly
+extraction failure (TASK-INF-5054), not routing — check the server
+logs on `promaxgb10-41b1` (`docker logs graphiti-mcp --tail 50`) for
+`Failed to process episode ... for group <X>` lines.
 
 ---
 

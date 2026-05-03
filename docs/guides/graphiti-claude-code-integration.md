@@ -343,53 +343,76 @@ results = await client.search(
    ```
 5. Check MCP server logs in Claude Code (View → Output → MCP)
 
-### MCP write `group_id` coercion (HTTP transport)
+### Episode written but not retrievable on search (LLM-extraction failure)
 
-**Symptom**: Episodes written via `mcp__graphiti__add_memory` land in
-`product_knowledge` (or another server-default group) instead of the
-`group_id` the caller passed. Subsequent searches scoped to the
-requested group return no results.
+**Symptom**: `mcp__graphiti__add_memory` returns a successful response
+("Episode 'X' queued for processing in group 'Y'"), but a subsequent
+`get_episodes(group_ids=["Y"])` or `search_nodes(query=..., group_ids=["Y"])`
+returns no results — even though the response confirmed the requested
+group.
 
-**Cause**: The HTTP MCP transport at `http://promaxgb10-41b1:8004/mcp`
-silently overrides the client-supplied `group_id` parameter with a
-server-side default. Search calls are unaffected — only writes leak
-into the wrong namespace.
+**Cause**: The episode is correctly queued under the requested group,
+but the queue worker's background LLM-extraction step fails. With
+`graphiti-core 0.28.1` and `provider: openai` in the MCP server's
+config, the LLM call goes to `https://api.openai.com/v1/responses`
+(the new Responses API) instead of the configured local LLM endpoint —
+the MCP server's LLM factory `openai` branch silently ignores
+`config.providers.openai.api_url`. With a placeholder API key, the
+call returns 401 and the episode is dropped after 2 retries.
 
-**Detection**: The MCP response message reveals the actual group used:
+This is the actual root cause of the symptom that originally motivated
+TASK-FIX-B1F7's "MCP write group_id coercion" diagnosis — see
+TASK-INF-5053 audit (`docs/state/TASK-INF-5053/audit.md`) for the
+investigation that disambiguated the two.
 
+**Detection**:
+
+```bash
+# On promaxgb10-41b1, check the queue worker's recent log
+ssh promaxgb10-41b1 "docker logs graphiti-mcp --tail 50 2>&1 | grep -E 'Processing episode|Failed to process|api.openai.com|401'"
+
+# Look for the pattern:
+#   services.queue_service - INFO  - Processing episode None for group <X>
+#   httpx                  - INFO  - HTTP Request: POST https://api.openai.com/v1/responses "401 Unauthorized"
+#   services.queue_service - ERROR - Failed to process episode None for group <X>
 ```
-"Episode 'X' queued for processing in group 'product_knowledge'"
-                                            ^^^^^^^^^^^^^^^^^
-                                            actual, may differ from
-                                            what was requested
-```
 
-If this string differs from the requested `group_id`, the write was
-overridden.
+If you see those lines, routing is fine and the LLM endpoint is the
+problem. If episodes process without the 401 path, extraction is
+working.
 
 **Workaround**:
 
-- `/task-complete` auto-detects the override (via
-  `installer/core/commands/lib/graphiti_response_parser.py`) and falls
-  back to the Python CLI for task-outcome writes:
+- Use the Python CLI for any write that must persist:
   ```bash
   guardkit graphiti capture-outcome --from-task-file <path> --timeout 300
   ```
-  The CLI bypasses the MCP server and writes directly via
-  `GraphitiClient`, which honours `group_id`.
-- For ad-hoc writes outside `/task-complete`, prefer the CLI for any
-  episode that must land in a specific group. Inline
-  `mcp__graphiti__add_memory` calls are still subject to the override.
-- For inline architectural-decision writes (Write 2 in `/task-complete`),
-  there is no equivalent CLI surface — the user is warned and decides
-  whether to file a follow-up.
+  The CLI uses `GraphitiClient` directly and is configured via
+  `.guardkit/graphiti.yaml`, which honours `llm_base_url`. This is the
+  same fallback that `/task-complete` Step 2a uses (kept as
+  defence-in-depth — see below).
+- For ad-hoc inline `mcp__graphiti__add_memory` calls, episodes will
+  queue under the correct group but may not persist if extraction
+  fails. If the write is important, follow up with the CLI path.
 
-**Status**: This is an upstream `graphiti-mcp` HTTP-server issue. The
-server runs on `promaxgb10-41b1` (not in this repo's `infra/`). A
-separate infra task should configure the server to honour client-
-supplied `group_id` or patch the upstream server to forward the
-parameter from the JSON body to the underlying `add_episode` call.
-See: TASK-FIX-B1F7.
+**Note on the defence-in-depth workaround in `/task-complete`**: Step 2a
+of `installer/core/commands/task-complete.md` still parses the MCP
+response message to detect a hypothetical `group_id` override and falls
+back to the CLI when divergence is detected. As of TASK-INF-5053 no
+such divergence is observed in practice — the server honours
+`group_id`. The detection + fallback is retained as cheap regression
+insurance, not as mitigation for a known live bug.
+
+**Status**: The real underlying issue (LLM endpoint misrouting in the
+MCP server's `openai` provider branch) is tracked as **TASK-INF-5054**.
+Resolution will let queued episodes complete extraction so writes
+become retrievable on search.
+
+**Group_id routing itself works correctly.** The earlier "MCP write
+`group_id` coercion" diagnosis (TASK-FIX-B1F7) was invalidated by
+direct verification against the running server — see
+`docs/state/TASK-INF-5053/audit.md` for the full audit (image SHA,
+source line numbers, probe response, correlated server log).
 
 ### Group ID mismatch — no results returned
 

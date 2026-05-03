@@ -285,15 +285,24 @@ DISPLAY: "[Graphiti] Warning: Could not capture task outcome ({error})"
 
 ---
 
-### Step 2a: Detect group_id Override and Fall Back to CLI (TASK-FIX-B1F7)
+### Step 2a: Detect group_id Override and Fall Back to CLI (TASK-FIX-B1F7, scope-revised by TASK-INF-5053)
 
-The Graphiti MCP HTTP server at `http://promaxgb10-41b1:8004/mcp`
-silently overrides the `group_id` parameter with a server-side default
-(typically `product_knowledge`). The actual group used is reported in
-the response message: `Episode '...' queued for processing in group
-'<actual>'`. Untreated, this means project-specific knowledge (task
-outcomes, project decisions) leaks into the shared `product_knowledge`
-namespace.
+> **Status (TASK-INF-5053, 2026-05-02):** the override that motivated
+> this step was investigated against the running server and **could not
+> be reproduced** — the source at `/app/mcp/src/graphiti_mcp_server.py:
+> 374-375` correctly honours client-supplied `group_id`, and live
+> probes confirm. The detection + fallback below is retained as cheap
+> defence-in-depth (one parser module + a non-blocking re-issue) so
+> that any future regression would be caught and mitigated
+> automatically. It is not addressing a known live bug. See
+> `docs/state/TASK-INF-5053/audit.md` for the audit trail.
+
+The Graphiti MCP HTTP server reports the actual group used in the
+response message: `Episode '...' queued for processing in group
+'<actual>'`. If `<actual>` ever differs from the requested `group_id`,
+project-specific knowledge (task outcomes, project decisions) would
+leak into a shared namespace and be lost to future scoped searches.
+Step 2a parses the message and falls back to the CLI on divergence.
 
 After **Write 1** completes, parse the response message and check for
 override using the parser at
@@ -365,8 +374,10 @@ to decide whether to file a follow-up.
 override-with-no-fallback) emits a warning and continues. Task
 completion is not affected.
 
-**See also**: `.claude/rules/graphiti-knowledge-graph.md` "Known
-transport limitation" and TASK-FIX-B1F7 for context.
+**See also**: `.claude/rules/graphiti-knowledge-graph.md` "HTTP MCP
+transport: `group_id` is honoured (TASK-INF-5053)",
+TASK-FIX-B1F7 (original mitigation), and TASK-INF-5053
+(`docs/state/TASK-INF-5053/audit.md`, scope revision).
 
 ---
 
