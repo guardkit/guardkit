@@ -18,6 +18,7 @@ import pytest
 
 from installer.core.commands.lib.smoke_gates_nudge import (
     check_smoke_gates_activation,
+    discover_test_roots,
 )
 
 
@@ -300,3 +301,197 @@ def test_notice_example_validates_against_smoke_gates_schema(
     # requires after_wave + command. If this raises, the nudge is once
     # again handing users a config that fails AutoBuild validation.
     SmokeGates.model_validate(parsed["smoke_gates"])
+
+
+# ---------------------------------------------------------------------------
+# TASK-FPSG-003 (L3c): discover_test_roots helper
+# ---------------------------------------------------------------------------
+
+
+class TestDiscoverTestRoots:
+    """Cover the four branches of ``discover_test_roots``."""
+
+    def test_returns_empty_when_no_tests_dir(self, tmp_path: Path) -> None:
+        assert discover_test_roots(tmp_path) == []
+
+    def test_returns_empty_when_tests_dir_is_a_file(self, tmp_path: Path) -> None:
+        # tests/ exists but is a file, not a directory.
+        (tmp_path / "tests").write_text("not a directory")
+        assert discover_test_roots(tmp_path) == []
+
+    def test_returns_empty_when_tests_dir_has_no_subdirs(
+        self, tmp_path: Path,
+    ) -> None:
+        (tmp_path / "tests").mkdir()
+        # Loose files at the top of tests/ are not test roots.
+        (tmp_path / "tests" / "conftest.py").write_text("# noqa")
+        assert discover_test_roots(tmp_path) == []
+
+    def test_returns_sorted_tests_prefixed_paths(self, tmp_path: Path) -> None:
+        tests_dir = tmp_path / "tests"
+        tests_dir.mkdir()
+        for name in ("unit", "forge", "integration"):
+            (tests_dir / name).mkdir()
+
+        result = discover_test_roots(tmp_path)
+
+        assert result == ["tests/forge", "tests/integration", "tests/unit"]
+
+    def test_skips_cache_and_hidden_directories(self, tmp_path: Path) -> None:
+        tests_dir = tmp_path / "tests"
+        tests_dir.mkdir()
+        for name in (
+            "unit",
+            "__pycache__",
+            ".pytest_cache",
+            "node_modules",
+            ".hidden",
+            "integration",
+        ):
+            (tests_dir / name).mkdir()
+
+        result = discover_test_roots(tmp_path)
+
+        assert result == ["tests/integration", "tests/unit"]
+
+    def test_skips_loose_files_alongside_subdirs(self, tmp_path: Path) -> None:
+        tests_dir = tmp_path / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "unit").mkdir()
+        (tests_dir / "conftest.py").write_text("# noqa")
+
+        assert discover_test_roots(tmp_path) == ["tests/unit"]
+
+
+# ---------------------------------------------------------------------------
+# TASK-FPSG-003 (L3c): banner uses discovered roots when repo_root supplied
+# ---------------------------------------------------------------------------
+
+
+class TestBannerGroundedInRepo:
+    """The notice surfaces real ``tests/`` subdirs when repo_root is passed."""
+
+    def test_banner_lists_discovered_roots_when_present(
+        self, tmp_path: Path,
+    ) -> None:
+        # Build a target repo with two test roots.
+        repo_root = tmp_path / "target_repo"
+        (repo_root / "tests" / "forge").mkdir(parents=True)
+        (repo_root / "tests" / "unit").mkdir(parents=True)
+
+        # And a feature YAML that triggers the nudge.
+        yaml_path = tmp_path / "FEAT-T.yaml"
+        _write(yaml_path, _TWO_WAVE_NO_SMOKE)
+
+        notice = check_smoke_gates_activation(yaml_path, repo_root=repo_root)
+
+        assert notice is not None
+        assert "Available test roots in this repo" in notice
+        assert "tests/forge" in notice
+        assert "tests/unit" in notice
+        # Example pytest command should use the discovered roots, not the
+        # generic placeholder.
+        assert "pytest tests/forge tests/unit -x" in notice
+        assert "tests/smoke" not in notice
+
+    def test_banner_falls_back_to_generic_when_no_tests_dir(
+        self, tmp_path: Path,
+    ) -> None:
+        # Target repo has no tests/ tree at all.
+        repo_root = tmp_path / "target_repo"
+        repo_root.mkdir()
+
+        yaml_path = tmp_path / "FEAT-T.yaml"
+        _write(yaml_path, _TWO_WAVE_NO_SMOKE)
+
+        notice = check_smoke_gates_activation(yaml_path, repo_root=repo_root)
+
+        assert notice is not None
+        assert "Available test roots in this repo" not in notice
+        assert "no `tests/` directory discovered" in notice
+        # Falls back to the historical generic placeholder.
+        assert "pytest tests/smoke -x" in notice
+
+    def test_banner_falls_back_to_generic_when_repo_root_omitted(
+        self, yaml_path: Path,
+    ) -> None:
+        # No repo_root → no discovery → generic placeholder, no roots block.
+        _write(yaml_path, _TWO_WAVE_NO_SMOKE)
+
+        notice = check_smoke_gates_activation(yaml_path)
+
+        assert notice is not None
+        assert "Available test roots in this repo" not in notice
+        assert "pytest tests/smoke -x" in notice
+
+    def test_banner_truncates_when_more_than_twelve_roots(
+        self, tmp_path: Path,
+    ) -> None:
+        repo_root = tmp_path / "target_repo"
+        tests_dir = repo_root / "tests"
+        tests_dir.mkdir(parents=True)
+        # Create 15 test roots; the banner should cap at 12 and surface the
+        # remainder via a "… (3 more)" line.
+        for i in range(15):
+            (tests_dir / f"suite_{i:02d}").mkdir()
+
+        yaml_path = tmp_path / "FEAT-T.yaml"
+        _write(yaml_path, _TWO_WAVE_NO_SMOKE)
+
+        notice = check_smoke_gates_activation(yaml_path, repo_root=repo_root)
+
+        assert notice is not None
+        assert "tests/suite_00" in notice
+        assert "tests/suite_11" in notice
+        # 12, 13, 14 are over the cap.
+        assert "tests/suite_14" not in notice
+        assert "… (3 more)" in notice
+
+    def test_grounded_banner_still_validates_against_smoke_gates_schema(
+        self, tmp_path: Path,
+    ) -> None:
+        """The grounded example block must round-trip through the
+        ``SmokeGates`` Pydantic model — same load-bearing check as the
+        legacy ``test_notice_example_validates_against_smoke_gates_schema``,
+        but exercised against the discovery-grounded variant.
+        """
+        import yaml as yaml_module
+
+        from guardkit.orchestrator.feature_loader import SmokeGates
+
+        repo_root = tmp_path / "target_repo"
+        (repo_root / "tests" / "forge").mkdir(parents=True)
+        (repo_root / "tests" / "unit").mkdir(parents=True)
+
+        yaml_path = tmp_path / "FEAT-T.yaml"
+        _write(yaml_path, _TWO_WAVE_NO_SMOKE)
+
+        notice = check_smoke_gates_activation(yaml_path, repo_root=repo_root)
+        assert notice is not None
+
+        lines = notice.splitlines()
+        start = next(
+            (i + 1 for i, line in enumerate(lines) if "Minimal example:" in line),
+            None,
+        )
+        assert start is not None
+        end = next(
+            (
+                i
+                for i, line in enumerate(lines[start:], start=start)
+                if line.lstrip().startswith("See ")
+            ),
+            None,
+        )
+        assert end is not None
+
+        raw_block = lines[start:end]
+        dedented = "\n".join(
+            line[4:] if line.startswith("    ") else line for line in raw_block
+        )
+
+        parsed = yaml_module.safe_load(dedented)
+        assert isinstance(parsed, dict)
+        assert "smoke_gates" in parsed
+
+        SmokeGates.model_validate(parsed["smoke_gates"])
