@@ -232,7 +232,7 @@ class FeatureTask(BaseModel):
     file_path: Path = Path("")
     complexity: int = Field(default=5, ge=1, le=10)
     dependencies: List[str] = Field(default_factory=list)
-    status: Literal["pending", "in_progress", "completed", "failed", "skipped"] = "pending"
+    status: Literal["pending", "in_progress", "completed", "failed", "skipped", "deferred"] = "pending"
     implementation_mode: Literal["direct", "task-work", "manual"] = "task-work"
     estimated_minutes: int = 30
     requires_infrastructure: List[str] = Field(default_factory=list)

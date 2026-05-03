@@ -1,0 +1,139 @@
+id: FEAT-AUTM
+name: /feature-plan task-design mismatch (Class C of /feature-plan defects)
+description: >
+  Implements Shape D from TASK-REV-AUTM decision review: hybrid plan-time
+  detector + task_type:operator_handoff enforcement. Solves the class of
+  /feature-plan defects where ACs require runtime/operator observation
+  (live infrastructure, human-in-the-loop, wall-clock) that Player and
+  Coach cannot satisfy by construction. Two-layer defence: detector at
+  plan time (cheap), enforcer at run time (safety net).
+created: '2026-05-03T12:35:00Z'
+updated: '2026-05-03T13:30:00Z'
+status: in_progress
+progress: '57%'
+completed_tasks: 4
+total_tasks: 7
+complexity: 28
+estimated_tasks: 7
+parent_review: TASK-REV-AUTM
+
+tasks:
+- id: TASK-FPTC-001
+  name: /feature-plan detector + interactive operator_handoff prompt (L3a)
+  file_path: tasks/backlog/feature-plan-defects/class-c-task-design-mismatch/TASK-FPTC-001-feature-plan-detector-and-prompt.md
+  complexity: 5
+  dependencies: []
+  status: pending
+  description: Adds Detection Rules section + operator_handoff row + interactive prompt step to feature-plan.md, plus pytest contract test asserting the prompt covers strong-signal markers.
+  implementation_mode: task-work
+  estimated_minutes: 120
+  task_type: feature
+  wave: 1
+  conductor_workspace: feature-plan-defects-wave1-1
+
+- id: TASK-FPTC-002
+  name: Add OPERATOR_HANDOFF to TaskType enum + skip-everything QualityGateProfile
+  file_path: tasks/backlog/feature-plan-defects/class-c-task-design-mismatch/TASK-FPTC-002-task-type-operator-handoff-enum.md
+  complexity: 3
+  dependencies: []
+  status: pending
+  description: Extends guardkit/models/task_types.py with OPERATOR_HANDOFF enum value and a QualityGateProfile that disables arch_review, coverage, and tests.
+  implementation_mode: task-work
+  estimated_minutes: 60
+  task_type: declarative
+  wave: 1
+  conductor_workspace: feature-plan-defects-wave1-2
+
+- id: TASK-FPTC-003
+  name: Feature orchestrator skips operator_handoff tasks; reports as DEFERRED
+  file_path: tasks/completed/2026-05/class-c-task-design-mismatch/TASK-FPTC-003-orchestrator-skip-operator-handoff.md
+  complexity: 5
+  dependencies:
+  - TASK-FPTC-002
+  status: completed
+  completed: '2026-05-03T13:30:00Z'
+  description: feature_orchestrator.py short-circuits dispatch for operator_handoff tasks before any Player/Coach invocation; records {task_id, outcome=deferred, reason} in the wave summary.
+  implementation_mode: task-work
+  estimated_minutes: 120
+  task_type: feature
+  wave: 2
+  conductor_workspace: feature-plan-defects-wave2-1
+
+- id: TASK-FPTC-004
+  name: CoachValidator + FeatureLoader treat operator_handoff as deferred-without-validation
+  file_path: tasks/backlog/feature-plan-defects/class-c-task-design-mismatch/TASK-FPTC-004-validator-and-loader-awareness.md
+  complexity: 4
+  dependencies:
+  - TASK-FPTC-002
+  status: pending
+  description: CoachValidator branches on operator_handoff at entry point and returns deferred outcome without AC matching; FeatureLoader accepts operator_handoff tasks with runtime-shaped ACs without error.
+  implementation_mode: task-work
+  estimated_minutes: 90
+  task_type: feature
+  wave: 2
+  conductor_workspace: feature-plan-defects-wave2-2
+
+- id: TASK-FPTC-005
+  name: /feature-complete surfaces operator follow-up checklist for deferred tasks
+  file_path: tasks/backlog/feature-plan-defects/class-c-task-design-mismatch/TASK-FPTC-005-feature-complete-operator-checklist.md
+  complexity: 4
+  dependencies:
+  - TASK-FPTC-003
+  status: pending
+  description: feature-complete.md gains a "Required operator follow-up" section; merge-summary code path emits the deferred-task checklist with task IDs, titles, and runtime ACs verbatim. Plan summary in feature-plan.md shows deferred count.
+  implementation_mode: task-work
+  estimated_minutes: 90
+  task_type: feature
+  wave: 3
+  conductor_workspace: feature-plan-defects-wave3-1
+
+- id: TASK-FPTC-006
+  name: End-to-end detector tests against FEAT-FD32 reproducers + false-positive guard
+  file_path: tasks/backlog/feature-plan-defects/class-c-task-design-mismatch/TASK-FPTC-006-detector-tests-against-reproducers.md
+  complexity: 4
+  dependencies:
+  - TASK-FPTC-001
+  status: pending
+  description: Verbatim AC-SEED-01 and AC-DEMO-01 fixtures asserted to be flagged. Three benign-looking fixtures asserted NOT flagged. Contract-mirror matcher mechanically verifies the prompt-side rules.
+  implementation_mode: task-work
+  estimated_minutes: 120
+  task_type: testing
+  wave: 3
+  conductor_workspace: feature-plan-defects-wave3-2
+
+- id: TASK-FPTC-007
+  name: Consolidate feature-plan-smoke-gate-validation/ into feature-plan-defects/ + write classification guide
+  file_path: tasks/backlog/feature-plan-defects/class-c-task-design-mismatch/TASK-FPTC-007-docs-and-folder-consolidation.md
+  complexity: 3
+  dependencies:
+  - TASK-FPTC-001
+  - TASK-FPTC-002
+  - TASK-FPTC-003
+  - TASK-FPTC-004
+  - TASK-FPTC-005
+  - TASK-FPTC-006
+  status: pending
+  description: git-mv FPSG folder into class-a-invented-paths/ and class-b-temporal-sequencing/ subfolders under feature-plan-defects/. New docs/guides/feature-plan-task-classification.md cross-linked from CLAUDE.md and feature-plan.md.
+  implementation_mode: task-work
+  estimated_minutes: 60
+  task_type: documentation
+  wave: 4
+  conductor_workspace: feature-plan-defects-wave4-1
+
+orchestration:
+  parallel_groups:
+  - - TASK-FPTC-001
+    - TASK-FPTC-002
+  - - TASK-FPTC-003
+    - TASK-FPTC-004
+  - - TASK-FPTC-005
+    - TASK-FPTC-006
+  - - TASK-FPTC-007
+  estimated_duration_minutes: 660
+  recommended_parallel: 2
+
+execution:
+  tasks_completed: 0
+  tasks_pending: 7
+  progress_percentage: 0
+  updated: '2026-05-03T12:35:00Z'

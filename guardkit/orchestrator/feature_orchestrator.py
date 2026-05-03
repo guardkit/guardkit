@@ -68,6 +68,7 @@ from guardkit.orchestrator.environment_bootstrap import (
     check_requires_python_precheck,
     format_requires_python_remediation,
 )
+from guardkit.models.task_types import TaskType, normalise_task_type
 from guardkit.tasks.task_loader import TaskLoader
 from guardkit.orchestrator.parallel_strategy import (
     MaxParallelMode,
@@ -129,6 +130,10 @@ class TaskExecutionResult:
     decision_subtype: Optional[str] = None
     # TASK-FIX-7A07: List of every sub-type that co-fired (structured form).
     decision_subtype_co_fires: List[str] = field(default_factory=list)
+    # TASK-FPTC-003: Reason string for tasks short-circuited as deferred (e.g.
+    # operator_handoff). Populated only when ``final_decision == "deferred"``;
+    # surfaced in the wave-summary banner so the operator knows what to do.
+    deferred_reason: Optional[str] = None
 
 
 @dataclass
@@ -2093,6 +2098,21 @@ The detailed specifications are in the task markdown file.
                 )
                 continue
 
+            # TASK-FPTC-003: operator_handoff short-circuit. Tasks the
+            # orchestrator must hand off to a human operator are never
+            # dispatched into the Player↔Coach loop — they are reported as
+            # deferred (terminal-but-not-failed) and the wave continues.
+            # This branch is the earliest possible check: before
+            # _update_task_started, before timeout resolution, before the
+            # AutoBuildOrchestrator is constructed, before any SDK budget
+            # burns.
+            deferred_result = self._maybe_defer_operator_handoff(
+                task, feature, wave_number
+            )
+            if deferred_result is not None:
+                results.append(deferred_result)
+                continue
+
             # Mark task as started for resume tracking
             self._update_task_started(feature, task_id)
 
@@ -3120,6 +3140,113 @@ The detailed specifications are in the task markdown file.
 
         return orchestration_result
 
+    # ========================================================================
+    # TASK-FPTC-003: operator_handoff skip branch
+    # ========================================================================
+
+    DEFERRED_OPERATOR_HANDOFF_REASON = (
+        "operator follow-up — runtime verification required"
+    )
+
+    def _read_task_type_from_frontmatter(
+        self, task_id: str
+    ) -> Optional[str]:
+        """
+        Resolve the canonical ``task_type`` for a task from its on-disk
+        frontmatter.
+
+        Returns the canonical TaskType value string (e.g. ``"operator_handoff"``)
+        when the file declares one, ``None`` when the task file cannot be
+        loaded or has no ``task_type`` key. Aliases are resolved via
+        ``normalise_task_type``; unknown values fall back to ``"feature"``
+        with a warning, matching the loader's behaviour. Loader errors are
+        caught and logged so the orchestrator falls through to normal
+        dispatch rather than crashing on a missing/corrupt task file.
+        """
+        try:
+            task_data = TaskLoader.load_task(task_id, repo_root=self.repo_root)
+        except Exception as exc:
+            logger.warning(
+                "[%s] operator_handoff probe: TaskLoader.load_task failed (%s); "
+                "treating as non-handoff",
+                task_id,
+                exc,
+            )
+            return None
+
+        frontmatter = task_data.get("frontmatter") or {}
+        raw = frontmatter.get("task_type")
+        if raw is None:
+            return None
+        return normalise_task_type(str(raw))
+
+    def _maybe_defer_operator_handoff(
+        self,
+        task: FeatureTask,
+        feature: Feature,
+        wave_number: int,
+    ) -> Optional[TaskExecutionResult]:
+        """
+        Short-circuit dispatch for ``task_type: operator_handoff`` tasks.
+
+        AC-FPTC-003-01: This branch fires before any worktree setup,
+        before any timeout resolution, before any AutoBuildOrchestrator
+        construction, before any SDK budget burn. The task is reported
+        as deferred (terminal-but-not-failed), the wave continues, and
+        the deferred entry is surfaced on stdout with task ID, title,
+        and reason string so the operator knows what to follow up on.
+
+        Returns a ``TaskExecutionResult`` with ``final_decision="deferred"``
+        when the task should be skipped, or ``None`` when normal dispatch
+        should proceed.
+        """
+        canonical_type = self._read_task_type_from_frontmatter(task.id)
+        if canonical_type != TaskType.OPERATOR_HANDOFF.value:
+            return None
+
+        reason = self.DEFERRED_OPERATOR_HANDOFF_REASON
+        title = task.name or task.id
+
+        # AC-FPTC-003-03: surface a deferred entry with task ID, title,
+        # and reason on the wave-summary stdout banner (the surface the
+        # orchestrator already uses). The wave display also gets a
+        # reasoned skip update so its task panel reflects the outcome.
+        if self._wave_display:
+            self._wave_display.update_task_status(
+                task.id,
+                "skipped",
+                f"DEFERRED — {reason}",
+            )
+        else:
+            console.print(
+                f"  [yellow]⏸ Deferred {task.id}[/yellow]: "
+                f"{title} — {reason}"
+            )
+
+        deferred_result = TaskExecutionResult(
+            task_id=task.id,
+            success=True,  # terminal-but-not-failed — feature run does not fail
+            total_turns=0,
+            final_decision="deferred",
+            error=None,
+            deferred_reason=reason,
+        )
+
+        # Persist the deferred outcome via the standard update path so
+        # downstream consumers (e.g. /feature-complete TASK-FPTC-005)
+        # see ``task.status == "deferred"`` and the deferred_reason in
+        # ``task.result``.
+        self._update_feature(feature, task.id, deferred_result, wave_number)
+
+        logger.info(
+            "[%s] operator_handoff skip: deferred (no Player/Coach invocation, "
+            "no SDK budget burn). reason=%r",
+            task.id,
+            reason,
+        )
+
+        return deferred_result
+
     def _dependencies_satisfied(
         self,
         task: FeatureTask,
@@ -3172,7 +3299,14 @@ The detailed specifications are in the task markdown file.
             return
 
         if result:
-            task.status = "completed" if result.success else "failed"
+            # TASK-FPTC-003: deferred is terminal-but-not-failed. Preserve
+            # the explicit "deferred" status in the saved feature state so
+            # /feature-complete (TASK-FPTC-005) can find it without
+            # round-tripping through the success flag.
+            if result.final_decision == "deferred":
+                task.status = "deferred"
+            else:
+                task.status = "completed" if result.success else "failed"
             task.turns_completed = result.total_turns
             task.current_turn = 0  # Reset current turn on completion
             task.completed_at = datetime.now().isoformat()
@@ -3180,6 +3314,7 @@ The detailed specifications are in the task markdown file.
                 "total_turns": result.total_turns,
                 "final_decision": result.final_decision,
                 "error": result.error,
+                "deferred_reason": result.deferred_reason,
             }
 
         # Update execution counters
