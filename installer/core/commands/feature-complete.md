@@ -321,6 +321,56 @@ For each completed task in dependency order:
 
 ---
 
+## Required operator follow-up
+
+When a feature contains tasks marked `task_type: operator_handoff`, the
+feature orchestrator skips them at dispatch (TASK-FPTC-003) and records
+them with `status: deferred` rather than `completed`/`failed`. They never
+enter the Player ↔ Coach loop because their acceptance criteria require
+runtime / wall-clock / human-in-the-loop verification that AutoBuild
+cannot perform.
+
+`/feature-complete`'s Phase 4 handoff surface picks those deferred
+records up and renders them as a checklist immediately after the merge
+instructions. Each entry carries:
+
+- the deferred task's ID,
+- the deferred task's title,
+- the runtime ACs from the task body's `## Required operator follow-up`
+  block, verbatim (template owned by `/feature-plan`).
+
+The subsection is suppressed entirely when zero tasks were deferred — no
+empty header is emitted in the merge summary.
+
+```
+╭───────────────── 📋 Required operator follow-up ──────────────────╮
+│ These tasks were deferred during AutoBuild because their           │
+│ acceptance criteria require runtime/operator verification. Verify  │
+│ each AC manually, then run `/task-complete TASK-XXX` per task.     │
+│                                                                    │
+│ TASK-OP-A — Rotate prod credentials                                │
+│ - **AC-OPA-01**: Confirm `kubectl rollout status` exits 0.         │
+│ - **AC-OPA-02**: Watch Grafana auth.errors panel for 10 minutes.   │
+│                                                                    │
+│ TASK-OP-B — Run live MCP tutor session                             │
+│ - **AC-OPB-01**: Walk a tutor session via Claude Desktop.          │
+╰────────────────────────────────────────────────────────────────────╯
+```
+
+After completing each AC manually, the operator runs
+`/task-complete TASK-XXX` per deferred task to mark it done. This is the
+only path by which an operator_handoff task transitions out of the
+`deferred` state.
+
+**Implementation**: `guardkit.orchestrator.feature_complete` —
+`render_operator_followup_panel()` (rendering),
+`_collect_deferred_tasks()` (selection),
+`_extract_operator_followup_acs()` (body parsing). The panel is wired
+into `FeatureCompleteOrchestrator._handoff_phase` via
+`_display_operator_followup`.
+
+---
+
 ## When to Use /feature-complete
 
 ### Good Candidates

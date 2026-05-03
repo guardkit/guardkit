@@ -1244,6 +1244,9 @@ Created: tasks/backlog/dark-mode/
   ├── TASK-DM-004-add-persistence.md
   └── TASK-DM-005-update-components.md
 
+Operator follow-up tasks: 1
+  (run /feature-complete to see the full checklist post-merge)
+
 --------------------------------------------------------------------------------
 📋 Execution Strategy:
 --------------------------------------------------------------------------------
@@ -1270,6 +1273,19 @@ Wave 2: 2 tasks (parallel execution)
 
 Original review: TASK-REV-A3F2 (marked completed)
 ```
+
+**`Operator follow-up tasks: N` line (TASK-FPTC-005)**:
+
+Count tasks in the generated plan whose frontmatter sets
+`task_type: operator_handoff`. Emit the line `Operator follow-up tasks: N`
+into the post-Step-10 summary (between the file tree and the Execution
+Strategy block) **only when N ≥ 1**. When zero tasks are
+`operator_handoff`, omit the line entirely — no `Operator follow-up
+tasks: 0` should appear. The line gives the operator early visibility
+into how much manual work the plan implies before they approve it; the
+full checklist is rendered post-merge by `/feature-complete` (see
+[`feature-complete.md`](./feature-complete.md) §Required operator
+follow-up).
 
 **What Makes This Enhanced**:
 - ✅ **Context-driven decisions** - Uses Context A (review scope) and Context B (implementation prefs)

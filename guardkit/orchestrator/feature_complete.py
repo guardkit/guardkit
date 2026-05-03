@@ -18,7 +18,7 @@ Example:
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Tuple
 
 from rich.console import Console
 from rich.panel import Panel
@@ -27,6 +27,7 @@ from guardkit.orchestrator.feature_loader import (
     Feature,
     FeatureLoader,
     FeatureNotFoundError,
+    FeatureTask,
     FeatureValidationError,
 )
 from guardkit.worktrees import WorktreeManager, Worktree
@@ -81,6 +82,136 @@ class FeatureCompleteError(Exception):
     """Base exception for feature completion errors."""
 
     pass
+
+
+# ============================================================================
+# Operator follow-up checklist helpers (TASK-FPTC-005)
+# ============================================================================
+
+# Heading authored by /feature-plan when it marks a task as
+# operator_handoff (see installer/core/commands/feature-plan.md, the
+# Required-operator-follow-up template). The match is case-insensitive
+# on the leading character to tolerate cosmetic edits, but otherwise
+# the exact wording is part of the cross-task contract.
+_OPERATOR_FOLLOWUP_HEADING_PREFIX = "## required operator follow-up"
+
+
+def _extract_operator_followup_acs(task_file: Path) -> List[str]:
+    """Return verbatim bullet lines from a task's operator-follow-up section.
+
+    The section is authored by ``/feature-plan`` when the operator answers
+    ``Y`` to the operator_handoff prompt; its template is documented in
+    ``installer/core/commands/feature-plan.md``. Each bullet line is the
+    runtime AC that the operator must verify post-merge.
+
+    Returns an empty list when the file is missing, unreadable, or the
+    section is absent — feature-complete must not crash because a deferred
+    task's body drifted from the template.
+    """
+
+    try:
+        content = task_file.read_text(encoding="utf-8")
+    except (FileNotFoundError, OSError):
+        return []
+
+    bullets: List[str] = []
+    in_section = False
+    for raw_line in content.splitlines():
+        stripped = raw_line.strip()
+        if not in_section:
+            if stripped.lower().startswith(_OPERATOR_FOLLOWUP_HEADING_PREFIX):
+                in_section = True
+            continue
+
+        # Next top-level heading ends the section.
+        if stripped.startswith("## "):
+            break
+
+        # Capture top-level bullets verbatim (preserve original line as
+        # the AC says "verbatim"). Indented sub-bullets are kept too —
+        # the spec wants the AC text exactly as the planner emitted it.
+        if stripped.startswith(("- ", "* ")):
+            bullets.append(raw_line.rstrip())
+
+    return bullets
+
+
+def _resolve_task_file(task: FeatureTask, repo_root: Path) -> Path:
+    """Resolve a FeatureTask.file_path against repo_root.
+
+    FeatureTask.file_path is sometimes serialised as a repo-relative path
+    (e.g. ``tasks/backlog/TASK-XXX.md``) and sometimes as an absolute path.
+    The orchestrator runs from the repo root, so anchor relative paths
+    there before reading.
+    """
+
+    file_path = Path(task.file_path)
+    if file_path.is_absolute():
+        return file_path
+    return repo_root / file_path
+
+
+def _collect_deferred_tasks(
+    feature: Feature, repo_root: Path
+) -> List[Tuple[FeatureTask, List[str]]]:
+    """Return ``(task, ac_bullets)`` tuples for every deferred task in *feature*.
+
+    Pairs each deferred task with the verbatim operator-follow-up bullets
+    from its body file. Producer of the deferred status is TASK-FPTC-003
+    (the orchestrator skip branch); consumer of the bullets is the
+    feature-complete merge summary.
+    """
+
+    pairs: List[Tuple[FeatureTask, List[str]]] = []
+    for task in feature.tasks:
+        if task.status != "deferred":
+            continue
+        ac_bullets = _extract_operator_followup_acs(
+            _resolve_task_file(task, repo_root)
+        )
+        pairs.append((task, ac_bullets))
+    return pairs
+
+
+def render_operator_followup_panel(
+    deferred: List[Tuple[FeatureTask, List[str]]],
+) -> Optional[Panel]:
+    """Render the merge-summary checklist for deferred tasks.
+
+    Returns ``None`` when there are no deferred tasks so callers can omit
+    the section entirely (AC-FPTC-005-05 — no empty header). Each entry
+    carries task ID, task title, and the runtime ACs verbatim
+    (AC-FPTC-005-02).
+    """
+
+    if not deferred:
+        return None
+
+    body_lines: List[str] = [
+        "[dim]These tasks were deferred during AutoBuild because their "
+        "acceptance criteria require runtime/operator verification. "
+        "Verify each AC manually, then run "
+        "`/task-complete TASK-XXX` per task.[/dim]",
+        "",
+    ]
+
+    for index, (task, ac_bullets) in enumerate(deferred):
+        if index > 0:
+            body_lines.append("")
+        body_lines.append(f"[bold cyan]{task.id}[/bold cyan] — {task.name}")
+        if ac_bullets:
+            body_lines.extend(ac_bullets)
+        else:
+            body_lines.append(
+                "  [yellow]⚠[/yellow] No runtime ACs found in task body "
+                "(check `## Required operator follow-up` section)."
+            )
+
+    return Panel(
+        "\n".join(body_lines),
+        title="📋 Required operator follow-up",
+        border_style="yellow",
+    )
 
 
 # ============================================================================
@@ -367,6 +498,26 @@ class FeatureCompleteOrchestrator:
         else:
             console.print("[yellow]⚠[/yellow] Worktree not available for merge instructions")
 
+        # TASK-FPTC-005: surface deferred operator_handoff tasks so the
+        # operator sees their runtime ACs in the merge summary.
+        self._display_operator_followup(feature)
+
+    def _display_operator_followup(self, feature: Feature) -> None:
+        """
+        Display the "Required operator follow-up" subsection for deferred tasks.
+
+        Producer of the deferred status is the feature orchestrator
+        (TASK-FPTC-003). When zero tasks were deferred, nothing is
+        printed — the section header is suppressed entirely.
+        """
+
+        deferred = _collect_deferred_tasks(feature, self.repo_root)
+        panel = render_operator_followup_panel(deferred)
+        if panel is None:
+            return
+        console.print()
+        console.print(panel)
+
     def _display_handoff(self, feature: Feature, worktree: Worktree) -> None:
         """
         Display merge instructions for user.
@@ -415,4 +566,5 @@ __all__ = [
     "FeatureCompleteOrchestrator",
     "FeatureCompleteResult",
     "FeatureCompleteError",
+    "render_operator_followup_panel",
 ]
