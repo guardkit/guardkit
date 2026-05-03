@@ -1315,6 +1315,7 @@ The `task_type` field is **REQUIRED** for AutoBuild integration. Without it, Coa
 | "Update docs", "Add README", "Documentation..." | `documentation` |
 | "Refactor...", "Migrate...", "Upgrade..." | `refactor` |
 | "Pydantic model", "DTO", "Settings class", "constants", "enums", "app init", "data model", "type definitions", "schema" | `declarative` |
+| Live infrastructure / human-in-the-loop / wall-clock observation patterns (see Detection Rules below) | `operator_handoff` |
 | All other implementation tasks | `feature` |
 
 **Seam Test Checklist**:
@@ -1338,6 +1339,122 @@ This is a soft gate - Coach will note missing seam tests but won't block approva
 - "Update API documentation" → `task_type: documentation`
 - "Add Pydantic models for user schema" → `task_type: declarative`
 - "Create Settings class and constants" → `task_type: declarative`
+- "Run seed script against live FalkorDB" → `task_type: operator_handoff`
+- "Conduct live MCP tutor session from Claude Desktop" → `task_type: operator_handoff`
+
+### Detection Rules — when to mark a task `operator_handoff`
+
+Some acceptance criteria specify behaviour that is `observed_at_runtime(real_world)`
+rather than `present_in_codebase(artifact)`. AutoBuild's Player ↔ Coach loop
+cannot satisfy these by construction — Coach is a deterministic file-existence
+and test-passing checker. The only safe outcomes are (1) don't generate the
+task in autobuild-shaped form, or (2) tag it so AutoBuild declines to attempt
+it. We do both: detect at plan time (cheap), and let `task_type: operator_handoff`
+short-circuit the orchestrator (safety net).
+
+When generating tasks, scan each acceptance criterion against the rules below.
+If a strong signal fires, **interactively prompt the operator** before emitting
+the task (see "Interactive prompt step" below).
+
+**Strong signals (any one triggers the prompt):**
+
+| Category | Verbatim phrases / patterns |
+|---|---|
+| Live infrastructure | `FalkorDB at <host>`, `Redis at <host>`, hostnames like `whitestocks`, `promaxgb10-*`, `localhost:<port>` paired with "live" or "production"; URLs to non-local services; "real LLM"; "real OpenAI"; "MCP query against running" |
+| Human verbs | "conduct", "drive [N] turns", "observe", "human-in-the-loop", "operator", "Claude Desktop session", "open ChatGPT", "review the dashboard", "watch for", "monitor", "tutoring session" |
+| Wall-clock language | "p50", "p95", "wall-clock", "latency over a N-minute run", "30 minutes of operation", "soak", "burn-in", "Expected ~30 min" |
+| Author self-disclosure | Test Requirements (or equivalent) section contains "There is no automated test harness for ...", "manual verification required", "operator runs the script and pastes the result", "cannot be satisfied by autobuild" |
+
+**Weak signals (require pairing with at least one strong signal):**
+
+- "verify", "ensure", "check" — often autobuild-suitable on their own
+- "running" something — could be unit test or live run
+- specific user names ("Lilymay", "test-user-123")
+- specific dataset names that may or may not exist on disk
+
+**False-positive guard:**
+
+A weak signal alone does NOT trigger. Strong signals always trigger. Mixed
+(1 strong + N weak) trigger. The detector flags; the human is the final
+arbiter via the interactive prompt below. Bias toward false positives —
+they cost one operator confirmation; false negatives cost a full
+turn-budget burn (~50–75 minutes per missed task in the FEAT-FD32 baseline).
+
+**Examples that should trigger:**
+
+- *"`python scripts/seed_student_model.py` runs successfully against live
+  FalkorDB at whitestocks:6379 ..."* — live infrastructure + wall-clock.
+- *"A live MCP tutor session is conducted from Claude Desktop with the user
+  as the human-in-the-loop ..."* — live infrastructure + human verbs +
+  author self-disclosure.
+
+**Examples that should NOT trigger:**
+
+- *"All unit tests pass with `pytest tests/ -v`."* — verb `pass` is weak;
+  no strong signals.
+- *"`SettingsClass.from_env()` reads `FALKORDB_HOST` from environment ..."*
+  — mentions FalkorDB but as a config string, not a live target.
+
+### Interactive prompt step
+
+When a strong signal fires for any acceptance criterion of a task being
+generated, pause task emission and run this prompt verbatim against the
+operator:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️  POSSIBLE OPERATOR_HANDOFF DETECTED — TASK-{id}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The following acceptance criterion contains a runtime-observation
+predicate that AutoBuild's Player ↔ Coach loop cannot satisfy:
+
+  AC-{id}: "{verbatim AC text}"
+
+Strong signals matched: {list of matched categories}
+
+Mark this task as `task_type: operator_handoff` and skip autobuild? [Y/n]:
+```
+
+**On `Y` (or empty input — Y is the default):**
+
+1. Emit the task frontmatter with `task_type: operator_handoff` (replacing
+   whatever default would otherwise apply from the rules table).
+2. Append a **`## Required operator follow-up`** block to the task body
+   listing the runtime ACs verbatim (3–5 lines per AC; the operator ticks
+   them off post-merge via the `feature-complete` checklist surfaced by
+   TASK-FPTC-005). Template:
+
+   ```markdown
+   ## Required operator follow-up
+
+   This task is `task_type: operator_handoff` — AutoBuild will not attempt
+   it. The operator must verify the runtime acceptance criteria below
+   manually, then mark the task complete via `/task-complete`.
+
+   - **AC-{id}**: {verbatim AC text}
+   - **AC-{id}**: {verbatim AC text}
+   ```
+
+**On `n`:**
+
+1. Emit the task with whatever default `task_type` the rules table assigns
+   (typically `feature`).
+2. Continue plan generation. The operator has accepted that AutoBuild will
+   attempt the task — if Coach later fails it, that is expected.
+
+**Multiple flagged ACs in one task:** ask once per task, not once per AC.
+Show all matched ACs in a single prompt; the operator's `Y` covers all of
+them.
+
+**See also:**
+
+- `.claude/reviews/TASK-REV-AUTM-review-report.md` §AC-AUTM-02 — full
+  rationale for the rules and their false-positive risk assessment.
+- TASK-FPTC-002 — registers `OPERATOR_HANDOFF` in `TaskType` and its
+  quality-gate profile (no tests, no arch review).
+- TASK-FPTC-003 — the orchestrator skip that makes `operator_handoff`
+  tasks short-circuit the Player ↔ Coach loop.
 
 This enables:
 - **Traceability**: From feature idea → review → implementation → completion
