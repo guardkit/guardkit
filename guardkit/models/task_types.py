@@ -32,6 +32,7 @@ class TaskType(Enum):
     - DOCUMENTATION: Documentation and guides (minimal validation)
     - TESTING: Test creation, test refactoring, coverage improvements (minimal validation)
     - REFACTOR: Code improvements, performance optimization, pattern implementation
+    - OPERATOR_HANDOFF: Tasks that hand off to a human operator (every gate disabled)
 
     Attributes:
         SCAFFOLDING: Configuration files, project setup, templates
@@ -42,6 +43,11 @@ class TaskType(Enum):
         TESTING: Test files, test utilities, coverage improvements
         REFACTOR: Code cleanup, performance optimization, pattern refactoring
         DECLARATIVE: Pydantic models, DTOs, Settings classes, constants, app init
+        OPERATOR_HANDOFF: Tasks the orchestrator must skip and route to a human
+            operator (e.g. external configuration, registry edits, manual
+            credential rotation). Every quality gate is disabled so the
+            orchestrator has a deterministic signal to skip the task entirely
+            rather than try to autonomously implement it.
     """
 
     SCAFFOLDING = "scaffolding"
@@ -52,6 +58,7 @@ class TaskType(Enum):
     TESTING = "testing"
     REFACTOR = "refactor"
     DECLARATIVE = "declarative"
+    OPERATOR_HANDOFF = "operator_handoff"
 
 
 @dataclass
@@ -254,6 +261,19 @@ DEFAULT_PROFILES: Dict[TaskType, QualityGateProfile] = {
         coverage_threshold=0.0,
         tests_required=True,  # Catch import errors
         plan_audit_required=True,  # Verify completeness
+        zero_test_blocking=False,
+        seam_tests_recommended=False,
+    ),
+    # Skip-everything profile: orchestrator branches on the enum value to
+    # skip the task entirely; gate values exist so any code path that
+    # mistakenly evaluates the profile still short-circuits.
+    TaskType.OPERATOR_HANDOFF: QualityGateProfile(
+        arch_review_required=False,
+        arch_review_threshold=0,
+        coverage_required=False,
+        coverage_threshold=0.0,
+        tests_required=False,
+        plan_audit_required=False,
         zero_test_blocking=False,
         seam_tests_recommended=False,
     ),

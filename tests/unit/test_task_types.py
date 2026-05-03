@@ -28,9 +28,9 @@ from guardkit.models.task_types import (
 class TestTaskTypeEnum:
     """Test TaskType enumeration."""
 
-    def test_task_type_enum_has_eight_values(self):
-        """Test that TaskType enum has exactly 8 values."""
-        assert len(TaskType) == 8
+    def test_task_type_enum_has_nine_values(self):
+        """Test that TaskType enum has exactly 9 values."""
+        assert len(TaskType) == 9
 
     def test_task_type_scaffolding_value(self):
         """Test SCAFFOLDING task type value."""
@@ -60,6 +60,10 @@ class TestTaskTypeEnum:
         """Test DECLARATIVE task type value."""
         assert TaskType.DECLARATIVE.value == "declarative"
 
+    def test_task_type_operator_handoff_value(self):
+        """Test OPERATOR_HANDOFF task type value."""
+        assert TaskType.OPERATOR_HANDOFF.value == "operator_handoff"
+
     def test_task_type_enum_lookup_by_value(self):
         """Test looking up enum members by value."""
         assert TaskType("scaffolding") == TaskType.SCAFFOLDING
@@ -69,6 +73,7 @@ class TestTaskTypeEnum:
         assert TaskType("testing") == TaskType.TESTING
         assert TaskType("refactor") == TaskType.REFACTOR
         assert TaskType("declarative") == TaskType.DECLARATIVE
+        assert TaskType("operator_handoff") == TaskType.OPERATOR_HANDOFF
 
 
 # ============================================================================
@@ -978,3 +983,61 @@ class TestDeclarativeTaskType:
         assert profile.plan_audit_required is True
         # Missing tests should not block (declarative code may not need them)
         assert profile.zero_test_blocking is False
+
+
+# ============================================================================
+# 14. OPERATOR_HANDOFF Task Type Tests (TASK-FPTC-002)
+# ============================================================================
+
+class TestOperatorHandoffTaskType:
+    """Test OPERATOR_HANDOFF task type enum and skip-everything profile."""
+
+    def test_operator_handoff_enum_value(self):
+        """AC-FPTC-002-01: TaskType.OPERATOR_HANDOFF exists with value 'operator_handoff'."""
+        assert TaskType.OPERATOR_HANDOFF.value == "operator_handoff"
+
+    def test_operator_handoff_constructs_without_error(self):
+        """AC-FPTC-002-03: TaskType('operator_handoff') constructs without error."""
+        assert TaskType("operator_handoff") == TaskType.OPERATOR_HANDOFF
+
+    def test_default_profiles_operator_handoff_skips_everything(self):
+        """AC-FPTC-002-02: OPERATOR_HANDOFF profile disables every gate."""
+        profile = DEFAULT_PROFILES[TaskType.OPERATOR_HANDOFF]
+        assert profile.arch_review_required is False
+        assert profile.arch_review_threshold == 0
+        assert profile.coverage_required is False
+        assert profile.coverage_threshold == 0.0
+        assert profile.tests_required is False
+        assert profile.plan_audit_required is False
+        assert profile.zero_test_blocking is False
+        assert profile.seam_tests_recommended is False
+
+    def test_get_profile_operator_handoff_skips_everything(self):
+        """AC-FPTC-002-03: get_profile(OPERATOR_HANDOFF) returns the skip-everything profile."""
+        profile = get_profile(TaskType.OPERATOR_HANDOFF)
+        assert profile.arch_review_required is False
+        assert profile.coverage_required is False
+        assert profile.tests_required is False
+        assert profile.plan_audit_required is False
+
+    def test_for_type_returns_operator_handoff_profile(self):
+        """QualityGateProfile.for_type(OPERATOR_HANDOFF) returns the skip-everything profile."""
+        profile = QualityGateProfile.for_type(TaskType.OPERATOR_HANDOFF)
+        assert profile.arch_review_required is False
+        assert profile.tests_required is False
+        assert profile.plan_audit_required is False
+
+    def test_operator_handoff_not_in_aliases(self):
+        """Implementation note: OPERATOR_HANDOFF must not have fuzzy alias matches."""
+        # The value is intentionally explicit; aliases like "handoff" or
+        # "operator-handoff" should not silently resolve to it.
+        for alias_value in TASK_TYPE_ALIASES.values():
+            assert alias_value != TaskType.OPERATOR_HANDOFF
+
+    def test_normalise_operator_handoff_passes_through(self):
+        """Canonical 'operator_handoff' string passes through normalise_task_type unchanged."""
+        assert normalise_task_type("operator_handoff") == "operator_handoff"
+
+    def test_default_profiles_contains_operator_handoff(self):
+        """DEFAULT_PROFILES registry includes OPERATOR_HANDOFF entry."""
+        assert TaskType.OPERATOR_HANDOFF in DEFAULT_PROFILES
