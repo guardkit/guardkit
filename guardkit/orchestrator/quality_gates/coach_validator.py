@@ -312,7 +312,7 @@ class CoachValidationResult:
 
     task_id: str
     turn: int
-    decision: Literal["approve", "feedback"]
+    decision: Literal["approve", "feedback", "deferred"]
     quality_gates: Optional[QualityGateStatus] = None
     independent_tests: Optional[IndependentTestResult] = None
     requirements: Optional[RequirementsValidation] = None
@@ -738,8 +738,6 @@ class CoachValidator:
         # Resolve task type and get quality gate profile
         try:
             task_type = self._resolve_task_type(task)
-            profile = get_profile(task_type)
-            logger.info(f"Using quality gate profile for task type: {task_type.value}")
         except ValueError as e:
             logger.error(f"Failed to resolve task type: {e}")
             return self._feedback_result(
@@ -754,6 +752,37 @@ class CoachValidator:
                 context_used=context,
                 is_configuration_error=True,
             )
+
+        # Operator handoff: defensive skip branch (TASK-FPTC-004 AC-01).
+        # Operator-handoff tasks have runtime-shaped acceptance criteria
+        # that no automated check can verify (e.g. "operator runs X
+        # against the deployed service and inspects Y"). The feature
+        # orchestrator (TASK-FPTC-003) is responsible for short-circuiting
+        # dispatch BEFORE Coach is invoked — this branch is a paranoid
+        # second line of defence that exits cleanly without exercising
+        # any AC-matching machinery if the orchestrator-level skip is
+        # bypassed for any reason. The "deferred" outcome shape mirrors
+        # what feature_orchestrator records, so TASK-FPTC-005's
+        # feature-complete summary sees consistent records.
+        if task_type == TaskType.OPERATOR_HANDOFF:
+            logger.info(
+                f"Coach skipping operator_handoff task {task_id} turn {turn}: "
+                f"runtime verification deferred to operator."
+            )
+            return CoachValidationResult(
+                task_id=task_id,
+                turn=turn,
+                decision="deferred",
+                quality_gates=None,
+                independent_tests=None,
+                requirements=None,
+                issues=[],
+                rationale="operator follow-up — runtime verification required",
+                context_used=context,
+            )
+
+        profile = get_profile(task_type)
+        logger.info(f"Using quality gate profile for task type: {task_type.value}")
 
         # 1. Read task-work quality gate results
         task_work_results = self.read_quality_gate_results(task_id)
