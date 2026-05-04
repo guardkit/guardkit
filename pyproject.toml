@@ -88,6 +88,13 @@ Documentation = "https://github.com/guardkit/guardkit/tree/main/docs"
 Repository = "https://github.com/guardkit/guardkit"
 Issues = "https://github.com/guardkit/guardkit/issues"
 
+[tool.hatch.metadata]
+# Allow direct git+ URL references for the graphiti-core fork pin
+# (graphiti-core @ git+https://github.com/guardkit/graphiti.git@v0.29.5-guardkit.1).
+# Required by hatchling 2.4+ metadata spec; without this the build backend
+# refuses to construct project metadata when dependencies use direct URLs.
+allow-direct-references = true
+
 [tool.hatch.version]
 path = "guardkit/__init__.py"
 
