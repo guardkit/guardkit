@@ -31,7 +31,7 @@ set -euo pipefail
 IMAGE_TAG="${GRAPHITI_MCP_IMAGE:-graphiti-mcp-standalone:local}"
 GRAPHITI_REPO_DIR="${GRAPHITI_REPO_DIR:-$HOME/Projects/appmilla_github/graphiti}"
 GRAPHITI_REPO_URL="${GRAPHITI_REPO_URL:-https://github.com/guardkit/graphiti.git}"
-GRAPHITI_TAG="${GRAPHITI_TAG:-v0.29.5-guardkit.1}"
+GRAPHITI_TAG="${GRAPHITI_TAG:-v0.29.5-guardkit.2}"
 
 DO_NO_CACHE=0
 for arg in "$@"; do
