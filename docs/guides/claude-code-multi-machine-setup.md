@@ -315,9 +315,14 @@ explicitly on each host that runs `guardkit autobuild`.
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
-# uv installs to ~/.local/bin/ — load it into the current shell:
-source ~/.local/bin/env
-# New shells pick it up automatically (the installer writes to ~/.bashrc).
+# uv installs to ~/.local/bin/. On Ubuntu that directory is already on PATH
+# via the default ~/.profile (when it exists at login time), so a fresh shell
+# picks it up automatically. If `which uv` fails in the *current* shell, add
+# the directory to PATH for this session:
+#   export PATH="$HOME/.local/bin:$PATH"
+# (Older uv installers — pre-0.10 — wrote a `~/.local/bin/env` shim and asked
+# you to `source` it. uv 0.11+ no longer ships that file; ignore guides that
+# still tell you to source it.)
 which uv && uv --version
 ```
 
@@ -352,10 +357,11 @@ that's already on the bootstrap PATH (e.g. `/usr/local/bin`).
 ### Per-machine state (as of 2026-05-02)
 
 - **MacBook**: uv installed long-term (Homebrew).
-- **GB10**: uv **not yet installed**; surfaces as the FEAT-DEA8 bootstrap
-  hard-fail in
-  `forge/docs/history/autobuild-FEAT-FORGE-010-fail-run-1-history.md`.
-  Install via the curl one-liner above before the next autobuild run.
+- **GB10**: uv 0.11.8 installed via the Astral installer on 2026-05-02
+  (binary at `~/.local/bin/uv`, picked up by Ubuntu's default
+  `~/.profile`). The previous FEAT-DEA8 bootstrap hard-fail in
+  `forge/docs/history/autobuild-FEAT-FORGE-010-fail-run-1-history.md`
+  should no longer reproduce.
 
 ---
 
