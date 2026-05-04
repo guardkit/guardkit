@@ -1,8 +1,14 @@
 ---
 id: TASK-FPTC-007
 title: "Consolidate feature-plan-smoke-gate-validation/ into feature-plan-defects/ + write classification guide"
-status: backlog
+status: completed
 created: 2026-05-03T12:00:00Z
+updated: 2026-05-03T13:30:00Z
+completed: 2026-05-03T13:30:00Z
+completed_location: tasks/backlog/feature-plan-defects/class-c-task-design-mismatch/
+completion_note: "Kept in feature folder for /feature-complete to archive with siblings (FPTC-001/002/003/004/005/006). Final task in FPTC Wave 4."
+previous_state: in_review
+state_transition_reason: "All 6 ACs satisfied; pytest 5/5 passing; folder consolidation done via git mv preserving history"
 priority: medium
 task_type: documentation
 implementation_mode: task-work
@@ -51,7 +57,7 @@ implement.
 
 ## Acceptance Criteria
 
-- [ ] **AC-FPTC-007-01** —
+- [x] **AC-FPTC-007-01** —
       `tasks/backlog/feature-plan-smoke-gate-validation/` no longer
       exists. Its files have moved to:
       - `tasks/backlog/feature-plan-defects/class-a-invented-paths/`
@@ -62,12 +68,12 @@ implement.
         FPSG-005 — see the Class B carve-out in the existing README)
       Existing FPSG-* task IDs do NOT change. Only the folder layout
       changes.
-- [ ] **AC-FPTC-007-02** — `tasks/backlog/feature-plan-defects/README.md`
+- [x] **AC-FPTC-007-02** — `tasks/backlog/feature-plan-defects/README.md`
       is rewritten to cover all three classes with cross-links to
       each subfolder, the parent reviews (TASK-REV-DEA8 for A/B,
       TASK-REV-AUTM for C), and a brief problem-statement-per-class
       summary.
-- [ ] **AC-FPTC-007-03** — `docs/guides/feature-plan-task-classification.md`
+- [x] **AC-FPTC-007-03** — `docs/guides/feature-plan-task-classification.md`
       exists and contains:
       - Description of the three defect classes (A: paths, B:
         temporal, C: task-design)
@@ -76,13 +82,13 @@ implement.
       - The `operator_handoff` escape hatch and how it surfaces in
         `/feature-complete`
       - Philosophy: *plan-time prevention beats runtime detection*
-- [ ] **AC-FPTC-007-04** — `CLAUDE.md` (root) "Feature Planning &
+- [x] **AC-FPTC-007-04** — `CLAUDE.md` (root) "Feature Planning &
       Build" section contains a one-line cross-reference to
       `docs/guides/feature-plan-task-classification.md`.
-- [ ] **AC-FPTC-007-05** — `installer/core/commands/feature-plan.md`
+- [x] **AC-FPTC-007-05** — `installer/core/commands/feature-plan.md`
       "Detection Rules" section (added by TASK-FPTC-001) gains a
       cross-link to the new guide.
-- [ ] **AC-FPTC-007-06** — Pytest test asserts the new guide path
+- [x] **AC-FPTC-007-06** — Pytest test asserts the new guide path
       exists and contains the strings: "Class A", "Class B",
       "Class C", "operator_handoff".
 

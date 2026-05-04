@@ -304,15 +304,35 @@ The task file reads cleanly end-to-end. Status stays backlog, decision is locked
 
 
 
+Task created. Stopping here per /task-create workflow — I will not implement.
 
-In the guardkit repo — 5 upstream tasks (high → low priority)
-Task	Priority	What
-TASK-FIX-A7B1	high	smoke_gates: honour bootstrap venv interpreter
-TASK-FIX-A7B2	high	tighten parallel_contention conditional approval (detect source-file conflicts)
-TASK-FIX-A7B3	medium	/feature-plan: warn/auto-serialise on wave-internal source overlap
-TASK-FIX-A7B4	medium	Coach should BLOCK (not warn) on planned-but-unimplemented seam tests
-TASK-FIX-A7B5	low	investigate Claude Agent SDK message-reader transport failures
-All five live at /home/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/TASK-FIX-A7B*.md, follow the local convention (external_reference block, task_type: bugfix, AC-NNN numbering), and cite verified file:line refs in active guardkit source. No git operations performed — they're sitting in the repo's own backlog ready for the guardkit team to pick up.
+
+✅ Task Created: TASK-FORK-52C2
+
+📋 Task Details
+Title: Redirect graphiti build/setup scripts to guardkit/graphiti fork
+Priority: high
+Status: backlog
+Task Type: infrastructure
+Complexity: 4
+Estimated: 90 min (executed on promaxgb10-41b1)
+Tags: [graphiti, fork, infra, mcp, scripts]
+Depends On: TASK-FORK-PATCH (must ship its tag first — AC-FORK-04 there)
+
+📁 File Location
+tasks/backlog/TASK-FORK-52C2-redirect-build-scripts-to-guardkit-graphiti-fork.md
+Scope summary:
+
+3 scripts to update mechanically: graphiti-mcp-build.sh (URL + new GRAPHITI_REPO_REF tag pin + --branch clone), setup_graphiti.sh, setup_graphiti_local.sh (raw COMPOSE_URL flip)
+1 test file to verify in context: tests/integration/conftest.py:250
+2 doc files to update: INSTALL-AND-VALIDATE.md:84, FEAT-GI-001-core-infrastructure.md:63
+GB10 rebuild + smoke probe required (./scripts/graphiti-mcp-build.sh --no-cache → restart stack → confirm OpenAIGenericClient log line + MCP episode round-trip)
+Out of scope: docs/research/blog/ADR/completed-task references to upstream issues (PR #1170, issue #1272, etc.) — those legitimately live on getzep
+Rollback path documented (tag pre-fork image as :local-pre-fork before --no-cache rebuild)
+Key dependency: This is the GuardKit-side execution of AC-FORK-07 in TASK-FORK-PATCH; cannot start until that task lands its tagged release on guardkit/graphiti. Captured AC-FORK-52C2-10 to close the loop back to that parent task.
+
+Next: /task-work TASK-FORK-52C2 once TASK-FORK-PATCH ships its tag.
+
 
 
 

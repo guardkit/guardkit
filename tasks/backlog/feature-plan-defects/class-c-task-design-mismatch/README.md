@@ -108,11 +108,14 @@ Drawn from parent review AC-AUTM-01..06:
 ## Cross-class siblings
 
 - **Class A — invented paths**:
-  [`tasks/backlog/feature-plan-smoke-gate-validation/`](../../feature-plan-smoke-gate-validation/)
-  (current location; will move under `feature-plan-defects/class-a-invented-paths/` per TASK-FPTC-007)
+  [`../class-a-invented-paths/`](../class-a-invented-paths/)
   — parent review TASK-REV-DEA8 (in `appmilla_github/forge/`).
 - **Class B — temporal mis-sequencing**:
-  same folder as Class A (mixed); TASK-FPTC-007 splits them.
+  [`../class-b-temporal-sequencing/`](../class-b-temporal-sequencing/)
+  — stub folder; the temporal-check carve-out lives in the Class A
+  validators (FPSG-002 / FPSG-004 / FPSG-005).
+- **Operator-facing classification guide**:
+  [`docs/guides/feature-plan-task-classification.md`](../../../../docs/guides/feature-plan-task-classification.md).
 - **Sibling complete (validator AC-matching, orthogonal)**:
   [`tasks/completed/2026-05/coach-validator-ac-id-matching/`](../../../completed/2026-05/coach-validator-ac-id-matching/)
   — TASK-CVAC-001 (parser), TASK-CVAC-002 (bidirectional matching).
@@ -141,7 +144,7 @@ feature-plan-defects/class-c-task-design-mismatch/
 └── TASK-FPTC-007-...md
 ```
 
-After TASK-FPTC-007 lands, the parent `feature-plan-defects/` folder
-will also contain `class-a-invented-paths/` and
-`class-b-temporal-sequencing/` consolidated from the existing
+The parent `feature-plan-defects/` folder also contains
+`class-a-invented-paths/` and `class-b-temporal-sequencing/`,
+consolidated by TASK-FPTC-007 from the previous
 `feature-plan-smoke-gate-validation/` folder.

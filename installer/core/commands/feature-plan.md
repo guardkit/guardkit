@@ -1360,6 +1360,13 @@ This is a soft gate - Coach will note missing seam tests but won't block approva
 
 ### Detection Rules — when to mark a task `operator_handoff`
 
+> **Operator-facing reference**:
+> [`docs/guides/feature-plan-task-classification.md`](../../../docs/guides/feature-plan-task-classification.md)
+> — concise summary of the three `/feature-plan` defect classes (Class A
+> invented paths, Class B temporal mis-sequencing, Class C task-design
+> mismatch), the strong/weak signal taxonomy below, and how the
+> `operator_handoff` escape hatch surfaces in `/feature-complete`.
+
 Some acceptance criteria specify behaviour that is `observed_at_runtime(real_world)`
 rather than `present_in_codebase(artifact)`. AutoBuild's Player ↔ Coach loop
 cannot satisfy these by construction — Coach is a deterministic file-existence

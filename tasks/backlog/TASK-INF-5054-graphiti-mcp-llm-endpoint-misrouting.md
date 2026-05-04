@@ -3,7 +3,7 @@ id: TASK-INF-5054
 title: "graphiti-mcp openai provider ignores api_url; falls through to api.openai.com and 401s"
 status: backlog
 created: 2026-05-02T17:05:00Z
-updated: 2026-05-03T00:00:00Z
+updated: 2026-05-03T22:00:00Z
 priority: high
 task_type: feature
 tags:
@@ -16,11 +16,37 @@ tags:
 complexity: 5
 estimated_minutes: 120
 parent_task: TASK-INF-5053
+superseded_by: TASK-FORK-PATCH
 remediation_decision: "option_b_openai_generic"
 execution_location: "promaxgb10-41b1 (work directly on the GB10, not via SSH from a Mac dev machine)"
 ---
 
 # Task: `graphiti-mcp` `openai` provider branch silently ignores `api_url`
+
+## Superseded — see TASK-FORK-PATCH (2026-05-03)
+
+**Status: superseded by [TASK-FORK-PATCH](../../../graphiti/tasks/backlog/TASK-FORK-PATCH-apply-appmilla-bug-fix-patches.md) in the appmilla graphiti fork.** The strategic call to fork `getzep/graphiti` (rather than maintain local-only patches with rebuild-time reminders) consolidates this task's implementation work alongside ~12 other graphiti-core / graphiti-mcp defects discovered during the 2026-05-03 audit. This task remains here as the audit trail for the original investigation; archive alongside TASK-FORK-PATCH per its AC-FORK-09 sweep.
+
+### What the supersession means in practice
+
+| AC in this task | Status under TASK-FORK-PATCH |
+|---|---|
+| AC #1 — pick remediation path | ✅ Done. Decision **option (b) `openai_generic`** is locked. TASK-FORK-PATCH Decision 6 refines this to **Approach A — auto-detect on `base_url`** (single `case 'openai':` arm that switches to `OpenAIGenericClient` when host is not `api.openai.com`), which matches the in-flight diff already drafted at `~/Projects/appmilla_github/graphiti-official/mcp_server/src/services/factories.py`. Approach A wins on zero-config-migration burden — no consumer YAML changes needed. |
+| AC #2 — apply the remediation | ✅ Subsumed by **AC-FORK-03** (factory branch lands in the fork) and **AC-FORK-15** (Decision 6 capture). The "comment block in `graphiti-mcp-build.sh` reminding the next person to re-apply the patch" hack from this task's Implementation Notes disappears entirely — the patch IS the fork. |
+| AC #3 — verify end-to-end | ✅ Subsumed by **AC-FORK-08** (full end-to-end verification block) and **AC-FORK-17** (specific `docker logs graphiti-mcp` log-line check confirming `OpenAIGenericClient` routing). |
+| AC #4 — decide fate of TASK-FIX-B1F7's defence-in-depth fallback | ✅ **Decided: keep**. Per TASK-FORK-PATCH's "Defence-in-depth code (stays put)" section, `installer/core/commands/lib/graphiti_response_parser.py` remains as a zero-cost regression guard against any future graphiti-mcp regression that silently misroutes episodes. No further action required on this AC. |
+| AC #5 — update documentation | ⏳ **Residual guardkit-side work**, not subsumed. After TASK-FORK-PATCH lands and AC-FORK-08 verifies end-to-end, the following docs need cleanup (touchpoints unchanged from the original AC #5 below): `docs/guides/graphiti-claude-code-integration.md` (remove the "Episode written but not retrievable" troubleshooting subsection); `docs/state/TASK-INF-5053/audit.md` (add a "follow-up resolved" note pointing at TASK-FORK-PATCH). Optionally also a short note in `scripts/graphiti-mcp-config.yaml` comments documenting the `openai` (now auto-routing) vs. explicit-provider distinction. **Sequencing**: do this after TASK-FORK-PATCH closes; can be done as part of the AC-FORK-09 archive sweep, or filed as a small follow-up task at that point if scope creeps. |
+| AC #6 — backfill missed episodes | ⏳ **Optional residual**. Per the original AC, "likely not worth it for general writes, but task-outcome writes from `/task-complete` ARE recoverable" via `guardkit graphiti capture-outcome --from-task-file`. Re-evaluate after TASK-FORK-PATCH lands; defer or skip based on operator judgement. |
+
+### Cross-references
+
+- **TASK-FORK-PATCH** — `~/Projects/appmilla_github/graphiti/tasks/backlog/TASK-FORK-PATCH-apply-appmilla-bug-fix-patches.md` (the consolidated fork-application task; carries the implementation work formerly described in this task's "Implementation Notes" section)
+- **TASK-FORK-PATCH `patches/`** — `~/Projects/appmilla_github/graphiti/patches/` (pre-built diffs for bugs #5/#10/#11/#12/#13; the openai_generic factory fix lives in the in-flight diff at `~/Projects/appmilla_github/graphiti-official/`, separate from `patches/`)
+- **TASK-INF-5053** (parent investigation) — `tasks/completed/2026-05/TASK-INF-5053-graphiti-mcp-http-server-group-id-fix.md`
+
+The original task body is preserved verbatim below for the audit trail. The "Decision (2026-05-03)", "Patch shape (option b)", and "Suggested order of operations on the GB10" sections still describe the work accurately at a per-step level — TASK-FORK-PATCH just re-homes them into the fork-management workflow.
+
+---
 
 ## Description
 

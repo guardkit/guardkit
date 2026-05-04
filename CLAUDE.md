@@ -40,6 +40,8 @@ A lightweight, pragmatic task workflow system with built-in quality gates that p
 /feature-complete TASK-XXX [--dry-run] [--verify]
 ```
 
+**See**: [`docs/guides/feature-plan-task-classification.md`](docs/guides/feature-plan-task-classification.md) for the three classes of `/feature-plan` defect (invented paths, temporal mis-sequencing, task-design mismatch) and the `operator_handoff` escape hatch.
+
 ### Design-First Workflow
 ```bash
 /task-work TASK-XXX --design-only      # Phases 2-2.8, stops at checkpoint
