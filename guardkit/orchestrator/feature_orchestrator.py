@@ -65,6 +65,8 @@ from guardkit.orchestrator.environment_bootstrap import (
     BootstrapFailureDetail,
     RequiresPythonMismatch,
     UvSourcesRequireUvError,
+    _create_worktree_uv_sources_symlinks,
+    _resolve_uv_sources_symlinks,
     check_requires_python_precheck,
     format_requires_python_remediation,
 )
@@ -1007,6 +1009,10 @@ class FeatureOrchestrator:
         # Copy task files to worktree
         self._copy_tasks_to_worktree(feature, worktree)
 
+        # TASK-FIX-AB61: Pre-arrange any [tool.uv.sources] sibling-path
+        # symlinks before bootstrap. Idempotent on --resume / --fresh.
+        self._arrange_uv_sources_symlinks(worktree)
+
         # Phase 1.5: Bootstrap environment (detect + install dependencies)
         self._bootstrap_environment(worktree)
 
@@ -1242,6 +1248,53 @@ class FeatureOrchestrator:
             logger.warning(
                 f"Failed to copy {error_count} task file(s) (see logs for details)"
             )
+
+    def _arrange_uv_sources_symlinks(self, worktree: Worktree) -> None:
+        """
+        Pre-create symlinks for ``[tool.uv.sources]`` sibling-path entries
+        so uv resolves the same files from the worktree as it would from
+        the source repo (TASK-FIX-AB61).
+
+        Both pyprojects must exist for this to do anything useful. Missing
+        ``pyproject.toml`` on either side, no ``[tool.uv.sources]`` table,
+        or only non-path-typed entries (``git`` / ``index`` / ``workspace``
+        / ``url``) → silent no-op.
+
+        Symlink-creation OSErrors are surfaced with a hint that names the
+        symlink path, target, and OS error. The hint deliberately does
+        NOT point at ``bootstrap_failure_mode: warn`` — this is a
+        worktree-arrangement step, not a bootstrap install (mirrors the
+        AB60 hint-correction pattern).
+        """
+        source_pyproject = self.repo_root / "pyproject.toml"
+        worktree_pyproject = worktree.path / "pyproject.toml"
+        if not source_pyproject.exists() or not worktree_pyproject.exists():
+            return
+
+        symlinks = _resolve_uv_sources_symlinks(
+            source_pyproject_path=source_pyproject,
+            worktree_pyproject_path=worktree_pyproject,
+        )
+        if not symlinks:
+            return
+
+        for symlink_path, target_path in symlinks:
+            logger.info(
+                "creating uv-sources symlink: %s -> %s",
+                symlink_path,
+                target_path,
+            )
+
+        try:
+            _create_worktree_uv_sources_symlinks(symlinks)
+        except OSError as exc:
+            failed = symlinks[0]
+            raise FeatureOrchestrationError(
+                f"Failed to create uv-sources symlink "
+                f"{failed[0]} -> {failed[1]}: {exc}. "
+                f"Verify filesystem permissions on the worktree parent and "
+                f"that the target path is readable. See TASK-FIX-AB61."
+            ) from exc
 
     def _bootstrap_environment(self, worktree: Worktree) -> Optional[BootstrapResult]:
         """

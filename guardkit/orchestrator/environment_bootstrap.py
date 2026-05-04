@@ -414,7 +414,7 @@ class BootstrapResult:
 #   absent                      | absent  | any        | pip install -e .  (unchanged)
 #   absent                      | present | yes        | uv sync --frozen
 #   absent                      | present | no         | pip install -e .  (+ warn)
-#   present                     | any     | yes        | uv pip install -e .  [1]
+#   present                     | any     | yes        | uv pip install -e .  [1][2]
 #   present                     | any     | no         | HARD-FAIL (UvSourcesRequireUvError)
 #
 # [1] ``uv pip install`` requires either an active venv or ``--system``. When
@@ -429,6 +429,20 @@ class BootstrapResult:
 #     hard-fail gate (TASK-FIX-7A04) surfaces the failure as usual.
 #     ``--system`` is intentionally avoided: it writes to the host Python
 #     and on managed Pythons would re-trigger PEP 668. (TASK-FIX-AB60)
+#
+# [2] For this row, guardkit pre-creates symlinks at worktree-relative
+#     paths for any ``[tool.uv.sources]`` entries with ``path = "..."``
+#     that point outside the worktree's own checkout. uv resolves
+#     path-typed sources relative to the pyproject's directory, so a
+#     sibling pin like ``foo = { path = "../foo" }`` resolves to a
+#     different filesystem location from a worktree at
+#     ``.guardkit/worktrees/<feat>/`` than from the source repo root.
+#     The symlink bridges the two. See
+#     :func:`_resolve_uv_sources_symlinks` and
+#     :func:`_create_worktree_uv_sources_symlinks`, plumbed from
+#     :meth:`FeatureOrchestrator._create_new_worktree`. This makes
+#     sibling-source overrides work transparently from worktrees without
+#     requiring per-repo preflight scripts. (TASK-FIX-AB61)
 
 
 class UvSourcesRequireUvError(RuntimeError):
@@ -469,6 +483,174 @@ def _pyproject_has_uv_sources(pyproject_path: Path) -> bool:
         return False
     sources = data.get("tool", {}).get("uv", {}).get("sources")
     return isinstance(sources, dict) and bool(sources)
+
+
+def _resolve_uv_sources_symlinks(
+    source_pyproject_path: Path,
+    worktree_pyproject_path: Path,
+) -> List[tuple[Path, Path]]:
+    """
+    Compute worktree symlinks needed to bridge ``[tool.uv.sources]`` paths
+    between a source repo and its worktree checkout (TASK-FIX-AB61).
+
+    uv resolves a path-typed source entry relative to the *pyproject's own
+    directory*. When the worktree pyproject lives at a different filesystem
+    location than the source pyproject, a sibling pin like
+    ``foo = { path = "../foo" }`` resolves to two different absolute paths.
+    This helper returns the ``(symlink_path, target_path)`` pairs that the
+    orchestrator should pre-create so uv finds the same files from the
+    worktree as it would from the source repo.
+
+    Parameters
+    ----------
+    source_pyproject_path : Path
+        Path to the source repo's ``pyproject.toml``.
+    worktree_pyproject_path : Path
+        Path to the worktree checkout's ``pyproject.toml``. Typically a
+        descendant of ``<source>/.guardkit/worktrees/<feat>/``.
+
+    Returns
+    -------
+    list[tuple[Path, Path]]
+        Each tuple is ``(symlink_path, target_path)`` where
+        ``symlink_path`` is where uv WILL look from the worktree, and
+        ``target_path`` is where the file actually lives. Both are
+        absolute, ``.resolve()``-d paths. Empty list when no
+        ``[tool.uv.sources]`` table is present, when all entries are
+        non-path-typed (``git``, ``index``, ``workspace``, ``url``), or
+        when every path-typed entry already lives inside the worktree's
+        own checkout.
+
+    Notes
+    -----
+    Entries whose ``source_resolved`` does not exist are skipped with a
+    warning rather than emitted — letting the bootstrap surface uv's own
+    "Distribution not found" error is more informative than mocking up a
+    broken symlink.
+    """
+    try:
+        try:
+            import tomllib  # Python 3.11+
+        except ImportError:
+            import tomli as tomllib  # type: ignore[import,no-redef]
+        data = tomllib.loads(source_pyproject_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.debug(
+            "Could not parse %s for uv-sources symlink resolution: %s",
+            source_pyproject_path,
+            exc,
+        )
+        return []
+
+    sources = data.get("tool", {}).get("uv", {}).get("sources")
+    if not isinstance(sources, dict) or not sources:
+        return []
+
+    source_dir = source_pyproject_path.parent
+    worktree_dir = worktree_pyproject_path.parent
+
+    symlinks: List[tuple[Path, Path]] = []
+    for key, entry in sources.items():
+        if not isinstance(entry, dict):
+            continue
+        path_value = entry.get("path")
+        if not isinstance(path_value, str):
+            # Non-path-typed entries (git, index, workspace, url) need no
+            # symlink. They're out of scope for AB61.
+            continue
+
+        worktree_resolved = (worktree_dir / path_value).resolve()
+        source_resolved = (source_dir / path_value).resolve()
+
+        if worktree_resolved == source_resolved:
+            # Path points inside the worktree's own checkout — uv finds it
+            # without help.
+            continue
+
+        if not source_resolved.exists():
+            logger.warning(
+                "uv-sources entry '%s' in %s points to %s which does not "
+                "exist; skipping symlink creation. uv will surface its own "
+                "'Distribution not found' error.",
+                key,
+                source_pyproject_path,
+                source_resolved,
+            )
+            continue
+
+        symlinks.append((worktree_resolved, source_resolved))
+
+    return symlinks
+
+
+def _create_worktree_uv_sources_symlinks(
+    symlinks: List[tuple[Path, Path]],
+) -> None:
+    """
+    Create the worktree symlinks computed by
+    :func:`_resolve_uv_sources_symlinks` (TASK-FIX-AB61).
+
+    Idempotent:
+
+    * If the symlink path is already a symlink pointing at the correct
+      target, leave it alone.
+    * If the symlink path is a symlink pointing elsewhere, replace it.
+    * If a non-symlink (real file or directory) already exists at the
+      symlink path, log a warning and skip — the consuming repo may have
+      a real directory there for another reason and silent overwrite
+      would be destructive.
+
+    Parameters
+    ----------
+    symlinks : list[tuple[Path, Path]]
+        ``(symlink_path, target_path)`` pairs as returned by
+        :func:`_resolve_uv_sources_symlinks`. Both paths must be
+        absolute. Empty list is a no-op.
+
+    Raises
+    ------
+    OSError
+        If symlink creation itself fails (permission denied, target
+        unreadable, parent directory creation failed). The caller is
+        responsible for surfacing this with a hint that names the
+        symlink path, target, and OS error — and that does NOT point at
+        ``bootstrap_failure_mode: warn`` (mirrors the AB60 hint pattern).
+    """
+    for symlink_path, target_path in symlinks:
+        if symlink_path.is_symlink():
+            try:
+                current = Path(os.readlink(symlink_path))
+            except OSError as exc:
+                logger.warning(
+                    "Could not read existing symlink at %s: %s; replacing.",
+                    symlink_path,
+                    exc,
+                )
+                current = None
+            if current is not None and current == target_path:
+                logger.debug(
+                    "uv-sources symlink already correct: %s -> %s",
+                    symlink_path,
+                    target_path,
+                )
+                continue
+            symlink_path.unlink()
+        elif symlink_path.exists():
+            logger.warning(
+                "Path %s exists and is not a symlink; skipping uv-sources "
+                "symlink creation. Remove or relocate it to enable "
+                "transparent sibling-source resolution from this worktree.",
+                symlink_path,
+            )
+            continue
+
+        symlink_path.parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(target_path, symlink_path)
+        logger.debug(
+            "Created uv-sources symlink: %s -> %s",
+            symlink_path,
+            target_path,
+        )
 
 
 def _resolve_python_pyproject_install_command(
@@ -1826,4 +2008,6 @@ __all__ = [
     "UvSourcesRequireUvError",
     "check_requires_python_precheck",
     "format_requires_python_remediation",
+    "_resolve_uv_sources_symlinks",
+    "_create_worktree_uv_sources_symlinks",
 ]
