@@ -413,6 +413,7 @@ def _format_bootstrap_hardfail_message(
     ]
 
     essential_failures = [d for d in result.failure_details if d.essential]
+    uv_venv_creation_failure = False
     if essential_failures:
         lead = essential_failures[0]
         lines.append(f"Manifest: {lead.manifest_path}")
@@ -420,15 +421,33 @@ def _format_bootstrap_hardfail_message(
             lines.append(f"Manifest requires-python: {lead.requires_python}")
         if lead.is_pep668:
             lines.append("Detected PEP 668 externally-managed-environment failure.")
+        # AB60: detect the worktree-local-venv-creation hard-fail by the
+        # marker the bootstrapper writes into stderr_excerpt. We do not
+        # want to suggest warn-mode for this row — warn would let agents
+        # run against a broken environment instead of fixing the venv.
+        if lead.stderr_excerpt and "uv venv creation failed" in lead.stderr_excerpt:
+            uv_venv_creation_failure = True
+            lines.append(
+                "Detected uv-sources install path failed to create a "
+                "worktree-local venv (TASK-FIX-AB60)."
+            )
         if lead.stderr_excerpt:
             lines.append("Install stderr (tail):")
             lines.append(lead.stderr_excerpt)
 
-    lines.append(
-        "Hint: set `bootstrap_failure_mode: warn` in .guardkit/config.yaml "
-        "(or pass `--bootstrap-failure-mode warn`) to downgrade this to a "
-        "non-blocking warning."
-    )
+    if uv_venv_creation_failure:
+        lines.append(
+            "Hint: investigate why `uv venv <worktree>/.venv` is failing "
+            "(permissions, disk, or uv version). Switching "
+            "`bootstrap_failure_mode` to `warn` is NOT a fix here — task "
+            "agents would then run against a missing environment."
+        )
+    else:
+        lines.append(
+            "Hint: set `bootstrap_failure_mode: warn` in .guardkit/config.yaml "
+            "(or pass `--bootstrap-failure-mode warn`) to downgrade this to a "
+            "non-blocking warning."
+        )
     return "\n".join(lines)
 
 

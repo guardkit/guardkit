@@ -36,6 +36,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -48,6 +49,19 @@ from typing import Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 PEP668_SENTINEL = "externally-managed-environment"
+
+# uv emits this stderr fragment when ``uv pip install`` is invoked outside an
+# active venv and no ``.venv`` is discoverable. The literal lives in uv's
+# source as ``"No virtual environment found"`` and is the substring we match
+# on; the trailing "; run `uv venv` ..." advice text is not stable enough to
+# include in a sentinel.
+#
+# Triggered by the ``[tool.uv.sources]``-present + ``uv on PATH``-yes row of
+# the install matrix above. ``_run_install`` detects this stderr, calls
+# ``_ensure_uv_venv`` to create a worktree-local ``.venv``, and retries the
+# original ``uv pip install`` with ``VIRTUAL_ENV`` and ``PATH`` exported. See
+# :meth:`EnvironmentBootstrapper._run_install` for the retry block.
+UV_NO_VENV_SENTINEL = "No virtual environment found"
 
 # Truncate stderr excerpts attached to failure-detail records. Full stderr is
 # still logged at WARNING by the install helpers — this cap only bounds what
@@ -400,8 +414,21 @@ class BootstrapResult:
 #   absent                      | absent  | any        | pip install -e .  (unchanged)
 #   absent                      | present | yes        | uv sync --frozen
 #   absent                      | present | no         | pip install -e .  (+ warn)
-#   present                     | any     | yes        | uv pip install -e .
+#   present                     | any     | yes        | uv pip install -e .  [1]
 #   present                     | any     | no         | HARD-FAIL (UvSourcesRequireUvError)
+#
+# [1] ``uv pip install`` requires either an active venv or ``--system``. When
+#     this row fires and the worktree has neither an active ``$VIRTUAL_ENV``
+#     nor a discoverable ``.venv`` in cwd, uv exits with stderr "No virtual
+#     environment found" before any wheels are pulled. The bootstrapper
+#     detects this sentinel (see :data:`UV_NO_VENV_SENTINEL`) inside
+#     :meth:`EnvironmentBootstrapper._run_install`, calls ``uv venv`` to
+#     create ``<cwd>/.venv`` (where uv looks first), and retries the
+#     original command with ``VIRTUAL_ENV`` and ``PATH`` exported. The
+#     retry is single-shot per bootstrap pass — if it still fails, the
+#     hard-fail gate (TASK-FIX-7A04) surfaces the failure as usual.
+#     ``--system`` is intentionally avoided: it writes to the host Python
+#     and on managed Pythons would re-trigger PEP 668. (TASK-FIX-AB60)
 
 
 class UvSourcesRequireUvError(RuntimeError):
@@ -859,6 +886,13 @@ class EnvironmentBootstrapper:
         self._state_file = state_file or (root / ".guardkit" / "bootstrap_state.json")
         self._retry_cooldown_seconds = retry_cooldown_seconds
         self._venv_python: Optional[Path] = None
+        # Per-bootstrap cache for the worktree-local venv created when the
+        # ``[tool.uv.sources]``-present matrix row hits uv's "No virtual
+        # environment found" stderr. Distinct from ``_venv_python`` (which
+        # lives at ``<root>/.guardkit/venv/`` for the PEP 668 path) — the
+        # uv-venv lives at ``<cwd>/.venv`` (where uv discovers it natively)
+        # and is created only on retry, not preserved across bootstrap runs.
+        self._uv_venv_python: Optional[Path] = None
         # Diagnostics captured by _run_install / _run_single_command for the
         # MOST RECENT call only — consumed by bootstrap() to populate
         # BootstrapResult.failure_details. Kept as private scratch state so
@@ -1211,6 +1245,78 @@ class EnvironmentBootstrapper:
         self._venv_python = venv_python
         return self._venv_python
 
+    def _is_uv_no_venv_error(self, stderr: str) -> bool:
+        """
+        Return True if *stderr* contains uv's "no venv discoverable" sentinel.
+
+        Symmetric with :meth:`_is_pep668_error`. Triggered by ``uv pip
+        install`` invocations against a project that declares
+        ``[tool.uv.sources]`` but where neither ``$VIRTUAL_ENV`` is set
+        nor ``<cwd>/.venv`` exists, on a uv version that requires an
+        explicit environment for non-system installs.
+
+        Parameters
+        ----------
+        stderr : str
+            Standard error output from a failed ``uv pip install`` command.
+        """
+        return UV_NO_VENV_SENTINEL in stderr
+
+    def _ensure_uv_venv(self, cwd: Path) -> Path:
+        """
+        Create a worktree-local venv at ``<cwd>/.venv`` (if needed).
+
+        Distinct from :meth:`_ensure_venv`: the PEP 668 venv lives at
+        ``<root>/.guardkit/venv/`` (a single shared interpreter for the
+        bootstrap pass), whereas the uv-sources venv lives **inside the
+        worktree** because uv discovers ``.venv`` relative to its cwd.
+        Putting it under ``.guardkit/venv/`` would not be discovered.
+
+        Idempotent — if ``.venv/bin/python`` already exists it is returned
+        without re-creating. The path is also cached on
+        ``self._uv_venv_python`` so a second ``uv pip install`` call inside
+        the same bootstrap pass short-circuits.
+
+        Parameters
+        ----------
+        cwd : Path
+            Working directory of the failing ``uv pip install`` call —
+            typically the manifest's parent directory.
+
+        Returns
+        -------
+        Path
+            Absolute path to the venv directory (``<cwd>/.venv``), suitable
+            for export as ``VIRTUAL_ENV``. Callers that want the python
+            interpreter should append ``/bin/python``.
+        """
+        if self._uv_venv_python is not None:
+            return self._uv_venv_python.parent.parent
+
+        venv_dir = cwd / ".venv"
+        venv_python = venv_dir / "bin" / "python"
+
+        if not venv_python.exists():
+            logger.info(
+                "uv-sources: creating worktree-local virtualenv at %s",
+                venv_dir,
+            )
+            subprocess.run(
+                ["uv", "venv", str(venv_dir)],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+        else:
+            logger.info(
+                "uv-sources: reusing existing worktree-local virtualenv at %s",
+                venv_dir,
+            )
+
+        self._uv_venv_python = venv_python
+        return venv_dir
+
     def _run_install(self, manifest: DetectedManifest) -> bool:
         """
         Run the install command for a single manifest.
@@ -1222,6 +1328,12 @@ class EnvironmentBootstrapper:
         On PEP 668 failure (``externally-managed-environment``), a project-
         local virtualenv is created and the command is retried with the venv
         Python.
+
+        On uv "no virtual environment found" failure (the
+        ``[tool.uv.sources]`` install matrix row when the worktree has no
+        venv), a worktree-local ``.venv`` is created via ``uv venv`` and
+        the original ``uv pip install`` is retried with ``VIRTUAL_ENV``
+        and ``PATH`` exported. (TASK-FIX-AB60)
 
         On failure, the stderr excerpt and PEP-668 flag are stashed on
         ``self._last_failure_stderr`` / ``self._last_failure_is_pep668`` so
@@ -1314,6 +1426,77 @@ class EnvironmentBootstrapper:
                 )
                 self._last_failure_stderr = _tail_excerpt(retry_proc.stderr)
                 self._last_failure_is_pep668 = True
+                return False
+
+            # uv-sources fallback: ``uv pip install`` against a project that
+            # declares ``[tool.uv.sources]`` requires a discoverable venv.
+            # When uv reports "No virtual environment found" we create one
+            # at ``<cwd>/.venv`` and retry once with VIRTUAL_ENV/PATH set.
+            # Gated to ``uv pip install ...`` specifically (cmd[1:3]) so
+            # ``uv sync`` (the FD32 path) is not intercepted. (AB60)
+            if (
+                cmd
+                and cmd[0] == "uv"
+                and cmd[1:3] == ["pip", "install"]
+                and self._uv_venv_python is None
+                and self._is_uv_no_venv_error(proc.stderr or "")
+            ):
+                try:
+                    venv_dir = self._ensure_uv_venv(Path(cwd))
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+                    logger.warning(
+                        "uv-sources: failed to create worktree-local venv at "
+                        "%s/.venv: %s",
+                        cwd,
+                        exc,
+                    )
+                    self._last_failure_stderr = _tail_excerpt(
+                        f"uv venv creation failed: {exc}\n"
+                        "Original uv pip install stderr:\n"
+                        + (proc.stderr or "")
+                    )
+                    return False
+
+                retry_cmd = list(manifest.install_command)
+                retry_env = {
+                    **os.environ,
+                    "VIRTUAL_ENV": str(venv_dir),
+                    "PATH": str(venv_dir / "bin")
+                    + os.pathsep
+                    + os.environ.get("PATH", ""),
+                }
+                logger.info(
+                    "uv-sources: retrying install for %s (%s) with VIRTUAL_ENV=%s: %s",
+                    manifest.stack,
+                    manifest.path.name,
+                    venv_dir,
+                    " ".join(retry_cmd),
+                )
+                retry_proc = subprocess.run(
+                    retry_cmd,
+                    cwd=cwd,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                    env=retry_env,
+                )
+                if retry_proc.returncode == 0:
+                    logger.info(
+                        "uv-sources retry succeeded for %s (%s)",
+                        manifest.stack,
+                        manifest.path.name,
+                    )
+                    return True
+                logger.warning(
+                    "uv-sources retry failed for %s (%s) with exit code %d:\n"
+                    "stderr: %s\nstdout: %s",
+                    manifest.stack,
+                    manifest.path.name,
+                    retry_proc.returncode,
+                    retry_proc.stderr or "(empty)",
+                    retry_proc.stdout or "(empty)",
+                )
+                self._last_failure_stderr = _tail_excerpt(retry_proc.stderr)
                 return False
 
             stderr_text = proc.stderr or ""

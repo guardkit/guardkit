@@ -409,6 +409,39 @@ def test_format_message_includes_pep668_marker() -> None:
     assert "/repo/pyproject.toml" in msg
 
 
+def test_format_message_swaps_hint_for_uv_venv_creation_failure() -> None:
+    """TASK-FIX-AB60: warn-mode hint must NOT be suggested when the AB60
+    path failed at venv creation. ``warn`` would let agents run against
+    a broken environment instead of fixing the venv-creation root cause.
+    """
+    detail = BootstrapFailureDetail(
+        stack="python",
+        manifest_path="/repo/pyproject.toml",
+        stderr_excerpt=(
+            "uv venv creation failed: permission denied\n"
+            "Original uv pip install stderr:\n"
+            "error: No virtual environment found\n"
+        ),
+        is_pep668=False,
+        requires_python=None,
+        essential=True,
+    )
+    result = _make_result(
+        installs_attempted=1,
+        installs_failed=1,
+        stacks_detected=["python"],
+        failure_details=[detail],
+    )
+    msg = _format_bootstrap_hardfail_message(result, ["python"])
+    # The AB60-specific hint fires.
+    assert "TASK-FIX-AB60" in msg
+    assert "uv venv" in msg
+    assert "permissions, disk, or uv version" in msg
+    # The misleading warn-mode hint is suppressed.
+    assert "bootstrap_failure_mode: warn" not in msg
+    assert "downgrade this to a non-blocking warning" not in msg
+
+
 # ---------------------------------------------------------------------------
 # TASK-REV-JMBP Workstream E — requires-python pre-check
 # ---------------------------------------------------------------------------
