@@ -31,7 +31,7 @@ dependencies = [
     "Jinja2>=3.1.0",
     "python-dotenv>=1.0.0",
     "httpx>=0.25.0",
-    "graphiti-core>=0.5.0",
+    "graphiti-core @ git+https://github.com/guardkit/graphiti.git@v0.29.5-guardkit.1",
     "gherkin-official>=29.0.0",
 ]
 
@@ -48,12 +48,12 @@ autobuild = [
 # FalkorDB graph store backend (alternative to Neo4j)
 # Installs graphiti-core with FalkorDB support
 falkordb = [
-    "graphiti-core[falkordb]",
+    "graphiti-core[falkordb] @ git+https://github.com/guardkit/graphiti.git@v0.29.5-guardkit.1",
 ]
 # Google Gemini LLM client for Graphiti entity extraction
 # Required when .guardkit/graphiti.yaml sets llm_provider: gemini
 gemini = [
-    "graphiti-core[google-genai]",
+    "graphiti-core[google-genai] @ git+https://github.com/guardkit/graphiti.git@v0.29.5-guardkit.1",
 ]
 dev = [
     "pytest>=7.4.3",
@@ -69,8 +69,8 @@ dev = [
 ]
 all = [
     "claude-agent-sdk>=0.1.49,<0.2",
-    "graphiti-core[falkordb]",
-    "graphiti-core[google-genai]",
+    "graphiti-core[falkordb] @ git+https://github.com/guardkit/graphiti.git@v0.29.5-guardkit.1",
+    "graphiti-core[google-genai] @ git+https://github.com/guardkit/graphiti.git@v0.29.5-guardkit.1",
     "pytest>=7.4.3",
     "pytest-cov>=4.1.0",
     "pytest-asyncio>=0.23.0",
