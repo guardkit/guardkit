@@ -353,10 +353,19 @@ models:
   #   Set the client equal to or just below the server limit.
   #
   #   Capacity bound: -np N below sets the on-server parallel slot count.
-  #   Each extra slot costs ~1-2 GB KV cache for Qwen2.5-14B Q8.  Currently
-  #   -np 2 → on-server ceiling is 2; concurrencyLimit: 4 leaves a small
-  #   buffer for admin probes.  To raise throughput meaningfully, increase
-  #   both -np and concurrencyLimit together (and re-check VRAM headroom).
+  #   Each extra slot costs ~1-2 GB KV cache for Qwen2.5-14B Q8.
+  #
+  #   2026-05-04 bump (study-tutor TASK-GR-SEED Wave 5+): raised
+  #   -np 2 → 6 and concurrencyLimit 4 → 8. graphiti-core's add_episode
+  #   fans out 3-5 LLM calls in parallel within a single episode (entity
+  #   extract + edge extract + dedup + summarise), which silently exceeded
+  #   the previous 2-slot ceiling and abandoned ~40-50 % of seed writes
+  #   under retry exhaustion. Six slots absorbs the worst observed burst
+  #   (5 simultaneous POSTs in a 20 ms window) with one slot of headroom;
+  #   concurrencyLimit 8 keeps the same proportion of admin-probe buffer.
+  #   VRAM cost: +6-8 GB versus the previous baseline (~22 GB → ~28-30 GB
+  #   for Qwen2.5-14B Q8) — well within the 64 GB headroom in the memory
+  #   budget at the top of this file.
   # ===========================================================================
   "qwen-graphiti":
     cmd: >
@@ -374,10 +383,10 @@ models:
       --flash-attn on
       --jinja
       --temp 0.0
-      -np 2
+      -np 6
     checkEndpoint: /health
     ttl: 0
-    concurrencyLimit: 4
+    concurrencyLimit: 8
     aliases:
       - "neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic"
       - "graphiti-llm"

@@ -1,5 +1,23 @@
 # llama-swap config for the GuardKit dark factory on GB10
 # =========================================================
+#
+# ⚠️ HISTORICAL — pre-llamacpp-migration (2026-04-29). This file describes
+# `qwen-graphiti` and `nomic-embed` as PROXY entries delegating to
+# external vLLM services on :8000 / :8001. Those vLLM services were
+# retired on 2026-04-29 (scripts archived under
+# `guardkit/scripts/archive-vllm/`) and replaced with llama.cpp models
+# managed directly by llama-swap.
+#
+# The live source-of-truth is the inline `cat > /opt/llama-swap/config/config.yaml`
+# block in `RUNBOOK-v3-production-deployment.md` §5.2. `qwen-graphiti` is
+# now a `cmd:`-managed llama.cpp entry with `-np 6` parallel slots and
+# `concurrencyLimit: 8` (raised 2026-05-04 to absorb graphiti-core's
+# add_episode fan-out — see study-tutor TASK-GR-SEED Wave 5+ notes in
+# the runbook for the rationale).
+#
+# Read the runbook before deploying. Updating this file without
+# updating the runbook will silently desync the GB10.
+#
 # Single front door at :9000 serving all agents.
 # - Forever group: Graphiti LLM + embeddings (delegated to existing vLLM services)
 # - Builders group: AutoBuild Coder + Jarvis/Architect/Coach reasoner (swap)
