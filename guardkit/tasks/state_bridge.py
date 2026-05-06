@@ -21,10 +21,12 @@ Example:
     >>> # Now safe to run task-work --implement-only
 """
 
+import json
 import logging
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import frontmatter
 
@@ -198,6 +200,23 @@ class TaskStateBridge:
 
         self.logger.info(f"Task file moved to: {new_path}")
 
+        # TASK-FIX-1B4C (Layer 3'): persist the move so AgentInvoker's
+        # post-turn git-diff enrichment can subtract the now-ghost source
+        # path before it reaches the Player report (and Coach honesty).
+        try:
+            self._persist_state_transition(
+                task_id=self.task_id,
+                repo_root=self.repo_root,
+                pre_path=task_path,
+                post_path=new_path,
+                kind="design_approved_transition",
+            )
+        except Exception as exc:  # noqa: BLE001 — must never fail the move
+            self.logger.warning(
+                f"Failed to persist state-transition record for "
+                f"{self.task_id}: {exc}"
+            )
+
         return new_path
 
     def verify_implementation_plan_exists(self) -> Path:
@@ -279,6 +298,26 @@ class TaskStateBridge:
         """
         state, _ = self._get_current_state()
         return state
+
+    def canonical_path_for(self) -> Optional[Path]:
+        """
+        Return the task's current canonical path on disk, or None if missing.
+
+        Public, read-only wrapper around :py:meth:`_get_current_state` for use by
+        :py:class:`guardkit.orchestrator.coach_verification.CoachVerifier` to
+        resolve Player ``files_modified`` claims that reference a pre-move path
+        when state_bridge has since moved the task file (TASK-FIX-1B4A,
+        Layer 1 of the FEAT-FFC3 fix).
+
+        Swallows :py:class:`TaskNotFoundError` so callers can fail-open: if the
+        task file genuinely cannot be located, the caller should fall back to
+        exact-match behaviour.
+        """
+        try:
+            _, task_path = self._get_current_state()
+            return task_path
+        except TaskNotFoundError:
+            return None
 
     # =========================================================================
     # Private Helper Methods

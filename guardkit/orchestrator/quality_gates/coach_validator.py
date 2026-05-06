@@ -402,6 +402,17 @@ class CoachValidationResult:
                     "discrepancy_count": len(
                         self.honesty_verification.discrepancies
                     ),
+                    # TASK-FIX-1B4A (Layer 1): expose state_bridge identity
+                    # resolutions for audit. Empty list when no resolutions
+                    # occurred (typical case) or wiring was absent.
+                    "resolved_paths": [
+                        {
+                            "claimed": rp.claimed,
+                            "resolved_to": rp.resolved_to,
+                            "task_id": rp.task_id,
+                        }
+                        for rp in self.honesty_verification.resolved_paths
+                    ],
                 }
                 if self.honesty_verification is not None
                 else None
@@ -762,6 +773,8 @@ class CoachValidator:
             task_type = self._resolve_task_type(task)
         except ValueError as e:
             logger.error(f"Failed to resolve task type: {e}")
+            # honesty_verification omitted (defaults to None): _verify_honesty
+            # has not yet been called on this short-circuit path (TASK-FIX-7E3F).
             return self._feedback_result(
                 task_id=task_id,
                 turn=turn,
@@ -791,6 +804,9 @@ class CoachValidator:
                 f"Coach skipping operator_handoff task {task_id} turn {turn}: "
                 f"runtime verification deferred to operator."
             )
+            # honesty_verification omitted (defaults to None): _verify_honesty
+            # has not yet been called on this operator-handoff short-circuit
+            # path (TASK-FIX-7E3F).
             return CoachValidationResult(
                 task_id=task_id,
                 turn=turn,
@@ -814,6 +830,9 @@ class CoachValidator:
                 f"Task-work results for {task_id} contain error: "
                 f"{task_work_results.get('error', 'unknown')}"
             )
+            # honesty_verification omitted (defaults to None): _verify_honesty
+            # has not yet been called on this missing-results short-circuit
+            # path (TASK-FIX-7E3F).
             return self._feedback_result(
                 task_id=task_id,
                 turn=turn,
@@ -1047,6 +1066,7 @@ class CoachValidator:
                 task_work_results=task_work_results,
                 context_used=context,
                 extra_issues=advisory_issues,
+                honesty_verification=honesty_verification,
             )
 
         # 3. Independent test verification (trust but verify)
@@ -1326,6 +1346,7 @@ class CoachValidator:
                     }],
                     rationale=rationale,
                     context_used=context,
+                    honesty_verification=honesty_verification,
                 )
 
         # 4. Validate requirements satisfaction
@@ -1347,6 +1368,7 @@ class CoachValidator:
                 }],
                 rationale=f"Missing {len(requirements.missing)} acceptance criteria: {', '.join(requirements.missing)}",
                 context_used=context,
+                honesty_verification=honesty_verification,
             )
 
         # 5. Check for blocking zero-test anomaly before approval
@@ -1373,6 +1395,7 @@ class CoachValidator:
                     "Please write and run tests before resubmitting."
                 ),
                 context_used=context,
+                honesty_verification=honesty_verification,
             )
 
         # 5.5. Check for seam test recommendations (soft gate, non-blocking)
@@ -1419,6 +1442,7 @@ class CoachValidator:
                     "scenario(s) reported assertion failure during pytest-bdd execution."
                 ),
                 context_used=context,
+                honesty_verification=honesty_verification,
             )
 
         # 5.8. Seam tests blocking gate (TASK-FIX-A7B4).
@@ -1449,6 +1473,7 @@ class CoachValidator:
                     "resubmitting."
                 ),
                 context_used=context,
+                honesty_verification=honesty_verification,
             )
 
         # Combine all non-blocking issues. The agent_invocations advisory
@@ -1502,6 +1527,7 @@ class CoachValidator:
             context_used=context,
             approved_without_independent_tests=conditional_approval,
             environment_conditional_approval=environment_conditional_approval,
+            honesty_verification=honesty_verification,
         )
 
     def read_quality_gate_results(self, task_id: str) -> Dict[str, Any]:
@@ -5052,7 +5078,24 @@ class CoachValidator:
         deterministic gate path keeps running.
         """
         try:
-            verifier = CoachVerifier(self.worktree_path)
+            # TASK-FIX-1B4A (Layer 1): wire identity-based path resolution so
+            # a Player-reported pre-move task path is recognised when
+            # state_bridge has moved the file mid-turn. Falls back to
+            # exact-match behaviour when task_id is unknown.
+            state_bridge = None
+            if self.task_id:
+                from guardkit.tasks.state_bridge import TaskStateBridge
+
+                state_bridge = TaskStateBridge(
+                    self.task_id,
+                    self.worktree_path,
+                    in_autobuild_context=True,
+                )
+            verifier = CoachVerifier(
+                self.worktree_path,
+                task_id=self.task_id,
+                state_bridge=state_bridge,
+            )
             discrepancies = []
             discrepancies.extend(verifier._verify_files_exist(task_work_results))
             discrepancies.extend(
@@ -5064,6 +5107,7 @@ class CoachValidator:
                 verified=len(discrepancies) == 0,
                 discrepancies=discrepancies,
                 honesty_score=1.0 - (critical / max(total, 1)),
+                resolved_paths=list(verifier._resolved_paths),
             )
         except Exception as exc:  # noqa: BLE001 — never block gates on verifier crash
             logger.warning(
@@ -5117,6 +5161,7 @@ class CoachValidator:
         requirements: Optional[RequirementsValidation] = None,
         context_used: Optional[str] = None,
         is_configuration_error: bool = False,
+        honesty_verification: Optional[HonestyVerification] = None,
     ) -> CoachValidationResult:
         """
         Create a feedback result.
@@ -5154,6 +5199,7 @@ class CoachValidator:
             rationale=rationale,
             context_used=context_used,
             is_configuration_error=is_configuration_error,
+            honesty_verification=honesty_verification,
         )
 
     def _feedback_from_gates(
@@ -5164,6 +5210,7 @@ class CoachValidator:
         task_work_results: Dict[str, Any],
         context_used: Optional[str] = None,
         extra_issues: Optional[List[Dict[str, Any]]] = None,
+        honesty_verification: Optional[HonestyVerification] = None,
     ) -> CoachValidationResult:
         """
         Create feedback result from failed quality gates.
@@ -5314,6 +5361,7 @@ class CoachValidator:
             issues=issues,
             rationale=f"{len(issues)} quality gate(s) failed",
             context_used=context_used,
+            honesty_verification=honesty_verification,
         )
 
     def save_decision(self, result: CoachValidationResult) -> Path:

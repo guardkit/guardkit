@@ -18,7 +18,10 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+
+if TYPE_CHECKING:
+    from guardkit.tasks.state_bridge import TaskStateBridge
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +75,27 @@ class Discrepancy:
 
 
 @dataclass
+class ResolvedPath:
+    """A Player-reported path resolved through state_bridge identity lookup.
+
+    Recorded on :py:class:`HonestyVerification` when ``CoachVerifier`` chose
+    not to emit a ``file_existence`` discrepancy because the claimed path was
+    missing on disk but the task's current canonical path (per state_bridge)
+    does exist. Provides an audit trail for why a discrepancy was suppressed.
+
+    Attributes:
+        claimed: The path the Player (or post-turn enrichment) reported.
+        resolved_to: The canonical task file path on disk (relative to worktree
+            when possible, absolute otherwise).
+        task_id: The task ID whose canonical path was consulted.
+    """
+
+    claimed: str
+    resolved_to: str
+    task_id: str
+
+
+@dataclass
 class TestResult:
     """Result of running tests.
 
@@ -94,11 +118,16 @@ class HonestyVerification:
         verified: True if all claims were verified successfully
         discrepancies: List of found discrepancies
         honesty_score: Score from 0.0 to 1.0 (1.0 = fully honest)
+        resolved_paths: Player-reported paths that would have triggered a
+            ``file_existence`` discrepancy but were resolved through
+            state_bridge identity lookup (TASK-FIX-1B4A). Empty list when
+            no resolutions occurred or state_bridge wiring is absent.
     """
 
     verified: bool
     discrepancies: List[Discrepancy] = field(default_factory=list)
     honesty_score: float = 1.0
+    resolved_paths: List[ResolvedPath] = field(default_factory=list)
 
 
 class CoachVerifier:
@@ -121,6 +150,8 @@ class CoachVerifier:
         self,
         worktree_path: Path,
         venv_python: Optional[Union[str, Path]] = None,
+        task_id: Optional[str] = None,
+        state_bridge: Optional["TaskStateBridge"] = None,
     ):
         """Initialize CoachVerifier.
 
@@ -131,6 +162,16 @@ class CoachVerifier:
                 ``BootstrapResult.venv_python`` so Coach verifies against
                 the same interpreter the Player's bootstrap produced.
                 Resolution follows :func:`_resolve_venv_python`.
+            task_id: Optional task identifier. When paired with ``state_bridge``,
+                enables identity-based path resolution in
+                :py:meth:`_verify_files_exist` so a Player-reported pre-move
+                task path can be resolved to the task's current canonical
+                location instead of triggering a false-fail file_existence
+                discrepancy (TASK-FIX-1B4A, Layer 1 of FEAT-FFC3 fix).
+            state_bridge: Optional :py:class:`TaskStateBridge` instance for
+                the same worktree. When either ``task_id`` or ``state_bridge``
+                is None, identity resolution is disabled and exact-match
+                behaviour is preserved (fail-open).
         """
         self.worktree_path = Path(worktree_path)
         self._cached_test_result: Optional[TestResult] = None
@@ -141,6 +182,9 @@ class CoachVerifier:
             logger.debug(
                 "CoachVerifier using interpreter %s for pytest", self._venv_python
             )
+        self.task_id: Optional[str] = task_id
+        self.state_bridge: Optional["TaskStateBridge"] = state_bridge
+        self._resolved_paths: List[ResolvedPath] = []
 
     def verify_player_report(self, player_report: Dict[str, Any]) -> HonestyVerification:
         """Verify all verifiable claims in Player report.
@@ -193,6 +237,7 @@ class CoachVerifier:
             verified=len(discrepancies) == 0,
             discrepancies=discrepancies,
             honesty_score=honesty_score,
+            resolved_paths=list(self._resolved_paths),
         )
 
     def _verify_test_results(self, report: Dict[str, Any]) -> List[Discrepancy]:
@@ -231,28 +276,76 @@ class CoachVerifier:
     def _verify_files_exist(self, report: Dict[str, Any]) -> List[Discrepancy]:
         """Verify claimed files actually exist.
 
+        When a claimed path is missing on disk and identity-resolution is wired
+        (``task_id`` and ``state_bridge`` both supplied at construction time),
+        consult :py:meth:`TaskStateBridge.canonical_path_for` once per call.
+        If that returns a path that exists on disk, suppress the discrepancy
+        and append a :py:class:`ResolvedPath` audit record to
+        ``self._resolved_paths`` instead. This closes the FEAT-FFC3 false-fail
+        where the orchestrator's post-turn enrichment attributes a pre-move
+        task path to the Player after state_bridge has moved the file
+        (TASK-FIX-1B4A, Layer 1).
+
         Args:
             report: Player report dictionary
 
         Returns:
-            List of discrepancies for missing files
+            List of discrepancies for missing files (after identity resolution)
         """
         discrepancies: List[Discrepancy] = []
+        self._resolved_paths = []
+
+        canonical_path: Optional[Path] = None
+        canonical_resolved: bool = False
 
         for file_list_key in ["files_created", "files_modified", "tests_written"]:
             claimed_files = report.get(file_list_key, [])
 
             for file_path in claimed_files:
                 full_path = self.worktree_path / file_path
-                if not full_path.exists():
-                    discrepancies.append(
-                        Discrepancy(
-                            claim_type="file_existence",
-                            player_claim=f"{file_list_key}: {file_path}",
-                            actual_value="File does not exist",
-                            severity="critical",
+                if full_path.exists():
+                    continue
+
+                if (
+                    self.task_id is not None
+                    and self.state_bridge is not None
+                ):
+                    if not canonical_resolved:
+                        canonical_path = self.state_bridge.canonical_path_for()
+                        canonical_resolved = True
+
+                    if canonical_path is not None and canonical_path.exists():
+                        try:
+                            resolved_to = str(
+                                canonical_path.relative_to(self.worktree_path)
+                            )
+                        except ValueError:
+                            resolved_to = str(canonical_path)
+                        self._resolved_paths.append(
+                            ResolvedPath(
+                                claimed=str(file_path),
+                                resolved_to=resolved_to,
+                                task_id=self.task_id,
+                            )
                         )
+                        logger.debug(
+                            "CoachVerifier suppressed file_existence "
+                            "discrepancy for %s via state_bridge canonical "
+                            "path %s (task %s)",
+                            file_path,
+                            resolved_to,
+                            self.task_id,
+                        )
+                        continue
+
+                discrepancies.append(
+                    Discrepancy(
+                        claim_type="file_existence",
+                        player_claim=f"{file_list_key}: {file_path}",
+                        actual_value="File does not exist",
+                        severity="critical",
                     )
+                )
 
         return discrepancies
 
@@ -521,6 +614,7 @@ __all__ = [
     "CoachVerifier",
     "Discrepancy",
     "HonestyVerification",
+    "ResolvedPath",
     "TestResult",
     "_resolve_venv_python",
     "format_verification_context",
