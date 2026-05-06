@@ -190,14 +190,26 @@ def run_smoke_gate(
             env=env,
         )
     except subprocess.TimeoutExpired as exc:
+        # TASK-SGER-001: surface partial output captured before the gate was
+        # killed. ``exc.stdout`` / ``exc.stderr`` carry whatever the
+        # subprocess wrote before the timeout fired — useful when a gate
+        # hangs partway through a multi-statement script.
+        partial_stderr = _decode(exc.stderr)
+        partial_stdout = _decode(exc.stdout)
         logger.warning(
-            "Smoke gate timed out after %ds: %s", config.timeout, config.command
+            "Smoke gate timed out after %ds: %s\n"
+            "stderr (partial):\n%s\n"
+            "stdout (partial):\n%s",
+            config.timeout,
+            config.command,
+            (partial_stderr or "(empty)").rstrip(),
+            (partial_stdout or "(empty)").rstrip(),
         )
         return SmokeGateResult(
             passed=False,
             exit_code=-1,
-            stdout=_decode(exc.stdout),
-            stderr=_decode(exc.stderr),
+            stdout=partial_stdout,
+            stderr=partial_stderr,
             timed_out=True,
             command=config.command,
             timeout=config.timeout,
@@ -239,11 +251,19 @@ def run_smoke_gate(
         )
     else:
         passed = False
+        # TASK-SGER-001: surface captured stderr/stdout so the failure log is
+        # self-diagnosing. The data is already on the CompletedProcess; without
+        # this, operators see only "exit=X, expected=Y" and have to re-run the
+        # gate by hand to learn what actually failed.
         logger.warning(
-            "Smoke gate failed after wave %d (exit=%d, expected=%d)",
+            "Smoke gate failed after wave %d (exit=%d, expected=%d)\n"
+            "stderr:\n%s\n"
+            "stdout:\n%s",
             wave_number,
             proc.returncode,
             config.expected_exit,
+            (proc.stderr or "(empty)").rstrip(),
+            (proc.stdout or "(empty)").rstrip(),
         )
 
     return SmokeGateResult(

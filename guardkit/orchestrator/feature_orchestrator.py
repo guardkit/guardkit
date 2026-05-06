@@ -2057,6 +2057,16 @@ The detailed specifications are in the task markdown file.
                             f"({reason}). Subsequent waves not started; worktree "
                             f"preserved at {worktree.path}."
                         )
+                        # TASK-SGER-001: append a stderr tail so the banner is
+                        # itself self-diagnosing. Full output goes to the log;
+                        # 20 lines is enough to land most pytest tracebacks.
+                        stderr_tail = "\n".join(
+                            (smoke_result.stderr or "").rstrip().splitlines()[-20:]
+                        )
+                        if stderr_tail:
+                            console.print(
+                                f"[red]stderr (last 20 lines):[/red]\n{stderr_tail}"
+                            )
                     break
                 elif smoke_result.gate_not_wired:
                     # Soft-warn path: build continues, but the operator sees
