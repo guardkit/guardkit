@@ -60,7 +60,7 @@ max_concurrent_episodes: 3
 # and logs fill with "Retrying request" / "Rate limit exceeded" warnings.
 # Range: 1-20 (5 = default)
 # Background: TASK-OPS-9F2A
-chunk_extraction_concurrency: 4
+chunk_extraction_concurrency: 8
 
 # LLM provider for Graphiti entity extraction
 # Options: openai (default), vllm, ollama, gemini
