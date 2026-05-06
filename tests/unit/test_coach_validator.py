@@ -5393,3 +5393,187 @@ class TestCriteriaClassifierRouting:
 # Note: BDD oracle gate tests for CoachValidator (TASK-BDD-E8954) live under
 # tests/unit/orchestrator/quality_gates/test_coach_validator.py — that path
 # is named explicitly in the task's acceptance criteria.
+
+
+# ============================================================================
+# TASK-FIX-1B4B Layer 2 — proportional honesty short-circuit
+# ============================================================================
+#
+# A single ``file_existence`` discrepancy (the residual case where Layer 1's
+# state-bridge resolution couldn't recover the path AND Layer 3' didn't filter
+# it) should be demoted to ``should_fix`` and **not** short-circuit gate
+# evaluation. Multiple discrepancies, ``promise_file_existence`` (the FEAT-6CC5
+# sophisticated-lie pattern), and content-claim discrepancies (``test_result``,
+# ``test_count``) retain ``must_fix`` and short-circuit.
+
+from guardkit.orchestrator.coach_verification import (
+    Discrepancy,
+    HonestyVerification,
+)
+
+
+def _honesty_with(*claim_types: str) -> HonestyVerification:
+    """Build a HonestyVerification with one critical Discrepancy per claim type."""
+    discrepancies = [
+        Discrepancy(
+            claim_type=ct,
+            player_claim=f"src/file_{i}.py",
+            actual_value="not found",
+            severity="critical",
+        )
+        for i, ct in enumerate(claim_types)
+    ]
+    return HonestyVerification(
+        verified=not discrepancies,
+        discrepancies=discrepancies,
+        honesty_score=1.0 if not discrepancies else 0.5,
+    )
+
+
+class TestHonestyShortCircuitDemotion:
+    """TASK-FIX-1B4B Layer 2: proportional honesty short-circuit."""
+
+    def test_single_file_existence_discrepancy_demoted_should_fix(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """AC-B1: one file_existence discrepancy → should_fix, gates run."""
+        write_task_work_results(task_work_results_dir, make_task_work_results())
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0, stdout="15 passed in 1.45s", stderr=""
+            )
+            validator = CoachValidator(str(tmp_worktree))
+            with patch.object(
+                validator,
+                "_verify_honesty",
+                return_value=_honesty_with("file_existence"),
+            ):
+                result = validator.validate("TASK-001", 1, make_task())
+
+        # Honesty gate did not short-circuit: independent tests + gates ran.
+        assert result.quality_gates is not None
+        assert result.independent_tests is not None
+        # The demoted issue is visible in the result.
+        honesty_issues = [
+            i for i in result.issues if i.get("category") == "honesty"
+        ]
+        assert len(honesty_issues) == 1
+        assert honesty_issues[0]["severity"] == "should_fix"
+        assert honesty_issues[0]["details"]["claim_type"] == "file_existence"
+
+    def test_multiple_file_existence_discrepancies_short_circuit(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """AC-B2: two file_existence discrepancies retain must_fix short-circuit."""
+        write_task_work_results(task_work_results_dir, make_task_work_results())
+
+        validator = CoachValidator(str(tmp_worktree))
+        with patch.object(
+            validator,
+            "_verify_honesty",
+            return_value=_honesty_with("file_existence", "file_existence"),
+        ):
+            result = validator.validate("TASK-001", 1, make_task())
+
+        # Short-circuit fired: gates were not consulted.
+        assert result.decision == "feedback"
+        assert result.quality_gates is None
+        assert result.independent_tests is None
+        honesty_issues = [
+            i for i in result.issues if i.get("category") == "honesty"
+        ]
+        assert len(honesty_issues) == 2
+        assert all(i["severity"] == "must_fix" for i in honesty_issues)
+
+    def test_promise_file_existence_short_circuit_preserved(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """AC-B3: promise_file_existence (FEAT-6CC5 lie pattern) still rejects."""
+        write_task_work_results(task_work_results_dir, make_task_work_results())
+
+        validator = CoachValidator(str(tmp_worktree))
+        with patch.object(
+            validator,
+            "_verify_honesty",
+            return_value=_honesty_with("promise_file_existence"),
+        ):
+            result = validator.validate("TASK-001", 1, make_task())
+
+        assert result.decision == "feedback"
+        assert result.quality_gates is None
+        honesty_issues = [
+            i for i in result.issues if i.get("category") == "honesty"
+        ]
+        assert len(honesty_issues) == 1
+        assert honesty_issues[0]["severity"] == "must_fix"
+        assert (
+            honesty_issues[0]["details"]["claim_type"]
+            == "promise_file_existence"
+        )
+
+    def test_test_result_discrepancy_short_circuit_preserved(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """AC-B4: test_result content claim still blocks (no demotion)."""
+        write_task_work_results(task_work_results_dir, make_task_work_results())
+
+        validator = CoachValidator(str(tmp_worktree))
+        with patch.object(
+            validator,
+            "_verify_honesty",
+            return_value=_honesty_with("test_result"),
+        ):
+            result = validator.validate("TASK-001", 1, make_task())
+
+        assert result.decision == "feedback"
+        assert result.quality_gates is None
+        honesty_issues = [
+            i for i in result.issues if i.get("category") == "honesty"
+        ]
+        assert len(honesty_issues) == 1
+        assert honesty_issues[0]["severity"] == "must_fix"
+        assert honesty_issues[0]["details"]["claim_type"] == "test_result"
+
+    def test_should_fix_honesty_issue_appears_in_feedback(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """AC-B5: demoted honesty issue surfaces in result.issues for the Player."""
+        # Force a feedback decision via failing tests so we exercise a
+        # non-approval path AND prove the demoted honesty issue still
+        # rides along in result.issues.
+        write_task_work_results(
+            task_work_results_dir,
+            make_task_work_results(tests_passed=False, failed_count=2),
+        )
+
+        validator = CoachValidator(str(tmp_worktree))
+        with patch.object(
+            validator,
+            "_verify_honesty",
+            return_value=_honesty_with("file_existence"),
+        ):
+            result = validator.validate("TASK-001", 1, make_task())
+
+        # Decision is feedback (driven by test_failure, not honesty).
+        assert result.decision == "feedback"
+        # Honesty did NOT short-circuit — gates were evaluated.
+        assert result.quality_gates is not None
+        # The should_fix honesty issue is visible alongside the test_failure.
+        honesty_issues = [
+            i for i in result.issues if i.get("category") == "honesty"
+        ]
+        assert len(honesty_issues) == 1
+        assert honesty_issues[0]["severity"] == "should_fix"
+        # Sibling categories from the real failure are also present.
+        assert any(i.get("category") == "test_failure" for i in result.issues)

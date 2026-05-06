@@ -868,9 +868,21 @@ class CoachValidator:
         # it twice would double the Coach's wall-clock cost.
         honesty_verification = self._verify_honesty(task_work_results)
         honesty_issues = self._honesty_issues_from(honesty_verification)
-        if honesty_issues:
+        # TASK-FIX-1B4B Layer 2: only ``must_fix`` honesty issues
+        # short-circuit gate evaluation. ``should_fix`` issues (a single
+        # path-only ``file_existence`` discrepancy demoted by
+        # ``_honesty_issues_from``) ride along to the final result so
+        # the Player still sees them in feedback while the rest of the
+        # gates run.
+        honesty_must_fix = [
+            i for i in honesty_issues if i["severity"] == "must_fix"
+        ]
+        honesty_should_fix = [
+            i for i in honesty_issues if i["severity"] == "should_fix"
+        ]
+        if honesty_must_fix:
             logger.warning(
-                f"Honesty verification produced {len(honesty_issues)} "
+                f"Honesty verification produced {len(honesty_must_fix)} "
                 f"critical issue(s) for {task_id}; short-circuiting "
                 f"gate evaluation."
             )
@@ -881,9 +893,9 @@ class CoachValidator:
                 quality_gates=None,
                 independent_tests=None,
                 requirements=None,
-                issues=honesty_issues,
+                issues=honesty_must_fix,
                 rationale=(
-                    f"{len(honesty_issues)} honesty discrepancy/discrepancies. "
+                    f"{len(honesty_must_fix)} honesty discrepancy/discrepancies. "
                     f"Adversarial verification overrode gate evaluation."
                 ),
                 context_used=context,
@@ -915,7 +927,7 @@ class CoachValidator:
                 quality_gates=None,
                 independent_tests=None,
                 requirements=None,
-                issues=[{
+                issues=honesty_should_fix + [{
                     "severity": "must_fix",
                     "category": "acceptance_criteria",
                     "description": (
@@ -1045,12 +1057,16 @@ class CoachValidator:
 
         # F3c helper: prepend the advisory to any issues list so process
         # observations ride along with whatever outcome-based decision
-        # downstream gates produce.
+        # downstream gates produce. ``honesty_should_fix`` rides the
+        # same channel (TASK-FIX-1B4B Layer 2): a single demoted
+        # path-only honesty discrepancy surfaces in feedback while the
+        # rest of the gates evaluate normally.
         advisory_issues: List[Dict[str, Any]] = (
             [agent_invocations_advisory]
             if agent_invocations_advisory is not None
             else []
         )
+        advisory_issues.extend(honesty_should_fix)
 
         # 2. Verify quality gates passed with profile
         gates_status = self.verify_quality_gates(
@@ -5122,19 +5138,33 @@ class CoachValidator:
     def _honesty_issues_from(
         self, honesty: HonestyVerification
     ) -> List[Dict[str, Any]]:
-        """Translate critical Discrepancies into ``must_fix`` issue dicts.
+        """Translate critical Discrepancies into honesty issue dicts.
 
-        Only ``critical`` severities become must_fix issues; warnings and
+        Only ``critical`` severities become honesty issues; warnings and
         info-level discrepancies are recorded on the result via
         ``honesty_verification`` but do not block gate evaluation.
+
+        Most critical discrepancies become ``must_fix`` issues that
+        short-circuit gate evaluation. The exception (TASK-FIX-1B4B
+        Layer 2) is a single ``file_existence``-only critical
+        discrepancy: it is demoted to ``should_fix`` so the discrepancy
+        surfaces in feedback as advisory while gate evaluation
+        continues. Multiple ``file_existence`` discrepancies,
+        ``promise_file_existence`` (FEAT-6CC5 sophisticated-lie
+        pattern), and content-claim discrepancies (``test_result``,
+        ``test_count``) retain ``must_fix`` and short-circuit.
         """
+        critical = [d for d in honesty.discrepancies if d.severity == "critical"]
+        demote = (
+            len(critical) == 1
+            and critical[0].claim_type == "file_existence"
+        )
+        severity = "should_fix" if demote else "must_fix"
         issues: List[Dict[str, Any]] = []
-        for d in honesty.discrepancies:
-            if d.severity != "critical":
-                continue
+        for d in critical:
             issues.append(
                 {
-                    "severity": "must_fix",
+                    "severity": severity,
                     "category": "honesty",
                     "description": (
                         f"Honesty verification failed: Player claim disagrees "
