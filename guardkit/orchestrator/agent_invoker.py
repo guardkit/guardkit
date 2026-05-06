@@ -5987,6 +5987,74 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         )
         return results_path
 
+    def _scan_ac_for_missing_paths(self, task_id: str) -> List[str]:
+        """Return AC-cited file paths that are absent from the worktree.
+
+        Implements TASK-AB-FIX-INVAB1 AC-005's escalation rule: when the
+        plan auditor reports ``skipped`` (no plan on disk), inspect the
+        task's acceptance criteria for path-shaped tokens — and elevate
+        the verdict to ``violation`` if any named path is missing.
+
+        Uses the same regex set as
+        ``synthetic_report.generate_file_existence_promises`` (primary
+        ``[\\w./\\-]+\\.\\w{1,5}`` plus backtick / single-quoted /
+        double-quoted variants) so AC-005 escalation parity matches the
+        synthetic-report path that produces completion_promises.
+
+        Returns:
+            Sorted, deduplicated list of paths the AC text names that
+            are absent from ``self.worktree_path``. Returns an empty list
+            when the task file or its acceptance_criteria can't be read,
+            so failure to introspect doesn't block the verdict pipeline.
+        """
+        import re as _re
+
+        task_file = self._find_task_file(task_id)
+        if task_file is None:
+            return []
+        try:
+            content = task_file.read_text(errors="replace")
+        except OSError:
+            return []
+        # Body after the YAML frontmatter — that's where AC text lives.
+        if content.startswith("---"):
+            parts = content.split("---", 2)
+            body = parts[2] if len(parts) >= 3 else content
+        else:
+            body = content
+        primary = _re.findall(r"[\w./\-]+\.\w{1,5}", body)
+        backtick = _re.findall(r"`([^`]+\.[a-zA-Z]+)`", body)
+        double_q = _re.findall(r'"([^"]+\.[a-zA-Z]+)"', body)
+        single_q = _re.findall(r"'([^']+\.[a-zA-Z]+)'", body)
+        paths: List[str] = []
+        seen: set = set()
+        for p in primary + backtick + double_q + single_q:
+            if "*" in p:
+                continue
+            if p in seen:
+                continue
+            seen.add(p)
+            paths.append(p)
+        # Filter to obvious source-file extensions and exclude paths
+        # that look like documentation / metadata so the escalation
+        # signal stays focused on implementation gaps. Keep this list
+        # narrow on purpose — TASK-AB-FIX-INVAB1 §"Don't break"
+        # warns against tightening helpers that already serve the
+        # synthetic-report pipeline. False positives here would block
+        # otherwise-passing tasks; false negatives degrade silently to
+        # current behaviour.
+        source_exts = (
+            ".py", ".ts", ".tsx", ".js", ".jsx", ".cs", ".go", ".java",
+            ".rb", ".rs",
+        )
+        missing: List[str] = []
+        for p in paths:
+            if not p.endswith(source_exts):
+                continue
+            if not (self.worktree_path / p).exists():
+                missing.append(p)
+        return sorted(set(missing))
+
     def _compute_plan_audit_verdict(self, task_id: str) -> Dict[str, Any]:
         """Run the deterministic plan auditor; return a Coach-consumable block.
 
@@ -6036,6 +6104,28 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             }
 
         if result.get("skipped"):
+            # TASK-AB-FIX-INVAB1 AC-005: a "no plan on disk" outcome is
+            # not a free pass. When AC text names a file path that
+            # doesn't exist on disk, escalate to a high-severity
+            # violation so coach_validator's plan_audit gate fires
+            # ``decision: feedback`` automatically.
+            ac_missing = self._scan_ac_for_missing_paths(task_id)
+            if ac_missing:
+                return {
+                    "status": "violation",
+                    "severity": "high",
+                    "violations": len(ac_missing),
+                    "extra_files": [],
+                    "missing_files": ac_missing,
+                    "extra_dependencies": [],
+                    "missing_dependencies": [],
+                    "loc_variance_pct": None,
+                    "discrepancies_count": len(ac_missing),
+                    "message": (
+                        "no plan on disk; AC names file path(s) that do "
+                        f"not exist on disk: {', '.join(ac_missing)}"
+                    ),
+                }
             return {
                 "status": "skipped",
                 "severity": None,

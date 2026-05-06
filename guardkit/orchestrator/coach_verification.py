@@ -171,6 +171,14 @@ class CoachVerifier:
         if file_disc:
             discrepancies.extend(file_disc)
 
+        # Verify completion_promises (TASK-AB-FIX-INVAB1 AC-001).
+        # Catches the FEAT-6CC5 class of sophisticated dishonesty: Player
+        # keeps files_created/files_modified honest while lying in
+        # completion_promises[*].implementation_files.
+        promise_disc = self._verify_completion_promises_files_exist(player_report)
+        if promise_disc:
+            discrepancies.extend(promise_disc)
+
         # Verify test count
         count_disc = self._verify_test_count(player_report)
         if count_disc:
@@ -246,6 +254,54 @@ class CoachVerifier:
                         )
                     )
 
+        return discrepancies
+
+    def _verify_completion_promises_files_exist(
+        self, report: Dict[str, Any]
+    ) -> List[Discrepancy]:
+        """Verify files claimed in completion_promises[*].implementation_files exist.
+
+        Catches the FEAT-6CC5 class of sophisticated dishonesty: Player keeps
+        ``files_created`` / ``files_modified`` honest (containing only metadata
+        that does exist) but lies in ``completion_promises`` with
+        ``status: "complete"`` and ``implementation_files`` referencing source
+        files that don't exist.
+
+        Only ``status: "complete"`` promises are inspected; incomplete and
+        rejected statuses are explicitly the Player flagging "not yet done"
+        and require no honesty challenge.
+
+        Args:
+            report: Player report dictionary
+
+        Returns:
+            List of critical discrepancies for promised-but-missing files.
+        """
+        discrepancies: List[Discrepancy] = []
+        promises = report.get("completion_promises") or []
+        for promise in promises:
+            if not isinstance(promise, dict):
+                continue
+            if promise.get("status") != "complete":
+                continue
+            impl_files = promise.get("implementation_files") or []
+            criterion_id = promise.get("criterion_id", "?")
+            for impl_file in impl_files:
+                if not impl_file:
+                    continue
+                if not (self.worktree_path / impl_file).exists():
+                    discrepancies.append(
+                        Discrepancy(
+                            claim_type="promise_file_existence",
+                            player_claim=(
+                                f"completion_promises[{criterion_id}]"
+                                f".status=complete with implementation_files "
+                                f"including {impl_file}"
+                            ),
+                            actual_value=f"File does not exist at {impl_file}",
+                            severity="critical",
+                        )
+                    )
         return discrepancies
 
     def _verify_test_count(self, report: Dict[str, Any]) -> List[Discrepancy]:
@@ -423,6 +479,11 @@ class CoachVerifier:
         count += len(report.get("files_created", []))
         count += len(report.get("files_modified", []))
         count += len(report.get("tests_written", []))
+        # TASK-AB-FIX-INVAB1 AC-001: count complete-promise files so the
+        # honesty score arithmetic stays accurate when the new check fires.
+        for promise in report.get("completion_promises") or []:
+            if isinstance(promise, dict) and promise.get("status") == "complete":
+                count += len(promise.get("implementation_files") or [])
         return max(count, 1)  # Avoid division by zero
 
 

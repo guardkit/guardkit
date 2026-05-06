@@ -673,3 +673,61 @@ from lib.plan_audit import (
     format_audit_report
 )
 ```
+
+---
+
+## Addendum (2026-05-06): Adversarial-rigor caveat from TASK-INV-AB1
+
+> Inserted by TASK-AB-FIX-INVAB1 AC-014. Cross-references:
+> [`TASK-INV-AB1-review-report.md`](TASK-INV-AB1-review-report.md),
+> [`.claude/rules/absence-of-failure-is-not-success.md`](../rules/absence-of-failure-is-not-success.md).
+
+The justification quoted in §"Option D — Task-Work Delegation" claimed:
+
+> *"Maintains adversarial rigor (Coach still validates independently)"*
+
+That claim was **delivered only when `CoachVerifier` was wired into the
+deterministic path**. The original report stated the design property
+before implementation and was not re-verified post-implementation. In
+practice, the implementation pattern that landed in commit `b7f0472a`
+(2026-01-25) wired `CoachVerifier` only into the LLM-Coach fallback at
+`agent_invoker.invoke_coach:1635`, not into the primary deterministic
+Coach path (`CoachValidator`). For every normal autobuild run between
+2025-12-30 (Option D decision) and 2026-05-06 (TASK-AB-FIX-INVAB1
+landing), the LLM Coach — and therefore the honesty verification — never
+fired. The deterministic Coach trusted Player-self-reported gate inputs
+in `task_work_results.json` without disk verification.
+
+The investigation **TASK-INV-AB1** documents this architectural
+regression in detail (with C4 component diagram and four sequence
+diagrams). The fix in **TASK-AB-FIX-INVAB1** restores the documented
+adversarial property by:
+
+1. Wiring `CoachVerifier` into `CoachValidator.validate()` immediately
+   after the player report is loaded and before quality-gate evaluation
+   (AC-002).
+2. Extending `CoachVerifier` with `_verify_completion_promises_files_exist`
+   to catch the FEAT-6CC5 class of sophisticated dishonesty (Player
+   keeps `files_created` honest while lying in
+   `completion_promises[*].implementation_files`) (AC-001).
+3. Surfacing the honesty score in `CoachValidationResult.to_dict()` for
+   per-turn observability (AC-003).
+4. Tightening defence-in-depth gaps: hybrid-fallback upgrade conditions
+   (AC-004), plan-audit `skipped` escalation (AC-005), and AC-cited test
+   command honesty (AC-006).
+
+Future readers of TASK-REV-0414 should understand that Option D's
+"lightweight Coach" pattern is **architecturally sound** — the bug was
+that one component (`CoachVerifier`) was left disconnected when the
+parallel path was introduced, not that the delegation pattern itself is
+flawed. The fix in TASK-AB-FIX-INVAB1 is restorative: it reconnects
+components that already existed and were always intended to work
+together.
+
+Per `.claude/rules/absence-of-failure-is-not-success.md`, the same
+meta-defect class has been observed in two sibling cases
+(parse_junit_xml zero-result false-green; BDD-oracle scenarios_failed
+== 0 false-green). When introducing a new "lightweight" / "deterministic"
+validator path that parallels an LLM-with-tools verification path,
+verify that all verification components from the original path are
+wired into the new path before declaring adversarial rigor preserved.

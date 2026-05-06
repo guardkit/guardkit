@@ -3829,14 +3829,18 @@ class TestCompletionPromisesMatching:
         assert "OAuth2 handler" in cr.evidence
 
     def test_promises_preferred_over_requirements_met(self, tmp_worktree):
-        """AC-002: completion_promises verified takes priority; incomplete upgraded by text."""
+        """AC-002: completion_promises verified takes priority; incomplete NOT upgraded.
+
+        Updated by TASK-AB-FIX-INVAB1 AC-004: the original TASK-FIX-TM02
+        behaviour of upgrading ``incomplete`` promises via Player-self-reported
+        text was identified as the second-order corruption path that let the
+        Player overrule the deterministic verifier. The
+        ``Promise status: incomplete`` upgrade branch in ``_hybrid_fallback``
+        was removed; an incomplete promise now stays rejected.
+        """
         validator = CoachValidator(str(tmp_worktree))
         task = make_task(["Feature A", "Feature B"])
         results = {
-            # Both strategies present — verified promises always win,
-            # but incomplete promises can be upgraded via text fallback
-            # (TASK-FIX-TM02: text matching against actual code is more
-            # reliable than Player-declared "incomplete")
             "completion_promises": [
                 {"criterion_id": "AC-001", "status": "complete", "evidence": "Done"},
                 {"criterion_id": "AC-002", "status": "incomplete"},
@@ -3848,11 +3852,10 @@ class TestCompletionPromisesMatching:
 
         # AC-001: verified by promise (kept as-is)
         assert validation.criteria_results[0].status == "verified"
-        # AC-002: promise said "incomplete" but text matching found "Feature B"
-        # → hybrid fallback upgrades via text (TASK-FIX-TM02)
-        assert validation.criteria_met == 2
-        assert validation.criteria_results[1].status == "verified"
-        assert "[Text fallback]" in validation.criteria_results[1].evidence
+        # AC-002: promise reported "incomplete" — text fallback no longer
+        # upgrades this case (TASK-AB-FIX-INVAB1 AC-004 removed the branch).
+        assert validation.criteria_met == 1
+        assert validation.criteria_results[1].status == "rejected"
 
     def test_falls_back_to_text_when_no_promises(self, tmp_worktree):
         """AC-005: Falls back to requirements_met text matching when no promises."""
@@ -4272,7 +4275,13 @@ class TestSeamTestRecommendation:
         task_work_results_dir,
     ):
         """Seam test recommendation does not block approval."""
-        # Write passing task-work results without seam tests
+        # Write passing task-work results without seam tests.
+        # TASK-AB-FIX-INVAB1 AC-002: the deterministic Coach now verifies
+        # files claimed in task_work_results actually exist on disk; the
+        # test fixture must materialise the test file the Player claims.
+        test_file = tmp_worktree / "tests" / "test_feature.py"
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text("def test_x(): assert True\n")
         results = make_task_work_results()
         results["tests_written"] = ["tests/test_feature.py"]
         write_task_work_results(task_work_results_dir, results)
