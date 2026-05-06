@@ -4372,7 +4372,13 @@ class AutoBuildOrchestrator:
         if not turn_record.coach_result or not turn_record.coach_result.success:
             return
 
-        honesty_data = turn_record.coach_result.report.get("honesty_verification", {})
+        honesty_data = turn_record.coach_result.report.get("honesty_verification")
+        if honesty_data is None:
+            logger.debug(
+                f"Turn {turn_record.turn}: no honesty payload to record "
+                f"(operator-handoff or pre-_verify_honesty short-circuit)"
+            )
+            return
         honesty_score = honesty_data.get("honesty_score", 1.0)
 
         self._honesty_history.append(honesty_score)
