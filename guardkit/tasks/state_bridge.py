@@ -319,9 +319,159 @@ class TaskStateBridge:
         except TaskNotFoundError:
             return None
 
+    @staticmethod
+    def orchestrator_induced_paths_for(
+        task_id: str, repo_root: Path
+    ) -> Set[str]:
+        """
+        Return the set of pre-move paths recorded for ``task_id``.
+
+        Reads ``<repo_root>/.guardkit/autobuild/{task_id}/state_transitions.json``
+        (written by :py:meth:`transition_to_design_approved`) and returns the
+        union of ``pre_path`` values across all transitions recorded for the
+        task. Callers (notably
+        :py:class:`guardkit.orchestrator.agent_invoker.AgentInvoker._create_player_report_from_task_work`)
+        subtract this set from the post-turn ``git diff --name-only`` enrichment
+        so orchestrator-induced ghost paths never reach the Player report or
+        the Coach honesty verification (TASK-FIX-1B4C, Layer 3' of the FEAT-FFC3
+        fix).
+
+        Static rather than instance-bound: the orchestrator at the union-merge
+        site does not have a :py:class:`TaskStateBridge` instance handy, and the
+        underlying read is a pure file lookup keyed on task_id and repo_root.
+
+        Fail-open by design — every error path returns an empty set:
+        - file does not exist (no state-bridge moves yet)
+        - file is malformed JSON (logged warning, no exception)
+        - file is unreadable (logged warning, no exception)
+        - top-level JSON is not a list (defensive, no exception)
+        """
+        repo_root_path = Path(repo_root)
+        transitions_path = (
+            TaskArtifactPaths.autobuild_dir(task_id, repo_root_path)
+            / "state_transitions.json"
+        )
+
+        if not transitions_path.exists():
+            return set()
+
+        try:
+            records = json.loads(transitions_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            logger.warning(
+                f"state_transitions.json for {task_id} is malformed at "
+                f"{transitions_path}; orchestrator-induced path filter "
+                f"will be a no-op for this task"
+            )
+            return set()
+        except OSError as exc:
+            logger.warning(
+                f"Could not read state_transitions.json for {task_id} at "
+                f"{transitions_path}: {exc}; orchestrator-induced path "
+                f"filter will be a no-op for this task"
+            )
+            return set()
+
+        if not isinstance(records, list):
+            return set()
+
+        return {
+            record["pre_path"]
+            for record in records
+            if isinstance(record, dict)
+            and isinstance(record.get("pre_path"), str)
+        }
+
     # =========================================================================
     # Private Helper Methods
     # =========================================================================
+
+    @staticmethod
+    def _persist_state_transition(
+        task_id: str,
+        repo_root: Path,
+        pre_path: Path,
+        post_path: Path,
+        kind: str,
+    ) -> None:
+        """
+        Append a state-transition record to ``state_transitions.json``.
+
+        Writes to ``<repo_root>/.guardkit/autobuild/{task_id}/state_transitions.json``,
+        creating the parent directory if needed. New records append; existing
+        records are preserved across calls (multi-turn safety: a path moved in
+        turn 1 remains a ghost in turn N's git diff).
+
+        Atomicity: writes to a sibling ``.tmp`` file and renames into place via
+        ``Path.replace``, which is atomic on POSIX and "best-effort" on Windows.
+        Each task has its own subdirectory under ``.guardkit/autobuild/`` so
+        there is no cross-task contention on the file.
+
+        Path normalisation: ``pre_path`` and ``post_path`` are stored relative
+        to ``repo_root`` and use POSIX separators, matching the format that
+        ``git diff --name-only`` emits in the union-merge consumer.
+
+        Used by Layer 3' of the FEAT-FFC3 fix (TASK-FIX-1B4C). The companion
+        reader is :py:meth:`orchestrator_induced_paths_for`.
+        """
+        repo_root_path = Path(repo_root)
+        autobuild_dir = TaskArtifactPaths.autobuild_dir(task_id, repo_root_path)
+        autobuild_dir.mkdir(parents=True, exist_ok=True)
+
+        transitions_path = autobuild_dir / "state_transitions.json"
+
+        records: List[Dict[str, Any]] = []
+        if transitions_path.exists():
+            try:
+                existing = json.loads(
+                    transitions_path.read_text(encoding="utf-8")
+                )
+                if isinstance(existing, list):
+                    records = existing
+                else:
+                    logger.warning(
+                        f"Existing state_transitions.json for {task_id} is "
+                        f"not a list; starting a fresh record list"
+                    )
+            except (json.JSONDecodeError, OSError) as exc:
+                logger.warning(
+                    f"Could not parse existing state_transitions.json for "
+                    f"{task_id}: {exc}; starting a fresh record list"
+                )
+
+        pre_rel = TaskStateBridge._relativise(pre_path, repo_root_path)
+        post_rel = TaskStateBridge._relativise(post_path, repo_root_path)
+
+        records.append(
+            {
+                "task_id": task_id,
+                "pre_path": pre_rel,
+                "post_path": post_rel,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "kind": kind,
+            }
+        )
+
+        tmp_path = transitions_path.with_name(
+            transitions_path.name + ".tmp"
+        )
+        tmp_path.write_text(
+            json.dumps(records, indent=2), encoding="utf-8"
+        )
+        tmp_path.replace(transitions_path)
+
+    @staticmethod
+    def _relativise(path: Path, repo_root: Path) -> str:
+        """Return ``path`` relative to ``repo_root`` as a POSIX string.
+
+        Falls back to the path as-is (POSIX-formatted) when ``path`` is not
+        under ``repo_root`` — should not happen in production but keeps
+        persistence robust under odd test fixtures.
+        """
+        try:
+            return path.resolve().relative_to(repo_root.resolve()).as_posix()
+        except ValueError:
+            return Path(path).as_posix()
 
     def _get_current_state(self) -> Tuple[str, Path]:
         """

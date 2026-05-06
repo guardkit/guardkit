@@ -2797,6 +2797,44 @@ Follow the decision format specified in your agent definition.
                 report["files_modified"] = sorted(list(original_modified | git_modified))
                 report["files_created"] = sorted(list(original_created | git_created))
 
+                # TASK-FIX-1B4C (Layer 3'): Filter orchestrator-induced ghost
+                # paths. When state_bridge moved a task file mid-turn (e.g.
+                # backlog → design_approved), `git diff --name-only` against
+                # the pre-move baseline reports the source path as deleted.
+                # Without -M rename detection, the union-merge above attributes
+                # that ghost path to the Player, who never wrote it. Subtract
+                # the persisted state-bridge moves so the ghost never reaches
+                # the Coach honesty verification. See FEAT-1B452 review report
+                # § C4 + § 3.
+                try:
+                    from guardkit.tasks.state_bridge import TaskStateBridge
+
+                    induced = TaskStateBridge.orchestrator_induced_paths_for(
+                        task_id, repo_root=self.worktree_path
+                    )
+                    if induced:
+                        before_modified = set(report["files_modified"])
+                        before_created = set(report["files_created"])
+                        report["files_modified"] = sorted(
+                            set(report["files_modified"]) - induced
+                        )
+                        report["files_created"] = sorted(
+                            set(report["files_created"]) - induced
+                        )
+                        filtered_paths = (
+                            (before_modified | before_created) & induced
+                        )
+                        if filtered_paths:
+                            logger.info(
+                                f"Filtered {len(filtered_paths)} "
+                                f"orchestrator-induced ghost path(s) for "
+                                f"{task_id}: {sorted(filtered_paths)}"
+                            )
+                except Exception as exc:  # noqa: BLE001 — never block report
+                    logger.warning(
+                        f"Ghost-path filter failed for {task_id}: {exc}"
+                    )
+
                 # TASK-FIX-PIPELINE: Filter invalid entries (Fix 4)
                 # TASK-FIX-PV01: Use centralised _is_valid_file_path which also
                 # rejects natural language words (e.g. 'house') that lack '/' or '.'.
