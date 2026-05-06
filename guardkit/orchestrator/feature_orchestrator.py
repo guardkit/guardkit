@@ -77,7 +77,12 @@ from guardkit.orchestrator.parallel_strategy import (
     ParallelConfig,
     resolve_max_parallel,
 )
-from guardkit.worktrees import WorktreeManager, Worktree, WorktreeCreationError
+from guardkit.worktrees import (
+    WorktreeManager,
+    Worktree,
+    WorktreeCreationError,
+    warn_pth_leaks,
+)
 from guardkit.cli.display import WaveProgressDisplay
 
 # Import instrumentation (TASK-INST-004)
@@ -1716,6 +1721,23 @@ The detailed specifications are in the task markdown file.
         if feature.execution.worktree_path:
             worktree_path = Path(feature.execution.worktree_path)
             if worktree_path.exists():
+                # TASK-FIX-FF62 (Layer 3 / FEAT-FFC6): warn on dangling
+                # editable .pth references in parent venvs before the
+                # worktree path becomes meaningless. Read-only and
+                # warning-only — wrapped in try/except so a buggy
+                # scanner can never abort cleanup.
+                try:
+                    warn_pth_leaks(
+                        repo_root=self.repo_root,
+                        worktree_path=worktree_path,
+                        console=console,
+                    )
+                except Exception as scanner_exc:  # noqa: BLE001
+                    logger.debug(
+                        "pth-leak warn hook failed, suppressing: %s",
+                        scanner_exc,
+                    )
+
                 try:
                     # Create a Worktree object for cleanup
                     worktree_to_cleanup = Worktree(

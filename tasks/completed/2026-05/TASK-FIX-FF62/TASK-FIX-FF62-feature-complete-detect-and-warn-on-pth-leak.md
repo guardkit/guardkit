@@ -1,9 +1,16 @@
 ---
 id: TASK-FIX-FF62
 title: "/feature-complete detect-and-warn on dangling editable .pth references"
-status: backlog
+status: completed
 created: 2026-05-06T00:00:00Z
-updated: 2026-05-06T00:00:00Z
+updated: 2026-05-06T13:30:00Z
+completed: 2026-05-06T13:30:00Z
+previous_state: in_review
+state_transition_reason: "All quality gates passed (18/18 tests, 89% line / 100% branch coverage on new module)"
+completed_location: tasks/completed/2026-05/TASK-FIX-FF62/
+organized_files:
+  - TASK-FIX-FF62-feature-complete-detect-and-warn-on-pth-leak.md
+  - implementation-plan.md
 priority: medium
 task_type: feature
 parent_review: TASK-REV-FFC6
@@ -15,9 +22,26 @@ complexity: 4
 tags: [autobuild, feature-complete, defense-in-depth, pth-scanner, ffc3-bug-4]
 related_tasks: [TASK-REV-FFC6, TASK-FIX-FF61]
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  coverage:
+    line: 89
+    branch: 100
+    target_module: guardkit/worktrees/pth_leak_scanner.py
+  tests_added: 18
+  tests_passed: 18
+  tests_failed: 0
+  last_run: 2026-05-06T13:00:00Z
+plan_audit:
+  status: passed
+  severity: medium
+  files_planned: 5
+  files_actual: 5
+  files_variance_pct: 0
+  loc_planned: 510
+  loc_actual: 940
+  loc_variance_pct: 84
+  rationale: "LOC variance entirely in hardening tests + module docstring/constants block + defensive try/except wrappers required by AC-002/AC-004 'never abort cleanup' contract. Zero production-surface scope creep, zero new dependencies, same file count."
+  decision: approved
 ---
 
 # Task: `/feature-complete` detect-and-warn on dangling editable .pth references

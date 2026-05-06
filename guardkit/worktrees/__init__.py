@@ -9,6 +9,7 @@ from .manager import (
     CommandExecutor,
     SubprocessExecutor,
 )
+from .pth_leak_scanner import find_pth_leaks, warn_pth_leaks
 
 __all__ = [
     "WorktreeManager",
@@ -18,4 +19,6 @@ __all__ = [
     "WorktreeMergeError",
     "CommandExecutor",
     "SubprocessExecutor",
+    "find_pth_leaks",
+    "warn_pth_leaks",
 ]
