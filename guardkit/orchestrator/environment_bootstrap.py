@@ -1226,6 +1226,28 @@ class EnvironmentBootstrapper:
         duration = time.monotonic() - start_time
         overall_success = installs_failed == 0
 
+        # TASK-SGER-002: always expose the active interpreter on successful
+        # Python bootstrap. The PEP 668 and uv-no-venv fallback paths set
+        # ``self._venv_python`` / ``self._uv_venv_python`` in their own retry
+        # blocks. The macOS happy path (``uv pip install`` succeeds first try
+        # against the orchestrator's parent shell venv) hits neither — the
+        # install IS effective (sys.executable has the package), but no
+        # fallback ran, so ``self._venv_python`` stays ``None`` and the
+        # downstream smoke gate inherits unchanged PATH (FEAT-61F1 failure
+        # shape). Capturing ``sys.executable`` here makes the contract
+        # uniform: every successful Python bootstrap exposes its interpreter.
+        if (
+            overall_success
+            and self._venv_python is None
+            and any(m.stack == "python" for m in manifests)
+        ):
+            self._venv_python = Path(sys.executable)
+            logger.info(
+                "Bootstrap: install ran against parent venv; venv_python "
+                "set to sys.executable=%s",
+                sys.executable,
+            )
+
         # Persist state hash with outcome so failed attempts can be retried
         self._save_state(content_hash, success=overall_success)
 
