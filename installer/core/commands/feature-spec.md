@@ -146,6 +146,8 @@ GROUP D: Edge Cases — concurrency, failure recovery, unusual sequences
 - Do NOT include implementation hints in scenario steps.
 - Do NOT reference HTTP status codes, SQL statements, file paths, or test IDs.
 
+> **GHERKIN SYNTAX INVARIANT (MANDATORY):** Every `Given`/`When`/`Then`/`And`/`But` step **must fit on a single physical line**. The official Gherkin parser used downstream by `/feature-plan` Step 11 (BDD linking, via `feature-plan-bdd-link prepare`) rejects multi-line step continuations and stops the rest of the workflow with a hard `CompositeParserException`. **Do not wrap step text across lines under any circumstances**, no matter how long the step. If a step truly needs structured multi-line content, use a doc-string (`"""` block) or a data table; otherwise keep the entire step on one line. This applies in every phase that emits Gherkin (proposal output, modifications, Phase 6 file write). Wrapping is allowed in `Feature:` descriptions, comments, and assumption annotations — only the five step keywords are constrained.
+
 **Proposal output format:**
 
 ```
@@ -890,6 +892,18 @@ When the user runs `/feature-spec`, execute the six phases in sequence. This is 
 6. **Execute Phase 5.** List all inferred assumptions. For each, state the proposed default, confidence, and basis. Wait for confirmation or override. If `--auto`, accept all defaults and mark all as `confidence=low`.
 
 7. **Execute Phase 6.** Assemble all accepted scenarios (including modifications, additions, and edge cases). Apply assumption annotations. Write all three output files to `{--output}/{kebab-feature-name}/`. Display the output summary.
+
+8. **Normalise the `.feature` file before claiming success.** Immediately after writing `{feature-name}.feature`, run:
+
+   ```bash
+   python -m installer.core.commands.lib.feature_spec_normalize {--output}/{feature-name}/{feature-name}.feature
+   ```
+
+   This is a deterministic backstop that:
+   - collapses any wrapped `Given`/`When`/`Then`/`And`/`But` continuation lines onto a single line (a defence in depth against LLM drift past the GHERKIN SYNTAX INVARIANT in Phase 2);
+   - validates the result with the official `gherkin` parser used downstream by `/feature-plan` Step 11.
+
+   On `exit 0`: continue to display the output summary. On `exit 1`: report the parser error to the operator (the file already on disk is the LLM's last output — investigate and re-run rather than silently shipping an unparseable spec).
 
 ### Behavioural rules
 

@@ -1845,8 +1845,20 @@ class TestPep668StatePersistence:
         expected_venv = str(tmp_path / ".guardkit" / "venv" / "bin" / "python")
         assert state["venv_python"] == expected_venv
 
-    def test_state_no_venv_when_no_pep668(self, tmp_path: Path) -> None:
-        """State file does not include venv_python when no PEP 668 error."""
+    def test_state_records_sys_executable_when_no_pep668(
+        self, tmp_path: Path
+    ) -> None:
+        """TASK-SGER-002: State file records sys.executable when the install
+        succeeded first try without firing the PEP 668 fallback.
+
+        Pre-fix this test asserted ``"venv_python" not in state`` — i.e. the
+        bootstrapper recorded no interpreter on the parent-venv happy path.
+        That was the FEAT-61F1 failure shape: the smoke gate inherited
+        unchanged PATH and resolved bare ``python`` to whichever interpreter
+        the system PATH surfaced first, often NOT the one that ran the
+        install. The new contract: every successful Python bootstrap
+        exposes its interpreter, full stop. See TASK-SGER-002 for rationale.
+        """
         f = tmp_path / "requirements.txt"
         f.write_text("flask\n")
         m = make_manifest(f)
@@ -1858,7 +1870,11 @@ class TestPep668StatePersistence:
             bootstrapper.bootstrap([m])
 
         state = bootstrapper._load_state()
-        assert "venv_python" not in state
+        assert state.get("venv_python") == sys.executable, (
+            "After TASK-SGER-002, a first-try install success must record "
+            "sys.executable as the active interpreter (matches the contract "
+            "of the BootstrapResult.venv_python field)."
+        )
 
     def test_bootstrap_recovers_venv_from_state(self, tmp_path: Path) -> None:
         """bootstrap() recovers venv_python from state on subsequent runs."""

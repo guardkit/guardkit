@@ -1031,3 +1031,52 @@ jq 'select(.event_type == "llm.call" and .error_type == "rate_limited") |
 - [Local Backend AutoBuild Guide](local-backend-autobuild-guide.md) — vLLM server setup, model alignment, and performance tuning
 - [CLI vs Claude Code](cli-vs-claude-code.md) — When to use the CLI vs slash commands
 - [Template Pattern Player Context](../features/FEAT-TPL-PLAYER-template-pattern-player-context.md) — Feature spec for template pattern injection (FEAT-TPL-PLAYER)
+
+---
+
+## Pre-merge `task_work_results.json` verification
+
+> Source: TASK-AB-FIX-INVAB1 AC-013 (review report Appendix C). Cross-link
+> from `.claude/rules/autobuild.md`.
+
+Before merging an autobuild branch, run this defence-in-depth check to
+catch the FEAT-6CC5 class of false-positive approval (Player-promised
+files that don't actually exist on disk). The deterministic Coach gate
+in `coach_validator.py` already enforces this on every turn after
+TASK-AB-FIX-INVAB1, but the standalone script is useful when reviewing
+historical archives or auditing a turn artefact in isolation.
+
+```bash
+# Detect promises that name implementation_files inconsistent with the
+# Player's own files_created/files_modified lists.
+python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+promised = {f for p in d.get("completion_promises", [])
+              for f in (p.get("implementation_files") or [])
+              if p.get("status") == "complete"}
+actual = set(d.get("files_created", []) + d.get("files_modified", []))
+missing = promised - actual
+if missing:
+    print(f"FALSE-POSITIVE INDICATOR: {sorted(missing)}")
+    sys.exit(1)
+print("ok")
+' .guardkit/autobuild/TASK-XXX/task_work_results.json
+```
+
+Exit code 0 = pass; exit code 1 = at least one promised
+implementation_file is absent from the Player's own files_created /
+files_modified lists, indicating either (a) the Player misreported its
+own changes or (b) the file genuinely does not exist on disk. Either
+way, do not merge until the discrepancy is investigated.
+
+**Architectural-regression detector** — confirms `CoachVerifier` is wired
+into the deterministic Coach path:
+
+```bash
+$ grep -c "CoachVerifier\|_verify_player_claims\|HonestyVerification\|honesty_verification" \
+    guardkit/orchestrator/quality_gates/coach_validator.py
+# Post TASK-AB-FIX-INVAB1: must be ≥ 5 (imports + helpers + dataclass field
+# + to_dict mirror). A zero result indicates the architectural regression
+# has been re-introduced — see TASK-INV-AB1 review report.
+```

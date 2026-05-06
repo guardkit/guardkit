@@ -43,6 +43,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
+from guardkit.orchestrator.coach_verification import (
+    CoachVerifier,
+    HonestyVerification,
+)
 from guardkit.orchestrator.docker_fixtures import (
     get_container_name,
     get_env_exports,
@@ -322,6 +326,10 @@ class CoachValidationResult:
     approved_without_independent_tests: bool = False
     is_configuration_error: bool = False
     environment_conditional_approval: bool = False
+    # TASK-AB-FIX-INVAB1 AC-003: surface honesty verification result for
+    # observability in coach_turn_N.json. None when verification was not
+    # invoked (e.g. operator-handoff short-circuit, missing-results path).
+    honesty_verification: Optional[HonestyVerification] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -384,6 +392,20 @@ class CoachValidationResult:
             "approved_without_independent_tests": self.approved_without_independent_tests,
             "is_configuration_error": self.is_configuration_error,
             "environment_conditional_approval": self.environment_conditional_approval,
+            # TASK-AB-FIX-INVAB1 AC-003: mirror the LLM Coach honesty schema
+            # (verified, honesty_score, discrepancy_count) — see
+            # installer/core/agents/autobuild-coach.md:165-184.
+            "honesty_verification": (
+                {
+                    "verified": self.honesty_verification.verified,
+                    "honesty_score": self.honesty_verification.honesty_score,
+                    "discrepancy_count": len(
+                        self.honesty_verification.discrepancies
+                    ),
+                }
+                if self.honesty_verification is not None
+                else None
+            ),
         }
 
 
@@ -802,6 +824,95 @@ class CoachValidator:
                 }],
                 rationale="Task-work quality gate results not found",
                 context_used=context,
+            )
+
+        # 1.4. Adversarial honesty verification (TASK-AB-FIX-INVAB1 AC-002).
+        #
+        # Restores the original Player–Coach adversarial property on the
+        # deterministic Coach path. Option D (TASK-REV-0414) introduced
+        # CoachValidator as the primary Coach but did not wire in
+        # CoachVerifier — the existing-but-disconnected honesty verifier
+        # documented in installer/core/agents/autobuild-coach.md:141-203.
+        #
+        # The verifier checks Player claims against worktree state:
+        # - files_created / files_modified / tests_written exist on disk
+        # - completion_promises[*].implementation_files exist when status=complete
+        #
+        # When critical discrepancies exist, gates are not consulted at all
+        # — Player feedback names the specific claim/actual disagreement so
+        # the next turn can correct course. Honest reports produce zero
+        # discrepancies (no behavioural change for compliant Players).
+        #
+        # Test verification (CoachVerifier._verify_test_results) is
+        # deliberately skipped here because run_independent_tests below
+        # already runs an authoritative independent pytest pass — running
+        # it twice would double the Coach's wall-clock cost.
+        honesty_verification = self._verify_honesty(task_work_results)
+        honesty_issues = self._honesty_issues_from(honesty_verification)
+        if honesty_issues:
+            logger.warning(
+                f"Honesty verification produced {len(honesty_issues)} "
+                f"critical issue(s) for {task_id}; short-circuiting "
+                f"gate evaluation."
+            )
+            return CoachValidationResult(
+                task_id=task_id,
+                turn=turn,
+                decision="feedback",
+                quality_gates=None,
+                independent_tests=None,
+                requirements=None,
+                issues=honesty_issues,
+                rationale=(
+                    f"{len(honesty_issues)} honesty discrepancy/discrepancies. "
+                    f"Adversarial verification overrode gate evaluation."
+                ),
+                context_used=context,
+                honesty_verification=honesty_verification,
+            )
+
+        # 1.45. AC-cited missing test files (TASK-AB-FIX-INVAB1 AC-006).
+        #
+        # If an acceptance criterion names a specific test file (e.g.
+        # ``tests/test_login.py``) and that file does not exist on disk,
+        # the independent-test gate would silently fall back to the
+        # existing-test set and report green. Surface the gap as a
+        # ``must_fix`` issue so the Coach short-circuits with feedback
+        # rather than running a smaller-scope pytest invocation that can
+        # only return false-greens.
+        ac_missing_tests = self._detect_ac_cited_missing_test_files(
+            task.get("acceptance_criteria", [])
+        )
+        if ac_missing_tests:
+            logger.warning(
+                f"AC-cited missing test files for {task_id}: "
+                f"{ac_missing_tests}. Short-circuiting before "
+                f"run_independent_tests."
+            )
+            return CoachValidationResult(
+                task_id=task_id,
+                turn=turn,
+                decision="feedback",
+                quality_gates=None,
+                independent_tests=None,
+                requirements=None,
+                issues=[{
+                    "severity": "must_fix",
+                    "category": "acceptance_criteria",
+                    "description": (
+                        f"AC names test file(s) that don't exist on disk: "
+                        f"{', '.join(ac_missing_tests)}. The independent-"
+                        f"test gate cannot run honestly while AC-cited "
+                        f"tests are absent."
+                    ),
+                    "details": {"missing_test_files": ac_missing_tests},
+                }],
+                rationale=(
+                    f"{len(ac_missing_tests)} AC-cited test file(s) "
+                    f"missing on disk; gate cannot run honestly."
+                ),
+                context_used=context,
+                honesty_verification=honesty_verification,
             )
 
         # 1.5. Agent-invocations gate (TASK-FIX-RWOP1.3.1, TASK-REV-F6E1 F3c).
@@ -3375,6 +3486,103 @@ class CoachValidator:
 
         return validation
 
+    def _extract_paths_from_ac_text(self, criterion_text: str) -> List[str]:
+        """Extract file-path-shaped tokens from AC criterion text.
+
+        Mirrors the regex used by ``synthetic_report.generate_file_existence_promises``
+        for parity, plus the backtick / quoted variants. Returns a deduplicated
+        list (insertion order preserved) of path-shaped strings; glob patterns
+        (paths containing ``*``) are filtered out — only literal paths are
+        eligible for disk-existence checks.
+
+        Used by:
+        - TASK-AB-FIX-INVAB1 AC-004: tightening the "No completion promise"
+          hybrid-fallback branch to require the named path to exist on disk.
+        - TASK-AB-FIX-INVAB1 AC-005: plan_audit ``skipped`` escalation when
+          AC names a missing source file.
+        """
+        if not criterion_text:
+            return []
+        primary = re.findall(r"[\w./\-]+\.\w{1,5}", criterion_text)
+        backtick = re.findall(r"`([^`]+\.[a-zA-Z]+)`", criterion_text)
+        double_q = re.findall(r'"([^"]+\.[a-zA-Z]+)"', criterion_text)
+        single_q = re.findall(r"'([^']+\.[a-zA-Z]+)'", criterion_text)
+        out: List[str] = []
+        seen: set = set()
+        for p in primary + backtick + double_q + single_q:
+            if "*" in p:
+                continue
+            if p not in seen:
+                out.append(p)
+                seen.add(p)
+        return out
+
+    def _ac_text_paths_all_exist_on_disk(self, criterion_text: str) -> bool:
+        """Return True iff the AC text either names no paths or all named paths exist.
+
+        Used by TASK-AB-FIX-INVAB1 AC-004's tightening of ``_hybrid_fallback``.
+        Path-free ACs trivially "exist" — the helper is permissive in that
+        case so legitimate text-fallback verification still works.
+        """
+        paths = self._extract_paths_from_ac_text(criterion_text)
+        if not paths:
+            return True
+        for p in paths:
+            if not (self.worktree_path / p).exists():
+                return False
+        return True
+
+    def _detect_ac_cited_missing_test_files(
+        self, acceptance_criteria: List[str]
+    ) -> List[str]:
+        """Return AC-cited test-file paths that don't exist on disk.
+
+        Implements TASK-AB-FIX-INVAB1 AC-006: when an AC names a specific
+        test file (path matching ``test_*.py`` / ``*_test.py`` Python
+        conventions, plus equivalents per stack), that file must exist
+        on disk. Otherwise the independent-test gate would silently run
+        a smaller-scope test set and report green.
+        """
+        missing: List[str] = []
+        seen: set = set()
+        for ac in acceptance_criteria or []:
+            for path in self._extract_paths_from_ac_text(ac):
+                if not self._is_test_file_path(path):
+                    continue
+                if path in seen:
+                    continue
+                seen.add(path)
+                if not (self.worktree_path / path).exists():
+                    missing.append(path)
+        return missing
+
+    @staticmethod
+    def _is_test_file_path(path: str) -> bool:
+        """Heuristic: does ``path`` look like a test-file path?
+
+        Recognises the test-file conventions enumerated in AC-006:
+        - Python: ``test_*.py`` (pytest) and ``*_test.py``
+        - Go: ``*_test.go``
+        - C#/.NET: ``Tests/*.cs`` (path component "Tests")
+        - JS/TS: ``*.test.ts`` / ``*.test.js`` / ``*.spec.ts`` / ``*.spec.js``
+        """
+        name = Path(path).name
+        if name.startswith("test_") and name.endswith(".py"):
+            return True
+        if name.endswith("_test.py"):
+            return True
+        if name.endswith("_test.go"):
+            return True
+        if name.endswith(".test.ts") or name.endswith(".test.js"):
+            return True
+        if name.endswith(".spec.ts") or name.endswith(".spec.js"):
+            return True
+        # .NET Tests/*.cs
+        parts = Path(path).parts
+        if any(p == "Tests" for p in parts) and name.endswith(".cs"):
+            return True
+        return False
+
     def _hybrid_fallback(
         self,
         promise_validation: RequirementsValidation,
@@ -3421,15 +3629,23 @@ class CoachValidator:
             elif (
                 text_cr.result == "verified"
                 and promise_cr.result == "rejected"
-                and (
-                    "No completion promise" in promise_cr.evidence
-                    or "Promise status: incomplete" in promise_cr.evidence
+                and "No completion promise" in promise_cr.evidence
+                and self._ac_text_paths_all_exist_on_disk(
+                    promise_cr.criterion_text
                 )
             ):
-                # Upgrade criteria where promise evidence is unreliable:
-                # - No promise written at all ("No completion promise")
-                # - File-existence promise incomplete ("Promise status: incomplete")
-                # Text matching against actual file content is more trustworthy.
+                # Upgrade criteria only when the Player wrote no
+                # completion promise at all (TASK-REV-E719 Fix 2 covers
+                # the legitimate SDK-turn-exhaustion case). The
+                # "Promise status: incomplete" upgrade branch was
+                # removed (TASK-AB-FIX-INVAB1 AC-004): an incomplete
+                # promise is the deterministic verifier's ground truth
+                # and Player-self-reported text must not overrule it.
+                #
+                # The "No completion promise" branch is further
+                # tightened (TASK-AB-FIX-INVAB1 AC-004): when the AC
+                # text names a file path, that file must exist on disk
+                # before Player text fallback may verify the criterion.
                 upgraded_count += 1
                 merged_results.append(CriterionResult(
                     criterion_id=text_cr.criterion_id,
@@ -4819,6 +5035,76 @@ class CoachValidator:
                 "unconfirmed": unconfirmed,
             },
         }]
+
+    def _verify_honesty(
+        self, task_work_results: Dict[str, Any]
+    ) -> HonestyVerification:
+        """Run CoachVerifier honesty checks against the Player report.
+
+        Filesystem-only verification: file existence (files_created /
+        files_modified / tests_written) and completion-promise file
+        existence. Test-result verification is deliberately skipped — the
+        deterministic Coach path runs ``run_independent_tests`` later in
+        ``validate()`` which is the authoritative pass.
+
+        Restores TASK-AB-FIX-INVAB1 AC-002 wiring. Never raises: returns
+        a default-honest verification on any unexpected failure so the
+        deterministic gate path keeps running.
+        """
+        try:
+            verifier = CoachVerifier(self.worktree_path)
+            discrepancies = []
+            discrepancies.extend(verifier._verify_files_exist(task_work_results))
+            discrepancies.extend(
+                verifier._verify_completion_promises_files_exist(task_work_results)
+            )
+            total = verifier._count_verifiable_claims(task_work_results)
+            critical = sum(1 for d in discrepancies if d.severity == "critical")
+            return HonestyVerification(
+                verified=len(discrepancies) == 0,
+                discrepancies=discrepancies,
+                honesty_score=1.0 - (critical / max(total, 1)),
+            )
+        except Exception as exc:  # noqa: BLE001 — never block gates on verifier crash
+            logger.warning(
+                "CoachVerifier raised during honesty check: %s. "
+                "Treating as honest to avoid blocking gate evaluation.",
+                exc,
+            )
+            return HonestyVerification(
+                verified=True, discrepancies=[], honesty_score=1.0
+            )
+
+    def _honesty_issues_from(
+        self, honesty: HonestyVerification
+    ) -> List[Dict[str, Any]]:
+        """Translate critical Discrepancies into ``must_fix`` issue dicts.
+
+        Only ``critical`` severities become must_fix issues; warnings and
+        info-level discrepancies are recorded on the result via
+        ``honesty_verification`` but do not block gate evaluation.
+        """
+        issues: List[Dict[str, Any]] = []
+        for d in honesty.discrepancies:
+            if d.severity != "critical":
+                continue
+            issues.append(
+                {
+                    "severity": "must_fix",
+                    "category": "honesty",
+                    "description": (
+                        f"Honesty verification failed: Player claim disagrees "
+                        f"with worktree state. Claim: {d.player_claim}. "
+                        f"Actual: {d.actual_value}."
+                    ),
+                    "details": {
+                        "claim_type": d.claim_type,
+                        "player_claim": d.player_claim,
+                        "actual_value": d.actual_value,
+                    },
+                }
+            )
+        return issues
 
     def _feedback_result(
         self,
