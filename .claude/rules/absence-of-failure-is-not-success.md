@@ -110,15 +110,41 @@ rg "CoachVerifier|honesty_verification" guardkit/orchestrator/quality_gates/
 rg "absence-of-failure" .claude/rules/
 ```
 
+## Meta-frame
+
+This rule and its inverse-shape sibling
+[`path-string-mismatch-is-not-dishonesty.md`](path-string-mismatch-is-not-dishonesty.md)
+are both instances of the same broader meta-frame: *a binary verdict
+from a low-fidelity oracle that cannot distinguish "no signal" from
+"positive/negative signal"*. This rule guards against the false-green
+direction (oracle reports zero failures because it ran zero attempts;
+gate approves). The sibling guards against the false-red direction
+(oracle reports a path miss because the orchestrator mutated the
+worktree, not because the Player lied; gate rejects). The shared
+remediation pattern is the same: pair the boolean verdict with a
+positive-evidence precondition (count of attempts > 0; identity-based
+resolution before path-equality discrepancy) so "absent oracle output"
+is surfaced as feedback, never silently approved or silently
+turn-rejecting.
+
 ## Prior art
 
-- **Sibling rule**: `.claude/rules/namespace-hygiene.md` — same shape
+- **Sibling rule (false-red inverse direction)**:
+  [`path-string-mismatch-is-not-dishonesty.md`](path-string-mismatch-is-not-dishonesty.md)
+  — same shape (symptom + detection recipe + remediation recipe + grep
+  signature), opposite verdict direction. Seeded by TASK-DOC-1B4D
+  (2026-05-06) after the FEAT-1B452 honesty false-fail incident
+  ([TASK-REV-1B452](../reviews/TASK-REV-1B452-review-report.md)).
+  Paired in Graphiti via `IS_INVERSE_SHAPE_OF` edge.
+- **Sibling rule (meta-class peer)**:
+  [`namespace-hygiene.md`](namespace-hygiene.md) — same shape
   (symptom + detection recipe + remediation recipe + grep signature).
   Same meta-class-of-defect (local decisions touching externally-defined
   contracts: PyPI namespaces vs. honesty contracts).
 - **Pair fact in Graphiti** (`guardkit__project_decisions`): node
   *"absence-of-failure-is-not-success"* with edges to the three known
-  instance uuids enumerated above.
+  instance uuids enumerated above, and an `IS_INVERSE_SHAPE_OF` edge
+  to the *"path-string-mismatch-is-not-dishonesty"* node.
 - **Architectural review report**: `.claude/reviews/TASK-INV-AB1-review-report.md`
   contains the C4 component diagram and four sequence diagrams that
   motivate this rule.
