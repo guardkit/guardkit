@@ -88,6 +88,31 @@ class TestResolveVenvPython:
 
         assert resolved is None
 
+    def test_explicit_worktree_local_venv_python_resolves(
+        self, tmp_path: Path
+    ) -> None:
+        """AC-019 (TASK-FIX-FF61): the FFC6 eager-venv path
+        ``<worktree>/.venv/bin/python`` is correctly resolved when passed
+        as explicit (typical ``BootstrapResult.venv_python`` value after
+        TASK-FIX-FF61 lands).
+
+        Regression lock for the new resolution surface — the FFC6 venv
+        location differs from the legacy PEP 668 path
+        (``<worktree>/.guardkit/venv/bin/python``); both must work.
+        """
+        worktree = tmp_path
+        ffc6_venv_python = worktree / ".venv" / "bin" / "python"
+        ffc6_venv_python.parent.mkdir(parents=True)
+        ffc6_venv_python.touch()
+
+        resolved = _resolve_venv_python(worktree, explicit=ffc6_venv_python)
+
+        assert resolved == ffc6_venv_python
+        # The worktree-local .venv path is distinct from the legacy
+        # .guardkit/venv path — both should be acceptable explicit inputs.
+        assert ".venv" in resolved.parts
+        assert ".guardkit" not in resolved.parts
+
 
 # --------------------------------------------------------------------------
 # CoachVerifier: end-to-end pytest argv shape

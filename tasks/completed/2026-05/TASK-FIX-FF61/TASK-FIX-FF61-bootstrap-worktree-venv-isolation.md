@@ -1,9 +1,17 @@
 ---
 id: TASK-FIX-FF61
 title: "Bootstrap worktree-venv isolation across all three install paths"
-status: backlog
+status: completed
 created: 2026-05-06T00:00:00Z
 updated: 2026-05-06T00:00:00Z
+completed: 2026-05-06T00:00:00Z
+previous_state: in_review
+state_transition_reason: "Completed via /task-complete after full quality-gate pass under --mode=tdd --intensity=strict"
+completed_location: tasks/completed/2026-05/TASK-FIX-FF61/
+organized_files: [
+  "TASK-FIX-FF61-bootstrap-worktree-venv-isolation.md",
+  "implementation-plan.md"
+]
 priority: high
 task_type: feature
 parent_review: TASK-REV-FFC6
@@ -14,9 +22,14 @@ complexity: 7
 tags: [autobuild, environment-bootstrap, venv-isolation, regression-fix, ffc3-bug-4]
 related_tasks: [TASK-REV-FFC6, TASK-FIX-FF62, TASK-FIX-A7B6, TASK-FIX-AB60, TASK-FIX-F09A2, TASK-FIX-7A05]
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  coverage: null  # not measured for this run; targeted regression suite
+  last_run: 2026-05-06T00:00:00Z
+  totals:
+    bootstrap_suite_passed: 148
+    coach_and_sibling_suites_passed: 274
+    new_ffc6_regression_tests: 5
+    updated_audit_tests: 9
 ---
 
 # Task: Bootstrap worktree-venv isolation across all three install paths
@@ -131,3 +144,115 @@ Seed under `guardkit__project_decisions`:
 - Node: "bootstrap subprocess must pass explicit `env=` with worktree-local `VIRTUAL_ENV`"
 - Node: "tests that mock `subprocess.run` must assert `env=` shape, not just exit code"
 - Edges to: existing nodes for `namespace-hygiene` and `absence-of-failure-is-not-success`.
+
+## Implementation Summary
+
+Closed Layer 1 of the FFC6 leak (autobuild bootstrap writing the
+worktree's editable `_editable_impl_*.pth` line into the **parent**
+project's `.venv`).
+
+**Approach.** Eager worktree-local `<worktree>/.venv` creation in
+`EnvironmentBootstrapper.bootstrap()`, gated on
+`any(m.stack == "python" for m in manifests)`, BEFORE any install
+subprocess runs. Combined with:
+1. New `_isolated_env(worktree_venv)` helper that strips inherited
+   `VIRTUAL_ENV` first, then sets `VIRTUAL_ENV` and prepends `PATH`
+   for the worktree-local venv.
+2. New `_python_install_env(manifest)` helper that returns the
+   isolated env for Python manifests when `self._venv_python` is set,
+   otherwise None (so non-Python commands and standalone `_run_install`
+   test fixtures inherit env unchanged).
+3. Existing `cmd[0]` remap at `_run_install:1567-1568` now fires on
+   first try (eager creation populates `self._venv_python` early).
+4. PEP 668 retry path and AB60 uv-sources retry path both refactored
+   to use `_isolated_env` for env construction (DRY).
+5. Replaced the false-success block at the legacy L1239-1249 with a
+   `BootstrapEnvironmentLeakError` invariant raise — refuses to claim
+   success when `self._venv_python` lies outside `self._root`.
+6. Saved-state recovery now validates that the saved `venv_python`
+   path is inside the worktree before reusing; older state files
+   that captured `sys.executable` (the parent venv via the old
+   SGER-002 contract) are discarded and re-established by eager
+   creation.
+
+**Result.** All 20 acceptance criteria met:
+
+- AC-001..008 (implementation): all delivered.
+- AC-009..012 (regression tests): 4 new tests in
+  `tests/unit/test_environment_bootstrap_ffc6.py` + AC-020 extras
+  test = 5 new tests.
+- AC-013 (test invariant fix): `test_preexisting_venv_succeeds_without_retry`
+  updated to assert `env=` shape.
+- AC-014 (audit pass): 8 sibling tests in
+  `test_environment_bootstrap.py` + 1 in
+  `test_environment_bootstrap_uv_venv.py` updated to acknowledge
+  eager venv-creation subprocess call (filter pattern applied).
+- AC-015..018 (don't-break): PEP 668, AB60, FD32, F09A2 paths all
+  preserved; 274 tests pass across affected suites with zero
+  regressions.
+- AC-019 (Coach interpreter): new test in
+  `tests/orchestrator/test_coach_interpreter_selection.py` locks in
+  worktree-local `.venv` resolution alongside the legacy
+  `.guardkit/venv` path.
+- AC-020 (A7B6 sequencing): extras-config simulation test confirms
+  isolation holds for `pip install -e ".[dev]"` shape.
+
+**Files changed (5):**
+- `guardkit/orchestrator/environment_bootstrap.py` — primary impl.
+- `tests/unit/test_environment_bootstrap_ffc6.py` (NEW, 421 LOC).
+- `tests/unit/test_environment_bootstrap_uv_venv.py` — AC-013 update.
+- `tests/unit/test_environment_bootstrap.py` — AC-014 audit.
+- `tests/orchestrator/test_coach_interpreter_selection.py` — AC-019.
+
+**Lessons.**
+
+1. **The parent venv is an externally-defined namespace** — every
+   subprocess-spawning code path that writes installable artifacts
+   must isolate `VIRTUAL_ENV` and (for pip-path commands)
+   `sys.executable`/`cmd[0]` against parent inheritance. Inheriting
+   either is a defense-in-depth violation of
+   `.claude/rules/namespace-hygiene.md`.
+2. **The strip-then-set order matters in `_isolated_env`.** Relying
+   on `{**os.environ, "VIRTUAL_ENV": ...}` works today but is brittle
+   to future uv precedence changes between explicit args and
+   inherited env. Always strip the parent value first.
+3. **Eager venv creation supersedes most retry paths in production
+   but they remain reachable** for direct `_run_install` fixture
+   calls (which is why AC-015..018 don't-break held). Defense-in-depth
+   on the runtime side is paid for by mock-shape verbosity in the
+   test side — the AC-014 audit filter pattern absorbs that cost
+   uniformly.
+4. **The TASK-SGER-002 false-success block was a textbook instance
+   of the `absence-of-failure-is-not-success` rule** — capturing
+   `sys.executable` because no fallback ran is exactly the
+   "no oracle ran ⇒ approve" anti-pattern. The replacement is the
+   inverse: refuse to claim success unless the captured interpreter
+   demonstrably resides inside the worktree.
+
+**Architectural decisions (for `guardkit__project_decisions`):**
+
+- *"Bootstrap subprocess must pass explicit `env=` with
+  worktree-local `VIRTUAL_ENV`"* — every Python-stack install
+  subprocess in `EnvironmentBootstrapper._run_install` and
+  `_run_single_command` (first try AND retry) MUST receive
+  `env=self._isolated_env(<worktree_venv>)`. Non-Python commands
+  inherit unchanged.
+- *"Tests that mock `subprocess.run` must assert `env=` shape, not
+  just exit code"* — the AC-013/AC-014 audit pattern is now a
+  blocking requirement when modifying tests for
+  `_run_install`/`_run_single_command`. Filtering venv-creation
+  calls via the `cmd[:2] != ["uv", "venv"]` and
+  `cmd[1:3] != ["-m", "venv"]` predicates is the canonical pattern.
+- *"`absence-of-failure-is-not-success` applies to interpreter
+  capture"* — the new
+  `BootstrapEnvironmentLeakError` invariant at the end of
+  `bootstrap()` is the inverse of the SGER-002 false-success block:
+  refuses to claim success when `self._venv_python` lies outside
+  `self._root`, even if all installs report exit 0.
+
+**Out of scope (separate tasks):**
+- Layer 2 (repoint parent venv at `/feature-complete`) — explicitly
+  skipped per review.
+- Layer 3 (detect-and-warn at finalization) — TASK-FIX-FF62.
+- Cross-template work (Node/.NET/Go/Rust/Flutter — leak-free per
+  review F8).

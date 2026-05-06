@@ -156,9 +156,27 @@ class TestUvSourcesVenvArrangement:
         # does not re-create.
         assert bootstrapper._uv_venv_python == tmp_path / ".venv" / "bin" / "python"
 
-    # AC test 2
+    # AC test 2 (updated by TASK-FIX-FF61 / AC-013)
     def test_preexisting_venv_succeeds_without_retry(self, tmp_path: Path) -> None:
-        """First invocation succeeds when uv already discovers .venv; no retry path."""
+        """First invocation succeeds when uv already discovers .venv; no retry path.
+
+        Updated by TASK-FIX-FF61 (AC-013): the assertion shape now
+        verifies that the install subprocess receives an explicit
+        ``env=`` kwarg with ``VIRTUAL_ENV`` pointing at the
+        worktree-local venv, defending against the FFC6 leak where
+        inherited ``$VIRTUAL_ENV`` would route the editable
+        ``_editable_impl_*.pth`` line into the parent project's venv.
+
+        The original ``mock_run.call_count == 1`` assertion is removed:
+        eager worktree-venv creation in ``bootstrap()`` may add an
+        ``uv venv`` / ``python -m venv`` subprocess call when the
+        worktree venv doesn't already exist on disk. We test through
+        ``bootstrap()`` (the production entry point) and pre-create the
+        venv on disk so the eager path's idempotent fast-return fires
+        and the only subprocess call is the install itself.
+        """
+        # Make the project "complete" so bootstrap() invokes _run_install.
+        (tmp_path / "x").mkdir()  # matches name = "x" in pyproject
         m = _make_uv_pip_manifest(tmp_path)
         # Simulate a preexisting venv (uv discovers it, exit code 0).
         venv_bin = tmp_path / ".venv" / "bin"
@@ -172,11 +190,33 @@ class TestUvSourcesVenvArrangement:
             "guardkit.orchestrator.environment_bootstrap.subprocess.run",
             return_value=first_proc,
         ) as mock_run:
-            assert bootstrapper._run_install(m) is True
+            result = bootstrapper.bootstrap([m])
 
-        # Only the original call — no uv venv invocation, no retry.
-        assert mock_run.call_count == 1
-        # Cache untouched.
+        assert result.success is True
+
+        # AC-013: env override fires on every Python install subprocess.
+        install_calls = [
+            c
+            for c in mock_run.call_args_list
+            if c.args[0][:2] != ["uv", "venv"]
+            and not (
+                len(c.args[0]) >= 3
+                and c.args[0][1] == "-m"
+                and c.args[0][2] == "venv"
+            )
+        ]
+        assert install_calls, "expected at least one install subprocess call"
+        for call_obj in install_calls:
+            env = call_obj.kwargs.get("env")
+            assert env is not None, (
+                "Python install subprocess.run call missing env= kwarg"
+            )
+            assert env["VIRTUAL_ENV"] == str(tmp_path / ".venv"), (
+                "VIRTUAL_ENV must point at the worktree-local venv, not "
+                "the inherited parent path"
+            )
+        # AB60 retry cache untouched: we did not need to enter the AB60
+        # retry path because eager creation guarantees the venv exists.
         assert bootstrapper._uv_venv_python is None
 
     # AC test 3 (FD32 regression guard)

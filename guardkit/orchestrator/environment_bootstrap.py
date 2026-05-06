@@ -456,6 +456,30 @@ class UvSourcesRequireUvError(RuntimeError):
     """
 
 
+class BootstrapEnvironmentLeakError(RuntimeError):
+    """
+    Raised when bootstrap completes a Python install but the captured
+    interpreter path lies outside the worktree root.
+
+    Instance of the ``absence-of-failure-is-not-success`` rule: the absence
+    of an install error does not prove the install landed in the right
+    interpreter. When ``self._venv_python`` points outside ``self._root``
+    after a "successful" install, the editable ``_editable_impl_*.pth`` line
+    has been written into the parent project's venv — silently corrupting
+    any downstream process (Claude Desktop MCPs, IDE language servers,
+    other autobuilds) that uses that venv after the worktree is torn down.
+
+    Refusing to claim success forces the orchestrator to treat the bootstrap
+    as failed and surfaces the actionable diagnostic rather than masking it
+    behind a green BootstrapResult.
+
+    See:
+        - TASK-FIX-FF61
+        - .claude/reviews/TASK-REV-FFC6-review-report.md
+        - .claude/rules/absence-of-failure-is-not-success.md
+    """
+
+
 def _uv_on_path() -> bool:
     """Return True when ``uv`` is resolvable via PATH."""
     return shutil.which("uv") is not None
@@ -1147,11 +1171,52 @@ class EnvironmentBootstrapper:
         saved = self._load_state()
         saved_venv = saved.get("venv_python")
         if saved_venv and Path(saved_venv).exists():
-            self._venv_python = Path(saved_venv)
-            logger.info(
-                "PEP 668: reusing virtualenv from previous run at %s",
-                self._venv_python,
-            )
+            saved_venv_path = Path(saved_venv)
+            # FFC6 invariant: the saved venv must be inside the worktree.
+            # Older state files written before TASK-FIX-FF61 may have
+            # captured ``sys.executable`` (the orchestrator's parent venv)
+            # via the false-success block at the previous L1239-1249.
+            # Discard such stale state — eager creation will re-establish
+            # a worktree-local venv below.
+            if str(saved_venv_path).startswith(str(self._root)):
+                self._venv_python = saved_venv_path
+                logger.info(
+                    "PEP 668: reusing virtualenv from previous run at %s",
+                    self._venv_python,
+                )
+            else:
+                logger.warning(
+                    "FFC6: discarding stale saved venv_python %s — outside "
+                    "worktree %s. Eager creation will re-establish.",
+                    saved_venv_path,
+                    self._root,
+                )
+
+        # FFC6 (AC-003): eagerly create a worktree-local venv BEFORE any
+        # Python install subprocess runs. This guarantees:
+        #   1. Pip-path commands have self._venv_python set so the existing
+        #      cmd[0] remap fires on the first try (not just on retry).
+        #   2. uv pip / uv sync commands receive a worktree-local
+        #      VIRTUAL_ENV via _isolated_env (not the inherited parent).
+        # Gated to Python-stack manifests so non-Python features (Node /
+        # .NET / Go / Rust / Flutter — all leak-free per FFC6 review F8)
+        # do not pay the venv-creation cost.
+        if any(m.stack == "python" for m in manifests) and (
+            self._venv_python is None
+            or not str(self._venv_python).startswith(str(self._root))
+        ):
+            try:
+                self._venv_python = self._ensure_worktree_venv(self._root)
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+                logger.warning(
+                    "FFC6: eager worktree venv creation failed at %s/.venv: %s. "
+                    "Falling through to existing PEP 668 / AB60 retry paths.",
+                    self._root,
+                    exc,
+                )
+                # Leave self._venv_python unset; the existing fallback
+                # paths in _run_install handle the externally-managed and
+                # uv-no-venv cases independently.
 
         # Run install commands
         installs_attempted = 0
@@ -1226,26 +1291,35 @@ class EnvironmentBootstrapper:
         duration = time.monotonic() - start_time
         overall_success = installs_failed == 0
 
-        # TASK-SGER-002: always expose the active interpreter on successful
-        # Python bootstrap. The PEP 668 and uv-no-venv fallback paths set
-        # ``self._venv_python`` / ``self._uv_venv_python`` in their own retry
-        # blocks. The macOS happy path (``uv pip install`` succeeds first try
-        # against the orchestrator's parent shell venv) hits neither — the
-        # install IS effective (sys.executable has the package), but no
-        # fallback ran, so ``self._venv_python`` stays ``None`` and the
-        # downstream smoke gate inherits unchanged PATH (FEAT-61F1 failure
-        # shape). Capturing ``sys.executable`` here makes the contract
-        # uniform: every successful Python bootstrap exposes its interpreter.
+        # FFC6 (AC-006): replaces the historical TASK-SGER-002 false-success
+        # block. SGER-002 captured ``sys.executable`` on the macOS happy path
+        # to give the downstream smoke gate a venv path to work with — but
+        # ``sys.executable`` is the orchestrator's parent venv, so the
+        # editable ``_editable_impl_*.pth`` line had already landed there,
+        # silently corrupting the parent project's venv after the worktree
+        # was torn down.
+        #
+        # With AC-003's eager worktree-venv creation in place,
+        # ``self._venv_python`` is guaranteed to point at
+        # ``<worktree>/.venv/bin/python`` (or, on PEP 668 fallback, at
+        # ``<worktree>/.guardkit/venv/bin/python``) before any install
+        # subprocess runs. If we still find ourselves with an interpreter
+        # outside the worktree, an upstream code path has reintroduced the
+        # leak — refuse to claim success and surface the diagnostic.
+        # Instance of the ``absence-of-failure-is-not-success`` rule.
         if (
             overall_success
-            and self._venv_python is None
             and any(m.stack == "python" for m in manifests)
+            and self._venv_python is not None
+            and not str(self._venv_python).startswith(str(self._root))
         ):
-            self._venv_python = Path(sys.executable)
-            logger.info(
-                "Bootstrap: install ran against parent venv; venv_python "
-                "set to sys.executable=%s",
-                sys.executable,
+            raise BootstrapEnvironmentLeakError(
+                f"Python install completed but interpreter "
+                f"{self._venv_python} is outside worktree {self._root}. "
+                f"Refusing to claim success — this would silently corrupt "
+                f"the parent venv. See "
+                f".claude/reviews/TASK-REV-FFC6-review-report.md and "
+                f".claude/rules/absence-of-failure-is-not-success.md."
             )
 
         # Persist state hash with outcome so failed attempts can be retried
@@ -1521,6 +1595,148 @@ class EnvironmentBootstrapper:
         self._uv_venv_python = venv_python
         return venv_dir
 
+    def _ensure_worktree_venv(self, worktree: Path) -> Path:
+        """
+        Create ``<worktree>/.venv`` eagerly (idempotent) and return the
+        Python interpreter path.
+
+        Used by :meth:`bootstrap` BEFORE any Python install subprocess
+        runs, so that:
+
+        - Pip-path commands (``[sys.executable, "-m", "pip", "install", -e, "."]``)
+          have ``self._venv_python`` set, which the existing remap at
+          :meth:`_run_install` swaps into ``cmd[0]`` before the install
+          subprocess runs.
+        - uv pip / uv sync commands receive an explicit ``env=`` kwarg
+          (via :meth:`_isolated_env`) with ``VIRTUAL_ENV`` exported to
+          the worktree-local venv, preventing inheritance of the
+          orchestrator's parent venv.
+
+        Implementation choice: prefer ``uv venv`` when uv is on PATH
+        (faster, supports python pinning), fall back to
+        ``python -m venv``. Both produce a venv with
+        ``<venv>/bin/python``.
+
+        Distinct from :meth:`_ensure_venv` (PEP 668 fallback at
+        ``<root>/.guardkit/venv/``) and :meth:`_ensure_uv_venv` (AB60
+        retry path at ``<cwd>/.venv``). The PEP 668 path remains as a
+        defense-in-depth fallback for the externally-managed Python
+        case; AB60 retry remains as a defense-in-depth fallback for any
+        uv version that fails the eager creation.
+
+        Parameters
+        ----------
+        worktree : Path
+            Worktree root (absolute). The venv is created at
+            ``<worktree>/.venv``.
+
+        Returns
+        -------
+        Path
+            Absolute path to the venv's Python interpreter
+            (``<worktree>/.venv/bin/python``).
+
+        Notes
+        -----
+        See:
+            - TASK-FIX-FF61
+            - .claude/reviews/TASK-REV-FFC6-review-report.md
+        """
+        venv_dir = worktree / ".venv"
+        venv_python = venv_dir / "bin" / "python"
+
+        if venv_python.exists():
+            logger.debug(
+                "FFC6: reusing existing worktree-local venv at %s", venv_dir
+            )
+            return venv_python
+
+        if _uv_on_path():
+            cmd = ["uv", "venv", str(venv_dir)]
+            logger.info(
+                "FFC6: creating worktree-local venv via uv at %s", venv_dir
+            )
+        else:
+            cmd = [sys.executable, "-m", "venv", str(venv_dir)]
+            logger.info(
+                "FFC6: creating worktree-local venv via python -m venv at %s",
+                venv_dir,
+            )
+
+        subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        return venv_python
+
+    def _python_install_env(
+        self, manifest: DetectedManifest
+    ) -> Optional[Dict[str, str]]:
+        """
+        Compute the subprocess env override for a Python install command.
+
+        Returns ``None`` for non-Python manifests (so they inherit
+        ``os.environ`` unchanged). Returns ``None`` for Python manifests
+        when ``self._venv_python`` is not set (test fixtures calling
+        ``_run_install`` directly without going through ``bootstrap()``,
+        and the legacy PEP 668 first-try call where the venv hasn't been
+        created yet — the retry call constructs its own env from the
+        just-created venv).
+
+        Otherwise returns ``self._isolated_env(<venv_dir>)`` where
+        ``<venv_dir>`` is the parent of ``<venv>/bin/python``.
+        """
+        if manifest.stack != "python":
+            return None
+        if self._venv_python is None:
+            return None
+        # _venv_python is <venv_dir>/bin/python; venv_dir is .parent.parent.
+        venv_dir = self._venv_python.parent.parent
+        return self._isolated_env(venv_dir)
+
+    def _isolated_env(self, worktree_venv: Path) -> Dict[str, str]:
+        """
+        Build a subprocess env dict that forces ``VIRTUAL_ENV`` to point
+        at the worktree-local venv.
+
+        Strips inherited ``VIRTUAL_ENV`` first so we never accidentally
+        fall through to the parent shell's venv even if a future uv
+        version changes precedence between ``$VIRTUAL_ENV`` and
+        explicit args. The strip-then-set order matters — relying solely
+        on ``{**os.environ, "VIRTUAL_ENV": ...}`` semantics works today
+        but is brittle to future runtime changes.
+
+        Parameters
+        ----------
+        worktree_venv : Path
+            Absolute path to the worktree-local venv directory (NOT the
+            interpreter path). For the eager-creation path this is
+            ``<worktree>/.venv``; for PEP 668 fallback it is
+            ``<worktree>/.guardkit/venv``.
+
+        Returns
+        -------
+        Dict[str, str]
+            Subprocess env dict with ``VIRTUAL_ENV`` set and
+            ``<worktree_venv>/bin`` prepended to ``PATH``.
+
+        Notes
+        -----
+        See:
+            - TASK-FIX-FF61 AC-002
+            - .claude/rules/namespace-hygiene.md (parent venv as
+              externally-defined namespace)
+        """
+        env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+        env["VIRTUAL_ENV"] = str(worktree_venv)
+        env["PATH"] = (
+            str(worktree_venv / "bin") + os.pathsep + env.get("PATH", "")
+        )
+        return env
+
     def _run_install(self, manifest: DetectedManifest) -> bool:
         """
         Run the install command for a single manifest.
@@ -1563,9 +1779,18 @@ class EnvironmentBootstrapper:
         cmd = list(manifest.install_command)
         is_python_cmd = cmd and cmd[0] == sys.executable
 
-        # If a venv was created (by a previous PEP 668 fallback), use it
+        # If a venv was created (eagerly via FFC6, or by a previous PEP 668
+        # fallback), use it. AC-005: with FFC6's eager creation in
+        # bootstrap(), self._venv_python is set BEFORE _run_install runs
+        # for any python manifest, so the remap fires on first try too.
         if self._venv_python and is_python_cmd:
             cmd[0] = str(self._venv_python)
+
+        # FFC6 (AC-004): for Python install commands, pass env= with
+        # VIRTUAL_ENV pointing at the worktree-local venv. Strips inherited
+        # parent VIRTUAL_ENV. Non-Python commands (npm, dotnet, cargo, ...)
+        # inherit env unchanged.
+        env = self._python_install_env(manifest)
 
         cwd = str(manifest.path.parent)
         logger.info(
@@ -1581,6 +1806,7 @@ class EnvironmentBootstrapper:
                 capture_output=True,
                 text=True,
                 timeout=300,
+                env=env,
             )
             if proc.returncode == 0:
                 logger.info(
@@ -1599,6 +1825,12 @@ class EnvironmentBootstrapper:
                 venv_python = self._ensure_venv()
                 retry_cmd = list(manifest.install_command)
                 retry_cmd[0] = str(venv_python)
+                # FFC6 (AC-004): retry must also receive isolated env so
+                # inherited parent VIRTUAL_ENV cannot route the editable
+                # .pth back into the parent venv. Use the just-created
+                # PEP 668 venv (<root>/.guardkit/venv) as the worktree-local
+                # interpreter root.
+                retry_env = self._isolated_env(venv_python.parent.parent)
                 logger.info(
                     "PEP 668: retrying install for %s (%s): %s",
                     manifest.stack,
@@ -1611,6 +1843,7 @@ class EnvironmentBootstrapper:
                     capture_output=True,
                     text=True,
                     timeout=300,
+                    env=retry_env,
                 )
                 if retry_proc.returncode == 0:
                     logger.info(
@@ -1662,13 +1895,11 @@ class EnvironmentBootstrapper:
                     return False
 
                 retry_cmd = list(manifest.install_command)
-                retry_env = {
-                    **os.environ,
-                    "VIRTUAL_ENV": str(venv_dir),
-                    "PATH": str(venv_dir / "bin")
-                    + os.pathsep
-                    + os.environ.get("PATH", ""),
-                }
+                # FFC6: route through _isolated_env so inherited parent
+                # VIRTUAL_ENV is stripped first (defense-in-depth against
+                # future precedence changes). Observable shape preserved:
+                # VIRTUAL_ENV set to <cwd>/.venv, PATH prepended.
+                retry_env = self._isolated_env(venv_dir)
                 logger.info(
                     "uv-sources: retrying install for %s (%s) with VIRTUAL_ENV=%s: %s",
                     manifest.stack,
@@ -1776,9 +2007,17 @@ class EnvironmentBootstrapper:
         run_cmd = list(cmd)
         is_python_cmd = run_cmd and run_cmd[0] == sys.executable
 
-        # If a venv was created (by a previous PEP 668 fallback), use it
+        # If a venv was created (eagerly via FFC6, or by a previous PEP 668
+        # fallback), use it.
         if self._venv_python and is_python_cmd:
             run_cmd[0] = str(self._venv_python)
+
+        # FFC6 (AC-004): Python pip commands receive isolated env so
+        # inherited parent VIRTUAL_ENV cannot route the install into the
+        # parent venv. Non-Python commands inherit env unchanged.
+        env: Optional[Dict[str, str]] = None
+        if is_python_cmd and self._venv_python is not None:
+            env = self._isolated_env(self._venv_python.parent.parent)
 
         logger.info("Running dep-install: %s", " ".join(run_cmd))
         try:
@@ -1788,6 +2027,7 @@ class EnvironmentBootstrapper:
                 capture_output=True,
                 text=True,
                 timeout=300,
+                env=env,
             )
             if proc.returncode == 0:
                 logger.debug("Command succeeded: %s", " ".join(run_cmd))
@@ -1802,6 +2042,8 @@ class EnvironmentBootstrapper:
                 venv_python = self._ensure_venv()
                 retry_cmd = list(cmd)
                 retry_cmd[0] = str(venv_python)
+                # FFC6 (AC-004): retry must also receive isolated env.
+                retry_env = self._isolated_env(venv_python.parent.parent)
                 logger.info(
                     "PEP 668: retrying dep-install: %s", " ".join(retry_cmd)
                 )
@@ -1811,6 +2053,7 @@ class EnvironmentBootstrapper:
                     capture_output=True,
                     text=True,
                     timeout=300,
+                    env=retry_env,
                 )
                 if retry_proc.returncode == 0:
                     logger.debug(
@@ -2028,6 +2271,7 @@ __all__ = [
     "EnvironmentBootstrapper",
     "RequiresPythonMismatch",
     "UvSourcesRequireUvError",
+    "BootstrapEnvironmentLeakError",
     "check_requires_python_precheck",
     "format_requires_python_remediation",
     "_resolve_uv_sources_symlinks",

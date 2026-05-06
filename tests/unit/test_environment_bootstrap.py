@@ -872,7 +872,14 @@ class TestEnvironmentBootstrapperBootstrap:
         assert result.success is True
 
     def test_bootstrap_runs_install_when_hash_differs(self, tmp_path: Path) -> None:
-        """bootstrap() calls _run_install when hash does not match."""
+        """bootstrap() calls _run_install when hash does not match.
+
+        TASK-FIX-FF61 (AC-014): with eager worktree-venv creation in
+        ``bootstrap()``, the subprocess call sequence for a Python manifest
+        is now ``[venv-create, install]`` instead of ``[install]``. We
+        assert exactly one *install* call (filtered) plus the eager
+        venv-creation call.
+        """
         f = tmp_path / "requirements.txt"
         f.write_text("flask\n")
         m = make_manifest(f)
@@ -880,7 +887,17 @@ class TestEnvironmentBootstrapperBootstrap:
         mock_result = Mock(returncode=0, stdout="", stderr="")
         with patch("subprocess.run", return_value=mock_result) as mock_run:
             result = bootstrapper.bootstrap([m])
-        mock_run.assert_called_once()
+        # AC-014: filter out the eager venv-creation call and assert one install.
+        install_calls = [
+            c
+            for c in mock_run.call_args_list
+            if c.args[0][:2] != ["uv", "venv"]
+            and not (
+                len(c.args[0]) >= 3
+                and c.args[0][1:3] == ["-m", "venv"]
+            )
+        ]
+        assert len(install_calls) == 1
         assert result.success is True
         assert result.installs_attempted == 1
         assert result.installs_failed == 0
@@ -1346,10 +1363,20 @@ class TestEnvironmentBootstrapperIncompleteProject:
         with patch("subprocess.run", return_value=mock_result) as mock_run:
             result = bootstrapper.bootstrap(manifests)
 
-        # Two dep-install calls (one per dependency), not one full install
-        assert mock_run.call_count == 2
-        # Full editable install must NOT appear in any command
-        for call_obj in mock_run.call_args_list:
+        # AC-014: filter out the eager venv-creation call. Two dep-install
+        # calls remain (one per dependency), not one full install.
+        install_calls = [
+            c
+            for c in mock_run.call_args_list
+            if c.args[0][:2] != ["uv", "venv"]
+            and not (
+                len(c.args[0]) >= 3
+                and c.args[0][1:3] == ["-m", "venv"]
+            )
+        ]
+        assert len(install_calls) == 2
+        # Full editable install must NOT appear in any install command
+        for call_obj in install_calls:
             cmd = call_obj.args[0]
             assert "-e" not in cmd, "Full editable install must not be run for incomplete project"
         assert result.success is True
@@ -1357,7 +1384,12 @@ class TestEnvironmentBootstrapperIncompleteProject:
         assert result.installs_failed == 0
 
     def test_complete_python_project_uses_full_install_command(self, tmp_path: Path) -> None:
-        """A complete project (requirements.txt) uses the standard install_command."""
+        """A complete project (requirements.txt) uses the standard install_command.
+
+        TASK-FIX-FF61 (AC-014): with eager worktree-venv creation in
+        ``bootstrap()``, the subprocess sequence is now
+        ``[venv-create, install]``. Filter to the install call only.
+        """
         f = tmp_path / "requirements.txt"
         f.write_text("flask\n")
         detector = ProjectEnvironmentDetector(root=tmp_path)
@@ -1369,8 +1401,18 @@ class TestEnvironmentBootstrapperIncompleteProject:
         with patch("subprocess.run", return_value=mock_result) as mock_run:
             result = bootstrapper.bootstrap(manifests)
 
-        mock_run.assert_called_once()
-        cmd = mock_run.call_args.args[0]
+        # AC-014: filter out the eager venv-creation call.
+        install_calls = [
+            c
+            for c in mock_run.call_args_list
+            if c.args[0][:2] != ["uv", "venv"]
+            and not (
+                len(c.args[0]) >= 3
+                and c.args[0][1:3] == ["-m", "venv"]
+            )
+        ]
+        assert len(install_calls) == 1
+        cmd = install_calls[0].args[0]
         assert "requirements.txt" in cmd
         assert result.success is True
 
@@ -1378,7 +1420,13 @@ class TestEnvironmentBootstrapperIncompleteProject:
     def test_incomplete_project_no_deps_skips_subprocess(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Incomplete project with no declared deps logs a warning and runs no installs."""
+        """Incomplete project with no declared deps logs a warning and runs no installs.
+
+        TASK-FIX-FF61 (AC-014): eager worktree-venv creation still fires
+        for any Python manifest, so the venv-creation subprocess is the
+        only call. There must be NO install / dep-install subprocess
+        calls.
+        """
         import logging
 
         pfile = tmp_path / "pyproject.toml"
@@ -1389,14 +1437,27 @@ class TestEnvironmentBootstrapperIncompleteProject:
         assert manifests[0].is_project_complete() is False
 
         bootstrapper = EnvironmentBootstrapper(root=tmp_path)
-        with patch("subprocess.run") as mock_run:
+        venv_create_proc = Mock(returncode=0, stdout="", stderr="")
+        with patch("subprocess.run", return_value=venv_create_proc) as mock_run:
             with caplog.at_level(
                 logging.WARNING,
                 logger="guardkit.orchestrator.environment_bootstrap",
             ):
                 result = bootstrapper.bootstrap(manifests)
 
-        mock_run.assert_not_called()
+        # AC-014: no install / dep-install subprocess calls — only the
+        # eager venv creation should have run (or no calls if eager
+        # creation was skipped because of a pre-existing venv on disk).
+        install_calls = [
+            c
+            for c in mock_run.call_args_list
+            if c.args[0][:2] != ["uv", "venv"]
+            and not (
+                len(c.args[0]) >= 3
+                and c.args[0][1:3] == ["-m", "venv"]
+            )
+        ]
+        assert install_calls == []
         assert result.installs_attempted == 0
         assert result.success is True  # No failures
 
@@ -1518,7 +1579,12 @@ class TestEnvironmentBootstrapperRetryLogic:
     def test_bootstrap_retries_on_hash_match_previous_failure_cooldown_expired(
         self, tmp_path: Path
     ) -> None:
-        """bootstrap() retries install when hash matches, previous failed, cooldown expired."""
+        """bootstrap() retries install when hash matches, previous failed, cooldown expired.
+
+        TASK-FIX-FF61 (AC-014): with eager worktree-venv creation, the
+        subprocess sequence for a Python manifest is
+        ``[venv-create, install]``. Filter to install calls only.
+        """
         f = tmp_path / "requirements.txt"
         f.write_text("flask\n")
         m = make_manifest(f)
@@ -1528,7 +1594,16 @@ class TestEnvironmentBootstrapperRetryLogic:
         mock_result = Mock(returncode=0, stdout="", stderr="")
         with patch("subprocess.run", return_value=mock_result) as mock_run:
             result = bootstrapper.bootstrap([m])
-        mock_run.assert_called_once()
+        install_calls = [
+            c
+            for c in mock_run.call_args_list
+            if c.args[0][:2] != ["uv", "venv"]
+            and not (
+                len(c.args[0]) >= 3
+                and c.args[0][1:3] == ["-m", "venv"]
+            )
+        ]
+        assert len(install_calls) == 1
         assert result.skipped is False
         assert result.success is True
 
@@ -1551,7 +1626,10 @@ class TestEnvironmentBootstrapperRetryLogic:
     def test_bootstrap_runs_on_hash_change_regardless_of_previous_success(
         self, tmp_path: Path
     ) -> None:
-        """bootstrap() runs install when hash differs even if previous attempt succeeded."""
+        """bootstrap() runs install when hash differs even if previous attempt succeeded.
+
+        TASK-FIX-FF61 (AC-014): filter out the eager venv-creation call.
+        """
         f = tmp_path / "requirements.txt"
         f.write_text("flask\n")
         m = make_manifest(f)
@@ -1561,7 +1639,16 @@ class TestEnvironmentBootstrapperRetryLogic:
         mock_result = Mock(returncode=0, stdout="", stderr="")
         with patch("subprocess.run", return_value=mock_result) as mock_run:
             result = bootstrapper.bootstrap([m])
-        mock_run.assert_called_once()
+        install_calls = [
+            c
+            for c in mock_run.call_args_list
+            if c.args[0][:2] != ["uv", "venv"]
+            and not (
+                len(c.args[0]) >= 3
+                and c.args[0][1:3] == ["-m", "venv"]
+            )
+        ]
+        assert len(install_calls) == 1
         assert result.skipped is False
 
     def test_bootstrap_stores_success_false_after_failed_install(
@@ -1825,39 +1912,44 @@ class TestPep668StatePersistence:
     """Tests for venv_python persistence in state file."""
 
     def test_state_includes_venv_python_after_creation(self, tmp_path: Path) -> None:
-        """State file includes venv_python path after venv is created."""
+        """State file includes venv_python path after venv is created.
+
+        TASK-FIX-FF61 (AC-008/AC-014): with eager worktree-venv creation,
+        the recorded ``venv_python`` is now ``<worktree>/.venv/bin/python``
+        (NOT the legacy ``<worktree>/.guardkit/venv/bin/python`` PEP 668
+        fallback). PEP 668 fallback remains as defense-in-depth but is
+        not exercised when eager creation succeeds.
+        """
         f = tmp_path / "requirements.txt"
         f.write_text("flask\n")
         m = make_manifest(f)
 
         bootstrapper = EnvironmentBootstrapper(root=tmp_path)
 
-        pep668_stderr = "error: externally-managed-environment\n"
-        fail_result = Mock(returncode=1, stdout="", stderr=pep668_stderr)
         success_result = Mock(returncode=0, stdout="ok", stderr="")
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.side_effect = [fail_result, Mock(returncode=0), success_result]
+        with patch("subprocess.run", return_value=success_result):
             bootstrapper.bootstrap([m])
 
         state = bootstrapper._load_state()
         assert "venv_python" in state
-        expected_venv = str(tmp_path / ".guardkit" / "venv" / "bin" / "python")
+        expected_venv = str(tmp_path / ".venv" / "bin" / "python")
         assert state["venv_python"] == expected_venv
 
-    def test_state_records_sys_executable_when_no_pep668(
+    def test_state_records_worktree_venv_python(
         self, tmp_path: Path
     ) -> None:
-        """TASK-SGER-002: State file records sys.executable when the install
-        succeeded first try without firing the PEP 668 fallback.
+        """TASK-FIX-FF61 (AC-008): State file records the worktree-local venv
+        on every successful Python bootstrap.
 
-        Pre-fix this test asserted ``"venv_python" not in state`` — i.e. the
-        bootstrapper recorded no interpreter on the parent-venv happy path.
-        That was the FEAT-61F1 failure shape: the smoke gate inherited
-        unchanged PATH and resolved bare ``python`` to whichever interpreter
-        the system PATH surfaced first, often NOT the one that ran the
-        install. The new contract: every successful Python bootstrap
-        exposes its interpreter, full stop. See TASK-SGER-002 for rationale.
+        Replaces the historical TASK-SGER-002 contract that recorded
+        ``sys.executable`` (the orchestrator's parent venv) when the
+        install succeeded first try. The SGER-002 contract was the
+        smoking gun for the FFC6 leak: capturing ``sys.executable``
+        meant the editable ``_editable_impl_*.pth`` line had already
+        landed in the parent venv. The new contract — eager
+        worktree-venv creation — guarantees ``state["venv_python"]``
+        always points inside the worktree root.
         """
         f = tmp_path / "requirements.txt"
         f.write_text("flask\n")
@@ -1870,10 +1962,18 @@ class TestPep668StatePersistence:
             bootstrapper.bootstrap([m])
 
         state = bootstrapper._load_state()
-        assert state.get("venv_python") == sys.executable, (
-            "After TASK-SGER-002, a first-try install success must record "
-            "sys.executable as the active interpreter (matches the contract "
-            "of the BootstrapResult.venv_python field)."
+        recorded = state.get("venv_python")
+        assert recorded is not None, (
+            "Every successful Python bootstrap must expose its interpreter "
+            "via state['venv_python'] (BootstrapResult.venv_python contract)."
+        )
+        # FFC6 invariant: the recorded venv MUST be inside the worktree root.
+        assert recorded.startswith(str(tmp_path)), (
+            f"FFC6 leak: state recorded {recorded} outside worktree {tmp_path}"
+        )
+        assert recorded != sys.executable, (
+            "FFC6 regression: sys.executable (parent venv) must not be "
+            "recorded — see .claude/reviews/TASK-REV-FFC6-review-report.md"
         )
 
     def test_bootstrap_recovers_venv_from_state(self, tmp_path: Path) -> None:
