@@ -6025,7 +6025,12 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         )
         return results_path
 
-    def _scan_ac_for_missing_paths(self, task_id: str) -> List[str]:
+    def _scan_ac_for_missing_paths(
+        self,
+        task_id: str,
+        *,
+        flag_basenames: bool = False,
+    ) -> List[str]:
         """Return AC-cited file paths that are absent from the worktree.
 
         Implements TASK-AB-FIX-INVAB1 AC-005's escalation rule: when the
@@ -6038,6 +6043,25 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         ``[\\w./\\-]+\\.\\w{1,5}`` plus backtick / single-quoted /
         double-quoted variants) so AC-005 escalation parity matches the
         synthetic-report path that produces completion_promises.
+
+        Bare basenames (tokens without a ``/`` separator, e.g.
+        ``pipeline_consumer.py``) are skipped by default — TASK-GK-AC-001
+        traced FEAT-PEBR Wave-1's UNRECOVERABLE_STALL to this scanner
+        flagging files that exist deeper in the tree. AC text routinely
+        names files by basename when the surrounding paragraph already
+        established the directory; treating that as a missing-file
+        signal is a false positive. Callers that genuinely need the
+        old behaviour (none today, but synthetic-report parity is
+        preserved) can pass ``flag_basenames=True``.
+
+        Args:
+            task_id: Task ID whose acceptance criteria should be scanned.
+            flag_basenames: When ``True`` (legacy / synthetic-report
+                parity behaviour), bare basenames missing from the
+                worktree root count as missing. When ``False`` (default),
+                only fully-qualified paths (those containing ``/``) are
+                checked against the worktree, so a basename that exists
+                anywhere under the tree does not trip the escalation.
 
         Returns:
             Sorted, deduplicated list of paths the AC text names that
@@ -6088,6 +6112,14 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         missing: List[str] = []
         for p in paths:
             if not p.endswith(source_exts):
+                continue
+            # Skip bare basenames unless the caller opts in. AC text
+            # often refers to files by basename (e.g. "modify
+            # pipeline_consumer.py") even when the file lives at
+            # src/forge/adapters/nats/pipeline_consumer.py. Treating
+            # that as a missing-file signal is the FEAT-PEBR Wave-1
+            # false-positive root cause (TASK-GK-AC-001).
+            if not flag_basenames and "/" not in p:
                 continue
             if not (self.worktree_path / p).exists():
                 missing.append(p)
