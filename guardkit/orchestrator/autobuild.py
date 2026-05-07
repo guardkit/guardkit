@@ -4004,13 +4004,37 @@ class AutoBuildOrchestrator:
                 extended_recent = self._feedback_history[-extended_threshold:]
                 ext_sigs = {sig for sig, _ in extended_recent}
                 ext_counts = [count for _, count in extended_recent]
-                if len(ext_sigs) == 1 and all(c == ext_counts[0] for c in ext_counts):
-                    logger.warning(
-                        f"Feedback stall: identical feedback (sig={feedback_sig}) "
-                        f"for {extended_threshold} turns with {counts[0]} criteria "
-                        f"passing (extended threshold for partial progress)"
-                    )
-                    return True
+                if len(ext_sigs) == 1:
+                    if all(c == ext_counts[0] for c in ext_counts):
+                        logger.warning(
+                            f"Feedback stall: identical feedback (sig={feedback_sig}) "
+                            f"for {extended_threshold} turns with {counts[0]} criteria "
+                            f"passing (extended threshold for partial progress)"
+                        )
+                        return True
+                    # Plateau-tolerant branch (TASK-GK-COACH-001):
+                    # Tolerate exactly one count transition between turn 1 and
+                    # turn 2 of the extended window; the remaining turns must
+                    # be uniform AND non-zero. Closes the 0→N then plateau
+                    # blind spot surfaced by FEAT-PEBR run-2
+                    # (TASK-REV-PEBR-002). Bug B (TASK-GK-CV-001) is the most
+                    # common trigger for this shape, but the structural blind
+                    # spot exists for any non-criteria gate that plateaus
+                    # after a single criteria-count climb.
+                    tail = ext_counts[1:]
+                    if (
+                        len(tail) >= extended_threshold - 1
+                        and all(c == tail[0] for c in tail)
+                        and tail[0] > 0
+                        and tail[0] != ext_counts[0]
+                    ):
+                        logger.warning(
+                            f"Feedback stall: identical feedback (sig={feedback_sig}) "
+                            f"for {extended_threshold - 1} consecutive turns with "
+                            f"{tail[0]} criteria passing after a 1-turn count "
+                            f"transition (plateau-tolerant extended threshold)"
+                        )
+                        return True
 
             logger.info(
                 f"Partial progress stall warning: {counts[0]} criteria passing "
