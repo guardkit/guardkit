@@ -1,9 +1,13 @@
 ---
 id: TASK-GK-PA-001
 title: Plan-audit must compare files_to_modify against git-modified set
-status: backlog
+status: completed
 created: 2026-05-07 00:00:00+00:00
-updated: 2026-05-07 00:00:00+00:00
+updated: 2026-05-07 13:00:00+00:00
+completed: 2026-05-07T13:00:00Z
+previous_state: in_review
+state_transition_reason: "Task completed; all 8 ACs satisfied"
+completed_location: tasks/completed/TASK-GK-PA-001/
 priority: high
 priority_band: P1
 task_type: refactor
@@ -22,9 +26,10 @@ tags:
   - regression-fix
   - P1
 test_results:
-  status: pending
+  status: passed
   coverage: null
-  last_run: null
+  last_run: 2026-05-07T12:30:00Z
+  summary: "55+ tests pass (39 plan auditor incl. 7 new + 5 coach validator + 8 integration + 3 new regression). 0 new ruff issues."
 ---
 
 # Task: Plan-audit must compare files_to_modify against git-modified set

@@ -240,6 +240,53 @@ class TestCoachValidator:
             for issue in result.issues
         )
 
+    def test_validate_feedback_includes_modify_axis_in_plan_audit(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """TASK-GK-PA-001 AC-7: _feedback_from_gates surfaces modify-axis
+        discrepancies (extra_modifications / missing_modifications) in
+        the plan_audit feedback issue's description and details.
+        """
+        results = make_task_work_results(violations=2)
+        results["plan_audit"] = {
+            "violations": 2,
+            "severity": "medium",
+            "extra_files": [],
+            "missing_files": [],
+            "extra_modifications": ["src/unplanned.py"],
+            "missing_modifications": ["src/planned_unmodified.py"],
+            "extra_dependencies": [],
+            "missing_dependencies": [],
+            "loc_variance_pct": None,
+            "discrepancies_count": 2,
+            "status": "violation",
+        }
+        write_task_work_results(task_work_results_dir, results)
+
+        validator = CoachValidator(str(tmp_worktree))
+        result = validator.validate("TASK-001", 1, make_task())
+
+        plan_audit_issues = [
+            issue for issue in result.issues
+            if issue["category"] == "plan_audit"
+        ]
+        assert len(plan_audit_issues) == 1
+        issue = plan_audit_issues[0]
+
+        # Description previews both axes
+        assert "unplanned modification" in issue["description"]
+        assert "src/unplanned.py" in issue["description"]
+        assert "unmodified planned file" in issue["description"]
+        assert "src/planned_unmodified.py" in issue["description"]
+
+        # Details dict carries both lists
+        assert issue["details"]["extra_modifications"] == ["src/unplanned.py"]
+        assert issue["details"]["missing_modifications"] == [
+            "src/planned_unmodified.py"
+        ]
+
     def test_validate_feedback_when_independent_tests_fail(
         self,
         tmp_worktree,

@@ -6166,6 +6166,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 "violations": 0,
                 "extra_files": [],
                 "missing_files": [],
+                "extra_modifications": [],
+                "missing_modifications": [],
                 "extra_dependencies": [],
                 "missing_dependencies": [],
                 "loc_variance_pct": None,
@@ -6187,6 +6189,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                     "violations": len(ac_missing),
                     "extra_files": [],
                     "missing_files": ac_missing,
+                    "extra_modifications": [],
+                    "missing_modifications": [],
                     "extra_dependencies": [],
                     "missing_dependencies": [],
                     "loc_variance_pct": None,
@@ -6202,6 +6206,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 "violations": 0,
                 "extra_files": [],
                 "missing_files": [],
+                "extra_modifications": [],
+                "missing_modifications": [],
                 "extra_dependencies": [],
                 "missing_dependencies": [],
                 "loc_variance_pct": None,
@@ -6216,6 +6222,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 "violations": 0,
                 "extra_files": [],
                 "missing_files": [],
+                "extra_modifications": [],
+                "missing_modifications": [],
                 "extra_dependencies": [],
                 "missing_dependencies": [],
                 "loc_variance_pct": None,
@@ -6233,6 +6241,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 "violations": 0,
                 "extra_files": [],
                 "missing_files": [],
+                "extra_modifications": [],
+                "missing_modifications": [],
                 "extra_dependencies": [],
                 "missing_dependencies": [],
                 "loc_variance_pct": None,
@@ -6243,12 +6253,30 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         # Extract deterministic fields from the report's discrepancy list.
         extra_files: List[str] = []
         missing_files: List[str] = []
+        extra_modifications: List[str] = []
+        missing_modifications: List[str] = []
         extra_deps: List[str] = []
         missing_deps: List[str] = []
         loc_variance_pct: Optional[float] = None
 
         for disc in report.discrepancies:
-            if disc.category == "files" and "extra" in disc.message:
+            # Modify-axis branches checked BEFORE the generic
+            # creation-axis ``extra`` / ``missing`` discriminators so
+            # the new modification messages route correctly.
+            if disc.category == "files" and "unplanned modification" in disc.message:
+                # TASK-GK-PA-001 Phase 4.5: producer message is
+                # ``f"{N} unplanned modification(s)"`` (digit-prefixed) per
+                # plan_audit.py:516. The previous ``startswith`` check
+                # never matched, so ``extra_modifications`` was structurally
+                # always ``[]``. Use substring match to route correctly.
+                extra_modifications = (
+                    list(disc.actual) if isinstance(disc.actual, list) else []
+                )
+            elif disc.category == "files" and "not modified" in disc.message:
+                missing_modifications = (
+                    list(disc.planned) if isinstance(disc.planned, list) else []
+                )
+            elif disc.category == "files" and "extra" in disc.message:
                 extra_files = list(disc.actual) if isinstance(disc.actual, list) else []
             elif disc.category == "files" and (
                 "missing" in disc.message or "not created" in disc.message
@@ -6281,6 +6309,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             "violations": violations,
             "extra_files": extra_files,
             "missing_files": missing_files,
+            "extra_modifications": extra_modifications,
+            "missing_modifications": missing_modifications,
             "extra_dependencies": extra_deps,
             "missing_dependencies": missing_deps,
             "loc_variance_pct": loc_variance_pct,
@@ -6289,6 +6319,16 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 f"severity={severity}, {len(report.discrepancies)} discrepanc(ies)"
                 + (f", {len(extra_files)} extra file(s)" if extra_files else "")
                 + (f", {len(missing_files)} missing file(s)" if missing_files else "")
+                + (
+                    f", {len(extra_modifications)} unplanned modification(s)"
+                    if extra_modifications
+                    else ""
+                )
+                + (
+                    f", {len(missing_modifications)} unmodified planned file(s)"
+                    if missing_modifications
+                    else ""
+                )
             ),
         }
 

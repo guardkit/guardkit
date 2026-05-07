@@ -25,6 +25,7 @@ from pathlib import Path
 from datetime import datetime
 import json
 import re
+import subprocess
 
 
 @dataclass
@@ -211,16 +212,46 @@ class PlanAuditor:
         """
         Scan for files modified (compare against planned modifications).
 
-        Note: Simplified implementation - actual version would use git diff.
+        Uses ``git diff --name-only HEAD`` against the workspace root to
+        enumerate modified-but-not-deleted files. Returns ``[]`` on any
+        failure path (missing git, non-git workspace, subprocess error,
+        non-zero return code) so callers treat the modify-axis as
+        unavailable rather than empty-and-therefore-everything-extra.
+
+        Excluded paths (test files, caches, etc.) are filtered out via
+        ``self._is_excluded`` to mirror ``_scan_created_files``.
 
         Args:
-            plan: Implementation plan
+            plan: Implementation plan (unused; kept for signature parity)
 
         Returns:
-            List of modified file paths
+            List of modified file paths relative to ``workspace_root``.
         """
-        # Simplified for MVP - actual implementation would use git
-        return []
+        try:
+            result = subprocess.run(
+                ["git", "diff", "--name-only", "HEAD"],
+                cwd=self.workspace_root,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+        except (subprocess.SubprocessError, FileNotFoundError, OSError):
+            return []
+
+        if result.returncode != 0:
+            return []
+
+        modified_files: List[str] = []
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if self._is_excluded(Path(line)):
+                continue
+            modified_files.append(line)
+
+        return modified_files
 
     def _count_lines_of_code(self, plan: Dict[str, Any]) -> int:
         """
@@ -454,6 +485,39 @@ class PlanAuditor:
                 actual=sorted(list(actual_files)),
                 variance=variance
             ))
+
+        # Modification-axis comparison: only fire when the plan declared
+        # modifications. AC-5 — when ``files_to_modify`` is empty, the plan
+        # makes no claim about modifications, so unplanned-modification
+        # noise is suppressed regardless of what the Player touched.
+        planned_modify = set(plan_data.get("files_to_modify", []))
+        actual_modify = set(actual.get("files_modified", []))
+
+        if planned_modify:
+            missing_modify = planned_modify - actual_modify
+            extra_modify = actual_modify - planned_modify
+
+            if missing_modify:
+                variance = (len(missing_modify) / max(len(planned_modify), 1)) * 100
+                discrepancies.append(Discrepancy(
+                    category="files",
+                    severity="medium",
+                    message=f"{len(missing_modify)} planned file(s) not modified",
+                    planned=sorted(list(missing_modify)),
+                    actual=sorted(list(actual_modify)),
+                    variance=variance,
+                ))
+
+            if extra_modify:
+                variance = (len(extra_modify) / max(len(planned_modify), 1)) * 100
+                discrepancies.append(Discrepancy(
+                    category="files",
+                    severity="low",
+                    message=f"{len(extra_modify)} unplanned modification(s)",
+                    planned=sorted(list(planned_modify)),
+                    actual=sorted(list(extra_modify)),
+                    variance=variance,
+                ))
 
         return discrepancies
 

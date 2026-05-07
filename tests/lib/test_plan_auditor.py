@@ -6,6 +6,7 @@ Part of TASK-025: Implement Phase 5.5 Plan Audit.
 """
 
 import pytest
+import subprocess
 from pathlib import Path
 from datetime import datetime
 import sys
@@ -336,6 +337,132 @@ class TestPlanAuditor:
         assert not auditor._is_excluded(Path("src/feature.py"))
         assert not auditor._is_excluded(Path("src/services/auth.py"))
         assert not auditor._is_excluded(Path("lib/utils.py"))
+
+    # ------------------------------------------------------------------
+    # TASK-GK-PA-001: modify-axis comparison tests
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _init_git_repo(repo_root: Path) -> None:
+        """Initialize an isolated git repo at ``repo_root``.
+
+        Sets a deterministic identity so commits don't depend on the
+        host's global git config (CI fixtures often have none).
+        """
+        env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+        run = lambda *args: subprocess.run(  # noqa: E731
+            args, cwd=repo_root, check=True, capture_output=True, env=env
+        )
+        run("git", "init", "-q")
+        run("git", "config", "user.email", "test@example.com")
+        run("git", "config", "user.name", "Test")
+        run("git", "config", "commit.gpgsign", "false")
+
+    def test_scan_modified_files_uses_git_diff(self, tmp_path):
+        """AC-1: _scan_modified_files returns git-modified files."""
+        self._init_git_repo(tmp_path)
+        target = tmp_path / "src" / "feature.py"
+        target.parent.mkdir(parents=True)
+        target.write_text("def foo():\n    return 1\n")
+        subprocess.run(
+            ["git", "add", "src/feature.py"], cwd=tmp_path, check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-q", "-m", "initial"], cwd=tmp_path, check=True,
+            capture_output=True,
+        )
+        # Modify the committed file
+        target.write_text("def foo():\n    return 2\n")
+
+        auditor = PlanAuditor(workspace_root=tmp_path)
+        modified = auditor._scan_modified_files({"plan": {}})
+
+        assert "src/feature.py" in modified
+
+    def test_scan_modified_files_no_git_returns_empty(self, tmp_path):
+        """AC-1: _scan_modified_files returns [] when not a git repo."""
+        # tmp_path with no `.git` directory
+        auditor = PlanAuditor(workspace_root=tmp_path)
+        modified = auditor._scan_modified_files({"plan": {}})
+
+        assert modified == []
+
+    def test_scan_modified_files_filters_excluded(self, tmp_path):
+        """AC-1: _scan_modified_files filters paths through _is_excluded."""
+        self._init_git_repo(tmp_path)
+        # Create a file in `tests/` (excluded by `**/tests/**` pattern)
+        excluded = tmp_path / "tests" / "test_thing.py"
+        excluded.parent.mkdir(parents=True)
+        excluded.write_text("def test_a():\n    pass\n")
+        # And a non-excluded production file
+        kept = tmp_path / "src" / "feature.py"
+        kept.parent.mkdir(parents=True)
+        kept.write_text("def foo():\n    return 1\n")
+
+        subprocess.run(
+            ["git", "add", "."], cwd=tmp_path, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-q", "-m", "initial"], cwd=tmp_path, check=True,
+            capture_output=True,
+        )
+
+        # Modify both files
+        excluded.write_text("def test_a():\n    assert True\n")
+        kept.write_text("def foo():\n    return 2\n")
+
+        auditor = PlanAuditor(workspace_root=tmp_path)
+        modified = auditor._scan_modified_files({"plan": {}})
+
+        assert "src/feature.py" in modified
+        assert "tests/test_thing.py" not in modified
+
+    def test_compare_files_missing_modify(self, auditor):
+        """AC-2: missing-modify produces medium-severity discrepancy."""
+        plan_data = {"files_to_create": [], "files_to_modify": ["a.py"]}
+        actual = {"files_created": [], "files_modified": []}
+
+        discrepancies = auditor._compare_files(plan_data, actual)
+
+        assert len(discrepancies) == 1
+        disc = discrepancies[0]
+        assert disc.category == "files"
+        assert disc.severity == "medium"
+        assert disc.message.startswith("1 planned file(s) not modified")
+        assert "a.py" in disc.planned
+
+    def test_compare_files_unplanned_modify_with_planned_set(self, auditor):
+        """AC-3: extra modify produces low-severity discrepancy."""
+        plan_data = {"files_to_create": [], "files_to_modify": ["a.py"]}
+        actual = {"files_created": [], "files_modified": ["a.py", "b.py"]}
+
+        discrepancies = auditor._compare_files(plan_data, actual)
+
+        assert len(discrepancies) == 1
+        disc = discrepancies[0]
+        assert disc.category == "files"
+        assert disc.severity == "low"
+        assert disc.message.startswith("1 unplanned modification(s)")
+        assert disc.actual == ["b.py"]
+
+    def test_compare_files_no_planned_modify_no_discrepancies(self, auditor):
+        """AC-5: empty files_to_modify suppresses modify-axis discrepancies."""
+        plan_data = {"files_to_create": [], "files_to_modify": []}
+        actual = {"files_created": [], "files_modified": ["b.py"]}
+
+        discrepancies = auditor._compare_files(plan_data, actual)
+
+        assert discrepancies == []
+
+    def test_compare_files_modify_match(self, auditor):
+        """AC-4: planned == actual modifications produces no discrepancy."""
+        plan_data = {"files_to_create": [], "files_to_modify": ["a.py"]}
+        actual = {"files_created": [], "files_modified": ["a.py"]}
+
+        discrepancies = auditor._compare_files(plan_data, actual)
+
+        assert discrepancies == []
 
 
 class TestPlanAuditReport:

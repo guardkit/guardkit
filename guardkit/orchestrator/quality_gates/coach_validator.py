@@ -1082,6 +1082,13 @@ class CoachValidator:
             task_work_results, profile=profile, skip_arch_review=skip_arch_review
         )
 
+        # Validate requirements ahead of the gate-fail short-circuit so
+        # gate-failure results carry criteria_met (TASK-GK-CR-001). This
+        # is a pure read over task / task_work_results / the player report
+        # — no side effects, idempotent. The same value is reused on the
+        # all-gates-passed path below, so the call happens exactly once.
+        requirements = self.validate_requirements(task, task_work_results, turn=turn)
+
         if not gates_status.all_gates_passed:
             logger.info(f"Quality gates failed for {task_id}: {gates_status}")
             return self._feedback_from_gates(
@@ -1092,6 +1099,7 @@ class CoachValidator:
                 context_used=context,
                 extra_issues=advisory_issues,
                 honesty_verification=honesty_verification,
+                requirements=requirements,
             )
 
         # 3. Independent test verification (trust but verify)
@@ -1374,9 +1382,8 @@ class CoachValidator:
                     honesty_verification=honesty_verification,
                 )
 
-        # 4. Validate requirements satisfaction
-        requirements = self.validate_requirements(task, task_work_results, turn=turn)
-
+        # 4. Validate requirements satisfaction (already hoisted above —
+        # see TASK-GK-CR-001).
         if not requirements.all_criteria_met:
             logger.info(f"Requirements not met for {task_id}: missing {requirements.missing}")
             return self._feedback_result(
@@ -5250,6 +5257,7 @@ class CoachValidator:
         context_used: Optional[str] = None,
         extra_issues: Optional[List[Dict[str, Any]]] = None,
         honesty_verification: Optional[HonestyVerification] = None,
+        requirements: Optional["RequirementsValidation"] = None,
     ) -> CoachValidationResult:
         """
         Create feedback result from failed quality gates.
@@ -5272,6 +5280,13 @@ class CoachValidator:
             F3c to thread the agent_invocations advisory through gate
             failures so process observations ride along with outcome
             feedback.
+        honesty_verification : Optional[HonestyVerification]
+            Honesty verification result if available
+        requirements : Optional[RequirementsValidation]
+            Requirements validation result. When the gate-fail short-circuit
+            fires, this is populated by the hoisted call in ``validate(...)``
+            so downstream consumers (autobuild stall detector) can read
+            ``criteria_met`` even when gates fail (TASK-GK-CR-001).
 
         Returns
         -------
@@ -5349,6 +5364,8 @@ class CoachValidator:
             severity = plan_audit.get("severity")
             extra_files = plan_audit.get("extra_files") or []
             missing_files = plan_audit.get("missing_files") or []
+            extra_modifications = plan_audit.get("extra_modifications") or []
+            missing_modifications = plan_audit.get("missing_modifications") or []
             extra_deps = plan_audit.get("extra_dependencies") or []
             issue_severity = "must_fix" if severity == "high" else "should_fix"
             parts: List[str] = ["Plan audit detected"]
@@ -5365,6 +5382,20 @@ class CoachValidator:
                 if len(missing_files) > 3:
                     preview += f", ... (+{len(missing_files) - 3} more)"
                 parts.append(f"— {len(missing_files)} missing file(s): {preview}")
+            if extra_modifications:
+                preview = ", ".join(extra_modifications[:3])
+                if len(extra_modifications) > 3:
+                    preview += f", ... (+{len(extra_modifications) - 3} more)"
+                parts.append(
+                    f"— {len(extra_modifications)} unplanned modification(s): {preview}"
+                )
+            if missing_modifications:
+                preview = ", ".join(missing_modifications[:3])
+                if len(missing_modifications) > 3:
+                    preview += f", ... (+{len(missing_modifications) - 3} more)"
+                parts.append(
+                    f"— {len(missing_modifications)} unmodified planned file(s): {preview}"
+                )
             if extra_deps:
                 preview = ", ".join(extra_deps[:3])
                 parts.append(f"— extra dep(s): {preview}")
@@ -5379,6 +5410,8 @@ class CoachValidator:
                     "violations": plan_audit.get("violations", 0),
                     "extra_files": extra_files,
                     "missing_files": missing_files,
+                    "extra_modifications": extra_modifications,
+                    "missing_modifications": missing_modifications,
                     "extra_dependencies": extra_deps,
                     "missing_dependencies": plan_audit.get(
                         "missing_dependencies"
@@ -5390,13 +5423,22 @@ class CoachValidator:
                 },
             })
 
+        # TASK-GK-CR-001 regression guard: gate-fail path must never flip
+        # the decision or the all_gates_passed flag. Use a real exception
+        # rather than `assert` so the invariant survives `python -O`.
+        if gates.all_gates_passed:
+            raise ValueError(
+                "_feedback_from_gates called but all_gates_passed is True; "
+                "this is a programming error — decision must remain 'feedback'."
+            )
+
         return CoachValidationResult(
             task_id=task_id,
             turn=turn,
             decision="feedback",
             quality_gates=gates,
             independent_tests=None,
-            requirements=None,
+            requirements=requirements,
             issues=issues,
             rationale=f"{len(issues)} quality gate(s) failed",
             context_used=context_used,
