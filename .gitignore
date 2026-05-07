@@ -121,6 +121,7 @@ debug-*.md
 # Process-acquired runtime locks (machine-local; never check in)
 .claude/*.lock
 .claude/state/*.lock
+/.guardkit-git.lock
 
 # Archived documents (keep structure but ignore temp/session files in root)
 /root-files-inventory.txt
