@@ -118,6 +118,10 @@ debug-*.md
 /*.session.json
 /*.state.json
 
+# Process-acquired runtime locks (machine-local; never check in)
+.claude/*.lock
+.claude/state/*.lock
+
 # Archived documents (keep structure but ignore temp/session files in root)
 /root-files-inventory.txt
 /categorized-inventory.txt
