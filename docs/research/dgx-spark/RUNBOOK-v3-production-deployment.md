@@ -934,14 +934,31 @@ else
 fi
 ```
 
-### 7.2 Restart Graphiti MCP server
+### 7.2 Rebuild and restart Graphiti MCP server
 
 ```bash
+echo "=== Rebuilding Graphiti MCP image at the pinned fork tag ==="
+
+cd ~/Projects/appmilla_github/guardkit
+
+# graphiti-mcp.sh refuses to start if the image is missing, but it will
+# happily reuse a stale image built from an older fork tag. We must rebuild
+# explicitly whenever the default GRAPHITI_TAG in graphiti-mcp-build.sh
+# moves (currently v0.29.5-guardkit.6 — carries the get_episodes MCP fix
+# verified in Phase 8.1 plus the TASK-INF-5054 LLM endpoint routing fix
+# verified in Phase 8.1b).
+./scripts/graphiti-mcp-build.sh
+
+# Confirm the checkout is at the pinned tag before we ship it.
+GRAPHITI_REPO_DIR="${GRAPHITI_REPO_DIR:-$HOME/Projects/appmilla_github/graphiti}"
+ACTUAL_TAG=$(git -C "$GRAPHITI_REPO_DIR" describe --tags --exact-match HEAD 2>/dev/null || echo "(no tag at HEAD)")
+echo "Graphiti fork checkout: $ACTUAL_TAG"
+[ "$ACTUAL_TAG" = "v0.29.5-guardkit.6" ] || echo "WARNING: not at v0.29.5-guardkit.6 — Phase 8.1/8.1b will likely fail"
+
 echo "=== Restarting Graphiti MCP server ==="
 
 docker stop graphiti-mcp 2>/dev/null && docker rm graphiti-mcp 2>/dev/null || true
 
-cd ~/Projects/appmilla_github/guardkit
 ./scripts/graphiti-mcp.sh
 
 sleep 10
@@ -951,6 +968,286 @@ curl -s http://localhost:8004/health 2>/dev/null && echo "Graphiti MCP server he
 ---
 
 ## Phase 8: End-to-End Graphiti Seed Test
+
+> **Phase 8.1 below verifies the v0.29.5-guardkit.5 MCP `get_episodes` bug
+> fix.** The seed test in Phase 8 exercises the Python client write path
+> (`guardkit graphiti seed`); Phase 8.1 exercises the MCP read path
+> (`get_episodes` over streamable HTTP) which is where the bug lived.
+> Both must pass.
+
+### 8.1 Verify MCP get_episodes returns non-empty results (v0.29.5-guardkit.5)
+
+The bug had two layers, both fixed in v0.29.5-guardkit.5:
+
+1. **MCP-side (v0.29.5-guardkit.5):** `mcp_server/src/graphiti_mcp_server.py`
+   `get_episodes` now routes through `Graphiti.retrieve_episodes` (decorated)
+   instead of calling `EpisodicNode.get_by_group_ids` directly with the
+   shared driver.
+2. **Decorator-side + packaging (v0.29.5-guardkit.5):** the
+   `@handle_multiple_group_ids` decorator now takes the FalkorDB
+   per-group `driver.clone(database=gid)` path for *single*-group calls
+   too, not only multi-group calls. Equally important: the Dockerfile
+   now installs graphiti-core from the local fork source tree
+   (`[tool.uv.sources]` resolves `path = "../"`) instead of stripping
+   the override and pulling broken upstream graphiti-core 0.28.1 from
+   PyPI. Without this, all the fork's `graphiti_core/` patches were
+   orphaned at runtime.
+
+See
+`~/Projects/appmilla_github/graphiti/docs/bugs/get-episodes-mcp-empty-results.md`
+and the audit trail in this runbook's Phase 8.1 commit history.
+
+This phase reads from groups that are already populated in FalkorDB. A
+synthetic write-then-read design was tried first and found unsuitable
+because **TASK-INF-5054** (graphiti-core misroutes LLM calls to
+`api.openai.com/v1/responses` instead of the local llama-swap) prevents
+`add_memory` from completing extraction — the EpisodicNode never lands
+even on a passing get_episodes path. Reading a pre-populated group
+isolates this phase from TASK-INF-5054 and exercises only the bug we
+care about here.
+
+**Precondition:** at least one of the probe groups below must already
+contain Episodic nodes. On a greenfield deployment, run
+`guardkit graphiti seed-system` first (or pick any group you know has
+been populated by prior captures). If all probe groups are empty, the
+script exits 2 (inconclusive) rather than passing or failing.
+
+```bash
+echo "=== Phase 8.1: MCP get_episodes (bug fix verification) ==="
+
+python3 - <<'PY'
+import asyncio
+import json
+import sys
+
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+
+URL = "http://localhost:8004/mcp/"
+# System groups that should be populated by guardkit graphiti seed-system,
+# plus a couple of project groups that accumulate via task captures.
+# Add or remove as appropriate for your deployment.
+PROBE_GROUPS = [
+    "command_workflows",
+    "patterns",
+    "guardkit__project_decisions",
+    "guardkit__task_outcomes",
+]
+
+
+def _payload(result):
+    if not getattr(result, "content", None):
+        return {}
+    text = result.content[0].text or "{}"
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return {"_raw": text}
+
+
+async def main() -> int:
+    async with streamablehttp_client(URL) as (read, write, _close):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            # Single-group calls — this is the path that returned [] pre-fix.
+            results = []
+            for group in PROBE_GROUPS:
+                res = await session.call_tool("get_episodes", {
+                    "group_ids": [group],
+                    "max_episodes": 3,
+                })
+                eps = _payload(res).get("episodes", [])
+                results.append((group, len(eps), eps[0].get("name") if eps else None))
+
+            print("=== single-group MCP get_episodes ===")
+            for grp, count, sample in results:
+                marker = "PASS " if count > 0 else "EMPTY"
+                line = f"  [{marker}] {grp:35s} -> {count} episode(s)"
+                if sample:
+                    line += f"  sample={sample!r}"
+                print(line)
+
+            # Multi-group regression check: this path also has to keep working.
+            multi_res = await session.call_tool("get_episodes", {
+                "group_ids": PROBE_GROUPS[:2],
+                "max_episodes": 4,
+            })
+            multi_eps = _payload(multi_res).get("episodes", [])
+            print(f"\n=== multi-group regression ({PROBE_GROUPS[:2]}) ===")
+            print(f"  {'PASS ' if multi_eps else 'EMPTY'}: {len(multi_eps)} episode(s)")
+
+            non_empty = [g for g, n, _ in results if n > 0]
+            if not non_empty:
+                print("\nENV-NOT-READY: all probe groups returned 0 episodes.")
+                print("Seed the system groups first, then re-run Phase 8.1:")
+                print("  guardkit graphiti seed-system")
+                return 2  # inconclusive
+
+            if not multi_eps:
+                print(
+                    "\nFAIL: multi-group call returned [] from probe groups "
+                    "that single-group calls confirmed are populated. "
+                    "Decorator may have regressed."
+                )
+                return 1
+
+            print(
+                f"\nPASS: {len(non_empty)}/{len(results)} probe groups returned "
+                f"episodes via single-group MCP get_episodes; multi-group "
+                f"returned {len(multi_eps)}. v0.29.5-guardkit.5 is in effect."
+            )
+            return 0
+
+
+sys.exit(asyncio.run(main()))
+PY
+```
+
+**Expected output (PASS path):**
+```
+=== single-group MCP get_episodes ===
+  [PASS ] command_workflows                   -> 3 episode(s)  sample='cli_guardkit_graphiti'
+  [PASS ] patterns                            -> 3 episode(s)  sample='Orchestrator Pattern: Error Recovery'
+  [PASS ] guardkit__project_decisions         -> 3 episode(s)  sample='Design rule: ...'
+  [PASS ] guardkit__task_outcomes             -> 3 episode(s)  sample='OUT-...'
+
+=== multi-group regression (['command_workflows', 'patterns']) ===
+  PASS : 6 episode(s)
+
+PASS: 4/4 probe groups returned episodes via single-group MCP get_episodes; multi-group returned 6. v0.29.5-guardkit.5 is in effect.
+```
+
+**If single-group probes return 0 but multi-group works** → only the
+guardkit.4 MCP-side fix is live; the guardkit.5 Dockerfile/decorator
+fix has not landed. Re-check: (a) the fork checkout in Phase 7.2 reports
+`v0.29.5-guardkit.6` and (b) `docker run --rm --entrypoint sh
+graphiti-mcp-standalone:local -c "grep -c 'len(group_ids)'
+/app/graphiti_core/decorators.py"` returns 0. If either is wrong, force
+a clean rebuild:
+
+```bash
+docker rmi graphiti-mcp-standalone:local
+./scripts/graphiti-mcp-build.sh --no-cache
+docker stop graphiti-mcp; docker rm graphiti-mcp
+./scripts/graphiti-mcp.sh
+```
+
+### 8.1b Verify MCP add_memory→get_episodes round-trip (TASK-INF-5054 / v0.29.5-guardkit.6)
+
+This phase verifies the **write** path now works end-to-end. Pre-fix
+(v0.29.5-guardkit.5 and earlier), `mcp_server/src/services/factories.py`
+`LLMClientFactory.create` dropped `base_url` on the floor for the
+`openai` provider and always returned `OpenAIClient`. `OpenAIClient`'s
+structured-output path calls `client.responses.parse` (the OpenAI
+Responses API at `/v1/responses`), which exists only on OpenAI cloud —
+local llama-swap / vLLM / ollama only implement `/v1/chat/completions`.
+Result: `add_memory` queued the episode, the queue worker called
+`https://api.openai.com/v1/responses` with the local
+`not-needed-vllm-local` API key, got HTTP 401, retried twice, dropped
+the episode. The EpisodicNode never landed in FalkorDB.
+
+v0.29.5-guardkit.6 fixes both layers: the factory now passes `base_url`
+to `LLMConfig` (matching the embedder factory which always did) and
+picks `OpenAIGenericClient` (chat.completions + json_schema response
+format) for any non-`api.openai.com` endpoint. Verify:
+
+```bash
+echo "=== Phase 8.1b: MCP add_memory → get_episodes round-trip ==="
+
+python3 - <<'PY'
+import asyncio
+import json
+import sys
+import time
+
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+
+URL = "http://localhost:8004/mcp/"
+GROUP = f"runbook_v3_addmem_smoke_{int(time.time())}"
+POLL_SECONDS = 90      # ~3-5 LLM calls × ~10s each at local-model latency
+POLL_INTERVAL = 5
+
+
+async def main() -> int:
+    async with streamablehttp_client(URL) as (rd, wr, _):
+        async with ClientSession(rd, wr) as s:
+            await s.initialize()
+            print(f"Test group: {GROUP}")
+
+            add_res = await s.call_tool("add_memory", {
+                "name": "TASK-INF-5054 round-trip smoke",
+                "episode_body": (
+                    "GuardKit AutoBuild runs on the GB10 behind llama-swap. "
+                    "Alice approved the deployment. The DGX Spark is the test host."
+                ),
+                "source": "text",
+                "source_description": "runbook v3 8.1b smoke",
+                "group_id": GROUP,
+            })
+            print(f"add_memory: {add_res.content[0].text if add_res.content else '(no content)'}")
+
+            deadline = time.time() + POLL_SECONDS
+            attempt = 0
+            episodes: list = []
+            while time.time() < deadline:
+                attempt += 1
+                await asyncio.sleep(POLL_INTERVAL)
+                get_res = await s.call_tool("get_episodes", {
+                    "group_ids": [GROUP],
+                    "max_episodes": 5,
+                })
+                payload = json.loads(get_res.content[0].text) if get_res.content else {}
+                episodes = payload.get("episodes", [])
+                if episodes:
+                    break
+                print(f"  attempt {attempt}: queue still processing, retrying in {POLL_INTERVAL}s")
+
+            try:
+                await s.call_tool("clear_graph", {"group_ids": [GROUP]})
+            except Exception as exc:
+                print(f"clear_graph: WARNING — cleanup failed for {GROUP}: {exc}")
+
+            if not episodes:
+                print(
+                    f"\nFAIL: episode never appeared after {POLL_SECONDS}s. "
+                    "Likely cause: TASK-INF-5054 fix not in image. Check "
+                    "`docker logs graphiti-mcp --tail 50` for "
+                    "`POST https://api.openai.com/v1/responses` 401s — "
+                    "if present, factory still routes to the cloud Responses API."
+                )
+                return 1
+
+            ep = episodes[0]
+            print(
+                f"\nPASS: add_memory → get_episodes round-trip works. "
+                f"Episode persisted in {attempt * POLL_INTERVAL}s "
+                f"(uuid={ep.get('uuid','')[:8]}, name={ep.get('name')!r}). "
+                "v0.29.5-guardkit.6 (TASK-INF-5054) is in effect."
+            )
+            return 0
+
+
+sys.exit(asyncio.run(main()))
+PY
+```
+
+**Sanity check after PASS** — confirm the LLM endpoint actually used:
+
+```bash
+docker logs graphiti-mcp --since 2m 2>&1 | \
+    grep -E "POST.*chat/completions|api.openai.com" | head -10
+```
+
+Expected: only `POST http://localhost:9000/v1/chat/completions "HTTP/1.1
+200 OK"` lines. If you see `api.openai.com/v1/responses 401`, the
+factory is routing to the wrong client — confirm the
+`OpenAI-compatible endpoint detected ... using OpenAIGenericClient`
+log line is present at startup
+(`docker logs graphiti-mcp 2>&1 | grep factories`).
+
+### 8.2 Graphiti seed through the Python client
 
 ```bash
 echo "=== E2E: Graphiti seed through llama-swap ==="
@@ -997,7 +1294,11 @@ fi
 | P6.5: Study tutor Socratic dialogue | | |
 | P6.6: Alias routing | | |
 | P7: Graphiti config updated | | dims 1024→768 |
-| P8: E2E Graphiti seed | | **No JSON errors** |
+| P7.2: Graphiti fork checkout at v0.29.5-guardkit.6 | | `git describe --tags --exact-match HEAD` |
+| P7.2: graphiti-core editable install (not PyPI) | | `docker run --rm --entrypoint sh graphiti-mcp-standalone:local -c 'test -f /app/graphiti_core/decorators.py'` |
+| P8.1: MCP get_episodes single-group returns non-empty | | v0.29.5-guardkit.5 verification |
+| P8.1b: MCP add_memory→get_episodes round-trip | | v0.29.5-guardkit.6 verification (TASK-INF-5054) |
+| P8.2: E2E Graphiti seed | | **No JSON errors** |
 
 ---
 

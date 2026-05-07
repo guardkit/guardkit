@@ -21,7 +21,7 @@
 #
 # Env overrides:
 #   GRAPHITI_REPO_URL  fork URL                 (default: guardkit/graphiti)
-#   GRAPHITI_TAG       tag to check out         (default: v0.29.5-guardkit.3)
+#   GRAPHITI_TAG       tag to check out         (default: v0.29.5-guardkit.6)
 #   GRAPHITI_REPO_DIR  local checkout location  (default: ~/Projects/appmilla_github/graphiti)
 #   GRAPHITI_MCP_IMAGE local docker image tag   (default: graphiti-mcp-standalone:local)
 
@@ -31,7 +31,7 @@ set -euo pipefail
 IMAGE_TAG="${GRAPHITI_MCP_IMAGE:-graphiti-mcp-standalone:local}"
 GRAPHITI_REPO_DIR="${GRAPHITI_REPO_DIR:-$HOME/Projects/appmilla_github/graphiti}"
 GRAPHITI_REPO_URL="${GRAPHITI_REPO_URL:-https://github.com/guardkit/graphiti.git}"
-GRAPHITI_TAG="${GRAPHITI_TAG:-v0.29.5-guardkit.3}"
+GRAPHITI_TAG="${GRAPHITI_TAG:-v0.29.5-guardkit.6}"
 
 DO_NO_CACHE=0
 for arg in "$@"; do
@@ -60,7 +60,11 @@ else
 fi
 
 DOCKERFILE="$GRAPHITI_REPO_DIR/mcp_server/docker/Dockerfile.standalone"
-BUILD_CONTEXT="$GRAPHITI_REPO_DIR/mcp_server"
+# Build context is the FORK ROOT (was mcp_server/ pre-v0.29.5-guardkit.6)
+# so the image can install graphiti-core from the local source tree.
+# Without this, the fork's bug fixes in graphiti_core/ are orphaned —
+# uv resolves graphiti-core from PyPI and the patches never reach runtime.
+BUILD_CONTEXT="$GRAPHITI_REPO_DIR"
 
 if [ ! -f "$DOCKERFILE" ]; then
   echo "ERROR: Dockerfile not found at $DOCKERFILE" >&2
