@@ -3206,7 +3206,12 @@ class CoachValidator:
         Strip common criterion prefixes from text.
 
         Removes markdown checkbox prefixes (- [ ], - [x ]), bullet points (* ),
-        and numbered prefixes (1. , 2) , 1) ).
+        and numbered prefixes (1. , 2) , 1) ). Does NOT strip AC-N: / AC-NNN:
+        labels — that is :meth:`_extract_ac_id`'s responsibility, and stripping
+        them here prevented the extractor from running (TASK-GK-CV-001 — the
+        strip consumed ``AC-1: ...`` so ``_extract_ac_id`` saw bare prose,
+        returned ``None``, and callers fell back to zero-padded ``AC-NNN``
+        keys that missed Player-emitted ``AC-N`` lookup keys).
 
         Parameters
         ----------
@@ -3216,7 +3221,8 @@ class CoachValidator:
         Returns
         -------
         str
-            Cleaned text without prefix
+            Cleaned text without bullet/checkbox/numbered prefix. AC labels
+            (if any) are preserved for downstream :meth:`_extract_ac_id`.
         """
         # Strip leading/trailing whitespace first
         cleaned = text.strip()
@@ -3239,11 +3245,6 @@ class CoachValidator:
                 # Found digits, check for ". " or ") "
                 if cleaned[i:i+2] == ". " or cleaned[i:i+2] == ") ":
                     cleaned = cleaned[i+2:].strip()
-
-        # Strip AC-NNN: prefixes (e.g., "AC-001: Some text")
-        ac_match = re.match(r'^AC-\d+:\s*', cleaned)
-        if ac_match:
-            cleaned = cleaned[ac_match.end():].strip()
 
         return cleaned
 

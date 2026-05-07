@@ -224,26 +224,38 @@ class TestExtractAcIdAfterStripPrefix:
         assert ac_id == "AC-LOAD-01"
         assert text == "Settings class has log_level field"
 
-    def test_checkbox_then_simple_id_already_stripped(self):
-        """``- [ ] AC-001: text`` — existing behaviour stripped to ``text``.
+    def test_checkbox_then_simple_id_extracted(self):
+        """``- [ ] AC-001: text`` — checkbox stripped, AC label preserved, then extracted.
 
-        ``_strip_criterion_prefix`` strips ``AC-NNN:`` for simple IDs, so by
-        the time ``_extract_ac_id`` sees the text the simple ID is gone. This
-        is the documented backwards-compat path: the index-based fallback
-        regenerates ``AC-001`` for index 0.
+        TASK-GK-CV-001: previously ``_strip_criterion_prefix`` consumed the
+        ``AC-001:`` prefix, blocking ``_extract_ac_id`` from reading the
+        label. After the fix, the strip helper handles only checkbox/bullet/
+        numbered prefixes; ``_extract_ac_id`` correctly extracts the AC ID.
         """
         cleaned = CoachValidator._strip_criterion_prefix(
             "- [ ] AC-001: Implement user authentication"
         )
-        assert cleaned == "Implement user authentication"
+        # AC label is preserved through the strip step.
+        assert cleaned == "AC-001: Implement user authentication"
 
         text, ac_id = CoachValidator._extract_ac_id(cleaned)
-        # Simple AC ID was already consumed by _strip_criterion_prefix.
-        assert ac_id is None
+        # Simple AC ID is now extracted (not silently dropped).
+        assert ac_id == "AC-001"
         assert text == "Implement user authentication"
 
-        # The caller's index-based fallback regenerates AC-001 (parity with
-        # pre-fix behaviour).
-        i = 0
-        criterion_id = ac_id or f"AC-{i+1:03d}"
-        assert criterion_id == "AC-001"
+    def test_checkbox_then_natural_label_id_extracted(self):
+        """``- [ ] AC-1: text`` — natural-label (not zero-padded) is extracted.
+
+        TASK-GK-CV-001: this is the FEAT-PEBR run-2 fingerprint. Pre-fix,
+        the criterion_id would have been ``AC-001`` (zero-padded fallback)
+        and Player promises with ``criterion_id="AC-1"`` would miss. Post-fix,
+        the criterion_id matches the natural label exactly.
+        """
+        cleaned = CoachValidator._strip_criterion_prefix(
+            "- [ ] AC-1: Implement user authentication"
+        )
+        assert cleaned == "AC-1: Implement user authentication"
+
+        text, ac_id = CoachValidator._extract_ac_id(cleaned)
+        assert ac_id == "AC-1"
+        assert text == "Implement user authentication"

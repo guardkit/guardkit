@@ -104,26 +104,31 @@ class TestStripCriterionPrefix:
         result = CoachValidator._strip_criterion_prefix("   ")
         assert result == ""
 
-    def test_strip_ac_prefix_basic(self):
-        """Strip 'AC-001: ' prefix."""
+    def test_does_not_strip_ac_prefix_basic(self):
+        """Preserve 'AC-001: ' prefix — extraction is _extract_ac_id's job.
+
+        TASK-GK-CV-001: previously this helper stripped ``^AC-\\d+:\\s*``
+        which masked the AC label from ``_extract_ac_id`` and caused
+        natural-label criteria to fall back to zero-padded keys that
+        Players emitting ``criterion_id="AC-N"`` could not match.
+        """
         result = CoachValidator._strip_criterion_prefix("AC-001: Settings class has log_level field")
-        assert result == "Settings class has log_level field"
+        assert result == "AC-001: Settings class has log_level field"
 
-    def test_strip_ac_prefix_multi_digit(self):
-        """Strip 'AC-123: ' prefix with multi-digit number."""
+    def test_does_not_strip_ac_prefix_multi_digit(self):
+        """Preserve 'AC-123: ' prefix (TASK-GK-CV-001)."""
         result = CoachValidator._strip_criterion_prefix("AC-123: Some acceptance criterion text")
-        assert result == "Some acceptance criterion text"
+        assert result == "AC-123: Some acceptance criterion text"
 
-    def test_strip_ac_prefix_with_checkbox(self):
-        """Strip checkbox AND AC prefix when combined."""
+    def test_strips_checkbox_but_preserves_ac_prefix(self):
+        """Strip checkbox prefix; AC label survives for _extract_ac_id (TASK-GK-CV-001)."""
         result = CoachValidator._strip_criterion_prefix("- [ ] AC-001: Settings class has log_level field")
-        assert result == "Settings class has log_level field"
-        # Note: checkbox is stripped first, then AC prefix is stripped in second pass
+        assert result == "AC-001: Settings class has log_level field"
 
-    def test_strip_ac_prefix_no_space_after_colon(self):
-        """Strip AC prefix even without space after colon."""
+    def test_does_not_strip_ac_prefix_no_space_after_colon(self):
+        """Preserve AC prefix even without space after colon (TASK-GK-CV-001)."""
         result = CoachValidator._strip_criterion_prefix("AC-001:Settings class")
-        assert result == "Settings class"
+        assert result == "AC-001:Settings class"
 
 
 # ============================================================================
