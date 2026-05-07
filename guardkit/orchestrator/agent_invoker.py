@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, List, Literal, Optional, Set, Tuple, Union
 
 if TYPE_CHECKING:
     from guardkit.orchestrator.autobuild import DesignContext
@@ -6051,6 +6051,128 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         )
         return results_path
 
+    def _extract_explicit_planned_files(
+        self,
+        task_id: str,
+    ) -> Set[str]:
+        """Return file paths declared in the task body's explicit sections.
+
+        Implements TASK-GK-PA-002 AC-1: when a task body contains
+        non-empty ``## Files to Create`` and/or ``## Files to Modify``
+        sections (the FM-001 convention introduced by
+        TASK-FRR-PEB-FM-001 / commit ``02aac9c``), those lists are the
+        authoritative ``planned_files`` set. The plan-audit fallback path
+        ``_compute_plan_audit_verdict`` consults this helper before
+        running the prose regex scan, so well-formed tasks no longer
+        false-positive on prose typos in ``## Implementation notes``
+        (FEAT-PEBR run-2 root cause).
+
+        The section-boundary regex is ``(?=\\n##(?!#)|\\Z)`` so a
+        ``### Subsection`` header inside the section does not terminate
+        it prematurely (subsections legitimately appear under
+        ``## Files to Create`` for grouped declarations).
+
+        Bullet extraction handles four common shapes:
+
+        - ``- `path/to/file.py```
+        - ``- `path/to/file.py` — description`` (em-dash separator)
+        - ``- `path/to/file.py` - description`` (space-dash-space)
+        - ``- path/to/file.py``
+
+        Sections that contain no parseable bullets (header-only or
+        stubs like ``- _none_``) are treated as **absent**, not
+        authoritative-empty — otherwise placeholder sections would
+        accidentally bypass both the explicit-section comparison and the
+        AC prose-scan fallback, leaving plan-audit blind.
+
+        Args:
+            task_id: Task ID whose body should be inspected.
+
+        Returns:
+            Union of paths declared in ``## Files to Create`` and
+            ``## Files to Modify``, as a set of repo-relative path
+            strings. Returns an empty set when neither section is
+            present or both are empty (so callers can ``if explicit:``
+            to detect the FM-001 convention).
+        """
+        import re as _re
+
+        task_file = self._find_task_file(task_id)
+        if task_file is None:
+            return set()
+        try:
+            content = task_file.read_text(errors="replace")
+        except OSError:
+            return set()
+        # Strip frontmatter the same way ``_scan_ac_for_missing_paths``
+        # does, to keep the two helpers' body-shape contracts identical.
+        if content.startswith("---"):
+            parts = content.split("---", 2)
+            body = parts[2] if len(parts) >= 3 else content
+        else:
+            body = content
+
+        # ``(?=^##(?!#)|\Z)`` stops at the next line-start ``## ``
+        # header but not at ``### Subsection`` headers — the latter are
+        # legitimate children of ``## Files to Create``. We anchor the
+        # lookahead with ``^`` (MULTILINE) instead of ``\n##`` so a
+        # blank line absorbed by ``\s*\n`` after the section header
+        # doesn't push the cursor past the next section's start.
+        section_pattern = (
+            r"^##\s+Files\s+to\s+{action}\s*\n(.*?)(?=^##(?!#)|\Z)"
+        )
+        sections: List[str] = []
+        for action in ("Create", "Modify"):
+            match = _re.search(
+                section_pattern.format(action=action),
+                body,
+                _re.IGNORECASE | _re.MULTILINE | _re.DOTALL,
+            )
+            if match:
+                sections.append(match.group(1))
+
+        paths: Set[str] = set()
+        for section_text in sections:
+            for line in section_text.splitlines():
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                # Bullet indicator: ``-`` or ``*`` followed by space.
+                # Numbered lists (``1.``) are unusual for these sections
+                # and are intentionally skipped to keep extraction tight.
+                if not (stripped.startswith("- ") or stripped.startswith("* ")):
+                    continue
+                item = stripped[2:].strip()
+                # Strip trailing description after em-dash (U+2014) or
+                # ``" - "`` (space-dash-space). Bare ``-`` is left alone
+                # so paths like ``feat-pebr-rev2/file.py`` survive.
+                for sep in ("—", " - "):
+                    idx = item.find(sep)
+                    if idx != -1:
+                        item = item[:idx].strip()
+                        break
+                # First backtick-quoted token wins when present;
+                # otherwise the leading whitespace-token is the path.
+                backtick_match = _re.match(r"`([^`]+)`", item)
+                if backtick_match:
+                    candidate = backtick_match.group(1).strip()
+                else:
+                    candidate = item.split()[0] if item else ""
+                if not candidate:
+                    continue
+                # Skip placeholder bullets like ``_none_`` or ``N/A``.
+                if candidate.startswith("_") or candidate.lower() in {
+                    "n/a",
+                    "none",
+                    "tbd",
+                }:
+                    continue
+                # Skip wildcards — ``planned_files`` is a literal set.
+                if "*" in candidate:
+                    continue
+                paths.add(candidate)
+        return paths
+
     def _scan_ac_for_missing_paths(
         self,
         task_id: str,
@@ -6079,6 +6201,16 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         signal is a false positive. Callers that genuinely need the
         old behaviour (none today, but synthetic-report parity is
         preserved) can pass ``flag_basenames=True``.
+
+        TASK-GK-PA-002 narrows the scan body to the ``## Acceptance
+        Criteria`` (or ``## Acceptance criterion``) section only.
+        Earlier behaviour scanned the whole post-frontmatter body —
+        which let prose paths in ``## Implementation notes`` (FEAT-PEBR
+        run-2 surfaced a typo cross-reference there) trip the scanner.
+        That mismatched the function's name and docstring; the slice
+        re-aligns them. If the AC header is absent, the scanner falls
+        back to whole-body scanning so non-standard task structures
+        keep their pre-fix behaviour.
 
         Args:
             task_id: Task ID whose acceptance criteria should be scanned.
@@ -6110,6 +6242,20 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             body = parts[2] if len(parts) >= 3 else content
         else:
             body = content
+        # TASK-GK-PA-002 AC-2: restrict the scan to the AC section only.
+        # ``(?=^##(?!#)|\Z)`` (MULTILINE) so a ``### Subsection`` header
+        # inside the AC block (rare but possible — e.g. ``### Edge
+        # cases``) does not terminate it, and an empty AC body followed
+        # by another ``##`` section terminates correctly. Falls back to
+        # whole-body scanning when the AC header is absent so
+        # non-standard task structures keep their pre-fix behaviour.
+        ac_match = _re.search(
+            r"^##\s+Acceptance\s+(?:Criteria|criterion)\s*\n(.*?)(?=^##(?!#)|\Z)",
+            body,
+            _re.IGNORECASE | _re.MULTILINE | _re.DOTALL,
+        )
+        if ac_match:
+            body = ac_match.group(1)
         primary = _re.findall(r"[\w./\-]+\.\w{1,5}", body)
         backtick = _re.findall(r"`([^`]+\.[a-zA-Z]+)`", body)
         double_q = _re.findall(r'"([^"]+\.[a-zA-Z]+)"', body)
@@ -6202,6 +6348,58 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             }
 
         if result.get("skipped"):
+            # TASK-GK-PA-002 AC-1: when the task body declares explicit
+            # ``## Files to Create`` / ``## Files to Modify`` sections
+            # (FM-001 convention, commit ``02aac9c``), those lists are
+            # the authoritative ``planned_files`` set. Compare against
+            # the worktree directly and skip the prose regex scan —
+            # FEAT-PEBR run-2 surfaced that prose typos in
+            # ``## Implementation notes`` were tripping the AC scanner
+            # even when every declared file was on disk.
+            explicit = self._extract_explicit_planned_files(task_id)
+            if explicit:
+                missing = sorted(
+                    p for p in explicit
+                    if not (self.worktree_path / p).exists()
+                )
+                if missing:
+                    return {
+                        "status": "violation",
+                        "severity": "high",
+                        "violations": len(missing),
+                        "extra_files": [],
+                        "missing_files": missing,
+                        "extra_modifications": [],
+                        "missing_modifications": [],
+                        "extra_dependencies": [],
+                        "missing_dependencies": [],
+                        "loc_variance_pct": None,
+                        "discrepancies_count": len(missing),
+                        "message": (
+                            f"task body declares {len(explicit)} planned "
+                            f"file(s); {len(missing)} not on disk: "
+                            f"{', '.join(missing[:3])}"
+                            f"{', ...' if len(missing) > 3 else ''}"
+                        ),
+                    }
+                return {
+                    "status": "passed",
+                    "severity": "low",
+                    "violations": 0,
+                    "extra_files": [],
+                    "missing_files": [],
+                    "extra_modifications": [],
+                    "missing_modifications": [],
+                    "extra_dependencies": [],
+                    "missing_dependencies": [],
+                    "loc_variance_pct": None,
+                    "discrepancies_count": 0,
+                    "message": (
+                        f"no plan on disk; all {len(explicit)} task-body-"
+                        "declared file(s) present"
+                    ),
+                }
+
             # TASK-AB-FIX-INVAB1 AC-005: a "no plan on disk" outcome is
             # not a free pass. When AC text names a file path that
             # doesn't exist on disk, escalate to a high-severity
