@@ -236,3 +236,205 @@ def test_bdd_failure_and_pending_both_surfaced(tmp_worktree, task_work_results_d
     categories = {i.get("category") for i in result.issues}
     assert "bdd_failure" in categories
     assert "bdd_pending" in categories
+
+
+# ---------------------------------------------------------------------------
+# TASK-GK-CR-001 — gate-fail path must populate `requirements`
+# ---------------------------------------------------------------------------
+
+
+def _make_gate_fail_results(
+    completion_promises: Optional[List[Dict[str, Any]]] = None,
+    requirements_addressed: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Construct a task_work_results dict that forces the quality-gate
+    fail short-circuit in ``CoachValidator.validate``.
+
+    ``tests_failed=2`` and ``all_passed=False`` flip ``tests_passed=False``
+    in ``QualityGateStatus``, so the gate-fail branch fires before any
+    independent test verification or AC matching runs.
+    """
+    results: Dict[str, Any] = {
+        "quality_gates": {
+            "tests_passing": False,
+            "tests_passed": 13,
+            "tests_failed": 2,
+            "coverage": 85,
+            "coverage_met": True,
+            "all_passed": False,
+        },
+        "code_review": {"score": 82, "solid": 85, "dry": 80, "yagni": 82},
+        "plan_audit": {"violations": 0, "file_count_match": True},
+    }
+    if completion_promises is not None:
+        results["completion_promises"] = completion_promises
+    if requirements_addressed is not None:
+        results["requirements_addressed"] = requirements_addressed
+    return results
+
+
+def _six_ac_task() -> Dict[str, Any]:
+    return {
+        "acceptance_criteria": [
+            "AC-001: User can register with email",
+            "AC-002: User can log in with credentials",
+            "AC-003: User can request password reset",
+            "AC-004: User can update profile",
+            "AC-005: User can view session history",
+            "AC-006: User can sign out cleanly",
+        ],
+    }
+
+
+def _three_ac_task() -> Dict[str, Any]:
+    return {
+        "acceptance_criteria": [
+            "AC-001: alpha bravo charlie delta",
+            "AC-002: echo foxtrot golf hotel",
+            "AC-003: india juliet kilo lima",
+        ],
+    }
+
+
+class TestFeedbackFromGatesRequirements:
+    """TASK-GK-CR-001: gate-fail short-circuit must thread requirements
+    through ``_feedback_from_gates`` so the autobuild stall detector can
+    read ``criteria_met`` even when gates fail."""
+
+    def test_gate_fail_with_completion_promises_populates_requirements(
+        self, tmp_worktree, task_work_results_dir
+    ):
+        """6 ACs, 6 completion_promises all complete, gate fails:
+        requirements is populated and criteria_met == 6."""
+        promises = [
+            {
+                "criterion_id": f"AC-{i+1:03d}",
+                "status": "complete",
+                "evidence": f"Implemented AC-{i+1:03d}",
+            }
+            for i in range(6)
+        ]
+        _write(
+            task_work_results_dir,
+            _make_gate_fail_results(completion_promises=promises),
+        )
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+            validator = CoachValidator(str(tmp_worktree))
+            result = validator.validate("TASK-001", 1, _six_ac_task())
+
+        assert result.decision == "feedback"
+        assert result.quality_gates is not None
+        assert result.quality_gates.all_gates_passed is False
+        assert result.requirements is not None
+        assert result.requirements.criteria_met == 6
+        assert result.requirements.criteria_total == 6
+
+    def test_gate_fail_with_requirements_addressed_text_fallback(
+        self, tmp_worktree, task_work_results_dir
+    ):
+        """No promises; requirements_addressed text-matches 2 of 3 ACs.
+        Gate fails: requirements is populated and criteria_met >= 1."""
+        # Two of the three criteria are mirrored verbatim; the third is
+        # absent so the legacy text matcher will reject it.
+        requirements_addressed = [
+            "AC-001: alpha bravo charlie delta",
+            "AC-002: echo foxtrot golf hotel",
+        ]
+        _write(
+            task_work_results_dir,
+            _make_gate_fail_results(
+                requirements_addressed=requirements_addressed
+            ),
+        )
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+            validator = CoachValidator(str(tmp_worktree))
+            result = validator.validate("TASK-001", 1, _three_ac_task())
+
+        assert result.decision == "feedback"
+        assert result.requirements is not None
+        assert result.requirements.criteria_met >= 1
+        assert result.requirements.criteria_total == 3
+
+    def test_gate_fail_with_no_promises_no_text_returns_zero_criteria_met(
+        self, tmp_worktree, task_work_results_dir
+    ):
+        """No completion_promises, no requirements_addressed.
+        Gate fails: validate_requirements still returns a non-None
+        RequirementsValidation with criteria_met == 0. This is the
+        documented behaviour — _count_criteria_passed is unchanged
+        downstream and reads zero exactly as before."""
+        _write(task_work_results_dir, _make_gate_fail_results())
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+            validator = CoachValidator(str(tmp_worktree))
+            result = validator.validate("TASK-001", 1, _three_ac_task())
+
+        assert result.decision == "feedback"
+        assert result.requirements is not None
+        assert result.requirements.criteria_met == 0
+        assert result.requirements.criteria_total == 3
+
+    def test_gate_fail_decision_remains_feedback_with_full_criteria_met(
+        self, tmp_worktree, task_work_results_dir
+    ):
+        """Critical regression guard: even with criteria_met maxed, the
+        gate-fail short-circuit must keep ``decision == 'feedback'``.
+        ``all_gates_passed`` is the sole gate on the decision field."""
+        promises = [
+            {
+                "criterion_id": f"AC-{i+1:03d}",
+                "status": "complete",
+                "evidence": f"Implemented AC-{i+1:03d}",
+            }
+            for i in range(6)
+        ]
+        _write(
+            task_work_results_dir,
+            _make_gate_fail_results(completion_promises=promises),
+        )
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+            validator = CoachValidator(str(tmp_worktree))
+            result = validator.validate("TASK-001", 1, _six_ac_task())
+
+        assert result.decision == "feedback"
+        assert result.requirements is not None
+        assert result.requirements.criteria_met == 6
+
+    def test_validate_requirements_called_once_per_validate_invocation_on_gate_fail(
+        self, tmp_worktree, task_work_results_dir
+    ):
+        """Guard against future re-introduction of a duplicate
+        ``validate_requirements`` call between the hoist site and the
+        old line-1369 site. With gates failing, the gate-fail branch
+        must short-circuit and exactly one call must have been made."""
+        promises = [
+            {
+                "criterion_id": f"AC-{i+1:03d}",
+                "status": "complete",
+            }
+            for i in range(6)
+        ]
+        _write(
+            task_work_results_dir,
+            _make_gate_fail_results(completion_promises=promises),
+        )
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+            validator = CoachValidator(str(tmp_worktree))
+            with patch.object(
+                validator,
+                "validate_requirements",
+                wraps=validator.validate_requirements,
+            ) as spy:
+                result = validator.validate("TASK-001", 1, _six_ac_task())
+
+        assert result.decision == "feedback"
+        assert spy.call_count == 1

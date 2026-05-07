@@ -1,9 +1,15 @@
 ---
 id: TASK-GK-CR-001
 title: Populate requirements validation on Coach gate-fail short-circuit
-status: backlog
+status: completed
 created: 2026-05-07 00:00:00+00:00
 updated: 2026-05-07 00:00:00+00:00
+completed: 2026-05-07 07:40:00+00:00
+previous_state: in_review
+state_transition_reason: "Implementation complete: 5 new tests + 480 regression tests pass, architectural-reviewer 80/100, regression guard via ValueError (-O safe). Files scoped to coach_validator.py + test_coach_validator.py. AC-1/2/5/6/7 satisfied directly; AC-3/4 follow from criteria_met=6 + decision=feedback assertions."
+completed_location: tasks/completed/TASK-GK-CR-001/
+organized_files:
+  - TASK-GK-CR-001.md
 priority: high
 priority_band: P0
 task_type: feature
@@ -23,9 +29,19 @@ tags:
   - regression-fix
   - P0
 test_results:
-  status: pending
+  status: passing
   coverage: null
-  last_run: null
+  last_run: 2026-05-07
+  target_file_tests: "9 passed (4 existing + 5 new) in 32s"
+  broader_regression: "480 passed in 305s (orchestrator/quality_gates + 6 unit/test_coach_validator* files)"
+  stall_detector_regression: "27 passed in 5s (test_autobuild_stall_detection.py)"
+files_modified:
+  - guardkit/orchestrator/quality_gates/coach_validator.py
+  - tests/unit/orchestrator/quality_gates/test_coach_validator.py
+ruff:
+  status: clean_on_modified_lines
+  pre_existing_errors: 7
+  note: "All 7 ruff errors are on lines unrelated to TASK-GK-CR-001 edits (1398, 2790, 4597, 4598, 5349, 5482, 5516). My edits at 1085-1100, 1382-1384, 5260, 5283-5288, 5426-5444 are lint-clean."
 ---
 
 # Task: Populate requirements validation on Coach gate-fail short-circuit
