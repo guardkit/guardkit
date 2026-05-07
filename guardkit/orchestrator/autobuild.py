@@ -5545,8 +5545,13 @@ class AutoBuildOrchestrator:
                     else "{task_id}"
                 )
                 missing_phases_list = classification.missing_phases or ["4", "5"]
+                # TASK-GK-PROF-001: pass workspace_root so Phase-3 resolution
+                # consults the installed specialist set rather than the
+                # hardcoded stack→specialist map.
                 specialist_lines = render_missing_phase_list(
-                    missing_phases_list, stack_template
+                    missing_phases_list,
+                    stack_template=stack_template,
+                    workspace_root=worktree_root,
                 )
                 specialist_block = "\n".join(
                     f"  - {line}" for line in specialist_lines

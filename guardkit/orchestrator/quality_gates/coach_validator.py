@@ -1012,8 +1012,17 @@ class CoachValidator:
                 for p in missing_phases_sorted
             ) if missing_phases_sorted else "unknown"
             stack_template = detect_stack_template(self.worktree_path)
+            # TASK-GK-PROF-001: thread the worktree root so Phase-3 resolution
+            # consults the *installed* specialist set, not the legacy
+            # stack→specialist map. When the stack's profile-default isn't
+            # installed (e.g. langchain-deepagents-orchestrator ships
+            # langchain-tool-decorator-specialist, not python-api-specialist),
+            # this downgrades the advisory to informational instead of naming
+            # an agent the operator doesn't have.
             specialist_lines = render_missing_phase_list(
-                missing_phases_sorted, stack_template
+                missing_phases_sorted,
+                stack_template=stack_template,
+                workspace_root=self.worktree_path,
             )
             specialist_block = "\n".join(f"- {line}" for line in specialist_lines)
             expected_phases_val = agent_invocations_validation.get(
