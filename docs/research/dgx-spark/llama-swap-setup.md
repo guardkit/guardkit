@@ -498,12 +498,18 @@ llama-swap sits **on top** of the existing infrastructure, not as a replacement.
 
 When swapping large models (GPT-OSS 120B, Qwen3.5-122B) on GB10's unified memory, a recurring failure occurs: after the previous model container exits, CUDA doesn't immediately return all memory to the free pool. vLLM's startup check `free_memory >= gpu_memory_utilization × total` fails with a hardcoded high utilisation value.
 
+<<<<<<< Updated upstream
+=======
+The fix is a wrapper script that queries actual free VRAM at launch time and computes the safe utilisation dynamically.
+
+>>>>>>> Stashed changes
 Save as `/opt/llama-swap/scripts/launch-large-model.sh`:
 
 ```bash
 #!/bin/bash
 # Dynamically sets --gpu-memory-utilization based on actually-free VRAM at launch time.
 # Adapted from martinB78's dgx-spark full-stack guide (April 2026).
+<<<<<<< Updated upstream
 # Usage: launch-large-model.sh PORT HOST MODEL_PATH MODEL_NAME
 set -euo pipefail
 
@@ -516,10 +522,34 @@ TOTAL_MIB=$(echo "$MEM_LINE" | awk -F',' '{gsub(/ /,"",$2); print $2+0}')
 # GB10: nvidia-smi reports 128 GiB (131072 MiB); CUDA sees 121.69 GiB (124610 MiB).
 GMEM=$(awk -v f="$FREE_MIB" -v t_nv="$TOTAL_MIB" 'BEGIN {
     cuda_t = 124610; safety = 3072;
+=======
+# Usage (from llama-swap cmd): /opt/llama-swap/scripts/launch-large-model.sh PORT HOST MODEL_PATH MODEL_NAME
+set -euo pipefail
+
+PORT="${1}"
+HOST="${2}"
+MODEL_PATH="${3}"
+MODEL_NAME="${4}"
+
+# Query free/total VRAM via nvidia-smi.
+# Adds ~3s overhead — negligible vs the 2-4 min this model takes to load.
+MEM_LINE=$(nvidia-smi --query-gpu=memory.free,memory.total --format=csv,noheaders,nounits | head -1)
+
+FREE_MIB=$(echo "$MEM_LINE" | awk -F',' '{gsub(/ /,"",$1); print $1+0}')
+TOTAL_MIB=$(echo "$MEM_LINE" | awk -F',' '{gsub(/ /,"",$2); print $2+0}')
+
+# GB10: nvidia-smi reports 128 GiB (131072 MiB) unified memory;
+# CUDA sees only 121.69 GiB (124610 MiB). Subtract that delta + 3 GiB safety margin
+# so the computed value matches vLLM's view of available memory.
+GMEM=$(awk -v f="$FREE_MIB" -v t_nv="$TOTAL_MIB" 'BEGIN {
+    cuda_t   = 124610;
+    safety   = 3072;
+>>>>>>> Stashed changes
     overhead = (t_nv > cuda_t) ? t_nv - cuda_t : 0;
     cuda_free = f - overhead - safety;
     if (cuda_free < 0) cuda_free = 0;
     u = cuda_free / cuda_t;
+<<<<<<< Updated upstream
     if (u > 0.85) u = 0.85; if (u < 0.60) u = 0.60;
     printf "%.2f", u;
 }')
@@ -532,13 +562,49 @@ exec llama-server --port "${PORT}" --host "${HOST}" \
     --ctx-size 131072 --batch-size 2048 --ubatch-size 2048 \
     --threads 16 -ngl 999 --no-mmap --flash-attn on \
     --cache-type-k q8_0 --cache-type-v q8_0 --jinja --temp 0.6 --top-p 0.95
+=======
+    if (u > 0.85) u = 0.85;
+    if (u < 0.60) u = 0.60;
+    printf "%.2f", u;
+}')
+
+if [ -z "$GMEM" ] || [ "$FREE_MIB" = "0" ]; then
+    echo "[auto-gmem] WARNING: VRAM query failed, using fallback 0.75"
+    GMEM="0.75"
+fi
+
+echo "[auto-gmem] nvidia-smi free=${FREE_MIB}MiB / total=${TOTAL_MIB}MiB → gpu_memory_utilization=${GMEM}"
+
+# Launch llama-server with the dynamically computed memory limit
+exec llama-server \
+    --port "${PORT}" \
+    --host "${HOST}" \
+    --model "${MODEL_PATH}" \
+    --alias "${MODEL_NAME}" \
+    --ctx-size 131072 \
+    --batch-size 2048 \
+    --ubatch-size 2048 \
+    --threads 16 \
+    -ngl 999 \
+    --no-mmap \
+    --flash-attn on \
+    --cache-type-k q8_0 \
+    --cache-type-v q8_0 \
+    --jinja \
+    --temp 0.6 \
+    --top-p 0.95
+>>>>>>> Stashed changes
 ```
 
 ```bash
 chmod +x /opt/llama-swap/scripts/launch-large-model.sh
 ```
 
+<<<<<<< Updated upstream
 Reference from `config.yaml` for any L-tier model:
+=======
+Reference it from `config.yaml` for any L-tier model:
+>>>>>>> Stashed changes
 
 ```yaml
   "gpt-oss-120b":
@@ -551,44 +617,127 @@ Reference from `config.yaml` for any L-tier model:
 > Added 2026-04-24 based on griffith.mark's three-stage model and martinB78's full-stack guide review.
 > See research doc §3.8 for the rationale.
 
+<<<<<<< Updated upstream
 LiteLLM sits in front of llama-swap and adds routing intelligence, cloud fallbacks, and usage logging. This is Phase 4 — implement after llama-swap is stable.
+=======
+LiteLLM sits in front of llama-swap and adds routing intelligence, cloud fallbacks, and usage logging without replacing anything. This is Phase 4 of the migration plan — implement after llama-swap is stable and AutoBuild is migrated.
+
+### Install LiteLLM
+>>>>>>> Stashed changes
 
 ```bash
 pip install litellm[proxy] --break-system-packages
 ```
 
+<<<<<<< Updated upstream
+=======
+### Config
+
+>>>>>>> Stashed changes
 Save as `/opt/litellm/config.yaml`:
 
 ```yaml
 model_list:
+<<<<<<< Updated upstream
+=======
+  # ===========================================
+  # Local models via llama-swap
+  # ===========================================
+>>>>>>> Stashed changes
   - model_name: qwen-coder-next
     litellm_params:
       model: openai/qwen-coder-next
       api_base: "http://localhost:9000/v1"
       api_key: "dummy"
+<<<<<<< Updated upstream
+=======
+      supports_reasoning: false
+
+>>>>>>> Stashed changes
   - model_name: gpt-oss-120b
     litellm_params:
       model: openai/gpt-oss-120b
       api_base: "http://localhost:9000/v1"
       api_key: "dummy"
       supports_reasoning: true
+<<<<<<< Updated upstream
   - model_name: claude-sonnet-4-6        # Claude Agent SDK catch-all
+=======
+      include_reasoning: true
+
+  - model_name: qwen-graphiti
+    litellm_params:
+      model: openai/qwen-graphiti
+      api_base: "http://localhost:9000/v1"
+      api_key: "dummy"
+
+  - model_name: nomic-embed
+    litellm_params:
+      model: openai/nomic-embed
+      api_base: "http://localhost:9000/v1"
+      api_key: "dummy"
+
+  # ===========================================
+  # Claude Agent SDK catch-all — route to local Coder-Next
+  # ===========================================
+  - model_name: claude-sonnet-4-6
+>>>>>>> Stashed changes
     litellm_params:
       model: openai/qwen-coder-next
       api_base: "http://localhost:9000/v1"
       api_key: "dummy"
+<<<<<<< Updated upstream
   - model_name: gemini-3.1-pro           # Cloud fallback — interactive only
+=======
+
+  - model_name: claude-opus-4-7
+    litellm_params:
+      model: openai/qwen-coder-next
+      api_base: "http://localhost:9000/v1"
+      api_key: "dummy"
+
+  # ===========================================
+  # Cloud fallback — interactive sessions only
+  # ===========================================
+  - model_name: gemini-3.1-pro
+>>>>>>> Stashed changes
     litellm_params:
       model: gemini/gemini-3.1-pro
       api_key: "os.environ/GEMINI_API_KEY"
 
 litellm_settings:
+<<<<<<< Updated upstream
   drop_params: true
 ```
 
 Start: `litellm --config /opt/litellm/config.yaml --port 14000 --host 0.0.0.0`
 
 Monitor at `http://promaxgb10-41b1:14000/ui` for per-model token counts, latency, and cost breakdown.
+=======
+  drop_params: true              # Silently drop unsupported params rather than error
+  success_callback: ["langfuse"]  # Optional: wire to LangFuse if already running
+```
+
+### Start LiteLLM
+
+```bash
+litellm --config /opt/litellm/config.yaml --port 14000 --host 0.0.0.0
+```
+
+Or as a systemd unit (create `/etc/systemd/system/litellm.service` following the same pattern as the llama-swap unit in §6).
+
+### Point agents at LiteLLM
+
+```bash
+export ANTHROPIC_BASE_URL=http://promaxgb10-41b1:14000
+export ANTHROPIC_AUTH_TOKEN=dummy
+export ANTHROPIC_API_KEY=""
+```
+
+### Monitoring
+
+Browse to `http://promaxgb10-41b1:14000/ui` for real-time request logs, per-model token counts, latency, and cost breakdown. This replaces the Gemini/Anthropic billing dashboards with local-first observability.
+>>>>>>> Stashed changes
 
 ## 14. Future enhancements
 
@@ -597,11 +746,18 @@ Monitor at `http://promaxgb10-41b1:14000/ui` for per-model token counts, latency
 - **Peer federation** — if a second machine is added (second GB10, Mac Studio), enable llama-swap peers so agents on either node see a unified model list
 - **API key enforcement** — once multi-user (James, Mark with scoped access), add `apiKeys` and per-key rate limits to separate concerns
 - **Concurrency tuning from real data** — after two weeks of Forge runs, analyse the web UI metrics for actual parallelism patterns and adjust `concurrencyLimit` per model
+<<<<<<< Updated upstream
 - **Qwen3-Coder-Next int4-AutoRound A/B test** — martinB78's benchmarks show 66.7 tok/s vs 32.9 tok/s FP8, at ~35 GB vs ~60 GB. If quality matches, switch to int4 as the default Player model (Phase 2b)
 - **Qwen3.6-27B multi-purpose evaluation** — once community benchmarks are available, test as a single always-loaded model for coding + reasoning + extraction (Phase 5)
 - **Dataset factory via llama-swap** — point agentic-dataset-factory at :9000 with model=gpt-oss-120b for co-existence with Graphiti (Phase 2c, see research doc §3.11)
 - **sparkrun adoption** — monitor dbsci's sparkrun for maturity
 - **martinB78's Docker-based model serving** — evaluate `--network container:llama-swap` pattern for cleaner network isolation
+=======
+- **Qwen3-Coder-Next int4-AutoRound A/B test** — martinB78's benchmarks show 66.7 tok/s vs 32.9 tok/s FP8, at ~35 GB vs ~60 GB. If quality matches within 10-15%, switch to int4 as the default Player model (Phase 2b in migration plan)
+- **Qwen3.6-27B multi-purpose evaluation** — once community benchmarks are available (1-2 weeks post-release), test as a single always-loaded model for coding + reasoning + extraction. If it passes all three roles, the swap infrastructure becomes optional for daily operation (Phase 5 in migration plan)
+- **sparkrun adoption** — monitor dbsci's sparkrun for maturity; if it stabilises, it could replace the vllm-serve.sh + llama-swap + LiteLLM stack with a single tool
+- **martinB78's Docker-based model serving** — evaluate using `--network container:llama-swap` pattern for cleaner network isolation if/when migrating to fully Dockerised model containers
+>>>>>>> Stashed changes
 
 ## 15. Rollback
 

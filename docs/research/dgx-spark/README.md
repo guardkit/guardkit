@@ -4,7 +4,13 @@ Research, decisions, and deployment docs for the GuardKit inference fleet on the
 
 ## Current architecture (deployed 2026-04-29)
 
+<<<<<<< Updated upstream
 **All-llama.cpp via llama-swap on :9000.** No vLLM. No Docker for inference. Four models permanently loaded, zero swap overhead.
+=======
+### Model serving strategy
+- [**dark-factory-economics-and-model-serving.md**](./dark-factory-economics-and-model-serving.md) — primary research doc. Covers the April 2026 cost crisis (£30 Gemini spend in 3 days of Graphiti tinkering), forum research from the NVIDIA DGX Spark community, model footprint / throughput tables, and the llama-swap architectural decision. Updated 2026-04-24 with martinB78's authoritative benchmark table, the dynamic VRAM launcher pattern, griffith.mark's three-stage orchestration model, LiteLLM routing layer recommendation, Qwen3.6-27B "one model no swap" thesis, and sparkrun community tooling landscape.
+- [**llama-swap-setup.md**](./llama-swap-setup.md) — companion implementation guide. Install, build llama.cpp for SM121, full fleet config.yaml with all five concurrent roles (Jarvis + Forge + architect-agent + Graphiti + embeddings + AutoBuild), smoke tests, monitoring, troubleshooting, rollback. Updated 2026-04-24 with the dynamic VRAM launcher script (adapted from martinB78), LiteLLM Phase 4 config, and Qwen3-Coder-Next int4-AutoRound as a test candidate.
+>>>>>>> Stashed changes
 
 | Model | Role | Footprint | Port |
 |---|---|---|---|
@@ -66,6 +72,7 @@ Logs: `/opt/llama-swap/logs/llama-swap.log`
 
 ## External references
 
+<<<<<<< Updated upstream
 - [NVIDIA DGX Spark / GB10 forum](https://forums.developer.nvidia.com/c/accelerated-computing/dgx-spark-gb10/719)
 - [Spark Arena leaderboard](https://spark-arena.com/leaderboard)
 - [mostlygeek/llama-swap](https://github.com/mostlygeek/llama-swap)
@@ -84,3 +91,13 @@ cp ~/Projects/appmilla_github/guardkit/scripts/archive-vllm/*.sh \
    ~/Projects/appmilla_github/guardkit/scripts/
 ./scripts/vllm-graphiti.sh && ./scripts/vllm-embed.sh
 ```
+=======
+- [NVIDIA DGX Spark / GB10 forum](https://forums.developer.nvidia.com/c/accelerated-computing/dgx-spark-gb10/719) — the primary community resource for real-world benchmarks and setup tips
+- [Spark Arena leaderboard](https://spark-arena.com/leaderboard) — community-submitted benchmarks
+- [eugr/spark-vllm-docker](https://github.com/eugr/spark-vllm-docker) — the vLLM Docker images the existing scripts depend on
+- [mostlygeek/llama-swap](https://github.com/mostlygeek/llama-swap) — the model-lifecycle manager chosen as the unified front door
+- [llama.cpp Anthropic Messages API PR #17570](https://github.com/ggml-org/llama.cpp/pull/17570) — the change that made llama.cpp a drop-in for the Claude Agent SDK
+- [martinB78's full-stack repo](https://github.com/mARTin-B78/dgx-spark_lite-llm_llama-swap_vllm_llama-cpp_ollama) — reference implementation for LiteLLM + llama-swap + vLLM + llama.cpp on GB10 (reviewed 2026-04-24)
+- [LiteLLM](https://docs.litellm.ai/) — unified API proxy, routing, and usage logging (Phase 4 target)
+- [sparkrun](https://sparkrun.dev) — dbsci's inference orchestration CLI (monitoring for future adoption)
+>>>>>>> Stashed changes

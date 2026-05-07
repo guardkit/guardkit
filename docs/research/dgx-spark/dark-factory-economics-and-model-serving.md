@@ -101,7 +101,110 @@ This unlocks llama.cpp as a direct drop-in for the Claude Agent SDK used by Auto
 ### 3.7 martinB78's full-stack guide — authoritative benchmarks and the dynamic VRAM launcher
 
 > **Review source:** Claude Desktop session 2026-04-24 — review of two NVIDIA forum posts requested by Rich.
+<<<<<<< Updated upstream
 > Forum posts: ["Managing Local LLM Orchestration"](https://forums.developer.nvidia.com/t/managing-local-llm-orchestration/363264) (March 2026) and ["Running a Full LLM Stack on DGX Spark GB10"](https://forums.developer.nvidia.com/t/running-a-full-llm-stack-on-dgx-spark-gb10-your-application-litellm-llama-swap-vllm-llama-cpp-ollama/367580) (April 23, 2026).
+=======
+> Forum posts: ["Managing Local LLM Orchestration"](https://forums.developer.nvidia.com/t/managing-local-llm-orchestration/363264) (March 2026) and ["Running a Full LLM Stack on DGX Spark GB10"](https://forums.developer.nvidia.com/t/running-a-full-llm-stack-on-dgx-spark-gb10-your-application-litellm-llama-swap-vllm-llama-cpp-ollama/367580) (April 23, 2026 — one day before this review).
+
+**martinB78** published a complete, working multi-model stack tutorial with Docker Compose, llama-swap, LiteLLM, vLLM, llama.cpp, and Ollama — including authoritative `llama-benchy` benchmark results from April 22, 2026. The benchmark table is the most current single-source performance reference for GB10.
+
+Key benchmark findings relevant to GuardKit model selection:
+
+| Model | Engine | pp2048 (tok/s) | tg128 (tok/s) | Notes |
+|---|---|---|---|---|
+| Nemotron-3-Nano-4B-FP8 | vLLM | 8179 | 39.8 | Potential future Jarvis fast-classifier |
+| Nemotron-3-Nano-30B-A3B-NVFP4 | vLLM | 7417 | 55.9 | Fastest 30B generation on Spark |
+| Qwen3.5-35B-A3B-FP8 | vLLM | 4439 | 49.1 | Solid but JSON contamination risk |
+| Qwen3.6-35B-A3B-FP8 | vLLM | 4969 | 49.5 | Slightly faster prefill than 3.5 |
+| **Qwen3-Coder-Next-FP8-Dynamic** | vLLM | 3946 | **32.9** | **Current AutoBuild Player candidate** |
+| **Qwen3-Coder-Next-int4-AutoRound** | vLLM | 4425 | **66.7** | **2× faster generation, ~35 GB footprint — test candidate** |
+| **GPT-OSS-120B (MXFP4)** | vLLM (mxfp4) | 4703 | **56.4** | **Current reasoner candidate — fastest 120B on Spark** |
+| Qwen3.5-122B-A10B-int4-AutoRound | vLLM (tf5) | 2048 | 23.8 | Best reasoning but slower generation |
+
+**Critical finding: Qwen3-Coder-Next int4-AutoRound at 66.7 tok/s is double the FP8 version's 32.9 tok/s**, at roughly 35 GB instead of 60 GB. If int4 quality is sufficient for AutoBuild (and AutoRound generally preserves quality well), this is strictly better: faster, smaller, more headroom for KV cache and concurrent models. This needs an A/B test against a real AutoBuild task before committing.
+
+**The dynamic VRAM launcher pattern.** martinB78 documented a failure mode on GB10 unified memory that the current config doesn't handle: after a model container exits, CUDA doesn't immediately return all memory to the free pool. vLLM's startup check (`free_memory >= gpu_memory_utilization × total`) fails because it sees stale memory usage. His solution is a wrapper script that queries actual free VRAM via `nvidia-smi` at launch time and computes a safe `--gpu-memory-utilization` value dynamically, clamped between 0.60 and 0.85 with a 3 GiB safety margin. This pattern is essential for any L-tier model (GPT-OSS 120B, Qwen3.5-122B) that loads after evicting another large model. See the companion setup guide for the implementation.
+
+**The `--network container:llama-swap` Docker pattern.** His architecture puts model containers inside llama-swap's network namespace so they bind to `localhost:PORT` from llama-swap's perspective. This is cleaner than exposing separate host ports — no port conflict management, and llama-swap's health checks hit localhost directly. The trade-off is Docker is required for every model container.
+
+### 3.8 The LiteLLM routing layer — griffith.mark's three-stage model
+
+> **Review source:** Same Claude Desktop session 2026-04-24.
+
+**griffith.mark** (from the "Managing Local LLM Orchestration" thread) defined three stages of LLM orchestration that map directly to the GuardKit fleet's trajectory:
+
+- **Stage 1 — Simple model picker.** Manual selection via Open WebUI or env vars. *GuardKit is past this stage.*
+- **Stage 2 — Ops-driven routing.** llama-swap manages lifecycle; LiteLLM manages routing, aliases, fallbacks, observability. *GuardKit is implementing this now.*
+- **Stage 3 — Intelligent task-aware selection.** A small classifier analyses each query and routes to the right model/profile. *This is exactly what Jarvis's intent router does.*
+
+The key insight is that llama-swap and LiteLLM serve different roles:
+
+| Concern | llama-swap | LiteLLM |
+|---|---|---|
+| Model lifecycle (start/stop/swap) | ✅ Primary role | ❌ Does not manage local processes |
+| API routing, aliases, wildcards | Basic (alias list) | ✅ Full routing engine |
+| Cloud fallback routing | ❌ Local only | ✅ 100+ providers |
+| Usage logging, cost tracking | Basic (web UI) | ✅ Per-request DB with tokens, latency, cost |
+| Anthropic ↔ OpenAI translation | Via llama.cpp | ✅ Native protocol translation |
+
+The current GuardKit config has llama-swap doing both lifecycle management AND routing. This works for Phase 1 (llama-swap only), but adding LiteLLM on top in Phase 2 provides:
+
+1. **Cloud fallback for interactive sessions** — route `gemini-3.1-pro` requests to Google's API when a human explicitly requests frontier reasoning, while all autonomous work stays local.
+2. **Usage dashboard** — the same visibility the Gemini/Anthropic billing consoles provided, but for local models too. Token counts, latency, per-model breakdown. After a week of Forge runs: "93% of tokens went through Coder-Next locally, 7% fell back to Gemini, total cloud cost: £4.20."
+3. **Claude model aliasing with wildcards** — `claude-*` catch-all routes to the local Coder-Next, so Claude Agent SDK integration requires zero SDK-side config changes.
+
+**Updated target architecture (Phase 2):**
+
+```
+Agents (Jarvis, Forge, AutoBuild, architect-agent)
+        ↓
+   LiteLLM :14000          ← Phase 2: unified API, cloud fallbacks,
+        ↓                     usage DB, model aliases, wildcards
+  llama-swap :9000          ← Phase 1: VRAM orchestration, swap lifecycle
+     /    |    \
+vLLM   llama.cpp  llama.cpp
+:8000    (swap)     (swap)
+:8001
+├── Graphiti 14B (forever)
+├── nomic-embed (forever)
+├── Coder-Next (builders)
+└── GPT-OSS 120B (builders)
+```
+
+LiteLLM is additive — llama-swap continues to work standalone. LiteLLM sits in front and adds routing intelligence without replacing anything. See the companion setup guide for the LiteLLM config.
+
+### 3.9 sparkrun and the community tooling landscape
+
+> **Review source:** Same Claude Desktop session 2026-04-24.
+
+**dbsci** (author of sparkrun, sparkrun.dev) noted in the orchestration thread that sparkrun is converging with llama-swap's space. It now includes:
+
+- Automatic LiteLLM proxy configuration from running models
+- Dynamic litellm config updates as models start/stop
+- Claude Code plugin for starting/stopping models from within agent sessions
+- Model alias support
+
+sparkrun is worth monitoring but not adopting yet — dbsci describes it as "soft launch" with undocumented features. If it matures, it could replace the `vllm-serve.sh` + llama-swap + LiteLLM stack with a single tool. The Claude Code plugin is particularly interesting for Jarvis's ability to self-manage the fleet.
+
+**martinB78's repo** (`mARTin-B78/dgx-spark_lite-llm_llama-swap_vllm_llama-cpp_ollama`) is the most complete reference implementation for the full LLM stack on GB10. Worth cloning as reference. Cherry-pick the `launch-large-model.sh` pattern and the LiteLLM config structure; leave Ollama, Portainer, and GHCR publishing on the shelf.
+
+### 3.10 Qwen3.6-27B — the "one model, no swap" thesis
+
+> **Review source:** Same Claude Desktop session 2026-04-24 — LinkedIn post analysis.
+
+Qwen3.6-27B was released on April 24, 2026 (the same day as this review session). It is a dense 27B model (not MoE), Apache 2.0, natively multimodal. At ~16 GB (Q4_K_M) or ~27 GB (FP8), it would fit alongside Graphiti + embeddings as a single always-loaded model with zero swap overhead.
+
+The multi-purpose thesis: if Qwen3.6-27B handles coding, reasoning, AND entity extraction adequately, the entire swap infrastructure becomes unnecessary for daily operation. The Forge loop never blocks on a model transition.
+
+**Status:** Too new to commit to (released hours before this review). Community benchmarks, structured-output reliability tests, and GB10-specific performance data are needed. Being dense (not MoE), it avoids the JSON contamination bugs that affected Qwen3.5-35B-A3B — a meaningful advantage for Graphiti entity extraction.
+
+**Test plan:** Add as a third builders-group member in llama-swap. Validate against each of the three roles (Graphiti extraction, AutoBuild Player, Coach reasoning) before promoting to always-on. If all three pass, the fleet config collapses to: one always-loaded 27B + embeddings + GPT-OSS 120B as an on-demand swap for deep architect sessions.
+
+### 3.7 martinB78's full-stack guide — authoritative benchmarks and the dynamic VRAM launcher
+
+> **Review source:** Claude Desktop session 2026-04-24 — review of two NVIDIA forum posts requested by Rich.
+> Forum posts: ["Managing Local LLM Orchestration"](https://forums.developer.nvidia.com/t/managing-local-llm-orchestration/363264) (March 2026) and ["Running a Full LLM Stack on DGX Spark GB10"](https://forums.developer.nvidia.com/t/running-a-full-llm-stack-on-dgx-spark-gb10-your-application-litellm-llama-swap-vllm-llama-cpp-ollama/367580) (April 23, 2026 — one day before this review).
+>>>>>>> Stashed changes
 
 **martinB78** published a complete, working multi-model stack tutorial with Docker Compose, llama-swap, LiteLLM, vLLM, llama.cpp, and Ollama — including authoritative `llama-benchy` benchmark results from April 22, 2026. His benchmark table is the most current single-source performance reference for GB10.
 
@@ -111,6 +214,7 @@ Key benchmark findings relevant to GuardKit model selection:
 |---|---|---|---|---|
 | Nemotron-3-Nano-4B-FP8 | vLLM | 8179 | 39.8 | Potential future Jarvis fast-classifier |
 | Nemotron-3-Nano-30B-A3B-NVFP4 | vLLM | 7417 | 55.9 | Fastest 30B generation on Spark |
+<<<<<<< Updated upstream
 | Qwen3.6-35B-A3B-FP8 | vLLM | 4969 | 49.5 | Slightly faster prefill than 3.5 |
 | **Qwen3-Coder-Next-FP8-Dynamic** | vLLM | 3946 | **32.9** | **Current AutoBuild Player candidate** |
 | **Qwen3-Coder-Next-int4-AutoRound** | vLLM | 4425 | **66.7** | **2× faster generation, ~35 GB — test candidate** |
@@ -121,39 +225,102 @@ Key benchmark findings relevant to GuardKit model selection:
 **The dynamic VRAM launcher pattern.** martinB78 documented a failure mode on GB10 unified memory: after a model container exits, CUDA doesn't immediately return all memory to the free pool. vLLM's startup check fails because it sees stale memory usage. His solution is a wrapper script that queries actual free VRAM via `nvidia-smi` at launch time and computes a safe `--gpu-memory-utilization` value dynamically, clamped between 0.60 and 0.85 with a 3 GiB safety margin. Essential for any L-tier model swap. See companion setup guide §12 for the implementation.
 
 **GitHub repo:** `mARTin-B78/dgx-spark_lite-llm_llama-swap_vllm_llama-cpp_ollama` — worth cloning as reference.
+=======
+| Qwen3.5-35B-A3B-FP8 | vLLM | 4439 | 49.1 | Solid but JSON contamination risk |
+| Qwen3.6-35B-A3B-FP8 | vLLM | 4969 | 49.5 | Slightly faster prefill than 3.5 |
+| **Qwen3-Coder-Next-FP8-Dynamic** | vLLM | 3946 | **32.9** | **Current AutoBuild Player candidate** |
+| **Qwen3-Coder-Next-int4-AutoRound** | vLLM | 4425 | **66.7** | **2× faster generation, ~35 GB footprint — test candidate** |
+| **GPT-OSS-120B (MXFP4)** | vLLM (mxfp4) | 4703 | **56.4** | **Current reasoner candidate — fastest 120B on Spark** |
+| Qwen3.5-122B-A10B-int4-AutoRound | vLLM (tf5) | 2048 | 23.8 | Best reasoning but slower generation |
+
+**Critical finding: Qwen3-Coder-Next int4-AutoRound at 66.7 tok/s is double the FP8 version's 32.9 tok/s**, at roughly 35 GB instead of 60 GB. If int4 quality is sufficient for AutoBuild (and AutoRound generally preserves quality well), this is strictly better: faster, smaller, more headroom for KV cache and concurrent models. This needs an A/B test against a real AutoBuild task before committing.
+
+**The dynamic VRAM launcher pattern.** martinB78 documented a failure mode on GB10 unified memory that the current config doesn't handle: after a model container exits, CUDA doesn't immediately return all memory to the free pool. vLLM's startup check (`free_memory >= gpu_memory_utilization × total`) fails because it sees stale memory usage. His solution is a wrapper script that queries actual free VRAM via `nvidia-smi` at launch time and computes a safe `--gpu-memory-utilization` value dynamically, clamped between 0.60 and 0.85 with a 3 GiB safety margin. This pattern is essential for any L-tier model (GPT-OSS 120B, Qwen3.5-122B) that loads after evicting another large model. See the companion setup guide for the implementation.
+
+**The `--network container:llama-swap` Docker pattern.** His architecture puts model containers inside llama-swap's network namespace so they bind to `localhost:PORT` from llama-swap's perspective. This is cleaner than exposing separate host ports — no port conflict management, and llama-swap's health checks hit localhost directly. The trade-off is Docker is required for every model container.
+
+**GitHub repo:** `mARTin-B78/dgx-spark_lite-llm_llama-swap_vllm_llama-cpp_ollama` — worth cloning as reference. Cherry-pick the `launch-large-model.sh` pattern and the LiteLLM config structure; leave Ollama, Portainer, and GHCR publishing on the shelf.
+>>>>>>> Stashed changes
 
 ### 3.8 The LiteLLM routing layer — griffith.mark's three-stage model
 
 > **Review source:** Same Claude Desktop session 2026-04-24.
 
+<<<<<<< Updated upstream
 **griffith.mark** defined three stages of LLM orchestration that map to GuardKit's trajectory: Stage 1 (manual model picker — past this), Stage 2 (ops-driven routing via llama-swap — implementing now), Stage 3 (intelligent task-aware selection — this is what Jarvis's intent router does).
 
 llama-swap manages model lifecycle (start/stop/swap); LiteLLM manages routing (aliases, fallbacks, observability). Adding LiteLLM on top in Phase 4 provides: cloud fallback for interactive `/system-arch` sessions, usage dashboard replacing the Gemini/Anthropic billing consoles, and `claude-*` wildcard catch-all routing.
+=======
+**griffith.mark** (from the "Managing Local LLM Orchestration" thread) defined three stages of LLM orchestration that map directly to the GuardKit fleet's trajectory:
+
+- **Stage 1 — Simple model picker.** Manual selection via Open WebUI or env vars. *GuardKit is past this stage.*
+- **Stage 2 — Ops-driven routing.** llama-swap manages lifecycle; LiteLLM manages routing, aliases, fallbacks, observability. *GuardKit is implementing this now.*
+- **Stage 3 — Intelligent task-aware selection.** A small classifier analyses each query and routes to the right model/profile. *This is exactly what Jarvis's intent router does.*
+
+The key insight is that llama-swap and LiteLLM serve different roles:
+
+| Concern | llama-swap | LiteLLM |
+|---|---|---|
+| Model lifecycle (start/stop/swap) | ✅ Primary role | ❌ Does not manage local processes |
+| API routing, aliases, wildcards | Basic (alias list) | ✅ Full routing engine |
+| Cloud fallback routing | ❌ Local only | ✅ 100+ providers |
+| Usage logging, cost tracking | Basic (web UI) | ✅ Per-request DB with tokens, latency, cost |
+| Anthropic ↔ OpenAI translation | Via llama.cpp | ✅ Native protocol translation |
+
+The current GuardKit config has llama-swap doing both lifecycle management AND routing. This works for Phase 1 (llama-swap only), but adding LiteLLM on top in Phase 2 provides:
+
+1. **Cloud fallback for interactive sessions** — route `gemini-3.1-pro` requests to Google's API when a human explicitly requests frontier reasoning, while all autonomous work stays local.
+2. **Usage dashboard** — the same visibility the Gemini/Anthropic billing consoles provided, but for local models too. Token counts, latency, per-model breakdown. After a week of Forge runs: "93% of tokens went through Coder-Next locally, 7% fell back to Gemini, total cloud cost: £4.20."
+3. **Claude model aliasing with wildcards** — `claude-*` catch-all routes to the local Coder-Next, so Claude Agent SDK integration requires zero SDK-side config changes.
+>>>>>>> Stashed changes
 
 **Updated target architecture (Phase 2):**
 
 ```
 Agents (Jarvis, Forge, AutoBuild, architect-agent)
         ↓
+<<<<<<< Updated upstream
    LiteLLM :14000          ← Phase 4: unified API, cloud fallbacks, usage DB
         ↓
+=======
+   LiteLLM :14000          ← Phase 2: unified API, cloud fallbacks,
+        ↓                     usage DB, model aliases, wildcards
+>>>>>>> Stashed changes
   llama-swap :9000          ← Phase 1: VRAM orchestration, swap lifecycle
      /    |    \
 vLLM   llama.cpp  llama.cpp
 :8000    (swap)     (swap)
 :8001
+<<<<<<< Updated upstream
 ```
 
+=======
+├── Graphiti 14B (forever)
+├── nomic-embed (forever)
+├── Coder-Next (builders)
+└── GPT-OSS 120B (builders)
+```
+
+LiteLLM is additive — llama-swap continues to work standalone. LiteLLM sits in front and adds routing intelligence without replacing anything. See the companion setup guide for the LiteLLM config.
+
+>>>>>>> Stashed changes
 ### 3.9 sparkrun and the community tooling landscape
 
 > **Review source:** Same Claude Desktop session 2026-04-24.
 
+<<<<<<< Updated upstream
 **dbsci** (author of sparkrun, sparkrun.dev) noted that sparkrun now includes automatic LiteLLM proxy configuration, dynamic config updates, a Claude Code plugin, and model alias support. Worth monitoring but not adopting yet — described as "soft launch" with undocumented features.
+=======
+**dbsci** (author of sparkrun, sparkrun.dev) noted in the orchestration thread that sparkrun is converging with llama-swap's space. It now includes automatic LiteLLM proxy configuration from running models, dynamic litellm config updates as models start/stop, a Claude Code plugin for starting/stopping models from within agent sessions, and model alias support.
+
+sparkrun is worth monitoring but not adopting yet — dbsci describes it as "soft launch" with undocumented features. If it matures, it could replace the `vllm-serve.sh` + llama-swap + LiteLLM stack with a single tool. The Claude Code plugin is particularly interesting for Jarvis's ability to self-manage the fleet.
+>>>>>>> Stashed changes
 
 ### 3.10 Qwen3.6-27B — the "one model, no swap" thesis
 
 > **Review source:** Same Claude Desktop session 2026-04-24 — LinkedIn post analysis.
 
+<<<<<<< Updated upstream
 Qwen3.6-27B released April 24, 2026. Dense 27B (not MoE), Apache 2.0, natively multimodal. At ~27 GB FP8, it would fit alongside Graphiti + embeddings with zero swap overhead. Being dense, it avoids the JSON contamination bugs that affected MoE models — meaningful advantage for Graphiti entity extraction.
 
 **Test plan:** Add as a third builders-group member. Validate against Graphiti extraction, AutoBuild Player, and Coach reasoning. If all pass, promote to always-on and demote swap members to on-demand-only.
@@ -198,6 +365,15 @@ At 42 GB total, there would be enough headroom to potentially run the dataset fa
 | Can't seed docs during dataset generation | Seed docs any time |
 | Manual model lifecycle management | llama-swap handles swap automatically |
 | Limited to one workload at a time | Factory + Graphiti + embeddings concurrently |
+=======
+Qwen3.6-27B was released on April 24, 2026 (the same day as this review session). It is a dense 27B model (not MoE), Apache 2.0, natively multimodal. At ~16 GB (Q4_K_M) or ~27 GB (FP8), it would fit alongside Graphiti + embeddings as a single always-loaded model with zero swap overhead.
+
+The multi-purpose thesis: if Qwen3.6-27B handles coding, reasoning, AND entity extraction adequately, the entire swap infrastructure becomes unnecessary for daily operation. The Forge loop never blocks on a model transition.
+
+**Status:** Too new to commit to (released hours before this review). Community benchmarks, structured-output reliability tests, and GB10-specific performance data are needed. Being dense (not MoE), it avoids the JSON contamination bugs that affected Qwen3.5-35B-A3B — a meaningful advantage for Graphiti entity extraction.
+
+**Test plan:** Add as a third builders-group member in llama-swap. Validate against each of the three roles (Graphiti extraction, AutoBuild Player, Coach reasoning) before promoting to always-on. If all three pass, the fleet config collapses to: one always-loaded 27B + embeddings + GPT-OSS 120B as an on-demand swap for deep architect sessions.
+>>>>>>> Stashed changes
 
 ## 4. The llama-swap discovery
 
@@ -290,6 +466,7 @@ All agents, tools, and pipelines point at `http://promaxgb10-41b1:9000` as their
 3. Run the same AutoBuild task against both quantisations; compare Player-Coach turn counts, tool call success rate, and time-to-complete
 4. If int4 matches FP8 within 10-15% on quality, prefer it: 66.7 tok/s vs 32.9 tok/s, ~35 GB vs ~60 GB (per martinB78's benchmarks, §3.7)
 
+<<<<<<< Updated upstream
 ### Phase 2c — Dataset factory migration to llama-swap
 
 > Added 2026-04-25 based on `vllm-agentic-factory.sh` review (§3.11).
@@ -300,6 +477,8 @@ All agents, tools, and pipelines point at `http://promaxgb10-41b1:9000` as their
 4. Confirm Graphiti remains responsive on :8000 during the entire factory run
 5. Retire `vllm-agentic-factory.sh` as the primary path; keep as documented fallback
 
+=======
+>>>>>>> Stashed changes
 ### Phase 3 — Migrate AutoBuild and Jarvis endpoints
 
 1. Point AutoBuild at `ANTHROPIC_BASE_URL=http://promaxgb10-41b1:9000`
@@ -312,19 +491,34 @@ All agents, tools, and pipelines point at `http://promaxgb10-41b1:9000` as their
 > Added 2026-04-24 based on forum review (§3.8).
 
 1. Stand up LiteLLM on port 14000, configured to route to llama-swap on :9000
+<<<<<<< Updated upstream
 2. Add cloud fallback routes for `gemini-3.1-pro` (interactive sessions only)
 3. Add `claude-*` wildcard catch-all routing to local Coder-Next
 4. Enable usage logging DB (SQLite initially)
 5. Point all agents at `http://promaxgb10-41b1:14000` instead of :9000
+=======
+2. Add cloud fallback routes for `gemini-3.1-pro` (interactive `/system-arch` sessions only)
+3. Add `claude-*` wildcard catch-all routing to local Coder-Next
+4. Enable usage logging DB (SQLite initially, Postgres if team access needed)
+5. Point all agents at `http://promaxgb10-41b1:14000` instead of :9000
+6. Monitor the LiteLLM dashboard at `:14000/ui` for per-model token counts, latency, and cloud-vs-local split
+>>>>>>> Stashed changes
 
 ### Phase 5 — Evaluate Qwen3.6-27B as multi-purpose workhorse
 
 > Added 2026-04-24 based on same-day release analysis (§3.10).
 
+<<<<<<< Updated upstream
 1. Wait for community benchmarks and GB10-specific validation (1-2 weeks post-release)
 2. Add as a third builders-group member in llama-swap config
 3. Validate against each of the three roles: Graphiti extraction, AutoBuild Player, Coach reasoning
 4. If all three pass, promote to always-on in the forever group
+=======
+1. Wait for community benchmarks and GB10-specific validation (target: 1-2 weeks after release)
+2. Add as a third builders-group member in llama-swap config
+3. Validate against each of the three roles: Graphiti extraction, AutoBuild Player, Coach reasoning
+4. If all three pass, promote to always-on in the forever group and demote swap members to on-demand-only
+>>>>>>> Stashed changes
 
 ## 7. Cost impact projection
 
