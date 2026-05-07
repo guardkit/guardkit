@@ -713,6 +713,22 @@ def feature(
         6. Preserve worktree for human review
 
     \b
+    Preflight Warnings (TASK-GK-PR-001):
+        Before wave 1 dispatch, the orchestrator probes every queued task's
+        ## Files to Modify declarations against the filesystem. If any path
+        does not resolve under repo_root or worktree_path you will see:
+
+            WARNING: TYPO in TASK-XXX line N (## Files to Modify):
+              declared: src/example/typo.py
+              not on disk under repo_root or worktree_path
+              closest matches (top 3):
+                - src/example/real.py (similarity 0.74)
+
+        Default behaviour is non-blocking — orchestration proceeds and
+        plan-audit catches the typo at Player turn 1. To abort instead,
+        set ``preflight_strict: true`` in the feature YAML.
+
+    \b
     Exit Codes:
         0: Success (all tasks completed)
         1: Feature file not found or SDK not available

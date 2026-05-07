@@ -437,6 +437,7 @@ class Feature(BaseModel):
     execution: FeatureExecution = Field(default_factory=FeatureExecution)
     smoke_gates: Optional[SmokeGates] = None
     bootstrap_extras: List[str] = Field(default_factory=list)
+    preflight_strict: bool = False
     file_path: Optional[Path] = None
 
     @field_validator("bootstrap_extras")

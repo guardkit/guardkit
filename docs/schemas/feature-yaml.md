@@ -23,6 +23,7 @@ For the Pydantic source of truth, see
 | `execution` | object | no | Runtime state; managed by the orchestrator. |
 | `smoke_gates` | object | **no** | See "Smoke gates schema" below (TASK-SMK-F703A). |
 | `bootstrap_extras` | list[str] | no | PEP 621 optional-dependency group names (e.g. `[dev]`) installed by the worktree bootstrap. See "Bootstrap extras" below (TASK-GK-BS-001). |
+| `preflight_strict` | bool | no | Default `false`. When `true`, the feature orchestrator aborts before wave 1 dispatch if any task declares a `## Files to Modify` path that does not exist under `repo_root` or `worktree_path`. When `false`, missing modify paths are logged as `WARNING` and orchestration proceeds (the existing plan-audit gate at Player turn 1 catches them, just slower). See "Path-existence preflight" below (TASK-GK-PR-001). |
 
 ## Task schema
 
@@ -153,6 +154,45 @@ uv lock --extra <ext1>,<ext2>
 If you need extras to be present in the worktree's venv when `uv.lock`
 exists, regenerate the lock with the extras included rather than
 relying on `bootstrap_extras` at install time.
+
+## Path-existence preflight (TASK-GK-PR-001)
+
+Before wave 1 dispatch, the feature orchestrator probes every queued
+task's `## Files to Modify` declarations against the filesystem. If
+any declared path does not exist at either `repo_root / path` or
+`worktree_path / path`, the operator sees a structured warning naming
+the task, the line in the task body, and up to three close on-disk
+matches via `difflib.get_close_matches`:
+
+```
+WARNING: TYPO in TASK-XXX line 157 (## Files to Modify):
+  declared: src/example/typo/path.py
+  not on disk under repo_root or worktree_path
+  closest matches (top 3):
+    - src/example/real/path.py (similarity 0.74)
+    - src/example/other.py     (similarity 0.42)
+```
+
+The check fires in <1s for ≤50 tasks. It catches a class of
+task-author typo that the existing plan-audit gate would otherwise
+take 25-35 minutes to surface (4 turns of identical missing-files
+feedback before `max_turns_exceeded` or `timeout_budget_exhausted`).
+
+```yaml
+preflight_strict: true   # opt-in: abort before wave dispatch on any
+                         # modify-axis typo. Default `false` is
+                         # warning-only — orchestration proceeds and
+                         # plan-audit catches the typo at Player turn 1.
+```
+
+`## Files to Create` declarations are checked symmetrically: a path
+that already exists on disk emits a warning ("is this a re-run?") but
+never aborts orchestration, since legitimate re-runs in a preserved
+worktree are common.
+
+The check skips paths whose extension is not in the indexed source
+list (`.py`, `.ts`, `.tsx`, `.js`, `.jsx`, `.cs`, `.go`, `.java`,
+`.rb`, `.rs`); documentation and config bullets pass through silently.
 
 ## Minimal valid example
 

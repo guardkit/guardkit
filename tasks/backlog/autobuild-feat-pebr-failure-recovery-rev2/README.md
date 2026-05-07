@@ -96,7 +96,9 @@ forge-side prose fix (in the forge repo):
 | [TASK-GK-PA-002](../../completed/TASK-GK-PA-002/TASK-GK-PA-002.md) | guardkit | **P0**   | ✅ completed (commit `c610426c`) | rev-2 review (run-2) |
 | [TASK-GK-COACH-001](../../completed/2026-05/TASK-GK-COACH-001/TASK-GK-COACH-001-plateau-aware-stall-extender.md) | guardkit | P1       | ✅ completed (commit `ddd36cbb`) | rev-2 review (run-2) |
 | [TASK-GK-BS-001](./TASK-GK-BS-001-bootstrap-extras-for-smoke-gate-deps.md) | guardkit | P1       | 🔲 backlog | run-3 (smoke-gate `No module named pytest`) |
+| [TASK-GK-PR-001](../../completed/2026-05/TASK-GK-PR-001/TASK-GK-PR-001-preflight-files-to-modify-existence-check.md) | guardkit | P2       | ✅ completed | run-4 (PEB-006 typo burned 30 mins) |
 | TASK-FRR-PEB-FM-002 (in **forge** repo) | forge    | **P0**   | ✅ applied (manually before run-3) | rev-2 review (run-2) |
+| TASK-FRR-PEB-FM-003 (in **forge** repo) | forge    | **P0**   | 🔲 backlog (typos in PEB-006 + PEB-012 `## Files to Modify`) | run-4 |
 
 The forge task is in the **forge** repo because it edits a forge task
 file (no guardkit code change).
@@ -125,6 +127,53 @@ Manual workaround in use today (preserves across `--resume`, lost on
 cd <forge>/.guardkit/worktrees/FEAT-PEBR
 uv pip install -e ".[dev]"
 ```
+
+### Run-4 update (2026-05-07)
+
+Manual `[dev]` install applied; smoke gate ran cleanly after Wave 4.
+**Run-4 added 4 more approvals** (PEB-005, -007, -011, -014), bringing
+the feature to 9/14 complete (~65%). Validation of the rev-2 fixes
+is now overwhelming:
+
+- All 5 newly-attempted tasks across waves 4-5 had clean Player→Coach
+  loops (no max_turns_exceeded, no unrecoverable_stall).
+- Coach `criteria_met` matched Player `completion_promises` correctly
+  (Bug B fix working — natural-label `AC-N` IDs match).
+
+Run-4 failed on **TASK-FRR-PEB-006** with `timeout_budget_exhausted`
+after 4 turns of plan-audit firing on a forge-side typo:
+
+| Task `## Files to Modify` declaration                      | Real on-disk path                                            |
+|------------------------------------------------------------|--------------------------------------------------------------|
+| `src/forge/cli/_approval_subscriber.py` (typo)             | `src/forge/adapters/nats/approval_subscriber.py`             |
+| `tests/forge/test_approval_subscriber.py` (typo)           | `tests/forge/adapters/test_approval_subscriber.py`           |
+
+The Player correctly modified the **real** files; Coach verified all
+6 ACs. TASK-GK-PA-002 is correctly enforcing the spec ("declared
+modify paths must exist on disk"); the bug is in the declaration.
+
+A parallel audit also turned up TASK-FRR-PEB-012 with the same shape:
+`tests/forge/cli/test_status.py` (typo) → real
+`tests/forge/test_cli_status.py`.
+
+**TASK-FRR-PEB-FM-003** (forge) fixes both typos and scrubs the
+PEB-006 `autobuild_state` block. Single forge commit, no guardkit
+change required. Once landed, PEB-006 should approve in 1 turn on
+resume.
+
+**TASK-GK-PR-001** (guardkit, P2) is the prophylactic structural
+fix — **target-repo agnostic**. The check operates on the guardkit
+task-file convention (`## Files to Modify` / `## Files to Create`
+sections defined by `PlanMarkdownParser`) using inputs already
+available to `FeatureOrchestrator` (`feature.tasks`, `repo_root`,
+`worktree_path`). No forge imports, no forge-specific path patterns,
+no hardcoded test fixtures — the discovery happened in a forge
+feature run, but the bug class fires on any guardkit-managed
+feature in any target repo (Python, TS/JS, C#, Go, etc.) the
+moment a task author mistypes a path under `## Files to Modify`.
+The preflight catches this class of bug in <1 second at
+feature-load time instead of 25-35 minutes per occurrence at Player
+turn 4-5.
 
 ## Validation Plan
 

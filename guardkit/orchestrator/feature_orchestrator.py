@@ -59,6 +59,10 @@ from guardkit.orchestrator.feature_validator import (
     validate_feature_environment,
     format_preflight_report,
 )
+from guardkit.orchestrator.preflight import (
+    PreflightTypoError,
+    preflight_validate,
+)
 from guardkit.orchestrator.environment_bootstrap import (
     ProjectEnvironmentDetector,
     EnvironmentBootstrapper,
@@ -1997,6 +2001,32 @@ The detailed specifications are in the task markdown file.
             f"(task_timeout={self.task_timeout}s)"
         )
         wave_results = []
+
+        # Path-existence preflight (TASK-GK-PR-001): probe every queued
+        # task's `## Files to Modify` declarations against repo_root and
+        # worktree before any Player turn fires. Catches task-author typos
+        # in <1s instead of letting them burn 25-35 minutes via the
+        # plan-audit gate at Player turn 4-5.
+        try:
+            typos = preflight_validate(
+                feature,
+                repo_root=self.repo_root,
+                worktree_path=worktree.path,
+                strict=feature.preflight_strict,
+            )
+        except PreflightTypoError:
+            console.print(
+                "[red]✗[/red] Preflight detected modify-axis typos "
+                "(preflight_strict=true). Aborting before wave dispatch."
+            )
+            raise
+        if typos:
+            console.print(
+                f"[yellow]![/yellow] Preflight: {len(typos)} task-author "
+                "typo(s) detected in `## Files to Modify`; orchestration "
+                "proceeding (preflight_strict=false). plan-audit will catch "
+                "these at turn 1."
+            )
 
         # Pre-flight FalkorDB connectivity check (TASK-ASF-002)
         # Detect unreachable FalkorDB upfront to avoid per-task retry latency
