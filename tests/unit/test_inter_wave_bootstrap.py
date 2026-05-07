@@ -161,8 +161,11 @@ class TestInterWaveBootstrapHook:
         ):
             results = orchestrator._wave_phase(feature, worktree)
 
-        # Bootstrap should be called exactly once (before wave 2)
-        mock_bootstrap.assert_called_once_with(worktree)
+        # Bootstrap should be called exactly once (before wave 2). Since
+        # TASK-GK-BS-001, ``_bootstrap_environment`` accepts a ``feature``
+        # kwarg so ``bootstrap_extras`` can be threaded into the install
+        # command.
+        mock_bootstrap.assert_called_once_with(worktree, feature=feature)
         assert len(results) == 2
 
     def test_bootstrap_not_called_for_wave_1(self, tmp_path: Path) -> None:
@@ -228,10 +231,15 @@ class TestInterWaveBootstrapHook:
         ):
             results = orchestrator._wave_phase(feature, worktree)
 
-        # Bootstrap called 3 times: before waves 2, 3, and 4
+        # Bootstrap called 3 times: before waves 2, 3, and 4. Same kwarg
+        # contract as the wave-2 test above (TASK-GK-BS-001).
         assert mock_bootstrap.call_count == 3
         mock_bootstrap.assert_has_calls(
-            [call(worktree), call(worktree), call(worktree)]
+            [
+                call(worktree, feature=feature),
+                call(worktree, feature=feature),
+                call(worktree, feature=feature),
+            ]
         )
         assert len(results) == 4
 

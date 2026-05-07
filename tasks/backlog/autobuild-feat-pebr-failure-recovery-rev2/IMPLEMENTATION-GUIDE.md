@@ -6,23 +6,30 @@
 
 ## Wave Plan
 
-There is **no wave dependency** between the three guardkit tasks —
-they touch three different files and three different code paths:
+There is **no wave dependency** between the four guardkit tasks —
+they touch four different files and four different code paths:
 
 - `TASK-GK-CV-001` → `guardkit/orchestrator/quality_gates/coach_validator.py`
 - `TASK-GK-PA-002` → `guardkit/orchestrator/agent_invoker.py`
 - `TASK-GK-COACH-001` → `guardkit/orchestrator/autobuild.py`
+- `TASK-GK-BS-001`   → `guardkit/orchestrator/environment_bootstrap.py` + feature_loader
 
-All three can land in **parallel** as separate PRs. The forge-side
+All four can land in **parallel** as separate PRs. The forge-side
 TASK-FRR-PEB-FM-002 is also independent (forge repo, task-file edit
 only).
 
-| Wave | Tasks                                                  | Conductor parallel? | Notes |
-|------|--------------------------------------------------------|---------------------|-------|
-| 1    | TASK-GK-CV-001, TASK-GK-PA-002, TASK-GK-COACH-001     | ✅ yes (3-up)       | Independent files |
+| Wave | Tasks                                                                  | Conductor parallel? | Notes |
+|------|------------------------------------------------------------------------|---------------------|-------|
+| 1    | TASK-GK-CV-001, TASK-GK-PA-002, TASK-GK-COACH-001                     | ✅ yes (3-up)       | Original rev-2 set; independent files |
+| 2    | TASK-GK-BS-001                                                         | n/a (single)        | Discovered in run-3; independent surface |
 
 (The forge task lives in a different repo and is not part of any
 guardkit wave.)
+
+The Wave-1 / Wave-2 split is **organisational only** — there is no
+build-time dependency. Wave-1 fixes the per-task adversarial loop
+(rev-2 surface); Wave-2 fixes the bootstrap so smoke gates can
+actually execute (run-3 surface). They can land in either order.
 
 ## Recommended Landing Order
 

@@ -17,6 +17,7 @@ Example:
 """
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -435,7 +436,34 @@ class Feature(BaseModel):
     orchestration: FeatureOrchestration = Field(default_factory=FeatureOrchestration)
     execution: FeatureExecution = Field(default_factory=FeatureExecution)
     smoke_gates: Optional[SmokeGates] = None
+    bootstrap_extras: List[str] = Field(default_factory=list)
     file_path: Optional[Path] = None
+
+    @field_validator("bootstrap_extras")
+    @classmethod
+    def _validate_bootstrap_extras(cls, v: List[str]) -> List[str]:
+        """Validate each entry is a syntactically valid PEP 621 extra name.
+
+        Per PEP 621 / PyPA spec, optional-dependency keys are restricted to
+        the same character class as project names: letters, digits, dots,
+        hyphens, underscores. Reject anything else at parse time so the
+        operator sees a useful error from ``/feature-build`` instead of a
+        cryptic pip error during bootstrap. (TASK-GK-BS-001 AC-1)
+        """
+        if not isinstance(v, list):
+            raise ValueError("bootstrap_extras must be a list of strings")
+        pattern = re.compile(r"^[A-Za-z0-9._-]+$")
+        for entry in v:
+            if not isinstance(entry, str):
+                raise ValueError(
+                    f"bootstrap_extras entries must be strings; got {entry!r}"
+                )
+            if not pattern.match(entry):
+                raise ValueError(
+                    f"bootstrap_extras contains invalid PEP 621 extra name: "
+                    f"{entry!r}. Names must match ^[A-Za-z0-9._-]+$"
+                )
+        return v
 
 
 # ============================================================================
@@ -749,6 +777,7 @@ class FeatureLoader:
                 "orchestration": orchestration,
                 "execution": execution,
                 "smoke_gates": smoke_gates,
+                "bootstrap_extras": data.get("bootstrap_extras", []),
             })
         except ValidationError as e:
             raise FeatureParseError(
@@ -1340,6 +1369,13 @@ class FeatureLoader:
         if data.get("smoke_gates") is None:
             data.pop("smoke_gates", None)
 
+        # Drop ``bootstrap_extras`` when empty. Auto-detection lives at
+        # bootstrap time (see :func:`derive_bootstrap_extras`) so we
+        # never persist an inferred value back to YAML — keeps the
+        # operator-declared field unambiguous. (TASK-GK-BS-001)
+        if not data.get("bootstrap_extras"):
+            data.pop("bootstrap_extras", None)
+
         # Manually serialize execution (dataclass)
         data["execution"] = {
             "started_at": feature.execution.started_at,
@@ -1495,6 +1531,136 @@ class FeatureLoader:
 
 
 # ============================================================================
+# Bootstrap-extras derivation (TASK-GK-BS-001)
+# ============================================================================
+
+
+# Candidate extras to probe when auto-detecting test deps from a smoke gate.
+# ``dev`` first because it's the conventional PEP 621 / PyPA name for "all
+# the things a contributor needs"; ``test`` second because it's the narrower
+# convention some projects prefer. If neither is present we log a warning
+# and fall through with no extras (current pre-fix behaviour).
+_AUTO_DETECT_EXTRA_CANDIDATES: List[str] = ["dev", "test"]
+
+# Word-boundary match on the literal ``pytest``. Case-insensitive so
+# ``Pytest`` / ``PYTEST`` in operator-authored shell commands also fire.
+# Constrained to the boundary form so unrelated tokens like
+# ``pytestify-runner`` don't trigger.
+_PYTEST_COMMAND_PATTERN = re.compile(r"\bpytest\b", re.IGNORECASE)
+
+
+def _read_pyproject_optional_dependencies(
+    project_dir: Path,
+) -> Dict[str, Any]:
+    """Return ``[project.optional-dependencies]`` from ``project_dir/pyproject.toml``.
+
+    Returns an empty dict on any of:
+      - pyproject.toml absent
+      - pyproject.toml unparseable (malformed TOML)
+      - ``[project.optional-dependencies]`` table absent
+
+    The conservative empty-dict fallback matches the pattern in
+    ``environment_bootstrap._pyproject_has_uv_sources``: detection helpers
+    swallow parse errors so the orchestrator surfaces them later via the
+    actual install command (where pip's error message is more useful than
+    a YAML-load wrapping it). (TASK-GK-BS-001)
+    """
+    pyproject_path = project_dir / "pyproject.toml"
+    if not pyproject_path.is_file():
+        return {}
+    try:
+        try:
+            import tomllib  # Python 3.11+
+        except ImportError:
+            import tomli as tomllib  # type: ignore[import,no-redef]
+        data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.debug(
+            "Could not parse %s for bootstrap_extras auto-detection: %s",
+            pyproject_path,
+            exc,
+        )
+        return {}
+    optional = data.get("project", {}).get("optional-dependencies", {})
+    return optional if isinstance(optional, dict) else {}
+
+
+def derive_bootstrap_extras(
+    feature: Feature,
+    project_dir: Path,
+) -> List[str]:
+    """Resolve the final extras list for a feature's bootstrap step.
+
+    Resolution order (TASK-GK-BS-001 AC-1, AC-3, AC-5):
+
+    1. **Operator-declared** (``feature.bootstrap_extras``) — wins if
+       non-empty. AC-5: explicit declaration suppresses auto-detection.
+    2. **Smoke-gate auto-detection** — when ``feature.smoke_gates`` is
+       configured AND ``smoke_gates.command`` references ``pytest`` at a
+       word boundary (case-insensitive), probe ``project_dir/pyproject.toml``
+       for the canonical test-extra name (``[dev]`` first, then ``[test]``).
+       Returns the first match.
+    3. **No extras** — when neither is declared, return an empty list.
+       If a pytest smoke gate is present but pyproject declares neither
+       ``[dev]`` nor ``[test]``, log a warning naming both candidates
+       (the most actionable feedback for the operator).
+
+    This is a *pure* function — no side effects on ``feature`` — so the
+    auto-detection result is never persisted back to YAML. The orchestrator
+    re-derives at every bootstrap, which keeps the operator-declared field
+    unambiguous.
+
+    Parameters
+    ----------
+    feature : Feature
+        Already-parsed feature (so ``bootstrap_extras`` has been validated
+        against the PEP 621 name regex).
+    project_dir : Path
+        Directory containing ``pyproject.toml`` to probe for auto-detection.
+        Typically the worktree root at bootstrap time.
+
+    Returns
+    -------
+    List[str]
+        Extras to install. Empty list means "no extras"
+        (equivalent to pre-TASK-GK-BS-001 behaviour).
+    """
+    # 1. Operator-declared wins.
+    if feature.bootstrap_extras:
+        return list(feature.bootstrap_extras)
+
+    # 2. Auto-detect from smoke gate command.
+    if feature.smoke_gates is None:
+        return []
+    command = feature.smoke_gates.command
+    if not _PYTEST_COMMAND_PATTERN.search(command):
+        return []
+
+    optional_deps = _read_pyproject_optional_dependencies(project_dir)
+    for candidate in _AUTO_DETECT_EXTRA_CANDIDATES:
+        if candidate in optional_deps:
+            logger.info(
+                "Smoke gate references pytest; auto-adding [%s] to "
+                "bootstrap extras (project: %s).",
+                candidate,
+                project_dir,
+            )
+            return [candidate]
+
+    # 3. Pytest smoke gate but no candidate extra — surface the gap.
+    logger.warning(
+        "Smoke gate command %r references pytest but pyproject at %s "
+        "declares neither [dev] nor [test] optional-dependencies. "
+        "Smoke gate may fail with 'No module named pytest'. Either add "
+        "a [dev] or [test] extra to pyproject.toml, or set "
+        "bootstrap_extras: [<your-name>] explicitly in the feature yaml.",
+        command,
+        project_dir,
+    )
+    return []
+
+
+# ============================================================================
 # Public API
 # ============================================================================
 
@@ -1506,6 +1672,8 @@ __all__ = [
     "FeatureExecution",
     # Loader
     "FeatureLoader",
+    # Helpers
+    "derive_bootstrap_extras",
     # Exceptions
     "FeatureNotFoundError",
     "FeatureParseError",

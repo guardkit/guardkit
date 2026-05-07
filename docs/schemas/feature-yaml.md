@@ -22,6 +22,7 @@ For the Pydantic source of truth, see
 | `orchestration` | object | yes | See "Orchestration schema" below. |
 | `execution` | object | no | Runtime state; managed by the orchestrator. |
 | `smoke_gates` | object | **no** | See "Smoke gates schema" below (TASK-SMK-F703A). |
+| `bootstrap_extras` | list[str] | no | PEP 621 optional-dependency group names (e.g. `[dev]`) installed by the worktree bootstrap. See "Bootstrap extras" below (TASK-GK-BS-001). |
 
 ## Task schema
 
@@ -96,6 +97,62 @@ number from the orchestrator, which iterates
 gate ever disagreed on what "wave 1" is, that would be a bug —
 `guardkit/orchestrator/smoke_gates.py::should_fire_for_wave` takes the
 wave number as input precisely to rule this out.
+
+## Bootstrap extras (TASK-GK-BS-001)
+
+Optional list of PEP 621 [optional-dependencies] group names that the
+worktree environment bootstrap should install alongside the project's
+base dependencies. Required when a smoke gate (or any other in-worktree
+command) depends on packages that the project intentionally keeps out
+of its base `dependencies` (e.g. `pytest`, `pytest-bdd`).
+
+```yaml
+bootstrap_extras: [dev]            # uv pip install -e ".[dev]"
+# or
+bootstrap_extras: [test, integration]  # uv pip install -e ".[test,integration]"
+```
+
+| Validation | Rule |
+|------------|------|
+| Type | `list[str]` |
+| Default | `[]` (no extras — preserves pre-TASK-GK-BS-001 behaviour) |
+| Name regex | `^[A-Za-z0-9._-]+$` (matches PyPA / PEP 621 extras spec) |
+| Persistence | Empty lists are dropped from YAML on save. |
+
+### Auto-detection from a pytest smoke gate
+
+When `bootstrap_extras` is **unset or empty** AND `smoke_gates.command`
+contains the literal `pytest` (case-insensitive, word-boundary match),
+the orchestrator probes the worktree's `pyproject.toml` for a canonical
+test-extras group:
+
+1. `[project.optional-dependencies].dev` — preferred (PyPA convention
+   for "everything a contributor needs").
+2. `[project.optional-dependencies].test` — narrower fallback.
+3. Neither declared → log a warning and proceed with no extras (the
+   smoke gate will fail with `No module named pytest`, which is the
+   actionable signal the operator needs).
+
+This makes the common "pytest smoke gate against a project that already
+declares `[dev]`" case work without per-feature configuration. To opt
+out of auto-detection, declare `bootstrap_extras` explicitly — operator
+declaration always wins.
+
+### `uv sync --frozen` caveat
+
+When the project has a `uv.lock`, the bootstrap uses `uv sync --frozen`
+(per the install-matrix in `environment_bootstrap.py`). `uv.lock` bakes
+extras at lock time, not install time, so applying `bootstrap_extras`
+to this row would diverge from the frozen lock. Instead the
+orchestrator emits a warning naming the lock-time fix:
+
+```
+uv lock --extra <ext1>,<ext2>
+```
+
+If you need extras to be present in the worktree's venv when `uv.lock`
+exists, regenerate the lock with the extras included rather than
+relying on `bootstrap_extras` at install time.
 
 ## Minimal valid example
 

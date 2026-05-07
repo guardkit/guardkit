@@ -44,7 +44,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -678,7 +678,9 @@ def _create_worktree_uv_sources_symlinks(
 
 
 def _resolve_python_pyproject_install_command(
-    directory: Path, pyproject_path: Path
+    directory: Path,
+    pyproject_path: Path,
+    extras: Sequence[str] = (),
 ) -> List[str]:
     """
     Choose the install command for a Python ``pyproject.toml`` manifest.
@@ -686,6 +688,20 @@ def _resolve_python_pyproject_install_command(
     Implements the matrix at the top of this section. The ``uv.lock`` /
     no-uv-on-path row emits a warning so operators know they're falling
     back to pip when a uv lockfile was available.
+
+    Parameters
+    ----------
+    directory : Path
+        Project directory containing the manifest.
+    pyproject_path : Path
+        Path to ``pyproject.toml`` (already verified to exist).
+    extras : Sequence[str], optional
+        PEP 621 optional-dependency group names to install (e.g.
+        ``["dev"]``). When non-empty for the editable-install paths,
+        the install target becomes ``.[ext1,ext2]`` instead of ``.``.
+        For the ``uv sync --frozen`` row, extras are ignored at install
+        time (uv.lock bakes extras at lock time, not install time) and
+        a warning is logged. (TASK-GK-BS-001)
 
     Raises
     ------
@@ -707,14 +723,36 @@ def _resolve_python_pyproject_install_command(
             "[tool.uv.sources] block from pyproject.toml."
         )
 
+    target = "."
+    if extras:
+        # Sort + dedup so the resulting command is deterministic regardless
+        # of caller ordering (helps cache hits on the bootstrap content
+        # hash, and makes test assertions stable).
+        target = f".[{','.join(sorted(set(extras)))}]"
+
     if has_uv_sources:
-        return ["uv", "pip", "install", "-e", "."]
+        return ["uv", "pip", "install", "-e", target]
 
     if has_uv_lock and uv_available:
         # `uv sync --frozen` is project-aware (reads pyproject.toml + uv.lock)
         # and `--frozen` guarantees the orchestrator never silently re-locks.
         # `uv pip sync` only accepts requirements.txt / pylock.toml — it
         # cannot parse uv's native `uv.lock` format. (TASK-FIX-FD32)
+        #
+        # Extras are baked into the lockfile at `uv lock --extra` time,
+        # not at install time — applying them here would diverge from
+        # the frozen lock. Warn so operators know to add the extra at
+        # lock time. (TASK-GK-BS-001)
+        if extras:
+            logger.warning(
+                "%s declares uv.lock; bootstrap_extras=%s ignored at install "
+                "time because `uv sync --frozen` reads extras from the lock. "
+                "Add extras at lock time via `uv lock --extra %s`, or remove "
+                "uv.lock to switch to the editable-install path.",
+                directory,
+                list(extras),
+                ",".join(sorted(set(extras))),
+            )
         return ["uv", "sync", "--frozen"]
 
     if has_uv_lock and not uv_available:
@@ -725,7 +763,7 @@ def _resolve_python_pyproject_install_command(
             directory,
         )
 
-    return [sys.executable, "-m", "pip", "install", "-e", "."]
+    return [sys.executable, "-m", "pip", "install", "-e", target]
 
 
 # ============================================================================
@@ -785,6 +823,7 @@ class ProjectEnvironmentDetector:
         self,
         root: Path,
         exclude_patterns: Optional[List[str]] = None,
+        python_extras: Sequence[str] = (),
     ) -> None:
         """
         Initialize the detector.
@@ -798,11 +837,21 @@ class ProjectEnvironmentDetector:
             root). Any subdirectory whose path relative to root starts with
             one of these patterns is skipped. Defaults to
             ``["tests/fixtures"]``.
+        python_extras : Sequence[str], optional
+            PEP 621 optional-dependency group names to apply to Python
+            ``pyproject.toml`` install commands (e.g. ``["dev"]`` →
+            ``pip install -e ".[dev]"``). The ``uv sync --frozen`` row
+            ignores this and emits a warning (extras are baked at lock
+            time). See :func:`_resolve_python_pyproject_install_command`
+            and TASK-GK-BS-001 for the rationale.
         """
         self._root = root
         self._exclude_patterns: List[str] = (
             exclude_patterns if exclude_patterns is not None else ["tests/fixtures"]
         )
+        # Frozen as a tuple so ``self._python_extras`` is hashable / can't
+        # be mutated by callers after construction.
+        self._python_extras: tuple[str, ...] = tuple(python_extras)
 
     def detect(self) -> List[DetectedManifest]:
         """
@@ -898,7 +947,7 @@ class ProjectEnvironmentDetector:
         if (directory / "pyproject.toml").exists() and "python" not in locked_stacks:
             pyproject_path = (directory / "pyproject.toml").resolve()
             install_command = _resolve_python_pyproject_install_command(
-                directory, pyproject_path
+                directory, pyproject_path, extras=self._python_extras
             )
             results.append(
                 DetectedManifest(

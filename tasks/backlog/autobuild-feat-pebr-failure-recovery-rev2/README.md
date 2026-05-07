@@ -87,18 +87,44 @@ unblock, all three are needed because:
 
 ## Recommended Set
 
-For cross-feature unblock, land **all three** plus the forge-side
-prose fix (in the forge repo):
+For cross-feature unblock, land **all four** guardkit tasks plus the
+forge-side prose fix (in the forge repo):
 
-| Task                                                              | Repo     | Priority |
-|-------------------------------------------------------------------|----------|----------|
-| [TASK-GK-CV-001](./TASK-GK-CV-001-fix-strip-before-extract-ac-id-bug.md) | guardkit | **P0**   |
-| [TASK-GK-PA-002](./TASK-GK-PA-002-honour-explicit-files-sections.md)     | guardkit | **P0**   |
-| [TASK-GK-COACH-001](./TASK-GK-COACH-001-plateau-aware-stall-extender.md) | guardkit | P1       |
-| [TASK-FRR-PEB-FM-002](../../../../forge/tasks/backlog/forge-autobuild-runner-pipeline-emitter-bridge/TASK-FRR-PEB-FM-002-fix-prose-typo-and-scrub-autobuild-state.md) | forge    | **P0**   |
+| Task                                                              | Repo     | Priority | Status (2026-05-07) | Discovered |
+|-------------------------------------------------------------------|----------|----------|---------------------|------------|
+| [TASK-GK-CV-001](../../in_review/autobuild-feat-pebr-failure-recovery-rev2/TASK-GK-CV-001-fix-strip-before-extract-ac-id-bug.md) | guardkit | **P0**   | ✅ in_review (commit `ce2bf056`) | rev-2 review (run-2) |
+| [TASK-GK-PA-002](../../completed/TASK-GK-PA-002/TASK-GK-PA-002.md) | guardkit | **P0**   | ✅ completed (commit `c610426c`) | rev-2 review (run-2) |
+| [TASK-GK-COACH-001](../../completed/2026-05/TASK-GK-COACH-001/TASK-GK-COACH-001-plateau-aware-stall-extender.md) | guardkit | P1       | ✅ completed (commit `ddd36cbb`) | rev-2 review (run-2) |
+| [TASK-GK-BS-001](./TASK-GK-BS-001-bootstrap-extras-for-smoke-gate-deps.md) | guardkit | P1       | 🔲 backlog | run-3 (smoke-gate `No module named pytest`) |
+| TASK-FRR-PEB-FM-002 (in **forge** repo) | forge    | **P0**   | ✅ applied (manually before run-3) | rev-2 review (run-2) |
 
 The forge task is in the **forge** repo because it edits a forge task
 file (no guardkit code change).
+
+### Run-3 update (2026-05-07)
+
+The first four tasks (CV-001, PA-002, COACH-001, FM-002) were applied
+manually before run-3 and **all four behaved as designed**:
+
+- TASK-FRR-PEB-003 approved in **1 turn** (was max_turns_exceeded
+  after 5 turns in run-2).
+- TASK-FRR-PEB-004 approved in 2 turns (new wave).
+- Waves 1, 2, 3-010 correctly skipped via resume semantics.
+
+Run-3 nevertheless failed because the **smoke gate after Wave 4 hit
+a fourth, environmental bug** (`No module named pytest` in the
+worktree venv). This is unrelated to bugs A/B/C — it is a
+bootstrap-extras gap surfaced for the first time because run-3 was
+the first run to actually reach a smoke gate. **TASK-GK-BS-001 is
+the structural fix.**
+
+Manual workaround in use today (preserves across `--resume`, lost on
+`--fresh`):
+
+```bash
+cd <forge>/.guardkit/worktrees/FEAT-PEBR
+uv pip install -e ".[dev]"
+```
 
 ## Validation Plan
 
@@ -117,10 +143,14 @@ Once all four tasks land, validate cross-repo by:
    - Wave 3 / TASK-FRR-PEB-010 skipped (already completed).
    - Wave 3 / TASK-FRR-PEB-003 runs and approves in 1 turn:
      `criteria_met=7/7`, `plan_audit_passed=True`,
-     `decision=approve`.
-   - Waves 4-8 proceed without re-tripping any of A/B/C.
+     `decision=approve`. ✅ **Validated in run-3.**
+   - Wave 4 / TASK-FRR-PEB-004 approves. ✅ **Validated in run-3.**
+   - Smoke gate after Wave 4 runs cleanly (requires
+     TASK-GK-BS-001 OR the manual `uv pip install -e ".[dev]"`
+     workaround in the worktree).
+   - Waves 5-8 proceed without re-tripping any of A/B/C/D.
 
-If any task in waves 4-8 hits a *different* phantom-path or stall
+If any task in waves 5-8 hits a *different* phantom-path or stall
 shape, that is a new bug — open a fresh review task in forge.
 
 ## Worktree Preservation

@@ -47,6 +47,7 @@ from guardkit.orchestrator.feature_loader import (
     FeatureTask,
     FeatureNotFoundError,
     FeatureValidationError,
+    derive_bootstrap_extras,
 )
 from guardkit.orchestrator.smoke_gates import (
     SmokeGateResult,
@@ -1019,7 +1020,7 @@ class FeatureOrchestrator:
         self._arrange_uv_sources_symlinks(worktree)
 
         # Phase 1.5: Bootstrap environment (detect + install dependencies)
-        self._bootstrap_environment(worktree)
+        self._bootstrap_environment(worktree, feature=feature)
 
         # Update feature with worktree path and start time
         feature.status = "in_progress"
@@ -1301,7 +1302,11 @@ class FeatureOrchestrator:
                 f"that the target path is readable. See TASK-FIX-AB61."
             ) from exc
 
-    def _bootstrap_environment(self, worktree: Worktree) -> Optional[BootstrapResult]:
+    def _bootstrap_environment(
+        self,
+        worktree: Worktree,
+        feature: Optional[Feature] = None,
+    ) -> Optional[BootstrapResult]:
         """
         Detect and install project dependencies in the worktree.
 
@@ -1315,6 +1320,13 @@ class FeatureOrchestrator:
         ----------
         worktree : Worktree
             Shared worktree to scan and install into.
+        feature : Optional[Feature]
+            Feature being bootstrapped. When provided, ``bootstrap_extras``
+            (operator-declared or auto-detected from a pytest smoke gate)
+            are threaded into the Python pyproject install command so
+            test deps live in the worktree's venv. Optional for
+            backward-compatibility with call sites that haven't been
+            updated. (TASK-GK-BS-001)
 
         Returns
         -------
@@ -1329,7 +1341,20 @@ class FeatureOrchestrator:
             to hard-fail (see :meth:`_should_hardfail_bootstrap`).
         """
         try:
-            detector = ProjectEnvironmentDetector(worktree.path)
+            python_extras: tuple[str, ...] = ()
+            if feature is not None:
+                python_extras = tuple(
+                    derive_bootstrap_extras(feature, worktree.path)
+                )
+                if python_extras:
+                    logger.info(
+                        "Bootstrap will install Python extras: %s",
+                        list(python_extras),
+                    )
+            detector = ProjectEnvironmentDetector(
+                worktree.path,
+                python_extras=python_extras,
+            )
             manifests = detector.detect()
 
             if not manifests:
@@ -1995,7 +2020,7 @@ The detailed specifications are in the task markdown file.
             # Inter-wave bootstrap: re-detect and install new dependencies
             # (e.g., Wave 1 may have created pyproject.toml that Wave 2 needs)
             if wave_number > 1:
-                self._bootstrap_environment(worktree)
+                self._bootstrap_environment(worktree, feature=feature)
 
             # Check dependencies satisfied
             for task_id in task_ids:
