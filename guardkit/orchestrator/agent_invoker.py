@@ -420,6 +420,32 @@ DOCUMENTATION_LEVEL_MAX_FILES = {
     "comprehensive": None,  # No limit
 }
 
+# TASK-GK-DOC-001: Paths the doc-level file-count check ignores. These are
+# orchestrator bookkeeping artefacts (turn dumps, bdd oracle output, task
+# plans) that the Player legitimately writes alongside real new code, plus
+# empty package markers. Counting them produces false-positive scope
+# warnings — see FEAT-PEBR turn-1 log for the original symptom.
+_DOC_LEVEL_EXCLUDED_PATTERNS: Tuple[str, ...] = (
+    ".guardkit/autobuild/",
+    ".guardkit/bdd/",
+    ".claude/task-plans/",
+)
+
+
+def _is_doc_level_excluded(path: str) -> bool:
+    """Return True if `path` is an orchestrator artefact that should not
+    count against the documentation-level file-count constraint.
+
+    Matches absolute and relative paths anchored on the excluded prefix,
+    plus empty-package `__init__.py` markers (bare or nested).
+    """
+    if path == "__init__.py" or path.endswith("/__init__.py"):
+        return True
+    return any(
+        path.startswith(prefix) or f"/{prefix}" in path
+        for prefix in _DOC_LEVEL_EXCLUDED_PATTERNS
+    )
+
 
 # =========================================================================
 # Stream Parser for Quality Gate Extraction
@@ -6703,12 +6729,18 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         if max_files is None:
             return
 
-        actual_count = len(files_created)
+        # TASK-GK-DOC-001: filter out orchestrator artefacts (turn dumps,
+        # bdd oracle output, task plans, empty package markers) before
+        # counting. Only real new code should count toward the limit.
+        files_for_count = [
+            f for f in files_created if not _is_doc_level_excluded(f)
+        ]
+        actual_count = len(files_for_count)
 
         if actual_count > max_files:
             # Show first 5 files to avoid overly long log messages
-            files_preview = files_created[:5]
-            suffix = "..." if len(files_created) > 5 else ""
+            files_preview = files_for_count[:5]
+            suffix = "..." if len(files_for_count) > 5 else ""
             logger.warning(
                 f"[{task_id}] Documentation level constraint violated: "
                 f"created {actual_count} files, max allowed {max_files} "

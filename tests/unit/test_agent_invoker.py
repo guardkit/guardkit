@@ -5249,6 +5249,91 @@ class TestFileCountConstraintValidation:
         assert "..." in caplog.text
         assert "created 8 files" in caplog.text
 
+    # TASK-GK-DOC-001: orchestrator artefacts must not count toward the
+    # doc-level file-count limit (FEAT-PEBR turn-1 false-positive fix).
+
+    def test_validate_file_count_excludes_only_artefacts(self, agent_invoker, caplog):
+        """List of only orchestrator artefacts triggers no warning."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
+
+        agent_invoker._validate_file_count_constraint(
+            task_id="TASK-GK-DOC-001",
+            documentation_level="minimal",
+            files_created=[
+                ".guardkit/autobuild/TASK-PEBR-001/player_turn_1.json",
+                ".guardkit/bdd/results.xml",
+                ".claude/task-plans/TASK-PEBR-001-implementation-plan.md",
+                "src/foo/__init__.py",
+            ],
+        )
+
+        assert "Documentation level constraint violated" not in caplog.text
+
+    def test_validate_file_count_counts_only_real_code(self, agent_invoker, caplog):
+        """Mixed list (artefacts + real source) counts only the real files."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
+
+        # FEAT-PEBR turn-1 fixture: 4 raw files, 2 real new code files.
+        agent_invoker._validate_file_count_constraint(
+            task_id="TASK-GK-DOC-001",
+            documentation_level="minimal",
+            files_created=[
+                ".guardkit/autobuild/TASK-PEBR-001/player_turn_1.json",
+                "src/forge/pipeline/build_ack_handle.py",
+                "tests/forge/adapters/nats/__init__.py",
+                "tests/forge/adapters/nats/test_pipeline_consumer.py",
+            ],
+        )
+
+        # 2 real files <= max 2 for minimal — no warning.
+        assert "Documentation level constraint violated" not in caplog.text
+
+    def test_validate_file_count_real_files_still_warn(self, agent_invoker, caplog):
+        """3 real source files in minimal mode still trip the warning."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
+
+        agent_invoker._validate_file_count_constraint(
+            task_id="TASK-GK-DOC-001",
+            documentation_level="minimal",
+            files_created=[
+                "src/foo.py",
+                "src/bar.py",
+                "src/baz.py",
+            ],
+        )
+
+        assert "Documentation level constraint violated" in caplog.text
+        assert "created 3 files" in caplog.text
+
+    def test_validate_file_count_warning_preview_excludes_artefacts(
+        self, agent_invoker, caplog
+    ):
+        """When the warning fires, the preview shows only real files."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
+
+        agent_invoker._validate_file_count_constraint(
+            task_id="TASK-GK-DOC-001",
+            documentation_level="minimal",
+            files_created=[
+                ".guardkit/autobuild/TASK-X/player_turn_1.json",
+                "src/a.py",
+                "src/b.py",
+                "src/c.py",
+            ],
+        )
+
+        assert "Documentation level constraint violated" in caplog.text
+        assert "created 3 files" in caplog.text
+        assert "player_turn_1.json" not in caplog.text
+
 
 # ==================== Tests for Direct Mode Routing (TASK-FB-2D8B) ====================
 

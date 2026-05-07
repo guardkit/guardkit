@@ -1,9 +1,11 @@
 ---
 id: TASK-GK-DOC-001
 title: Exclude autobuild artefacts from documentation-level file-count constraint
-status: backlog
+status: completed
 created: 2026-05-07 00:00:00+00:00
-updated: 2026-05-07 00:00:00+00:00
+updated: 2026-05-07 12:30:00+00:00
+completed: 2026-05-07T12:30:00+00:00
+completed_location: tasks/completed/TASK-GK-DOC-001/
 priority: low
 priority_band: P2
 task_type: refactor
@@ -22,9 +24,10 @@ tags:
   - false-positive-warning
   - P2
 test_results:
-  status: pending
+  status: passed
   coverage: null
-  last_run: null
+  last_run: 2026-05-07T12:00:00+00:00
+  details: "13/13 file-count tests pass (4 new + 9 existing); 83 companion task_work_results tests pass; ruff baseline unchanged at 21 pre-existing errors"
 ---
 
 # Task: Exclude autobuild artefacts from documentation-level file-count constraint
