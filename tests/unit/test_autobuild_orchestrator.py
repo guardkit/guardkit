@@ -2413,6 +2413,279 @@ class TestExtractFeedback:
         assert "Implement OAuth flow" not in feedback
 
 
+class TestBuildFeedbackSummary:
+    """Test _build_feedback_summary method (TASK-GK-FB-001).
+
+    Verifies that the operator-visible turn summary picks the highest-severity
+    issue's description rather than slicing the joined feedback text, which
+    would always show any non-blocking advisory that is prepended to the issues
+    list by coach_validator.py.
+    """
+
+    def _make_orchestrator(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        return AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+    def test_must_fix_wins_over_warning_advisory(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """AC-1: must_fix description shown even when warning advisory is first."""
+        orchestrator = self._make_orchestrator(
+            mock_worktree_manager, mock_agent_invoker, mock_progress_display
+        )
+        coach_report = {
+            "issues": [
+                {
+                    "severity": "warning",
+                    "description": (
+                        "Advisory (non-blocking): task-work produced a report "
+                        "with 2 of 3 expected agent invocations..."
+                    ),
+                },
+                {
+                    "severity": "must_fix",
+                    "description": (
+                        "Plan audit detected high-severity discrepancies — "
+                        "3 extra file(s): foo.py, bar.py, baz.py"
+                    ),
+                },
+            ]
+        }
+
+        summary = orchestrator._build_feedback_summary(
+            coach_report, "fallback text"
+        )
+
+        assert summary.startswith("Feedback: Plan audit detected high-severity")
+        assert "Advisory" not in summary
+
+    def test_only_warnings_uses_first_warning(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """AC-2: When only warnings exist, first warning's description is shown."""
+        orchestrator = self._make_orchestrator(
+            mock_worktree_manager, mock_agent_invoker, mock_progress_display
+        )
+        first_desc = "First warning description here"
+        coach_report = {
+            "issues": [
+                {"severity": "warning", "description": first_desc},
+                {"severity": "warning", "description": "Second warning description"},
+            ]
+        }
+
+        summary = orchestrator._build_feedback_summary(
+            coach_report, "fallback text"
+        )
+
+        assert first_desc in summary
+
+    def test_multiple_must_fix_uses_list_order(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """AC-3: When multiple must_fix issues exist, first in list order is shown."""
+        orchestrator = self._make_orchestrator(
+            mock_worktree_manager, mock_agent_invoker, mock_progress_display
+        )
+        coach_report = {
+            "issues": [
+                {
+                    "severity": "warning",
+                    "description": "Advisory (non-blocking): some advisory text",
+                },
+                {
+                    "severity": "must_fix",
+                    "description": "must_fix_A: first must_fix issue",
+                },
+                {
+                    "severity": "must_fix",
+                    "description": "must_fix_B: second must_fix issue",
+                },
+            ]
+        }
+
+        summary = orchestrator._build_feedback_summary(
+            coach_report, "fallback text"
+        )
+
+        assert "must_fix_A: first must_fix issue" in summary
+        assert "must_fix_B" not in summary
+
+    def test_truncates_long_description_to_80_chars(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Long description is truncated to 80 chars with trailing '...'."""
+        orchestrator = self._make_orchestrator(
+            mock_worktree_manager, mock_agent_invoker, mock_progress_display
+        )
+        long_desc = "X" * 200
+        coach_report = {
+            "issues": [
+                {"severity": "must_fix", "description": long_desc},
+            ]
+        }
+
+        summary = orchestrator._build_feedback_summary(
+            coach_report, "fallback text"
+        )
+
+        assert summary.endswith("...")
+        # "Feedback: " prefix (10 chars) + 80 chars of description + "..." (3 chars)
+        assert summary == f"Feedback: {'X' * 80}..."
+
+    def test_short_description_not_truncated(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Short description (<=80 chars) is not truncated with '...'."""
+        orchestrator = self._make_orchestrator(
+            mock_worktree_manager, mock_agent_invoker, mock_progress_display
+        )
+        short_desc = "Short must_fix description"
+        coach_report = {
+            "issues": [
+                {"severity": "must_fix", "description": short_desc},
+            ]
+        }
+
+        summary = orchestrator._build_feedback_summary(
+            coach_report, "fallback text"
+        )
+
+        assert summary == f"Feedback: {short_desc}"
+        assert "..." not in summary
+
+    def test_no_issues_falls_back_to_text(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Empty issues list causes fallback to fallback_text verbatim."""
+        orchestrator = self._make_orchestrator(
+            mock_worktree_manager, mock_agent_invoker, mock_progress_display
+        )
+        coach_report = {"issues": []}
+
+        summary = orchestrator._build_feedback_summary(
+            coach_report, "some rationale string"
+        )
+
+        assert summary == "Feedback: some rationale string"
+
+    def test_no_issues_long_fallback_truncated(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Empty issues list with long fallback_text is truncated."""
+        orchestrator = self._make_orchestrator(
+            mock_worktree_manager, mock_agent_invoker, mock_progress_display
+        )
+        long_fallback = "F" * 200
+        coach_report = {"issues": []}
+
+        summary = orchestrator._build_feedback_summary(
+            coach_report, long_fallback
+        )
+
+        assert summary.endswith("...")
+        assert summary == f"Feedback: {'F' * 80}..."
+
+    def test_extract_feedback_unchanged_full_text_preserved(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """AC-5: _extract_feedback still returns full text (Player sees everything)."""
+        orchestrator = self._make_orchestrator(
+            mock_worktree_manager, mock_agent_invoker, mock_progress_display
+        )
+        advisory_desc = (
+            "Advisory (non-blocking): task-work produced a report "
+            "with 2 of 3 expected agent invocations..."
+        )
+        must_fix_desc = (
+            "Plan audit detected high-severity discrepancies — "
+            "3 extra file(s): foo.py, bar.py, baz.py"
+        )
+        coach_report = {
+            "issues": [
+                {"severity": "warning", "description": advisory_desc},
+                {"severity": "must_fix", "description": must_fix_desc},
+            ]
+        }
+
+        full_feedback = orchestrator._extract_feedback(coach_report)
+
+        assert advisory_desc in full_feedback
+        assert must_fix_desc in full_feedback
+
+    def test_feat_pebr_regression_fixture(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """AC-6: FEAT-PEBR-style report shows must_fix plan_audit, not advisory."""
+        orchestrator = self._make_orchestrator(
+            mock_worktree_manager, mock_agent_invoker, mock_progress_display
+        )
+        coach_report = {
+            "decision": "feedback",
+            "issues": [
+                {
+                    "severity": "warning",
+                    "description": (
+                        "Advisory (non-blocking): task-work produced a report "
+                        "with 2 of 3 expected agent invocations"
+                    ),
+                },
+                {
+                    "severity": "must_fix",
+                    "description": (
+                        "Plan audit detected high-severity discrepancies — "
+                        "3 extra file(s): foo.py, bar.py, baz.py"
+                    ),
+                },
+            ],
+        }
+
+        summary = orchestrator._build_feedback_summary(
+            coach_report, "fallback text"
+        )
+
+        assert "Plan audit detected high-severity" in summary
+        assert "Advisory" not in summary
+        assert "non-blocking" not in summary
+
+
 # ============================================================================
 # Test Error Classification in _invoke_player_safely (TASK-AB-FIX-002)
 # ============================================================================

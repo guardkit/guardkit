@@ -1,9 +1,12 @@
 ---
 id: TASK-GK-FB-001
 title: Surface must_fix issues first in operator-visible feedback summary
-status: backlog
+status: completed
 created: 2026-05-07 00:00:00+00:00
-updated: 2026-05-07 00:00:00+00:00
+updated: 2026-05-07 13:30:00+00:00
+completed: 2026-05-07 13:30:00+00:00
+previous_state: in_review
+state_transition_reason: "Task complete — all ACs satisfied, tests passing, no new lint errors"
 priority: medium
 priority_band: P2
 task_type: refactor
@@ -22,9 +25,16 @@ tags:
   - feedback-display
   - P2
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  coverage: skipped  # MINIMAL intensity (parent_review + complexity 3 → auto-detected)
+  last_run: 2026-05-07T13:00:00Z
+  tests_passed: 19  # 9 new TestBuildFeedbackSummary + 10 existing TestExtractFeedback
+  tests_failed: 0
+  ruff_new_errors: 0  # 69 pre-existing repo errors unchanged; zero introduced
+files_modified:
+  - guardkit/orchestrator/autobuild.py
+  - tests/unit/test_autobuild_orchestrator.py
+implementation_option_chosen: b  # Summary builder rewritten; coach_validator.py untouched
 ---
 
 # Task: Surface must_fix issues first in operator-visible feedback summary

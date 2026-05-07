@@ -3123,11 +3123,7 @@ class AutoBuildOrchestrator:
                 if advisory:
                     feedback_text = feedback_text + "\n\n" + advisory
             is_config_error = coach_result.report.get("is_configuration_error", False)
-            summary = (
-                f"Feedback: {feedback_text[:80]}..."
-                if len(feedback_text) > 80
-                else f"Feedback: {feedback_text}"
-            )
+            summary = self._build_feedback_summary(coach_result.report, feedback_text)
             self._progress_display.complete_turn("feedback", summary)
             # Show coach context status line (TASK-FIX-GCW5)
             if coach_context_status and coach_context_status.status != "disabled":
@@ -5306,6 +5302,64 @@ class AutoBuildOrchestrator:
             feedback_lines.append(f"... and {len(issues) - 3} more issues")
 
         return "\n".join(feedback_lines)
+
+    def _build_feedback_summary(
+        self, coach_report: Dict[str, Any], fallback_text: str
+    ) -> str:
+        """
+        Build the operator-visible turn summary from the highest-severity issue.
+
+        Background: ``coach_validator.py`` (lines 1056-1078) prepends an
+        ``agent_invocations_advisory`` (severity=warning, non-blocking) to the
+        issues list before returning a feedback decision.  The previous inline
+        implementation sliced the *joined* feedback text produced by
+        ``_extract_feedback``, which meant the advisory always appeared first in
+        the 80-char window, hiding the real ``must_fix`` issue from the operator
+        log.
+
+        This method reads ``coach_report["issues"]`` directly, picks the
+        highest-severity issue (must_fix > should_fix > warning), and uses its
+        ``description`` field for the summary.  ``_extract_feedback`` is
+        intentionally left unchanged — the Player still receives the full,
+        untruncated feedback text.
+
+        Parameters
+        ----------
+        coach_report : Dict[str, Any]
+            Coach decision JSON (same object passed to ``_extract_feedback``).
+        fallback_text : str
+            The text returned by ``_extract_feedback`` (used when no issues are
+            present or all descriptions are empty).
+
+        Returns
+        -------
+        str
+            Operator-visible summary string, e.g. ``"Feedback: Plan audit …"``.
+        """
+        severity_order: Dict[str, int] = {
+            "must_fix": 0,
+            "should_fix": 1,
+            "warning": 2,
+        }
+
+        issues = coach_report.get("issues") or []
+        if issues:
+            primary = min(
+                issues,
+                key=lambda issue: severity_order.get(
+                    issue.get("severity", "warning"), 99
+                ),
+            )
+            description = primary.get("description", "") or ""
+            if description:
+                if len(description) > 80:
+                    return f"Feedback: {description[:80]}..."
+                return f"Feedback: {description}"
+
+        # No issues or empty description — fall back to slicing the joined text
+        if len(fallback_text) > 80:
+            return f"Feedback: {fallback_text[:80]}..."
+        return f"Feedback: {fallback_text}"
 
     def _build_environment_stall_diagnostic(
         self,
