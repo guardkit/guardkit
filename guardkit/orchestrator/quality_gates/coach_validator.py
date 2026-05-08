@@ -3927,12 +3927,19 @@ class CoachValidator:
             if matching_files:
                 # Deduplicate and convert to relative paths
                 unique_files = list(set(matching_files))
-                files_str = " ".join(
+                rel_files = [
                     str(f.relative_to(self.worktree_path)) for f in sorted(unique_files)
-                )
-                logger.info(f"Task-specific tests detected for {task_id}: {len(unique_files)} file(s)")
-                logger.debug(f"Test files: {files_str}")
-                return f"pytest {files_str} -v --tb=short"
+                ]
+                # Drop pytest-bdd glue files (TASK-FIX-CC-BDD).
+                rel_files = self._filter_bdd_glue_files(rel_files)
+                if rel_files:
+                    files_str = " ".join(rel_files)
+                    logger.info(
+                        f"Task-specific tests detected for {task_id}: "
+                        f"{len(rel_files)} file(s)"
+                    )
+                    logger.debug(f"Test files: {files_str}")
+                    return f"pytest {files_str} -v --tb=short"
 
             # No task-specific tests found via any method
             logger.info(
@@ -3963,7 +3970,12 @@ class CoachValidator:
                             ) and (self.worktree_path / f).exists()
                         ]
                         if test_files:
-                            files_str = " ".join(sorted(test_files))
+                            # Drop pytest-bdd glue files (TASK-FIX-CC-BDD).
+                            test_files = self._filter_bdd_glue_files(
+                                sorted(test_files)
+                            )
+                        if test_files:
+                            files_str = " ".join(test_files)
                             logger.info(
                                 f"Found test files via cumulative diff for "
                                 f"{task_id}: {len(test_files)} file(s)"
@@ -3992,12 +4004,17 @@ class CoachValidator:
                                 promise_test_files.add(test_file)
 
                     if promise_test_files:
-                        files_str = " ".join(sorted(promise_test_files))
-                        logger.info(
-                            f"Found test files via completion_promises for "
-                            f"{task_id}: {len(promise_test_files)} file(s)"
+                        # Drop pytest-bdd glue files (TASK-FIX-CC-BDD).
+                        promise_files_filtered = self._filter_bdd_glue_files(
+                            sorted(promise_test_files)
                         )
-                        return f"pytest {files_str} -v --tb=short"
+                        if promise_files_filtered:
+                            files_str = " ".join(promise_files_filtered)
+                            logger.info(
+                                f"Found test files via completion_promises for "
+                                f"{task_id}: {len(promise_files_filtered)} file(s)"
+                            )
+                            return f"pytest {files_str} -v --tb=short"
                 except Exception as e:
                     logger.debug(f"Completion promises test extraction failed: {e}")
 
@@ -4147,6 +4164,16 @@ class CoachValidator:
             logger.debug("All detected test files were excluded by collect_ignore_glob")
             return None
 
+        # Drop pytest-bdd glue files (TASK-FIX-CC-BDD); they require
+        # task-tag-scoped execution via run_bdd_for_task, not unscoped pytest.
+        test_files = self._filter_bdd_glue_files(test_files)
+        if not test_files:
+            logger.debug(
+                "All detected test files were pytest-bdd glue; "
+                "deferring to run_bdd_for_task / bdd_results gate"
+            )
+            return None
+
         # Deduplicate and build command
         unique_files = sorted(set(test_files))
         files_str = " ".join(unique_files)
@@ -4170,6 +4197,56 @@ class CoachValidator:
             except ValueError:
                 return filepath
         return filepath
+
+    def _filter_bdd_glue_files(self, test_files: List[str]) -> List[str]:
+        """Drop pytest-bdd glue files from the independent_tests pytest cmd.
+
+        Defect: an unscoped ``pytest <files>`` invocation that includes
+        pytest-bdd glue collects every scenario in the matching ``.feature``
+        file, including scenarios tagged for downstream peer tasks. Their
+        unbound steps surface as ``FAILED``, the ``tests_passed`` /
+        ``scenarios_failed > 0`` gates fire, and the Coach rejects on a
+        deterministic, retry-immune signal. See TASK-FIX-CC-BDD and the
+        FEAT-39E1 post-mortem.
+
+        Fix: BDD verification is delegated to ``run_bdd_for_task`` (already
+        task-tag scoped via ``-m @task:<TASK-ID>``). The Player-side
+        ``_run_bdd_oracle`` runs it once per turn and writes ``bdd_results``
+        into ``task_work_results``; the Coach's separate ``bdd_results``
+        gate (``_check_bdd_results``) enforces ``scenarios_failed == 0``.
+        Removing BDD glue files from the independent_tests pytest cmd does
+        not weaken verification — it just stops double-running the same
+        scenarios without the tag scope.
+
+        Parameters
+        ----------
+        test_files : List[str]
+            Test file paths relative to ``self.worktree_path``.
+
+        Returns
+        -------
+        List[str]
+            ``test_files`` with pytest-bdd glue removed (preserves order).
+        """
+        from .bdd_runner import is_bdd_glue_file
+
+        plain: List[str] = []
+        excluded: List[str] = []
+        for tf in test_files:
+            full = self.worktree_path / tf
+            if is_bdd_glue_file(full):
+                excluded.append(tf)
+            else:
+                plain.append(tf)
+        if excluded:
+            logger.info(
+                "TASK-FIX-CC-BDD: Excluded %d pytest-bdd glue file(s) from "
+                "independent_tests pytest cmd; task-tag scoping is enforced "
+                "via run_bdd_for_task / bdd_results gate. Excluded: %s",
+                len(excluded),
+                excluded,
+            )
+        return plain
 
     def _classify_test_failure(
         self,

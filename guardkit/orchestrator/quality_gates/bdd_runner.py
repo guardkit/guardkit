@@ -130,6 +130,40 @@ def task_tag(task_id: str) -> str:
     return f"@task:{task_id}"
 
 
+def is_bdd_glue_file(file_path: Any) -> bool:
+    """Return True when the file appears to be pytest-bdd glue.
+
+    Used by Coach's ``independent_tests`` path to keep pytest-bdd glue out
+    of an unscoped ``pytest <files>`` invocation. Unscoped pytest collects
+    every scenario in the matching ``.feature`` file, including those tagged
+    for downstream peer tasks; their unbound steps surface as ``FAILED`` and
+    the Coach's ``tests_passed`` / ``scenarios_failed > 0`` gates reject
+    deterministically. The Player-side ``_run_bdd_oracle`` already routes
+    BDD execution through :func:`run_bdd_for_task`, which is task-tag
+    scoped. See TASK-FIX-CC-BDD.
+
+    Detection is a cheap text scan for pytest-bdd v8 import signatures:
+    ``from pytest_bdd import``, ``import pytest_bdd``, or
+    ``pytest_bdd.scenarios(``. Returns ``False`` for missing files,
+    non-``.py`` files, and files that cannot be read.
+    """
+    try:
+        p = Path(file_path)
+    except (TypeError, ValueError):
+        return False
+    if not p.is_file() or p.suffix != ".py":
+        return False
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return (
+        "pytest_bdd.scenarios(" in text
+        or "from pytest_bdd import" in text
+        or "import pytest_bdd" in text
+    )
+
+
 # ---------------------------------------------------------------------------
 # Discovery
 # ---------------------------------------------------------------------------
@@ -596,6 +630,7 @@ __all__ = [
     "PendingDetail",
     "find_feature_files_with_tag",
     "has_pytest_bdd",
+    "is_bdd_glue_file",
     "parse_junit_xml",
     "run_bdd_for_task",
     "task_tag",

@@ -69,6 +69,7 @@ from guardkit.orchestrator.quality_gates.bdd_runner import (
     BDDResult,
     FailureDetail as BDDFailureDetail,
     PendingDetail as BDDPendingDetail,
+    is_bdd_glue_file,
     run_bdd_for_task,
     task_tag as bdd_task_tag,
 )
@@ -104,6 +105,7 @@ __all__ = [
     "BDDResult",
     "BDDFailureDetail",
     "BDDPendingDetail",
+    "is_bdd_glue_file",
     "run_bdd_for_task",
     "bdd_task_tag",
 ]
