@@ -104,9 +104,15 @@ def _failing_test_result(
 def _task_work_results_with_files(
     files_created=None,
     files_modified=None,
+    files_authored=None,
 ) -> dict:
-    """Build a passing task_work_results dict with optional file-edit lists."""
-    return {
+    """Build a passing task_work_results dict with optional file-edit lists.
+
+    ``files_authored`` is added as a separate key only when the caller
+    passes it explicitly (TASK-FIX-CC-COND). Tests for the legacy
+    fallback path must omit it.
+    """
+    payload = {
         "tests_passed": True,
         "coverage_pct": 85.0,
         "arch_review_score": 80,
@@ -115,6 +121,9 @@ def _task_work_results_with_files(
         "files_created": list(files_created or []),
         "files_modified": list(files_modified or []),
     }
+    if files_authored is not None:
+        payload["files_authored"] = list(files_authored)
+    return payload
 
 
 def _run_validate(
@@ -265,6 +274,100 @@ class TestDetectSourceFileContention:
         results = _task_work_results_with_files(files_created=["new_module.py"])
         overlaps = validator._detect_source_file_contention(results)
         assert overlaps == {"TASK-PRV-003": frozenset({"new_module.py"})}
+
+
+# ---------------------------------------------------------------------------
+# 1b. files_authored takes precedence over files_modified (TASK-FIX-CC-COND)
+# ---------------------------------------------------------------------------
+
+
+class TestFilesAuthoredPrecedence:
+    """When ``files_authored`` is present, the contention detector ignores
+    ``files_modified`` / ``files_created``.
+
+    Background: ``files_modified`` is unioned with worktree-wide ``git diff``
+    output by ``agent_invoker`` before reaching Coach, which contaminates it
+    with peer-task edits in shared-worktree parallel waves. ``files_authored``
+    is captured at the SDK Write/Edit boundary and remains authoritative.
+    See TASK-REV-CC40 finding F-3.
+    """
+
+    def test_uses_files_authored_not_files_modified(
+        self, tmp_path: Path
+    ) -> None:
+        """Replays the FEAT-39E1 false-positive shape.
+
+        Player authored only ``a.py``. Worktree-wide git diff added ``b.py``
+        (peer's edit) into ``files_modified``. Peer changed ``b.py``.
+        With the old code, intersection was {b.py} → false-positive
+        contention. With ``files_authored`` driving the check, the
+        intersection is empty.
+        """
+        validator = _make_validator(
+            tmp_path,
+            peer_changed_files={"TASK-PRV-003": ["b.py"]},
+        )
+        results = _task_work_results_with_files(
+            files_authored=["a.py"],
+            files_modified=["a.py", "b.py"],  # b.py is git-diff noise
+        )
+        assert validator._detect_source_file_contention(results) == {}
+
+    def test_genuine_contention_still_detected(self, tmp_path: Path) -> None:
+        """Regression-pin TASK-FIX-A7B2: real overlap must still surface.
+
+        Player authored ``a.py``. Peer also changed ``a.py``. The detector
+        must report the overlap so the existing parallel_contention →
+        feedback path engages.
+        """
+        validator = _make_validator(
+            tmp_path,
+            peer_changed_files={"TASK-PRV-003": ["a.py"]},
+        )
+        results = _task_work_results_with_files(
+            files_authored=["a.py"],
+            files_modified=["a.py"],
+        )
+        overlaps = validator._detect_source_file_contention(results)
+        assert overlaps == {"TASK-PRV-003": frozenset({"a.py"})}
+
+    def test_falls_back_to_files_modified_when_files_authored_absent(
+        self, tmp_path: Path
+    ) -> None:
+        """Backwards-compat: legacy task_work_results without ``files_authored``
+        still drive contention detection from ``files_modified`` /
+        ``files_created`` so historical replay fixtures remain readable.
+        """
+        validator = _make_validator(
+            tmp_path,
+            peer_changed_files={"TASK-PRV-003": ["a.py"]},
+        )
+        # Note: no files_authored key passed → omitted from payload
+        results = _task_work_results_with_files(files_modified=["a.py"])
+        assert "files_authored" not in results
+        overlaps = validator._detect_source_file_contention(results)
+        assert overlaps == {"TASK-PRV-003": frozenset({"a.py"})}
+
+    def test_empty_files_authored_yields_no_contention(
+        self, tmp_path: Path
+    ) -> None:
+        """``files_authored = []`` means "this task authored nothing" — yield
+        empty overlap even when ``files_modified`` is contaminated.
+
+        This is the key correctness property: presence-based fallback, not
+        truthy-based. Otherwise a task that ran no Write/Edit but inherited
+        peer git-diff noise in files_modified would still false-positive.
+        """
+        validator = _make_validator(
+            tmp_path,
+            peer_changed_files={"TASK-PRV-003": ["a.py"]},
+        )
+        results = _task_work_results_with_files(
+            files_authored=[],
+            files_modified=["a.py"],  # contaminated by peer commit
+        )
+        assert "files_authored" in results
+        assert validator._detect_source_file_contention(results) == {}
 
 
 # ---------------------------------------------------------------------------

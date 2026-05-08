@@ -519,6 +519,14 @@ class TaskWorkStreamParser:
         self._quality_gates_passed: Optional[bool] = None
         self._files_modified: set = set()
         self._files_created: set = set()
+        # TASK-FIX-CC-COND: Files the Player explicitly authored via Write/Edit
+        # tool calls. Distinct from _files_modified/_files_created because
+        # those get unioned with worktree-wide `git diff` output downstream
+        # (see _create_player_report_from_task_work), which contaminates them
+        # with peer-task edits in shared-worktree parallel waves. _files_authored
+        # is only ever populated from real tool invocations, so it remains
+        # authoritative for source-file contention detection.
+        self._files_authored: set = set()
         self._test_files_created: set = set()
         self._arch_score: Optional[int] = None
         self._solid_score: Optional[int] = None
@@ -612,6 +620,7 @@ class TaskWorkStreamParser:
 
         if tool_name == "Write":
             self._files_created.add(file_path)
+            self._files_authored.add(file_path)
             logger.debug(f"Tool call tracked - file created: {file_path}")
             # Track test files separately
             if self._is_test_file(file_path):
@@ -619,6 +628,7 @@ class TaskWorkStreamParser:
                 logger.debug(f"Test file tracked: {file_path}")
         elif tool_name == "Edit":
             self._files_modified.add(file_path)
+            self._files_authored.add(file_path)
             logger.debug(f"Tool call tracked - file modified: {file_path}")
 
     def _parse_tool_invocations(self, message: str) -> None:
@@ -818,6 +828,14 @@ class TaskWorkStreamParser:
         if self._files_created:
             result["files_created"] = sorted(list(self._files_created))
 
+        # TASK-FIX-CC-COND: emit files_authored only when non-empty
+        # (parity with files_modified/files_created). The downstream
+        # producer ``_write_task_work_results`` always persists the field
+        # to disk (even as []) so Coach gets a positive presence signal
+        # for the new contention-detection path.
+        if self._files_authored:
+            result["files_authored"] = sorted(list(self._files_authored))
+
         if self._test_files_created:
             result["test_files_created"] = sorted(list(self._test_files_created))
 
@@ -846,6 +864,7 @@ class TaskWorkStreamParser:
         self._quality_gates_passed = None
         self._files_modified = set()
         self._files_created = set()
+        self._files_authored = set()
         self._test_files_created = set()
         self._arch_score = None
         self._solid_score = None
@@ -2746,6 +2765,15 @@ Follow the decision format specified in your agent definition.
                 # Map task-work fields to Player report fields
                 report["files_modified"] = task_work_data.get("files_modified", [])
                 report["files_created"] = task_work_data.get("files_created", [])
+                # TASK-FIX-CC-COND: propagate files_authored (Player's
+                # explicit Write/Edit set). Never union with git diff
+                # downstream — that contamination is exactly what this
+                # field exists to avoid. Coach's source-file contention
+                # detector reads this verbatim.
+                if "files_authored" in task_work_data:
+                    report["files_authored"] = task_work_data.get(
+                        "files_authored", []
+                    )
 
                 # Extract test info (conditional on tests_info existing)
                 tests_info = task_work_data.get("tests_info", {})
@@ -6652,6 +6680,15 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             # Deduplicate file lists using set conversion
             "files_modified": sorted(list(set(result_data.get("files_modified", [])))),
             "files_created": sorted(list(set(result_data.get("files_created", [])))),
+            # TASK-FIX-CC-COND: persist files_authored separately. This is
+            # the Player's *intent* (Write/Edit tool calls), distinct from
+            # files_modified/files_created which the orchestrator unions
+            # with worktree-wide git diff downstream. Coach's source-file
+            # contention detector reads this field to avoid attributing
+            # peer-task edits to this task in parallel waves.
+            "files_authored": sorted(
+                list(set(result_data.get("files_authored", []) or []))
+            ),
             "tests_written": sorted(list(set(result_data.get("tests_written", [])))),
             "summary": self._generate_summary(result_data),
         }
@@ -6708,6 +6745,11 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         ]
         results["files_modified"] = [
             f for f in results["files_modified"]
+            if TaskWorkStreamParser._is_valid_file_path(f)
+        ]
+        # TASK-FIX-CC-COND: parity filter for files_authored.
+        results["files_authored"] = [
+            f for f in results["files_authored"]
             if TaskWorkStreamParser._is_valid_file_path(f)
         ]
 

@@ -4204,6 +4204,69 @@ class TestTaskWorkStreamParser:
         assert "files_created" in result
         assert "/src/new_module.py" in result["files_created"]
 
+    # -------------- files_authored Tracking (TASK-FIX-CC-COND) --------------
+
+    def test_files_authored_populated_from_write_tool_call(self, parser):
+        """Write tool calls populate files_authored alongside files_created."""
+        parser._track_tool_call("Write", {"file_path": "/src/new.py"})
+        result = parser.to_result()
+
+        assert "files_authored" in result
+        assert result["files_authored"] == ["/src/new.py"]
+        # Coexists with files_created (same source path)
+        assert "/src/new.py" in result["files_created"]
+
+    def test_files_authored_populated_from_edit_tool_call(self, parser):
+        """Edit tool calls populate files_authored alongside files_modified."""
+        parser._track_tool_call("Edit", {"file_path": "/src/existing.py"})
+        result = parser.to_result()
+
+        assert result["files_authored"] == ["/src/existing.py"]
+        assert "/src/existing.py" in result["files_modified"]
+
+    def test_files_authored_excludes_text_pattern_only_paths(self, parser):
+        """Paths captured purely from prose (Modified:/Created: text patterns)
+        do NOT enter files_authored — only real Write/Edit tool calls do.
+
+        This is the property the contention detector relies on: the
+        worktree-wide git diff that downstream code unions into
+        ``files_modified`` is itself encoded into the SDK output as text
+        (e.g. ``"Modified: peer_file.py"``). If those text-pattern hits
+        bled into ``files_authored``, the false-positive shape from
+        TASK-REV-CC40 would re-emerge.
+        """
+        parser.parse_message("Modified: peer_file.py")
+        parser.parse_message("Created: another_peer_file.py")
+        result = parser.to_result()
+
+        # Text-pattern hits land in files_modified/files_created…
+        assert "peer_file.py" in result.get("files_modified", [])
+        assert "another_peer_file.py" in result.get("files_created", [])
+        # …but NOT in files_authored (no Write/Edit tool call ran).
+        assert "files_authored" not in result
+
+    def test_files_authored_omitted_when_no_tool_calls(self, parser):
+        """Parser without Write/Edit tool calls emits no files_authored key.
+
+        Parity with files_modified/files_created, which are also omitted
+        from the result dict when empty. ``_write_task_work_results``
+        always serialises the field to disk separately so Coach gets
+        the presence signal regardless of parser output.
+        """
+        parser.parse_message("Phase 4: Testing")
+        result = parser.to_result()
+
+        assert "files_authored" not in result
+
+    def test_files_authored_cleared_on_reset(self, parser):
+        """reset() clears files_authored alongside other tracked state."""
+        parser._track_tool_call("Write", {"file_path": "/src/a.py"})
+        assert parser.to_result()["files_authored"] == ["/src/a.py"]
+
+        parser.reset()
+        result = parser.to_result()
+        assert "files_authored" not in result
+
     def test_parse_tool_result_created(self, parser):
         """Parse 'File created successfully at:' message."""
         parser.parse_message("File created successfully at: /tests/test_new.py")
@@ -4707,6 +4770,45 @@ class TestWriteTaskWorkResults:
 
         parsed = json.loads(results_path.read_text())
         assert parsed["files_modified"] == ["a_file.py", "m_file.py", "z_file.py"]
+
+    # -------------- files_authored Tests (TASK-FIX-CC-COND) --------------
+
+    def test_write_persists_files_authored_when_present(
+        self, invoker, worktree_path
+    ):
+        """Non-empty ``files_authored`` from the parser is persisted to disk
+        verbatim (sorted, deduplicated)."""
+        result_data = {
+            "files_authored": ["src/b.py", "src/a.py", "src/a.py"],
+            "files_modified": ["src/a.py", "src/b.py", "src/peer_noise.py"],
+            "files_created": [],
+        }
+
+        results_path = invoker._write_task_work_results("TASK-001", result_data)
+
+        parsed = json.loads(results_path.read_text())
+        assert parsed["files_authored"] == ["src/a.py", "src/b.py"]
+        # files_modified is independent — git-diff noise stays where it is.
+        assert "src/peer_noise.py" in parsed["files_modified"]
+
+    def test_write_persists_empty_files_authored_as_present(
+        self, invoker, worktree_path
+    ):
+        """When the Player ran no Write/Edit, ``files_authored`` must still be
+        on disk as ``[]`` so Coach can use presence-based fallback to skip
+        the legacy contention path. This is the load-bearing invariant for
+        TASK-FIX-CC-COND."""
+        result_data = {
+            "tests_passed": 5,
+            "tests_failed": 0,
+            # No files_authored key → producer should still emit []
+        }
+
+        results_path = invoker._write_task_work_results("TASK-001", result_data)
+
+        parsed = json.loads(results_path.read_text())
+        assert "files_authored" in parsed
+        assert parsed["files_authored"] == []
 
     # -------------- Completion Status Tests --------------
 

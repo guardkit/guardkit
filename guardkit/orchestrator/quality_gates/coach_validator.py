@@ -641,8 +641,11 @@ class CoachValidator:
         Parameters
         ----------
         task_work_results : Dict[str, Any]
-            Player's task_work_results.json payload. Reads ``files_created``
-            and ``files_modified`` to determine this task's edit set.
+            Player's task_work_results.json payload. Reads ``files_authored``
+            (Player's explicit Write/Edit tool calls — TASK-FIX-CC-COND) when
+            present, otherwise falls back to ``files_created`` /
+            ``files_modified`` for compatibility with pre-files_authored
+            artefacts.
 
         Returns
         -------
@@ -650,19 +653,65 @@ class CoachValidator:
             Map from peer task id to set of overlapping file paths. Empty when
             no peer edits overlap, when this task has no recorded edits, or
             when no peer snapshot was supplied.
+
+        Notes
+        -----
+        TASK-FIX-CC-COND: ``files_modified`` / ``files_created`` are
+        unioned with worktree-wide ``git diff`` output by ``agent_invoker``
+        before they reach this validator, so in shared-worktree parallel
+        waves they include peer-task edits this task never authored. Using
+        them as the contention input produced false-positive
+        ``parallel_contention`` verdicts that blocked the conditional
+        approval path the design relies on (see TASK-REV-CC40 finding F-3,
+        FEAT-39E1 turn-2 evidence). ``files_authored`` is captured at the
+        SDK Write/Edit boundary and is *not* enriched with git output, so
+        it remains authoritative. The fallback is presence-based, not
+        truthy-based: ``files_authored = []`` correctly means "this task
+        authored nothing" and yields no contention, even when
+        ``files_modified`` is contaminated.
         """
         if not self._peer_changed_files:
             return {}
-        own = set(task_work_results.get("files_created", []) or [])
-        own.update(task_work_results.get("files_modified", []) or [])
+
+        # TASK-FIX-CC-COND: prefer the Player's authored set when present.
+        # Presence-based fallback: distinguish "field absent" (legacy
+        # task_work_results.json from before files_authored existed) from
+        # "field present, empty" (this task's Player did no Write/Edit).
+        if "files_authored" in task_work_results:
+            authored_raw = task_work_results.get("files_authored") or []
+            own = {str(f) for f in authored_raw if f}
+            source = "files_authored"
+        else:
+            legacy = set(task_work_results.get("files_created", []) or [])
+            legacy.update(task_work_results.get("files_modified", []) or [])
+            own = {str(f) for f in legacy if f}
+            source = "legacy_files_modified"
+
         if not own:
             return {}
-        own_normalised = {str(f) for f in own if f}
+
         overlaps: Dict[str, frozenset] = {}
         for peer_id, peer_files in self._peer_changed_files.items():
-            shared = peer_files & own_normalised
+            shared = peer_files & own
             if shared:
                 overlaps[peer_id] = frozenset(shared)
+
+        if overlaps:
+            # TASK-FIX-CC-COND bonus: structured-log line so future
+            # false positives are diagnosable from logs alone. Records
+            # both the authored set and the (possibly contaminated)
+            # files_modified set so a reviewer can see at a glance
+            # whether the overlap reflects real intent or legacy
+            # fallback noise.
+            logger.info(
+                "Source-file contention detected (source=%s, overlaps=%s, "
+                "files_authored=%s, files_modified=%s, files_created=%s)",
+                source,
+                {peer: sorted(files) for peer, files in overlaps.items()},
+                sorted(task_work_results.get("files_authored", []) or []),
+                sorted(task_work_results.get("files_modified", []) or []),
+                sorted(task_work_results.get("files_created", []) or []),
+            )
         return overlaps
 
     def _get_coach_test_model(self) -> Optional[str]:
