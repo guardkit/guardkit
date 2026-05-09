@@ -98,6 +98,16 @@ logger = logging.getLogger(__name__)
 console = Console()
 
 
+# TASK-FIX-DEFD: terminal task statuses that satisfy a dependency edge in
+# ``_dependencies_satisfied``. ``deferred`` is terminal-but-not-failed
+# (TASK-FPTC-003 contract for ``operator_handoff`` skips); dependents may
+# proceed but receive a logger.warning so the operator can cross-check that
+# the deferred predecessor's artefacts are not load-bearing for the
+# dependent's own scope. Single source of truth — do not duplicate the
+# string literals inside the predicate.
+TERMINAL_SATISFIED: frozenset[str] = frozenset({"completed", "deferred"})
+
+
 # ============================================================================
 # Data Models
 # ============================================================================
@@ -3414,6 +3424,19 @@ The detailed specifications are in the task markdown file.
         """
         Check if all dependencies for a task are satisfied.
 
+        A dependency is satisfied if its status is in ``TERMINAL_SATISFIED``
+        (i.e. ``"completed"`` or ``"deferred"``). When a dependent proceeds
+        against a ``deferred`` predecessor, a ``logger.warning(...)`` is
+        emitted naming both task IDs and the predecessor's
+        ``deferred_reason`` — the dependent task is asserting that the
+        deferred predecessor's artefacts are not load-bearing for its own
+        scope (TASK-FIX-DEFD; closes the contract gap left by
+        TASK-FPTC-003 which introduced ``status="deferred"`` only on the
+        writer path).
+
+        Unknown predecessors (``find_task`` returns ``None``) are treated
+        as satisfied — preserves prior behaviour.
+
         Parameters
         ----------
         task : FeatureTask
@@ -3424,12 +3447,27 @@ The detailed specifications are in the task markdown file.
         Returns
         -------
         bool
-            True if all dependencies completed successfully
+            True if all dependencies are in a terminal-satisfied state
         """
         for dep_id in task.dependencies:
             dep_task = FeatureLoader.find_task(feature, dep_id)
-            if dep_task and dep_task.status != "completed":
+            if dep_task is None:
+                continue  # unknown predecessor; preserve existing behaviour
+            if dep_task.status not in TERMINAL_SATISFIED:
                 return False
+            if dep_task.status == "deferred":
+                deferred_reason = (
+                    dep_task.result.get("deferred_reason")
+                    if dep_task.result is not None
+                    else None
+                )
+                logger.warning(
+                    "[%s] Proceeding against deferred predecessor [%s] "
+                    "(reason=%r). Dependent task assumes the deferred "
+                    "predecessor's artefacts are not load-bearing for its "
+                    "own scope.",
+                    task.id, dep_id, deferred_reason,
+                )
         return True
 
     def _update_feature(

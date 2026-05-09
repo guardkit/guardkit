@@ -659,6 +659,200 @@ def test_dependencies_not_satisfied_pending_deps(temp_repo, sample_feature, mock
 
 
 # ============================================================================
+# Test: Dependencies Satisfied — TERMINAL_SATISFIED contract (TASK-FIX-DEFD)
+# ============================================================================
+
+
+def test_dependencies_satisfied_completed_dep_emits_no_warning(
+    temp_repo, sample_feature, mock_worktree_manager, caplog,
+):
+    """A `completed` predecessor satisfies the dep with no warning emitted."""
+    orchestrator = FeatureOrchestrator(repo_root=temp_repo, worktree_manager=mock_worktree_manager)
+
+    sample_feature.tasks[0].status = "completed"
+    task = sample_feature.tasks[1]  # depends on TASK-T-001
+
+    with caplog.at_level(logging.WARNING, logger="guardkit.orchestrator.feature_orchestrator"):
+        assert orchestrator._dependencies_satisfied(task, sample_feature) is True
+
+    assert caplog.records == []
+
+
+def test_dependencies_satisfied_deferred_dep_emits_warning(
+    temp_repo, sample_feature, mock_worktree_manager, caplog,
+):
+    """A `deferred` predecessor satisfies the dep AND emits a warning."""
+    orchestrator = FeatureOrchestrator(repo_root=temp_repo, worktree_manager=mock_worktree_manager)
+
+    sample_feature.tasks[0].status = "deferred"
+    sample_feature.tasks[0].result = {
+        "total_turns": 0,
+        "final_decision": "deferred",
+        "error": None,
+        "deferred_reason": "operator_handoff: requires GB10 + Open WebUI manual run",
+    }
+    task = sample_feature.tasks[1]  # TASK-T-002 depends on TASK-T-001
+
+    with caplog.at_level(logging.WARNING, logger="guardkit.orchestrator.feature_orchestrator"):
+        assert orchestrator._dependencies_satisfied(task, sample_feature) is True
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    msg = warnings[0].getMessage()
+    assert "TASK-T-002" in msg
+    assert "TASK-T-001" in msg
+    assert "operator_handoff: requires GB10 + Open WebUI manual run" in msg
+
+
+def test_dependencies_not_satisfied_failed_dep(
+    temp_repo, sample_feature, mock_worktree_manager,
+):
+    """A `failed` predecessor leaves the dep unsatisfied."""
+    orchestrator = FeatureOrchestrator(repo_root=temp_repo, worktree_manager=mock_worktree_manager)
+
+    sample_feature.tasks[0].status = "failed"
+    task = sample_feature.tasks[1]
+    assert orchestrator._dependencies_satisfied(task, sample_feature) is False
+
+
+def test_dependencies_not_satisfied_pending_dep_regression(
+    temp_repo, sample_feature, mock_worktree_manager,
+):
+    """A `pending` predecessor leaves the dep unsatisfied (regression guard)."""
+    orchestrator = FeatureOrchestrator(repo_root=temp_repo, worktree_manager=mock_worktree_manager)
+
+    # tasks[0].status defaults to "pending"
+    task = sample_feature.tasks[1]
+    assert orchestrator._dependencies_satisfied(task, sample_feature) is False
+
+
+def test_dependencies_not_satisfied_in_progress_dep(
+    temp_repo, sample_feature, mock_worktree_manager,
+):
+    """An `in_progress` predecessor leaves the dep unsatisfied."""
+    orchestrator = FeatureOrchestrator(repo_root=temp_repo, worktree_manager=mock_worktree_manager)
+
+    sample_feature.tasks[0].status = "in_progress"
+    task = sample_feature.tasks[1]
+    assert orchestrator._dependencies_satisfied(task, sample_feature) is False
+
+
+def test_dependencies_satisfied_mixed_completed_and_deferred(
+    temp_repo, mock_worktree_manager, caplog,
+):
+    """Mixed `completed` + `deferred` predecessors → satisfied, exactly one warning."""
+    feature = Feature(
+        id="FEAT-MIXED",
+        name="Mixed Dep Feature",
+        description="Two predecessors, one completed, one deferred",
+        created="2025-12-31T12:00:00Z",
+        status="planned",
+        complexity=4,
+        estimated_tasks=3,
+        tasks=[
+            FeatureTask(
+                id="TASK-M-001",
+                name="Completed predecessor",
+                file_path=Path("tasks/completed/TASK-M-001.md"),
+                complexity=3,
+                dependencies=[],
+                status="completed",
+                implementation_mode="task-work",
+                estimated_minutes=30,
+            ),
+            FeatureTask(
+                id="TASK-M-002",
+                name="Deferred predecessor",
+                file_path=Path("tasks/in_progress/TASK-M-002.md"),
+                complexity=3,
+                dependencies=[],
+                status="deferred",
+                implementation_mode="task-work",
+                estimated_minutes=30,
+                result={
+                    "total_turns": 0,
+                    "final_decision": "deferred",
+                    "error": None,
+                    "deferred_reason": "operator_handoff",
+                },
+            ),
+            FeatureTask(
+                id="TASK-M-003",
+                name="Dependent task",
+                file_path=Path("tasks/backlog/TASK-M-003.md"),
+                complexity=3,
+                dependencies=["TASK-M-001", "TASK-M-002"],
+                status="pending",
+                implementation_mode="task-work",
+                estimated_minutes=30,
+            ),
+        ],
+        orchestration=FeatureOrchestration(
+            parallel_groups=[["TASK-M-001"], ["TASK-M-002"], ["TASK-M-003"]],
+            estimated_duration_minutes=90,
+            recommended_parallel=1,
+        ),
+        execution=FeatureExecution(),
+    )
+
+    orchestrator = FeatureOrchestrator(
+        repo_root=Path("/tmp"),
+        worktree_manager=mock_worktree_manager,
+    )
+
+    dependent = feature.tasks[2]
+    with caplog.at_level(logging.WARNING, logger="guardkit.orchestrator.feature_orchestrator"):
+        assert orchestrator._dependencies_satisfied(dependent, feature) is True
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "TASK-M-002" in warnings[0].getMessage()
+    assert "TASK-M-001" not in warnings[0].getMessage()
+
+
+def test_dependencies_satisfied_unknown_predecessor(
+    temp_repo, sample_feature, mock_worktree_manager,
+):
+    """An unknown predecessor (find_task returns None) is treated as satisfied."""
+    orchestrator = FeatureOrchestrator(repo_root=temp_repo, worktree_manager=mock_worktree_manager)
+
+    # Add a task with a dep that doesn't exist in the feature.
+    sample_feature.tasks.append(
+        FeatureTask(
+            id="TASK-T-999",
+            name="Phantom-dep task",
+            file_path=Path("tasks/backlog/TASK-T-999.md"),
+            complexity=2,
+            dependencies=["TASK-DOES-NOT-EXIST"],
+            status="pending",
+            implementation_mode="task-work",
+            estimated_minutes=15,
+        )
+    )
+
+    task = sample_feature.tasks[-1]
+    assert orchestrator._dependencies_satisfied(task, sample_feature) is True
+
+
+def test_dependencies_satisfied_deferred_dep_with_no_result(
+    temp_repo, sample_feature, mock_worktree_manager, caplog,
+):
+    """A `deferred` predecessor with result=None still satisfies; warning has reason=None."""
+    orchestrator = FeatureOrchestrator(repo_root=temp_repo, worktree_manager=mock_worktree_manager)
+
+    sample_feature.tasks[0].status = "deferred"
+    sample_feature.tasks[0].result = None  # edge case: writer path skipped
+    task = sample_feature.tasks[1]
+
+    with caplog.at_level(logging.WARNING, logger="guardkit.orchestrator.feature_orchestrator"):
+        assert orchestrator._dependencies_satisfied(task, sample_feature) is True
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "reason=None" in warnings[0].getMessage()
+
+
+# ============================================================================
 # Test: Resume and Fresh Flag Behavior
 # ============================================================================
 
