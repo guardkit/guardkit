@@ -1,15 +1,102 @@
 ---
 id: TASK-OBS-ABST
 title: Passive autobuild run-success observability from existing on-disk artefacts
-status: backlog
-created: 2026-05-10T18:35:00Z
-updated: 2026-05-10T18:35:00Z
+status: blocked
+created: 2026-05-10 18:35:00+00:00
+updated: 2026-05-10 19:00:00+00:00
 priority: high
-tags: [observability, telemetry, autobuild, narrow-recommendation, evidence-gap-closure]
+tags:
+- observability
+- telemetry
+- autobuild
+- narrow-recommendation
+- evidence-gap-closure
 parent_review: TASK-REV-ABST
 complexity: 5
-implementation_mode: task-work
+implementation_mode: autobuild
 estimated_effort_hours: 5
+autobuild:
+  enabled: true
+  max_turns: 6
+  base_branch: main
+  mode: tdd
+  sdk_timeout: 1200
+autobuild_state:
+  current_turn: 5
+  max_turns: 5
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/TASK-OBS-ABST
+  base_branch: main
+  started_at: '2026-05-10T13:15:02.150726'
+  last_updated: '2026-05-10T14:22:52.205524'
+  turns:
+  - turn: 1
+    decision: feedback
+    feedback: "- Advisory (non-blocking): task-work produced a report with 2 of 3\
+      \ expected agent invocations. Missing phases: 3 (Implementation). Consider invoking\
+      \ these agents via the Task tool to strengthen stack-specific quality:\n- Phase\
+      \ 3: `the stack-specific Phase-3 specialist` (Implementation)\n- Architectural\
+      \ review score below threshold\n- Plan audit detected high-severity discrepancies\
+      \ \u2014 8 missing file(s): docs/guides/observability.md, guardkit/cli.py, guardkit/observability/__init__.py,\
+      \ ... (+5 more)"
+    timestamp: '2026-05-10T13:15:02.150726'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
+  - turn: 2
+    decision: feedback
+    feedback: "- Advisory (non-blocking): task-work produced a report with 2 of 3\
+      \ expected agent invocations. Missing phases: 3 (Implementation). Consider invoking\
+      \ these agents via the Task tool to strengthen stack-specific quality:\n- Phase\
+      \ 3: `the stack-specific Phase-3 specialist` (Implementation)\n- Architectural\
+      \ review score below threshold\n- Plan audit detected high-severity discrepancies\
+      \ \u2014 2 missing file(s): guardkit/cli.py, ~/.guardkit/observability.yaml"
+    timestamp: '2026-05-10T13:29:43.043667'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
+  - turn: 3
+    decision: feedback
+    feedback: "- Advisory (non-blocking): task-work produced a report with 2 of 3\
+      \ expected agent invocations. Missing phases: 3 (Implementation). Consider invoking\
+      \ these agents via the Task tool to strengthen stack-specific quality:\n- Phase\
+      \ 3: `the stack-specific Phase-3 specialist` (Implementation)\n- Architectural\
+      \ review score below threshold\n- Plan audit detected high-severity discrepancies\
+      \ \u2014 2 missing file(s): guardkit/cli.py, ~/.guardkit/observability.yaml"
+    timestamp: '2026-05-10T13:47:59.010114'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
+  - turn: 4
+    decision: feedback
+    feedback: '- Advisory (non-blocking): task-work produced a report with 2 of 3
+      expected agent invocations. Missing phases: 3 (Implementation). Consider invoking
+      these agents via the Task tool to strengthen stack-specific quality:
+
+      - Phase 3: `the stack-specific Phase-3 specialist` (Implementation)
+
+      - Architectural review score below threshold'
+    timestamp: '2026-05-10T13:58:22.609329'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
+  - turn: 5
+    decision: feedback
+    feedback: '- Advisory (non-blocking): task-work produced a report with 2 of 3
+      expected agent invocations. Missing phases: 3 (Implementation). Consider invoking
+      these agents via the Task tool to strengthen stack-specific quality:
+
+      - Phase 3: `the stack-specific Phase-3 specialist` (Implementation)
+
+      - Architectural review score below threshold'
+    timestamp: '2026-05-10T14:12:50.312396'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Passive autobuild run-success observability
@@ -231,3 +318,40 @@ Treat the report's §3.1 table as the regression target.
   `.claude/observability/run-success-snapshot-2026-05-10.json` to serve as
   TASK-REV-ABST.1's input baseline
 - [ ] Task moved to `completed` with provenance fields populated
+
+## Hold notice (2026-05-10, post-autobuild)
+
+Autobuild completed with `decision: max_turns_exceeded` after 5 turns.
+Worktree preserved at `.guardkit/worktrees/TASK-OBS-ABST` (branch
+`autobuild/TASK-OBS-ABST`, merge-base `b17275f6`, 16 commits behind
+current main).
+
+**What's done** (verified 2026-05-10T14:23):
+- Files created per the task body's "Files to create" list (8 of 8)
+- 62/62 tests passing in `tests/observability/`
+- CLI registered (`guardkit observability run-success` shows help and runs)
+- Plan audit clean (`severity: low`, 0 violations, all declared files present)
+- Markdown output well-formed; JSON format flag implemented (per AC-004)
+
+**What's not done — blocking merge:**
+1. **AC-010 baseline does not reproduce** — see TASK-FIX-905B. forge over-counts
+   first-pass-pass (~3.5× the §3.1 expected); fleet-gateway over-counts
+   multi_retry_pass (FG-001 should be no-pass, currently shows 1 pass).
+2. **Coach gate unsatisfiable** — see TASK-FIX-DF51. `code_review.score` is
+   never written to `task_work_results.json`, so the architectural-review
+   gate defaults to 0 < 60 and rejects every turn regardless of actual
+   review outcome. This is *not* a defect of TASK-OBS-ABST itself, but it
+   prevented Coach approval and inflated the run to 5 turns.
+
+**Merge sequence (post-fix)**:
+
+1. Land TASK-FIX-905B (classifier calibration); confirm baseline
+   regression test passes.
+2. Optionally land TASK-FIX-DF51 (Coach producer wiring) — note this
+   is a frozen-path fix during the 2026-05-11→2026-05-17 freeze window.
+3. Rebase `autobuild/TASK-OBS-ABST` onto current main.
+4. Merge to main; transition this task to `completed`.
+
+**State machine**: this task is moved to `tasks/blocked/` — quality gates
+failed (arch gate due to DF51, AC-010 due to 905B). Will return to
+`in_progress` when the calibration fix lands.
