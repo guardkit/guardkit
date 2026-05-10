@@ -1701,9 +1701,16 @@ class EnvironmentBootstrapper:
             return venv_python
 
         if _uv_on_path():
-            cmd = ["uv", "venv", str(venv_dir)]
+            # ``--seed`` installs pip + setuptools into the new venv. Without
+            # it, ``uv venv`` creates a minimal venv that lacks pip, and the
+            # subsequent dep-install calls (which run ``<venv>/bin/python -m
+            # pip install <pkg>`` via :meth:`_run_install`) fail with "No
+            # module named pip" — manifests as a hard-fail bootstrap error
+            # despite uv being present.
+            cmd = ["uv", "venv", "--seed", str(venv_dir)]
             logger.info(
-                "FFC6: creating worktree-local venv via uv at %s", venv_dir
+                "FFC6: creating worktree-local venv via uv (seeded) at %s",
+                venv_dir,
             )
         else:
             cmd = [sys.executable, "-m", "venv", str(venv_dir)]
