@@ -8,6 +8,10 @@ A lightweight, pragmatic task workflow system with built-in quality gates that p
 
 **Core Features:** Quality Gates (Phase 2.5 + 4.5) | Simple Workflow (Create → Work → Complete) | AI Collaboration | Zero Ceremony
 
+## Project Status
+
+⏸️ **Gate-stack freeze active 2026-05-11→2026-05-17** (TASK-FREEZE-ABST) — see [`.claude/state/gate-freeze-2026-05-17.md`](.claude/state/gate-freeze-2026-05-17.md) before touching frozen paths.
+
 ### Core Principles
 
 1. **Quality First**: Never compromise on test coverage or architecture

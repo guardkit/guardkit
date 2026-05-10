@@ -1,16 +1,72 @@
 ---
 id: TASK-FREEZE-ABST
 title: Declare 7-day gate-stack freeze (2026-05-11 → 2026-05-17) and add commit-time guard
-status: backlog
+status: completed
 created: 2026-05-10T18:30:00Z
-updated: 2026-05-10T18:30:00Z
+updated: 2026-05-10T19:05:00Z
+completed: 2026-05-10T19:05:00Z
+completed_location: tasks/completed/TASK-FREEZE-ABST/
 priority: high
 tags: [freeze, gate-stack, autobuild, narrow-recommendation, process]
 parent_review: TASK-REV-ABST
 complexity: 2
 implementation_mode: task-work
 estimated_effort_hours: 1
+actual_effort_hours: 0.5
+previous_state: in_review
+state_transition_reason: "All 4 ACs satisfied; pytest guard passes (1 passed, 1 skipped-on-out-of-window for today 2026-05-10)."
+organized_files:
+  - TASK-FREEZE-ABST.md
+deliverables:
+  - .claude/state/gate-freeze-2026-05-17.md
+  - tests/rules/test_gate_freeze.py
+  - CLAUDE.md (Project Status section added)
 ---
+
+## Implementation Summary
+
+Filed the 7-day gate-stack freeze (2026-05-11 → 2026-05-17 inclusive)
+recommended by TASK-REV-ABST §8.1.1 (Narrow). Three deliverables:
+
+1. **Freeze record** at `.claude/state/gate-freeze-2026-05-17.md` —
+   captures the window, frozen paths, permitted-vs-forbidden commit
+   classes, exception protocol (one-line override entry under
+   `## Granted overrides`), and cross-references to the originating
+   review and the two sibling rules (`absence-of-failure-is-not-success`
+   and `path-string-mismatch-is-not-dishonesty`).
+
+2. **Pytest guard** at `tests/rules/test_gate_freeze.py` — two tests:
+   - `test_freeze_record_present_and_parseable` always runs and asserts
+     the record exists with the canonical structure (window dates,
+     `## Granted overrides` section, link to the review).
+   - `test_gate_freeze_no_forbidden_commits` is `@pytest.mark.skipif`'d
+     on out-of-window dates; inside the window it walks `git log` over
+     the frozen paths, classifies each commit (revert / docs-or-test /
+     ≤3-line guard / out-of-scope / forbidden), and fails if any
+     forbidden-class commit lands without a matching `TASK-XXX` entry
+     in `## Granted overrides`. Verified locally: `1 passed, 1 skipped`
+     on 2026-05-10 (one day before the window opens) with the skip
+     reason naming the window correctly.
+
+3. **CLAUDE.md pointer** — added a `## Project Status` section near
+   the top with the one-line freeze notice exactly per AC-003. To be
+   removed by TASK-REV-ABST.1 on 2026-05-17.
+
+## Notes
+
+- The pytest guard does **not** auto-revert offending commits — it
+  fails loudly so the operator decides. Auto-revert would be a
+  destructive default.
+- The single-line-guard heuristic counts only added lines (`+`) ≤3 and
+  rejects diffs that introduce new `def`/`class`/`async def` symbols on
+  frozen paths. Counting added-only (rather than added+removed) matches
+  the "single-line defensive guard" intent better — a 1-line
+  replacement is one new line of behaviour, not two.
+- The override-section parser lives in the same module as the guard;
+  if the freeze record's structure changes, both must move together.
+  The presence test enforces a small structural invariant
+  (`## Granted overrides` heading + window dates + review backlink) so
+  drift is caught even outside the window.
 
 # Task: Declare 7-day gate-stack freeze + commit-time guard
 
