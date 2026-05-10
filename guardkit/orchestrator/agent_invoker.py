@@ -3087,6 +3087,25 @@ Follow the decision format specified in your agent definition.
                     task_work_data["plan_audit"] = new_plan_audit
                     updated = True
 
+                # TASK-FIX-DF51: re-run the code_review fold against the
+                # enriched data. This is the load-bearing call site: by the
+                # time we get here, _inject_specialist_records_into_task_work_results
+                # has already merged the orchestrator-invoked Phase-5 record
+                # into agent_invocations, so the helper's path-2
+                # (specialist-completion synthesis) can fire. The initial
+                # write at _write_task_work_results runs *before* injection
+                # and therefore won't see the orchestrator-sourced record;
+                # this enrichment writeback is what actually closes the gap
+                # for autobuild runs. Idempotent: returns None when an
+                # existing measured score is already present, leaving the
+                # legacy Player-stream block alone.
+                new_code_review = self._compute_code_review_block(task_work_data)
+                if new_code_review is not None and (
+                    task_work_data.get("code_review") != new_code_review
+                ):
+                    task_work_data["code_review"] = new_code_review
+                    updated = True
+
                 if updated:
                     with open(task_work_results_path, "w") as f:
                         json.dump(task_work_data, f, indent=2)
@@ -6331,6 +6350,124 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 missing.append(p)
         return sorted(set(missing))
 
+    def _compute_code_review_block(
+        self, task_work_data: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Derive ``code_review`` from the orchestrator-invoked Phase-5 record.
+
+        TASK-FIX-DF51: producer-side fold for ``code_review.score``. Mirrors the
+        sibling fixes (TASK-FIX-RWOP1.3.1 agent_invocations gate; TASK-FIX-RWOP1.3.2
+        plan_audit gate): Coach reads ``task_work_results["code_review"]["score"]``,
+        but no upstream producer was writing that key for the OSI architecture
+        (orchestrator-invoked code-reviewer in
+        :mod:`guardkit.orchestrator.specialist_invocations`). The result is the
+        canonical *runner-without-producer* anti-pattern — the gate runs but is
+        structurally unsatisfiable, so every Coach turn rejects with
+        ``must_fix/architectural`` "Architectural review score below threshold"
+        regardless of actual review quality.
+
+        Resolution order:
+
+        1. **Player-stream score wins.** If ``task_work_data["code_review"]``
+           already carries a ``score`` (populated by the legacy
+           ``architectural_review`` extraction in
+           :meth:`_write_task_work_results`, sourced from
+           :class:`TaskWorkStreamParser` parsing the Player's own prose
+           ``"Architectural Score: N/100"`` markers), return ``None`` to
+           signal "leave the existing block alone." This keeps the legacy
+           single-process ``/task-work`` path behaviourally unchanged.
+        2. **Phase-5 specialist completion → synthesise.** Look at
+           ``agent_invocations`` for a ``phase == "5"`` record from the
+           orchestrator-invoked code-reviewer (``source == "orchestrator"``).
+           Map ``status`` to a synthesised block:
+
+           ============  ===========  ====================================
+           inv status    score        explanation
+           ============  ===========  ====================================
+           completed     100          Read-only specialist ran to clean SDK
+                                      completion. We didn't *measure* a
+                                      numeric score (the read-only agent
+                                      can't write a sidecar), so 100 is the
+                                      natural ceiling that signals "max
+                                      confidence we have." The ``source``
+                                      field marks the score as synthesised.
+           failed        0            Explicit fail — gate must reject.
+           ============  ===========  ====================================
+
+           AC-005: when the specialist crashed, timed out, or was skipped
+           (``status == "skipped"``), return ``None``. The on-disk
+           ``code_review`` key is left absent so the consumer's
+           ``code_review.get("score", 0)`` default-to-0 path still applies.
+           This preserves the ability of a real review failure to surface
+           as a gate failure rather than being masked by a synthesised
+           pass.
+        3. **No phase-5 record at all.** Return ``None``; same default-to-0
+           fallback applies (existing behaviour for non-OSI / pre-injection
+           writes).
+
+        The synthesised block always carries an explicit ``source`` field so
+        a reader of ``coach_turn_N.json`` can distinguish a measured
+        prose-parsed score from a completion-marker synthesis. Subscores
+        (``solid``/``dry``/``yagni``) are not synthesised — they only appear
+        when the Player's stream parser captured them (path 1 above).
+
+        Args:
+            task_work_data: The in-progress results dict, after
+                ``arch_review_data`` extraction and after
+                ``agent_invocations`` injection (when called from
+                :meth:`_create_player_report_from_task_work`) or before
+                injection (when called from :meth:`_write_task_work_results`
+                — in that case path 2 may legitimately fire if the Player
+                emitted Phase-5 records itself).
+
+        Returns:
+            A dict to assign to ``task_work_data["code_review"]``, or
+            ``None`` to leave the existing key (or absence of key) alone.
+
+        Notes:
+            Never raises. Defensive against missing/malformed
+            ``agent_invocations`` entries — a non-list, non-dict, or
+            wrong-typed entry is silently ignored and resolution falls
+            through to the next path.
+        """
+        existing = task_work_data.get("code_review")
+        if isinstance(existing, dict) and "score" in existing:
+            return None
+
+        invocations = task_work_data.get("agent_invocations")
+        if not isinstance(invocations, list):
+            return None
+
+        for inv in invocations:
+            if not isinstance(inv, dict):
+                continue
+            if str(inv.get("phase", "")) != "5":
+                continue
+            if inv.get("agent") != "code-reviewer":
+                continue
+            if inv.get("source") != "orchestrator":
+                continue
+            status = inv.get("status")
+            if status == "completed":
+                return {
+                    "score": 100,
+                    "status": "completed",
+                    "source": "orchestrator_specialist_completion",
+                }
+            if status == "failed":
+                block: Dict[str, Any] = {
+                    "score": 0,
+                    "status": "failed",
+                    "source": "orchestrator_specialist_failure",
+                }
+                error = inv.get("error")
+                if isinstance(error, str) and error:
+                    block["error"] = error
+                return block
+            return None
+
+        return None
+
     def _compute_plan_audit_verdict(self, task_id: str) -> Dict[str, Any]:
         """Run the deterministic plan auditor; return a Coach-consumable block.
 
@@ -6787,6 +6924,18 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         # plan_audit.severity and plan_audit.violations from this block,
         # not from the Player's self-report.
         results["plan_audit"] = self._compute_plan_audit_verdict(task_id)
+
+        # TASK-FIX-DF51: code_review gate on the producer side. Coach reads
+        # task_work_results["code_review"]["score"] but no upstream producer
+        # was writing it under the OSI architecture, so the gate kept failing
+        # forever (must_fix/architectural). The fold below synthesises the
+        # block from the Phase-5 specialist record when no Player-stream
+        # score is available; see _compute_code_review_block for the full
+        # resolution order. Returns None to leave any existing block (set
+        # above from arch_review_data) untouched.
+        new_code_review = self._compute_code_review_block(results)
+        if new_code_review is not None:
+            results["code_review"] = new_code_review
 
         # TASK-FIX-RWOP1.4a: assumption-confidence warn-mode gate on the
         # producer side. Coach reads unconfirmed_low_confidence_assumptions
