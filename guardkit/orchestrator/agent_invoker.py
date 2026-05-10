@@ -5679,6 +5679,30 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         design_file = TaskArtifactPaths.design_results_path(task_id, self.worktree_path)
         return self._read_json_artifact(design_file)
 
+    def _resolve_worktree_python_executable(self) -> Optional[str]:
+        """Resolve the worktree's venv interpreter for BDD oracle subprocesses.
+
+        Resolution order: ``<worktree>/.venv/bin/python3`` →
+        ``<worktree>/.venv/bin/python`` → ``None``.
+
+        Without this, ``run_bdd_for_task`` falls back to whichever ``pytest`` is
+        first on ``PATH`` — typically a user-level interpreter that cannot
+        import the worktree's editable-installed package, causing the BDD
+        oracle to fail with ``ModuleNotFoundError`` even though the worktree's
+        own venv is correctly populated. See TASK-AB-001 / FEAT-FG-001.
+        """
+        venv_bin = Path(self.worktree_path) / ".venv" / "bin"
+        for candidate in (venv_bin / "python3", venv_bin / "python"):
+            if candidate.is_file():
+                return str(candidate)
+
+        logger.warning(
+            "BDD oracle running against system pytest; worktree-local imports "
+            "may fail (no .venv/bin/python[3] under %s).",
+            self.worktree_path,
+        )
+        return None
+
     def _run_bdd_oracle(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Run task-level BDD oracle (TASK-BDD-E8954).
 
@@ -5693,7 +5717,17 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 run_bdd_for_task,
             )
 
-            result = run_bdd_for_task(task_id, self.worktree_path)
+            python_executable = self._resolve_worktree_python_executable()
+            logger.info(
+                "BDD oracle invoking run_bdd_for_task for %s with python_executable=%s",
+                task_id,
+                python_executable,
+            )
+            result = run_bdd_for_task(
+                task_id,
+                self.worktree_path,
+                python_executable=python_executable,
+            )
         except Exception as exc:  # noqa: BLE001 — protect task-work writer
             logger.warning(
                 "BDD oracle raised %s for %s; treating as skipped.",

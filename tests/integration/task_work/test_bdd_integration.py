@@ -154,3 +154,85 @@ def test_bdd_runner_exception_does_not_break_writer(worktree: Path, monkeypatch)
     # Wiring degrades gracefully — bdd_results omitted, but file is written.
     assert results_file.exists()
     assert "bdd_results" not in payload
+
+
+# ---------------------------------------------------------------------------
+# TASK-AB-001: orchestrator threads python_executable through to bdd_runner
+# ---------------------------------------------------------------------------
+
+
+def _make_fake_python(worktree: Path, name: str) -> Path:
+    """Create an executable placeholder under <worktree>/.venv/bin/<name>."""
+    venv_bin = worktree / ".venv" / "bin"
+    venv_bin.mkdir(parents=True, exist_ok=True)
+    fake = venv_bin / name
+    fake.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    fake.chmod(0o755)
+    return fake
+
+
+def test_orchestrator_passes_worktree_python3_to_bdd_runner(worktree: Path, monkeypatch):
+    """AC: when <worktree>/.venv/bin/python3 exists, it is forwarded as python_executable."""
+    _write_feature(worktree, "login.feature", _PASS_FEATURE)
+    expected_python = _make_fake_python(worktree, "python3")
+
+    captured: dict = {}
+
+    def fake_run(task_id, worktree_path, **kwargs):
+        captured["task_id"] = task_id
+        captured["worktree_path"] = worktree_path
+        captured["kwargs"] = kwargs
+        return None
+
+    monkeypatch.setattr(bdd_runner, "run_bdd_for_task", fake_run)
+
+    invoker = _make_invoker(worktree)
+    invoker._run_bdd_oracle("TASK-001")
+
+    assert captured["kwargs"]["python_executable"] == str(expected_python)
+
+
+def test_orchestrator_falls_back_to_python_when_python3_missing(
+    worktree: Path, monkeypatch
+):
+    """Resolution order: python3 → python → None."""
+    _write_feature(worktree, "login.feature", _PASS_FEATURE)
+    expected_python = _make_fake_python(worktree, "python")
+
+    captured: dict = {}
+
+    def fake_run(task_id, worktree_path, **kwargs):
+        captured["kwargs"] = kwargs
+        return None
+
+    monkeypatch.setattr(bdd_runner, "run_bdd_for_task", fake_run)
+
+    invoker = _make_invoker(worktree)
+    invoker._run_bdd_oracle("TASK-001")
+
+    assert captured["kwargs"]["python_executable"] == str(expected_python)
+
+
+def test_orchestrator_passes_none_when_no_venv_and_logs_warning(
+    worktree: Path, monkeypatch, caplog
+):
+    """No .venv/bin/python[3] → python_executable=None plus a logged warning."""
+    _write_feature(worktree, "login.feature", _PASS_FEATURE)
+
+    captured: dict = {}
+
+    def fake_run(task_id, worktree_path, **kwargs):
+        captured["kwargs"] = kwargs
+        return None
+
+    monkeypatch.setattr(bdd_runner, "run_bdd_for_task", fake_run)
+
+    invoker = _make_invoker(worktree)
+    with caplog.at_level("WARNING", logger="guardkit.orchestrator.agent_invoker"):
+        invoker._run_bdd_oracle("TASK-001")
+
+    assert captured["kwargs"]["python_executable"] is None
+    assert any(
+        "BDD oracle running against system pytest" in record.getMessage()
+        for record in caplog.records
+    )
