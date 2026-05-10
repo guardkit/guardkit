@@ -531,6 +531,8 @@ class FeatureOrchestrator:
         emitter: Optional[Any] = None,
         task_log_interval: int = 60,
         bootstrap_failure_mode: Optional[str] = None,
+        honesty_early_abort_threshold: float = 0.3,
+        honesty_early_abort_window: int = 3,
     ):
         """
         Initialize FeatureOrchestrator.
@@ -621,6 +623,11 @@ class FeatureOrchestrator:
 
         self.repo_root = Path(repo_root).resolve()
         self.max_turns = max_turns
+        # TASK-FIX-HEAB: rolling-average honesty early-abort settings.
+        # Propagated to per-task AutoBuildOrchestrator so feature.yaml /
+        # CLI overrides flow down to every task in every wave.
+        self.honesty_early_abort_threshold = honesty_early_abort_threshold
+        self.honesty_early_abort_window = honesty_early_abort_window
         self.stop_on_failure = stop_on_failure
         self.resume = resume
         self.fresh = fresh
@@ -2942,6 +2949,9 @@ The detailed specifications are in the task markdown file.
                 venv_python=self._bootstrap_venv_python,  # TASK-FIX-7A05
                 wave_changed_files=wave_changed_files,  # TASK-FIX-A7B2
                 wave_files_lock=wave_files_lock,  # TASK-FIX-A7B2
+                # TASK-FIX-HEAB: rolling-average honesty early-abort
+                honesty_early_abort_threshold=self.honesty_early_abort_threshold,
+                honesty_early_abort_window=self.honesty_early_abort_window,
             )
 
             # Execute task orchestration

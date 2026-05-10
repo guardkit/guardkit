@@ -2327,6 +2327,14 @@ class AutoBuildOrchestrator:
                                 )
                                 self._checkpoint_manager.rollback_to(target_turn)
 
+                                # TASK-FIX-RBSS AC-1: clear the Player SDK session
+                                # so the next turn does not resume the polluted
+                                # cumulative-authoring memory of files the
+                                # rollback just deleted. Mirrors the
+                                # perspective-reset path above (lines 2161-2165).
+                                if self._agent_invoker is not None:
+                                    self._agent_invoker.set_player_resume_session(None)
+
                                 # Update state after rollback
                                 self._turn_history = turn_history[:target_turn]
                                 previous_feedback = (
