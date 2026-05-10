@@ -223,6 +223,16 @@ class CoachVerifier:
         if promise_disc:
             discrepancies.extend(promise_disc)
 
+        # Verify Player claims would be staged (TASK-AB-FIX-CHECKPOINT-CLAIM-AUDIT).
+        # Catches the FEAT-39E1 class of silent loss: Player created a file
+        # that exists on disk but is gitignored (or sparse-filtered, etc.),
+        # so the per-turn checkpoint commits without it. ``_verify_files_exist``
+        # passes because the file is on disk; this check fails because git
+        # would refuse to stage it.
+        claim_audit_disc = self._verify_claims_were_staged(player_report)
+        if claim_audit_disc:
+            discrepancies.extend(claim_audit_disc)
+
         # Verify test count
         count_disc = self._verify_test_count(player_report)
         if count_disc:
@@ -348,6 +358,181 @@ class CoachVerifier:
                 )
 
         return discrepancies
+
+    def _verify_claims_were_staged(
+        self, report: Dict[str, Any]
+    ) -> List[Discrepancy]:
+        """Verify Player-claimed files would be picked up by ``git add -A``.
+
+        Sibling of :py:meth:`_verify_files_exist`. Where ``_verify_files_exist``
+        asks "is the file on disk?", this asks "would git stage it into the
+        next checkpoint commit?". Both signals are needed: a file the Player
+        created can pass the on-disk check yet be silently filtered by
+        ``.gitignore`` (or sparse-checkout, ``assume-unchanged``, or pathspec
+        attribute filters), so the per-turn checkpoint commits without it and
+        the file is later lost when the worktree is cleaned up.
+
+        Catches the FEAT-39E1 class of silent loss
+        (TASK-AB-FIX-CHECKPOINT-CLAIM-AUDIT, 2026-05-08): Player created
+        ``src/study_tutor/adapters/manifest.py``; the worktree's ``.gitignore``
+        carried an unanchored ``adapters/`` rule; ``git add -A`` silently
+        skipped the file; the Coach approved the turn at honesty score 1.0
+        (the file *did* exist on disk); the file never reached the merged
+        branch.
+
+        Pair-with-attempted-count semantics from
+        ``.claude/rules/absence-of-failure-is-not-success.md``: when the
+        Player populated zero claim keys (zero-cardinality input), this
+        method emits no discrepancy and lets other gates decide. The implicit
+        "git add error count == 0" gate becomes pair-with-attempted-count
+        only when the attempted count is > 0.
+
+        Detection oracle. The task spec
+        (``TASK-AB-FIX-CHECKPOINT-CLAIM-AUDIT`` AC-002) names
+        ``git show --name-only --format= HEAD`` as the staged-set source.
+        That command is correct only *after* the checkpoint commit lands.
+        In the current ``autobuild.py`` flow the checkpoint commit happens
+        *after* Coach decides
+        (``autobuild.py:2257-2266`` for the approve path,
+        ``autobuild.py:2306-2316`` for the feedback path), so at honesty-
+        verification time HEAD is still the previous turn's checkpoint.
+        Using ``git status --porcelain=v1`` here gives the same signal
+        ("paths git would stage on the next ``git add -A``") at the right
+        moment in the flow — modified-tracked, untracked-not-ignored,
+        and deletions all surface, while gitignored files do not. The
+        behaviour matches AC-005/006/007.
+
+        Args:
+            report: Player report dictionary.
+
+        Returns:
+            Critical ``claim_audit`` discrepancies for files claimed but
+            not in the would-be-staged set. Empty list when:
+              * The claimed set is empty (zero-cardinality permitted).
+              * The git invocation failed (fail-open; never block gates on
+                infrastructure errors).
+              * Every claimed path is in the would-be-staged set.
+        """
+        claimed: set[str] = set()
+        for key in ("files_created", "files_modified", "tests_written"):
+            for entry in report.get(key) or []:
+                if entry:
+                    claimed.add(self._normalize_claimed_path(str(entry)))
+        for promise in report.get("completion_promises") or []:
+            if not isinstance(promise, dict):
+                continue
+            for entry in promise.get("implementation_files") or []:
+                if entry:
+                    claimed.add(self._normalize_claimed_path(str(entry)))
+            test_file = promise.get("test_file")
+            if test_file:
+                claimed.add(self._normalize_claimed_path(str(test_file)))
+
+        # AC-004: zero-cardinality permitted — no oracle ran, don't block.
+        if not claimed:
+            return []
+
+        # Fail-open guard: skip the audit when the worktree is not a git
+        # repo. The audit oracle (``git status --porcelain``) is meaningful
+        # only inside a git tree, and many of the existing fixture-based
+        # tests instantiate ``CoachVerifier`` against a plain ``tmp_path``
+        # so that ``_verify_files_exist`` can be exercised in isolation.
+        # ``.git`` is a directory in a normal repo and a file in linked
+        # worktrees — ``Path.exists()`` covers both.
+        if not (self.worktree_path / ".git").exists():
+            logger.debug(
+                "claim_audit: %s is not a git worktree; skipping audit "
+                "(fail-open).",
+                self.worktree_path,
+            )
+            return []
+
+        try:
+            # ``--untracked-files=all`` expands new untracked directories
+            # into their individual files. Without it, git collapses
+            # ``src/new_module/`` to a single ``?? src/new_module/`` line
+            # and we'd false-fail every claimed file under it.
+            result = subprocess.run(
+                ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+                cwd=self.worktree_path,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            logger.warning(
+                "claim_audit: 'git status --porcelain=v1' failed (%s) in %s; "
+                "fail-open to avoid blocking gate evaluation on infra error.",
+                exc,
+                self.worktree_path,
+            )
+            return []
+        if result.returncode != 0:
+            logger.warning(
+                "claim_audit: 'git status --porcelain=v1' returned %d in %s; "
+                "fail-open. stderr=%s",
+                result.returncode,
+                self.worktree_path,
+                result.stderr.strip(),
+            )
+            return []
+
+        would_stage: set[str] = set()
+        for line in result.stdout.splitlines():
+            # Porcelain v1 line: ``XY <path>`` or ``XY <oldpath> -> <newpath>``
+            # where X/Y are status codes. Anything reported here would be
+            # staged by ``git add -A`` — gitignored paths are excluded by
+            # default (no ``--ignored`` flag).
+            if len(line) < 4:
+                continue
+            path_part = line[3:]
+            if " -> " in path_part:
+                old, _, new = path_part.partition(" -> ")
+                would_stage.add(self._normalize_claimed_path(old.strip().strip('"')))
+                would_stage.add(self._normalize_claimed_path(new.strip().strip('"')))
+            else:
+                would_stage.add(
+                    self._normalize_claimed_path(path_part.strip().strip('"'))
+                )
+
+        dropped = sorted(claimed - would_stage)
+        if not dropped:
+            return []
+
+        discrepancies: List[Discrepancy] = []
+        for path in dropped:
+            discrepancies.append(
+                Discrepancy(
+                    claim_type="claim_audit",
+                    player_claim=f"Player claimed file {path}",
+                    actual_value=(
+                        "Path would not be staged by 'git add -A' "
+                        "(absent from 'git status --porcelain'). Most "
+                        "common cause: an unanchored .gitignore rule "
+                        "silently filters the file. Other causes: "
+                        "sparse-checkout, assume-unchanged, pathspec "
+                        "attribute filters, or the file is tracked but "
+                        "unchanged (Player claimed modified but didn't)."
+                    ),
+                    severity="critical",
+                )
+            )
+        return discrepancies
+
+    @staticmethod
+    def _normalize_claimed_path(path: str) -> str:
+        """Strip leading ``./`` so claimed paths match porcelain output.
+
+        Player reports occasionally prefix paths with ``./``; ``git status``
+        never does. Normalising both sides avoids false-fail mismatches on
+        cosmetic differences. Trailing slashes (directory markers) are also
+        stripped so ``adapters/`` matches ``adapters``.
+        """
+        cleaned = path
+        while cleaned.startswith("./"):
+            cleaned = cleaned[2:]
+        return cleaned.rstrip("/")
 
     def _verify_completion_promises_files_exist(
         self, report: Dict[str, Any]

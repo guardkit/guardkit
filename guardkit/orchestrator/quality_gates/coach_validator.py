@@ -5222,6 +5222,16 @@ class CoachValidator:
             discrepancies.extend(
                 verifier._verify_completion_promises_files_exist(task_work_results)
             )
+            # TASK-AB-FIX-CHECKPOINT-CLAIM-AUDIT: detect the FEAT-39E1 class
+            # of silent loss — Player-created files that exist on disk but
+            # are gitignored (or sparse-filtered, etc.) so the per-turn
+            # checkpoint commit drops them. Pair-with-attempted-count
+            # semantics from absence-of-failure-is-not-success.md guard the
+            # implicit "git add error count == 0" gate against zero-attempted
+            # false-greens.
+            discrepancies.extend(
+                verifier._verify_claims_were_staged(task_work_results)
+            )
             total = verifier._count_verifiable_claims(task_work_results)
             critical = sum(1 for d in discrepancies if d.severity == "critical")
             return HonestyVerification(
@@ -5258,23 +5268,58 @@ class CoachValidator:
         ``promise_file_existence`` (FEAT-6CC5 sophisticated-lie
         pattern), and content-claim discrepancies (``test_result``,
         ``test_count``) retain ``must_fix`` and short-circuit.
+
+        ``claim_audit`` discrepancies (TASK-AB-FIX-CHECKPOINT-CLAIM-AUDIT,
+        sibling of TASK-AB-FIX-INVAB1's ``honesty`` category) are emitted
+        with ``category: "claim_audit"`` instead of ``"honesty"``, are
+        always ``must_fix``, and are excluded from the FEAT-FFC3
+        single-discrepancy demotion above. The class they cover —
+        Player-created files silently dropped by ``git add -A`` — is a
+        different defect shape than the FFC3 ghost-path case the
+        demotion was added for, and a single dropped path is enough
+        signal to reject the turn.
         """
         critical = [d for d in honesty.discrepancies if d.severity == "critical"]
+        # Partition: claim_audit discrepancies have their own category and
+        # never participate in the FEAT-FFC3 single-discrepancy demotion.
+        non_audit = [d for d in critical if d.claim_type != "claim_audit"]
+        audit = [d for d in critical if d.claim_type == "claim_audit"]
         demote = (
-            len(critical) == 1
-            and critical[0].claim_type == "file_existence"
+            len(non_audit) == 1
+            and non_audit[0].claim_type == "file_existence"
         )
-        severity = "should_fix" if demote else "must_fix"
+        severity_for_non_audit = "should_fix" if demote else "must_fix"
+
         issues: List[Dict[str, Any]] = []
-        for d in critical:
+        for d in non_audit:
             issues.append(
                 {
-                    "severity": severity,
+                    "severity": severity_for_non_audit,
                     "category": "honesty",
                     "description": (
                         f"Honesty verification failed: Player claim disagrees "
                         f"with worktree state. Claim: {d.player_claim}. "
                         f"Actual: {d.actual_value}."
+                    ),
+                    "details": {
+                        "claim_type": d.claim_type,
+                        "player_claim": d.player_claim,
+                        "actual_value": d.actual_value,
+                    },
+                }
+            )
+        for d in audit:
+            issues.append(
+                {
+                    "severity": "must_fix",
+                    "category": "claim_audit",
+                    "description": (
+                        f"Checkpoint claim audit failed: Player claimed a "
+                        f"file that 'git add -A' would not stage. "
+                        f"{d.player_claim}. {d.actual_value} Investigate "
+                        f"before approving the turn — most common cause is "
+                        f"an unanchored .gitignore rule silently filtering "
+                        f"the file out of the per-turn checkpoint commit."
                     ),
                     "details": {
                         "claim_type": d.claim_type,
