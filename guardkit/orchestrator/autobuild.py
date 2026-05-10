@@ -2445,30 +2445,42 @@ class AutoBuildOrchestrator:
             return turn_history, "max_turns_exceeded"
 
     def _cap_specialist_timeout(
-        self, remaining_budget: Optional[float]
+        self,
+        remaining_budget: Optional[float],
+        task_id: str,
     ) -> int:
-        """Cap orchestrator-invoked specialist sdk_timeout at remaining wall (TASK-ABSR-WALL).
+        """Cap orchestrator-invoked specialist sdk_timeout via the Player-side scaler.
 
-        Mirrors the Player-side cap in ``AgentInvoker._calculate_sdk_timeout`` so a
+        Delegates the base computation to
+        ``AgentInvoker._calculate_sdk_timeout`` so the specialist receives the
+        same mode/complexity multipliers the Player gets for the same task
+        (TASK-FIX-CRSTL-MULT). Then applies the wall-clock clamp on top so a
         single specialist (Phase 4 test-orchestrator or Phase 5 code-reviewer)
-        cannot consume the entire remaining wall budget when ``self.sdk_timeout``
+        cannot consume the entire remaining wall budget when the scaled value
         exceeds what's left.
 
         Reserves ``COACH_GRACE_PERIOD_SECONDS`` so Coach still has a window to
         validate after the specialist returns. Floors at 60 s to prevent
-        pathologically-low values from blocking specialists entirely.
+        pathologically-low values from blocking specialists entirely
+        (TASK-ABSR-WALL).
 
         Set ``GUARDKIT_SPECIALIST_TIMEOUT_CAP=disable`` to short-circuit the
-        cap (emergency backout).
+        wall clamp (the scaling still applies — disable means "no wall cap",
+        not "no scaling"). Emergency backout only.
         """
-        base = self.sdk_timeout or 1200
         if os.environ.get("GUARDKIT_SPECIALIST_TIMEOUT_CAP") == "disable":
-            return base
+            return self._agent_invoker._calculate_sdk_timeout(
+                task_id, remaining_budget=None
+            )
+
+        scaled = self._agent_invoker._calculate_sdk_timeout(
+            task_id, remaining_budget=remaining_budget
+        )
         if remaining_budget is None:
-            return base
+            return scaled
         reserved = remaining_budget - COACH_GRACE_PERIOD_SECONDS
         cap = max(60, int(reserved))
-        return min(base, cap)
+        return min(scaled, cap)
 
     def _execute_turn(
         self,
@@ -2950,7 +2962,8 @@ class AutoBuildOrchestrator:
                             worktree_path=worktree.path,
                             task_id=task_id,
                             sdk_timeout=self._cap_specialist_timeout(
-                                remaining_budget=remaining_budget
+                                remaining_budget=remaining_budget,
+                                task_id=task_id,
                             ),
                             agent_invoker=self._agent_invoker,
                             cancellation_event=self._cancellation_event,
@@ -2980,7 +2993,8 @@ class AutoBuildOrchestrator:
                                 task_id=task_id,
                                 phase4_result=phase4_result,
                                 sdk_timeout=self._cap_specialist_timeout(
-                                    remaining_budget=phase5_remaining
+                                    remaining_budget=phase5_remaining,
+                                    task_id=task_id,
                                 ),
                                 agent_invoker=self._agent_invoker,
                                 cancellation_event=self._cancellation_event,

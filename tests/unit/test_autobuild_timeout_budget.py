@@ -793,71 +793,149 @@ class TestFeatureOrchestratorBudgetPropagation:
 
 
 class TestCapSpecialistTimeout:
-    """Cap orchestrator-invoked specialist sdk_timeout at remaining wall.
+    """Cap orchestrator-invoked specialist sdk_timeout via the Player-side scaler.
 
-    The cap mirrors the Player-side cap in
-    ``AgentInvoker._calculate_sdk_timeout`` so a single specialist cannot
-    consume the entire remaining wall budget when ``self.sdk_timeout``
-    exceeds what's left.
+    TASK-FIX-CRSTL-MULT: ``_cap_specialist_timeout`` delegates the base value
+    to ``AgentInvoker._calculate_sdk_timeout`` so the specialist receives the
+    same mode/complexity multipliers the Player gets for the same task, then
+    applies the Coach-grace wall clamp on top so a single specialist cannot
+    consume the entire remaining wall budget.
     """
 
     def _orchestrator(
-        self, worktree_path, mock_worktree, sdk_timeout: int = 1200
+        self,
+        worktree_path,
+        mock_worktree,
+        scaled_timeout: int = 1200,
     ) -> AutoBuildOrchestrator:
         orch = _make_orchestrator(worktree_path, mock_worktree)
-        orch.sdk_timeout = sdk_timeout
+        # The mock agent_invoker's _calculate_sdk_timeout returns the scaled
+        # value the function will then clamp against the wall.
+        orch._agent_invoker._calculate_sdk_timeout = Mock(return_value=scaled_timeout)
         return orch
 
-    def test_uses_full_when_ample_remaining(
+    def test_uses_scaled_when_ample_remaining(
         self, worktree_path, mock_worktree
     ):
-        """Ample remaining_budget → returns base sdk_timeout unchanged."""
-        orch = self._orchestrator(worktree_path, mock_worktree, sdk_timeout=1200)
+        """Ample remaining_budget → returns scaled value unchanged."""
+        orch = self._orchestrator(
+            worktree_path, mock_worktree, scaled_timeout=1200
+        )
         # 2400 remaining - 120 grace = 2280 reserved; min(1200, 2280) = 1200
-        assert orch._cap_specialist_timeout(remaining_budget=2400.0) == 1200
+        result = orch._cap_specialist_timeout(
+            remaining_budget=2400.0, task_id="TASK-AB-001"
+        )
+        assert result == 1200
+        orch._agent_invoker._calculate_sdk_timeout.assert_called_once_with(
+            "TASK-AB-001", remaining_budget=2400.0
+        )
 
     def test_caps_when_low_remaining(
         self, worktree_path, mock_worktree
     ):
         """Low remaining_budget → cap to remaining minus COACH_GRACE_PERIOD."""
-        orch = self._orchestrator(worktree_path, mock_worktree, sdk_timeout=1200)
+        orch = self._orchestrator(
+            worktree_path, mock_worktree, scaled_timeout=1200
+        )
         # 800 remaining - 120 grace = 680 reserved; min(1200, 680) = 680
-        assert orch._cap_specialist_timeout(remaining_budget=800.0) == 680
+        result = orch._cap_specialist_timeout(
+            remaining_budget=800.0, task_id="TASK-AB-001"
+        )
+        assert result == 680
 
     def test_floor_at_60s(self, worktree_path, mock_worktree):
         """Pathologically-low remaining → floor at 60 s, never zero/negative."""
-        orch = self._orchestrator(worktree_path, mock_worktree, sdk_timeout=1200)
+        orch = self._orchestrator(
+            worktree_path, mock_worktree, scaled_timeout=1200
+        )
         # 100 remaining - 120 grace = -20 reserved; floor 60; min(1200, 60) = 60
-        assert orch._cap_specialist_timeout(remaining_budget=100.0) == 60
+        assert (
+            orch._cap_specialist_timeout(
+                remaining_budget=100.0, task_id="TASK-AB-001"
+            )
+            == 60
+        )
         # Even at remaining=0 the floor still holds.
-        assert orch._cap_specialist_timeout(remaining_budget=0.0) == 60
+        assert (
+            orch._cap_specialist_timeout(
+                remaining_budget=0.0, task_id="TASK-AB-001"
+            )
+            == 60
+        )
 
-    def test_no_budget_passes_base(
+    def test_no_budget_returns_scaled(
         self, worktree_path, mock_worktree
     ):
-        """remaining_budget=None → return base sdk_timeout (no cap)."""
-        orch = self._orchestrator(worktree_path, mock_worktree, sdk_timeout=1200)
-        assert orch._cap_specialist_timeout(remaining_budget=None) == 1200
+        """remaining_budget=None → return scaled value (no wall clamp)."""
+        orch = self._orchestrator(
+            worktree_path, mock_worktree, scaled_timeout=1200
+        )
+        result = orch._cap_specialist_timeout(
+            remaining_budget=None, task_id="TASK-AB-001"
+        )
+        assert result == 1200
+        orch._agent_invoker._calculate_sdk_timeout.assert_called_once_with(
+            "TASK-AB-001", remaining_budget=None
+        )
 
-    def test_circuit_breaker_env_var(
+    def test_circuit_breaker_env_var_keeps_scaling(
         self, worktree_path, mock_worktree, monkeypatch
     ):
-        """GUARDKIT_SPECIALIST_TIMEOUT_CAP=disable → return base regardless."""
-        orch = self._orchestrator(worktree_path, mock_worktree, sdk_timeout=1200)
+        """GUARDKIT_SPECIALIST_TIMEOUT_CAP=disable → return scaled value, no wall clamp.
+
+        TASK-FIX-CRSTL-MULT: disable means "no wall cap", not "no scaling".
+        The function must still call ``_calculate_sdk_timeout`` so the
+        mode/complexity multipliers are applied, but with ``remaining_budget=None``
+        so neither the Player-side budget cap nor the orchestrator-side wall
+        clamp is applied.
+        """
+        orch = self._orchestrator(
+            worktree_path, mock_worktree, scaled_timeout=1200
+        )
         monkeypatch.setenv("GUARDKIT_SPECIALIST_TIMEOUT_CAP", "disable")
         # Without the env var this would be capped to 60.
-        assert orch._cap_specialist_timeout(remaining_budget=100.0) == 1200
+        result = orch._cap_specialist_timeout(
+            remaining_budget=100.0, task_id="TASK-AB-001"
+        )
+        assert result == 1200
+        # The scaler is called with remaining_budget=None when the wall cap
+        # is disabled — disable nukes BOTH wall caps, not just the
+        # orchestrator's.
+        orch._agent_invoker._calculate_sdk_timeout.assert_called_once_with(
+            "TASK-AB-001", remaining_budget=None
+        )
 
-    def test_falls_back_when_sdk_timeout_unset(
+    def test_scaled_value_propagates_from_invoker(
         self, worktree_path, mock_worktree
     ):
-        """Defensive: if sdk_timeout is None, treat base as 1200."""
-        orch = self._orchestrator(worktree_path, mock_worktree, sdk_timeout=1200)
-        orch.sdk_timeout = None  # simulate missing config
-        # No budget → base 1200
-        assert orch._cap_specialist_timeout(remaining_budget=None) == 1200
-        # Ample budget → still base
-        assert orch._cap_specialist_timeout(remaining_budget=2400.0) == 1200
+        """The function trusts the scaler's verdict: a 2999 s scaled value
+        with ample wall budget passes through unchanged.
+
+        Reproduces the FEAT-RAG-08 / TASK-AIV2-003 scenario from the parent
+        review: complexity=7, mode=task-work, base=1200 → scaled=2999, wall
+        budget ~2787 s. Pre-fix the orchestrator clamped to a flat 1200;
+        post-fix it clamps against the actual wall reserve.
+        """
+        orch = self._orchestrator(
+            worktree_path, mock_worktree, scaled_timeout=2999
+        )
+        # 2787 remaining - 120 grace = 2667 reserved; min(2999, 2667) = 2667
+        result = orch._cap_specialist_timeout(
+            remaining_budget=2787.0, task_id="TASK-AIV2-003"
+        )
+        assert result == 2667
+        orch._agent_invoker._calculate_sdk_timeout.assert_called_once_with(
+            "TASK-AIV2-003", remaining_budget=2787.0
+        )
+
+    def test_task_id_is_required(self, worktree_path, mock_worktree):
+        """task_id is a required parameter (TASK-FIX-CRSTL-MULT AC)."""
+        orch = self._orchestrator(
+            worktree_path, mock_worktree, scaled_timeout=1200
+        )
+        with pytest.raises(TypeError):
+            # Missing task_id should raise TypeError, not silently fall back.
+            orch._cap_specialist_timeout(remaining_budget=2400.0)
 
 
 # ============================================================================
@@ -1114,13 +1192,27 @@ class TestSpecialistBudgetRefresh:
         return orch
 
     def _wrap_cap(self, orchestrator):
-        """Wrap ``_cap_specialist_timeout`` so each call's input is captured."""
+        """Wrap ``_cap_specialist_timeout`` so each call's input is captured.
+
+        TASK-FIX-CRSTL-MULT: the function now takes ``task_id`` as a required
+        kwarg. The wrapper captures only ``remaining_budget`` (the value the
+        budget-refresh tests assert against) but forwards both args through to
+        the real implementation.
+        """
         cap_inputs: List[Optional[float]] = []
+        # Stage the agent_invoker mock so the real implementation can resolve
+        # a scaled value. The refresh tests only care about the input each
+        # cap call sees; the scaler output is incidental.
+        orchestrator._agent_invoker._calculate_sdk_timeout = Mock(
+            return_value=orchestrator.sdk_timeout or 1200
+        )
         original_cap = orchestrator._cap_specialist_timeout
 
-        def capture_cap(remaining_budget=None):
+        def capture_cap(remaining_budget=None, task_id=None):
             cap_inputs.append(remaining_budget)
-            return original_cap(remaining_budget=remaining_budget)
+            return original_cap(
+                remaining_budget=remaining_budget, task_id=task_id
+            )
 
         orchestrator._cap_specialist_timeout = capture_cap
         return cap_inputs

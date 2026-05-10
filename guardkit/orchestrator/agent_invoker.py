@@ -2507,6 +2507,29 @@ Follow the decision format specified in your agent definition.
                                     # TASK-FIX-OBS2: Track tool use for progress logging
                                     if self._progress_logger:
                                         self._track_tool_use(message)
+                                    # TASK-FIX-CRSTL-MULT R2: Emit ToolUseBlock log
+                                    # lines on the specialist path so per-tool signal
+                                    # surfaces during long specialist invocations.
+                                    # Player/Coach paths already get this from the
+                                    # task-work delegation path; gating on
+                                    # heartbeat_label_override avoids double-logging.
+                                    if heartbeat_label_override is not None:
+                                        content = getattr(message, "content", None) or []
+                                        for block in content:
+                                            if type(block).__name__ != "ToolUseBlock":
+                                                continue
+                                            tool_input = getattr(block, "input", {}) or {}
+                                            keys = (
+                                                sorted(tool_input.keys())
+                                                if isinstance(tool_input, dict)
+                                                else []
+                                            )
+                                            logger.info(
+                                                f"[{task_id}] {heartbeat_label_override} "
+                                                f"ToolUseBlock "
+                                                f"{getattr(block, 'name', '?')} "
+                                                f"input keys: {keys}"
+                                            )
                                     # Progress tracking handled by ProgressDisplay
                                     # Agent writes report to JSON file, which is loaded after
                                     # the query completes via _load_agent_report()
