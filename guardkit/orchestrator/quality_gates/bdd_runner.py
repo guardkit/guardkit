@@ -29,6 +29,7 @@ territory) and is intentionally out of scope here.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -62,6 +63,15 @@ _PYTEST_EXIT_USAGE_ERROR = 4       # pytest usage error (e.g. "not found", bad a
 
 # Cap raw output captured into BDDResult to keep result JSON small.
 _MAX_RAW_OUTPUT_CHARS = 8_000
+
+# Env-var contract (TASK-AB-004): the pytest subprocess advertises the active
+# task ID so the project's ``features/conftest.py`` collection bridge can pick
+# the per-task glue module ``test_<slug>__<sanitised_task_id>.py`` over the
+# legacy shared ``test_<slug>.py``. Solves the FEAT-FG-001 race where two
+# parallel tasks both rewrote the same shared glue file. Sanitisation matches
+# ``_build_pytest_argv`` (``:`` and ``-`` → ``_``); the conftest is responsible
+# for applying that on the consumer side.
+_BDD_TASK_ID_ENV: str = "GUARDKIT_BDD_TASK_ID"
 
 # Cap runner-error reason snippets to keep synthetic FailureDetail compact.
 _RUNNER_ERROR_REASON_MAX = 200
@@ -386,15 +396,27 @@ def _invoke_pytest_bdd(
     junit_xml_path: Path,
     timeout: int,
     python_executable: Optional[str] = None,
+    task_id: Optional[str] = None,
 ) -> _PytestInvocation:
     """Run pytest-bdd in a subprocess and capture its outputs.
 
     Isolated as its own function so unit tests can monkeypatch it without
     spawning real subprocesses.
+
+    When ``task_id`` is given, ``GUARDKIT_BDD_TASK_ID=<task_id>`` is set in
+    the subprocess environment (on top of the inherited env). The project's
+    ``features/conftest.py`` reads this variable to pick the per-task glue
+    module ``test_<slug>__<sanitised_task_id>.py`` over the legacy shared
+    ``test_<slug>.py`` (TASK-AB-004). When ``task_id`` is ``None`` the env
+    is inherited unchanged so legacy single-task callers stay untouched.
     """
     argv = _build_pytest_argv(feature_files, tag, junit_xml_path)
     if python_executable:
         argv = [python_executable, "-m", *argv]
+    env: Optional[Dict[str, str]] = None
+    if task_id is not None:
+        env = os.environ.copy()
+        env[_BDD_TASK_ID_ENV] = task_id
     try:
         proc = subprocess.run(
             argv,
@@ -402,6 +424,7 @@ def _invoke_pytest_bdd(
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=env,
         )
     except subprocess.TimeoutExpired as exc:
         logger.warning("pytest-bdd timed out after %ss: %s", timeout, exc)
@@ -518,6 +541,7 @@ def run_bdd_for_task(
         junit_xml_path=junit_xml_path,
         timeout=timeout,
         python_executable=python_executable,
+        task_id=task_id,
     )
 
     passed, failures, pending = parse_junit_xml(invocation.junit_xml)
@@ -599,4 +623,5 @@ __all__ = [
     "parse_junit_xml",
     "run_bdd_for_task",
     "task_tag",
+    "_BDD_TASK_ID_ENV",
 ]

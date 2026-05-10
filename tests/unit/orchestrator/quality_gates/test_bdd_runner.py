@@ -342,13 +342,25 @@ class _Patcher:
         self.stderr = stderr
         self.calls: List[dict] = []
 
-    def __call__(self, *, feature_files, tag, cwd, junit_xml_path, timeout, python_executable=None):
+    def __call__(
+        self,
+        *,
+        feature_files,
+        tag,
+        cwd,
+        junit_xml_path,
+        timeout,
+        python_executable=None,
+        task_id=None,
+    ):
         self.calls.append({
             "feature_files": list(feature_files),
             "tag": tag,
             "cwd": cwd,
             "junit_xml_path": junit_xml_path,
             "timeout": timeout,
+            "python_executable": python_executable,
+            "task_id": task_id,
         })
         # Materialise the junit file too so the runner can read it back.
         Path(junit_xml_path).parent.mkdir(parents=True, exist_ok=True)
@@ -551,6 +563,126 @@ class TestRunBddForTask:
         assert call["tag"] == "@task:TASK-001"
         assert call["cwd"] == worktree
         assert any(p.name == "login.feature" for p in call["feature_files"])
+
+    def test_run_threads_task_id_to_invocation(
+        self, worktree: Path, monkeypatch
+    ):
+        # AC (TASK-AB-004): run_bdd_for_task must thread its ``task_id``
+        # argument into _invoke_pytest_bdd so the env-var contract reaches
+        # the pytest subprocess. _PASS_FEATURE carries @task:TASK-001 so
+        # that's the task id we run the oracle against.
+        _write_feature(worktree, "login.feature", _PASS_FEATURE)
+        monkeypatch.setattr(bdd_runner, "has_pytest_bdd", lambda **_: True)
+        invoker = _Patcher(_PASSED_JUNIT)
+        monkeypatch.setattr(bdd_runner, "_invoke_pytest_bdd", invoker)
+
+        run_bdd_for_task("TASK-001", worktree)
+
+        assert len(invoker.calls) == 1
+        assert invoker.calls[0]["task_id"] == "TASK-001"
+
+
+# ---------------------------------------------------------------------------
+# GUARDKIT_BDD_TASK_ID env-var threading (TASK-AB-004)
+#
+# When ``task_id`` is supplied to _invoke_pytest_bdd, the pytest subprocess
+# must inherit the parent env AND have ``GUARDKIT_BDD_TASK_ID=<task_id>``
+# set on top. This is the contract the project's features/conftest.py reads
+# to pick the per-task glue module ``test_<slug>__<TASK_ID>.py`` over the
+# legacy shared ``test_<slug>.py``.
+# ---------------------------------------------------------------------------
+
+
+class TestBddTaskIdEnvThreading:
+    def _capture_subprocess_run(self, monkeypatch):
+        """Patch ``subprocess.run`` inside bdd_runner and capture kwargs."""
+        captured: dict = {}
+
+        class _CompletedProcess:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        def _fake_run(argv, **kwargs):
+            captured["argv"] = list(argv)
+            captured["env"] = kwargs.get("env")
+            captured["cwd"] = kwargs.get("cwd")
+            captured["timeout"] = kwargs.get("timeout")
+            return _CompletedProcess()
+
+        monkeypatch.setattr(bdd_runner.subprocess, "run", _fake_run)
+        return captured
+
+    def test_invoke_sets_guardkit_bdd_task_id_env(
+        self, tmp_path: Path, monkeypatch
+    ):
+        # AC: GUARDKIT_BDD_TASK_ID is present in the subprocess env when
+        # task_id is supplied.
+        feature = tmp_path / "x.feature"
+        feature.write_text(_PASS_FEATURE, encoding="utf-8")
+        junit = tmp_path / "junit.xml"
+        captured = self._capture_subprocess_run(monkeypatch)
+
+        bdd_runner._invoke_pytest_bdd(
+            feature_files=[feature],
+            tag="@task:TASK-FG-002",
+            cwd=tmp_path,
+            junit_xml_path=junit,
+            timeout=30,
+            task_id="TASK-FG-002",
+        )
+
+        assert captured["env"] is not None
+        assert captured["env"][bdd_runner._BDD_TASK_ID_ENV] == "TASK-FG-002"
+
+    def test_invoke_preserves_inherited_env(
+        self, tmp_path: Path, monkeypatch
+    ):
+        # AC: setting GUARDKIT_BDD_TASK_ID must not strip the parent env
+        # (PATH, PYTHONPATH, etc.). os.environ.copy() then update.
+        monkeypatch.setenv("GUARDKIT_BDD_PROBE_VAR", "probe-value")
+        feature = tmp_path / "x.feature"
+        feature.write_text(_PASS_FEATURE, encoding="utf-8")
+        junit = tmp_path / "junit.xml"
+        captured = self._capture_subprocess_run(monkeypatch)
+
+        bdd_runner._invoke_pytest_bdd(
+            feature_files=[feature],
+            tag="@task:TASK-FG-002",
+            cwd=tmp_path,
+            junit_xml_path=junit,
+            timeout=30,
+            task_id="TASK-FG-002",
+        )
+
+        env = captured["env"]
+        assert env is not None
+        assert env.get("GUARDKIT_BDD_PROBE_VAR") == "probe-value"
+        assert env[bdd_runner._BDD_TASK_ID_ENV] == "TASK-FG-002"
+
+    def test_invoke_without_task_id_inherits_env_unchanged(
+        self, tmp_path: Path, monkeypatch
+    ):
+        # AC (regression): the legacy single-task path (task_id=None) must
+        # leave the subprocess env exactly inherited — passing env=None to
+        # subprocess.run delegates that to the OS rather than constructing
+        # a clean dict, which is the pre-AB-004 behaviour.
+        feature = tmp_path / "x.feature"
+        feature.write_text(_PASS_FEATURE, encoding="utf-8")
+        junit = tmp_path / "junit.xml"
+        captured = self._capture_subprocess_run(monkeypatch)
+
+        bdd_runner._invoke_pytest_bdd(
+            feature_files=[feature],
+            tag="@task:TASK-FG-002",
+            cwd=tmp_path,
+            junit_xml_path=junit,
+            timeout=30,
+            task_id=None,
+        )
+
+        # env=None preserves pre-fix behaviour (subprocess inherits parent).
+        assert captured["env"] is None
 
 
 # ---------------------------------------------------------------------------
