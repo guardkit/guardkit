@@ -394,3 +394,72 @@ Summary
   insertions, 94 deletions.                                                                                              
                                                                   
   Want me to /schedule an agent in ~3 weeks to check whether TASK-REV-COSE has landed and unblock TASK-FIX-A7B7? 
+
+
+
+
+  Done. Here's what landed:
+
+Review report (.claude/reviews/TASK-REV-ABST-review-report.md) — verdict: Narrow + 7-day freeze + re-measurement on 2026-05-17. Updated §8.4 records the deadline-driven rescoping (dropped TASK-VAL-FG001/FFC3/FRESH because they require autobuild reruns; passive monitoring substitutes documented).
+
+5 concrete tasks filed in tasks/backlog/ (each has full content — frontmatter + EARS-style ACs + files-to-create/modify + evidence cites + dependencies, ready for /feature-spec or direct /task-work):
+
+Task	Effort	When
+TASK-FREEZE-ABST	<1h	now
+TASK-OBS-ABST — passive guardkit observability run-success CLI scanning existing on-disk artefacts; closes the §9.1 evidence gap reusably	4-6h	now
+TASK-RETIRE-AC — citation grep + retire/keep audit	1-2h	now (after FREEZE)
+TASK-DEMOTE-PA	1-2h	deferred to 2026-05-17
+TASK-REV-ABST.1 — falsifier scoring, picks Continue/Hold/Pivot	2-3h	deferred to 2026-05-17
+TASK-REV-ABST itself is now in tasks/review_complete/ with frontmatter status: review_complete and a review_results block recording the verdict, falsifiers, follow-up date, and report path.
+
+TASK-REV-PIVOT is deferred-and-not-filed — only created if a NEGATIVE-falsifier fires on 2026-05-17.
+
+Net immediate cost to you under deadline: ~7-9 hours of audit/observability work spread over the 7-day freeze. The follow-up review on 2026-05-17 only uses data you'll have generated passively.
+
+
+
+
+FG-001 succeeded — that's a major positive signal. 6/6 tasks COMPLETED, 22 minutes, the resumed wave-2 stall is gone, TASK-FG-004 (the only fresh work) approved on Turn 2. This is the first validation observation that the AB-001/003/004 fixes actually hold against the load-bearing reproducer that motivated them.
+
+It doesn't fully fire POSITIVE-1 (which needs ≥3 features clean on first-turn — FG-004 took 2 turns, not 1) but it does fire POSITIVE-2 (no new framework FP incident filed) and rules out NEGATIVE-2 (no ≥5-turn identical-feedback stall). Net effect on the verdict: Narrow still holds, but the trajectory just got a strong corroborating data point. TASK-OBS-ABST will pick this up automatically when it runs.
+
+How to implement the 5 tasks:
+
+Four are implementation tasks (use /task-work); one is a review (/task-review).
+
+Task	Command	When
+TASK-FREEZE-ABST	/task-work TASK-FREEZE-ABST	now — lightweight, do first
+TASK-OBS-ABST	/task-work TASK-OBS-ABST	now — main effort (4-6h)
+TASK-RETIRE-AC	/task-work TASK-RETIRE-AC	after FREEZE completes (depends on freeze record existing)
+TASK-DEMOTE-PA	/task-work TASK-DEMOTE-PA	2026-05-17 or later (frontmatter not_actionable_until: 2026-05-17)
+TASK-REV-ABST.1	/task-review TASK-REV-ABST.1	2026-05-17 or later (it's task_type: review, not implementation)
+Recommended order
+
+# Today (under 1h):
+/task-work TASK-FREEZE-ABST
+
+# Today / over the next few days (4-6h, the main monitoring deliverable):
+/task-work TASK-OBS-ABST
+
+# After FREEZE lands (1-2h):
+/task-work TASK-RETIRE-AC
+
+# On 2026-05-17:
+/task-work TASK-DEMOTE-PA      # 1-2h
+/task-review TASK-REV-ABST.1   # 2-3h, picks Continue/Hold/Pivot
+A few notes on what /task-work will do
+It auto-detects complexity from frontmatter and runs Phase 2-5 (plan → arch review → complexity eval → implementation → tests → code review). All four implementation tasks are complexity 2-5, so they should auto-proceed without hitting the Phase 2.8 human checkpoint (that fires at ≥7).
+TASK-OBS-ABST has complexity: 5 and 10 ACs — /task-work will likely break it into a multi-phase plan; you'll see the plan before implementation starts and can intervene if you want a slimmer first cut.
+not_actionable_until: 2026-05-17 is informational only — it won't physically block early execution, but /task-work should surface it. If it doesn't, just don't run them early.
+Parallel option (optional)
+TASK-FREEZE-ABST and TASK-OBS-ABST touch different files (.claude/state/, tests/rules/, CLAUDE.md vs guardkit/observability/, guardkit/cli.py) — they could run in parallel via Conductor workspaces if you want. Sequential is simpler and they're small enough that the parallelism overhead probably isn't worth it.
+
+please can you save this to a markdown doc for future reference
+
+
+Saved to .claude/reviews/TASK-REV-ABST-implementation-guide.md — sibling to the review report so anyone reading the report finds it.
+
+It captures: the verdict context, the 5 tasks + commands, recommended order, dependency graph, /task-work behaviour notes, the FG-001 success observation and its effect on the falsifier set, the 2026-05-17 precondition checks, and a "future agents" reading order if you're picking it up cold post-deadlines.
+
+
+
