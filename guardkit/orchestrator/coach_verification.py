@@ -62,16 +62,26 @@ class Discrepancy:
     """A discrepancy between Player claim and reality.
 
     Attributes:
-        claim_type: Type of claim ("test_result", "file_existence", "test_count")
+        claim_type: Type of claim ("test_result", "file_existence",
+            "test_count", "claim_audit", "claim_audit_gitignored").
         player_claim: What the Player reported
         actual_value: What was actually found
-        severity: Severity level ("critical", "warning", "info")
+        severity: Severity level ("critical", "should_fix", "warning", "info")
+        ignore_rule: For ``claim_audit_gitignored`` discrepancies, the
+            ``<source>:<linenum>:<pattern>`` line from
+            ``git check-ignore -v --no-index`` that matched the path.
+            ``None`` for every other claim_type. Used by the Coach
+            feedback path to surface the matched rule to the Player and,
+            when the source is the project-root ``.gitignore``, to
+            append a "rebase the worktree onto main" hint
+            (TASK-FIX-IGNR AC-6).
     """
 
     claim_type: str
     player_claim: str
     actual_value: str
-    severity: str  # "critical", "warning", "info"
+    severity: str  # "critical", "should_fix", "warning", "info"
+    ignore_rule: Optional[str] = None
 
 
 @dataclass
@@ -122,12 +132,21 @@ class HonestyVerification:
             ``file_existence`` discrepancy but were resolved through
             state_bridge identity lookup (TASK-FIX-1B4A). Empty list when
             no resolutions occurred or state_bridge wiring is absent.
+        should_fix_count: Count of ``severity == "should_fix"`` discrepancies
+            (TASK-FIX-IGNR). These are advisory — they do not contribute to
+            ``honesty_score`` and do not short-circuit gate evaluation, but
+            they ride along to Coach feedback so the Player can act on them.
+            The motivating case is ``claim_audit_gitignored``: a Player-
+            authored file that is on disk but silently filtered by
+            ``.gitignore`` deserves an actionable warning, not a
+            turn-rejecting fabrication verdict.
     """
 
     verified: bool
     discrepancies: List[Discrepancy] = field(default_factory=list)
     honesty_score: float = 1.0
     resolved_paths: List[ResolvedPath] = field(default_factory=list)
+    should_fix_count: int = 0
 
 
 class CoachVerifier:
@@ -241,6 +260,12 @@ class CoachVerifier:
         # Calculate honesty score
         total_claims = self._count_verifiable_claims(player_report)
         critical_failures = len([d for d in discrepancies if d.severity == "critical"])
+        # TASK-FIX-IGNR AC-2: should_fix discrepancies (e.g.
+        # claim_audit_gitignored) do NOT contribute to honesty_score —
+        # they ride along as advisory feedback only.
+        should_fix_count = len(
+            [d for d in discrepancies if d.severity == "should_fix"]
+        )
         honesty_score = 1.0 - (critical_failures / max(total_claims, 1))
 
         return HonestyVerification(
@@ -248,6 +273,7 @@ class CoachVerifier:
             discrepancies=discrepancies,
             honesty_score=honesty_score,
             resolved_paths=list(self._resolved_paths),
+            should_fix_count=should_fix_count,
         )
 
     def _verify_test_results(self, report: Dict[str, Any]) -> List[Discrepancy]:
@@ -500,25 +526,140 @@ class CoachVerifier:
         if not dropped:
             return []
 
+        # TASK-FIX-IGNR: split the dropped set into "fabricated" (path is
+        # absent from disk OR present but git would refuse to stage for a
+        # non-ignore reason — e.g. tracked-but-unchanged) and "gitignored"
+        # (path is on disk and ``git check-ignore -v --no-index`` matches
+        # an ignore rule). The first stays ``severity="critical"`` because
+        # the Player is claiming work that did not land. The second drops
+        # to ``severity="should_fix"``: the Player-authored file exists,
+        # the .gitignore is the bug, and short-circuiting the gate
+        # produces the FEAT-39E1 turn-1 → turn-5 adversarial blow-up
+        # documented in TASK-REV-F30A.
         discrepancies: List[Discrepancy] = []
         for path in dropped:
-            discrepancies.append(
-                Discrepancy(
-                    claim_type="claim_audit",
-                    player_claim=f"Player claimed file {path}",
-                    actual_value=(
-                        "Path would not be staged by 'git add -A' "
-                        "(absent from 'git status --porcelain'). Most "
-                        "common cause: an unanchored .gitignore rule "
-                        "silently filters the file. Other causes: "
-                        "sparse-checkout, assume-unchanged, pathspec "
-                        "attribute filters, or the file is tracked but "
-                        "unchanged (Player claimed modified but didn't)."
-                    ),
-                    severity="critical",
+            classification = self._classify_dropped_path(path)
+            if classification == "gitignored":
+                ignore_rule = self._git_check_ignore_rule(path)
+                discrepancies.append(
+                    Discrepancy(
+                        claim_type="claim_audit_gitignored",
+                        player_claim=f"Player claimed file {path}",
+                        actual_value=(
+                            f"Path is on disk but matched a .gitignore "
+                            f"rule ({ignore_rule}); 'git add -A' silently "
+                            f"skipped it. Fix the ignore rule (or rebase "
+                            f"the worktree onto a branch where the rule "
+                            f"is fixed) and re-run the turn."
+                        ),
+                        severity="should_fix",
+                        ignore_rule=ignore_rule,
+                    )
                 )
-            )
+            else:
+                # "fabricated" or "infra_error" — keep the critical
+                # behaviour. infra_error here means ``git check-ignore``
+                # itself broke (exit 128); we already logged a warning
+                # in ``_classify_dropped_path``. Falling back to critical
+                # preserves the FEAT-39E1 detection floor when the
+                # gitignore probe is unavailable for any reason.
+                discrepancies.append(
+                    Discrepancy(
+                        claim_type="claim_audit",
+                        player_claim=f"Player claimed file {path}",
+                        actual_value=(
+                            "Path would not be staged by 'git add -A' "
+                            "(absent from 'git status --porcelain'). Most "
+                            "common cause: an unanchored .gitignore rule "
+                            "silently filters the file. Other causes: "
+                            "sparse-checkout, assume-unchanged, pathspec "
+                            "attribute filters, or the file is tracked but "
+                            "unchanged (Player claimed modified but didn't)."
+                        ),
+                        severity="critical",
+                    )
+                )
         return discrepancies
+
+    def _classify_dropped_path(self, path: str) -> str:
+        """Classify why ``path`` was absent from ``git status --porcelain``.
+
+        Returns one of:
+          * ``"fabricated"`` — path does not exist on disk (Player lied),
+            or path exists but ``git check-ignore`` reports it as not
+            ignored (tracked-but-unchanged, sparse-filter, etc.).
+          * ``"gitignored"`` — path exists on disk and ``git check-ignore -v
+            --no-index`` matches an ignore rule.
+          * ``"infra_error"`` — ``git check-ignore`` itself failed (exit
+            128 or a subprocess crash). Caller falls back to critical to
+            preserve the detection floor.
+
+        ``--no-index`` makes ``git check-ignore`` evaluate ignore rules
+        against the path string regardless of whether the path is tracked,
+        which is what we want here (the path was just dropped from
+        porcelain, so it is, by definition, untracked-or-modified).
+        """
+        abs_path = self.worktree_path / path
+        if not abs_path.exists():
+            return "fabricated"
+
+        try:
+            result = subprocess.run(
+                ["git", "check-ignore", "-v", "--no-index", "--", path],
+                cwd=self.worktree_path,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            logger.warning(
+                "claim_audit: 'git check-ignore' failed (%s) for path %s "
+                "in %s; falling back to critical classification.",
+                exc, path, self.worktree_path,
+            )
+            return "infra_error"
+
+        if result.returncode == 0:
+            return "gitignored"
+        if result.returncode == 1:
+            return "fabricated"
+        # 128 or any other non-{0,1} exit: log + fall back.
+        logger.warning(
+            "claim_audit: 'git check-ignore' returned %d for path %s "
+            "in %s; stderr=%s. Falling back to critical classification.",
+            result.returncode, path, self.worktree_path,
+            result.stderr.strip(),
+        )
+        return "infra_error"
+
+    def _git_check_ignore_rule(self, path: str) -> str:
+        """Return the matched ``<source>:<line>:<pattern>`` for ``path``.
+
+        Should only be called after ``_classify_dropped_path`` returned
+        ``"gitignored"``; on any anomaly returns the literal string
+        ``"unknown"`` rather than raising, so the discrepancy still
+        surfaces with a usable (if degraded) message.
+        """
+        try:
+            result = subprocess.run(
+                ["git", "check-ignore", "-v", "--no-index", "--", path],
+                cwd=self.worktree_path,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return "unknown"
+        if result.returncode != 0 or not result.stdout:
+            return "unknown"
+        # Output: ``<source>:<line>:<pattern><HT><pathname>`` — split on
+        # the first tab to recover the rule prefix.
+        first_line = result.stdout.splitlines()[0]
+        if "\t" in first_line:
+            return first_line.split("\t", 1)[0]
+        return first_line
 
     @staticmethod
     def _normalize_claimed_path(path: str) -> str:

@@ -5234,11 +5234,21 @@ class CoachValidator:
             )
             total = verifier._count_verifiable_claims(task_work_results)
             critical = sum(1 for d in discrepancies if d.severity == "critical")
+            # TASK-FIX-IGNR AC-2: track should_fix discrepancies separately
+            # so the gate can ride them along to feedback without counting
+            # them toward the honesty_score. The motivating case is
+            # ``claim_audit_gitignored`` — file is on disk, .gitignore is
+            # the bug, and turn-rejecting on it produces the FEAT-39E1
+            # adversarial blow-up.
+            should_fix = sum(
+                1 for d in discrepancies if d.severity == "should_fix"
+            )
             return HonestyVerification(
                 verified=len(discrepancies) == 0,
                 discrepancies=discrepancies,
                 honesty_score=1.0 - (critical / max(total, 1)),
                 resolved_paths=list(verifier._resolved_paths),
+                should_fix_count=should_fix,
             )
         except Exception as exc:  # noqa: BLE001 — never block gates on verifier crash
             logger.warning(
@@ -5272,18 +5282,38 @@ class CoachValidator:
         ``claim_audit`` discrepancies (TASK-AB-FIX-CHECKPOINT-CLAIM-AUDIT,
         sibling of TASK-AB-FIX-INVAB1's ``honesty`` category) are emitted
         with ``category: "claim_audit"`` instead of ``"honesty"``, are
-        always ``must_fix``, and are excluded from the FEAT-FFC3
-        single-discrepancy demotion above. The class they cover —
-        Player-created files silently dropped by ``git add -A`` — is a
-        different defect shape than the FFC3 ghost-path case the
-        demotion was added for, and a single dropped path is enough
-        signal to reject the turn.
+        ``must_fix``, and are excluded from the FEAT-FFC3 single-
+        discrepancy demotion above. The class they cover — Player claims
+        about files that did not actually land in the per-turn checkpoint
+        commit — is a different defect shape than the FFC3 ghost-path
+        case the demotion was added for, and a single dropped path is
+        enough signal to reject the turn.
+
+        ``claim_audit_gitignored`` discrepancies (TASK-FIX-IGNR) are the
+        narrow non-fabrication subset of the above: the Player-authored
+        file *is* on disk, but a ``.gitignore`` rule silently filtered
+        it out of the would-be-staged set. These are emitted as
+        ``should_fix`` advisory issues — same ``category: "claim_audit"``
+        so dashboards still bucket them with the gate, but they ride
+        along to feedback rather than short-circuiting evaluation. AC-6
+        appends a rebase hint to the description when the matched rule's
+        source is the project-root ``.gitignore`` (the most common
+        recoverable case: the rule was already fixed on ``main`` and the
+        worktree just needs to rebase).
         """
         critical = [d for d in honesty.discrepancies if d.severity == "critical"]
         # Partition: claim_audit discrepancies have their own category and
         # never participate in the FEAT-FFC3 single-discrepancy demotion.
         non_audit = [d for d in critical if d.claim_type != "claim_audit"]
         audit = [d for d in critical if d.claim_type == "claim_audit"]
+        # TASK-FIX-IGNR: the gitignored subset is should_fix and never
+        # short-circuits. Pulled separately from the critical list and
+        # supplemented from honesty.discrepancies (severity == should_fix).
+        gitignored = [
+            d for d in honesty.discrepancies
+            if d.claim_type == "claim_audit_gitignored"
+            and d.severity == "should_fix"
+        ]
         demote = (
             len(non_audit) == 1
             and non_audit[0].claim_type == "file_existence"
@@ -5328,7 +5358,54 @@ class CoachValidator:
                     },
                 }
             )
+        for d in gitignored:
+            description = (
+                f"Player-claimed file is on disk but matched a "
+                f".gitignore rule, so the per-turn checkpoint commit "
+                f"silently dropped it. {d.player_claim}. "
+                f"{d.actual_value}"
+            )
+            # AC-6: when the matching rule lives in the project-root
+            # ``.gitignore`` (rule source has no directory prefix), the
+            # most common recoverable shape is "rule already fixed on
+            # main, worktree just needs to rebase". Surface that hint.
+            if self._ignore_rule_is_project_root(d.ignore_rule):
+                description += (
+                    " Hint: rebase the worktree onto main if the "
+                    ".gitignore was fixed there."
+                )
+            issues.append(
+                {
+                    "severity": "should_fix",
+                    "category": "claim_audit",
+                    "description": description,
+                    "details": {
+                        "claim_type": d.claim_type,
+                        "player_claim": d.player_claim,
+                        "actual_value": d.actual_value,
+                        "ignore_rule": d.ignore_rule,
+                    },
+                }
+            )
         return issues
+
+    @staticmethod
+    def _ignore_rule_is_project_root(ignore_rule: Optional[str]) -> bool:
+        """Return True when ``ignore_rule`` was matched against the project-
+        root ``.gitignore`` (TASK-FIX-IGNR AC-6).
+
+        ``git check-ignore -v --no-index`` formats matched rules as
+        ``<source>:<linenum>:<pattern>``. The source path is relative to
+        the worktree root. A rule from the project-root ``.gitignore``
+        therefore has source ``.gitignore`` exactly (no directory
+        prefix). Rules from nested ``.gitignore`` files (e.g.
+        ``src/.gitignore``) have a directory in the source — those are
+        not the rebase-fixable case the hint targets, so we return False.
+        """
+        if not ignore_rule:
+            return False
+        source = ignore_rule.split(":", 1)[0]
+        return source == ".gitignore"
 
     def _feedback_result(
         self,

@@ -61,7 +61,11 @@ def verifier(git_worktree: Path) -> CoachVerifier:
 
 
 # ---------------------------------------------------------------------------
-# AC-005: gitignored file is rejected
+# AC-005: gitignored file is surfaced as a non-critical advisory
+# (TASK-FIX-IGNR demoted this from severity="critical" to "should_fix";
+# the discrepancy still surfaces, just under the narrower
+# ``claim_audit_gitignored`` claim_type so Coach can route it to
+# advisory feedback instead of a turn-rejecting short-circuit.)
 # ---------------------------------------------------------------------------
 
 
@@ -70,7 +74,9 @@ def test_ac005_gitignored_file_produces_claim_audit_discrepancy(
 ) -> None:
     """Reproducer for FEAT-39E1: Player creates a file under an unanchored
     ``adapters/`` rule. The file is on disk so ``_verify_files_exist`` is
-    silent. ``_verify_claims_were_staged`` must catch it.
+    silent. ``_verify_claims_were_staged`` must catch it under the
+    ``claim_audit_gitignored`` claim_type with ``severity="should_fix"``
+    (TASK-FIX-IGNR AC-1 reclassification).
     """
     # Set up the unanchored gitignore rule that bit study-tutor.
     (git_worktree / ".gitignore").write_text("adapters/\n")
@@ -87,12 +93,17 @@ def test_ac005_gitignored_file_produces_claim_audit_discrepancy(
     discrepancies = verifier._verify_claims_were_staged(report)
 
     assert len(discrepancies) == 1
-    assert discrepancies[0].claim_type == "claim_audit"
-    assert discrepancies[0].severity == "critical"
+    # TASK-FIX-IGNR: gitignored-but-present is now a should_fix advisory
+    # under the dedicated claim_audit_gitignored claim_type, so Coach
+    # short-circuit logic does not turn-reject the FEAT-39E1 shape.
+    assert discrepancies[0].claim_type == "claim_audit_gitignored"
+    assert discrepancies[0].severity == "should_fix"
     assert "src/study_tutor/adapters/manifest.py" in discrepancies[0].player_claim
-    # The actual_value must hint at the gitignore root cause so the next
-    # turn's Player has actionable feedback.
-    assert "gitignore" in discrepancies[0].actual_value.lower()
+    # The matched rule is exposed verbatim so the operator can fix the
+    # .gitignore rather than chase Player honesty across turns.
+    assert discrepancies[0].ignore_rule is not None
+    assert ".gitignore" in discrepancies[0].ignore_rule
+    assert "adapters/" in discrepancies[0].ignore_rule
 
 
 # ---------------------------------------------------------------------------
@@ -306,8 +317,13 @@ def test_verify_player_report_emits_claim_audit_alongside_other_checks(
     git_worktree: Path, verifier: CoachVerifier
 ) -> None:
     """``CoachVerifier.verify_player_report`` (the public entry point used
-    by ``agent_invoker._verify_player_claims``) must return the new
-    claim_audit discrepancies in its discrepancy list."""
+    by ``agent_invoker._verify_player_claims``) must return the
+    claim_audit-family discrepancies in its discrepancy list.
+
+    After TASK-FIX-IGNR the gitignored case now surfaces under
+    ``claim_audit_gitignored``; we accept either ``claim_audit`` or
+    ``claim_audit_gitignored`` here so the test catches the family.
+    """
     (git_worktree / ".gitignore").write_text("adapters/\n")
     src = git_worktree / "src" / "adapters"
     src.mkdir(parents=True)
@@ -321,7 +337,115 @@ def test_verify_player_report_emits_claim_audit_alongside_other_checks(
     verification = verifier.verify_player_report(report)
 
     audit = [
-        d for d in verification.discrepancies if d.claim_type == "claim_audit"
+        d for d in verification.discrepancies
+        if d.claim_type in {"claim_audit", "claim_audit_gitignored"}
     ]
     assert len(audit) == 1
+    # ``verified`` remains False — the discrepancy still surfaces, just
+    # at a lower severity than turn-rejecting critical.
     assert verification.verified is False
+
+
+# ---------------------------------------------------------------------------
+# TASK-FIX-IGNR AC-4: gitignored-but-present is should_fix, not critical
+# ---------------------------------------------------------------------------
+
+
+def test_claim_audit_gitignored_is_should_fix_not_critical(
+    git_worktree: Path, verifier: CoachVerifier
+) -> None:
+    """Reproduces the FEAT-39E1 scenario through the public
+    ``verify_player_report`` API so the should_fix accounting and
+    ignore_rule plumbing are exercised end-to-end.
+
+    Setup: ``.gitignore`` carries an unanchored ``adapters/`` rule and
+    the Player authors ``src/pkg/adapters/foo.py`` on disk. Under the
+    pre-IGNR contract this fired a critical claim_audit and short-
+    circuited the gate (turn-1 → turn-5 adversarial blow-up). Under
+    AC-1/AC-2 the discrepancy is should_fix, ``critical_failures`` is
+    zero, and the matched rule is preserved on the discrepancy so
+    Coach can render it back to the Player.
+    """
+    (git_worktree / ".gitignore").write_text("adapters/\n")
+    src = git_worktree / "src" / "pkg" / "adapters"
+    src.mkdir(parents=True)
+    (src / "foo.py").write_text("class Foo: pass\n")
+
+    report: Dict[str, Any] = {
+        "files_created": ["src/pkg/adapters/foo.py"],
+        "tests_run": False,
+    }
+
+    verification = verifier.verify_player_report(report)
+
+    # AC-2: critical count is zero — the gitignored case no longer
+    # contributes to the honesty critical_failures total.
+    critical = [d for d in verification.discrepancies if d.severity == "critical"]
+    assert critical == [], (
+        f"Expected zero critical discrepancies for a gitignored-but-"
+        f"present file; got: {critical}"
+    )
+
+    # AC-2: should_fix_count is exactly 1 (the one dropped path).
+    assert verification.should_fix_count == 1
+
+    # AC-1 + AC-4: the discrepancy is the new should_fix shape and
+    # carries the matched ignore rule verbatim.
+    assert len(verification.discrepancies) == 1
+    disc = verification.discrepancies[0]
+    assert disc.severity == "should_fix"
+    assert disc.claim_type == "claim_audit_gitignored"
+    assert disc.ignore_rule is not None
+    assert ".gitignore" in disc.ignore_rule
+    assert "adapters/" in disc.ignore_rule
+
+
+# ---------------------------------------------------------------------------
+# TASK-FIX-IGNR AC-5: actual fabrication (path not on disk) stays critical
+# ---------------------------------------------------------------------------
+
+
+def test_claim_audit_fabricated_path_still_critical(
+    git_worktree: Path, verifier: CoachVerifier
+) -> None:
+    """Regression guard for the AC-1 split: when the Player claims a
+    path that does not exist on disk, the discrepancy must remain
+    ``severity="critical"`` under ``claim_type="claim_audit"`` so the
+    short-circuit in ``coach_validator`` still rejects the turn.
+
+    This is the inverse of AC-4: same gate, different input shape, and
+    the contract for genuine fabrication is unchanged.
+    """
+    # Note: no file created on disk. ``src/study_tutor/adapters/missing.py``
+    # is a pure Player invention.
+    report: Dict[str, Any] = {
+        "files_created": ["src/study_tutor/adapters/missing.py"],
+        "tests_run": False,
+    }
+
+    verification = verifier.verify_player_report(report)
+
+    # AC-5: the claim_audit-family discrepancy for the fabricated path
+    # is critical claim_audit, not the demoted claim_audit_gitignored
+    # shape. (verify_player_report also runs _verify_files_exist, which
+    # produces its own critical file_existence discrepancy for the
+    # missing path — that is orthogonal to AC-5 and is asserted
+    # separately below.)
+    audit = [
+        d for d in verification.discrepancies
+        if d.claim_type in {"claim_audit", "claim_audit_gitignored"}
+    ]
+    assert len(audit) == 1
+    disc = audit[0]
+    assert disc.severity == "critical"
+    assert disc.claim_type == "claim_audit"
+    assert disc.ignore_rule is None
+    # No path was demoted — should_fix_count is zero.
+    assert verification.should_fix_count == 0
+    # And the file_existence gate still flags the missing path
+    # (defence in depth — both gates remain wired).
+    file_existence = [
+        d for d in verification.discrepancies if d.claim_type == "file_existence"
+    ]
+    assert len(file_existence) == 1
+    assert file_existence[0].severity == "critical"
