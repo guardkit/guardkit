@@ -5624,3 +5624,142 @@ class TestHonestyShortCircuitDemotion:
         assert honesty_issues[0]["severity"] == "should_fix"
         # Sibling categories from the real failure are also present.
         assert any(i.get("category") == "test_failure" for i in result.issues)
+
+
+class TestClaimAuditIssues:
+    """TASK-AB-FIX-CHECKPOINT-CLAIM-AUDIT: claim_audit gate wiring.
+
+    Exercises ``_honesty_issues_from`` semantics for the new
+    ``claim_audit`` claim_type. Uses ``patch.object(validator,
+    "_verify_honesty", ...)`` so the test focuses on issue translation
+    without spinning up a real git repo (the verifier-level git behaviour
+    is covered by ``test_coach_verification_claim_audit.py``).
+    """
+
+    def test_claim_audit_emits_distinct_category(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """A claim_audit discrepancy must use ``category: "claim_audit"`` —
+        not ``"honesty"`` — so dashboards and stall classifiers can
+        sub-type it (sibling of TASK-AB-FIX-INVAB1's ``honesty``)."""
+        write_task_work_results(task_work_results_dir, make_task_work_results())
+
+        validator = CoachValidator(str(tmp_worktree))
+        with patch.object(
+            validator,
+            "_verify_honesty",
+            return_value=_honesty_with("claim_audit"),
+        ):
+            result = validator.validate("TASK-001", 1, make_task())
+
+        # Short-circuit fires: gates were not consulted.
+        assert result.decision == "feedback"
+        assert result.quality_gates is None
+        assert result.independent_tests is None
+
+        # Issue is in claim_audit category, NOT honesty.
+        claim_audit_issues = [
+            i for i in result.issues if i.get("category") == "claim_audit"
+        ]
+        assert len(claim_audit_issues) == 1
+        assert claim_audit_issues[0]["severity"] == "must_fix"
+        assert (
+            claim_audit_issues[0]["details"]["claim_type"] == "claim_audit"
+        )
+
+        # And no honesty issue is created for the same discrepancy.
+        honesty_issues = [
+            i for i in result.issues if i.get("category") == "honesty"
+        ]
+        assert honesty_issues == []
+
+    def test_single_claim_audit_not_demoted_to_should_fix(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """The FEAT-FFC3 single-discrepancy demotion (file_existence →
+        should_fix) must NOT apply to claim_audit. Even one dropped
+        path is enough signal to reject the turn."""
+        write_task_work_results(task_work_results_dir, make_task_work_results())
+
+        validator = CoachValidator(str(tmp_worktree))
+        with patch.object(
+            validator,
+            "_verify_honesty",
+            return_value=_honesty_with("claim_audit"),
+        ):
+            result = validator.validate("TASK-001", 1, make_task())
+
+        claim_audit_issues = [
+            i for i in result.issues if i.get("category") == "claim_audit"
+        ]
+        assert len(claim_audit_issues) == 1
+        assert claim_audit_issues[0]["severity"] == "must_fix"
+
+    def test_claim_audit_short_circuit_returns_only_must_fix(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """When a single file_existence discrepancy coexists with a
+        claim_audit one, the file_existence demotion still fires inside
+        ``_honesty_issues_from`` (claim_audit is excluded from the
+        non_audit count). But because claim_audit is must_fix, the
+        honesty short-circuit triggers and returns only the must_fix
+        issues — the should_fix demotion is a no-op in this case
+        (matches existing behaviour: the short-circuit branch sets
+        ``issues=honesty_must_fix`` and drops should_fix). The Player
+        sees claim_audit feedback this turn; if file_existence remains
+        next turn, it surfaces on its own."""
+        write_task_work_results(task_work_results_dir, make_task_work_results())
+
+        validator = CoachValidator(str(tmp_worktree))
+        with patch.object(
+            validator,
+            "_verify_honesty",
+            return_value=_honesty_with("file_existence", "claim_audit"),
+        ):
+            result = validator.validate("TASK-001", 1, make_task())
+
+        # claim_audit is must_fix → short-circuit fires.
+        assert result.decision == "feedback"
+        assert result.quality_gates is None
+
+        # Short-circuit returns must_fix only; should_fix demotion is dropped.
+        honesty_issues = [
+            i for i in result.issues if i.get("category") == "honesty"
+        ]
+        claim_audit_issues = [
+            i for i in result.issues if i.get("category") == "claim_audit"
+        ]
+        assert honesty_issues == []
+        assert len(claim_audit_issues) == 1
+        assert claim_audit_issues[0]["severity"] == "must_fix"
+
+    def test_multiple_claim_audit_all_must_fix(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """Multiple dropped paths each surface as separate must_fix
+        claim_audit issues so the next-turn Player has the full list."""
+        write_task_work_results(task_work_results_dir, make_task_work_results())
+
+        validator = CoachValidator(str(tmp_worktree))
+        with patch.object(
+            validator,
+            "_verify_honesty",
+            return_value=_honesty_with(
+                "claim_audit", "claim_audit", "claim_audit"
+            ),
+        ):
+            result = validator.validate("TASK-001", 1, make_task())
+
+        claim_audit_issues = [
+            i for i in result.issues if i.get("category") == "claim_audit"
+        ]
+        assert len(claim_audit_issues) == 3
+        assert all(i["severity"] == "must_fix" for i in claim_audit_issues)

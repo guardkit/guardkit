@@ -629,6 +629,98 @@ class TestNoPassingCheckpointStall:
         assert final_decision == "approved"
         mock_checkpoint_manager.rollback_to.assert_called_once_with(1)
 
+    def test_rollback_clears_player_session(
+        self,
+        mock_worktree,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+        mock_pre_loop_gates,
+        mock_coach_validator,
+        mock_checkpoint_manager,
+    ):
+        """TASK-FIX-RBSS AC-2: rollback clears the Player SDK resume session.
+
+        After ``rollback_to(target_turn)`` fires, the orchestrator must call
+        ``AgentInvoker.set_player_resume_session(None)`` before the next
+        loop iteration so the next Player turn does not resume the prior
+        turn's polluted cumulative-authoring memory of files the rollback
+        just deleted. The call must be ordered AFTER ``rollback_to`` and
+        AFTER the per-turn ``set_player_resume_session(<live id>)`` write
+        at the end of the just-completed turn (so the live id does not
+        clobber the reset).
+        """
+        # Turn 1 triggers rollback; turn 2 (post-rollback) approves.
+        mock_checkpoint_manager.should_rollback.side_effect = [True, False, False]
+        mock_checkpoint_manager.find_last_passing_checkpoint.return_value = 1
+        mock_checkpoint_manager.rollback_to.return_value = True
+
+        # Wire a parent mock so cross-mock call ordering is observable.
+        order_witness = Mock()
+        order_witness.attach_mock(mock_checkpoint_manager.rollback_to, "rollback_to")
+        order_witness.attach_mock(
+            mock_agent_invoker.set_player_resume_session,
+            "set_player_resume_session",
+        )
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=3,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+            pre_loop_gates=mock_pre_loop_gates,
+            enable_checkpoints=True,
+            rollback_on_pollution=True,
+        )
+        orchestrator._checkpoint_manager = mock_checkpoint_manager
+
+        player_result = make_player_result(tests_passed=True)
+        # Give it a session_id so the per-turn end-of-loop set_player_resume_session
+        # call also fires — the test then pins that the rollback-side reset
+        # follows it (i.e. the rollback's None overrides the live id).
+        player_result.session_id = "live-session-abc"
+        coach_feedback = make_coach_result(decision="feedback", feedback_text="Fix issues")
+        coach_approve = make_coach_result(decision="approve")
+
+        mock_agent_invoker.invoke_player.return_value = player_result
+        mock_agent_invoker.invoke_coach.side_effect = [coach_feedback, coach_approve]
+
+        turn_history, final_decision = orchestrator._loop_phase(
+            task_id="TASK-SD-001",
+            requirements="Test requirements",
+            acceptance_criteria=["criterion 1"],
+            worktree=mock_worktree,
+        )
+
+        # The rollback path executed.
+        mock_checkpoint_manager.rollback_to.assert_called_once_with(1)
+        # AC-2 core assertion: the SDK resume session was cleared with None.
+        mock_agent_invoker.set_player_resume_session.assert_any_call(None)
+
+        # Pin ordering: the None reset comes AFTER rollback_to, AND the None
+        # reset comes AFTER any preceding live-session write (so the rollback
+        # outcome wins for the next turn).
+        recorded_calls = order_witness.method_calls
+        rollback_idx = next(
+            (i for i, c in enumerate(recorded_calls) if c[0] == "rollback_to"),
+            None,
+        )
+        assert rollback_idx is not None, "rollback_to must have been called"
+        # The first set_player_resume_session(None) at or after rollback_idx.
+        post_rollback_resets = [
+            c for c in recorded_calls[rollback_idx:]
+            if c[0] == "set_player_resume_session" and c.args == (None,)
+        ]
+        assert post_rollback_resets, (
+            "set_player_resume_session(None) must be called after rollback_to "
+            "(AC-1 ordering)"
+        )
+
+        # Sanity: loop did not stall.
+        assert final_decision != "unrecoverable_stall"
+        assert final_decision == "approved"
+
 
 # ============================================================================
 # Test Repeated Feedback Stall (Mechanism 2) in _loop_phase

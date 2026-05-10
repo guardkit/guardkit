@@ -961,6 +961,174 @@ def test_single_task_checkpoint_still_works(checkpoint_manager, mock_git_executo
     assert len(checkpoint_manager.checkpoints) == 1
 
 
+# ============================================================================
+# Audit-trail Archival Tests (TASK-FIX-RBSS AC-3, AC-4, AC-5)
+# ============================================================================
+
+
+def test_rollback_preserves_audit_trail(tmp_path, mock_git_executor):
+    """AC-4: Rollback to turn 1 archives coach_turn_2/3.json under _rollback_archive/.
+
+    Creates a fake autobuild run with checkpoints at turns 1-3 and per-turn
+    audit JSONs on disk, fires rollback to turn 1, and asserts that the
+    post-target audit files (turns 2 and 3) are preserved under
+    `_rollback_archive/turn_1_<timestamp>/`.
+
+    Also verifies AC-5 part 2: a defensive `.gitignore` is written inside
+    `_rollback_archive/` so the archived files self-exclude from any future
+    `git add -A` checkpoint commit.
+    """
+    worktree_path = tmp_path / "worktree"
+    autobuild_dir = worktree_path / ".guardkit" / "autobuild" / "TASK-RBSS"
+    autobuild_dir.mkdir(parents=True)
+
+    # Seed per-turn audit JSONs as the orchestrator would have written them.
+    for turn in (1, 2, 3):
+        (autobuild_dir / f"coach_turn_{turn}.json").write_text(
+            json.dumps({"turn": turn, "decision": "feedback"})
+        )
+        (autobuild_dir / f"player_turn_{turn}.json").write_text(
+            json.dumps({"turn": turn, "tests_passed": False})
+        )
+        (autobuild_dir / f"turn_state_turn_{turn}.json").write_text(
+            json.dumps({"turn": turn})
+        )
+    # An unrelated file in the same directory must not be archived.
+    (autobuild_dir / "checkpoints.json").write_text(json.dumps({"checkpoints": []}))
+
+    manager = WorktreeCheckpointManager(
+        worktree_path=worktree_path,
+        task_id="TASK-RBSS",
+        git_executor=mock_git_executor,
+    )
+    # Three checkpoints; rev-parse returns distinct hashes for each.
+    mock_git_executor.execute.side_effect = [
+        Mock(returncode=0, stdout="", stderr=""),  # add
+        Mock(returncode=0, stdout="", stderr=""),  # commit
+        Mock(returncode=0, stdout="commit1\n", stderr=""),  # rev-parse
+        Mock(returncode=0, stdout="", stderr=""),
+        Mock(returncode=0, stdout="", stderr=""),
+        Mock(returncode=0, stdout="commit2\n", stderr=""),
+        Mock(returncode=0, stdout="", stderr=""),
+        Mock(returncode=0, stdout="", stderr=""),
+        Mock(returncode=0, stdout="commit3\n", stderr=""),
+        Mock(returncode=0, stdout="", stderr=""),  # reset --hard
+    ]
+    manager.create_checkpoint(turn=1, tests_passed=True, test_count=10)
+    manager.create_checkpoint(turn=2, tests_passed=False, test_count=10)
+    manager.create_checkpoint(turn=3, tests_passed=False, test_count=10)
+
+    # Act
+    success = manager.rollback_to(1)
+    assert success is True
+
+    # The reset call must still have been issued — archive must not block it.
+    reset_call = mock_git_executor.execute.call_args_list[-1]
+    assert reset_call[0][0] == ["git", "reset", "--hard", "commit1"]
+
+    # Find the snapshot dir; its name carries the target turn + a timestamp.
+    archive_root = autobuild_dir / "_rollback_archive"
+    assert archive_root.is_dir(), "_rollback_archive/ must exist after rollback"
+    snapshot_dirs = [d for d in archive_root.iterdir() if d.is_dir()]
+    assert len(snapshot_dirs) == 1
+    snapshot_dir = snapshot_dirs[0]
+    assert snapshot_dir.name.startswith("turn_1_")
+
+    # AC-4: post-target audit files (turns 2 and 3) are preserved.
+    assert (snapshot_dir / "coach_turn_2.json").is_file()
+    assert (snapshot_dir / "coach_turn_3.json").is_file()
+    # Player and turn_state JSONs for the same turns are preserved too.
+    assert (snapshot_dir / "player_turn_2.json").is_file()
+    assert (snapshot_dir / "turn_state_turn_3.json").is_file()
+    # Files for the target turn itself are NOT archived (the reset preserves them).
+    assert not (snapshot_dir / "coach_turn_1.json").exists()
+    # Unrelated files in the autobuild dir are NOT swept up.
+    assert not (snapshot_dir / "checkpoints.json").exists()
+
+    # AC-5 part 2: defensive in-directory .gitignore self-excludes the archive
+    # from future `git add -A`, regardless of the consumer project's root .gitignore.
+    archive_gitignore = archive_root / ".gitignore"
+    assert archive_gitignore.is_file()
+    archive_gitignore_text = archive_gitignore.read_text()
+    assert "*" in archive_gitignore_text
+    assert "!.gitignore" in archive_gitignore_text
+
+
+def test_rollback_with_no_audit_files_is_noop(tmp_path, mock_git_executor):
+    """Rollback succeeds even when no per-turn audit JSONs exist on disk.
+
+    Audit archival is best-effort. A worktree with no JSONs (e.g. early
+    failure before any per-turn writes) must not block the rollback.
+    """
+    worktree_path = tmp_path / "worktree"
+    autobuild_dir = worktree_path / ".guardkit" / "autobuild" / "TASK-RBSS"
+    autobuild_dir.mkdir(parents=True)
+
+    manager = WorktreeCheckpointManager(
+        worktree_path=worktree_path,
+        task_id="TASK-RBSS",
+        git_executor=mock_git_executor,
+    )
+    mock_git_executor.execute.side_effect = [
+        Mock(returncode=0, stdout="", stderr=""),
+        Mock(returncode=0, stdout="", stderr=""),
+        Mock(returncode=0, stdout="commit1\n", stderr=""),
+        Mock(returncode=0, stdout="", stderr=""),  # reset
+    ]
+    manager.create_checkpoint(turn=1, tests_passed=True, test_count=10)
+
+    success = manager.rollback_to(1)
+    assert success is True
+
+    archive_root = autobuild_dir / "_rollback_archive"
+    # Snapshot dir was created (timestamped) but contains no copied files.
+    snapshot_dirs = [d for d in archive_root.iterdir() if d.is_dir()]
+    assert len(snapshot_dirs) == 1
+    snapshot_files = list(snapshot_dirs[0].iterdir())
+    assert snapshot_files == []
+
+
+def test_archive_does_not_recurse_into_prior_archives(tmp_path, mock_git_executor):
+    """A second rollback must not pick up the first rollback's snapshots.
+
+    AC-5 spec says `_rollback_archive/` is excluded from the worktree-checkpoint
+    tracked-set so subsequent rollbacks don't recursively archive prior archives.
+    The defensive in-directory .gitignore handles the git side; this test pins
+    the in-process behaviour: the iterator only scans top-level files in the
+    autobuild dir and never descends into `_rollback_archive/`.
+    """
+    worktree_path = tmp_path / "worktree"
+    autobuild_dir = worktree_path / ".guardkit" / "autobuild" / "TASK-RBSS"
+    autobuild_dir.mkdir(parents=True)
+
+    # Pre-existing snapshot from a prior rollback (with a fake coach JSON inside).
+    prior_snapshot = autobuild_dir / "_rollback_archive" / "turn_1_19990101T000000Z"
+    prior_snapshot.mkdir(parents=True)
+    (prior_snapshot / "coach_turn_2.json").write_text(json.dumps({"turn": 2}))
+
+    # A current per-turn JSON that should be archived.
+    (autobuild_dir / "coach_turn_3.json").write_text(json.dumps({"turn": 3}))
+
+    manager = WorktreeCheckpointManager(
+        worktree_path=worktree_path,
+        task_id="TASK-RBSS",
+        git_executor=mock_git_executor,
+    )
+    # Drive the archive directly so the test is fully deterministic.
+    archived = manager._archive_post_target_audit_files(target_turn=2)
+
+    # Only the top-level coach_turn_3.json got archived; the prior snapshot's
+    # coach_turn_2.json was NOT picked up.
+    assert archived == 1
+    new_snapshots = [
+        d for d in (autobuild_dir / "_rollback_archive").iterdir()
+        if d.is_dir() and d.name != prior_snapshot.name
+    ]
+    assert len(new_snapshots) == 1
+    assert (new_snapshots[0] / "coach_turn_3.json").is_file()
+    assert not (new_snapshots[0] / "coach_turn_2.json").exists()
+
+
 def test_thread_lock_shared_across_managers(tmp_path):
     """Test that managers for the same worktree share a thread lock."""
     worktree_path = tmp_path / "shared"

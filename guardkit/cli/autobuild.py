@@ -238,6 +238,31 @@ def autobuild():
         "Override via GUARDKIT_TIMEOUT_MULTIPLIER env var."
     ),
 )
+@click.option(
+    "--honesty-early-abort-threshold",
+    "honesty_early_abort_threshold",
+    default=None,
+    type=float,
+    help=(
+        "Abort the loop when the rolling honesty average drops below this "
+        "value (range 0.0-1.0, default 0.3). Honesty score is "
+        "1 - critical_failures/total_claims; an avg below 0.3 means most "
+        "claims across the window were rejected. "
+        "Defaults to task frontmatter autobuild.honesty_early_abort_threshold "
+        "or 0.3. TASK-FIX-HEAB."
+    ),
+)
+@click.option(
+    "--honesty-early-abort-window",
+    "honesty_early_abort_window",
+    default=None,
+    type=int,
+    help=(
+        "Number of recent turns averaged for the honesty early-abort check "
+        "(default: 3). Defaults to task frontmatter "
+        "autobuild.honesty_early_abort_window or 3. TASK-FIX-HEAB."
+    ),
+)
 @click.pass_context
 @handle_cli_errors
 def task(
@@ -256,6 +281,8 @@ def task(
     ablation_mode: bool,
     enable_context: bool,
     timeout_multiplier: Optional[float],
+    honesty_early_abort_threshold: Optional[float],
+    honesty_early_abort_window: Optional[int],
 ):
     """
     Execute AutoBuild orchestration for a task.
@@ -343,6 +370,28 @@ def task(
     if effective_sdk_timeout is None:
         effective_sdk_timeout = autobuild_config.get("sdk_timeout", 1200)
     logger.info(f"SDK timeout: {effective_sdk_timeout}s")
+
+    # TASK-FIX-HEAB: resolve honesty early-abort settings (CLI > frontmatter > default)
+    effective_honesty_threshold = honesty_early_abort_threshold
+    if effective_honesty_threshold is None:
+        effective_honesty_threshold = autobuild_config.get(
+            "honesty_early_abort_threshold", 0.3
+        )
+    if not (0.0 <= float(effective_honesty_threshold) <= 1.0):
+        raise click.BadParameter(
+            "honesty_early_abort_threshold must be between 0.0 and 1.0",
+            param_hint="'--honesty-early-abort-threshold'",
+        )
+    effective_honesty_window = honesty_early_abort_window
+    if effective_honesty_window is None:
+        effective_honesty_window = autobuild_config.get(
+            "honesty_early_abort_window", 3
+        )
+    if int(effective_honesty_window) < 1:
+        raise click.BadParameter(
+            "honesty_early_abort_window must be >= 1",
+            param_hint="'--honesty-early-abort-window'",
+        )
 
     # Resolve skip_arch_review: CLI flag > task frontmatter > default (False)
     effective_skip_arch_review = skip_arch_review
@@ -438,6 +487,8 @@ def task(
         ablation_mode=ablation_mode,
         enable_context=enable_context,
         timeout_multiplier=effective_timeout_multiplier,
+        honesty_early_abort_threshold=float(effective_honesty_threshold),
+        honesty_early_abort_window=int(effective_honesty_window),
     )
 
     # Phase 3: Execute orchestration
@@ -655,6 +706,28 @@ def status(ctx, task_id: str, verbose: bool):
         ".guardkit/config.yaml."
     ),
 )
+@click.option(
+    "--honesty-early-abort-threshold",
+    "honesty_early_abort_threshold",
+    default=0.3,
+    type=float,
+    show_default=True,
+    help=(
+        "Abort each task's loop when its rolling honesty average drops "
+        "below this value (range 0.0-1.0). TASK-FIX-HEAB."
+    ),
+)
+@click.option(
+    "--honesty-early-abort-window",
+    "honesty_early_abort_window",
+    default=3,
+    type=int,
+    show_default=True,
+    help=(
+        "Number of recent turns averaged for the honesty early-abort "
+        "check. TASK-FIX-HEAB."
+    ),
+)
 @click.pass_context
 @handle_cli_errors
 def feature(
@@ -677,6 +750,8 @@ def feature(
     skip_validation: bool,
     task_log_interval: int,
     bootstrap_failure_mode: Optional[str],
+    honesty_early_abort_threshold: float,
+    honesty_early_abort_window: int,
 ):
     """
     Execute AutoBuild for all tasks in a feature.
@@ -840,6 +915,8 @@ def feature(
             emitter=emitter,
             task_log_interval=task_log_interval,
             bootstrap_failure_mode=bootstrap_failure_mode,
+            honesty_early_abort_threshold=honesty_early_abort_threshold,
+            honesty_early_abort_window=honesty_early_abort_window,
         )
 
         # Execute feature orchestration

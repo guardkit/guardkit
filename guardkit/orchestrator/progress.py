@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 # Type aliases
 TurnStatus = Literal["in_progress", "success", "feedback", "error"]
-FinalStatus = Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "design_extraction_failed"]
+FinalStatus = Literal["approved", "max_turns_exceeded", "honesty_collapse", "unrecoverable_stall", "player_invocation_stall", "error", "design_extraction_failed"]
 
 
 def get_iso_timestamp() -> str:
@@ -442,6 +442,7 @@ class ProgressDisplay:
         status_colors = {
             "approved": "green",
             "max_turns_exceeded": "yellow",
+            "honesty_collapse": "yellow",
             "unrecoverable_stall": "red",
             "player_invocation_stall": "red",
             "cancelled": "yellow",

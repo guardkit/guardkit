@@ -27,16 +27,11 @@ from guardkit.orchestrator.exceptions import (
     SDKTimeoutError,
 )
 
-# Worktree exceptions - import with sys.path fallback
-try:
-    from orchestrator.worktrees import WorktreeCreationError, WorktreeMergeError
-except ImportError:
-    # Fallback for testing
-    class WorktreeCreationError(Exception):
-        pass
-
-    class WorktreeMergeError(Exception):
-        pass
+from guardkit.worktrees.manager import (
+    WorktreeCreationError,
+    WorktreeError,
+    WorktreeMergeError,
+)
 
 
 console = Console()
@@ -72,6 +67,8 @@ def handle_cli_errors(func: Callable) -> Callable:
     - TaskParseError → Exit 1 (task parsing failed)
     - WorktreeCreationError → Exit 2 (worktree setup failed)
     - WorktreeMergeError → Exit 2 (merge failed)
+    - WorktreeError → Exit 2 (catch-all for worktree subsystem errors,
+      e.g. "not a git repository" when the CLI is run from outside a repo)
     - AgentInvocationError → Exit 2 (agent invocation failed)
     - SDKTimeoutError → Exit 2 (SDK timeout)
     - PermissionError → Exit 4 (permission denied)
@@ -122,6 +119,16 @@ def handle_cli_errors(func: Callable) -> Callable:
                 "\n[yellow]Suggestion:[/yellow] Resolve conflicts manually or use --preserve"
             )
             logger.error(f"Worktree merge failed: {e}")
+            sys.exit(EXIT_ORCHESTRATION_ERROR)
+
+        except WorktreeError as e:
+            console.print(f"[red]Worktree error: {e}[/red]")
+            if "not a git repository" in str(e).lower():
+                console.print(
+                    "\n[yellow]Suggestion:[/yellow] Run this command from the root of a "
+                    "git repository (e.g. `cd` into the project directory first)."
+                )
+            logger.error(f"Worktree error: {e}")
             sys.exit(EXIT_ORCHESTRATION_ERROR)
 
         except AgentInvocationError as e:

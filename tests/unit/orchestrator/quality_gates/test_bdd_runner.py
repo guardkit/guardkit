@@ -342,13 +342,25 @@ class _Patcher:
         self.stderr = stderr
         self.calls: List[dict] = []
 
-    def __call__(self, *, feature_files, tag, cwd, junit_xml_path, timeout, python_executable=None):
+    def __call__(
+        self,
+        *,
+        feature_files,
+        tag,
+        cwd,
+        junit_xml_path,
+        timeout,
+        python_executable=None,
+        task_id=None,
+    ):
         self.calls.append({
             "feature_files": list(feature_files),
             "tag": tag,
             "cwd": cwd,
             "junit_xml_path": junit_xml_path,
             "timeout": timeout,
+            "python_executable": python_executable,
+            "task_id": task_id,
         })
         # Materialise the junit file too so the runner can read it back.
         Path(junit_xml_path).parent.mkdir(parents=True, exist_ok=True)
@@ -551,6 +563,126 @@ class TestRunBddForTask:
         assert call["tag"] == "@task:TASK-001"
         assert call["cwd"] == worktree
         assert any(p.name == "login.feature" for p in call["feature_files"])
+
+    def test_run_threads_task_id_to_invocation(
+        self, worktree: Path, monkeypatch
+    ):
+        # AC (TASK-AB-004): run_bdd_for_task must thread its ``task_id``
+        # argument into _invoke_pytest_bdd so the env-var contract reaches
+        # the pytest subprocess. _PASS_FEATURE carries @task:TASK-001 so
+        # that's the task id we run the oracle against.
+        _write_feature(worktree, "login.feature", _PASS_FEATURE)
+        monkeypatch.setattr(bdd_runner, "has_pytest_bdd", lambda **_: True)
+        invoker = _Patcher(_PASSED_JUNIT)
+        monkeypatch.setattr(bdd_runner, "_invoke_pytest_bdd", invoker)
+
+        run_bdd_for_task("TASK-001", worktree)
+
+        assert len(invoker.calls) == 1
+        assert invoker.calls[0]["task_id"] == "TASK-001"
+
+
+# ---------------------------------------------------------------------------
+# GUARDKIT_BDD_TASK_ID env-var threading (TASK-AB-004)
+#
+# When ``task_id`` is supplied to _invoke_pytest_bdd, the pytest subprocess
+# must inherit the parent env AND have ``GUARDKIT_BDD_TASK_ID=<task_id>``
+# set on top. This is the contract the project's features/conftest.py reads
+# to pick the per-task glue module ``test_<slug>__<TASK_ID>.py`` over the
+# legacy shared ``test_<slug>.py``.
+# ---------------------------------------------------------------------------
+
+
+class TestBddTaskIdEnvThreading:
+    def _capture_subprocess_run(self, monkeypatch):
+        """Patch ``subprocess.run`` inside bdd_runner and capture kwargs."""
+        captured: dict = {}
+
+        class _CompletedProcess:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        def _fake_run(argv, **kwargs):
+            captured["argv"] = list(argv)
+            captured["env"] = kwargs.get("env")
+            captured["cwd"] = kwargs.get("cwd")
+            captured["timeout"] = kwargs.get("timeout")
+            return _CompletedProcess()
+
+        monkeypatch.setattr(bdd_runner.subprocess, "run", _fake_run)
+        return captured
+
+    def test_invoke_sets_guardkit_bdd_task_id_env(
+        self, tmp_path: Path, monkeypatch
+    ):
+        # AC: GUARDKIT_BDD_TASK_ID is present in the subprocess env when
+        # task_id is supplied.
+        feature = tmp_path / "x.feature"
+        feature.write_text(_PASS_FEATURE, encoding="utf-8")
+        junit = tmp_path / "junit.xml"
+        captured = self._capture_subprocess_run(monkeypatch)
+
+        bdd_runner._invoke_pytest_bdd(
+            feature_files=[feature],
+            tag="@task:TASK-FG-002",
+            cwd=tmp_path,
+            junit_xml_path=junit,
+            timeout=30,
+            task_id="TASK-FG-002",
+        )
+
+        assert captured["env"] is not None
+        assert captured["env"][bdd_runner._BDD_TASK_ID_ENV] == "TASK-FG-002"
+
+    def test_invoke_preserves_inherited_env(
+        self, tmp_path: Path, monkeypatch
+    ):
+        # AC: setting GUARDKIT_BDD_TASK_ID must not strip the parent env
+        # (PATH, PYTHONPATH, etc.). os.environ.copy() then update.
+        monkeypatch.setenv("GUARDKIT_BDD_PROBE_VAR", "probe-value")
+        feature = tmp_path / "x.feature"
+        feature.write_text(_PASS_FEATURE, encoding="utf-8")
+        junit = tmp_path / "junit.xml"
+        captured = self._capture_subprocess_run(monkeypatch)
+
+        bdd_runner._invoke_pytest_bdd(
+            feature_files=[feature],
+            tag="@task:TASK-FG-002",
+            cwd=tmp_path,
+            junit_xml_path=junit,
+            timeout=30,
+            task_id="TASK-FG-002",
+        )
+
+        env = captured["env"]
+        assert env is not None
+        assert env.get("GUARDKIT_BDD_PROBE_VAR") == "probe-value"
+        assert env[bdd_runner._BDD_TASK_ID_ENV] == "TASK-FG-002"
+
+    def test_invoke_without_task_id_inherits_env_unchanged(
+        self, tmp_path: Path, monkeypatch
+    ):
+        # AC (regression): the legacy single-task path (task_id=None) must
+        # leave the subprocess env exactly inherited — passing env=None to
+        # subprocess.run delegates that to the OS rather than constructing
+        # a clean dict, which is the pre-AB-004 behaviour.
+        feature = tmp_path / "x.feature"
+        feature.write_text(_PASS_FEATURE, encoding="utf-8")
+        junit = tmp_path / "junit.xml"
+        captured = self._capture_subprocess_run(monkeypatch)
+
+        bdd_runner._invoke_pytest_bdd(
+            feature_files=[feature],
+            tag="@task:TASK-FG-002",
+            cwd=tmp_path,
+            junit_xml_path=junit,
+            timeout=30,
+            task_id=None,
+        )
+
+        # env=None preserves pre-fix behaviour (subprocess inherits parent).
+        assert captured["env"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -884,3 +1016,223 @@ class TestStepExtraction:
         step = _extract_step_from_message(msg)
         assert "the user signs up" in step.lower()
         assert "StepDefinitionNotFoundError" not in step
+
+
+# ---------------------------------------------------------------------------
+# Collection-error reason enrichment (TASK-AB-003)
+#
+# When pytest fails to collect a test module (ImportError, ModuleNotFoundError,
+# SyntaxError, plugin load failure, ...) it writes the testcase as
+# `<error message="collection failure">...traceback...</error>` rather than a
+# `<failure>` block. The pre-fix runner copied the `<error message>` attribute
+# verbatim, so `BDDFailure.reason` ended up as the literal string
+# `"collection failure"` and the Player got no signal about the real cause.
+#
+# These tests pin the post-fix behaviour: parse the body for the actual
+# exception class+message and the last traceback frame.
+# ---------------------------------------------------------------------------
+
+
+_COLLECTION_ERROR_JUNIT_MODULENOTFOUND = """\
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+  <testsuite name="pytest" tests="1" failures="0" errors="1">
+    <testcase classname="features.fg-001.test_fg-001" name="features/fg-001/test_fg-001.py" time="0.012">
+      <error message="collection failure" type="ModuleNotFoundError">
+Traceback (most recent call last):
+  File "/worktree/.venv/lib/python3.12/site-packages/_pytest/python.py", line 493, in importtestmodule
+    mod = import_path(...)
+  File "/worktree/features/fg-001/test_fg-001.py", line 41, in &lt;module&gt;
+    from common.jarvis_client import JarvisClient
+ModuleNotFoundError: No module named 'common'
+      </error>
+    </testcase>
+  </testsuite>
+</testsuites>
+"""
+
+
+_COLLECTION_ERROR_JUNIT_SYNTAX = """\
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+  <testsuite name="pytest" tests="1" failures="0" errors="1">
+    <testcase classname="features.x.test_x" name="features/x/test_x.py" time="0.001">
+      <error message="collection failure" type="SyntaxError">
+  File "/worktree/features/x/test_x.py", line 7
+    def broken(:
+              ^
+SyntaxError: invalid syntax
+      </error>
+    </testcase>
+  </testsuite>
+</testsuites>
+"""
+
+
+class TestCollectionErrorReason:
+    def test_extract_error_reason_includes_module_name_and_frame(self):
+        # AC (TASK-AB-003): direct unit test of the helper.
+        from guardkit.orchestrator.quality_gates.bdd_runner import (
+            _extract_error_reason,
+        )
+
+        message = "collection failure"
+        body = (
+            "Traceback (most recent call last):\n"
+            '  File "/worktree/features/fg-001/test_fg-001.py", line 41, in <module>\n'
+            "    from common.jarvis_client import JarvisClient\n"
+            "ModuleNotFoundError: No module named 'common'\n"
+        )
+        reason = _extract_error_reason(message, body)
+
+        # AC2: reason must include the missing module name and exception class.
+        assert "ModuleNotFoundError" in reason
+        assert "No module named 'common'" in reason
+        # AC1: reason must include the original `<error message>` attribute…
+        assert "collection failure" in reason
+        # …and the last traceback frame (file:line plus the source snippet).
+        assert "features/fg-001/test_fg-001.py:41" in reason
+        assert "from common.jarvis_client import JarvisClient" in reason
+
+    def test_extract_error_reason_passes_through_other_classes_verbatim(self):
+        # AC3: no special-casing per exception class — SyntaxError must be
+        # surfaced just as faithfully as ImportError.
+        from guardkit.orchestrator.quality_gates.bdd_runner import (
+            _extract_error_reason,
+        )
+
+        message = "collection failure"
+        body = (
+            '  File "/worktree/features/x/test_x.py", line 7\n'
+            "    def broken(:\n"
+            "              ^\n"
+            "SyntaxError: invalid syntax\n"
+        )
+        reason = _extract_error_reason(message, body)
+
+        assert "SyntaxError" in reason
+        assert "invalid syntax" in reason
+        assert "test_x.py:7" in reason
+
+    def test_extract_error_reason_falls_back_to_message_when_body_empty(self):
+        from guardkit.orchestrator.quality_gates.bdd_runner import (
+            _extract_error_reason,
+        )
+
+        reason = _extract_error_reason("collection failure", "")
+
+        # No body to parse — at minimum the original message must survive
+        # so reason isn't empty.
+        assert "collection failure" in reason
+
+    def test_extract_error_reason_caps_overlong_output(self):
+        from guardkit.orchestrator.quality_gates.bdd_runner import (
+            _extract_error_reason,
+        )
+
+        giant_body = (
+            "Traceback (most recent call last):\n"
+            + "  Filler line that is not a frame\n" * 200
+            + "RuntimeError: " + ("x" * 2000) + "\n"
+        )
+        reason = _extract_error_reason("collection failure", giant_body)
+
+        assert len(reason) <= 800
+        assert reason.endswith("...")
+
+    def test_parse_junit_collection_error_produces_rich_reason(self):
+        # AC6 (TASK-AB-003): the integration through parse_junit_xml must
+        # produce a FailureDetail whose `reason` contains both
+        # "ModuleNotFoundError" and "No module named 'common'".
+        passed, failures, pending = parse_junit_xml(
+            _COLLECTION_ERROR_JUNIT_MODULENOTFOUND
+        )
+
+        assert passed == 0
+        assert pending == []
+        assert len(failures) == 1
+        f = failures[0]
+        assert isinstance(f, FailureDetail)
+        # The parser should NOT collapse this to "collection failure" alone.
+        assert "ModuleNotFoundError" in f.reason
+        assert "No module named 'common'" in f.reason
+        # Last frame info present.
+        assert "test_fg-001.py:41" in f.reason
+
+    def test_parse_junit_collection_error_does_not_classify_as_pending(self):
+        # Regression guard: collection errors must NEVER fall into the
+        # pending bucket, even though they share the `<error>` shape.
+        # Pending is exclusively the StepDefinitionNotFoundError class
+        # surfaced inside `<failure>` nodes.
+        _, failures, pending = parse_junit_xml(
+            _COLLECTION_ERROR_JUNIT_MODULENOTFOUND
+        )
+
+        assert len(failures) == 1
+        assert pending == []
+
+    def test_parse_junit_failure_path_reason_unchanged(self):
+        # AC5 regression guard: the `<failure>` reason path must remain
+        # the literal-message extraction it always was. Only `<error>`
+        # nodes get the new richer extraction.
+        passed, failures, pending = parse_junit_xml(_FAILED_JUNIT)
+
+        assert len(failures) == 1
+        # Pre-fix invariant from TestParseJunitXml.test_failed_scenario_classifies_as_failure
+        assert "AssertionError" in failures[0].reason
+        # No traceback-frame string injected for the failure path.
+        assert "  at " not in failures[0].reason
+
+
+class TestCoachFeedbackEmbedsReason:
+    def test_check_bdd_results_description_contains_per_failure_reason(
+        self, tmp_path: Path
+    ):
+        # AC7 (TASK-AB-003): the Coach feedback summariser must surface the
+        # per-failure `reason` strings in the issue `description` (which is
+        # the only field the Player feedback renderer reads — see
+        # AgentInvoker._format_feedback_for_player).
+        from guardkit.orchestrator.quality_gates.coach_validator import (
+            CoachValidator,
+        )
+
+        bdd_results_dict = {
+            "scenarios_passed": 0,
+            "scenarios_failed": 1,
+            "scenarios_pending": 0,
+            "failures": [{
+                "feature_file": "features/fg-001/fg-001.feature",
+                "scenario_name": "User logs in",
+                "failing_step": "collection failure",
+                "reason": (
+                    "collection failure: ModuleNotFoundError: "
+                    "No module named 'common'\n"
+                    "  at features/fg-001/test_fg-001.py:41 "
+                    "(from common.jarvis_client import JarvisClient)"
+                ),
+            }],
+            "pending": [],
+            "feature_files": ["features/fg-001/fg-001.feature"],
+            "tag": "@task:TASK-FG-002",
+        }
+        task_work_results = {"bdd_results": bdd_results_dict}
+
+        validator = CoachValidator(worktree_path=str(tmp_path))
+        blocking, _non_blocking = validator._check_bdd_results(
+            task_work_results
+        )
+
+        assert len(blocking) == 1
+        issue = blocking[0]
+        assert issue["category"] == "bdd_failure"
+        assert issue["severity"] == "must_fix"
+
+        # The Player only sees `description` — so the missing-module string
+        # MUST appear there, not just in the `failure_examples` aux list.
+        description = issue["description"]
+        assert "ModuleNotFoundError" in description
+        assert "No module named 'common'" in description
+        # And the generic header must remain so the high-level signal is
+        # still readable.
+        assert "BDD oracle" in description
+        assert "scenario(s) failed" in description

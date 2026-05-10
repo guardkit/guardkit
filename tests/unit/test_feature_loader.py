@@ -716,6 +716,58 @@ def test_is_incomplete_all_completed():
     assert FeatureLoader.is_incomplete(feature) is False
 
 
+def test_is_incomplete_failed_feature_with_failed_task_is_resumable():
+    """A `status: failed` feature with a failed task is incomplete (resumable).
+
+    Regression: previously this returned False because:
+      - `feature.status == "failed"` wasn't in the incomplete-status set
+      - no task had `status: in_progress`
+      - the partial-completion check `0 < (completed+failed) < total` failed
+        the upper bound when all tasks were in terminal states (e.g.
+        5 completed + 1 failed == 6 == len(tasks))
+
+    The orchestrator's `_setup_phase` then took the "no incomplete state"
+    branch and rebuilt the worktree from main even when `--resume` was
+    explicitly passed, destroying the existing checkpoint commits.
+
+    Real-world repro: FEAT-FG-001 had one task hit `unrecoverable_stall`
+    due to an upstream AC-linter bug. After the upstream fix landed,
+    `--resume` should have retried only the failed task — but instead
+    silently rebuilt the worktree.
+    """
+    feature = Feature(
+        id="FEAT-1",
+        name="Test",
+        status="failed",
+        tasks=[
+            FeatureTask(id="TASK-1", name="Task 1", status="completed"),
+            FeatureTask(id="TASK-2", name="Task 2", status="completed"),
+            FeatureTask(id="TASK-3", name="Task 3", status="failed"),
+        ],
+        orchestration=FeatureOrchestration(parallel_groups=[]),
+    )
+    assert FeatureLoader.is_incomplete(feature) is True
+
+
+def test_is_incomplete_completed_feature_with_failed_task_is_resumable():
+    """If feature.status doesn't match task statuses, fall back to task-level.
+
+    Defensive: if `feature.status: completed` but a task's `status: failed`
+    (e.g. a hand-edited YAML), the failed task is still retryable.
+    """
+    feature = Feature(
+        id="FEAT-1",
+        name="Test",
+        status="completed",
+        tasks=[
+            FeatureTask(id="TASK-1", name="Task 1", status="completed"),
+            FeatureTask(id="TASK-2", name="Task 2", status="failed"),
+        ],
+        orchestration=FeatureOrchestration(parallel_groups=[]),
+    )
+    assert FeatureLoader.is_incomplete(feature) is True
+
+
 def test_get_resume_point_basic():
     """Test getting resume point from feature."""
     feature = Feature(

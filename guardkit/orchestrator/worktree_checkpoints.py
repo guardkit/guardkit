@@ -46,13 +46,15 @@ Example:
 import fcntl
 import json
 import logging
+import re
+import shutil
 import subprocess
 import threading
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import ClassVar, Dict, List, Optional, Protocol
+from typing import ClassVar, Dict, List, Optional, Protocol, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -438,7 +440,21 @@ class WorktreeCheckpointManager:
         """Rollback worktree to checkpoint at specified turn.
 
         This method performs a hard reset to the git commit at the specified
-        turn, discarding all changes made in subsequent turns.
+        turn, discarding all changes made in subsequent turns. Before the
+        reset it snapshots per-turn audit JSONs (``coach_turn_*.json``,
+        ``player_turn_*.json``, ``turn_state_turn_*.json``) for turns
+        ``> turn`` to ``_rollback_archive/`` so the forensic audit trail of
+        the polluted turns survives the reset (TASK-FIX-RBSS AC-3).
+
+        Note:
+            This method is **filesystem-only by design**. Resetting the
+            Player SDK resume session is the *caller*'s responsibility —
+            see ``autobuild.py`` rollback branch which calls
+            ``AgentInvoker.set_player_resume_session(None)`` immediately
+            after this method returns (TASK-FIX-RBSS AC-1, AC-7). Without
+            that caller-side reset the next turn resumes the polluted
+            cumulative-authoring memory and re-emits the file claims the
+            rollback just deleted, defeating the rollback's purpose.
 
         Args:
             turn: Turn number to rollback to (1-indexed)
@@ -460,6 +476,19 @@ class WorktreeCheckpointManager:
         )
 
         try:
+            # TASK-FIX-RBSS AC-3: snapshot per-turn audit JSONs for turns
+            # > target_turn before `git reset --hard` discards them. Audit
+            # archival is best-effort: a snapshot failure must not block
+            # the rollback itself (the SDK-session reset that follows is
+            # load-bearing for recovery; archival is forensic hygiene).
+            try:
+                self._archive_post_target_audit_files(turn)
+            except Exception as archive_error:  # noqa: BLE001
+                logger.warning(
+                    f"[rollback] Audit-trail archive failed (continuing "
+                    f"with reset): {archive_error}"
+                )
+
             # Hard reset to checkpoint commit
             self.git_executor.execute(
                 ["git", "reset", "--hard", checkpoint.commit_hash],
@@ -583,6 +612,94 @@ class WorktreeCheckpointManager:
             if checkpoint.turn == turn:
                 return checkpoint
         return None
+
+    # Audit JSONs the rollback wipes when their committing turn is rolled
+    # away by ``git reset --hard``. Pattern groups: 1=turn number.
+    _AUDIT_FILE_PATTERNS: ClassVar[Tuple[Tuple[str, "re.Pattern[str]"], ...]] = (
+        ("coach", re.compile(r"^coach_turn_(\d+)\.json$")),
+        ("player", re.compile(r"^player_turn_(\d+)\.json$")),
+        ("turn_state", re.compile(r"^turn_state_turn_(\d+)\.json$")),
+    )
+
+    def _archive_post_target_audit_files(self, target_turn: int) -> int:
+        """Snapshot per-turn audit JSONs for turns > ``target_turn``.
+
+        Copies every ``coach_turn_<N>.json``, ``player_turn_<N>.json`` and
+        ``turn_state_turn_<N>.json`` under ``.guardkit/autobuild/<task>/``
+        whose turn number is strictly greater than ``target_turn`` into
+        ``.guardkit/autobuild/<task>/_rollback_archive/turn_<target>_<ts>/``
+        before the caller's ``git reset --hard`` would otherwise destroy
+        them. Also writes a defensive ``.gitignore`` inside
+        ``_rollback_archive/`` so the archived files self-exclude from any
+        future ``git add -A`` checkpoint commit — that prevents subsequent
+        rollbacks from recursively wiping prior archives even when the
+        consumer project's root ``.gitignore`` does not list the archive
+        path (TASK-FIX-RBSS AC-5).
+
+        Audit-trail archival is best-effort. The caller is expected to
+        catch any exception and continue with the reset — the SDK-session
+        reset that follows is load-bearing; this is forensic hygiene.
+
+        Args:
+            target_turn: Rollback target. Files for turns ``> target_turn``
+                are archived; the target turn itself is preserved by the
+                git reset and does not need archival.
+
+        Returns:
+            Number of files archived. Zero is a valid no-op (e.g. test
+            fixtures with no per-turn JSONs on disk).
+        """
+        if not self._autobuild_dir.exists():
+            return 0
+
+        rollback_archive_dir = self._autobuild_dir / "_rollback_archive"
+        rollback_archive_dir.mkdir(parents=True, exist_ok=True)
+
+        # Defensive in-directory .gitignore so the snapshots are never
+        # picked up by `git add -A` in the next checkpoint, regardless of
+        # what the project's root .gitignore says. ``!.gitignore`` keeps
+        # the marker file itself committable so the directory's intent is
+        # discoverable in git history.
+        archive_gitignore = rollback_archive_dir / ".gitignore"
+        if not archive_gitignore.exists():
+            archive_gitignore.write_text("*\n!.gitignore\n", encoding="utf-8")
+
+        timestamp = datetime.now().strftime("%Y%m%dT%H%M%SZ")
+        snapshot_dir = rollback_archive_dir / f"turn_{target_turn}_{timestamp}"
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+        archived_count = 0
+        # Iterate only top-level files in the autobuild dir; we explicitly
+        # do NOT descend into _rollback_archive/ so we cannot pick up
+        # prior snapshots.
+        for entry in self._autobuild_dir.iterdir():
+            if not entry.is_file():
+                continue
+            for _kind, pattern in self._AUDIT_FILE_PATTERNS:
+                match = pattern.match(entry.name)
+                if not match:
+                    continue
+                try:
+                    file_turn = int(match.group(1))
+                except ValueError:
+                    break
+                if file_turn <= target_turn:
+                    break
+                try:
+                    shutil.copy2(entry, snapshot_dir / entry.name)
+                    archived_count += 1
+                except OSError as copy_error:
+                    logger.warning(
+                        f"[rollback] Failed to archive {entry.name}: "
+                        f"{copy_error}"
+                    )
+                break
+
+        logger.info(
+            f"[rollback] Archived {archived_count} audit file(s) to "
+            f"_rollback_archive/{snapshot_dir.name}/"
+        )
+        return archived_count
 
     def _save_checkpoints(self) -> None:
         """Save checkpoint history to JSON file.

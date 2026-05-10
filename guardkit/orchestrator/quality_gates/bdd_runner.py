@@ -29,6 +29,7 @@ territory) and is intentionally out of scope here.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -62,6 +63,15 @@ _PYTEST_EXIT_USAGE_ERROR = 4       # pytest usage error (e.g. "not found", bad a
 
 # Cap raw output captured into BDDResult to keep result JSON small.
 _MAX_RAW_OUTPUT_CHARS = 8_000
+
+# Env-var contract (TASK-AB-004): the pytest subprocess advertises the active
+# task ID so the project's ``features/conftest.py`` collection bridge can pick
+# the per-task glue module ``test_<slug>__<sanitised_task_id>.py`` over the
+# legacy shared ``test_<slug>.py``. Solves the FEAT-FG-001 race where two
+# parallel tasks both rewrote the same shared glue file. Sanitisation matches
+# ``_build_pytest_argv`` (``:`` and ``-`` → ``_``); the conftest is responsible
+# for applying that on the consumer side.
+_BDD_TASK_ID_ENV: str = "GUARDKIT_BDD_TASK_ID"
 
 # Cap runner-error reason snippets to keep synthetic FailureDetail compact.
 _RUNNER_ERROR_REASON_MAX = 200
@@ -234,6 +244,84 @@ def has_pytest_bdd(python_executable: Optional[str] = None) -> bool:
 
 _FEATURE_FILE_FROM_NODEID = re.compile(r"(?P<feature>features/[^:\s]+\.feature)")
 
+# Matches a Python traceback frame line: `  File "path", line N, in name`.
+# The trailing `, in name` is optional because pytest collection errors
+# sometimes omit it.
+_TRACEBACK_FRAME_RE = re.compile(
+    r'^\s*File "(?P<path>[^"]+)", line (?P<lineno>\d+)(?:, in .+)?$'
+)
+
+
+def _extract_error_reason(message: str, body: str) -> str:
+    """Build a rich ``reason`` string for junit ``<error>`` nodes.
+
+    Composes three signals so the Coach's feedback names the actual failure
+    class and location instead of the generic ``"collection failure"`` prose
+    pytest writes into the ``message`` attribute:
+
+    1. The ``<error message="...">`` attribute (e.g. ``collection failure``).
+    2. The inner exception class+message — typically the last non-indented
+       line of the traceback body (e.g. ``ModuleNotFoundError: No module
+       named 'common'``).
+    3. The *last* traceback frame ``File "path", line N`` plus the source
+       snippet on the line immediately after it (e.g. ``from common.x import y``).
+
+    No exception-class special-casing — whatever the body says, we surface.
+    See TASK-AB-003.
+    """
+    msg_text = (message or "").strip()
+    body_text = body or ""
+
+    exception_line = ""
+    for line in reversed(body_text.splitlines()):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # Skip indented continuation lines (source snippets, traceback frames).
+        if line.startswith((" ", "\t")):
+            continue
+        if stripped.startswith("Traceback "):
+            continue
+        exception_line = stripped
+        break
+
+    last_frame: Optional[Tuple[str, str, str]] = None
+    body_lines = body_text.splitlines()
+    for i, line in enumerate(body_lines):
+        m = _TRACEBACK_FRAME_RE.match(line)
+        if not m:
+            continue
+        path = m.group("path")
+        lineno = m.group("lineno")
+        snippet = ""
+        if i + 1 < len(body_lines):
+            next_line = body_lines[i + 1]
+            if not _TRACEBACK_FRAME_RE.match(next_line):
+                snippet = next_line.strip()
+        last_frame = (path, lineno, snippet)
+
+    parts: List[str] = []
+    if msg_text and exception_line and exception_line != msg_text:
+        parts.append(f"{msg_text}: {exception_line}")
+    elif msg_text:
+        parts.append(msg_text)
+    elif exception_line:
+        parts.append(exception_line)
+
+    if last_frame is not None:
+        path, lineno, snippet = last_frame
+        frame_str = f"  at {path}:{lineno}"
+        if snippet:
+            frame_str += f" ({snippet})"
+        parts.append(frame_str)
+
+    reason = "\n".join(parts).strip()
+    if not reason:
+        reason = msg_text or "<empty error>"
+    if len(reason) > 800:
+        reason = reason[:797] + "..."
+    return reason
+
 
 def _classify_failure_text(message: str) -> bool:
     """Return True when the failure message indicates a pending step.
@@ -314,7 +402,16 @@ def parse_junit_xml(xml_text: str) -> Tuple[int, List[FailureDetail], List[Pendi
         full = f"{message}\n{body}"
         step = _extract_step_from_message(full)
 
-        if _classify_failure_text(full):
+        # Collection errors land in `<error>` (not `<failure>`) and never
+        # represent a missing step definition — they are always real
+        # failures. Skip the pending classifier and use the richer
+        # `_extract_error_reason` so the Coach feedback names the actual
+        # exception class+message and the last traceback frame, not the
+        # generic ``"collection failure"`` prose pytest writes into the
+        # `<error message>` attribute. See TASK-AB-003.
+        is_error_only = failure_node is None and error_node is not None
+
+        if not is_error_only and _classify_failure_text(full):
             pending.append(
                 PendingDetail(
                     feature_file=feature_file,
@@ -323,10 +420,13 @@ def parse_junit_xml(xml_text: str) -> Tuple[int, List[FailureDetail], List[Pendi
                 )
             )
         else:
-            # Trim the reason to keep BDDResult compact.
-            reason = (message or body or "").strip()
-            if len(reason) > 500:
-                reason = reason[:497] + "..."
+            if is_error_only:
+                reason = _extract_error_reason(message, body)
+            else:
+                # Trim the reason to keep BDDResult compact.
+                reason = (message or body or "").strip()
+                if len(reason) > 500:
+                    reason = reason[:497] + "..."
             failures.append(
                 FailureDetail(
                     feature_file=feature_file,
@@ -420,15 +520,27 @@ def _invoke_pytest_bdd(
     junit_xml_path: Path,
     timeout: int,
     python_executable: Optional[str] = None,
+    task_id: Optional[str] = None,
 ) -> _PytestInvocation:
     """Run pytest-bdd in a subprocess and capture its outputs.
 
     Isolated as its own function so unit tests can monkeypatch it without
     spawning real subprocesses.
+
+    When ``task_id`` is given, ``GUARDKIT_BDD_TASK_ID=<task_id>`` is set in
+    the subprocess environment (on top of the inherited env). The project's
+    ``features/conftest.py`` reads this variable to pick the per-task glue
+    module ``test_<slug>__<sanitised_task_id>.py`` over the legacy shared
+    ``test_<slug>.py`` (TASK-AB-004). When ``task_id`` is ``None`` the env
+    is inherited unchanged so legacy single-task callers stay untouched.
     """
     argv = _build_pytest_argv(feature_files, tag, junit_xml_path)
     if python_executable:
         argv = [python_executable, "-m", *argv]
+    env: Optional[Dict[str, str]] = None
+    if task_id is not None:
+        env = os.environ.copy()
+        env[_BDD_TASK_ID_ENV] = task_id
     try:
         proc = subprocess.run(
             argv,
@@ -436,6 +548,7 @@ def _invoke_pytest_bdd(
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=env,
         )
     except subprocess.TimeoutExpired as exc:
         logger.warning("pytest-bdd timed out after %ss: %s", timeout, exc)
@@ -552,6 +665,7 @@ def run_bdd_for_task(
         junit_xml_path=junit_xml_path,
         timeout=timeout,
         python_executable=python_executable,
+        task_id=task_id,
     )
 
     passed, failures, pending = parse_junit_xml(invocation.junit_xml)
@@ -634,4 +748,5 @@ __all__ = [
     "parse_junit_xml",
     "run_bdd_for_task",
     "task_tag",
+    "_BDD_TASK_ID_ENV",
 ]

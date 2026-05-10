@@ -3603,18 +3603,63 @@ class CoachValidator:
         (paths containing ``*``) are filtered out — only literal paths are
         eligible for disk-existence checks.
 
+        Quoted content (backticks, single quotes, double quotes) that contains
+        whitespace is treated as a *command line* rather than a single path
+        (TASK-AB-006). For example, ``` `pytest tests/foo.py` ``` is split on
+        whitespace and each token is independently checked against the path
+        regex; the ``pytest`` runner prefix and any flags drop out and only
+        ``tests/foo.py`` is kept. Pytest node-ID suffixes (``::test_name``)
+        are stripped from every quoted token so that ``pytest
+        tests/foo.py::test_bar`` and ``tests/foo.py::TestC::test_x`` both
+        yield ``tests/foo.py`` rather than the unrunnable composite. Without
+        this tokenisation step the over-captured command line would fail
+        disk-existence under :py:meth:`_detect_ac_cited_missing_test_files`
+        and short-circuit the independent-test gate even though the cited
+        test file is in fact present (the FG-004 stall pattern that motivated
+        this fix).
+
         Used by:
         - TASK-AB-FIX-INVAB1 AC-004: tightening the "No completion promise"
           hybrid-fallback branch to require the named path to exist on disk.
         - TASK-AB-FIX-INVAB1 AC-005: plan_audit ``skipped`` escalation when
           AC names a missing source file.
+        - TASK-AB-FIX-INVAB1 AC-006 (via :py:meth:`_detect_ac_cited_missing_test_files`):
+          the AC-cited-missing-test-files honesty gate.
         """
         if not criterion_text:
             return []
         primary = re.findall(r"[\w./\-]+\.\w{1,5}", criterion_text)
-        backtick = re.findall(r"`([^`]+\.[a-zA-Z]+)`", criterion_text)
-        double_q = re.findall(r'"([^"]+\.[a-zA-Z]+)"', criterion_text)
-        single_q = re.findall(r"'([^']+\.[a-zA-Z]+)'", criterion_text)
+        backtick_raw = re.findall(r"`([^`]+\.[a-zA-Z]+)`", criterion_text)
+        double_q_raw = re.findall(r'"([^"]+\.[a-zA-Z]+)"', criterion_text)
+        single_q_raw = re.findall(r"'([^']+\.[a-zA-Z]+)'", criterion_text)
+
+        # TASK-AB-006: tokenise whitespace-bearing quoted content as a
+        # command line so a runner prefix (`pytest`, `python -m pytest`,
+        # …) and flags don't end up smuggled into the path candidate.
+        # Also strip pytest node-ID suffixes (``::test_name``) from every
+        # quoted token so the bare file path is what gets disk-checked.
+        # Bare-token quoted content (``path/to/file.py``) is preserved
+        # verbatim modulo the node-ID strip — the original behaviour that
+        # `path/to/file.py` is captured from `` `path/to/file.py` `` is
+        # unchanged.
+        path_token_re = re.compile(r"[\w./\-]+\.\w{1,5}")
+
+        def _expand_quoted(quoted_chunks: List[str]) -> List[str]:
+            expanded: List[str] = []
+            for chunk in quoted_chunks:
+                if any(c.isspace() for c in chunk):
+                    for tok in chunk.split():
+                        tok = tok.split("::", 1)[0]
+                        if path_token_re.fullmatch(tok):
+                            expanded.append(tok)
+                else:
+                    expanded.append(chunk.split("::", 1)[0])
+            return expanded
+
+        backtick = _expand_quoted(backtick_raw)
+        double_q = _expand_quoted(double_q_raw)
+        single_q = _expand_quoted(single_q_raw)
+
         out: List[str] = []
         seen: set = set()
         for p in primary + backtick + double_q + single_q:
@@ -3650,6 +3695,25 @@ class CoachValidator:
         conventions, plus equivalents per stack), that file must exist
         on disk. Otherwise the independent-test gate would silently run
         a smaller-scope test set and report green.
+
+        Path extraction is delegated to
+        :py:meth:`_extract_paths_from_ac_text`, which (per TASK-AB-006)
+        treats whitespace-bearing quoted content as a command line and
+        tokenises out the runner / flags. In practice this means:
+
+        - ``pytest tests/foo.py`` / ``pytest -v tests/foo.py`` /
+          ``python -m pytest tests/foo.py`` are all reduced to
+          ``tests/foo.py`` for disk-existence checks.
+        - ``pytest tests/foo.py::test_bar`` strips the node-ID suffix
+          and checks ``tests/foo.py``.
+        - **Non-pytest runners** with no path-shaped argument
+          (``npm test``, ``dotnet test --filter Category=Unit``,
+          ``cargo test``) yield no path candidates and therefore raise
+          no AC-006 missing-file findings — the gate is silent for those
+          shapes by design. Stacks that need disk-existence verification
+          for non-pytest runners must cite the test file path explicitly
+          in the AC text (e.g. ``AC-x: tests in tests/Suite.cs pass``)
+          rather than relying on the runner command alone.
         """
         missing: List[str] = []
         seen: set = set()
@@ -4774,10 +4838,11 @@ class CoachValidator:
 
         if scenarios_failed > 0:
             failure_summaries: List[str] = []
+            reason_bullets: List[str] = []
             for f in failures[:5]:
                 scenario = f.get("scenario_name", "<unknown>")
                 step = f.get("failing_step", "")
-                reason = f.get("reason", "")
+                reason = (f.get("reason") or "").strip()
                 summary = f"{scenario}"
                 if step:
                     summary += f" — step: {step}"
@@ -4785,14 +4850,37 @@ class CoachValidator:
                     summary += f" — {reason[:160]}"
                 failure_summaries.append(summary)
 
+                # TASK-AB-003: surface the per-failure reason as a bullet in
+                # the description so the Player feedback (which renders only
+                # `description`) carries the actual exception class+message
+                # and traceback frame, not just the generic "Implementation
+                # does not satisfy the Gherkin specification" prose.
+                if reason:
+                    bullet_reason = reason
+                    if len(bullet_reason) > 400:
+                        bullet_reason = bullet_reason[:397] + "..."
+                    bullet = f"- {scenario}: {bullet_reason}"
+                else:
+                    bullet = f"- {scenario}"
+                reason_bullets.append(bullet)
+
+            description_parts: List[str] = [
+                f"BDD oracle: {scenarios_failed} scenario(s) failed "
+                f"during pytest-bdd execution."
+            ]
+            if reason_bullets:
+                description_parts.append("Per-failure details:")
+                description_parts.extend(reason_bullets)
+            else:
+                description_parts.append(
+                    "Implementation does not satisfy the Gherkin specification."
+                )
+            description = "\n".join(description_parts)
+
             blocking.append({
                 "severity": "must_fix",
                 "category": "bdd_failure",
-                "description": (
-                    f"BDD oracle: {scenarios_failed} scenario(s) failed "
-                    f"during pytest-bdd execution. "
-                    f"Implementation does not satisfy the Gherkin specification."
-                ),
+                "description": description,
                 "scenarios_failed": scenarios_failed,
                 "scenarios_passed": scenarios_passed,
                 "scenarios_pending": scenarios_pending,
@@ -5260,13 +5348,33 @@ class CoachValidator:
             discrepancies.extend(
                 verifier._verify_completion_promises_files_exist(task_work_results)
             )
+            # TASK-AB-FIX-CHECKPOINT-CLAIM-AUDIT: detect the FEAT-39E1 class
+            # of silent loss — Player-created files that exist on disk but
+            # are gitignored (or sparse-filtered, etc.) so the per-turn
+            # checkpoint commit drops them. Pair-with-attempted-count
+            # semantics from absence-of-failure-is-not-success.md guard the
+            # implicit "git add error count == 0" gate against zero-attempted
+            # false-greens.
+            discrepancies.extend(
+                verifier._verify_claims_were_staged(task_work_results)
+            )
             total = verifier._count_verifiable_claims(task_work_results)
             critical = sum(1 for d in discrepancies if d.severity == "critical")
+            # TASK-FIX-IGNR AC-2: track should_fix discrepancies separately
+            # so the gate can ride them along to feedback without counting
+            # them toward the honesty_score. The motivating case is
+            # ``claim_audit_gitignored`` — file is on disk, .gitignore is
+            # the bug, and turn-rejecting on it produces the FEAT-39E1
+            # adversarial blow-up.
+            should_fix = sum(
+                1 for d in discrepancies if d.severity == "should_fix"
+            )
             return HonestyVerification(
                 verified=len(discrepancies) == 0,
                 discrepancies=discrepancies,
                 honesty_score=1.0 - (critical / max(total, 1)),
                 resolved_paths=list(verifier._resolved_paths),
+                should_fix_count=should_fix,
             )
         except Exception as exc:  # noqa: BLE001 — never block gates on verifier crash
             logger.warning(
@@ -5296,18 +5404,53 @@ class CoachValidator:
         ``promise_file_existence`` (FEAT-6CC5 sophisticated-lie
         pattern), and content-claim discrepancies (``test_result``,
         ``test_count``) retain ``must_fix`` and short-circuit.
+
+        ``claim_audit`` discrepancies (TASK-AB-FIX-CHECKPOINT-CLAIM-AUDIT,
+        sibling of TASK-AB-FIX-INVAB1's ``honesty`` category) are emitted
+        with ``category: "claim_audit"`` instead of ``"honesty"``, are
+        ``must_fix``, and are excluded from the FEAT-FFC3 single-
+        discrepancy demotion above. The class they cover — Player claims
+        about files that did not actually land in the per-turn checkpoint
+        commit — is a different defect shape than the FFC3 ghost-path
+        case the demotion was added for, and a single dropped path is
+        enough signal to reject the turn.
+
+        ``claim_audit_gitignored`` discrepancies (TASK-FIX-IGNR) are the
+        narrow non-fabrication subset of the above: the Player-authored
+        file *is* on disk, but a ``.gitignore`` rule silently filtered
+        it out of the would-be-staged set. These are emitted as
+        ``should_fix`` advisory issues — same ``category: "claim_audit"``
+        so dashboards still bucket them with the gate, but they ride
+        along to feedback rather than short-circuiting evaluation. AC-6
+        appends a rebase hint to the description when the matched rule's
+        source is the project-root ``.gitignore`` (the most common
+        recoverable case: the rule was already fixed on ``main`` and the
+        worktree just needs to rebase).
         """
         critical = [d for d in honesty.discrepancies if d.severity == "critical"]
+        # Partition: claim_audit discrepancies have their own category and
+        # never participate in the FEAT-FFC3 single-discrepancy demotion.
+        non_audit = [d for d in critical if d.claim_type != "claim_audit"]
+        audit = [d for d in critical if d.claim_type == "claim_audit"]
+        # TASK-FIX-IGNR: the gitignored subset is should_fix and never
+        # short-circuits. Pulled separately from the critical list and
+        # supplemented from honesty.discrepancies (severity == should_fix).
+        gitignored = [
+            d for d in honesty.discrepancies
+            if d.claim_type == "claim_audit_gitignored"
+            and d.severity == "should_fix"
+        ]
         demote = (
-            len(critical) == 1
-            and critical[0].claim_type == "file_existence"
+            len(non_audit) == 1
+            and non_audit[0].claim_type == "file_existence"
         )
-        severity = "should_fix" if demote else "must_fix"
+        severity_for_non_audit = "should_fix" if demote else "must_fix"
+
         issues: List[Dict[str, Any]] = []
-        for d in critical:
+        for d in non_audit:
             issues.append(
                 {
-                    "severity": severity,
+                    "severity": severity_for_non_audit,
                     "category": "honesty",
                     "description": (
                         f"Honesty verification failed: Player claim disagrees "
@@ -5321,7 +5464,74 @@ class CoachValidator:
                     },
                 }
             )
+        for d in audit:
+            issues.append(
+                {
+                    "severity": "must_fix",
+                    "category": "claim_audit",
+                    "description": (
+                        f"Checkpoint claim audit failed: Player claimed a "
+                        f"file that 'git add -A' would not stage. "
+                        f"{d.player_claim}. {d.actual_value} Investigate "
+                        f"before approving the turn — most common cause is "
+                        f"an unanchored .gitignore rule silently filtering "
+                        f"the file out of the per-turn checkpoint commit."
+                    ),
+                    "details": {
+                        "claim_type": d.claim_type,
+                        "player_claim": d.player_claim,
+                        "actual_value": d.actual_value,
+                    },
+                }
+            )
+        for d in gitignored:
+            description = (
+                f"Player-claimed file is on disk but matched a "
+                f".gitignore rule, so the per-turn checkpoint commit "
+                f"silently dropped it. {d.player_claim}. "
+                f"{d.actual_value}"
+            )
+            # AC-6: when the matching rule lives in the project-root
+            # ``.gitignore`` (rule source has no directory prefix), the
+            # most common recoverable shape is "rule already fixed on
+            # main, worktree just needs to rebase". Surface that hint.
+            if self._ignore_rule_is_project_root(d.ignore_rule):
+                description += (
+                    " Hint: rebase the worktree onto main if the "
+                    ".gitignore was fixed there."
+                )
+            issues.append(
+                {
+                    "severity": "should_fix",
+                    "category": "claim_audit",
+                    "description": description,
+                    "details": {
+                        "claim_type": d.claim_type,
+                        "player_claim": d.player_claim,
+                        "actual_value": d.actual_value,
+                        "ignore_rule": d.ignore_rule,
+                    },
+                }
+            )
         return issues
+
+    @staticmethod
+    def _ignore_rule_is_project_root(ignore_rule: Optional[str]) -> bool:
+        """Return True when ``ignore_rule`` was matched against the project-
+        root ``.gitignore`` (TASK-FIX-IGNR AC-6).
+
+        ``git check-ignore -v --no-index`` formats matched rules as
+        ``<source>:<linenum>:<pattern>``. The source path is relative to
+        the worktree root. A rule from the project-root ``.gitignore``
+        therefore has source ``.gitignore`` exactly (no directory
+        prefix). Rules from nested ``.gitignore`` files (e.g.
+        ``src/.gitignore``) have a directory in the source — those are
+        not the rebase-fixable case the hint targets, so we return False.
+        """
+        if not ignore_rule:
+            return False
+        source = ignore_rule.split(":", 1)[0]
+        return source == ".gitignore"
 
     def _feedback_result(
         self,

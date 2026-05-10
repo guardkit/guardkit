@@ -82,6 +82,10 @@ obj/
 # GuardKit autobuild artifacts (per-task state, not source-controlled)
 .guardkit/autobuild/
 
+# Rollback audit-trail snapshots (TASK-FIX-RBSS): defensive entry that
+# applies to consumer projects without `.guardkit/autobuild/` excluded.
+_rollback_archive/
+
 # GuardKit archive (completed feature archives)
 .guardkit/archive/
 
