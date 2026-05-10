@@ -53,6 +53,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -255,6 +256,7 @@ FAILURE_CATEGORY_MAP: Dict[str, str] = {
     "unrecoverable_stall": "other",
     "player_invocation_stall": "env_failure",
     "design_extraction_failed": "other",
+    "honesty_collapse": "other",
 }
 """Map final_decision strings to FailureCategory controlled vocabulary values."""
 
@@ -788,7 +790,7 @@ class OrchestrationResult:
     task_id: str
     success: bool
     total_turns: int
-    final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "rate_limited", "design_extraction_failed"]
+    final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "rate_limited", "design_extraction_failed", "honesty_collapse"]
     turn_history: List[TurnRecord]
     worktree: Worktree
     error: Optional[str] = None
@@ -913,6 +915,8 @@ class AutoBuildOrchestrator:
         venv_python: Optional[str] = None,
         wave_changed_files: Optional[Dict[str, Any]] = None,
         wave_files_lock: Optional[threading.Lock] = None,
+        honesty_early_abort_threshold: float = 0.3,
+        honesty_early_abort_window: int = 3,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -1082,6 +1086,16 @@ class AutoBuildOrchestrator:
         # them in parallel waves.
         self._wave_changed_files: Optional[Dict[str, Any]] = wave_changed_files
         self._wave_files_lock: Optional[threading.Lock] = wave_files_lock
+        # Honesty rolling-average early-abort thresholds (TASK-FIX-HEAB).
+        # _check_honesty_early_abort() consults these after each turn: when
+        # mean(self._honesty_history[-window:]) < threshold and at least
+        # ``window`` samples have accrued, the loop short-circuits with
+        # final_decision="honesty_collapse" instead of burning the remaining
+        # max_turns budget on what observably won't recover. Defaults match
+        # the CLI/feature_orchestrator forwarding layer (cli/autobuild.py:243-263,
+        # feature_orchestrator.py:534-535).
+        self.honesty_early_abort_threshold: float = honesty_early_abort_threshold
+        self.honesty_early_abort_window: int = honesty_early_abort_window
         # Per-turn context status tracking for progress display (TASK-FIX-GCW5)
         self._last_player_context_status: Optional[ContextStatus] = None
         self._last_coach_context_status: Optional[ContextStatus] = None
@@ -2037,7 +2051,7 @@ class AutoBuildOrchestrator:
         requires_infrastructure: Optional[List[str]] = None,
         consumer_context: Optional[list] = None,
         time_budget_seconds: Optional[float] = None,
-    ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "design_extraction_failed", "timeout_budget_exhausted"]]:
+    ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "design_extraction_failed", "timeout_budget_exhausted", "honesty_collapse"]]:
         """
         Phase 3: Execute Player↔Coach adversarial loop.
 
@@ -2240,6 +2254,25 @@ class AutoBuildOrchestrator:
 
                 # Record honesty score from Coach's verification
                 self._record_honesty(turn_record)
+
+                # Honesty rolling-average early-abort (TASK-FIX-HEAB).
+                # When the rolling average over _honesty_early_abort_window
+                # turns drops below _honesty_early_abort_threshold the loop
+                # short-circuits with a "honesty_collapse" final_decision —
+                # the diagnostic explains why and points at the most-flagged
+                # claim. This is the autobuild-level integration the
+                # original TASK-FIX-HEAB commit advertised but did not land;
+                # see TASK-FIX-HEAB-FOLLOWUP.
+                heab_msg = self._check_honesty_early_abort(
+                    turn_history,
+                    task_id=task_id,
+                    worktree_path=worktree.path,
+                )
+                if heab_msg is not None:
+                    logger.warning(
+                        f"[{task_id}] HONESTY COLLAPSE after turn {turn}: {heab_msg}"
+                    )
+                    return turn_history, "honesty_collapse"
 
                 # Display criteria progress after each turn
                 self._display_criteria_progress(turn_record, acceptance_criteria)
@@ -3159,7 +3192,7 @@ class AutoBuildOrchestrator:
     def _finalize_phase(
         self,
         worktree: Worktree,
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "configuration_error", "pre_loop_blocked", "design_extraction_failed"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "configuration_error", "pre_loop_blocked", "design_extraction_failed", "honesty_collapse"],
         turn_history: List[TurnRecord],
     ) -> None:
         """
@@ -3201,9 +3234,12 @@ class AutoBuildOrchestrator:
         # Always preserve worktree for human review
         self._worktree_manager.preserve_on_failure(worktree)
 
-        # Check for blocked report in last Player report (escape hatch pattern)
+        # Check for blocked report in last Player report (escape hatch pattern).
+        # honesty_collapse is treated like max_turns_exceeded for this gate
+        # (TASK-FIX-HEAB) — both terminate the loop with no Coach approval, so
+        # any blocked_report the Player emitted is equally relevant.
         blocked_report = self._extract_blocked_report(turn_history)
-        if blocked_report and final_decision == "max_turns_exceeded":
+        if blocked_report and final_decision in ("max_turns_exceeded", "honesty_collapse"):
             # Render structured blocked report
             self._progress_display.render_blocked_report(
                 blocked_report=blocked_report,
@@ -4428,6 +4464,158 @@ class AutoBuildOrchestrator:
                 f"({discrepancy_count} discrepancies)"
             )
 
+    def _check_honesty_early_abort(
+        self,
+        turn_history: List[TurnRecord],
+        *,
+        task_id: str,
+        worktree_path: Path,
+    ) -> Optional[str]:
+        """
+        Decide whether the rolling honesty average has collapsed enough to
+        abort the loop early (TASK-FIX-HEAB).
+
+        Returns ``None`` when no abort is indicated. Returns an
+        operator-facing diagnostic string when:
+
+        1. ``len(self._honesty_history) >= self.honesty_early_abort_window``
+           AND
+        2. ``mean(self._honesty_history[-window:]) < self.honesty_early_abort_threshold``.
+
+        The diagnostic names the rolling average, the threshold, the
+        most-flagged ``player_claim`` across the window (filtered to
+        Coach issues with category ``"honesty"`` or ``"claim_audit"``),
+        and the number of turns saved by short-circuiting. When the
+        most-flagged path matches a ``.gitignore`` rule in the worktree,
+        a best-effort ``git check-ignore -v`` recommendation line is
+        appended; failures of that subprocess are swallowed so the
+        diagnostic always fires.
+
+        Parameters
+        ----------
+        turn_history : List[TurnRecord]
+            Per-turn records from the loop. Used to extract the
+            most-flagged claim across ``[-window:]``.
+        task_id : str
+            Task identifier; included in the message for log correlation.
+        worktree_path : Path
+            Worktree root, used as cwd for the ``git check-ignore``
+            best-effort lookup.
+
+        Returns
+        -------
+        Optional[str]
+            ``None`` when no abort indicated, otherwise the diagnostic
+            string the loop should log before returning
+            ``"honesty_collapse"``.
+        """
+        # Defensive lookups: tests / future callers that construct the
+        # orchestrator via ``__new__`` to exercise narrow code paths
+        # (e.g. tests/unit/test_autobuild_timeout_budget.py) won't have
+        # set these attributes. Fall back to the same defaults the ctor
+        # uses so the helper is a no-op rather than raising
+        # AttributeError on those code paths.
+        window = getattr(self, "honesty_early_abort_window", 3)
+        threshold = getattr(self, "honesty_early_abort_threshold", 0.3)
+        history = getattr(self, "_honesty_history", None) or []
+
+        # AC-7: window precondition. Suppresses first-turn false trips.
+        if len(history) < window:
+            return None
+
+        recent = history[-window:]
+        rolling_avg = sum(recent) / len(recent)
+        if rolling_avg >= threshold:
+            return None
+
+        abort_turn = len(history)
+        max_turns = getattr(self, "max_turns", abort_turn)
+        saved = max(0, max_turns - abort_turn)
+
+        # AC-2: most-flagged player_claim across the window. Iterate the
+        # tail of turn_history (its length should match the honesty
+        # window when called from the loop, but slice defensively in
+        # case of resume scenarios that pre-populate _honesty_history).
+        claim_counter: Counter = Counter()
+        for tr in turn_history[-window:]:
+            coach = getattr(tr, "coach_result", None)
+            if coach is None or not getattr(coach, "success", False):
+                continue
+            report = getattr(coach, "report", None) or {}
+            issues = report.get("issues") or []
+            for issue in issues:
+                if not isinstance(issue, dict):
+                    continue
+                if issue.get("category") not in {"honesty", "claim_audit"}:
+                    continue
+                details = issue.get("details") or {}
+                claim = details.get("player_claim")
+                if claim:
+                    claim_counter[claim] += 1
+
+        top_claim: Optional[str] = None
+        top_count: int = 0
+        if claim_counter:
+            top_claim, top_count = claim_counter.most_common(1)[0]
+
+        lines: List[str] = [
+            f"HONESTY COLLAPSE [{task_id}]: rolling avg {rolling_avg:.2f} "
+            f"over last {window} turns < threshold {threshold:.2f}.",
+        ]
+        if top_claim is not None:
+            lines.append(
+                f"Most-flagged claim: '{top_claim}' "
+                f"({top_count} of last {window} turns)."
+            )
+        lines.append(
+            f"Saved {saved} turn(s) of {max_turns} "
+            f"(aborted at turn {abort_turn})."
+        )
+
+        # AC-2: best-effort git check-ignore -v recommendation. Skip the
+        # rec line silently on any failure (no .gitignore match, git
+        # missing, subprocess error). The diagnostic must still fire.
+        if top_claim is not None:
+            rec = self._git_check_ignore_rec(top_claim, worktree_path)
+            if rec is not None:
+                lines.append(rec)
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def _git_check_ignore_rec(
+        candidate_path: str, worktree_path: Path
+    ) -> Optional[str]:
+        """Run ``git check-ignore -v --no-index`` against ``candidate_path``.
+
+        Returns a one-line operator recommendation when the path matches
+        a ``.gitignore`` rule, or ``None`` on no-match / any error. Mirrors
+        TASK-FIX-IGNR's ``--no-index`` invocation so untracked paths the
+        Player keeps re-claiming surface their gitignore origin.
+        """
+        try:
+            proc = subprocess.run(
+                [
+                    "git",
+                    "check-ignore",
+                    "-v",
+                    "--no-index",
+                    candidate_path,
+                ],
+                cwd=str(worktree_path),
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            return None
+        if proc.returncode == 0 and proc.stdout.strip():
+            return (
+                f"Path matches a .gitignore rule "
+                f"(git check-ignore -v): {proc.stdout.strip()}"
+            )
+        return None
+
     def _display_criteria_progress(
         self,
         turn_record: TurnRecord,
@@ -5488,7 +5676,7 @@ class AutoBuildOrchestrator:
     def _build_summary_details(
         self,
         turn_history: List[TurnRecord],
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "design_extraction_failed"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "design_extraction_failed", "honesty_collapse"],
     ) -> str:
         """
         Build detailed summary text for final report.
@@ -5552,6 +5740,28 @@ class AutoBuildOrchestrator:
                 f"Maximum turns ({self.max_turns}) reached without approval.\n"
                 f"Worktree preserved for inspection.\n"
                 f"Review implementation and provide manual guidance."
+            )
+
+        elif final_decision == "honesty_collapse":
+            # TASK-FIX-HEAB: rolling-average honesty collapse short-circuits
+            # the loop. The diagnostic produced by _check_honesty_early_abort
+            # was logged at abort time and is the actionable artefact —
+            # mirror it into the summary so terminal users see the same
+            # context without grepping the log.
+            n_turns = len(turn_history)
+            avg = (
+                sum(self._honesty_history[-self.honesty_early_abort_window:])
+                / self.honesty_early_abort_window
+            ) if len(self._honesty_history) >= self.honesty_early_abort_window else 0.0
+            return (
+                f"Honesty collapse detected after {n_turns} turn(s) "
+                f"[honesty_early_abort].\n"
+                f"Rolling average over last {self.honesty_early_abort_window} "
+                f"turns: {avg:.2f} < threshold {self.honesty_early_abort_threshold:.2f}.\n"
+                f"Worktree preserved for inspection.\n"
+                f"Suggested action: inspect the most-recent Coach honesty "
+                f"discrepancies and the worktree's .gitignore for "
+                f"silently-excluded paths the Player keeps re-claiming."
             )
 
         elif final_decision == "player_invocation_stall":
@@ -5788,7 +5998,7 @@ class AutoBuildOrchestrator:
 
     def _build_error_message(
         self,
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "design_extraction_failed"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "design_extraction_failed", "honesty_collapse"],
         turn_history: List[TurnRecord],
     ) -> str:
         """
@@ -5808,6 +6018,16 @@ class AutoBuildOrchestrator:
         """
         if final_decision == "max_turns_exceeded":
             return f"Maximum turns ({self.max_turns}) exceeded without approval"
+
+        elif final_decision == "honesty_collapse":
+            # TASK-FIX-HEAB: rolling honesty average dropped below threshold;
+            # short-circuit instead of burning the rest of max_turns.
+            return (
+                f"Honesty collapse: rolling avg over last "
+                f"{self.honesty_early_abort_window} turns dropped below "
+                f"threshold {self.honesty_early_abort_threshold:.2f} after "
+                f"{len(turn_history)} turn(s)"
+            )
 
         elif final_decision == "unrecoverable_stall":
             return (
@@ -6326,6 +6546,15 @@ def finalize_autobuild(
             f"Review implementation: cd {worktree_path}",
             f"Check last feedback: cat .guardkit/autobuild/{task_id}/coach_turn_{loop_result.total_turns}.json",
             "Consider manual intervention or increase max_turns",
+        ]
+    elif loop_result.final_decision == "honesty_collapse":
+        # TASK-FIX-HEAB: rolling-average honesty collapse — guide the operator
+        # at the most-flagged claim and the worktree's .gitignore (the typical
+        # silent-exclusion failure that motivated TASK-FIX-IGNR + this gate).
+        next_steps = [
+            f"Inspect Coach honesty issues: cat .guardkit/autobuild/{task_id}/coach_turn_{loop_result.total_turns}.json",
+            f"Check the worktree's .gitignore: cd {worktree_path} && cat .gitignore",
+            "Re-run with relaxed --honesty-early-abort-threshold once the cause is understood.",
         ]
     elif loop_result.final_decision == "pre_loop_blocked":
         next_steps = [
