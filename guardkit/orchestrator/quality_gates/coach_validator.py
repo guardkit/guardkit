@@ -5440,6 +5440,19 @@ class CoachValidator:
             if d.claim_type == "claim_audit_gitignored"
             and d.severity == "should_fix"
         ]
+        # TASK-FIX-PCN: the tracked-but-unmodified subset is also
+        # should_fix advisory (defence-in-depth for the agent_invoker-side
+        # filter at _strip_orchestrator_managed_paths). The claimed path
+        # is tracked in git but porcelain shows no change for it — most
+        # commonly because the Player report writer swept an
+        # orchestrator-managed path (e.g. .guardkit/autobuild/<TASK-ID>/...)
+        # into files_modified. Surfaces as a warning so the operator can
+        # see the noise without the gate collapsing.
+        unmodified = [
+            d for d in honesty.discrepancies
+            if d.claim_type == "claim_audit_unmodified"
+            and d.severity == "should_fix"
+        ]
         demote = (
             len(non_audit) == 1
             and non_audit[0].claim_type == "file_existence"
@@ -5510,6 +5523,33 @@ class CoachValidator:
                         "player_claim": d.player_claim,
                         "actual_value": d.actual_value,
                         "ignore_rule": d.ignore_rule,
+                    },
+                }
+            )
+        # TASK-FIX-PCN: surface tracked-but-unmodified path claims as
+        # should_fix advisory issues. Same ``category: "claim_audit"``
+        # bucket so dashboards group them with sibling claim-audit shapes,
+        # but they ride along to feedback rather than short-circuiting
+        # gate evaluation. Most common cause is the Player report writer
+        # sweeping an orchestrator-managed path into files_modified;
+        # the Player-side filter at _strip_orchestrator_managed_paths
+        # is the load-bearing fix and this branch is defence-in-depth.
+        for d in unmodified:
+            issues.append(
+                {
+                    "severity": "should_fix",
+                    "category": "claim_audit",
+                    "description": (
+                        f"Player-claimed file is tracked in git but "
+                        f"'git status --porcelain' shows no change for "
+                        f"it — the Player likely swept an orchestrator-"
+                        f"managed path into files_modified. "
+                        f"{d.player_claim}. {d.actual_value}"
+                    ),
+                    "details": {
+                        "claim_type": d.claim_type,
+                        "player_claim": d.player_claim,
+                        "actual_value": d.actual_value,
                     },
                 }
             )

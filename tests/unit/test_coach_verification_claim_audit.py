@@ -206,11 +206,19 @@ def test_mixed_one_staged_one_dropped_surfaces_only_dropped(
 # ---------------------------------------------------------------------------
 
 
-def test_tracked_unchanged_modified_claim_rejected(
+def test_tracked_unchanged_modified_claim_demoted_to_should_fix(
     git_worktree: Path, verifier: CoachVerifier
 ) -> None:
     """Player claims to modify ``README.md`` but didn't actually change it.
-    ``git add -A`` won't put it in the next commit → should reject.
+
+    Pre-TASK-FIX-PCN this fired ``claim_type="claim_audit"`` with
+    ``severity="critical"``, which short-circuited the gate. After
+    TASK-FIX-PCN AC-6 the path is recognised as tracked-but-unmodified
+    and demoted to ``claim_type="claim_audit_unmodified"`` with
+    ``severity="should_fix"``: the discrepancy still surfaces (so the
+    operator can see the noise), but the gate keeps evaluating the rest
+    of the criteria. Defence-in-depth for the agent_invoker-side filter
+    at ``_strip_orchestrator_managed_paths`` — see TASK-FIX-PCN.
     """
     report: Dict[str, Any] = {
         "files_modified": ["README.md"],
@@ -219,8 +227,13 @@ def test_tracked_unchanged_modified_claim_rejected(
     discrepancies = verifier._verify_claims_were_staged(report)
 
     assert len(discrepancies) == 1
-    assert discrepancies[0].claim_type == "claim_audit"
-    assert "README.md" in discrepancies[0].player_claim
+    disc = discrepancies[0]
+    assert disc.claim_type == "claim_audit_unmodified"
+    assert disc.severity == "should_fix"
+    assert "README.md" in disc.player_claim
+    # The actual_value text mentions tracked-in-git so the operator can
+    # disambiguate from the gitignored / fabricated cases.
+    assert "tracked" in disc.actual_value.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -338,7 +351,7 @@ def test_verify_player_report_emits_claim_audit_alongside_other_checks(
 
     audit = [
         d for d in verification.discrepancies
-        if d.claim_type in {"claim_audit", "claim_audit_gitignored"}
+        if d.claim_type in {"claim_audit", "claim_audit_gitignored", "claim_audit_unmodified"}
     ]
     assert len(audit) == 1
     # ``verified`` remains False — the discrepancy still surfaces, just
@@ -433,7 +446,7 @@ def test_claim_audit_fabricated_path_still_critical(
     # separately below.)
     audit = [
         d for d in verification.discrepancies
-        if d.claim_type in {"claim_audit", "claim_audit_gitignored"}
+        if d.claim_type in {"claim_audit", "claim_audit_gitignored", "claim_audit_unmodified"}
     ]
     assert len(audit) == 1
     disc = audit[0]
@@ -449,3 +462,110 @@ def test_claim_audit_fabricated_path_still_critical(
     ]
     assert len(file_existence) == 1
     assert file_existence[0].severity == "critical"
+
+
+# ---------------------------------------------------------------------------
+# TASK-FIX-PCN AC-7: tracked-but-unmodified is should_fix, not critical
+# ---------------------------------------------------------------------------
+
+
+def test_claim_audit_tracked_unmodified_is_should_fix(
+    git_worktree: Path, verifier: CoachVerifier
+) -> None:
+    """Reproduces the FEAT-39E1 PH1-005 shape through the public
+    ``verify_player_report`` API: the Player report writer swept
+    orchestrator-managed paths into ``files_modified`` and the Coach's
+    claim audit short-circuited the gate on tracked-but-unchanged paths
+    the Player never authored.
+
+    Setup: README.md is committed in the base fixture. The Player
+    "claims" to have modified it but didn't actually touch it. Pre-PCN
+    this fired ``claim_type="claim_audit"`` with ``severity="critical"``
+    and short-circuited the gate via ``_honesty_issues_from``. Under
+    AC-6/AC-7 the discrepancy is ``claim_audit_unmodified`` with
+    ``severity="should_fix"``: it surfaces in feedback as advisory while
+    gate evaluation continues.
+
+    Defence-in-depth: the load-bearing fix is the agent_invoker-side
+    filter at ``_strip_orchestrator_managed_paths`` (TASK-FIX-PCN AC-2)
+    which prevents the noisy paths from reaching the Coach in the first
+    place. This Coach-side demotion guarantees the gate doesn't collapse
+    even when the Player-side filter misses a path.
+    """
+    report: Dict[str, Any] = {
+        # README.md was committed in the git_worktree fixture; the
+        # Player "claims" to have modified it but didn't actually touch
+        # it. ``git status --porcelain`` will show no change for it.
+        "files_modified": ["README.md"],
+        "tests_run": False,
+    }
+
+    verification = verifier.verify_player_report(report)
+
+    # AC-7: critical count is zero — the tracked-but-unmodified case no
+    # longer contributes to the honesty critical_failures total, so the
+    # short-circuit at coach_validator.py:872 does not fire and the
+    # gate keeps evaluating.
+    critical = [
+        d for d in verification.discrepancies if d.severity == "critical"
+    ]
+    assert critical == [], (
+        f"Expected zero critical discrepancies for a tracked-but-"
+        f"unmodified file; got: {critical}"
+    )
+
+    # AC-7: should_fix_count is exactly 1 (the one dropped path).
+    assert verification.should_fix_count == 1
+
+    # AC-7: the discrepancy is the new should_fix shape and identifies
+    # the path as tracked (so the operator can disambiguate from the
+    # gitignored / fabricated cases).
+    assert len(verification.discrepancies) == 1
+    disc = verification.discrepancies[0]
+    assert disc.severity == "should_fix"
+    assert disc.claim_type == "claim_audit_unmodified"
+    assert "README.md" in disc.player_claim
+    assert "tracked" in disc.actual_value.lower()
+    # claim_audit_unmodified does NOT carry an ignore_rule (that field is
+    # exclusive to claim_audit_gitignored).
+    assert disc.ignore_rule is None
+
+
+def test_claim_audit_unmodified_does_not_short_circuit_gate(
+    git_worktree: Path, verifier: CoachVerifier
+) -> None:
+    """Mixed report: one tracked-unmodified path AND one genuine
+    fabrication. The fabrication is critical and must short-circuit; the
+    tracked-unmodified path rides along as should_fix.
+
+    Confirms that AC-7's demotion is path-scoped — it does not blanket-
+    suppress critical discrepancies on the same report.
+    """
+    report: Dict[str, Any] = {
+        "files_modified": ["README.md"],  # tracked, unchanged → should_fix
+        "files_created": [
+            # Genuine fabrication — path absent from disk.
+            "src/never_created.py",
+        ],
+        "tests_run": False,
+    }
+
+    verification = verifier.verify_player_report(report)
+
+    # The fabrication still produces a critical claim_audit discrepancy.
+    critical_audit = [
+        d for d in verification.discrepancies
+        if d.severity == "critical"
+        and d.claim_type == "claim_audit"
+    ]
+    assert len(critical_audit) == 1
+    assert "src/never_created.py" in critical_audit[0].player_claim
+
+    # The tracked-but-unmodified path still surfaces as should_fix.
+    unmodified = [
+        d for d in verification.discrepancies
+        if d.claim_type == "claim_audit_unmodified"
+    ]
+    assert len(unmodified) == 1
+    assert unmodified[0].severity == "should_fix"
+    assert "README.md" in unmodified[0].player_claim

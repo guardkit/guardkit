@@ -63,7 +63,8 @@ class Discrepancy:
 
     Attributes:
         claim_type: Type of claim ("test_result", "file_existence",
-            "test_count", "claim_audit", "claim_audit_gitignored").
+            "test_count", "claim_audit", "claim_audit_gitignored",
+            "claim_audit_unmodified").
         player_claim: What the Player reported
         actual_value: What was actually found
         severity: Severity level ("critical", "should_fix", "warning", "info")
@@ -75,6 +76,19 @@ class Discrepancy:
             when the source is the project-root ``.gitignore``, to
             append a "rebase the worktree onto main" hint
             (TASK-FIX-IGNR AC-6).
+
+    The ``claim_audit_unmodified`` shape (TASK-FIX-PCN AC-6) is the
+    sibling of ``claim_audit_gitignored``: where the latter says
+    "Player-authored file is on disk but .gitignore filtered it", this
+    one says "claimed path is tracked in git AND porcelain shows no
+    change for it". The most common cause is the Player report writer
+    sweeping an orchestrator-managed path (e.g.
+    ``.guardkit/autobuild/<TASK-ID>/coach_turn_N.json`` or
+    ``tasks/backlog/<TASK-ID>-*.md``) into ``files_modified`` —
+    defence-in-depth for the agent_invoker-side filter at
+    ``_strip_orchestrator_managed_paths``. Demoted to ``should_fix``
+    so the gate surfaces a warning rather than collapsing on the
+    FEAT-39E1 PH1-005 shape.
     """
 
     claim_type: str
@@ -526,16 +540,29 @@ class CoachVerifier:
         if not dropped:
             return []
 
-        # TASK-FIX-IGNR: split the dropped set into "fabricated" (path is
-        # absent from disk OR present but git would refuse to stage for a
-        # non-ignore reason — e.g. tracked-but-unchanged) and "gitignored"
-        # (path is on disk and ``git check-ignore -v --no-index`` matches
-        # an ignore rule). The first stays ``severity="critical"`` because
-        # the Player is claiming work that did not land. The second drops
-        # to ``severity="should_fix"``: the Player-authored file exists,
-        # the .gitignore is the bug, and short-circuiting the gate
-        # produces the FEAT-39E1 turn-1 → turn-5 adversarial blow-up
-        # documented in TASK-REV-F30A.
+        # TASK-FIX-IGNR + TASK-FIX-PCN: split the dropped set into:
+        #   * "fabricated"          — path absent from disk, OR present
+        #                              but neither gitignored nor tracked.
+        #                              Stays ``severity="critical"``: the
+        #                              Player is claiming work that did
+        #                              not land.
+        #   * "gitignored"          — path on disk, matches a .gitignore
+        #                              rule (TASK-FIX-IGNR). Demoted to
+        #                              ``severity="should_fix"`` so the
+        #                              FEAT-39E1 turn-1→turn-5 adversarial
+        #                              blow-up does not recur.
+        #   * "tracked_unmodified"  — path on disk, tracked in git, but
+        #                              porcelain shows no change for it
+        #                              (TASK-FIX-PCN). Most common cause:
+        #                              the Player report writer swept an
+        #                              orchestrator-managed path into
+        #                              files_modified (defence-in-depth
+        #                              for the agent_invoker-side filter
+        #                              at ``_strip_orchestrator_managed_paths``).
+        #                              Demoted to ``severity="should_fix"``
+        #                              so the gate surfaces a warning
+        #                              rather than rejecting the turn on
+        #                              what is almost always a noise path.
         discrepancies: List[Discrepancy] = []
         for path in dropped:
             classification = self._classify_dropped_path(path)
@@ -556,6 +583,26 @@ class CoachVerifier:
                         ignore_rule=ignore_rule,
                     )
                 )
+            elif classification == "tracked_unmodified":
+                discrepancies.append(
+                    Discrepancy(
+                        claim_type="claim_audit_unmodified",
+                        player_claim=f"Player claimed file {path}",
+                        actual_value=(
+                            "Path is tracked in git but 'git status "
+                            "--porcelain' shows no change for it — the "
+                            "Player claimed work on a file it did not "
+                            "actually modify this turn. Most likely "
+                            "cause: the report writer swept an "
+                            "orchestrator-managed path (e.g. a file "
+                            "under .guardkit/autobuild/ or tasks/<state>/) "
+                            "into files_modified. Defence-in-depth for "
+                            "the agent_invoker-side filter; this is a "
+                            "warning, not a turn-rejecting fabrication."
+                        ),
+                        severity="should_fix",
+                    )
+                )
             else:
                 # "fabricated" or "infra_error" — keep the critical
                 # behaviour. infra_error here means ``git check-ignore``
@@ -572,9 +619,8 @@ class CoachVerifier:
                             "(absent from 'git status --porcelain'). Most "
                             "common cause: an unanchored .gitignore rule "
                             "silently filters the file. Other causes: "
-                            "sparse-checkout, assume-unchanged, pathspec "
-                            "attribute filters, or the file is tracked but "
-                            "unchanged (Player claimed modified but didn't)."
+                            "sparse-checkout, assume-unchanged, or "
+                            "pathspec attribute filters."
                         ),
                         severity="critical",
                     )
@@ -586,13 +632,21 @@ class CoachVerifier:
 
         Returns one of:
           * ``"fabricated"`` — path does not exist on disk (Player lied),
-            or path exists but ``git check-ignore`` reports it as not
-            ignored (tracked-but-unchanged, sparse-filter, etc.).
+            or path exists but is neither gitignored nor tracked
+            (genuinely unaccounted for).
           * ``"gitignored"`` — path exists on disk and ``git check-ignore -v
             --no-index`` matches an ignore rule.
-          * ``"infra_error"`` — ``git check-ignore`` itself failed (exit
-            128 or a subprocess crash). Caller falls back to critical to
-            preserve the detection floor.
+          * ``"tracked_unmodified"`` — path exists on disk, is NOT
+            gitignored, and ``git ls-files --error-unmatch`` confirms it
+            is tracked. Porcelain showed no change for it because there
+            *is* no change. Most common cause: the Player report writer
+            swept an orchestrator-managed path into ``files_modified``
+            (TASK-FIX-PCN). Caller demotes to ``should_fix`` so the gate
+            surfaces a warning rather than rejecting the turn.
+          * ``"infra_error"`` — ``git check-ignore`` (or the
+            ``ls-files`` follow-up) itself failed (exit 128 or a
+            subprocess crash). Caller falls back to critical to preserve
+            the detection floor.
 
         ``--no-index`` makes ``git check-ignore`` evaluate ignore rules
         against the path string regardless of whether the path is tracked,
@@ -623,6 +677,31 @@ class CoachVerifier:
         if result.returncode == 0:
             return "gitignored"
         if result.returncode == 1:
+            # Not gitignored and the path exists on disk. Two remaining
+            # cases: tracked-but-unmodified (TASK-FIX-PCN) or genuinely
+            # fabricated (rare given porcelain --untracked-files=all
+            # would have surfaced an untracked file). Use ls-files
+            # --error-unmatch to distinguish so the caller can demote
+            # the tracked-but-unmodified case to should_fix.
+            try:
+                ls_result = subprocess.run(
+                    ["git", "ls-files", "--error-unmatch", "--", path],
+                    cwd=self.worktree_path,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=30,
+                )
+            except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+                logger.warning(
+                    "claim_audit: 'git ls-files --error-unmatch' failed "
+                    "(%s) for path %s in %s; falling back to fabricated "
+                    "classification.",
+                    exc, path, self.worktree_path,
+                )
+                return "fabricated"
+            if ls_result.returncode == 0:
+                return "tracked_unmodified"
             return "fabricated"
         # 128 or any other non-{0,1} exit: log + fall back.
         logger.warning(

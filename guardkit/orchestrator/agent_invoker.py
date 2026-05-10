@@ -110,6 +110,136 @@ _PARSER_PHASE_TO_VALIDATOR_PHASE = {
 
 
 # =========================================================================
+# Orchestrator-managed-path filter (TASK-FIX-PCN)
+# =========================================================================
+#
+# Sibling of the ``state_transitions.json`` filter at
+# :py:meth:`AgentInvoker._create_player_report_from_task_work` (TASK-FIX-1B4C
+# Layer 3'). Where that filter handles *recorded* state-bridge moves, this
+# pattern-based filter handles the broader class of orchestrator-owned
+# paths that any post-turn ``git diff --name-only`` enrichment will sweep
+# into the Player report:
+#
+#   * ``.guardkit/autobuild/<TASK-ID>/*.json`` — per-task sidecars
+#     (player_turn_N.json, coach_turn_N.json, turn_state_*.json,
+#     state_transitions.json)
+#   * ``.guardkit/autobuild/<FEAT-ID>/*.{jsonl,md,json}`` — feature-level
+#     autobuild metadata
+#   * ``.guardkit/bootstrap_state.json`` — bootstrap phase state
+#   * ``tasks/{backlog,design_approved,in_progress,in_review,completed}/...``
+#     — task-scaffold markdown files the orchestrator copies during setup
+#     (including subfolder variants under feature folders)
+#
+# These paths are NOT gitignored (so TASK-FIX-IGNR's gitignored→should_fix
+# demotion does not apply) and they DO exist on disk (so file-existence
+# passes), but they are not Player work product. Without the filter every
+# autobuild turn for a non-trivial task accumulates dozens of them across
+# files_modified / files_created / tests_written and the Coach's claim
+# audit at ``_verify_claims_were_staged`` short-circuits on tracked-but-
+# unchanged paths the Player never authored (study-tutor FEAT-39E1 run-5
+# PH1-005 — Player went 4 → 25 → 30+ → 179 ghost paths across four turns;
+# decision=timeout_budget_exhausted). See TASK-FIX-PCN and the rule
+# ``.claude/rules/path-string-mismatch-is-not-dishonesty.md``.
+#
+# Patterns are intentionally narrow: they only match namespaces fully
+# owned by the orchestrator. Player work under unrelated ``tasks/``
+# subdirectories or user-scripted ``.guardkit/`` artefacts MUST pass
+# through unchanged (AC-4 regression).
+
+_ORCHESTRATOR_MANAGED_PATH_PATTERNS: Tuple[re.Pattern, ...] = (
+    re.compile(r"^\.guardkit/autobuild/"),
+    re.compile(r"^\.guardkit/bootstrap_state\.json$"),
+    re.compile(
+        r"^tasks/(?:backlog|design_approved|in_progress|in_review|completed)/"
+    ),
+)
+
+
+def _is_orchestrator_managed_path(path: Any) -> bool:
+    """Return True when ``path`` lives in an orchestrator-owned namespace.
+
+    Used by :py:meth:`AgentInvoker._strip_orchestrator_managed_paths` to
+    keep orchestrator-induced ghost paths out of the Player report.
+    Conservative: only namespaces fully owned by the orchestrator match;
+    everything else (Player work under ``src/``, ``tests/``, unrelated
+    ``tasks/`` subdirectories, user-scripted ``.guardkit/`` artefacts,
+    etc.) returns False.
+    """
+    if not isinstance(path, str) or not path:
+        return False
+    normalized = path.replace("\\", "/")
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    return any(p.match(normalized) for p in _ORCHESTRATOR_MANAGED_PATH_PATTERNS)
+
+
+def _strip_orchestrator_managed_paths(
+    report: Dict[str, Any], task_id: str
+) -> Set[str]:
+    """Strip orchestrator-managed paths from Player-report claim lists.
+
+    Mutates ``report`` in place. Strips matching paths from:
+
+      * ``report["files_modified"]``
+      * ``report["files_created"]``
+      * ``report["tests_written"]``
+      * ``report["completion_promises"][*]["implementation_files"]``
+      * ``report["completion_promises"][*]["test_file"]``
+
+    Returns the union of stripped paths so the caller can log a single
+    ``Filtered N orchestrator-induced ghost path(s) for {task_id}: [...]``
+    summary line (TASK-FIX-PCN AC-5; same format as the run-3-era
+    ``state_transitions.json``-driven filter so existing log monitoring
+    continues to work).
+    """
+    stripped: Set[str] = set()
+
+    for key in ("files_modified", "files_created", "tests_written"):
+        original = report.get(key) or []
+        if not original:
+            continue
+        kept: List[str] = []
+        any_stripped = False
+        for path in original:
+            if _is_orchestrator_managed_path(path):
+                stripped.add(path)
+                any_stripped = True
+            else:
+                kept.append(path)
+        if any_stripped:
+            report[key] = sorted(kept)
+
+    promises = report.get("completion_promises") or []
+    for promise in promises:
+        if not isinstance(promise, dict):
+            continue
+        impl_files = promise.get("implementation_files") or []
+        if impl_files:
+            kept_impl: List[str] = []
+            any_stripped = False
+            for path in impl_files:
+                if _is_orchestrator_managed_path(path):
+                    stripped.add(path)
+                    any_stripped = True
+                else:
+                    kept_impl.append(path)
+            if any_stripped:
+                promise["implementation_files"] = kept_impl
+        test_file = promise.get("test_file")
+        if test_file and _is_orchestrator_managed_path(test_file):
+            stripped.add(test_file)
+            promise["test_file"] = None
+
+    if stripped:
+        logger.info(
+            f"Filtered {len(stripped)} orchestrator-induced ghost "
+            f"path(s) for {task_id}: {sorted(stripped)}"
+        )
+
+    return stripped
+
+
+# =========================================================================
 # Partial Data Extraction (TASK-CRV-1540)
 # =========================================================================
 
@@ -3047,6 +3177,21 @@ Follow the decision format specified in your agent definition.
                         f"Generated {len(synthetic_promises)} file-existence promises "
                         f"for {task_id} (agent did not produce promises)"
                     )
+
+        # TASK-FIX-PCN: strip orchestrator-managed paths from claim lists
+        # (sibling of the state_transitions.json filter at line 2826-2862).
+        # Runs as the final step before disk write so it catches paths
+        # contributed by every upstream enrichment path: task_work_results
+        # self-report, git diff enrichment, task_work_result.output merge,
+        # agent-written player_report recovery, and the synthetic
+        # completion_promises generator above. See the module-level
+        # docstring on _strip_orchestrator_managed_paths.
+        try:
+            _strip_orchestrator_managed_paths(report, task_id)
+        except Exception as exc:  # noqa: BLE001 — never block report
+            logger.warning(
+                f"Orchestrator-managed-path filter failed for {task_id}: {exc}"
+            )
 
         # Write Player report
         with open(player_report_path, "w") as f:
