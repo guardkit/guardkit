@@ -1422,9 +1422,17 @@ class FeatureLoader:
         Check if a feature has incomplete execution state.
 
         A feature is considered incomplete if:
-        - Status is 'in_progress' or 'paused'
-        - Has any tasks in 'in_progress' status
-        - Has executed at least one wave but not all tasks are done
+        - Status is 'in_progress', 'paused', or 'failed'
+        - Has any tasks in 'in_progress' or 'failed' status
+        - Has executed at least one wave but not all tasks are completed
+
+        Note on 'failed' inclusion (TASK-FIX-RESUME-FAILED): a feature with
+        ``status: failed`` and any retryable failed tasks is *resumable*, not
+        terminal. Treating it as complete caused ``--resume`` to silently fall
+        through to ``_create_new_worktree`` in ``_setup_phase``, destroying
+        the existing worktree's checkpoint commits when the user explicitly
+        asked to resume. Discovered when re-running FEAT-FG-001 after an
+        AB-006-style upstream fix made a previously-stalled task retryable.
 
         Parameters
         ----------
@@ -1434,28 +1442,31 @@ class FeatureLoader:
         Returns
         -------
         bool
-            True if feature execution is incomplete
+            True if feature execution is incomplete (resumable)
         """
-        # Check status
-        if feature.status in ("in_progress", "paused"):
+        # Check status — 'failed' is incomplete because failed tasks can be
+        # retried after an upstream fix.
+        if feature.status in ("in_progress", "paused", "failed"):
             return True
 
-        # Check for in-progress tasks
+        # Check for in-progress or failed tasks at the task level — covers
+        # the case where the feature-level status doesn't match (e.g. paused
+        # mid-wave with one task failed).
         for task in feature.tasks:
-            if task.status == "in_progress":
+            if task.status in ("in_progress", "failed"):
                 return True
 
-        # Check if we have partial completion
+        # Check if we have partial completion. 'failed' tasks count as
+        # not-yet-completed (they may be retried) so the upper bound here
+        # is the count of *completed* tasks rather than tasks in any
+        # terminal state.
         if feature.execution.started_at:
             completed_count = sum(
                 1 for t in feature.tasks if t.status == "completed"
             )
-            failed_count = sum(
-                1 for t in feature.tasks if t.status == "failed"
-            )
 
-            # If we started but haven't finished all tasks
-            if 0 < (completed_count + failed_count) < len(feature.tasks):
+            # If we started but haven't completed all tasks
+            if 0 < completed_count < len(feature.tasks):
                 return True
 
         return False
