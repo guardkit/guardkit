@@ -10,6 +10,8 @@ import sys
 from unittest.mock import patch
 from io import StringIO
 
+from rich.console import Console
+
 from guardkit.cli.decorators import (
     handle_cli_errors,
     EXIT_SUCCESS,
@@ -21,11 +23,11 @@ from guardkit.cli.decorators import (
 from guardkit.tasks.task_loader import TaskNotFoundError, TaskParseError
 from guardkit.orchestrator.exceptions import AgentInvocationError, SDKTimeoutError
 
-# Import worktree exceptions - use fallback versions from decorators module
-# since production code has wrong import path (orchestrator.worktrees vs guardkit.worktrees)
-from guardkit.cli import decorators
-WorktreeCreationError = decorators.WorktreeCreationError
-WorktreeMergeError = decorators.WorktreeMergeError
+from guardkit.worktrees.manager import (
+    WorktreeCreationError,
+    WorktreeError,
+    WorktreeMergeError,
+)
 
 
 # ============================================================================
@@ -78,6 +80,25 @@ def test_worktree_merge_error_exit_code():
     @handle_cli_errors
     def command():
         raise WorktreeMergeError("Merge conflicts detected")
+
+    with pytest.raises(SystemExit) as exc_info:
+        command()
+
+    assert exc_info.value.code == EXIT_ORCHESTRATION_ERROR
+
+
+def test_worktree_base_error_exit_code():
+    """Test base WorktreeError (e.g. not-a-git-repo) maps to EXIT_ORCHESTRATION_ERROR (2).
+
+    Regression: previously this fell through to the generic Exception handler and
+    surfaced as 'Unexpected error' with a full traceback, exiting with
+    EXIT_INVALID_ARGUMENTS (3) — wrong code, wrong message. Now it's caught as
+    a worktree-subsystem error.
+    """
+
+    @handle_cli_errors
+    def command():
+        raise WorktreeError("Not a git repository: /home/user/projects")
 
     with pytest.raises(SystemExit) as exc_info:
         command()
@@ -182,6 +203,33 @@ def test_worktree_creation_error_message(mock_stdout):
         command()
 
     # Verify decorator runs without error
+
+
+def test_not_a_git_repo_error_includes_cd_suggestion():
+    """The 'not a git repository' WorktreeError surfaces a `cd` suggestion.
+
+    Verifies the friendly hint added when the user runs `guardkit autobuild ...`
+    from outside a git repo (e.g. from `~/Projects/` instead of a project dir).
+    """
+    console_capture = Console(record=True, force_terminal=False)
+
+    with patch("guardkit.cli.decorators.console", console_capture):
+        @handle_cli_errors
+        def command():
+            raise WorktreeError(
+                "Git command failed: git rev-parse --git-dir\n"
+                "Stderr: fatal: not a git repository (or any of the parent "
+                "directories): .git"
+            )
+
+        with pytest.raises(SystemExit) as exc_info:
+            command()
+
+    assert exc_info.value.code == EXIT_ORCHESTRATION_ERROR
+    output = console_capture.export_text()
+    assert "Worktree error" in output
+    assert "Suggestion" in output
+    assert "git repository" in output
 
 
 # ============================================================================
