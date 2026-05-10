@@ -1016,3 +1016,223 @@ class TestStepExtraction:
         step = _extract_step_from_message(msg)
         assert "the user signs up" in step.lower()
         assert "StepDefinitionNotFoundError" not in step
+
+
+# ---------------------------------------------------------------------------
+# Collection-error reason enrichment (TASK-AB-003)
+#
+# When pytest fails to collect a test module (ImportError, ModuleNotFoundError,
+# SyntaxError, plugin load failure, ...) it writes the testcase as
+# `<error message="collection failure">...traceback...</error>` rather than a
+# `<failure>` block. The pre-fix runner copied the `<error message>` attribute
+# verbatim, so `BDDFailure.reason` ended up as the literal string
+# `"collection failure"` and the Player got no signal about the real cause.
+#
+# These tests pin the post-fix behaviour: parse the body for the actual
+# exception class+message and the last traceback frame.
+# ---------------------------------------------------------------------------
+
+
+_COLLECTION_ERROR_JUNIT_MODULENOTFOUND = """\
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+  <testsuite name="pytest" tests="1" failures="0" errors="1">
+    <testcase classname="features.fg-001.test_fg-001" name="features/fg-001/test_fg-001.py" time="0.012">
+      <error message="collection failure" type="ModuleNotFoundError">
+Traceback (most recent call last):
+  File "/worktree/.venv/lib/python3.12/site-packages/_pytest/python.py", line 493, in importtestmodule
+    mod = import_path(...)
+  File "/worktree/features/fg-001/test_fg-001.py", line 41, in &lt;module&gt;
+    from common.jarvis_client import JarvisClient
+ModuleNotFoundError: No module named 'common'
+      </error>
+    </testcase>
+  </testsuite>
+</testsuites>
+"""
+
+
+_COLLECTION_ERROR_JUNIT_SYNTAX = """\
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+  <testsuite name="pytest" tests="1" failures="0" errors="1">
+    <testcase classname="features.x.test_x" name="features/x/test_x.py" time="0.001">
+      <error message="collection failure" type="SyntaxError">
+  File "/worktree/features/x/test_x.py", line 7
+    def broken(:
+              ^
+SyntaxError: invalid syntax
+      </error>
+    </testcase>
+  </testsuite>
+</testsuites>
+"""
+
+
+class TestCollectionErrorReason:
+    def test_extract_error_reason_includes_module_name_and_frame(self):
+        # AC (TASK-AB-003): direct unit test of the helper.
+        from guardkit.orchestrator.quality_gates.bdd_runner import (
+            _extract_error_reason,
+        )
+
+        message = "collection failure"
+        body = (
+            "Traceback (most recent call last):\n"
+            '  File "/worktree/features/fg-001/test_fg-001.py", line 41, in <module>\n'
+            "    from common.jarvis_client import JarvisClient\n"
+            "ModuleNotFoundError: No module named 'common'\n"
+        )
+        reason = _extract_error_reason(message, body)
+
+        # AC2: reason must include the missing module name and exception class.
+        assert "ModuleNotFoundError" in reason
+        assert "No module named 'common'" in reason
+        # AC1: reason must include the original `<error message>` attribute…
+        assert "collection failure" in reason
+        # …and the last traceback frame (file:line plus the source snippet).
+        assert "features/fg-001/test_fg-001.py:41" in reason
+        assert "from common.jarvis_client import JarvisClient" in reason
+
+    def test_extract_error_reason_passes_through_other_classes_verbatim(self):
+        # AC3: no special-casing per exception class — SyntaxError must be
+        # surfaced just as faithfully as ImportError.
+        from guardkit.orchestrator.quality_gates.bdd_runner import (
+            _extract_error_reason,
+        )
+
+        message = "collection failure"
+        body = (
+            '  File "/worktree/features/x/test_x.py", line 7\n'
+            "    def broken(:\n"
+            "              ^\n"
+            "SyntaxError: invalid syntax\n"
+        )
+        reason = _extract_error_reason(message, body)
+
+        assert "SyntaxError" in reason
+        assert "invalid syntax" in reason
+        assert "test_x.py:7" in reason
+
+    def test_extract_error_reason_falls_back_to_message_when_body_empty(self):
+        from guardkit.orchestrator.quality_gates.bdd_runner import (
+            _extract_error_reason,
+        )
+
+        reason = _extract_error_reason("collection failure", "")
+
+        # No body to parse — at minimum the original message must survive
+        # so reason isn't empty.
+        assert "collection failure" in reason
+
+    def test_extract_error_reason_caps_overlong_output(self):
+        from guardkit.orchestrator.quality_gates.bdd_runner import (
+            _extract_error_reason,
+        )
+
+        giant_body = (
+            "Traceback (most recent call last):\n"
+            + "  Filler line that is not a frame\n" * 200
+            + "RuntimeError: " + ("x" * 2000) + "\n"
+        )
+        reason = _extract_error_reason("collection failure", giant_body)
+
+        assert len(reason) <= 800
+        assert reason.endswith("...")
+
+    def test_parse_junit_collection_error_produces_rich_reason(self):
+        # AC6 (TASK-AB-003): the integration through parse_junit_xml must
+        # produce a FailureDetail whose `reason` contains both
+        # "ModuleNotFoundError" and "No module named 'common'".
+        passed, failures, pending = parse_junit_xml(
+            _COLLECTION_ERROR_JUNIT_MODULENOTFOUND
+        )
+
+        assert passed == 0
+        assert pending == []
+        assert len(failures) == 1
+        f = failures[0]
+        assert isinstance(f, FailureDetail)
+        # The parser should NOT collapse this to "collection failure" alone.
+        assert "ModuleNotFoundError" in f.reason
+        assert "No module named 'common'" in f.reason
+        # Last frame info present.
+        assert "test_fg-001.py:41" in f.reason
+
+    def test_parse_junit_collection_error_does_not_classify_as_pending(self):
+        # Regression guard: collection errors must NEVER fall into the
+        # pending bucket, even though they share the `<error>` shape.
+        # Pending is exclusively the StepDefinitionNotFoundError class
+        # surfaced inside `<failure>` nodes.
+        _, failures, pending = parse_junit_xml(
+            _COLLECTION_ERROR_JUNIT_MODULENOTFOUND
+        )
+
+        assert len(failures) == 1
+        assert pending == []
+
+    def test_parse_junit_failure_path_reason_unchanged(self):
+        # AC5 regression guard: the `<failure>` reason path must remain
+        # the literal-message extraction it always was. Only `<error>`
+        # nodes get the new richer extraction.
+        passed, failures, pending = parse_junit_xml(_FAILED_JUNIT)
+
+        assert len(failures) == 1
+        # Pre-fix invariant from TestParseJunitXml.test_failed_scenario_classifies_as_failure
+        assert "AssertionError" in failures[0].reason
+        # No traceback-frame string injected for the failure path.
+        assert "  at " not in failures[0].reason
+
+
+class TestCoachFeedbackEmbedsReason:
+    def test_check_bdd_results_description_contains_per_failure_reason(
+        self, tmp_path: Path
+    ):
+        # AC7 (TASK-AB-003): the Coach feedback summariser must surface the
+        # per-failure `reason` strings in the issue `description` (which is
+        # the only field the Player feedback renderer reads — see
+        # AgentInvoker._format_feedback_for_player).
+        from guardkit.orchestrator.quality_gates.coach_validator import (
+            CoachValidator,
+        )
+
+        bdd_results_dict = {
+            "scenarios_passed": 0,
+            "scenarios_failed": 1,
+            "scenarios_pending": 0,
+            "failures": [{
+                "feature_file": "features/fg-001/fg-001.feature",
+                "scenario_name": "User logs in",
+                "failing_step": "collection failure",
+                "reason": (
+                    "collection failure: ModuleNotFoundError: "
+                    "No module named 'common'\n"
+                    "  at features/fg-001/test_fg-001.py:41 "
+                    "(from common.jarvis_client import JarvisClient)"
+                ),
+            }],
+            "pending": [],
+            "feature_files": ["features/fg-001/fg-001.feature"],
+            "tag": "@task:TASK-FG-002",
+        }
+        task_work_results = {"bdd_results": bdd_results_dict}
+
+        validator = CoachValidator(worktree_path=str(tmp_path))
+        blocking, _non_blocking = validator._check_bdd_results(
+            task_work_results
+        )
+
+        assert len(blocking) == 1
+        issue = blocking[0]
+        assert issue["category"] == "bdd_failure"
+        assert issue["severity"] == "must_fix"
+
+        # The Player only sees `description` — so the missing-module string
+        # MUST appear there, not just in the `failure_examples` aux list.
+        description = issue["description"]
+        assert "ModuleNotFoundError" in description
+        assert "No module named 'common'" in description
+        # And the generic header must remain so the high-level signal is
+        # still readable.
+        assert "BDD oracle" in description
+        assert "scenario(s) failed" in description

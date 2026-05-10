@@ -4648,10 +4648,11 @@ class CoachValidator:
 
         if scenarios_failed > 0:
             failure_summaries: List[str] = []
+            reason_bullets: List[str] = []
             for f in failures[:5]:
                 scenario = f.get("scenario_name", "<unknown>")
                 step = f.get("failing_step", "")
-                reason = f.get("reason", "")
+                reason = (f.get("reason") or "").strip()
                 summary = f"{scenario}"
                 if step:
                     summary += f" — step: {step}"
@@ -4659,14 +4660,37 @@ class CoachValidator:
                     summary += f" — {reason[:160]}"
                 failure_summaries.append(summary)
 
+                # TASK-AB-003: surface the per-failure reason as a bullet in
+                # the description so the Player feedback (which renders only
+                # `description`) carries the actual exception class+message
+                # and traceback frame, not just the generic "Implementation
+                # does not satisfy the Gherkin specification" prose.
+                if reason:
+                    bullet_reason = reason
+                    if len(bullet_reason) > 400:
+                        bullet_reason = bullet_reason[:397] + "..."
+                    bullet = f"- {scenario}: {bullet_reason}"
+                else:
+                    bullet = f"- {scenario}"
+                reason_bullets.append(bullet)
+
+            description_parts: List[str] = [
+                f"BDD oracle: {scenarios_failed} scenario(s) failed "
+                f"during pytest-bdd execution."
+            ]
+            if reason_bullets:
+                description_parts.append("Per-failure details:")
+                description_parts.extend(reason_bullets)
+            else:
+                description_parts.append(
+                    "Implementation does not satisfy the Gherkin specification."
+                )
+            description = "\n".join(description_parts)
+
             blocking.append({
                 "severity": "must_fix",
                 "category": "bdd_failure",
-                "description": (
-                    f"BDD oracle: {scenarios_failed} scenario(s) failed "
-                    f"during pytest-bdd execution. "
-                    f"Implementation does not satisfy the Gherkin specification."
-                ),
+                "description": description,
                 "scenarios_failed": scenarios_failed,
                 "scenarios_passed": scenarios_passed,
                 "scenarios_pending": scenarios_pending,

@@ -210,6 +210,84 @@ def has_pytest_bdd(python_executable: Optional[str] = None) -> bool:
 
 _FEATURE_FILE_FROM_NODEID = re.compile(r"(?P<feature>features/[^:\s]+\.feature)")
 
+# Matches a Python traceback frame line: `  File "path", line N, in name`.
+# The trailing `, in name` is optional because pytest collection errors
+# sometimes omit it.
+_TRACEBACK_FRAME_RE = re.compile(
+    r'^\s*File "(?P<path>[^"]+)", line (?P<lineno>\d+)(?:, in .+)?$'
+)
+
+
+def _extract_error_reason(message: str, body: str) -> str:
+    """Build a rich ``reason`` string for junit ``<error>`` nodes.
+
+    Composes three signals so the Coach's feedback names the actual failure
+    class and location instead of the generic ``"collection failure"`` prose
+    pytest writes into the ``message`` attribute:
+
+    1. The ``<error message="...">`` attribute (e.g. ``collection failure``).
+    2. The inner exception class+message — typically the last non-indented
+       line of the traceback body (e.g. ``ModuleNotFoundError: No module
+       named 'common'``).
+    3. The *last* traceback frame ``File "path", line N`` plus the source
+       snippet on the line immediately after it (e.g. ``from common.x import y``).
+
+    No exception-class special-casing — whatever the body says, we surface.
+    See TASK-AB-003.
+    """
+    msg_text = (message or "").strip()
+    body_text = body or ""
+
+    exception_line = ""
+    for line in reversed(body_text.splitlines()):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # Skip indented continuation lines (source snippets, traceback frames).
+        if line.startswith((" ", "\t")):
+            continue
+        if stripped.startswith("Traceback "):
+            continue
+        exception_line = stripped
+        break
+
+    last_frame: Optional[Tuple[str, str, str]] = None
+    body_lines = body_text.splitlines()
+    for i, line in enumerate(body_lines):
+        m = _TRACEBACK_FRAME_RE.match(line)
+        if not m:
+            continue
+        path = m.group("path")
+        lineno = m.group("lineno")
+        snippet = ""
+        if i + 1 < len(body_lines):
+            next_line = body_lines[i + 1]
+            if not _TRACEBACK_FRAME_RE.match(next_line):
+                snippet = next_line.strip()
+        last_frame = (path, lineno, snippet)
+
+    parts: List[str] = []
+    if msg_text and exception_line and exception_line != msg_text:
+        parts.append(f"{msg_text}: {exception_line}")
+    elif msg_text:
+        parts.append(msg_text)
+    elif exception_line:
+        parts.append(exception_line)
+
+    if last_frame is not None:
+        path, lineno, snippet = last_frame
+        frame_str = f"  at {path}:{lineno}"
+        if snippet:
+            frame_str += f" ({snippet})"
+        parts.append(frame_str)
+
+    reason = "\n".join(parts).strip()
+    if not reason:
+        reason = msg_text or "<empty error>"
+    if len(reason) > 800:
+        reason = reason[:797] + "..."
+    return reason
+
 
 def _classify_failure_text(message: str) -> bool:
     """Return True when the failure message indicates a pending step.
@@ -290,7 +368,16 @@ def parse_junit_xml(xml_text: str) -> Tuple[int, List[FailureDetail], List[Pendi
         full = f"{message}\n{body}"
         step = _extract_step_from_message(full)
 
-        if _classify_failure_text(full):
+        # Collection errors land in `<error>` (not `<failure>`) and never
+        # represent a missing step definition — they are always real
+        # failures. Skip the pending classifier and use the richer
+        # `_extract_error_reason` so the Coach feedback names the actual
+        # exception class+message and the last traceback frame, not the
+        # generic ``"collection failure"`` prose pytest writes into the
+        # `<error message>` attribute. See TASK-AB-003.
+        is_error_only = failure_node is None and error_node is not None
+
+        if not is_error_only and _classify_failure_text(full):
             pending.append(
                 PendingDetail(
                     feature_file=feature_file,
@@ -299,10 +386,13 @@ def parse_junit_xml(xml_text: str) -> Tuple[int, List[FailureDetail], List[Pendi
                 )
             )
         else:
-            # Trim the reason to keep BDDResult compact.
-            reason = (message or body or "").strip()
-            if len(reason) > 500:
-                reason = reason[:497] + "..."
+            if is_error_only:
+                reason = _extract_error_reason(message, body)
+            else:
+                # Trim the reason to keep BDDResult compact.
+                reason = (message or body or "").strip()
+                if len(reason) > 500:
+                    reason = reason[:497] + "..."
             failures.append(
                 FailureDetail(
                     feature_file=feature_file,
