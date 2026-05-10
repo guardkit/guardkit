@@ -3554,18 +3554,63 @@ class CoachValidator:
         (paths containing ``*``) are filtered out — only literal paths are
         eligible for disk-existence checks.
 
+        Quoted content (backticks, single quotes, double quotes) that contains
+        whitespace is treated as a *command line* rather than a single path
+        (TASK-AB-006). For example, ``` `pytest tests/foo.py` ``` is split on
+        whitespace and each token is independently checked against the path
+        regex; the ``pytest`` runner prefix and any flags drop out and only
+        ``tests/foo.py`` is kept. Pytest node-ID suffixes (``::test_name``)
+        are stripped from every quoted token so that ``pytest
+        tests/foo.py::test_bar`` and ``tests/foo.py::TestC::test_x`` both
+        yield ``tests/foo.py`` rather than the unrunnable composite. Without
+        this tokenisation step the over-captured command line would fail
+        disk-existence under :py:meth:`_detect_ac_cited_missing_test_files`
+        and short-circuit the independent-test gate even though the cited
+        test file is in fact present (the FG-004 stall pattern that motivated
+        this fix).
+
         Used by:
         - TASK-AB-FIX-INVAB1 AC-004: tightening the "No completion promise"
           hybrid-fallback branch to require the named path to exist on disk.
         - TASK-AB-FIX-INVAB1 AC-005: plan_audit ``skipped`` escalation when
           AC names a missing source file.
+        - TASK-AB-FIX-INVAB1 AC-006 (via :py:meth:`_detect_ac_cited_missing_test_files`):
+          the AC-cited-missing-test-files honesty gate.
         """
         if not criterion_text:
             return []
         primary = re.findall(r"[\w./\-]+\.\w{1,5}", criterion_text)
-        backtick = re.findall(r"`([^`]+\.[a-zA-Z]+)`", criterion_text)
-        double_q = re.findall(r'"([^"]+\.[a-zA-Z]+)"', criterion_text)
-        single_q = re.findall(r"'([^']+\.[a-zA-Z]+)'", criterion_text)
+        backtick_raw = re.findall(r"`([^`]+\.[a-zA-Z]+)`", criterion_text)
+        double_q_raw = re.findall(r'"([^"]+\.[a-zA-Z]+)"', criterion_text)
+        single_q_raw = re.findall(r"'([^']+\.[a-zA-Z]+)'", criterion_text)
+
+        # TASK-AB-006: tokenise whitespace-bearing quoted content as a
+        # command line so a runner prefix (`pytest`, `python -m pytest`,
+        # …) and flags don't end up smuggled into the path candidate.
+        # Also strip pytest node-ID suffixes (``::test_name``) from every
+        # quoted token so the bare file path is what gets disk-checked.
+        # Bare-token quoted content (``path/to/file.py``) is preserved
+        # verbatim modulo the node-ID strip — the original behaviour that
+        # `path/to/file.py` is captured from `` `path/to/file.py` `` is
+        # unchanged.
+        path_token_re = re.compile(r"[\w./\-]+\.\w{1,5}")
+
+        def _expand_quoted(quoted_chunks: List[str]) -> List[str]:
+            expanded: List[str] = []
+            for chunk in quoted_chunks:
+                if any(c.isspace() for c in chunk):
+                    for tok in chunk.split():
+                        tok = tok.split("::", 1)[0]
+                        if path_token_re.fullmatch(tok):
+                            expanded.append(tok)
+                else:
+                    expanded.append(chunk.split("::", 1)[0])
+            return expanded
+
+        backtick = _expand_quoted(backtick_raw)
+        double_q = _expand_quoted(double_q_raw)
+        single_q = _expand_quoted(single_q_raw)
+
         out: List[str] = []
         seen: set = set()
         for p in primary + backtick + double_q + single_q:
@@ -3601,6 +3646,25 @@ class CoachValidator:
         conventions, plus equivalents per stack), that file must exist
         on disk. Otherwise the independent-test gate would silently run
         a smaller-scope test set and report green.
+
+        Path extraction is delegated to
+        :py:meth:`_extract_paths_from_ac_text`, which (per TASK-AB-006)
+        treats whitespace-bearing quoted content as a command line and
+        tokenises out the runner / flags. In practice this means:
+
+        - ``pytest tests/foo.py`` / ``pytest -v tests/foo.py`` /
+          ``python -m pytest tests/foo.py`` are all reduced to
+          ``tests/foo.py`` for disk-existence checks.
+        - ``pytest tests/foo.py::test_bar`` strips the node-ID suffix
+          and checks ``tests/foo.py``.
+        - **Non-pytest runners** with no path-shaped argument
+          (``npm test``, ``dotnet test --filter Category=Unit``,
+          ``cargo test``) yield no path candidates and therefore raise
+          no AC-006 missing-file findings — the gate is silent for those
+          shapes by design. Stacks that need disk-existence verification
+          for non-pytest runners must cite the test file path explicitly
+          in the AC text (e.g. ``AC-x: tests in tests/Suite.cs pass``)
+          rather than relying on the runner command alone.
         """
         missing: List[str] = []
         seen: set = set()
