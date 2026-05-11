@@ -3623,6 +3623,30 @@ class TestLateApprovalReconciliation:
         return path
 
     @staticmethod
+    def _write_coach_turn_in_worktree(
+        repo_root: Path,
+        feature_id: str,
+        task_id: str,
+        turn: int,
+        decision: str,
+        mtime_offset_s: float,
+    ) -> Path:
+        """Helper: write ``coach_turn_<turn>.json`` under the worktree
+        autobuild path Coach actually uses for FEAT-* runs:
+        ``<repo>/.guardkit/worktrees/<feature_id>/.guardkit/autobuild/<task_id>/``.
+        """
+        wt_autobuild = (
+            repo_root / ".guardkit" / "worktrees" / feature_id
+            / ".guardkit" / "autobuild" / task_id
+        )
+        wt_autobuild.mkdir(parents=True, exist_ok=True)
+        path = wt_autobuild / f"coach_turn_{turn}.json"
+        path.write_text(json.dumps({"decision": decision}))
+        target_mtime = time.time() + mtime_offset_s
+        os.utime(path, (target_mtime, target_mtime))
+        return path
+
+    @staticmethod
     def _write_turn_state(
         repo_root: Path, task_id: str, turn: int, turn_number: int
     ) -> Path:
@@ -3743,6 +3767,92 @@ class TestLateApprovalReconciliation:
         self._write_coach_turn(
             temp_repo, "TASK-T-001", turn=2,
             decision="approve", mtime_offset_s=-10.0,
+        )
+        result = orchestrator._check_late_approval(
+            "TASK-T-001", timer_fire_time=time.time(),
+        )
+        assert result == "approve"
+
+    # ------------------------------------------------------------------
+    # TASK-FIX-LATEAPPR R1: worktree-aware candidate-dirs walk
+    # ------------------------------------------------------------------
+
+    def test_check_late_approval_finds_coach_in_worktree_autobuild(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """AC-R1.1 / AC-T1: a Coach approval written ONLY under
+        ``.guardkit/worktrees/<feature>/.guardkit/autobuild/<task>/`` is
+        still found and returns ``'approve'`` when fresh. Models the
+        FEAT-RAG-08 run-2 production case: Coach wrote to the worktree
+        autobuild dir but the legacy repo-root-only lookup returned []
+        and the wave recorded TIMEOUT.
+        """
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo, worktree_manager=mock_worktree_manager,
+        )
+        self._write_coach_turn_in_worktree(
+            temp_repo, feature_id="FEAT-WT-001", task_id="TASK-T-001",
+            turn=2, decision="approve", mtime_offset_s=-11.0,
+        )
+        # Sanity: nothing under the repo-root path.
+        repo_root_dir = (
+            temp_repo / ".guardkit" / "autobuild" / "TASK-T-001"
+        )
+        assert not repo_root_dir.exists()
+
+        result = orchestrator._check_late_approval(
+            "TASK-T-001", timer_fire_time=time.time(),
+        )
+        assert result == "approve"
+
+    def test_check_late_approval_prefers_latest_across_candidate_dirs(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """AC-R1.2 / AC-T2: when a stale Coach file lives at the
+        repo-root path AND a fresh one lives in the worktree path,
+        the worktree (latest mtime) wins.
+        """
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo, worktree_manager=mock_worktree_manager,
+        )
+        # Stale repo-root: well outside grace, decision=feedback.
+        self._write_coach_turn(
+            temp_repo, "TASK-T-001", turn=1,
+            decision="feedback", mtime_offset_s=-300.0,
+        )
+        # Fresh worktree: within grace, decision=approve.
+        self._write_coach_turn_in_worktree(
+            temp_repo, feature_id="FEAT-WT-001", task_id="TASK-T-001",
+            turn=2, decision="approve", mtime_offset_s=-5.0,
+        )
+        result = orchestrator._check_late_approval(
+            "TASK-T-001", timer_fire_time=time.time(),
+        )
+        assert result == "approve"
+
+    def test_check_late_approval_repo_root_only_still_works(
+        self, temp_repo, mock_worktree_manager
+    ):
+        """AC-T3: existing direct-mode (repo-root-only) behaviour is
+        preserved by the candidate-dirs walk. Seed only at the
+        repo-root path; ``_check_late_approval`` still returns
+        ``'approve'``. Same shape as
+        ``test_approve_within_grace_returns_approve`` but with the
+        worktrees root explicitly absent for clarity.
+        """
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo, worktree_manager=mock_worktree_manager,
+        )
+        worktrees_root = temp_repo / ".guardkit" / "worktrees"
+        # mock_worktree_manager creates this dir; remove it so the
+        # candidate walk has only the repo-root entry to consider.
+        if worktrees_root.exists():
+            import shutil
+            shutil.rmtree(worktrees_root)
+
+        self._write_coach_turn(
+            temp_repo, "TASK-T-001", turn=2,
+            decision="approve", mtime_offset_s=-30.0,
         )
         result = orchestrator._check_late_approval(
             "TASK-T-001", timer_fire_time=time.time(),
@@ -3889,6 +3999,75 @@ async def test_timeout_without_late_approval_still_records_timeout(
     r = results[0]
     assert r.success is False
     assert r.final_decision == "timeout"
+
+
+@pytest.mark.asyncio
+async def test_timeout_warning_does_not_carry_hardcoded_sdk_timeout_budget(
+    temp_repo, parallel_feature, mock_worktree, mock_worktree_manager,
+    caplog, monkeypatch,
+):
+    """
+    TASK-FIX-LATEAPPR R3 / AC-T4: the feature-level TIMEOUT warning must
+    no longer hardcode the misleading
+    ``SDK timeout budget was 1200s per invocation`` clause. After
+    TASK-FIX-CRSTL-MULT scales the actual per-invocation timeout by
+    complexity, the orchestrator base (=1200s by default) is no longer
+    the value in effect and printing it wastes diagnostic time.
+    """
+    monkeypatch.setenv("GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR", "0")
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        task_timeout=1,
+        sdk_timeout=1200,
+    )
+
+    def mock_slow(task, feature, worktree, cancellation_event=None,
+                  timeout_event=None, time_budget_seconds=None,
+                  wave_size=1, **kwargs):
+        import time as _t
+        _t.sleep(5)
+        return TaskExecutionResult(
+            task_id=task.id, success=True, total_turns=1,
+            final_decision="approved",
+        )
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_slow):
+        with caplog.at_level(
+            logging.WARNING,
+            logger="guardkit.orchestrator.feature_orchestrator",
+        ):
+            results = await orchestrator._execute_wave_parallel(
+                1, ["TASK-P-001"], parallel_feature, mock_worktree,
+            )
+
+    assert len(results) == 1
+    assert results[0].final_decision == "timeout"
+
+    warning_messages = [
+        rec.message for rec in caplog.records
+        if rec.levelno == logging.WARNING
+    ]
+    # The misleading hardcoded clause must be gone.
+    for msg in warning_messages:
+        assert "SDK timeout budget was 1200s per invocation" not in msg, (
+            f"Misleading hardcoded clause still present in warning: {msg}"
+        )
+
+    # Replacement pointer + retained diagnostic density (AC-R3.2):
+    # task_id and effective_task_timeout must still be present.
+    timeout_warning_messages = [
+        msg for msg in warning_messages
+        if "TIMEOUT (feature-level)" in msg
+    ]
+    assert timeout_warning_messages, (
+        "Expected at least one 'TIMEOUT (feature-level)' warning"
+    )
+    timeout_msg = timeout_warning_messages[0]
+    assert "TASK-P-001" in timeout_msg
+    assert "task_timeout=1s" in timeout_msg
+    assert "progress.log" in timeout_msg
+    assert "[TASK-P-001] SDK timeout:" in timeout_msg
 
 
 @pytest.mark.asyncio

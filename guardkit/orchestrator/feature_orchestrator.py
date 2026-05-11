@@ -2409,20 +2409,17 @@ The detailed specifications are in the task markdown file.
                         # path + mtime delta. Failures are non-fatal — the
                         # reclassification proceeds even if logging fields
                         # can't be gathered.
+                        # TASK-FIX-LATEAPPR R1.3: share the candidate-dirs
+                        # walk with ``_check_late_approval`` so the audit
+                        # path correctly identifies the worktree source
+                        # for worktree-backed runs.
                         coach_audit_path: Optional[Path] = None
                         coach_mtime_delta: Optional[float] = None
                         try:
-                            audit_dir = (
-                                self.repo_root / ".guardkit"
-                                / "autobuild" / task_id
+                            coach_audit_path = (
+                                self._latest_coach_turn_path(task_id)
                             )
-                            audit_files = sorted(
-                                audit_dir.glob("coach_turn_*.json"),
-                                key=lambda p: p.stat().st_mtime,
-                                reverse=True,
-                            )
-                            if audit_files:
-                                coach_audit_path = audit_files[0]
+                            if coach_audit_path is not None:
                                 coach_mtime_delta = abs(
                                     coach_audit_path.stat().st_mtime
                                     - timer_fire_time
@@ -2468,7 +2465,6 @@ The detailed specifications are in the task markdown file.
                         )
                         continue
 
-                    sdk_timeout = self.sdk_timeout or 1200
                     # TASK-ATR-001: Use per-task resolved timeout for messages
                     effective_task_timeout = per_task_timeouts.get(task_id, self.task_timeout)
                     timeout_msg = (
@@ -2486,9 +2482,19 @@ The detailed specifications are in the task markdown file.
                             last_state = f" Last log: {lines[-1]}" if lines else ""
                         except Exception:
                             pass
+                    # TASK-FIX-LATEAPPR R3: dropped the hardcoded
+                    # ``SDK timeout budget was {sdk_timeout}s per
+                    # invocation`` clause. After TASK-FIX-CRSTL-MULT the
+                    # actual per-specialist timeout is scaled by
+                    # complexity and printed verbatim into the per-task
+                    # ``progress.log`` as ``[<task_id>] SDK timeout: <N>s``.
+                    # The hardcoded ``self.sdk_timeout`` (orchestrator
+                    # base, default 1200s) was misleading whenever CRSTL
+                    # scaling kicked in.
                     logger.warning(
                         f"TIMEOUT (feature-level): task_timeout={effective_task_timeout}s expired "
-                        f"for {task_id}. SDK timeout budget was {sdk_timeout}s per invocation."
+                        f"for {task_id}. See per-invocation '[{task_id}] SDK timeout: <N>s' "
+                        f"lines in progress.log for actual values applied."
                         f"{last_state}"
                     )
                     logger.warning(timeout_msg)
@@ -3111,6 +3117,69 @@ The detailed specifications are in the task markdown file.
     # Late-approval reconciliation helpers (TASK-ATR-003)
     # ------------------------------------------------------------------
 
+    def _autobuild_candidate_dirs(self, task_id: str) -> list[Path]:
+        """
+        Return every ``.guardkit/autobuild/<task_id>`` dir Coach may have
+        written to.
+
+        For direct-mode runs Coach writes under
+        ``self.repo_root/.guardkit/autobuild/<task_id>/``. For
+        worktree-backed runs (every ``FEAT-*`` autobuild) it writes under
+        ``self.repo_root/.guardkit/worktrees/<feature_id>/.guardkit/autobuild/<task_id>/``.
+
+        TASK-FIX-LATEAPPR: late-approval reconciliation and the
+        APPROVED_LATE audit-path glob both need to see both shapes, so
+        the candidate-dirs walk is centralised here. The list is
+        additive — direct-mode runs continue to see exactly the
+        repo-root path.
+        """
+        candidates: list[Path] = [
+            self.repo_root / ".guardkit" / "autobuild" / task_id,
+        ]
+        worktrees_root = self.repo_root / ".guardkit" / "worktrees"
+        if worktrees_root.exists():
+            try:
+                for wt_dir in worktrees_root.iterdir():
+                    if not wt_dir.is_dir():
+                        continue
+                    candidates.append(
+                        wt_dir / ".guardkit" / "autobuild" / task_id
+                    )
+            except OSError as exc:
+                logger.debug(
+                    f"[{task_id}] worktrees iter skipped: {exc}"
+                )
+        return candidates
+
+    def _latest_coach_turn_path(self, task_id: str) -> Optional[Path]:
+        """
+        Return the most-recent ``coach_turn_*.json`` for ``task_id`` across
+        every direct/worktree autobuild dir, or ``None`` if none exist.
+
+        Used by both ``_check_late_approval`` (read decision + mtime delta)
+        and the APPROVED_LATE audit-log block (record source path +
+        mtime delta). Never raises.
+        """
+        coach_files: list[Path] = []
+        for d in self._autobuild_candidate_dirs(task_id):
+            if not d.exists():
+                continue
+            try:
+                coach_files.extend(d.glob("coach_turn_*.json"))
+            except OSError as exc:
+                logger.debug(
+                    f"[{task_id}] coach_turn glob skipped in {d}: {exc}"
+                )
+        if not coach_files:
+            return None
+        try:
+            return max(coach_files, key=lambda p: p.stat().st_mtime)
+        except OSError as exc:
+            logger.debug(
+                f"[{task_id}] coach_turn stat skipped: {exc}"
+            )
+            return None
+
     def _check_late_approval(
         self, task_id: str, timer_fire_time: float
     ) -> Optional[str]:
@@ -3124,6 +3193,11 @@ The detailed specifications are in the task markdown file.
         even though the per-wave ``asyncio.gather`` already collected a
         ``TimeoutError``. Returns ``None`` for any error or absence; never
         raises.
+
+        TASK-FIX-LATEAPPR: the search now walks every direct-mode and
+        worktree-backed ``.guardkit/autobuild/<task_id>/`` dir via
+        ``_autobuild_candidate_dirs`` / ``_latest_coach_turn_path`` so
+        worktree-backed ``FEAT-*`` runs reclassify correctly.
 
         Parameters
         ----------
@@ -3142,19 +3216,9 @@ The detailed specifications are in the task markdown file.
             ``None`` otherwise.
         """
         try:
-            autobuild_dir = (
-                self.repo_root / ".guardkit" / "autobuild" / task_id
-            )
-            if not autobuild_dir.exists():
+            latest = self._latest_coach_turn_path(task_id)
+            if latest is None:
                 return None
-            coach_files = sorted(
-                autobuild_dir.glob("coach_turn_*.json"),
-                key=lambda p: p.stat().st_mtime,
-                reverse=True,
-            )
-            if not coach_files:
-                return None
-            latest = coach_files[0]
             mtime_delta = abs(latest.stat().st_mtime - timer_fire_time)
             if mtime_delta > LATE_APPROVAL_GRACE_S:
                 return None
