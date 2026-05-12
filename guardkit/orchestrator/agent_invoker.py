@@ -1613,6 +1613,17 @@ class AgentInvoker:
         """
         start_time = time.time()
 
+        # TASK-FIX-CAUD-PREFLIGHT-C3B0: Pre-turn-1 git check-ignore fail-fast
+        # gate. Walks the task's planned target list through ``git
+        # check-ignore`` in the worktree before any SDK turn runs. If a
+        # planned target IS ignored, raises ``AgentInvocationError`` with
+        # the exact matched rule so the operator can either rebase the
+        # worktree (if the rule is from project-root .gitignore) or pick
+        # a non-ignored target. Skipped when no plan or frontmatter list
+        # is available (identical to the no-plan branch in plan-audit).
+        if turn == 1:
+            self._run_preflight_ignore_gate(task_id)
+
         # TASK-FIX-VL06: Record baseline commit before SDK invocation
         # to prevent cross-task file attribution in parallel waves
         if self._baseline_commit is None:
@@ -3370,6 +3381,72 @@ Follow the decision format specified in your agent definition.
                     )
             except (json.JSONDecodeError, IOError) as e:
                 logger.warning(f"Failed to update task_work_results.json: {e}")
+
+    def _run_preflight_ignore_gate(self, task_id: str) -> None:
+        """Run the pre-turn-1 ``git check-ignore`` fail-fast gate
+        (TASK-FIX-CAUD-PREFLIGHT-C3B0).
+
+        Closes deferred AC-005 of TASK-FIX-CAUD-J6F1. Walks the task's
+        planned target list through ``git check-ignore -v --no-index``
+        in the worktree. If any planned target IS git-ignored, raises
+        ``AgentInvocationError`` with the matched rule so the Player
+        does not burn SDK turns creating a file that cannot be tracked.
+
+        Skipped silently when no implementation plan and no frontmatter
+        ``files_to_create`` / ``files_to_modify`` list is available —
+        identical to the no-plan branch in plan-audit, per the AC-005
+        brief.
+        """
+        from guardkit.orchestrator.preflight_ignore_gate import (
+            STATUS_BLOCKED,
+            STATUS_PASSED,
+            STATUS_SKIPPED,
+            format_blocked_message,
+            run_preflight_ignore_gate,
+        )
+
+        try:
+            result = run_preflight_ignore_gate(task_id, self.worktree_path)
+        except Exception as exc:
+            # Infra-error: log and continue. The Coach still runs the
+            # existence floor at turn end, so a broken pre-flight does
+            # not weaken the overall detection floor — it only loses
+            # the early fail-fast signal.
+            logger.warning(
+                "preflight_ignore_gate raised unexpectedly for %s: %s. "
+                "Continuing without pre-flight.",
+                task_id,
+                exc,
+            )
+            return
+
+        if result.status == STATUS_PASSED:
+            logger.info(
+                "[%s] preflight_ignore_gate: passed (no planned targets are git-ignored)",
+                task_id,
+            )
+            return
+        if result.status == STATUS_SKIPPED:
+            logger.info(
+                "[%s] preflight_ignore_gate: skipped (%s)",
+                task_id,
+                result.skip_reason or "no source available",
+            )
+            return
+        if result.status == STATUS_BLOCKED:
+            message = format_blocked_message(task_id, result)
+            logger.error(
+                "[%s] preflight_ignore_gate: BLOCKED — fail-fast before turn 1.\n%s",
+                task_id,
+                message,
+            )
+            raise AgentInvocationError(message)
+        # Defensive: unknown status. Log and continue rather than block.
+        logger.warning(
+            "[%s] preflight_ignore_gate: unknown status %r; continuing.",
+            task_id,
+            result.status,
+        )
 
     def _record_baseline(self) -> None:
         """Record git HEAD hash before task execution starts (TASK-FIX-VL06).

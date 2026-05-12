@@ -87,9 +87,10 @@ commit. Format:
 The pytest guard at `tests/rules/test_gate_freeze.py` reads this section
 and treats listed tasks as exempted. No override → guard fails the run.
 
-### Granted overrides
+## Granted overrides
 
-*(none yet)*
+- 2026-05-12: Override granted for TASK-FIX-CAUD-PREFLIGHT-C3B0 (pre-turn-1 git check-ignore fail-fast gate — closes deferred AC-005 of TASK-FIX-CAUD-J6F1; user-approved during interactive /task-work session)
+- 2026-05-12: Override granted for TASK-FIX-CAUD-J6F1 (claim-audit path normalisation; commit dd7a690c landed pre-override — backfilled retroactively to make the guard pass)
 
 ## Operational notes
 
