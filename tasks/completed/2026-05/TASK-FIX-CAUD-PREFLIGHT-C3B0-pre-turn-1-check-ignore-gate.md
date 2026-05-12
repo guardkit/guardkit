@@ -1,13 +1,15 @@
 ---
 id: TASK-FIX-CAUD-PREFLIGHT-C3B0
 title: "Claim-audit pre-flight: walk planned target list through `git check-ignore -v` before turn 1"
-status: in_review
+status: completed
 task_type: implementation
 priority: medium
 created: 2026-05-12
 updated: 2026-05-12
-previous_state: in_progress
-state_transition_reason: "Quality gates passed: 28/28 new tests, no regressions in agent_invoker suite"
+completed: 2026-05-12
+previous_state: in_review
+state_transition_reason: "Task completion: all ACs delivered, tests passing, code committed"
+completed_location: tasks/completed/2026-05/
 tags: [autobuild, coach, claim-audit, preflight, fail-fast]
 related_tasks: [TASK-FIX-CAUD-J6F1, TASK-REV-J6F1]
 parent_task: TASK-FIX-CAUD-J6F1
