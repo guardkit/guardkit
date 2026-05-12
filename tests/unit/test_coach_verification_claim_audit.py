@@ -569,3 +569,168 @@ def test_claim_audit_unmodified_does_not_short_circuit_gate(
     assert len(unmodified) == 1
     assert unmodified[0].severity == "should_fix"
     assert "README.md" in unmodified[0].player_claim
+
+
+# ---------------------------------------------------------------------------
+# TASK-FIX-CAUD-J6F1 AC-001 / AC-006: absolute-path normalisation
+#
+# Reproducer for the FEAT-JARVIS-006 fail-run-1 incident: the Player
+# report carried the same staged file under both absolute and relative
+# form, and the audit's literal-string membership test against
+# worktree-relative ``git status --porcelain`` flagged exactly the
+# absolute entries (and none of the matching relative entries).
+# After AC-001, ``_normalize_claimed_path`` resolves absolute paths to
+# the worktree-relative form so both representations dedupe to one
+# matching entry and no discrepancy fires.
+# ---------------------------------------------------------------------------
+
+
+def test_absolute_and_relative_duplicate_of_staged_file_no_discrepancy(
+    git_worktree: Path, verifier: CoachVerifier
+) -> None:
+    """The J6F1 reproducer: Player reports the same staged file under
+    both absolute and relative form. Audit must dedupe and pass.
+
+    Pre-AC-001: the absolute entry was kept verbatim, the porcelain set
+    only ever contained the relative form, so ``claimed - would_stage``
+    contained one entry per absolute claim → ``claim_audit`` discrepancy
+    with ``severity="critical"`` (because the Player did not actually
+    fabricate; the path resolves to a real, staged file).
+
+    Post-AC-001: ``_normalize_claimed_path`` folds the absolute form to
+    the worktree-relative form. Both entries become the same key in the
+    ``claimed`` set, the comparison succeeds, and no discrepancy fires.
+    """
+    (git_worktree / "src" / "jarvis" / "infrastructure").mkdir(parents=True)
+    target = git_worktree / "src" / "jarvis" / "infrastructure" / "chat_handler.py"
+    target.write_text("class ChatHandler: ...\n")
+
+    abs_path = str(target)
+    rel_path = "src/jarvis/infrastructure/chat_handler.py"
+
+    report: Dict[str, Any] = {
+        "files_created": [abs_path, rel_path],
+    }
+
+    discrepancies = verifier._verify_claims_were_staged(report)
+
+    assert discrepancies == [], (
+        f"Expected no discrepancies for an absolute+relative duplicate of "
+        f"a real staged file; got: {discrepancies}"
+    )
+
+
+def test_normalize_claimed_path_absolute_to_worktree_relative(
+    git_worktree: Path, verifier: CoachVerifier
+) -> None:
+    """Direct unit test on the normaliser: absolute path under the
+    worktree resolves to its relative form; absolute path outside the
+    worktree falls through unchanged."""
+    src = git_worktree / "src" / "foo.py"
+    src.parent.mkdir(parents=True)
+    src.write_text("x = 1\n")
+
+    # Absolute under worktree → relative
+    assert verifier._normalize_claimed_path(str(src)) == "src/foo.py"
+
+    # Relative is unchanged
+    assert verifier._normalize_claimed_path("src/foo.py") == "src/foo.py"
+
+    # ./ prefix and trailing / still stripped (existing contract preserved)
+    assert verifier._normalize_claimed_path("./src/foo.py") == "src/foo.py"
+    assert verifier._normalize_claimed_path("adapters/") == "adapters"
+
+    # Absolute path outside the worktree → unchanged (downstream
+    # classification flags it as fabricated)
+    outside = "/tmp/definitely-not-under-the-worktree/foo.py"
+    assert verifier._normalize_claimed_path(outside) == outside
+
+
+# ---------------------------------------------------------------------------
+# TASK-FIX-CAUD-J6F1 AC-003b: harness-owned paths are allowlisted
+#
+# The orchestrator-side filter at
+# ``agent_invoker._strip_orchestrator_managed_paths`` is the load-bearing
+# fix; the Coach-side allowlist in ``_verify_claims_were_staged`` is
+# defence in depth so harness paths can never produce a claim_audit
+# discrepancy even if the orchestrator-side strip misses one.
+# ---------------------------------------------------------------------------
+
+
+def test_harness_owned_relative_path_allowlisted(
+    git_worktree: Path, verifier: CoachVerifier
+) -> None:
+    """A Player report containing only ``.guardkit/autobuild/<TASK>/...``
+    paths produces no audit discrepancy — the allowlist filter drops them
+    from the claimed set before the porcelain comparison."""
+    report: Dict[str, Any] = {
+        "files_created": [
+            ".guardkit/autobuild/TASK-FOO/player_turn_1.json",
+            ".guardkit/autobuild/TASK-FOO/coach_turn_1.json",
+        ],
+    }
+
+    discrepancies = verifier._verify_claims_were_staged(report)
+
+    assert discrepancies == []
+
+
+def test_harness_owned_absolute_path_allowlisted(
+    git_worktree: Path, verifier: CoachVerifier
+) -> None:
+    """The J6F1-shape: Player report contains the orchestrator's
+    per-turn artefact under its absolute path (because the harness
+    itself wrote it that way and it round-trips into ``files_created``).
+    AC-001 normalises to relative; AC-003b allowlist then drops it.
+    No audit discrepancy fires.
+    """
+    abs_player_turn = str(
+        git_worktree / ".guardkit" / "autobuild" / "TASK-FOO" / "player_turn_1.json"
+    )
+
+    report: Dict[str, Any] = {
+        "files_created": [abs_player_turn],
+    }
+
+    discrepancies = verifier._verify_claims_were_staged(report)
+
+    assert discrepancies == [], (
+        f"Expected no discrepancies for a harness-owned path in absolute "
+        f"form; got: {discrepancies}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# TASK-FIX-CAUD-J6F1 AC-002: diagnostic message surfaces actual checked facts
+# ---------------------------------------------------------------------------
+
+
+def test_fabricated_discrepancy_diagnostic_includes_path_exists_and_no_match(
+    git_worktree: Path, verifier: CoachVerifier
+) -> None:
+    """When the Player claims a path that is genuinely fabricated (does
+    not exist on disk), the discrepancy's ``actual_value`` must report
+    the *checked* facts (``path_exists=False``, ``gitignore_match=no rule
+    matched``, ``tracked=no``) instead of speculating about an
+    unanchored .gitignore rule.
+
+    AC-002 motivation: the previous "Most common cause: an unanchored
+    .gitignore rule" wording sent the J6F1 review chasing hypothesis 1
+    even though check-ignore had already returned exit 1 (no match).
+    """
+    report: Dict[str, Any] = {
+        "files_created": ["src/never_created.py"],
+    }
+
+    discrepancies = verifier._verify_claims_were_staged(report)
+
+    assert len(discrepancies) == 1
+    disc = discrepancies[0]
+    assert disc.claim_type == "claim_audit"
+    assert disc.severity == "critical"
+    # The new diagnostic surfaces actual checked facts:
+    assert "path_exists=False" in disc.actual_value
+    assert "no rule matched" in disc.actual_value
+    assert "tracked=no" in disc.actual_value
+    # And does NOT carry the speculative gitignore-rule guess:
+    assert "Most common cause: an unanchored" not in disc.actual_value

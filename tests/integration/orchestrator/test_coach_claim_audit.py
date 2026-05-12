@@ -366,3 +366,107 @@ def test_single_claim_audit_not_demoted_to_should_fix(
     assert len(audit_issues) == 1
     assert audit_issues[0]["severity"] == "must_fix"
     assert audit_issues[0]["details"]["claim_type"] == "claim_audit"
+
+
+# ---------------------------------------------------------------------------
+# TASK-FIX-CAUD-J6F1 AC-006: FEAT-JARVIS-006 fail-run-1 replay
+#
+# The Player report on the failed run carried the same staged file under
+# both absolute and relative form, plus the harness-owned per-turn
+# artefact under its absolute path. Pre-fix Coach raised three critical
+# claim_audit discrepancies (one per absolute claim) and short-circuited
+# the gate. Post-fix:
+#   * The duplicated source/test files dedupe (AC-001 normalisation).
+#   * The harness-owned per-turn JSON is allowlisted (AC-003b).
+#   * Decision is approve, no must_fix claim_audit issue.
+# ---------------------------------------------------------------------------
+
+
+def test_j6f1_player_turn1_replay_no_claim_audit_issue(
+    git_worktree: Path, task_work_results_dir: Path
+) -> None:
+    """Replay the J6F1 player_turn_1 shape end-to-end against the
+    deterministic Coach path. Asserts the FEAT-JARVIS-006 fail-run-1
+    incident no longer fires a critical claim_audit discrepancy.
+    """
+    # Stage the chat handler + tests under the same paths the Player
+    # reported. These exist on disk AND will be in ``git status
+    # --porcelain`` (untracked-not-ignored), so the audit MUST classify
+    # them as staged.
+    src = git_worktree / "src" / "jarvis" / "infrastructure"
+    src.mkdir(parents=True)
+    (src / "chat_handler.py").write_text("class ChatHandler: ...\n")
+    tests = git_worktree / "tests" / "unit" / "infrastructure"
+    tests.mkdir(parents=True)
+    (tests / "test_chat_handler.py").write_text(
+        "def test_handler(): assert True\n"
+    )
+
+    # Also stage the harness-owned per-turn artefact under its absolute
+    # path — the J6F1 incident's third flagged path. The orchestrator
+    # writes this file at an absolute path which round-trips into the
+    # Player's files_created. AC-003b's allowlist must drop it.
+    autobuild_dir = git_worktree / ".guardkit" / "autobuild" / "TASK-001"
+    autobuild_dir.mkdir(parents=True, exist_ok=True)
+    abs_player_turn = autobuild_dir / "player_turn_1.json"
+    abs_player_turn.write_text("{}\n")
+
+    # The implementation plan that task-work writes per the J6F1 fail-run-1
+    # report (F4 bucket A: yes-on-disk / yes-staged / no-flagged). Created
+    # so the replay matches the actual fixture shape.
+    plan_dir = git_worktree / ".claude" / "task-plans"
+    plan_dir.mkdir(parents=True)
+    (plan_dir / "TASK-001-implementation-plan.md").write_text("# plan\n")
+
+    abs_chat_handler = str(src / "chat_handler.py")
+    abs_test = str(tests / "test_chat_handler.py")
+
+    # The exact J6F1 shape: each file claimed under both absolute and
+    # relative form. Pre-fix this raised 3× critical claim_audit (one
+    # per absolute entry); post-fix all three are normalised away.
+    results = _passing_baseline({
+        "files_created": [
+            ".claude/task-plans/TASK-001-implementation-plan.md",
+            abs_chat_handler,
+            abs_test,
+            str(abs_player_turn),
+            "src/jarvis/infrastructure/chat_handler.py",
+            "tests/unit/infrastructure/test_chat_handler.py",
+        ],
+    })
+    _write_results(task_work_results_dir, results)
+
+    with patch("subprocess.run", side_effect=_selective_run):
+        validator = CoachValidator(str(git_worktree))
+        result = validator.validate("TASK-001", 1, _task())
+
+    # Either no claim_audit issue at all, or any that surface are
+    # advisory should_fix — never the J6F1-shape critical must_fix
+    # that drove the unrecoverable_stall.
+    audit_issues = [
+        i for i in result.issues if i.get("category") == "claim_audit"
+    ]
+    must_fix_audit = [
+        i for i in audit_issues if i.get("severity") == "must_fix"
+    ]
+    assert must_fix_audit == [], (
+        f"J6F1 reproducer regressed: post-fix replay must NOT produce "
+        f"a must_fix claim_audit issue. Got: {must_fix_audit}"
+    )
+    # The .claude/task-plans/... entry isn't on disk so it's a genuine
+    # file_existence concern — but the J6F1 reproducer only requires
+    # that the absolute-path/harness paths stop firing, not that every
+    # ancillary path becomes clean. Pin only the regression we fixed.
+    audit_paths_must_fix = [
+        i["details"]["player_claim"] for i in must_fix_audit
+    ]
+    j6f1_paths = [
+        abs_chat_handler,
+        abs_test,
+        str(abs_player_turn),
+    ]
+    for p in j6f1_paths:
+        assert p not in " ".join(audit_paths_must_fix), (
+            f"J6F1 path {p} produced a must_fix audit issue; expected "
+            f"normalisation/allowlist to suppress it."
+        )

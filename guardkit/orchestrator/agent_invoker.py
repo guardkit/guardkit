@@ -155,7 +155,9 @@ _ORCHESTRATOR_MANAGED_PATH_PATTERNS: Tuple[re.Pattern, ...] = (
 )
 
 
-def _is_orchestrator_managed_path(path: Any) -> bool:
+def _is_orchestrator_managed_path(
+    path: Any, worktree_path: Optional[Path] = None
+) -> bool:
     """Return True when ``path`` lives in an orchestrator-owned namespace.
 
     Used by :py:meth:`AgentInvoker._strip_orchestrator_managed_paths` to
@@ -164,17 +166,57 @@ def _is_orchestrator_managed_path(path: Any) -> bool:
     everything else (Player work under ``src/``, ``tests/``, unrelated
     ``tasks/`` subdirectories, user-scripted ``.guardkit/`` artefacts,
     etc.) returns False.
+
+    Parameters
+    ----------
+    path:
+        Path string from the Player report. May be relative
+        (``.guardkit/...``) or absolute
+        (``/Users/.../FEAT-X/.guardkit/...``).
+    worktree_path:
+        When provided, absolute path inputs are first normalised to be
+        relative to ``worktree_path`` so the same regex set matches
+        regardless of the form the Player chose to report. Without
+        ``worktree_path``, only relative paths can match — preserving
+        the pre-CAUD-J6F1 behaviour for callers that haven't been
+        threaded through yet (TASK-FIX-CAUD-J6F1 AC-003a).
     """
     if not isinstance(path, str) or not path:
         return False
     normalized = path.replace("\\", "/")
     if normalized.startswith("./"):
         normalized = normalized[2:]
+
+    # AC-003a: when an absolute path is reported AND we know the
+    # worktree root, fold it down to the worktree-relative form before
+    # the regex match. Without this, the patterns at
+    # ``_ORCHESTRATOR_MANAGED_PATH_PATTERNS`` (anchored at start-of-
+    # string with ``^\.guardkit/...``) cannot match
+    # ``/Users/.../FEAT-X/.guardkit/...`` and harness-owned paths in
+    # absolute form leak through to the Coach. See TASK-FIX-CAUD-J6F1.
+    if worktree_path is not None:
+        candidate = Path(normalized)
+        if candidate.is_absolute():
+            try:
+                resolved = candidate.resolve()
+                worktree_resolved = worktree_path.resolve()
+                normalized = str(
+                    resolved.relative_to(worktree_resolved)
+                ).replace("\\", "/")
+            except (ValueError, OSError):
+                # Path is absolute but lives outside the worktree, or
+                # resolve() failed. Fall through with the original
+                # string — non-orchestrator paths are the typical case
+                # here, so a non-match is the correct outcome.
+                pass
+
     return any(p.match(normalized) for p in _ORCHESTRATOR_MANAGED_PATH_PATTERNS)
 
 
 def _strip_orchestrator_managed_paths(
-    report: Dict[str, Any], task_id: str
+    report: Dict[str, Any],
+    task_id: str,
+    worktree_path: Optional[Path] = None,
 ) -> Set[str]:
     """Strip orchestrator-managed paths from Player-report claim lists.
 
@@ -191,6 +233,16 @@ def _strip_orchestrator_managed_paths(
     summary line (TASK-FIX-PCN AC-5; same format as the run-3-era
     ``state_transitions.json``-driven filter so existing log monitoring
     continues to work).
+
+    Parameters
+    ----------
+    worktree_path:
+        Optional worktree root. When provided, absolute Player-reported
+        paths under the worktree are normalised to their
+        worktree-relative form before matching, so harness-owned paths
+        in absolute form (e.g.
+        ``/Users/.../FEAT-X/.guardkit/autobuild/<TASK_ID>/...``) are
+        also stripped. See TASK-FIX-CAUD-J6F1 AC-003a.
     """
     stripped: Set[str] = set()
 
@@ -201,7 +253,7 @@ def _strip_orchestrator_managed_paths(
         kept: List[str] = []
         any_stripped = False
         for path in original:
-            if _is_orchestrator_managed_path(path):
+            if _is_orchestrator_managed_path(path, worktree_path):
                 stripped.add(path)
                 any_stripped = True
             else:
@@ -218,7 +270,7 @@ def _strip_orchestrator_managed_paths(
             kept_impl: List[str] = []
             any_stripped = False
             for path in impl_files:
-                if _is_orchestrator_managed_path(path):
+                if _is_orchestrator_managed_path(path, worktree_path):
                     stripped.add(path)
                     any_stripped = True
                 else:
@@ -226,7 +278,7 @@ def _strip_orchestrator_managed_paths(
             if any_stripped:
                 promise["implementation_files"] = kept_impl
         test_file = promise.get("test_file")
-        if test_file and _is_orchestrator_managed_path(test_file):
+        if test_file and _is_orchestrator_managed_path(test_file, worktree_path):
             stripped.add(test_file)
             promise["test_file"] = None
 
@@ -3209,8 +3261,16 @@ Follow the decision format specified in your agent definition.
         # agent-written player_report recovery, and the synthetic
         # completion_promises generator above. See the module-level
         # docstring on _strip_orchestrator_managed_paths.
+        #
+        # TASK-FIX-CAUD-J6F1 AC-003a: thread ``self.worktree_path`` so the
+        # filter also catches harness-owned paths in absolute form
+        # (``/Users/.../FEAT-X/.guardkit/autobuild/<TASK_ID>/...``). The
+        # FEAT-JARVIS-006 fail-run-1 incident leaked exactly these into
+        # the Coach because the filter only matched relative paths.
         try:
-            _strip_orchestrator_managed_paths(report, task_id)
+            _strip_orchestrator_managed_paths(
+                report, task_id, worktree_path=self.worktree_path
+            )
         except Exception as exc:  # noqa: BLE001 — never block report
             logger.warning(
                 f"Orchestrator-managed-path filter failed for {task_id}: {exc}"

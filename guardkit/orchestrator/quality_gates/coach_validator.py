@@ -5478,6 +5478,14 @@ class CoachValidator:
                 }
             )
         for d in audit:
+            # TASK-FIX-CAUD-J6F1 AC-002: drop the speculative "most
+            # common cause is an unanchored .gitignore rule" tail.
+            # The verifier's actual_value already carries the probe
+            # results (path_exists / gitignore_match / tracked) so
+            # the operator sees the checked facts rather than a guess.
+            # The previous wording sent the J6F1 review chasing
+            # hypothesis 1 for a non-trivial amount of time even though
+            # check-ignore had explicitly returned "no rule matched".
             issues.append(
                 {
                     "severity": "must_fix",
@@ -5486,9 +5494,7 @@ class CoachValidator:
                         f"Checkpoint claim audit failed: Player claimed a "
                         f"file that 'git add -A' would not stage. "
                         f"{d.player_claim}. {d.actual_value} Investigate "
-                        f"before approving the turn — most common cause is "
-                        f"an unanchored .gitignore rule silently filtering "
-                        f"the file out of the per-turn checkpoint commit."
+                        f"before approving the turn."
                     ),
                     "details": {
                         "claim_type": d.claim_type,

@@ -468,6 +468,33 @@ class CoachVerifier:
             if test_file:
                 claimed.add(self._normalize_claimed_path(str(test_file)))
 
+        # TASK-FIX-CAUD-J6F1 AC-003b — defence-in-depth allowlist.
+        # The orchestrator-side filter at
+        # ``agent_invoker._strip_orchestrator_managed_paths`` is the
+        # load-bearing fix; this strip here makes sure that even if a
+        # harness-owned path slips past it (e.g. a future refactor that
+        # introduces a new write site, or a synthetic-promise generator
+        # that injects after the strip), the Coach's claim audit never
+        # raises a discrepancy on a path the Player had no control over.
+        # Late import to avoid the agent_invoker → coach_verification
+        # → agent_invoker circular at module-load time.
+        try:
+            from guardkit.orchestrator.agent_invoker import (
+                _is_orchestrator_managed_path,
+            )
+        except ImportError:
+            # Filter unavailable (e.g. partial install / namespace
+            # re-arrangement). Fail-open: leave ``claimed`` unchanged
+            # and let the existing audit logic run.
+            pass
+        else:
+            claimed = {
+                p for p in claimed
+                if not _is_orchestrator_managed_path(
+                    p, worktree_path=self.worktree_path
+                )
+            }
+
         # AC-004: zero-cardinality permitted — no oracle ran, don't block.
         if not claimed:
             return []
@@ -610,17 +637,57 @@ class CoachVerifier:
                 # in ``_classify_dropped_path``. Falling back to critical
                 # preserves the FEAT-39E1 detection floor when the
                 # gitignore probe is unavailable for any reason.
+                #
+                # TASK-FIX-CAUD-J6F1 AC-002: the actual_value text now
+                # surfaces the *checked* facts (path_exists, ignore-probe
+                # result, tracked status) rather than speculating about
+                # an unanchored .gitignore rule. The previous text
+                # ("Most common cause: an unanchored .gitignore rule
+                # silently filters the file") sent the J6F1 review chasing
+                # a wrong hypothesis for non-trivial time, even though
+                # ``_classify_dropped_path`` had *already* run check-ignore
+                # and obtained exit 1 (no match) on every flagged path.
+                abs_path = self.worktree_path / path
+                path_exists = abs_path.exists()
+                if classification == "fabricated":
+                    # Reaching this branch means ``_classify_dropped_path``
+                    # observed: check-ignore exit 1 (no rule matched) AND
+                    # — if path exists — ls-files exit != 0 (not tracked).
+                    diagnosis = (
+                        f"path_exists={path_exists}; "
+                        f"gitignore_match=no rule matched; tracked=no"
+                    )
+                    if not path_exists:
+                        cause = (
+                            "Most likely cause: the Player claimed work "
+                            "on a file that does not exist on disk."
+                        )
+                    else:
+                        cause = (
+                            "Path exists on disk but is neither "
+                            "gitignored nor tracked — investigate "
+                            "sparse-checkout, assume-unchanged, or "
+                            "pathspec attribute filters as the next step."
+                        )
+                else:  # "infra_error"
+                    diagnosis = (
+                        f"path_exists={path_exists}; "
+                        f"gitignore_match=probe failed; tracked=unknown"
+                    )
+                    cause = (
+                        "The 'git check-ignore' probe itself failed "
+                        "(logged separately); falling back to critical "
+                        "classification to preserve the FEAT-39E1 "
+                        "detection floor."
+                    )
                 discrepancies.append(
                     Discrepancy(
                         claim_type="claim_audit",
                         player_claim=f"Player claimed file {path}",
                         actual_value=(
-                            "Path would not be staged by 'git add -A' "
-                            "(absent from 'git status --porcelain'). Most "
-                            "common cause: an unanchored .gitignore rule "
-                            "silently filters the file. Other causes: "
-                            "sparse-checkout, assume-unchanged, or "
-                            "pathspec attribute filters."
+                            f"Path absent from 'git status --porcelain' "
+                            f"so 'git add -A' would not stage it. Probes: "
+                            f"{diagnosis}. {cause}"
                         ),
                         severity="critical",
                     )
@@ -740,19 +807,61 @@ class CoachVerifier:
             return first_line.split("\t", 1)[0]
         return first_line
 
-    @staticmethod
-    def _normalize_claimed_path(path: str) -> str:
-        """Strip leading ``./`` so claimed paths match porcelain output.
+    def _normalize_claimed_path(self, path: str) -> str:
+        """Normalise a claimed path so it can be compared with porcelain output.
 
-        Player reports occasionally prefix paths with ``./``; ``git status``
-        never does. Normalising both sides avoids false-fail mismatches on
-        cosmetic differences. Trailing slashes (directory markers) are also
-        stripped so ``adapters/`` matches ``adapters``.
+        Three normalisation steps, applied in order:
+
+        1. Strip leading ``./`` (Player reports sometimes prefix paths with
+           it; ``git status`` never does).
+        2. Strip trailing ``/`` (so ``adapters/`` matches ``adapters``).
+        3. **Convert absolute paths to worktree-relative** (TASK-FIX-CAUD-J6F1):
+           when the Player reports
+           ``/Users/.../FEAT-X/src/foo.py`` and ``git status --porcelain``
+           reports ``src/foo.py``, the literal-string membership test in
+           :py:meth:`_verify_claims_were_staged` would otherwise produce a
+           guaranteed false-positive ``claim_audit`` discrepancy.
+           ``Path.resolve().relative_to(worktree_path.resolve())`` brings
+           both sides to the same canonical form. Falls through unchanged
+           when the path lives outside the worktree, when ``resolve()``
+           fails (broken symlink, permission denied), or when the input
+           is already relative — so genuinely-fabricated absolute paths
+           outside the worktree still surface as discrepancies via the
+           downstream classification.
+
+        Backslashes are normalised to forward slashes so Windows-style
+        paths in Player reports compare cleanly with porcelain (porcelain
+        always emits forward slashes).
         """
         cleaned = path
         while cleaned.startswith("./"):
             cleaned = cleaned[2:]
-        return cleaned.rstrip("/")
+        cleaned = cleaned.rstrip("/")
+
+        # AC-001: absolute → worktree-relative. The membership-test in
+        # _verify_claims_were_staged compares this output against
+        # ``git status --porcelain`` which is always worktree-relative,
+        # so absolute claims can never match without this step. See
+        # TASK-FIX-CAUD-J6F1 / TASK-REV-J6F1 for the FEAT-JARVIS-006
+        # repro that motivated this fix.
+        candidate = Path(cleaned)
+        if candidate.is_absolute():
+            try:
+                resolved = candidate.resolve()
+                worktree_resolved = self.worktree_path.resolve()
+                cleaned = str(
+                    resolved.relative_to(worktree_resolved)
+                ).replace("\\", "/")
+            except (ValueError, OSError):
+                # ValueError: path is absolute but lies outside the
+                # worktree — leave as-is so the downstream
+                # ``_classify_dropped_path`` flags it as fabricated.
+                # OSError: resolve() failed (broken symlink, perm
+                # denied). Same fallback: keep the original string so
+                # the gate fails open rather than silently swallowing
+                # the claim.
+                pass
+        return cleaned
 
     def _verify_completion_promises_files_exist(
         self, report: Dict[str, Any]
