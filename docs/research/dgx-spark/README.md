@@ -31,6 +31,7 @@ Logs: `/opt/llama-swap/logs/llama-swap.log`
 | Document | Purpose |
 |---|---|
 | [**RUNBOOK-v3-production-deployment.md**](./RUNBOOK-v3-production-deployment.md) | Production deployment runbook. Executed 2026-04-28, six gaps found and fixed via TASK-RUN-D6F4, two operational follow-ups resolved via TASK-OPS-7CB1/9F2A. Post-fix runbook is clean-room re-executable. |
+| [**AUTOBUILD-ON-LLAMA-SWAP-findings.md**](./AUTOBUILD-ON-LLAMA-SWAP-findings.md) | AutoBuild + llama-swap findings (2026-05-14, DDD South West demo prep). Anthropic-Messages-API compatibility, the `-np` ctx-split trap, Qwen3.6 protocol-following limit, the `/unload` safety hatch, memory-ceiling freeze postmortem, Qwen3-Coder-30B opt-in setup, Reachy/Jarvis routing topology. |
 | [**llama-swap-systemd-supervision.md**](./llama-swap-systemd-supervision.md) | User-space systemd unit with `-watch-config` for auto-reload. Replaces the orphaned nohup process. Pending: sudo cleanup of stale root unit + `loginctl enable-linger`. |
 | [**POST-VALIDATION-model-strategy-revision.md**](./POST-VALIDATION-model-strategy-revision.md) | Strategy pivot from dense 27B to MoE 35B-A3B workhorse. Explains the physics (bandwidth wall) and the decision. |
 | [**gb10-model-requirements-matrix.md**](./gb10-model-requirements-matrix.md) | Fleet-wide model consolidation analysis: 16 roles → 6 models → 4 deployed. Speed expectations for the dense 27B are superseded by the post-validation revision but the role mapping and cluster analysis remain valid. |
