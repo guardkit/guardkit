@@ -1,10 +1,14 @@
 ---
 id: TASK-HMIG-001A
 title: Define HarnessAdapter interface (guardkit-side ABC)
-status: backlog
+status: completed
 task_type: implementation
 created: 2026-05-19T20:30:00Z
-updated: 2026-05-19T20:30:00Z
+updated: 2026-05-20T12:35:00Z
+completed: 2026-05-20T12:35:00Z
+previous_state: in_review
+state_transition_reason: "Task complete — all ACs satisfied, tests passing, review approved"
+completed_location: tasks/completed/2026-05/
 priority: critical
 complexity: 3
 deadline: 2026-06-15
@@ -44,25 +48,25 @@ TASK-HMIG-006) to dispatch through either substrate based on the
 
 ## Acceptance Criteria
 
-- [ ] AC-001: New module `guardkit/orchestrator/harness/__init__.py` (re-exports
+- [x] AC-001: New module `guardkit/orchestrator/harness/__init__.py` (re-exports
       `HarnessAdapter` and `HarnessEvent`).
-- [ ] AC-002: New module `guardkit/orchestrator/harness/adapter.py` defining:
+- [x] AC-002: New module `guardkit/orchestrator/harness/adapter.py` defining:
   - `HarnessAdapter(ABC)` with abstract method
     `async def invoke(self, prompt: str, role: str, tools: list, cwd: Path, *, timeout_seconds: int) -> AsyncIterator[HarnessEvent]`
   - Properties `session_id: str | None` and `supports_resume: bool`.
-- [ ] AC-003: `HarnessEvent` dataclass / TypedDict with discriminated-union
+- [x] AC-003: `HarnessEvent` dataclass / TypedDict with discriminated-union
       shape covering at least: `assistant_message`, `tool_use`, `tool_result`,
       `result_message` (mirrors what SDK message types currently emit; see
       review §3.5 for the OUT contract).
-- [ ] AC-004: Module docstring explicitly states the cross-repo contract: the
+- [x] AC-004: Module docstring explicitly states the cross-repo contract: the
       `LangGraphHarness` lives in `guardkitfactory` and is imported by
       `agent_invoker.py` only after the cutover flag is set.
-- [ ] AC-005: Unit test at `tests/orchestrator/harness/test_adapter_interface.py`:
+- [x] AC-005: Unit test at `tests/orchestrator/harness/test_adapter_interface.py`:
   - Instantiating `HarnessAdapter` directly raises `TypeError` (it's abstract).
   - A deliberately-incomplete subclass (missing `invoke`) also raises `TypeError`.
   - A trivial fake subclass implementing `invoke` instantiates cleanly and the
     `session_id` / `supports_resume` properties return their default values.
-- [ ] AC-006: No imports from `claude_agent_sdk`, `anthropic`, or
+- [x] AC-006: No imports from `claude_agent_sdk`, `anthropic`, or
       `guardkitfactory` in this module — it's pure abstract surface.
 
 ## Implementation Notes
