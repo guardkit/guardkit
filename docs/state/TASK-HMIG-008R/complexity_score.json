@@ -1,0 +1,27 @@
+{
+  "task_id": "TASK-HMIG-008R",
+  "evaluated_at": "2026-05-21",
+  "phase": "2.7",
+  "total_score": 7,
+  "level": "high",
+  "review_mode": "FULL_REQUIRED",
+  "factors": {
+    "files_modified": 4,
+    "files_created": 4,
+    "patterns": ["evidence-bundle dataclass", "shim+delegation refactor", "primary/legacy branching via env var", "structured prompt sections with XML-like guard tags"],
+    "external_dependencies": ["guardkitfactory.bdd.plugin.BDDRunResult (TYPE_CHECKING)"],
+    "risk_indicators": [
+      "frozen-path-touch (coach_validator.py, agent_invoker.py, autobuild.py — freeze closed 2026-05-17)",
+      "load-bearing migration risk R-13 (LLM Coach too lenient)",
+      "honesty layer 1/3' wiring preservation",
+      "falsifier conflict requires explicit revision of plan §11.2 (already patched)"
+    ]
+  },
+  "force_triggers": [
+    "intensity:strict (from task frontmatter)",
+    "complexity_score>=7",
+    "frozen-path-touch tag",
+    "deadline: 2026-06-15 (FEAT-HMIG migration cutover)"
+  ],
+  "rationale": "Complexity 7 maintained from task frontmatter. Strict intensity + 7+ score = FULL_REQUIRED. Plan touches four files, three previously frozen; restores a load-bearing architectural invariant (LLM Coach primacy per Block adversarial-cooperation paper). Architectural review found three must-address items, all patched into the plan before checkpoint."
+}

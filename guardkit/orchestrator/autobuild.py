@@ -5278,14 +5278,101 @@ class AutoBuildOrchestrator:
         else:
             self._last_coach_context_status = ContextStatus(status="disabled")
 
-        # Try lightweight CoachValidator first (Option D architecture)
-        try:
-            logger.info(f"Using CoachValidator for {task_id} turn {turn}")
+        # TASK-HMIG-008R Part B (Revision 3): branch on GUARDKIT_COACH_LEGACY.
+        #
+        # Default (env var unset): LLM Coach is the primary decision-maker.
+        # CoachValidator runs gather_evidence to produce a CoachEvidenceBundle,
+        # and the LLM Coach is invoked unconditionally via
+        # self._agent_invoker.invoke_coach. The LLM Coach reads the bundle
+        # (rendered into the prompt by _build_coach_prompt in Part C) and
+        # writes coach_turn_N.json with approve/feedback.
+        #
+        # Legacy (GUARDKIT_COACH_LEGACY=1): deterministic CoachValidator is the
+        # primary decision-maker (Option D / TASK-REV-0414 behaviour). The LLM
+        # Coach is only invoked on validator exception. This is the
+        # operator-controlled emergency-revert documented in
+        # ``guardkit doctor`` and the TASK-HMIG-008R commit message.
+        #
+        # Per Phase 2.5 review finding #1, exception handling in the primary
+        # path MUST NOT fall back to validator.validate() — that would
+        # reactivate the path falsifier #1 requires to be GONE and bypass the
+        # GUARDKIT_COACH_LEGACY operator-controlled revert. Unexpected
+        # exceptions in gather_evidence are caught and surfaced as a synthetic
+        # feedback coach_turn_N.json so the turn produces a deterministic
+        # feedback decision, not silent approval and not a validator fallback.
+        legacy_mode = os.environ.get("GUARDKIT_COACH_LEGACY") == "1"
 
-            # Use the actual worktree path (supports both single-task and feature mode)
-            # In single-task mode: worktree.path = .guardkit/worktrees/TASK-001
-            # In feature mode: worktree.path = .guardkit/worktrees/FEAT-ABC
-            # CoachValidator will look for: worktree.path/.guardkit/autobuild/{task_id}/task_work_results.json
+        if legacy_mode:
+            return self._invoke_coach_legacy(
+                task_id=task_id,
+                turn=turn,
+                requirements=requirements,
+                player_report=player_report,
+                worktree=worktree,
+                acceptance_criteria=acceptance_criteria,
+                task_type=task_type,
+                skip_arch_review=skip_arch_review,
+                requires_infrastructure=requires_infrastructure,
+                consumer_context=consumer_context,
+                remaining_budget=remaining_budget,
+                wave_size=wave_size,
+                peer_changed_files=peer_changed_files,
+                context_prompt=context_prompt,
+                start_time=start_time,
+            )
+
+        return self._invoke_coach_primary(
+            task_id=task_id,
+            turn=turn,
+            requirements=requirements,
+            player_report=player_report,
+            worktree=worktree,
+            acceptance_criteria=acceptance_criteria,
+            task_type=task_type,
+            skip_arch_review=skip_arch_review,
+            requires_infrastructure=requires_infrastructure,
+            consumer_context=consumer_context,
+            remaining_budget=remaining_budget,
+            wave_size=wave_size,
+            peer_changed_files=peer_changed_files,
+            context_prompt=context_prompt,
+            start_time=start_time,
+        )
+
+    def _invoke_coach_legacy(
+        self,
+        *,
+        task_id: str,
+        turn: int,
+        requirements: str,
+        player_report: Dict[str, Any],
+        worktree: Worktree,
+        acceptance_criteria: Optional[List[str]],
+        task_type: Optional[str],
+        skip_arch_review: bool,
+        requires_infrastructure: Optional[List[str]],
+        consumer_context: Optional[list],
+        remaining_budget: Optional[float],
+        wave_size: int,
+        peer_changed_files: Optional[Dict[str, Any]],
+        context_prompt: str,
+        start_time: float,
+    ) -> AgentInvocationResult:
+        """Legacy Coach flow: CoachValidator decides, LLM Coach is exception fallback.
+
+        Pre-TASK-HMIG-008R behaviour preserved verbatim, gated on
+        ``GUARDKIT_COACH_LEGACY=1``. Used as the operator-controlled
+        emergency revert when the LLM Coach's leniency in canary surfaces a
+        regression (Wave 3 / TASK-HMIG-009).
+        """
+        import time
+        import asyncio
+
+        logger.info(
+            "Using CoachValidator (legacy, GUARDKIT_COACH_LEGACY=1) for "
+            "%s turn %s", task_id, turn,
+        )
+        try:
             coach_cfg = self._load_coach_config()
             coach_test_execution = coach_cfg.get("test_execution", "sdk")
             matching_strategy = coach_cfg.get("matching_strategy", "auto")
@@ -5296,7 +5383,7 @@ class AutoBuildOrchestrator:
                 matching_strategy=matching_strategy,
                 wave_size=wave_size,
                 turn=turn,
-                peer_changed_files=peer_changed_files,  # TASK-FIX-A7B2
+                peer_changed_files=peer_changed_files,
             )
             validation_result = validator.validate(
                 task_id=task_id,
@@ -5307,27 +5394,20 @@ class AutoBuildOrchestrator:
                     "requires_infrastructure": requires_infrastructure or [],
                     "_docker_available": validator._is_docker_available(),
                     "consumer_context": consumer_context or [],
-                    # TASK-FIX-A7B4: pass the raw task description so Coach can
-                    # inspect description-driven blocks (## Seam Tests, etc.).
                     "description": requirements or "",
                 },
                 skip_arch_review=skip_arch_review,
                 context=context_prompt if context_prompt else None,
             )
 
-            # Log context usage (TASK-GWR-002)
             if context_prompt:
                 logger.info(
                     f"[Graphiti] Coach context provided: {len(context_prompt)} chars"
                 )
 
             duration = time.time() - start_time
-
-            # Save Coach decision to file
             decision_path = validator.save_decision(validation_result)
 
-            # TASK-RFX-528E: Append command_results to Coach decision JSON
-            # for visibility in the turn artifact files.
             if player_report.get("command_results") and decision_path.exists():
                 try:
                     with open(decision_path, "r") as f:
@@ -5338,7 +5418,6 @@ class AutoBuildOrchestrator:
                 except Exception as exc:
                     logger.debug("Failed to append command_results to coach decision: %s", exc)
 
-            # Convert CoachValidationResult to AgentInvocationResult
             return AgentInvocationResult(
                 task_id=task_id,
                 turn=turn,
@@ -5351,21 +5430,14 @@ class AutoBuildOrchestrator:
 
         except Exception as e:
             logger.warning(f"CoachValidator failed, falling back to SDK: {e}")
-
-            # Fallback to SDK invocation if CoachValidator fails
             try:
-                # AgentInvoker.invoke_coach is actually synchronous despite the
-                # async def signature - it raises NotImplementedError until SDK available
-                import asyncio
-
-                # Create event loop if needed
                 try:
                     loop = asyncio.get_event_loop()
                 except RuntimeError:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
 
-                result = loop.run_until_complete(
+                return loop.run_until_complete(
                     self._agent_invoker.invoke_coach(
                         task_id=task_id,
                         turn=turn,
@@ -5374,10 +5446,8 @@ class AutoBuildOrchestrator:
                         remaining_budget=remaining_budget,
                     )
                 )
-                return result
 
             except NotImplementedError as sdk_error:
-                # SDK not yet available - expected during Phase 1a
                 logger.warning(f"Coach invocation not implemented: {sdk_error}")
                 return AgentInvocationResult(
                     task_id=task_id,
@@ -5399,6 +5469,256 @@ class AutoBuildOrchestrator:
                     duration_seconds=time.time() - start_time,
                     error=f"Unexpected error: {str(sdk_error)}",
                 )
+
+    def _invoke_coach_primary(
+        self,
+        *,
+        task_id: str,
+        turn: int,
+        requirements: str,
+        player_report: Dict[str, Any],
+        worktree: Worktree,
+        acceptance_criteria: Optional[List[str]],
+        task_type: Optional[str],
+        skip_arch_review: bool,
+        requires_infrastructure: Optional[List[str]],
+        consumer_context: Optional[list],
+        remaining_budget: Optional[float],
+        wave_size: int,
+        peer_changed_files: Optional[Dict[str, Any]],
+        context_prompt: str,
+        start_time: float,
+    ) -> AgentInvocationResult:
+        """Primary Coach flow (TASK-HMIG-008R): LLM Coach is the decision-maker.
+
+        Per the Block adversarial-cooperation paper and the Revision 3
+        architectural correction (operator-approved 2026-05-20), the LLM Coach
+        is invoked unconditionally for every turn. CoachValidator runs
+        ``gather_evidence`` to produce a structured ``CoachEvidenceBundle``
+        which Part C will render into the Coach prompt via
+        ``AgentInvoker._build_coach_prompt``.
+
+        Exception handling per plan §3 / Phase 2.5 review finding #1:
+        unexpected exceptions in ``gather_evidence`` write a synthetic
+        ``feedback`` coach_turn_N.json with rationale naming the failure.
+        The LLM Coach is NOT bypassed by a deterministic-validator fallback
+        in this path — ``GUARDKIT_COACH_LEGACY=1`` is the sole, intentional,
+        operator-controlled mechanism for reactivating ``validate()``.
+        """
+        import asyncio
+        import time
+
+        logger.info("Using LLM Coach (primary) for %s turn %s", task_id, turn)
+        if context_prompt:
+            logger.info(
+                f"[Graphiti] Coach context provided: {len(context_prompt)} chars"
+            )
+
+        coach_cfg = self._load_coach_config()
+        coach_test_execution = coach_cfg.get("test_execution", "sdk")
+        matching_strategy = coach_cfg.get("matching_strategy", "auto")
+        validator = CoachValidator(
+            str(worktree.path),
+            task_id=task_id,
+            coach_test_execution=coach_test_execution,
+            matching_strategy=matching_strategy,
+            wave_size=wave_size,
+            turn=turn,
+            peer_changed_files=peer_changed_files,
+        )
+
+        # Step 1: gather evidence bundle. Never falls back to validate() on
+        # exception; instead emits a synthetic feedback decision.
+        try:
+            evidence_bundle = validator.gather_evidence(
+                task_id=task_id,
+                turn=turn,
+                task={
+                    "acceptance_criteria": acceptance_criteria or [],
+                    "task_type": task_type,
+                    "requires_infrastructure": requires_infrastructure or [],
+                    "_docker_available": validator._is_docker_available(),
+                    "consumer_context": consumer_context or [],
+                    "description": requirements or "",
+                },
+                skip_arch_review=skip_arch_review,
+                context=context_prompt if context_prompt else None,
+            )
+        except Exception as exc:  # noqa: BLE001 — primary path must not fall back
+            logger.error(
+                "gather_evidence raised in primary Coach path for %s turn %s: %s. "
+                "Emitting synthetic feedback decision (no validate() fallback).",
+                task_id, turn, exc, exc_info=True,
+            )
+            return self._emit_synthetic_coach_feedback(
+                task_id=task_id,
+                turn=turn,
+                worktree=worktree,
+                rationale=f"Evidence gathering failed: {exc}",
+                start_time=start_time,
+            )
+
+        # Step 2: invoke LLM Coach via AgentInvoker, threading the bundle.
+        # Part C (this PR) extends invoke_coach + _build_coach_prompt to
+        # accept and render evidence_bundle; the call below tolerates Part C
+        # not yet landing by guarding the kwarg behind a signature probe.
+        try:
+            try:
+                invoke_kwargs: Dict[str, Any] = {
+                    "task_id": task_id,
+                    "turn": turn,
+                    "requirements": requirements,
+                    "player_report": player_report,
+                    "remaining_budget": remaining_budget,
+                }
+                # TASK-HMIG-008R Part B/C: pass evidence_bundle to the SDK
+                # invoker. The kwarg is consumed by Part C's extended
+                # _build_coach_prompt. If Part C has not landed yet (the
+                # SDK invoker still uses the legacy signature), drop the
+                # kwarg so the call still works — the LLM Coach will run
+                # without the structured bundle and compute honesty itself
+                # from player_report, which is the pre-HMIG-008R behaviour.
+                import inspect as _inspect
+
+                _sig = _inspect.signature(self._agent_invoker.invoke_coach)
+                if "evidence_bundle" in _sig.parameters:
+                    invoke_kwargs["evidence_bundle"] = evidence_bundle
+                if "coach_context" in _sig.parameters and context_prompt:
+                    invoke_kwargs["coach_context"] = context_prompt
+
+                return asyncio.run(self._agent_invoker.invoke_coach(**invoke_kwargs))
+            except RuntimeError as runtime_exc:
+                # asyncio.run cannot be called when an event loop is already
+                # running (e.g. in a Jupyter context or test that wraps this
+                # in its own loop). Fall through to the legacy get_event_loop
+                # pattern. The DeprecationWarning is acceptable in this rare
+                # case — Phase 2.5 review should-address #4's primary
+                # motivation is the per-turn invocation, which uses
+                # asyncio.run when possible.
+                if "asyncio.run() cannot be called" not in str(runtime_exc):
+                    raise
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                return loop.run_until_complete(
+                    self._agent_invoker.invoke_coach(**invoke_kwargs)
+                )
+
+        except NotImplementedError as sdk_error:
+            logger.warning(
+                "Coach invocation not implemented in primary path: %s. "
+                "Emitting synthetic feedback decision.",
+                sdk_error,
+            )
+            return self._emit_synthetic_coach_feedback(
+                task_id=task_id,
+                turn=turn,
+                worktree=worktree,
+                rationale=(
+                    f"LLM Coach invocation not available "
+                    f"(SDK integration pending): {sdk_error}. "
+                    f"Set GUARDKIT_COACH_LEGACY=1 to use the deterministic "
+                    f"CoachValidator path."
+                ),
+                start_time=start_time,
+            )
+        except Exception as sdk_error:  # noqa: BLE001 — surface as feedback, not fallback
+            logger.error(
+                "Coach invocation failed in primary path: %s. Emitting "
+                "synthetic feedback decision.",
+                sdk_error, exc_info=True,
+            )
+            return self._emit_synthetic_coach_feedback(
+                task_id=task_id,
+                turn=turn,
+                worktree=worktree,
+                rationale=f"LLM Coach invocation failed: {sdk_error}",
+                start_time=start_time,
+            )
+
+    def _emit_synthetic_coach_feedback(
+        self,
+        *,
+        task_id: str,
+        turn: int,
+        worktree: Worktree,
+        rationale: str,
+        start_time: float,
+    ) -> AgentInvocationResult:
+        """Write a synthetic feedback coach_turn_N.json and return its result.
+
+        Used by the primary Coach flow (``_invoke_coach_primary``) when
+        ``gather_evidence`` or ``AgentInvoker.invoke_coach`` raises an
+        unexpected exception. Per Phase 2.5 review finding #1 and plan §3,
+        the primary path MUST NOT fall back to ``CoachValidator.validate()`` —
+        falsifier #1 ("the path autobuild._invoke_coach -> CoachValidator.validate()
+        for the decision is GONE") requires that the validator never silently
+        re-becomes the decision-maker on exception. ``GUARDKIT_COACH_LEGACY=1``
+        remains the sole, intentional, operator-controlled revert.
+
+        The synthetic decision schema mirrors ``CoachValidationResult.to_dict``
+        closely enough that downstream consumers (autobuild's
+        ``_display_criteria_progress``, ``_count_criteria_passed``) see a
+        consistent shape: ``decision: "feedback"``, populated rationale,
+        empty ``criteria_verification`` (no AC evaluation occurred).
+        """
+        import time
+
+        duration = time.time() - start_time
+        decision_dir = worktree.path / ".guardkit" / "autobuild" / task_id
+        decision_dir.mkdir(parents=True, exist_ok=True)
+        decision_path = decision_dir / f"coach_turn_{turn}.json"
+
+        synthetic = {
+            "task_id": task_id,
+            "turn": turn,
+            "decision": "feedback",
+            "validation_results": {
+                "quality_gates": None,
+                "independent_tests": None,
+                "requirements": None,
+            },
+            "criteria_verification": [],
+            "acceptance_criteria_verification": {"criteria_results": []},
+            "issues": [
+                {
+                    "severity": "must_fix",
+                    "category": "coach_primary_exception",
+                    "description": rationale,
+                }
+            ],
+            "rationale": rationale,
+            "context_used": None,
+            "approved_without_independent_tests": False,
+            "is_configuration_error": False,
+            "environment_conditional_approval": False,
+            "honesty_verification": None,
+            "coach_primary_synthetic_feedback": True,
+        }
+        try:
+            with open(decision_path, "w") as f:
+                json.dump(synthetic, f, indent=2)
+            logger.info(
+                "Wrote synthetic feedback decision to %s (rationale: %s)",
+                decision_path, rationale,
+            )
+        except OSError as write_exc:
+            logger.error(
+                "Failed to write synthetic feedback decision to %s: %s",
+                decision_path, write_exc,
+            )
+
+        return AgentInvocationResult(
+            task_id=task_id,
+            turn=turn,
+            agent_type="coach",
+            success=True,
+            report=synthetic,
+            duration_seconds=duration,
+            error=None,
+        )
 
     def _load_coach_config(self) -> Dict[str, Any]:
         """

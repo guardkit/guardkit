@@ -47,6 +47,9 @@ from guardkit.orchestrator.coach_verification import (
     CoachVerifier,
     HonestyVerification,
 )
+from guardkit.orchestrator.quality_gates.coach_evidence import (
+    CoachEvidenceBundle,
+)
 from guardkit.orchestrator.docker_fixtures import (
     get_container_name,
     get_env_exports,
@@ -1610,6 +1613,499 @@ class CoachValidator:
             environment_conditional_approval=environment_conditional_approval,
             honesty_verification=honesty_verification,
         )
+
+    def gather_evidence(
+        self,
+        task_id: str,
+        turn: int,
+        task: Dict[str, Any],
+        skip_arch_review: bool = False,
+        context: Optional[str] = None,
+    ) -> CoachEvidenceBundle:
+        """Gather structured evidence for the LLM Coach (TASK-HMIG-008R Part A).
+
+        Runs the same deterministic gathering pipeline the legacy
+        ``validate()`` method uses internally, but packages the results into a
+        :class:`CoachEvidenceBundle` instead of applying decision logic. The
+        LLM Coach reads this bundle (rendered as JSON into the Coach prompt by
+        ``_build_coach_prompt``) plus the honesty result and makes the final
+        approve/feedback decision per the Block adversarial-cooperation paper.
+
+        The pipeline aborts early under three conditions, leaving downstream
+        fields as ``None`` and setting ``bundle.gathering_status`` so the
+        Coach's absence-of-failure guards know to treat the ``None`` fields
+        as ABSENT SIGNAL:
+
+        * Pre-evidence error (invalid task type, missing task_work_results,
+          or an unexpected exception in a gathering helper) →
+          ``"partial_exception"`` with a human-readable cause in
+          ``bundle.gathering_error``.
+        * Honesty verification produced ``must_fix`` discrepancies →
+          ``"partial_honesty_abort"``. Gates and independent tests are not
+          run because the legacy decision tree would have short-circuited
+          here too — the LLM Coach reaches the same conclusion by reading
+          ``bundle.honesty.discrepancies``.
+        * Quality gates failed → ``"partial_gate_abort"``. Independent
+          tests / requirements validation are not run. The LLM Coach
+          reaches a feedback decision by reading ``bundle.quality_gates``.
+
+        Per the Phase 2.5 architectural review and §3 "Exception handling
+        for gather_evidence" in the implementation plan, this method MUST
+        NOT raise to its caller. Wrapping inner helper exceptions in a
+        ``partial_exception`` bundle prevents an exception fallback to
+        ``validate()`` from re-activating the primary decision path that
+        falsifier #1 ("CoachValidator.validate() for the decision is GONE")
+        requires to be gone. ``GUARDKIT_COACH_LEGACY=1`` remains the sole
+        operator-controlled mechanism for re-activating ``validate()``.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., ``"TASK-001"``). Used to read
+            ``task_work_results.json`` from the standard autobuild path and
+            to wire state-bridge identity resolution into the honesty
+            verifier (TASK-FIX-1B4A Layer 1).
+        turn : int
+            Current turn number (1-based). Passed to
+            ``validate_requirements`` and ``run_independent_tests``.
+        task : Dict[str, Any]
+            Task data dict. Must contain ``acceptance_criteria`` and may
+            contain ``task_type``, ``requires_infrastructure``,
+            ``_docker_available``, ``consumer_context``, ``description``.
+        skip_arch_review : bool, optional
+            If ``True``, the architectural-review gate is skipped regardless
+            of the profile setting. Used for ``--implement-only`` mode where
+            Phase 2.5B did not run. Default: ``False``.
+        context : Optional[str], optional
+            Optional Graphiti / coach context string. Not currently consumed
+            by gather_evidence itself; threaded through for symmetry with
+            ``validate()``'s signature so the legacy shim (when AC-003 is
+            completed in a follow-up) can pass it forward.
+
+        Returns
+        -------
+        CoachEvidenceBundle
+            Populated evidence bundle. Always returned; never raises.
+        """
+        default_honest = HonestyVerification(verified=True)
+
+        # ------------------------------------------------------------------
+        # Pre-evidence: resolve task type. Mirrors validate() lines 821-838.
+        # ------------------------------------------------------------------
+        try:
+            task_type = self._resolve_task_type(task)
+        except ValueError as exc:
+            logger.error(
+                "gather_evidence: failed to resolve task type: %s", exc
+            )
+            return CoachEvidenceBundle(
+                honesty=default_honest,
+                gathering_status="partial_exception",
+                gathering_error=f"invalid_task_type: {exc}",
+            )
+
+        try:
+            profile = get_profile(task_type)
+        except Exception as exc:  # noqa: BLE001 — defensive; get_profile is total
+            logger.error(
+                "gather_evidence: failed to load profile for %s: %s",
+                task_type, exc,
+            )
+            return CoachEvidenceBundle(
+                honesty=default_honest,
+                gathering_status="partial_exception",
+                gathering_error=f"missing_profile: {exc}",
+                task_type=task_type.value,
+            )
+
+        profile_name = getattr(profile, "name", None) or task_type.value
+
+        # OPERATOR_HANDOFF: no evidence to gather. The legacy validate() returns
+        # decision="deferred" here; gather_evidence reports a clean status so
+        # the LLM Coach prompt sees an empty bundle with the task_type marker.
+        # The Part B / Part C wiring is responsible for short-circuiting the
+        # Coach invocation for operator-handoff tasks at the autobuild layer
+        # (the same place the legacy validate() returned deferred).
+        if task_type == TaskType.OPERATOR_HANDOFF:
+            logger.info(
+                "gather_evidence: skipping evidence collection for "
+                "operator_handoff task %s (runtime verification deferred to "
+                "operator)", task_id,
+            )
+            return CoachEvidenceBundle(
+                honesty=default_honest,
+                gathering_status="complete",
+                task_type=task_type.value,
+                profile_name=profile_name,
+            )
+
+        # ------------------------------------------------------------------
+        # Pre-evidence: read task_work_results. Mirrors validate() lines 875-895.
+        # ------------------------------------------------------------------
+        task_work_results = self.read_quality_gate_results(task_id)
+        if "error" in task_work_results:
+            logger.warning(
+                "gather_evidence: task-work results missing for %s: %s",
+                task_id, task_work_results.get("error", "unknown"),
+            )
+            return CoachEvidenceBundle(
+                honesty=default_honest,
+                gathering_status="partial_exception",
+                gathering_error=(
+                    f"missing_results: {task_work_results.get('error', 'unknown')}"
+                ),
+                task_type=task_type.value,
+                profile_name=profile_name,
+            )
+
+        # ------------------------------------------------------------------
+        # 1. Honesty verification. Mirrors validate() lines 918-952.
+        # ------------------------------------------------------------------
+        try:
+            honesty = self._verify_honesty(task_work_results)
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "gather_evidence: _verify_honesty raised unexpectedly: %s", exc,
+            )
+            return CoachEvidenceBundle(
+                honesty=default_honest,
+                gathering_status="partial_exception",
+                gathering_error=f"honesty_exception: {exc}",
+                task_type=task_type.value,
+                profile_name=profile_name,
+            )
+
+        honesty_issues = self._honesty_issues_from(honesty)
+        honesty_must_fix = [
+            i for i in honesty_issues if i["severity"] == "must_fix"
+        ]
+        honesty_should_fix = [
+            i for i in honesty_issues if i["severity"] == "should_fix"
+        ]
+
+        # Layer-2 demotion hint for the LLM Coach. Mirrors the structural
+        # condition inside _honesty_issues_from (lines 5456-5460): a single
+        # critical file_existence discrepancy that was Layer-1-resolved (via
+        # state_bridge.canonical_path_for) is demoted from must_fix to
+        # should_fix. Surface that hint structurally so the LLM Coach can
+        # apply absence-of-failure guard #4 without re-deriving the demotion.
+        severity_recommendations: List[Dict[str, str]] = []
+        critical_discrepancies = [
+            d for d in honesty.discrepancies if d.severity == "critical"
+        ]
+        non_audit_critical = [
+            d for d in critical_discrepancies
+            if d.claim_type != "claim_audit"
+        ]
+        if (
+            len(non_audit_critical) == 1
+            and non_audit_critical[0].claim_type == "file_existence"
+        ):
+            severity_recommendations.append({
+                "recommendation": (
+                    "A single file_existence discrepancy was suppressed by "
+                    "Layer-1 identity resolution (state_bridge "
+                    "canonical_path_for). Treat as should_fix, not must_fix. "
+                    "Continue AC evaluation."
+                ),
+                "rule": (
+                    "path-string-mismatch-is-not-dishonesty "
+                    "(Layer 2 demotion)"
+                ),
+            })
+
+        # Advisory issues: agent-invocations advisory (F3c) + Layer-2 honesty
+        # should_fix issues. Both ride along with the final decision (approve
+        # or feedback) and are surfaced to the Player so process observations
+        # remain visible. Pre-computed here so the LLM Coach can read them
+        # without re-deriving from raw fields.
+        advisory_issues: List[Dict[str, Any]] = []
+        agent_invocations_advisory = (
+            self._compute_agent_invocations_advisory(task_work_results)
+        )
+        if agent_invocations_advisory is not None:
+            advisory_issues.append(agent_invocations_advisory)
+        advisory_issues.extend(honesty_should_fix)
+
+        # Honesty short-circuit: don't run downstream gathering. Legacy
+        # validate() also short-circuits here.
+        if honesty_must_fix:
+            logger.warning(
+                "gather_evidence: honesty produced %d must_fix issue(s) "
+                "for %s; downstream gathering skipped.",
+                len(honesty_must_fix), task_id,
+            )
+            return CoachEvidenceBundle(
+                honesty=honesty,
+                gathering_status="partial_honesty_abort",
+                severity_recommendations=severity_recommendations,
+                advisory_issues=advisory_issues,
+                task_type=task_type.value,
+                profile_name=profile_name,
+            )
+
+        # ------------------------------------------------------------------
+        # 2. Quality gates. Mirrors validate() lines 1130-1132.
+        # ------------------------------------------------------------------
+        try:
+            gates = self.verify_quality_gates(
+                task_work_results,
+                profile=profile,
+                skip_arch_review=skip_arch_review,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "gather_evidence: verify_quality_gates raised: %s", exc,
+            )
+            return CoachEvidenceBundle(
+                honesty=honesty,
+                gathering_status="partial_exception",
+                gathering_error=f"quality_gates_exception: {exc}",
+                severity_recommendations=severity_recommendations,
+                advisory_issues=advisory_issues,
+                task_type=task_type.value,
+                profile_name=profile_name,
+            )
+
+        # Build the evidence dict slices the LLM Coach reads.
+        quality_gates_raw = task_work_results.get("quality_gates")
+        if not isinstance(quality_gates_raw, dict):
+            quality_gates_raw = {}
+
+        coverage_details: Dict[str, Any] = {
+            "coverage_met": quality_gates_raw.get("coverage_met"),
+            "line_coverage": quality_gates_raw.get("line_coverage"),
+            "branch_coverage": quality_gates_raw.get("branch_coverage"),
+            "line_threshold": quality_gates_raw.get("line_threshold"),
+            "branch_threshold": quality_gates_raw.get("branch_threshold"),
+            "coverage_required": gates.coverage_required,
+        }
+
+        tests_dict: Dict[str, Any] = {
+            "tests_passed": gates.tests_passed,
+            "tests_required": gates.tests_required,
+            "tests_run": quality_gates_raw.get("tests_run"),
+            "tests_failed": quality_gates_raw.get("tests_failed"),
+            "all_passed": quality_gates_raw.get("all_passed"),
+            "requires_infrastructure": task.get("requires_infrastructure"),
+        }
+
+        plan_audit_raw = task_work_results.get("plan_audit")
+        plan_audit_dict: Optional[Dict[str, Any]] = (
+            plan_audit_raw if isinstance(plan_audit_raw, dict) else None
+        )
+
+        code_review_raw = task_work_results.get("code_review")
+        arch_review_dict: Optional[Dict[str, Any]] = None
+        if isinstance(code_review_raw, dict):
+            arch_review_dict = {
+                "score": code_review_raw.get("score"),
+                "threshold": getattr(profile, "arch_review_threshold", 60),
+                "passed": gates.arch_review_passed,
+                "required": gates.arch_review_required,
+            }
+            # Surface any sub-scores the producer wrote (solid/dry/yagni).
+            for sub in ("solid_score", "dry_score", "yagni_score"):
+                if sub in code_review_raw:
+                    arch_review_dict[sub] = code_review_raw[sub]
+
+        bdd_raw = task_work_results.get("bdd_results")
+        bdd_dict: Optional[Dict[str, Any]] = (
+            bdd_raw if isinstance(bdd_raw, dict) else None
+        )
+
+        # Quality-gate-failure short-circuit. Legacy validate() also
+        # short-circuits here via _feedback_from_gates.
+        if not gates.all_gates_passed:
+            logger.info(
+                "gather_evidence: quality gates failed for %s; downstream "
+                "(requirements, independent tests) skipped.", task_id,
+            )
+            return CoachEvidenceBundle(
+                honesty=honesty,
+                gathering_status="partial_gate_abort",
+                quality_gates=gates,
+                coverage_details=coverage_details,
+                plan_audit=plan_audit_dict,
+                bdd=bdd_dict,
+                arch_review=arch_review_dict,
+                tests=tests_dict,
+                severity_recommendations=severity_recommendations,
+                advisory_issues=advisory_issues,
+                task_type=task_type.value,
+                profile_name=profile_name,
+            )
+
+        # ------------------------------------------------------------------
+        # 3. Requirements validation. Mirrors validate() line 1139.
+        # Hoisted ahead of independent-test in the legacy path; preserved
+        # here for the same reason — cheaper, idempotent.
+        # ------------------------------------------------------------------
+        try:
+            requirements = self.validate_requirements(
+                task, task_work_results, turn=turn
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "gather_evidence: validate_requirements raised: %s", exc,
+            )
+            return CoachEvidenceBundle(
+                honesty=honesty,
+                gathering_status="partial_exception",
+                gathering_error=f"requirements_exception: {exc}",
+                quality_gates=gates,
+                coverage_details=coverage_details,
+                plan_audit=plan_audit_dict,
+                bdd=bdd_dict,
+                arch_review=arch_review_dict,
+                tests=tests_dict,
+                severity_recommendations=severity_recommendations,
+                advisory_issues=advisory_issues,
+                task_type=task_type.value,
+                profile_name=profile_name,
+            )
+
+        # ------------------------------------------------------------------
+        # 4. Independent tests. Mirrors validate() lines 1156-1175.
+        # ------------------------------------------------------------------
+        if not profile.tests_required:
+            test_result: IndependentTestResult = IndependentTestResult(
+                tests_passed=True,
+                test_command="skipped",
+                test_output_summary=(
+                    f"Independent test verification skipped "
+                    f"(tests not required for {task_type.value} tasks)"
+                ),
+                duration_seconds=0.0,
+            )
+            logger.info(
+                "gather_evidence: independent test verification skipped for "
+                "%s (tests not required for %s tasks)",
+                task_id, task_type.value,
+            )
+        else:
+            try:
+                test_result = self.run_independent_tests(
+                    task_work_results=task_work_results,
+                    task=task,
+                    turn=turn,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "gather_evidence: run_independent_tests raised: %s", exc,
+                )
+                return CoachEvidenceBundle(
+                    honesty=honesty,
+                    gathering_status="partial_exception",
+                    gathering_error=f"independent_tests_exception: {exc}",
+                    quality_gates=gates,
+                    coverage_details=coverage_details,
+                    plan_audit=plan_audit_dict,
+                    bdd=bdd_dict,
+                    arch_review=arch_review_dict,
+                    tests=tests_dict,
+                    requirements=requirements,
+                    severity_recommendations=severity_recommendations,
+                    advisory_issues=advisory_issues,
+                    task_type=task_type.value,
+                    profile_name=profile_name,
+                )
+
+        return CoachEvidenceBundle(
+            honesty=honesty,
+            gathering_status="complete",
+            quality_gates=gates,
+            coverage_details=coverage_details,
+            plan_audit=plan_audit_dict,
+            bdd=bdd_dict,
+            arch_review=arch_review_dict,
+            tests=tests_dict,
+            independent_tests=test_result,
+            requirements=requirements,
+            severity_recommendations=severity_recommendations,
+            advisory_issues=advisory_issues,
+            task_type=task_type.value,
+            profile_name=profile_name,
+        )
+
+    def _compute_agent_invocations_advisory(
+        self, task_work_results: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """Compute the non-blocking agent-invocations advisory issue.
+
+        Extracted from ``validate()`` lines 1028-1126 (TASK-FIX-RWOP1.3.1 /
+        TASK-REV-F6E1 F3c) for reuse by ``gather_evidence()`` (TASK-HMIG-008R
+        Part A). Returns ``None`` when no advisory is needed.
+
+        The logic mirrors the inline computation in ``validate()``: a
+        ``"violation"`` status in ``task_work_results['agent_invocations_validation']``
+        produces a ``severity == "warning"`` advisory naming the missing
+        phases and recommending stack-specific specialists. ``"passed"``,
+        ``"validator_error"``, and ``"no_data"`` statuses are not advised
+        on — they ride through without comment.
+        """
+        agent_invocations_validation = task_work_results.get(
+            "agent_invocations_validation"
+        )
+        if not (
+            isinstance(agent_invocations_validation, dict)
+            and agent_invocations_validation.get("status") == "violation"
+        ):
+            return None
+
+        raw_missing = agent_invocations_validation.get("missing_phases") or []
+        missing_phases: List[str] = []
+        if raw_missing and isinstance(raw_missing[0], dict):
+            missing_phases = [
+                str(m.get("phase", ""))
+                for m in raw_missing
+                if m.get("phase")
+            ]
+        else:
+            missing_phases = [str(m) for m in raw_missing]
+        missing_phases_sorted = sorted(missing_phases)
+        missing_phases_with_names = ", ".join(
+            f"{p} ({PHASE_DESCRIPTIONS.get(p, 'Unknown')})"
+            for p in missing_phases_sorted
+        ) if missing_phases_sorted else "unknown"
+
+        stack_template = detect_stack_template(self.worktree_path)
+        specialist_lines = render_missing_phase_list(
+            missing_phases_sorted,
+            stack_template=stack_template,
+            workspace_root=self.worktree_path,
+        )
+        specialist_block = "\n".join(
+            f"- {line}" for line in specialist_lines
+        )
+
+        expected_phases_val = agent_invocations_validation.get("expected_phases")
+        actual_invocations_val = agent_invocations_validation.get("actual_invocations")
+        expected_str = (
+            str(expected_phases_val) if expected_phases_val is not None else "?"
+        )
+        actual_str = (
+            str(actual_invocations_val)
+            if actual_invocations_val is not None
+            else "?"
+        )
+
+        return {
+            "severity": "warning",
+            "category": "agent_invocations_advisory",
+            "description": (
+                f"Advisory (non-blocking): task-work produced a report with "
+                f"{actual_str} of {expected_str} expected agent invocations. "
+                f"Missing phases: {missing_phases_with_names}. "
+                f"Consider invoking these agents via the Task tool to "
+                f"strengthen stack-specific quality:\n{specialist_block}"
+            ),
+            "details": {
+                "missing_phases": missing_phases_sorted,
+                "expected_phases": expected_phases_val,
+                "actual_invocations": actual_invocations_val,
+            },
+        }
 
     def read_quality_gate_results(self, task_id: str) -> Dict[str, Any]:
         """

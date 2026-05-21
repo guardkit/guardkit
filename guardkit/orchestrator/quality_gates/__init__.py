@@ -37,6 +37,10 @@ Example:
 
 from guardkit.orchestrator.quality_gates.pre_loop import PreLoopQualityGates
 from guardkit.orchestrator.quality_gates.task_work_interface import TaskWorkInterface
+from guardkit.orchestrator.quality_gates.coach_evidence import (
+    CoachEvidenceBundle,
+    GatheringStatus,
+)
 from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
     CoachValidationResult,
@@ -85,6 +89,9 @@ __all__ = [
     "QualityGateStatus",
     "IndependentTestResult",
     "RequirementsValidation",
+    # Coach evidence bundle (TASK-HMIG-008R Revision 3)
+    "CoachEvidenceBundle",
+    "GatheringStatus",
     # Security checker
     "SecurityChecker",
     "SecurityFinding",
