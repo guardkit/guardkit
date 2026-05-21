@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 from guardkit.cli.doctor import (
+    ActiveHarnessCheck,
     CLIToolCheck,
     Check,
     CheckResult,
@@ -1021,3 +1022,69 @@ class TestDoctorIntegration:
 
         # Exit code 0 means all required checks passed
         # Exit code 1 means some required checks failed
+
+
+# ============================================================================
+# ActiveHarnessCheck Tests (TASK-HMIG-006 AC-006)
+# ============================================================================
+
+
+class TestActiveHarnessCheck:
+    """Test ActiveHarnessCheck reports the active GUARDKIT_HARNESS substrate."""
+
+    def test_sdk_default_when_env_unset(self, monkeypatch):
+        """Default (no env var) reports sdk substrate."""
+        monkeypatch.delenv("GUARDKIT_HARNESS", raising=False)
+        result = ActiveHarnessCheck().run()
+
+        assert result.status == CheckStatus.PASS
+        assert "sdk" in result.message.lower()
+        assert result.required is False
+
+    def test_sdk_explicit(self, monkeypatch):
+        """Explicit GUARDKIT_HARNESS=sdk reports sdk substrate."""
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+        result = ActiveHarnessCheck().run()
+
+        assert result.status == CheckStatus.PASS
+        assert "sdk" in result.message.lower()
+
+    def test_langgraph_with_guardkitfactory_importable(self, monkeypatch):
+        """GUARDKIT_HARNESS=langgraph reports the guardkitfactory version."""
+        monkeypatch.setenv("GUARDKIT_HARNESS", "langgraph")
+        result = ActiveHarnessCheck().run()
+
+        # guardkitfactory is editable-installed in this venv (Phase 3a setup)
+        assert result.status == CheckStatus.PASS
+        assert "langgraph" in result.message
+        assert "guardkitfactory" in result.message
+
+    def test_langgraph_without_guardkitfactory(self, monkeypatch):
+        """GUARDKIT_HARNESS=langgraph + missing guardkitfactory reports FAIL."""
+        monkeypatch.setenv("GUARDKIT_HARNESS", "langgraph")
+        # Force the import to fail by setting the module slot to None so
+        # subsequent imports raise ImportError.
+        monkeypatch.setitem(sys.modules, "guardkitfactory", None)
+
+        result = ActiveHarnessCheck().run()
+
+        assert result.status == CheckStatus.FAIL
+        assert "not importable" in result.message
+        assert result.details is not None
+
+    def test_unknown_value_warns(self, monkeypatch):
+        """Unknown GUARDKIT_HARNESS value surfaces as WARNING."""
+        monkeypatch.setenv("GUARDKIT_HARNESS", "deepagents")
+        result = ActiveHarnessCheck().run()
+
+        assert result.status == CheckStatus.WARNING
+        assert "deepagents" in result.message
+        assert "sdk|langgraph" in result.message
+
+    def test_value_case_insensitive(self, monkeypatch):
+        """GUARDKIT_HARNESS comparison is case-insensitive (matches selector)."""
+        monkeypatch.setenv("GUARDKIT_HARNESS", "SDK")
+        result = ActiveHarnessCheck().run()
+
+        assert result.status == CheckStatus.PASS
+        assert "sdk" in result.message.lower()

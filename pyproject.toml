@@ -44,6 +44,11 @@ autobuild = [
     # (TASK-FIX-7A01 / TASK-REV-E4F5 F1). Upper bound <0.2 reflects upstream's
     # 0.1.x series as the stable surface; re-audit before bumping past 0.2.
     "claude-agent-sdk>=0.1.49,<0.2",
+    # TASK-HMIG-006 AC-005: cross-repo dispatch through the
+    # HarnessAdapter substrate seam. Resolved from a sibling repo in
+    # operator-side dev via [tool.uv.sources] below; end-user installs
+    # pick up whichever release matches the version contract.
+    "guardkitfactory>=0.1,<1",
 ]
 # FalkorDB graph store backend (alternative to Neo4j)
 # Installs graphiti-core with FalkorDB support
@@ -69,6 +74,7 @@ dev = [
 ]
 all = [
     "claude-agent-sdk>=0.1.49,<0.2",
+    "guardkitfactory>=0.1,<1",
     "graphiti-core[falkordb] @ git+https://github.com/guardkit/graphiti.git@v0.29.5-guardkit.1",
     "graphiti-core[google-genai] @ git+https://github.com/guardkit/graphiti.git@v0.29.5-guardkit.1",
     "pytest>=7.4.3",
@@ -78,6 +84,16 @@ all = [
     "pytest-bdd>=8.1,<9",
     "httpx>=0.25.1",
 ]
+
+[tool.uv.sources]
+# TASK-HMIG-006 D-5: sibling-repo editable resolution for the unpublished
+# guardkitfactory package. Matches the jarvis / specialist-agent fleet
+# convention for nats-core. Operator-side dev runs
+# `uv sync --extra autobuild` (or `pip install -e ../guardkitfactory`) to
+# pick up the editable install. End users on PyPI get the version-pinned
+# release once guardkitfactory ships there; until then, the [tool.uv.sources]
+# block is the resolution path. See docs/guides/portfolio-python-pinning.md.
+guardkitfactory = { path = "../guardkitfactory", editable = true }
 
 [project.scripts]
 guardkit-py = "guardkit.cli.main:main"

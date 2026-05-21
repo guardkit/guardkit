@@ -53,6 +53,21 @@ from guardkit.orchestrator.schemas import (
     VerificationResult,
 )
 
+# TASK-HMIG-006 Phase 3b: HarnessAdapter substrate seam.
+# Pure-Python, SDK-free imports — the concrete ClaudeSDKHarness lazily
+# imports claude_agent_sdk inside its own invoke() (matches existing
+# test-fixture behaviour at tests/orchestrator/instrumentation/
+# test_llm_call_events.py which patches sys.modules["claude_agent_sdk"]).
+# See Design Decision D-3: orchestrator-side concerns (heartbeat,
+# cancel monitor, sdk_debug, llm.call event) stay inline.
+from guardkit.orchestrator.harness import (
+    AssistantMessageEvent,
+    ResultMessageEvent,
+    ToolResultEvent,
+    ToolUseEvent,
+    select_harness,
+)
+
 # TASK-FIX-RWOP1.3.1: Agent-invocations validation on the producer path.
 # task-work.md Step 6.5 declares validate_agent_invocations as "the ONLY
 # checkpoint that prevents false reporting". Folding it into
@@ -2395,125 +2410,115 @@ Follow the decision format specified in your agent definition.
             AgentInvocationError: If SDK invocation fails
             SDKTimeoutError: If invocation exceeds timeout
         """
-        try:
-            from claude_agent_sdk import (
-                query,
-                ClaudeAgentOptions,
-                CLINotFoundError,
-                ProcessError,
-                CLIJSONDecodeError,
-                AssistantMessage,
-                ResultMessage,
-            )
-        except ImportError as e:
-            import sys
-            diagnosis = (
-                f"Claude Agent SDK import failed.\n"
-                f"  Error: {e}\n"
-                f"  Python: {sys.executable}\n"
-                f"  sys.path (first 3): {sys.path[:3]}\n\n"
-                f"To fix:\n"
-                f"  pip install claude-agent-sdk\n"
-                f"  # OR for full autobuild support:\n"
-                f"  pip install guardkit-py[autobuild]"
-            )
-            raise AgentInvocationError(diagnosis) from e
-
-        # TASK-FIX-7A03: MessageParseError is raised by the SDK's internal
-        # parser (claude_agent_sdk/_internal/message_parser.py) when it hits
-        # a message type it doesn't recognise (e.g. rate_limit_event on a
-        # newer API than the installed SDK knows about). The class is in
-        # the private _errors module because it is not part of
-        # claude_agent_sdk.__all__. Separate import with graceful fallback
-        # so test fixtures that mock claude_agent_sdk as a non-package
-        # MagicMock (and thus cannot resolve _errors submodule imports) do
-        # not crash unrelated tests. In the production deployment path the
-        # real SDK resolves this import and the fallback sentinel is dead
-        # code.
-        try:
-            from claude_agent_sdk._errors import MessageParseError
-        except ImportError:
-            class MessageParseError(Exception):  # type: ignore[no-redef]
-                """Sentinel when SDK does not expose _errors submodule."""
-                pass
-
+        # TASK-HMIG-006 Phase 3b: dispatch through HarnessAdapter. The
+        # harness owns SDK lazy-import, ClaudeAgentOptions construction,
+        # message-stream translation, parse resilience (TASK-FIX-7A03),
+        # session_id capture (TASK-RFX-B20B), and generator hygiene
+        # (TASK-RFX-8332 / TASK-FIX-GEN1). Per Design Decision D-3,
+        # orchestrator-side concerns (heartbeat, cancel monitor,
+        # measure_latency, sdk_debug, llm.call event) stay inline. Per
+        # D-4, the harness normalises all SDK-specific exceptions
+        # (CLINotFoundError / ProcessError / CLIJSONDecodeError /
+        # harness-internal ValueError) to AgentInvocationError before
+        # they reach this caller.
         from guardkit.orchestrator.sdk_utils import check_assistant_message_error
 
-        # TASK-INST-005b: Instrumentation state for event emission
+        # TASK-INST-005b: Instrumentation state for event emission. The
+        # response_messages list is populated from event.raw per Design
+        # Decision D-1 so downstream consumers (_emit_llm_call_event
+        # token extraction, cancelled-error session_id rescan,
+        # _extract_partial_from_messages) keep working unchanged.
         call_status: str = "ok"
         call_error: Optional[Exception] = None
         response_messages: List[Any] = []
 
+        # Extract task_id from prompt for heartbeat logging (substrate-
+        # agnostic — the harness does not need it).
+        task_id_match = re.search(r"TASK-[A-Z0-9-]+", prompt)
+        heartbeat_task_id = task_id_match.group(0) if task_id_match else "unknown"
+
+        # TASK-DIAG-F4A2: Preserve rendered prompt under sdk_debug/
+        # turn_<n>/[coach/] when GUARDKIT_AUTOBUILD_PRESERVE_DEBUG is set.
+        # Helper is a no-op otherwise. Substrate-agnostic — operates on
+        # whatever the orchestrator constructs.
+        from guardkit.orchestrator.sdk_debug import (
+            preserve_prompt as _sdk_preserve_prompt,
+        )
+        _debug_task_id = task_id or heartbeat_task_id
+        _debug_turn = turn if turn is not None else 1
+        _debug_role = "coach" if agent_type == "coach" else "player"
+        # NB: the rendered SDK options object is not available outside
+        # the harness; pass `None` here for the options snapshot. The
+        # prompt + per-event JSONL still preserve enough context to
+        # diagnose SDK stalls (TASK-DIAG-F4A2 acceptance criteria).
+        _sdk_debug_dir = _sdk_preserve_prompt(
+            workspace_root=self.worktree_path,
+            task_id=_debug_task_id,
+            turn=_debug_turn,
+            role=_debug_role,
+            prompt=prompt,
+            options=None,
+        )
+
+        # TASK-FIX-ASPF-004: Monitor cancellation event and kill SDK
+        # subprocess when the feature-level timeout fires. The kill path
+        # is SDK-subprocess specific but the polling logic itself is
+        # substrate-agnostic (D-3).
+        async def _cancel_monitor() -> None:
+            """Poll cancellation event and kill subprocess if set."""
+            while True:
+                await asyncio.sleep(2)
+                if self._cancellation_event and self._cancellation_event.is_set():
+                    logger.info(
+                        f"TASK-FIX-ASPF-004: Cancellation event detected during "
+                        f"{agent_type} invocation, terminating SDK subprocess"
+                    )
+                    self._kill_child_claude_processes()
+                    return
+
+        monitor: Optional[asyncio.Task] = None
+        if self._cancellation_event:
+            monitor = asyncio.create_task(_cancel_monitor())
+
         try:
-            options_kwargs = dict(
-                cwd=str(self.worktree_path),
+            # Construct the harness. select_harness() routes via
+            # GUARDKIT_HARNESS env var (default "sdk"). Per Design Decision
+            # D-6, harness instances are single-use per invocation — the
+            # cleanup-handler installer is invoked inside the harness's
+            # invoke() against the running event loop.
+            harness = select_harness(
+                sdk_timeout_seconds=self.sdk_timeout_seconds,
                 allowed_tools=allowed_tools,
                 permission_mode=permission_mode,
                 # TASK-REV-C4D7: Direct mode also needs ~50 internal turns
                 # (same as task-work delegation path fixed in TASK-REV-BB80)
                 # TASK-FIX-7718: Use effective turns (auto-reduced for local backends)
                 max_turns=self._effective_sdk_max_turns,
-                setting_sources=["project"],  # Load CLAUDE.md from worktree
+                model=model,
+                resume_session_id=resume_session_id,
+                sdk_debug_dir=_sdk_debug_dir,
+                cleanup_handler_installer=_install_sdk_cleanup_handler,
             )
-            if model is not None:
-                options_kwargs["model"] = model
-            # TASK-RFX-B20B: Resume from prior session if session_id provided
-            if resume_session_id is not None:
-                options_kwargs["resume"] = resume_session_id
-                logger.info(
-                    f"Resuming SDK session: {resume_session_id[:16]}..."
+
+            # TASK-HMIG-006 AC-007: surface the resume-intent drop loudly
+            # when the caller offers a resume_session_id and the resolved
+            # harness does not support resume (e.g. LangGraphHarness Wave-2
+            # skeleton). The translator at the selector layer silently
+            # drops the kwarg; this warning is the user-facing
+            # acknowledgement that the resume intent will not be honoured
+            # and the next turn starts fresh. The check is cheap and runs
+            # BEFORE measure_latency() opens so the latency band reported
+            # for the LLM call event is unaffected.
+            if resume_session_id is not None and not harness.supports_resume:
+                logger.warning(
+                    "TASK-HMIG-006 AC-007: resume_session_id=%s... was supplied but "
+                    "harness %s does not support_resume; starting fresh session.",
+                    resume_session_id[:16],
+                    type(harness).__name__,
                 )
-            options = ClaudeAgentOptions(**options_kwargs)
 
-            # Extract task_id from prompt for heartbeat logging
-            task_id_match = re.search(r"TASK-[A-Z0-9-]+", prompt)
-            heartbeat_task_id = task_id_match.group(0) if task_id_match else "unknown"
-
-            # TASK-DIAG-F4A2: Preserve rendered prompt + SDK options under
-            # sdk_debug/turn_<n>/[coach/] when GUARDKIT_AUTOBUILD_PRESERVE_DEBUG
-            # is set. Helper is a no-op otherwise.
-            from guardkit.orchestrator.sdk_debug import (
-                preserve_prompt as _sdk_preserve_prompt,
-            )
-            _debug_task_id = task_id or heartbeat_task_id
-            _debug_turn = turn if turn is not None else 1
-            _debug_role = "coach" if agent_type == "coach" else "player"
-            _sdk_debug_dir = _sdk_preserve_prompt(
-                workspace_root=self.worktree_path,
-                task_id=_debug_task_id,
-                turn=_debug_turn,
-                role=_debug_role,
-                prompt=prompt,
-                options=options,
-            )
-
-            # TASK-FIX-ASPF-004: Monitor cancellation event and kill SDK
-            # subprocess when the feature-level timeout fires. Without this,
-            # asyncio.wait_for only cancels the asyncio wrapper while the
-            # underlying OS subprocess continues running.
-            async def _cancel_monitor() -> None:
-                """Poll cancellation event and kill subprocess if set."""
-                while True:
-                    await asyncio.sleep(2)
-                    if self._cancellation_event and self._cancellation_event.is_set():
-                        logger.info(
-                            f"TASK-FIX-ASPF-004: Cancellation event detected during "
-                            f"{agent_type} invocation, terminating SDK subprocess"
-                        )
-                        self._kill_child_claude_processes()
-                        return
-
-            monitor: Optional[asyncio.Task] = None
-            if self._cancellation_event:
-                monitor = asyncio.create_task(_cancel_monitor())
-
-            _install_sdk_cleanup_handler(asyncio.get_running_loop())
-            # TASK-RFX-8332: Hold explicit reference to query() generator
-            # so we can call aclose() in the finally block, preventing GC
-            # from scheduling athrow(GeneratorExit) in a wrong asyncio Task.
-            gen = None
             try:
-                # TASK-INST-005b: Wrap SDK call with latency measurement
+                # TASK-INST-005b: Wrap harness call with latency measurement.
                 with measure_latency() as latency:
                     try:
                         async with asyncio.timeout(self.sdk_timeout_seconds):
@@ -2526,118 +2531,90 @@ Follow the decision format specified in your agent definition.
                                 phase_label,
                                 progress_logger=self._progress_logger,
                             ):
-                                gen = query(prompt=prompt, options=options)
-                                # TASK-FIX-7A03: Iterate via explicit __anext__
-                                # calls so a MessageParseError / ValueError on a
-                                # single stream message (e.g. rate_limit_event
-                                # from a newer API than the installed SDK knows
-                                # about) can be logged + skipped instead of
-                                # aborting the whole turn. Production SDK async
-                                # generators terminate after the first uncaught
-                                # exception, so the subsequent __anext__ call
-                                # will observe StopAsyncIteration and we exit
-                                # the loop cleanly with whatever messages we
-                                # already collected.
-                                unparseable_count = 0
-                                gen_iter = gen.__aiter__()
-                                while True:
-                                    try:
-                                        message = await gen_iter.__anext__()
-                                    except StopAsyncIteration:
-                                        break
-                                    except (MessageParseError, ValueError) as parse_err:
-                                        unparseable_count += 1
-                                        logger.warning(
-                                            f"TASK-FIX-7A03: Skipping unparseable "
-                                            f"SDK message in {agent_type} stream "
-                                            f"(error_class="
-                                            f"{type(parse_err).__name__}): "
-                                            f"{parse_err}"
-                                        )
-                                        continue
-                                    response_messages.append(message)
-                                    # TASK-DIAG-F4A2: Preserve each event to JSONL
-                                    if _sdk_debug_dir is not None:
+                                async for event in harness.invoke(
+                                    prompt=prompt,
+                                    role=agent_type,
+                                    tools=allowed_tools,
+                                    cwd=self.worktree_path,
+                                    timeout_seconds=self.sdk_timeout_seconds,
+                                ):
+                                    # Per Design Decision D-1: response_messages
+                                    # holds the raw SDK shape so duck-typed
+                                    # consumers (_emit_llm_call_event,
+                                    # _extract_partial_from_messages,
+                                    # cancelled-error session_id rescan) keep
+                                    # working unchanged. Fall back to the event
+                                    # itself when raw is None (LangGraph path).
+                                    raw = event.raw if event.raw is not None else event
+                                    response_messages.append(raw)
+
+                                    # TASK-DIAG-F4A2: Preserve each raw event to
+                                    # JSONL when raw is populated.
+                                    if _sdk_debug_dir is not None and event.raw is not None:
                                         from guardkit.orchestrator.sdk_debug import (
                                             preserve_event as _sdk_preserve_event,
                                         )
-                                        _sdk_preserve_event(_sdk_debug_dir, message)
-                                    err = check_assistant_message_error(message)
-                                    if err:
-                                        raise AgentInvocationError(
-                                            f"Agent {agent_type} received API error: {err}"
-                                        )
-                                    # TASK-FIX-OBS2: Track tool use for progress logging
-                                    if self._progress_logger:
-                                        self._track_tool_use(message)
-                                    # TASK-FIX-CRSTL-MULT R2: Emit ToolUseBlock log
-                                    # lines on the specialist path so per-tool signal
-                                    # surfaces during long specialist invocations.
-                                    # Player/Coach paths already get this from the
-                                    # task-work delegation path; gating on
-                                    # heartbeat_label_override avoids double-logging.
-                                    if heartbeat_label_override is not None:
-                                        content = getattr(message, "content", None) or []
-                                        for block in content:
-                                            if type(block).__name__ != "ToolUseBlock":
-                                                continue
-                                            tool_input = getattr(block, "input", {}) or {}
-                                            keys = (
-                                                sorted(tool_input.keys())
-                                                if isinstance(tool_input, dict)
-                                                else []
-                                            )
-                                            logger.info(
-                                                f"[{task_id}] {heartbeat_label_override} "
-                                                f"ToolUseBlock "
-                                                f"{getattr(block, 'name', '?')} "
-                                                f"input keys: {keys}"
-                                            )
-                                    # Progress tracking handled by ProgressDisplay
-                                    # Agent writes report to JSON file, which is loaded after
-                                    # the query completes via _load_agent_report()
-                                    if isinstance(message, ResultMessage):
-                                        # TASK-RFX-B20B: Capture session_id for resumption
-                                        self._last_session_id = getattr(message, "session_id", None)
-                                        # TASK-FIX-GEN1: Drain remaining messages so the
-                                        # generator exhausts naturally.  This prevents
-                                        # aclose() in the finally block from triggering
-                                        # AnyIO cancel-scope CancelledError (40% failure
-                                        # rate on direct-mode invocations).
-                                        try:
-                                            async for _ in gen:
-                                                pass
-                                        except Exception:
-                                            pass  # safe to ignore during drain
-                                        gen = None  # exhausted; skip aclose() in finally
-                                        break
+                                        _sdk_preserve_event(_sdk_debug_dir, event.raw)
 
-                                # TASK-FIX-7A03: Post-stream resilience bookkeeping.
-                                # Zero successful parses + any unparseables → treat
-                                # as a structured parse failure so TASK-FIX-7A02 can
-                                # classify this as player_invocation_stall rather
-                                # than the old opaque "SDK invocation failed" shape.
-                                # Partial success (≥1 parsed) emits a summary WARNING
-                                # and the turn continues with whatever was parsed.
-                                if unparseable_count > 0:
-                                    if not response_messages:
-                                        raise AgentInvocationError(
-                                            f"{unparseable_count} messages unparseable "
-                                            f"in {agent_type} stream "
-                                            f"(no valid messages received)",
-                                            error_class="MessageParseError",
-                                        )
-                                    logger.warning(
-                                        f"TASK-FIX-7A03: {agent_type} stream "
-                                        f"completed with {unparseable_count} "
-                                        f"unparseable message(s) dropped; "
-                                        f"{len(response_messages)} message(s) "
-                                        f"parsed successfully"
-                                    )
+                                    # API-error check + tool-use tracking
+                                    # operate on the raw SDK shape per D-1.
+                                    if event.raw is not None:
+                                        err = check_assistant_message_error(event.raw)
+                                        if err:
+                                            raise AgentInvocationError(
+                                                f"Agent {agent_type} received API error: {err}"
+                                            )
+                                        # TASK-FIX-OBS2: Track tool use for
+                                        # progress logging.
+                                        if self._progress_logger:
+                                            self._track_tool_use(event.raw)
+                                        # TASK-FIX-CRSTL-MULT R2: Emit
+                                        # ToolUseBlock log lines on the
+                                        # specialist path so per-tool signal
+                                        # surfaces during long specialist
+                                        # invocations. Player/Coach paths
+                                        # already get this from the task-work
+                                        # delegation path; gating on
+                                        # heartbeat_label_override avoids
+                                        # double-logging.
+                                        if heartbeat_label_override is not None:
+                                            content = getattr(event.raw, "content", None) or []
+                                            for block in content:
+                                                if type(block).__name__ != "ToolUseBlock":
+                                                    continue
+                                                tool_input = getattr(block, "input", {}) or {}
+                                                keys = (
+                                                    sorted(tool_input.keys())
+                                                    if isinstance(tool_input, dict)
+                                                    else []
+                                                )
+                                                logger.info(
+                                                    f"[{task_id}] {heartbeat_label_override} "
+                                                    f"ToolUseBlock "
+                                                    f"{getattr(block, 'name', '?')} "
+                                                    f"input keys: {keys}"
+                                                )
+
+                                    # ResultMessageEvent is terminal. The
+                                    # in-loop generator drain is now owned by
+                                    # the harness (TASK-FIX-GEN1 moved per
+                                    # Design Decision D-3); orchestrator only
+                                    # captures session_id and breaks.
+                                    if isinstance(event, ResultMessageEvent):
+                                        # TASK-RFX-B20B: capture session_id for
+                                        # resumption. Read from the event field
+                                        # (which the harness populates from the
+                                        # raw SDK message) so the same code path
+                                        # works for any substrate.
+                                        self._last_session_id = event.session_id
+                                        break
                     except (Exception, asyncio.CancelledError) as exc:
                         if isinstance(exc, asyncio.CancelledError):
                             logger.debug(f"CancelledError caught at _invoke_with_role: {exc}")
-                            # TASK-CRV-1540: Extract partial data before re-raising
+                            # TASK-CRV-1540: Extract partial data before re-raising.
+                            # response_messages still contains raw SDK message
+                            # objects via event.raw, so the existing
+                            # extractor + duck-typed scan loop keep working.
                             try:
                                 self._last_partial_report = _extract_partial_from_messages(
                                     response_messages
@@ -2660,24 +2637,14 @@ Follow the decision format specified in your agent definition.
                         call_error = exc
                         raise
             finally:
-                # TASK-RFX-8332: Explicitly close the query() async generator
-                # to prevent GC finalization from scheduling athrow(GeneratorExit)
-                # in a wrong asyncio Task (causes CancelledError on 40% of
-                # direct-mode invocations).
-                if gen is not None:
-                    with suppress(Exception):
-                        try:
-                            async with asyncio.timeout(5):
-                                await gen.aclose()
-                        except (asyncio.TimeoutError, asyncio.CancelledError):
-                            pass
-
                 if monitor and not monitor.done():
                     monitor.cancel()
                     with suppress(asyncio.CancelledError):
                         await monitor
 
-                # TASK-INST-005b: Emit llm.call event (fire-and-forget)
+                # TASK-INST-005b: Emit llm.call event (fire-and-forget).
+                # Token extraction reads usage off the raw SDK ResultMessage
+                # objects that live in response_messages via event.raw.
                 self._emit_llm_call_event(
                     agent_type=agent_type,
                     model=model,
@@ -2698,28 +2665,22 @@ Follow the decision format specified in your agent definition.
             # handler below would re-wrap it and overwrite its error_class
             # (e.g. the MessageParseError classification emitted by the
             # all-unparseable-stream branch would be lost in transit).
+            # Per TASK-HMIG-006 Design Decision D-4, the harness now
+            # normalises SDK-specific exceptions (CLINotFoundError,
+            # ProcessError, CLIJSONDecodeError, harness-internal
+            # ValueError) to AgentInvocationError before they reach this
+            # caller — so this pass-through is the primary surfacing path
+            # for substrate failures.
             raise
-        except CLINotFoundError as e:
-            raise AgentInvocationError(
-                "Claude Code CLI not installed. "
-                "Run: npm install -g @anthropic-ai/claude-code"
-            ) from e
-        except ProcessError as e:
-            raise AgentInvocationError(
-                f"SDK process failed (exit {e.exit_code}): {e.stderr}"
-            ) from e
-        except CLIJSONDecodeError as e:
-            raise AgentInvocationError(
-                f"Failed to parse SDK response: {e}"
-            ) from e
         except ValueError as e:
-            # TASK-FIX-7A03: Typed ValueError clause — preserves
-            # type(e).__name__ as error_class so TASK-FIX-7A02 can
-            # classify parse-type failures (MessageParseError subclasses
-            # ClaudeSDKError not ValueError, so the ValueErrors that land
-            # here are the SDK's own ValueError raises — e.g. "Unsupported
-            # plugin type" — plus any other ValueError bubbling up from
-            # the streaming body).
+            # TASK-FIX-7A03 / TASK-HMIG-006 D-4: catch-all for non-harness
+            # ValueError raised by select_harness(),
+            # _emit_llm_call_event(), or event-dispatch glue. Harness-
+            # internal ValueError is already normalised to
+            # AgentInvocationError inside the harness; this clause now
+            # only fires for orchestrator-side ValueError. Wording
+            # preserved verbatim so TASK-FIX-7A02 classification keeps
+            # the existing error_class signal.
             raise AgentInvocationError(
                 f"SDK value error for {agent_type} "
                 f"({type(e).__name__}): {e}",
@@ -2730,9 +2691,10 @@ Follow the decision format specified in your agent definition.
             # with type(e).__name__ so the surfaced message is no longer
             # opaque, and populate error_class so downstream classification
             # (TASK-FIX-7A02) gets the signal for exception types we didn't
-            # anticipate. (Previously this produced messages like "SDK
-            # invocation failed for player: Unknown message type:
-            # rate_limit_event" with no indication it was a parse error.)
+            # anticipate. Reached only when the harness boundary leaks an
+            # exception type other than AgentInvocationError /
+            # asyncio.TimeoutError / ValueError — should be rare given the
+            # D-4 normalisation, but kept as a safety net.
             raise AgentInvocationError(
                 f"SDK invocation failed for {agent_type} "
                 f"({type(e).__name__}): {str(e)}",

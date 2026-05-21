@@ -188,6 +188,61 @@ class PackageCheck(Check):
             )
 
 
+class ActiveHarnessCheck(Check):
+    """Report the active autobuild harness substrate (TASK-HMIG-006 AC-006).
+
+    Reads the ``GUARDKIT_HARNESS`` env var (default ``"sdk"``) and reports
+    it alongside the version of ``guardkitfactory`` if the langgraph path
+    can be resolved. Always a non-required (WARNING-on-issue) check — the
+    doctor surfaces the configuration, it does not validate it.
+    """
+
+    def __init__(self, required: bool = False):
+        super().__init__(required=required)
+        self.name = "active harness"
+
+    def run(self) -> CheckResult:
+        harness = os.environ.get("GUARDKIT_HARNESS", "sdk").lower()
+
+        if harness == "sdk":
+            return CheckResult(
+                name=self.name,
+                status=CheckStatus.PASS,
+                message="sdk (claude-agent-sdk path)",
+                required=self.required,
+            )
+
+        if harness == "langgraph":
+            try:
+                import guardkitfactory  # type: ignore[import-not-found]
+
+                version = getattr(guardkitfactory, "__version__", "unknown")
+                return CheckResult(
+                    name=self.name,
+                    status=CheckStatus.PASS,
+                    message=f"langgraph (guardkitfactory {version})",
+                    required=self.required,
+                )
+            except ImportError as exc:
+                return CheckResult(
+                    name=self.name,
+                    status=CheckStatus.FAIL,
+                    message=(
+                        "langgraph selected but guardkitfactory not "
+                        "importable"
+                    ),
+                    details=str(exc),
+                    required=self.required,
+                )
+
+        return CheckResult(
+            name=self.name,
+            status=CheckStatus.WARNING,
+            message=f"unknown harness {harness!r} (expected sdk|langgraph)",
+            required=self.required,
+        )
+
+
 class CLIToolCheck(Check):
     """Check if a CLI tool is available."""
 
@@ -484,6 +539,8 @@ class DoctorRunner:
             PackageCheck("frontmatter", required=True),
             # AutoBuild Dependencies
             PackageCheck("claude-agent-sdk", import_name="claude_agent_sdk", required=False),
+            PackageCheck("guardkitfactory", required=False),
+            ActiveHarnessCheck(required=False),
             CLIToolCheck("claude", required=False),
             ClaudeAuthCheck(required=False),
             SDKConnectivityCheck(enabled=self.connectivity, required=False),

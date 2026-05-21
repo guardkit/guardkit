@@ -27,7 +27,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import AsyncIterator, Literal, Union
+from typing import AsyncGenerator, AsyncIterator, Literal, Union
 
 
 @dataclass(frozen=True)
@@ -84,11 +84,21 @@ class ResultMessageEvent:
     do not support resume should populate it with ``None``. ``stop_reason``
     and ``usage`` mirror the optional SDK fields used by the orchestrator
     for logging and progress display.
+
+    ``raw`` mirrors the channel on :class:`AssistantMessageEvent`: holds
+    the original SDK-side ``ResultMessage`` (or harness-specific terminal
+    object) when populated, allowing downstream consumers in
+    ``agent_invoker.py`` that duck-type on the raw shape
+    (``_emit_llm_call_event`` token extraction, cancelled-error
+    session_id rescan) to keep operating without migration. Defaults to
+    ``None`` so concrete harnesses that have no useful raw form remain
+    compatible with the ABC.
     """
 
     session_id: str | None
     stop_reason: str | None = None
     usage: dict[str, object] | None = None
+    raw: object | None = None
     type: Literal["result_message"] = "result_message"
 
 
@@ -131,7 +141,7 @@ class HarnessAdapter(ABC):
         cwd: Path,
         *,
         timeout_seconds: int,
-    ) -> AsyncIterator[HarnessEvent]:
+    ) -> AsyncGenerator[HarnessEvent, None]:
         """Stream :class:`HarnessEvent` values for a single agent turn.
 
         :param prompt: The full prompt text to send to the harness.
@@ -152,8 +162,10 @@ class HarnessAdapter(ABC):
         """
         raise NotImplementedError
         # Unreachable yield: makes this an async-generator function so the
-        # declared ``AsyncIterator[HarnessEvent]`` return type is honoured
-        # at the language level. Required only for static-checker clarity.
+        # declared ``AsyncGenerator[HarnessEvent, None]`` return type is
+        # honoured at the language level. Required only for static-checker
+        # clarity. ``AsyncGenerator`` is the precise type for an async-gen
+        # function; ``AsyncIterator`` is the broader protocol it satisfies.
         yield  # type: ignore[unreachable]  # pragma: no cover
 
     @property
