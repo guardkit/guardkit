@@ -12,6 +12,7 @@ Example:
 
 import logging
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -122,6 +123,56 @@ def _require_sdk() -> None:
 
 
 # ============================================================================
+# Base-branch detection (TASK-FIX-WTBC)
+# ============================================================================
+
+
+def _detect_base_branch(
+    default: str = "main", cwd: Optional[Path] = None
+) -> str:
+    """
+    Read the current branch of ``cwd`` (defaults to the process cwd).
+
+    When ``guardkit autobuild task``/``feature`` is invoked from a git
+    worktree on a non-main branch, the inner ``autobuild/<id>`` worktree must
+    branch from the caller's HEAD, not from main, to preserve fixture-branch
+    isolation (TASK-REV-HM09 §2). This helper reads the calling cwd's current
+    branch so the CLI can pass it through to ``orchestrate(base_branch=...)``.
+
+    Parameters
+    ----------
+    default : str, optional
+        Branch to return when detection fails or HEAD is detached
+        (default: ``"main"``).
+    cwd : Optional[Path], optional
+        Directory to inspect. ``None`` (default) inspects the process cwd —
+        the right behaviour for the create path. ``_find_worktree`` passes the
+        worktree path to read *its* branch for status display.
+
+    Returns
+    -------
+    str
+        The current branch name, or ``default`` when ``git rev-parse`` fails
+        or reports a detached HEAD (``"HEAD"``).
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        branch = result.stdout.strip()
+        # Detached HEAD reports the literal "HEAD" — fall back to default.
+        if branch and branch != "HEAD":
+            return branch
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    return default
+
+
+# ============================================================================
 # AutoBuild Command Group
 # ============================================================================
 
@@ -156,6 +207,17 @@ def autobuild():
     default="claude-sonnet-4-5-20250929",
     help="Claude model to use",
     show_default=True,
+)
+@click.option(
+    "--base-branch",
+    "base_branch",
+    default=None,
+    help=(
+        "Branch to create the worktree from. "
+        "Precedence: --base-branch > current branch of the calling cwd > 'main'. "
+        "Defaults to the cwd's current branch so autobuild run from a non-main "
+        "worktree branches from that worktree's HEAD (TASK-FIX-WTBC)."
+    ),
 )
 @click.option(
     "--verbose",
@@ -270,6 +332,7 @@ def task(
     task_id: str,
     max_turns: int,
     model: str,
+    base_branch: Optional[str],
     verbose: bool,
     resume: bool,
     mode: Optional[str],
@@ -491,12 +554,17 @@ def task(
         honesty_early_abort_window=int(effective_honesty_window),
     )
 
+    # Resolve base branch: --base-branch > cwd HEAD > "main" (TASK-FIX-WTBC)
+    effective_base_branch = base_branch or _detect_base_branch()
+    logger.info(f"Base branch for worktree: {effective_base_branch}")
+
     # Phase 3: Execute orchestration
     logger.info(f"Starting orchestration for {task_id} (resume={resume})")
     result = orchestrator.orchestrate(
         task_id=task_id,
         requirements=task_data["requirements"],
         acceptance_criteria=task_data["acceptance_criteria"],
+        base_branch=effective_base_branch,
         task_file_path=task_data.get("file_path"),  # Pass task file for state persistence
     )
 
@@ -608,6 +676,17 @@ def status(ctx, task_id: str, verbose: bool):
     "specific_task",
     default=None,
     help="Run specific task within feature (e.g., TASK-AUTH-001)",
+)
+@click.option(
+    "--base-branch",
+    "base_branch",
+    default=None,
+    help=(
+        "Branch to create the shared feature worktree from. "
+        "Precedence: --base-branch > current branch of the calling cwd > 'main'. "
+        "Defaults to the cwd's current branch so autobuild run from a non-main "
+        "worktree branches from that worktree's HEAD (TASK-FIX-WTBC)."
+    ),
 )
 @click.option(
     "--verbose",
@@ -739,6 +818,7 @@ def feature(
     fresh: bool,
     refresh: bool,
     specific_task: Optional[str],
+    base_branch: Optional[str],
     verbose: bool,
     sdk_timeout: Optional[int],
     enable_pre_loop: Optional[bool],
@@ -919,9 +999,14 @@ def feature(
             honesty_early_abort_window=honesty_early_abort_window,
         )
 
+        # Resolve base branch: --base-branch > cwd HEAD > "main" (TASK-FIX-WTBC)
+        effective_base_branch = base_branch or _detect_base_branch()
+        logger.info(f"Base branch for feature worktree: {effective_base_branch}")
+
         # Execute feature orchestration
         result = orchestrator.orchestrate(
             feature_id=feature_id,
+            base_branch=effective_base_branch,
             specific_task=specific_task,
         )
 
@@ -1183,20 +1268,8 @@ def _find_worktree(
     # Build Worktree instance from discovered path
     branch_name = f"autobuild/{task_id}"
 
-    # Detect base branch from git (or default to main)
-    try:
-        import subprocess
-
-        result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=worktree_path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        base_branch = result.stdout.strip() or "main"
-    except Exception:
-        base_branch = "main"
+    # Detect the worktree's own branch for display (or default to main).
+    base_branch = _detect_base_branch(cwd=worktree_path)
 
     return Worktree(
         task_id=task_id,

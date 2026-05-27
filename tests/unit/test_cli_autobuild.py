@@ -16,7 +16,7 @@ from click.testing import CliRunner
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from guardkit.cli.autobuild import autobuild, task, status
+from guardkit.cli.autobuild import autobuild, task, status, feature
 from guardkit.cli.main import cli
 from guardkit.orchestrator import OrchestrationResult, TurnRecord
 from guardkit.tasks.task_loader import TaskNotFoundError
@@ -203,13 +203,19 @@ def test_task_command_success(
     # Verify orchestrator initialized
     mock_orchestrator_class.assert_called_once()
 
-    # Verify orchestrate called with correct args
-    mock_orchestrator.orchestrate.assert_called_once_with(
-        task_id="TASK-AB-001",
-        requirements=mock_task_data["requirements"],
-        acceptance_criteria=mock_task_data["acceptance_criteria"],
-        task_file_path=mock_task_data["file_path"],
+    # Verify orchestrate called with correct args.
+    # base_branch is resolved from cwd HEAD (TASK-FIX-WTBC); assert the
+    # other kwargs explicitly and that base_branch was passed through.
+    mock_orchestrator.orchestrate.assert_called_once()
+    orchestrate_kwargs = mock_orchestrator.orchestrate.call_args.kwargs
+    assert orchestrate_kwargs["task_id"] == "TASK-AB-001"
+    assert orchestrate_kwargs["requirements"] == mock_task_data["requirements"]
+    assert (
+        orchestrate_kwargs["acceptance_criteria"]
+        == mock_task_data["acceptance_criteria"]
     )
+    assert orchestrate_kwargs["task_file_path"] == mock_task_data["file_path"]
+    assert "base_branch" in orchestrate_kwargs
 
     # Verify exit code
     assert result.exit_code == 0
@@ -1276,3 +1282,237 @@ def test_task_command_enable_context_flag(
     mock_orchestrator_class.assert_called_once()
     call_kwargs = mock_orchestrator_class.call_args[1]
     assert call_kwargs["enable_context"] is True
+
+
+# ============================================================================
+# Base-branch detection / passthrough (TASK-FIX-WTBC)
+# ============================================================================
+
+
+def _git(args, cwd):
+    """Run a git command in ``cwd``, raising on failure."""
+    import subprocess
+
+    return subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+
+@pytest.fixture
+def fixture_git_repo(tmp_path):
+    """Create a real git repo with one commit on a non-main branch.
+
+    Returns (repo_path, branch_name). The repo's current HEAD is the
+    feature branch, simulating autobuild invoked from a non-main worktree.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(["init", "-b", "main"], cwd=repo)
+    _git(["config", "user.email", "test@example.com"], cwd=repo)
+    _git(["config", "user.name", "Test"], cwd=repo)
+    (repo / "README.md").write_text("seed\n")
+    _git(["add", "."], cwd=repo)
+    _git(["commit", "-m", "initial"], cwd=repo)
+    # Switch to a non-main feature branch (the canary's isolation strategy).
+    _git(["checkout", "-b", "feature/test-branch"], cwd=repo)
+    (repo / "feature.txt").write_text("on feature branch\n")
+    _git(["add", "."], cwd=repo)
+    _git(["commit", "-m", "feature work"], cwd=repo)
+    return repo, "feature/test-branch"
+
+
+class TestDetectBaseBranch:
+    """Unit tests for _detect_base_branch (TASK-FIX-WTBC)."""
+
+    def test_reads_cwd_head(self, fixture_git_repo, monkeypatch):
+        """Process cwd on a non-main branch is detected as the base branch."""
+        from guardkit.cli.autobuild import _detect_base_branch
+
+        repo, branch = fixture_git_repo
+        monkeypatch.chdir(repo)
+
+        assert _detect_base_branch() == branch
+
+    def test_explicit_cwd_argument(self, fixture_git_repo):
+        """An explicit cwd reads that directory's branch (status-display path)."""
+        from guardkit.cli.autobuild import _detect_base_branch
+
+        repo, branch = fixture_git_repo
+
+        assert _detect_base_branch(cwd=repo) == branch
+
+    def test_detached_head_falls_back_to_default(self, fixture_git_repo):
+        """Detached HEAD reports 'HEAD' → fall back to the default branch."""
+        from guardkit.cli.autobuild import _detect_base_branch
+
+        repo, _ = fixture_git_repo
+        # Detach HEAD at the current commit.
+        head_sha = _git(["rev-parse", "HEAD"], cwd=repo).stdout.strip()
+        _git(["checkout", head_sha], cwd=repo)
+
+        assert _detect_base_branch(cwd=repo) == "main"
+        assert _detect_base_branch(default="develop", cwd=repo) == "develop"
+
+    def test_not_a_git_repo_falls_back(self, tmp_path):
+        """git rev-parse failing (not a repo) falls back to the default."""
+        from guardkit.cli.autobuild import _detect_base_branch
+
+        non_repo = tmp_path / "plain"
+        non_repo.mkdir()
+
+        assert _detect_base_branch(cwd=non_repo) == "main"
+
+    def test_git_missing_falls_back(self, monkeypatch):
+        """A missing git binary (FileNotFoundError) falls back to the default."""
+        import guardkit.cli.autobuild as mod
+
+        def _raise(*_args, **_kwargs):
+            raise FileNotFoundError("git not installed")
+
+        monkeypatch.setattr(mod.subprocess, "run", _raise)
+
+        assert mod._detect_base_branch() == "main"
+
+
+@patch("guardkit.cli.autobuild._require_sdk")
+@patch("guardkit.cli.autobuild.TaskLoader.load_task")
+@patch("guardkit.cli.autobuild.AutoBuildOrchestrator")
+@patch("guardkit.cli.autobuild._detect_base_branch")
+def test_task_command_passes_cwd_branch_as_base_branch(
+    mock_detect,
+    mock_orchestrator_class,
+    mock_load_task,
+    mock_require_sdk,
+    cli_runner,
+    mock_task_data,
+    mock_success_result,
+):
+    """AC-001: task command resolves cwd HEAD and passes it to orchestrate()."""
+    mock_detect.return_value = "feature/test-branch"
+    mock_load_task.return_value = mock_task_data
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.orchestrate.return_value = mock_success_result
+    mock_orchestrator_class.return_value = mock_orchestrator
+
+    result = cli_runner.invoke(task, ["TASK-AB-001"])
+
+    assert result.exit_code == 0
+    orchestrate_kwargs = mock_orchestrator.orchestrate.call_args.kwargs
+    assert orchestrate_kwargs["base_branch"] == "feature/test-branch"
+
+
+@patch("guardkit.cli.autobuild._require_sdk")
+@patch("guardkit.cli.autobuild.TaskLoader.load_task")
+@patch("guardkit.cli.autobuild.AutoBuildOrchestrator")
+@patch("guardkit.cli.autobuild._detect_base_branch")
+def test_task_command_base_branch_flag_overrides_cwd(
+    mock_detect,
+    mock_orchestrator_class,
+    mock_load_task,
+    mock_require_sdk,
+    cli_runner,
+    mock_task_data,
+    mock_success_result,
+):
+    """AC-003: --base-branch overrides cwd HEAD detection."""
+    mock_detect.return_value = "feature/test-branch"  # would be used if no flag
+    mock_load_task.return_value = mock_task_data
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.orchestrate.return_value = mock_success_result
+    mock_orchestrator_class.return_value = mock_orchestrator
+
+    result = cli_runner.invoke(
+        task, ["TASK-AB-001", "--base-branch", "release/v2"]
+    )
+
+    assert result.exit_code == 0
+    orchestrate_kwargs = mock_orchestrator.orchestrate.call_args.kwargs
+    assert orchestrate_kwargs["base_branch"] == "release/v2"
+    # cwd detection must not be consulted when the flag is supplied.
+    mock_detect.assert_not_called()
+
+
+@patch("guardkit.cli.autobuild._require_sdk")
+@patch("guardkit.cli.autobuild.FeatureOrchestrator")
+@patch("guardkit.cli.autobuild._detect_base_branch")
+def test_feature_command_passes_cwd_branch_as_base_branch(
+    mock_detect, mock_orchestrator_class, mock_require_sdk, cli_runner
+):
+    """AC-002: feature command resolves cwd HEAD and passes it to orchestrate()."""
+    mock_detect.return_value = "feature/test-branch"
+    mock_orchestrator = MagicMock()
+    mock_result = MagicMock()
+    mock_result.success = True
+    mock_orchestrator.orchestrate.return_value = mock_result
+    mock_orchestrator_class.return_value = mock_orchestrator
+
+    result = cli_runner.invoke(feature, ["FEAT-A1B2"])
+
+    orchestrate_kwargs = mock_orchestrator.orchestrate.call_args.kwargs
+    assert orchestrate_kwargs["base_branch"] == "feature/test-branch"
+
+
+@patch("guardkit.cli.autobuild._require_sdk")
+@patch("guardkit.cli.autobuild.FeatureOrchestrator")
+@patch("guardkit.cli.autobuild._detect_base_branch")
+def test_feature_command_base_branch_flag_overrides_cwd(
+    mock_detect, mock_orchestrator_class, mock_require_sdk, cli_runner
+):
+    """AC-002/AC-003: --base-branch overrides cwd HEAD for the feature command."""
+    mock_detect.return_value = "feature/test-branch"
+    mock_orchestrator = MagicMock()
+    mock_result = MagicMock()
+    mock_result.success = True
+    mock_orchestrator.orchestrate.return_value = mock_result
+    mock_orchestrator_class.return_value = mock_orchestrator
+
+    result = cli_runner.invoke(
+        feature, ["FEAT-A1B2", "--base-branch", "release/v2"]
+    )
+
+    orchestrate_kwargs = mock_orchestrator.orchestrate.call_args.kwargs
+    assert orchestrate_kwargs["base_branch"] == "release/v2"
+    mock_detect.assert_not_called()
+
+
+def test_base_branch_in_task_help(cli_runner):
+    """AC-006: --base-branch documented in task --help."""
+    result = cli_runner.invoke(task, ["--help"])
+    assert "--base-branch" in result.output
+
+
+def test_base_branch_in_feature_help(cli_runner):
+    """AC-006: --base-branch documented in feature --help."""
+    result = cli_runner.invoke(feature, ["--help"])
+    assert "--base-branch" in result.output
+
+
+def test_worktree_created_from_cwd_head_end_to_end(fixture_git_repo):
+    """AC-001/AC-005: WorktreeManager.create(base_branch=cwd HEAD) branches
+    the inner worktree from the cwd's HEAD, not main — the falsifier check.
+
+    Exercises the real WorktreeManager against a real repo (no SDK), proving
+    the resolved base_branch reaches the worktree's HEAD. AC-005: the library
+    default ("main") is unchanged; the CLI supplies the cwd branch.
+    """
+    from guardkit.cli.autobuild import _detect_base_branch
+    from guardkit.worktrees import WorktreeManager
+
+    repo, branch = fixture_git_repo
+    feature_tip = _git(["rev-parse", branch], cwd=repo).stdout.strip()
+    main_tip = _git(["rev-parse", "main"], cwd=repo).stdout.strip()
+    assert feature_tip != main_tip  # branches genuinely diverge
+
+    manager = WorktreeManager(repo_root=repo)
+    resolved = _detect_base_branch(cwd=repo)
+    assert resolved == branch
+
+    worktree = manager.create(task_id="TASK-AB-001", base_branch=resolved)
+    inner_head = _git(["rev-parse", "HEAD"], cwd=worktree.path).stdout.strip()
+
+    assert inner_head == feature_tip
+    assert inner_head != main_tip

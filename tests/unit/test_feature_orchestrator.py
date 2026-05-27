@@ -507,10 +507,13 @@ def test_cli_feature_command_invokes_orchestrator(mock_orchestrator_class, mock_
 
     assert result.exit_code == 0
     mock_orchestrator_class.assert_called_once()
-    mock_orchestrator.orchestrate.assert_called_once_with(
-        feature_id="FEAT-CLI",
-        specific_task=None,
-    )
+    # base_branch is resolved from cwd HEAD (TASK-FIX-WTBC); assert the other
+    # kwargs explicitly and that base_branch is passed through.
+    mock_orchestrator.orchestrate.assert_called_once()
+    orchestrate_kwargs = mock_orchestrator.orchestrate.call_args.kwargs
+    assert orchestrate_kwargs["feature_id"] == "FEAT-CLI"
+    assert orchestrate_kwargs["specific_task"] is None
+    assert "base_branch" in orchestrate_kwargs
 
 
 @patch("guardkit.cli.autobuild._check_sdk_available", return_value=(True, None))
@@ -537,10 +540,12 @@ def test_cli_feature_command_with_specific_task(mock_orchestrator_class, mock_sd
     result = runner.invoke(feature, ["FEAT-CLI", "--task", "TASK-ABC-001"])
 
     assert result.exit_code == 0
-    mock_orchestrator.orchestrate.assert_called_once_with(
-        feature_id="FEAT-CLI",
-        specific_task="TASK-ABC-001",
-    )
+    # base_branch is resolved from cwd HEAD (TASK-FIX-WTBC).
+    mock_orchestrator.orchestrate.assert_called_once()
+    orchestrate_kwargs = mock_orchestrator.orchestrate.call_args.kwargs
+    assert orchestrate_kwargs["feature_id"] == "FEAT-CLI"
+    assert orchestrate_kwargs["specific_task"] == "TASK-ABC-001"
+    assert "base_branch" in orchestrate_kwargs
 
 
 @patch("guardkit.cli.autobuild._check_sdk_available", return_value=(True, None))
