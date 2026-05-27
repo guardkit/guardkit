@@ -615,3 +615,42 @@ class TestConstructorPlumbing:
 
         opts = captured["options"]
         assert list(getattr(opts, "allowed_tools", [])) == ["Read", "Bash"]
+
+    @pytest.mark.asyncio
+    async def test_setting_sources_defaults_to_project(self, tmp_path):
+        """TASK-HMIG-006.4: omitting setting_sources defaults to ["project"].
+
+        Preserves the value the harness previously hardcoded in invoke(),
+        so the existing _invoke_with_role caller (which does not pass it)
+        keeps the project-only behaviour.
+        """
+        captured: dict = {}
+
+        def capture(**kwargs):
+            captured["options"] = kwargs.get("options")
+            return RecordingAsyncGen([("yield", _result_msg())])
+
+        harness = _make_harness()  # no setting_sources override
+
+        with patch.object(claude_agent_sdk, "query", side_effect=capture):
+            await _drain(harness, tmp_path)
+
+        opts = captured["options"]
+        assert list(getattr(opts, "setting_sources", [])) == ["project"]
+
+    @pytest.mark.asyncio
+    async def test_setting_sources_forwarded_to_options(self, tmp_path):
+        """TASK-HMIG-006.4: an explicit setting_sources reaches ClaudeAgentOptions."""
+        captured: dict = {}
+
+        def capture(**kwargs):
+            captured["options"] = kwargs.get("options")
+            return RecordingAsyncGen([("yield", _result_msg())])
+
+        harness = _make_harness(setting_sources=["user", "project"])
+
+        with patch.object(claude_agent_sdk, "query", side_effect=capture):
+            await _drain(harness, tmp_path)
+
+        opts = captured["options"]
+        assert list(getattr(opts, "setting_sources", [])) == ["user", "project"]

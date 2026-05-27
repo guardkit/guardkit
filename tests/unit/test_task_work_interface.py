@@ -495,189 +495,438 @@ class TestExecuteDesignPhase:
 
 
 # ============================================================================
-# Test SDK ContentBlock Message Parsing (TASK-FB-FIX-005)
+# Test Harness Dispatch (TASK-HMIG-006.4)
 # ============================================================================
 
 
-class TestSDKContentBlockParsing:
-    """Test proper parsing of SDK messages with ContentBlock structure.
+from guardkit.orchestrator.exceptions import AgentInvocationError
+from guardkit.orchestrator.harness import (
+    AssistantMessageEvent,
+    ResultMessageEvent,
+)
 
-    TASK-FB-FIX-005: These tests verify that the fixed _execute_via_sdk()
-    properly iterates over ContentBlock objects instead of calling str()
-    on the content list, which was causing plan paths to not be extracted.
 
-    Root cause of bug:
-        OLD: str(message.content)  # Produces "[TextBlock(text='...'), ...]"
-        NEW: Iterate content and extract block.text from TextBlock instances
+class _FakeHarness:
+    """Minimal HarnessAdapter double yielding scripted HarnessEvents.
 
-    These tests use mock ContentBlock classes to simulate real SDK behavior.
+    TASK-HMIG-006.4: ``_execute_via_sdk`` now dispatches through
+    ``select_harness()`` and consumes the substrate-agnostic
+    ``HarnessEvent`` stream. These tests mock at that seam (the
+    architecturally correct boundary) instead of the now-internal
+    ``claude_agent_sdk`` import. Records the ``invoke()`` call kwargs so
+    tests can assert prompt / role / cwd / timeout forwarding.
+    """
+
+    def __init__(self, events):
+        self._events = list(events)
+        self.invoke_calls = []
+
+    async def invoke(self, prompt, role, tools, cwd, *, timeout_seconds):
+        self.invoke_calls.append(
+            {
+                "prompt": prompt,
+                "role": role,
+                "tools": tools,
+                "cwd": cwd,
+                "timeout_seconds": timeout_seconds,
+            }
+        )
+        for event in self._events:
+            yield event
+
+    @property
+    def supports_resume(self):
+        return False
+
+
+def _design_phase_events():
+    """Scripted harness events mirroring a successful design-phase run."""
+    return [
+        AssistantMessageEvent(text="Phase 2: Implementation Planning..."),
+        AssistantMessageEvent(
+            text="Architectural Score: 85/100\nSOLID: 88, DRY: 82, YAGNI: 85"
+        ),
+        AssistantMessageEvent(text="Complexity Score: 6/10"),
+        AssistantMessageEvent(
+            text="Plan saved to: docs/state/TASK-001/implementation_plan.md"
+        ),
+        AssistantMessageEvent(
+            text="Phase 2.8: checkpoint approved\nState: DESIGN_APPROVED"
+        ),
+        ResultMessageEvent(session_id="sess-design-1"),
+    ]
+
+
+_SELECT_HARNESS = "guardkit.orchestrator.harness.select_harness"
+
+
+class TestHarnessDispatch:
+    """TASK-HMIG-006.4 AC-001: design phase routes through select_harness().
+
+    The pre-loop design phase no longer imports claude_agent_sdk directly;
+    it dispatches through the GUARDKIT_HARNESS-driven harness seam, the
+    same boundary agent_invoker._invoke_with_role crosses.
     """
 
     @pytest.mark.asyncio
-    async def test_extracts_text_from_textblocks(
-        self, interface, mock_contentblock_sdk_module, tmp_worktree
-    ):
-        """Test that text is properly extracted from TextBlock instances.
+    async def test_routes_through_select_harness(self, interface):
+        """AC-001/AC-004: select_harness() is invoked (no direct SDK import)."""
+        fake = _FakeHarness(_design_phase_events())
 
-        TASK-FB-FIX-005: Verifies block.text is extracted, not str(content).
-        """
-        # Create plan file so parsing can find it
+        with patch(_SELECT_HARNESS, return_value=fake) as mock_select:
+            await interface._execute_via_sdk("design prompt for TASK-001")
+
+        mock_select.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_forwards_pre_loop_sdk_kwargs(self, interface):
+        """AC-002: the four pre-loop SDK kwargs are forwarded to select_harness()."""
+        fake = _FakeHarness(_design_phase_events())
+
+        with patch(_SELECT_HARNESS, return_value=fake) as mock_select:
+            await interface._execute_via_sdk("design prompt for TASK-001")
+
+        kwargs = mock_select.call_args.kwargs
+        assert kwargs["setting_sources"] == ["project"]
+        assert kwargs["max_turns"] == 25
+        assert kwargs["permission_mode"] == "acceptEdits"
+        assert "Skill" not in kwargs["allowed_tools"]
+        assert "Task" not in kwargs["allowed_tools"]
+        assert "Read" in kwargs["allowed_tools"]
+        assert kwargs["sdk_timeout_seconds"] == interface.sdk_timeout_seconds
+
+    @pytest.mark.asyncio
+    async def test_invoke_receives_prompt_and_cwd(self, interface, tmp_worktree):
+        """harness.invoke() receives the prompt and the worktree cwd."""
+        fake = _FakeHarness(_design_phase_events())
+
+        with patch(_SELECT_HARNESS, return_value=fake):
+            await interface._execute_via_sdk("design prompt for TASK-001")
+
+        assert len(fake.invoke_calls) == 1
+        call = fake.invoke_calls[0]
+        assert call["prompt"] == "design prompt for TASK-001"
+        assert call["cwd"] == tmp_worktree
+        assert call["timeout_seconds"] == interface.sdk_timeout_seconds
+
+    @pytest.mark.asyncio
+    async def test_extracts_plan_path_from_event_text(self, interface, tmp_worktree):
+        """Assistant event text is collected and parsed for the plan path."""
         plan_dir = tmp_worktree / "docs" / "state" / "TASK-001"
         plan_dir.mkdir(parents=True)
-        plan_file = plan_dir / "implementation_plan.md"
-        plan_file.write_text("# Plan\n\nImplementation plan content")
+        (plan_dir / "implementation_plan.md").write_text("# Plan")
 
-        with patch.dict("sys.modules", {"claude_agent_sdk": mock_contentblock_sdk_module}):
-            result = await interface._execute_via_sdk("/task-work TASK-001 --design-only")
+        fake = _FakeHarness(_design_phase_events())
+        with patch(_SELECT_HARNESS, return_value=fake):
+            result = await interface._execute_via_sdk("design prompt for TASK-001")
 
-            # Plan path should be found because text content is properly extracted
-            assert result["plan_path"] == "docs/state/TASK-001/implementation_plan.md"
-
-    @pytest.mark.asyncio
-    async def test_extracts_complexity_score_from_textblocks(
-        self, interface, mock_contentblock_sdk_module, tmp_worktree
-    ):
-        """Test complexity score is extracted from TextBlock text content."""
-        with patch.dict("sys.modules", {"claude_agent_sdk": mock_contentblock_sdk_module}):
-            result = await interface._execute_via_sdk("/task-work TASK-001 --design-only")
-
-            assert result["complexity"]["score"] == 6
+        assert result["plan_path"] == "docs/state/TASK-001/implementation_plan.md"
 
     @pytest.mark.asyncio
-    async def test_extracts_architectural_score_from_textblocks(
-        self, interface, mock_contentblock_sdk_module, tmp_worktree
-    ):
-        """Test architectural review score is extracted from TextBlock text content."""
-        with patch.dict("sys.modules", {"claude_agent_sdk": mock_contentblock_sdk_module}):
-            result = await interface._execute_via_sdk("/task-work TASK-001 --design-only")
+    async def test_extracts_complexity_and_arch_scores(self, interface):
+        """Complexity + SOLID/DRY/YAGNI scores parsed from collected event text."""
+        fake = _FakeHarness(_design_phase_events())
+        with patch(_SELECT_HARNESS, return_value=fake):
+            result = await interface._execute_via_sdk("design prompt for TASK-001")
 
-            assert result["architectural_review"]["score"] == 85
-
-    @pytest.mark.asyncio
-    async def test_checkpoint_approved_detected_from_textblocks(
-        self, interface, mock_contentblock_sdk_module, tmp_worktree
-    ):
-        """Test checkpoint approved status is detected from TextBlock text."""
-        with patch.dict("sys.modules", {"claude_agent_sdk": mock_contentblock_sdk_module}):
-            result = await interface._execute_via_sdk("/task-work TASK-001 --design-only")
-
-            assert result["checkpoint_result"] == "approved"
+        assert result["complexity"]["score"] == 6
+        assert result["architectural_review"]["score"] == 85
+        assert result["architectural_review"]["solid"] == 88
 
     @pytest.mark.asyncio
-    async def test_handles_mixed_contentblock_types(
-        self, interface, mock_contentblock_sdk_module, tmp_worktree
-    ):
-        """Test handling of messages with mixed TextBlock and ToolUseBlock content.
+    async def test_checkpoint_approved_detected(self, interface):
+        """Checkpoint approval is detected from collected event text."""
+        fake = _FakeHarness(_design_phase_events())
+        with patch(_SELECT_HARNESS, return_value=fake):
+            result = await interface._execute_via_sdk("design prompt for TASK-001")
 
-        TASK-FB-FIX-005: Verifies ToolUseBlock is logged but not added to output,
-        and TextBlock text is still properly collected.
-        """
-        with patch.dict("sys.modules", {"claude_agent_sdk": mock_contentblock_sdk_module}):
-            result = await interface._execute_via_sdk("/task-work TASK-001 --design-only")
-
-            # Should still extract data from TextBlocks despite ToolUseBlocks present
-            assert result["architectural_review"]["score"] == 85
+        assert result["checkpoint_result"] == "approved"
 
     @pytest.mark.asyncio
-    async def test_handles_tool_result_block_content(
-        self, interface, tmp_worktree
-    ):
-        """Test that ToolResultBlock content is extracted when present."""
-        async def mock_query_with_tool_result(*args, **kwargs):
-            messages = [
-                MockAssistantMessage(content=[
-                    MockTextBlock("Processing..."),
-                    MockToolResultBlock(content="Tool result: Plan saved to: docs/state/TASK-002/implementation_plan.md"),
-                ]),
-                MockResultMessage(num_turns=1),
+    async def test_result_message_event_terminates_loop(self, interface):
+        """Events after the terminal ResultMessageEvent are not consumed."""
+        events = [
+            AssistantMessageEvent(text="Complexity: 5/10"),
+            ResultMessageEvent(session_id=None),
+            AssistantMessageEvent(text="Plan saved to: should/not/be/parsed.md"),
+        ]
+        fake = _FakeHarness(events)
+        with patch(_SELECT_HARNESS, return_value=fake):
+            result = await interface._execute_via_sdk("design prompt for TASK-001")
+
+        # The post-terminal event must not contribute to the parsed output.
+        assert result["plan_path"] != "should/not/be/parsed.md"
+
+    @pytest.mark.asyncio
+    async def test_api_error_in_raw_raises_design_phase_error(self, interface):
+        """A bug-#472 API error on event.raw surfaces as DesignPhaseError."""
+
+        class _ErrMsg:
+            error = "rate limit exceeded"
+            content = []
+
+        events = [AssistantMessageEvent(text="", raw=_ErrMsg())]
+        fake = _FakeHarness(events)
+        with patch(_SELECT_HARNESS, return_value=fake):
+            with pytest.raises(DesignPhaseError):
+                await interface._execute_via_sdk("design prompt for TASK-001")
+
+    @pytest.mark.asyncio
+    async def test_handles_result_message_gracefully(self, interface):
+        """ResultMessageEvent terminal is handled without errors."""
+        fake = _FakeHarness(_design_phase_events())
+        with patch(_SELECT_HARNESS, return_value=fake):
+            result = await interface._execute_via_sdk("design prompt for TASK-001")
+
+        assert "complexity" in result
+        assert "checkpoint_result" in result
+
+    @pytest.mark.asyncio
+    async def test_debug_logging_short_output(self, interface, caplog):
+        """DEBUG output-length logging runs for short collected output (<500)."""
+        import logging as _logging
+
+        fake = _FakeHarness(
+            [
+                AssistantMessageEvent(text="Complexity: 5/10"),
+                ResultMessageEvent(session_id=None),
             ]
-            for msg in messages:
-                yield msg
+        )
+        with caplog.at_level(
+            _logging.DEBUG,
+            logger="guardkit.orchestrator.quality_gates.task_work_interface",
+        ):
+            with patch(_SELECT_HARNESS, return_value=fake):
+                await interface._execute_via_sdk("design prompt for TASK-001")
 
-        mock_module = MagicMock()
-        mock_module.query = mock_query_with_tool_result
-        mock_module.ClaudeAgentOptions = MagicMock()
-        mock_module.CLINotFoundError = Exception
-        mock_module.ProcessError = Exception
-        mock_module.CLIJSONDecodeError = Exception
-        mock_module.AssistantMessage = MockAssistantMessage
-        mock_module.TextBlock = MockTextBlock
-        mock_module.ToolUseBlock = MockToolUseBlock
-        mock_module.ToolResultBlock = MockToolResultBlock
-        mock_module.ResultMessage = MockResultMessage
-
-        # Create plan file
-        plan_dir = tmp_worktree / "docs" / "state" / "TASK-002"
-        plan_dir.mkdir(parents=True)
-        plan_file = plan_dir / "implementation_plan.md"
-        plan_file.write_text("# Plan content")
-
-        with patch.dict("sys.modules", {"claude_agent_sdk": mock_module}):
-            result = await interface._execute_via_sdk("/task-work TASK-002 --design-only")
-
-            # Plan path should be found from tool result content
-            assert result["plan_path"] == "docs/state/TASK-002/implementation_plan.md"
+        assert any("Collected output length" in r.message for r in caplog.records)
+        assert any("Full output" in r.message for r in caplog.records)
 
     @pytest.mark.asyncio
-    async def test_handles_result_message_gracefully(
-        self, interface, mock_contentblock_sdk_module, tmp_worktree
-    ):
-        """Test that ResultMessage (final message) is handled without errors."""
-        with patch.dict("sys.modules", {"claude_agent_sdk": mock_contentblock_sdk_module}):
-            # Should not raise any exception
-            result = await interface._execute_via_sdk("/task-work TASK-001 --design-only")
+    async def test_debug_logging_long_output(self, interface, caplog):
+        """DEBUG output-length logging takes the preview branch for long output (>500)."""
+        import logging as _logging
 
-            # Result should be valid despite ResultMessage at end
-            assert "complexity" in result
-            assert "checkpoint_result" in result
+        long_text = "Complexity: 5/10\n" + ("x" * 600)
+        fake = _FakeHarness(
+            [
+                AssistantMessageEvent(text=long_text),
+                ResultMessageEvent(session_id=None),
+            ]
+        )
+        with caplog.at_level(
+            _logging.DEBUG,
+            logger="guardkit.orchestrator.quality_gates.task_work_interface",
+        ):
+            with patch(_SELECT_HARNESS, return_value=fake):
+                await interface._execute_via_sdk("design prompt for TASK-001")
+
+        assert any("Output preview" in r.message for r in caplog.records)
+
+
+class TestHarnessExceptionHandling:
+    """TASK-HMIG-006.4 AC-003: harness failures map to the right exceptions."""
 
     @pytest.mark.asyncio
-    async def test_old_str_conversion_bug_produces_invalid_path(self, interface, tmp_worktree):
-        """Verify that the old str(message.content) approach produces invalid paths.
+    async def test_sdk_import_failure_reraised_as_import_error(self, interface):
+        """SDK-missing (AgentInvocationError caused by ImportError) → ImportError.
 
-        TASK-FB-FIX-005: This test demonstrates why the fix was needed.
-        If we stringify the content list, the extracted path includes garbage
-        characters like '),' from the string representation.
+        Preserves execute_design_phase's subprocess fallback: the harness
+        normalises a missing claude_agent_sdk to AgentInvocationError, and
+        _execute_via_sdk re-raises ImportError when that is the root cause.
         """
-        # Simulate what str(message.content) would produce
-        simulated_old_output = "[TextBlock(text='Plan saved to: docs/state/TASK-001/implementation_plan.md'), ToolUseBlock(name='test')]"
 
-        # This regex matches but extracts an INVALID path with trailing garbage
+        async def _import_failing_invoke(*args, **kwargs):
+            err = AgentInvocationError("Claude Agent SDK import failed")
+            err.__cause__ = ImportError("No module named 'claude_agent_sdk'")
+            raise err
+            yield  # pragma: no cover  (marks this an async-generator)
+
+        fake = MagicMock()
+        fake.invoke = _import_failing_invoke
+
+        with patch(_SELECT_HARNESS, return_value=fake):
+            with pytest.raises(ImportError):
+                await interface._execute_via_sdk("design prompt for TASK-001")
+
+    @pytest.mark.asyncio
+    async def test_other_invocation_failure_raises_design_phase_error(self, interface):
+        """A non-import AgentInvocationError surfaces as DesignPhaseError."""
+
+        async def _failing_invoke(*args, **kwargs):
+            raise AgentInvocationError("SDK process failed (exit 1)")
+            yield  # pragma: no cover
+
+        fake = MagicMock()
+        fake.invoke = _failing_invoke
+
+        with patch(_SELECT_HARNESS, return_value=fake):
+            with pytest.raises(DesignPhaseError):
+                await interface._execute_via_sdk("design prompt for TASK-001")
+
+    @pytest.mark.asyncio
+    async def test_harness_selection_failure_raises_design_phase_error(self, interface):
+        """langgraph unavailable / unknown value at construction → DesignPhaseError.
+
+        select_harness() raising AgentInvocationError must NOT fall back to
+        the SDK subprocess path (that would defeat GUARDKIT_HARNESS=langgraph).
+        """
+
+        def _failing_select(*args, **kwargs):
+            raise AgentInvocationError(
+                "GUARDKIT_HARNESS=langgraph but guardkitfactory is not importable"
+            )
+
+        with patch(_SELECT_HARNESS, side_effect=_failing_select):
+            with pytest.raises(DesignPhaseError):
+                await interface._execute_via_sdk("design prompt for TASK-001")
+
+    @pytest.mark.asyncio
+    async def test_timeout_raises_design_phase_error(self, interface):
+        """A harness timeout (orchestrator-side asyncio.timeout) → DesignPhaseError."""
+
+        async def _timeout_invoke(*args, **kwargs):
+            raise asyncio.TimeoutError()
+            yield  # pragma: no cover
+
+        fake = MagicMock()
+        fake.invoke = _timeout_invoke
+
+        with patch(_SELECT_HARNESS, return_value=fake):
+            with pytest.raises(DesignPhaseError):
+                await interface._execute_via_sdk("design prompt for TASK-001")
+
+    @pytest.mark.asyncio
+    async def test_unexpected_error_raises_design_phase_error(self, interface):
+        """An unexpected exception leaking from the harness → DesignPhaseError."""
+
+        async def _boom_invoke(*args, **kwargs):
+            raise RuntimeError("unexpected harness explosion")
+            yield  # pragma: no cover
+
+        fake = MagicMock()
+        fake.invoke = _boom_invoke
+
+        with patch(_SELECT_HARNESS, return_value=fake):
+            with pytest.raises(DesignPhaseError):
+                await interface._execute_via_sdk("design prompt for TASK-001")
+
+
+class TestSubstrateParity:
+    """TASK-HMIG-006.4 AC-004: identical event streams → identical results.
+
+    The design-phase glue (_execute_via_sdk + _parse_sdk_output) is
+    substrate-agnostic: whether the HarnessEvents came from
+    ClaudeSDKHarness (raw populated) or LangGraphHarness (raw is None),
+    the same stream yields an identical raw DesignPhaseResult dict.
+    """
+
+    @pytest.mark.asyncio
+    async def test_identical_events_yield_identical_result(self, interface):
+        class _Raw:
+            error = None
+            content = []
+
+        # SDK path: events carry a raw SDK-shape object per Design Decision D-1.
+        sdk_events = [
+            AssistantMessageEvent(text=e.text, raw=_Raw())
+            for e in _design_phase_events()
+            if isinstance(e, AssistantMessageEvent)
+        ] + [ResultMessageEvent(session_id="sess-1", raw=_Raw())]
+
+        # LangGraph path: raw is None (no SDK shape downstream).
+        lg_events = [
+            AssistantMessageEvent(text=e.text)
+            for e in _design_phase_events()
+            if isinstance(e, AssistantMessageEvent)
+        ] + [ResultMessageEvent(session_id=None)]
+
+        with patch(_SELECT_HARNESS, return_value=_FakeHarness(sdk_events)):
+            sdk_result = await interface._execute_via_sdk("design prompt for TASK-001")
+
+        with patch(_SELECT_HARNESS, return_value=_FakeHarness(lg_events)):
+            lg_result = await interface._execute_via_sdk("design prompt for TASK-001")
+
+        assert sdk_result == lg_result
+
+
+class TestFalsifierNoSdkOnLangGraph:
+    """TASK-HMIG-006.4 AC-005 falsifier (cheap, CI-able form).
+
+    The frontmatter falsifier runs ``guardkit autobuild task TASK-X
+    --pre-loop`` with ``GUARDKIT_HARNESS=langgraph`` and greps stderr for
+    zero ``claude_agent_sdk.subprocess_cli`` lines. That full run needs a
+    live LLM, so this test proves the same claim deterministically: with
+    ``GUARDKIT_HARNESS=langgraph`` the design phase dispatches through the
+    REAL LangGraphHarness (via the unpatched ``select_harness``) and NEVER
+    calls ``claude_agent_sdk.query``. Only ``LangGraphHarness.invoke`` is
+    stubbed so no real LLM call happens.
+    """
+
+    @pytest.mark.asyncio
+    async def test_langgraph_design_phase_never_calls_sdk(self, interface, monkeypatch):
+        import claude_agent_sdk
+        from guardkitfactory.harness import LangGraphHarness
+
+        monkeypatch.setenv("GUARDKIT_HARNESS", "langgraph")
+
+        async def _fake_lg_invoke(self, prompt, role, tools, cwd, *, timeout_seconds):
+            yield AssistantMessageEvent(text="Complexity: 6/10")
+            yield AssistantMessageEvent(text="Phase 2.8: checkpoint approved")
+            yield ResultMessageEvent(session_id=None)
+
+        sdk_query = MagicMock(name="claude_agent_sdk.query")
+
+        # NOTE: select_harness is NOT patched here — the real langgraph
+        # dispatch runs, exercising _translate_kwargs_for_langgraph against
+        # the four pre-loop SDK kwargs (including setting_sources).
+        with patch.object(LangGraphHarness, "invoke", _fake_lg_invoke), patch.object(
+            claude_agent_sdk, "query", sdk_query
+        ):
+            result = await interface._execute_via_sdk("design prompt for TASK-001")
+
+        # Falsifier assertion: zero SDK invocations on the langgraph design path.
+        assert sdk_query.call_count == 0
+        # The langgraph path still produces a valid design result.
+        assert result["complexity"]["score"] == 6
+        assert result["checkpoint_result"] == "approved"
+
+
+class TestParseSDKOutputRobustness:
+    """Regression coverage for _parse_sdk_output plan-path extraction.
+
+    TASK-FB-FIX-005 origin: the old str(message.content) approach produced
+    corrupted paths. The harness now hands clean joined text to
+    _parse_sdk_output; this test pins the parser's clean-vs-corrupted
+    behaviour independently of the harness seam.
+    """
+
+    def test_clean_text_yields_clean_path_corrupted_does_not(self, interface):
         import re
+
         plan_patterns = [
             r"Plan saved to[:\s]+([^\s\n]+)",
             r"(docs/state/[A-Z0-9-]+/implementation_plan\.(?:md|json))",
         ]
 
-        found_path = None
+        # Stringified content list (the old bug) → corrupted path.
+        corrupted_source = (
+            "[TextBlock(text='Plan saved to: "
+            "docs/state/TASK-001/implementation_plan.md'), ToolUseBlock(name='test')]"
+        )
+        found = None
         for pattern in plan_patterns:
-            match = re.search(pattern, simulated_old_output, re.IGNORECASE)
+            match = re.search(pattern, corrupted_source, re.IGNORECASE)
             if match:
-                found_path = match.group(1) if match.lastindex else match.group(0)
+                found = match.group(1) if match.lastindex else match.group(0)
                 break
+        assert found is not None
+        assert found != "docs/state/TASK-001/implementation_plan.md"
 
-        # The old approach extracts a CORRUPTED path with trailing characters
-        # from the TextBlock string representation
-        assert found_path is not None, "Pattern should match (but with garbage)"
-        assert "')" in found_path or ")," in found_path or found_path.endswith("'"), \
-            f"Old approach should produce corrupted path, got: {found_path}"
-
-        # The path is NOT valid - it has extra characters
-        assert found_path != "docs/state/TASK-001/implementation_plan.md", \
-            "Old approach should NOT produce clean path"
-
-        # Now test with properly extracted text (the fix)
-        proper_text_content = "Plan saved to: docs/state/TASK-001/implementation_plan.md"
-
-        found_path = None
-        for pattern in plan_patterns:
-            match = re.search(pattern, proper_text_content, re.IGNORECASE)
-            if match:
-                found_path = match.group(1) if match.lastindex else match.group(0)
-                break
-
-        # The fixed approach DOES find the CORRECT path
-        assert found_path == "docs/state/TASK-001/implementation_plan.md"
+        # Clean joined text (what the harness now provides) → clean path.
+        clean_source = "Plan saved to: docs/state/TASK-001/implementation_plan.md"
+        result = interface._parse_sdk_output(clean_source)
+        assert result["plan_path"] == "docs/state/TASK-001/implementation_plan.md"
 
 
 # ============================================================================

@@ -114,6 +114,33 @@ class TestTranslateKwargsForLangGraph:
 
         assert "resume_session_id" not in translated
 
+    def test_drops_setting_sources(self) -> None:
+        """TASK-HMIG-006.4 AC-002: pre-loop ``setting_sources`` is dropped.
+
+        DeepAgents has no settings-layer analogue, so the kwarg is a no-op
+        on the LangGraph path — ``model`` is the only surviving key.
+        """
+        translated = _translate_kwargs_for_langgraph(
+            _sdk_kwargs(setting_sources=["project"])
+        )
+
+        assert "setting_sources" not in translated
+        assert set(translated.keys()) == {"model"}
+
+    def test_pre_loop_kwarg_bag_reduces_to_model(self) -> None:
+        """The full pre-loop kwarg bag (TASK-HMIG-006.4) reduces to ``model``."""
+        pre_loop_bag = {
+            "sdk_timeout_seconds": 1200,
+            "allowed_tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+            "permission_mode": "acceptEdits",
+            "max_turns": 25,
+            "setting_sources": ["project"],
+        }
+
+        translated = _translate_kwargs_for_langgraph(pre_loop_bag)
+
+        assert translated == {"model": None}
+
 
 # ----------------------------------------------------------------------
 # Dispatch tests
@@ -262,3 +289,38 @@ class TestSelectHarnessDispatch:
         harness = select_harness(env_var=_TEST_ENV_VAR, **_sdk_kwargs())
 
         assert isinstance(harness, LangGraphHarness)
+
+    def test_langgraph_accepts_setting_sources_without_typeerror(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """TASK-HMIG-006.4 AC-002: pre-loop ``setting_sources`` must not break langgraph.
+
+        The pre-loop design phase forwards ``setting_sources=["project"]``.
+        The translator drops it, so ``LangGraphHarness(**translated)`` must
+        not raise ``TypeError`` on the new kwarg.
+        """
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+
+        from guardkitfactory.harness import LangGraphHarness
+
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR,
+            **_sdk_kwargs(setting_sources=["project"]),
+        )
+
+        assert isinstance(harness, LangGraphHarness)
+
+    def test_sdk_path_threads_setting_sources(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """TASK-HMIG-006.4: the SDK harness records the forwarded ``setting_sources``."""
+        monkeypatch.setenv(_TEST_ENV_VAR, "sdk")
+
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR,
+            **_sdk_kwargs(setting_sources=["project"]),
+        )
+
+        # ClaudeSDKHarness stores the value for use in invoke()'s
+        # ClaudeAgentOptions construction.
+        assert harness._setting_sources == ["project"]

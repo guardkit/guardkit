@@ -112,6 +112,18 @@ consumers happy at the cost of LangGraph-side fidelity):
 | Resume support (`supports_resume`) | `True` (SDK `session_id`) | `False` (per AC-007, D-07) | **Out of scope** — JSON-on-disk checkpointing is the migration's chosen resume path. |
 | Direct-mode SDK call at `agent_invoker.py:5269+` | Direct SDK `query()` | Still SDK | **TASK-HMIG-006.1** |
 | Coach independent test pass (`coach_validator.py:1869+`) | Direct SDK `query()` | Still SDK | **TASK-HMIG-006.3** |
+| Pre-loop design phase (`task_work_interface.py:_execute_via_sdk`) | Routes through `select_harness()` | Routes through `select_harness()` | **Fixed in TASK-HMIG-006.4 (this task)** |
+
+The pre-loop design-phase row above is now closed: the design phase
+(Phases 1.5–2.8) dispatches through `select_harness()` rather than
+importing `claude_agent_sdk` directly, so `GUARDKIT_HARNESS=langgraph`
+routes the design phase through the LangGraph harness instead of
+silently using the SDK. The four SDK-only pre-loop kwargs
+(`setting_sources`, `max_turns`, `allowed_tools`, `permission_mode`) are
+forwarded to `select_harness()`; `_translate_kwargs_for_langgraph` drops
+them on the langgraph branch — `setting_sources` is a documented no-op
+(DeepAgents loads its default context; project-sources injection is
+deferred to a follow-up if needed).
 
 Each divergence is asserted explicitly by the AC-004 byte-compat test
 suite — see [`tests/orchestrator/harness/`](../../../tests/orchestrator/harness/).

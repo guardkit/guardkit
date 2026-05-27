@@ -92,6 +92,14 @@ class ClaudeSDKHarness(HarnessAdapter):
     max_turns:
         Maximum SDK internal turns; passed through to
         ``ClaudeAgentOptions.max_turns``.
+    setting_sources:
+        SDK ``ClaudeAgentOptions.setting_sources`` value controlling which
+        settings layers the agent loads (e.g. ``["project"]`` for
+        project-only context, ``["user", "project"]`` for both). Defaults
+        to ``["project"]`` so existing callers that do not pass it (the
+        ``_invoke_with_role`` player/coach path) keep the project-only
+        behaviour the harness previously hardcoded. The pre-loop design
+        phase (TASK-HMIG-006.4) passes it explicitly.
     model:
         Optional model override (e.g. ``"claude-sonnet-4-5-20250929"``).
         When ``None`` the SDK picks its default.
@@ -122,12 +130,18 @@ class ClaudeSDKHarness(HarnessAdapter):
         cleanup_handler_installer: Optional[
             Callable[[asyncio.AbstractEventLoop], None]
         ] = None,
+        setting_sources: Optional[List[str]] = None,
     ) -> None:
         self._sdk_timeout_seconds = sdk_timeout_seconds
         self._allowed_tools = list(allowed_tools)
         self._permission_mode = permission_mode
         self._max_turns = max_turns
         self._model = model
+        # Default to project-only context — preserves the value the
+        # harness previously hardcoded in invoke() (TASK-HMIG-006.4).
+        self._setting_sources = (
+            list(setting_sources) if setting_sources is not None else ["project"]
+        )
         self._resume_session_id = resume_session_id
         self._sdk_debug_dir = sdk_debug_dir
         self._cleanup_handler_installer = cleanup_handler_installer
@@ -230,7 +244,7 @@ class ClaudeSDKHarness(HarnessAdapter):
             allowed_tools=self._allowed_tools,
             permission_mode=self._permission_mode,
             max_turns=self._max_turns,
-            setting_sources=["project"],
+            setting_sources=self._setting_sources,
         )
         if self._model is not None:
             options_kwargs["model"] = self._model

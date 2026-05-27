@@ -541,4 +541,8 @@ class TestBug472DefenseInExistingPaths:
             "from guardkit.orchestrator.sdk_utils import check_assistant_message_error"
             in source
         )
-        assert "check_assistant_message_error(message)" in source
+        # TASK-HMIG-006.4: the design phase now routes through the
+        # HarnessAdapter, so the bug-#472 defence checks the raw SDK shape
+        # carried on the HarnessEvent (event.raw) rather than a bare
+        # `message`. The defence is still present and unconditional.
+        assert "check_assistant_message_error(event.raw)" in source

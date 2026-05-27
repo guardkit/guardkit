@@ -55,12 +55,25 @@ def _translate_kwargs_for_langgraph(harness_kwargs: dict[str, Any]) -> dict[str,
     * ``allowed_tools`` — SDK ``ClaudeAgentOptions.allowed_tools`` field;
       the LangGraph path receives its tool surface through the
       ``invoke()`` ``tools`` argument and through DeepAgents' built-in
-      tool set (filesystem + ``execute`` + planning + sub-agents).
+      tool set (filesystem + ``execute`` + planning + sub-agents). The
+      pre-loop design phase (TASK-HMIG-006.4) forwards the full
+      ``["Read", "Write", "Edit", "Bash", "Grep", "Glob"]`` set; it is
+      dropped here and DeepAgents' built-in surface is used instead.
     * ``permission_mode`` — SDK ``"acceptEdits"`` / ``"bypassPermissions"``
       vocabulary; LangGraph permissions are out of scope until
-      TASK-HMIG-002R wires the real backend/permissions plumbing.
+      TASK-HMIG-002R wires the real backend/permissions plumbing. The
+      pre-loop design phase forwards ``"acceptEdits"``; dropped here.
     * ``max_turns`` — SDK option only; the LangGraph turn loop is owned
-      by DeepAgents internally.
+      by DeepAgents internally. The pre-loop design phase forwards
+      ``max_turns=25``; dropped here.
+    * ``setting_sources`` — SDK ``ClaudeAgentOptions.setting_sources``
+      field controlling which settings layers load (TASK-HMIG-006.4).
+      There is no direct DeepAgents analogue, so it is a **no-op** on the
+      LangGraph path: the LangGraph harness always loads the default
+      DeepAgents context (option (a) of the TASK-HMIG-006.4 design note).
+      Project-sources context-injection into ``LangGraphHarness.invoke()``
+      is deferred to a separate task if it proves necessary. A truthy
+      value emits a debug-level trace mirroring ``resume_session_id``.
     * ``resume_session_id`` — LangGraph does not support session resume
       in the Wave-2 skeleton (``supports_resume`` is ``False``); the
       caller-side AC-007 warning in ``_invoke_with_role`` surfaces this.
@@ -93,6 +106,22 @@ def _translate_kwargs_for_langgraph(harness_kwargs: dict[str, Any]) -> dict[str,
             "does not support resume).",
             resume_session_id[:16],
         )
+
+    # TASK-HMIG-006.4 AC-002: the pre-loop design phase forwards
+    # setting_sources=["project"]. DeepAgents has no settings-layer
+    # analogue, so the kwarg is a documented no-op on the LangGraph path
+    # (the LangGraph harness always loads the default DeepAgents context).
+    # Emit a debug trace when a value is present so direct select_harness()
+    # callers get a signal the setting will not be honoured.
+    setting_sources = harness_kwargs.get("setting_sources")
+    if setting_sources:
+        logger.debug(
+            "TASK-HMIG-006.4 AC-002: setting_sources=%s dropped by "
+            "_translate_kwargs_for_langgraph (no DeepAgents analogue; "
+            "LangGraph path loads default DeepAgents context).",
+            setting_sources,
+        )
+
     return {"model": harness_kwargs.get("model")}
 
 

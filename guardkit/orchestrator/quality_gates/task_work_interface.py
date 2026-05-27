@@ -5,14 +5,22 @@ This module provides a clean interface for executing design phases (1.5-2.8)
 from the AutoBuild feature-build workflow, enabling quality gate reuse.
 
 Architecture:
-    TASK-POF-003: Uses an inline execution protocol sent directly to the
-    Claude Agent SDK, replacing the previous /task-work --design-only skill
-    invocation. This eliminates ~840KB of unnecessary context loading per
-    session by using setting_sources=["project"] instead of ["user", "project"].
+    TASK-POF-003: Uses an inline execution protocol, replacing the previous
+    /task-work --design-only skill invocation. This eliminates ~840KB of
+    unnecessary context loading per session by using
+    setting_sources=["project"] instead of ["user", "project"].
 
-    The inline protocol instructs the SDK agent to execute Phases 1.5
+    The inline protocol instructs the agent to execute Phases 1.5
     (task loading), 2 (planning), 2.5B (arch review), 2.7 (complexity),
     and 2.8 (checkpoint) directly.
+
+    TASK-HMIG-006.4: the design phase dispatches through
+    ``select_harness()`` (the ``GUARDKIT_HARNESS``-driven HarnessAdapter
+    seam) rather than importing ``claude_agent_sdk`` directly — the same
+    boundary ``agent_invoker._invoke_with_role`` crosses for the
+    Player/Coach loop. A ``GUARDKIT_HARNESS=langgraph`` run therefore
+    routes the design phase through the LangGraph harness instead of
+    silently using the SDK.
 
     Subprocess fallback still uses the guardkit CLI with --design-only flag.
 
@@ -406,16 +414,28 @@ class TaskWorkInterface:
 
     async def _execute_via_sdk(self, prompt: str) -> Dict[str, Any]:
         """
-        Execute task-work via Claude Agent SDK.
+        Execute the design-phase prompt through the active harness.
 
-        Invokes the SDK with the constructed prompt and collects the output
-        stream. Parses the stream to extract design phase results including
-        implementation plan, complexity score, and architectural review.
+        TASK-HMIG-006.4: routes through :func:`select_harness` (honouring
+        the ``GUARDKIT_HARNESS`` env var, default ``"sdk"``) instead of
+        importing ``claude_agent_sdk`` directly. This closes the fourth
+        SDK call site missed by TASK-HMIG-006, so a
+        ``GUARDKIT_HARNESS=langgraph`` run no longer silently bypasses the
+        harness adapter during the pre-loop design phase.
+
+        The harness yields substrate-agnostic
+        :class:`~guardkit.orchestrator.harness.adapter.HarnessEvent`
+        values; the joined assistant text is collected and handed to
+        :meth:`_parse_sdk_output`, preserving the SDK path's output shape.
+
+        The ``asyncio.timeout`` and ``async_heartbeat`` wrappers stay
+        orchestrator-side (Design Decision D-3) — the harness owns only
+        the message-stream translation and SDK-exception normalisation.
 
         Parameters
         ----------
         prompt : str
-            The complete prompt (e.g., "/task-work TASK-001 --design-only")
+            The complete design-phase prompt.
 
         Returns
         -------
@@ -431,119 +451,129 @@ class TaskWorkInterface:
         Raises
         ------
         ImportError
-            If Claude Agent SDK is not installed
+            When the SDK harness cannot import ``claude_agent_sdk`` — re-
+            raised so :meth:`execute_design_phase` falls back to the
+            subprocess path (behaviour preserved from the pre-migration
+            direct-import implementation).
         DesignPhaseError
-            If SDK execution fails or times out
+            For any other harness failure: LangGraph unavailable, unknown
+            ``GUARDKIT_HARNESS`` value, timeout, or a normalised SDK error.
         """
-        try:
-            from claude_agent_sdk import (
-                query,
-                ClaudeAgentOptions,
-                CLINotFoundError,
-                ProcessError,
-                CLIJSONDecodeError,
-                AssistantMessage,
-                TextBlock,
-                ToolUseBlock,
-                ToolResultBlock,
-                ResultMessage,
-            )
-        except ImportError as e:
-            import sys
-            diagnosis = (
-                f"Claude Agent SDK import failed.\n"
-                f"  Error: {e}\n"
-                f"  Python: {sys.executable}\n"
-                f"  To fix: pip install claude-agent-sdk or pip install guardkit-py[autobuild]"
-            )
-            logger.error(diagnosis)
-            raise ImportError(diagnosis) from e
-
+        from guardkit.orchestrator.exceptions import AgentInvocationError
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+            select_harness,
+        )
         from guardkit.orchestrator.sdk_utils import check_assistant_message_error
 
-        logger.info(f"Executing via SDK: {prompt}")
-        logger.info(f"Working directory: {self.worktree_path}")
+        logger.info(f"Executing design phase via harness (cwd={self.worktree_path})")
 
+        # TASK-HMIG-006.4 AC-001/AC-002: construct the harness via the
+        # env-var selector. The four SDK-only kwargs below are consumed by
+        # ClaudeSDKHarness on the SDK path and dropped by
+        # _translate_kwargs_for_langgraph on the langgraph path. A
+        # construction-time AgentInvocationError (GUARDKIT_HARNESS=langgraph
+        # with guardkitfactory missing, or an unknown value) must NOT fall
+        # back to the SDK subprocess path, so it surfaces as DesignPhaseError.
         try:
-            options = ClaudeAgentOptions(
-                cwd=str(self.worktree_path),
+            harness = select_harness(
+                sdk_timeout_seconds=self.sdk_timeout_seconds,
                 allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
                 permission_mode="acceptEdits",
                 max_turns=25,  # Inline protocol is simpler than full task-work
-                # TASK-POF-003: Use project-only context (~78KB) instead of user+project (~840KB)
-                # Inline protocol replaces /task-work skill invocation, so user skills not needed
+                # TASK-POF-003: project-only context (~78KB) vs user+project (~840KB).
                 setting_sources=["project"],
             )
+        except AgentInvocationError as e:
+            logger.error(f"Harness selection failed: {e}")
+            raise DesignPhaseError(phase="design", error=str(e)) from e
 
-            # Extract task_id from prompt for heartbeat logging
-            task_id_match = re.search(r"TASK-[A-Z0-9-]+", prompt)
-            heartbeat_task_id = task_id_match.group(0) if task_id_match else "unknown"
+        # Extract task_id from prompt for heartbeat logging.
+        task_id_match = re.search(r"TASK-[A-Z0-9-]+", prompt)
+        heartbeat_task_id = task_id_match.group(0) if task_id_match else "unknown"
 
-            collected_output: List[str] = []
+        collected_output: List[str] = []
+        try:
             async with asyncio.timeout(self.sdk_timeout_seconds):
                 async with async_heartbeat(heartbeat_task_id, "design phase"):
-                    async for message in query(prompt=prompt, options=options):
-                        # TASK-FB-FIX-005: Properly iterate ContentBlocks instead of str()
-                        # message.content is a list[ContentBlock], not a string
-                        if isinstance(message, AssistantMessage):
-                            err = check_assistant_message_error(message)
+                    async for event in harness.invoke(
+                        prompt=prompt,
+                        role="design",
+                        tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+                        cwd=self.worktree_path,
+                        timeout_seconds=self.sdk_timeout_seconds,
+                    ):
+                        # API-error check operates on the raw SDK shape per
+                        # Design Decision D-1 (raw is None on the LangGraph
+                        # path, which carries no bug-#472 surface).
+                        if event.raw is not None:
+                            err = check_assistant_message_error(event.raw)
                             if err:
-                                raise DesignPhaseError(phase="design", error=f"SDK agent error: {err}")
-                            for block in message.content:
-                                if isinstance(block, TextBlock):
-                                    collected_output.append(block.text)
-                                    # Log progress for debugging
-                                    if "Phase" in block.text or "Plan saved" in block.text:
-                                        logger.debug(f"SDK progress: {block.text[:100]}...")
-                                elif isinstance(block, ToolUseBlock):
-                                    logger.debug(f"Tool invoked: {block.name}")
-                                elif isinstance(block, ToolResultBlock):
-                                    # Extract content from tool results if present
-                                    if block.content:
-                                        collected_output.append(str(block.content))
-                        elif isinstance(message, ResultMessage):
-                            logger.info(f"SDK completed: turns={message.num_turns}")
+                                raise DesignPhaseError(
+                                    phase="design",
+                                    error=f"SDK agent error: {err}",
+                                )
 
-            # Join collected output and parse results
-            output_text = "\n".join(collected_output)
-            logger.info(f"SDK execution completed for design phase")
-
-            # TASK-FB-FIX-006: Log output length for debugging
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Collected output length: {len(output_text)} chars")
-                if len(output_text) < 500:
-                    logger.debug(f"Full output: {output_text}")
-                else:
-                    logger.debug(f"Output preview: {output_text[:500]}...")
-
-            return self._parse_sdk_output(output_text)
+                        if isinstance(event, AssistantMessageEvent):
+                            # The harness has already joined TextBlock text
+                            # into event.text. Real SDK streams never nest
+                            # tool-result content inside AssistantMessages,
+                            # so collecting event.text matches the
+                            # pre-migration TextBlock collection for any
+                            # production stream.
+                            if event.text:
+                                collected_output.append(event.text)
+                                if "Phase" in event.text or "Plan saved" in event.text:
+                                    logger.debug(
+                                        f"Harness progress: {event.text[:100]}..."
+                                    )
+                        elif isinstance(event, ResultMessageEvent):
+                            logger.info("Harness completed design phase")
+                            break
 
         except asyncio.TimeoutError:
-            error_msg = f"SDK timeout after {self.sdk_timeout_seconds}s"
+            error_msg = f"Harness timeout after {self.sdk_timeout_seconds}s"
             logger.error(error_msg)
             raise DesignPhaseError(phase="design", error=error_msg)
 
-        except CLINotFoundError as e:
-            error_msg = (
-                "Claude Code CLI not installed. "
-                "Run: npm install -g @anthropic-ai/claude-code"
-            )
-            logger.error(error_msg)
-            raise DesignPhaseError(phase="design", error=error_msg) from e
+        except DesignPhaseError:
+            # Already-structured (e.g. bug-#472 API error above) — pass through.
+            raise
 
-        except ProcessError as e:
-            error_msg = f"SDK process failed (exit {e.exit_code}): {e.stderr}"
-            logger.error(error_msg)
-            raise DesignPhaseError(phase="design", error=error_msg) from e
-
-        except CLIJSONDecodeError as e:
-            error_msg = f"Failed to parse SDK response: {e}"
-            logger.error(error_msg)
-            raise DesignPhaseError(phase="design", error=error_msg) from e
+        except AgentInvocationError as e:
+            # The harness normalises all SDK-specific failures to
+            # AgentInvocationError (Design Decision D-4). When the root
+            # cause is a missing claude_agent_sdk, re-raise ImportError so
+            # execute_design_phase falls back to the subprocess path
+            # (preserves pre-migration behaviour). All other harness
+            # failures surface as DesignPhaseError.
+            if isinstance(e.__cause__, ImportError):
+                logger.warning(
+                    "SDK harness reported claude_agent_sdk import failure; "
+                    "re-raising ImportError for subprocess fallback"
+                )
+                raise ImportError(str(e)) from e
+            logger.error(f"Harness invocation failed: {e}")
+            raise DesignPhaseError(phase="design", error=str(e)) from e
 
         except Exception as e:
             logger.exception(f"Unexpected error executing design phase: {e}")
             raise DesignPhaseError(phase="design", error=str(e)) from e
+
+        # Join collected output and parse results.
+        output_text = "\n".join(collected_output)
+        logger.info("Harness execution completed for design phase")
+
+        # TASK-FB-FIX-006: Log output length for debugging.
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Collected output length: {len(output_text)} chars")
+            if len(output_text) < 500:
+                logger.debug(f"Full output: {output_text}")
+            else:
+                logger.debug(f"Output preview: {output_text[:500]}...")
+
+        return self._parse_sdk_output(output_text)
 
     def _parse_sdk_output(self, output: str) -> Dict[str, Any]:
         """
