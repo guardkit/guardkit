@@ -79,8 +79,19 @@ obj/
 # GuardKit worktrees (created by autobuild)
 .guardkit/worktrees/
 
-# GuardKit autobuild artifacts (per-task state, not source-controlled)
-.guardkit/autobuild/
+# GuardKit autobuild artifacts (per-task state, not source-controlled).
+# Use `.guardkit/autobuild/*` (not trailing `/`) so git keeps walking the
+# directory and the audit-grade allow-patterns below for TASK-HMIG-009
+# can re-include specific files.
+.guardkit/autobuild/*
+# Audit-grade canary artefacts for TASK-HMIG-009 are explicit allow-patterns
+# (canary-set + results + comparison are committed; per-run artefacts under
+# .guardkit/autobuild/TASK-REV-HMIG-canary/<harness>/<task_id>/run_<n>/
+# stay gitignored — they contain stdout/stderr that may include logged
+# secrets, and they're reproducible from the runner).
+!.guardkit/autobuild/TASK-REV-HMIG-canary-set.json
+!.guardkit/autobuild/TASK-REV-HMIG-canary-results.json
+!.guardkit/autobuild/TASK-REV-HMIG-canary-comparison.md
 
 # Rollback audit-trail snapshots (TASK-FIX-RBSS): defensive entry that
 # applies to consumer projects without `.guardkit/autobuild/` excluded.

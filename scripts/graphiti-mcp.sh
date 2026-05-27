@@ -124,7 +124,7 @@ echo "  Model:   ${LLM_MODEL:-<YAML default: qwen-graphiti>}"
 echo "========================================"
 echo ""
 
-RUN_FLAGS=(-d)
+RUN_FLAGS=(-d --restart unless-stopped)
 if [ "$FOREGROUND" = "1" ]; then
   RUN_FLAGS=(--rm)
 fi

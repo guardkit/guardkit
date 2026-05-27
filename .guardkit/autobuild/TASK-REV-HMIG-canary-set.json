@@ -1,0 +1,101 @@
+{
+  "schema_version": "1.0.0",
+  "task_id": "TASK-HMIG-009",
+  "parent_review": "TASK-REV-HMIG",
+  "created": "2026-05-21T00:00:00Z",
+  "created_by": "scaffolded by /task-work TASK-HMIG-009 (operator-pickable)",
+  "spec_reference": "tasks/backlog/autobuild-harness-migration/TASK-HMIG-009-canary-validation.md",
+  "central_falsifier": "LangGraph aggregate first-pass-success rate across 9 LangGraph runs >= 75% (review §11). <75% halts Wave 4.",
+  "rep_count_per_harness": 3,
+  "pre_loop": false,
+  "pre_loop_rationale": "Forced off after smoke v5+v6 (2026-05-27) revealed that the pre-loop design phase hard-routes through claude-agent-sdk via task_work_interface, bypassing GUARDKIT_HARNESS. Disabling pre-loop isolates the harness adapter's actual purview (the Player-Coach loop). NOTE 2026-05-27: the v5/v6 marker-contract failures attributed to 'local Qwen' were actually a consequence of running qwen3-coder-30b (not an AutoBuild Player model — see model_choice_correction below) rather than a pre-loop substrate problem per se. Pre-loop ON should be re-evaluated against qwen-coder-next once TASK-HMIG-006.4 lands; see TASK-HMIG-009B. This is a scope narrowing relative to the original AC-007 falsifier — recorded in canary-analysis.md.",
+  "model_choice_correction": {
+    "applied": "2026-05-27",
+    "applied_via": "TASK-REV-HM09 review feedback (operator: rich@appmilla.com)",
+    "from": "qwen3-coder-30b / openai:qwen3-coder-30b",
+    "to": "qwen-coder-next / openai:qwen-coder-next",
+    "rationale": "Qwen3-Coder-Next is the documented and empirically proven AutoBuild Player model per docs/research/dgx-spark/gb10-model-requirements-matrix.md:61 ('Current. Proven with AutoBuild'), already configured on llama-swap port 8002 per docs/research/dgx-spark/llama-swap-config.yaml:72-79 (alias 'qwen-coder-next'), and named as the AutoBuild LLM in docs/research/dev-pipeline-system/ships-computer-system-arch-intent.md:58,70,449. The earlier post-2026-04-29 swap to qwen3-coder-30b was undocumented and not operator-approved; the operator raised this point repeatedly during TASK-REV-HMIG execution. F2 ('local Qwen fails marker contract') in canary-analysis.md §3 is now suspected to be a consequence of running the wrong model, not a llama-swap parser-config defect. Reverting to qwen-coder-next is expected to make F2 disappear without further infra work.",
+    "endpoint_change": "Both harnesses now target llama-swap's qwen-coder-next alias. SDK keeps ANTHROPIC_BASE_URL=http://promaxgb10-41b1:9000 because the Anthropic-compat endpoint accepts arbitrary model names and routes by model string; LangGraph keeps OPENAI_BASE_URL=http://promaxgb10-41b1:9000/v1 for the same reason. (Port 8002 is the model's direct vLLM endpoint; port 9000 is the llama-swap front door that routes by model name to whichever vLLM backend currently holds the model. Either port works; 9000 was already used by the pilot, so kept for minimal-diff continuity.)"
+  },
+  "harnesses": [
+    {
+      "name": "sdk",
+      "env": {
+        "GUARDKIT_HARNESS": "sdk",
+        "ANTHROPIC_BASE_URL": "http://promaxgb10-41b1:9000",
+        "ANTHROPIC_API_KEY": "vllm-local-key"
+      },
+      "model": "qwen-coder-next",
+      "notes": "SDK redirected to llama-swap front door on the GB10 (port 9000). Model alias: qwen-coder-next (Qwen3-Coder-Next FP8) — the operator's documented and proven AutoBuild Player model. See model_choice_correction above for the 2026-05-27 swap from qwen3-coder-30b."
+    },
+    {
+      "name": "langgraph",
+      "env": {
+        "GUARDKIT_HARNESS": "langgraph",
+        "OPENAI_BASE_URL": "http://promaxgb10-41b1:9000/v1",
+        "OPENAI_API_KEY": "llama-swap-local-key"
+      },
+      "model": "openai:qwen-coder-next",
+      "notes": "LangGraph via deepagents.create_deep_agent → init_chat_model('openai:qwen-coder-next') hitting llama-swap's OpenAI-compat endpoint at port 9000. The Wave-2 skeleton only forwards `model`; backend/permissions wiring is TASK-HMIG-002R territory. Endpoint reachability + tool-use block emission to be confirmed at the start of TASK-HMIG-009A execution (see 009A AC-001A)."
+    }
+  ],
+  "canary_tasks": [
+    {
+      "task_id": "TASK-GLI-004",
+      "role": "mandated_baseline",
+      "complexity": 2,
+      "source_path_at_canary_time": "tasks/completed/TASK-GLI-004/TASK-GLI-004.md",
+      "rationale": "Mandated by TASK-HMIG-009 spec. Small (complexity 2), single-file YAML edit + Python config-loader change. Already-passed SDK historical baseline (completed 2026-02-28). Establishes the harness-agnostic floor: if either harness fails here, it's not a Pattern-2 or Pattern-3 issue, it's a harness regression.",
+      "expected_first_pass_outcome_under_sdk": "approve in 1 turn (historical record)",
+      "surface_coverage": ["state-bridge moves (all autobuild tasks hit this)", "Coach AC verification on YAML+Python pair"],
+      "fixture_baseline_commit": "7f2c02cfbaf83da3348c51091929231abef2d489",
+      "fixture_baseline_rationale": "Parent of 5bbca5142 ('graphiti local embedding review and tasks', 2026-02-28) which introduced llm_provider and embedding_provider fields per AC-001. Verified: parent has no llm_provider in .guardkit/graphiti.yaml; child does.",
+      "fixture_branch_name": "canary-TASK-GLI-004-fixture",
+      "operator_action_required": "The runner auto-creates a local branch named `canary-TASK-GLI-004-fixture` at `fixture_baseline_commit` if it doesn't exist, then mutates the task file's autobuild.base_branch to that branch for the duration of each run, then restores the task file via `git checkout` after each run. The operator does NOT need to author the fixture branch manually. To opt out (e.g. to run against current main and trivially pass), set `fixture_baseline_commit` to null."
+    },
+    {
+      "task_id": "TASK-FIX-A7D3",
+      "role": "pattern_3_surface_candidate",
+      "complexity": 3,
+      "source_path_at_canary_time": "tasks/backlog/TASK-FIX-A7D3-fix-python-scoping-issue-with-json-import-in-enhancer-py.md",
+      "rationale": "Currently in backlog (not yet implemented), critical-priority bugfix in installer/core/lib/agent_enhancement/enhancer.py. Small scope (single-file Python scoping fix), exercises every state-bridge transition (backlog → design_approved → in_progress → in_review). Pattern 3 (honesty false-fail) historically manifested at the boundary between state_bridge moves and the union-merge at agent_invoker.py:2796 — every autobuild run on this task hits that surface naturally. If the LangGraph harness's identity-bounded honesty resolution (Layer 1 + Layer 3' contracts from review §6, codified in path-string-mismatch-is-not-dishonesty.md) is wired correctly, all 6 runs (3×SDK + 3×LG) should reach the 16-AC evaluation rather than short-circuit on a single critical file_existence discrepancy.",
+      "expected_first_pass_outcome_under_sdk": "approve in 1-2 turns (the post-Layer-1/Layer-3' SDK should handle this cleanly)",
+      "surface_coverage": ["state-bridge moves", "CoachVerifier._verify_files_exist", "TaskStateBridge.canonical_path_for(task_id)", "orchestrator-induced ghost-path filter"],
+      "operator_action_required": "No prep — task is already in backlog. The autobuild creates a worktree from main and the Player attempts the implementation fresh."
+    },
+    {
+      "task_id": "TASK-DOC-267D",
+      "role": "pattern_2_surface_candidate_with_caveat",
+      "complexity": 2,
+      "source_path_at_canary_time": "tasks/backlog/TASK-DOC-267D-add-agent-response-format-reference-to-claude-md-templates.md",
+      "rationale": "Currently in backlog. Documentation/template task: touches multiple template CLAUDE.md files plus template-generation logic. Multi-file scope (vs the single-file FIX-A7D3) stresses the Coach's file-set diff handling — a known weak surface in the SDK path. CAVEAT: this task has bdd_scenarios: [] (no linked Gherkin), so it does NOT directly exercise the BDD plugin interface contract from review §6 (C1: scenarios_attempted=0 → feedback, not approve). To get faithful Pattern-2 coverage, the operator should either (i) accept that this canary slot is a multi-file-write proxy rather than a BDD-plugin probe, or (ii) before the run, author a synthetic small task with `bdd_scenarios: [BDD-CANARY-001]` and a single scenario whose step definitions intentionally do not match (forces scenarios_attempted=0). Option (ii) is the more faithful Pattern-2 coverage; option (i) is the faster operator path.",
+      "expected_first_pass_outcome_under_sdk": "approve in 1-2 turns",
+      "surface_coverage": ["multi-file template edits", "Coach diff-summary handling", "(weakly) BDD oracle pre-flight on a task with no scenarios"],
+      "operator_action_required": "Optional: replace this slot with a synthetic BDD canary fixture per the caveat above. If accepting the slot as-is, no prep needed."
+    }
+  ],
+  "selection_notes": {
+    "why_these_three": "TASK-GLI-004 anchored by spec. TASK-FIX-A7D3 and TASK-DOC-267D selected from current backlog (no fixture replay needed). The two extras cover (a) single-file Pattern-3 surface and (b) multi-file write surface (weakly Pattern-2). Both are complexity 2-3, which keeps total wall-clock for 18 runs in the 4-12 hour range depending on harness throughput.",
+    "alternative_picks_considered_and_rejected": [
+      {
+        "task_id": "TASK-FIX-1B4A",
+        "reason_rejected": "Already completed (commit 9d2fe52d). Re-running requires a pre-fix fixture branch, which the operator may not want to author."
+      },
+      {
+        "task_id": "TASK-AB-FIX-INVAB1",
+        "reason_rejected": "Already completed. Same pre-fix-fixture requirement."
+      },
+      {
+        "task_id": "TASK-P28-D102",
+        "reason_rejected": "Has bdd_scenarios: [] (empty) — does not exercise BDD plugin. Also marked `deferred: post-release`, so out-of-scope for canary."
+      }
+    ],
+    "operator_override_protocol": "The operator MAY swap either of the two non-mandated canary tasks (slots 2 and 3) before invoking the runner. Update this file in place; the runner reads canary_tasks[] at start. The mandated TASK-GLI-004 slot MUST NOT be removed (spec AC-001) but MAY be supplemented with a fixture-branch reference if the operator chooses the pre-implementation replay path."
+  },
+  "result_collection": {
+    "per_run_record_target": ".guardkit/autobuild/TASK-REV-HMIG-canary-results.json",
+    "per_run_artefacts_target": ".guardkit/autobuild/TASK-REV-HMIG-canary/<harness>/<task_id>/run_<n>/",
+    "comparison_doc_target": ".guardkit/autobuild/TASK-REV-HMIG-canary-comparison.md",
+    "analysis_doc_target": "docs/state/TASK-REV-HMIG/canary-analysis.md"
+  }
+}
