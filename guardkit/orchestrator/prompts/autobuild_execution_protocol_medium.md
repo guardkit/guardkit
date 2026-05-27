@@ -232,6 +232,8 @@ CRITICAL: `completion_promises` MUST have one entry per acceptance criterion. Em
 
 Status values: "complete", "incomplete", "uncertain". Self-check: one entry per AC, no empty evidence.
 
+**CRITICAL: `files_modified` / `files_created` scoping** — list only paths YOU wrote or edited this session. Do NOT sweep `git status --porcelain`; in parallel-wave runs the worktree may contain sibling tasks' in-flight writes, and the honesty auditor will flag claims for paths you did not author as fabrications. A fabrication flag aborts evidence gathering (`partial_honesty_abort`). Exclude orchestrator-managed paths (`.guardkit/`, `.claude/task-plans/`).
+
 ---
 
 ## Output Markers

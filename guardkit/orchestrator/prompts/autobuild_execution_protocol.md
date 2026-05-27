@@ -282,6 +282,23 @@ Your report MUST be valid JSON with ALL of these fields.
 | requirements_addressed | array[string] | YES | Completed requirements |
 | requirements_remaining | array[string] | YES | Pending requirements |
 
+### `files_modified` / `files_created` Scoping Rule
+
+These fields MUST list only paths this task's session actually created or
+modified. Do NOT populate them from `git status --porcelain` or any
+directory sweep.
+
+**Why this matters**: in parallel-wave execution the worktree may contain
+in-flight writes from sibling tasks, and the honesty auditor will flag
+claims for paths you did not author as fabrications. A fabrication flag
+aborts evidence gathering (`partial_honesty_abort`) and prevents Coach
+verification from completing.
+
+- `files_created`: only paths you opened with the Write tool this session
+- `files_modified`: only paths you opened with the Edit tool this session
+- Exclude orchestrator-managed paths: `.guardkit/`, `.claude/task-plans/`,
+  `tasks/`, and any autobuild state files
+
 ### Completion Promise Schema
 
 Each completion_promise maps to one acceptance criterion:

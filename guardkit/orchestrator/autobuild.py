@@ -2274,8 +2274,21 @@ class AutoBuildOrchestrator:
                     )
                     return turn_history, "honesty_collapse"
 
-                # Display criteria progress after each turn
-                self._display_criteria_progress(turn_record, acceptance_criteria)
+                # Display criteria progress after each turn.
+                # Wrap in try/except: this is a display-only helper and must
+                # never fail a task. Previously a parse error inside
+                # _display_criteria_progress (e.g. unknown VerificationResult
+                # value from the Coach) bubbled up to orchestrate() and
+                # marked the task 'error', halting stop_on_failure runs.
+                # See TASK-REV-9A4B post-mortem.
+                try:
+                    self._display_criteria_progress(turn_record, acceptance_criteria)
+                except Exception:
+                    logger.exception(
+                        "[%s] _display_criteria_progress failed; continuing turn "
+                        "(this is a display-only helper)",
+                        task_id,
+                    )
 
                 # Persist state after each turn
                 if task_file_path:

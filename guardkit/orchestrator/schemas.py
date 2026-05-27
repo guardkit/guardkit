@@ -231,9 +231,29 @@ class CriterionVerification:
             >>> verification.result
             <VerificationResult.VERIFIED: 'verified'>
         """
+        raw_result = data.get("result", "rejected")
+        try:
+            result = VerificationResult(raw_result)
+        except ValueError:
+            # Coach LLMs sometimes emit a third state (e.g. "unverified",
+            # "pending", "cannot_verify") when the GATHERING-STATUS GUARD
+            # in coach_evidence.py blocks them from endorsing or rejecting
+            # an AC — the evidence pipeline aborted, so neither "verified"
+            # nor "rejected" is semantically correct. See
+            # .claude/rules/absence-of-failure-is-not-success.md.
+            # Defaulting to REJECTED is safe: an unknown verdict is
+            # definitionally not endorsed, so it cannot leak as approval.
+            # The Coach's notes field still carries the original reasoning.
+            logger.warning(
+                "Unknown VerificationResult value %r, defaulting to REJECTED "
+                "(emitter likely meant 'cannot verify' — see "
+                "absence-of-failure-is-not-success.md)",
+                raw_result,
+            )
+            result = VerificationResult.REJECTED
         return cls(
             criterion_id=data.get("criterion_id", ""),
-            result=VerificationResult(data.get("result", "rejected")),
+            result=result,
             notes=data.get("notes", ""),
         )
 

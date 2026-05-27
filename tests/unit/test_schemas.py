@@ -442,6 +442,47 @@ class TestCriterionVerification:
         assert restored.result == sample_verification.result
         assert restored.notes == sample_verification.notes
 
+    def test_from_dict_unknown_value_defaults_to_rejected(self, caplog):
+        """Unknown result values fall back to REJECTED with a warning.
+
+        Regression: TASK-REV-9A4B. Coach LLMs sometimes emit a third
+        state (e.g. "unverified", "pending", "cannot_verify") when the
+        GATHERING-STATUS GUARD blocks them from endorsing or rejecting.
+        Previously this raised ValueError and killed the orchestration.
+        """
+        import logging
+
+        data = {
+            "criterion_id": "AC-001",
+            "result": "unverified",
+            "notes": "Evidence pipeline aborted (partial_honesty_abort)",
+        }
+
+        with caplog.at_level(logging.WARNING, logger="guardkit.orchestrator.schemas"):
+            verification = CriterionVerification.from_dict(data)
+
+        assert verification.criterion_id == "AC-001"
+        assert verification.result == VerificationResult.REJECTED
+        assert (
+            verification.notes
+            == "Evidence pipeline aborted (partial_honesty_abort)"
+        )
+        # Warning must cite the value and the absence-of-failure rule
+        # so an operator can find it in the log and understand the cause.
+        assert any(
+            "unverified" in rec.message and "absence-of-failure" in rec.message
+            for rec in caplog.records
+        ), f"Expected warning citing 'unverified' and the rule, got: {caplog.records}"
+
+    def test_from_dict_other_unknown_values_also_default(self):
+        """Other plausible third-state words also fall back safely."""
+        for raw in ("pending", "cannot_verify", "uncertain", "skipped", ""):
+            data = {"criterion_id": "AC-X", "result": raw, "notes": ""}
+            verification = CriterionVerification.from_dict(data)
+            assert verification.result == VerificationResult.REJECTED, (
+                f"Expected REJECTED fallback for raw={raw!r}"
+            )
+
 
 # ============================================================================
 # 4. calculate_completion_percentage Tests
