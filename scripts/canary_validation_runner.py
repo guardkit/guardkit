@@ -48,12 +48,23 @@ Usage
     # Limit reps (e.g. quick smoke before committing to 18 full runs).
     python scripts/canary_validation_runner.py --reps 1
 
-After all 18 runs complete, run the aggregator at the bottom of this
-file to produce ``TASK-REV-HMIG-canary-comparison.md``:
+    # TASK-HMIG-009A partial canary: 2 backlog tasks (drops TASK-GLI-004),
+    # 12 runs, written to a dedicated TASK-HMIG-009A-canary namespace so
+    # they never conflate with the full 009 results.
+    python scripts/canary_validation_runner.py --variant 009a --dry-run
+    python scripts/canary_validation_runner.py --variant 009a
+    python scripts/canary_validation_runner.py --variant 009a --aggregate
+
+    # Ad-hoc scope narrowing without a named variant:
+    python scripts/canary_validation_runner.py --exclude-task TASK-GLI-004
+
+After all runs complete, run the aggregator at the bottom of this
+file to produce ``<namespace>-comparison.md``:
 
 .. code-block:: shell
 
-    python scripts/canary_validation_runner.py --aggregate
+    python scripts/canary_validation_runner.py --aggregate            # full 009
+    python scripts/canary_validation_runner.py --variant 009a --aggregate
 
 Non-goals
 ---------
@@ -86,10 +97,62 @@ from typing import Any
 # ---------------------------------------------------------------------------
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-CANARY_SET_PATH = REPO_ROOT / ".guardkit" / "autobuild" / "TASK-REV-HMIG-canary-set.json"
-RESULTS_PATH = REPO_ROOT / ".guardkit" / "autobuild" / "TASK-REV-HMIG-canary-results.json"
-COMPARISON_PATH = REPO_ROOT / ".guardkit" / "autobuild" / "TASK-REV-HMIG-canary-comparison.md"
-ARTEFACT_ROOT = REPO_ROOT / ".guardkit" / "autobuild" / "TASK-REV-HMIG-canary"
+AUTOBUILD_DIR = REPO_ROOT / ".guardkit" / "autobuild"
+CANARY_SET_PATH = AUTOBUILD_DIR / "TASK-REV-HMIG-canary-set.json"
+
+# Default output namespace = the full TASK-HMIG-009 canary (18 runs, 3 tasks).
+_DEFAULT_NAMESPACE = "TASK-REV-HMIG-canary"
+
+
+@dataclass
+class OutputPaths:
+    """Output targets for one canary scope. Each scope variant writes to its
+    own namespace so its runs never conflate with another variant's results.
+    """
+
+    results_path: Path
+    comparison_path: Path
+    artefact_root: Path
+
+    @classmethod
+    def for_namespace(cls, namespace: str) -> "OutputPaths":
+        return cls(
+            results_path=AUTOBUILD_DIR / f"{namespace}-results.json",
+            comparison_path=AUTOBUILD_DIR / f"{namespace}-comparison.md",
+            artefact_root=AUTOBUILD_DIR / namespace,
+        )
+
+
+# Scope variants narrow the canary to a task allowlist and redirect output
+# to a dedicated namespace. Default (no --variant) preserves the original
+# TASK-HMIG-009 full-canary behaviour.
+#
+# TASK-HMIG-009A: partial canary — 2 backlog tasks that do NOT need
+# fixture-branch isolation (so TASK-FIX-WTBC / F4 is off the critical path).
+# Drops TASK-GLI-004 (needs fixture isolation → 009B only). 2 tasks × 2
+# harnesses × 3 reps = 12 runs.
+VARIANTS: dict[str, dict[str, Any]] = {
+    "009a": {
+        "namespace": "TASK-HMIG-009A-canary",
+        "include_tasks": ["TASK-FIX-A7D3", "TASK-DOC-267D"],
+        "central_falsifier": (
+            "LangGraph first-pass-success rate is computable across >=6 "
+            "LangGraph runs (2 tasks x 3 reps) and meets either (a) >=75% "
+            "(cutover proceeds on schedule) or (b) <75% with classified "
+            "failure modes (cutover decision reconsidered with evidence). "
+            "A null result (no comparison computable) is the only failure. "
+            "(TASK-HMIG-009A)"
+        ),
+    },
+}
+
+DEFAULT_PATHS = OutputPaths.for_namespace(_DEFAULT_NAMESPACE)
+
+# Backwards-compatible module-level aliases (referenced by external tooling
+# and the docstring). Variant runs thread an OutputPaths instance instead.
+RESULTS_PATH = DEFAULT_PATHS.results_path
+COMPARISON_PATH = DEFAULT_PATHS.comparison_path
+ARTEFACT_ROOT = DEFAULT_PATHS.artefact_root
 
 
 @dataclass
@@ -142,28 +205,42 @@ def load_canary_set() -> dict[str, Any]:
     return json.loads(CANARY_SET_PATH.read_text())
 
 
-def load_existing_results() -> list[dict[str, Any]]:
-    if not RESULTS_PATH.exists():
+def load_existing_results(paths: OutputPaths = DEFAULT_PATHS) -> list[dict[str, Any]]:
+    if not paths.results_path.exists():
         return []
     try:
-        return json.loads(RESULTS_PATH.read_text()).get("runs", [])
+        return json.loads(paths.results_path.read_text()).get("runs", [])
     except json.JSONDecodeError:
         # Corrupted; back it up and start fresh so a partial run doesn't
-        # block all 18 forever.
-        backup = RESULTS_PATH.with_suffix(".json.corrupt." + str(int(time.time())))
-        shutil.copy(RESULTS_PATH, backup)
-        print(f"WARNING: {RESULTS_PATH} was unparseable; backed up to {backup}")
+        # block the whole batch forever.
+        backup = paths.results_path.with_suffix(".json.corrupt." + str(int(time.time())))
+        shutil.copy(paths.results_path, backup)
+        print(f"WARNING: {paths.results_path} was unparseable; backed up to {backup}")
         return []
 
 
-def build_run_plans(canary: dict[str, Any], reps: int, task_filter: str | None, harness_filter: str | None) -> list[RunPlan]:
+def build_run_plans(
+    canary: dict[str, Any],
+    reps: int,
+    task_filter: str | None,
+    harness_filter: str | None,
+    include_tasks: list[str] | None = None,
+    exclude_tasks: list[str] | None = None,
+) -> list[RunPlan]:
     plans: list[RunPlan] = []
     pre_loop = canary.get("pre_loop", True)  # default ON to preserve historical behavior
+    include_set = set(include_tasks) if include_tasks else None
+    exclude_set = set(exclude_tasks) if exclude_tasks else set()
     for harness in canary["harnesses"]:
         if harness_filter and harness["name"] != harness_filter:
             continue
         for task in canary["canary_tasks"]:
-            if task_filter and task["task_id"] != task_filter:
+            tid = task["task_id"]
+            if task_filter and tid != task_filter:
+                continue
+            if include_set is not None and tid not in include_set:
+                continue
+            if tid in exclude_set:
                 continue
             for rep in range(1, reps + 1):
                 plans.append(
@@ -363,7 +440,13 @@ def harvest_run_artefacts(task_id: str, dest: Path, run_cwd: Path = REPO_ROOT) -
     return metrics
 
 
-def execute_run(plan: RunPlan, max_turns: int, sdk_timeout: int, verbose: bool) -> RunRecord:
+def execute_run(
+    plan: RunPlan,
+    max_turns: int,
+    sdk_timeout: int,
+    verbose: bool,
+    paths: OutputPaths = DEFAULT_PATHS,
+) -> RunRecord:
     """Execute one autobuild invocation and return its record.
 
     Workflow:
@@ -376,7 +459,7 @@ def execute_run(plan: RunPlan, max_turns: int, sdk_timeout: int, verbose: bool) 
     4. Harvest player_turn_*.json, coach_turn_*.json, and the sdk_debug/
        tree into the canary artefact directory.
     """
-    artefact_dir = ARTEFACT_ROOT / plan.harness / plan.task_id / f"run_{plan.run_index}"
+    artefact_dir = paths.artefact_root / plan.harness / plan.task_id / f"run_{plan.run_index}"
     artefact_dir.mkdir(parents=True, exist_ok=True)
 
     # Decide run_cwd: canary worktree if fixture-branch, else repo root.
@@ -454,15 +537,22 @@ def execute_run(plan: RunPlan, max_turns: int, sdk_timeout: int, verbose: bool) 
     )
 
 
-def append_result(record: RunRecord, canary: dict[str, Any], existing: list[dict[str, Any]]) -> None:
+def append_result(
+    record: RunRecord,
+    canary: dict[str, Any],
+    existing: list[dict[str, Any]],
+    paths: OutputPaths = DEFAULT_PATHS,
+    parent_task: str = "TASK-HMIG-009",
+    falsifier: str | None = None,
+) -> None:
     payload = {
         "schema_version": "1.0.0",
-        "parent_task": "TASK-HMIG-009",
-        "central_falsifier": canary["central_falsifier"],
+        "parent_task": parent_task,
+        "central_falsifier": falsifier or canary["central_falsifier"],
         "updated": datetime.now(timezone.utc).isoformat(),
         "runs": existing + [record.__dict__],
     }
-    RESULTS_PATH.write_text(json.dumps(payload, indent=2) + "\n")
+    paths.results_path.write_text(json.dumps(payload, indent=2) + "\n")
 
 
 # ---------------------------------------------------------------------------
@@ -471,10 +561,10 @@ def append_result(record: RunRecord, canary: dict[str, Any], existing: list[dict
 # ---------------------------------------------------------------------------
 
 
-def aggregate() -> None:
-    if not RESULTS_PATH.exists():
-        sys.exit(f"ERROR: {RESULTS_PATH} not found. Run the 18 canary runs first.")
-    payload = json.loads(RESULTS_PATH.read_text())
+def aggregate(paths: OutputPaths = DEFAULT_PATHS) -> None:
+    if not paths.results_path.exists():
+        sys.exit(f"ERROR: {paths.results_path} not found. Run the canary runs first.")
+    payload = json.loads(paths.results_path.read_text())
     runs: list[dict[str, Any]] = payload.get("runs", [])
     if not runs:
         sys.exit("ERROR: no runs recorded. Nothing to aggregate.")
@@ -566,8 +656,8 @@ def aggregate() -> None:
         "",
     ])
 
-    COMPARISON_PATH.write_text("\n".join(md))
-    print(f"Wrote {COMPARISON_PATH.relative_to(REPO_ROOT)}")
+    paths.comparison_path.write_text("\n".join(md))
+    print(f"Wrote {paths.comparison_path.relative_to(REPO_ROOT)}")
     print(f"LangGraph rate: {lg_rate:.1f}% — {verdict.split('—')[0].strip()}")
 
 
@@ -586,22 +676,58 @@ def main() -> None:
     )
     parser.add_argument("--harness", choices=["sdk", "langgraph"], help="Restrict to one harness.")
     parser.add_argument("--task", help="Restrict to one canary task ID.")
+    parser.add_argument(
+        "--variant",
+        choices=sorted(VARIANTS),
+        help=(
+            "Scope variant. '009a' = partial canary (TASK-FIX-A7D3 + "
+            "TASK-DOC-267D, drops TASK-GLI-004) writing to its own "
+            "TASK-HMIG-009A-canary namespace. Omit for the full TASK-HMIG-009 "
+            "18-run canary."
+        ),
+    )
+    parser.add_argument(
+        "--exclude-task",
+        action="append",
+        default=[],
+        metavar="TASK-ID",
+        help="Drop a canary task ID from the run (repeatable). Applied after --variant.",
+    )
     parser.add_argument("--reps", type=int, default=3, help="Reps per (task, harness). Spec mandates 3.")
     parser.add_argument("--max-turns", type=int, default=5, help="Passed through to `guardkit autobuild task`.")
     parser.add_argument("--sdk-timeout", type=int, default=1200, help="Passed through to `guardkit autobuild task`.")
     parser.add_argument("--verbose", action="store_true", help="Pass `--verbose` to autobuild.")
     args = parser.parse_args()
 
+    # Resolve scope variant → output namespace, task allowlist, falsifier.
+    variant = VARIANTS.get(args.variant) if args.variant else None
+    if variant:
+        paths = OutputPaths.for_namespace(variant["namespace"])
+        include_tasks = variant.get("include_tasks")
+        parent_task = "TASK-HMIG-009A" if args.variant == "009a" else "TASK-HMIG-009"
+        falsifier = variant.get("central_falsifier")
+    else:
+        paths = DEFAULT_PATHS
+        include_tasks = None
+        parent_task = "TASK-HMIG-009"
+        falsifier = None
+
     if args.aggregate:
-        aggregate()
+        aggregate(paths)
         return
 
     canary = load_canary_set()
-    existing = load_existing_results()
-    plans = build_run_plans(canary, args.reps, args.task, args.harness)
+    existing = load_existing_results(paths)
+    plans = build_run_plans(
+        canary, args.reps, args.task, args.harness,
+        include_tasks=include_tasks, exclude_tasks=args.exclude_task,
+    )
 
     if args.dry_run:
-        print(f"Run plan ({len(plans)} runs, {len(existing)} already recorded):")
+        scope = f"variant={args.variant}" if args.variant else "full canary"
+        print(f"Run plan ({scope}, {len(plans)} runs, {len(existing)} already recorded):")
+        print(f"  results → {paths.results_path.relative_to(REPO_ROOT)}")
+        print(f"  artefacts → {paths.artefact_root.relative_to(REPO_ROOT)}/")
         for p in plans:
             status = "DONE" if is_already_run(p, existing) else "TODO"
             print(f"  [{status}] {p.harness:10s}  {p.task_id:20s}  rep {p.run_index}  model={p.model}")
@@ -615,9 +741,12 @@ def main() -> None:
     print(f"Executing {len(todo)} runs ({len(existing)} already complete, {len(plans) - len(todo) - len(existing)} skipped via filters)...")
     for i, plan in enumerate(todo, 1):
         print(f"\n[{i}/{len(todo)}] {plan.harness}  {plan.task_id}  rep {plan.run_index}")
-        record = execute_run(plan, args.max_turns, args.sdk_timeout, args.verbose)
+        record = execute_run(plan, args.max_turns, args.sdk_timeout, args.verbose, paths)
         existing.append(record.__dict__)
-        append_result(record, canary, [e for e in existing if e is not record.__dict__])
+        append_result(
+            record, canary, [e for e in existing if e is not record.__dict__],
+            paths=paths, parent_task=parent_task, falsifier=falsifier,
+        )
         print(
             f"  → exit={record.exit_code}  turns={record.turns_used}  "
             f"decision={record.coach_decision}  wall={record.wall_clock_seconds}s"

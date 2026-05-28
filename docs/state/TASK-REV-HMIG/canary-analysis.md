@@ -355,3 +355,111 @@ the falsifier was designed to measure. But the pilot **has** surfaced:
 - Worktree manager: [`guardkit/worktrees/manager.py`](../../../guardkit/worktrees/manager.py)
 - Anti-stub rule (Coach honesty guard origins): [`.claude/rules/absence-of-failure-is-not-success.md`](../../../.claude/rules/absence-of-failure-is-not-success.md), [`path-string-mismatch-is-not-dishonesty.md`](../../../.claude/rules/path-string-mismatch-is-not-dishonesty.md)
 - Pilot smoke artefacts under [.guardkit/autobuild/TASK-REV-HMIG-canary/](../../../.guardkit/autobuild/TASK-REV-HMIG-canary/) (per-run stdout/stderr/coach_turn/player_turn captures; sdk_debug for loop runs only)
+
+## 8. TASK-HMIG-009A — partial canary (post-F1, qwen-coder-next, no pre-loop)
+
+> Added by TASK-HMIG-009A (2026-05-27). This section is the audit narrative
+> for the scope-narrowed partial canary that runs once its dependency
+> (TASK-HMIG-006.4, F1 fix) landed. 009A drops TASK-GLI-004 (needs fixture
+> isolation → F4 → TASK-FIX-WTBC, deferred to 009B) and runs the two backlog
+> tasks that execute against current main.
+
+### 8.1 Scope as executed
+
+| Aspect | 009A value |
+|---|---|
+| Canary tasks | TASK-FIX-A7D3, TASK-DOC-267D (TASK-GLI-004 dropped) |
+| Reps per (task, harness) | 3 |
+| Total runs | 12 (2 tasks × 2 harnesses × 3 reps) |
+| Pre-loop | OFF (`--no-pre-loop`) — isolates the harness adapter's purview |
+| Backing model | `qwen-coder-next` (both harnesses) — the canonical AutoBuild Player model |
+| Runner invocation | `python scripts/canary_validation_runner.py --variant 009a` |
+| Output namespace | `.guardkit/autobuild/TASK-HMIG-009A-canary{,-results.json,-comparison.md}` |
+| Aggregate metric | LangGraph first-pass-success rate across all 6 LangGraph runs |
+
+### 8.2 Dependency status
+
+- **F1 (pre-loop bypasses harness adapter)** — **CLOSED** by TASK-HMIG-006.4
+  (commit `f2c240a7`, 2026-05-27). `task_work_interface._execute_via_sdk` now
+  routes through `select_harness()`; its falsifier (zero
+  `claude_agent_sdk.subprocess_cli` lines in the design phase under
+  `GUARDKIT_HARNESS=langgraph`) is covered by a CI test. The **live** pre-loop
+  smoke (009A AC-001) remains to be run once the model substrate is available.
+- **F4 (worktree manager ignores cwd branch)** — **out of scope** for 009A
+  (both tasks run against current main; no fixture replay). Deferred to 009B.
+
+### 8.3 Preflight — AC-001A: BLOCKER (2026-05-27)
+
+**`qwen-coder-next` is not deployed on the live GB10 llama-swap front door.**
+
+`GET http://promaxgb10-41b1:9000/v1/models` returns `architect-agent`,
+`gemma4-tutor`, `nomic-embed`, `qwen-graphiti`, `qwen3-coder-30b`,
+`qwen36-workhorse` — **`qwen-coder-next` is absent**. A direct
+`POST /v1/chat/completions` with `model=qwen-coder-next` returns
+`could not find suitable inference handler for qwen-coder-next`; port 8002
+(claimed "direct vLLM endpoint") refuses connection; `qwen3-coder-30b`
+answers normally on :9000.
+
+The model-swap correction (canary-set `model_choice_correction`, applied
+2026-05-27) cited [`llama-swap-config.yaml:72-79`](../../../docs/research/dgx-spark/llama-swap-config.yaml)
+as evidence the model is "already configured" — but that file is marked
+**HISTORICAL** (pre-llamacpp-migration, 2026-04-29) at its line 4 and names
+[`RUNBOOK-v3-production-deployment.md`](../../../docs/research/dgx-spark/RUNBOOK-v3-production-deployment.md)
+§5.2 as the live source-of-truth. The runbook's live config defines
+`qwen36-workhorse`/`gemma4-tutor`/`qwen-graphiti`/`nomic-embed` — **not**
+`qwen-coder-next`. So the model the canary depends on exists only in a stale
+config and is not on the live substrate.
+
+**This halts AC-001A→D and AC-003.** It is the cheap front-loaded catch the
+009A preflight was designed for: it prevents ~10h of GB10 compute on a run
+that would 404 on every request. See the canary-set `preflight_findings`
+block and [`docs/deep-dives/autobuild_local_vllm.md`](../../../docs/deep-dives/autobuild_local_vllm.md)
+"Live deployment status" for the remediation.
+
+**Operator action required before the batch can run:** deploy `qwen-coder-next`
+on the GB10 llama-swap (GB10-shell action — add the builders-group entry,
+stage the GGUF, reload, reconverge the runbook), then re-run AC-001A until
+`/v1/models` lists the alias and a completion returns 200. _Alternatively_ the
+operator may decide the live `qwen3-coder-30b` is the substrate to validate
+and revise the model choice — but F2/F6 were observed on `qwen3-coder-30b`, so
+that re-opens the marker-contract question.
+
+### 8.4 AC-001B/C/D — preflight smokes (pending substrate)
+
+_Blocked on §8.3. To be filled once `qwen-coder-next` is reachable:_
+
+- **AC-001B** — replay TASK-FIX-A7D3 design prompt directly against the
+  llama-swap `qwen-coder-next` endpoint; observe ≥1 well-formed `tool_use`
+  block. If observed → F2 confirmed methodologically resolved. If not → halt
+  and file a parser-config investigation for `qwen-coder-next` specifically.
+- **AC-001C** — one-rep SDK smoke (`--no-pre-loop`, `GUARDKIT_HARNESS=sdk`)
+  reaches Coach turn 1 with non-empty `files_modified`.
+- **AC-001D** — one-rep LangGraph smoke (same, `GUARDKIT_HARNESS=langgraph`).
+
+### 8.5 Results (pending batch)
+
+_To be auto-populated by `python scripts/canary_validation_runner.py --variant 009a --aggregate`
+into [`.guardkit/autobuild/TASK-HMIG-009A-canary-comparison.md`](../../../.guardkit/autobuild/TASK-HMIG-009A-canary-comparison.md),
+then summarised here._
+
+| Harness | First-pass success | Mean turns | Notes |
+|---|---|---|---|
+| SDK | _pending_ | _pending_ | |
+| LangGraph | _pending_ | _pending_ | |
+
+### 8.6 Verdict (AC-005, pending data)
+
+The Wave-4 cutover bar (per TASK-HMIG-009 AC-007, with the F6 substrate-quality
+caveat): LangGraph first-pass-success ≥75% across the 6 LangGraph runs ⇒ GO;
+<75% with classified failure modes ⇒ NO-GO / reconsider with evidence. A null
+result (no comparison computable) is the only outright task failure.
+
+**Current status: cannot be computed — blocked at AC-001A (§8.3).** Verdict
+deferred until the substrate blocker is cleared and the 12 runs execute.
+
+### 8.7 Cross-link to cutover (AC-006)
+
+[TASK-HMIG-010](../../../tasks/) (Wave-4 cutover) is gated on this verdict. As
+of 2026-05-27 the signal is **not yet available** (AC-001A blocker), so the
+cutover decision has no 009A input yet. On GO → HMIG-010 proceeds on schedule;
+on NO-GO → escalate to operator for cutover-deadline reconsideration.

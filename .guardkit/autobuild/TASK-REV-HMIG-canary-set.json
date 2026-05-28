@@ -17,6 +17,29 @@
     "rationale": "Qwen3-Coder-Next is the documented and empirically proven AutoBuild Player model per docs/research/dgx-spark/gb10-model-requirements-matrix.md:61 ('Current. Proven with AutoBuild'), already configured on llama-swap port 8002 per docs/research/dgx-spark/llama-swap-config.yaml:72-79 (alias 'qwen-coder-next'), and named as the AutoBuild LLM in docs/research/dev-pipeline-system/ships-computer-system-arch-intent.md:58,70,449. The earlier post-2026-04-29 swap to qwen3-coder-30b was undocumented and not operator-approved; the operator raised this point repeatedly during TASK-REV-HMIG execution. F2 ('local Qwen fails marker contract') in canary-analysis.md §3 is now suspected to be a consequence of running the wrong model, not a llama-swap parser-config defect. Reverting to qwen-coder-next is expected to make F2 disappear without further infra work.",
     "endpoint_change": "Both harnesses now target llama-swap's qwen-coder-next alias. SDK keeps ANTHROPIC_BASE_URL=http://promaxgb10-41b1:9000 because the Anthropic-compat endpoint accepts arbitrary model names and routes by model string; LangGraph keeps OPENAI_BASE_URL=http://promaxgb10-41b1:9000/v1 for the same reason. (Port 8002 is the model's direct vLLM endpoint; port 9000 is the llama-swap front door that routes by model name to whichever vLLM backend currently holds the model. Either port works; 9000 was already used by the pilot, so kept for minimal-diff continuity.)"
   },
+  "task_hmig_009a_scope": {
+    "applied": "2026-05-27",
+    "applied_via": "implement TASK-HMIG-009A (operator: rich@appmilla.com)",
+    "summary": "Scope-narrowed partial canary. Run via `python scripts/canary_validation_runner.py --variant 009a`, which reads this same canary set but restricts to the two backlog tasks below and writes to a dedicated TASK-HMIG-009A-canary output namespace (so 009A runs never conflate with the full-009 results in TASK-REV-HMIG-canary-results.json).",
+    "tasks": ["TASK-FIX-A7D3", "TASK-DOC-267D"],
+    "dropped_from_009a": {
+      "TASK-GLI-004": "Needs fixture-branch isolation, which is defeated by F4 (TASK-FIX-WTBC). Retained in this canary_tasks[] for the full-009 / 009B run but excluded from the 009A --variant allowlist. NOT removed (009 spec AC-001 mandates the GLI-004 slot)."
+    },
+    "reps_per_task_per_harness": 3,
+    "total_runs": 12,
+    "pre_loop": false,
+    "f4_status": "OUT OF SCOPE for 009A — the two 009A tasks run against current main (no fixture replay), so the F4 worktree-cwd-branch bug is not on the critical path. Fixture-isolation canary is deferred to TASK-HMIG-009B (post-TASK-FIX-WTBC).",
+    "aggregate_metric": "LangGraph first-pass-success rate across all 6 LangGraph runs (2 tasks x 3 reps)."
+  },
+  "preflight_findings": {
+    "AC-001A_2026-05-27": {
+      "verdict": "FAIL — BLOCKER",
+      "finding": "Live GB10 llama-swap front door (http://promaxgb10-41b1:9000) does NOT serve the `qwen-coder-next` alias. `GET /v1/models` lists architect-agent, gemma4-tutor, nomic-embed, qwen-graphiti, qwen3-coder-30b, qwen36-workhorse — but NOT qwen-coder-next. A direct `POST /v1/chat/completions` with model=qwen-coder-next returns 'could not find suitable inference handler for qwen-coder-next'. Port 8002 (claimed direct vLLM endpoint) refuses connection. By contrast qwen3-coder-30b answers normally on :9000.",
+      "implication": "The model_choice_correction above cited docs/research/dgx-spark/llama-swap-config.yaml:72-79 as evidence qwen-coder-next is 'already configured' — but that file is explicitly marked HISTORICAL (pre-llamacpp-migration, 2026-04-29) at its line 4, and names RUNBOOK-v3-production-deployment.md §5.2 as the live source-of-truth. The runbook's live config block defines qwen36-workhorse / gemma4-tutor / qwen-graphiti / nomic-embed — NOT qwen-coder-next. So qwen-coder-next is defined ONLY in a stale config and is not deployed on the live substrate.",
+      "operator_action_required": "Before the 12-run batch can produce meaningful signal, the GB10 llama-swap config must actually serve qwen-coder-next (GB10-shell action: add the qwen-coder-next builders-group entry to /opt/llama-swap/config/config.yaml per the historical llama-swap-config.yaml:72-90 block, ensure /opt/llama-swap/models/qwen3-coder-next/Qwen3-Coder-Next-FP8.gguf is present, and reload llama-swap). Re-run AC-001A curl smoke to confirm 200 + non-empty before committing to ~10h of compute. ALTERNATIVELY the operator may decide qwen3-coder-30b (which IS live) is the substrate to validate against and revise the model_choice_correction — but note F2/F6 in canary-analysis.md were observed on qwen3-coder-30b, so that path re-opens the marker-contract question.",
+      "halts": ["AC-001A", "AC-001B", "AC-001C", "AC-001D", "AC-003"]
+    }
+  },
   "harnesses": [
     {
       "name": "sdk",
