@@ -176,13 +176,20 @@ Production config: `/opt/llama-swap/config/config.yaml`
 
 | Model | Footprint (weights + KV @ ctx) | Used by |
 |---|---|---|
-| `qwen-graphiti` (Qwen2.5-14B Q8_0) | ~22 GB @ 32 K, `-np 6` | Graphiti entity extraction, Jarvis intent routing |
+| `qwen-graphiti` (Qwen2.5-14B Q8_0) | ~28 GB @ 65 K, `-np 4` (16 K per slot — bumped 2026-05-25, see §9) | Graphiti entity extraction, Jarvis intent routing |
 | `nomic-embed` (nomic-embed-text-v1.5 f16) | ~2 GB @ 8 K, `-np 4` | Graphiti embeddings, ChromaDB |
 | `qwen36-workhorse` (Qwen3.6-35B-A3B UD-Q4_K_XL) | ~30 GB @ 98 K, `-np 1` | AutoBuild Player/Coach (legacy), Forge, Dataset Factory, **Jarvis-reasoner subagent** |
 | `gemma4-tutor` (Gemma 4 26B-A4B Q4_K_M) | ~22 GB @ 32 K, `-np 1` | GCSE study tutor (Socratic) |
 | `architect-agent` (gemma-4 thinking variant Q4_K_M) | ~25 GB @ 65 K, `-np 1` | ADR / architectural review (software-architect alias) |
 
-Steady-state baseline: **~87 GB used**, leaving ~34 GB for OS + VS Code + Firefox + autobuild's Python orchestrator.
+Steady-state baseline (post 2026-05-25 bump): **~93 GB used** (was
+~87 GB pre-bump; see §9), leaving ~28 GB for OS + VS Code + Firefox
++ autobuild's Python orchestrator. The bump was deliberately landed
+as `-np 4 / ctx 65 K` instead of `-np 6 / ctx 98 K` precisely to keep
+the headroom growth modest (+6 GB instead of +12-16 GB). Keep
+`qwen3-coder-30b` and any extra on-demand model evicted unless actively
+in use, and treat `/unload` (§5.1) as the first response to memory
+pressure during the demo.
 
 ### 4.2 Defined-but-not-preloaded (on-demand)
 
@@ -415,7 +422,135 @@ Based on findings 1-6:
 
 ---
 
-## 9. Provenance
+## 9. Configuration revisions
+
+### 9.1 2026-05-25 — qwen-graphiti `--ctx-size 32768 → 65536`, `-np 6 → 4`
+
+**Trigger:** Graphiti architecture-seed run for the DDD South West
+2026 demo failed when graphiti-core's `full_doc` chunker emitted a
+**9443-token chunk** for the largest workflow rule. The chunk
+exceeded the per-slot ceiling and llama.cpp returned
+`exceed_context_size_error 400`, aborting the seed before the
+ARCHITECTURE.md / domain-model.md chunks (expected to land in the
+9-12 K range) could be processed.
+
+**Diagnosis:** `qwen-graphiti` was running with `--ctx-size 32768`
+and `-np 6`. llama.cpp's parallel-slot mode divides total ctx-size
+across slots, so each slot only had **~5.6 K** of context
+(32768 ÷ 6 ≈ 5461, rounded by alignment to ~5632). Anything beyond
+that 400'd.
+
+**Memory pressure at deploy-time forced a slot-trade design.**
+The initial plan was to triple `--ctx-size` (32768 → 98304) while
+preserving `-np 6` (so each slot would jump from 5.6 K → 16 K with
+no loss of fan-out absorption). At apply-time, however, the GB10
+was already at **114 GB used / 121 GB total** — only 7 GB free,
+swap at 7 GB. The +12-16 GB KV-cache growth for the 98 K plan would
+have crossed the 121 GB ceiling on reload, matching the freeze
+profile that hard-reset the box on 2026-05-14 (see §1). The applied
+design trims `-np 6 → 4` instead, holding per-slot context at the
+same 16 K target with only a +6 GB KV delta.
+
+**Change applied (live config + runbook source-of-truth):**
+
+```diff
+   "qwen-graphiti":
+     cmd: >
+       $LLAMA_SERVER
+       --port \${PORT}
+       --host 0.0.0.0
+       --model $GRAPHITI_FILE
+       --alias qwen-graphiti
+-      --ctx-size 32768
++      --ctx-size 65536
+       --batch-size 2048
+       --ubatch-size 2048
+       --threads 16
+       -ngl 999
+       --no-mmap
+       --flash-attn on
+       --jinja
+       --temp 0.0
+-      -np 6
++      -np 4
+     checkEndpoint: /health
+     ttl: 0
+-    concurrencyLimit: 8
++    concurrencyLimit: 6
+```
+
+Per-slot context: ~5.6 K → **~16 K** (65536 ÷ 4 = 16384). Leaves
+~4-7 K headroom over the 9-12 K chunk band for graphiti-core's
+prompt scaffolding (entity-extract / edge-extract / dedup /
+summarise templates).
+
+**Fan-out trade.** Slot count dropped 6 → 4. graphiti-core's
+typical 3-5-call `add_episode` fan-out (TASK-OPS-9F2A, 2026-05-04)
+still fits in 4 slots in the common case; a worst-case 5-call burst
+will queue briefly at llama-swap before dispatch. The 2026-05-04
+rationale for `-np 6` was specifically to absorb a 5-call burst
+*plus one* admin-probe headroom slot — that headroom is gone now,
+but 5-bursts are infrequent enough that brief queueing is
+acceptable. `concurrencyLimit 8 → 6` preserves the same ~1.5×
+admin-probe buffer ratio over `-np`.
+
+**VRAM cost:** KV cache scales linearly with total ctx-size. 2× ctx
+(32 K → 65 K) ≈ **+6 GB**, taking Qwen2.5-14B Q8 from ~22 GB to
+~28 GB. Steady-state preload baseline crosses from ~87 GB to
+**~93 GB**, leaving ~28 GB of headroom — comfortable.
+
+**Deploy steps (executed 2026-05-25 against `promaxgb10-41b1`):**
+
+```bash
+# 1. Back up the live config
+sudo cp /opt/llama-swap/config/config.yaml \
+        /opt/llama-swap/config/config.yaml.bak-2026-05-25-pre-ctxbump
+
+# 2. /unload all children to free memory before reload
+#    (skip this only if you have ≥20 GB free already)
+curl -sS http://localhost:9000/unload    # frees ~100 GB
+
+# 3. Edit /opt/llama-swap/config/config.yaml — apply the diff above
+
+# 4. Probe qwen-graphiti to trigger reload with new args
+curl -sS http://localhost:9000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen-graphiti","max_tokens":4,
+       "messages":[{"role":"user","content":"ping"}]}'
+
+# 5. Probe nomic-embed to bring embeddings back
+curl -sS http://localhost:9000/v1/embeddings \
+  -H "Content-Type: application/json" \
+  -d '{"model":"nomic-embed","input":"ping"}'
+
+# 6. Verify the new args on the running child
+ps -o pid,args -C llama-server | grep qwen-graphiti
+# Expect: --ctx-size 65536 ... -np 4
+
+# 7. Confirm memory footprint
+free -h
+```
+
+**Validation:** re-run the Graphiti architecture-seed against the
+workflow rule that previously 400'd. Expected: no
+`exceed_context_size_error`. ARCHITECTURE.md / domain-model.md
+chunks in the next wave should also flow without error provided
+they land at ≤16 K including graphiti-core's prompt scaffolding.
+
+**Follow-up considerations:**
+
+- If ARCHITECTURE.md / domain-model.md chunks land *above* 16 K
+  including scaffolding, the same trade can be made again
+  (`-np 4 → 2`, `--ctx-size 65536 → 98304` would yield ~49 K per
+  slot at roughly the same VRAM). Below that point, the
+  graphiti-core fan-out queueing penalty starts to dominate.
+- If memory headroom permits later (e.g. after evicting
+  `qwen3-coder-30b` permanently), revisit the original
+  `-np 6 / --ctx-size 98304` design to restore fan-out absorption.
+
+---
+
+## 10. Provenance
 
 This document captures findings from an interactive session on
 2026-05-14 attempting to set up `guardkit autobuild` against

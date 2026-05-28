@@ -10,13 +10,17 @@
 **Target architecture:**
 ```
 llama-swap :9000 (single front door — all agents point here)
-├── Qwen2.5-14B Q8_0          (Graphiti entity extraction)      ~22 GB  always loaded
+├── Qwen2.5-14B Q8_0          (Graphiti entity extraction)      ~28 GB  always loaded
 ├── nomic-embed f16            (embeddings for Graphiti/ChromaDB) ~0.3 GB always loaded
 ├── Qwen3.6-35B-A3B Q4_K_XL   (workhorse: Player/Coach/Forge)   ~21 GB  always loaded
 └── Gemma 4 26B-A4B Q4_K_M    (fine-tuned GCSE study tutor)     ~17 GB  always loaded
                                                                  -------
-                                                      Total:    ~60 GB  (64 GB headroom)
+                                                      Total:    ~66 GB  (~62 GB headroom)
 ```
+*Graphiti footprint reflects the 2026-05-25 bump (`--ctx-size 32768 →
+65536`, `-np 6 → 4`, `concurrencyLimit 8 → 6`); was ~22 GB at the
+original 5.6 K-per-slot config. See §5.2 and
+`AUTOBUILD-ON-LLAMA-SWAP-findings.md` §9.1 for the rationale.*
 
 ---
 
@@ -294,12 +298,19 @@ cat > /opt/llama-swap/config/config.yaml << EOF
 # Port: :9000 (all agents, Graphiti, study tutor point here)
 # Routing: by model name/alias in the request
 #
-# Memory budget (validated 2026-04-28):
-#   Qwen2.5-14B Q8_0:                  ~22 GB
+# Memory budget (validated 2026-04-28; Graphiti revised 2026-05-25):
+#   Qwen2.5-14B Q8_0:                  ~28 GB   (was ~22 GB @ --ctx-size 32768
+#                                                 / -np 6; bumped to
+#                                                 --ctx-size 65536 / -np 4
+#                                                 on 2026-05-25 → 16 K per slot.
+#                                                 Live-edit memory pressure
+#                                                 forced trimming -np 6 → 4
+#                                                 instead of tripling ctx; see
+#                                                 §5.2 comment block.)
 #   nomic-embed f16:                    ~0.3 GB
 #   Qwen3.6-35B-A3B Q4_K_XL:           ~21 GB
 #   Gemma 4 26B-A4B Q4_K_M (tutor):    ~17 GB
-#   Total:                              ~60 GB / 128 GB (64 GB headroom)
+#   Total:                              ~66 GB / 128 GB (~62 GB headroom)
 # =============================================================================
 
 # 600s timeout (was 300s) gives the 21 GB workhorse and 19 GB tutor enough
@@ -366,6 +377,30 @@ models:
   #   VRAM cost: +6-8 GB versus the previous baseline (~22 GB → ~28-30 GB
   #   for Qwen2.5-14B Q8) — well within the 64 GB headroom in the memory
   #   budget at the top of this file.
+  #
+  #   2026-05-25 bump (DDD South West Graphiti architecture seed): raised
+  #   --ctx-size 32768 → 65536, reduced -np 6 → 4, and trimmed
+  #   concurrencyLimit 8 → 6. This gives each of the four parallel slots
+  #   16 K context (was ~5.6 K = 32768 / 6). graphiti-core's full_doc
+  #   chunker was emitting 9443-token chunks for the largest workflow
+  #   rule, which 400'd against the 5.6 K per-slot ceiling and aborted
+  #   the seed. ARCHITECTURE.md / domain-model.md chunks in the next
+  #   wave are expected to land around the 9-12 K range, so 16 K leaves
+  #   headroom for graphiti-core's prompt scaffolding on top of the
+  #   chunk payload. KV cache adds ~+6 GB (~22 GB → ~28 GB for
+  #   Qwen2.5-14B Q8); the broader memory budget at the top of this
+  #   file is updated to match.
+  #
+  #   Why -np was trimmed: at the time of the live edit the GB10 was
+  #   already at 114 GB used / 121 GB total. The "preserve -np 6 and
+  #   triple --ctx-size to 98304" alternative would have added
+  #   +12-16 GB and tipped past the 121 GB ceiling on reload (the
+  #   freeze profile from 2026-05-14). Trading two parallel slots
+  #   keeps the bump at +6 GB. 4 slots still absorbs the typical 3-5-
+  #   call add_episode fan-out, though a worst-case 5-burst will
+  #   queue briefly on llama-swap before being dispatched.
+  #   concurrencyLimit 6 keeps the same ~1.5× admin-probe buffer
+  #   over -np that 8/6 originally provided.
   # ===========================================================================
   "qwen-graphiti":
     cmd: >
@@ -374,7 +409,7 @@ models:
       --host 0.0.0.0
       --model $GRAPHITI_FILE
       --alias qwen-graphiti
-      --ctx-size 32768
+      --ctx-size 65536
       --batch-size 2048
       --ubatch-size 2048
       --threads 16
@@ -383,10 +418,10 @@ models:
       --flash-attn on
       --jinja
       --temp 0.0
-      -np 6
+      -np 4
     checkEndpoint: /health
     ttl: 0
-    concurrencyLimit: 8
+    concurrencyLimit: 6
     aliases:
       - "neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic"
       - "graphiti-llm"
