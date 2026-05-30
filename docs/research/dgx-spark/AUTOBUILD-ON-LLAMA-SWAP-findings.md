@@ -1167,6 +1167,186 @@ GPT-4o-mini** — untried, paid (£10/day documented in
 `graphiti.yaml` comments). No remaining local-LLM path that meaningfully
 moves the memory budget.
 
+### 9.9 2026-05-30 — drop `qwen-coder-next`; rotate preload tutor→architect; add `tutor` matrix.set
+
+**Trigger.** Memory-budget review following §9.8. The user asked whether
+`qwen-graphiti + nomic-embed + qwen36-workhorse + qwen-coder-next` could
+co-reside (autobuild Player on workhorse, dedicated Coder on coder-next,
+Graphiti hot). The math said no: ~28 + 2 + 30 + 90 = **~150 GB** vs the
+~115 GB effective budget. Per §9.2, coder-next is exclusive — it cannot
+share. Every GuardKit command that captures to Graphiti
+(`/feature-spec`, `/system-arch`, `/system-design`, `/task-work` outcome
+write, `/task-complete` rollup) would block during any autobuild run
+that used coder-next.
+
+Two follow-up questions surfaced from that analysis:
+
+1. **Is coder-next actually worth the operational tax?** Forum research on
+   the NVIDIA DGX Spark GB10 category turned up direct comparative data
+   between coder-next and the workhorse-class Qwen3.6 family:
+   - **AgentBench**: Qwen3.6 27B = **59.3%**, Qwen3-Coder-Next = **46.0%**.
+     The workhorse-class *beats* coder-next on agent benchmarks — exactly
+     the workload autobuild's Player↔Coach loop is.
+     ([forum thread][f-agent])
+   - User reports: *"coder-next get stuck in a few things and 122B fixes
+     it at once"*, *"I default to 35B most of the times"* (same thread,
+     azampatti). Coder-next has reasoning bottlenecks in agent loops.
+   - Single-stream gen speed: coder-next ~43–45 t/s, workhorse-class
+     ~31–32 t/s — a real but modest ~1.3–1.5× speedup, not the 10×
+     suggested by the often-misquoted 483 t/s figure (which is *batch*
+     throughput at c=32+, not single-stream).
+     ([HOW-TO thread][f-howto], [perf thread][f-perf])
+   - Quantization alternatives don't escape the memory floor: NVFP4
+     "couldn't find one that works" on GB10; AWQ allocation errors
+     reported. FP8 at ~92 GB resident is the only viable path.
+     ([quant thread][f-quant], [cluster thread][f-cluster])
+
+2. **Why have a dedicated autobuild coder at all?** The current config
+   already routes autobuild's Player and Coach to `qwen36-workhorse`
+   via the `autobuild-player` and `coach` aliases — coder-30b and
+   coder-next are *opt-in* via `--model autobuild-coder` /
+   `--model autobuild-coder-next`. The default path doesn't need them.
+
+**Decision.** Drop `qwen-coder-next` entirely; keep `qwen3-coder-30b` as
+an on-demand opt-in alternative; rotate the always-on preload set so
+`architect-agent` (Gemma 4 26B-A4B with the thinking template, used by
+`/system-arch` / `/system-design` / `/arch-refine` / `/system-plan`)
+takes `gemma4-tutor`'s slot; create a dedicated `tutor` matrix.set so
+tutor sessions load on-demand.
+
+**New layout (post-change).**
+
+| Set | Members | Resident (GB, approx) | When |
+|---|---|---:|---|
+| `all` (default) | qg + ne + qw + aa + dl | ~80 (dl loads on demand) | always-on |
+| `tutor` | gt + qw | ~45 | on first `study-tutor` request; auto-unload after 30 min idle |
+| `coder_30b` | qc | ~22 | on first `autobuild-coder` request; evicts the family |
+
+Preload list rotated: `gemma4-tutor` → `architect-agent`. Tutor's TTL
+flipped `0` → `1800`; architect's TTL flipped `1800` → `0`.
+
+**Keepalive script update.** `MODEL_PROBE_KIND` in
+`scripts/llama-swap-keepalive.sh` swapped `gemma4-tutor` →
+`architect-agent` to match the new preload set. The keepalive MUST equal
+the preload set or §9.4-class incidents recur. Deployed via:
+
+```bash
+sudo cp scripts/llama-swap-keepalive.sh /usr/local/bin/llama-swap-keepalive.sh
+```
+
+**Operational caveat for tutor sessions.** The `tutor` matrix.set does
+not contain `qg`/`ne`/`aa`. When the keepalive fires (5-min cadence) it
+probes `qwen-graphiti` (in `all` only), causing the solver to switch
+from `tutor` back to `all`, evicting `gemma4-tutor` mid-session. Two
+mitigations:
+
+- **Short turns** (under 5 min between user messages) won't notice — the
+  tutor reloads on the next message in ~8 s (warm-cache cold reload).
+- **Long sessions** should pause the timer first:
+  ```bash
+  sudo systemctl stop llama-swap-keepalive.timer
+  # ...tutor session...
+  sudo systemctl start llama-swap-keepalive.timer
+  ```
+
+This is the same discipline that §9.2 documented for coder-next, applied
+sparingly because tutor sessions are interactive and recoverable.
+
+**Verified (2026-05-30).** Hot-reload picked up the change. New preload
+healthy: qg + ne + qw + aa, all probes HTTP 200 in <1 s, memory steady
+at ~88 GB used / ~33 GB available. Tutor-mode switch verified:
+`set=tutor dsl="gt & qw" evict=[architect-agent nomic-embed qwen-graphiti]
+target=[gemma4-tutor qwen36-workhorse] cost=3`, cold load 8.3 s, memory
+drops to ~57 GB used / ~63 GB free. Switch-back to `all` on next graphiti
+request: `set=all evict=[gemma4-tutor]`, qg responds, memory returns to
+the always-on baseline.
+
+**Net memory delta committed.** No always-on RAM change (preload set
+same size, architect's ctx 65 K adds ~5 GB KV vs tutor's ctx 32 K, so
+~80 GB vs prior ~76 GB). **Disk reclaim potential: 75 GB** in the
+`~/.cache/huggingface/hub/models--Qwen--Qwen3-Coder-Next-FP8` cache —
+left in place pending an explicit decision to reclaim, so restoration
+remains zero-download.
+
+#### Restoration recipe — putting `qwen-coder-next` back
+
+Three artifacts needed; all preserved:
+
+1. **Launch script** — `/opt/llama-swap/scripts/vllm-coder-next.sh`
+   (left in place, unchanged).
+2. **HF cache** — `~/.cache/huggingface/hub/models--Qwen--Qwen3-Coder-Next-FP8`
+   (75 GB, left in place).
+3. **Config block** — captured below for re-insertion into
+   `/opt/llama-swap/config/config.yaml`:
+
+```yaml
+# 2026-05-28 (TASK-HMIG-009A): on-demand vLLM-served Qwen3-Coder-Next-FP8.
+# UNLIKE every other entry this launches vLLM in Docker (not llama.cpp) via
+# /opt/llama-swap/scripts/vllm-coder-next.sh, because Qwen3-Coder-Next ships
+# as FP8 safetensors (qwen3next hybrid linear-attention MoE) and the
+# delta-net path is CPU-bound/slow under llama.cpp (llama.cpp#19345). vLLM
+# FP8 is the proven ~43 tok/s path on GB10 (forum "HOW-TO: Run
+# Qwen3-Coder-Next on Spark"); see AUTOBUILD-ON-LLAMA-SWAP-findings.md.
+#
+# EXCLUSIVE: ~75 GB FP8 weights + KV ≈ ~90 GB resident. The `coder_next`
+# matrix.set below holds ONLY this model, so requesting it evicts every
+# llama.cpp model, and any family-alias request evicts this. Sequential by
+# design (DECISION-DF-001 concurrency analysis) — it cannot co-reside with
+# the study tutor under the 121 GB ceiling.
+#
+# BEFORE LOADING: pause the keepalive timer
+#   sudo systemctl stop llama-swap-keepalive.timer
+# (its 5-min family-revive probe would evict coder-next mid-build), check
+# `free -g`, and `curl :9000/unload` if the family is resident. Use via
+#   guardkit autobuild task TASK-XXX --model qwen-coder-next
+"qwen-coder-next":
+  cmd: /opt/llama-swap/scripts/vllm-coder-next.sh ${PORT}
+  cmdStop: docker stop vllm-coder-next
+  checkEndpoint: /health
+  ttl: 600                 # on-demand: auto-unload the ~77 GB beast after 10 min idle
+  concurrencyLimit: 2
+  aliases:
+    - "autobuild-coder-next"
+```
+
+Plus three matrix re-edits:
+
+```yaml
+matrix:
+  vars:
+    ...
+    qcn: qwen-coder-next   # re-add
+    ...
+  sets:
+    ...
+    coder_next: "qcn"      # re-add
+```
+
+After the edits, hot-reload picks up the entry within ~5 s. Verify with:
+`curl -s http://localhost:9000/v1/models | python3 -c "import sys,json;
+print('qwen-coder-next' in [m['id'] for m in json.load(sys.stdin)['data']])"`.
+
+To **fully reclaim** the 75 GB disk (if you decide coder-next won't be
+restored), the only additional step is:
+`rm -rf ~/.cache/huggingface/hub/models--Qwen--Qwen3-Coder-Next-FP8`.
+
+#### Pointers
+
+- [Forum: For local Agent, QWEN3.6 35B OR QWEN3-CODER-NEXT?][f-agent]
+- [Forum: HOW-TO Run Qwen3-Coder-Next on Spark][f-howto]
+- [Forum: Which quantization for Qwen3-Coder-Next 80B][f-quant]
+- [Forum: Does Qwen3.5-35B-A3B on GB10 leave performance on the table?][f-perf]
+- [Forum: Issues with qwen3 coder next on dual node cluster][f-cluster]
+- §9.2: original coder-next adoption
+- §9.4: keepalive ↔ exclusive-set ping-pong (the failure mode this avoids)
+- §9.8: gemma4-as-graphiti experiment (failed; companion experiment in the same memory-budget exercise)
+
+[f-agent]: https://forums.developer.nvidia.com/t/for-loacl-agent-qwen3-6-35b-or-qwen3-coder-next/367721
+[f-howto]: https://forums.developer.nvidia.com/t/how-to-run-qwen3-coder-next-on-spark/359571
+[f-quant]: https://forums.developer.nvidia.com/t/which-quantization-should-i-pick-for-qwen3-coder-next-80b-to-run-on-a-single-dgx-spark/360600
+[f-perf]: https://forums.developer.nvidia.com/t/does-qwen3-5-35b-a3b-on-gb10-leave-a-lot-of-performance-on-the-table/362200
+[f-cluster]: https://forums.developer.nvidia.com/t/issues-with-qwen3-coder-next-on-dual-node-cluster/362767
+
 ---
 
 ## 10. Provenance

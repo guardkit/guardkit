@@ -34,11 +34,18 @@ LOG_TAG="llama-swap-keepalive"
 # new model, add an entry here. Wrong endpoint produces a 4xx and still revives
 # the model (llama-swap loads on first request regardless), so a missing entry
 # is degraded but not broken.
+#
+# 2026-05-30: swapped gemma4-tutor → architect-agent to match the rotated
+# preload set in config.yaml. Tutor is now on-demand via the `tutor` matrix
+# set and MUST NOT be probed here (it would auto-load every 5 min and defeat
+# the on-demand intent). architect-agent uses gemma4-thinking.jinja — its
+# thinking-mode output is truncated at max_tokens=1 in the probe, which is
+# harmless. See findings §9.9.
 declare -A MODEL_PROBE_KIND=(
     [qwen-graphiti]=chat
     [nomic-embed]=embed
     [qwen36-workhorse]=chat
-    [gemma4-tutor]=chat
+    [architect-agent]=chat
 )
 
 log() {
@@ -69,12 +76,23 @@ configured_json=$(curl -sS --max-time "$PROBE_TIMEOUT" "$LLAMA_SWAP_URL/v1/model
     exit 1
 }
 
+# Only revive models on the ALWAYS-ON allowlist (the MODEL_PROBE_KIND keys).
+# On-demand models (qwen3-coder-30b, granite-docling, gemma4-tutor) are
+# INTENTIONALLY not-running between uses — they must NOT be revived. Reviving
+# them previously loaded the 77 GB qwen-coder-next and thrashed the GPU's
+# exclusive coder sets every 5 min, spiking unified memory past 121 GB → hard
+# freeze (2026-05-29). The MODEL_PROBE_KIND map is the source of truth for
+# "keep warm"; add an entry there to manage a new always-on model.
+# See docs/research/dgx-spark/AUTOBUILD-ON-LLAMA-SWAP-findings.md §9.4 + §9.9.
+ALWAYS_ON="${!MODEL_PROBE_KIND[*]}"
+
 # Parse with python3 (always present on this host) rather than jq (not
-# guaranteed in stripped systemd environments). We treat any model whose
-# /running entry is missing OR whose state is not "ready" as needing a revive.
-mapfile -t TO_REVIVE < <(python3 - "$running_json" "$configured_json" <<'PY'
+# guaranteed in stripped systemd environments). We treat any allowlisted model
+# whose /running entry is missing OR whose state is not "ready" as needing a
+# revive; non-allowlisted (on-demand) models are ignored.
+mapfile -t TO_REVIVE < <(python3 - "$running_json" "$configured_json" "$ALWAYS_ON" <<'PY'
 import json, sys
-running_raw, configured_raw = sys.argv[1], sys.argv[2]
+running_raw, configured_raw, allow_raw = sys.argv[1], sys.argv[2], sys.argv[3]
 try:
     running = json.loads(running_raw).get("running", [])
     configured = json.loads(configured_raw).get("data", [])
@@ -82,11 +100,12 @@ except (ValueError, AttributeError) as e:
     print(f"ERROR: parse: {e}", file=sys.stderr)
     sys.exit(2)
 
+allow = set(allow_raw.split())
 ready = {entry["model"] for entry in running if entry.get("state") == "ready"}
 configured_ids = [m["id"] for m in configured]
 
 for mid in configured_ids:
-    if mid not in ready:
+    if mid in allow and mid not in ready:
         print(mid)
 PY
 ) || {
