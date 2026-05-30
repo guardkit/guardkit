@@ -1465,6 +1465,184 @@ team's smoke run with a real test PDF.
 
 [lpa]: ../../../../lpa-platform-poc/docs/history/lpa-extraction-e2e-smoke-4.md
 
+### 9.11 2026-05-30 — granite-vision-4-1-4b actually-working config (vLLM v0.22.0; `lpa` set is mutually exclusive)
+
+**Trigger.** §9.10's initial config didn't work. LPA team's smoke (step 4b)
+reported vLLM crashing when llama-swap tried to start vllm-granite-vision.
+Investigation surfaced THREE distinct problems with the §9.10 design,
+each fixed:
+
+#### Problem 1: `--limit-mm-per-prompt image=1` rejected by newer vLLM
+
+**Symptom.**
+```
+vllm serve: error: argument --limit-mm-per-prompt:
+  Value image=1 cannot be converted to <function loads at 0x...>
+```
+
+**Cause.** vLLM changed the format of `--limit-mm-per-prompt` from
+`key=value` shorthand to JSON. The LPA runbook
+(`lpa-extraction-e2e-smoke-4.md`) was written for an older vLLM. New vLLM
+accepts either:
+- JSON: `--limit-mm-per-prompt '{"image": 1}'`
+- Dotted CLI form: `--limit-mm-per-prompt.image=1`
+
+**Fix.** Updated `vllm-granite-vision.sh` to use the dotted form (avoids
+shell-quoting headaches in the heredoc-like `exec docker run`).
+
+#### Problem 2: cu130-nightly image (vLLM 0.18.1rc1) doesn't natively support `Granite4VisionForConditionalGeneration`
+
+**Symptom.** After fixing problem 1, vLLM started, downloaded the model
+(~6 GB), then EngineCore crashed with:
+```
+ValueError: There is no module or parameter named 'image_newline' in
+TransformersMultiModalForCausalLM.
+```
+
+**Cause.** Granite Vision 4.1 uses the
+`Granite4VisionForConditionalGeneration` architecture (introduced for the
+4.1 family). Native vLLM support was added in v0.21+. Our cu130-nightly
+image had v0.18.1rc1 — too old. It fell back to
+`TransformersMultiModalForCausalLM` (the generic Transformers backend),
+which doesn't know about the `image_newline` parameter the 4.1 model
+ships with. Cause confirmed via vLLM docs: *"Granite Vision 4.1 is
+supported natively in vLLM as of v0.21.0"*.
+
+**Fix.** Pulled `vllm/vllm-openai:v0.22.0-aarch64-cu129-ubuntu2404`
+(31 GB image, released 2026-05-29). Re-ran the granite-vision serve —
+log now shows:
+```
+INFO [model.py:617] Resolved architecture: Granite4VisionForConditionalGeneration
+INFO: Application startup complete.   (at 106 s)
+```
+
+Native impl, not Transformers fallback. Updated `vllm-granite-vision.sh`
+default image to v0.22.0. The cu130-nightly image is **kept** as the
+default for `vllm-docling.sh` — docling doesn't need vLLM v0.21+ and is
+on a known-good cuDNN. Per-script image scoping; do not synchronise.
+
+#### Problem 3: actual memory footprint is ~26 GB, not the estimated ~12-15 GB
+
+**Symptom.** With granite-vision loaded alongside the always-on family
+(qg + ne + qw + aa ~80 GB), `free -h` showed **114 GB used / 7 GB free,
+11 GB swap**. A text-only chat-completion test timed out at 30 s —
+almost certainly swap-thrash-induced. This is right at the §9.4 freeze
+threshold.
+
+**Cause.** Initial estimate (12-15 GB) was based on
+`gpu-memory-utilization 0.12` ≈ 15 GB allocated KV cache. But on unified
+memory, the vLLM process also consumes substantial system memory for:
+- bf16 weights (~8 GB)
+- Vision encoder + spatial/layerwise projectors (Granite4Vision's
+  qformer scaffolding adds noticeable Python-side state)
+- Image processor / multi-modal pipeline state
+- vLLM Python process overhead (torch import, CUDA contexts, etc.)
+- Activation buffers during model load
+
+Measured delta on this hardware: **~26 GB** with `gpu-memory-utilization
+0.12, max-model-len 8192, max-num-seqs 4`. Even with aggressive trimming
+(util 0.08, max-len 4096, max-seqs 2), co-residency with the family
+would land near the freeze line — not worth the risk.
+
+**Fix.** **Removed `gv` from the `all` matrix.set; left it in `lpa`
+only.** Requesting `granite-vision` now triggers a switch to the `lpa`
+set (`gv & qw & ne`), evicting qg + aa + dl, keeping qw + ne, loading
+gv. Total resident: ~56 GB, well under the safe ceiling. After ttl 1800
+idle, gv unloads and the next probe revives the family.
+
+This makes granite-vision a **mutually-exclusive workload** like the
+(removed) qwen-coder-next — Graphiti is unavailable during LPA runs.
+That's acceptable because LPA pipeline output is captured by the LPA
+POC's own storage (not Graphiti), and LPA runs are bounded discrete
+sessions, not continuous background work.
+
+**Operational note.** A long LPA session needs the keepalive paused
+(`sudo systemctl stop llama-swap-keepalive.timer`) to prevent the
+5-min qg/ne/qw/aa probe cycle from evicting gv mid-session. Same
+discipline §9.2 documented for coder-next.
+
+#### Final working config (verified 2026-05-30)
+
+```yaml
+# /opt/llama-swap/config/config.yaml
+"granite-vision-4-1-4b":
+  cmd: /opt/llama-swap/scripts/vllm-granite-vision.sh ${PORT}
+  cmdStop: docker stop vllm-granite-vision
+  checkEndpoint: /health
+  ttl: 1800
+  concurrencyLimit: 4
+  aliases:
+    - "granite-vision-4.1-4b"
+    - "granite-vision"
+
+matrix:
+  vars:
+    gv: granite-vision-4-1-4b   # only member of `lpa`
+  sets:
+    all: "qg & ne & qw & aa & dl"   # gv NOT here
+    lpa: "gv & qw & ne"             # mutually exclusive with `all`
+```
+
+```bash
+# /opt/llama-swap/scripts/vllm-granite-vision.sh — key changes vs §9.10
+IMAGE="${VLLM_GV_IMAGE:-vllm/vllm-openai:v0.22.0-aarch64-cu129-ubuntu2404}"
+# ...
+--limit-mm-per-prompt.image=1   # not 'image=1'
+```
+
+**LPA POC AC-009 status (re-checked 2026-05-30 post-fix).**
+
+- **Step 4a (catalogue check):** ✅ still cleared
+  (`granite-vision-4-1-4b` in `/v1/models`).
+- **Step 4b (chat-completions smoke against a real LPA page):** ⏳
+  pending — the failed text-only test was a memory-pressure timeout
+  under the bad config; the LPA team's actual smoke (image_url POST
+  against an LPA page) hasn't been re-attempted since the fixes.
+  Recommended workflow:
+  1. Optionally pause keepalive if the session will be long.
+  2. POST chat-completions with
+     `{type:image_url, image_url:{url:"data:image/png;base64,..."}}`.
+  3. First request triggers cold-load via the v0.22.0 image (~110 s) and
+     the `lpa` matrix.set switch (qg+aa+dl evicted, gv+qw+ne resident).
+  4. Subsequent requests within the 30-min ttl window are warm.
+  5. After the session, the next qg/ne/qw/aa probe (keepalive or
+     explicit) auto-evicts gv and revives the family.
+
+**Memory footprints (corrected from §9.10).**
+
+| Mode | Resident | Headroom |
+|---|---:|---:|
+| `all` only (always-on) | ~80 GB | ~40 GB |
+| `all` + granite-vision (NOT recommended — was the original design) | ~106 GB | ~15 GB (§9.4 danger zone) |
+| `lpa` (gv + qw + ne) — granite-vision exclusive | ~56 GB | ~65 GB |
+
+**Restoration of §9.10 design (if granite-vision footprint shrinks in
+future).** If a future vLLM build measurably reduces granite-vision's
+unified-memory cost to ≤15 GB (e.g. via int4 quantization, smaller
+multi-modal state, etc.), re-adding `gv` to `all` becomes safe and
+brings back on-demand co-residency. To check: load granite-vision alone
+under the v0.22.0 image and measure `free -h` delta vs no-gv baseline.
+If under 15 GB net, re-add to `all`; if not, leave in `lpa` only.
+
+#### Lessons for future LPA-style vLLM additions
+
+1. **Pin a vLLM image that natively supports the target model.** Falling
+   back to `TransformersMultiModalForCausalLM` rarely works for newer
+   multi-modal architectures with custom parameters. Check vLLM's
+   `Resolved architecture:` line in the log — if it's
+   `TransformersMultiModalForCausalLM`, expect failures.
+2. **Measure actual resident memory before assuming budget.** On unified
+   memory, `gpu-memory-utilization` is a target for KV cache, NOT the
+   total process footprint. Add 2-3× headroom to the GPU util setting
+   when sizing matrix.sets.
+3. **Don't trust runbook arg syntax for newer vLLM.** Format changes
+   (e.g., `--limit-mm-per-prompt`) happen between minor versions.
+   Verify against `vllm serve --help=<arg-name>` for the chosen image.
+4. **Use a dedicated matrix.set for high-footprint on-demand models.**
+   The §9.2 coder-next pattern (exclusive set, evicts family) is the
+   correct default for anything >20 GB resident, not in-place
+   co-residency within `all`.
+
 ---
 
 ## 10. Provenance
