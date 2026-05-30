@@ -73,8 +73,6 @@ chunk_extraction_concurrency: 8
 # --- GB10 (vLLM, FP8) — ACTIVE ---
 llm_provider: vllm
 llm_base_url: http://promaxgb10-41b1:9000/v1
-# 2026-05-30: workhorse-for-Graphiti experiment reverted (both -np 1 and -np 2
-# variants). See AUTOBUILD-ON-LLAMA-SWAP-findings.md §9.5 + §9.6.
 llm_model: qwen-graphiti
 #
 # --- Fallback: Google Gemini (cloud, paid) — uncomment when GB10 training ---
