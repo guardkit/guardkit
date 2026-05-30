@@ -12,6 +12,8 @@ models via vLLM.
 
 Use `neuralmagic/Qwen2.5-14B-Instruct-FP8-dynamic` with `--structured-outputs-config.backend xgrammar`.
 Avoid Qwen3 (thinking mode wastes tokens). Avoid Nemotron 3 Nano (8K context too small).
+Avoid Gemma 4 26B-A4B (thinking-mode markers baked into weights + dedup-index
+hallucination; see [findings §9.8](../research/dgx-spark/AUTOBUILD-ON-LLAMA-SWAP-findings.md#98-2026-05-30--gemma-4-as-graphiti-backend-failed-revert)).
 Graphiti requires `response_format=json_schema` — xgrammar enforces this at the token level.
 
 ---
@@ -216,6 +218,7 @@ Stick with FP8 for production workloads.
 | Mistral-Small-4-119B NVFP4 | 40K | ~99 GB RAM; MLA backend fails on SM 12.1; ~27 tok/s |
 | Mistral-Nemo-12B | 128K | No GB10 benchmarks; unvalidated on ARM64 |
 | Llama 3.1 8B | 128K | Inferior JSON quality vs Qwen2.5; no GB10 community data |
+| Gemma 4 26B-A4B (Q4_K_M, llama.cpp) | 65K | Thinking-mode `<\|channel>thought<channel\|>` markers baked into weights — only suppressed by xgrammar/`json_schema`; leaks through `json_object`. Hallucinated dedup indices (returned `[0,3,5,7]` for valid range `0..1`). Chat-template alternation breaks Graphiti's `[system, user, user-on-retry]` retry pattern (fixable with custom jinja). See [findings §9.8](../research/dgx-spark/AUTOBUILD-ON-LLAMA-SWAP-findings.md#98-2026-05-30--gemma-4-as-graphiti-backend-failed-revert). |
 
 ---
 
