@@ -1347,6 +1347,124 @@ restored), the only additional step is:
 [f-perf]: https://forums.developer.nvidia.com/t/does-qwen3-5-35b-a3b-on-gb10-leave-a-lot-of-performance-on-the-table/362200
 [f-cluster]: https://forums.developer.nvidia.com/t/issues-with-qwen3-coder-next-on-dual-node-cluster/362767
 
+### 9.10 2026-05-30 — register `granite-vision-4-1-4b` for the LPA platform; add `lpa` matrix.set
+
+**Trigger.** `lpa-platform-poc/docs/history/lpa-extraction-e2e-smoke-4.md`
+AC-009: the LPA POC's planned swap from `granite-docling-258M` to
+`ibm-granite/granite-vision-4.1-4b` (Option 3 — ~16× more params, designed
+for general document understanding) was blocked because the routable id
+was not yet served by the GB10's llama-swap. Repo-side prep had landed
+(prompt seam in `src/lpa/clients/docling.py`); the model swap + smoke
+test could not run until granite-vision was advertised on `/v1/models`
+and routed on `/chat/completions`.
+
+User asked for "a configuration for the lpa platform with Qwen3.6
+workhorse and granite-vision-4.1-4b" — meaning both: register the model
+in llama-swap, and document the LPA-shaped layout (vision + workhorse).
+
+**Two adaptations from the LPA runbook in the source doc.**
+
+1. **Image: `vllm/vllm-openai:cu130-nightly`, NOT NGC `26.01-py3`.** The
+   LPA runbook suggested NGC, which was the same starting point that
+   docling-258M used and ran into in §9.3: NGC's older cuDNN fails the
+   idefics2/3 vision encoder's `F.conv2d` patch embedding on Blackwell
+   sm_121 with *"GET was unable to find an engine to execute this
+   computation"*. The cu130-nightly image (vLLM 0.18, torch 2.10+cu130,
+   cuDNN 9.15) runs the conv fine. Granite Vision shares the same vision
+   encoder family as Granite Docling, so the same lesson applies.
+2. **GPU util `0.12`, NOT `0.40`.** The LPA runbook suggested 0.40
+   (~50 GB allocation), which is wasteful for a 4B bf16 model. 0.12
+   (~15 GB) covers weights (~8 GB) + KV at max-len 8192 × max-num-seqs 4
+   (~2-3 GB) + activations (~1-2 GB) with headroom. Bumpable via
+   `VLLM_GV_GPU_UTIL` if real LPA load shows KV pressure.
+
+**What landed.**
+
+- **`/opt/llama-swap/scripts/vllm-granite-vision.sh`** — new launch
+  script, mirrors the `vllm-docling.sh` pattern (vLLM in Docker under
+  llama-swap so one memory manager owns the unified pool — avoids the
+  KV-cache profiling clash from §9.3). Container name
+  `vllm-granite-vision`. `HF_HUB_OFFLINE` deliberately NOT set so the
+  first load can download the ~8 GB weights; remove after first load if
+  desired. Three served-model-names registered: `granite-vision-4-1-4b`
+  (entry key — listed in `/v1/models`), `granite-vision-4.1-4b` (HF
+  model id), and bare `granite-vision`.
+- **`/opt/llama-swap/config/config.yaml`** — new `granite-vision-4-1-4b`
+  entry (`ttl: 1800`, `concurrencyLimit: 4`, aliases match the
+  served-model-names). New matrix var `gv` added to `matrix.vars`.
+  `gv` included in `all` (loads on-demand alongside the family — total
+  ~95 GB when loaded), plus a new dedicated `lpa: "gv & qw & ne"` set
+  (~42-45 GB) for memory-constrained LPA runs.
+
+**Layout (post-change).**
+
+| Set | Members | Resident (GB, approx) | When |
+|---|---|---:|---|
+| `all` (default) | qg + ne + qw + aa + dl + gv | ~80 always-on; +11 if docling loaded; +12-15 if vision loaded | always-on family + on-demand vision/docling co-resident |
+| `tutor` | gt + qw | ~45 | on first `study-tutor` request |
+| `lpa` | gv + qw + ne | ~42-45 | when memory pressure forces a smaller layout; otherwise gv loads in-place within `all` |
+| `coder_30b` | qc | ~22 | on first `autobuild-coder` request |
+
+**Co-residency caution.** Docling + granite-vision both loaded
+simultaneously with the family hits ~108 GB resident, close to the
+~115 GB safe ceiling. The LPA POC's migration replaces docling with
+vision, so this is a transitional concern: avoid invoking both VLMs
+back-to-back during the cutover window. After the migration completes,
+docling can be removed (entry, var, and set member) for a cleaner setup.
+
+**LPA POC AC-009 status (cleared step 4a; 4b pending first load).**
+
+- **Step 4a (catalogue check):** ✅ cleared.
+  `curl http://promaxgb10-41b1:9000/v1/models | jq '.data[].id'` now
+  returns `granite-vision-4-1-4b` in the list. The two aliases
+  (`granite-vision-4.1-4b` and bare `granite-vision`) route on
+  `/chat/completions` but don't appear in `/v1/models` — same behavior as
+  `granite-docling` and consistent with the LPA02-A gotcha called out in
+  the source runbook (the displayed id is the routable one; aliases
+  route but aren't listed).
+- **Step 4b (chat-completions smoke against a real LPA page):** ⏳
+  deferred. The first chat-completions request will trigger a ~8 GB
+  download of the granite-vision weights to
+  `~/.cache/huggingface/hub/models--ibm-granite--granite-vision-4.1-4b`,
+  then vLLM cold-start (~30-90 s), then serve the request. This is the
+  LPA team's smoke (it needs a real PDF page from the LPA test corpus),
+  not part of this infra change. Recommended: do the first load against
+  a stable memory state (no concurrent model swap) — same constraint
+  docling has, per §9.3.
+
+**Routable id to set in `DOCLING_VLM_MODEL`.** Any of these will route:
+
+- `granite-vision-4-1-4b` (the id shown in `/v1/models` — pick this
+  if you want the routable id to match the listed id exactly)
+- `granite-vision-4.1-4b` (the HF model name — matches what
+  `lpa-platform-poc/docs/history/lpa-extraction-e2e-smoke-4.md`
+  suggested)
+- `granite-vision` (short alias)
+
+**Keepalive note.** `granite-vision-4-1-4b` is on-demand and MUST NOT be
+added to `scripts/llama-swap-keepalive.sh`'s `MODEL_PROBE_KIND` — same
+rationale as docling, coder-30b, and tutor. The keepalive allowlist
+remains the 4 always-on (qg, ne, qw, aa). Probing gv would auto-trigger
+the 8 GB download every 5 min until cached, then auto-load it every 5
+min thereafter — defeating the on-demand intent.
+
+**Verified (2026-05-30).** Hot-reload picked up the change. New entry
+listed in `/v1/models`. Always-on preload unaffected (qg + ne + qw + aa
+all health-checked OK after reload). Memory steady at ~81 GB / ~39 GB
+free. Did NOT trigger the first cold load — leaving that for the LPA
+team's smoke run with a real test PDF.
+
+#### Pointers
+
+- [`lpa-platform-poc/docs/history/lpa-extraction-e2e-smoke-4.md`][lpa]
+  — source runbook (AC-009 unblocker)
+- §9.3 — original docling NGC vs cu130 lesson (same cuDNN/sm_121 issue
+  applies to granite-vision)
+- §9.9 — preceding change (preload rotation, coder-next removal) — this
+  is the next addition to the same matrix-config evolution
+
+[lpa]: ../../../../lpa-platform-poc/docs/history/lpa-extraction-e2e-smoke-4.md
+
 ---
 
 ## 10. Provenance
