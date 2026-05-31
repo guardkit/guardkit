@@ -1643,6 +1643,124 @@ If under 15 GB net, re-add to `all`; if not, leave in `lpa` only.
    correct default for anything >20 GB resident, not in-place
    co-residency within `all`.
 
+### 9.12 2026-05-31 — register `granite-vision-3-3-2b` as LPA fallback after 4.1-4b's page-4 EOS collapse
+
+**Trigger.** LPA POC team ran 7 full Ashworth smokes against
+`granite-vision-4-1-4b` on 2026-05-31 (see `lpa-platform-poc/docs/
+history/lpa-extraction-e2e-smoke-4.md` and `TASK-FIX-LPA02-F` progress
+log). Result: AC-001 still 0/0 primary attorneys. Root-caused to a
+**1-token EOS collapse** on Ashworth page-4-Section-2 with the prompt
+`"Convert this page to markdown."` in greedy decoding (`temperature: 0`).
+The collapse is reproducible across vLLM-container restarts (a 165 s
+cold call still emitted a single stop-token); adding any token to the
+prompt prefix (e.g. `"Please convert this page to markdown."`) unsticks
+page 4 in isolation, but every per-page tuning that fixes page 4
+degrades enough other pages in the 23-page Docling loop to drop
+"Sarah Bennett" from the markdown and net-regress the JSON extraction
+(the "per-page tuning → pipeline regression" pattern). The temperature
+sweep (Runs E + F) and the max_tokens sweep (Run G) all confirmed.
+
+The team's recommended next step (`smoke-4.md` §"Open questions"
+candidate 1): **fall back to `ibm-granite/granite-vision-3.3-2b`** —
+different training lineage, may not share the EOS-collapse signature;
+also smaller (3B vs 4B) so should help AC-007's 8-min runtime budget.
+
+**What landed.**
+
+- **New launch script** `/opt/llama-swap/scripts/vllm-granite-vision-3-3-2b.sh`
+  — mirrors the 4.1-4b script. Uses the same
+  `vllm/vllm-openai:v0.22.0-aarch64-cu129-ubuntu2404` image (3.3-2b's
+  `LlavaNextForConditionalGeneration` arch is universally supported in
+  vLLM since v0.4 — the cu130-nightly image would also work, but
+  staying on v0.22.0 for consistency with the 4.1-4b setup).
+  `gpu-memory-utilization 0.10` (down from 4.1-4b's 0.12; the smaller
+  model needs less KV-cache budget). Container name
+  `vllm-granite-vision-3-3-2b`.
+- **New model entry** in `/opt/llama-swap/config/config.yaml`:
+  `granite-vision-3-3-2b` with alias `granite-vision-3.3-2b` (HF model
+  id form). `ttl: 1800`. NOT given the bare `granite-vision` alias
+  (4.1-4b owns that to avoid ambiguity).
+- **New matrix var** `gv33` and **new matrix.set**
+  `lpa_v3: "gv33 & qw & ne"` — parallel to the existing
+  `lpa: "gv & qw & ne"` (§9.11). Both LPA sets are mutually exclusive
+  with `all` AND mutually exclusive with each other (only one vision
+  model loads at a time — they're substitutable for the LPA workload).
+  The LPA POC picks via `DOCLING_VLM_MODEL` env var on its side. **4.1-4b
+  is KEPT registered** as a comparison/rollback option; not removed.
+- **Inline comment for the LPA sets** was rewritten to capture both
+  (the old §9.10-era comment about "loads in-place within `all`" was
+  stale — §9.11 already made it mutually exclusive).
+
+**Verified end-to-end 2026-05-31.** Image-content POST via
+`/chat/completions` on `:9000`:
+
+```
+HTTP 200 in 353 s (cold load: 6 GB download + vLLM init + image processing)
+matrix: model=granite-vision-3-3-2b set=lpa_v3 dsl="gv33 & qw & ne"
+        evict=[architect-agent qwen-graphiti]
+        target=[granite-vision-3-3-2b nomic-embed qwen36-workhorse]
+        cost=2
+system_fingerprint: vllm-0.22.0-c935d4d0
+```
+
+Coherent response on a 1×1 transparent PNG (model hallucinated trees,
+which is normal for empty-image behavior). Switch-back to `all` worked:
+qg in 17 s, aa in 17 s (cold reloads — they had been evicted during the
+test; warm responses would be sub-second on subsequent probes).
+
+**Measured memory footprint: ~15 GB resident** for `granite-vision-3-3-2b`
+under the configured args. Significantly leaner than 4.1-4b's ~26 GB,
+matching the smaller parameter count. Memory math during the test:
+
+| Phase | Resident | Used | Free |
+|---|---|---:|---:|
+| Always-on family before test | qg + ne + qw + aa | ~88 GB | ~33 GB |
+| `lpa_v3` after cold load | gv33 + qw + ne | ~53 GB | ~68 GB |
+| After switch-back to `all` | qg + ne + qw + aa | ~88 GB | ~33 GB |
+
+`lpa_v3` is **comfortably under the 115 GB safe ceiling** with ~65 GB
+headroom — the leanest mutually-exclusive set in the matrix.
+
+**LPA POC AC-009 status (for the 3.3-2b variant).**
+
+- **Step 4a (catalogue check):** ✅ `granite-vision-3-3-2b` advertised in
+  `/v1/models`.
+- **Step 4b (chat-completions smoke):** ✅ generic 1×1-PNG smoke passed.
+  The LPA team's real-page smoke against Ashworth pages 1–23 is the next
+  step on their side — set `DOCLING_VLM_MODEL: granite-vision-3-3-2b`
+  in `docker-compose.poc.yml` and re-run `_smoke_lpa_extraction.py`.
+- **Routable id:** `granite-vision-3-3-2b` (listed) or alias
+  `granite-vision-3.3-2b` (routes but not listed — same LPA02-A gotcha
+  pattern; safer to use the listed id).
+
+**Operational caveat.** Same as `lpa`/4.1-4b: long LPA sessions need
+the keepalive paused — see [`llama-swap-keepalive-start-stop.md`](./llama-swap-keepalive-start-stop.md)
+"When to pause keep-alive — `lpa`" (also applies to `lpa_v3`).
+
+**What this leaves available.** Both LPA vision models are now registered
+and selectable per-environment via `DOCLING_VLM_MODEL`:
+
+| Model | Resident | Set | Use when |
+|---|---:|---|---|
+| `granite-vision-4-1-4b` | ~26 GB | `lpa` | Comparison / rollback / future re-attempt with prompt-per-page workaround |
+| `granite-vision-3-3-2b` | ~15 GB | `lpa_v3` | LPA POC current default — fallback per smoke-4 evidence |
+
+If 3.3-2b also fails the LPA acceptance tests, the runbook's next
+candidates (per `smoke-4.md`) are non-IBM VLMs (Qwen2.5-VL-7B,
+Pixtral-12B) or escalation to Option 2 (StandardPdfPipeline / pure OCR
+via Docling's traditional pipeline). Both would require fresh
+registration work on the GB10 side.
+
+#### Pointers
+
+- [`lpa-platform-poc/docs/history/lpa-extraction-e2e-smoke-4.md`](../../../../lpa-platform-poc/docs/history/lpa-extraction-e2e-smoke-4.md)
+  — 7-run Ashworth evidence + root-cause analysis
+- [`lpa-platform-poc/tasks/backlog/TASK-FIX-LPA02-F-swap-vlm-to-granite-vision-4-1-4b.md`](../../../../lpa-platform-poc/tasks/backlog/TASK-FIX-LPA02-F-swap-vlm-to-granite-vision-4-1-4b.md)
+  §"Progress log" — repo-side seam evolution + recommendation
+- §9.10 / §9.11 — granite-vision-4-1-4b registration history
+- README "On-demand models" + "Matrix sets" tables — both updated to
+  include gv33 / lpa_v3
+
 ---
 
 ## 10. Provenance

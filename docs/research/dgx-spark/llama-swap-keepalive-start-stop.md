@@ -148,16 +148,25 @@ in ~8 s (warm cache cold start). Recoverable, but disruptive.
 See [`AUTOBUILD-ON-LLAMA-SWAP-findings.md`](./AUTOBUILD-ON-LLAMA-SWAP-findings.md)
 §9.9 for the tutor matrix-set design.
 
-### `lpa` — LPA POC page→markdown extraction (`granite-vision-4-1-4b`)
+### `lpa` / `lpa_v3` — LPA POC page→markdown extraction
 
-Loading `granite-vision-4-1-4b` (or its aliases: `granite-vision-4.1-4b`,
-`granite-vision`) switches to the `lpa` set (`gv & qw & ne`), evicting
-`qwen-graphiti`, `architect-agent`, and `granite-docling`. The model is
-vLLM-served (~26 GB resident) with a 30-min idle ttl.
+Two vision models are registered for the LPA POC workload — pick which
+via `DOCLING_VLM_MODEL` env var on the POC side:
+
+| Model | Set | Resident | Notes |
+|---|---|---:|---|
+| `granite-vision-4-1-4b` (aliases: `granite-vision-4.1-4b`, `granite-vision`) | `lpa` | ~26 GB | Granite4Vision arch; EOS-collapse pattern on Ashworth Section 2 — kept for comparison |
+| `granite-vision-3-3-2b` (alias: `granite-vision-3.3-2b`) | `lpa_v3` | ~15 GB | LlavaNext arch; current LPA-POC default; leaner |
+
+Loading either switches to its respective set, evicting `qwen-graphiti`,
+`architect-agent`, and `granite-docling`. **The two LPA sets are also
+mutually exclusive with each other** — requesting one vision model
+evicts the other if loaded. Both are vLLM-served with a 30-min idle ttl.
 
 **Pause the timer before any LPA batch that will run longer than ~5
-minutes** — otherwise the 5-min `qg` probe will switch back to `all` and
-evict `granite-vision-4-1-4b` mid-batch (cold reload ~110 s).
+minutes** — otherwise the 5-min `qg` probe will switch back to `all`
+and evict the vision model mid-batch (cold reload: ~110 s for 4.1-4b,
+~110 s warm / ~6 min first-ever for 3.3-2b including the 6 GB download).
 
 ```bash
 sudo systemctl stop llama-swap-keepalive.timer
@@ -171,6 +180,15 @@ For ad-hoc single-page tests (one POST, sub-minute), pausing the timer
 isn't strictly necessary — but is good hygiene if there's any chance of
 follow-up requests.
 
+To **switch which vision model is in use** mid-session, just POST to the
+other model id; llama-swap will evict the current one and load the
+other (cold load). To **clear the prefix cache** of either model
+without changing the set, force a container restart:
+`docker stop vllm-granite-vision` (4.1-4b) or
+`docker stop vllm-granite-vision-3-3-2b` (3.3-2b). `--rm` cleans up;
+the next POST triggers a fresh container with empty caches.
+
 See [`AUTOBUILD-ON-LLAMA-SWAP-findings.md`](./AUTOBUILD-ON-LLAMA-SWAP-findings.md)
-§9.10 / §9.11 for the granite-vision setup history and the working
-config (vLLM image, matrix-set design, memory math).
+§9.10 / §9.11 (4.1-4b setup history) and §9.12 (3.3-2b fallback + memory
+math) for the full setup details, vLLM image rationale, and matrix-set
+design.

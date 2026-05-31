@@ -28,7 +28,8 @@ The keep-alive timer (`llama-swap-keepalive.timer`, 5-min cadence) probes these 
 | `gemma4-tutor` (Gemma 4 26B-A4B Q4_K_M + Socratic template) | `study-tutor`, `gcse-tutor`, `gemma4-specialist` | ~17 GB | 1800s | llama.cpp | GCSE study tutor (Socratic) |
 | `qwen3-coder-30b` (Qwen3-Coder-30B-A3B UD-Q4_K_XL) | `autobuild-coder` | ~22–25 GB | 600s | llama.cpp | Opt-in code-tuned alternative to workhorse for autobuild |
 | `granite-docling` (IBM Granite Docling 258M) | `granite-docling-258M`, `docling` | ~11 GB | 1800s | vLLM-in-Docker (cu130-nightly) | Page→markdown extraction for the LPA POC (legacy, being phased out) |
-| `granite-vision-4-1-4b` (IBM Granite Vision 4.1-4b bf16) | `granite-vision-4.1-4b`, `granite-vision` | ~26 GB | 1800s | vLLM-in-Docker (v0.22.0-aarch64-cu129) | LPA POC's planned replacement for docling-258M |
+| `granite-vision-4-1-4b` (IBM Granite Vision 4.1-4b bf16) | `granite-vision-4.1-4b`, `granite-vision` | ~26 GB | 1800s | vLLM-in-Docker (v0.22.0-aarch64-cu129) | LPA POC vision model (Granite4Vision arch); EOS-collapse pattern on Section 2 — kept for comparison/rollback per §9.12 |
+| `granite-vision-3-3-2b` (IBM Granite Vision 3.3-2b bf16) | `granite-vision-3.3-2b` | ~15 GB | 1800s | vLLM-in-Docker (v0.22.0-aarch64-cu129) | LPA POC fallback vision model (LlavaNext arch); leaner than 4.1-4b; current LPA-POC default — see §9.12 |
 
 ### Matrix sets (which models can co-reside)
 
@@ -37,9 +38,10 @@ The keep-alive timer (`llama-swap-keepalive.timer`, 5-min cadence) probes these 
 | `all` (default) | qg + ne + qw + aa + dl | ~80 GB always-on + ~11 GB if docling loaded | Any request for a member of this set. Docling loads in-place. |
 | `tutor` | gt + qw | ~45 GB | `study-tutor` request → evicts qg + ne + aa + dl |
 | `lpa` | gv + qw + ne | ~56 GB | `granite-vision-4-1-4b` request → evicts qg + aa + dl |
+| `lpa_v3` | gv33 + qw + ne | ~45 GB | `granite-vision-3-3-2b` request → evicts qg + aa + dl (and `gv` if loaded — the two vision models are mutually exclusive) |
 | `coder_30b` | qc | ~22 GB | `autobuild-coder` request → evicts everything else in `all` |
 
-**Mutually-exclusive workloads**: `tutor`, `lpa`, and `coder_30b` each evict at least part of the `all` family. While any of them is loaded, the always-on workloads are partially unavailable (e.g. **Graphiti is unavailable during `lpa` and `coder_30b` runs**). The keep-alive timer's 5-min probe cycle will evict them mid-session — see "When to pause keep-alive" in [`llama-swap-keepalive-start-stop.md`](./llama-swap-keepalive-start-stop.md).
+**Mutually-exclusive workloads**: `tutor`, `lpa`, `lpa_v3`, and `coder_30b` each evict at least part of the `all` family. While any of them is loaded, the always-on workloads are partially unavailable (e.g. **Graphiti is unavailable during `lpa` / `lpa_v3` / `coder_30b` runs**). `lpa` and `lpa_v3` are also mutually exclusive with each other — only one vision model loads at a time; pick which via `DOCLING_VLM_MODEL` env var on the LPA POC side. The keep-alive timer's 5-min probe cycle will evict any of these sets mid-session — see "When to pause keep-alive" in [`llama-swap-keepalive-start-stop.md`](./llama-swap-keepalive-start-stop.md).
 
 ### Per-workload routing recipes
 
@@ -51,7 +53,8 @@ The keep-alive timer (`llama-swap-keepalive.timer`, 5-min cadence) probes these 
 | AutoBuild default (Player + Coach) | `claude-sonnet-4-5-20250929` / `autobuild-player` / `coach` | `all` (qw) | Workhorse — also wins AgentBench vs coder-next (see findings §9.9) |
 | AutoBuild with code-tuned alternative | `--model autobuild-coder` | `coder_30b` (exclusive) | Evicts the family for the build duration |
 | Study tutor session | `study-tutor` | `tutor` | Evicts graphiti + architect; pause keep-alive for long sessions |
-| LPA page→markdown extraction | `granite-vision-4-1-4b` | `lpa` | Evicts graphiti + architect + docling; pause keep-alive for long sessions; first load ~110 s cold |
+| LPA page→markdown extraction (4.1-4b) | `granite-vision-4-1-4b` | `lpa` | Evicts graphiti + architect + docling; pause keep-alive for long sessions; first load ~110 s cold. EOS-collapse issue on Ashworth Section 2 — see §9.12. |
+| LPA page→markdown extraction (3.3-2b, current LPA-POC default) | `granite-vision-3-3-2b` | `lpa_v3` | Evicts graphiti + architect + docling + 4.1-4b if loaded; pause keep-alive for long sessions; first load ~6 min cold (includes 6 GB download). Smaller / leaner than 4.1-4b. |
 | LPA legacy docling (being phased out) | `granite-docling` | `all` (loads in-place) | Co-resident with family — no eviction |
 
 ### Operational essentials
