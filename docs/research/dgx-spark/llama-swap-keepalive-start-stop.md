@@ -76,26 +76,101 @@ systemctl is-enabled llama-swap-keepalive.timer   # enabled | disabled
 systemctl list-timers llama-swap-keepalive.timer  # shows NEXT fire time
 ```
 
-## When to pause it — exclusive coder builds (`qwen-coder-next` or `qwen3-coder-30b`)
+## When to pause keep-alive — mutually-exclusive workloads
 
-`qwen-coder-next` (vLLM/FP8) and `qwen3-coder-30b` are **exclusive**
-models (sets `coder_next` / `coder_30b`): loading either evicts the other
-llama.cpp models (all but `granite-docling`). While one is loaded for a
-build, the keep-alive timer's next probe would revive `qwen36-workhorse`
-and — via llama-swap's `matrix.sets` — **evict the coder mid-build** (the
-~111 GB workhorse↔coder ping-pong). So pause it first (example uses
-coder-next; `--model autobuild-coder` for coder-30b):
+Three matrix sets evict at least part of the always-on family:
+`coder_30b`, `tutor`, and `lpa`. While any of them is loaded, the
+keep-alive timer's 5-min probe of `qwen-graphiti` / `nomic-embed` /
+`qwen36-workhorse` / `architect-agent` would trigger the solver to
+switch back to the `all` set — **evicting the on-demand model
+mid-session**. Pause the timer for any session likely to exceed 5
+minutes between requests.
+
+The general pattern is:
 
 ```bash
-# Before a coder-next build
+# Before the long session
 sudo systemctl stop llama-swap-keepalive.timer
 
-# ... run: guardkit autobuild task TASK-XXX --model qwen-coder-next ...
+# ... run your workload ...
 
-# After the build (swap back to the family, then resume keep-alive)
+# After the session — pick ONE of:
+#   (a) just resume the timer; the family will revive on next probe
+sudo systemctl start llama-swap-keepalive.timer
+#   (b) immediately reset memory before resuming (recommended after big VLM loads)
 curl -sS http://localhost:9000/unload
 sudo systemctl start llama-swap-keepalive.timer
 ```
 
+Per-workload specifics below.
+
+### `coder_30b` — opt-in autobuild coder (`qwen3-coder-30b`)
+
+Loading `autobuild-coder` evicts every other llama.cpp model in `all`
+(qg, ne, qw, aa, dl) — coder-30b runs alone at ~22 GB. The 5-min revive
+probe for `qwen-graphiti` would otherwise swap the coder out mid-build
+(the ~111 GB workhorse↔coder ping-pong documented in
+[`AUTOBUILD-ON-LLAMA-SWAP-findings.md`](./AUTOBUILD-ON-LLAMA-SWAP-findings.md)
+§9.2 / §9.4).
+
+```bash
+sudo systemctl stop llama-swap-keepalive.timer
+# ... guardkit autobuild task TASK-XXX --model autobuild-coder ...
+curl -sS http://localhost:9000/unload
+sudo systemctl start llama-swap-keepalive.timer
+```
+
+> Historical: `qwen-coder-next` (vLLM/FP8) was an even larger exclusive
+> coder (~92 GB resident) that had the same constraint. It was removed
+> from the live config 2026-05-30 (see §9.9) after the forum AgentBench
+> review showed `qwen36-workhorse` outperforms it on agent tasks. The
+> launch script + HF cache are preserved for zero-download restoration.
+
+### `tutor` — study tutor session (`gemma4-tutor`)
+
+Loading `study-tutor` (or any of its aliases: `gcse-tutor`,
+`gemma4-specialist`) switches to the `tutor` set (`gt & qw`), evicting
+`qwen-graphiti`, `nomic-embed`, `architect-agent`, and `granite-docling`.
+Tutor sessions are usually short interactive turns; the 5-min keep-alive
+probe is unlikely to fire between messages. **Only pause for long
+sessions** (>5 min between user messages).
+
+```bash
+# Optional — only if the session will have long gaps between turns
+sudo systemctl stop llama-swap-keepalive.timer
+# ... interactive tutor session ...
+sudo systemctl start llama-swap-keepalive.timer
+```
+
+If the tutor gets evicted mid-session, the next user message reloads it
+in ~8 s (warm cache cold start). Recoverable, but disruptive.
+
 See [`AUTOBUILD-ON-LLAMA-SWAP-findings.md`](./AUTOBUILD-ON-LLAMA-SWAP-findings.md)
-§9.2 for the full coder-next smoke test and rationale.
+§9.9 for the tutor matrix-set design.
+
+### `lpa` — LPA POC page→markdown extraction (`granite-vision-4-1-4b`)
+
+Loading `granite-vision-4-1-4b` (or its aliases: `granite-vision-4.1-4b`,
+`granite-vision`) switches to the `lpa` set (`gv & qw & ne`), evicting
+`qwen-graphiti`, `architect-agent`, and `granite-docling`. The model is
+vLLM-served (~26 GB resident) with a 30-min idle ttl.
+
+**Pause the timer before any LPA batch that will run longer than ~5
+minutes** — otherwise the 5-min `qg` probe will switch back to `all` and
+evict `granite-vision-4-1-4b` mid-batch (cold reload ~110 s).
+
+```bash
+sudo systemctl stop llama-swap-keepalive.timer
+# ... LPA extraction batch (Ashworth + Fairfax + Pengelly etc.) ...
+# When done, EITHER let it auto-unload on the 30-min ttl, OR force-unload now:
+curl -sS http://localhost:9000/unload
+sudo systemctl start llama-swap-keepalive.timer
+```
+
+For ad-hoc single-page tests (one POST, sub-minute), pausing the timer
+isn't strictly necessary — but is good hygiene if there's any chance of
+follow-up requests.
+
+See [`AUTOBUILD-ON-LLAMA-SWAP-findings.md`](./AUTOBUILD-ON-LLAMA-SWAP-findings.md)
+§9.10 / §9.11 for the granite-vision setup history and the working
+config (vLLM image, matrix-set design, memory math).
