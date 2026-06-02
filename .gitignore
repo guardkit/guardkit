@@ -79,6 +79,11 @@ obj/
 # GuardKit worktrees (created by autobuild)
 .guardkit/worktrees/
 
+# GuardKit canary worktrees (created by scripts/canary_validation_runner.py
+# for TASK-HMIG-009 / TASK-REV-HMIG). Sibling rule to .guardkit/worktrees/:
+# registered git worktrees, never source-controlled in the parent repo.
+.guardkit/canary-worktrees/
+
 # GuardKit autobuild artifacts (per-task state, not source-controlled).
 # Use `.guardkit/autobuild/*` (not trailing `/`) so git keeps walking the
 # directory and the audit-grade allow-patterns below for TASK-HMIG-009
