@@ -70,6 +70,21 @@ _PHASE_5_AGENT_FIELD_DEFAULTS: dict[str, Any] = {
     "output_summary": "Review completed by orchestrator-invoked code-reviewer.",
 }
 
+# Per-specialist SDK-timeout ceiling for the Phase 4 test-orchestrator.
+#
+# The caller-supplied ``sdk_timeout`` is shared with Player/Coach and can
+# reach 2340s on the canary batch. The test-orchestrator specialist has
+# been observed to launch ``pytest`` with ``Bash run_in_background=true``
+# then poll ``TaskOutput`` every ~30s until the SDK timeout fires —
+# burning ~38min per turn even when pytest itself would finish in <2min
+# (TASK-HMIG-009A AC-003 rep 1, 2026-06-03; see
+# ``docs/reviews/autobuild-migration/long-run-1.md``). The cap is a hard
+# orchestrator-side ceiling that converts the SDK timeout into a graceful
+# specialist failure at the 10-minute mark instead of letting it consume
+# the full Player/Coach budget. Suites that legitimately need >600s
+# should be decomposed at the task level, not papered over here.
+_TEST_ORCHESTRATOR_SDK_TIMEOUT_CAP_SECONDS: int = 600
+
 
 # Reverse lookup of guardkit.orchestrator.phase_specialists.STATIC_PHASE_SPECIALISTS
 # scoped to specialists this module is responsible for. Kept inline rather
@@ -663,11 +678,24 @@ async def invoke_test_orchestrator(
         summary_path=summary_path,
     )
 
+    # TASK-FIX-SPECHANG: cap the caller-supplied sdk_timeout at the
+    # test-orchestrator-specific ceiling so a polling specialist cannot
+    # burn the full Player/Coach budget.
+    capped_sdk_timeout = min(sdk_timeout, _TEST_ORCHESTRATOR_SDK_TIMEOUT_CAP_SECONDS)
+    if capped_sdk_timeout < sdk_timeout:
+        logger.info(
+            "[%s] test-orchestrator sdk_timeout capped from %ds to %ds "
+            "(TASK-FIX-SPECHANG)",
+            task_id,
+            sdk_timeout,
+            capped_sdk_timeout,
+        )
+
     run_result = await run_specialist(
         specialist_name="test-orchestrator",
         worktree_path=Path(worktree_path),
         task_id=task_id,
-        sdk_timeout=sdk_timeout,
+        sdk_timeout=capped_sdk_timeout,
         prompt=prompt,
         allowed_tools=["Read", "Write", "Bash", "Search"],
         agent_invoker=agent_invoker,

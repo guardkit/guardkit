@@ -540,6 +540,66 @@ async def test_invoke_test_orchestrator_preserves_existing_phase_5_block(
 
 
 # =============================================================================
+# invoke_test_orchestrator timeout cap (TASK-FIX-SPECHANG)
+# =============================================================================
+#
+# The Phase 4 runner must clamp caller-supplied sdk_timeout to a
+# specialist-specific ceiling so a polling LLM cannot consume the full
+# Player/Coach budget. Verified by capturing what the SDK actually saw
+# during _invoke_with_role.
+
+
+@pytest.mark.asyncio
+async def test_invoke_test_orchestrator_caps_sdk_timeout_above_ceiling(
+    tmp_path: Path,
+) -> None:
+    """Caller passes sdk_timeout > 600s; SDK call sees the capped value."""
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_004)
+
+    captured: dict[str, object] = {}
+
+    async def _capture(**_: object) -> None:
+        # run_specialist sets sdk_timeout_seconds on the invoker before
+        # calling _invoke_with_role; that is the value the SDK sees.
+        captured["timeout"] = invoker.sdk_timeout_seconds
+
+    invoker = _make_fake_agent_invoker(invoke_side_effect=_capture)
+
+    await invoke_test_orchestrator(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_OSI_004,
+        sdk_timeout=2340,
+        agent_invoker=invoker,
+    )
+
+    assert captured["timeout"] == 600
+
+
+@pytest.mark.asyncio
+async def test_invoke_test_orchestrator_passes_smaller_sdk_timeout_through(
+    tmp_path: Path,
+) -> None:
+    """Caller passes sdk_timeout < 600s; cap is a no-op."""
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_004)
+
+    captured: dict[str, object] = {}
+
+    async def _capture(**_: object) -> None:
+        captured["timeout"] = invoker.sdk_timeout_seconds
+
+    invoker = _make_fake_agent_invoker(invoke_side_effect=_capture)
+
+    await invoke_test_orchestrator(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_OSI_004,
+        sdk_timeout=300,
+        agent_invoker=invoker,
+    )
+
+    assert captured["timeout"] == 300
+
+
+# =============================================================================
 # invoke_code_reviewer (TASK-OSI-005)
 # =============================================================================
 #
