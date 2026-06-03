@@ -1146,6 +1146,7 @@ class AgentInvoker:
         timeout_multiplier: Optional[float] = None,
         emitter: Optional[Any] = None,
         venv_python: Optional[str] = None,
+        model_name: Optional[str] = None,  # TASK-FIX-MODELPLUMB
     ):
         """Initialize AgentInvoker.
 
@@ -1202,6 +1203,15 @@ class AgentInvoker:
         self._last_session_id: Optional[str] = None
         # TASK-INST-005b: EventEmitter for instrumentation telemetry
         self._emitter = emitter if emitter is not None else NullEmitter()
+        # TASK-FIX-MODELPLUMB: default model identifier for invocations that
+        # don't specify one. Threaded from the CLI --model flag through
+        # AutoBuildOrchestrator. Used as a fallback inside _invoke_with_role
+        # when the per-call model kwarg is None — load-bearing for the
+        # LangGraph harness (DeepAgents.create_deep_agent fails with
+        # "'function' object has no attribute 'name'" when model=None);
+        # decorative-but-harmless for the SDK path (routes via
+        # ANTHROPIC_BASE_URL).
+        self._model_name: Optional[str] = model_name
 
         if self.timeout_multiplier != 1.0:
             logger.info(
@@ -2802,6 +2812,15 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         if self._cancellation_event:
             monitor = asyncio.create_task(_cancel_monitor())
 
+        # TASK-FIX-MODELPLUMB: fall back to the orchestrator-stored model
+        # name when the caller didn't specify one explicitly. invoke_coach,
+        # the legacy direct-SDK Player path, and run_specialist all call
+        # _invoke_with_role without a model= kwarg (comments at those sites
+        # say "Model selection delegated to CLI default" — this is the
+        # mechanism that actually carries the CLI default through).
+        if model is None:
+            model = self._model_name
+
         try:
             # Construct the harness. select_harness() routes via
             # GUARDKIT_HARNESS env var (default "sdk"). Per Design Decision
@@ -2820,6 +2839,14 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 resume_session_id=resume_session_id,
                 sdk_debug_dir=_sdk_debug_dir,
                 cleanup_handler_installer=_install_sdk_cleanup_handler,
+                # TASK-FIX-002R-CONSUME: ``cwd`` is the worktree path the
+                # langgraph branch needs to construct a path-confined
+                # LocalShellBackend via
+                # ``guardkitfactory.harness.build_autobuild_backend(cwd)``.
+                # The SDK branch ignores it (popped at the top of
+                # ``select_harness``); passing unconditionally keeps the
+                # call site harness-agnostic.
+                cwd=self.worktree_path,
             )
 
             # TASK-HMIG-006 AC-007: surface the resume-intent drop loudly

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
 from guardkit.orchestrator.exceptions import AgentInvocationError
@@ -81,6 +82,11 @@ def _translate_kwargs_for_langgraph(harness_kwargs: dict[str, Any]) -> dict[str,
       preservation is a separate concern owned by guardkitfactory.
     * ``cleanup_handler_installer`` — SDK subprocess cleanup hook; the
       LangGraph path has no subprocess to clean up.
+    * ``cwd`` — TASK-FIX-002R-CONSUME: worktree path consumed by
+      :func:`select_harness` itself to build the LocalShellBackend via
+      :func:`guardkitfactory.harness.build_autobuild_backend`. It is not
+      a ``LangGraphHarness.__init__`` parameter, so the translator drops
+      it.
 
     The keeper list:
 
@@ -122,7 +128,29 @@ def _translate_kwargs_for_langgraph(harness_kwargs: dict[str, Any]) -> dict[str,
             setting_sources,
         )
 
-    return {"model": harness_kwargs.get("model")}
+    # TASK-FIX-MODELPLUMB: auto-prefix `openai:` when the caller passes a
+    # bare alias (e.g. `qwen36-workhorse`) without a provider prefix.
+    # DeepAgents' `init_chat_model` requires a provider-prefixed string
+    # when no explicit BaseChatModel instance is supplied. The SDK harness
+    # path accepts bare aliases because routing is via ANTHROPIC_BASE_URL,
+    # so the CLI --model flag is historically bare. Preserving that CLI
+    # shape while making LangGraph happy means the translator owns the
+    # prefix. If the caller already supplied a prefix (`openai:...`,
+    # `anthropic:...`) or a BaseChatModel instance (non-string), pass
+    # through unchanged.
+    model = harness_kwargs.get("model")
+    if isinstance(model, str) and ":" not in model:
+        prefixed = f"openai:{model}"
+        logger.debug(
+            "TASK-FIX-MODELPLUMB: auto-prefixed bare model alias %r -> %r "
+            "for LangGraph (DeepAgents init_chat_model requires a provider "
+            "prefix).",
+            model,
+            prefixed,
+        )
+        model = prefixed
+
+    return {"model": model}
 
 
 def select_harness(
@@ -143,7 +171,13 @@ def select_harness(
         :class:`~guardkit.orchestrator.harness.sdk_harness.ClaudeSDKHarness`
         accepts ``sdk_timeout_seconds`` / ``allowed_tools`` /
         ``permission_mode`` / ``max_turns`` / etc.; see that class for
-        the full signature.
+        the full signature. The ``cwd`` kwarg is special-cased
+        (TASK-FIX-002R-CONSUME): the selector pops it before delegating
+        so it does not reach ``ClaudeSDKHarness.__init__`` (which has no
+        such parameter); the langgraph branch threads it into
+        :func:`guardkitfactory.harness.build_autobuild_backend` so the
+        :class:`LangGraphHarness` is constructed with a path-confined
+        ``LocalShellBackend``. Required when ``name == "langgraph"``.
 
     Returns
     -------
@@ -155,9 +189,17 @@ def select_harness(
     ------
     AgentInvocationError
         If the env var names ``"langgraph"`` but guardkitfactory cannot
-        be imported, OR if the env var names an unsupported value.
+        be imported, OR if the langgraph branch is selected without a
+        ``cwd=`` kwarg, OR if the env var names an unsupported value.
     """
     name = os.environ.get(env_var, "sdk").lower()
+
+    # TASK-FIX-002R-CONSUME: ``cwd`` is consumed by the langgraph branch
+    # below to build the LocalShellBackend; ``ClaudeSDKHarness.__init__``
+    # has no such parameter (it receives cwd later via
+    # :meth:`invoke`). Pop it here so both branches see a stable kwarg
+    # bag and callers can pass cwd unconditionally.
+    cwd = harness_kwargs.pop("cwd", None)
 
     if name == "sdk":
         # Lazy import keeps the package importable when claude_agent_sdk
@@ -167,8 +209,18 @@ def select_harness(
         return ClaudeSDKHarness(**harness_kwargs)
 
     if name == "langgraph":
+        # TASK-FIX-002R-CONSUME: import the backend + permissions factories
+        # from guardkitfactory.harness alongside LangGraphHarness. They are
+        # the consumer-side counterpart to TASK-HMIG-002R (which built the
+        # factories in guardkitfactory on 2026-05-20). Without this wiring
+        # LangGraphHarness's backend/permissions defaulted to ``None`` and
+        # AC-001D could not exercise the falsifier in TASK-REV-HM09 §7.1.
         try:
-            from guardkitfactory.harness import LangGraphHarness  # type: ignore[import-not-found]
+            from guardkitfactory.harness import (  # type: ignore[import-not-found]
+                LangGraphHarness,
+                build_autobuild_backend,
+                build_autobuild_permissions,
+            )
         except ImportError as e:
             raise AgentInvocationError(
                 f"GUARDKIT_HARNESS=langgraph but guardkitfactory is not "
@@ -177,7 +229,24 @@ def select_harness(
                 f"or `pip install -e ../guardkitfactory` for "
                 f"operator-side dev."
             ) from e
-        return LangGraphHarness(**_translate_kwargs_for_langgraph(harness_kwargs))
+
+        if cwd is None:
+            raise AgentInvocationError(
+                "select_harness(langgraph) requires a `cwd=` kwarg "
+                "naming the worktree path so "
+                "guardkitfactory.harness.build_autobuild_backend(cwd) "
+                "can build a path-confined LocalShellBackend. Update "
+                "the caller (typically "
+                "guardkit.orchestrator.agent_invoker._invoke_with_role) "
+                "to pass cwd=self.worktree_path."
+            )
+
+        translated = _translate_kwargs_for_langgraph(harness_kwargs)
+        return LangGraphHarness(
+            model=translated["model"],
+            backend=build_autobuild_backend(Path(cwd)),
+            permissions=build_autobuild_permissions(),
+        )
 
     raise AgentInvocationError(
         f"Unknown GUARDKIT_HARNESS value: {name!r}. "

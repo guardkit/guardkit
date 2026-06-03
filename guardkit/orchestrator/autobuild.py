@@ -917,6 +917,7 @@ class AutoBuildOrchestrator:
         wave_files_lock: Optional[threading.Lock] = None,
         honesty_early_abort_threshold: float = 0.3,
         honesty_early_abort_window: int = 3,
+        model: Optional[str] = None,  # TASK-FIX-MODELPLUMB
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -1040,6 +1041,14 @@ class AutoBuildOrchestrator:
         # from BootstrapResult.venv_python in the feature orchestrator so
         # Coach verifies against the same interpreter the bootstrap built.
         self._venv_python: Optional[str] = venv_python
+        # TASK-FIX-MODELPLUMB: CLI --model threaded through to AgentInvoker
+        # then used as default when invoke_coach / _invoke_with_role /
+        # specialist invocations don't specify their own model. Load-bearing
+        # for the LangGraph harness path (DeepAgents needs a real model
+        # factory; model=None fails construction with "'function' object has
+        # no attribute 'name'"). Decorative-but-harmless for the SDK path
+        # (routes via ANTHROPIC_BASE_URL).
+        self._model_name: Optional[str] = model
         # Hardcoded reset turns per architectural review (TASK-BRF-001): [3, 5]
         self.perspective_reset_turns: List[int] = [3, 5] if enable_perspective_reset else []
         self._turn_history: List[TurnRecord] = []
@@ -1499,6 +1508,7 @@ class AutoBuildOrchestrator:
                         cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
                         timeout_multiplier=self.timeout_multiplier,  # TASK-FIX-VL05
                         venv_python=self._venv_python,  # TASK-FIX-7A05
+                        model_name=self._model_name,  # TASK-FIX-MODELPLUMB
                     )
                 # TASK-FIX-OBS2: Attach progress logger to agent invoker
                 if self._progress_logger and self._agent_invoker:
@@ -1527,6 +1537,7 @@ class AutoBuildOrchestrator:
                     use_task_work_delegation=True,
                     cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
                     venv_python=self._venv_python,  # TASK-FIX-7A05
+                    model_name=self._model_name,  # TASK-FIX-MODELPLUMB
                 )
             # TASK-FIX-OBS2: Attach progress logger to agent invoker
             if self._progress_logger and self._agent_invoker:
@@ -6507,6 +6518,7 @@ class AutoBuildOrchestrator:
                     use_task_work_delegation=True,
                     cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
                     venv_python=self._venv_python,  # TASK-FIX-7A05
+                    model_name=self._model_name,  # TASK-FIX-MODELPLUMB
                 )
             # TASK-FIX-OBS2: Attach progress logger to agent invoker
             if self._progress_logger and self._agent_invoker:

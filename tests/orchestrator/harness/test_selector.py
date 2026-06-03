@@ -222,7 +222,9 @@ class TestSelectHarnessDispatch:
         assert isinstance(harness, ClaudeSDKHarness)
 
     def test_langgraph_returns_langgraph_harness(
-        self, monkeypatch: pytest.MonkeyPatch
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Any,
     ) -> None:
         """``GUARDKIT_HARNESS=langgraph`` → :class:`LangGraphHarness`."""
         monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
@@ -235,7 +237,11 @@ class TestSelectHarnessDispatch:
         # non-None object is fine here.
         stub_model = MagicMock()
 
-        harness = select_harness(env_var=_TEST_ENV_VAR, model=stub_model)
+        # TASK-FIX-002R-CONSUME: langgraph branch requires a worktree
+        # cwd to construct the LocalShellBackend.
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR, model=stub_model, cwd=tmp_path
+        )
 
         assert isinstance(harness, LangGraphHarness)
         assert harness.model is stub_model
@@ -273,7 +279,9 @@ class TestSelectHarnessDispatch:
         assert "langgraph" in msg
 
     def test_langgraph_translates_kwargs_so_no_typeerror(
-        self, monkeypatch: pytest.MonkeyPatch
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Any,
     ) -> None:
         """SDK-shaped kwarg bag must reach LangGraphHarness without TypeError.
 
@@ -285,13 +293,18 @@ class TestSelectHarnessDispatch:
 
         from guardkitfactory.harness import LangGraphHarness
 
-        # Pass the full orchestrator-side bag (every SDK kwarg present).
-        harness = select_harness(env_var=_TEST_ENV_VAR, **_sdk_kwargs())
+        # Pass the full orchestrator-side bag (every SDK kwarg present)
+        # plus the TASK-FIX-002R-CONSUME ``cwd`` kwarg.
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR, cwd=tmp_path, **_sdk_kwargs()
+        )
 
         assert isinstance(harness, LangGraphHarness)
 
     def test_langgraph_accepts_setting_sources_without_typeerror(
-        self, monkeypatch: pytest.MonkeyPatch
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Any,
     ) -> None:
         """TASK-HMIG-006.4 AC-002: pre-loop ``setting_sources`` must not break langgraph.
 
@@ -305,10 +318,102 @@ class TestSelectHarnessDispatch:
 
         harness = select_harness(
             env_var=_TEST_ENV_VAR,
+            cwd=tmp_path,
             **_sdk_kwargs(setting_sources=["project"]),
         )
 
         assert isinstance(harness, LangGraphHarness)
+
+    # ------------------------------------------------------------------
+    # TASK-FIX-002R-CONSUME regression tests
+    # ------------------------------------------------------------------
+
+    def test_langgraph_wires_backend_and_permissions(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Any,
+    ) -> None:
+        """AC-005: langgraph branch wires factory-built backend + permissions.
+
+        Confirms the falsifier from TASK-REV-HM09 §7.1 Wave 1: the
+        ``LangGraphHarness`` returned by ``select_harness(langgraph,
+        cwd=...)`` has non-None ``.backend`` and non-None ``.permissions``,
+        both of types from :mod:`guardkitfactory.harness`. Before
+        TASK-FIX-002R-CONSUME, both attributes defaulted to ``None``
+        because the selector built ``LangGraphHarness(model=...)`` only.
+        """
+        # guardkitfactory pins requires-python >= 3.11; guardkit may
+        # run its unit suite on 3.10. Skip rather than fail when the
+        # cross-repo dependency is not importable.
+        pytest.importorskip("guardkitfactory.harness")
+
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+
+        from guardkitfactory.harness import LangGraphHarness
+        from guardkitfactory.harness.backend_config import LocalShellBackend
+        from guardkitfactory.harness.permissions import FilesystemPermission
+
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR,
+            model=MagicMock(),
+            cwd=tmp_path,
+        )
+
+        assert isinstance(harness, LangGraphHarness)
+        assert harness.backend is not None
+        assert isinstance(harness.backend, LocalShellBackend)
+        assert harness.permissions is not None
+        assert isinstance(harness.permissions, list)
+        assert len(harness.permissions) > 0
+        assert all(
+            isinstance(p, FilesystemPermission) for p in harness.permissions
+        )
+
+    def test_langgraph_missing_cwd_raises_with_actionable_message(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC-002 boundary: langgraph without ``cwd=`` raises a diagnostic.
+
+        The error message must name the caller (``_invoke_with_role``)
+        and the kwarg (``cwd``) so operators can act on it without
+        spelunking through the selector. Requires guardkitfactory to be
+        importable so the cwd-missing branch is the one that fires (not
+        the import-error branch).
+        """
+        pytest.importorskip("guardkitfactory.harness")
+
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+
+        with pytest.raises(AgentInvocationError) as exc_info:
+            # No cwd= kwarg.
+            select_harness(env_var=_TEST_ENV_VAR, model=MagicMock())
+
+        msg = str(exc_info.value)
+        assert "cwd" in msg
+        assert "build_autobuild_backend" in msg
+        assert "_invoke_with_role" in msg
+
+    def test_sdk_path_ignores_cwd_kwarg(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Any,
+    ) -> None:
+        """AC-003: SDK harness must accept and ignore the ``cwd=`` kwarg.
+
+        ``ClaudeSDKHarness.__init__`` has no ``cwd`` parameter (it takes
+        cwd later via :meth:`invoke`). The selector pops the kwarg before
+        delegating so callers can pass ``cwd`` unconditionally without a
+        ``TypeError``.
+        """
+        monkeypatch.setenv(_TEST_ENV_VAR, "sdk")
+
+        from guardkit.orchestrator.harness.sdk_harness import ClaudeSDKHarness
+
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR, cwd=tmp_path, **_sdk_kwargs()
+        )
+
+        assert isinstance(harness, ClaudeSDKHarness)
 
     def test_sdk_path_threads_setting_sources(
         self, monkeypatch: pytest.MonkeyPatch

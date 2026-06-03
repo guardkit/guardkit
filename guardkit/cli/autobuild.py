@@ -552,6 +552,7 @@ def task(
         timeout_multiplier=effective_timeout_multiplier,
         honesty_early_abort_threshold=float(effective_honesty_threshold),
         honesty_early_abort_window=int(effective_honesty_window),
+        model=model,  # TASK-FIX-MODELPLUMB: thread --model to harness construction (load-bearing for LangGraph)
     )
 
     # Resolve base branch: --base-branch > cwd HEAD > "main" (TASK-FIX-WTBC)
