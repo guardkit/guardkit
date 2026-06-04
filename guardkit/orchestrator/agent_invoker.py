@@ -5628,208 +5628,264 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             f"(variant={protocol_variant}, multiplier={self.timeout_multiplier}x)"
         )
 
-        try:
-            from claude_agent_sdk import (
-                query,
-                ClaudeAgentOptions,
-                CLINotFoundError,
-                ProcessError,
-                CLIJSONDecodeError,
-                # Import message types for proper ContentBlock iteration
-                AssistantMessage,
-                TextBlock,
-                ToolUseBlock,
-                ToolResultBlock,
-                ResultMessage,
-            )
-        except ImportError as e:
-            import sys
-            diagnosis = (
-                f"Claude Agent SDK import failed.\n"
-                f"  Error: {e}\n"
-                f"  Python: {sys.executable}\n"
-                f"  sys.path (first 3): {sys.path[:3]}\n\n"
-                f"To fix:\n"
-                f"  pip install claude-agent-sdk\n"
-                f"  # OR for full autobuild support:\n"
-                f"  pip install guardkit-py[autobuild]"
-            )
-            logger.error(diagnosis)
-            return TaskWorkResult(
-                success=False,
-                output={},
-                error=diagnosis,
-            )
-
+        # TASK-HMIG-006.1: dispatch through HarnessAdapter. Same pattern as
+        # the Player path migrated in TASK-HMIG-006 Phase 3b
+        # (`_invoke_with_role` at agent_invoker.py:2855) and Coach's
+        # independent verifier migrated in TASK-HMIG-006.3
+        # (`coach_validator._run_tests_via_sdk`). The harness owns SDK
+        # lazy-import, ClaudeAgentOptions construction, parse resilience
+        # (TASK-FIX-7A03), session_id capture (TASK-RFX-B20B), and
+        # generator hygiene (TASK-RFX-8332 / TASK-FIX-GEN1). Per
+        # Design Decision D-3, orchestrator-side concerns (heartbeat,
+        # sdk_debug, retry loop, tool tracking, rate-limit detection)
+        # stay inline. Per D-4, the harness normalises all SDK-specific
+        # exceptions (CLINotFoundError / ProcessError / CLIJSONDecodeError
+        # / harness-internal ValueError / SDK import failure) to
+        # AgentInvocationError before they reach this caller.
         from guardkit.orchestrator.sdk_utils import check_assistant_message_error
 
         # TASK-ABSR-MAXT: Complexity-scale max_turns (mirrors _calculate_sdk_timeout).
-        # Computed once per invocation so the same value flows into the SDK options,
-        # the parsed result, and the returned TaskWorkResult.
+        # Computed once per invocation so the same value flows into the harness
+        # constructor, the parsed result, and the returned TaskWorkResult.
         effective_max_turns = self._calculate_sdk_max_turns(task_id)
 
+        # TASK-DIAG-F4A2: Preserve rendered task-work prompt under
+        # sdk_debug/turn_<n>/ when GUARDKIT_AUTOBUILD_PRESERVE_DEBUG is
+        # set. Helper is a no-op otherwise. Substrate-agnostic — operates
+        # on whatever the orchestrator constructs. The rendered SDK
+        # options object now lives inside the harness, so the prompt +
+        # per-event JSONL still preserve enough context to diagnose SDK
+        # stalls.
+        from guardkit.orchestrator.sdk_debug import (
+            preserve_prompt as _sdk_preserve_prompt,
+            preserve_event as _sdk_preserve_event,
+        )
+        _sdk_debug_dir = _sdk_preserve_prompt(
+            workspace_root=self.worktree_path,
+            task_id=task_id,
+            turn=turn,
+            role="player",
+            prompt=prompt,
+            options=None,
+        )
+
+        # TASK-FBSDK-011: Log invocation configuration. Options are now
+        # constructed inside the harness so we log the orchestrator-side
+        # knobs only.
+        logger.info(f"[{task_id}] Harness invocation starting")
+        logger.info(f"[{task_id}] Working directory: {self.worktree_path}")
+        logger.info(
+            f"[{task_id}] Allowed tools: "
+            f"{['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob', 'Task']}"
+        )
+        logger.info(f"[{task_id}] Permission mode: acceptEdits")
+        logger.info(f"[{task_id}] Max turns: {effective_max_turns}")
+        logger.info(f"[{task_id}] SDK timeout: {self.sdk_timeout_seconds}s")
+        if self._last_session_id is not None:
+            logger.info(
+                f"[{task_id}] Resuming SDK session: "
+                f"{self._last_session_id[:16]}..."
+            )
+        logger.debug(f"[{task_id}] Prompt (first 500 chars): {prompt[:500]}...")
+
+        # TASK-FIX-46F2: Retry loop for transient SDK stream errors.
+        # Under GPU contention, vLLM SSE streams can be interrupted with
+        # "unknown" errors. A single retry avoids expensive state-recovery.
+        # Each retry constructs a fresh harness instance per
+        # Design Decision D-6 (single-use per invocation).
+        _sdk_stream_error: Optional[str] = None
+        collected_output: List[str] = []
+        message_count = 0
+        assistant_count = 0
+        tool_count = 0
+        result_count = 0
+        parser = TaskWorkStreamParser()
+        sdk_turns_used = None
+        sdk_session_id = None
+
         try:
-            _tw_options_kwargs = dict(
-                cwd=str(self.worktree_path),
-                # TASK-POF-004: Removed "Skill" - inline protocol doesn't invoke skills
-                allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task"],
-                permission_mode="acceptEdits",
-                # TASK-REV-BB80: Use dedicated constant, NOT self.max_turns_per_agent
-                # max_turns_per_agent is for adversarial turns (default: 5)
-                # task-work needs ~50 internal turns for all phases
-                # TASK-ABSR-MAXT: Complexity-scaled per-task (was self._effective_sdk_max_turns)
-                max_turns=effective_max_turns,
-                # TASK-POF-004: Use "project" only - inline protocol replaces
-                # skill invocation, no need to load user commands (~839KB savings)
-                setting_sources=["project"],
-            )
-            # TASK-RFX-B20B: Resume from prior session if available
-            if self._last_session_id is not None:
-                _tw_options_kwargs["resume"] = self._last_session_id
-                logger.info(
-                    f"[{task_id}] Resuming SDK session: {self._last_session_id[:16]}..."
-                )
-            options = ClaudeAgentOptions(**_tw_options_kwargs)
-
-            # TASK-DIAG-F4A2: Preserve rendered task-work prompt + options
-            # under sdk_debug/turn_<n>/ when GUARDKIT_AUTOBUILD_PRESERVE_DEBUG
-            # is set. Helper is a no-op otherwise.
-            from guardkit.orchestrator.sdk_debug import (
-                preserve_prompt as _sdk_preserve_prompt,
-                preserve_event as _sdk_preserve_event,
-            )
-            _sdk_debug_dir = _sdk_preserve_prompt(
-                workspace_root=self.worktree_path,
-                task_id=task_id,
-                turn=turn,
-                role="player",
-                prompt=prompt,
-                options=options,
-            )
-
-            # TASK-FBSDK-011: Log SDK configuration before invocation
-            logger.info(f"[{task_id}] SDK invocation starting")
-            logger.info(f"[{task_id}] Working directory: {self.worktree_path}")
-            logger.info(f"[{task_id}] Allowed tools: {options.allowed_tools}")
-            logger.info(f"[{task_id}] Setting sources: {options.setting_sources}")
-            logger.info(f"[{task_id}] Permission mode: {options.permission_mode}")
-            logger.info(f"[{task_id}] Max turns: {options.max_turns}")
-            logger.info(f"[{task_id}] SDK timeout: {self.sdk_timeout_seconds}s")
-            logger.debug(f"[{task_id}] Prompt (first 500 chars): {prompt[:500]}...")
-
-            _install_sdk_cleanup_handler(asyncio.get_running_loop())
-            # TASK-RFX-8332: Track generator reference across retry iterations
-            # for cleanup in exception handlers (declared before retry loop)
-            _tw_gen = None
-            # TASK-FIX-46F2: Retry loop for transient SDK stream errors.
-            # Under GPU contention, vLLM SSE streams can be interrupted with
-            # "unknown" errors. A single retry avoids expensive state-recovery.
-            _sdk_stream_error: Optional[str] = None
             for _sdk_attempt in range(MAX_SDK_STREAM_RETRIES + 1):
-                collected_output: List[str] = []
-                # TASK-FIX-STUB-C: Create parser before stream loop so ToolUseBlock
-                # file operations can be tracked during processing (not just after)
+                collected_output = []
+                # TASK-FIX-STUB-C: Recreate parser per retry so ToolUseBlock
+                # file operations from a previous (failed) attempt do not
+                # leak into the successful attempt's result.
                 parser = TaskWorkStreamParser()
-                # TASK-FBSDK-011: Track message statistics
                 message_count = 0
                 assistant_count = 0
                 tool_count = 0
                 result_count = 0
                 _sdk_stream_error = None
-                # TASK-INST-005c: Track pending Bash tool invocations for
-                # tool.exec event emission. Keyed by tool_use_id.
                 _pending_bash_tools: Dict[str, Dict[str, Any]] = {}
-                # TASK-VPR-003: Track SDK turns from ResultMessage
                 sdk_turns_used = None
-                # TASK-RFX-B20B: Track session_id from ResultMessage
                 sdk_session_id = None
-                # TASK-RFX-8332: Hold explicit reference to query() generator
-                # so we can call aclose() in cleanup, preventing GC from
-                # scheduling athrow(GeneratorExit) in a wrong asyncio Task.
-                _tw_gen = None
+
+                # Construct the harness. select_harness() routes via
+                # GUARDKIT_HARNESS env var (default "sdk"). The SDK harness
+                # owns ClaudeAgentOptions construction, the query() call,
+                # generator hygiene (TASK-RFX-8332 / TASK-FIX-GEN1), and
+                # per-message parse resilience (TASK-FIX-7A03). Per
+                # Design Decision D-3, the cleanup-handler installer is
+                # passed through so the SDK subprocess gets cleaned up
+                # against the running event loop.
+                harness = select_harness(
+                    sdk_timeout_seconds=self.sdk_timeout_seconds,
+                    # TASK-POF-004: Removed "Skill" - inline protocol doesn't invoke skills
+                    allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task"],
+                    permission_mode="acceptEdits",
+                    # TASK-REV-BB80 / TASK-ABSR-MAXT: Complexity-scaled per-task.
+                    max_turns=effective_max_turns,
+                    # TASK-RFX-B20B: Resume from prior session if available.
+                    resume_session_id=self._last_session_id,
+                    sdk_debug_dir=_sdk_debug_dir,
+                    cleanup_handler_installer=_install_sdk_cleanup_handler,
+                    # TASK-POF-004: Use "project" only - inline protocol replaces
+                    # skill invocation (~839KB savings on the SDK path; dropped
+                    # by the LangGraph translator).
+                    setting_sources=["project"],
+                    # TASK-FIX-002R-CONSUME: ``cwd`` is consumed by the
+                    # langgraph branch to build a path-confined LocalShellBackend.
+                    # The SDK branch ignores it (popped at the top of
+                    # select_harness); passing unconditionally keeps the call
+                    # site harness-agnostic.
+                    cwd=self.worktree_path,
+                )
+
+                # TASK-HMIG-006 AC-007: surface the resume-intent drop loudly
+                # when the resolved harness does not support resume.
+                if (
+                    self._last_session_id is not None
+                    and not harness.supports_resume
+                ):
+                    logger.warning(
+                        "TASK-HMIG-006 AC-007: _last_session_id=%s... was supplied but "
+                        "harness %s does not support_resume; starting fresh session.",
+                        self._last_session_id[:16],
+                        type(harness).__name__,
+                    )
+
                 async with asyncio.timeout(self.sdk_timeout_seconds):
-                    async with async_heartbeat(task_id, "task-work implementation", progress_logger=self._progress_logger):
-                        _tw_gen = query(prompt=prompt, options=options)
-                        async for message in _tw_gen:
-                            # TASK-FBSDK-011: Track message counts
+                    async with async_heartbeat(
+                        task_id,
+                        "task-work implementation",
+                        progress_logger=self._progress_logger,
+                    ):
+                        async for event in harness.invoke(
+                            prompt=prompt,
+                            role="player",
+                            tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task"],
+                            cwd=self.worktree_path,
+                            timeout_seconds=self.sdk_timeout_seconds,
+                        ):
                             message_count += 1
-                            # TASK-DIAG-F4A2: Preserve event to JSONL (no-op if disabled)
-                            _sdk_preserve_event(_sdk_debug_dir, message)
-                            # Properly iterate ContentBlocks instead of str()
-                            # message.content is a list[ContentBlock], not a string
-                            # Mirrors TASK-FB-FIX-005 pattern from task_work_interface.py
-                            if isinstance(message, AssistantMessage):
-                                err = check_assistant_message_error(message)
-                                if err:
-                                    # TASK-FIX-46F2: Retry on transient "unknown" errors
-                                    if (
-                                        _sdk_attempt < MAX_SDK_STREAM_RETRIES
-                                        and "unknown" in str(err).lower()
-                                    ):
-                                        logger.warning(
-                                            "[%s] SDK stream error (attempt %d/%d), "
-                                            "retrying in %ds: %s",
-                                            task_id,
-                                            _sdk_attempt + 1,
-                                            MAX_SDK_STREAM_RETRIES + 1,
-                                            SDK_STREAM_RETRY_BACKOFF,
-                                            err,
+                            # TASK-DIAG-F4A2: Preserve raw event to JSONL
+                            # (no-op if disabled). Operates on event.raw to
+                            # preserve the SDK-shape JSON the prior path
+                            # used to dump.
+                            if _sdk_debug_dir is not None and event.raw is not None:
+                                _sdk_preserve_event(_sdk_debug_dir, event.raw)
+
+                            if isinstance(event, AssistantMessageEvent):
+                                # API-error check operates on raw SDK shape;
+                                # only the SDK harness populates event.raw,
+                                # other substrates have raw=None and this
+                                # check is a no-op there.
+                                if event.raw is not None:
+                                    err = check_assistant_message_error(event.raw)
+                                    if err:
+                                        # TASK-FIX-46F2: Retry on transient "unknown" errors.
+                                        if (
+                                            _sdk_attempt < MAX_SDK_STREAM_RETRIES
+                                            and "unknown" in str(err).lower()
+                                        ):
+                                            logger.warning(
+                                                "[%s] SDK stream error (attempt %d/%d), "
+                                                "retrying in %ds: %s",
+                                                task_id,
+                                                _sdk_attempt + 1,
+                                                MAX_SDK_STREAM_RETRIES + 1,
+                                                SDK_STREAM_RETRY_BACKOFF,
+                                                err,
+                                            )
+                                            _sdk_stream_error = err
+                                            break  # Break event loop to retry
+                                        logger.error(
+                                            f"[{task_id}] SDK API error in stream: {err}"
                                         )
-                                        _sdk_stream_error = err
-                                        break  # Break message loop to retry
-                                    logger.error(f"[{task_id}] SDK API error in stream: {err}")
-                                    return TaskWorkResult(success=False, output={}, error=f"SDK agent error: {err}")
+                                        return TaskWorkResult(
+                                            success=False,
+                                            output={},
+                                            error=f"SDK agent error: {err}",
+                                        )
                                 assistant_count += 1
-                                for block in message.content:
-                                    if isinstance(block, TextBlock):
-                                        collected_output.append(block.text)
-                                        # Log progress for debugging
-                                        if "Phase" in block.text or "test" in block.text.lower():
-                                            logger.debug(f"SDK progress: {block.text[:100]}...")
-                                    elif isinstance(block, ToolUseBlock):
+                                # Collect joined text content for parser
+                                if event.text:
+                                    collected_output.append(event.text)
+                                    if "Phase" in event.text or "test" in event.text.lower():
+                                        logger.debug(
+                                            f"SDK progress: {event.text[:100]}..."
+                                        )
+                                # Walk raw content blocks for tool tracking +
+                                # per-bash-exec emission. Substrate-agnostic
+                                # via duck-typing on type(block).__name__ —
+                                # matches the heartbeat scan at
+                                # agent_invoker.py:2974-2989 and the SDK
+                                # harness's own ToolUseBlock emission at
+                                # sdk_harness.py:318-328.
+                                content = (
+                                    getattr(event.raw, "content", None) or []
+                                    if event.raw is not None
+                                    else []
+                                )
+                                for block in content:
+                                    block_class = type(block).__name__
+                                    if block_class == "ToolUseBlock":
                                         tool_count += 1
-                                        logger.debug(f"Tool invoked: {block.name}")
-                                        # TASK-FIX-OBS2: Update progress logger with tool use
+                                        block_name = getattr(block, "name", "")
+                                        logger.debug(f"Tool invoked: {block_name}")
+                                        # TASK-FIX-OBS2: Update progress logger with tool use.
                                         if self._progress_logger:
-                                            self._progress_logger._last_tool = block.name
+                                            self._progress_logger._last_tool = block_name
                                         # TASK-FIX-STUB-C: Track file operations from
                                         # Write/Edit tools to populate files_created/
-                                        # files_modified in task_work_results.json
-                                        if block.name in ("Write", "Edit"):
+                                        # files_modified in task_work_results.json.
+                                        if block_name in ("Write", "Edit"):
                                             tool_input = getattr(block, "input", {})
                                             if isinstance(tool_input, dict):
-                                                # TASK-FIX-PIPELINE: Log actual SDK key names (Fix 1)
+                                                # TASK-FIX-PIPELINE: Log actual SDK key names (Fix 1).
                                                 logger.info(
-                                                    f"[{task_id}] ToolUseBlock {block.name} input keys: "
+                                                    f"[{task_id}] ToolUseBlock {block_name} input keys: "
                                                     f"{list(tool_input.keys())}"
                                                 )
                                                 parser._track_tool_call(
-                                                    block.name, tool_input
+                                                    block_name, tool_input
                                                 )
-                                                # TASK-FIX-OBS2: Track file changes for progress
+                                                # TASK-FIX-OBS2: Track file changes for progress.
                                                 if self._progress_logger:
                                                     self._progress_logger._files_changed += 1
                                             else:
                                                 logger.warning(
-                                                    f"[{task_id}] ToolUseBlock {block.name} input is "
+                                                    f"[{task_id}] ToolUseBlock {block_name} input is "
                                                     f"{type(tool_input).__name__}, not dict: {str(tool_input)[:200]}"
                                                 )
                                         # TASK-INST-005c: Track Bash tool invocations
-                                        # for tool.exec event emission
-                                        elif block.name == "Bash":
+                                        # for tool.exec event emission.
+                                        elif block_name == "Bash":
                                             tool_input = getattr(block, "input", {})
                                             if isinstance(tool_input, dict):
-                                                _pending_bash_tools[block.id] = {
+                                                _pending_bash_tools[getattr(block, "id", "")] = {
                                                     "cmd": tool_input.get("command", ""),
                                                     "start_ns": time.monotonic_ns(),
                                                 }
-                                    elif isinstance(block, ToolResultBlock):
+                                    elif block_class == "ToolResultBlock":
                                         # TASK-INST-005c: Emit tool.exec event for
-                                        # completed Bash tool invocations
+                                        # completed Bash tool invocations.
                                         _tool_use_id = getattr(block, "tool_use_id", "")
                                         if _tool_use_id in _pending_bash_tools:
                                             _bash_info = _pending_bash_tools.pop(_tool_use_id)
-                                            _content = str(block.content) if block.content else ""
+                                            _block_content = getattr(block, "content", None)
+                                            _content_str = (
+                                                str(_block_content) if _block_content else ""
+                                            )
                                             _latency = (
                                                 (time.monotonic_ns() - _bash_info["start_ns"])
                                                 / 1_000_000
@@ -5839,40 +5895,44 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                                 cmd=_bash_info["cmd"],
                                                 exit_code=0,
                                                 latency_ms=_latency,
-                                                stdout_tail=_content,
+                                                stdout_tail=_content_str,
                                                 stderr_tail="",
                                                 task_id=task_id,
                                             )
-                                        # Extract content from tool results if present
-                                        if block.content:
-                                            collected_output.append(str(block.content))
-                            elif isinstance(message, ResultMessage):
+                                        # Extract content from tool results
+                                        # if present (parser sees them too).
+                                        _result_content = getattr(block, "content", None)
+                                        if _result_content:
+                                            collected_output.append(str(_result_content))
+                            elif isinstance(event, ResultMessageEvent):
                                 result_count += 1
-                                # TASK-VPR-003: Capture SDK turns from ResultMessage
-                                sdk_turns_used = message.num_turns
-                                # TASK-RFX-B20B: Capture session_id for resumption
-                                sdk_session_id = getattr(message, "session_id", None)
+                                # TASK-VPR-003: Capture SDK turns from ResultMessage.
+                                # ResultMessageEvent does not expose num_turns at
+                                # the typed-event level (TASK-HMIG-006 D-1 left
+                                # this on raw); read from event.raw which the SDK
+                                # harness populates with the original SDK
+                                # ResultMessage. LangGraph harness leaves raw=None
+                                # so sdk_turns_used stays None on that path.
+                                if event.raw is not None:
+                                    sdk_turns_used = getattr(
+                                        event.raw, "num_turns", None
+                                    )
+                                # TASK-RFX-B20B: Capture session_id for resumption.
+                                # Read from typed field so the same code path
+                                # works for any substrate.
+                                sdk_session_id = event.session_id
                                 self._last_session_id = sdk_session_id
-                                logger.info(f"[{task_id}] SDK completed: turns={message.num_turns}")
+                                logger.info(
+                                    f"[{task_id}] SDK completed: turns={sdk_turns_used}"
+                                )
                                 break
 
-                # TASK-RFX-8332: Explicitly close the query() async generator
-                # after each retry iteration to prevent GC finalization.
-                if _tw_gen is not None:
-                    with suppress(Exception):
-                        try:
-                            async with asyncio.timeout(5):
-                                await _tw_gen.aclose()
-                        except (asyncio.TimeoutError, asyncio.CancelledError):
-                            pass
-                    _tw_gen = None
-
                 if _sdk_stream_error is None:
-                    break  # Stream completed successfully, exit retry loop
-                # TASK-FIX-46F2: Backoff before retry
+                    break  # Stream completed successfully, exit retry loop.
+                # TASK-FIX-46F2: Backoff before retry.
                 await asyncio.sleep(SDK_STREAM_RETRY_BACKOFF)
 
-            # TASK-FIX-46F2: If retries exhausted with transient error, fall through
+            # TASK-FIX-46F2: If retries exhausted with transient error, fall through.
             if _sdk_stream_error is not None:
                 logger.error(
                     f"[{task_id}] SDK API error in stream after "
@@ -5883,27 +5943,27 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                     error=f"SDK agent error: {_sdk_stream_error}",
                 )
 
-            # TASK-FBSDK-011: Log message processing summary
+            # TASK-FBSDK-011: Log message processing summary.
             logger.info(
                 f"[{task_id}] Message summary: total={message_count}, "
                 f"assistant={assistant_count}, tools={tool_count}, results={result_count}"
             )
 
-            # Join collected output for parsing
+            # Join collected output for parsing.
             output_text = "\n".join(collected_output)
 
-            # Parse text output for quality gate metrics (tests, coverage, phases)
-            # Note: parser already has file tracking from ToolUseBlock processing above
+            # Parse text output for quality gate metrics (tests, coverage, phases).
+            # Note: parser already has file tracking from ToolUseBlock processing above.
             parser.parse_message(output_text)
             parsed_result = parser.to_result()
 
-            # TASK-VPR-003: Inject SDK turn metrics into parsed result
-            # These flow through to task_work_results.json for Coach and reporting
-            # TASK-ABSR-MAXT: Report the complexity-scaled value actually passed to the SDK
+            # TASK-VPR-003: Inject SDK turn metrics into parsed result.
+            # These flow through to task_work_results.json for Coach and reporting.
+            # TASK-ABSR-MAXT: Report the complexity-scaled value actually passed to the SDK.
             parsed_result["sdk_turns_used"] = sdk_turns_used
             parsed_result["sdk_max_turns"] = effective_max_turns
 
-            # Write task_work_results.json for Coach validation
+            # Write task_work_results.json for Coach validation.
             self._write_task_work_results(task_id, parsed_result, documentation_level)
 
             logger.info(f"task-work completed successfully for {task_id}")
@@ -5925,39 +5985,32 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             self._write_failure_results(task_id, error_msg, "TimeoutError", collected_output)
             raise SDKTimeoutError(error_msg)
 
-        except CLINotFoundError as e:
-            error_msg = (
-                "Claude Code CLI not installed. "
-                "Run: npm install -g @anthropic-ai/claude-code"
+        except AgentInvocationError as e:
+            # TASK-HMIG-006.1 / D-4: the harness normalises SDK-specific
+            # exceptions (CLINotFoundError / ProcessError /
+            # CLIJSONDecodeError / SDK import failure / harness-internal
+            # ValueError) to AgentInvocationError. The diagnostic info
+            # (exit_code, stderr, error_class) is preserved inside the
+            # exception message string; downstream consumers
+            # (test assertions, log greps) keep working because the
+            # harness mirrors the pre-migration message wording verbatim:
+            #
+            #   * "Claude Agent SDK import failed." (sdk_harness.py:222)
+            #   * "Claude Code CLI not installed."  (sdk_harness.py:422)
+            #   * "SDK process failed (exit ...)"   (sdk_harness.py:427)
+            #   * "Failed to parse SDK response: ..." (sdk_harness.py:431)
+            error_msg = str(e)
+            logger.error(
+                f"[{task_id}] SDK invocation failed via harness "
+                f"(error_class=AgentInvocationError): {error_msg}"
             )
-            logger.error(error_msg)
-            self._write_failure_results(task_id, error_msg, "CLINotFoundError", collected_output)
-            return TaskWorkResult(
-                success=False,
-                output={},
-                error=error_msg,
-            )
-
-        except ProcessError as e:
-            error_msg = f"SDK process failed (exit {e.exit_code}): {e.stderr}"
-            logger.error(f"[{task_id}] SDK PROCESS ERROR")
-            logger.error(f"[{task_id}] Exit code: {e.exit_code}")
-            logger.error(f"[{task_id}] Stderr: {e.stderr}")
             logger.error(f"[{task_id}] Messages processed: {message_count}")
             if collected_output:
                 last_output = " ".join(collected_output)[-500:]
                 logger.error(f"[{task_id}] Last output (500 chars): {last_output}")
-            self._write_failure_results(task_id, error_msg, "ProcessError", collected_output)
-            return TaskWorkResult(
-                success=False,
-                output={},
-                error=error_msg,
+            self._write_failure_results(
+                task_id, error_msg, "AgentInvocationError", collected_output
             )
-
-        except CLIJSONDecodeError as e:
-            error_msg = f"Failed to parse SDK response: {e}"
-            logger.error(error_msg)
-            self._write_failure_results(task_id, error_msg, "CLIJSONDecodeError", collected_output)
             return TaskWorkResult(
                 success=False,
                 output={},
@@ -5967,10 +6020,10 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         except Exception as e:
             error_msg = str(e)
 
-            # Check for rate limit in error message
+            # Check for rate limit in error message.
             is_rate_limit, reset_time = detect_rate_limit(error_msg)
 
-            # Also check collected output for rate limit messages
+            # Also check collected output for rate limit messages.
             if not is_rate_limit and collected_output:
                 last_output = " ".join(collected_output)[-500:]
                 is_rate_limit, reset_time = detect_rate_limit(last_output)
@@ -5984,7 +6037,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                     reset_time=reset_time
                 )
 
-            # Original generic error handling continues...
+            # Catch-all for non-harness failures (e.g. orchestrator-side
+            # state errors, asyncio mishaps). Preserves the pre-migration
+            # log shape.
             error_msg = f"Unexpected error executing task-work: {str(e)}"
             logger.error(f"[{task_id}] SDK UNEXPECTED ERROR: {type(e).__name__}")
             logger.error(f"[{task_id}] Error message: {str(e)}")
@@ -5999,17 +6054,6 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 output={},
                 error=error_msg,
             )
-        finally:
-            # TASK-RFX-8332: Ensure query() generator is closed on ALL exit
-            # paths (timeout, process error, etc.) to prevent GC finalization
-            # from scheduling athrow(GeneratorExit) in a wrong asyncio Task.
-            if _tw_gen is not None:
-                with suppress(Exception):
-                    try:
-                        async with asyncio.timeout(5):
-                            await _tw_gen.aclose()
-                    except (asyncio.TimeoutError, asyncio.CancelledError):
-                        pass
 
     def _parse_task_work_output(self, stdout: str) -> Dict[str, Any]:
         """Parse task-work stdout into structured output.

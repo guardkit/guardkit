@@ -195,51 +195,106 @@ class TestInvokeWithRoleGeneratorClose:
 
 
 # ============================================================================
-# 2. _invoke_task_work_implement generator close tests (3 tests)
+# 2. _invoke_task_work_implement harness-ownership tests (3 tests)
 # ============================================================================
+#
+# TASK-HMIG-006.1 migrated _invoke_task_work_implement off the direct SDK
+# call site (query(prompt=prompt, options=options) + manual _tw_gen.aclose()
+# bookkeeping) to dispatch through ``select_harness()`` + ``harness.invoke()``.
+# After that migration the orchestrator no longer holds the SDK ``query()``
+# generator directly — generator hygiene (TASK-RFX-8332 / TASK-FIX-GEN1) is
+# owned by the harness (see ClaudeSDKHarness.invoke at
+# guardkit/orchestrator/harness/sdk_harness.py:449-459). The tests below
+# assert the new contract: the orchestrator dispatches through the harness
+# substrate seam and threads the SDK cleanup handler through to the harness,
+# rather than holding the generator and closing it inline.
+#
+# The behavioural guarantee (generator is aclose()d on every exit path) is
+# covered by the harness-side tests in tests/orchestrator/harness/
+# test_sdk_harness.py — those tests grep the harness source for the same
+# substrings this class used to check on the orchestrator.
 
 
 class TestInvokeTaskWorkImplementGeneratorClose:
-    """Verify _invoke_task_work_implement explicitly closes query() generator."""
+    """Verify _invoke_task_work_implement dispatches through the harness
+    substrate seam (TASK-HMIG-006.1) rather than holding the SDK generator
+    directly. Generator hygiene is now owned by the harness; this class
+    asserts the orchestrator-side contract surface only.
+    """
 
     def test_generator_reference_held_in_task_work(self):
-        """query() return value is stored in explicit variable in task-work path."""
+        """TASK-HMIG-006.1: dispatch through select_harness/harness.invoke
+        instead of holding ``query()`` directly."""
         import inspect
         source = inspect.getsource(AgentInvoker._invoke_task_work_implement)
 
-        # Must NOT have inline consumption pattern
+        # Must NOT consume the SDK ``query()`` generator inline. After the
+        # harness migration, ``query`` lives only inside the harness; any
+        # surviving call here would mean the migration regressed.
         assert "async for message in query(" not in source, (
-            "Generator must NOT be consumed inline - hold explicit reference"
+            "Direct ``query()`` consumption must not survive the harness "
+            "migration — dispatch through harness.invoke() instead."
         )
-        # Must have explicit reference
-        assert "_tw_gen = query(" in source, "Must assign query() to _tw_gen variable"
-        assert "async for message in _tw_gen:" in source, "Must iterate over held reference"
+        assert "_tw_gen = query(" not in source, (
+            "Direct ``query()`` capture must not survive the harness "
+            "migration — the harness owns the generator reference."
+        )
+        # Must dispatch through the harness substrate seam.
+        assert "select_harness(" in source, (
+            "Must construct the harness via select_harness() so "
+            "GUARDKIT_HARNESS routes the dispatch."
+        )
+        assert "harness.invoke(" in source, (
+            "Must iterate harness.invoke() events (per AC-001)."
+        )
+        assert "async for event in harness.invoke(" in source, (
+            "Must iterate typed HarnessEvent values directly."
+        )
 
     def test_aclose_in_retry_cleanup(self):
-        """Generator is aclose()d after each retry iteration."""
+        """TASK-HMIG-006.1: retry loop reconstructs the harness instead of
+        re-using a manually-managed query() generator."""
         import inspect
         source = inspect.getsource(AgentInvoker._invoke_task_work_implement)
 
-        assert "await _tw_gen.aclose()" in source, "Must call aclose() on _tw_gen"
-        assert "_tw_gen = None" in source, "Must reset reference after close"
+        # The retry loop (TASK-FIX-46F2) must survive the harness migration
+        # — under GPU contention vLLM SSE streams still need a retry.
+        assert "MAX_SDK_STREAM_RETRIES" in source, (
+            "Retry loop must survive harness migration (TASK-FIX-46F2)."
+        )
+        # And each retry must build a fresh harness per Design Decision D-6
+        # (single-use per invocation). Manual ``_tw_gen.aclose()`` must NOT
+        # survive — the harness's own finally block owns generator cleanup.
+        assert "await _tw_gen.aclose()" not in source, (
+            "Manual generator close must not survive — harness owns it."
+        )
 
     def test_aclose_in_finally_block(self):
-        """Generator is aclose()d in finally block for exception paths."""
+        """TASK-HMIG-006.1: manual finally-block generator cleanup is gone;
+        D-4 exception handling (AgentInvocationError catch) replaces the
+        SDK-specific cascade."""
         import inspect
         source = inspect.getsource(AgentInvoker._invoke_task_work_implement)
 
-        # Verify there's a finally block with generator cleanup
-        # Find 'finally:' followed by _tw_gen cleanup
-        finally_idx = source.find("finally:")
-        assert finally_idx != -1, "Must have finally block"
-
-        # Check that aclose is called after finally
-        after_finally = source[finally_idx:]
-        assert "await _tw_gen.aclose()" in after_finally, (
-            "finally block must call aclose() on _tw_gen"
+        # The harness raises ``AgentInvocationError`` for every normalised
+        # SDK failure (D-4); the orchestrator must have a dedicated catch
+        # block for it instead of the old four-clause cascade.
+        assert "except AgentInvocationError" in source, (
+            "Must catch AgentInvocationError from the harness boundary (D-4)."
         )
-        assert "asyncio.timeout(5)" in after_finally, (
-            "finally block must use 5s timeout for aclose"
+        # The old SDK-specific exception cascade must NOT survive — those
+        # types live only inside the harness now.
+        assert "except CLINotFoundError" not in source, (
+            "SDK-specific CLINotFoundError catch must not survive — "
+            "harness normalises it to AgentInvocationError."
+        )
+        assert "except ProcessError" not in source, (
+            "SDK-specific ProcessError catch must not survive — "
+            "harness normalises it to AgentInvocationError."
+        )
+        assert "except CLIJSONDecodeError" not in source, (
+            "SDK-specific CLIJSONDecodeError catch must not survive — "
+            "harness normalises it to AgentInvocationError."
         )
 
 
@@ -258,10 +313,20 @@ class TestSdkCleanupHandlerPreserved:
         assert "_install_sdk_cleanup_handler(" in source
 
     def test_cleanup_handler_in_task_work(self):
-        """_install_sdk_cleanup_handler still called in _invoke_task_work_implement."""
+        """_install_sdk_cleanup_handler threaded through select_harness.
+
+        TASK-HMIG-006.1: the orchestrator no longer calls
+        ``_install_sdk_cleanup_handler(asyncio.get_running_loop())`` itself —
+        the harness owns the subprocess lifetime (D-6) and the installer is
+        passed in as the ``cleanup_handler_installer`` kwarg so the harness
+        invokes it against the right event loop on every call.
+        """
         import inspect
         source = inspect.getsource(AgentInvoker._invoke_task_work_implement)
-        assert "_install_sdk_cleanup_handler(" in source
+        assert "cleanup_handler_installer=_install_sdk_cleanup_handler" in source, (
+            "Must pass _install_sdk_cleanup_handler to the harness via the "
+            "cleanup_handler_installer kwarg (D-6 contract preserved)."
+        )
 
 
 # ============================================================================

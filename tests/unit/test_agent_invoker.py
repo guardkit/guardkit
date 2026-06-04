@@ -1327,8 +1327,17 @@ class TestInvokeTaskWorkImplement:
     def _create_mock_sdk(self, query_gen):
         """Create mock SDK module with given query generator.
 
-        TASK-FB-FIX-013: Updated to include AssistantMessage, TextBlock, and other
+        TASK-FB-FIX-013: Includes AssistantMessage, TextBlock, and other
         message types for proper ContentBlock iteration testing.
+
+        TASK-HMIG-006.1: Class names match the real SDK exactly (no "Mock"
+        prefix) so the harness's duck-typing scans at
+        ``sdk_harness.py:319`` (``type(block).__name__ == "ToolUseBlock"``)
+        and ``sdk_harness.py:477`` (``type(block).__name__ == "TextBlock"``)
+        succeed against these fixtures. With ``sys.modules`` patched, the
+        harness's lazy ``from claude_agent_sdk import ...`` resolves to
+        these classes; the duck-typing only works when the
+        ``type(...).__name__`` matches the SDK literal.
         """
         mock_sdk = MagicMock()
         mock_sdk.query = query_gen
@@ -1337,36 +1346,40 @@ class TestInvokeTaskWorkImplement:
         mock_sdk.ProcessError = type("ProcessError", (Exception,), {"exit_code": 1, "stderr": ""})
         mock_sdk.CLIJSONDecodeError = type("CLIJSONDecodeError", (Exception,), {})
 
-        # TASK-FB-FIX-013: Add message type classes for isinstance() checks
-        # These are real classes that isinstance() can check against
-        class MockTextBlock:
+        # Class names match the real SDK exactly so the harness's
+        # duck-typing on ``type(block).__name__`` accepts them.
+        class TextBlock:
             def __init__(self, text):
                 self.type = "text"
                 self.text = text
 
-        class MockToolUseBlock:
-            def __init__(self, name="test_tool"):
+        class ToolUseBlock:
+            def __init__(self, name="test_tool", input=None, id=""):
                 self.type = "tool_use"
                 self.name = name
+                self.input = input if input is not None else {}
+                self.id = id
 
-        class MockToolResultBlock:
-            def __init__(self, content=None):
+        class ToolResultBlock:
+            def __init__(self, content=None, tool_use_id=""):
                 self.type = "tool_result"
                 self.content = content
+                self.tool_use_id = tool_use_id
 
-        class MockAssistantMessage:
+        class AssistantMessage:
             def __init__(self, content):
                 self.content = content  # List of ContentBlocks
 
-        class MockResultMessage:
-            def __init__(self, num_turns=1):
+        class ResultMessage:
+            def __init__(self, num_turns=1, session_id=None):
                 self.num_turns = num_turns
+                self.session_id = session_id
 
-        mock_sdk.AssistantMessage = MockAssistantMessage
-        mock_sdk.TextBlock = MockTextBlock
-        mock_sdk.ToolUseBlock = MockToolUseBlock
-        mock_sdk.ToolResultBlock = MockToolResultBlock
-        mock_sdk.ResultMessage = MockResultMessage
+        mock_sdk.AssistantMessage = AssistantMessage
+        mock_sdk.TextBlock = TextBlock
+        mock_sdk.ToolUseBlock = ToolUseBlock
+        mock_sdk.ToolResultBlock = ToolResultBlock
+        mock_sdk.ResultMessage = ResultMessage
 
         return mock_sdk
 
@@ -1656,6 +1669,274 @@ class TestInvokeTaskWorkImplement:
         assert quality_gates["coverage"] == 92.5
         assert quality_gates["coverage_met"] is True
         assert quality_gates["tests_passing"] is True
+
+
+class TestTaskWorkHarnessMigration:
+    """Verify TASK-HMIG-006.1 harness-migration contract.
+
+    Mirrors TASK-HMIG-006.3's TestCoachHarnessMigration pattern. These
+    tests exercise the harness substrate seam itself rather than relying
+    on ``sys.modules["claude_agent_sdk"]`` patching: they patch
+    ``agent_invoker.select_harness`` so the test specifies the harness
+    instance directly. AC-004 (LangGraph dispatch) is exercised via the
+    env-var probe and the AgentInvocationError re-raise path.
+    """
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance for harness-migration tests."""
+        return AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=60,
+            use_task_work_delegation=True,
+        )
+
+    def _build_fake_harness(self, events_to_yield, supports_resume=True):
+        """Construct a minimal HarnessAdapter stand-in.
+
+        The fake harness yields whatever ``events_to_yield`` produces and
+        records the kwargs passed to ``invoke``. Mirrors the pattern in
+        ``tests/unit/test_coach_validator.py::_FakeHarness``.
+        """
+        from guardkit.orchestrator.harness import HarnessAdapter
+
+        class _FakeHarness(HarnessAdapter):
+            def __init__(self):
+                self.invoke_kwargs = None
+
+            async def invoke(self, prompt, role, tools, cwd, *, timeout_seconds):
+                self.invoke_kwargs = {
+                    "prompt": prompt,
+                    "role": role,
+                    "tools": list(tools),
+                    "cwd": cwd,
+                    "timeout_seconds": timeout_seconds,
+                }
+                for event in events_to_yield:
+                    yield event
+
+            @property
+            def supports_resume(self):
+                return supports_resume
+
+        return _FakeHarness()
+
+    @pytest.mark.asyncio
+    async def test_dispatches_through_select_harness(self, invoker, worktree_path):
+        """AC-001: TaskWork dispatch routes through select_harness rather
+        than re-importing ``claude_agent_sdk`` directly."""
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+        )
+
+        events = [
+            AssistantMessageEvent(
+                text="15 tests passed, 0 tests failed\nCoverage: 88.5%",
+                raw=None,
+            ),
+            ResultMessageEvent(session_id="test-session-id-001", raw=None),
+        ]
+        fake_harness = self._build_fake_harness(events)
+        select_harness_kwargs = {}
+
+        def _capture_select(**kwargs):
+            select_harness_kwargs.update(kwargs)
+            return fake_harness
+
+        with patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            side_effect=_capture_select,
+        ) as mock_select:
+            result = await invoker._invoke_task_work_implement(
+                task_id="TASK-HMIG-006.1-AC001",
+                mode="standard",
+            )
+
+        assert result.success is True
+        # ``select_harness`` must be called at least once (retry loop may
+        # iterate, but the success path exits after the first attempt).
+        assert mock_select.call_count >= 1
+        # AC-002: orchestrator-side Player concerns must survive the
+        # migration as harness constructor kwargs.
+        assert select_harness_kwargs["permission_mode"] == "acceptEdits"
+        assert "Read" in select_harness_kwargs["allowed_tools"]
+        assert "Write" in select_harness_kwargs["allowed_tools"]
+        assert "Edit" in select_harness_kwargs["allowed_tools"]
+        assert "Bash" in select_harness_kwargs["allowed_tools"]
+        assert "Task" in select_harness_kwargs["allowed_tools"]
+        assert "Skill" not in select_harness_kwargs["allowed_tools"]
+        # TASK-FIX-002R-CONSUME: the cwd kwarg must be passed unconditionally
+        # so the LangGraph branch can build a path-confined backend.
+        assert select_harness_kwargs["cwd"] == worktree_path
+        # TASK-POF-004 / TASK-HMIG-006.4: setting_sources stays orchestrator-side.
+        assert select_harness_kwargs["setting_sources"] == ["project"]
+        # The cleanup handler must be threaded through to the harness
+        # (D-6 — single-use per invocation, harness installs it).
+        from guardkit.orchestrator.agent_invoker import _install_sdk_cleanup_handler
+        assert (
+            select_harness_kwargs["cleanup_handler_installer"]
+            is _install_sdk_cleanup_handler
+        )
+        # Session ID captured from ResultMessageEvent (TASK-RFX-B20B).
+        assert invoker._last_session_id == "test-session-id-001"
+        assert result.session_id == "test-session-id-001"
+
+    @pytest.mark.asyncio
+    async def test_assistant_event_text_collected_for_parser(self, invoker):
+        """AC-001: text from AssistantMessageEvent flows into the parser
+        so quality gates are extracted."""
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+        )
+
+        events = [
+            AssistantMessageEvent(
+                text="12 tests passed, 0 tests failed\nCoverage: 92.5%\nIN_REVIEW",
+                raw=None,
+            ),
+            ResultMessageEvent(session_id=None, raw=None),
+        ]
+        fake_harness = self._build_fake_harness(events)
+
+        with patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            return_value=fake_harness,
+        ):
+            result = await invoker._invoke_task_work_implement(
+                task_id="TASK-HMIG-006.1-AC001b",
+                mode="tdd",
+            )
+
+        assert result.success is True
+        assert result.output.get("tests_passed") == 12
+        assert result.output.get("coverage") == 92.5
+
+    @pytest.mark.asyncio
+    async def test_agent_invocation_error_returns_failure_result(self, invoker):
+        """AC-001 D-4: AgentInvocationError from the harness boundary is
+        converted to a ``TaskWorkResult(success=False)`` with the harness
+        message preserved (so the four pre-migration SDK-specific
+        diagnostic messages survive verbatim)."""
+        from guardkit.orchestrator.harness import HarnessAdapter
+
+        class _RaisingHarness(HarnessAdapter):
+            async def invoke(self, prompt, role, tools, cwd, *, timeout_seconds):
+                # D-4 normalised error message — mirrors the wording the
+                # harness uses for CLINotFoundError (sdk_harness.py:421-424).
+                raise AgentInvocationError(
+                    "Claude Code CLI not installed. "
+                    "Run: npm install -g @anthropic-ai/claude-code"
+                )
+                yield  # type: ignore[unreachable]
+
+        with patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            return_value=_RaisingHarness(),
+        ):
+            result = await invoker._invoke_task_work_implement(
+                task_id="TASK-HMIG-006.1-AC001c",
+                mode="standard",
+            )
+
+        assert result.success is False
+        assert "Claude Code CLI not installed" in result.error
+
+    @pytest.mark.asyncio
+    async def test_langgraph_env_var_routes_through_selector(
+        self, invoker, monkeypatch, worktree_path
+    ):
+        """AC-004: setting ``GUARDKIT_HARNESS=langgraph`` causes the
+        orchestrator to dispatch through ``select_harness`` rather than
+        hardcoding the SDK path.
+
+        Mirrors TASK-HMIG-006.3's ``test_honours_langgraph_env_var``
+        pattern (tests/unit/test_coach_validator.py:5628-5655): the test
+        asserts dispatch-boundary placement, not LangGraph behavioural
+        parity. Behavioural parity for LangGraph is out of scope here
+        (LangGraph turn loop is owned by guardkitfactory).
+        """
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+        )
+
+        monkeypatch.setenv("GUARDKIT_HARNESS", "langgraph")
+        events = [
+            AssistantMessageEvent(text="0 tests passed, 0 tests failed", raw=None),
+            ResultMessageEvent(session_id=None, raw=None),
+        ]
+        fake_harness = self._build_fake_harness(events)
+        call_count = 0
+
+        def _capture(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            return fake_harness
+
+        with patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            side_effect=_capture,
+        ):
+            result = await invoker._invoke_task_work_implement(
+                task_id="TASK-HMIG-006.1-AC004",
+                mode="standard",
+            )
+
+        # The orchestrator dispatched through select_harness regardless of
+        # substrate (AC-004). Retry loop may invoke once on success.
+        assert call_count >= 1, (
+            "select_harness must be the dispatch boundary regardless of substrate"
+        )
+        # And the harness's ``invoke`` was actually consumed (proves we
+        # iterated events from whatever harness the selector returned).
+        assert fake_harness.invoke_kwargs is not None
+        assert fake_harness.invoke_kwargs["role"] == "player"
+        assert fake_harness.invoke_kwargs["cwd"] == worktree_path
+        assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_resume_session_id_threaded_into_harness(
+        self, invoker, worktree_path
+    ):
+        """TASK-RFX-B20B parity: when ``_last_session_id`` is set, the
+        orchestrator threads it into the harness constructor so the SDK
+        path can resume."""
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+        )
+
+        invoker._last_session_id = "prior-session-fafa-bbbb-cccc"
+
+        events = [
+            AssistantMessageEvent(text="0 tests passed, 0 tests failed", raw=None),
+            ResultMessageEvent(session_id="fresh-session-id", raw=None),
+        ]
+        fake_harness = self._build_fake_harness(events, supports_resume=True)
+        select_harness_kwargs = {}
+
+        def _capture_select(**kwargs):
+            select_harness_kwargs.update(kwargs)
+            return fake_harness
+
+        with patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            side_effect=_capture_select,
+        ):
+            await invoker._invoke_task_work_implement(
+                task_id="TASK-HMIG-006.1-resume",
+                mode="standard",
+            )
+
+        assert (
+            select_harness_kwargs["resume_session_id"]
+            == "prior-session-fafa-bbbb-cccc"
+        )
+        # And the orchestrator overwrites _last_session_id with the
+        # session_id from the terminal event for the next turn.
+        assert invoker._last_session_id == "fresh-session-id"
 
 
 class TestParseTaskWorkOutput:
