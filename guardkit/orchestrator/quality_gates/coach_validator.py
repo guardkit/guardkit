@@ -2423,11 +2423,57 @@ class CoachValidator:
             f"```bash\n{test_cmd}\n```\n\nProvide the full test output."
         )
 
+        # TASK-HMIG-006.5: Restore sdk_debug preservation for the Coach
+        # test path. Pre-migration (TASK-DIAG-F4A2), the SDK call site
+        # invoked ``_sdk_preserve_prompt`` / ``_sdk_preserve_event``
+        # under ``GUARDKIT_AUTOBUILD_PRESERVE_DEBUG=1`` so incident
+        # analysis of coach test-run failures had a quoted artefact
+        # trail under ``sdk_debug/turn_<n>/coach/test_run/``. The
+        # HMIG-006.3 migration dropped those calls because the harness
+        # substrate seam owns the message stream and no harness-level
+        # hook existed. The preservation is re-introduced here against
+        # the synthesised options-shaped snapshot below so the
+        # diagnostic surface mirrors the pre-migration shape; the
+        # harness dispatch boundary itself (AC-001/AC-002 of HMIG-006.3)
+        # is untouched. Zero overhead when the env var is unset
+        # (``preserve_prompt`` short-circuits and ``preserve_event``
+        # becomes a no-op against ``debug_dir=None``).
+        from guardkit.orchestrator.sdk_debug import (
+            preserve_prompt as _sdk_preserve_prompt,
+            preserve_event as _sdk_preserve_event,
+        )
+
         try:
             # Use GUARDKIT_COACH_TEST_MODEL env var if set, otherwise CLI default
             model = self._get_coach_test_model()
             worktree_str = str(self.worktree_path)
             logger.debug(f"Coach harness PYTHONPATH prepend: {worktree_str}")
+
+            # Synthesise the diagnostic options snapshot the
+            # pre-migration ``ClaudeAgentOptions`` would have produced.
+            # The post-migration harness owns its own option assembly;
+            # this record captures Coach's intent (what the substrate
+            # was asked to run with) rather than the substrate's
+            # realisation. ``GUARDKIT_HARNESS`` is included so the
+            # post-mortem can distinguish SDK vs. LangGraph runs.
+            _sdk_options_snapshot = {
+                "cwd": str(self.worktree_path),
+                "allowed_tools": ["Bash"],
+                "permission_mode": "bypassPermissions",
+                "max_turns": 1,
+                "model": model,
+                "harness": os.environ.get("GUARDKIT_HARNESS", "sdk"),
+                "pythonpath_prepend": worktree_str,
+                "sdk_timeout_seconds": self.test_timeout,
+            }
+            _sdk_debug_dir = _sdk_preserve_prompt(
+                workspace_root=self.worktree_path,
+                task_id=self.task_id or "unknown",
+                turn=self._turn,
+                role="coach_test",
+                prompt=prompt,
+                options=_sdk_options_snapshot,
+            )
 
             collected_text: List[str] = []
             bash_output: Optional[str] = None
@@ -2452,6 +2498,12 @@ class CoachValidator:
                         cwd=self.worktree_path,
                         timeout_seconds=self.test_timeout,
                     ):
+                        # TASK-HMIG-006.5: record every harness event
+                        # the loop consumes. ``preserve_event`` is a
+                        # no-op when ``_sdk_debug_dir`` is None
+                        # (env var unset), so this is zero-cost in
+                        # production.
+                        _sdk_preserve_event(_sdk_debug_dir, event)
                         if isinstance(event, AssistantMessageEvent):
                             # API-error short-circuit mirrors the Player
                             # dispatch in agent_invoker._invoke_with_role.

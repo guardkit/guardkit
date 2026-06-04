@@ -59,6 +59,7 @@ def tmp_worktree(tmp_path):
 _HARNESS_OWNING_TEST_CLASSES = frozenset({
     "TestSdkEnvMerge",
     "TestCoachHarnessMigration",
+    "TestCoachSdkDebugPreservation",
 })
 
 
@@ -5675,6 +5676,239 @@ class TestCoachHarnessMigration:
         ):
             with pytest.raises(AgentInvocationError, match="simulated transport"):
                 asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
+
+
+# ============================================================================
+# Coach sdk_debug preservation (TASK-HMIG-006.5) — restore TASK-DIAG-F4A2
+# diagnostic surface dropped by TASK-HMIG-006.3 harness migration.
+# ============================================================================
+
+
+class TestCoachSdkDebugPreservation:
+    """TASK-HMIG-006.5: ``_run_tests_via_sdk`` preserves prompt + harness
+    event stream under ``sdk_debug/turn_<n>/coach/test_run/`` when
+    ``GUARDKIT_AUTOBUILD_PRESERVE_DEBUG=1``.
+
+    The pre-migration shape (TASK-DIAG-F4A2) wrote three files per
+    coach test turn:
+
+    * ``prompt.txt`` — byte-equal to the prompt the SDK saw.
+    * ``options.json`` — JSON dump of the ``ClaudeAgentOptions`` dataclass.
+    * ``messages.jsonl`` — one JSON line per SDK message consumed.
+
+    Post-migration the harness owns the message stream, so this class
+    asserts the equivalent shape against (a) the synthesised
+    options-snapshot dict the new call site builds and (b) the
+    ``HarnessEvent`` typed records yielded by the substrate.
+
+    Lives in ``_HARNESS_OWNING_TEST_CLASSES`` so the autouse
+    SDK-failure fixture does not clobber the explicit
+    ``select_harness`` patch installed below.
+    """
+
+    @staticmethod
+    def _read_jsonl(path):
+        return [json.loads(line) for line in path.read_text().splitlines() if line]
+
+    def test_no_files_when_env_var_unset(self, tmp_worktree, monkeypatch):
+        """AC-003: zero overhead in production — no sdk_debug dir created."""
+        import asyncio
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+        )
+
+        monkeypatch.delenv("GUARDKIT_AUTOBUILD_PRESERVE_DEBUG", raising=False)
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-001", turn=1)
+        fake = _FakeHarness(events=[
+            AssistantMessageEvent(text="5 passed in 0.1s", raw=None),
+            ResultMessageEvent(session_id=None),
+        ])
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
+            return_value=fake,
+        ):
+            asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
+
+        sdk_debug_root = tmp_worktree / ".guardkit" / "autobuild" / "TASK-001" / "sdk_debug"
+        assert not sdk_debug_root.exists(), (
+            "preserve_prompt must short-circuit when env var is unset"
+        )
+
+    def test_preserves_prompt_options_and_events_when_enabled(
+        self, tmp_worktree, monkeypatch
+    ):
+        """AC-001 + AC-002: full triple is written with HarnessEvent shape."""
+        import asyncio
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+        )
+
+        monkeypatch.setenv("GUARDKIT_AUTOBUILD_PRESERVE_DEBUG", "1")
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-001", turn=3)
+        events = [
+            AssistantMessageEvent(text="Running pytest", raw=None),
+            AssistantMessageEvent(text="5 passed in 0.1s", raw=None),
+            ResultMessageEvent(session_id="sess-xyz", stop_reason="end_turn"),
+        ]
+        fake = _FakeHarness(events=events)
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
+            return_value=fake,
+        ):
+            asyncio.run(validator._run_tests_via_sdk("pytest tests/foo"))
+
+        debug_dir = (
+            tmp_worktree
+            / ".guardkit" / "autobuild" / "TASK-001" / "sdk_debug"
+            / "turn_3" / "coach" / "test_run"
+        )
+        assert debug_dir.is_dir(), "coach test debug dir must exist under turn_<n>/coach/test_run/"
+
+        # AC-001: prompt.txt is byte-equal to the rendered command prompt
+        prompt_text = (debug_dir / "prompt.txt").read_text(encoding="utf-8")
+        assert "pytest tests/foo" in prompt_text
+        assert prompt_text.startswith("Run the following test command")
+
+        # AC-001: options.json captures the synthesised options-shaped snapshot
+        options_payload = json.loads((debug_dir / "options.json").read_text())
+        assert options_payload["allowed_tools"] == ["Bash"]
+        assert options_payload["permission_mode"] == "bypassPermissions"
+        assert options_payload["max_turns"] == 1
+        assert options_payload["cwd"] == str(tmp_worktree)
+        # GUARDKIT_HARNESS env var is captured so post-mortem can
+        # distinguish SDK vs. LangGraph substrate runs.
+        assert options_payload["harness"] == "sdk"
+        assert options_payload["pythonpath_prepend"] == str(tmp_worktree)
+
+        # AC-002: each HarnessEvent the loop consumed is recorded with
+        # its typed class name. messages.jsonl is one JSON line per
+        # event in stream order.
+        recorded = self._read_jsonl(debug_dir / "messages.jsonl")
+        assert len(recorded) == 3, (
+            f"expected one JSONL line per harness event, got {len(recorded)}: {recorded}"
+        )
+        assert [r["type"] for r in recorded] == [
+            "AssistantMessageEvent",
+            "AssistantMessageEvent",
+            "ResultMessageEvent",
+        ]
+        # First AssistantMessageEvent carries its text field through
+        # the dataclass.asdict path (AC-002 typed-event shape).
+        assert recorded[0]["text"] == "Running pytest"
+        # Terminal ResultMessageEvent carries its session_id field.
+        assert recorded[2]["session_id"] == "sess-xyz"
+
+    def test_event_raw_walked_recursively(self, tmp_worktree, monkeypatch):
+        """AC-002: ``event.raw`` (SDK Message) is walked, not repr'd.
+
+        Pre-migration the JSONL line was the raw SDK message dumped
+        via dataclass.asdict. Post-migration the harness wraps the
+        SDK message in ``AssistantMessageEvent.raw``. The preservation
+        path must walk that field recursively so post-mortem analysis
+        sees the same fields it used to — not a single ``repr()``
+        string.
+        """
+        import asyncio
+        from dataclasses import dataclass, field as dc_field
+        from typing import List as ListT
+
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+        )
+
+        monkeypatch.setenv("GUARDKIT_AUTOBUILD_PRESERVE_DEBUG", "1")
+
+        @dataclass
+        class _FakeTextBlock:
+            text: str = ""
+            block_type: str = "text"
+
+        @dataclass
+        class _FakeRawSDKMessage:
+            """Stands in for ``claude_agent_sdk.AssistantMessage``."""
+            content: ListT[_FakeTextBlock] = dc_field(default_factory=list)
+            model: str = "claude-sonnet"
+
+        raw_msg = _FakeRawSDKMessage(
+            content=[_FakeTextBlock(text="bash output here")],
+            model="claude-sonnet",
+        )
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-001", turn=1)
+        fake = _FakeHarness(events=[
+            AssistantMessageEvent(text="bash output here", raw=raw_msg),
+            ResultMessageEvent(session_id=None),
+        ])
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
+            return_value=fake,
+        ):
+            asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
+
+        debug_dir = (
+            tmp_worktree
+            / ".guardkit" / "autobuild" / "TASK-001" / "sdk_debug"
+            / "turn_1" / "coach" / "test_run"
+        )
+        recorded = self._read_jsonl(debug_dir / "messages.jsonl")
+        first = recorded[0]
+        assert first["type"] == "AssistantMessageEvent"
+        # ``raw`` is walked recursively, not repr'd — the inner SDK
+        # message keeps its fields addressable from the JSONL line.
+        assert isinstance(first["raw"], dict), (
+            f"raw must be walked into a dict, got {type(first['raw']).__name__}: {first['raw']!r}"
+        )
+        assert first["raw"]["type"] == "_FakeRawSDKMessage"
+        assert first["raw"]["model"] == "claude-sonnet"
+        assert first["raw"]["content"][0]["text"] == "bash output here"
+
+    def test_preservation_idempotent_within_turn(self, tmp_worktree, monkeypatch):
+        """Re-running ``_run_tests_via_sdk`` for the same turn overwrites,
+        matching the pre-migration ``preserve_prompt`` contract that
+        wipes stale state from interrupted runs.
+        """
+        import asyncio
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+        )
+
+        monkeypatch.setenv("GUARDKIT_AUTOBUILD_PRESERVE_DEBUG", "1")
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-001", turn=1)
+
+        def _run(events):
+            fake = _FakeHarness(events=events)
+            with patch(
+                "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
+                return_value=fake,
+            ):
+                asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
+
+        _run([AssistantMessageEvent(text="first run", raw=None),
+              ResultMessageEvent(session_id=None)])
+        _run([AssistantMessageEvent(text="second run", raw=None),
+              ResultMessageEvent(session_id=None)])
+
+        debug_dir = (
+            tmp_worktree
+            / ".guardkit" / "autobuild" / "TASK-001" / "sdk_debug"
+            / "turn_1" / "coach" / "test_run"
+        )
+        recorded = self._read_jsonl(debug_dir / "messages.jsonl")
+        # Second run wipes the first — only the second pair survives.
+        assert [r["text"] for r in recorded[:1]] == ["second run"], (
+            "idempotent re-run must overwrite, not append, the JSONL stream"
+        )
 
 
 # ============================================================================
