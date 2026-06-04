@@ -8,14 +8,26 @@
   "central_falsifier": "LangGraph aggregate first-pass-success rate across 9 LangGraph runs >= 75% (review §11). <75% halts Wave 4.",
   "rep_count_per_harness": 3,
   "pre_loop": false,
-  "pre_loop_rationale": "Forced off after smoke v5+v6 (2026-05-27) revealed that the pre-loop design phase hard-routes through claude-agent-sdk via task_work_interface, bypassing GUARDKIT_HARNESS. Disabling pre-loop isolates the harness adapter's actual purview (the Player-Coach loop). NOTE 2026-05-27: the v5/v6 marker-contract failures attributed to 'local Qwen' were actually a consequence of running qwen3-coder-30b (not an AutoBuild Player model — see model_choice_correction below) rather than a pre-loop substrate problem per se. Pre-loop ON should be re-evaluated against qwen-coder-next once TASK-HMIG-006.4 lands; see TASK-HMIG-009B. This is a scope narrowing relative to the original AC-007 falsifier — recorded in canary-analysis.md.",
+  "pre_loop_rationale": "Forced off after smoke v5+v6 (2026-05-27) revealed that the pre-loop design phase hard-routes through claude-agent-sdk via task_work_interface, bypassing GUARDKIT_HARNESS. Disabling pre-loop isolates the harness adapter's actual purview (the Player-Coach loop). NOTE 2026-06-02: the v5/v6 marker-contract failures attributed to 'local Qwen' on qwen36-workhorse may have been a transient symptom of the pre-llama-swap-rework configuration (system prompt, tool-call parser, etc.) — the operator has since done substantial llama-swap configuration work (week of 2026-05-28→2026-06-02) and verified qwen36-workhorse on benchmarks + NVIDIA-forum-validated real-world agentic-coding use. Re-evaluation of pre-loop ON against the current live qwen36-workhorse is deferred to TASK-HMIG-009B. This is a scope narrowing relative to the original AC-007 falsifier — recorded in canary-analysis.md.",
   "model_choice_correction": {
-    "applied": "2026-05-27",
+    "applied": "2026-05-27 → SUPERSEDED 2026-06-02",
+    "superseded_by": "model_choice_correction_v2",
     "applied_via": "TASK-REV-HM09 review feedback (operator: rich@appmilla.com)",
     "from": "qwen3-coder-30b / openai:qwen3-coder-30b",
     "to": "qwen-coder-next / openai:qwen-coder-next",
-    "rationale": "Qwen3-Coder-Next is the documented and empirically proven AutoBuild Player model per docs/research/dgx-spark/gb10-model-requirements-matrix.md:61 ('Current. Proven with AutoBuild'), already configured on llama-swap port 8002 per docs/research/dgx-spark/llama-swap-config.yaml:72-79 (alias 'qwen-coder-next'), and named as the AutoBuild LLM in docs/research/dev-pipeline-system/ships-computer-system-arch-intent.md:58,70,449. The earlier post-2026-04-29 swap to qwen3-coder-30b was undocumented and not operator-approved; the operator raised this point repeatedly during TASK-REV-HMIG execution. F2 ('local Qwen fails marker contract') in canary-analysis.md §3 is now suspected to be a consequence of running the wrong model, not a llama-swap parser-config defect. Reverting to qwen-coder-next is expected to make F2 disappear without further infra work.",
-    "endpoint_change": "Both harnesses now target llama-swap's qwen-coder-next alias. SDK keeps ANTHROPIC_BASE_URL=http://promaxgb10-41b1:9000 because the Anthropic-compat endpoint accepts arbitrary model names and routes by model string; LangGraph keeps OPENAI_BASE_URL=http://promaxgb10-41b1:9000/v1 for the same reason. (Port 8002 is the model's direct vLLM endpoint; port 9000 is the llama-swap front door that routes by model name to whichever vLLM backend currently holds the model. Either port works; 9000 was already used by the pilot, so kept for minimal-diff continuity.)"
+    "rationale": "Qwen3-Coder-Next was the documented and empirically proven AutoBuild Player model per docs/research/dgx-spark/gb10-model-requirements-matrix.md:61 ('Current. Proven with AutoBuild'). Reverted from the undocumented post-2026-04-29 swap to qwen3-coder-30b.",
+    "outcome": "Preflight AC-001A (2026-05-27) found qwen-coder-next was documented but NOT deployed on the live GB10 llama-swap (config drift between the historical llama-swap-config.yaml and the live RUNBOOK-v3 production deployment). See preflight_findings.AC-001A_2026-05-27 below for the verbatim failure. Block surfaced before any compute was burned — the cheap preflight design caught the issue.",
+    "endpoint_change": "Both harnesses targeted llama-swap's qwen-coder-next alias on port 9000. ANTHROPIC_BASE_URL=http://promaxgb10-41b1:9000 (SDK), OPENAI_BASE_URL=http://promaxgb10-41b1:9000/v1 (LangGraph)."
+  },
+  "model_choice_correction_v2": {
+    "applied": "2026-06-02",
+    "applied_via": "Operator direction (rich@appmilla.com) post-research on docs/research/dgx-spark/gb10-memory-budget-and-macbook-offload.md and operator's own llama-swap configuration work + NVIDIA-forum benchmarks for agentic coding",
+    "from": "qwen-coder-next / openai:qwen-coder-next  (documented but not deployed — see model_choice_correction.outcome)",
+    "to": "qwen36-workhorse / openai:qwen36-workhorse",
+    "rationale": "Per docs/research/dgx-spark/gb10-memory-budget-and-macbook-offload.md:37 (measured 2026-05-28), qwen36-workhorse (Qwen3.6-35B-A3B) serves 'jarvis-reasoner, forge, autobuild, dataset-factory' — a shared workhorse across multiple agentic-coding roles, not a single-purpose model. Resource-consolidation argument: don't run three separate coding models when one strong workhorse covers all the roles. Empirical argument: benchmarks + NVIDIA developer-forum posts (operator's own research, week of 2026-05-28→2026-06-02) identify Qwen3.6-35B-A3B as the strongest agentic-coding model in the GB10's deployable range. Deployment argument: qwen36-workhorse is LIVE on the GB10 llama-swap (verified by preflight AC-001A 2026-05-27 — it was the only autobuild-shaped model serving), so this swap requires zero infrastructure changes.",
+    "endpoint_change": "Both harnesses now target llama-swap's qwen36-workhorse alias on port 9000. ANTHROPIC_BASE_URL=http://promaxgb10-41b1:9000 (SDK), OPENAI_BASE_URL=http://promaxgb10-41b1:9000/v1 (LangGraph). Port unchanged — minimal-diff continuity.",
+    "f2_reframe": "The original F2 finding in canary-analysis.md §3.F2 (smokes v2/v3, 'qwen36-workhorse fails AutoBuild marker contract') was observed PRE the operator's 2026-05-28→2026-06-02 llama-swap reconfiguration work. The new direction is to re-verify against the post-reconfig live workhorse via TASK-HMIG-009A's preflight ACs. If preflight passes (expected per operator's benchmark+forum research), F2 is resolved as 'pre-reconfig transient' and the 12-run batch proceeds. If preflight fails, the parser-config audit fallback path applies to qwen36-workhorse specifically (not the deleted TASK-OPS-LSPC's framing).",
+    "supersedes_rule": "This revision invalidates the prior 'use qwen-coder-next' guidance in feedback memory feedback_autobuild_player_model.md. The durable rule is 'defer to operator on AutoBuild Player model selection'; the specific current choice is qwen36-workhorse. Memory updated 2026-06-02."
   },
   "task_hmig_009a_scope": {
     "applied": "2026-05-27",
@@ -33,11 +45,62 @@
   },
   "preflight_findings": {
     "AC-001A_2026-05-27": {
-      "verdict": "FAIL — BLOCKER",
+      "verdict": "FAIL — BLOCKER (RESOLVED 2026-06-02 by model_choice_correction_v2, not by infrastructure work)",
       "finding": "Live GB10 llama-swap front door (http://promaxgb10-41b1:9000) does NOT serve the `qwen-coder-next` alias. `GET /v1/models` lists architect-agent, gemma4-tutor, nomic-embed, qwen-graphiti, qwen3-coder-30b, qwen36-workhorse — but NOT qwen-coder-next. A direct `POST /v1/chat/completions` with model=qwen-coder-next returns 'could not find suitable inference handler for qwen-coder-next'. Port 8002 (claimed direct vLLM endpoint) refuses connection. By contrast qwen3-coder-30b answers normally on :9000.",
       "implication": "The model_choice_correction above cited docs/research/dgx-spark/llama-swap-config.yaml:72-79 as evidence qwen-coder-next is 'already configured' — but that file is explicitly marked HISTORICAL (pre-llamacpp-migration, 2026-04-29) at its line 4, and names RUNBOOK-v3-production-deployment.md §5.2 as the live source-of-truth. The runbook's live config block defines qwen36-workhorse / gemma4-tutor / qwen-graphiti / nomic-embed — NOT qwen-coder-next. So qwen-coder-next is defined ONLY in a stale config and is not deployed on the live substrate.",
-      "operator_action_required": "Before the 12-run batch can produce meaningful signal, the GB10 llama-swap config must actually serve qwen-coder-next (GB10-shell action: add the qwen-coder-next builders-group entry to /opt/llama-swap/config/config.yaml per the historical llama-swap-config.yaml:72-90 block, ensure /opt/llama-swap/models/qwen3-coder-next/Qwen3-Coder-Next-FP8.gguf is present, and reload llama-swap). Re-run AC-001A curl smoke to confirm 200 + non-empty before committing to ~10h of compute. ALTERNATIVELY the operator may decide qwen3-coder-30b (which IS live) is the substrate to validate against and revise the model_choice_correction — but note F2/F6 in canary-analysis.md were observed on qwen3-coder-30b, so that path re-opens the marker-contract question.",
-      "halts": ["AC-001A", "AC-001B", "AC-001C", "AC-001D", "AC-003"]
+      "resolution": "Operator decided 2026-06-02 (after benchmark + NVIDIA-forum research and ~1 week of llama-swap reconfiguration work) to use the LIVE qwen36-workhorse instead of deploying qwen-coder-next. See model_choice_correction_v2 above. The original blocker is therefore obsolete — both harnesses now target a model that IS deployed and verified responding. AC-001A will be re-run against qwen36-workhorse before the 12-run batch as a sanity check (cheap, expected to pass per the preflight design).",
+      "halts": ["AC-001A", "AC-001B", "AC-001C", "AC-001D", "AC-003"],
+      "halts_lifted_by": "model_choice_correction_v2 (2026-06-02). Re-running AC-001A against qwen36-workhorse is the new gate; halts persist contingently until that re-run passes."
+    },
+    "AC-001A_2026-06-02": {
+      "verdict": "PASS",
+      "finding": "qwen36-workhorse listed in :9000/v1/models; 10-token completion returned 'OK'. Endpoint live and routing correctly.",
+      "tool": "scripts/preflight_009a.py",
+      "raw_response_dir": ".guardkit/autobuild/TASK-HMIG-009A-canary/preflight/"
+    },
+    "AC-001B_2026-06-02": {
+      "verdict": "PASS (both wire formats)",
+      "finding_openai_compat": "POST :9000/v1/chat/completions with model=qwen36-workhorse + the real 12.3KB design-phase prompt for TASK-FIX-A7D3 + the real autobuild tool surface (Read/Write/Edit/Bash/Grep/Glob) returned a response with tool_calls=[{name:'Glob'}]. LangGraph wire format works.",
+      "finding_anthropic_compat": "POST :9000/v1/messages with same prompt + same tool surface in Anthropic shape returned content blocks with type='tool_use' name='Glob'. This is the historical F2 failure path; resolved.",
+      "implication": "F2 ('local Qwen fails AutoBuild marker contract') is empirically resolved at the substrate level on qwen36-workhorse. The operator's 2026-05-28→2026-06-02 llama-swap reconfiguration work is verified working. The pre-reconfig failures observed on smokes v2/v3 (canary-analysis.md §3.F2) are now obsolete data points.",
+      "tool": "scripts/preflight_009a.py",
+      "raw_response_files": [
+        ".guardkit/autobuild/TASK-HMIG-009A-canary/preflight/AC-001B-openai-response.json",
+        ".guardkit/autobuild/TASK-HMIG-009A-canary/preflight/AC-001B-anthropic-response.json"
+      ]
+    },
+    "AC-001C_2026-06-02": {
+      "verdict": "PASS — APPROVED in 1 turn (well exceeds 'reaches Coach turn 1 with non-empty files_modified' criterion)",
+      "command": "GUARDKIT_HARNESS=sdk ANTHROPIC_BASE_URL=http://promaxgb10-41b1:9000 ANTHROPIC_API_KEY=vllm-local-key guardkit autobuild task TASK-FIX-A7D3 --no-pre-loop --no-checkpoints --max-turns 2 --model qwen36-workhorse",
+      "metrics": {
+        "decision": "approved",
+        "turns": 1,
+        "wall_clock_total": "~21min",
+        "files_created": 3,
+        "files_modified": 16,
+        "tests_passing": 1,
+        "sdk_turns": 40,
+        "sdk_wall_clock": "500.6s",
+        "sdk_turn_avg": "12.5s",
+        "tool_use_blocks": 39,
+        "specialists_invoked": ["test-orchestrator", "code-reviewer"],
+        "coach_validation_wall_clock": "287s",
+        "honesty_score": 1.0,
+        "honesty_discrepancies_handled": 1,
+        "ghost_path_filter_fires": 3
+      },
+      "implications": [
+        "F2 dead for SDK + qwen36-workhorse: 39 real ToolUseBlocks, real file diffs, no marker-contract failure.",
+        "F6 (Player honesty failures) not manifesting on workhorse: honesty score 1.00.",
+        "Full Player↔Coach↔specialist orchestration works end-to-end on workhorse, not just bare model emission.",
+        "TASK-FIX-1B4A / Layer-3' ghost-path filter (path-string-mismatch-is-not-dishonesty.md) fires correctly during real runs."
+      ],
+      "anomalies_noted_not_regressions": [
+        "Deterministic gates flagged audit=False (required=True), ALL_PASSED=False at coach_validator.py — LLM Coach overrode per TASK-HMIG-008R design (LLM Coach primary, CoachValidator is evidence supplier).",
+        "Criteria Progress: 0/1 verified (0%) — Coach approved despite 0 verified ACs. May be a single abstract criterion that's pending, or criteria verifier path needs review. Worth a glance at coach_turn_1.json before scaling to 12 runs.",
+        "BDD oracle ran against system pytest (no worktree-local .venv); minor fallback path. Not blocking."
+      ],
+      "full_log": "docs/reviews/autobuild-migration/TASK-FIX-A7D3.md"
     }
   },
   "harnesses": [
@@ -48,8 +111,8 @@
         "ANTHROPIC_BASE_URL": "http://promaxgb10-41b1:9000",
         "ANTHROPIC_API_KEY": "vllm-local-key"
       },
-      "model": "qwen-coder-next",
-      "notes": "SDK redirected to llama-swap front door on the GB10 (port 9000). Model alias: qwen-coder-next (Qwen3-Coder-Next FP8) — the operator's documented and proven AutoBuild Player model. See model_choice_correction above for the 2026-05-27 swap from qwen3-coder-30b."
+      "model": "qwen36-workhorse",
+      "notes": "SDK redirected to llama-swap front door on the GB10 (port 9000). Model alias: qwen36-workhorse (Qwen3.6-35B-A3B) — operator's current AutoBuild Player model choice as of 2026-06-02. Shared workhorse across jarvis-reasoner, forge, autobuild, dataset-factory. See model_choice_correction_v2 above for the swap from qwen-coder-next (which was documented but not deployed). Verified LIVE on the GB10 llama-swap by preflight AC-001A on 2026-05-27."
     },
     {
       "name": "langgraph",
@@ -58,8 +121,8 @@
         "OPENAI_BASE_URL": "http://promaxgb10-41b1:9000/v1",
         "OPENAI_API_KEY": "llama-swap-local-key"
       },
-      "model": "openai:qwen-coder-next",
-      "notes": "LangGraph via deepagents.create_deep_agent → init_chat_model('openai:qwen-coder-next') hitting llama-swap's OpenAI-compat endpoint at port 9000. The Wave-2 skeleton only forwards `model`; backend/permissions wiring is TASK-HMIG-002R territory. Endpoint reachability + tool-use block emission to be confirmed at the start of TASK-HMIG-009A execution (see 009A AC-001A)."
+      "model": "openai:qwen36-workhorse",
+      "notes": "LangGraph via deepagents.create_deep_agent → init_chat_model('openai:qwen36-workhorse') hitting llama-swap's OpenAI-compat endpoint at port 9000. The Wave-2 skeleton only forwards `model`; backend/permissions wiring is TASK-HMIG-002R territory. Endpoint reachability already confirmed by preflight AC-001A (qwen36-workhorse was the live, working model in 2026-05-27 probe). Post-reconfig tool-use block emission to be re-confirmed at the start of TASK-HMIG-009A execution to validate the 2026-05-28→2026-06-02 llama-swap rework resolved the v2/v3 marker-contract issue."
     }
   ],
   "canary_tasks": [

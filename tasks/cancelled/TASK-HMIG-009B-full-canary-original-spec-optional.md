@@ -2,9 +2,13 @@
 id: TASK-HMIG-009B
 title: Full canary execution — original TASK-HMIG-009 spec (optional polish, post-009A)
 task_type: validation
-status: backlog
+status: cancelled
 created: 2026-05-27T15:30:00Z
-updated: 2026-05-27T15:30:00Z
+updated: 2026-06-04T13:00:00Z
+cancelled: 2026-06-04T13:00:00Z
+cancelled_location: tasks/cancelled/
+cancellation_reason: "TASK-HMIG-009A produced a decisive GO verdict (5/6 SDK + 5/6 LangGraph = 83.3% approval; LangGraph 4/6 first-pass vs SDK 3/6; LangGraph 34% faster wall-clock). 009B was conditional on 009A being ambiguous — see this task's own 'When to skip' section. Skipped per the documented happy path. Saves ~40h GB10 compute that would not have changed the cutover decision."
+previous_state: backlog
 priority: medium    # optional — only runs if 009A signal is ambiguous
 complexity: 6
 effort_hours: 40    # ~40h GB10 compute (18 runs × ~2h each per F8 extrapolation; tighter with backlog tasks)
@@ -35,13 +39,42 @@ falsifier: "Aggregate result strengthens or weakens TASK-HMIG-009A's verdict wit
 
 # Task: Full canary execution — original TASK-HMIG-009 spec (optional polish)
 
-> **⚠ OPTIONAL**: This task only runs if TASK-HMIG-009A's signal is ambiguous. If 009A's verdict is decisive (clear GO or clear NO-GO for the Wave-4 cutover), skip this task and proceed directly to TASK-HMIG-010.
+> **🛑 CANCELLED 2026-06-04** — TASK-HMIG-009A produced a decisive GO verdict
+> overnight (per `docs/state/TASK-REV-HMIG/canary-analysis.md` §8.5):
+>
+> | Metric | SDK | LangGraph |
+> |---|---|---|
+> | Approval rate | 5/6 (83.3%) | 5/6 (83.3%) |
+> | First-pass success | 3/6 (50%) | 4/6 (67%) |
+> | Mean wall-clock | ~31 min | ~21 min (34% faster) |
+> | Failure mode | 1× unrecoverable_stall (F6) | 1× ERROR (llama-swap 400) |
+>
+> Both harnesses clear the ≥75% bar at parity; LangGraph is +17 pp on
+> first-pass and 34% faster on wall-clock. Cutover decision: **GO**.
+>
+> Per this task's own "When to skip" section (preserved below), all three
+> skip conditions are met:
+>
+> 1. ✅ 009A produced a decisive GO verdict (≥75% first-pass on LangGraph,
+>    classified failure modes — F6 substrate-level not harness-level).
+> 2. ✅ Operator (2026-06-04) confirmed 009A scope is sufficient grounds
+>    for the cutover decision.
+> 3. ✅ 2026-06-15 cutover deadline does not allow the ~40h additional
+>    canary compute that 009B would require.
+>
+> Closing without execution. **Skipped — TASK-HMIG-009A signal was decisive (GO);
+> full canary not required for cutover decision.** F6 honesty collapse is filed
+> as substrate work (not harness work) and is independent of the cutover.
+>
+> ---
+
+> **⚠ OPTIONAL** (original framing, preserved for history): This task only runs if TASK-HMIG-009A's signal is ambiguous. If 009A's verdict is decisive (clear GO or clear NO-GO for the Wave-4 cutover), skip this task and proceed directly to TASK-HMIG-010.
 
 ## Description
 
 Full execution of the original TASK-HMIG-009 canary spec, runnable after F1 (TASK-HMIG-006.4) and F4 (TASK-FIX-WTBC) close and TASK-HMIG-009A has produced its preliminary verdict. Adds the fixture-branch isolated task (TASK-GLI-004) and the pre-loop ON variant back into scope, producing the full 18-rep comparison originally specified.
 
-**Model choice**: same as 009A — both harnesses use `qwen-coder-next` (Qwen3-Coder-Next FP8). F2 (the "local Qwen marker contract failure") was reframed as a model-swap incident on 2026-05-27 and resolved by reverting the canary-set to the proven model; see [.guardkit/autobuild/TASK-REV-HMIG-canary-set.json](../../../.guardkit/autobuild/TASK-REV-HMIG-canary-set.json) `model_choice_correction` block. If 009A's AC-001A-D preflight passes, no separate F2 work is required for 009B either.
+**Model choice (revised 2026-06-02)**: same as 009A — both harnesses use `qwen36-workhorse` (Qwen3.6-35B-A3B), the operator's current AutoBuild Player model per `model_choice_correction_v2` in [.guardkit/autobuild/TASK-REV-HMIG-canary-set.json](../../../.guardkit/autobuild/TASK-REV-HMIG-canary-set.json). This supersedes the 2026-05-27 swap to qwen-coder-next (which was documented but not deployed — surfaced by 009A's preflight AC-001A on 2026-05-27). The operator's week of 2026-05-28→2026-06-02 llama-swap reconfiguration work + benchmark/forum research on agentic coding settled on the workhorse as the strongest deployable choice. If 009A's preflight (AC-001A/B against qwen36-workhorse) passes, no separate F2 work is required for 009B either.
 
 ## Scope (per TASK-HMIG-009 original spec)
 
