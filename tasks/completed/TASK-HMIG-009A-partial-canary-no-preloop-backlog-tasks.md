@@ -2,11 +2,13 @@
 id: TASK-HMIG-009A
 title: Partial canary execution — backlog tasks, no pre-loop, no fixture isolation (post-F1)
 task_type: validation
-status: backlog
-previous_state: blocked
-state_transition_reason: "AC-001D PASSED on run 6 (2026-06-03): LangGraph end-to-end APPROVED in 1 turn — 4 files created, 16 modified, 2 tests passing, honesty 0.96, Coach approved in 90s. The 6-run iteration journey resolved all 5 layers of the Wave-2 skeleton: MODELPLUMB (guardkit) + LGTOOLS (guardkitfactory) + 002R-CONSUME (guardkit selector wiring) + 002R-NOPERMS (guardkitfactory permissions drop) + 002R-NOVMODE (guardkitfactory virtual_mode flip). The 6th hypothesised layer (Coach/specialist prompt-tool-name mismatch) dissolved — DeepAgents' runtime tool advertisement was sufficient; 002R-PROMPT closed without code changes. UNBLOCKED for AC-003 (12-run batch)."
+status: completed
+previous_state: backlog
+state_transition_reason: "AC-003 batch completed 2026-06-04: 5/6 = 83.3% approval rate on BOTH harnesses (SDK and LangGraph). Passes central falsifier (≥75% LangGraph). LangGraph 34% faster end-to-end (~21min vs ~31min mean). Both single failures trace to F6 (Player honesty collapse on multi-turn iteration on qwen36-workhorse) — same root cause, different surfacing. Cutover verdict: GO. Per AC-006, TASK-HMIG-010 unblocked. Full per-rep table + aggregate metrics in docs/state/TASK-REV-HMIG/canary-analysis.md §8.5/8.6/8.7. Caveat: runner reporting bugs filed as TASK-FIX-CANARY-PARSER (does NOT block cutover; ground truth preserved in per-rep stdout.log files)."
+completed_at: 2026-06-04T14:21:00Z
+completed_by: operator
 created: 2026-05-27T15:30:00Z
-updated: 2026-06-03T09:40:00Z
+updated: 2026-06-04T14:21:00Z
 priority: high
 complexity: 5
 effort_hours: 10    # ~10h GB10 compute (12 runs × ~30-60min each, backlog tasks are smaller than TASK-GLI-004)

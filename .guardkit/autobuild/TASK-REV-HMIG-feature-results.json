@@ -1,0 +1,52 @@
+{
+  "$schema_version": "1.0",
+  "task_id": "TASK-HMIG-010",
+  "parent_review": "TASK-REV-HMIG",
+  "purpose": "Per-task outcome record for the TASK-HMIG-010 feature-level LangGraph validation run. Populated by the operator after each task completes (the runner does not yet auto-emit this — see TASK-FIX-CANARY-PARSER for the analogous gap on the canary side).",
+  "created": "2026-06-04T14:21:00Z",
+  "created_by": "/task-work TASK-HMIG-010 scaffold",
+  "target_feature_id": null,
+  "target_feature_path": null,
+  "harness": "langgraph",
+  "model": "qwen36-workhorse",
+  "run_started_at": null,
+  "run_finished_at": null,
+  "task_outcomes": [],
+  "task_outcome_schema": {
+    "task_id": "TASK-XXX (string, required)",
+    "wave": "1|2|3|... (int, required)",
+    "parallel_group": "wave_id or null (string, optional)",
+    "coach_decision": "approve|feedback|unrecoverable_stall|error|skipped (string, required)",
+    "turns_used": "0..max_turns (int, required)",
+    "first_pass_success": "true|false (bool, required) — true iff coach_decision == 'approve' AND turns_used == 1",
+    "resume_used": "true|false (bool, required) — true iff a --resume invocation was needed",
+    "resume_outcome": "approve|feedback|unrecoverable_stall|error|n/a (string, required if resume_used)",
+    "wall_clock_seconds": "int, required",
+    "non_recoverable": "true|false (bool, required) — true iff failure required code edits to the harness itself per AC-006 definition",
+    "notes": "free-form string, optional — failure analysis, resume rationale, divergence-from-canary commentary"
+  },
+  "aggregate_metrics": {
+    "computed_at": null,
+    "total_tasks": null,
+    "first_pass_success_count": null,
+    "first_pass_success_rate": null,
+    "resume_recovered_count": null,
+    "non_recoverable_count": null,
+    "total_wall_clock_seconds": null,
+    "mean_turns_to_approve": null,
+    "comparison_to_009a_baseline": {
+      "009a_langgraph_first_pass_rate": 0.67,
+      "009a_langgraph_approval_rate": 0.833,
+      "delta_first_pass_rate": null,
+      "delta_significant": null,
+      "significance_threshold": "10pp drop triggers AC-004 investigation"
+    }
+  },
+  "falsifier_verdict": {
+    "evaluated_at": null,
+    "threshold": ">= 0.80 first_pass_success_rate AND non_recoverable_count == 0",
+    "verdict": null,
+    "rationale": null,
+    "cutover_decision": null
+  }
+}

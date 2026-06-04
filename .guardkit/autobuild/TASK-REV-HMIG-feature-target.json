@@ -1,0 +1,101 @@
+{
+  "$schema_version": "1.0",
+  "task_id": "TASK-HMIG-010",
+  "parent_review": "TASK-REV-HMIG",
+  "purpose": "Operator-pickable target feature for TASK-HMIG-010's end-to-end LangGraph validation run. Mirrors the canary-set.json pattern from TASK-HMIG-009: candidates with rationale, fit scoring against AC-001, and an operator_pick slot that the operator fills in BEFORE running guardkit autobuild feature.",
+  "created": "2026-06-04T14:21:00Z",
+  "created_by": "/task-work TASK-HMIG-010 scaffold",
+  "ac_001_selection_criteria": {
+    "min_tasks": 3,
+    "min_waves": 2,
+    "requires_bdd_gated_task": true,
+    "requires_state_bridge_transitions": true,
+    "max_orchestrator_time_hours": 8,
+    "note_on_criteria_strictness": "These criteria together are tight. As of 2026-06-04 no single backlog feature satisfies all five (the BDD-gated + ≤8h pair is the hardest constraint — only beads-integration has a BDD-gated task and it's a ~30-40h feature). Operator may either pick a sub-slice of a larger feature, relax one criterion with rationale, or pick the closest fit and document the gap. The relaxation rationale should be recorded in operator_pick.criteria_deviation."
+  },
+  "candidates": [
+    {
+      "rank": 1,
+      "feature_id": "beads-integration",
+      "feature_path": "tasks/backlog/beads-integration/",
+      "fit_against_ac_001": {
+        "task_count": 11,
+        "wave_count": 4,
+        "bdd_gated_tasks": ["TASK-BI-009"],
+        "state_bridge_tasks": "TBD — needs manual scan; CLI integration tasks (BI-006, BI-007) likely touch state_bridge transitions",
+        "estimated_orchestrator_hours": "30-40 (whole feature) — VIOLATES ≤8h",
+        "verdict": "Strong on BDD coverage + structure (4 waves, 11 tasks); fails on total effort"
+      },
+      "rationale": "The only backlog feature with a BDD-gated task (TASK-BI-009 has bdd_scenarios: [...]). 4-wave structure exercises the full WorktreeManager + feature_complete merge paths. Real feature delivery value (backend abstraction for task storage — Markdown vs Beads-Beanstalkd). Strong candidate IF sliced.",
+      "slice_recommendation": {
+        "tasks": ["TASK-BI-001", "TASK-BI-002", "TASK-BI-004", "TASK-BI-009"],
+        "waves": [1, 1, 2, "ungrouped"],
+        "rationale": "BI-001 (interface) + BI-002 (markdown backend) + BI-004 (registry) form a self-contained Wave 1+2 slice that delivers a working TaskBackend abstraction without committing to the beads-beanstalkd implementation. Adding BI-009 (unified metadata schema, BDD-gated) gives the BDD coverage AC-001 requires. Estimated 4 tasks × ~2h orchestrator-time = ~8h. Fits the ≤8h bound exactly.",
+        "estimated_orchestrator_hours": 8,
+        "delivers_real_value": true,
+        "caveat": "The slice leaves BI-003 (beads-beanstalkd backend) + BI-005..BI-008 + BI-010/011 in backlog. That's acceptable; they can be picked up post-cutover by /feature-build or further /task-work invocations."
+      }
+    },
+    {
+      "rank": 2,
+      "feature_id": "autobuild-observability-fixes",
+      "feature_path": "tasks/backlog/autobuild-observability-fixes/",
+      "fit_against_ac_001": {
+        "task_count": 3,
+        "wave_count": 2,
+        "bdd_gated_tasks": [],
+        "state_bridge_tasks": "Likely — TASK-FIX-GD02 (shared-worktree git detection baseline) touches the WorktreeManager + state_bridge boundary",
+        "estimated_orchestrator_hours": "6-8 (complexity 3+4+6)",
+        "verdict": "Fits structure + effort + state-bridge; FAILS BDD criterion"
+      },
+      "rationale": "Smallest backlog feature that cleanly fits the structure-and-effort half of AC-001. 3 tasks, 2 waves, ~6-8h. The state-bridge boundary is exercised (GD02 specifically). Delivers real fixes to the autobuild observability surface that the operator presumably wants anyway. Operator must relax the BDD criterion to pick this — the relaxation rationale would be: 'BDD-plugin contract C1 was already validated by 009A's 12-run batch under qwen36-workhorse; re-exercising it under feature-level orchestration adds little marginal coverage beyond the WorktreeManager + feature_complete paths.'",
+      "slice_recommendation": null
+    },
+    {
+      "rank": 3,
+      "feature_id": "graphiti-context-fixes",
+      "feature_path": "tasks/backlog/graphiti-context-fixes/",
+      "fit_against_ac_001": {
+        "task_count": 3,
+        "wave_count": 2,
+        "bdd_gated_tasks": [],
+        "state_bridge_tasks": "Unlikely — these are pure CLI + Graphiti-integration tasks",
+        "estimated_orchestrator_hours": "2-4 (complexity 1+3+7, but the 7-complexity one is review_complete so effectively 1+3=4)",
+        "verdict": "Fits structure; UNDERSHOOTS effort (too small to exercise feature-build at load); FAILS BDD + state-bridge"
+      },
+      "rationale": "Listed for completeness as the smallest 3-task / 2-wave backlog candidate. Probably too lightweight to meaningfully validate the WorktreeManager + feature_complete + Coach-gating-across-multiple-tasks paths the task is designed to exercise. Not recommended unless operator wants a fast, low-cost smoke and is willing to accept that 010 will not stress-test the orchestration surface."
+    }
+  ],
+  "operator_pick": {
+    "feature_id": null,
+    "feature_path": null,
+    "task_ids_in_slice": null,
+    "estimated_orchestrator_hours": null,
+    "criteria_deviation": null,
+    "rationale": null,
+    "picked_at": null,
+    "picked_by": null
+  },
+  "execution_plan_once_picked": {
+    "step_1_baseline": "Confirm the picked tasks are clean in backlog (not in_progress, not blocked). If a slice is being used, file a placeholder note in the feature folder's README documenting which tasks are in/out of the 010 slice so subsequent /feature-build runs don't re-pick them.",
+    "step_2_dry_run": "guardkit autobuild feature {feature_id} --dry-run (validate orchestration plan)",
+    "step_3_run": "GUARDKIT_HARNESS=langgraph OPENAI_BASE_URL=http://promaxgb10-41b1:9000/v1 OPENAI_API_KEY=llama-swap-local-key guardkit autobuild feature {feature_id} --model qwen36-workhorse 2>&1 | tee .guardkit/autobuild/TASK-REV-HMIG-feature-run/run-1-stdout.log",
+    "step_4_per_task_record": "After each task completes (success or failure), append a record to TASK-REV-HMIG-feature-results.json matching the AC-003 schema. The runner does not yet auto-emit this — manual append is the current shape (mirrors 009A's runner-parser gap; see TASK-FIX-CANARY-PARSER).",
+    "step_5_resume_on_failure": "Any first-pass failure → guardkit autobuild feature {feature_id} --resume. Record resume outcome and first-pass-fail reason in the same per-task record.",
+    "step_6_merge": "On all-pass: guardkit autobuild complete {feature_id}. Confirm no merge conflicts, no broken downstream consumers (AC-007).",
+    "step_7_analysis": "Append narrative to docs/state/TASK-REV-HMIG/feature-run-analysis.md per AC-009. Compare first-pass-success rate to 009A's 67% LangGraph baseline (AC-004). Compute falsifier verdict per AC-008."
+  },
+  "model_choice": {
+    "harness": "langgraph",
+    "model": "qwen36-workhorse",
+    "endpoint": "http://promaxgb10-41b1:9000/v1",
+    "rationale": "Same model as 009A's validated batch. No re-validation needed; the 009A 12-run batch proved this substrate satisfies the Player+Coach contract end-to-end under both wire formats."
+  },
+  "notes_for_operator": [
+    "AC-001 selection is the load-bearing decision in this task. The /task-work scaffold has presented 3 candidates with explicit fit-against-AC-001 scoring; pick one and fill the operator_pick block.",
+    "The beads-integration sliced option is the only candidate that satisfies all 5 criteria simultaneously, at the cost of committing to deliver a real (large) feature in slices over time.",
+    "The autobuild-observability-fixes option is the cleanest fit if you're willing to relax the BDD criterion. Recommended relaxation rationale provided above.",
+    "Falsifier verdict (AC-008): ≥80% first-pass-success AND no non-recoverable failure → proceed to Wave 4 cutover (TASK-HMIG-011). Anything else → halt cutover, escalate.",
+    "Schedule: spec says D-9 → D-7 so results inform the D-7 cutover-flip decision. Deadline is 2026-06-15 so D-7 ≈ 2026-06-08; budget ~2-3 days for the run + analysis."
+  ]
+}

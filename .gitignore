@@ -97,6 +97,12 @@ obj/
 !.guardkit/autobuild/TASK-REV-HMIG-canary-set.json
 !.guardkit/autobuild/TASK-REV-HMIG-canary-results.json
 !.guardkit/autobuild/TASK-REV-HMIG-canary-comparison.md
+# Audit-grade feature-run artefacts for TASK-HMIG-010 (same rationale as canary):
+# the target picks, per-task results, and analysis stay tracked; any per-task
+# run artefacts under .guardkit/autobuild/TASK-REV-HMIG-feature-run/ stay
+# gitignored (stdout/stderr may include logged secrets, reproducible from runner).
+!.guardkit/autobuild/TASK-REV-HMIG-feature-target.json
+!.guardkit/autobuild/TASK-REV-HMIG-feature-results.json
 
 # Rollback audit-trail snapshots (TASK-FIX-RBSS): defensive entry that
 # applies to consumer projects without `.guardkit/autobuild/` excluded.
