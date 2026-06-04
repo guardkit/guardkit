@@ -653,6 +653,12 @@ def status(ctx, task_id: str, verbose: bool):
     show_default=True,
 )
 @click.option(
+    "--model",
+    default="claude-sonnet-4-5-20250929",
+    help="Claude model to use",
+    show_default=True,
+)
+@click.option(
     "--stop-on-failure/--no-stop-on-failure",
     default=True,
     help="Stop feature execution on first task failure",
@@ -814,6 +820,7 @@ def feature(
     ctx,
     feature_id: str,
     max_turns: int,
+    model: str,
     stop_on_failure: bool,
     resume: bool,
     fresh: bool,
@@ -998,6 +1005,7 @@ def feature(
             bootstrap_failure_mode=bootstrap_failure_mode,
             honesty_early_abort_threshold=honesty_early_abort_threshold,
             honesty_early_abort_window=honesty_early_abort_window,
+            model=model,  # TASK-FIX-LGFM: thread --model to per-task AutoBuildOrchestrator (load-bearing for LangGraph)
         )
 
         # Resolve base branch: --base-branch > cwd HEAD > "main" (TASK-FIX-WTBC)

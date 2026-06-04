@@ -543,6 +543,7 @@ class FeatureOrchestrator:
         bootstrap_failure_mode: Optional[str] = None,
         honesty_early_abort_threshold: float = 0.3,
         honesty_early_abort_window: int = 3,
+        model: Optional[str] = None,
     ):
         """
         Initialize FeatureOrchestrator.
@@ -633,6 +634,12 @@ class FeatureOrchestrator:
 
         self.repo_root = Path(repo_root).resolve()
         self.max_turns = max_turns
+        # TASK-FIX-LGFM: thread --model from `guardkit autobuild feature` CLI
+        # down to every per-task AutoBuildOrchestrator. Load-bearing for the
+        # LangGraph harness path (DeepAgents needs a real model factory;
+        # model=None fails construction). Sibling of TASK-FIX-MODELPLUMB which
+        # closed the same path for the `task` subcommand.
+        self.model = model
         # TASK-FIX-HEAB: rolling-average honesty early-abort settings.
         # Propagated to per-task AutoBuildOrchestrator so feature.yaml /
         # CLI overrides flow down to every task in every wave.
@@ -2968,6 +2975,10 @@ The detailed specifications are in the task markdown file.
                 # TASK-FIX-HEAB: rolling-average honesty early-abort
                 honesty_early_abort_threshold=self.honesty_early_abort_threshold,
                 honesty_early_abort_window=self.honesty_early_abort_window,
+                # TASK-FIX-LGFM: thread --model down to LangGraph harness via
+                # AgentInvoker. Without this, model=None reaches LangGraphHarness
+                # and DeepAgents falls back to Anthropic (auth error under llama-swap).
+                model=self.model,
             )
 
             # Execute task orchestration

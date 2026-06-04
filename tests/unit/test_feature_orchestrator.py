@@ -250,6 +250,40 @@ def test_orchestrator_default_values(temp_repo, mock_worktree_manager):
     assert orchestrator.verbose is False
 
 
+def test_orchestrator_accepts_model_parameter(temp_repo, mock_worktree_manager):
+    """Test FeatureOrchestrator accepts and stores --model (TASK-FIX-LGFM).
+
+    Without this, model=None reaches AutoBuildOrchestrator → AgentInvoker →
+    LangGraphHarness, DeepAgents falls back to Anthropic, and llama-swap
+    operators see "Could not resolve authentication method" at Player turn 1.
+    Sibling-of-F1 regression: closed for `task` (TASK-FIX-MODELPLUMB) but
+    missed for `feature` until TASK-FIX-LGFM.
+    """
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        model="qwen36-workhorse",
+    )
+
+    assert orchestrator.model == "qwen36-workhorse"
+
+
+def test_orchestrator_model_defaults_to_none(temp_repo, mock_worktree_manager):
+    """Test FeatureOrchestrator model defaults to None when unspecified.
+
+    The CLI default ('claude-sonnet-4-5-20250929') is supplied by Click in
+    `guardkit.cli.autobuild.feature`, not by the orchestrator's __init__,
+    so a direct construction without a model is permitted (matches the
+    AutoBuildOrchestrator contract — see guardkit/orchestrator/autobuild.py:920).
+    """
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    assert orchestrator.model is None
+
+
 def test_orchestrator_custom_features_dir(temp_repo, mock_worktree_manager):
     """Test FeatureOrchestrator with custom features directory."""
     custom_dir = temp_repo / "custom" / "features"

@@ -1069,6 +1069,85 @@ def test_feature_command_sdk_timeout_passed_to_orchestrator(
 
 
 # ============================================================================
+# --model CLI Option Tests (TASK-FIX-LGFM)
+#
+# Sibling-of-F1 regression: the `task` subcommand threads --model via
+# TASK-FIX-MODELPLUMB; the `feature` subcommand did not, so model=None
+# reached LangGraphHarness → DeepAgents fell back to Anthropic →
+# "Could not resolve authentication method" under llama-swap routing.
+# These tests pin the wire so the regression cannot recur silently.
+# ============================================================================
+
+
+def test_feature_command_model_option_in_help(cli_runner):
+    """Test feature command help shows --model option (TASK-FIX-LGFM)."""
+    result = cli_runner.invoke(feature, ["--help"])
+    assert result.exit_code == 0
+    assert "--model" in result.output
+
+
+@patch("guardkit.cli.autobuild._require_sdk")
+@patch("guardkit.cli.autobuild.FeatureOrchestrator")
+def test_feature_command_model_passed_to_orchestrator(
+    mock_orchestrator_class, mock_require_sdk, cli_runner
+):
+    """Test feature command threads --model to FeatureOrchestrator (TASK-FIX-LGFM).
+
+    Falsifier: this is the equivalent of the TASK-HMIG-006.4 falsifier test
+    for F1 (zero claude_agent_sdk.subprocess_cli lines under
+    GUARDKIT_HARNESS=langgraph). Here we assert that invoking the feature
+    subcommand with --model X results in model="X" reaching
+    FeatureOrchestrator (which in turn threads it to AutoBuildOrchestrator
+    and the LangGraph harness).
+    """
+    from guardkit.cli.autobuild import feature
+
+    mock_orchestrator = MagicMock()
+    mock_result = MagicMock()
+    mock_result.success = True
+    mock_orchestrator.orchestrate.return_value = mock_result
+    mock_orchestrator_class.return_value = mock_orchestrator
+
+    # Execute with --model option (operator override for local-Qwen via llama-swap)
+    result = cli_runner.invoke(
+        feature, ["FEAT-A1B2", "--model", "qwen36-workhorse"]
+    )
+
+    # Verify orchestrator initialized with model="qwen36-workhorse"
+    mock_orchestrator_class.assert_called_once()
+    call_kwargs = mock_orchestrator_class.call_args[1]
+    assert call_kwargs["model"] == "qwen36-workhorse"
+
+
+@patch("guardkit.cli.autobuild._require_sdk")
+@patch("guardkit.cli.autobuild.FeatureOrchestrator")
+def test_feature_command_model_default_matches_task_subcommand(
+    mock_orchestrator_class, mock_require_sdk, cli_runner
+):
+    """Test feature command --model default matches the task subcommand (TASK-FIX-LGFM).
+
+    Both `task` and `feature` subcommands should default to the same model
+    string so operators see consistent behavior. If this assertion drifts
+    apart from the `task` subcommand default in
+    guardkit/cli/autobuild.py:~206, the two CLI surfaces have desynced.
+    """
+    from guardkit.cli.autobuild import feature
+
+    mock_orchestrator = MagicMock()
+    mock_result = MagicMock()
+    mock_result.success = True
+    mock_orchestrator.orchestrate.return_value = mock_result
+    mock_orchestrator_class.return_value = mock_orchestrator
+
+    # Execute without --model (rely on default)
+    result = cli_runner.invoke(feature, ["FEAT-A1B2"])
+
+    mock_orchestrator_class.assert_called_once()
+    call_kwargs = mock_orchestrator_class.call_args[1]
+    assert call_kwargs["model"] == "claude-sonnet-4-5-20250929"
+
+
+# ============================================================================
 # enable_pre_loop CLI Option Tests (TASK-FB-FIX-010)
 # ============================================================================
 
