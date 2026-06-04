@@ -1,12 +1,14 @@
 ---
 id: TASK-HMIG-006.2
 title: Migrate _extract_partial_from_messages / _track_tool_use to HarnessEvent dispatch
-status: in_progress
+status: completed
 task_type: implementation
 created: 2026-05-20T18:00:00Z
 updated: 2026-06-04T00:00:00Z
-previous_state: backlog
-state_transition_reason: "/task-work TASK-HMIG-006.2 execution"
+completed: 2026-06-04T00:00:00Z
+previous_state: in_review
+state_transition_reason: "AC-001..006 satisfied; /task-complete finalizing cross-repo PR pair (guardkit b48ad750 + guardkitfactory 7e4bd30 on task-hmig-006.2-helper-migration)"
+completed_location: tasks/completed/2026-06/TASK-HMIG-006.2-migrate-helpers-to-harness-event-dispatch.md
 priority: high
 complexity: 6
 parent_task: TASK-HMIG-006
@@ -221,3 +223,23 @@ This task spans **two repos**. Recommended commit/PR pattern:
 ### Next task in cutover chain (after this lands)
 
 Per operator's 2026-06-04 Option (a) choice: TASK-HMIG-006.3 (Coach independent SDK invocation migration) → TASK-HMIG-006.1 (direct-mode TaskWork dispatch migration) → TASK-HMIG-010 (full feature validation) → cutover ceremony (no dedicated task file yet — confirm with parent review §7.3 Wave 4).
+
+---
+
+## Implementation Summary (added 2026-06-04 by /task-complete)
+
+**Approach**: Cross-repo migration of three helper-function call sites in `agent_invoker.py` from duck-typing on `event.raw` (SDK shape) to dispatching on typed `HarnessEvent` variants. Both `ClaudeSDKHarness` and `LangGraphHarness` extended to yield `ToolUseEvent` per tool call before `AssistantMessageEvent`. New `harness_events` accumulator runs alongside `response_messages` (which retains its raw-shape role for the remaining duck-typed consumers: `_emit_llm_call_event` token extraction, `check_assistant_message_error`, the specialist-path heartbeat log).
+
+**Outcome**: All six ACs satisfied. The verifiable AC-003 signal — the byte-compat parity test inversion `lg_partial["tool_call_count"] == 0 → == 1` — passes. AC-005 surface holds: zero new failures across 1075 passes in guardkit + 78 in guardkitfactory (16 pre-existing failures unchanged). AC-006 surface adds 7 new tests in `test_helper_event_dispatch_parity.py` proving end-to-end LangGraph parity. Architectural reviewer scored 74/100 with five concrete recommendations; all five were incorporated as plan amendments before implementation (Step 5 deferred per YAGNI, `_StubLangGraphHarness` updated alongside the production stub, `response_messages` accumulation atomically narrowed to exclude `ToolUseEvent`, heartbeat-log straggler documented, LangChain `AIMessage.tool_calls` shape verified before commit).
+
+**Lessons**:
+1. **Plan-time architectural review pays its way for cross-repo work**. The reviewer's "Risk 2 — AC-003 inversion is necessary but not sufficient" caught a subtle false-green: flipping the assertion would have passed even if the production `LangGraphHarness` change never landed, because the test stub didn't yield `ToolUseEvent`. Updating the stub atomically with the production change made the inversion a real signal. Pattern reusable: any time a test assertion is documented as "the verifiable signal", check whether the fixture exercises the production code path or a stub that could pass for the wrong reason. Related rule: `.claude/rules/absence-of-failure-is-not-success.md`.
+2. **YAGNI compliance saves cross-cutting churn**. The original plan's Step 5 (`_emit_llm_call_event` migration) was scope creep against AC-001/002/003. Deferring it kept the diff focused, kept `extract_token_usage`'s separate duck-typing pattern out of this PR, and made a clean "Open" follow-on row in the divergences README. The acceptance criteria — not the task title — are the authoritative scope contract.
+3. **`response_messages` mixed-type accumulation is a smell**. The original `event.raw if event.raw is not None else event` fallback (line 2897 pre-change) silently mixed typed events into a list typed `List[Any]` whenever `event.raw` was None. After the migration, splitting into separate `response_messages` (raw-only) + `harness_events` (typed) accumulators is more defensible — each has a single semantic shape. Future refactors that need raw-or-typed branching should split the lists rather than relying on an `is not None` fallback.
+
+**Cross-repo coordination**: Two commits, both on `task-hmig-006.2-helper-migration`:
+- `guardkitfactory@7e4bd30` — LangGraph harness yields `ToolUseEvent` from `AIMessage.tool_calls`
+- `guardkit@b48ad750` — Helper migrations + SDK harness `ToolUseEvent` emission + test fixture rewrites + divergences README update
+- `guardkit@4469ca1c` — IN_REVIEW state transition
+
+**Related ADRs / parent decisions**: D-1 (the `event.raw` channel introduced in parent task TASK-HMIG-006, partially repealed by this task's typed dispatch); the broader cutover chain framing in `tasks/backlog/autobuild-harness-migration/README.md` and `TASK-REV-HMIG`.
