@@ -32,13 +32,22 @@ Behaviour preserved verbatim from the inline implementation:
 
 Per Design Decision D-1, ``AssistantMessage`` translates into a single
 :class:`AssistantMessageEvent` with the joined text content; the
-``raw`` slot is populated with the original SDK message so downstream
-consumers in ``agent_invoker.py`` that duck-type on
-``type(block).__name__`` (e.g. ``_track_tool_use``,
-``_extract_partial_from_messages``) keep working unchanged. The
-harness does NOT explode ``ToolUseBlock`` content blocks into
-separate :class:`ToolUseEvent` yields — that is reserved for the
-helper-function migration in TASK-HMIG-006.2.
+``raw`` slot is populated with the original SDK message so any remaining
+duck-typed consumer in ``agent_invoker.py`` (e.g. the
+``check_assistant_message_error`` API-error scan, the heartbeat
+``ToolUseBlock`` log gated to the specialist path) keeps working
+unchanged.
+
+TASK-HMIG-006.2 extension: When an ``AssistantMessage`` carries
+``ToolUseBlock`` content blocks, the harness now ALSO yields one
+:class:`ToolUseEvent` per block BEFORE the :class:`AssistantMessageEvent`.
+This mirrors what the LangGraph harness emits from
+``AIMessage.tool_calls`` and lets the migrated
+``_track_tool_use`` / ``_extract_partial_from_messages`` consumers
+dispatch on a typed event instead of walking ``event.raw.content``. The
+order (tool-uses first, then the joined-text assistant event) keeps the
+typed-event ordering aligned with the textual order in the source
+message — useful when partial-extract output is interleaved.
 
 The :meth:`invoke` ``tools`` and ``timeout_seconds`` parameters are
 accepted to satisfy the :class:`HarnessAdapter` ABC contract, but the
@@ -65,6 +74,7 @@ from guardkit.orchestrator.harness.adapter import (
     HarnessAdapter,
     HarnessEvent,
     ResultMessageEvent,
+    ToolUseEvent,
 )
 
 logger = logging.getLogger(__name__)
@@ -297,6 +307,25 @@ class ClaudeSDKHarness(HarnessAdapter):
                     response_messages.append(message)
 
                     if isinstance(message, AssistantMessage):
+                        # TASK-HMIG-006.2: emit one ToolUseEvent per
+                        # ToolUseBlock BEFORE the AssistantMessageEvent so
+                        # the migrated _track_tool_use /
+                        # _extract_partial_from_messages consumers can
+                        # dispatch on typed events instead of walking
+                        # event.raw.content. ToolUseBlock is duck-typed by
+                        # class name to avoid an SDK import (matches the
+                        # heartbeat scan at agent_invoker.py:2930-2945).
+                        for block in getattr(message, "content", None) or []:
+                            if type(block).__name__ != "ToolUseBlock":
+                                continue
+                            tool_input = getattr(block, "input", {}) or {}
+                            if not isinstance(tool_input, dict):
+                                tool_input = {}
+                            yield ToolUseEvent(
+                                tool_use_id=getattr(block, "id", "") or "",
+                                name=getattr(block, "name", "") or "",
+                                input=tool_input,
+                            )
                         text = _extract_assistant_text(message)
                         yield AssistantMessageEvent(text=text, raw=message)
                     elif isinstance(message, ResultMessage):

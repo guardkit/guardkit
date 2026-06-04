@@ -70,6 +70,7 @@ from guardkit.orchestrator.schemas import (
 # cancel monitor, sdk_debug, llm.call event) stay inline.
 from guardkit.orchestrator.harness import (
     AssistantMessageEvent,
+    HarnessEvent,
     ResultMessageEvent,
     ToolResultEvent,
     ToolUseEvent,
@@ -319,51 +320,67 @@ def _strip_orchestrator_managed_paths(
 # =========================================================================
 
 
-def _extract_partial_from_messages(response_messages: List[Any]) -> Dict[str, Any]:
-    """Extract partial data from accumulated response_messages.
+def _extract_partial_from_messages(events: List[Any]) -> Dict[str, Any]:
+    """Extract partial data from accumulated harness events.
 
     Called in the CancelledError handler to salvage information from
-    AssistantMessage objects that were collected before cancellation.
+    events that were yielded before cancellation.
 
-    Defensively handles empty, malformed, or unexpected message types.
+    TASK-HMIG-006.2 migration: this used to consume a list of SDK
+    ``AssistantMessage`` objects and walked their ``content`` blocks via
+    ``type(block).__name__`` duck-typing. Both harnesses now yield typed
+    :class:`HarnessEvent` variants — ``AssistantMessageEvent`` for
+    assistant text, ``ToolUseEvent`` for each tool call — so this helper
+    now dispatches on event types directly. The output schema is
+    unchanged (AC-001).
+
+    The parameter type is still ``List[Any]`` because legacy call sites
+    pass a list typed as ``List[Any]`` (the orchestrator's
+    ``response_messages`` was historically a List of raw SDK objects).
+    Each element is dispatched on isinstance: ``AssistantMessageEvent``
+    contributes its joined text as one text-block entry,
+    ``ToolUseEvent`` contributes the tool name + input keys, and
+    ``Write``/``Edit`` tool calls with ``file_path`` populate
+    ``file_modifications``. Other elements (including
+    ``ResultMessageEvent`` and any legacy SDK objects from non-migrated
+    callers) are skipped.
 
     Parameters
     ----------
-    response_messages : List[Any]
-        SDK messages accumulated during the query loop (AssistantMessage,
-        ResultMessage, etc.)
+    events : List[Any]
+        Harness events accumulated during the query loop. Typically a
+        list of :class:`HarnessEvent` variants; non-event elements are
+        silently skipped.
 
     Returns
     -------
     Dict[str, Any]
         Partial report with text_block_count, tool_call_count,
-        file_modifications, and last_text_blocks.
+        file_modifications, last_text_blocks, message_count. Schema
+        unchanged from the pre-migration shape per AC-001.
     """
     text_blocks: List[str] = []
     tool_calls: List[Dict[str, Any]] = []
     file_modifications: List[str] = []
 
-    for msg in response_messages:
+    for ev in events:
         try:
-            content = getattr(msg, "content", None)
-            if not content or not isinstance(content, (list, tuple)):
-                continue
-            for block in content:
-                block_type = type(block).__name__
-                if block_type == "TextBlock":
-                    text = getattr(block, "text", "")
-                    if text:
-                        text_blocks.append(text)
-                elif block_type == "ToolUseBlock":
-                    name = getattr(block, "name", "")
-                    inp = getattr(block, "input", {}) or {}
-                    tool_calls.append({"name": name, "input_keys": list(inp.keys())})
-                    if name in ("Write", "Edit") and isinstance(inp, dict):
-                        fp = inp.get("file_path", "")
-                        if fp:
-                            file_modifications.append(fp)
+            if isinstance(ev, AssistantMessageEvent):
+                text = ev.text
+                if text:
+                    text_blocks.append(text)
+            elif isinstance(ev, ToolUseEvent):
+                name = ev.name
+                inp = ev.input if isinstance(ev.input, dict) else {}
+                tool_calls.append({"name": name, "input_keys": list(inp.keys())})
+                if name in ("Write", "Edit"):
+                    fp = inp.get("file_path", "")
+                    if fp:
+                        file_modifications.append(fp)
+            # ResultMessageEvent and any other element types are silently
+            # skipped — they contribute no partial-extract content.
         except Exception:
-            # Defensive: skip malformed messages
+            # Defensive: skip malformed events
             continue
 
     return {
@@ -371,7 +388,7 @@ def _extract_partial_from_messages(response_messages: List[Any]) -> Dict[str, An
         "tool_call_count": len(tool_calls),
         "file_modifications": file_modifications,
         "last_text_blocks": text_blocks[-3:] if text_blocks else [],
-        "message_count": len(response_messages),
+        "message_count": len(events),
     }
 
 
@@ -1250,31 +1267,27 @@ class AgentInvoker:
         """
         self._progress_logger = progress_logger
 
-    def _track_tool_use(self, message: Any) -> None:
-        """Track tool use from SDK response messages for progress logging.
+    def _track_tool_use(self, event: "ToolUseEvent") -> None:
+        """Track a single tool-use event for progress logging.
 
-        Extracts tool names and file modifications from AssistantMessage
-        content blocks to keep the progress logger's state up to date.
+        TASK-HMIG-006.2 migration: the previous signature accepted the SDK
+        ``AssistantMessage`` and walked its content blocks for
+        ``ToolUseBlock`` instances. Both harnesses now yield a
+        :class:`ToolUseEvent` per tool call, so this helper consumes one
+        typed event per call and the AssistantMessage content walk is gone.
 
         Parameters
         ----------
-        message : Any
-            SDK response message (AssistantMessage, etc.)
+        event : ToolUseEvent
+            Typed tool-use event yielded by the active harness.
         """
         if not self._progress_logger:
             return
         try:
-            content = getattr(message, "content", None)
-            if not content or not isinstance(content, (list, tuple)):
-                return
-            for block in content:
-                block_type = type(block).__name__
-                if block_type == "ToolUseBlock":
-                    name = getattr(block, "name", "")
-                    self._progress_logger._last_tool = name
-                    inp = getattr(block, "input", {}) or {}
-                    if name in ("Write", "Edit") and isinstance(inp, dict):
-                        self._progress_logger._files_changed += 1
+            name = event.name
+            self._progress_logger._last_tool = name
+            if name in ("Write", "Edit"):
+                self._progress_logger._files_changed += 1
         except Exception:
             pass  # Never crash orchestration for progress tracking
 
@@ -2757,12 +2770,24 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
 
         # TASK-INST-005b: Instrumentation state for event emission. The
         # response_messages list is populated from event.raw per Design
-        # Decision D-1 so downstream consumers (_emit_llm_call_event
-        # token extraction, cancelled-error session_id rescan,
-        # _extract_partial_from_messages) keep working unchanged.
+        # Decision D-1 so the remaining duck-typed consumers
+        # (_emit_llm_call_event token extraction, cancelled-error
+        # session_id rescan) keep working unchanged. TASK-HMIG-006.2
+        # narrowed this contract: ToolUseEvent entries are excluded
+        # because the migrated _track_tool_use /
+        # _extract_partial_from_messages consumers dispatch on typed
+        # events directly via harness_events instead of duck-typing on
+        # event.raw.
         call_status: str = "ok"
         call_error: Optional[Exception] = None
         response_messages: List[Any] = []
+        # TASK-HMIG-006.2: typed-event canonical record for the migrated
+        # _extract_partial_from_messages consumer below. Holds every event
+        # the harness yielded (AssistantMessageEvent, ToolUseEvent,
+        # ResultMessageEvent) in the order they arrived, so the post-stream
+        # and cancelled-error extract paths can dispatch on event variants
+        # rather than duck-typing on SDK shapes.
+        harness_events: List[HarnessEvent] = []
 
         # Extract task_id from prompt for heartbeat logging (substrate-
         # agnostic — the harness does not need it).
@@ -2887,15 +2912,26 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                                     cwd=self.worktree_path,
                                     timeout_seconds=self.sdk_timeout_seconds,
                                 ):
-                                    # Per Design Decision D-1: response_messages
-                                    # holds the raw SDK shape so duck-typed
-                                    # consumers (_emit_llm_call_event,
-                                    # _extract_partial_from_messages,
-                                    # cancelled-error session_id rescan) keep
-                                    # working unchanged. Fall back to the event
-                                    # itself when raw is None (LangGraph path).
-                                    raw = event.raw if event.raw is not None else event
-                                    response_messages.append(raw)
+                                    # TASK-HMIG-006.2: keep the typed-event
+                                    # stream as the canonical record for the
+                                    # post-stream extract path. response_messages
+                                    # retains its D-1 purpose (raw SDK shape for
+                                    # the remaining duck-typed consumers:
+                                    # _emit_llm_call_event token usage, the
+                                    # check_assistant_message_error API-error
+                                    # scan, the heartbeat ToolUseBlock log on
+                                    # the specialist path) but ToolUseEvent
+                                    # entries are skipped — they exist only as
+                                    # typed events for the migrated
+                                    # _track_tool_use / _extract_partial_from_messages
+                                    # consumers, and appending them to
+                                    # response_messages would mix typed events
+                                    # with SDK objects in a list typed
+                                    # List[Any].
+                                    if not isinstance(event, ToolUseEvent):
+                                        raw = event.raw if event.raw is not None else event
+                                        response_messages.append(raw)
+                                    harness_events.append(event)
 
                                     # TASK-DIAG-F4A2: Preserve each raw event to
                                     # JSONL when raw is populated.
@@ -2905,18 +2941,26 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                                         )
                                         _sdk_preserve_event(_sdk_debug_dir, event.raw)
 
-                                    # API-error check + tool-use tracking
-                                    # operate on the raw SDK shape per D-1.
-                                    if event.raw is not None:
+                                    # TASK-HMIG-006.2: tool-use tracking moved
+                                    # to a dedicated ToolUseEvent branch — the
+                                    # AssistantMessageEvent.raw walk it used to
+                                    # do is gone. Both harnesses now yield one
+                                    # ToolUseEvent per tool call.
+                                    if isinstance(event, ToolUseEvent):
+                                        if self._progress_logger:
+                                            self._track_tool_use(event)
+
+                                    # API-error check + heartbeat ToolUseBlock
+                                    # log still operate on the raw SDK shape:
+                                    # the API-error structure is SDK-specific
+                                    # and the heartbeat log is intentionally
+                                    # gated to the specialist path.
+                                    if isinstance(event, AssistantMessageEvent) and event.raw is not None:
                                         err = check_assistant_message_error(event.raw)
                                         if err:
                                             raise AgentInvocationError(
                                                 f"Agent {agent_type} received API error: {err}"
                                             )
-                                        # TASK-FIX-OBS2: Track tool use for
-                                        # progress logging.
-                                        if self._progress_logger:
-                                            self._track_tool_use(event.raw)
                                         # TASK-FIX-CRSTL-MULT R2: Emit
                                         # ToolUseBlock log lines on the
                                         # specialist path so per-tool signal
@@ -2960,16 +3004,19 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                     except (Exception, asyncio.CancelledError) as exc:
                         if isinstance(exc, asyncio.CancelledError):
                             logger.debug(f"CancelledError caught at _invoke_with_role: {exc}")
-                            # TASK-CRV-1540: Extract partial data before re-raising.
-                            # response_messages still contains raw SDK message
-                            # objects via event.raw, so the existing
-                            # extractor + duck-typed scan loop keep working.
+                            # TASK-CRV-1540 + TASK-HMIG-006.2: extract partial
+                            # data before re-raising. harness_events is the
+                            # typed-event canonical record; the migrated
+                            # _extract_partial_from_messages dispatches on
+                            # event variants instead of duck-typing on raw
+                            # SDK shapes, so the LangGraph path now produces
+                            # non-empty counts where it used to return zeros.
                             try:
                                 self._last_partial_report = _extract_partial_from_messages(
-                                    response_messages
+                                    harness_events
                                 )
                                 logger.info(
-                                    f"Extracted partial data from {len(response_messages)} messages: "
+                                    f"Extracted partial data from {len(harness_events)} events: "
                                     f"{self._last_partial_report['text_block_count']} text blocks, "
                                     f"{self._last_partial_report['tool_call_count']} tool calls, "
                                     f"{len(self._last_partial_report['file_modifications'])} file mods"
@@ -2977,7 +3024,12 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                             except Exception as extract_err:
                                 logger.warning(f"Failed to extract partial data: {extract_err}")
                                 self._last_partial_report = None
-                            # TASK-RFX-B20B: Scan accumulated messages for session_id
+                            # TASK-RFX-B20B: Scan accumulated messages for
+                            # session_id. response_messages still holds raw
+                            # SDK ResultMessage objects (TASK-HMIG-006.2 only
+                            # excludes ToolUseEvent from the accumulation,
+                            # not ResultMessage raws) so this duck-typed
+                            # rescan keeps working.
                             for msg in reversed(response_messages):
                                 if type(msg).__name__ == "ResultMessage":
                                     self._last_session_id = getattr(msg, "session_id", None)

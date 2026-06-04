@@ -33,6 +33,7 @@ from guardkit.orchestrator.harness import (
     HarnessAdapter,
     HarnessEvent,
     ResultMessageEvent,
+    ToolUseEvent,
 )
 
 
@@ -95,8 +96,9 @@ class _FakeSDKResultMessage:
 class _StubSDKHarness(HarnessAdapter):
     """Yields events shaped exactly like ``ClaudeSDKHarness`` would.
 
-    The ``raw`` slot on each event carries the SDK-typed object so
-    downstream helpers see the SDK shape.
+    The ``raw`` slot on the assistant event carries the SDK-typed
+    AssistantMessage; ``ToolUseEvent`` instances are yielded BEFORE the
+    AssistantMessageEvent (TASK-HMIG-006.2 production parity).
     """
 
     def __init__(self, *, text: str, tool_calls: list[dict], session_id: str | None):
@@ -108,12 +110,23 @@ class _StubSDKHarness(HarnessAdapter):
         self, prompt, role, tools, cwd, *, timeout_seconds
     ) -> AsyncIterator[HarnessEvent]:
         # Build the SDK-shape AssistantMessage with TextBlock + ToolUseBlock
+        # for the raw slot. The ToolUseEvent yields mirror what
+        # ClaudeSDKHarness.invoke does after TASK-HMIG-006.2.
         blocks: List[Any] = [TextBlock(text=self._text)]
         for tc in self._tool_calls:
             blocks.append(
                 ToolUseBlock(name=tc["name"], input=tc["input"])
             )
         sdk_msg = _FakeSDKAssistantMessage(content=blocks)
+
+        # TASK-HMIG-006.2: yield ToolUseEvent per tool call before the
+        # AssistantMessageEvent (production SDK harness ordering).
+        for tc in self._tool_calls:
+            yield ToolUseEvent(
+                tool_use_id=tc.get("id", ""),
+                name=tc["name"],
+                input=tc["input"],
+            )
         yield AssistantMessageEvent(text=self._text, raw=sdk_msg)
 
         sdk_result = _FakeSDKResultMessage(session_id=self._session_id)
@@ -133,12 +146,16 @@ class _StubLangGraphHarness(HarnessAdapter):
     """Yields events shaped exactly like ``LangGraphHarness`` would.
 
     The ``raw`` slot on the AssistantMessageEvent carries the LangChain
-    dict (no ``.content`` attribute as a list of typed blocks); the
-    ResultMessageEvent carries ``session_id=None`` per AC-007.
+    dict (no ``.content`` attribute as a list of typed blocks);
+    ``ToolUseEvent`` instances are yielded BEFORE the
+    AssistantMessageEvent when ``tool_calls`` is non-empty
+    (TASK-HMIG-006.2 production parity). The ResultMessageEvent carries
+    ``session_id=None`` per AC-007.
     """
 
-    def __init__(self, *, text: str):
+    def __init__(self, *, text: str, tool_calls: list[dict] | None = None):
         self._text = text
+        self._tool_calls = tool_calls or []
 
     async def invoke(  # type: ignore[override]
         self, prompt, role, tools, cwd, *, timeout_seconds
@@ -150,6 +167,14 @@ class _StubLangGraphHarness(HarnessAdapter):
                 {"role": "assistant", "content": self._text},
             ],
         }
+        # TASK-HMIG-006.2: yield ToolUseEvent per tool call before the
+        # AssistantMessageEvent (production LangGraph harness ordering).
+        for tc in self._tool_calls:
+            yield ToolUseEvent(
+                tool_use_id=tc.get("id", ""),
+                name=tc["name"],
+                input=tc.get("input", tc.get("args", {})),
+            )
         yield AssistantMessageEvent(text=self._text, raw=langchain_dict)
         yield ResultMessageEvent(
             session_id=None, stop_reason="end_turn", usage=None
@@ -166,11 +191,18 @@ class _StubLangGraphHarness(HarnessAdapter):
 
 
 async def _drive_to_response_messages(harness: HarnessAdapter) -> List[Any]:
-    """Run a harness for one turn and collect response_messages the way
-    ``_invoke_with_role`` does: append ``event.raw`` if non-None else
-    the typed event itself.
+    """Run a harness for one turn and collect the typed-events list.
+
+    TASK-HMIG-006.2 migration: ``_extract_partial_from_messages`` now
+    consumes a list of :class:`HarnessEvent` values (the orchestrator's
+    ``harness_events`` accumulator), not a list of SDK message objects.
+    This helper mirrors that accumulation pattern, appending each event
+    as it arrives until the terminal ``ResultMessageEvent``. The name
+    is preserved (rather than renamed to ``_drive_to_events``) so the
+    existing test bodies keep reading; the docstring documents the
+    schema change.
     """
-    response_messages: List[Any] = []
+    events: List[Any] = []
     async for event in harness.invoke(
         prompt="test prompt",
         role="player",
@@ -178,10 +210,10 @@ async def _drive_to_response_messages(harness: HarnessAdapter) -> List[Any]:
         cwd=Path("."),
         timeout_seconds=30,
     ):
-        response_messages.append(event.raw if event.raw is not None else event)
+        events.append(event)
         if isinstance(event, ResultMessageEvent):
             break
-    return response_messages
+    return events
 
 
 # ============================================================================
@@ -251,13 +283,16 @@ class TestSchemaSubsetParity:
             await _drive_to_response_messages(lg)
         )
 
-        # Text extraction parity
+        # TASK-HMIG-006.2: text extraction parity is now true parity —
+        # both substrates read the joined text off
+        # AssistantMessageEvent.text rather than walking raw content.
         assert sdk_partial["text_block_count"] == 1
-        assert lg_partial["text_block_count"] == 0, (
-            "DOCUMENTED Wave-2 divergence (D-7): LangGraph's LangChain "
-            "result dict has no .content list of TextBlocks, so the "
-            "duck-typed text-extraction path returns 0. Fixed in "
-            "TASK-HMIG-006.2."
+        assert lg_partial["text_block_count"] == 1, (
+            "TASK-HMIG-006.2 regression: LangGraph text extraction "
+            "should now match SDK (both consume "
+            "AssistantMessageEvent.text). If this assertion fires, the "
+            "typed-event dispatch in _extract_partial_from_messages has "
+            "drifted back to duck-typing on raw content."
         )
 
         # Tool extraction parity (both empty — true parity)
@@ -274,18 +309,33 @@ class TestSchemaSubsetParity:
 
 class TestDocumentedDivergences:
     """Per .claude/rules/absence-of-failure-is-not-success.md: each
-    Wave-2 divergence is asserted explicitly so a silent regression
-    (e.g. LangGraph suddenly producing tool_calls=[]) is caught.
+    Wave-2 documented divergence was asserted explicitly so a silent
+    regression (e.g. LangGraph suddenly producing tool_calls=[]) would
+    be caught.
 
-    When TASK-HMIG-006.2 lands, these tests must INVERT — that
-    inversion is the verifiable signal the helper-migration is
-    complete.
+    TASK-HMIG-006.2 INVERSION: with the helper migration to typed
+    ``HarnessEvent`` dispatch, the tool-use divergence is gone — both
+    substrates now report tool_call_count=1 for a turn that carries
+    one tool call. The session-id divergence remains documented per
+    AC-007 (LangGraph checkpointer is out of scope).
     """
 
     @pytest.mark.asyncio
-    async def test_tool_use_divergence_documented(self):
-        """SDK populates tool_calls when ToolUseBlock present;
-        LangGraph returns []. Fixed in TASK-HMIG-006.2."""
+    async def test_tool_use_parity_post_migration(self):
+        """TASK-HMIG-006.2 inversion (AC-003): SDK and LangGraph both
+        populate tool_calls when a tool call is present. The previous
+        ``test_tool_use_divergence_documented`` asserted
+        ``lg_partial["tool_call_count"] == 0`` and was the verifiable
+        signal pending migration; flipping it to ``== 1`` is the AC-003
+        success signal.
+
+        The LangGraph stub is also updated to yield ToolUseEvent
+        directly (mirrors production LangGraphHarness emitting
+        ToolUseEvent from AIMessage.tool_calls per Step 2 of the
+        migration). Without that stub update, the test would pass
+        ``lg_partial["tool_call_count"] == 0`` for the WRONG reason
+        (stub omitted the event, not because dispatch failed).
+        """
         sdk = _StubSDKHarness(
             text="modifying file",
             tool_calls=[
@@ -300,7 +350,20 @@ class TestDocumentedDivergences:
             ],
             session_id="uuid-abc",
         )
-        lg = _StubLangGraphHarness(text="modifying file")
+        lg = _StubLangGraphHarness(
+            text="modifying file",
+            tool_calls=[
+                {
+                    "id": "call-001",
+                    "name": "Edit",
+                    "input": {
+                        "file_path": "src/foo.py",
+                        "old_string": "x",
+                        "new_string": "y",
+                    },
+                }
+            ],
+        )
 
         sdk_partial = _extract_partial_from_messages(
             await _drive_to_response_messages(sdk)
@@ -309,22 +372,27 @@ class TestDocumentedDivergences:
             await _drive_to_response_messages(lg)
         )
 
-        # SDK extracts the tool call
+        # SDK extracts the tool call (unchanged)
         assert sdk_partial["tool_call_count"] == 1, (
-            "SDK regression: ToolUseBlock no longer extracted"
+            "SDK regression: ToolUseEvent no longer extracted"
         )
         assert sdk_partial["file_modifications"] == ["src/foo.py"], (
             "SDK regression: Edit file_path no longer captured"
         )
 
-        # LangGraph divergence: tool_calls drops to 0 (D-7)
-        assert lg_partial["tool_call_count"] == 0, (
-            "LangGraph drift: tool_calls now non-empty — has "
-            "TASK-HMIG-006.2 landed? If so, INVERT this assertion."
+        # TASK-HMIG-006.2 (AC-003): LangGraph now matches SDK — both
+        # paths report tool_call_count == 1 via ToolUseEvent dispatch.
+        assert lg_partial["tool_call_count"] == 1, (
+            "TASK-HMIG-006.2 regression: LangGraph tool_call_count "
+            "should now match SDK via ToolUseEvent dispatch. If this "
+            "fires, the LangGraph harness stopped yielding ToolUseEvent "
+            "or _extract_partial_from_messages stopped dispatching on "
+            "ToolUseEvent."
         )
-        assert lg_partial["file_modifications"] == [], (
-            "LangGraph drift: file_modifications now non-empty — has "
-            "TASK-HMIG-006.2 landed? If so, INVERT this assertion."
+        assert lg_partial["file_modifications"] == ["src/foo.py"], (
+            "TASK-HMIG-006.2 regression: LangGraph file_modifications "
+            "should now match SDK — Edit tool_calls carry file_path in "
+            "their args, picked up by the migrated extractor."
         )
 
     @pytest.mark.asyncio
