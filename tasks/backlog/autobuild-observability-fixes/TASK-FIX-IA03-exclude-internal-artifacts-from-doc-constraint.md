@@ -1,11 +1,15 @@
 ---
 id: TASK-FIX-IA03
 title: Exclude internal artifacts from documentation constraint count
-status: backlog
-created: 2026-02-20T00:00:00Z
-updated: 2026-02-20T00:00:00Z
+status: in_progress
+created: 2026-02-20 00:00:00+00:00
+updated: 2026-02-20 00:00:00+00:00
 priority: medium
-tags: [autobuild, bugfix, documentation-constraint, artifacts]
+tags:
+- autobuild
+- bugfix
+- documentation-constraint
+- artifacts
 task_type: feature
 complexity: 3
 parent_review: TASK-REV-A515
@@ -16,6 +20,14 @@ test_results:
   status: pending
   coverage: null
   last_run: null
+autobuild_state:
+  current_turn: 0
+  max_turns: 5
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AOF
+  base_branch: main
+  started_at: '2026-06-04T20:33:52.227090'
+  last_updated: '2026-06-04T20:33:52.227093'
+  turns: []
 ---
 
 # Task: Exclude internal artifacts from documentation constraint count
