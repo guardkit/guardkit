@@ -7,7 +7,7 @@ description: "Three orchestrator-side fixes to the AutoBuild observability surfa
   \ orchestrator/server-side logic, picked as the AC-001 target feature for TASK-HMIG-010's\
   \ end-to-end LangGraph validation run."
 created: '2026-06-04T18:30:00Z'
-status: failed
+status: in_progress
 complexity: 5
 estimated_tasks: 3
 tasks:
@@ -16,23 +16,15 @@ tasks:
   file_path: tasks/backlog/autobuild-observability-fixes/TASK-FIX-IA03-exclude-internal-artifacts-from-doc-constraint.md
   complexity: 3
   dependencies: []
-  status: failed
+  status: in_progress
   implementation_mode: task-work
   estimated_minutes: 90
   requires_infrastructure: []
-  result:
-    total_turns: 1
-    final_decision: error
-    error: 'Unexpected error: SDK invocation failed for coach (LangGraphHarnessError):
-      LangGraphHarness: agent.ainvoke failed for role=''coach'' model=None: "Could
-      not resolve authentication method. Expected either api_key or auth_token to
-      be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly
-      omitted"'
-    deferred_reason: null
-  turns_completed: 1
-  current_turn: 0
-  started_at: '2026-06-04T20:12:32.806908'
-  completed_at: '2026-06-04T20:13:01.090730'
+  result: null
+  turns_completed: 0
+  current_turn: 1
+  started_at: '2026-06-04T20:33:52.216492'
+  completed_at: null
 - id: TASK-FIX-GD02
   name: Scope git detection to per-task file changes in shared worktrees
   file_path: tasks/backlog/autobuild-observability-fixes/TASK-FIX-GD02-shared-worktree-git-detection-baseline.md
@@ -72,14 +64,14 @@ orchestration:
   recommended_parallel: 2
 preflight_strict: false
 execution:
-  started_at: '2026-06-04T20:12:29.186561'
-  completed_at: '2026-06-04T20:13:01.094385'
+  started_at: '2026-06-04T20:33:48.801202'
+  completed_at: null
   worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AOF
-  total_turns: 1
+  total_turns: 0
   tasks_completed: 0
-  tasks_failed: 1
+  tasks_failed: 0
   current_wave: 1
   completed_waves: []
-  last_updated: '2026-06-04T20:13:01.090744'
+  last_updated: '2026-06-04T20:33:52.216497'
   archived_at: null
   archived_to: null
