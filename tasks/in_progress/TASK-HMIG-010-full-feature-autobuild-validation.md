@@ -1,12 +1,12 @@
 ---
 id: TASK-HMIG-010
 title: Full feature autobuild end-to-end validation under LangGraph
-status: blocked
-previous_state: in_progress
-state_transition_reason: "Run 1 (2026-06-04T19:12, ~28s) failed at Player turn 1 with LangGraphHarnessError(model=None, auth error). Root cause: `guardkit autobuild feature` subcommand does not thread --model to AutoBuildOrchestrator, causing the LangGraph harness's DeepAgents factory to default to Anthropic provider (which then demands ANTHROPIC_API_KEY). This is sibling-of-F1 in the canary-analysis.md naming — same shape as the pre-loop bypass closed by TASK-HMIG-006.4. Recorded as F9 in feature-run-incidents.md. Blocked on TASK-FIX-LGFM."
+status: in_progress
+previous_state: blocked
+state_transition_reason: "Pre-unblocked 2026-06-04T20:50Z: TASK-FIX-LGFM is being implemented in a parallel session and is reportedly at the test-writing stage. Moving 010 to in_progress now so re-run is staged the moment LGFM lands. CRITICAL: do NOT run guardkit autobuild feature FEAT-AOF until LGFM is confirmed merged (otherwise F9 re-fires). Pre-flight gate before re-run: verify --model option appears in `guardkit autobuild feature --help` output."
 task_type: validation
 created: 2026-05-19T20:30:00Z
-updated: 2026-06-04T20:30:00Z
+updated: 2026-06-04T20:50:00Z
 priority: critical
 complexity: 5
 deadline: 2026-06-15
@@ -18,8 +18,11 @@ parallel_group: 3B
 implementation_mode: manual    # operator-monitored end-to-end run; /task-work produces scaffolding only
 intensity: standard
 effort_hours: 8
-blocked_by:
-  - TASK-FIX-LGFM  # feature subcommand --model threading; must land before 010 run 2
+# Run 2 gating (LGFM-confirmation precondition — soft, not blocked_by:)
+# - TASK-FIX-LGFM must merge before re-running. Verify via:
+#     guardkit autobuild feature --help | grep -- --model
+#   If --model is absent, re-running will hit F9 again. See
+#   feature-run-incidents.md I-001 for the failure shape.
 depends_on:
   - TASK-HMIG-009A  # canary 12-run batch passed 2026-06-04 — substitute for the originally-cited TASK-HMIG-009 which was halted at F1/F4
   # - TASK-HMIG-009 # ORIGINAL: blocked at F1/F4; superseded by 009A per TASK-REV-HM09 §7
