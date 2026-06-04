@@ -21,6 +21,16 @@
       "halted_by": "stop_on_failure=True after Wave 1 task 1 errored",
       "stdout_log": "docs/reviews/autobuild-migration/autobuild-FEAT-AOF-run-1.md",
       "notes": "Aborted at Wave 1 / TASK-FIX-IA03 / Turn 1 with LangGraphHarnessError (auth). Root cause: feature subcommand doesn't thread --model. See incident I-001 (F9) in feature-run-incidents.md and TASK-FIX-LGFM."
+    },
+    {
+      "run_number": 2,
+      "started_at": "2026-06-04T19:33:32Z",
+      "finished_at": "2026-06-04T19:41:52Z",
+      "wall_clock_seconds": 500,
+      "outcome": "feature_orchestrator_aborted_on_first_task",
+      "halted_by": "stop_on_failure=True after Wave 1 task 1 errored on turn 2",
+      "stdout_log": "docs/reviews/autobuild-migration/autobuild-FEAT-AOF-run-2.md",
+      "notes": "Post-LGFM run. Surfaced F10 (main Player still gets model=None — sibling-of-F9 in AgentInvoker._invoke_task_work_implement, line 5730) and F11 (DeepAgents conversation_history offload to read-only /conversation_history/ host root, sibling-of-NOVMODE). Both filed as TASK-FIX-LGFM2 and TASK-FIX-CHO01. Coach successfully ran for ~1.5min on synthetic report (with model='openai:qwen36-workhorse' — proving Coach side of model threading is correct), but main Player path consumed 2 turns failing identically. See I-002 and I-003 in incidents."
     }
   ],
   "task_outcomes": [
@@ -37,6 +47,20 @@
       "wall_clock_seconds": 28,
       "non_recoverable": true,
       "notes": "Failed at Player turn 1 with LangGraphHarnessError(model=None, auth). Not a substrate-quality finding — this is a CLI-plumbing gap (F9 / TASK-FIX-LGFM). After LGFM lands, re-run with --fresh."
+    },
+    {
+      "task_id": "TASK-FIX-IA03",
+      "run_number": 2,
+      "wave": 1,
+      "parallel_group": null,
+      "coach_decision": "error",
+      "turns_used": 2,
+      "first_pass_success": false,
+      "resume_used": false,
+      "resume_outcome": "n/a",
+      "wall_clock_seconds": 500,
+      "non_recoverable": true,
+      "notes": "Post-LGFM run. Main Player still fails with model=None (F10, AgentInvoker._invoke_task_work_implement missing model= threading). Synthetic report fired; test-orchestrator specialist DID get model='openai:qwen36-workhorse' (proving the Coach + specialist paths got LGFM correctly), but immediately hit F11 (DeepAgents conversation_history offload fails to read-only host root /conversation_history/, summarization can't trim, prompt grows to 569k tokens, llama-swap returns 400 exceed_context_size). Two new blockers filed: TASK-FIX-LGFM2 (F10) and TASK-FIX-CHO01 (F11)."
     }
   ],
   "task_outcome_schema": {

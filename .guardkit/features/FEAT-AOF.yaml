@@ -7,7 +7,7 @@ description: "Three orchestrator-side fixes to the AutoBuild observability surfa
   \ orchestrator/server-side logic, picked as the AC-001 target feature for TASK-HMIG-010's\
   \ end-to-end LangGraph validation run."
 created: '2026-06-04T18:30:00Z'
-status: in_progress
+status: failed
 complexity: 5
 estimated_tasks: 3
 tasks:
@@ -16,15 +16,22 @@ tasks:
   file_path: tasks/backlog/autobuild-observability-fixes/TASK-FIX-IA03-exclude-internal-artifacts-from-doc-constraint.md
   complexity: 3
   dependencies: []
-  status: in_progress
+  status: failed
   implementation_mode: task-work
   estimated_minutes: 90
   requires_infrastructure: []
-  result: null
-  turns_completed: 0
-  current_turn: 1
+  result:
+    total_turns: 2
+    final_decision: error
+    error: 'Unexpected error executing task-work: LangGraphHarness: agent.ainvoke
+      failed for role=''player'' model=None: "Could not resolve authentication method.
+      Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key`
+      or `Authorization` headers to be explicitly omitted"'
+    deferred_reason: null
+  turns_completed: 2
+  current_turn: 0
   started_at: '2026-06-04T20:33:52.216492'
-  completed_at: null
+  completed_at: '2026-06-04T20:41:59.996167'
 - id: TASK-FIX-GD02
   name: Scope git detection to per-task file changes in shared worktrees
   file_path: tasks/backlog/autobuild-observability-fixes/TASK-FIX-GD02-shared-worktree-git-detection-baseline.md
@@ -65,13 +72,13 @@ orchestration:
 preflight_strict: false
 execution:
   started_at: '2026-06-04T20:33:48.801202'
-  completed_at: null
+  completed_at: '2026-06-04T20:42:00.000011'
   worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AOF
-  total_turns: 0
+  total_turns: 2
   tasks_completed: 0
-  tasks_failed: 0
+  tasks_failed: 1
   current_wave: 1
   completed_waves: []
-  last_updated: '2026-06-04T20:33:52.216497'
+  last_updated: '2026-06-04T20:41:59.996178'
   archived_at: null
   archived_to: null

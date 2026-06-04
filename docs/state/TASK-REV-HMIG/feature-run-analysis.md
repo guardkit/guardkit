@@ -20,12 +20,39 @@
 - [ ] AC-008 — Falsifier verdict deferred until LGFM lands and a clean run 2 produces data.
 - [〜] AC-009 — This analysis document carries the run-1 narrative (§§0, 6); §§1-5, 7-8 pending real data.
 
-## Status header (2026-06-04T20:30Z)
+## Status header (2026-06-04T21:00Z)
 
-**TASK-HMIG-010 BLOCKED on TASK-FIX-LGFM.** Run 1 surfaced F9 (feature
-subcommand doesn't thread `--model` to LangGraph harness — sibling-of-F1).
-After LGFM lands, re-run with `--fresh` and resume the AC checklist
-from AC-002.
+**TASK-HMIG-010 BLOCKED on TASK-FIX-LGFM2 AND TASK-FIX-CHO01.**
+
+- Run 1 (pre-LGFM): F9 → fixed by LGFM (commit `683823cc`)
+- Run 2 (post-LGFM): two new blockers surfaced:
+  - **F10**: sibling-of-F9 inside AgentInvoker — `_invoke_task_work_implement` (main inline-implement Player path) doesn't pass `model=` to `select_harness`, while `_invoke_with_role` (Coach + specialists) does. → TASK-FIX-LGFM2, ~30 min fix.
+  - **F11**: sibling-of-NOVMODE in guardkitfactory — DeepAgents summarization middleware writes conversation_history offload to read-only host root `/conversation_history/`, the offload fails, summarization can't trim, prompts overflow qwen36-workhorse's 131k context window. → TASK-FIX-CHO01, ~2h fix.
+
+After BOTH land, re-run with `--fresh` and resume the AC checklist from AC-002.
+
+## Pattern emerging across runs 1+2
+
+Three F-numbered findings (F9, F10, F11) plus three precursor findings
+(F1, F4, NOVMODE) all share the same meta-shape:
+
+> **A configuration / threading contract closed for some invocation
+> sites but missed for others on the same migration boundary.**
+
+| Finding | Boundary | Path closed | Path missed |
+|---|---|---|---|
+| F1 (canary) | claude-agent-sdk → LangGraph | Player-Coach loop | Pre-loop design phase |
+| F4 (canary) | worktree manager → cwd branch | Most calls | Calls from a non-main worktree |
+| NOVMODE | DeepAgents virtual_mode | Most paths | Path-doubling worktree paths |
+| F9 (010 run 1) | CLI `--model` → orchestrator | task subcommand | feature subcommand |
+| F10 (010 run 2) | AgentInvoker model → harness | `_invoke_with_role` | `_invoke_task_work_implement` |
+| F11 (010 run 2) | DeepAgents path config | virtual_mode paths | conversation_history paths |
+
+010's job is to surface exactly these. The cadence (6 instances over
+the migration's lifecycle) suggests a `.claude/rules/` seeding is
+warranted post-cutover: *audit ALL invocation sites of any contract
+boundary touched by a migration, not just the ones the migration's
+stated scope covers*. Proposed in TASK-FIX-LGFM2 Notes section.
 
 ## 1. Executive verdict
 
@@ -121,10 +148,53 @@ filed 2026-06-04. ~1h fix. Mirrors TASK-HMIG-006.4's pattern for F1
 **Cutover-deadline impact**: minimal. ~1h fix + ~1h re-run = ~2h.
 Deadline 2026-06-15, current date 2026-06-04. Comfortable.
 
+### F10 (2026-06-04, run 2): sibling-of-F9 inside AgentInvoker
+
+**Where**: [`guardkit/orchestrator/agent_invoker.py:5730-5751`](../../../guardkit/orchestrator/agent_invoker.py) (the `_invoke_task_work_implement` `select_harness(...)` call site). Compare with [`agent_invoker.py:2855-2875`](../../../guardkit/orchestrator/agent_invoker.py) (the working `_invoke_with_role` site) which passes `model=model` with a `_model_name` fallback from line 2847.
+
+**Evidence**: Run-2 stdout log split signature:
+
+```
+line 139: role='player' model=None        (main inline-implement Player — fails auth)
+line 350: role='player' model='openai:qwen36-workhorse'  (test-orchestrator specialist — routes correctly)
+```
+
+The discrepancy is the smoking gun. Same `role='player'`, different model value, different code path. The specialist routes through `run_specialist → _invoke_with_role` (which has model threading). The main Player routes through `_invoke_task_work_implement` (which doesn't).
+
+**Class-of-defect**: sibling-of-F9 (which was sibling-of-F1). Migration boundary closed for some invocation sites but missed for the main Player path.
+
+**Resolution**: [TASK-FIX-LGFM2](../../../tasks/backlog/autobuild-harness-migration/TASK-FIX-LGFM2-inline-implement-model-threading.md). One-line code edit.
+
+### F11 (2026-06-04, run 2): DeepAgents conversation-history offload to read-only host root
+
+**Where**: DeepAgents' `summarization.py` middleware, configured by the guardkitfactory `LangGraphHarness` wrapper. Offload path defaults to absolute host-root `/conversation_history/...`.
+
+**Evidence**: Run-2 stdout log:
+
+```
+line 342: Failed to offload conversation history to
+            /conversation_history/session_7b9e811b.md (60 messages):
+            [Errno 30] Read-only file system: '/conversation_history'
+line 346: Offloading conversation history to backend failed during
+            summarization. Older messages will not be recoverable.
+... 8 LLM calls accumulating context ...
+line 350: 'request (569665 tokens) exceeds the available context size
+            (131072 tokens), try increasing it'
+```
+
+The summarization middleware tries to trim history → can't write to host root → can't trim → conversation accumulates uncapped → llama-swap returns 400 once context exceeds qwen36-workhorse's 131k window.
+
+**Class-of-defect**: sibling-of-NOVMODE. DeepAgents configuration assuming a virtualised filesystem but landing on the host. NOVMODE was paths under `/`; F11 is paths under `/conversation_history/`.
+
+**Why it didn't surface in 009A**: 009A only exercised the `task` subcommand, which makes one specialist invocation per task (test-orchestrator), then exits. The 010 feature path invokes specialists per task across multiple waves; the longer conversation lifecycle is what surfaces the offload failure.
+
+**Resolution**: [TASK-FIX-CHO01](../../../tasks/backlog/autobuild-harness-migration/TASK-FIX-CHO01-deepagents-conversation-history-offload-path.md). Configure offload directory at `<worktree>/.guardkit/conversation_history/` and/or set a hard message-count cap on the summarization middleware. Likely lives in `guardkitfactory.harness.langgraph_harness.LangGraphHarness`.
+
 ### F2, F5, F6, F7 (canary-analysis.md) at feature scale
 
-_Pending data from run 2 (post-LGFM). Run 1 did not reach the
-Player-LLM step, so no substrate-quality finding could be observed._
+_Pending data from run 3+ (post-F10+F11). Runs 1 and 2 did not reach
+the Player-LLM step on the main path, so no substrate-quality finding
+could be observed yet._
 
 ## 7. Recommendation
 

@@ -1,12 +1,12 @@
 ---
 id: TASK-HMIG-010
 title: Full feature autobuild end-to-end validation under LangGraph
-status: in_progress
-previous_state: blocked
-state_transition_reason: "Pre-unblocked 2026-06-04T20:50Z: TASK-FIX-LGFM is being implemented in a parallel session and is reportedly at the test-writing stage. Moving 010 to in_progress now so re-run is staged the moment LGFM lands. CRITICAL: do NOT run guardkit autobuild feature FEAT-AOF until LGFM is confirmed merged (otherwise F9 re-fires). Pre-flight gate before re-run: verify --model option appears in `guardkit autobuild feature --help` output."
+status: blocked
+previous_state: in_progress
+state_transition_reason: "Run 2 (2026-06-04T19:33, post-LGFM) surfaced two new sequential blockers. F10 (sibling-of-F9): AgentInvoker._invoke_task_work_implement at agent_invoker.py:5730 doesn't pass model= to select_harness — the main inline-implement Player path still fails with model=None auth error even though the sibling _invoke_with_role path (Coach + specialists) does pass it. F11 (sibling-of-NOVMODE): DeepAgents summarization middleware writes conversation_history offload to read-only host root /conversation_history/ — the offload fails, summarization can't trim history, and at ~9 LLM calls the test-orchestrator specialist's prompt grows to 569k tokens against qwen36-workhorse's 131k window. F10 unblocks the main Player; F11 unblocks the specialists. Both filed as TASK-FIX-LGFM2 and TASK-FIX-CHO01."
 task_type: validation
 created: 2026-05-19T20:30:00Z
-updated: 2026-06-04T20:50:00Z
+updated: 2026-06-04T21:00:00Z
 priority: critical
 complexity: 5
 deadline: 2026-06-15
@@ -18,11 +18,9 @@ parallel_group: 3B
 implementation_mode: manual    # operator-monitored end-to-end run; /task-work produces scaffolding only
 intensity: standard
 effort_hours: 8
-# Run 2 gating (LGFM-confirmation precondition — soft, not blocked_by:)
-# - TASK-FIX-LGFM must merge before re-running. Verify via:
-#     guardkit autobuild feature --help | grep -- --model
-#   If --model is absent, re-running will hit F9 again. See
-#   feature-run-incidents.md I-001 for the failure shape.
+blocked_by:
+  - TASK-FIX-LGFM2  # F10 — inline-implement Player path missing model= threading. ~30 min fix.
+  - TASK-FIX-CHO01  # F11 — DeepAgents conversation_history offload to read-only host root. ~2h fix.
 depends_on:
   - TASK-HMIG-009A  # canary 12-run batch passed 2026-06-04 — substitute for the originally-cited TASK-HMIG-009 which was halted at F1/F4
   # - TASK-HMIG-009 # ORIGINAL: blocked at F1/F4; superseded by 009A per TASK-REV-HM09 §7
