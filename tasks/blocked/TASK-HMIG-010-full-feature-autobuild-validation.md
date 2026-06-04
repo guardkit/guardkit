@@ -1,12 +1,12 @@
 ---
 id: TASK-HMIG-010
 title: Full feature autobuild end-to-end validation under LangGraph
-status: in_progress
-previous_state: backlog
-state_transition_reason: "Operator-driven validation run. Scaffolded by /task-work TASK-HMIG-010 on 2026-06-04. Dependency satisfied by TASK-HMIG-009A's 2026-06-04 GO verdict (5/6 = 83.3% on both harnesses, passes ≥75% falsifier). The 009 (original) → 009A (substitute) substitution is per TASK-REV-HM09 §7."
+status: blocked
+previous_state: in_progress
+state_transition_reason: "Run 1 (2026-06-04T19:12, ~28s) failed at Player turn 1 with LangGraphHarnessError(model=None, auth error). Root cause: `guardkit autobuild feature` subcommand does not thread --model to AutoBuildOrchestrator, causing the LangGraph harness's DeepAgents factory to default to Anthropic provider (which then demands ANTHROPIC_API_KEY). This is sibling-of-F1 in the canary-analysis.md naming — same shape as the pre-loop bypass closed by TASK-HMIG-006.4. Recorded as F9 in feature-run-incidents.md. Blocked on TASK-FIX-LGFM."
 task_type: validation
 created: 2026-05-19T20:30:00Z
-updated: 2026-06-04T14:21:00Z
+updated: 2026-06-04T20:30:00Z
 priority: critical
 complexity: 5
 deadline: 2026-06-15
@@ -18,6 +18,8 @@ parallel_group: 3B
 implementation_mode: manual    # operator-monitored end-to-end run; /task-work produces scaffolding only
 intensity: standard
 effort_hours: 8
+blocked_by:
+  - TASK-FIX-LGFM  # feature subcommand --model threading; must land before 010 run 2
 depends_on:
   - TASK-HMIG-009A  # canary 12-run batch passed 2026-06-04 — substitute for the originally-cited TASK-HMIG-009 which was halted at F1/F4
   # - TASK-HMIG-009 # ORIGINAL: blocked at F1/F4; superseded by 009A per TASK-REV-HM09 §7

@@ -1,8 +1,13 @@
 id: FEAT-AOF
 name: AutoBuild Observability Fixes
-description: Three orchestrator-side fixes to the AutoBuild observability surface — exclude internal artifacts from documentation constraint counting (IA03), scope git detection to per-task file changes in shared worktrees (GD02), and add independent test execution for the testing task type (TP05). All three are runtime-agnostic orchestrator/server-side logic, picked as the AC-001 target feature for TASK-HMIG-010's end-to-end LangGraph validation run.
+description: "Three orchestrator-side fixes to the AutoBuild observability surface\
+  \ \u2014 exclude internal artifacts from documentation constraint counting (IA03),\
+  \ scope git detection to per-task file changes in shared worktrees (GD02), and add\
+  \ independent test execution for the testing task type (TP05). All three are runtime-agnostic\
+  \ orchestrator/server-side logic, picked as the AC-001 target feature for TASK-HMIG-010's\
+  \ end-to-end LangGraph validation run."
 created: '2026-06-04T18:30:00Z'
-status: planned
+status: failed
 complexity: 5
 estimated_tasks: 3
 tasks:
@@ -11,10 +16,23 @@ tasks:
   file_path: tasks/backlog/autobuild-observability-fixes/TASK-FIX-IA03-exclude-internal-artifacts-from-doc-constraint.md
   complexity: 3
   dependencies: []
-  status: pending
-  description: ''
+  status: failed
   implementation_mode: task-work
   estimated_minutes: 90
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: error
+    error: 'Unexpected error: SDK invocation failed for coach (LangGraphHarnessError):
+      LangGraphHarness: agent.ainvoke failed for role=''coach'' model=None: "Could
+      not resolve authentication method. Expected either api_key or auth_token to
+      be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly
+      omitted"'
+    deferred_reason: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-06-04T20:12:32.806908'
+  completed_at: '2026-06-04T20:13:01.090730'
 - id: TASK-FIX-GD02
   name: Scope git detection to per-task file changes in shared worktrees
   file_path: tasks/backlog/autobuild-observability-fixes/TASK-FIX-GD02-shared-worktree-git-detection-baseline.md
@@ -22,9 +40,14 @@ tasks:
   dependencies:
   - TASK-FIX-IA03
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 180
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 - id: TASK-FIX-TP05
   name: Add independent test execution for testing task type
   file_path: tasks/backlog/autobuild-observability-fixes/TASK-FIX-TP05-add-test-execution-for-testing-task-type.md
@@ -32,9 +55,14 @@ tasks:
   dependencies:
   - TASK-FIX-IA03
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 120
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 orchestration:
   parallel_groups:
   - - TASK-FIX-IA03
@@ -42,3 +70,16 @@ orchestration:
     - TASK-FIX-TP05
   estimated_duration_minutes: 390
   recommended_parallel: 2
+preflight_strict: false
+execution:
+  started_at: '2026-06-04T20:12:29.186561'
+  completed_at: '2026-06-04T20:13:01.094385'
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AOF
+  total_turns: 1
+  tasks_completed: 0
+  tasks_failed: 1
+  current_wave: 1
+  completed_waves: []
+  last_updated: '2026-06-04T20:13:01.090744'
+  archived_at: null
+  archived_to: null

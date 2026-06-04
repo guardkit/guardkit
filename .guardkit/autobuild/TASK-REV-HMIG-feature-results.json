@@ -9,9 +9,36 @@
   "target_feature_path": "tasks/backlog/autobuild-observability-fixes/",
   "harness": "langgraph",
   "model": "qwen36-workhorse",
-  "run_started_at": null,
-  "run_finished_at": null,
-  "task_outcomes": [],
+  "run_started_at": "2026-06-04T19:12:29Z",
+  "run_finished_at": "2026-06-04T19:13:01Z",
+  "run_attempts": [
+    {
+      "run_number": 1,
+      "started_at": "2026-06-04T19:12:29Z",
+      "finished_at": "2026-06-04T19:13:01Z",
+      "wall_clock_seconds": 28,
+      "outcome": "feature_orchestrator_aborted_on_first_task",
+      "halted_by": "stop_on_failure=True after Wave 1 task 1 errored",
+      "stdout_log": "docs/reviews/autobuild-migration/autobuild-FEAT-AOF-run-1.md",
+      "notes": "Aborted at Wave 1 / TASK-FIX-IA03 / Turn 1 with LangGraphHarnessError (auth). Root cause: feature subcommand doesn't thread --model. See incident I-001 (F9) in feature-run-incidents.md and TASK-FIX-LGFM."
+    }
+  ],
+  "task_outcomes": [
+    {
+      "task_id": "TASK-FIX-IA03",
+      "run_number": 1,
+      "wave": 1,
+      "parallel_group": null,
+      "coach_decision": "error",
+      "turns_used": 1,
+      "first_pass_success": false,
+      "resume_used": false,
+      "resume_outcome": "n/a",
+      "wall_clock_seconds": 28,
+      "non_recoverable": true,
+      "notes": "Failed at Player turn 1 with LangGraphHarnessError(model=None, auth). Not a substrate-quality finding — this is a CLI-plumbing gap (F9 / TASK-FIX-LGFM). After LGFM lands, re-run with --fresh."
+    }
+  ],
   "task_outcome_schema": {
     "task_id": "TASK-XXX (string, required)",
     "wave": "1|2|3|... (int, required)",
