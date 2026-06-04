@@ -97,14 +97,18 @@
     "execution_sketch": "1. Operator: 'I want to spec X.' 2. /feature-spec X --auto produces .feature file in docs/bdd/. 3. /feature-plan X --context docs/bdd/X.feature produces tasks/backlog/X/{README,IMPLEMENTATION-GUIDE,TASK-*}.md. 4. Update this feature-target.json:operator_pick to point at the newly-created feature. 5. Run guardkit autobuild feature X under LangGraph per the execution_plan_once_picked steps."
   },
   "operator_pick": {
-    "feature_id": null,
-    "feature_path": null,
-    "task_ids_in_slice": null,
-    "estimated_orchestrator_hours": null,
-    "criteria_deviation": null,
-    "rationale": null,
-    "picked_at": null,
-    "picked_by": null
+    "feature_id": "autobuild-observability-fixes",
+    "feature_path": "tasks/backlog/autobuild-observability-fixes/",
+    "task_ids_in_slice": ["TASK-FIX-IA03", "TASK-FIX-GD02", "TASK-FIX-TP05"],
+    "slice_note": "Full feature — no slicing. All 3 tasks across 2 waves (Wave 1: IA03; Wave 2: GD02, TP05).",
+    "estimated_orchestrator_hours": 8,
+    "criteria_deviation": {
+      "criterion_relaxed": "requires_bdd_gated_task",
+      "rationale": "No backlog feature outside the dropped beads-integration has a BDD-gated task. Relaxation is acceptable because TASK-HMIG-009A's 2026-06-04 12-run batch already validated the BDD-plugin contract C1 under qwen36-workhorse end-to-end. Re-exercising the BDD-plugin path at feature scale adds little marginal coverage beyond the WorktreeManager + feature_complete + multi-task Coach-gating paths, which the picked feature exercises through GD02 (state-bridge) + TP05 (test execution) + multi-task wave structure."
+    },
+    "rationale": "Recommended pick. Real autobuild-surface delivery value (dogfooding: the feature improves the autobuild orchestrator that TASK-HMIG-010 itself validates). Runtime-agnostic — all three tasks are pure orchestrator/server-side logic with no Claude-Code/TTY/IDE dependencies. State-bridge boundary directly exercised by GD02 (shared-worktree git detection). Fits ≤8h orchestrator-time bound. 3 tasks across 2 waves provides multi-wave Coach-gating coverage.",
+    "picked_at": "2026-06-04T18:10:00Z",
+    "picked_by": "operator (Richard Woollcott)"
   },
   "execution_plan_once_picked": {
     "step_1_baseline": "Confirm the picked tasks are clean in backlog (not in_progress, not blocked). If a slice is being used, file a placeholder note in the feature folder's README documenting which tasks are in/out of the 010 slice so subsequent /feature-build runs don't re-pick them.",
