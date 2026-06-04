@@ -111,9 +111,9 @@
     "picked_by": "operator (Richard Woollcott)"
   },
   "execution_plan_once_picked": {
-    "step_1_baseline": "Confirm the picked tasks are clean in backlog (not in_progress, not blocked). If a slice is being used, file a placeholder note in the feature folder's README documenting which tasks are in/out of the 010 slice so subsequent /feature-build runs don't re-pick them.",
-    "step_2_dry_run": "guardkit autobuild feature {feature_id} --dry-run (validate orchestration plan)",
-    "step_3_run": "GUARDKIT_HARNESS=langgraph OPENAI_BASE_URL=http://promaxgb10-41b1:9000/v1 OPENAI_API_KEY=llama-swap-local-key guardkit autobuild feature {feature_id} --model qwen36-workhorse 2>&1 | tee .guardkit/autobuild/TASK-REV-HMIG-feature-run/run-1-stdout.log",
+    "step_1_baseline": "Confirm picked tasks are clean in backlog (not in_progress, not blocked). Confirm .guardkit/features/{feature_id}.yaml exists and is status: planned (NOT completed/failed/in_progress). The `guardkit autobuild feature` command requires this YAML; missing or stale YAMLs are the most common preflight failure mode (see TASK-HMIG-010 history — FEAT-AOF.yaml was backfilled at scaffold time because the original feature plan didn't generate it).",
+    "step_2_preflight_dir": "mkdir -p .guardkit/autobuild/TASK-REV-HMIG-feature-run/ (tee won't create the parent).",
+    "step_3_run": "GUARDKIT_HARNESS=langgraph OPENAI_BASE_URL=http://promaxgb10-41b1:9000/v1 OPENAI_API_KEY=llama-swap-local-key guardkit autobuild feature {feature_id} --fresh --model qwen36-workhorse 2>&1 | tee .guardkit/autobuild/TASK-REV-HMIG-feature-run/run-1-stdout.log",
     "step_4_per_task_record": "After each task completes (success or failure), append a record to TASK-REV-HMIG-feature-results.json matching the AC-003 schema. The runner does not yet auto-emit this — manual append is the current shape.",
     "step_5_resume_on_failure": "Any first-pass failure → guardkit autobuild feature {feature_id} --resume. Record resume outcome and first-pass-fail reason in the same per-task record.",
     "step_6_merge": "On all-pass: guardkit autobuild complete {feature_id}. Confirm no merge conflicts, no broken downstream consumers (AC-007).",
