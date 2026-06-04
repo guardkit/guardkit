@@ -1,9 +1,12 @@
 ---
 id: TASK-HMIG-006.3
 title: Migrate Coach's independent SDK invocation (coach_validator.py:1869+) through HarnessAdapter
-status: backlog
+status: in_review
 task_type: implementation
 created: 2026-05-20T18:00:00Z
+updated: 2026-06-04T00:00:00Z
+previous_state: in_progress
+state_transition_reason: "All quality gates passed; ready for human review"
 priority: medium
 complexity: 5
 parent_task: TASK-HMIG-006
