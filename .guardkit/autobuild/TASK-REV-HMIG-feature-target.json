@@ -5,67 +5,97 @@
   "purpose": "Operator-pickable target feature for TASK-HMIG-010's end-to-end LangGraph validation run. Mirrors the canary-set.json pattern from TASK-HMIG-009: candidates with rationale, fit scoring against AC-001, and an operator_pick slot that the operator fills in BEFORE running guardkit autobuild feature.",
   "created": "2026-06-04T14:21:00Z",
   "created_by": "/task-work TASK-HMIG-010 scaffold",
+  "updated": "2026-06-04T17:55:00Z",
+  "update_history": [
+    {
+      "timestamp": "2026-06-04T17:55:00Z",
+      "change": "Dropped beads-integration candidate (operator: never going to need it). Dropped feature-build-ux candidate (Claude-Code-tied surfaces — TTY/progress/polling — that LangGraph Player can't meaningfully exercise). Promoted autobuild-observability-fixes to rank 1 (cleanest fit for runtime-agnostic orchestrator validation). Added graphiti-docs at rank 2 (safer/lighter alternative). Demoted graphiti-context-fixes to rank 3 (too small). Added 'design-fresh-via-feature-spec' as an alternative path."
+    }
+  ],
   "ac_001_selection_criteria": {
     "min_tasks": 3,
     "min_waves": 2,
     "requires_bdd_gated_task": true,
     "requires_state_bridge_transitions": true,
     "max_orchestrator_time_hours": 8,
-    "note_on_criteria_strictness": "These criteria together are tight. As of 2026-06-04 no single backlog feature satisfies all five (the BDD-gated + ≤8h pair is the hardest constraint — only beads-integration has a BDD-gated task and it's a ~30-40h feature). Operator may either pick a sub-slice of a larger feature, relax one criterion with rationale, or pick the closest fit and document the gap. The relaxation rationale should be recorded in operator_pick.criteria_deviation."
+    "note_on_criteria_strictness": "These criteria together are tight. As of 2026-06-04 no surviving backlog feature satisfies all five — the BDD-gated requirement is the constraint that no planned feature meets after the runtime-agnostic filter (the only BDD-gated backlog feature was beads-integration, which the operator has explicitly dropped). Operator MUST either (a) relax the BDD criterion with rationale (the 009A 12-run batch already validated the BDD-plugin contract C1 under qwen36-workhorse — re-exercising at feature scale adds little marginal coverage beyond the WorktreeManager + feature_complete paths), or (b) take the 'design-fresh-via-feature-spec' alternative path which naturally generates Gherkin scenarios. Record the chosen deviation rationale in operator_pick.criteria_deviation."
   },
   "candidates": [
     {
       "rank": 1,
-      "feature_id": "beads-integration",
-      "feature_path": "tasks/backlog/beads-integration/",
-      "fit_against_ac_001": {
-        "task_count": 11,
-        "wave_count": 4,
-        "bdd_gated_tasks": ["TASK-BI-009"],
-        "state_bridge_tasks": "TBD — needs manual scan; CLI integration tasks (BI-006, BI-007) likely touch state_bridge transitions",
-        "estimated_orchestrator_hours": "30-40 (whole feature) — VIOLATES ≤8h",
-        "verdict": "Strong on BDD coverage + structure (4 waves, 11 tasks); fails on total effort"
-      },
-      "rationale": "The only backlog feature with a BDD-gated task (TASK-BI-009 has bdd_scenarios: [...]). 4-wave structure exercises the full WorktreeManager + feature_complete merge paths. Real feature delivery value (backend abstraction for task storage — Markdown vs Beads-Beanstalkd). Strong candidate IF sliced.",
-      "slice_recommendation": {
-        "tasks": ["TASK-BI-001", "TASK-BI-002", "TASK-BI-004", "TASK-BI-009"],
-        "waves": [1, 1, 2, "ungrouped"],
-        "rationale": "BI-001 (interface) + BI-002 (markdown backend) + BI-004 (registry) form a self-contained Wave 1+2 slice that delivers a working TaskBackend abstraction without committing to the beads-beanstalkd implementation. Adding BI-009 (unified metadata schema, BDD-gated) gives the BDD coverage AC-001 requires. Estimated 4 tasks × ~2h orchestrator-time = ~8h. Fits the ≤8h bound exactly.",
-        "estimated_orchestrator_hours": 8,
-        "delivers_real_value": true,
-        "caveat": "The slice leaves BI-003 (beads-beanstalkd backend) + BI-005..BI-008 + BI-010/011 in backlog. That's acceptable; they can be picked up post-cutover by /feature-build or further /task-work invocations."
-      }
-    },
-    {
-      "rank": 2,
       "feature_id": "autobuild-observability-fixes",
       "feature_path": "tasks/backlog/autobuild-observability-fixes/",
+      "last_touched": "2026-02-20",
       "fit_against_ac_001": {
         "task_count": 3,
         "wave_count": 2,
         "bdd_gated_tasks": [],
-        "state_bridge_tasks": "Likely — TASK-FIX-GD02 (shared-worktree git detection baseline) touches the WorktreeManager + state_bridge boundary",
-        "estimated_orchestrator_hours": "6-8 (complexity 3+4+6)",
-        "verdict": "Fits structure + effort + state-bridge; FAILS BDD criterion"
+        "state_bridge_tasks": "Yes — TASK-FIX-GD02 (shared-worktree git detection baseline) touches the WorktreeManager + state_bridge boundary directly",
+        "estimated_orchestrator_hours": "6-8 (complexity 3+4+6, IA03/TP05/GD02)",
+        "runtime_agnostic": true,
+        "verdict": "Fits structure + effort + state-bridge; FAILS BDD criterion (relaxable, see ac_001_selection_criteria.note_on_criteria_strictness)"
       },
-      "rationale": "Smallest backlog feature that cleanly fits the structure-and-effort half of AC-001. 3 tasks, 2 waves, ~6-8h. The state-bridge boundary is exercised (GD02 specifically). Delivers real fixes to the autobuild observability surface that the operator presumably wants anyway. Operator must relax the BDD criterion to pick this — the relaxation rationale would be: 'BDD-plugin contract C1 was already validated by 009A's 12-run batch under qwen36-workhorse; re-exercising it under feature-level orchestration adds little marginal coverage beyond the WorktreeManager + feature_complete paths.'",
-      "slice_recommendation": null
+      "task_breakdown": [
+        {"id": "TASK-FIX-IA03", "title": "Exclude internal artifacts from documentation constraint count", "complexity": 3, "wave": 1},
+        {"id": "TASK-FIX-GD02", "title": "Scope git detection to per-task file changes in shared worktrees", "complexity": 6, "wave": 2},
+        {"id": "TASK-FIX-TP05", "title": "Add independent test execution for testing task type", "complexity": 4, "wave": 2}
+      ],
+      "rationale": "RECOMMENDED. The cleanest fit on every criterion except BDD: 3 tasks, 2 waves, ~6-8h, state-bridge boundary directly exercised (GD02), all three tasks are pure orchestrator/server-side logic agnostic to whether the Player runs under Claude Code or LangGraph. Real delivery value: improves the autobuild orchestrator surface that TASK-HMIG-010 is itself validating — dogfooding synergy. Per-task tasks_to_test_paths are all visible in the Player's worktree (no external dependencies on Claude Code, IDE, TTY, etc).",
+      "slice_recommendation": null,
+      "why_runtime_agnostic": "GD02 = git detection logic; IA03 = doc-constraint counting; TP05 = test execution for testing task type. None depend on the runtime context (TTY/IDE/progress display) the way the previously-considered feature-build-ux did. The LangGraph Player can write + test these changes inside its worktree exactly the same way a Claude Code Player can."
+    },
+    {
+      "rank": 2,
+      "feature_id": "graphiti-docs",
+      "feature_path": "tasks/backlog/graphiti-docs/",
+      "last_touched": "2026-01-29",
+      "fit_against_ac_001": {
+        "task_count": 4,
+        "wave_count": 2,
+        "bdd_gated_tasks": [],
+        "state_bridge_tasks": "No — pure documentation work",
+        "estimated_orchestrator_hours": "~6.5 (per the feature's README estimate)",
+        "runtime_agnostic": true,
+        "verdict": "Fits structure + effort; FAILS BDD + state-bridge"
+      },
+      "task_breakdown": [
+        {"id": "TASK-GI-DOC-001", "title": "Write Integration Guide", "complexity": 4, "wave": 1},
+        {"id": "TASK-GI-DOC-002", "title": "Write Setup Guide", "complexity": 3, "wave": 1},
+        {"id": "TASK-GI-DOC-003", "title": "Write Architecture Docs", "complexity": 4, "wave": 1},
+        {"id": "TASK-GI-DOC-004", "title": "Add GitHub Pages Nav", "complexity": 1, "wave": 2}
+      ],
+      "rationale": "SAFER/LIGHTER alternative. Pure documentation work — easiest for the Player to complete successfully (low risk of F6 honesty collapse since there's no functional code to lie about). Wave 2 (DOC-004 nav) depends on Wave 1's three parallel doc-writes, exercising the WorktreeManager merge path. Caveat: documentation-only doesn't stress the Coach's test-execution gates the way GD02 would, so it under-validates a chunk of what TASK-HMIG-010 is supposed to measure. Pick this if minimising run-time risk matters more than orchestration-surface coverage.",
+      "slice_recommendation": null,
+      "why_runtime_agnostic": "Markdown file writes. No runtime context dependencies."
     },
     {
       "rank": 3,
       "feature_id": "graphiti-context-fixes",
       "feature_path": "tasks/backlog/graphiti-context-fixes/",
+      "last_touched": "2026-03-08",
       "fit_against_ac_001": {
         "task_count": 3,
         "wave_count": 2,
         "bdd_gated_tasks": [],
-        "state_bridge_tasks": "Unlikely — these are pure CLI + Graphiti-integration tasks",
+        "state_bridge_tasks": "No — these are pure CLI + Graphiti-integration tasks",
         "estimated_orchestrator_hours": "2-4 (complexity 1+3+7, but the 7-complexity one is review_complete so effectively 1+3=4)",
+        "runtime_agnostic": true,
         "verdict": "Fits structure; UNDERSHOOTS effort (too small to exercise feature-build at load); FAILS BDD + state-bridge"
       },
-      "rationale": "Listed for completeness as the smallest 3-task / 2-wave backlog candidate. Probably too lightweight to meaningfully validate the WorktreeManager + feature_complete + Coach-gating-across-multiple-tasks paths the task is designed to exercise. Not recommended unless operator wants a fast, low-cost smoke and is willing to accept that 010 will not stress-test the orchestration surface."
+      "rationale": "Listed for completeness as the smallest 3-task / 2-wave backlog candidate. Probably too lightweight to meaningfully validate the WorktreeManager + feature_complete + Coach-gating-across-multiple-tasks paths the task is designed to exercise. Not recommended unless operator wants a fast, low-cost smoke and is willing to accept that 010 will not stress-test the orchestration surface.",
+      "slice_recommendation": null
     }
   ],
+  "alternative_path_design_fresh": {
+    "summary": "Spec + plan a fresh small feature using /feature-spec + /feature-plan, then run autobuild against the freshly-designed feature. Adds ~1-2h of design overhead before the autobuild run starts but naturally produces BDD-gated tasks (via /feature-spec's Gherkin generation), satisfying AC-001 cleanly without relaxation.",
+    "when_to_choose": "If you want the AC-001 BDD criterion satisfied without operator hand-waving, AND you have a small (≤8h) feature idea you'd actually want delivered.",
+    "cost": "~1-2h /feature-spec + /feature-plan time before autobuild starts. Total wall-clock budget remains comfortably within the 2026-06-15 deadline.",
+    "what_it_doesnt_solve": "The runtime-agnostic concern still applies — the feature idea must not be Claude-Code-tied (TTY, progress, IDE integration). Pick a feature that lives in pure orchestrator/CLI/library code.",
+    "candidate_feature_ideas": [
+      "Operator does not currently have a small ≤8h fresh feature in mind. /task-work scaffold cannot recommend one without business context. If choosing this path, the operator should propose a feature idea, and /feature-spec + /feature-plan will land 3-5 BDD-gated tasks shaped to it."
+    ],
+    "execution_sketch": "1. Operator: 'I want to spec X.' 2. /feature-spec X --auto produces .feature file in docs/bdd/. 3. /feature-plan X --context docs/bdd/X.feature produces tasks/backlog/X/{README,IMPLEMENTATION-GUIDE,TASK-*}.md. 4. Update this feature-target.json:operator_pick to point at the newly-created feature. 5. Run guardkit autobuild feature X under LangGraph per the execution_plan_once_picked steps."
+  },
   "operator_pick": {
     "feature_id": null,
     "feature_path": null,
@@ -80,7 +110,7 @@
     "step_1_baseline": "Confirm the picked tasks are clean in backlog (not in_progress, not blocked). If a slice is being used, file a placeholder note in the feature folder's README documenting which tasks are in/out of the 010 slice so subsequent /feature-build runs don't re-pick them.",
     "step_2_dry_run": "guardkit autobuild feature {feature_id} --dry-run (validate orchestration plan)",
     "step_3_run": "GUARDKIT_HARNESS=langgraph OPENAI_BASE_URL=http://promaxgb10-41b1:9000/v1 OPENAI_API_KEY=llama-swap-local-key guardkit autobuild feature {feature_id} --model qwen36-workhorse 2>&1 | tee .guardkit/autobuild/TASK-REV-HMIG-feature-run/run-1-stdout.log",
-    "step_4_per_task_record": "After each task completes (success or failure), append a record to TASK-REV-HMIG-feature-results.json matching the AC-003 schema. The runner does not yet auto-emit this — manual append is the current shape (mirrors 009A's runner-parser gap; see TASK-FIX-CANARY-PARSER).",
+    "step_4_per_task_record": "After each task completes (success or failure), append a record to TASK-REV-HMIG-feature-results.json matching the AC-003 schema. The runner does not yet auto-emit this — manual append is the current shape.",
     "step_5_resume_on_failure": "Any first-pass failure → guardkit autobuild feature {feature_id} --resume. Record resume outcome and first-pass-fail reason in the same per-task record.",
     "step_6_merge": "On all-pass: guardkit autobuild complete {feature_id}. Confirm no merge conflicts, no broken downstream consumers (AC-007).",
     "step_7_analysis": "Append narrative to docs/state/TASK-REV-HMIG/feature-run-analysis.md per AC-009. Compare first-pass-success rate to 009A's 67% LangGraph baseline (AC-004). Compute falsifier verdict per AC-008."
@@ -92,9 +122,9 @@
     "rationale": "Same model as 009A's validated batch. No re-validation needed; the 009A 12-run batch proved this substrate satisfies the Player+Coach contract end-to-end under both wire formats."
   },
   "notes_for_operator": [
-    "AC-001 selection is the load-bearing decision in this task. The /task-work scaffold has presented 3 candidates with explicit fit-against-AC-001 scoring; pick one and fill the operator_pick block.",
-    "The beads-integration sliced option is the only candidate that satisfies all 5 criteria simultaneously, at the cost of committing to deliver a real (large) feature in slices over time.",
-    "The autobuild-observability-fixes option is the cleanest fit if you're willing to relax the BDD criterion. Recommended relaxation rationale provided above.",
+    "AC-001 selection is the load-bearing decision in this task. The /task-work scaffold has presented 3 backlog candidates + 1 alternative path; pick one and fill the operator_pick block.",
+    "RECOMMENDED: autobuild-observability-fixes (rank 1). Real autobuild-surface delivery value, runtime-agnostic, exercises state-bridge (GD02), fits ≤8h. Requires relaxing the BDD criterion — rationale is the 009A 12-run batch already validated the BDD-plugin contract under qwen36-workhorse.",
+    "Dropped from earlier scaffold: beads-integration (operator: never going to need); feature-build-ux (Claude-Code-tied surfaces that the LangGraph Player can't meaningfully exercise).",
     "Falsifier verdict (AC-008): ≥80% first-pass-success AND no non-recoverable failure → proceed to Wave 4 cutover (TASK-HMIG-011). Anything else → halt cutover, escalate.",
     "Schedule: spec says D-9 → D-7 so results inform the D-7 cutover-flip decision. Deadline is 2026-06-15 so D-7 ≈ 2026-06-08; budget ~2-3 days for the run + analysis."
   ]

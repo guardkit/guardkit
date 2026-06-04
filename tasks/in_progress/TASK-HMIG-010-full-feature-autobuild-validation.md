@@ -123,11 +123,14 @@ falsifier. Cutover GO recommended. Frontmatter updated accordingly.
 
 ### AC-001 selection: the load-bearing operator decision
 
-3 candidates presented in `feature-target.json` with explicit fit-scoring:
+3 backlog candidates + 1 alternative path presented in `feature-target.json` with explicit fit-scoring:
 
-1. **beads-integration (sliced)** — the only candidate satisfying all 5 AC-001 criteria simultaneously, by slicing to {BI-001, BI-002, BI-004, BI-009} ≈ 8h. Cost: commits to delivering a large feature in slices.
-2. **autobuild-observability-fixes** — clean fit on structure + effort + state-bridge, fails BDD criterion. Recommended relaxation rationale provided in feature-target.json.
-3. **graphiti-context-fixes** — smallest fit, likely too lightweight to meaningfully stress-test the orchestration surface.
+1. **autobuild-observability-fixes** *(RECOMMENDED)* — clean fit on structure + effort + state-bridge (GD02), runtime-agnostic (no Claude-Code-tied surfaces), real dogfooding value (the feature improves the autobuild surface that 010 is validating). Fails BDD criterion — relaxation rationale: 009A's 12-run batch already validated the BDD-plugin contract under qwen36-workhorse.
+2. **graphiti-docs** — pure documentation, safer/lighter alternative. Lower run-time risk but under-validates the Coach's test-execution gates.
+3. **graphiti-context-fixes** — smallest fit, probably too lightweight to stress-test the orchestration surface.
+4. *(alternative path)* **design fresh via /feature-spec + /feature-plan** — adds ~1-2h design overhead, naturally produces BDD-gated tasks. Requires an operator-supplied feature idea.
+
+Dropped from earlier scaffold: **beads-integration** (operator: never going to need), **feature-build-ux** (Claude-Code-tied surfaces — TTY/progress/polling — the LangGraph Player can't meaningfully exercise).
 
 Operator must fill `feature-target.json:operator_pick` before proceeding.
 
