@@ -1,10 +1,17 @@
 ---
 id: TASK-FIX-CHO01
 title: DeepAgents writes conversation history to read-only `/conversation_history/` host root
-status: backlog
+status: completed
+previous_state: backlog
+state_transition_reason: "Superseded by two guardkitfactory-side tasks that together deliver F11's fix with a better factoring than this GuardKit-side framing anticipated. TASK-HMIG-002R-SUMM-ROOT addressed the offload-path symptom (CompositeBackend wrapping LocalShellBackend, exposes artifacts_root=<worktree> so the summarization middleware computes <worktree>/conversation_history/ instead of literal /conversation_history/). TASK-HMIG-002R-MODEL-PROFILE addressed the root sizing question (model_config.py with MODEL_CONTEXT_WINDOWS registry + _resolve_model_for_invoke attaching model.profile.max_input_tokens — switches deepagents' summarization from no-profile fallback ('tokens', 170000) to ('fraction', 0.85), firing at ~111k tokens inside qwen36-workhorse's 131k window). Both landed in guardkitfactory 2026-06-05 with 92 passing tests, 0 failures. The selector.py-keeps-the-bridge invariant preserved (no GuardKit-side changes needed). The deferred message-count belt-and-braces trigger is documented in model_config.py's module docstring for future addition."
+completed_at: 2026-06-05T08:00:00Z
+completed_by: operator
+superseded_by:
+  - TASK-HMIG-002R-SUMM-ROOT   # guardkitfactory: offload-path fix
+  - TASK-HMIG-002R-MODEL-PROFILE # guardkitfactory: model.profile sizing
 task_type: bug
 created: 2026-06-04T21:00:00Z
-updated: 2026-06-04T21:00:00Z
+updated: 2026-06-05T08:00:00Z
 priority: critical
 complexity: 4
 deadline: 2026-06-15
@@ -16,8 +23,8 @@ wave: 3
 implementation_mode: task-work
 intensity: standard
 effort_hours: 2
-blocks:
-  - TASK-HMIG-010
+# blocks: cleared on supersession — TASK-HMIG-010 is unblocked w.r.t. F11.
+# Original block reference (historical): TASK-HMIG-010
 falsifier: "After landing, the test-orchestrator specialist invocation under qwen36-workhorse does NOT log `Failed to offload conversation history to /conversation_history/...` and does NOT hit `request (NNNNNN tokens) exceeds the available context size (131072 tokens)` for a normal-sized task. The summarization middleware either (a) successfully writes to a writable per-worktree directory, or (b) operates in a no-offload mode that caps message history without filesystem I/O."
 tags:
   - autobuild
