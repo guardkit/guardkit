@@ -1,12 +1,12 @@
 ---
 id: TASK-FIX-CTOUT01
 title: Coach cancellation race — task-level timeout fires but Coach continues to approval
-status: in_progress
+status: in_review
 task_type: bug
 created: 2026-06-05T09:00:00Z
-updated: 2026-06-05T12:30:00Z
-previous_state: backlog
-state_transition_reason: "task-work invocation 2026-06-05"
+updated: 2026-06-05T15:00:00Z
+previous_state: in_progress
+state_transition_reason: "Phases 1-5 complete on fix/ctout01-coach-cancellation-race; AC-001/002/003/004/006 satisfied; AC-005 handed off"
 priority: high
 complexity: 5
 deadline: 2026-06-15
@@ -89,12 +89,15 @@ Suggested investigation steps:
 
 ## Acceptance Criteria
 
-- [ ] AC-001: Reproduce the bug deterministically (mock LangGraph harness with a slow-to-complete invoke, fire task_timeout while in flight). Assert that current behaviour shows timeout-then-approve divergence.
-- [ ] AC-002: Implement cancellation propagation under the LangGraph harness path. Specifically: when `feature_orchestrator`'s task_timeout fires, the in-flight `harness.invoke(...)` async iteration must terminate within a bounded window (≤30s).
-- [ ] AC-003: Outer cancellation wins UNLESS inner Coach completes within `LATE_APPROVAL_GRACE_S` of timer fire, in which case the inner approval is honoured as `approved_late` with `success=True`. This preserves the existing `LATE_APPROVAL_GRACE_S` design (TASK-ATR-003) while ensuring under-grace approvals are no longer silently lost. Revision rationale: the original "outer always wins" wording (filed 2026-06-05 AM) was naïvely contradicting the load-bearing `LATE_APPROVAL_GRACE_S` reconciliation path that was designed for precisely the GD02 scenario. Investigation under TASK-FIX-CTOUT01 confirmed the actual bookkeeping divergence was caused by a silent-exception-swallow in `_check_late_approval` (`feature_orchestrator.py:3237`), not by the cancellation contract being mis-designed.
-- [ ] AC-004: Regression test exercises the cancellation-during-Coach case under both SDK and LangGraph harnesses; both must produce consistent bookkeeping.
-- [ ] AC-005: Re-run TASK-HMIG-010 (run 4) — GD02's verdict is unambiguous (either it completes within 3000s, OR it cleanly times out without a phantom-approval).
-- [ ] AC-006: Document the cancellation contract in `guardkitfactory.harness.langgraph_harness` docstring or a `.claude/rules/` rule — the contract is: "an in-flight `invoke(...)` MUST honour asyncio cancellation within 30s, even if a mid-call LLM response is pending."
+- [x] AC-001: Reproduced deterministically by two new tests in `TestLateApprovalReconciliation`: `test_layer4_silent_swallow_invisible_on_current_main` (RED on pre-fix main, demonstrates hypothesis (b) silent-swallow) and the companion non-spam regression `test_check_late_approval_does_not_warn_when_decision_key_missing`. Hypothesis (a) (path-canonicalisation) empirically ruled out by the planning agent's analysis of `_autobuild_candidate_dirs` (see `docs/state/TASK-FIX-CTOUT01/implementation_plan.md` §0).
+- [x] AC-002: Implemented via the new `HarnessAdapter.cancel()` interface (`adapter.py`) + `ClaudeSDKHarness.cancel()` (closes active `query()` generator) + `LangGraphHarness.cancel()` (cancels the asyncio Task wrapping `agent.ainvoke` with a 30s deadline, env-tunable via `GUARDKIT_HARNESS_CANCEL_DEADLINE`). `AgentInvoker._cancel_monitor` now calls `await harness.cancel()` BEFORE the legacy `_kill_child_claude_processes()` SIGTERM, making the cancellation contract substrate-agnostic.
+- [x] AC-003: Revised wording (above) preserves `LATE_APPROVAL_GRACE_S` (TASK-ATR-003) as the safety net; the silent-swallow fix at `feature_orchestrator.py:3237` makes its failure mode observable instead of invisible.
+- [x] AC-004: Regression coverage spans both substrates:
+  - SDK: `tests/orchestrator/harness/test_sdk_harness.py::TestCancelSDKHarness` (3 tests: noop, closes active gen, idempotency).
+  - LangGraph: `guardkitfactory/tests/harness/test_langgraph_harness.py::TestCancelLangGraphHarness` (3 tests: noop, propagates cancel, deadline-expiry warning).
+  - Bookkeeping convergence under the Layer 4 reconciliation path: existing `test_timeout_with_late_approval_reclassifies_as_approved_late` (positive case) PLUS the new `test_layer4_silent_swallow_invisible_on_current_main` (negative case — surfaces WARNING when reconciliation fails).
+- [ ] AC-005: **HANDOFF to a future session** — re-run `guardkit autobuild feature autobuild-harness-migration` (TASK-HMIG-010 run 4) and observe whether GD02's verdict is now unambiguous. This is a ~50min orchestrated run, not a code change, and was explicitly carved out of CTOUT01's scope per the 2026-06-05 PM operator decision.
+- [x] AC-006: Cancellation contract documented in `.claude/rules/harness-cancellation-contract.md` (new — the four-layer taxonomy + conflict-resolution rule between Layer 3 and Layer 4). `LangGraphHarness.cancel()` docstring references the rule file.
 
 ## Implementation Notes
 

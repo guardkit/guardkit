@@ -90,3 +90,39 @@ async def test_fake_subclass_invoke_yields_events() -> None:
     assert len(events) == 1
     assert isinstance(events[0], ResultMessageEvent)
     assert events[0].type == "result_message"
+
+
+# ============================================================================
+# TASK-FIX-CTOUT01 — cancel() interface
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_cancel_default_is_noop_on_concrete_subclass() -> None:
+    """TASK-FIX-CTOUT01: HarnessAdapter.cancel() default is a no-op.
+
+    Concrete subclasses MAY override (SDK closes the active query
+    generator; LangGraph cancels the in-flight ainvoke task), but the
+    default implementation must succeed silently — every pre-CTOUT01
+    test fake that subclasses HarnessAdapter without overriding cancel
+    must remain instantiable and callable.
+    """
+    harness = _FakeHarness()
+    result = await harness.cancel()
+    assert result is None
+
+
+def test_cancel_method_signature_matches_contract() -> None:
+    """Guard against accidental drift in the cancel() signature."""
+    sig = inspect.signature(HarnessAdapter.cancel)
+    params = sig.parameters
+    assert list(params) == ["self"], (
+        "HarnessAdapter.cancel() must take no parameters beyond self — "
+        "concrete harnesses already hold state for the in-flight call."
+    )
+
+
+def test_cancel_is_async() -> None:
+    """cancel() must be an async coroutine function so the orchestrator
+    can `await` it from the _cancel_monitor task."""
+    assert inspect.iscoroutinefunction(HarnessAdapter.cancel)
