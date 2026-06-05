@@ -2817,25 +2817,18 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             options=None,
         )
 
-        # TASK-FIX-ASPF-004: Monitor cancellation event and kill SDK
-        # subprocess when the feature-level timeout fires. The kill path
-        # is SDK-subprocess specific but the polling logic itself is
-        # substrate-agnostic (D-3).
-        async def _cancel_monitor() -> None:
-            """Poll cancellation event and kill subprocess if set."""
-            while True:
-                await asyncio.sleep(2)
-                if self._cancellation_event and self._cancellation_event.is_set():
-                    logger.info(
-                        f"TASK-FIX-ASPF-004: Cancellation event detected during "
-                        f"{agent_type} invocation, terminating SDK subprocess"
-                    )
-                    self._kill_child_claude_processes()
-                    return
-
+        # TASK-FIX-CTOUT01: monitor task creation moved to AFTER
+        # select_harness() (~30 lines below) so the closure can capture
+        # the live ``harness`` handle and dispatch
+        # ``await harness.cancel()`` alongside the legacy
+        # ``_kill_child_claude_processes()`` (TASK-FIX-ASPF-004) call.
+        # Under LangGraph, ``harness.cancel()`` is the only thing that
+        # actually unblocks the in-flight ``agent.ainvoke()`` — there is
+        # no subprocess for the SIGTERM path to kill. Under SDK, both
+        # run: ``cancel()`` closes the query() generator from inside the
+        # async loop, ``_kill_child_claude_processes()`` provides OS-level
+        # escalation as before.
         monitor: Optional[asyncio.Task] = None
-        if self._cancellation_event:
-            monitor = asyncio.create_task(_cancel_monitor())
 
         # TASK-FIX-MODELPLUMB: fall back to the orchestrator-stored model
         # name when the caller didn't specify one explicitly. invoke_coach,
@@ -2873,6 +2866,50 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 # call site harness-agnostic.
                 cwd=self.worktree_path,
             )
+
+            # TASK-FIX-ASPF-004 + TASK-FIX-CTOUT01: dispatch cancellation
+            # to BOTH the substrate-agnostic ``harness.cancel()`` path
+            # (CTOUT01 — the only thing that unblocks LangGraph's
+            # in-flight ``agent.ainvoke()``) AND the legacy
+            # ``_kill_child_claude_processes()`` SIGTERM (ASPF-004 — OS-
+            # level subprocess escalation; no-op under LangGraph). The
+            # closure was moved here from earlier in this method so it
+            # can capture the live ``harness`` reference returned by
+            # ``select_harness()`` above.
+            async def _cancel_monitor() -> None:
+                """Poll cancellation event; dispatch harness cancel + SIGTERM."""
+                while True:
+                    await asyncio.sleep(2)
+                    if (
+                        self._cancellation_event
+                        and self._cancellation_event.is_set()
+                    ):
+                        logger.info(
+                            f"TASK-FIX-CTOUT01: Cancellation event detected "
+                            f"during {agent_type} invocation; calling "
+                            f"harness.cancel() and terminating any SDK "
+                            f"subprocess."
+                        )
+                        # NEW (TASK-FIX-CTOUT01): substrate-agnostic
+                        # cooperative cancel. SDK closes the active
+                        # query() generator; LangGraph cancels the
+                        # asyncio.Task wrapping agent.ainvoke().
+                        try:
+                            await harness.cancel()
+                        except Exception as exc:
+                            logger.warning(
+                                f"TASK-FIX-CTOUT01: harness.cancel() raised "
+                                f"{type(exc).__name__}: {exc} — falling "
+                                f"through to subprocess kill."
+                            )
+                        # LEGACY (TASK-FIX-ASPF-004): SDK-subprocess SIGTERM.
+                        # No-op under LangGraph; stays the OS-level
+                        # escalation under SDK.
+                        self._kill_child_claude_processes()
+                        return
+
+            if self._cancellation_event:
+                monitor = asyncio.create_task(_cancel_monitor())
 
             # TASK-HMIG-006 AC-007: surface the resume-intent drop loudly
             # when the caller offers a resume_session_id and the resolved

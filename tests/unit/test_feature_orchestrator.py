@@ -3936,6 +3936,109 @@ class TestLateApprovalReconciliation:
         (autobuild_dir / "turn_state_turn_1.json").write_text("{bad")
         assert orchestrator._read_total_turns("TASK-T-001") is None
 
+    # ========================================================================
+    # TASK-FIX-CTOUT01 — silent-swallow reproducer
+    # ========================================================================
+
+    def test_layer4_silent_swallow_invisible_on_current_main(
+        self, temp_repo, mock_worktree_manager, caplog, monkeypatch,
+    ):
+        """
+        TASK-FIX-CTOUT01 hypothesis (b) reproducer.
+
+        The bare ``except Exception`` swallow at
+        ``feature_orchestrator.py:3237`` demotes every failure of
+        ``_latest_coach_turn_path`` to DEBUG. In run-3's INFO-level log
+        capture this was invisible — late-approval reclassification
+        silently didn't fire, and GD02's wave summary showed FAILED
+        despite Coach having approved within the 60s grace window.
+
+        Assertion: when ``_latest_coach_turn_path`` raises, a WARNING
+        with exc_info must reach the operator. This test is the
+        falsifier for the silent-swallow class-of-defect — runs RED on
+        current main (no WARNING in caplog), GREEN after Step 2 of the
+        CTOUT01 fix.
+        """
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo, worktree_manager=mock_worktree_manager,
+        )
+        # Force _latest_coach_turn_path to raise — simulates the
+        # transient OSError / JSONDecodeError / AttributeError class
+        # that the bare except clause at line 3237 currently swallows.
+        monkeypatch.setattr(
+            orchestrator,
+            "_latest_coach_turn_path",
+            MagicMock(side_effect=OSError("simulated stat failure")),
+        )
+        with caplog.at_level(
+            logging.DEBUG,
+            logger="guardkit.orchestrator.feature_orchestrator",
+        ):
+            result = orchestrator._check_late_approval(
+                "TASK-FIX-GD02", timer_fire_time=time.time(),
+            )
+        assert result is None
+        warning_records = [
+            r for r in caplog.records
+            if r.levelno == logging.WARNING
+            and "_check_late_approval failed" in r.message
+        ]
+        assert len(warning_records) == 1, (
+            "Expected exactly one WARNING from _check_late_approval; "
+            f"got {len(warning_records)} (silent-swallow regression — "
+            "run-3 GD02 invisible failure mode)."
+        )
+        assert warning_records[0].exc_info is not None, (
+            "WARNING must include exc_info to surface the swallowed "
+            "exception for postmortem analysis."
+        )
+        assert "TASK-FIX-GD02" in warning_records[0].message
+
+    def test_check_late_approval_does_not_warn_when_decision_key_missing(
+        self, temp_repo, mock_worktree_manager, caplog,
+    ):
+        """
+        TASK-FIX-CTOUT01 non-spam regression.
+
+        The bare-Exception swallow upgrade must NOT spam logs when the
+        coach file legitimately lacks a 'decision' key (the
+        ``dict.get("decision")`` returns None silently, no exception
+        raised). Only ACTUAL exceptions should emit WARNING.
+        """
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo, worktree_manager=mock_worktree_manager,
+        )
+        autobuild_dir = (
+            temp_repo / ".guardkit" / "autobuild" / "TASK-T-002"
+        )
+        autobuild_dir.mkdir(parents=True, exist_ok=True)
+        coach_file = autobuild_dir / "coach_turn_2.json"
+        # NOTE: misspelled key — `dict.get("decision")` returns None
+        # without raising, exercising the no-exception code path.
+        coach_file.write_text(json.dumps({"NOTdecision": "approve"}))
+        target_mtime = time.time() - 5.0
+        os.utime(coach_file, (target_mtime, target_mtime))
+
+        with caplog.at_level(
+            logging.WARNING,
+            logger="guardkit.orchestrator.feature_orchestrator",
+        ):
+            result = orchestrator._check_late_approval(
+                "TASK-T-002", timer_fire_time=time.time(),
+            )
+        # Result: None because 'decision' key is missing (returns None,
+        # not 'approve').
+        assert result is None
+        # CRITICAL: no WARNING emitted, because no exception was raised.
+        warning_records = [
+            r for r in caplog.records if r.levelno == logging.WARNING
+        ]
+        assert not warning_records, (
+            "Missing decision key returned None via .get() without "
+            "raising; no WARNING should fire — that's the legitimate "
+            "non-exception code path."
+        )
+
 
 @pytest.mark.asyncio
 async def test_timeout_with_late_approval_reclassifies_as_approved_late(

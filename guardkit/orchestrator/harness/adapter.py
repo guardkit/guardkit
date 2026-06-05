@@ -188,6 +188,40 @@ class HarnessAdapter(ABC):
         """
         return False
 
+    async def cancel(self) -> None:
+        """Request termination of any in-flight :meth:`invoke` call.
+
+        TASK-FIX-CTOUT01 contract: when the orchestrator's
+        ``cancellation_event`` (TASK-ASF-007) fires during a Coach or
+        Player invocation, ``AgentInvoker._cancel_monitor`` calls
+        ``await harness.cancel()`` to request immediate termination of
+        any in-flight ``invoke(...)`` async iteration. Concrete harnesses
+        MUST honour this cancellation within
+        ``GUARDKIT_HARNESS_CANCEL_DEADLINE`` seconds (default 30),
+        even if a mid-call LLM response is pending.
+
+        The default implementation is a no-op. Concrete subclasses
+        override:
+
+        * ``ClaudeSDKHarness.cancel()`` closes the active SDK ``query()``
+          async generator; OS-level subprocess escalation is owned
+          separately by ``AgentInvoker._kill_child_claude_processes``
+          (TASK-FIX-ASPF-004).
+        * ``LangGraphHarness.cancel()`` cancels the asyncio Task wrapping
+          the in-flight ``agent.ainvoke(...)`` call so LangChain's HTTP
+          client receives the cancellation signal.
+
+        The no-op default is intentional: pre-CTOUT01 test fakes that
+        subclass :class:`HarnessAdapter` without overriding ``cancel``
+        continue to work — they were never wired into the cancellation
+        path and the no-op preserves that.
+
+        See ``.claude/rules/harness-cancellation-contract.md`` for the
+        full four-layer cancellation taxonomy and the conflict-resolution
+        rule between this layer and ``LATE_APPROVAL_GRACE_S``.
+        """
+        return None
+
 
 __all__ = [
     "AssistantMessageEvent",
