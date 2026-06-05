@@ -30,6 +30,43 @@ Each incident gets its own `## I-NNN: <title>` section with:
 
 ## Incidents
 
+## I-006 (F16): Graphiti FalkorDB teardown race — `no running event loop` at process exit
+
+- **Task**: process-wide (post-feature-orchestration cleanup)
+- **Wave / parallel group**: n/a (process exit)
+- **Symptom**: `ERROR:graphiti_core.driver.falkordb_driver:Error executing FalkorDB query: no running event loop` followed by traceback ending `RuntimeError: no running event loop`. Run-3 log lines 1638–1686.
+- **Attempts made**: First observation. Doesn't affect run outcomes (process is already exiting).
+- **Root cause**: A Graphiti `edge_fulltext_search` coroutine is in-flight when the event loop closes — characteristic fire-and-forget pattern. The traceback's "Exception ignored while closing generator" confirms CPython is suppressing the actual error.
+- **Class-of-defect**: async teardown hygiene. Not a migration-class defect.
+- **Severity**: **LOW** — cosmetic; doesn't affect outcomes; may hide real teardown issues if/when they appear.
+- **Resolution**: Code edit in `guardkit.knowledge.autobuild_context_loader` or `graphiti_client`. Either await the offending call or register a process-exit handler.
+- **Follow-up task**: [TASK-FIX-FALK01](../../../tasks/backlog/autobuild-harness-migration/TASK-FIX-FALK01-graphiti-falkordb-teardown-race.md) filed 2026-06-05. Does NOT block TASK-HMIG-010 — deferrable to Wave 4 cleanup.
+
+## I-005 (F14): Coach cancellation race — task-level timeout fires but Coach continues to approval
+
+- **Task**: TASK-FIX-GD02 (Wave 2 of FEAT-AOF, run 3, turn 2 Coach)
+- **Wave / parallel group**: Wave 2, ungrouped within wave
+- **Symptom**: At 07:45:26, feature_orchestrator fires `task_timeout=3000s expired` for TASK-FIX-GD02 (run-3 lines 1555–1556). `TASK-FIX-ASPF-004: Cancellation event detected during coach invocation, terminating SDK subprocess` (line 1559). But 5+ subsequent `POST /v1/responses` calls succeed (lines 1560–1564), and at 07:46:14 Coach reaches APPROVED (line 1565). Final bookkeeping diverges: outer feature_orchestrator marks `Wave 2 ✗ FAILED: 1 passed, 1 failed` (line 1601); inner autobuild summary marks `Status: APPROVED ... Coach approved implementation after 2 turn(s)` (lines 1579–1595).
+- **Attempts made**: First observation. The race is between the cancellation event and the in-flight LangGraph `agent.ainvoke` async operation; cancellation didn't propagate.
+- **Root cause hypothesis**: ASPF-004's cancellation handler is SDK-subprocess-specific (`terminating SDK subprocess`). Under the LangGraph harness, there's no subprocess — the in-flight call is `async agent.ainvoke(...)` on the orchestrator's event loop. The cancellation flag is set but doesn't propagate to LangGraph's pregel loop or the in-flight `langchain_anthropic._async_client.messages.create(...)` HTTP request.
+- **Class-of-defect**: **harness asymmetry** — a contract honoured by the SDK harness (process termination) but not by the LangGraph harness (which needs `asyncio.CancelledError` propagation instead). Distinct from the model-threading class but a sibling shape (something the migration was supposed to translate didn't get translated).
+- **Severity**: **HIGH** — blocks AC-008 falsifier computation because GD02's true verdict is ambiguous. If counted as failure: 2/3 = 67%, falsifier fails. If counted as success: 3/3 = 100%, falsifier passes. The cutover decision swings on this one task's ground-truth verdict, which the orchestrator can't currently report.
+- **Resolution**: Code edit + regression test. See [TASK-FIX-CTOUT01](../../../tasks/backlog/autobuild-harness-migration/TASK-FIX-CTOUT01-coach-cancellation-timeout-race.md) for the full investigation plan. Cancellation must propagate to the LangGraph harness's `invoke(...)` async iteration within a bounded window (≤30s), and the outer verdict (cancellation) must dominate the inner verdict (approval-after-cancellation).
+- **Follow-up task**: [TASK-FIX-CTOUT01](../../../tasks/backlog/autobuild-harness-migration/TASK-FIX-CTOUT01-coach-cancellation-timeout-race.md) filed 2026-06-05. **Blocks TASK-HMIG-010** (AC-008 verdict-blocker).
+
+## I-004 (F12): `coach_test` role missing model threading (4th instance of class)
+
+- **Task**: TASK-FIX-IA03 and TASK-FIX-GD02 (CoachValidator's SDK test execution path, fired for every Coach turn)
+- **Wave / parallel group**: every Coach turn across both waves
+- **Symptom**: `ERROR:guardkit.orchestrator.quality_gates.coach_validator:SDK coach test execution failed (error_class=LangGraphHarnessError): LangGraphHarness: agent.ainvoke failed for role='coach_test' model=None: "Could not resolve authentication method..."` (run-3 line 313 and similar at 1540). Immediately followed by `WARNING: SDK test execution failed (error_class=LangGraphHarnessError), falling back to subprocess.` (line 314, 1541).
+- **Attempts made**: Fires on every Coach turn. Fallback to subprocess works — runs aren't blocked, just noisy.
+- **Root cause**: Same as F1/F9/F10: a migration boundary closed for some invocation sites but missed for one more. The CoachValidator's SDK test execution path (`coach_test` role) constructs the harness without passing `model=`.
+- **Class-of-defect**: **4th instance of the model-threading class** (F1, F9, F10, F12). The cadence is no longer accidental.
+- **Severity**: **MEDIUM** — soft-fails to subprocess fallback, so runs continue. But every Coach turn pays a logged ERROR + fallback overhead, and the LangGraph code path is dead. Audit-log noise affects AC-008 evidence-clarity.
+- **Resolution**: One-line code edit + regression test. Mirror [`agent_invoker.py:5756`](../../../guardkit/orchestrator/agent_invoker.py) (the LGFM2 pattern). Probably in `guardkit/orchestrator/quality_gates/coach_validator.py`.
+- **Follow-up task**: [TASK-FIX-LGFM3](../../../tasks/backlog/autobuild-harness-migration/TASK-FIX-LGFM3-coach-test-role-model-threading.md) filed 2026-06-05. Does NOT block TASK-HMIG-010 (subprocess fallback works), but should land before AC-008 verdict for clean signal.
+- **Class-of-defect rule-seeding**: At 4 instances, a `.claude/rules/` rule is warranted post-cutover. Proposal in LGFM3 and feature-run-analysis.md §6.
+
 ## I-003 (F11): DeepAgents conversation-history offload writes to read-only host root
 
 - **Task**: TASK-FIX-IA03 (Wave 1 of FEAT-AOF, run 2, test-orchestrator specialist)

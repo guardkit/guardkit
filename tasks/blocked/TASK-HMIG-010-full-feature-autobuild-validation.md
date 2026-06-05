@@ -1,12 +1,12 @@
 ---
 id: TASK-HMIG-010
 title: Full feature autobuild end-to-end validation under LangGraph
-status: in_progress
-previous_state: blocked
-state_transition_reason: "Unblocked 2026-06-05: both blockers resolved. F10 → TASK-FIX-LGFM2 landed 2026-06-05 (model=self._model_name at agent_invoker.py:5756, 2 regression tests in TestTaskWorkHarnessMigration). F11 → superseded by guardkitfactory TASK-HMIG-002R-SUMM-ROOT (offload prefix uses <worktree>/conversation_history/ via CompositeBackend.artifacts_root) + TASK-HMIG-002R-MODEL-PROFILE (model.profile.max_input_tokens=131072 from MODEL_CONTEXT_WINDOWS registry, switches deepagents summarization to fraction-0.85 → fires at ~111k tokens inside qwen's 131k window). 92 guardkitfactory tests passing. Pre-flight checks (verifying agent_invoker.py:5756 line, backend_config.py artifacts_root, model_config.py) all green. Ready for run 3."
+status: blocked
+previous_state: in_progress
+state_transition_reason: "Run 3 (2026-06-05T06:36, ~70min, post-LGFM+SUMM-ROOT+MODEL-PROFILE) produced first real autobuild data: 2/3 tasks reached APPROVED state (IA03 turn 1, TP05 turn 1). GD02 (complexity 6) hit 50-min task budget AND Coach approved AFTER cancellation fired — F14 cancellation-race makes GD02's true verdict ambiguous, which directly blocks AC-008 falsifier computation. Filed F14 as TASK-FIX-CTOUT01 (re-blocks 010). Also filed F12 (TASK-FIX-LGFM3, 4th instance of model-threading-class) and F16 (TASK-FIX-FALK01, cosmetic Graphiti teardown). F13 (test-orchestrator SPECHANG timeout) and F15 (substrate slowness on complexity-6) recorded as substrate-quality findings in feature-run-analysis.md §6 — not code blockers."
 task_type: validation
 created: 2026-05-19T20:30:00Z
-updated: 2026-06-05T08:00:00Z
+updated: 2026-06-05T09:00:00Z
 priority: critical
 complexity: 5
 deadline: 2026-06-15
@@ -18,10 +18,14 @@ parallel_group: 3B
 implementation_mode: manual    # operator-monitored end-to-end run; /task-work produces scaffolding only
 intensity: standard
 effort_hours: 8
-# Run 3 gating: all known blockers resolved. Pre-flight recipe in feature-target.json execution_plan_once_picked.
-# Historical blocked_by (run 2 era, both resolved 2026-06-05):
-#   - TASK-FIX-LGFM2 (F10) — landed in tasks/completed/2026-06/
-#   - TASK-FIX-CHO01 (F11) — superseded by guardkitfactory TASK-HMIG-002R-SUMM-ROOT + 002R-MODEL-PROFILE
+blocked_by:
+  - TASK-FIX-CTOUT01  # F14 — cancellation race that makes GD02's verdict ambiguous (blocks AC-008 computation). ~3h fix.
+# Soft-fail follow-ons (don't block 010, but should land before AC-008 verdict for clean signal):
+#   - TASK-FIX-LGFM3   # F12 — coach_test role model-threading. Soft-fails to subprocess. ~30 min fix.
+#   - TASK-FIX-FALK01  # F16 — Graphiti FalkorDB teardown race. Cosmetic. ~1h fix, deferrable.
+# Substrate-quality findings recorded for AC-008 evidence:
+#   - F13: test-orchestrator specialist hits SPECHANG 600s cap on qwen36-workhorse (run-3 line 289)
+#   - F15: GD02 took 50min for 2 turns on complexity-6 task (substrate slow on this shape)
 depends_on:
   - TASK-HMIG-009A  # canary 12-run batch passed 2026-06-04 — substitute for the originally-cited TASK-HMIG-009 which was halted at F1/F4
   # - TASK-HMIG-009 # ORIGINAL: blocked at F1/F4; superseded by 009A per TASK-REV-HM09 §7

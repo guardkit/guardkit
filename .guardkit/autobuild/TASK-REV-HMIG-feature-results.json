@@ -31,6 +31,25 @@
       "halted_by": "stop_on_failure=True after Wave 1 task 1 errored on turn 2",
       "stdout_log": "docs/reviews/autobuild-migration/autobuild-FEAT-AOF-run-2.md",
       "notes": "Post-LGFM run. Surfaced F10 (main Player still gets model=None — sibling-of-F9 in AgentInvoker._invoke_task_work_implement, line 5730) and F11 (DeepAgents conversation_history offload to read-only /conversation_history/ host root, sibling-of-NOVMODE). Both filed as TASK-FIX-LGFM2 and TASK-FIX-CHO01. Coach successfully ran for ~1.5min on synthetic report (with model='openai:qwen36-workhorse' — proving Coach side of model threading is correct), but main Player path consumed 2 turns failing identically. See I-002 and I-003 in incidents."
+    },
+    {
+      "run_number": 3,
+      "started_at": "2026-06-05T06:36:07Z",
+      "finished_at": "2026-06-05T07:46:14Z",
+      "wall_clock_seconds": 4207,
+      "outcome": "feature_orchestrator_halted_on_wave2_failure",
+      "halted_by": "stop_on_failure=True after Wave 2 had 1 task fail (GD02 timeout-then-approved divergence)",
+      "stdout_log": "docs/reviews/autobuild-migration/autobuild-FEAT-AOF-run-3.md",
+      "feature_status": "FAILED",
+      "feature_status_caveat": "STRICT letter reading is FAILED. GD02's true verdict is AMBIGUOUS due to F14 cancellation race (outer says timeout/failed, inner Coach says approved). AC-008 verdict computation deferred until F14 (CTOUT01) lands and run 4 produces a clean signal.",
+      "tasks_completed_strict": 2,
+      "tasks_completed_inclusive_of_inner_verdict": 3,
+      "tasks_failed_strict": 1,
+      "tasks_failed_inclusive_of_inner_verdict": 0,
+      "clean_executions_per_orchestrator": "3/3 (100%)",
+      "first_pass_success_rate_strict": 0.67,
+      "first_pass_success_rate_inclusive": 1.0,
+      "notes": "First run producing real autobuild data. Findings: F12 (sibling-of-F10, coach_test role missing model, soft-fails to subprocess), F13 (substrate-quality: test-orchestrator hits SPECHANG 600s cap on qwen36-workhorse), F14 (cancellation race makes GD02 verdict ambiguous — blocks AC-008 computation), F15 (substrate-quality: GD02 needed 50min for complexity-6 multi-turn iteration), F16 (cosmetic: Graphiti FalkorDB teardown race). F11 (CHO01) fix empirically validated — MODEL-PROFILE summarization fires at ~111k, no context overflow this run. See incidents I-004 through I-006."
     }
   ],
   "task_outcomes": [
@@ -61,6 +80,52 @@
       "wall_clock_seconds": 500,
       "non_recoverable": true,
       "notes": "Post-LGFM run. Main Player still fails with model=None (F10, AgentInvoker._invoke_task_work_implement missing model= threading). Synthetic report fired; test-orchestrator specialist DID get model='openai:qwen36-workhorse' (proving the Coach + specialist paths got LGFM correctly), but immediately hit F11 (DeepAgents conversation_history offload fails to read-only host root /conversation_history/, summarization can't trim, prompt grows to 569k tokens, llama-swap returns 400 exceed_context_size). Two new blockers filed: TASK-FIX-LGFM2 (F10) and TASK-FIX-CHO01 (F11)."
+    },
+    {
+      "task_id": "TASK-FIX-IA03",
+      "run_number": 3,
+      "wave": 1,
+      "parallel_group": null,
+      "coach_decision": "approve",
+      "turns_used": 1,
+      "first_pass_success": true,
+      "resume_used": false,
+      "resume_outcome": "n/a",
+      "wall_clock_seconds": 850,
+      "non_recoverable": false,
+      "notes": "First real autobuild approval. Player ran 246.8s with 48 messages (1 assistant, 0 tools tracked by LangGraph counter — note: tool use under DeepAgents may not increment the SDK-style counter; git detection found 4 modified + 43 created files, of which 4 ghost paths were filtered, leaving ~36 real Player-created files). Test-orchestrator specialist HIT 600s SPECHANG cap (F13 substrate-quality finding) but Coach approved on synthetic report + Graphiti context. Coach turn 1 logged F12 coach_test model=None error but subprocess fallback succeeded. Quality gates ALL_PASSED=True. APPROVED in 1 turn."
+    },
+    {
+      "task_id": "TASK-FIX-TP05",
+      "run_number": 3,
+      "wave": 2,
+      "parallel_group": null,
+      "coach_decision": "approve",
+      "turns_used": 1,
+      "first_pass_success": true,
+      "resume_used": false,
+      "resume_outcome": "n/a",
+      "wall_clock_seconds": null,
+      "non_recoverable": false,
+      "notes": "Cleanest pass of the run. Approved on turn 1 within Wave 2. No findings recorded. This is the canonical 'substrate is working' data point."
+    },
+    {
+      "task_id": "TASK-FIX-GD02",
+      "run_number": 3,
+      "wave": 2,
+      "parallel_group": null,
+      "coach_decision": "AMBIGUOUS",
+      "coach_decision_outer": "timeout",
+      "coach_decision_inner": "approve",
+      "turns_used": 2,
+      "first_pass_success": false,
+      "first_pass_success_caveat": "Turn 1 Coach gave FEEDBACK (honesty discrepancy: Player reported 6 files modified but git status showed none of those). Turn 2 Coach approved after Player corrected. So first-pass-success was FALSE under any reading; what's ambiguous is whether turn 2 should count as 'recovered successfully' or 'timed out'.",
+      "resume_used": false,
+      "resume_outcome": "n/a",
+      "wall_clock_seconds": 3000,
+      "non_recoverable": true,
+      "non_recoverable_caveat": "Outer orchestrator marks as task_timeout (non-recoverable per AC-006). Inner Coach reached APPROVED state ~48s after the cancellation fired. F14 (cancellation race) makes the true verdict ambiguous. Blocks AC-008 computation.",
+      "notes": "F14 cancellation race. Substrate-quality finding F15 (50min for complexity-6 multi-turn iteration on qwen36-workhorse — substrate is slow on this task shape). After CTOUT01 lands, re-run will produce an unambiguous verdict. Possible mitigation for run 4: bump --task-timeout 3000 -> 4500 to give GD02 more runway, OR bump SPECHANG cap if test-orchestrator timing is a contributing factor."
     }
   ],
   "task_outcome_schema": {

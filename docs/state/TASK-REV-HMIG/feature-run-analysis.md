@@ -20,16 +20,30 @@
 - [ ] AC-008 — Falsifier verdict deferred until LGFM lands and a clean run 2 produces data.
 - [〜] AC-009 — This analysis document carries the run-1 narrative (§§0, 6); §§1-5, 7-8 pending real data.
 
-## Status header (2026-06-04T21:00Z)
+## Status header (2026-06-05T09:00Z)
 
-**TASK-HMIG-010 BLOCKED on TASK-FIX-LGFM2 AND TASK-FIX-CHO01.**
+**TASK-HMIG-010 BLOCKED on TASK-FIX-CTOUT01** (verdict-blocker for AC-008).
 
 - Run 1 (pre-LGFM): F9 → fixed by LGFM (commit `683823cc`)
-- Run 2 (post-LGFM): two new blockers surfaced:
-  - **F10**: sibling-of-F9 inside AgentInvoker — `_invoke_task_work_implement` (main inline-implement Player path) doesn't pass `model=` to `select_harness`, while `_invoke_with_role` (Coach + specialists) does. → TASK-FIX-LGFM2, ~30 min fix.
-  - **F11**: sibling-of-NOVMODE in guardkitfactory — DeepAgents summarization middleware writes conversation_history offload to read-only host root `/conversation_history/`, the offload fails, summarization can't trim, prompts overflow qwen36-workhorse's 131k context window. → TASK-FIX-CHO01, ~2h fix.
+- Run 2 (post-LGFM): F10 → fixed by LGFM2; F11 → fixed by 002R-SUMM-ROOT + 002R-MODEL-PROFILE in guardkitfactory
+- Run 3 (post-LGFM2+SUMM-ROOT+MODEL-PROFILE, 2026-06-05): **first real autobuild data**.
+  - **2/3 tasks reached APPROVED** (IA03 turn 1, TP05 turn 1)
+  - **GD02 verdict AMBIGUOUS** due to F14 cancellation race (outer says timeout, inner Coach says approved within ~48s of cancellation)
+  - **F12** (4th instance of model-threading class) — `coach_test` role missing model. Soft-fails to subprocess. → TASK-FIX-LGFM3.
+  - **F13** (substrate-quality) — test-orchestrator hits SPECHANG 600s cap on qwen36-workhorse. Not code-fixable; recorded as substrate finding.
+  - **F14** (harness asymmetry) — cancellation doesn't propagate to LangGraph harness. Blocks AC-008 computation. → TASK-FIX-CTOUT01, **the one that re-blocks 010**.
+  - **F15** (substrate-quality) — GD02 took 50min for complexity-6 multi-turn work. Recorded as substrate finding; possibly mitigated by `--task-timeout` bump on run 4.
+  - **F16** (cosmetic) — Graphiti FalkorDB teardown race. Defer. → TASK-FIX-FALK01.
 
-After BOTH land, re-run with `--fresh` and resume the AC checklist from AC-002.
+After CTOUT01 lands (and ideally LGFM3 too for clean audit signal), re-run with `--fresh`. AC-008 verdict will then be computable from run-4 evidence.
+
+### Run-3 outcomes table
+
+| Task | Verdict (outer) | Verdict (inner) | Turns | Wall clock | Notes |
+|---|---|---|---|---|---|
+| TASK-FIX-IA03 | ✓ APPROVED | ✓ APPROVED | 1 | ~14min | Soft-fail F12 (coach_test); F13 (specialist SPECHANG timeout) didn't prevent approval |
+| TASK-FIX-TP05 | ✓ APPROVED | ✓ APPROVED | 1 | (Wave 2) | Cleanest pass; canonical substrate-working data point |
+| TASK-FIX-GD02 | ⏱ TIMEOUT | ✓ APPROVED | 2 | 50min (capped) | **F14 ambiguity** + F15 (substrate slow on complexity-6) |
 
 ## Pattern emerging across runs 1+2
 
@@ -190,11 +204,110 @@ The summarization middleware tries to trim history → can't write to host root 
 
 **Resolution**: [TASK-FIX-CHO01](../../../tasks/backlog/autobuild-harness-migration/TASK-FIX-CHO01-deepagents-conversation-history-offload-path.md). Configure offload directory at `<worktree>/.guardkit/conversation_history/` and/or set a hard message-count cap on the summarization middleware. Likely lives in `guardkitfactory.harness.langgraph_harness.LangGraphHarness`.
 
+### F12 (2026-06-05, run 3): `coach_test` role missing model — 4th instance of model-threading class
+
+**Where**: `guardkit/orchestrator/quality_gates/coach_validator.py`, the SDK test-execution path (`coach_test` role harness construction). Mirror of F10's missing `model=` kwarg, in a different file.
+
+**Evidence**: Run-3 log line 313 (and recurring per-Coach-turn):
+
+```
+ERROR: SDK coach test execution failed: LangGraphHarness: agent.ainvoke failed
+  for role='coach_test' model=None: "Could not resolve authentication method..."
+WARNING: falling back to subprocess.
+```
+
+**Soft-fail**: subprocess fallback works (line 314+). Run 3 isn't blocked by this — but the LangGraph code path for `coach_test` is dead, and every Coach turn pays a logged ERROR.
+
+**Class-of-defect**: 4th instance of the model-threading class (F1, F9, F10, F12). At 4 instances over the migration's lifecycle, a `.claude/rules/` meta-rule is now strongly motivated.
+
+**Resolution**: [TASK-FIX-LGFM3](../../../tasks/backlog/autobuild-harness-migration/TASK-FIX-LGFM3-coach-test-role-model-threading.md). One-line code edit + regression test.
+
+### F13 (2026-06-05, run 3): test-orchestrator SPECHANG cap is hit but no context overflow
+
+**Where**: `guardkit/orchestrator/specialist_invocations.py` test-orchestrator invocation, capped at 600s by TASK-FIX-SPECHANG safety guard.
+
+**Evidence**: Run-3 log lines 211 + 289:
+
+```
+[TASK-FIX-IA03] test-orchestrator sdk_timeout capped from 2340s to 600s (TASK-FIX-SPECHANG)
+[...]
+run_specialist(test-orchestrator) failed for TASK-FIX-IA03: SDKTimeoutError:
+  Agent invocation exceeded 600s timeout
+```
+
+**Important distinction from run-2's F11**: This is NOT context-window failure. The MODEL-PROFILE summarization (002R-MODEL-PROFILE) IS firing — there's no `exceed_context_size_error` from llama-swap in run 3 despite the specialist running for 600s. Instead, the specialist made 80+ successful HTTP calls and **still couldn't complete its task** within the SPECHANG cap. F11 is empirically closed; F13 is a different (substrate-quality) problem layered behind it.
+
+**Class-of-defect**: **substrate-quality finding**. Mirrors canary's F6 (Player honesty collapse / multi-turn iteration drift on local Qwen) but manifests through SPECHANG instead of context overflow. Same root substrate behaviour, different symptom because the orchestrator's safety nets have improved.
+
+**Why IA03 still got approved despite F13**: The orchestrator's synthetic-report path fired when the specialist failed (test-orchestrator's role is to verify, not to gate). Coach approved on the synthetic report + Graphiti context + Quality-gate checks (ALL_PASSED=True). So F13 is *visible* but didn't prevent first-pass success here.
+
+**Resolution**: Not a code blocker. Possible levers:
+- **Bump SPECHANG cap** from 600s → 900s/1200s (config edit) — gives the specialist more iteration runway
+- **Investigate specialist prompt** for qwen36-workhorse efficiency (separate work)
+- **Accept and document** as the qwen36-workhorse iteration-speed envelope
+
+Not filing as a blocker task — recorded here for AC-008 evidence.
+
+### F14 (2026-06-05, run 3): cancellation race — outer timeout fires, inner Coach completes anyway
+
+**Where**: `guardkit.orchestrator.feature_orchestrator` (task-level timeout firing) interacting with `guardkit.orchestrator.autobuild` (Coach turn invocation) under `guardkitfactory.harness.langgraph_harness.LangGraphHarness.invoke()` (in-flight async iteration).
+
+**Evidence**: Run-3 log lines 1555–1601 (GD02 timeline):
+
+```
+07:45:26  WARNING: TIMEOUT (feature-level): task_timeout=3000s expired
+07:45:26  TASK-FIX-ASPF-004: Cancellation event detected during coach invocation,
+          terminating SDK subprocess
+07:45:30+ httpx: POST .../v1/responses "HTTP/1.1 200 OK"   (×5, cancellation IGNORED)
+07:46:14  ✓ Coach approved - ready for human review
+          Wave 2 ✗ FAILED                         ← outer
+          Status: APPROVED ... Coach approved      ← inner
+```
+
+The "TASK-FIX-ASPF-004 ... terminating SDK subprocess" log is sibling of F1: ASPF-004's cancellation handler is **SDK-subprocess-specific** (it terminates a subprocess). Under the LangGraph harness, there's no subprocess — the in-flight call is `async agent.ainvoke(...)` on the orchestrator's event loop. The cancellation flag is set but doesn't propagate to LangGraph's pregel loop or its in-flight HTTP request.
+
+**Class-of-defect**: **harness asymmetry** — a contract the SDK harness honoured (process termination) that the LangGraph harness doesn't honour (needs `asyncio.CancelledError` propagation instead). Distinct from the model-threading class but shares the migration meta-shape: *the migration translated some contracts behind the substrate boundary, missed this one*.
+
+**Why this matters for AC-008**: GD02's outer verdict (timeout/failed) and inner verdict (approve) directly contradict. The cutover decision swings on whether GD02 is counted as success or failure:
+- Counted as failure: 2/3 = 67% first-pass success → **HALT cutover** per AC-008
+- Counted as success (Coach DID approve): 3/3 = 100% (eventually), 0 non-recoverable → **PROCEED with cutover**
+
+**The orchestrator can't currently tell us which it is.** This is the verdict-blocker.
+
+**Resolution**: [TASK-FIX-CTOUT01](../../../tasks/backlog/autobuild-harness-migration/TASK-FIX-CTOUT01-coach-cancellation-timeout-race.md). Propagate cancellation through the LangGraph async path, establish the contract "outer cancellation dominates inner approval". ~3h fix.
+
+### F15 (2026-06-05, run 3): substrate-quality timing on complexity-6 multi-turn iteration
+
+**Where**: qwen36-workhorse + multi-turn Player-Coach iteration loop on complexity-6 tasks.
+
+**Evidence**: Run-3 wall-clock:
+- IA03 (complexity 3, 1 turn): ~14 min total
+- TP05 (complexity 4, 1 turn): completed within Wave 2's allocation
+- GD02 (complexity 6, 2 turns): 50 min (capped — would have continued)
+
+GD02 needed multi-turn iteration because turn 1 Coach gave FEEDBACK on a Player honesty discrepancy (line 1584: "Player reported 6 files as modified but `git status --porcelain` shows none of t..."). Turn 2 Player corrected (line 1585: "0 files created, 6 modified, 0 tests"), Coach approved (line 1586). Each Player or Coach turn on qwen36-workhorse is slow enough that 2-turn convergence eats the 50-min budget.
+
+**Class-of-defect**: **substrate-quality finding**. Mirrors canary's F6 directly — multi-turn iteration is the slow path on local Qwen. Once we account for F14's bookkeeping race, F15 is the load-bearing constraint for AC-008.
+
+**Resolution**: Not code-fixable. Levers:
+- **Bump --task-timeout** from 3000s → 4500s (config) gives GD02-class tasks more runway
+- **Combine with KV cache bump** (200k context) for a slightly wider summarisation band — modest improvement, not load-bearing for this finding
+- **Accept and document** as the qwen36-workhorse envelope for feature-scale autobuild
+
+Recorded here for AC-008 evidence.
+
+### F16 (2026-06-05, run 3): Graphiti FalkorDB teardown race (cosmetic)
+
+Cosmetic process-exit teardown issue. Doesn't affect outcomes. Filed as [TASK-FIX-FALK01](../../../tasks/backlog/autobuild-harness-migration/TASK-FIX-FALK01-graphiti-falkordb-teardown-race.md) — deferrable to Wave 4 cleanup.
+
 ### F2, F5, F6, F7 (canary-analysis.md) at feature scale
 
-_Pending data from run 3+ (post-F10+F11). Runs 1 and 2 did not reach
-the Player-LLM step on the main path, so no substrate-quality finding
-could be observed yet._
+Run 3 produced the first observations of canary findings at feature scale:
+
+- **F2 (model marker-contract failure)**: NOT reproduced. qwen36-workhorse successfully drove main Player turn for IA03 (40+ files created via Player tool use, structured promise/AC report extracted). MODEL-PROFILE + post-reconfig llama-swap closed F2's surface for the main Player path. Specialist behaviour (F13 SPECHANG) is a separate finding.
+- **F5 (Coach honesty verification works on local Qwen)**: REPRODUCED, working as designed. Run-3 GD02 turn-1 Coach feedback caught the Player's honesty discrepancy ("Player reported 6 files as modified but `git status --porcelain` shows none") — exactly the migration-guard surface the parent review described.
+- **F6 (Player honesty failures common on local Qwen)**: REPRODUCED at moderate severity. GD02 turn-1 Player fabricated `files_modified`. Coach caught it (per F5). Player turn-2 corrected and Coach approved. So F6 fires once per task on average but the guards work.
+- **F7 (unrecoverable-stall guard)**: NOT EXERCISED. F14 blocked the natural stall observation point.
 
 ## 7. Recommendation
 
