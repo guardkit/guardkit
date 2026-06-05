@@ -1,10 +1,12 @@
 ---
 id: TASK-FIX-CTOUT01
 title: Coach cancellation race — task-level timeout fires but Coach continues to approval
-status: backlog
+status: in_progress
 task_type: bug
 created: 2026-06-05T09:00:00Z
-updated: 2026-06-05T09:00:00Z
+updated: 2026-06-05T12:30:00Z
+previous_state: backlog
+state_transition_reason: "task-work invocation 2026-06-05"
 priority: high
 complexity: 5
 deadline: 2026-06-15
@@ -89,7 +91,7 @@ Suggested investigation steps:
 
 - [ ] AC-001: Reproduce the bug deterministically (mock LangGraph harness with a slow-to-complete invoke, fire task_timeout while in flight). Assert that current behaviour shows timeout-then-approve divergence.
 - [ ] AC-002: Implement cancellation propagation under the LangGraph harness path. Specifically: when `feature_orchestrator`'s task_timeout fires, the in-flight `harness.invoke(...)` async iteration must terminate within a bounded window (≤30s).
-- [ ] AC-003: Outer feature_orchestrator verdict (timeout/failed) and inner autobuild verdict (cancelled/error/etc.) agree. The inner verdict for a cancellation MUST NOT be `approved` — even if Coach completed before the cancellation propagated, the outer cancellation wins.
+- [ ] AC-003: Outer cancellation wins UNLESS inner Coach completes within `LATE_APPROVAL_GRACE_S` of timer fire, in which case the inner approval is honoured as `approved_late` with `success=True`. This preserves the existing `LATE_APPROVAL_GRACE_S` design (TASK-ATR-003) while ensuring under-grace approvals are no longer silently lost. Revision rationale: the original "outer always wins" wording (filed 2026-06-05 AM) was naïvely contradicting the load-bearing `LATE_APPROVAL_GRACE_S` reconciliation path that was designed for precisely the GD02 scenario. Investigation under TASK-FIX-CTOUT01 confirmed the actual bookkeeping divergence was caused by a silent-exception-swallow in `_check_late_approval` (`feature_orchestrator.py:3237`), not by the cancellation contract being mis-designed.
 - [ ] AC-004: Regression test exercises the cancellation-during-Coach case under both SDK and LangGraph harnesses; both must produce consistent bookkeeping.
 - [ ] AC-005: Re-run TASK-HMIG-010 (run 4) — GD02's verdict is unambiguous (either it completes within 3000s, OR it cleanly times out without a phantom-approval).
 - [ ] AC-006: Document the cancellation contract in `guardkitfactory.harness.langgraph_harness` docstring or a `.claude/rules/` rule — the contract is: "an in-flight `invoke(...)` MUST honour asyncio cancellation within 30s, even if a mid-call LLM response is pending."
@@ -112,3 +114,22 @@ Suggested investigation steps:
 This is the most consequential of the run-3 findings because it directly affects the AC-008 cutover-verdict computation. Without a clean cancellation contract, every run that has a complexity-6 task at the edge of the substrate's iteration speed will produce ambiguous bookkeeping — and the cutover decision becomes politicised between "did the substrate work?" (Coach approved) and "did the orchestrator's budget hold?" (timeout fired).
 
 Recommended sequencing: fix this BEFORE landing the LGFM3 (F12) fix — LGFM3 is a soft-fail anyway. CTOUT01's resolution is what gates the AC-008 verdict.
+
+## AC-001 evidence (2026-06-05 PM)
+
+Investigation under TASK-FIX-CTOUT01 found that the four-layer cancellation contract had a silent-bookkeeping failure mode that hadn't been seen because every exception in `_check_late_approval` was demoted to DEBUG. The reproducer test
+`tests/unit/test_feature_orchestrator.py::TestLateApprovalReconciliation::test_layer4_silent_swallow_invisible_on_current_main`
+runs RED on current `main` (no WARNING in caplog when `_latest_coach_turn_path` raises) and GREEN after the line-3237 promotion to WARNING + `exc_info`. The companion non-spam regression
+`test_check_late_approval_does_not_warn_when_decision_key_missing`
+asserts the upgrade does NOT spam logs on the legitimate "decision key absent" code path (no exception → no WARNING).
+
+**Hypothesis ranking (AC-001 outcome):**
+- **Hypothesis (b) "silent exception swallow"** — empirically confirmed by the reproducer test running RED on `main`. The fix at `feature_orchestrator.py:3237` lands in the same commit as the reproducer.
+- **Hypothesis (a) "wrong directory under worktree-backed layout"** — empirically NOT reached by the reproducer. The planning agent's analysis (saved at `docs/state/TASK-FIX-CTOUT01/implementation_plan.md` §0) confirmed the candidate-dirs walk is structurally correct for the run-3 FEAT-AOF worktree layout. Conditional Step 3 of the plan (path-canonicalisation fix) is therefore SKIPPED.
+- **Open follow-up:** the canary-worktree nested layout (`docs/state/TASK-FIX-CTOUT01/implementation_plan.md` §0 point 3) is acknowledged out-of-scope for CTOUT01 — file a separate task if it ever surfaces in production.
+
+**Implication for AC-005 (re-run TASK-HMIG-010):** without the line-3237 promotion, run-3's silent swallow would have invisibly hidden any future late-approval failures. Run-4 should now produce loud WARNING-level diagnostics if Layer 4 ever fails to reclassify, making AC-008's cutover-verdict computation observable.
+
+## Split decision
+
+The original plan (`docs/state/TASK-FIX-CTOUT01/implementation_plan.md` §4) considered splitting into CTOUT01-a (Layer 4 fix only) and CTOUT01-b (`harness.cancel()` abstraction, deferrable). With hypothesis (a) empirically ruled out, CTOUT01-a's distinguishing fix (path canonicalisation) does not need to land — the Layer 4 fix collapses to a single-line log-level promotion, too small to be its own task. **Verdict: CTOUT01 lands as one task,** bundling the silent-swallow upgrade with the harness `cancel()` abstraction work.

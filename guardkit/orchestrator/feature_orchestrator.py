@@ -3235,8 +3235,17 @@ The detailed specifications are in the task markdown file.
                 return None
             return json.loads(latest.read_text()).get("decision")
         except Exception as exc:
-            logger.debug(
-                f"[{task_id}] _check_late_approval skipped: {exc}"
+            # TASK-FIX-CTOUT01: Promote from DEBUG to WARNING with
+            # exc_info. Silent swallowing here is how Layer 4 (late-
+            # approval reconciliation) failed invisibly in run-3 of
+            # TASK-HMIG-010 — the GD02 wave summary divergence
+            # (outer=timeout, inner=approved) reached human review
+            # before any operator noticed the bookkeeping miss because
+            # the DEBUG line never surfaced under INFO-level logging.
+            # See .claude/rules/harness-cancellation-contract.md.
+            logger.warning(
+                f"[{task_id}] _check_late_approval failed: {exc}",
+                exc_info=exc,
             )
             return None
 
