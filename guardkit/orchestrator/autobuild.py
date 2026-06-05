@@ -148,6 +148,7 @@ from guardkit.knowledge.graphiti_client import (
     get_factory,
     GraphitiClientFactory,
     _suppress_httpx_cleanup_errors,
+    _install_graphiti_unraisable_hook,
 )
 
 # Import AutoBuild context loader for job-specific context (TASK-GR6-006)
@@ -1021,6 +1022,15 @@ class AutoBuildOrchestrator:
         """
         if max_turns < 1:
             raise ValueError("max_turns must be at least 1")
+
+        # TASK-FIX-FALK01: Install sys.unraisablehook once per process so the
+        # cosmetic "no running event loop" traceback from graphiti-core's
+        # FalkorDB driver (edge_fulltext_search GCed after the loop closes)
+        # never reaches stderr. Idempotent — safe to call from every
+        # AutoBuildOrchestrator(); also no-op when Graphiti is disabled, since
+        # the hook only suppresses errors whose coroutine source lives in
+        # graphiti_core / falkordb / redis.asyncio.
+        _install_graphiti_unraisable_hook()
 
         self.repo_root = Path(repo_root).resolve()
         self.max_turns = max_turns

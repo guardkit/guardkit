@@ -755,3 +755,311 @@ class TestConnectivityCheck:
             factory.check_connectivity()
 
         mock_create.assert_not_called()
+
+
+# ============================================================================
+# 11. FalkorDB Teardown-Race Suppression (TASK-FIX-FALK01)
+# ============================================================================
+#
+# The Graphiti FalkorDB driver may have an ``edge_fulltext_search`` coroutine
+# still in-flight when the event loop closes at process exit. Both the
+# loop-level exception handler (``_suppress_httpx_cleanup_errors``) and the
+# GC-time ``sys.unraisablehook`` (``_install_graphiti_unraisable_hook``) are
+# extended to recognise the resulting ``RuntimeError("no running event loop")``
+# and drop it silently. See ``tasks/in_progress/autobuild-harness-migration/
+# TASK-FIX-FALK01-graphiti-falkordb-teardown-race.md``.
+
+
+class TestIsNoRunningLoopError:
+    """Tests for the ``_is_no_running_loop_error`` predicate."""
+
+    def test_none_exception(self):
+        from guardkit.knowledge.graphiti_client import _is_no_running_loop_error
+
+        assert _is_no_running_loop_error(None) is False
+
+    def test_matching_runtime_error(self):
+        from guardkit.knowledge.graphiti_client import _is_no_running_loop_error
+
+        assert _is_no_running_loop_error(RuntimeError("no running event loop")) is True
+
+    def test_case_insensitive_match(self):
+        from guardkit.knowledge.graphiti_client import _is_no_running_loop_error
+
+        assert _is_no_running_loop_error(RuntimeError("No Running Event Loop")) is True
+
+    def test_does_not_match_event_loop_is_closed(self):
+        """``Event loop is closed`` belongs to the httpx branch, not this one."""
+        from guardkit.knowledge.graphiti_client import _is_no_running_loop_error
+
+        assert _is_no_running_loop_error(RuntimeError("Event loop is closed")) is False
+
+    def test_non_runtime_error(self):
+        from guardkit.knowledge.graphiti_client import _is_no_running_loop_error
+
+        assert _is_no_running_loop_error(ValueError("no running event loop")) is False
+
+
+class TestNoRunningEventLoopSuppression:
+    """Tests for ``_suppress_httpx_cleanup_errors`` handling FALK01."""
+
+    def test_suppresses_no_running_event_loop(self):
+        """Loop handler silences ``RuntimeError('no running event loop')``."""
+        loop = asyncio.new_event_loop()
+
+        captured = []
+
+        def base_handler(_loop, ctx):
+            captured.append(ctx)
+
+        loop.set_exception_handler(base_handler)
+        _suppress_httpx_cleanup_errors(loop)
+
+        context = {
+            "exception": RuntimeError("no running event loop"),
+            "message": "Task exception was never retrieved",
+        }
+        loop.call_exception_handler(context)
+
+        # Suppressed — should NOT reach the base handler.
+        assert captured == []
+        loop.close()
+
+    def test_propagates_other_runtime_errors_after_falk01(self):
+        """Unrelated ``RuntimeError`` strings still propagate."""
+        loop = asyncio.new_event_loop()
+
+        captured = []
+
+        def base_handler(_loop, ctx):
+            captured.append(ctx)
+
+        loop.set_exception_handler(base_handler)
+        _suppress_httpx_cleanup_errors(loop)
+
+        context = {
+            "exception": RuntimeError("something else"),
+            "message": "Task exception was never retrieved",
+        }
+        loop.call_exception_handler(context)
+
+        assert len(captured) == 1
+        loop.close()
+
+
+class TestIsGraphitiUnraisable:
+    """Tests for the ``_is_graphiti_unraisable`` predicate."""
+
+    def _make_unraisable(self, exc, filename):
+        """Build an ``UnraisableHookArgs``-shaped namespace for testing."""
+        from types import SimpleNamespace
+
+        code = SimpleNamespace(co_filename=filename)
+        obj = SimpleNamespace(cr_code=code, gi_code=None)
+        return SimpleNamespace(
+            exc_type=type(exc) if exc is not None else None,
+            exc_value=exc,
+            exc_traceback=None,
+            err_msg=None,
+            object=obj,
+        )
+
+    def test_matches_graphiti_core_source(self):
+        from guardkit.knowledge.graphiti_client import _is_graphiti_unraisable
+
+        unraisable = self._make_unraisable(
+            RuntimeError("no running event loop"),
+            "/site-packages/graphiti_core/search/search_utils.py",
+        )
+        assert _is_graphiti_unraisable(unraisable) is True
+
+    def test_matches_falkordb_source(self):
+        from guardkit.knowledge.graphiti_client import _is_graphiti_unraisable
+
+        unraisable = self._make_unraisable(
+            RuntimeError("no running event loop"),
+            "/site-packages/falkordb/asyncio/graph.py",
+        )
+        assert _is_graphiti_unraisable(unraisable) is True
+
+    def test_matches_redis_asyncio_source(self):
+        from guardkit.knowledge.graphiti_client import _is_graphiti_unraisable
+
+        unraisable = self._make_unraisable(
+            RuntimeError("no running event loop"),
+            "/site-packages/redis/asyncio/connection.py",
+        )
+        assert _is_graphiti_unraisable(unraisable) is True
+
+    def test_matches_asyncio_timeouts_source(self):
+        """``asyncio.timeouts`` is where ``get_running_loop()`` raises."""
+        from guardkit.knowledge.graphiti_client import _is_graphiti_unraisable
+
+        unraisable = self._make_unraisable(
+            RuntimeError("no running event loop"),
+            "/usr/lib/python3.14/asyncio/timeouts.py",
+        )
+        assert _is_graphiti_unraisable(unraisable) is True
+
+    def test_rejects_unrelated_filename(self):
+        """Unraisable from user code is propagated, not suppressed."""
+        from guardkit.knowledge.graphiti_client import _is_graphiti_unraisable
+
+        unraisable = self._make_unraisable(
+            RuntimeError("no running event loop"),
+            "/home/user/myapp/random_module.py",
+        )
+        assert _is_graphiti_unraisable(unraisable) is False
+
+    def test_rejects_event_loop_is_closed_string(self):
+        """Different RuntimeError string is not matched here."""
+        from guardkit.knowledge.graphiti_client import _is_graphiti_unraisable
+
+        unraisable = self._make_unraisable(
+            RuntimeError("Event loop is closed"),
+            "/site-packages/graphiti_core/search/search_utils.py",
+        )
+        assert _is_graphiti_unraisable(unraisable) is False
+
+    def test_rejects_non_runtime_error(self):
+        from guardkit.knowledge.graphiti_client import _is_graphiti_unraisable
+
+        unraisable = self._make_unraisable(
+            ValueError("no running event loop"),
+            "/site-packages/graphiti_core/search/search_utils.py",
+        )
+        assert _is_graphiti_unraisable(unraisable) is False
+
+    def test_handles_missing_object_or_code(self):
+        """Defensive handling of unraisable args without coroutine info."""
+        from types import SimpleNamespace
+        from guardkit.knowledge.graphiti_client import _is_graphiti_unraisable
+
+        unraisable = SimpleNamespace(
+            exc_type=RuntimeError,
+            exc_value=RuntimeError("no running event loop"),
+            exc_traceback=None,
+            err_msg=None,
+            object=None,
+        )
+        assert _is_graphiti_unraisable(unraisable) is False
+
+
+class TestGraphitiUnraisableHook:
+    """Tests for ``_install_graphiti_unraisable_hook``."""
+
+    @pytest.fixture(autouse=True)
+    def reset_hook(self):
+        """Restore ``sys.unraisablehook`` and the installed-sentinel each test."""
+        import sys
+        import guardkit.knowledge.graphiti_client as gc
+
+        original_hook = sys.unraisablehook
+        original_flag = gc._unraisable_hook_installed
+        yield
+        sys.unraisablehook = original_hook
+        gc._unraisable_hook_installed = original_flag
+
+    def _make_unraisable(self, exc, filename):
+        from types import SimpleNamespace
+
+        code = SimpleNamespace(co_filename=filename)
+        obj = SimpleNamespace(cr_code=code, gi_code=None)
+        return SimpleNamespace(
+            exc_type=type(exc) if exc is not None else None,
+            exc_value=exc,
+            exc_traceback=None,
+            err_msg=None,
+            object=obj,
+        )
+
+    def test_install_is_idempotent(self):
+        """Calling the installer twice still leaves exactly one hook chain."""
+        import sys
+        import guardkit.knowledge.graphiti_client as gc
+        from guardkit.knowledge.graphiti_client import (
+            _install_graphiti_unraisable_hook,
+        )
+
+        gc._unraisable_hook_installed = False
+        previous_hook = sys.unraisablehook
+
+        _install_graphiti_unraisable_hook()
+        first = sys.unraisablehook
+        assert first is not previous_hook
+        assert gc._unraisable_hook_installed is True
+
+        _install_graphiti_unraisable_hook()
+        second = sys.unraisablehook
+        # Same hook object — no re-wrap.
+        assert second is first
+
+    def test_suppresses_graphiti_unraisable(self):
+        """Graphiti-shaped GC-time error never reaches the previous hook."""
+        import sys
+        import guardkit.knowledge.graphiti_client as gc
+        from guardkit.knowledge.graphiti_client import (
+            _install_graphiti_unraisable_hook,
+        )
+
+        gc._unraisable_hook_installed = False
+        seen = []
+        sys.unraisablehook = lambda args: seen.append(args)
+
+        _install_graphiti_unraisable_hook()
+
+        sys.unraisablehook(
+            self._make_unraisable(
+                RuntimeError("no running event loop"),
+                "/site-packages/graphiti_core/search/search_utils.py",
+            )
+        )
+
+        assert seen == []
+
+    def test_propagates_unrelated_unraisable(self):
+        """Non-graphiti unraisable still reaches the previously-installed hook."""
+        import sys
+        import guardkit.knowledge.graphiti_client as gc
+        from guardkit.knowledge.graphiti_client import (
+            _install_graphiti_unraisable_hook,
+        )
+
+        gc._unraisable_hook_installed = False
+        seen = []
+        sys.unraisablehook = lambda args: seen.append(args)
+
+        _install_graphiti_unraisable_hook()
+
+        sys.unraisablehook(
+            self._make_unraisable(
+                ValueError("unrelated unraisable"),
+                "/home/user/myapp/random_module.py",
+            )
+        )
+
+        assert len(seen) == 1
+        assert isinstance(seen[0].exc_value, ValueError)
+
+    def test_propagates_non_graphiti_runtime_error(self):
+        """Even ``no running event loop`` from non-graphiti code propagates."""
+        import sys
+        import guardkit.knowledge.graphiti_client as gc
+        from guardkit.knowledge.graphiti_client import (
+            _install_graphiti_unraisable_hook,
+        )
+
+        gc._unraisable_hook_installed = False
+        seen = []
+        sys.unraisablehook = lambda args: seen.append(args)
+
+        _install_graphiti_unraisable_hook()
+
+        sys.unraisablehook(
+            self._make_unraisable(
+                RuntimeError("no running event loop"),
+                "/home/user/myapp/some_other_async_lib.py",
+            )
+        )
+
+        assert len(seen) == 1
