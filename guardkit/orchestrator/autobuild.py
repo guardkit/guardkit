@@ -5622,7 +5622,7 @@ class AutoBuildOrchestrator:
                 if "coach_context" in _sig.parameters and context_prompt:
                     invoke_kwargs["coach_context"] = context_prompt
 
-                return asyncio.run(self._agent_invoker.invoke_coach(**invoke_kwargs))
+                result = asyncio.run(self._agent_invoker.invoke_coach(**invoke_kwargs))
             except RuntimeError as runtime_exc:
                 # asyncio.run cannot be called when an event loop is already
                 # running (e.g. in a Jupyter context or test that wraps this
@@ -5638,9 +5638,66 @@ class AutoBuildOrchestrator:
                 except RuntimeError:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
-                return loop.run_until_complete(
+                result = loop.run_until_complete(
                     self._agent_invoker.invoke_coach(**invoke_kwargs)
                 )
+
+            # TASK-FIX-COACHSF01: soft-fail on Coach verdict-emission failures.
+            #
+            # `AgentInvoker.invoke_coach` catches `CoachDecisionNotFoundError`
+            # and `CoachDecisionInvalidError` internally (agent_invoker.py:
+            # 1987-1997) and returns `success=False` with the exception
+            # message as `error` — these never raise out of `invoke_coach`,
+            # so the broader `except Exception` synthetic-feedback safety
+            # net below cannot see them. Without this check the orchestrator
+            # surfaces `coach_decision="error"` to the wave loop, the turn
+            # hard-fails, and the Player gets no opportunity to retry.
+            #
+            # The failure class this catches is canary F2 at Coach level
+            # (qwen36-workhorse-style substrates that discuss the Bash
+            # heredoc verdict-write in prose without actually emitting the
+            # tool_use block). It's a substrate-quality finding, not a
+            # task-quality finding — so we convert it to a synthetic
+            # feedback decision with a rationale naming the failure mode,
+            # write coach_turn_N.json (so downstream consumers see a
+            # consistent shape), and return success=True. The Player gets
+            # a turn N+1 to retry; substrate variance may produce a real
+            # verdict on the second attempt.
+            #
+            # Other `success=False` outcomes (`SDKTimeoutError` → "SDK
+            # timeout after Xs", generic `Exception` → "Unexpected error: X")
+            # are propagated unchanged: those are not verdict-emission
+            # failures and the wave loop's existing handling is correct
+            # for them.
+            if (
+                not result.success
+                and result.error
+                and (
+                    "Coach decision not found" in result.error
+                    or "Coach decision invalid" in result.error
+                )
+            ):
+                logger.warning(
+                    "Coach verdict-emission failed in primary path for %s "
+                    "turn %s: %s. Emitting synthetic feedback decision "
+                    "(substrate F2 at Coach level — Player will retry on "
+                    "turn %s with this feedback).",
+                    task_id, turn, result.error, turn + 1,
+                )
+                return self._emit_synthetic_coach_feedback(
+                    task_id=task_id,
+                    turn=turn,
+                    worktree=worktree,
+                    rationale=(
+                        f"Coach verdict-emission failed: {result.error}. "
+                        f"Likely substrate limitation (qwen36-workhorse F2 "
+                        f"at Coach level). Player should retry on turn "
+                        f"{turn + 1} with this feedback."
+                    ),
+                    start_time=start_time,
+                )
+
+            return result
 
         except NotImplementedError as sdk_error:
             logger.warning(
