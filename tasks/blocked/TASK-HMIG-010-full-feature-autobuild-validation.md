@@ -3,10 +3,10 @@ id: TASK-HMIG-010
 title: Full feature autobuild end-to-end validation under LangGraph
 status: blocked
 previous_state: in_progress
-state_transition_reason: "Run 3 (2026-06-05T06:36, ~70min, post-LGFM+SUMM-ROOT+MODEL-PROFILE) produced first real autobuild data: 2/3 tasks reached APPROVED state (IA03 turn 1, TP05 turn 1). GD02 (complexity 6) hit 50-min task budget AND Coach approved AFTER cancellation fired — F14 cancellation-race makes GD02's true verdict ambiguous, which directly blocks AC-008 falsifier computation. Filed F14 as TASK-FIX-CTOUT01 (re-blocks 010). Also filed F12 (TASK-FIX-LGFM3, 4th instance of model-threading-class) and F16 (TASK-FIX-FALK01, cosmetic Graphiti teardown). F13 (test-orchestrator SPECHANG timeout) and F15 (substrate slowness on complexity-6) recorded as substrate-quality findings in feature-run-analysis.md §6 — not code blockers."
+state_transition_reason: "Run 4 (2026-06-05T16:05, 13m30s, post-CTOUT01+LGFM3) failed at Wave 1 IA03 turn 1 with 'Coach decision not found'. New finding F17 (canary F2 at Coach level): qwen36-workhorse Coach completed 140s of LLM activity (12 successful HTTP 200s) but never emitted the Bash heredoc tool call to write coach_turn_1.json. The orchestrator's synthetic-feedback safety net at autobuild.py:5663 exists but only fires on raised exceptions — invoke_coach catches CoachDecisionNotFoundError internally at agent_invoker.py:1987 and returns success=False, bypassing the safety net. Substantive Player work was correct (14/14 doc-level exclusion tests passing, 517/580 suite passes — phase_4_summary.json). Filed F17 as TASK-FIX-COACHSF01 (fix-shape a: wire safety net to fire on success=False with 'Coach decision not found' error). Also recorded F18 (cosmetic pip-cache ghost-path filter gap) as I-008. Prior fixes confirmed landed: LGFM3 in completed/2026-06/, CTOUT01 in completed/2026-06/."
 task_type: validation
 created: 2026-05-19T20:30:00Z
-updated: 2026-06-05T09:00:00Z
+updated: 2026-06-05T17:30:00Z
 priority: critical
 complexity: 5
 deadline: 2026-06-15
@@ -19,13 +19,17 @@ implementation_mode: manual    # operator-monitored end-to-end run; /task-work p
 intensity: standard
 effort_hours: 8
 blocked_by:
-  - TASK-FIX-CTOUT01  # F14 — cancellation race that makes GD02's verdict ambiguous (blocks AC-008 computation). ~3h fix.
-# Soft-fail follow-ons (don't block 010, but should land before AC-008 verdict for clean signal):
-#   - TASK-FIX-LGFM3   # F12 — coach_test role model-threading. Soft-fails to subprocess. ~30 min fix.
-#   - TASK-FIX-FALK01  # F16 — Graphiti FalkorDB teardown race. Cosmetic. ~1h fix, deferrable.
+  - TASK-FIX-COACHSF01  # F17 — Coach verdict-emission failure (canary F2 at Coach level) needs synthetic-feedback safety net wired. ~1.5h fix.
+# Resolved blockers (landed 2026-06-05):
+#   - TASK-FIX-CTOUT01 (F14) — substrate-agnostic harness.cancel() landed, in completed/2026-06/
+#   - TASK-FIX-LGFM3 (F12)   — coach_test model threading landed, in completed/2026-06/
+# Soft-fail follow-ons (don't block 010, deferrable):
+#   - TASK-FIX-FALK01 (F16)  — Graphiti FalkorDB teardown race. Cosmetic.
 # Substrate-quality findings recorded for AC-008 evidence:
-#   - F13: test-orchestrator specialist hits SPECHANG 600s cap on qwen36-workhorse (run-3 line 289)
-#   - F15: GD02 took 50min for 2 turns on complexity-6 task (substrate slow on this shape)
+#   - F2 at Coach level (run 4): qwen36-workhorse Coach unreliable at structured Bash-heredoc verdict emission. After COACHSF01 lands, this becomes soft-fail telemetry rather than hard blocker.
+#   - F13: test-orchestrator specialist hits SPECHANG 600s cap on qwen36-workhorse (run-3 line 289; did NOT fire in run 4)
+#   - F15: GD02 took 50min for 2 turns on complexity-6 task (substrate slow on this shape; not exercised in run 4 because IA03 failed before reaching Wave 2)
+#   - F18 (cosmetic): pip-cache ghost-path filter gap — 40+ Library/Caches/pip/ entries leak into Player files_modified report. Recorded I-008.
 depends_on:
   - TASK-HMIG-009A  # canary 12-run batch passed 2026-06-04 — substitute for the originally-cited TASK-HMIG-009 which was halted at F1/F4
   # - TASK-HMIG-009 # ORIGINAL: blocked at F1/F4; superseded by 009A per TASK-REV-HM09 §7

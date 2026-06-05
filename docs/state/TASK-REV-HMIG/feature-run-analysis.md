@@ -20,9 +20,18 @@
 - [ ] AC-008 — Falsifier verdict deferred until LGFM lands and a clean run 2 produces data.
 - [〜] AC-009 — This analysis document carries the run-1 narrative (§§0, 6); §§1-5, 7-8 pending real data.
 
-## Status header (2026-06-05T09:00Z)
+## Status header (2026-06-05T17:30Z)
 
-**TASK-HMIG-010 BLOCKED on TASK-FIX-CTOUT01** (verdict-blocker for AC-008).
+**TASK-HMIG-010 BLOCKED on TASK-FIX-COACHSF01** (verdict-blocker for AC-008).
+
+- Run 4 (2026-06-05T16:05, 13m30s, post-CTOUT01+LGFM3+SUMM-ROOT+MODEL-PROFILE):
+  - **Substantive Player work succeeded**: IA03 turn 1 produced 14/14 doc-level exclusion tests passing, 517/580 suite tests passed (63 pre-existing failures honestly disclosed). This is the cleanest qwen36-workhorse Player result of the migration — `phase_4_summary.json` is well-formed and accurate.
+  - **Coach LLM hard-failed at verdict emission**: 140s of Coach reasoning, 12 successful HTTP 200s, but no Bash-heredoc tool call to write `coach_turn_1.json`. **F17: canary F2 manifesting at Coach level.**
+  - **Orchestrator safety-net inconsistency**: `_invoke_coach_primary` has `_emit_synthetic_coach_feedback` for exception cases, but `invoke_coach` converts `CoachDecisionNotFoundError` to `success=False` instead of letting it propagate. Safety net never fires for this failure mode. → TASK-FIX-COACHSF01.
+  - **CTOUT01 + LGFM3 fixes empirically validated**: no model=None on coach_test (LGFM3 ✓), no F14 cancellation race observed (CTOUT01 not exercised this run — no Coach approval to race), no SPECHANG timeout (F13 didn't fire), no FalkorDB teardown error (F16 not observed in run 4).
+  - **F18 (cosmetic)**: 40+ pip-cache paths leaked into Player's files_modified list. Recorded as I-008.
+
+After COACHSF01 lands, F17 converts from hard-blocker to soft-fail telemetry. Run 5 should produce a usable AC-008 signal.
 
 - Run 1 (pre-LGFM): F9 → fixed by LGFM (commit `683823cc`)
 - Run 2 (post-LGFM): F10 → fixed by LGFM2; F11 → fixed by 002R-SUMM-ROOT + 002R-MODEL-PROFILE in guardkitfactory
@@ -299,6 +308,39 @@ Recorded here for AC-008 evidence.
 ### F16 (2026-06-05, run 3): Graphiti FalkorDB teardown race (cosmetic)
 
 Cosmetic process-exit teardown issue. Doesn't affect outcomes. Filed as [TASK-FIX-FALK01](../../../tasks/backlog/autobuild-harness-migration/TASK-FIX-FALK01-graphiti-falkordb-teardown-race.md) — deferrable to Wave 4 cleanup.
+
+### F17 (2026-06-05, run 4): Coach LLM completes but doesn't emit verdict file — canary F2 at Coach level
+
+**Where**: `guardkit/orchestrator/agent_invoker.py` Coach contract (lines 1959 allowed_tools, 2393 prompt) interacting with `guardkit/orchestrator/autobuild.py:5663` `_invoke_coach_primary` safety net.
+
+**Evidence**: Run-4 log + worktree inspection at `.guardkit/worktrees/FEAT-AOF/.guardkit/autobuild/TASK-FIX-IA03/`:
+- Coach LLM ran 140s with 12 successful `POST /v1/responses HTTP/1.1 200 OK`
+- `phase_4_summary.json` exists and is well-formed (Player+specialists' aggregated state)
+- `turn_state_turn_1.json` exists (orchestrator's record)
+- **`coach_turn_1.json` does NOT exist** — Coach LLM never emitted the Bash-heredoc to create it
+- Orchestrator raises `Coach decision not found: ...coach_turn_1.json` (run-4 line 297)
+
+**Class-of-defect**: dual.
+1. **Substrate quality** — qwen36-workhorse Coach reasoning + Bash-heredoc structured-emission contract is unreliable for non-trivial verdicts. This is canary F2 ("model discusses tool calls in prose without emitting actual tool_use blocks") confirmed at Coach scope. Confirmed by the diff between run 3 (synthetic Player report → simpler Coach reasoning → tool call succeeded) and run 4 (real Player report with 63 pre-existing test failures → complex Coach reasoning → drift into prose response).
+2. **Orchestrator load-bearing inconsistency** — the orchestrator's safety net at `autobuild.py:5663` (`_emit_synthetic_coach_feedback` on `except Exception`) was designed exactly for this case but doesn't fire because `invoke_coach` catches `CoachDecisionNotFoundError` internally at `agent_invoker.py:1987-1997` and returns `success=False` instead of raising. The safety net only watches for exceptions.
+
+**Why this matters for AC-008**: hard-fails Wave 1 before the falsifier can even evaluate. With COACHSF01's safety-net wiring, F17 becomes a soft-fail feedback turn — the substantive Player work (which was correct in run 4!) gets recorded and the orchestrator can produce a usable verdict signal.
+
+**Resolution**: [TASK-FIX-COACHSF01](../../../tasks/backlog/autobuild-harness-migration/TASK-FIX-COACHSF01-coach-soft-fail-on-decision-not-found.md). ~15-line change in `_invoke_coach_primary`: after `asyncio.run(invoke_coach(...))` returns, if `result.success=False` AND `"Coach decision not found"` in `result.error`: emit synthetic feedback. ~1.5h fix.
+
+**Out-of-scope longer-term work**: Coach's verdict-emission contract depending on Bash-heredoc is the substrate-asymmetry root cause. Two options for the post-cutover review:
+- (a) Reduce Coach to structured-output format that the orchestrator parses from response text (eliminates the tool-call dependency entirely)
+- (b) Grant Coach a constrained Write tool limited to `coach_turn_*.json` paths (removes the contract complexity but mildly violates the read-only invariant — a controlled exception is plausible)
+
+File as TASK-REV-COACH-OUTPUT-CONTRACT post-cutover.
+
+### F18 (2026-06-05, run 4, cosmetic): pip-cache ghost-path filter gap
+
+**Where**: `agent_invoker.py:200` ghost-path filter has a hardcoded allow-list.
+
+**Evidence**: Worktree's `turn_state_turn_1.json` `files_modified` list contains 40+ `Library/Caches/pip/http-v2/...` entries alongside the legitimate `tests/orchestrator/test_doc_level_exclusion.py`.
+
+**Resolution**: extend ghost-path filter to include pip cache + similar bootstrap-output patterns. Cosmetic; folded into incidents log (I-008), not filed as a separate task.
 
 ### F2, F5, F6, F7 (canary-analysis.md) at feature scale
 
