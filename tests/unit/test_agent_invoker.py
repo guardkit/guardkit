@@ -1938,6 +1938,113 @@ class TestTaskWorkHarnessMigration:
         # session_id from the terminal event for the next turn.
         assert invoker._last_session_id == "fresh-session-id"
 
+    @pytest.mark.asyncio
+    async def test_model_name_threaded_into_harness(self, worktree_path):
+        """TASK-FIX-LGFM2 (sibling-of-LGFM, sibling-of-F9/F1): when the
+        AgentInvoker is constructed with ``model_name="qwen36-workhorse"``,
+        the orchestrator-stored model must be threaded into the harness
+        constructor at the ``_invoke_task_work_implement`` site (the main
+        inline-implement Player path), not just at the ``_invoke_with_role``
+        site.
+
+        Pre-fix, the main Player's ``select_harness(...)`` call at
+        agent_invoker.py:5730 omitted the ``model=`` kwarg entirely, so the
+        LangGraph branch received ``model=None``, DeepAgents fell back to
+        its default Anthropic provider, and llama-swap operators saw
+        "Could not resolve authentication method" at Player turn 1
+        (F10 in feature-run-incidents.md). Mirrors the working
+        ``_invoke_with_role`` site at agent_invoker.py:2863.
+        """
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+        )
+
+        invoker = AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=60,
+            use_task_work_delegation=True,
+            model_name="qwen36-workhorse",
+        )
+
+        events = [
+            AssistantMessageEvent(text="0 tests passed, 0 tests failed", raw=None),
+            ResultMessageEvent(session_id=None, raw=None),
+        ]
+        fake_harness = self._build_fake_harness(events)
+        select_harness_kwargs = {}
+
+        def _capture_select(**kwargs):
+            select_harness_kwargs.update(kwargs)
+            return fake_harness
+
+        with patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            side_effect=_capture_select,
+        ):
+            result = await invoker._invoke_task_work_implement(
+                task_id="TASK-FIX-LGFM2-AC002",
+                mode="standard",
+            )
+
+        assert result.success is True
+        # The single line LGFM2 adds: the model kwarg must be passed
+        # through to the harness so the LangGraph branch can construct
+        # DeepAgents with the configured model, not fall back to
+        # Anthropic-default.
+        assert "model" in select_harness_kwargs, (
+            "TASK-FIX-LGFM2 regression: select_harness must be called "
+            "with a model= kwarg from _invoke_task_work_implement"
+        )
+        assert select_harness_kwargs["model"] == "qwen36-workhorse", (
+            f"TASK-FIX-LGFM2 regression: expected model='qwen36-workhorse' "
+            f"to reach the harness, got {select_harness_kwargs['model']!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_model_name_none_threaded_as_none(self, worktree_path):
+        """TASK-FIX-LGFM2 complement: when ``model_name`` is omitted at
+        construction (the legacy call-shape before TASK-FIX-MODELPLUMB
+        threaded --model end-to-end), the harness receives ``model=None``.
+
+        This pins that the fix did NOT introduce a hardcoded default at
+        the inline-implement site — model selection still flows from the
+        constructor, matching the CLI default behaviour."""
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+        )
+
+        invoker = AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=60,
+            use_task_work_delegation=True,
+            # model_name omitted → defaults to None
+        )
+
+        events = [
+            AssistantMessageEvent(text="0 tests passed, 0 tests failed", raw=None),
+            ResultMessageEvent(session_id=None, raw=None),
+        ]
+        fake_harness = self._build_fake_harness(events)
+        select_harness_kwargs = {}
+
+        def _capture_select(**kwargs):
+            select_harness_kwargs.update(kwargs)
+            return fake_harness
+
+        with patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            side_effect=_capture_select,
+        ):
+            await invoker._invoke_task_work_implement(
+                task_id="TASK-FIX-LGFM2-AC002-none",
+                mode="standard",
+            )
+
+        assert "model" in select_harness_kwargs
+        assert select_harness_kwargs["model"] is None
+
 
 class TestParseTaskWorkOutput:
     """Test _parse_task_work_output method."""

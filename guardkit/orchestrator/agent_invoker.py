@@ -5742,6 +5742,18 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                     # skill invocation (~839KB savings on the SDK path; dropped
                     # by the LangGraph translator).
                     setting_sources=["project"],
+                    # TASK-FIX-LGFM2 (sibling-of-LGFM, sibling-of-F9/F1):
+                    # Thread the orchestrator-stored model name through to the
+                    # harness. Mirrors the kwarg at the _invoke_with_role site
+                    # (agent_invoker.py:2863). Without this, the LangGraph
+                    # branch hits the harness with model=None, DeepAgents
+                    # falls back to its default Anthropic provider, and
+                    # llama-swap operators see "Could not resolve
+                    # authentication method" at Player turn 1. The main
+                    # Player path has no per-call model override, so direct
+                    # ``model=self._model_name`` is sufficient (no fallback
+                    # needed).
+                    model=self._model_name,
                     # TASK-FIX-002R-CONSUME: ``cwd`` is consumed by the
                     # langgraph branch to build a path-confined LocalShellBackend.
                     # The SDK branch ignores it (popped at the top of

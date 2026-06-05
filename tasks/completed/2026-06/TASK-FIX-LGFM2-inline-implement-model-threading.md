@@ -1,10 +1,13 @@
 ---
 id: TASK-FIX-LGFM2
 title: Thread `_model_name` to `select_harness` in `_invoke_task_work_implement`
-status: backlog
+status: completed
 task_type: bug
 created: 2026-06-04T21:00:00Z
-updated: 2026-06-04T21:00:00Z
+updated: 2026-06-05T08:00:00Z
+completed: 2026-06-05T08:00:00Z
+previous_state: in_progress
+state_transition_reason: "LGFM2 fix landed: model kwarg threaded to inline _invoke_task_work_implement + 2 regression tests passing"
 priority: critical
 complexity: 2
 deadline: 2026-06-15
@@ -91,9 +94,22 @@ harness = select_harness(
 
 ## Acceptance Criteria
 
-- [ ] AC-001: Add `model=self._model_name,` to the `select_harness(...)` call at [`agent_invoker.py:5730`](../../../guardkit/orchestrator/agent_invoker.py) (between `setting_sources` and `cwd` to match the kwarg ordering in the working site).
-- [ ] AC-002: Add a unit-test regression mirroring the LGFM tests: assert that when `AgentInvoker(model_name="qwen36-workhorse")` invokes `_invoke_task_work_implement`, the harness is constructed with `model="qwen36-workhorse"`.
-- [ ] AC-003: Live smoke (HMIG-010 run 3): `guardkit autobuild feature FEAT-AOF --fresh --model qwen36-workhorse` reaches the main Player's `harness.invoke` with `model='openai:qwen36-workhorse'` (not None). Failure mode shifts to F11 (next layer) or substrate-quality findings.
+- [x] AC-001: Add `model=self._model_name,` to the `select_harness(...)` call at [`agent_invoker.py:5730`](../../../guardkit/orchestrator/agent_invoker.py) (between `setting_sources` and `cwd` to match the kwarg ordering in the working site).
+- [x] AC-002: Add a unit-test regression mirroring the LGFM tests: assert that when `AgentInvoker(model_name="qwen36-workhorse")` invokes `_invoke_task_work_implement`, the harness is constructed with `model="qwen36-workhorse"`.
+- [ ] AC-003: Live smoke (HMIG-010 run 3): `guardkit autobuild feature FEAT-AOF --fresh --model qwen36-workhorse` reaches the main Player's `harness.invoke` with `model='openai:qwen36-workhorse'` (not None). Failure mode shifts to F11 (next layer) or substrate-quality findings. *(Deferred — same shape as LGFM AC-006; gated on running HMIG-010 run 3 once CHO01 is also landed.)*
+
+## Completion notes
+
+- **AC-001 landed**: [`guardkit/orchestrator/agent_invoker.py:5730-5751`](../../../guardkit/orchestrator/agent_invoker.py) now passes `model=self._model_name` between `setting_sources` and `cwd`, matching the kwarg ordering at [`agent_invoker.py:2855-2875`](../../../guardkit/orchestrator/agent_invoker.py). Per the task's implementation note, no `if model is None: model = self._model_name` fallback was added — the main Player path has no per-call model override, so direct `model=self._model_name` is sufficient and cleaner.
+- **AC-002 landed**: Two regression tests added in `tests/unit/test_agent_invoker.py::TestTaskWorkHarnessMigration`:
+  - `test_model_name_threaded_into_harness` — pins that `AgentInvoker(model_name="qwen36-workhorse")._invoke_task_work_implement(...)` constructs the harness with `model="qwen36-workhorse"`.
+  - `test_model_name_none_threaded_as_none` — pins that when `model_name` is omitted at construction (legacy call-shape), the harness still receives `model=None` (no hardcoded default introduced).
+- **Test pass**: All 7 `TestTaskWorkHarnessMigration` tests pass (5 pre-existing + 2 new). The single pre-existing failure in `TestInvokeTaskWorkImplement::test_invoke_task_work_implement_mode_passed` is unrelated to LGFM2 (reproduces with this fix stashed).
+- **AC-003 deferred**: Live smoke is gated on running HMIG-010 run 3, which also needs the sibling blocker [TASK-FIX-CHO01](TASK-FIX-CHO01-deepagents-conversation-history-offload-path.md) to land. Same handling as LGFM AC-006.
+
+## Unblocks
+
+- [TASK-HMIG-010](../TASK-HMIG-010-full-feature-autobuild-validation.md) — once CHO01 also lands, run 3 can proceed.
 
 ## Implementation Notes
 

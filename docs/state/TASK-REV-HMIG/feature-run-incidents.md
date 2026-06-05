@@ -53,7 +53,7 @@ Each incident gets its own `## I-NNN: <title>` section with:
 - **Class-of-defect**: sibling-of-F9 (which was itself sibling-of-F1). Same shape: a migration path closed for some invocation sites but missed for others. F1 was Player-Coach-loop vs pre-loop. F9 was task vs feature CLI subcommand. F10 is `_invoke_with_role` vs `_invoke_task_work_implement`. **Three instances of the same defect-class** — worth a `.claude/rules/` seeding (proposal at the bottom of TASK-FIX-LGFM2).
 - **Severity**: **HIGH** — blocks the main Player path entirely. Meets AC-006's non-recoverable definition (requires code edits).
 - **Resolution**: One-line code edit: add `model=self._model_name,` to the `select_harness(...)` call at `agent_invoker.py:5730`. Mechanical.
-- **Follow-up task**: [TASK-FIX-LGFM2](../../../tasks/backlog/autobuild-harness-migration/TASK-FIX-LGFM2-inline-implement-model-threading.md) filed 2026-06-04. Blocks TASK-HMIG-010.
+- **Follow-up task**: [TASK-FIX-LGFM2](../../../tasks/completed/2026-06/TASK-FIX-LGFM2-inline-implement-model-threading.md) filed 2026-06-04, **landed 2026-06-05** (`model=self._model_name` threaded; 2 regression tests in `TestTaskWorkHarnessMigration`). HMIG-010 remains blocked on F11 (CHO01) before run 3 can fire.
 
 ## I-001 (F9): `guardkit autobuild feature` doesn't thread `--model` to LangGraph harness
 
