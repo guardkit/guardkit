@@ -1,10 +1,13 @@
 ---
 id: TASK-FIX-LGFM3
 title: Thread `_model_name` to `select_harness` for `coach_test` role in CoachValidator SDK test execution
-status: backlog
+status: completed
 task_type: bug
 created: 2026-06-05T09:00:00Z
-updated: 2026-06-05T09:00:00Z
+updated: 2026-06-05T10:25:00Z
+completed: 2026-06-05T10:25:00Z
+previous_state: in_review
+state_transition_reason: "AC-001/002/003 satisfied deterministically (6/6 TestCoachTestModelEnvVar pass, 286/286 coach_validator suite pass). AC-004 live smoke deferred to HMIG-010 unblock run."
 priority: high
 complexity: 2
 deadline: 2026-06-15
@@ -67,10 +70,29 @@ In `guardkit/orchestrator/quality_gates/coach_validator.py`, the SDK test execut
 
 ## Acceptance Criteria
 
-- [ ] AC-001: Locate the `coach_test` role harness invocation in `coach_validator.py` (likely a `select_harness(...)` or `harness.invoke(...)` site).
-- [ ] AC-002: Thread the orchestrator's `_model_name` to the harness construction at that site, mirroring [`agent_invoker.py:5756`](../../../guardkit/orchestrator/agent_invoker.py) (TASK-FIX-LGFM2 precedent).
-- [ ] AC-003: Add a unit-test regression. CoachValidator with `model_name="qwen36-workhorse"` should construct the harness with `model="qwen36-workhorse"` for the `coach_test` role.
-- [ ] AC-004: Live smoke (HMIG-010 run 4): the `role='coach_test' model=None` ERROR line is absent. SDK test execution path completes successfully when llama-swap is configured.
+- [x] AC-001: Located the `coach_test` role harness invocation at
+  [`coach_validator.py:2484`](../../../guardkit/orchestrator/quality_gates/coach_validator.py)
+  (already passing `model=model`). The defect lived one level up: the
+  ``model`` value came from `_get_coach_test_model()` which only consulted
+  the `GUARDKIT_COACH_TEST_MODEL` env var and had no fallback to the
+  orchestrator's `_model_name`.
+- [x] AC-002: Threaded `model_name` through `CoachValidator.__init__`,
+  stored on `self._model_name`, and added it as the second-tier fallback
+  in `_get_coach_test_model()` (env var still wins). Two construction
+  sites in [`autobuild.py`](../../../guardkit/orchestrator/autobuild.py)
+  (lines 5404 and 5546) now pass `model_name=self._model_name`,
+  mirroring the LGFM2 precedent at `agent_invoker.py:5756`. The third
+  site (line 3649, `verify_command_criteria`) is unrelated to harness
+  invocation and was left alone.
+- [x] AC-003: Added three regression tests in
+  [`test_coach_validator.py`](../../../tests/unit/test_coach_validator.py)
+  `TestCoachTestModelEnvVar`:
+  - `test_get_coach_test_model_falls_back_to_orchestrator_model`
+  - `test_get_coach_test_model_env_var_overrides_orchestrator_model`
+  - `test_get_coach_test_model_returns_none_when_no_source_set`
+  All 286 coach_validator tests pass after the change.
+- [ ] AC-004: Live smoke (HMIG-010 run 4) — deferred to HMIG-010 unblock
+  run. Will verify the `role='coach_test' model=None` ERROR line is absent.
 
 ## Implementation Notes
 

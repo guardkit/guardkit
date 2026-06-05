@@ -5408,6 +5408,7 @@ class AutoBuildOrchestrator:
                 wave_size=wave_size,
                 turn=turn,
                 peer_changed_files=peer_changed_files,
+                model_name=self._model_name,  # TASK-FIX-LGFM3
             )
             validation_result = validator.validate(
                 task_id=task_id,
@@ -5549,6 +5550,7 @@ class AutoBuildOrchestrator:
             wave_size=wave_size,
             turn=turn,
             peer_changed_files=peer_changed_files,
+            model_name=self._model_name,  # TASK-FIX-LGFM3
         )
 
         # Step 1: gather evidence bundle. Never falls back to validate() on

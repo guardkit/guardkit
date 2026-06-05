@@ -543,6 +543,7 @@ class CoachValidator:
         wave_size: int = 1,
         turn: int = 1,
         peer_changed_files: Optional[Dict[str, Any]] = None,
+        model_name: Optional[str] = None,
     ):
         """
         Initialize CoachValidator.
@@ -584,12 +585,23 @@ class CoachValidator:
             NOT fire — instead Coach returns feedback and the existing
             Player-Coach loop retries on the next turn (by which point peers have
             completed and the wave is naturally serialised). See TASK-FIX-A7B2.
+        model_name : Optional[str]
+            Orchestrator-configured model name to thread through to the harness
+            for SDK-based Coach test execution. Used as a fallback when the
+            ``GUARDKIT_COACH_TEST_MODEL`` env var is not set. Mirrors the model
+            threading precedent set by TASK-FIX-LGFM2 / TASK-FIX-MODELPLUMB in
+            ``AgentInvoker``. Without this, the LangGraph harness receives
+            ``model=None`` for ``role='coach_test'`` and falls back to subprocess
+            (TASK-FIX-LGFM3 / F12).
         """
         self.worktree_path = Path(worktree_path)
         self.test_command = test_command
         self.test_timeout = test_timeout
         self.task_id = task_id
         self._coach_test_execution = coach_test_execution
+        # TASK-FIX-LGFM3: orchestrator model threaded through for SDK test
+        # execution path; falls back to None when caller didn't supply one.
+        self._model_name: Optional[str] = model_name
         self.wave_size = max(1, int(wave_size))
         # TASK-DIAG-F4A2: Turn number for sdk_debug preservation paths.
         # Default 1 keeps backwards-compat for callers that don't pass it.
@@ -735,12 +747,20 @@ class CoachValidator:
     def _get_coach_test_model(self) -> Optional[str]:
         """Return the model for Coach SDK test invocations, or None to use CLI default.
 
-        When set, GUARDKIT_COACH_TEST_MODEL allows operators to use a different
-        model for Coach test execution (e.g. claude-haiku-4-5-20251001 to reduce
-        cost on the real Anthropic API) while the CLI default works with vLLM.
+        Resolution order:
+        1. ``GUARDKIT_COACH_TEST_MODEL`` env var (operator override — e.g.
+           claude-haiku-4-5-20251001 for cost reduction on the real Anthropic API).
+        2. Orchestrator-supplied ``model_name`` (TASK-FIX-LGFM3): same value
+           threaded into ``AgentInvoker.select_harness`` calls. Without this
+           fallback, the LangGraph harness receives ``model=None`` for
+           ``role='coach_test'`` and the SDK path errors out (F12).
+        3. ``None`` (harness uses CLI default).
         """
         import os
-        return os.environ.get("GUARDKIT_COACH_TEST_MODEL") or None
+        env_model = os.environ.get("GUARDKIT_COACH_TEST_MODEL") or None
+        if env_model is not None:
+            return env_model
+        return self._model_name
 
     def _resolve_task_type(self, task: Dict[str, Any]) -> TaskType:
         """

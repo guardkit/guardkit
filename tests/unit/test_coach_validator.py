@@ -5134,6 +5134,58 @@ class TestCoachTestModelEnvVar:
             result = validator._get_coach_test_model()
         assert result is None
 
+    # ------------------------------------------------------------------
+    # TASK-FIX-LGFM3: orchestrator model_name threaded through CoachValidator
+    # ------------------------------------------------------------------
+
+    def test_get_coach_test_model_falls_back_to_orchestrator_model(
+        self, tmp_worktree
+    ):
+        """When env var is unset, falls back to ``model_name`` passed by orchestrator.
+
+        Regression for F12 — without this fallback the LangGraph harness gets
+        ``model=None`` for ``role='coach_test'`` even though the orchestrator
+        was launched with ``--model qwen36-workhorse``.
+        """
+        validator = CoachValidator(
+            str(tmp_worktree), model_name="openai:qwen36-workhorse"
+        )
+        with patch.dict("os.environ", {}, clear=True):
+            result = validator._get_coach_test_model()
+        assert result == "openai:qwen36-workhorse"
+
+    def test_get_coach_test_model_env_var_overrides_orchestrator_model(
+        self, tmp_worktree
+    ):
+        """Env var keeps precedence over orchestrator-supplied ``model_name``.
+
+        Operators must be able to override the orchestrator-wide model for
+        Coach test execution alone (e.g. to use a cheap Anthropic model for
+        Coach tests while the main loop runs against vLLM).
+        """
+        validator = CoachValidator(
+            str(tmp_worktree), model_name="openai:qwen36-workhorse"
+        )
+        with patch.dict(
+            "os.environ", {"GUARDKIT_COACH_TEST_MODEL": "claude-haiku-4-5-20251001"}
+        ):
+            result = validator._get_coach_test_model()
+        assert result == "claude-haiku-4-5-20251001"
+
+    def test_get_coach_test_model_returns_none_when_no_source_set(
+        self, tmp_worktree
+    ):
+        """Returns None when neither env var nor orchestrator model is provided.
+
+        Pins that omitting ``model_name`` from construction does NOT introduce
+        a hardcoded default — the no-orchestrator-model path stays a clean
+        ``None``, matching the LGFM2 precedent for the inline-implement site.
+        """
+        validator = CoachValidator(str(tmp_worktree))
+        with patch.dict("os.environ", {}, clear=True):
+            result = validator._get_coach_test_model()
+        assert result is None
+
 
 # ============================================================================
 # Run Tests
