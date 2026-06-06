@@ -552,6 +552,7 @@ def task(
         timeout_multiplier=effective_timeout_multiplier,
         honesty_early_abort_threshold=float(effective_honesty_threshold),
         honesty_early_abort_window=int(effective_honesty_window),
+        model=model,  # TASK-FIX-MODELPLUMB: thread --model to harness construction (load-bearing for LangGraph)
     )
 
     # Resolve base branch: --base-branch > cwd HEAD > "main" (TASK-FIX-WTBC)
@@ -649,6 +650,12 @@ def status(ctx, task_id: str, verbose: bool):
     default=5,
     type=int,
     help="Maximum adversarial turns per task (default: 5)",
+    show_default=True,
+)
+@click.option(
+    "--model",
+    default="claude-sonnet-4-5-20250929",
+    help="Claude model to use",
     show_default=True,
 )
 @click.option(
@@ -813,6 +820,7 @@ def feature(
     ctx,
     feature_id: str,
     max_turns: int,
+    model: str,
     stop_on_failure: bool,
     resume: bool,
     fresh: bool,
@@ -997,6 +1005,7 @@ def feature(
             bootstrap_failure_mode=bootstrap_failure_mode,
             honesty_early_abort_threshold=honesty_early_abort_threshold,
             honesty_early_abort_window=honesty_early_abort_window,
+            model=model,  # TASK-FIX-LGFM: thread --model to per-task AutoBuildOrchestrator (load-bearing for LangGraph)
         )
 
         # Resolve base branch: --base-branch > cwd HEAD > "main" (TASK-FIX-WTBC)

@@ -1,0 +1,21 @@
+{
+  "task_id": "TASK-FIX-COACHOUT01",
+  "total_score": 7,
+  "level": "Complex",
+  "review_mode": "FULL_REQUIRED",
+  "factors": {
+    "file_complexity": 2,
+    "pattern_familiarity": 2,
+    "risk_level": 3
+  },
+  "forced_review_triggers": [
+    "frontmatter:intensity=strict",
+    "task body declares cutover-blocker (TASK-HMIG-011 gated on this fix)",
+    "touches Coach prompt — load-bearing adversarial-cooperation contract",
+    "substrate-parity requirement (SDK + LangGraph harnesses must produce identical coach_turn_N.json structure)"
+  ],
+  "duration_estimate_hours": 4,
+  "rationale": "Strict-intensity is set in frontmatter and re-confirmed by triggers: cutover-blocker, Coach prompt change (load-bearing), substrate-parity requirement, harness-cancellation-contract sibling meta-frame. Phase 2.5B scored 82/100 (above strict threshold 70). Phase 2.8 checkpoint is MANDATORY BLOCKING (no timeout) per strict-intensity rules — the operator must explicitly approve the Shape A pick + the three reviewer-required implementation constraints before Phase 3 proceeds.",
+  "evaluated_at": "2026-06-06",
+  "evaluator": "complexity-evaluator (Phase 2.7, design-only)"
+}

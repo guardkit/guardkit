@@ -654,3 +654,122 @@ class TestConstructorPlumbing:
 
         opts = captured["options"]
         assert list(getattr(opts, "setting_sources", [])) == ["user", "project"]
+
+
+# ----------------------------------------------------------------------
+# Cooperative cancellation (TASK-FIX-CTOUT01)
+# ----------------------------------------------------------------------
+
+
+class TestCancelSDKHarness:
+    """Verifies HarnessAdapter.cancel() closes the active query() generator.
+
+    TASK-FIX-CTOUT01 added an async ``cancel`` method to HarnessAdapter
+    so AgentInvoker._cancel_monitor can request termination of an
+    in-flight invoke() when the orchestrator's cancellation_event fires.
+
+    Under SDK harness, cancel() calls ``aclose()`` on the active
+    ``query()`` generator — propagating CancelledError into the
+    async-for loop in invoke(), which the orchestrator already handles
+    via its existing asyncio.timeout() + CancelledError cascade.
+    """
+
+    @pytest.mark.asyncio
+    async def test_cancel_is_noop_when_no_active_invoke(self):
+        """A fresh harness with no in-flight invoke has nothing to close."""
+        harness = _make_harness()
+        # Must not raise; no observable side effect.
+        await harness.cancel()
+        assert harness._active_gen is None
+
+    @pytest.mark.asyncio
+    async def test_cancel_closes_active_generator(self, tmp_path):
+        """When invoke() is in-flight, cancel() closes the gen and
+        invoke() unblocks via the closed generator."""
+        harness = _make_harness()
+
+        # A gen that yields one assistant message then HANGS on the next
+        # __anext__ (simulates the SDK awaiting an LLM HTTP response that
+        # never arrives). cancel()'s aclose() must unblock this hang.
+        class HangingGen:
+            def __init__(self) -> None:
+                self.aclose_calls = 0
+                self._yielded_first = False
+                self._closed = asyncio.Event()
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if not self._yielded_first:
+                    self._yielded_first = True
+                    return _assistant_msg("partial")
+                # Hang until cancel() calls aclose(), which sets _closed.
+                await self._closed.wait()
+                raise StopAsyncIteration
+
+            async def aclose(self):
+                self.aclose_calls += 1
+                self._closed.set()
+
+        fake_gen = HangingGen()
+
+        with patch.object(claude_agent_sdk, "query", return_value=fake_gen):
+            invoke_task = asyncio.create_task(_drain(harness, tmp_path))
+            # Spin the event loop enough for invoke() to construct the
+            # gen, set self._active_gen, consume the first event, and
+            # suspend on the hanging __anext__.
+            for _ in range(10):
+                await asyncio.sleep(0)
+            assert harness._active_gen is fake_gen, (
+                "invoke() must expose the active gen on the instance "
+                "before suspending — cancel() relies on this for "
+                "external aclose()."
+            )
+
+            await harness.cancel()
+
+            # cancel() closed the gen; the hanging __anext__ unblocks
+            # via _closed.set() inside aclose, then raises
+            # StopAsyncIteration, and invoke()'s async-for exits cleanly.
+            try:
+                await asyncio.wait_for(invoke_task, timeout=2.0)
+            except asyncio.TimeoutError:
+                invoke_task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await invoke_task
+                pytest.fail(
+                    "invoke() did not terminate within 2s after cancel — "
+                    "the generator's aclose() should unblock the async-for."
+                )
+
+        # aclose() was called at least once.
+        assert fake_gen.aclose_calls >= 1
+        # Instance handle cleared.
+        assert harness._active_gen is None
+
+    @pytest.mark.asyncio
+    async def test_cancel_clears_active_gen_before_aclose(self, tmp_path):
+        """Idempotency: a second cancel() call after the first is a no-op
+        because self._active_gen was cleared synchronously before the
+        first cancel awaited aclose()."""
+        harness = _make_harness()
+        good = _assistant_msg("payload")
+        done = _result_msg(session_id="sess-cancel-2")
+        fake_gen = RecordingAsyncGen([
+            ("yield", good),
+            ("yield", done),
+        ])
+
+        with patch.object(claude_agent_sdk, "query", return_value=fake_gen):
+            await _drain(harness, tmp_path)
+
+        # invoke() finished naturally; instance handle cleared by finally.
+        assert harness._active_gen is None
+        prior_close_count = fake_gen.aclose_calls
+        # A late cancel() must not raise and must not re-close.
+        await harness.cancel()
+        assert fake_gen.aclose_calls == prior_close_count, (
+            "cancel() called after invoke() has finished should be a "
+            "no-op — instance handle was cleared, so no second aclose."
+        )

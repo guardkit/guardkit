@@ -18,6 +18,7 @@ Test Organization:
 """
 
 import json
+import os
 import pytest
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -49,6 +50,74 @@ def tmp_worktree(tmp_path):
     worktree = tmp_path / "worktrees" / "TASK-001"
     worktree.mkdir(parents=True)
     return worktree
+
+
+# Classes that own their own ``select_harness`` patching (TASK-HMIG-006.3).
+# The autouse fixture below skips its default patch for these classes so
+# their explicit ``with patch("...select_harness", ...)`` blocks govern
+# the harness behaviour for those tests.
+_HARNESS_OWNING_TEST_CLASSES = frozenset({
+    "TestSdkEnvMerge",
+    "TestCoachHarnessMigration",
+    "TestCoachSdkDebugPreservation",
+})
+
+
+@pytest.fixture(autouse=True)
+def _default_coach_harness_simulates_sdk_failure(request):
+    """Restore pre-TASK-HMIG-006.3 fallback semantics for unmodified tests.
+
+    Pre-migration, ``CoachValidator._run_tests_via_sdk`` invoked
+    ``claude_agent_sdk.query`` directly. In the test environment that
+    subprocess reliably failed (no API key / no live CLI), the SDK
+    raised, and ``run_independent_tests`` caught the exception and fell
+    back to ``subprocess.run`` — which the affected tests mock. Tests
+    such as ``TestIndependentTestVerification`` therefore depended on
+    that implicit "SDK fails → subprocess fallback" chain even though
+    their assertions were entirely about the subprocess path.
+
+    Post-migration, ``_run_tests_via_sdk`` dispatches through
+    ``select_harness``. ``ClaudeSDKHarness.invoke`` short-circuits on
+    ``ResultMessageEvent``, which means the post-``ResultMessage``
+    exception that the pre-migration code surfaced is now invisible to
+    the orchestrator. The SDK call returns a result with empty
+    ``raw_output`` instead of raising, so the fallback never fires and
+    the subprocess mock is never exercised.
+
+    This autouse fixture patches ``select_harness`` at the
+    ``coach_validator`` binding to return a harness whose ``invoke()``
+    raises :class:`AgentInvocationError`. ``run_independent_tests``
+    catches the exception and falls back to subprocess, restoring the
+    pre-migration behaviour for every test that does not explicitly
+    own the harness boundary. Tests that need the real harness or a
+    bespoke fake (``TestSdkEnvMerge``, ``TestCoachHarnessMigration``)
+    are skipped via ``_HARNESS_OWNING_TEST_CLASSES`` and rely on their
+    own ``with patch(...)`` blocks.
+    """
+    cls = getattr(request.node, "cls", None)
+    if cls is not None and cls.__name__ in _HARNESS_OWNING_TEST_CLASSES:
+        yield
+        return
+
+    from guardkit.orchestrator.exceptions import AgentInvocationError
+
+    class _SdkFailingHarness:
+        supports_resume = False
+        session_id = None
+
+        async def invoke(self, prompt, role, tools, cwd, *, timeout_seconds):
+            raise AgentInvocationError(
+                "TASK-HMIG-006.3 test fixture: simulated SDK transport "
+                "failure to restore pre-migration subprocess-fallback "
+                "semantics."
+            )
+            yield  # unreachable; keeps this an async generator
+
+    with patch(
+        "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
+        return_value=_SdkFailingHarness(),
+    ):
+        yield
 
 
 @pytest.fixture
@@ -5065,6 +5134,58 @@ class TestCoachTestModelEnvVar:
             result = validator._get_coach_test_model()
         assert result is None
 
+    # ------------------------------------------------------------------
+    # TASK-FIX-LGFM3: orchestrator model_name threaded through CoachValidator
+    # ------------------------------------------------------------------
+
+    def test_get_coach_test_model_falls_back_to_orchestrator_model(
+        self, tmp_worktree
+    ):
+        """When env var is unset, falls back to ``model_name`` passed by orchestrator.
+
+        Regression for F12 — without this fallback the LangGraph harness gets
+        ``model=None`` for ``role='coach_test'`` even though the orchestrator
+        was launched with ``--model qwen36-workhorse``.
+        """
+        validator = CoachValidator(
+            str(tmp_worktree), model_name="openai:qwen36-workhorse"
+        )
+        with patch.dict("os.environ", {}, clear=True):
+            result = validator._get_coach_test_model()
+        assert result == "openai:qwen36-workhorse"
+
+    def test_get_coach_test_model_env_var_overrides_orchestrator_model(
+        self, tmp_worktree
+    ):
+        """Env var keeps precedence over orchestrator-supplied ``model_name``.
+
+        Operators must be able to override the orchestrator-wide model for
+        Coach test execution alone (e.g. to use a cheap Anthropic model for
+        Coach tests while the main loop runs against vLLM).
+        """
+        validator = CoachValidator(
+            str(tmp_worktree), model_name="openai:qwen36-workhorse"
+        )
+        with patch.dict(
+            "os.environ", {"GUARDKIT_COACH_TEST_MODEL": "claude-haiku-4-5-20251001"}
+        ):
+            result = validator._get_coach_test_model()
+        assert result == "claude-haiku-4-5-20251001"
+
+    def test_get_coach_test_model_returns_none_when_no_source_set(
+        self, tmp_worktree
+    ):
+        """Returns None when neither env var nor orchestrator model is provided.
+
+        Pins that omitting ``model_name`` from construction does NOT introduce
+        a hardcoded default — the no-orchestrator-model path stays a clean
+        ``None``, matching the LGFM2 precedent for the inline-implement site.
+        """
+        validator = CoachValidator(str(tmp_worktree))
+        with patch.dict("os.environ", {}, clear=True):
+            result = validator._get_coach_test_model()
+        assert result is None
+
 
 # ============================================================================
 # Run Tests
@@ -5292,43 +5413,67 @@ class TestInfrastructureFeedbackDetail:
 
 
 # ============================================================================
-# SDK env merge (TASK-EMB-004)
+# SDK env merge (TASK-EMB-004) — revalidated under TASK-HMIG-006.3
 # ============================================================================
 
 
-def _make_mock_sdk(captured_env: dict) -> MagicMock:
-    """Return a mock claude_agent_sdk module that captures ClaudeAgentOptions kwargs."""
+class _FakeHarness:
+    """HarnessAdapter stub for the TASK-HMIG-006.3 test surface.
 
-    class CapturingOptions:
-        def __init__(self, **kwargs):
-            captured_env.update(kwargs.get("env", {}))
+    Snapshots ``os.environ`` at ``invoke()`` time and records the kwargs
+    so tests can assert on Coach's harness dispatch + env contract.
 
-    async def fake_query(prompt, options):  # pragma: no cover
-        if False:
-            yield  # make this an async generator that yields nothing
+    Why the snapshot is the right verification mechanism after TASK-HMIG-006.3:
+    pre-migration, Coach passed ``env={**os.environ, "PYTHONPATH": ...}``
+    as a ``ClaudeAgentOptions`` kwarg and tests captured the kwarg
+    directly via a mocked ``CapturingOptions``. Post-migration,
+    ``ClaudeSDKHarness.invoke`` does NOT pass ``env=`` to
+    ``ClaudeAgentOptions`` (sdk_harness.py:252-258); the SDK subprocess
+    inherits the process environment instead. The
+    ``coach_validator._patched_pythonpath`` context manager mutates
+    ``os.environ`` for the scope of ``harness.invoke()``. Asserting on
+    the snapshot at that moment verifies the exact state the SDK
+    subprocess sees, which is what the original AC-003 tests intended.
+    Subprocess inheritance itself is an SDK implementation detail not
+    under test.
+    """
 
-    mock_sdk = MagicMock()
-    mock_sdk.ClaudeAgentOptions = CapturingOptions
-    mock_sdk.query = fake_query
-    mock_sdk.AssistantMessage = object
-    mock_sdk.UserMessage = object
-    mock_sdk.ToolResultBlock = object
-    mock_sdk.TextBlock = object
-    mock_sdk.CLINotFoundError = Exception
-    mock_sdk.ProcessError = Exception
-    mock_sdk.CLIJSONDecodeError = Exception
-    return mock_sdk
+    def __init__(self, events: Optional[List[Any]] = None) -> None:
+        self.events = list(events or [])
+        self.invoke_calls: List[dict] = []
+        self.env_snapshots: List[Dict[str, str]] = []
+        self.supports_resume = False
+        self.session_id: Optional[str] = None
+
+    async def invoke(self, prompt, role, tools, cwd, *, timeout_seconds):
+        self.invoke_calls.append(
+            {
+                "prompt": prompt,
+                "role": role,
+                "tools": list(tools),
+                "cwd": cwd,
+                "timeout_seconds": timeout_seconds,
+            }
+        )
+        self.env_snapshots.append(dict(os.environ))
+        for event in self.events:
+            yield event
 
 
 class TestSdkEnvMerge:
-    """Verify _run_tests_via_sdk passes merged env (TASK-EMB-004).
+    """Verify _run_tests_via_sdk preserves env contract (TASK-EMB-004).
 
-    env= must be {**os.environ, "PYTHONPATH": new_pythonpath} so that
-    API keys and other inherited vars are not stripped.
+    TASK-HMIG-006.3 changed the verification mechanism but not the
+    invariant. Pre-migration tests captured ``env=`` from a mocked
+    ``ClaudeAgentOptions``; post-migration tests inspect ``os.environ``
+    at the moment ``harness.invoke()`` is called. See ``_FakeHarness``
+    docstring for the rationale. The asserted contract is unchanged:
+    API keys are inherited, and ``PYTHONPATH`` is prepended with the
+    worktree root.
     """
 
     def test_sdk_env_inherits_os_environ_keys(self, tmp_worktree, monkeypatch):
-        """ClaudeAgentOptions receives os.environ keys plus the PYTHONPATH override."""
+        """At harness.invoke() time, os.environ carries inherited keys + PYTHONPATH override."""
         import asyncio
 
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-api-key")
@@ -5336,31 +5481,486 @@ class TestSdkEnvMerge:
         monkeypatch.delenv("PYTHONPATH", raising=False)
 
         validator = CoachValidator(str(tmp_worktree))
-        captured_env: dict = {}
+        fake = _FakeHarness(events=[])
 
-        with patch.dict("sys.modules", {"claude_agent_sdk": _make_mock_sdk(captured_env)}):
+        with patch(
+            "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
+            return_value=fake,
+        ):
             asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
 
-        assert "ANTHROPIC_API_KEY" in captured_env, "API key must be inherited from os.environ"
-        assert "EMBEDDING_PROVIDER" in captured_env, "EMBEDDING_PROVIDER must be inherited"
-        assert captured_env["PYTHONPATH"] == str(tmp_worktree), "PYTHONPATH must be worktree root"
+        assert len(fake.env_snapshots) == 1, "harness.invoke must be called exactly once"
+        env = fake.env_snapshots[0]
+        assert env.get("ANTHROPIC_API_KEY") == "test-api-key", "API key must be inherited"
+        assert env.get("EMBEDDING_PROVIDER") == "openai", "EMBEDDING_PROVIDER must be inherited"
+        assert env.get("PYTHONPATH") == str(tmp_worktree), "PYTHONPATH must be set to worktree root"
 
     def test_sdk_env_pythonpath_prepends_worktree(self, tmp_worktree, monkeypatch):
-        """PYTHONPATH in env includes worktree root when an existing PYTHONPATH is set."""
+        """PYTHONPATH at harness.invoke() time includes the worktree root as a prefix."""
         import asyncio
 
         monkeypatch.setenv("PYTHONPATH", "/some/existing/path")
 
         validator = CoachValidator(str(tmp_worktree))
-        captured_env: dict = {}
+        fake = _FakeHarness(events=[])
 
-        with patch.dict("sys.modules", {"claude_agent_sdk": _make_mock_sdk(captured_env)}):
+        with patch(
+            "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
+            return_value=fake,
+        ):
             asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
 
-        pythonpath = captured_env.get("PYTHONPATH", "")
+        env = fake.env_snapshots[0]
+        pythonpath = env.get("PYTHONPATH", "")
         assert str(tmp_worktree) in pythonpath, "worktree path must appear in PYTHONPATH"
         assert "/some/existing/path" in pythonpath, "existing PYTHONPATH must be preserved"
         assert pythonpath.startswith(str(tmp_worktree)), "worktree must have priority (be first)"
+
+    def test_pythonpath_restored_after_invoke(self, tmp_worktree, monkeypatch):
+        """The PYTHONPATH context manager must restore the original after invoke()."""
+        import asyncio
+
+        monkeypatch.setenv("PYTHONPATH", "/pre-existing")
+        validator = CoachValidator(str(tmp_worktree))
+        fake = _FakeHarness(events=[])
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
+            return_value=fake,
+        ):
+            asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
+
+        # After invoke completes the global mutation is reverted.
+        assert os.environ.get("PYTHONPATH") == "/pre-existing", (
+            "_patched_pythonpath must restore the pre-call value"
+        )
+
+
+# ============================================================================
+# Coach harness migration (TASK-HMIG-006.3) — AC-004 dispatch surface
+# ============================================================================
+
+
+class TestCoachHarnessMigration:
+    """TASK-HMIG-006.3: Coach's independent SDK call dispatches through HarnessAdapter.
+
+    These tests cover the AC-004 surface: ``_run_tests_via_sdk`` uses
+    ``select_harness`` so ``GUARDKIT_HARNESS`` routes the same way it
+    does for the Player path migrated in TASK-HMIG-006/006.2.
+    Behavioural parity for the LangGraph substrate is out of scope per
+    Section 8 of the implementation plan; only the dispatch boundary
+    and event-loop translation are asserted here.
+    """
+
+    def test_dispatches_through_select_harness_with_coach_kwargs(
+        self, tmp_worktree
+    ):
+        """select_harness is called once with Coach-specific kwargs (AC-001, AC-002)."""
+        import asyncio
+        from guardkit.orchestrator.harness import ResultMessageEvent
+
+        validator = CoachValidator(str(tmp_worktree))
+        fake = _FakeHarness(events=[ResultMessageEvent(session_id=None)])
+        captured_kwargs: dict = {}
+
+        def _capture(**kwargs):
+            captured_kwargs.update(kwargs)
+            return fake
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
+            side_effect=_capture,
+        ):
+            asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
+
+        # AC-001: select_harness is the dispatch boundary
+        assert captured_kwargs, "select_harness must be called"
+        # AC-002: Coach-specific verifier constraints stay orchestrator-side
+        assert captured_kwargs["allowed_tools"] == ["Bash"]
+        assert captured_kwargs["permission_mode"] == "bypassPermissions"
+        assert captured_kwargs["max_turns"] == 1
+        assert captured_kwargs["sdk_timeout_seconds"] == validator.test_timeout
+        assert captured_kwargs["cwd"] == validator.worktree_path
+        # harness.invoke receives the same Coach-side tool set + role
+        assert fake.invoke_calls[0]["tools"] == ["Bash"]
+        assert fake.invoke_calls[0]["role"] == "coach_test"
+        assert fake.invoke_calls[0]["timeout_seconds"] == validator.test_timeout
+
+    def test_consumes_tool_result_event_is_error_true(self, tmp_worktree):
+        """ToolResultEvent(is_error=True) -> bash_is_error=True -> failure result."""
+        import asyncio
+        from guardkit.orchestrator.harness import (
+            ResultMessageEvent,
+            ToolResultEvent,
+        )
+
+        validator = CoachValidator(str(tmp_worktree))
+        fake = _FakeHarness(events=[
+            ToolResultEvent(
+                tool_use_id="x",
+                content="error: command not found",
+                is_error=True,
+            ),
+            ResultMessageEvent(session_id=None),
+        ])
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
+            return_value=fake,
+        ):
+            result = asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
+
+        assert result.tests_passed is False
+        assert "error" in result.raw_output.lower()
+        assert result.test_command == "pytest tests/"
+
+    def test_consumes_tool_result_event_is_error_false_falls_through_to_heuristic(
+        self, tmp_worktree
+    ):
+        """ToolResultEvent(is_error=False) intentionally maps to heuristic branch.
+
+        The False->None mapping is documented in coach_validator: is_error=False
+        means "tool ran cleanly" not "tests passed", so the heuristic
+        branch on the output text decides.
+        """
+        import asyncio
+        from guardkit.orchestrator.harness import (
+            ResultMessageEvent,
+            ToolResultEvent,
+        )
+
+        validator = CoachValidator(str(tmp_worktree))
+        fake = _FakeHarness(events=[
+            ToolResultEvent(
+                tool_use_id="x",
+                content="5 passed in 0.12s",
+                is_error=False,
+            ),
+            ResultMessageEvent(session_id=None),
+        ])
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
+            return_value=fake,
+        ):
+            result = asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
+
+        # Heuristic detects "passed" without "failed/error" → tests_passed=True
+        assert result.tests_passed is True
+        assert "5 passed" in result.raw_output
+
+    def test_consumes_assistant_message_then_heuristic_pass(self, tmp_worktree):
+        """AssistantMessageEvent text feeds the heuristic when no ToolResultEvent fires.
+
+        SDK-harness path contract (per coach_validator NOTE in
+        _run_tests_via_sdk): ClaudeSDKHarness does not yield
+        ToolResultEvent, so bash_is_error stays None and the heuristic
+        on ``collected_text`` is the effective pass/fail determination.
+        """
+        import asyncio
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+        )
+
+        validator = CoachValidator(str(tmp_worktree))
+        fake = _FakeHarness(events=[
+            AssistantMessageEvent(text="Test run complete. 5 passed in 0.12s", raw=None),
+            ResultMessageEvent(session_id=None),
+        ])
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
+            return_value=fake,
+        ):
+            result = asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
+
+        assert result.tests_passed is True
+        assert "5 passed" in result.raw_output
+
+    def test_honours_langgraph_env_var(self, tmp_worktree, monkeypatch):
+        """GUARDKIT_HARNESS=langgraph routes through select_harness (dispatch only).
+
+        Asserts that the Coach path does not hardcode the SDK; the
+        env-var-driven select_harness factory is the only dispatch
+        boundary. Behavioural parity for LangGraph is out of scope per
+        AC-004 / Section 8.
+        """
+        import asyncio
+        from guardkit.orchestrator.harness import ResultMessageEvent
+
+        monkeypatch.setenv("GUARDKIT_HARNESS", "langgraph")
+        validator = CoachValidator(str(tmp_worktree))
+        fake = _FakeHarness(events=[ResultMessageEvent(session_id=None)])
+        call_count = 0
+
+        def _capture(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            return fake
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
+            side_effect=_capture,
+        ):
+            asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
+
+        assert call_count == 1, "select_harness must be the dispatch boundary regardless of substrate"
+
+    def test_agent_invocation_error_is_reraised(self, tmp_worktree):
+        """AgentInvocationError from harness.invoke surfaces to the caller."""
+        import asyncio
+        from guardkit.orchestrator.exceptions import AgentInvocationError
+
+        validator = CoachValidator(str(tmp_worktree))
+
+        class _ExplodingHarness:
+            supports_resume = False
+            session_id = None
+
+            async def invoke(self, prompt, role, tools, cwd, *, timeout_seconds):
+                raise AgentInvocationError("simulated transport failure")
+                yield  # unreachable; keeps this an async generator
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
+            return_value=_ExplodingHarness(),
+        ):
+            with pytest.raises(AgentInvocationError, match="simulated transport"):
+                asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
+
+
+# ============================================================================
+# Coach sdk_debug preservation (TASK-HMIG-006.5) — restore TASK-DIAG-F4A2
+# diagnostic surface dropped by TASK-HMIG-006.3 harness migration.
+# ============================================================================
+
+
+class TestCoachSdkDebugPreservation:
+    """TASK-HMIG-006.5: ``_run_tests_via_sdk`` preserves prompt + harness
+    event stream under ``sdk_debug/turn_<n>/coach/test_run/`` when
+    ``GUARDKIT_AUTOBUILD_PRESERVE_DEBUG=1``.
+
+    The pre-migration shape (TASK-DIAG-F4A2) wrote three files per
+    coach test turn:
+
+    * ``prompt.txt`` — byte-equal to the prompt the SDK saw.
+    * ``options.json`` — JSON dump of the ``ClaudeAgentOptions`` dataclass.
+    * ``messages.jsonl`` — one JSON line per SDK message consumed.
+
+    Post-migration the harness owns the message stream, so this class
+    asserts the equivalent shape against (a) the synthesised
+    options-snapshot dict the new call site builds and (b) the
+    ``HarnessEvent`` typed records yielded by the substrate.
+
+    Lives in ``_HARNESS_OWNING_TEST_CLASSES`` so the autouse
+    SDK-failure fixture does not clobber the explicit
+    ``select_harness`` patch installed below.
+    """
+
+    @staticmethod
+    def _read_jsonl(path):
+        return [json.loads(line) for line in path.read_text().splitlines() if line]
+
+    def test_no_files_when_env_var_unset(self, tmp_worktree, monkeypatch):
+        """AC-003: zero overhead in production — no sdk_debug dir created."""
+        import asyncio
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+        )
+
+        monkeypatch.delenv("GUARDKIT_AUTOBUILD_PRESERVE_DEBUG", raising=False)
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-001", turn=1)
+        fake = _FakeHarness(events=[
+            AssistantMessageEvent(text="5 passed in 0.1s", raw=None),
+            ResultMessageEvent(session_id=None),
+        ])
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
+            return_value=fake,
+        ):
+            asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
+
+        sdk_debug_root = tmp_worktree / ".guardkit" / "autobuild" / "TASK-001" / "sdk_debug"
+        assert not sdk_debug_root.exists(), (
+            "preserve_prompt must short-circuit when env var is unset"
+        )
+
+    def test_preserves_prompt_options_and_events_when_enabled(
+        self, tmp_worktree, monkeypatch
+    ):
+        """AC-001 + AC-002: full triple is written with HarnessEvent shape."""
+        import asyncio
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+        )
+
+        monkeypatch.setenv("GUARDKIT_AUTOBUILD_PRESERVE_DEBUG", "1")
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-001", turn=3)
+        events = [
+            AssistantMessageEvent(text="Running pytest", raw=None),
+            AssistantMessageEvent(text="5 passed in 0.1s", raw=None),
+            ResultMessageEvent(session_id="sess-xyz", stop_reason="end_turn"),
+        ]
+        fake = _FakeHarness(events=events)
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
+            return_value=fake,
+        ):
+            asyncio.run(validator._run_tests_via_sdk("pytest tests/foo"))
+
+        debug_dir = (
+            tmp_worktree
+            / ".guardkit" / "autobuild" / "TASK-001" / "sdk_debug"
+            / "turn_3" / "coach" / "test_run"
+        )
+        assert debug_dir.is_dir(), "coach test debug dir must exist under turn_<n>/coach/test_run/"
+
+        # AC-001: prompt.txt is byte-equal to the rendered command prompt
+        prompt_text = (debug_dir / "prompt.txt").read_text(encoding="utf-8")
+        assert "pytest tests/foo" in prompt_text
+        assert prompt_text.startswith("Run the following test command")
+
+        # AC-001: options.json captures the synthesised options-shaped snapshot
+        options_payload = json.loads((debug_dir / "options.json").read_text())
+        assert options_payload["allowed_tools"] == ["Bash"]
+        assert options_payload["permission_mode"] == "bypassPermissions"
+        assert options_payload["max_turns"] == 1
+        assert options_payload["cwd"] == str(tmp_worktree)
+        # GUARDKIT_HARNESS env var is captured so post-mortem can
+        # distinguish SDK vs. LangGraph substrate runs.
+        assert options_payload["harness"] == "sdk"
+        assert options_payload["pythonpath_prepend"] == str(tmp_worktree)
+
+        # AC-002: each HarnessEvent the loop consumed is recorded with
+        # its typed class name. messages.jsonl is one JSON line per
+        # event in stream order.
+        recorded = self._read_jsonl(debug_dir / "messages.jsonl")
+        assert len(recorded) == 3, (
+            f"expected one JSONL line per harness event, got {len(recorded)}: {recorded}"
+        )
+        assert [r["type"] for r in recorded] == [
+            "AssistantMessageEvent",
+            "AssistantMessageEvent",
+            "ResultMessageEvent",
+        ]
+        # First AssistantMessageEvent carries its text field through
+        # the dataclass.asdict path (AC-002 typed-event shape).
+        assert recorded[0]["text"] == "Running pytest"
+        # Terminal ResultMessageEvent carries its session_id field.
+        assert recorded[2]["session_id"] == "sess-xyz"
+
+    def test_event_raw_walked_recursively(self, tmp_worktree, monkeypatch):
+        """AC-002: ``event.raw`` (SDK Message) is walked, not repr'd.
+
+        Pre-migration the JSONL line was the raw SDK message dumped
+        via dataclass.asdict. Post-migration the harness wraps the
+        SDK message in ``AssistantMessageEvent.raw``. The preservation
+        path must walk that field recursively so post-mortem analysis
+        sees the same fields it used to — not a single ``repr()``
+        string.
+        """
+        import asyncio
+        from dataclasses import dataclass, field as dc_field
+        from typing import List as ListT
+
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+        )
+
+        monkeypatch.setenv("GUARDKIT_AUTOBUILD_PRESERVE_DEBUG", "1")
+
+        @dataclass
+        class _FakeTextBlock:
+            text: str = ""
+            block_type: str = "text"
+
+        @dataclass
+        class _FakeRawSDKMessage:
+            """Stands in for ``claude_agent_sdk.AssistantMessage``."""
+            content: ListT[_FakeTextBlock] = dc_field(default_factory=list)
+            model: str = "claude-sonnet"
+
+        raw_msg = _FakeRawSDKMessage(
+            content=[_FakeTextBlock(text="bash output here")],
+            model="claude-sonnet",
+        )
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-001", turn=1)
+        fake = _FakeHarness(events=[
+            AssistantMessageEvent(text="bash output here", raw=raw_msg),
+            ResultMessageEvent(session_id=None),
+        ])
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
+            return_value=fake,
+        ):
+            asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
+
+        debug_dir = (
+            tmp_worktree
+            / ".guardkit" / "autobuild" / "TASK-001" / "sdk_debug"
+            / "turn_1" / "coach" / "test_run"
+        )
+        recorded = self._read_jsonl(debug_dir / "messages.jsonl")
+        first = recorded[0]
+        assert first["type"] == "AssistantMessageEvent"
+        # ``raw`` is walked recursively, not repr'd — the inner SDK
+        # message keeps its fields addressable from the JSONL line.
+        assert isinstance(first["raw"], dict), (
+            f"raw must be walked into a dict, got {type(first['raw']).__name__}: {first['raw']!r}"
+        )
+        assert first["raw"]["type"] == "_FakeRawSDKMessage"
+        assert first["raw"]["model"] == "claude-sonnet"
+        assert first["raw"]["content"][0]["text"] == "bash output here"
+
+    def test_preservation_idempotent_within_turn(self, tmp_worktree, monkeypatch):
+        """Re-running ``_run_tests_via_sdk`` for the same turn overwrites,
+        matching the pre-migration ``preserve_prompt`` contract that
+        wipes stale state from interrupted runs.
+        """
+        import asyncio
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+        )
+
+        monkeypatch.setenv("GUARDKIT_AUTOBUILD_PRESERVE_DEBUG", "1")
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-001", turn=1)
+
+        def _run(events):
+            fake = _FakeHarness(events=events)
+            with patch(
+                "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
+                return_value=fake,
+            ):
+                asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
+
+        _run([AssistantMessageEvent(text="first run", raw=None),
+              ResultMessageEvent(session_id=None)])
+        _run([AssistantMessageEvent(text="second run", raw=None),
+              ResultMessageEvent(session_id=None)])
+
+        debug_dir = (
+            tmp_worktree
+            / ".guardkit" / "autobuild" / "TASK-001" / "sdk_debug"
+            / "turn_1" / "coach" / "test_run"
+        )
+        recorded = self._read_jsonl(debug_dir / "messages.jsonl")
+        # Second run wipes the first — only the second pair survives.
+        assert [r["text"] for r in recorded[:1]] == ["second run"], (
+            "idempotent re-run must overwrite, not append, the JSONL stream"
+        )
 
 
 # ============================================================================

@@ -105,14 +105,15 @@ consumers happy at the cost of LangGraph-side fidelity):
 
 | Downstream signal | SDK path | LangGraph path (Wave-2) | Fixed in |
 |---|---|---|---|
-| `_emit_llm_call_event` input/output tokens | Populated from `ResultMessage.usage` | `None` (LangChain dict has different shape) | **TASK-HMIG-006.2** |
-| `_track_tool_use` progress counters | Populated from `ToolUseBlock` blocks | No-op (LangChain dict has no `.content` list) | **TASK-HMIG-006.2** |
-| `_extract_partial_from_messages` on cancel | Full text/tool-call extraction | Lossy (returns empty lists) | **TASK-HMIG-006.2** |
-| `player_turn_N.json` `tool_calls` field | Populated when tools used | `[]` on LangGraph until 006.2 | **TASK-HMIG-006.2** |
+| `_emit_llm_call_event` input/output tokens | Populated from `ResultMessage.usage` | `None` (LangChain dict has different shape) | **Open** — deferred from TASK-HMIG-006.2 per YAGNI (not named in AC-001/002/003). The token-usage `dict` is already carried on `ResultMessageEvent.usage` by both harnesses; the remaining work is migrating `_emit_llm_call_event` + `extract_token_usage` to dispatch on the typed event. File a follow-on (e.g. TASK-HMIG-006.2A). |
+| `_track_tool_use` progress counters | Populated from `ToolUseEvent` (was `ToolUseBlock`) | Populated from `ToolUseEvent` | **Fixed in TASK-HMIG-006.2** |
+| `_extract_partial_from_messages` on cancel | Full text/tool-call extraction via typed-event dispatch | Full text/tool-call extraction via typed-event dispatch | **Fixed in TASK-HMIG-006.2** |
+| `player_turn_N.json` `tool_calls` field | Populated when tools used | Populated when tools used (via `AIMessage.tool_calls` → `ToolUseEvent`) | **Fixed in TASK-HMIG-006.2** |
+| Heartbeat `ToolUseBlock` log (`agent_invoker.py:2939+`, specialist path) | Walks `event.raw.content` for `ToolUseBlock` blocks | No-op (LangChain dict has no `.content`) | **Open** — gated to `heartbeat_label_override`-set callers (specialist path) and intentionally left on the raw shape because it is per-block diagnostic logging, not a Coach gate. Migrating it to consume `ToolUseEvent` instances is a quality-of-life follow-on if the LangGraph specialist path needs the same per-tool signal. |
 | Resume support (`supports_resume`) | `True` (SDK `session_id`) | `False` (per AC-007, D-07) | **Out of scope** — JSON-on-disk checkpointing is the migration's chosen resume path. |
 | Direct-mode SDK call at `agent_invoker.py:5269+` | Direct SDK `query()` | Still SDK | **TASK-HMIG-006.1** |
 | Coach independent test pass (`coach_validator.py:1869+`) | Direct SDK `query()` | Still SDK | **TASK-HMIG-006.3** |
-| Pre-loop design phase (`task_work_interface.py:_execute_via_sdk`) | Routes through `select_harness()` | Routes through `select_harness()` | **Fixed in TASK-HMIG-006.4 (this task)** |
+| Pre-loop design phase (`task_work_interface.py:_execute_via_sdk`) | Routes through `select_harness()` | Routes through `select_harness()` | **Fixed in TASK-HMIG-006.4** |
 
 The pre-loop design-phase row above is now closed: the design phase
 (Phases 1.5–2.8) dispatches through `select_harness()` rather than
@@ -134,9 +135,15 @@ divergence-asserting cases per
 the divergences make the AC-004 contract a positive-evidence test, not a
 silently-passing zero-cardinality check.
 
-When TASK-HMIG-006.2 lands, the divergence assertions invert (from
-"divergence expected" to "parity expected"). That inversion is the
-verifiable signal that the helper-function migration is complete.
+TASK-HMIG-006.2 INVERSION COMPLETE: the helper-function migration
+flipped three rows above from "Wave-2 lossy" to "Parity restored". The
+verifiable signal was the byte-compat-parity test inversion at
+[`tests/orchestrator/harness/test_byte_compat_parity.py`](../../../tests/orchestrator/harness/test_byte_compat_parity.py)
+— previously `lg_partial["tool_call_count"] == 0` (divergence),
+now `lg_partial["tool_call_count"] == 1` (parity). The AC-006 surface
+([`test_helper_event_dispatch_parity.py`](../../../tests/orchestrator/harness/test_helper_event_dispatch_parity.py))
+proves `_track_tool_use` + `_extract_partial_from_messages` work
+end-to-end against synthetic LangGraph event streams.
 
 ## Adapter ownership boundary
 
@@ -146,8 +153,11 @@ The substrate seam is intentionally thin. The harness handles ONLY:
 - Constructing the underlying client (`ClaudeAgentOptions` or
   `create_deep_agent`)
 - The per-turn message-stream loop
-- Translating native messages → `HarnessEvent` (with `event.raw`
-  populated for SDK-shape downstream consumers)
+- Translating native messages → `HarnessEvent` (typed-event taxonomy
+  per Phase 3a; `event.raw` populated only for the remaining duck-typed
+  consumers — `_emit_llm_call_event` token extraction, the API-error
+  scan, the heartbeat ToolUseBlock log — that have not been migrated to
+  typed dispatch yet)
 - Generator hygiene (`aclose`, drain on terminal event)
 - Translating substrate-specific exceptions to `AgentInvocationError`
   (D-4 normalisation)
@@ -164,8 +174,10 @@ substrate-agnostic concerns of the orchestrator, not the substrate:
 - `sdk_debug.preserve_prompt` / `preserve_event` JSONL writers
 - `_emit_llm_call_event` event emission
 - `check_assistant_message_error` validation
-- `_track_tool_use` progress counters
-- TASK-CRV-1540 partial-extract on `CancelledError`
+- `_track_tool_use` progress counters (consumes typed `ToolUseEvent`
+  post TASK-HMIG-006.2)
+- TASK-CRV-1540 partial-extract on `CancelledError` (consumes typed
+  events from `harness_events` post TASK-HMIG-006.2)
 - TASK-RFX-B20B `session_id` rescan loop
 
 ## Testing

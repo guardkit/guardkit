@@ -498,7 +498,17 @@ class TestBug472DefenseInExistingPaths:
     """Verify check_assistant_message_error is called in SDK stream loops (bug #472 defense)."""
 
     def test_agent_invoker_invoke_with_role_checks_error(self):
-        """check_assistant_message_error is imported and called in _invoke_with_role SDK loop."""
+        """check_assistant_message_error is imported and called on the SDK
+        AssistantMessage in _invoke_with_role.
+
+        TASK-HMIG-006 / TASK-HMIG-006.1: after the harness migration the
+        SDK ``AssistantMessage`` is reached via the typed ``AssistantMessageEvent.raw``
+        slot (raw is populated by the SDK harness; LangGraph harness leaves
+        it ``None`` and the API-error check is a no-op there). The bug-#472
+        defence is preserved — the literal call form moved from
+        ``check_assistant_message_error(message)`` to
+        ``check_assistant_message_error(event.raw)``.
+        """
         import inspect
 
         from guardkit.orchestrator import agent_invoker as ai_module
@@ -511,22 +521,33 @@ class TestBug472DefenseInExistingPaths:
             in source
         )
 
-        # Verify it is called at least once in the module
-        assert "check_assistant_message_error(message)" in source
+        # Verify the API-error check is called at least once on the raw
+        # SDK AssistantMessage (event.raw shape post-harness-migration).
+        assert "check_assistant_message_error(event.raw)" in source, (
+            "bug-#472 defence must survive harness migration via "
+            "check_assistant_message_error(event.raw)"
+        )
 
     def test_agent_invoker_task_work_implement_checks_error(self):
-        """check_assistant_message_error is called in _invoke_task_work_implement SDK loop."""
+        """check_assistant_message_error is called in both _invoke_with_role
+        and _invoke_task_work_implement SDK loops.
+
+        TASK-HMIG-006 / TASK-HMIG-006.1: bug #472 defence is upheld at both
+        call sites via ``check_assistant_message_error(event.raw)``.
+        """
         import inspect
 
         from guardkit.orchestrator import agent_invoker as ai_module
 
         source = inspect.getsource(ai_module)
 
-        # Count the number of call-sites - there should be at least 2 (one per loop)
-        call_count = source.count("check_assistant_message_error(message)")
+        # Count the number of call-sites - there should be at least 2
+        # (one per loop, both passing event.raw post-harness-migration).
+        call_count = source.count("check_assistant_message_error(event.raw)")
         assert call_count >= 2, (
-            f"Expected at least 2 call-sites for check_assistant_message_error in "
-            f"agent_invoker.py but found {call_count}"
+            f"Expected at least 2 call-sites for "
+            f"check_assistant_message_error(event.raw) in agent_invoker.py "
+            f"but found {call_count}"
         )
 
     def test_task_work_interface_execute_via_sdk_checks_error(self):

@@ -1,11 +1,32 @@
 ---
 id: TASK-DOC-267D
 title: Add agent-response format reference to CLAUDE.md templates
-status: backlog
+status: in_review
 priority: low
 complexity: 2
-tags: [documentation, templates, agent-response, template-create]
-related_tasks: [TASK-FIX-267C]
+tags:
+- documentation
+- templates
+- agent-response
+- template-create
+related_tasks:
+- TASK-FIX-267C
+autobuild_state:
+  current_turn: 1
+  max_turns: 5
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/TASK-DOC-267D
+  base_branch: main
+  started_at: '2026-06-04T02:07:57.988507'
+  last_updated: '2026-06-04T02:21:13.178851'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-06-04T02:07:57.988507'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
 ---
 
 # Add Agent Response Format Reference to CLAUDE.md Templates

@@ -32,13 +32,22 @@ Behaviour preserved verbatim from the inline implementation:
 
 Per Design Decision D-1, ``AssistantMessage`` translates into a single
 :class:`AssistantMessageEvent` with the joined text content; the
-``raw`` slot is populated with the original SDK message so downstream
-consumers in ``agent_invoker.py`` that duck-type on
-``type(block).__name__`` (e.g. ``_track_tool_use``,
-``_extract_partial_from_messages``) keep working unchanged. The
-harness does NOT explode ``ToolUseBlock`` content blocks into
-separate :class:`ToolUseEvent` yields — that is reserved for the
-helper-function migration in TASK-HMIG-006.2.
+``raw`` slot is populated with the original SDK message so any remaining
+duck-typed consumer in ``agent_invoker.py`` (e.g. the
+``check_assistant_message_error`` API-error scan, the heartbeat
+``ToolUseBlock`` log gated to the specialist path) keeps working
+unchanged.
+
+TASK-HMIG-006.2 extension: When an ``AssistantMessage`` carries
+``ToolUseBlock`` content blocks, the harness now ALSO yields one
+:class:`ToolUseEvent` per block BEFORE the :class:`AssistantMessageEvent`.
+This mirrors what the LangGraph harness emits from
+``AIMessage.tool_calls`` and lets the migrated
+``_track_tool_use`` / ``_extract_partial_from_messages`` consumers
+dispatch on a typed event instead of walking ``event.raw.content``. The
+order (tool-uses first, then the joined-text assistant event) keeps the
+typed-event ordering aligned with the textual order in the source
+message — useful when partial-extract output is interleaved.
 
 The :meth:`invoke` ``tools`` and ``timeout_seconds`` parameters are
 accepted to satisfy the :class:`HarnessAdapter` ABC contract, but the
@@ -65,6 +74,7 @@ from guardkit.orchestrator.harness.adapter import (
     HarnessAdapter,
     HarnessEvent,
     ResultMessageEvent,
+    ToolUseEvent,
 )
 
 logger = logging.getLogger(__name__)
@@ -146,6 +156,11 @@ class ClaudeSDKHarness(HarnessAdapter):
         self._sdk_debug_dir = sdk_debug_dir
         self._cleanup_handler_installer = cleanup_handler_installer
         self._session_id: Optional[str] = None
+        # TASK-FIX-CTOUT01: handle to the in-flight query() async generator,
+        # exposed for cooperative close from :meth:`cancel`. Set inside
+        # :meth:`invoke` after the generator is constructed, cleared in
+        # the finally block. ``None`` when no invoke is currently active.
+        self._active_gen: Any = None
 
     @property
     def session_id(self) -> Optional[str]:
@@ -274,6 +289,11 @@ class ClaudeSDKHarness(HarnessAdapter):
         try:
             try:
                 gen = query(prompt=prompt, options=options)
+                # TASK-FIX-CTOUT01: expose the live generator so a
+                # concurrent :meth:`cancel` call (driven by
+                # AgentInvoker._cancel_monitor when the orchestrator's
+                # cancellation_event fires) can close it from the outside.
+                self._active_gen = gen
                 gen_iter = gen.__aiter__()
                 while True:
                     try:
@@ -297,6 +317,25 @@ class ClaudeSDKHarness(HarnessAdapter):
                     response_messages.append(message)
 
                     if isinstance(message, AssistantMessage):
+                        # TASK-HMIG-006.2: emit one ToolUseEvent per
+                        # ToolUseBlock BEFORE the AssistantMessageEvent so
+                        # the migrated _track_tool_use /
+                        # _extract_partial_from_messages consumers can
+                        # dispatch on typed events instead of walking
+                        # event.raw.content. ToolUseBlock is duck-typed by
+                        # class name to avoid an SDK import (matches the
+                        # heartbeat scan at agent_invoker.py:2930-2945).
+                        for block in getattr(message, "content", None) or []:
+                            if type(block).__name__ != "ToolUseBlock":
+                                continue
+                            tool_input = getattr(block, "input", {}) or {}
+                            if not isinstance(tool_input, dict):
+                                tool_input = {}
+                            yield ToolUseEvent(
+                                tool_use_id=getattr(block, "id", "") or "",
+                                name=getattr(block, "name", "") or "",
+                                input=tool_input,
+                            )
                         text = _extract_assistant_text(message)
                         yield AssistantMessageEvent(text=text, raw=message)
                     elif isinstance(message, ResultMessage):
@@ -428,6 +467,58 @@ class ClaudeSDKHarness(HarnessAdapter):
                             await gen.aclose()
                     except (asyncio.TimeoutError, asyncio.CancelledError):
                         pass
+            # TASK-FIX-CTOUT01: drop the instance handle once invoke()
+            # has finished cleaning up. A concurrent :meth:`cancel`
+            # racing the natural finalisation is safe — its own aclose()
+            # is wrapped in ``with suppress(Exception)`` so a double-close
+            # is a no-op. Clearing here is what guarantees the next
+            # invoke() doesn't observe a stale generator from a prior
+            # call.
+            self._active_gen = None
+
+    async def cancel(self) -> None:
+        """TASK-FIX-CTOUT01: close the active ``query()`` async generator.
+
+        Called by ``AgentInvoker._cancel_monitor`` when the orchestrator's
+        ``cancellation_event`` fires during an in-flight Coach / Player
+        invocation. Closing the active generator causes the in-flight
+        ``async-for`` loop in :meth:`invoke` to terminate at its next
+        suspension, which propagates back to the orchestrator's
+        ``asyncio.timeout(...)`` handler via the existing
+        ``asyncio.CancelledError`` cascade (see ``invoke``'s
+        ``except (asyncio.TimeoutError, asyncio.CancelledError): raise``
+        clause).
+
+        OS-level subprocess escalation (terminating the Claude CLI child)
+        is owned separately by
+        ``AgentInvoker._kill_child_claude_processes`` (TASK-FIX-ASPF-004)
+        — this method handles only the in-Python cooperative cancel
+        signal. The two paths run in parallel under
+        ``_cancel_monitor`` so the SDK substrate's cancellation is
+        defence-in-depth: aclose() unwinds the Python-side stream;
+        SIGTERM ensures the child curl process drops its TCP connection
+        if the SDK's own subprocess cleanup is slow.
+
+        Idempotent: no-op if no invoke is currently active. Safe to call
+        concurrently with the natural finalisation in invoke()'s
+        ``finally`` block — the suppressed double-close is a no-op.
+
+        See ``.claude/rules/harness-cancellation-contract.md`` Layer 3
+        for the substrate-agnostic contract this method implements.
+        """
+        gen = self._active_gen
+        if gen is None:
+            return
+        # Clear FIRST so the in-flight invoke()'s finally block — when it
+        # eventually runs — observes the empty handle and skips its own
+        # aclose() (idempotency at the instance level).
+        self._active_gen = None
+        with suppress(Exception):
+            try:
+                async with asyncio.timeout(5):
+                    await gen.aclose()
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                pass
 
 
 def _extract_assistant_text(message: Any) -> str:

@@ -123,6 +123,34 @@ def create_report_file(worktree_path: Path, task_id: str, turn: int, agent_type:
     return report_path
 
 
+def _coach_harness_events(payload: Dict[str, Any]):
+    """Build a single-AssistantMessageEvent stream wrapping a fenced Coach JSON.
+
+    TASK-FIX-COACHOUT01 Shape A: Coach no longer writes
+    ``coach_turn_N.json`` itself — it ends its response with a fenced
+    ``json`` block, and the orchestrator's
+    ``coach_output_parser.extract_and_write`` writes the file. The unit
+    tests below mock ``_invoke_with_role(return_events=True)`` to return
+    a synthetic event stream that the parser will see.
+    """
+    from guardkit.orchestrator.harness.adapter import AssistantMessageEvent
+
+    fenced = f"```json\n{json.dumps(payload, indent=2)}\n```"
+    return [AssistantMessageEvent(text=f"Verification reasoning.\n\n{fenced}")]
+
+
+def _coach_mock(payload: Dict[str, Any] | None):
+    """Build an ``AsyncMock`` for ``_invoke_with_role`` Coach-style.
+
+    Returns ``(None, harness_events)`` so the new
+    ``invoke_coach`` destructure (``_, harness_events = result_tuple``)
+    works. When ``payload`` is ``None``, returns an empty event list —
+    drives the ``CoachDecisionNotFoundError`` path.
+    """
+    events = _coach_harness_events(payload) if payload is not None else []
+    return AsyncMock(return_value=(None, events))
+
+
 # ==================== Initialization Tests ====================
 
 
@@ -333,15 +361,18 @@ class TestCoachInvocation:
     async def test_invoke_coach_success(
         self, agent_invoker, worktree_path, sample_player_report, sample_coach_approval
     ):
-        """Coach invocation succeeds and returns decision."""
-        # Setup: Create Coach decision file
-        create_report_file(
-            worktree_path, "TASK-001", 1, "coach", sample_coach_approval
-        )
+        """Coach invocation succeeds and returns decision.
 
-        # Mock SDK
+        TASK-FIX-COACHOUT01 Shape A: Coach's verdict comes back as a fenced
+        JSON block in ``AssistantMessageEvent.text``. The orchestrator's
+        ``coach_output_parser.extract_and_write`` writes
+        ``coach_turn_N.json`` from the parser side, then
+        ``_load_agent_report`` re-reads it for ``_validate_coach_decision``.
+        """
+        # Mock SDK to return the verdict as a structured event stream.
         with patch.object(
-            agent_invoker, "_invoke_with_role", new_callable=AsyncMock
+            agent_invoker, "_invoke_with_role",
+            _coach_mock(sample_coach_approval),
         ) as mock_sdk:
             # Execute
             result = await agent_invoker.invoke_coach(
@@ -364,30 +395,33 @@ class TestCoachInvocation:
             assert "honesty_verification" in result.report
             assert result.duration_seconds > 0
 
-            # Verify SDK was called with read-only permissions
+            # Verify SDK was called with read-only permissions and the
+            # COACHOUT01 return_events=True opt-in.
             mock_sdk.assert_called_once()
             call_kwargs = mock_sdk.call_args.kwargs
             assert call_kwargs["agent_type"] == "coach"
             assert call_kwargs["allowed_tools"] == ["Read", "Bash", "Grep", "Glob"]
             assert call_kwargs["permission_mode"] == "bypassPermissions"
+            assert call_kwargs["return_events"] is True
             assert "Write" not in call_kwargs["allowed_tools"]
             assert "Edit" not in call_kwargs["allowed_tools"]
+
+            # Verify parser actually wrote the file the loader reads.
+            coach_file = (
+                worktree_path / ".guardkit" / "autobuild" / "TASK-001"
+                / "coach_turn_1.json"
+            )
+            assert coach_file.exists()
 
     @pytest.mark.asyncio
     async def test_invoke_coach_approval(
         self, agent_invoker, worktree_path, sample_player_report, sample_coach_approval
     ):
         """Coach approves implementation."""
-        # Setup
-        create_report_file(
-            worktree_path, "TASK-001", 1, "coach", sample_coach_approval
-        )
-
-        # Mock SDK
         with patch.object(
-            agent_invoker, "_invoke_with_role", new_callable=AsyncMock
+            agent_invoker, "_invoke_with_role",
+            _coach_mock(sample_coach_approval),
         ):
-            # Execute
             result = await agent_invoker.invoke_coach(
                 task_id="TASK-001",
                 turn=1,
@@ -395,7 +429,6 @@ class TestCoachInvocation:
                 player_report=sample_player_report,
             )
 
-            # Verify
             assert result.success is True
             assert result.report["decision"] == "approve"
 
@@ -404,16 +437,10 @@ class TestCoachInvocation:
         self, agent_invoker, worktree_path, sample_player_report, sample_coach_feedback
     ):
         """Coach provides feedback."""
-        # Setup
-        create_report_file(
-            worktree_path, "TASK-001", 1, "coach", sample_coach_feedback
-        )
-
-        # Mock SDK
         with patch.object(
-            agent_invoker, "_invoke_with_role", new_callable=AsyncMock
+            agent_invoker, "_invoke_with_role",
+            _coach_mock(sample_coach_feedback),
         ):
-            # Execute
             result = await agent_invoker.invoke_coach(
                 task_id="TASK-001",
                 turn=1,
@@ -421,19 +448,24 @@ class TestCoachInvocation:
                 player_report=sample_player_report,
             )
 
-            # Verify
             assert result.success is True
             assert result.report["decision"] == "feedback"
             assert len(result.report["issues"]) > 0
 
     @pytest.mark.asyncio
     async def test_invoke_coach_decision_not_found(self, agent_invoker, sample_player_report):
-        """Raises error if Coach doesn't create decision."""
-        # Mock SDK (decision file won't be created)
+        """Raises error if Coach doesn't emit a fenced JSON block.
+
+        TASK-FIX-COACHOUT01 Shape A: the failure mode is no event stream
+        (or an event stream with no fenced ``json`` block). The parser
+        raises ``CoachDecisionNotFoundError`` which propagates to
+        ``invoke_coach``'s except branch.
+        """
+        # Mock SDK to return an empty event stream (no AssistantMessageEvent).
         with patch.object(
-            agent_invoker, "_invoke_with_role", new_callable=AsyncMock
+            agent_invoker, "_invoke_with_role",
+            _coach_mock(None),
         ):
-            # Execute
             result = await agent_invoker.invoke_coach(
                 task_id="TASK-001",
                 turn=1,
@@ -441,30 +473,31 @@ class TestCoachInvocation:
                 player_report=sample_player_report,
             )
 
-            # Verify
             assert result.success is False
+            # COACHSF01 greps for this substring in autobuild.py:5676-5678.
             assert "Coach decision not found" in result.error
 
     @pytest.mark.asyncio
     async def test_invoke_coach_invalid_decision_value(
         self, agent_invoker, worktree_path, sample_player_report
     ):
-        """Raises error if Coach decision has invalid value."""
-        # Setup: Create decision with invalid value
+        """Raises error if Coach decision has an invalid ``decision`` value.
+
+        TASK-FIX-COACHOUT01 Shape A: the parser validates the decision
+        field against ``{"approve", "feedback"}`` before writing
+        ``coach_turn_N.json``. ``"maybe"`` triggers
+        ``CoachDecisionInvalidError`` directly from the parser, so the
+        file is never created.
+        """
         invalid_decision = {
             "task_id": "TASK-001",
             "turn": 1,
             "decision": "maybe",  # Invalid - must be "approve" or "feedback"
         }
-        create_report_file(
-            worktree_path, "TASK-001", 1, "coach", invalid_decision
-        )
-
-        # Mock SDK
         with patch.object(
-            agent_invoker, "_invoke_with_role", new_callable=AsyncMock
+            agent_invoker, "_invoke_with_role",
+            _coach_mock(invalid_decision),
         ):
-            # Execute
             result = await agent_invoker.invoke_coach(
                 task_id="TASK-001",
                 turn=1,
@@ -474,7 +507,13 @@ class TestCoachInvocation:
 
             # Verify
             assert result.success is False
-            assert "validation failed" in result.error
+            # TASK-FIX-COACHOUT01 Shape A: the parser catches the invalid
+            # ``decision`` value earlier in the pipeline (before
+            # ``_validate_coach_decision`` runs), so the error string now
+            # carries the parser's prefix instead of the validator's
+            # "validation failed" wording. COACHSF01 greps for this
+            # substring in autobuild.py:5676-5678.
+            assert "Coach decision invalid" in result.error
 
 
 # ==================== Prompt Building Tests ====================
@@ -515,7 +554,14 @@ class TestPromptBuilding:
         assert "Please address all feedback points" in prompt
 
     def test_build_coach_prompt(self, agent_invoker, worktree_path, sample_player_report):
-        """Coach prompt includes requirements and Player report."""
+        """Coach prompt includes requirements and Player report.
+
+        TASK-FIX-COACHOUT01 Shape A: the Coach prompt no longer embeds the
+        ``coach_turn_N.json`` worktree path because Coach does not write
+        the file. The orchestrator parses the verdict from Coach's
+        response text and writes the file itself. The prompt must instead
+        instruct Coach to end its response with a fenced ``json`` block.
+        """
         prompt = agent_invoker._build_coach_prompt(
             task_id="TASK-001",
             turn=1,
@@ -527,11 +573,22 @@ class TestPromptBuilding:
         assert "Turn: 1" in prompt
         assert "Implement OAuth2 authentication" in prompt
         assert "Player's Report" in prompt
-        # Verify absolute path with worktree_path prefix
-        assert f"{worktree_path}/.guardkit/autobuild/TASK-001/coach_turn_1.json" in prompt
         # Verify Player report is included as JSON
         assert '"task_id": "TASK-001"' in prompt
         assert '"tests_passed": true' in prompt
+
+        # TASK-FIX-COACHOUT01 Shape A — Decision Format contract.
+        # The old "Write your decision to {path}" instruction is gone;
+        # Coach is told to end its response with a fenced JSON block.
+        assert "Write your decision to" not in prompt
+        assert (
+            f"{worktree_path}/.guardkit/autobuild/TASK-001/coach_turn_1.json"
+            not in prompt
+        )
+        assert "fenced JSON block" in prompt
+        assert "```json" in prompt
+        # The "last fenced block wins" rule is load-bearing — pin it.
+        assert "last" in prompt.lower()
 
 
 # ==================== Report Validation Tests ====================
@@ -1327,8 +1384,17 @@ class TestInvokeTaskWorkImplement:
     def _create_mock_sdk(self, query_gen):
         """Create mock SDK module with given query generator.
 
-        TASK-FB-FIX-013: Updated to include AssistantMessage, TextBlock, and other
+        TASK-FB-FIX-013: Includes AssistantMessage, TextBlock, and other
         message types for proper ContentBlock iteration testing.
+
+        TASK-HMIG-006.1: Class names match the real SDK exactly (no "Mock"
+        prefix) so the harness's duck-typing scans at
+        ``sdk_harness.py:319`` (``type(block).__name__ == "ToolUseBlock"``)
+        and ``sdk_harness.py:477`` (``type(block).__name__ == "TextBlock"``)
+        succeed against these fixtures. With ``sys.modules`` patched, the
+        harness's lazy ``from claude_agent_sdk import ...`` resolves to
+        these classes; the duck-typing only works when the
+        ``type(...).__name__`` matches the SDK literal.
         """
         mock_sdk = MagicMock()
         mock_sdk.query = query_gen
@@ -1337,36 +1403,40 @@ class TestInvokeTaskWorkImplement:
         mock_sdk.ProcessError = type("ProcessError", (Exception,), {"exit_code": 1, "stderr": ""})
         mock_sdk.CLIJSONDecodeError = type("CLIJSONDecodeError", (Exception,), {})
 
-        # TASK-FB-FIX-013: Add message type classes for isinstance() checks
-        # These are real classes that isinstance() can check against
-        class MockTextBlock:
+        # Class names match the real SDK exactly so the harness's
+        # duck-typing on ``type(block).__name__`` accepts them.
+        class TextBlock:
             def __init__(self, text):
                 self.type = "text"
                 self.text = text
 
-        class MockToolUseBlock:
-            def __init__(self, name="test_tool"):
+        class ToolUseBlock:
+            def __init__(self, name="test_tool", input=None, id=""):
                 self.type = "tool_use"
                 self.name = name
+                self.input = input if input is not None else {}
+                self.id = id
 
-        class MockToolResultBlock:
-            def __init__(self, content=None):
+        class ToolResultBlock:
+            def __init__(self, content=None, tool_use_id=""):
                 self.type = "tool_result"
                 self.content = content
+                self.tool_use_id = tool_use_id
 
-        class MockAssistantMessage:
+        class AssistantMessage:
             def __init__(self, content):
                 self.content = content  # List of ContentBlocks
 
-        class MockResultMessage:
-            def __init__(self, num_turns=1):
+        class ResultMessage:
+            def __init__(self, num_turns=1, session_id=None):
                 self.num_turns = num_turns
+                self.session_id = session_id
 
-        mock_sdk.AssistantMessage = MockAssistantMessage
-        mock_sdk.TextBlock = MockTextBlock
-        mock_sdk.ToolUseBlock = MockToolUseBlock
-        mock_sdk.ToolResultBlock = MockToolResultBlock
-        mock_sdk.ResultMessage = MockResultMessage
+        mock_sdk.AssistantMessage = AssistantMessage
+        mock_sdk.TextBlock = TextBlock
+        mock_sdk.ToolUseBlock = ToolUseBlock
+        mock_sdk.ToolResultBlock = ToolResultBlock
+        mock_sdk.ResultMessage = ResultMessage
 
         return mock_sdk
 
@@ -1656,6 +1726,381 @@ class TestInvokeTaskWorkImplement:
         assert quality_gates["coverage"] == 92.5
         assert quality_gates["coverage_met"] is True
         assert quality_gates["tests_passing"] is True
+
+
+class TestTaskWorkHarnessMigration:
+    """Verify TASK-HMIG-006.1 harness-migration contract.
+
+    Mirrors TASK-HMIG-006.3's TestCoachHarnessMigration pattern. These
+    tests exercise the harness substrate seam itself rather than relying
+    on ``sys.modules["claude_agent_sdk"]`` patching: they patch
+    ``agent_invoker.select_harness`` so the test specifies the harness
+    instance directly. AC-004 (LangGraph dispatch) is exercised via the
+    env-var probe and the AgentInvocationError re-raise path.
+    """
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance for harness-migration tests."""
+        return AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=60,
+            use_task_work_delegation=True,
+        )
+
+    def _build_fake_harness(self, events_to_yield, supports_resume=True):
+        """Construct a minimal HarnessAdapter stand-in.
+
+        The fake harness yields whatever ``events_to_yield`` produces and
+        records the kwargs passed to ``invoke``. Mirrors the pattern in
+        ``tests/unit/test_coach_validator.py::_FakeHarness``.
+        """
+        from guardkit.orchestrator.harness import HarnessAdapter
+
+        class _FakeHarness(HarnessAdapter):
+            def __init__(self):
+                self.invoke_kwargs = None
+
+            async def invoke(self, prompt, role, tools, cwd, *, timeout_seconds):
+                self.invoke_kwargs = {
+                    "prompt": prompt,
+                    "role": role,
+                    "tools": list(tools),
+                    "cwd": cwd,
+                    "timeout_seconds": timeout_seconds,
+                }
+                for event in events_to_yield:
+                    yield event
+
+            @property
+            def supports_resume(self):
+                return supports_resume
+
+        return _FakeHarness()
+
+    @pytest.mark.asyncio
+    async def test_dispatches_through_select_harness(self, invoker, worktree_path):
+        """AC-001: TaskWork dispatch routes through select_harness rather
+        than re-importing ``claude_agent_sdk`` directly."""
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+        )
+
+        events = [
+            AssistantMessageEvent(
+                text="15 tests passed, 0 tests failed\nCoverage: 88.5%",
+                raw=None,
+            ),
+            ResultMessageEvent(session_id="test-session-id-001", raw=None),
+        ]
+        fake_harness = self._build_fake_harness(events)
+        select_harness_kwargs = {}
+
+        def _capture_select(**kwargs):
+            select_harness_kwargs.update(kwargs)
+            return fake_harness
+
+        with patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            side_effect=_capture_select,
+        ) as mock_select:
+            result = await invoker._invoke_task_work_implement(
+                task_id="TASK-HMIG-006.1-AC001",
+                mode="standard",
+            )
+
+        assert result.success is True
+        # ``select_harness`` must be called at least once (retry loop may
+        # iterate, but the success path exits after the first attempt).
+        assert mock_select.call_count >= 1
+        # AC-002: orchestrator-side Player concerns must survive the
+        # migration as harness constructor kwargs.
+        assert select_harness_kwargs["permission_mode"] == "acceptEdits"
+        assert "Read" in select_harness_kwargs["allowed_tools"]
+        assert "Write" in select_harness_kwargs["allowed_tools"]
+        assert "Edit" in select_harness_kwargs["allowed_tools"]
+        assert "Bash" in select_harness_kwargs["allowed_tools"]
+        assert "Task" in select_harness_kwargs["allowed_tools"]
+        assert "Skill" not in select_harness_kwargs["allowed_tools"]
+        # TASK-FIX-002R-CONSUME: the cwd kwarg must be passed unconditionally
+        # so the LangGraph branch can build a path-confined backend.
+        assert select_harness_kwargs["cwd"] == worktree_path
+        # TASK-POF-004 / TASK-HMIG-006.4: setting_sources stays orchestrator-side.
+        assert select_harness_kwargs["setting_sources"] == ["project"]
+        # The cleanup handler must be threaded through to the harness
+        # (D-6 — single-use per invocation, harness installs it).
+        from guardkit.orchestrator.agent_invoker import _install_sdk_cleanup_handler
+        assert (
+            select_harness_kwargs["cleanup_handler_installer"]
+            is _install_sdk_cleanup_handler
+        )
+        # Session ID captured from ResultMessageEvent (TASK-RFX-B20B).
+        assert invoker._last_session_id == "test-session-id-001"
+        assert result.session_id == "test-session-id-001"
+
+    @pytest.mark.asyncio
+    async def test_assistant_event_text_collected_for_parser(self, invoker):
+        """AC-001: text from AssistantMessageEvent flows into the parser
+        so quality gates are extracted."""
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+        )
+
+        events = [
+            AssistantMessageEvent(
+                text="12 tests passed, 0 tests failed\nCoverage: 92.5%\nIN_REVIEW",
+                raw=None,
+            ),
+            ResultMessageEvent(session_id=None, raw=None),
+        ]
+        fake_harness = self._build_fake_harness(events)
+
+        with patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            return_value=fake_harness,
+        ):
+            result = await invoker._invoke_task_work_implement(
+                task_id="TASK-HMIG-006.1-AC001b",
+                mode="tdd",
+            )
+
+        assert result.success is True
+        assert result.output.get("tests_passed") == 12
+        assert result.output.get("coverage") == 92.5
+
+    @pytest.mark.asyncio
+    async def test_agent_invocation_error_returns_failure_result(self, invoker):
+        """AC-001 D-4: AgentInvocationError from the harness boundary is
+        converted to a ``TaskWorkResult(success=False)`` with the harness
+        message preserved (so the four pre-migration SDK-specific
+        diagnostic messages survive verbatim)."""
+        from guardkit.orchestrator.harness import HarnessAdapter
+
+        class _RaisingHarness(HarnessAdapter):
+            async def invoke(self, prompt, role, tools, cwd, *, timeout_seconds):
+                # D-4 normalised error message — mirrors the wording the
+                # harness uses for CLINotFoundError (sdk_harness.py:421-424).
+                raise AgentInvocationError(
+                    "Claude Code CLI not installed. "
+                    "Run: npm install -g @anthropic-ai/claude-code"
+                )
+                yield  # type: ignore[unreachable]
+
+        with patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            return_value=_RaisingHarness(),
+        ):
+            result = await invoker._invoke_task_work_implement(
+                task_id="TASK-HMIG-006.1-AC001c",
+                mode="standard",
+            )
+
+        assert result.success is False
+        assert "Claude Code CLI not installed" in result.error
+
+    @pytest.mark.asyncio
+    async def test_langgraph_env_var_routes_through_selector(
+        self, invoker, monkeypatch, worktree_path
+    ):
+        """AC-004: setting ``GUARDKIT_HARNESS=langgraph`` causes the
+        orchestrator to dispatch through ``select_harness`` rather than
+        hardcoding the SDK path.
+
+        Mirrors TASK-HMIG-006.3's ``test_honours_langgraph_env_var``
+        pattern (tests/unit/test_coach_validator.py:5628-5655): the test
+        asserts dispatch-boundary placement, not LangGraph behavioural
+        parity. Behavioural parity for LangGraph is out of scope here
+        (LangGraph turn loop is owned by guardkitfactory).
+        """
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+        )
+
+        monkeypatch.setenv("GUARDKIT_HARNESS", "langgraph")
+        events = [
+            AssistantMessageEvent(text="0 tests passed, 0 tests failed", raw=None),
+            ResultMessageEvent(session_id=None, raw=None),
+        ]
+        fake_harness = self._build_fake_harness(events)
+        call_count = 0
+
+        def _capture(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            return fake_harness
+
+        with patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            side_effect=_capture,
+        ):
+            result = await invoker._invoke_task_work_implement(
+                task_id="TASK-HMIG-006.1-AC004",
+                mode="standard",
+            )
+
+        # The orchestrator dispatched through select_harness regardless of
+        # substrate (AC-004). Retry loop may invoke once on success.
+        assert call_count >= 1, (
+            "select_harness must be the dispatch boundary regardless of substrate"
+        )
+        # And the harness's ``invoke`` was actually consumed (proves we
+        # iterated events from whatever harness the selector returned).
+        assert fake_harness.invoke_kwargs is not None
+        assert fake_harness.invoke_kwargs["role"] == "player"
+        assert fake_harness.invoke_kwargs["cwd"] == worktree_path
+        assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_resume_session_id_threaded_into_harness(
+        self, invoker, worktree_path
+    ):
+        """TASK-RFX-B20B parity: when ``_last_session_id`` is set, the
+        orchestrator threads it into the harness constructor so the SDK
+        path can resume."""
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+        )
+
+        invoker._last_session_id = "prior-session-fafa-bbbb-cccc"
+
+        events = [
+            AssistantMessageEvent(text="0 tests passed, 0 tests failed", raw=None),
+            ResultMessageEvent(session_id="fresh-session-id", raw=None),
+        ]
+        fake_harness = self._build_fake_harness(events, supports_resume=True)
+        select_harness_kwargs = {}
+
+        def _capture_select(**kwargs):
+            select_harness_kwargs.update(kwargs)
+            return fake_harness
+
+        with patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            side_effect=_capture_select,
+        ):
+            await invoker._invoke_task_work_implement(
+                task_id="TASK-HMIG-006.1-resume",
+                mode="standard",
+            )
+
+        assert (
+            select_harness_kwargs["resume_session_id"]
+            == "prior-session-fafa-bbbb-cccc"
+        )
+        # And the orchestrator overwrites _last_session_id with the
+        # session_id from the terminal event for the next turn.
+        assert invoker._last_session_id == "fresh-session-id"
+
+    @pytest.mark.asyncio
+    async def test_model_name_threaded_into_harness(self, worktree_path):
+        """TASK-FIX-LGFM2 (sibling-of-LGFM, sibling-of-F9/F1): when the
+        AgentInvoker is constructed with ``model_name="qwen36-workhorse"``,
+        the orchestrator-stored model must be threaded into the harness
+        constructor at the ``_invoke_task_work_implement`` site (the main
+        inline-implement Player path), not just at the ``_invoke_with_role``
+        site.
+
+        Pre-fix, the main Player's ``select_harness(...)`` call at
+        agent_invoker.py:5730 omitted the ``model=`` kwarg entirely, so the
+        LangGraph branch received ``model=None``, DeepAgents fell back to
+        its default Anthropic provider, and llama-swap operators saw
+        "Could not resolve authentication method" at Player turn 1
+        (F10 in feature-run-incidents.md). Mirrors the working
+        ``_invoke_with_role`` site at agent_invoker.py:2863.
+        """
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+        )
+
+        invoker = AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=60,
+            use_task_work_delegation=True,
+            model_name="qwen36-workhorse",
+        )
+
+        events = [
+            AssistantMessageEvent(text="0 tests passed, 0 tests failed", raw=None),
+            ResultMessageEvent(session_id=None, raw=None),
+        ]
+        fake_harness = self._build_fake_harness(events)
+        select_harness_kwargs = {}
+
+        def _capture_select(**kwargs):
+            select_harness_kwargs.update(kwargs)
+            return fake_harness
+
+        with patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            side_effect=_capture_select,
+        ):
+            result = await invoker._invoke_task_work_implement(
+                task_id="TASK-FIX-LGFM2-AC002",
+                mode="standard",
+            )
+
+        assert result.success is True
+        # The single line LGFM2 adds: the model kwarg must be passed
+        # through to the harness so the LangGraph branch can construct
+        # DeepAgents with the configured model, not fall back to
+        # Anthropic-default.
+        assert "model" in select_harness_kwargs, (
+            "TASK-FIX-LGFM2 regression: select_harness must be called "
+            "with a model= kwarg from _invoke_task_work_implement"
+        )
+        assert select_harness_kwargs["model"] == "qwen36-workhorse", (
+            f"TASK-FIX-LGFM2 regression: expected model='qwen36-workhorse' "
+            f"to reach the harness, got {select_harness_kwargs['model']!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_model_name_none_threaded_as_none(self, worktree_path):
+        """TASK-FIX-LGFM2 complement: when ``model_name`` is omitted at
+        construction (the legacy call-shape before TASK-FIX-MODELPLUMB
+        threaded --model end-to-end), the harness receives ``model=None``.
+
+        This pins that the fix did NOT introduce a hardcoded default at
+        the inline-implement site — model selection still flows from the
+        constructor, matching the CLI default behaviour."""
+        from guardkit.orchestrator.harness import (
+            AssistantMessageEvent,
+            ResultMessageEvent,
+        )
+
+        invoker = AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=60,
+            use_task_work_delegation=True,
+            # model_name omitted → defaults to None
+        )
+
+        events = [
+            AssistantMessageEvent(text="0 tests passed, 0 tests failed", raw=None),
+            ResultMessageEvent(session_id=None, raw=None),
+        ]
+        fake_harness = self._build_fake_harness(events)
+        select_harness_kwargs = {}
+
+        def _capture_select(**kwargs):
+            select_harness_kwargs.update(kwargs)
+            return fake_harness
+
+        with patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            side_effect=_capture_select,
+        ):
+            await invoker._invoke_task_work_implement(
+                task_id="TASK-FIX-LGFM2-AC002-none",
+                mode="standard",
+            )
+
+        assert "model" in select_harness_kwargs
+        assert select_harness_kwargs["model"] is None
 
 
 class TestParseTaskWorkOutput:

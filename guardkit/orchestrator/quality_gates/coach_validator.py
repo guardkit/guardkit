@@ -65,6 +65,21 @@ from guardkit.orchestrator.phase_specialists import (
 from guardkit.orchestrator.schemas import STATUS_ALIASES
 from guardkit.models.task_types import TaskType, QualityGateProfile, get_profile, TASK_TYPE_ALIASES
 
+# TASK-HMIG-006.3: Coach's independent SDK invocation dispatches through
+# the HarnessAdapter substrate seam established by TASK-HMIG-006 (Player
+# path) and TASK-HMIG-006.2 (cross-repo helper migration). Importing at
+# module top matches the Player path convention in
+# ``agent_invoker.py:71-77`` and makes ``select_harness`` a stable patch
+# target for tests under ``coach_validator.select_harness``.
+from guardkit.orchestrator.exceptions import AgentInvocationError
+from guardkit.orchestrator.harness import (
+    AssistantMessageEvent,
+    ResultMessageEvent,
+    ToolResultEvent,
+    select_harness,
+)
+from guardkit.orchestrator.sdk_utils import check_assistant_message_error
+
 # Optional coach context integration (TASK-SC-009)
 try:
     from guardkit.planning.coach_context_builder import build_coach_context
@@ -528,6 +543,7 @@ class CoachValidator:
         wave_size: int = 1,
         turn: int = 1,
         peer_changed_files: Optional[Dict[str, Any]] = None,
+        model_name: Optional[str] = None,
     ):
         """
         Initialize CoachValidator.
@@ -569,12 +585,23 @@ class CoachValidator:
             NOT fire — instead Coach returns feedback and the existing
             Player-Coach loop retries on the next turn (by which point peers have
             completed and the wave is naturally serialised). See TASK-FIX-A7B2.
+        model_name : Optional[str]
+            Orchestrator-configured model name to thread through to the harness
+            for SDK-based Coach test execution. Used as a fallback when the
+            ``GUARDKIT_COACH_TEST_MODEL`` env var is not set. Mirrors the model
+            threading precedent set by TASK-FIX-LGFM2 / TASK-FIX-MODELPLUMB in
+            ``AgentInvoker``. Without this, the LangGraph harness receives
+            ``model=None`` for ``role='coach_test'`` and falls back to subprocess
+            (TASK-FIX-LGFM3 / F12).
         """
         self.worktree_path = Path(worktree_path)
         self.test_command = test_command
         self.test_timeout = test_timeout
         self.task_id = task_id
         self._coach_test_execution = coach_test_execution
+        # TASK-FIX-LGFM3: orchestrator model threaded through for SDK test
+        # execution path; falls back to None when caller didn't supply one.
+        self._model_name: Optional[str] = model_name
         self.wave_size = max(1, int(wave_size))
         # TASK-DIAG-F4A2: Turn number for sdk_debug preservation paths.
         # Default 1 keeps backwards-compat for callers that don't pass it.
@@ -720,12 +747,20 @@ class CoachValidator:
     def _get_coach_test_model(self) -> Optional[str]:
         """Return the model for Coach SDK test invocations, or None to use CLI default.
 
-        When set, GUARDKIT_COACH_TEST_MODEL allows operators to use a different
-        model for Coach test execution (e.g. claude-haiku-4-5-20251001 to reduce
-        cost on the real Anthropic API) while the CLI default works with vLLM.
+        Resolution order:
+        1. ``GUARDKIT_COACH_TEST_MODEL`` env var (operator override — e.g.
+           claude-haiku-4-5-20251001 for cost reduction on the real Anthropic API).
+        2. Orchestrator-supplied ``model_name`` (TASK-FIX-LGFM3): same value
+           threaded into ``AgentInvoker.select_harness`` calls. Without this
+           fallback, the LangGraph harness receives ``model=None`` for
+           ``role='coach_test'`` and the SDK path errors out (F12).
+        3. ``None`` (harness uses CLI default).
         """
         import os
-        return os.environ.get("GUARDKIT_COACH_TEST_MODEL") or None
+        env_model = os.environ.get("GUARDKIT_COACH_TEST_MODEL") or None
+        if env_model is not None:
+            return env_model
+        return self._model_name
 
     def _resolve_task_type(self, task: Dict[str, Any]) -> TaskType:
         """
@@ -2342,11 +2377,19 @@ class CoachValidator:
         return str(content)
 
     async def _run_tests_via_sdk(self, test_cmd: str) -> IndependentTestResult:
-        """Run tests via Claude Agent SDK Bash tool for environment parity.
+        """Run tests via the harness substrate seam (TASK-HMIG-006.3).
 
-        Uses the SDK to execute the test command inside a Claude Code session,
-        ensuring the same shell environment (PATH, conda/venv activation, etc.)
-        as the Player agent used during implementation.
+        Dispatches through :func:`select_harness` so ``GUARDKIT_HARNESS``
+        routes Coach's independent verification through the SDK or
+        LangGraph substrate consistently with the Player path migrated
+        in TASK-HMIG-006/006.2. Coach-specific orchestrator concerns
+        (``allowed_tools=["Bash"]``, ``max_turns=1``,
+        ``permission_mode="bypassPermissions"``, ``self.test_timeout``)
+        remain orchestrator-side per AC-002.
+
+        The method name retains the historical ``_via_sdk`` suffix so
+        callers (``run_independent_tests`` at line ~2867) need no
+        change; the dispatch is now harness-agnostic.
 
         Parameters
         ----------
@@ -2356,165 +2399,187 @@ class CoachValidator:
         Returns
         -------
         IndependentTestResult
-            Result of test execution via SDK
+            Result of test execution via the substrate seam.
         """
         import asyncio
         import time
+        from contextlib import contextmanager
 
-        try:
-            from claude_agent_sdk import (
-                query,
-                ClaudeAgentOptions,
-                AssistantMessage,
-                UserMessage,
-                ToolResultBlock,
-                CLINotFoundError,
-                ProcessError,
-                CLIJSONDecodeError,
-            )
-        except ImportError as e:
-            logger.warning(f"Claude Agent SDK not available for coach test execution: {e}")
-            raise
+        # ``select_harness``, harness event types, ``AgentInvocationError``,
+        # and ``check_assistant_message_error`` are imported at module top
+        # (TASK-HMIG-006.3) so ``coach_validator.select_harness`` is a
+        # stable patch target. ``asyncio`` / ``time`` / ``contextmanager``
+        # remain method-local to preserve the historic lazy-import shape
+        # for the rest of the method body.
 
-        from guardkit.orchestrator.sdk_utils import check_assistant_message_error
+        @contextmanager
+        def _patched_pythonpath(prepend: str):
+            """Scope PYTHONPATH mutation to harness.invoke() (Step D).
 
-        # TASK-FIX-7A09: MessageParseError is raised by the SDK's internal
-        # parser when it hits a message type it doesn't recognise (e.g.
-        # rate_limit_event on a newer API than the installed SDK knows
-        # about). The class lives in the private _errors module because it
-        # is not part of claude_agent_sdk.__all__. Graceful-fallback import
-        # mirrors agent_invoker.py:2174 so test fixtures that mock
-        # claude_agent_sdk as a MagicMock do not crash on the _errors
-        # submodule.
-        try:
-            from claude_agent_sdk._errors import MessageParseError
-        except ImportError:
-            class MessageParseError(Exception):  # type: ignore[no-redef]
-                """Sentinel when SDK does not expose _errors submodule."""
-                pass
+            ``ClaudeSDKHarness`` does not accept an ``env=`` kwarg
+            (sdk_harness.py:130-158); adding one would widen the
+            harness interface for a Coach-only concern (ISP). Mutating
+            ``os.environ`` in a tight scope lets the SDK subprocess
+            inherit PYTHONPATH naturally. The single-coach-turn-per-
+            worktree invariant makes this process-global side effect
+            acceptable; do not lift this helper to a module-level
+            utility without reconsidering thread-safety.
+            """
+            original = os.environ.get("PYTHONPATH")
+            current = os.environ.get("PYTHONPATH", "")
+            new = f"{prepend}:{current}" if current else prepend
+            os.environ["PYTHONPATH"] = new
+            try:
+                yield
+            finally:
+                if original is None:
+                    os.environ.pop("PYTHONPATH", None)
+                else:
+                    os.environ["PYTHONPATH"] = original
 
         start_time = time.time()
-        prompt = f"Run the following test command and report the output:\n\n```bash\n{test_cmd}\n```\n\nProvide the full test output."
+        prompt = (
+            f"Run the following test command and report the output:\n\n"
+            f"```bash\n{test_cmd}\n```\n\nProvide the full test output."
+        )
+
+        # TASK-HMIG-006.5: Restore sdk_debug preservation for the Coach
+        # test path. Pre-migration (TASK-DIAG-F4A2), the SDK call site
+        # invoked ``_sdk_preserve_prompt`` / ``_sdk_preserve_event``
+        # under ``GUARDKIT_AUTOBUILD_PRESERVE_DEBUG=1`` so incident
+        # analysis of coach test-run failures had a quoted artefact
+        # trail under ``sdk_debug/turn_<n>/coach/test_run/``. The
+        # HMIG-006.3 migration dropped those calls because the harness
+        # substrate seam owns the message stream and no harness-level
+        # hook existed. The preservation is re-introduced here against
+        # the synthesised options-shaped snapshot below so the
+        # diagnostic surface mirrors the pre-migration shape; the
+        # harness dispatch boundary itself (AC-001/AC-002 of HMIG-006.3)
+        # is untouched. Zero overhead when the env var is unset
+        # (``preserve_prompt`` short-circuits and ``preserve_event``
+        # becomes a no-op against ``debug_dir=None``).
+        from guardkit.orchestrator.sdk_debug import (
+            preserve_prompt as _sdk_preserve_prompt,
+            preserve_event as _sdk_preserve_event,
+        )
 
         try:
             # Use GUARDKIT_COACH_TEST_MODEL env var if set, otherwise CLI default
             model = self._get_coach_test_model()
-
-            # Fix: ensure worktree root has priority on PYTHONPATH to avoid
-            # stale .pth files from previous editable installs polluting sys.path
-            current_pythonpath = os.environ.get("PYTHONPATH", "")
             worktree_str = str(self.worktree_path)
-            new_pythonpath = f"{worktree_str}:{current_pythonpath}" if current_pythonpath else worktree_str
-            logger.debug(f"Coach SDK PYTHONPATH: {new_pythonpath}")
+            logger.debug(f"Coach harness PYTHONPATH prepend: {worktree_str}")
 
-            options_kwargs = dict(
-                cwd=str(self.worktree_path),
-                allowed_tools=["Bash"],
-                permission_mode="bypassPermissions",
-                max_turns=1,
-                env={**os.environ, "PYTHONPATH": new_pythonpath},
-            )
-            if model is not None:
-                options_kwargs["model"] = model
-            options = ClaudeAgentOptions(**options_kwargs)
-
-            # TASK-DIAG-F4A2: Preserve coach independent-test prompt + stream
-            # under sdk_debug/turn_<n>/coach/test_run/ when
-            # GUARDKIT_AUTOBUILD_PRESERVE_DEBUG is set. No-op otherwise.
-            from guardkit.orchestrator.sdk_debug import (
-                preserve_prompt as _sdk_preserve_prompt,
-                preserve_event as _sdk_preserve_event,
-            )
+            # Synthesise the diagnostic options snapshot the
+            # pre-migration ``ClaudeAgentOptions`` would have produced.
+            # The post-migration harness owns its own option assembly;
+            # this record captures Coach's intent (what the substrate
+            # was asked to run with) rather than the substrate's
+            # realisation. ``GUARDKIT_HARNESS`` is included so the
+            # post-mortem can distinguish SDK vs. LangGraph runs.
+            _sdk_options_snapshot = {
+                "cwd": str(self.worktree_path),
+                "allowed_tools": ["Bash"],
+                "permission_mode": "bypassPermissions",
+                "max_turns": 1,
+                "model": model,
+                "harness": os.environ.get("GUARDKIT_HARNESS", "sdk"),
+                "pythonpath_prepend": worktree_str,
+                "sdk_timeout_seconds": self.test_timeout,
+            }
             _sdk_debug_dir = _sdk_preserve_prompt(
                 workspace_root=self.worktree_path,
                 task_id=self.task_id or "unknown",
                 turn=self._turn,
                 role="coach_test",
                 prompt=prompt,
-                options=options,
+                options=_sdk_options_snapshot,
             )
 
             collected_text: List[str] = []
             bash_output: Optional[str] = None
             bash_is_error: Optional[bool] = None
+            api_error: Optional[str] = None
 
-            # TASK-FIX-7A09: Mirror the per-message defensive stream
-            # iteration from agent_invoker._invoke_with_role
-            # (TASK-FIX-7A03) onto the Coach independent-test SDK path.
-            # Parse-type exceptions on individual messages
-            # (MessageParseError from the SDK's internal parser hitting
-            # an unknown message type; ValueError from "Unsupported
-            # plugin type" etc.) are logged and skipped so one bad
-            # message does not abort the whole test-verification turn.
-            # Transport-level exceptions (ProcessError,
-            # CLIJSONDecodeError, CLINotFoundError) are NOT caught here
-            # — they bubble through to the outer except cascade where
-            # their structured diagnostic info (exit_code, stderr) is
-            # surfaced to the caller.
-            unparseable_count = 0
-            async with asyncio.timeout(self.test_timeout):
-                gen = query(prompt=prompt, options=options)
-                gen_iter = gen.__aiter__()
-                while True:
-                    try:
-                        message = await gen_iter.__anext__()
-                    except StopAsyncIteration:
-                        break
-                    except (MessageParseError, ValueError) as parse_err:
-                        unparseable_count += 1
-                        logger.warning(
-                            f"TASK-FIX-7A09: Skipping unparseable SDK "
-                            f"message in coach test stream "
-                            f"(error_class="
-                            f"{type(parse_err).__name__}): {parse_err}"
-                        )
-                        continue
-
-                    # TASK-DIAG-F4A2: Preserve event to JSONL (no-op if disabled)
-                    _sdk_preserve_event(_sdk_debug_dir, message)
-
-                    err = check_assistant_message_error(message)
-                    if err:
-                        duration = time.time() - start_time
-                        logger.error(f"SDK API error during coach test execution: {err}")
-                        return IndependentTestResult(
-                            tests_passed=False,
-                            test_command=test_cmd,
-                            test_output_summary=f"SDK API error: {err}",
-                            duration_seconds=duration,
-                            raw_output=f"SDK API error: {err}",
-                        )
-
-                    if isinstance(message, AssistantMessage):
-                        from claude_agent_sdk import TextBlock
-                        for block in message.content:
-                            if isinstance(block, TextBlock):
-                                collected_text.append(block.text)
-                    elif isinstance(message, UserMessage):
-                        # GAP-FIX #4: Extract Bash tool results from UserMessage
-                        if hasattr(message, 'content') and isinstance(message.content, list):
-                            for block in message.content:
-                                if isinstance(block, ToolResultBlock):
-                                    block_text = self._extract_content_text(block.content)
-                                    if block_text:
-                                        bash_output = block_text
-                                    # GAP-FIX #6/#7: Three-way is_error handling
-                                    is_err = getattr(block, 'is_error', None)
-                                    if is_err is True:
-                                        bash_is_error = True
-                                    elif is_err is False:
-                                        bash_is_error = False
-                                    # None: parse output text to determine pass/fail
-
-            if unparseable_count > 0:
-                logger.warning(
-                    f"TASK-FIX-7A09: coach test stream completed with "
-                    f"{unparseable_count} unparseable message(s) dropped"
+            with _patched_pythonpath(worktree_str):
+                harness = select_harness(
+                    sdk_timeout_seconds=self.test_timeout,
+                    allowed_tools=["Bash"],
+                    permission_mode="bypassPermissions",
+                    max_turns=1,
+                    model=model,
+                    cwd=self.worktree_path,
                 )
+
+                async with asyncio.timeout(self.test_timeout):
+                    async for event in harness.invoke(
+                        prompt=prompt,
+                        role="coach_test",
+                        tools=["Bash"],
+                        cwd=self.worktree_path,
+                        timeout_seconds=self.test_timeout,
+                    ):
+                        # TASK-HMIG-006.5: record every harness event
+                        # the loop consumes. ``preserve_event`` is a
+                        # no-op when ``_sdk_debug_dir`` is None
+                        # (env var unset), so this is zero-cost in
+                        # production.
+                        _sdk_preserve_event(_sdk_debug_dir, event)
+                        if isinstance(event, AssistantMessageEvent):
+                            # API-error short-circuit mirrors the Player
+                            # dispatch in agent_invoker._invoke_with_role.
+                            # Only the SDK harness sets ``event.raw``;
+                            # other substrates have raw=None and this
+                            # check is a no-op there.
+                            if event.raw is not None:
+                                err = check_assistant_message_error(event.raw)
+                                if err:
+                                    api_error = err
+                                    break
+                            collected_text.append(event.text)
+                        elif isinstance(event, ToolResultEvent):
+                            # NOTE (TASK-HMIG-006.3, Architectural review
+                            # Concern 4): the current SDK harness does NOT
+                            # yield ToolResultEvent — sdk_harness.py only
+                            # handles AssistantMessage / ResultMessage /
+                            # ToolUseEvent. On the SDK path bash_is_error
+                            # therefore stays None and the heuristic
+                            # branch below is the effective pass/fail
+                            # determination. This branch is live for any
+                            # future harness that yields ToolResultEvent
+                            # (e.g. a variant that walks UserMessage
+                            # content) and preserves the pre-migration
+                            # tri-state contract:
+                            #   is_error=True  -> bash_is_error=True (tool errored)
+                            #   is_error=False -> bash_is_error=None (heuristic)
+                            # The False->None mapping is intentional:
+                            # is_error=False means "tool ran cleanly" not
+                            # "tests passed", so we let the heuristic
+                            # branch decide from the output text.
+                            content = event.content
+                            if isinstance(content, str):
+                                bash_output = content
+                            else:
+                                bash_output = self._extract_content_text(content)
+                            bash_is_error = True if event.is_error else None
+                        elif isinstance(event, ResultMessageEvent):
+                            break
 
             duration = time.time() - start_time
 
-            # Determine pass/fail from bash_is_error and output
+            if api_error is not None:
+                logger.error(f"SDK API error during coach test execution: {api_error}")
+                return IndependentTestResult(
+                    tests_passed=False,
+                    test_command=test_cmd,
+                    test_output_summary=f"SDK API error: {api_error}",
+                    duration_seconds=duration,
+                    raw_output=f"SDK API error: {api_error}",
+                )
+
+            # Determine pass/fail from bash_is_error and output. Branches
+            # below are unchanged from pre-migration: output assembly is
+            # substrate-agnostic; only the source of bash_is_error /
+            # bash_output / collected_text changed.
             if bash_is_error is True:
                 output_text = bash_output or "\n".join(collected_text) or "No output"
                 summary = self._summarize_test_output(output_text)
@@ -2529,6 +2594,16 @@ class CoachValidator:
                     raw_output=output_text,
                 )
             elif bash_is_error is False:
+                # NOTE (TASK-HMIG-006.3 code-review nit): this branch is
+                # unreachable in the current implementation because the
+                # ToolResultEvent handler above maps ``is_error=False``
+                # to ``bash_is_error=None`` (heuristic path). Retained
+                # unchanged from pre-migration per the implementation
+                # plan; it activates only if a future harness yields
+                # tri-state ``is_error`` semantics (e.g. by emitting
+                # ``bash_is_error = False`` directly here from a custom
+                # branch). Removing it would silently break that future
+                # extension, so the branch stays live but documented.
                 output_text = bash_output or "\n".join(collected_text) or "No output"
                 summary = self._summarize_test_output(output_text)
                 logger.debug(
@@ -2577,40 +2652,25 @@ class CoachValidator:
                 duration_seconds=duration,
                 raw_output=f"Timeout after {self.test_timeout}s",
             )
-        # TASK-FIX-7A09: Split the former catch-all into explicit handlers
-        # so transport-level failures carry structured diagnostic info
-        # (exit_code, stderr, error_class) through to the fallback log in
-        # run_independent_tests. The original exceptions are re-raised
-        # untouched — ProcessError already carries .exit_code and .stderr,
-        # CLIJSONDecodeError carries .line and .original_error — so the
-        # caller can introspect type/attributes without string-matching.
-        except CLINotFoundError as e:
-            duration = time.time() - start_time
+        except AgentInvocationError as e:
+            # TASK-HMIG-006.3 D-4: the harness normalises
+            # CLINotFoundError / ProcessError / CLIJSONDecodeError /
+            # MessageParseError into a single AgentInvocationError
+            # (sdk_harness.py). The diagnostic info (exit_code, stderr,
+            # error_class) is preserved inside the exception message
+            # string. ``run_independent_tests``'s generic catch reads
+            # type(e).__name__ for log formatting and falls back to
+            # subprocess, so behavioural parity is preserved; the only
+            # observable change is the logged error_class value.
             logger.error(
                 f"SDK coach test execution failed "
-                f"(error_class=CLINotFoundError): {e}"
-            )
-            raise
-        except ProcessError as e:
-            duration = time.time() - start_time
-            stderr_val = getattr(e, "stderr", None)
-            stderr_head = stderr_val[:500] if isinstance(stderr_val, str) else None
-            logger.error(
-                f"SDK coach test execution failed "
-                f"(error_class=ProcessError, "
-                f"exit_code={getattr(e, 'exit_code', None)}, "
-                f"stderr_head={stderr_head!r}): {e}"
-            )
-            raise
-        except CLIJSONDecodeError as e:
-            duration = time.time() - start_time
-            logger.error(
-                f"SDK coach test execution failed "
-                f"(error_class=CLIJSONDecodeError): {e}"
+                f"(error_class=AgentInvocationError): {e}"
             )
             raise
         except Exception as e:
-            duration = time.time() - start_time
+            # Catch-all retained for non-harness failures (e.g.
+            # context-manager errors restoring PYTHONPATH). Preserves
+            # the pre-migration log shape.
             logger.error(
                 f"SDK coach test execution failed "
                 f"(error_class={type(e).__name__}): {e}"

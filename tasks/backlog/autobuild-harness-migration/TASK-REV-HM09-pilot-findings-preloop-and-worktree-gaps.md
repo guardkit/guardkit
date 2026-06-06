@@ -27,8 +27,22 @@ review_results:
     - TASK-HMIG-009A     # partial canary, post-F1 (includes F2-resolution preflight)
     - TASK-HMIG-009B     # full canary, post-all (optional)
   recommended_path: partial-close    # Path 2 from §8 (post-correction)
-  correction_applied: 2026-05-27     # see review report's "⚠ Correction" addendum
-  correction_summary: "F2 reframed from parser-config audit to model-swap incident. Canary-set edited in-place to revert qwen3-coder-30b → qwen-coder-next. TASK-OPS-LSPC deleted; verification folded into TASK-HMIG-009A preflight ACs 001A-001D."
+  correction_history:
+    - applied: 2026-05-27
+      summary: "v1: F2 reframed from parser-config audit to model-swap incident. Canary-set edited in-place to revert qwen3-coder-30b → qwen-coder-next. TASK-OPS-LSPC deleted; verification folded into TASK-HMIG-009A preflight ACs 001A-001D."
+      outcome: "Preflight AC-001A (2026-05-27) caught that qwen-coder-next was documented but not deployed on live GB10 llama-swap. Cheap preflight worked as designed."
+    - applied: 2026-06-02
+      summary: "v2: After ~1 week of operator llama-swap reconfig + benchmark/forum research, model choice revised to qwen36-workhorse (already LIVE, serves jarvis-reasoner/forge/autobuild/dataset-factory per gb10-memory-budget-and-macbook-offload.md:37). Canary-set model_choice_correction_v2 block added; TASK-HMIG-009A unblocked."
+      outcome: "TASK-HMIG-009A status backlog (unblocked); preflight ACs reframed against qwen36-workhorse; AC-001B is the new load-bearing post-reconfig gate."
+    - applied: 2026-06-03
+      summary: "v3: AC-001D's 3 iterations exposed that the LangGraph Wave-2 harness is a skeleton (never integration-tested). Layers 1+2 fixed (MODELPLUMB + LGTOOLS); layers 3+4 require TASK-HMIG-002R (named in parent review on 2026-05-19 but never filed) + new TASK-HMIG-002R-PROMPT (prompt adaptation, surfaced by AC-001D run 3)."
+      outcome: "TASK-HMIG-009A status blocked on 002R + 002R-PROMPT. Cutover margin collapsed; operator decision per 2026-06-03 is to push 002R+002R-PROMPT this week."
+    - applied: 2026-06-03
+      summary: "v3.1 (correction-of-correction): Operator caught a cross-repo coordination error in v3. TASK-HMIG-002R has been COMPLETE in guardkitfactory since 2026-05-20 (factories build_autobuild_backend + build_autobuild_permissions exist + exported + tested). Actual gap is consumer-side wiring in guardkit's selector.py. Fix scope collapsed 12h → ~1h. Filed TASK-FIX-002R-CONSUME. Deleted duplicate TASK-HMIG-002R from guardkit/backlog. Re-scoped TASK-HMIG-002R-PROMPT to speculative."
+      outcome: "TASK-HMIG-009A blocked on TASK-FIX-002R-CONSUME instead. Cutover margin restored to comfortable (~1h dev + 10h compute against 12-day window). Process gap noted: check ../guardkitfactory/tasks/{completed,backlog}/ before filing cross-repo tasks."
+    - applied: 2026-06-03
+      summary: "v3.2 (success): AC-001D run 6 PASSED — LangGraph end-to-end APPROVED in 1 turn (4 files created, 16 modified, 2 tests passing, honesty 0.96, ~13.5min total — ~35% faster than SDK). The 6-run iteration journey resolved 5 layers (MODELPLUMB + LGTOOLS + 002R-CONSUME + 002R-NOPERMS + 002R-NOVMODE); the predicted 6th layer (Coach/specialist prompt-tool-name mismatch) dissolved because DeepAgents' runtime tool advertisement was sufficient. TASK-HMIG-002R-PROMPT deleted."
+      outcome: "TASK-HMIG-009A unblocked; ready for AC-003 (12-run batch). Cutover-decision feasible against 2026-06-15. Three quality signals to track in batch: LLM-Coach-override-of-honesty-oracle, Criteria-Progress-0-with-Coach-approval, /v1/responses retries."
 related_tasks:
   - TASK-HMIG-006   # Wave-2 dispatch refactor that left pre-loop unmigrated
   - TASK-HMIG-009   # Canary that surfaced the gaps

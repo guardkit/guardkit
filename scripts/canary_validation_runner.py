@@ -82,6 +82,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -373,6 +374,70 @@ def clean_worktree_state(task_id: str, run_cwd: Path) -> None:
             shutil.rmtree(path)
 
 
+# ---------------------------------------------------------------------------
+# stdout.log parser — fallback when coach_turn_*.json artefacts aren't
+# harvested (the inner autobuild worktree's state dir isn't always reachable
+# from the canary runner's run_cwd; tracked separately as
+# TASK-FIX-CANARY-ARTEFACTS). The stdout.log is always written by execute_run,
+# so it's the most reliable source for orchestration outcome + turns_used.
+#
+# Maps the orchestrator's final Status (rendered by progress.py:render_summary)
+# to the canonical coach_decision vocabulary used by the results JSON +
+# aggregator (see RunRecord.coach_decision docstring).
+# ---------------------------------------------------------------------------
+
+# Map of stdout Status strings to canonical coach_decision values.
+# Keep aligned with status_colors in guardkit/orchestrator/progress.py.
+_STATUS_TO_DECISION: dict[str, str] = {
+    "APPROVED": "approve",
+    "MAX_TURNS_EXCEEDED": "feedback",
+    "HONESTY_COLLAPSE": "feedback",
+    "UNRECOVERABLE_STALL": "unrecoverable_stall",
+    "PLAYER_INVOCATION_STALL": "unrecoverable_stall",
+    "CANCELLED": "error",
+    "ERROR": "error",
+}
+
+_STATUS_RE = re.compile(r"Status:\s+([A-Z_]+)")
+_TURNS_RE = re.compile(r"Total turns:\s+(\d+)")
+
+
+def parse_stdout_outcome(stdout_path: Path) -> dict[str, Any]:
+    """Extract orchestration outcome from a per-rep ``stdout.log``.
+
+    Returns a dict with at minimum ``coach_decision`` (from
+    ``_STATUS_TO_DECISION``, falling back to ``"unknown"``) and
+    ``turns_used`` (from the ``Total turns: N`` marker, falling back
+    to 0 if not present). Acceptance-criteria counts are NOT extracted
+    here — the per-rep ``stderr.log`` and ``coach_turn_*.json`` are the
+    sources for those (see task TASK-FIX-CANARY-PARSER "Out of scope").
+
+    Both markers are scanned from the END of the file backwards so the
+    final orchestration summary panel wins over any intermediate prints
+    (e.g. mid-turn coach decisions).
+    """
+    if not stdout_path.exists():
+        return {"coach_decision": "unknown", "turns_used": 0}
+
+    try:
+        text = stdout_path.read_text(errors="replace")
+    except OSError:
+        return {"coach_decision": "unknown", "turns_used": 0}
+
+    status_matches = _STATUS_RE.findall(text)
+    turns_matches = _TURNS_RE.findall(text)
+
+    if status_matches:
+        last_status = status_matches[-1]
+        decision = _STATUS_TO_DECISION.get(last_status, "unknown")
+    else:
+        decision = "unknown"
+
+    turns_used = int(turns_matches[-1]) if turns_matches else 0
+
+    return {"coach_decision": decision, "turns_used": turns_used}
+
+
 def harvest_run_artefacts(task_id: str, dest: Path, run_cwd: Path = REPO_ROOT) -> dict[str, Any]:
     """Copy ``.guardkit/autobuild/<task_id>/`` artefacts into ``dest`` and
     extract aggregate metrics for the run record.
@@ -436,6 +501,23 @@ def harvest_run_artefacts(task_id: str, dest: Path, run_cwd: Path = REPO_ROOT) -
                 metrics["acceptance_criteria_failed"] = summary.get("failed_count", 0)
         except (json.JSONDecodeError, OSError) as e:
             metrics["coach_decision"] = f"parse_error: {e}"
+
+    # Fallback: if coach_turn_*.json harvesting didn't yield a usable outcome
+    # (no files reachable, or schema mismatch), parse the per-rep stdout.log
+    # written by execute_run. The stdout panel ("Status: APPROVED", "Total
+    # turns: N") is rendered by progress.py for every run and is always
+    # present, so it's the canonical fallback for orchestration outcome.
+    needs_stdout_fallback = (
+        metrics["coach_decision"] in ("unknown", "")
+        or str(metrics["coach_decision"]).startswith("parse_error:")
+        or metrics["turns_used"] == 0
+    )
+    if needs_stdout_fallback:
+        stdout_outcome = parse_stdout_outcome(dest / "stdout.log")
+        if stdout_outcome["coach_decision"] != "unknown":
+            metrics["coach_decision"] = stdout_outcome["coach_decision"]
+        if stdout_outcome["turns_used"] > 0:
+            metrics["turns_used"] = stdout_outcome["turns_used"]
 
     return metrics
 
@@ -556,6 +638,84 @@ def append_result(
 
 
 # ---------------------------------------------------------------------------
+# Re-parse — operator-triggered backfill that walks the per-rep stdout.log
+# files already on disk and rewrites coach_decision + turns_used into the
+# existing results JSON. Idempotent: running it twice produces the same
+# JSON, and on records where stdout.log doesn't exist or doesn't parse,
+# the existing values are preserved (no destructive writes).
+#
+# Use case: TASK-HMIG-009A batch had `coach_decision: "unknown"` for all
+# 12 reps because the coach_turn_*.json harvesting was silently failing
+# (TASK-FIX-CANARY-ARTEFACTS). The stdout.log files captured the real
+# outcomes; --reparse-stdout backfills the results JSON without
+# re-executing any LLM calls.
+# ---------------------------------------------------------------------------
+
+
+def reparse_stdout(paths: OutputPaths = DEFAULT_PATHS) -> None:
+    """Walk run records in ``paths.results_path`` and refresh
+    ``coach_decision`` + ``turns_used`` from each rep's stdout.log.
+
+    Preserves all other fields (wall_clock, AC counts, exit_code, etc.).
+    Idempotent. Reports a summary of what changed so the operator can
+    confirm the backfill matches expectations before re-aggregating.
+    """
+    if not paths.results_path.exists():
+        sys.exit(f"ERROR: {paths.results_path} not found. Nothing to re-parse.")
+
+    payload = json.loads(paths.results_path.read_text())
+    runs: list[dict[str, Any]] = payload.get("runs", [])
+    if not runs:
+        sys.exit("ERROR: no runs recorded. Nothing to re-parse.")
+
+    updated_count = 0
+    skipped_no_stdout = 0
+    unchanged = 0
+
+    for record in runs:
+        artefact_rel = record.get("artefact_dir", "")
+        if not artefact_rel:
+            skipped_no_stdout += 1
+            continue
+        stdout_path = REPO_ROOT / artefact_rel / "stdout.log"
+        if not stdout_path.exists():
+            skipped_no_stdout += 1
+            continue
+
+        outcome = parse_stdout_outcome(stdout_path)
+        old_decision = record.get("coach_decision", "unknown")
+        old_turns = record.get("turns_used", 0)
+        new_decision = outcome["coach_decision"]
+        new_turns = outcome["turns_used"]
+
+        # Only overwrite when the stdout parse yielded something concrete —
+        # never destroy a known value with "unknown" / 0.
+        changed = False
+        if new_decision != "unknown" and new_decision != old_decision:
+            record["coach_decision"] = new_decision
+            changed = True
+        if new_turns > 0 and new_turns != old_turns:
+            record["turns_used"] = new_turns
+            changed = True
+
+        if changed:
+            updated_count += 1
+        else:
+            unchanged += 1
+
+    payload["updated"] = datetime.now(timezone.utc).isoformat()
+    payload["runs"] = runs
+    paths.results_path.write_text(json.dumps(payload, indent=2) + "\n")
+
+    print(f"Re-parsed {len(runs)} run(s) from {paths.results_path.relative_to(REPO_ROOT)}:")
+    print(f"  Updated:   {updated_count}")
+    print(f"  Unchanged: {unchanged}")
+    print(f"  Skipped (no stdout.log): {skipped_no_stdout}")
+    if updated_count:
+        print("\nRun --aggregate to refresh the comparison doc.")
+
+
+# ---------------------------------------------------------------------------
 # Aggregation — produces TASK-REV-HMIG-canary-comparison.md from the
 # results JSON. Operator runs this with --aggregate after all 18 runs.
 # ---------------------------------------------------------------------------
@@ -579,6 +739,17 @@ def aggregate(paths: OutputPaths = DEFAULT_PATHS) -> None:
         rate = (len(first_pass) / total * 100) if total else 0.0
         return len(first_pass), total, rate
 
+    def approve_rate(rs: list[dict[str, Any]]) -> tuple[int, int, float]:
+        """Approve rate at any turn count — the operator's hand-compiled
+        metric in canary-analysis.md §8.5 (5/6 + 5/6 = 83.3% for 009A).
+        Surfaced alongside first-pass-success so the comparison doc
+        reflects both the strict cutover bar AND the looser approval rate.
+        """
+        approved = [r for r in rs if r["coach_decision"] == "approve"]
+        total = len(rs)
+        rate = (len(approved) / total * 100) if total else 0.0
+        return len(approved), total, rate
+
     def mean(rs: list[dict[str, Any]], key: str) -> float:
         vals = [r[key] for r in rs if isinstance(r.get(key), (int, float))]
         return round(sum(vals) / len(vals), 2) if vals else 0.0
@@ -587,6 +758,8 @@ def aggregate(paths: OutputPaths = DEFAULT_PATHS) -> None:
     lg_runs = by_harness["langgraph"]
     sdk_fp, sdk_total, sdk_rate = first_pass_success_rate(sdk_runs)
     lg_fp, lg_total, lg_rate = first_pass_success_rate(lg_runs)
+    sdk_ap, _, sdk_ap_rate = approve_rate(sdk_runs)
+    lg_ap, _, lg_ap_rate = approve_rate(lg_runs)
 
     # Falsifier verdict per TASK-HMIG-009 AC-007.
     if lg_rate >= 85:
@@ -604,18 +777,23 @@ def aggregate(paths: OutputPaths = DEFAULT_PATHS) -> None:
             "(c) pivoting to a third option."
         )
 
+    parent_task = payload.get("parent_task", "TASK-HMIG-009")
+    results_rel = paths.results_path.relative_to(REPO_ROOT)
+    set_rel = CANARY_SET_PATH.relative_to(REPO_ROOT)
+
     md = [
-        "# Canary validation comparison — TASK-REV-HMIG",
+        f"# Canary validation comparison — {parent_task}",
         "",
         f"> Generated by `scripts/canary_validation_runner.py --aggregate` at "
         f"{datetime.now(timezone.utc).isoformat()} from "
-        f"`.guardkit/autobuild/TASK-REV-HMIG-canary-results.json` "
-        f"({len(runs)} runs recorded).",
+        f"`{results_rel}` ({len(runs)} runs recorded).",
         "",
         "## 1. Aggregate first-pass-success rate (the central falsifier)",
         "",
-        f"- **LangGraph**: {lg_fp}/{lg_total} = **{lg_rate:.1f}%**",
-        f"- **SDK**: {sdk_fp}/{sdk_total} = **{sdk_rate:.1f}%**",
+        f"- **LangGraph**: {lg_fp}/{lg_total} = **{lg_rate:.1f}%** (first pass; "
+        f"any-turn approve rate: {lg_ap}/{lg_total} = {lg_ap_rate:.1f}%)",
+        f"- **SDK**: {sdk_fp}/{sdk_total} = **{sdk_rate:.1f}%** (first pass; "
+        f"any-turn approve rate: {sdk_ap}/{sdk_total} = {sdk_ap_rate:.1f}%)",
         "",
         f"### Verdict: {verdict}",
         "",
@@ -623,7 +801,8 @@ def aggregate(paths: OutputPaths = DEFAULT_PATHS) -> None:
         "",
         "| Metric | SDK | LangGraph |",
         "|---|---|---|",
-        f"| First-pass success | {sdk_fp}/{sdk_total} ({sdk_rate:.1f}%) | {lg_fp}/{lg_total} ({lg_rate:.1f}%) |",
+        f"| First-pass success (turns=1) | {sdk_fp}/{sdk_total} ({sdk_rate:.1f}%) | {lg_fp}/{lg_total} ({lg_rate:.1f}%) |",
+        f"| Approve rate (any turns) | {sdk_ap}/{sdk_total} ({sdk_ap_rate:.1f}%) | {lg_ap}/{lg_total} ({lg_ap_rate:.1f}%) |",
         f"| Mean turns used | {mean(sdk_runs, 'turns_used')} | {mean(lg_runs, 'turns_used')} |",
         f"| Mean wall-clock (s) | {mean(sdk_runs, 'wall_clock_seconds')} | {mean(lg_runs, 'wall_clock_seconds')} |",
         f"| Mean ACs passed | {mean(sdk_runs, 'acceptance_criteria_passed')} | {mean(lg_runs, 'acceptance_criteria_passed')} |",
@@ -645,12 +824,12 @@ def aggregate(paths: OutputPaths = DEFAULT_PATHS) -> None:
         "",
         "## 4. Per-task AC equivalence",
         "",
-        "_(Manual fill-in: for each canary task, list ACs where SDK and LangGraph agreed (both passed or both failed across all 3 reps) vs disagreed. Use the per-run `coach_turn_N.json` artefacts under `.guardkit/autobuild/TASK-REV-HMIG-canary/` to populate.)_",
+        f"_(Manual fill-in: for each canary task, list ACs where SDK and LangGraph agreed (both passed or both failed across all 3 reps) vs disagreed. Use the per-run `coach_turn_N.json` artefacts under `{paths.artefact_root.relative_to(REPO_ROOT)}/` to populate.)_",
         "",
         "## 5. References",
         "",
-        "- Canary set: [.guardkit/autobuild/TASK-REV-HMIG-canary-set.json](TASK-REV-HMIG-canary-set.json)",
-        "- Raw run records: [.guardkit/autobuild/TASK-REV-HMIG-canary-results.json](TASK-REV-HMIG-canary-results.json)",
+        f"- Canary set: [{set_rel}]({set_rel.name})",
+        f"- Raw run records: [{results_rel}]({results_rel.name})",
         "- Audit analysis: [docs/state/TASK-REV-HMIG/canary-analysis.md](../../docs/state/TASK-REV-HMIG/canary-analysis.md)",
         "- Parent review: [.claude/reviews/TASK-REV-HMIG-review-report.md](../../.claude/reviews/TASK-REV-HMIG-review-report.md)",
         "",
@@ -659,6 +838,39 @@ def aggregate(paths: OutputPaths = DEFAULT_PATHS) -> None:
     paths.comparison_path.write_text("\n".join(md))
     print(f"Wrote {paths.comparison_path.relative_to(REPO_ROOT)}")
     print(f"LangGraph rate: {lg_rate:.1f}% — {verdict.split('—')[0].strip()}")
+
+
+# ---------------------------------------------------------------------------
+# Variant discovery — scans .guardkit/autobuild/ for existing results files
+# so the CLI can tell the operator which --variant to pass when they omit it
+# from --aggregate / --reparse-stdout.
+# ---------------------------------------------------------------------------
+
+
+def _discover_variant_results() -> list[tuple[str | None, Path]]:
+    """Return (variant_name, results_path) tuples for every existing
+    ``<namespace>-canary-results.json`` under ``.guardkit/autobuild/``.
+
+    ``variant_name`` is the key from ``VARIANTS`` when the file's
+    namespace matches a registered variant; ``None`` otherwise (e.g.
+    the legacy default ``TASK-REV-HMIG-canary``). Sorted by mtime
+    descending so the most-recent batch shows first.
+    """
+    if not AUTOBUILD_DIR.exists():
+        return []
+    candidates = sorted(
+        AUTOBUILD_DIR.glob("*-canary-results.json"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    # Reverse-lookup: namespace string → variant name.
+    namespace_to_variant = {v["namespace"]: name for name, v in VARIANTS.items()}
+    results: list[tuple[str | None, Path]] = []
+    for path in candidates:
+        # filename = "<namespace>-results.json" → namespace = filename without "-results.json"
+        namespace = path.name[: -len("-results.json")]
+        results.append((namespace_to_variant.get(namespace), path))
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -672,7 +884,16 @@ def main() -> None:
     parser.add_argument(
         "--aggregate",
         action="store_true",
-        help="Skip runs; just regenerate TASK-REV-HMIG-canary-comparison.md from existing results.",
+        help="Skip runs; just regenerate <namespace>-comparison.md from existing results. Requires --variant.",
+    )
+    parser.add_argument(
+        "--reparse-stdout",
+        action="store_true",
+        help=(
+            "Skip runs; walk each rep's stdout.log and refresh "
+            "coach_decision + turns_used in the existing results JSON. "
+            "Idempotent. Requires --variant."
+        ),
     )
     parser.add_argument("--harness", choices=["sdk", "langgraph"], help="Restrict to one harness.")
     parser.add_argument("--task", help="Restrict to one canary task ID.")
@@ -699,6 +920,29 @@ def main() -> None:
     parser.add_argument("--verbose", action="store_true", help="Pass `--verbose` to autobuild.")
     args = parser.parse_args()
 
+    # AC-003: --aggregate (and --reparse-stdout) require --variant. Silently
+    # falling back to the default namespace was a footgun: operator forgot
+    # --variant 009a after a 12-run batch and the runner re-aggregated
+    # yesterday's 1-run pilot results, producing a misleading 0/0 verdict.
+    if (args.aggregate or args.reparse_stdout) and not args.variant:
+        available = _discover_variant_results()
+        flag = "--aggregate" if args.aggregate else "--reparse-stdout"
+        msg = [
+            f"ERROR: {flag} requires --variant (no default).",
+            "",
+            "Pick the variant that matches the batch you just ran. Available results files:",
+        ]
+        if available:
+            for variant_name, results_file in available:
+                rel = results_file.relative_to(REPO_ROOT)
+                if variant_name:
+                    msg.append(f"  --variant {variant_name:6s}  → {rel}")
+                else:
+                    msg.append(f"  (no registered variant)  → {rel}")
+        else:
+            msg.append("  (none found under .guardkit/autobuild/*-canary-results.json)")
+        sys.exit("\n".join(msg))
+
     # Resolve scope variant → output namespace, task allowlist, falsifier.
     variant = VARIANTS.get(args.variant) if args.variant else None
     if variant:
@@ -711,6 +955,10 @@ def main() -> None:
         include_tasks = None
         parent_task = "TASK-HMIG-009"
         falsifier = None
+
+    if args.reparse_stdout:
+        reparse_stdout(paths)
+        return
 
     if args.aggregate:
         aggregate(paths)
@@ -752,8 +1000,14 @@ def main() -> None:
             f"decision={record.coach_decision}  wall={record.wall_clock_seconds}s"
         )
 
+    # AC-004: surface the right --aggregate command for the variant in use,
+    # so the operator doesn't need to remember to repeat --variant.
+    if args.variant:
+        aggregate_cmd = f"python scripts/canary_validation_runner.py --variant {args.variant} --aggregate"
+    else:
+        aggregate_cmd = "python scripts/canary_validation_runner.py --variant <variant> --aggregate"
     print("\nAll runs complete. Re-invoke with --aggregate to refresh the comparison doc:")
-    print("  python scripts/canary_validation_runner.py --aggregate")
+    print(f"  {aggregate_cmd}")
 
 
 if __name__ == "__main__":

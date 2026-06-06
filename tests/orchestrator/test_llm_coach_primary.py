@@ -489,3 +489,273 @@ class TestPrimaryFlowExceptionHandling:
             "downstream consumer chain (_display_criteria_progress, "
             "_count_criteria_passed) sees a consistent shape."
         )
+
+
+# ---------------------------------------------------------------------------
+# TASK-FIX-COACHSF01 — soft-fail on Coach verdict-emission failures
+# ---------------------------------------------------------------------------
+
+
+class TestPrimaryFlowVerdictEmissionSoftFail:
+    """TASK-FIX-COACHSF01 regression: when ``invoke_coach`` catches
+    ``CoachDecisionNotFoundError`` / ``CoachDecisionInvalidError`` internally
+    and returns ``success=False`` with the exception text in ``error``,
+    ``_invoke_coach_primary`` MUST convert that into a synthetic feedback
+    decision (so the Player gets a turn N+1 with Coach's feedback) instead of
+    surfacing ``success=False`` to the wave loop and hard-failing the turn.
+
+    Falsifier (from the task spec): "After landing, ... if Coach LLM
+    completes its invocation but does NOT write coach_turn_N.json
+    (qwen36-workhorse F2-at-Coach-level substrate behaviour),
+    ``_invoke_coach_primary`` MUST emit a synthetic feedback decision
+    (writes coach_turn_N.json with rationale naming the failure mode) and
+    return success=True."
+
+    Other ``success=False`` outcomes (``SDKTimeoutError``, generic
+    ``Unexpected error``) MUST continue to propagate as-is (AC-003) — the
+    soft-fail is narrowly scoped to verdict-emission failures.
+    """
+
+    def test_decision_not_found_emits_synthetic_feedback(
+        self,
+        orchestrator: AutoBuildOrchestrator,
+        mock_worktree: Worktree,
+        mock_agent_invoker: MagicMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """AC-002 + AC-004: ``invoke_coach`` returns success=False with
+        "Coach decision not found" → synthetic feedback fires.
+        """
+        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
+        mock_worktree.path = tmp_path
+
+        # Simulate invoke_coach catching CoachDecisionNotFoundError internally.
+        mock_agent_invoker.invoke_coach.return_value = AgentInvocationResult(
+            task_id="TASK-LCP-001",
+            turn=1,
+            agent_type="coach",
+            success=False,
+            report={},
+            duration_seconds=0.0,
+            error="Coach decision not found: coach_turn_1.json missing",
+        )
+
+        with patch(
+            "guardkit.orchestrator.autobuild.CoachValidator"
+        ) as mock_validator_class:
+            mock_instance = MagicMock()
+            mock_instance.gather_evidence.return_value = _empty_bundle()
+            mock_validator_class.return_value = mock_instance
+
+            result = _invoke_coach(orchestrator, mock_worktree)
+
+        # Synthetic feedback fired: success=True, decision=feedback, on-disk.
+        assert result.success is True, (
+            "AC-004: verdict-emission failure must be soft-failed as "
+            "synthetic feedback (success=True), not hard-failed as "
+            "success=False (which the wave loop reads as coach_decision=error)."
+        )
+        assert result.report.get("decision") == "feedback"
+        assert result.report.get("coach_primary_synthetic_feedback") is True
+        # Rationale names the failure mode so future runs / Graphiti can
+        # distinguish this class from other Coach-side errors.
+        assert "verdict-emission failed" in result.report.get("rationale", "")
+        assert "Coach decision not found" in result.report.get("rationale", "")
+
+        # coach_turn_1.json was written.
+        decision_path = (
+            tmp_path / ".guardkit" / "autobuild" / "TASK-LCP-001" / "coach_turn_1.json"
+        )
+        assert decision_path.exists(), (
+            "Synthetic feedback must write coach_turn_N.json so downstream "
+            "consumers see a consistent shape."
+        )
+
+    def test_decision_invalid_emits_synthetic_feedback(
+        self,
+        orchestrator: AutoBuildOrchestrator,
+        mock_worktree: Worktree,
+        mock_agent_invoker: MagicMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """AC-002 sibling: ``CoachDecisionInvalidError`` (malformed JSON) is
+        the same failure class as not-found and must also soft-fail.
+        """
+        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
+        mock_worktree.path = tmp_path
+
+        mock_agent_invoker.invoke_coach.return_value = AgentInvocationResult(
+            task_id="TASK-LCP-001",
+            turn=2,
+            agent_type="coach",
+            success=False,
+            report={},
+            duration_seconds=0.0,
+            error="Coach decision invalid: missing 'decision' field",
+        )
+
+        with patch(
+            "guardkit.orchestrator.autobuild.CoachValidator"
+        ) as mock_validator_class:
+            mock_instance = MagicMock()
+            mock_instance.gather_evidence.return_value = _empty_bundle()
+            mock_validator_class.return_value = mock_instance
+
+            result = orchestrator._invoke_coach_safely(
+                task_id="TASK-LCP-001",
+                turn=2,
+                requirements="Test requirements",
+                player_report={
+                    "status": "completed",
+                    "files_modified": [],
+                    "files_created": [],
+                },
+                worktree=mock_worktree,
+            )
+
+        assert result.success is True
+        assert result.report.get("decision") == "feedback"
+        assert result.report.get("coach_primary_synthetic_feedback") is True
+        assert "Coach decision invalid" in result.report.get("rationale", "")
+
+    def test_sdk_timeout_propagates_unchanged(
+        self,
+        orchestrator: AutoBuildOrchestrator,
+        mock_worktree: Worktree,
+        mock_agent_invoker: MagicMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """AC-003: ``SDKTimeoutError`` is NOT a verdict-emission failure
+        and must continue to propagate as success=False. The orchestrator's
+        wave loop handles timeout distinctly from verdict-emission.
+        """
+        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
+        mock_worktree.path = tmp_path
+
+        # invoke_coach turns SDKTimeoutError into:
+        #   error=f"SDK timeout after {self.sdk_timeout_seconds}s: {str(e)}"
+        # See agent_invoker.py:1998-2008.
+        timeout_result = AgentInvocationResult(
+            task_id="TASK-LCP-001",
+            turn=1,
+            agent_type="coach",
+            success=False,
+            report={},
+            duration_seconds=900.0,
+            error="SDK timeout after 900s: query exceeded budget",
+        )
+        mock_agent_invoker.invoke_coach.return_value = timeout_result
+
+        with patch(
+            "guardkit.orchestrator.autobuild.CoachValidator"
+        ) as mock_validator_class:
+            mock_instance = MagicMock()
+            mock_instance.gather_evidence.return_value = _empty_bundle()
+            mock_validator_class.return_value = mock_instance
+
+            result = _invoke_coach(orchestrator, mock_worktree)
+
+        # Propagated as-is, NOT converted to synthetic feedback.
+        assert result is timeout_result, (
+            "AC-003: SDKTimeoutError outcomes must pass through unchanged. "
+            "Only verdict-emission failures (decision not found / invalid) "
+            "convert to synthetic feedback."
+        )
+        assert result.success is False
+        # No coach_turn_N.json should have been written by the soft-fail path.
+        decision_path = (
+            tmp_path / ".guardkit" / "autobuild" / "TASK-LCP-001" / "coach_turn_1.json"
+        )
+        assert not decision_path.exists(), (
+            "Soft-fail path must NOT fire for SDKTimeoutError. If "
+            "coach_turn_1.json exists, the narrow scope of AC-003 has been "
+            "violated."
+        )
+
+    def test_unexpected_error_propagates_unchanged(
+        self,
+        orchestrator: AutoBuildOrchestrator,
+        mock_worktree: Worktree,
+        mock_agent_invoker: MagicMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """AC-003: generic ``Unexpected error`` (the catch-all branch in
+        ``invoke_coach``) is not a verdict-emission failure either and
+        must propagate as success=False.
+        """
+        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
+        mock_worktree.path = tmp_path
+
+        # invoke_coach's catch-all branch produces:
+        #   error=f"Unexpected error: {str(e)}"
+        # See agent_invoker.py:2009-2018.
+        unexpected_result = AgentInvocationResult(
+            task_id="TASK-LCP-001",
+            turn=1,
+            agent_type="coach",
+            success=False,
+            report={},
+            duration_seconds=12.5,
+            error="Unexpected error: ConnectionResetError on httpx stream",
+        )
+        mock_agent_invoker.invoke_coach.return_value = unexpected_result
+
+        with patch(
+            "guardkit.orchestrator.autobuild.CoachValidator"
+        ) as mock_validator_class:
+            mock_instance = MagicMock()
+            mock_instance.gather_evidence.return_value = _empty_bundle()
+            mock_validator_class.return_value = mock_instance
+
+            result = _invoke_coach(orchestrator, mock_worktree)
+
+        assert result is unexpected_result
+        assert result.success is False
+        # No on-disk synthetic feedback.
+        decision_path = (
+            tmp_path / ".guardkit" / "autobuild" / "TASK-LCP-001" / "coach_turn_1.json"
+        )
+        assert not decision_path.exists()
+
+    def test_success_true_propagates_unchanged(
+        self,
+        orchestrator: AutoBuildOrchestrator,
+        mock_worktree: Worktree,
+        mock_agent_invoker: MagicMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Sanity guard: the soft-fail predicate is gated on success=False.
+        A normal successful Coach decision MUST flow through untouched and
+        NOT be replaced by synthetic feedback.
+        """
+        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
+        mock_worktree.path = tmp_path
+
+        approved_result = AgentInvocationResult(
+            task_id="TASK-LCP-001",
+            turn=1,
+            agent_type="coach",
+            success=True,
+            report={"decision": "approve", "rationale": "real approval"},
+            duration_seconds=4.2,
+        )
+        mock_agent_invoker.invoke_coach.return_value = approved_result
+
+        with patch(
+            "guardkit.orchestrator.autobuild.CoachValidator"
+        ) as mock_validator_class:
+            mock_instance = MagicMock()
+            mock_instance.gather_evidence.return_value = _empty_bundle()
+            mock_validator_class.return_value = mock_instance
+
+            result = _invoke_coach(orchestrator, mock_worktree)
+
+        assert result is approved_result
+        assert result.report.get("decision") == "approve"
+        # No synthetic-feedback marker on a real approval.
+        assert "coach_primary_synthetic_feedback" not in result.report

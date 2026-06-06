@@ -32,6 +32,7 @@ import logging
 import os
 import re
 import json
+import sys
 import threading
 import time
 
@@ -2140,7 +2141,7 @@ def _is_graphiti_background_task(task: "asyncio.Task") -> bool:
 def _suppress_httpx_cleanup_errors(loop: "asyncio.AbstractEventLoop") -> None:
     """Install a custom exception handler that suppresses shutdown cleanup errors.
 
-    Suppresses two categories of harmless errors that surface during shutdown:
+    Suppresses three categories of harmless errors that surface during shutdown:
 
     1. **httpx cleanup**: ``RuntimeError('Event loop is closed')`` from httpx
        ``AsyncClient.aclose()`` tasks scheduled during ``asyncio.run()``.
@@ -2149,8 +2150,15 @@ def _suppress_httpx_cleanup_errors(loop: "asyncio.AbstractEventLoop") -> None:
        graphiti-core ``build_indices_and_constraints()`` background tasks
        that outlive the Redis connection pool (TASK-PFI-E5F6).
 
-    Both are cosmetic — the OS reclaims sockets on thread exit — but they
-    produce noisy ``ERROR:asyncio:Task exception was never retrieved`` logs.
+    3. **FalkorDB teardown race**: ``RuntimeError('no running event loop')``
+       from graphiti-core ``edge_fulltext_search`` / FalkorDB async driver
+       coroutines that are still in-flight when the event loop closes
+       (TASK-FIX-FALK01). See also ``_install_graphiti_unraisable_hook`` for
+       the GC-time path that catches the same error after the loop is gone.
+
+    All three are cosmetic — the OS reclaims sockets on thread exit — but
+    they produce noisy ``ERROR:asyncio:Task exception was never retrieved``
+    logs.
 
     Parameters
     ----------
@@ -2171,6 +2179,10 @@ def _suppress_httpx_cleanup_errors(loop: "asyncio.AbstractEventLoop") -> None:
             return
         if _is_redis_buffer_closed(exception):
             # Harmless FalkorDB shutdown error — suppress silently
+            return
+        if _is_no_running_loop_error(exception):
+            # Harmless FalkorDB teardown race — suppress silently
+            # (TASK-FIX-FALK01)
             return
         # Delegate everything else to the original handler (or default)
         if original_handler is not None:
@@ -2193,6 +2205,115 @@ def _is_redis_buffer_closed(exception: Optional[BaseException]) -> bool:
     if type_name in ("RedisError", "ConnectionError", "ResponseError"):
         return "buffer is closed" in str(exception).lower()
     return False
+
+
+def _is_no_running_loop_error(exception: Optional[BaseException]) -> bool:
+    """Return True if *exception* is a ``RuntimeError('no running event loop')``.
+
+    Surfaces from graphiti-core's FalkorDB driver (and the underlying
+    ``redis.asyncio`` / ``asyncio.timeouts`` machinery) when a search
+    coroutine is awaiting a Redis read at the moment the event loop tears
+    down. The driver tries to honour a timeout via
+    ``asyncio.timeouts.timeout`` → ``events.get_running_loop()`` and finds
+    no loop. See TASK-FIX-FALK01.
+    """
+    if exception is None:
+        return False
+    if not isinstance(exception, RuntimeError):
+        return False
+    return "no running event loop" in str(exception).lower()
+
+
+# Module-level sentinel preventing double-installation of the unraisable hook.
+# The hook is process-wide (``sys.unraisablehook`` is a single slot), so
+# installing it once at orchestrator startup is sufficient.
+_unraisable_hook_installed: bool = False
+
+
+def _is_graphiti_unraisable(unraisable: "sys.UnraisableHookArgs") -> bool:
+    """Return True if *unraisable* is a known-harmless graphiti-core teardown noise.
+
+    Matches the shape produced by CPython garbage-collecting a coroutine
+    object whose body is mid-await on the FalkorDB async driver when the
+    event loop closes — e.g. ``edge_fulltext_search`` inside
+    ``graphiti_core.search.search_utils``. See the TASK-FIX-FALK01 traceback
+    for the canonical reproducer.
+
+    Filtering criteria (both must hold):
+
+    * exception is ``RuntimeError("no running event loop")``, and
+    * the garbage-collected object is a coroutine whose body originates in
+      one of the graphiti-core / FalkorDB / redis async source files.
+
+    The narrow scope keeps the hook from masking unrelated unraisable
+    exceptions raised elsewhere in the process.
+    """
+    exc_value = getattr(unraisable, "exc_value", None)
+    if not _is_no_running_loop_error(exc_value):
+        return False
+
+    obj = getattr(unraisable, "object", None)
+    code = getattr(obj, "cr_code", None) or getattr(obj, "gi_code", None)
+    if code is None:
+        return False
+    filename = getattr(code, "co_filename", "") or ""
+    # Restrict suppression to the known async DB driver source trees.
+    haystack = filename.lower()
+    return any(
+        marker in haystack
+        for marker in (
+            "graphiti_core",
+            "falkordb",
+            # redis.asyncio is in the cleanup chain (connection.disconnect)
+            "redis/asyncio",
+            "redis\\asyncio",
+            # asyncio.timeouts is where get_running_loop() raises
+            "asyncio/timeouts",
+            "asyncio\\timeouts",
+        )
+    )
+
+
+def _install_graphiti_unraisable_hook() -> None:
+    """Install a ``sys.unraisablehook`` that swallows graphiti teardown noise.
+
+    Some FalkorDB coroutines stay pending when the event loop closes
+    (``edge_fulltext_search`` is the canonical case — TASK-FIX-FALK01).
+    CPython garbage-collects those coroutines at process exit; their
+    ``close()`` path tries to honour a timeout via
+    ``asyncio.timeouts.timeout`` → ``events.get_running_loop()`` and the
+    resulting ``RuntimeError`` surfaces through ``sys.unraisablehook`` as
+    ``Exception ignored while closing generator``.
+
+    The loop-level handler installed by
+    :func:`_suppress_httpx_cleanup_errors` cannot catch this case because
+    the loop is already gone by the time CPython runs the unraisable
+    callback.
+
+    Idempotent: installs at most once per process. Delegates every
+    non-matching unraisable to the previously-installed hook (default
+    behaviour preserved for any non-graphiti unraisable error).
+
+    Notes
+    -----
+    The hook narrowly checks both the exception string and the source
+    filename of the garbage-collected coroutine, so non-graphiti
+    unraisable exceptions continue to propagate to ``stderr`` as before.
+    """
+    global _unraisable_hook_installed
+    if _unraisable_hook_installed:
+        return
+
+    previous_hook = sys.unraisablehook
+
+    def _hook(unraisable: "sys.UnraisableHookArgs") -> None:
+        if _is_graphiti_unraisable(unraisable):
+            # Harmless graphiti-core teardown race — drop silently.
+            return
+        previous_hook(unraisable)
+
+    sys.unraisablehook = _hook
+    _unraisable_hook_installed = True
 
 
 class GraphitiClientFactory:

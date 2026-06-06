@@ -70,6 +70,7 @@ from guardkit.orchestrator.schemas import (
 # cancel monitor, sdk_debug, llm.call event) stay inline.
 from guardkit.orchestrator.harness import (
     AssistantMessageEvent,
+    HarnessEvent,
     ResultMessageEvent,
     ToolResultEvent,
     ToolUseEvent,
@@ -319,51 +320,67 @@ def _strip_orchestrator_managed_paths(
 # =========================================================================
 
 
-def _extract_partial_from_messages(response_messages: List[Any]) -> Dict[str, Any]:
-    """Extract partial data from accumulated response_messages.
+def _extract_partial_from_messages(events: List[Any]) -> Dict[str, Any]:
+    """Extract partial data from accumulated harness events.
 
     Called in the CancelledError handler to salvage information from
-    AssistantMessage objects that were collected before cancellation.
+    events that were yielded before cancellation.
 
-    Defensively handles empty, malformed, or unexpected message types.
+    TASK-HMIG-006.2 migration: this used to consume a list of SDK
+    ``AssistantMessage`` objects and walked their ``content`` blocks via
+    ``type(block).__name__`` duck-typing. Both harnesses now yield typed
+    :class:`HarnessEvent` variants — ``AssistantMessageEvent`` for
+    assistant text, ``ToolUseEvent`` for each tool call — so this helper
+    now dispatches on event types directly. The output schema is
+    unchanged (AC-001).
+
+    The parameter type is still ``List[Any]`` because legacy call sites
+    pass a list typed as ``List[Any]`` (the orchestrator's
+    ``response_messages`` was historically a List of raw SDK objects).
+    Each element is dispatched on isinstance: ``AssistantMessageEvent``
+    contributes its joined text as one text-block entry,
+    ``ToolUseEvent`` contributes the tool name + input keys, and
+    ``Write``/``Edit`` tool calls with ``file_path`` populate
+    ``file_modifications``. Other elements (including
+    ``ResultMessageEvent`` and any legacy SDK objects from non-migrated
+    callers) are skipped.
 
     Parameters
     ----------
-    response_messages : List[Any]
-        SDK messages accumulated during the query loop (AssistantMessage,
-        ResultMessage, etc.)
+    events : List[Any]
+        Harness events accumulated during the query loop. Typically a
+        list of :class:`HarnessEvent` variants; non-event elements are
+        silently skipped.
 
     Returns
     -------
     Dict[str, Any]
         Partial report with text_block_count, tool_call_count,
-        file_modifications, and last_text_blocks.
+        file_modifications, last_text_blocks, message_count. Schema
+        unchanged from the pre-migration shape per AC-001.
     """
     text_blocks: List[str] = []
     tool_calls: List[Dict[str, Any]] = []
     file_modifications: List[str] = []
 
-    for msg in response_messages:
+    for ev in events:
         try:
-            content = getattr(msg, "content", None)
-            if not content or not isinstance(content, (list, tuple)):
-                continue
-            for block in content:
-                block_type = type(block).__name__
-                if block_type == "TextBlock":
-                    text = getattr(block, "text", "")
-                    if text:
-                        text_blocks.append(text)
-                elif block_type == "ToolUseBlock":
-                    name = getattr(block, "name", "")
-                    inp = getattr(block, "input", {}) or {}
-                    tool_calls.append({"name": name, "input_keys": list(inp.keys())})
-                    if name in ("Write", "Edit") and isinstance(inp, dict):
-                        fp = inp.get("file_path", "")
-                        if fp:
-                            file_modifications.append(fp)
+            if isinstance(ev, AssistantMessageEvent):
+                text = ev.text
+                if text:
+                    text_blocks.append(text)
+            elif isinstance(ev, ToolUseEvent):
+                name = ev.name
+                inp = ev.input if isinstance(ev.input, dict) else {}
+                tool_calls.append({"name": name, "input_keys": list(inp.keys())})
+                if name in ("Write", "Edit"):
+                    fp = inp.get("file_path", "")
+                    if fp:
+                        file_modifications.append(fp)
+            # ResultMessageEvent and any other element types are silently
+            # skipped — they contribute no partial-extract content.
         except Exception:
-            # Defensive: skip malformed messages
+            # Defensive: skip malformed events
             continue
 
     return {
@@ -371,7 +388,7 @@ def _extract_partial_from_messages(response_messages: List[Any]) -> Dict[str, An
         "tool_call_count": len(tool_calls),
         "file_modifications": file_modifications,
         "last_text_blocks": text_blocks[-3:] if text_blocks else [],
-        "message_count": len(response_messages),
+        "message_count": len(events),
     }
 
 
@@ -1146,6 +1163,7 @@ class AgentInvoker:
         timeout_multiplier: Optional[float] = None,
         emitter: Optional[Any] = None,
         venv_python: Optional[str] = None,
+        model_name: Optional[str] = None,  # TASK-FIX-MODELPLUMB
     ):
         """Initialize AgentInvoker.
 
@@ -1202,6 +1220,15 @@ class AgentInvoker:
         self._last_session_id: Optional[str] = None
         # TASK-INST-005b: EventEmitter for instrumentation telemetry
         self._emitter = emitter if emitter is not None else NullEmitter()
+        # TASK-FIX-MODELPLUMB: default model identifier for invocations that
+        # don't specify one. Threaded from the CLI --model flag through
+        # AutoBuildOrchestrator. Used as a fallback inside _invoke_with_role
+        # when the per-call model kwarg is None — load-bearing for the
+        # LangGraph harness (DeepAgents.create_deep_agent fails with
+        # "'function' object has no attribute 'name'" when model=None);
+        # decorative-but-harmless for the SDK path (routes via
+        # ANTHROPIC_BASE_URL).
+        self._model_name: Optional[str] = model_name
 
         if self.timeout_multiplier != 1.0:
             logger.info(
@@ -1240,31 +1267,27 @@ class AgentInvoker:
         """
         self._progress_logger = progress_logger
 
-    def _track_tool_use(self, message: Any) -> None:
-        """Track tool use from SDK response messages for progress logging.
+    def _track_tool_use(self, event: "ToolUseEvent") -> None:
+        """Track a single tool-use event for progress logging.
 
-        Extracts tool names and file modifications from AssistantMessage
-        content blocks to keep the progress logger's state up to date.
+        TASK-HMIG-006.2 migration: the previous signature accepted the SDK
+        ``AssistantMessage`` and walked its content blocks for
+        ``ToolUseBlock`` instances. Both harnesses now yield a
+        :class:`ToolUseEvent` per tool call, so this helper consumes one
+        typed event per call and the AssistantMessage content walk is gone.
 
         Parameters
         ----------
-        message : Any
-            SDK response message (AssistantMessage, etc.)
+        event : ToolUseEvent
+            Typed tool-use event yielded by the active harness.
         """
         if not self._progress_logger:
             return
         try:
-            content = getattr(message, "content", None)
-            if not content or not isinstance(content, (list, tuple)):
-                return
-            for block in content:
-                block_type = type(block).__name__
-                if block_type == "ToolUseBlock":
-                    name = getattr(block, "name", "")
-                    self._progress_logger._last_tool = name
-                    inp = getattr(block, "input", {}) or {}
-                    if name in ("Write", "Edit") and isinstance(inp, dict):
-                        self._progress_logger._files_changed += 1
+            name = event.name
+            self._progress_logger._last_tool = name
+            if name in ("Write", "Edit"):
+                self._progress_logger._files_changed += 1
         except Exception:
             pass  # Never crash orchestration for progress tracking
 
@@ -1929,17 +1952,54 @@ class AgentInvoker:
 
             # Invoke SDK with Coach permissions (Read, Bash only - no Write/Edit)
             # Coach uses bypassPermissions since it's read-only anyway
-            # Model selection delegated to CLI default
-            await self._invoke_with_role(
+            # Model selection delegated to CLI default.
+            #
+            # TASK-FIX-COACHOUT01 Shape A: request return_events=True so the
+            # typed HarnessEvent stream comes back here for the structured-
+            # output parser. Coach's allowed_tools list is intentionally
+            # UNCHANGED — the verdict is no longer written by Coach at all;
+            # the orchestrator extracts it from Coach's response text and
+            # writes coach_turn_N.json itself. Per AC-A4 of the task file.
+            result_tuple = await self._invoke_with_role(
                 prompt=prompt,
                 agent_type="coach",
                 allowed_tools=["Read", "Bash", "Grep", "Glob"],
                 permission_mode="bypassPermissions",
                 task_id=task_id,
                 turn=turn,
+                return_events=True,
+            )
+            assert result_tuple is not None, (
+                "_invoke_with_role(return_events=True) must return a tuple "
+                "on success; got None"
+            )
+            _, harness_events = result_tuple
+
+            # TASK-FIX-COACHOUT01 Shape A: extract the structured verdict from
+            # Coach's response text and persist coach_turn_N.json from the
+            # orchestrator side. The parser raises CoachDecisionNotFoundError
+            # / CoachDecisionInvalidError with messages COACHSF01 greps for
+            # (autobuild.py:5676-5678) on every failure path — the exceptions
+            # propagate to the existing except block at the bottom of this
+            # method, which converts them to AgentInvocationResult(
+            # success=False, error=str(e)). COACHSF01 then fires the
+            # synthetic-feedback safety net unchanged.
+            from guardkit.orchestrator.coach_output_parser import (
+                extract_and_write as _coach_extract_and_write,
+            )
+            coach_output_path = self._get_report_path(task_id, turn, "coach")
+            _coach_extract_and_write(
+                harness_events=harness_events,
+                task_id=task_id,
+                turn=turn,
+                output_path=coach_output_path,
             )
 
-            # Load and validate Coach decision
+            # Load and validate Coach decision — the file on disk was just
+            # written by the parser, so this re-read keeps the existing
+            # consumer contract intact. _validate_coach_decision still owns
+            # the deep schema check (criteria_verification, severity values,
+            # decision-specific field presence) the parser doesn't replicate.
             decision = self._load_agent_report(task_id, turn, "coach")
             self._validate_coach_decision(decision)
 
@@ -2367,12 +2427,23 @@ Turn: {turn}
 
 ## Decision Format
 
-Write your decision to:
-{self.worktree_path}/.guardkit/autobuild/{task_id}/coach_turn_{turn}.json
+End your response with a fenced JSON block. Do **NOT** use Bash to write a file —
+the orchestrator parses your decision directly from your response text.
 
-Your decision MUST be valid JSON with these fields:
+The fenced JSON block MUST appear at the end of your response, after all prose
+reasoning, in this exact form:
 
-For APPROVAL:
+```json
+{{
+  "task_id": "{task_id}",
+  "turn": {turn},
+  "decision": "approve" | "feedback",
+  ...fields as specified below...
+}}
+```
+
+For APPROVAL, the JSON block must contain:
+```json
 {{
   "task_id": "{task_id}",
   "turn": {turn},
@@ -2388,8 +2459,10 @@ For APPROVAL:
   }},{verification_example}
   "rationale": "Why you approved"
 }}
+```
 
-For FEEDBACK:
+For FEEDBACK, the JSON block must contain:
+```json
 {{
   "task_id": "{task_id}",
   "turn": {turn},
@@ -2405,13 +2478,17 @@ For FEEDBACK:
   ],{verification_example}
   "rationale": "Why you're providing feedback"
 }}
+```
 
 **IMPORTANT**: For each acceptance criterion, create a criteria_verification with:
 - criterion_id: The ID (e.g., "AC-001") matching the Player's completion_promise
 - result: "verified" if criterion is satisfied, "rejected" if not
 - notes: Your reasoning - what you checked and found
 
-Follow the decision format specified in your agent definition.
+**CRITICAL**: The fenced ```json block MUST be the last thing in your response.
+Do not write any prose after the closing ``` fence. If you emit exploratory JSON
+blocks earlier in your response (e.g. while sketching alternatives), the
+orchestrator takes only the **last** fenced block.
 """
         return prompt
 
@@ -2704,7 +2781,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         task_id: Optional[str] = None,
         turn: Optional[int] = None,
         heartbeat_label_override: Optional[str] = None,
-    ) -> None:
+        return_events: bool = False,
+    ) -> Optional[Tuple[None, List[HarnessEvent]]]:
         """Low-level SDK invocation with role-based permissions.
 
         This method handles the actual Claude Agent SDK invocation with
@@ -2727,6 +2805,26 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 :func:`run_specialist` so orchestrator-invoked specialists
                 surface as ``"specialist:{name} invocation"`` instead of
                 masquerading as Player/Coach invocations (TASK-ABSR-DIAG).
+            return_events: When ``True``, return ``(None, harness_events)``
+                instead of ``None`` so callers can inspect the typed event
+                stream the harness emitted. Used by the Coach call site
+                (``invoke_coach``) to feed ``coach_output_parser`` the
+                substrate-agnostic ``AssistantMessageEvent`` list it needs
+                to extract the structured verdict (TASK-FIX-COACHOUT01
+                Shape A). Player and specialist call sites leave this
+                ``False`` and continue to receive ``None``.
+
+                The parameter-based mechanism (rather than an instance
+                attribute like ``self._last_harness_events``) was chosen by
+                the Phase 2.5B architectural review (Gap 1) to avoid the
+                hidden stale-state risk a future concurrent-invocation
+                refactor would silently activate.
+
+        Returns:
+            ``None`` by default. ``(None, harness_events)`` when
+            ``return_events=True``. Returns from BOTH the success path AND
+            the SDK-timeout / AgentInvocationError paths re-raise — the
+            tuple is only returned on a clean invocation completion.
 
         Raises:
             AgentInvocationError: If SDK invocation fails
@@ -2747,12 +2845,24 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
 
         # TASK-INST-005b: Instrumentation state for event emission. The
         # response_messages list is populated from event.raw per Design
-        # Decision D-1 so downstream consumers (_emit_llm_call_event
-        # token extraction, cancelled-error session_id rescan,
-        # _extract_partial_from_messages) keep working unchanged.
+        # Decision D-1 so the remaining duck-typed consumers
+        # (_emit_llm_call_event token extraction, cancelled-error
+        # session_id rescan) keep working unchanged. TASK-HMIG-006.2
+        # narrowed this contract: ToolUseEvent entries are excluded
+        # because the migrated _track_tool_use /
+        # _extract_partial_from_messages consumers dispatch on typed
+        # events directly via harness_events instead of duck-typing on
+        # event.raw.
         call_status: str = "ok"
         call_error: Optional[Exception] = None
         response_messages: List[Any] = []
+        # TASK-HMIG-006.2: typed-event canonical record for the migrated
+        # _extract_partial_from_messages consumer below. Holds every event
+        # the harness yielded (AssistantMessageEvent, ToolUseEvent,
+        # ResultMessageEvent) in the order they arrived, so the post-stream
+        # and cancelled-error extract paths can dispatch on event variants
+        # rather than duck-typing on SDK shapes.
+        harness_events: List[HarnessEvent] = []
 
         # Extract task_id from prompt for heartbeat logging (substrate-
         # agnostic — the harness does not need it).
@@ -2782,25 +2892,27 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             options=None,
         )
 
-        # TASK-FIX-ASPF-004: Monitor cancellation event and kill SDK
-        # subprocess when the feature-level timeout fires. The kill path
-        # is SDK-subprocess specific but the polling logic itself is
-        # substrate-agnostic (D-3).
-        async def _cancel_monitor() -> None:
-            """Poll cancellation event and kill subprocess if set."""
-            while True:
-                await asyncio.sleep(2)
-                if self._cancellation_event and self._cancellation_event.is_set():
-                    logger.info(
-                        f"TASK-FIX-ASPF-004: Cancellation event detected during "
-                        f"{agent_type} invocation, terminating SDK subprocess"
-                    )
-                    self._kill_child_claude_processes()
-                    return
-
+        # TASK-FIX-CTOUT01: monitor task creation moved to AFTER
+        # select_harness() (~30 lines below) so the closure can capture
+        # the live ``harness`` handle and dispatch
+        # ``await harness.cancel()`` alongside the legacy
+        # ``_kill_child_claude_processes()`` (TASK-FIX-ASPF-004) call.
+        # Under LangGraph, ``harness.cancel()`` is the only thing that
+        # actually unblocks the in-flight ``agent.ainvoke()`` — there is
+        # no subprocess for the SIGTERM path to kill. Under SDK, both
+        # run: ``cancel()`` closes the query() generator from inside the
+        # async loop, ``_kill_child_claude_processes()`` provides OS-level
+        # escalation as before.
         monitor: Optional[asyncio.Task] = None
-        if self._cancellation_event:
-            monitor = asyncio.create_task(_cancel_monitor())
+
+        # TASK-FIX-MODELPLUMB: fall back to the orchestrator-stored model
+        # name when the caller didn't specify one explicitly. invoke_coach,
+        # the legacy direct-SDK Player path, and run_specialist all call
+        # _invoke_with_role without a model= kwarg (comments at those sites
+        # say "Model selection delegated to CLI default" — this is the
+        # mechanism that actually carries the CLI default through).
+        if model is None:
+            model = self._model_name
 
         try:
             # Construct the harness. select_harness() routes via
@@ -2820,7 +2932,59 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 resume_session_id=resume_session_id,
                 sdk_debug_dir=_sdk_debug_dir,
                 cleanup_handler_installer=_install_sdk_cleanup_handler,
+                # TASK-FIX-002R-CONSUME: ``cwd`` is the worktree path the
+                # langgraph branch needs to construct a path-confined
+                # LocalShellBackend via
+                # ``guardkitfactory.harness.build_autobuild_backend(cwd)``.
+                # The SDK branch ignores it (popped at the top of
+                # ``select_harness``); passing unconditionally keeps the
+                # call site harness-agnostic.
+                cwd=self.worktree_path,
             )
+
+            # TASK-FIX-ASPF-004 + TASK-FIX-CTOUT01: dispatch cancellation
+            # to BOTH the substrate-agnostic ``harness.cancel()`` path
+            # (CTOUT01 — the only thing that unblocks LangGraph's
+            # in-flight ``agent.ainvoke()``) AND the legacy
+            # ``_kill_child_claude_processes()`` SIGTERM (ASPF-004 — OS-
+            # level subprocess escalation; no-op under LangGraph). The
+            # closure was moved here from earlier in this method so it
+            # can capture the live ``harness`` reference returned by
+            # ``select_harness()`` above.
+            async def _cancel_monitor() -> None:
+                """Poll cancellation event; dispatch harness cancel + SIGTERM."""
+                while True:
+                    await asyncio.sleep(2)
+                    if (
+                        self._cancellation_event
+                        and self._cancellation_event.is_set()
+                    ):
+                        logger.info(
+                            f"TASK-FIX-CTOUT01: Cancellation event detected "
+                            f"during {agent_type} invocation; calling "
+                            f"harness.cancel() and terminating any SDK "
+                            f"subprocess."
+                        )
+                        # NEW (TASK-FIX-CTOUT01): substrate-agnostic
+                        # cooperative cancel. SDK closes the active
+                        # query() generator; LangGraph cancels the
+                        # asyncio.Task wrapping agent.ainvoke().
+                        try:
+                            await harness.cancel()
+                        except Exception as exc:
+                            logger.warning(
+                                f"TASK-FIX-CTOUT01: harness.cancel() raised "
+                                f"{type(exc).__name__}: {exc} — falling "
+                                f"through to subprocess kill."
+                            )
+                        # LEGACY (TASK-FIX-ASPF-004): SDK-subprocess SIGTERM.
+                        # No-op under LangGraph; stays the OS-level
+                        # escalation under SDK.
+                        self._kill_child_claude_processes()
+                        return
+
+            if self._cancellation_event:
+                monitor = asyncio.create_task(_cancel_monitor())
 
             # TASK-HMIG-006 AC-007: surface the resume-intent drop loudly
             # when the caller offers a resume_session_id and the resolved
@@ -2860,15 +3024,26 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                                     cwd=self.worktree_path,
                                     timeout_seconds=self.sdk_timeout_seconds,
                                 ):
-                                    # Per Design Decision D-1: response_messages
-                                    # holds the raw SDK shape so duck-typed
-                                    # consumers (_emit_llm_call_event,
-                                    # _extract_partial_from_messages,
-                                    # cancelled-error session_id rescan) keep
-                                    # working unchanged. Fall back to the event
-                                    # itself when raw is None (LangGraph path).
-                                    raw = event.raw if event.raw is not None else event
-                                    response_messages.append(raw)
+                                    # TASK-HMIG-006.2: keep the typed-event
+                                    # stream as the canonical record for the
+                                    # post-stream extract path. response_messages
+                                    # retains its D-1 purpose (raw SDK shape for
+                                    # the remaining duck-typed consumers:
+                                    # _emit_llm_call_event token usage, the
+                                    # check_assistant_message_error API-error
+                                    # scan, the heartbeat ToolUseBlock log on
+                                    # the specialist path) but ToolUseEvent
+                                    # entries are skipped — they exist only as
+                                    # typed events for the migrated
+                                    # _track_tool_use / _extract_partial_from_messages
+                                    # consumers, and appending them to
+                                    # response_messages would mix typed events
+                                    # with SDK objects in a list typed
+                                    # List[Any].
+                                    if not isinstance(event, ToolUseEvent):
+                                        raw = event.raw if event.raw is not None else event
+                                        response_messages.append(raw)
+                                    harness_events.append(event)
 
                                     # TASK-DIAG-F4A2: Preserve each raw event to
                                     # JSONL when raw is populated.
@@ -2878,18 +3053,26 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                                         )
                                         _sdk_preserve_event(_sdk_debug_dir, event.raw)
 
-                                    # API-error check + tool-use tracking
-                                    # operate on the raw SDK shape per D-1.
-                                    if event.raw is not None:
+                                    # TASK-HMIG-006.2: tool-use tracking moved
+                                    # to a dedicated ToolUseEvent branch — the
+                                    # AssistantMessageEvent.raw walk it used to
+                                    # do is gone. Both harnesses now yield one
+                                    # ToolUseEvent per tool call.
+                                    if isinstance(event, ToolUseEvent):
+                                        if self._progress_logger:
+                                            self._track_tool_use(event)
+
+                                    # API-error check + heartbeat ToolUseBlock
+                                    # log still operate on the raw SDK shape:
+                                    # the API-error structure is SDK-specific
+                                    # and the heartbeat log is intentionally
+                                    # gated to the specialist path.
+                                    if isinstance(event, AssistantMessageEvent) and event.raw is not None:
                                         err = check_assistant_message_error(event.raw)
                                         if err:
                                             raise AgentInvocationError(
                                                 f"Agent {agent_type} received API error: {err}"
                                             )
-                                        # TASK-FIX-OBS2: Track tool use for
-                                        # progress logging.
-                                        if self._progress_logger:
-                                            self._track_tool_use(event.raw)
                                         # TASK-FIX-CRSTL-MULT R2: Emit
                                         # ToolUseBlock log lines on the
                                         # specialist path so per-tool signal
@@ -2933,16 +3116,19 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                     except (Exception, asyncio.CancelledError) as exc:
                         if isinstance(exc, asyncio.CancelledError):
                             logger.debug(f"CancelledError caught at _invoke_with_role: {exc}")
-                            # TASK-CRV-1540: Extract partial data before re-raising.
-                            # response_messages still contains raw SDK message
-                            # objects via event.raw, so the existing
-                            # extractor + duck-typed scan loop keep working.
+                            # TASK-CRV-1540 + TASK-HMIG-006.2: extract partial
+                            # data before re-raising. harness_events is the
+                            # typed-event canonical record; the migrated
+                            # _extract_partial_from_messages dispatches on
+                            # event variants instead of duck-typing on raw
+                            # SDK shapes, so the LangGraph path now produces
+                            # non-empty counts where it used to return zeros.
                             try:
                                 self._last_partial_report = _extract_partial_from_messages(
-                                    response_messages
+                                    harness_events
                                 )
                                 logger.info(
-                                    f"Extracted partial data from {len(response_messages)} messages: "
+                                    f"Extracted partial data from {len(harness_events)} events: "
                                     f"{self._last_partial_report['text_block_count']} text blocks, "
                                     f"{self._last_partial_report['tool_call_count']} tool calls, "
                                     f"{len(self._last_partial_report['file_modifications'])} file mods"
@@ -2950,7 +3136,12 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                             except Exception as extract_err:
                                 logger.warning(f"Failed to extract partial data: {extract_err}")
                                 self._last_partial_report = None
-                            # TASK-RFX-B20B: Scan accumulated messages for session_id
+                            # TASK-RFX-B20B: Scan accumulated messages for
+                            # session_id. response_messages still holds raw
+                            # SDK ResultMessage objects (TASK-HMIG-006.2 only
+                            # excludes ToolUseEvent from the accumulation,
+                            # not ResultMessage raws) so this duck-typed
+                            # rescan keeps working.
                             for msg in reversed(response_messages):
                                 if type(msg).__name__ == "ResultMessage":
                                     self._last_session_id = getattr(msg, "session_id", None)
@@ -3022,6 +3213,17 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 f"({type(e).__name__}): {str(e)}",
                 error_class=type(e).__name__,
             ) from e
+
+        # TASK-FIX-COACHOUT01 Shape A: hand the typed event stream back to
+        # the Coach call site so coach_output_parser.extract_and_write can
+        # consume AssistantMessageEvent text without round-tripping through
+        # an instance attribute. Reached only on the success path — the
+        # except branches above all raise. Player and specialist sites
+        # leave return_events at its default and continue to receive None
+        # (the implicit fall-through here).
+        if return_events:
+            return (None, harness_events)
+        return None
 
     def _emit_llm_call_event(
         self,
@@ -5549,208 +5751,276 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             f"(variant={protocol_variant}, multiplier={self.timeout_multiplier}x)"
         )
 
-        try:
-            from claude_agent_sdk import (
-                query,
-                ClaudeAgentOptions,
-                CLINotFoundError,
-                ProcessError,
-                CLIJSONDecodeError,
-                # Import message types for proper ContentBlock iteration
-                AssistantMessage,
-                TextBlock,
-                ToolUseBlock,
-                ToolResultBlock,
-                ResultMessage,
-            )
-        except ImportError as e:
-            import sys
-            diagnosis = (
-                f"Claude Agent SDK import failed.\n"
-                f"  Error: {e}\n"
-                f"  Python: {sys.executable}\n"
-                f"  sys.path (first 3): {sys.path[:3]}\n\n"
-                f"To fix:\n"
-                f"  pip install claude-agent-sdk\n"
-                f"  # OR for full autobuild support:\n"
-                f"  pip install guardkit-py[autobuild]"
-            )
-            logger.error(diagnosis)
-            return TaskWorkResult(
-                success=False,
-                output={},
-                error=diagnosis,
-            )
-
+        # TASK-HMIG-006.1: dispatch through HarnessAdapter. Same pattern as
+        # the Player path migrated in TASK-HMIG-006 Phase 3b
+        # (`_invoke_with_role` at agent_invoker.py:2855) and Coach's
+        # independent verifier migrated in TASK-HMIG-006.3
+        # (`coach_validator._run_tests_via_sdk`). The harness owns SDK
+        # lazy-import, ClaudeAgentOptions construction, parse resilience
+        # (TASK-FIX-7A03), session_id capture (TASK-RFX-B20B), and
+        # generator hygiene (TASK-RFX-8332 / TASK-FIX-GEN1). Per
+        # Design Decision D-3, orchestrator-side concerns (heartbeat,
+        # sdk_debug, retry loop, tool tracking, rate-limit detection)
+        # stay inline. Per D-4, the harness normalises all SDK-specific
+        # exceptions (CLINotFoundError / ProcessError / CLIJSONDecodeError
+        # / harness-internal ValueError / SDK import failure) to
+        # AgentInvocationError before they reach this caller.
         from guardkit.orchestrator.sdk_utils import check_assistant_message_error
 
         # TASK-ABSR-MAXT: Complexity-scale max_turns (mirrors _calculate_sdk_timeout).
-        # Computed once per invocation so the same value flows into the SDK options,
-        # the parsed result, and the returned TaskWorkResult.
+        # Computed once per invocation so the same value flows into the harness
+        # constructor, the parsed result, and the returned TaskWorkResult.
         effective_max_turns = self._calculate_sdk_max_turns(task_id)
 
+        # TASK-DIAG-F4A2: Preserve rendered task-work prompt under
+        # sdk_debug/turn_<n>/ when GUARDKIT_AUTOBUILD_PRESERVE_DEBUG is
+        # set. Helper is a no-op otherwise. Substrate-agnostic — operates
+        # on whatever the orchestrator constructs. The rendered SDK
+        # options object now lives inside the harness, so the prompt +
+        # per-event JSONL still preserve enough context to diagnose SDK
+        # stalls.
+        from guardkit.orchestrator.sdk_debug import (
+            preserve_prompt as _sdk_preserve_prompt,
+            preserve_event as _sdk_preserve_event,
+        )
+        _sdk_debug_dir = _sdk_preserve_prompt(
+            workspace_root=self.worktree_path,
+            task_id=task_id,
+            turn=turn,
+            role="player",
+            prompt=prompt,
+            options=None,
+        )
+
+        # TASK-FBSDK-011: Log invocation configuration. Options are now
+        # constructed inside the harness so we log the orchestrator-side
+        # knobs only.
+        logger.info(f"[{task_id}] Harness invocation starting")
+        logger.info(f"[{task_id}] Working directory: {self.worktree_path}")
+        logger.info(
+            f"[{task_id}] Allowed tools: "
+            f"{['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob', 'Task']}"
+        )
+        logger.info(f"[{task_id}] Permission mode: acceptEdits")
+        logger.info(f"[{task_id}] Max turns: {effective_max_turns}")
+        logger.info(f"[{task_id}] SDK timeout: {self.sdk_timeout_seconds}s")
+        if self._last_session_id is not None:
+            logger.info(
+                f"[{task_id}] Resuming SDK session: "
+                f"{self._last_session_id[:16]}..."
+            )
+        logger.debug(f"[{task_id}] Prompt (first 500 chars): {prompt[:500]}...")
+
+        # TASK-FIX-46F2: Retry loop for transient SDK stream errors.
+        # Under GPU contention, vLLM SSE streams can be interrupted with
+        # "unknown" errors. A single retry avoids expensive state-recovery.
+        # Each retry constructs a fresh harness instance per
+        # Design Decision D-6 (single-use per invocation).
+        _sdk_stream_error: Optional[str] = None
+        collected_output: List[str] = []
+        message_count = 0
+        assistant_count = 0
+        tool_count = 0
+        result_count = 0
+        parser = TaskWorkStreamParser()
+        sdk_turns_used = None
+        sdk_session_id = None
+
         try:
-            _tw_options_kwargs = dict(
-                cwd=str(self.worktree_path),
-                # TASK-POF-004: Removed "Skill" - inline protocol doesn't invoke skills
-                allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task"],
-                permission_mode="acceptEdits",
-                # TASK-REV-BB80: Use dedicated constant, NOT self.max_turns_per_agent
-                # max_turns_per_agent is for adversarial turns (default: 5)
-                # task-work needs ~50 internal turns for all phases
-                # TASK-ABSR-MAXT: Complexity-scaled per-task (was self._effective_sdk_max_turns)
-                max_turns=effective_max_turns,
-                # TASK-POF-004: Use "project" only - inline protocol replaces
-                # skill invocation, no need to load user commands (~839KB savings)
-                setting_sources=["project"],
-            )
-            # TASK-RFX-B20B: Resume from prior session if available
-            if self._last_session_id is not None:
-                _tw_options_kwargs["resume"] = self._last_session_id
-                logger.info(
-                    f"[{task_id}] Resuming SDK session: {self._last_session_id[:16]}..."
-                )
-            options = ClaudeAgentOptions(**_tw_options_kwargs)
-
-            # TASK-DIAG-F4A2: Preserve rendered task-work prompt + options
-            # under sdk_debug/turn_<n>/ when GUARDKIT_AUTOBUILD_PRESERVE_DEBUG
-            # is set. Helper is a no-op otherwise.
-            from guardkit.orchestrator.sdk_debug import (
-                preserve_prompt as _sdk_preserve_prompt,
-                preserve_event as _sdk_preserve_event,
-            )
-            _sdk_debug_dir = _sdk_preserve_prompt(
-                workspace_root=self.worktree_path,
-                task_id=task_id,
-                turn=turn,
-                role="player",
-                prompt=prompt,
-                options=options,
-            )
-
-            # TASK-FBSDK-011: Log SDK configuration before invocation
-            logger.info(f"[{task_id}] SDK invocation starting")
-            logger.info(f"[{task_id}] Working directory: {self.worktree_path}")
-            logger.info(f"[{task_id}] Allowed tools: {options.allowed_tools}")
-            logger.info(f"[{task_id}] Setting sources: {options.setting_sources}")
-            logger.info(f"[{task_id}] Permission mode: {options.permission_mode}")
-            logger.info(f"[{task_id}] Max turns: {options.max_turns}")
-            logger.info(f"[{task_id}] SDK timeout: {self.sdk_timeout_seconds}s")
-            logger.debug(f"[{task_id}] Prompt (first 500 chars): {prompt[:500]}...")
-
-            _install_sdk_cleanup_handler(asyncio.get_running_loop())
-            # TASK-RFX-8332: Track generator reference across retry iterations
-            # for cleanup in exception handlers (declared before retry loop)
-            _tw_gen = None
-            # TASK-FIX-46F2: Retry loop for transient SDK stream errors.
-            # Under GPU contention, vLLM SSE streams can be interrupted with
-            # "unknown" errors. A single retry avoids expensive state-recovery.
-            _sdk_stream_error: Optional[str] = None
             for _sdk_attempt in range(MAX_SDK_STREAM_RETRIES + 1):
-                collected_output: List[str] = []
-                # TASK-FIX-STUB-C: Create parser before stream loop so ToolUseBlock
-                # file operations can be tracked during processing (not just after)
+                collected_output = []
+                # TASK-FIX-STUB-C: Recreate parser per retry so ToolUseBlock
+                # file operations from a previous (failed) attempt do not
+                # leak into the successful attempt's result.
                 parser = TaskWorkStreamParser()
-                # TASK-FBSDK-011: Track message statistics
                 message_count = 0
                 assistant_count = 0
                 tool_count = 0
                 result_count = 0
                 _sdk_stream_error = None
-                # TASK-INST-005c: Track pending Bash tool invocations for
-                # tool.exec event emission. Keyed by tool_use_id.
                 _pending_bash_tools: Dict[str, Dict[str, Any]] = {}
-                # TASK-VPR-003: Track SDK turns from ResultMessage
                 sdk_turns_used = None
-                # TASK-RFX-B20B: Track session_id from ResultMessage
                 sdk_session_id = None
-                # TASK-RFX-8332: Hold explicit reference to query() generator
-                # so we can call aclose() in cleanup, preventing GC from
-                # scheduling athrow(GeneratorExit) in a wrong asyncio Task.
-                _tw_gen = None
+
+                # Construct the harness. select_harness() routes via
+                # GUARDKIT_HARNESS env var (default "sdk"). The SDK harness
+                # owns ClaudeAgentOptions construction, the query() call,
+                # generator hygiene (TASK-RFX-8332 / TASK-FIX-GEN1), and
+                # per-message parse resilience (TASK-FIX-7A03). Per
+                # Design Decision D-3, the cleanup-handler installer is
+                # passed through so the SDK subprocess gets cleaned up
+                # against the running event loop.
+                harness = select_harness(
+                    sdk_timeout_seconds=self.sdk_timeout_seconds,
+                    # TASK-POF-004: Removed "Skill" - inline protocol doesn't invoke skills
+                    allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task"],
+                    permission_mode="acceptEdits",
+                    # TASK-REV-BB80 / TASK-ABSR-MAXT: Complexity-scaled per-task.
+                    max_turns=effective_max_turns,
+                    # TASK-RFX-B20B: Resume from prior session if available.
+                    resume_session_id=self._last_session_id,
+                    sdk_debug_dir=_sdk_debug_dir,
+                    cleanup_handler_installer=_install_sdk_cleanup_handler,
+                    # TASK-POF-004: Use "project" only - inline protocol replaces
+                    # skill invocation (~839KB savings on the SDK path; dropped
+                    # by the LangGraph translator).
+                    setting_sources=["project"],
+                    # TASK-FIX-LGFM2 (sibling-of-LGFM, sibling-of-F9/F1):
+                    # Thread the orchestrator-stored model name through to the
+                    # harness. Mirrors the kwarg at the _invoke_with_role site
+                    # (agent_invoker.py:2863). Without this, the LangGraph
+                    # branch hits the harness with model=None, DeepAgents
+                    # falls back to its default Anthropic provider, and
+                    # llama-swap operators see "Could not resolve
+                    # authentication method" at Player turn 1. The main
+                    # Player path has no per-call model override, so direct
+                    # ``model=self._model_name`` is sufficient (no fallback
+                    # needed).
+                    model=self._model_name,
+                    # TASK-FIX-002R-CONSUME: ``cwd`` is consumed by the
+                    # langgraph branch to build a path-confined LocalShellBackend.
+                    # The SDK branch ignores it (popped at the top of
+                    # select_harness); passing unconditionally keeps the call
+                    # site harness-agnostic.
+                    cwd=self.worktree_path,
+                )
+
+                # TASK-HMIG-006 AC-007: surface the resume-intent drop loudly
+                # when the resolved harness does not support resume.
+                if (
+                    self._last_session_id is not None
+                    and not harness.supports_resume
+                ):
+                    logger.warning(
+                        "TASK-HMIG-006 AC-007: _last_session_id=%s... was supplied but "
+                        "harness %s does not support_resume; starting fresh session.",
+                        self._last_session_id[:16],
+                        type(harness).__name__,
+                    )
+
                 async with asyncio.timeout(self.sdk_timeout_seconds):
-                    async with async_heartbeat(task_id, "task-work implementation", progress_logger=self._progress_logger):
-                        _tw_gen = query(prompt=prompt, options=options)
-                        async for message in _tw_gen:
-                            # TASK-FBSDK-011: Track message counts
+                    async with async_heartbeat(
+                        task_id,
+                        "task-work implementation",
+                        progress_logger=self._progress_logger,
+                    ):
+                        async for event in harness.invoke(
+                            prompt=prompt,
+                            role="player",
+                            tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task"],
+                            cwd=self.worktree_path,
+                            timeout_seconds=self.sdk_timeout_seconds,
+                        ):
                             message_count += 1
-                            # TASK-DIAG-F4A2: Preserve event to JSONL (no-op if disabled)
-                            _sdk_preserve_event(_sdk_debug_dir, message)
-                            # Properly iterate ContentBlocks instead of str()
-                            # message.content is a list[ContentBlock], not a string
-                            # Mirrors TASK-FB-FIX-005 pattern from task_work_interface.py
-                            if isinstance(message, AssistantMessage):
-                                err = check_assistant_message_error(message)
-                                if err:
-                                    # TASK-FIX-46F2: Retry on transient "unknown" errors
-                                    if (
-                                        _sdk_attempt < MAX_SDK_STREAM_RETRIES
-                                        and "unknown" in str(err).lower()
-                                    ):
-                                        logger.warning(
-                                            "[%s] SDK stream error (attempt %d/%d), "
-                                            "retrying in %ds: %s",
-                                            task_id,
-                                            _sdk_attempt + 1,
-                                            MAX_SDK_STREAM_RETRIES + 1,
-                                            SDK_STREAM_RETRY_BACKOFF,
-                                            err,
+                            # TASK-DIAG-F4A2: Preserve raw event to JSONL
+                            # (no-op if disabled). Operates on event.raw to
+                            # preserve the SDK-shape JSON the prior path
+                            # used to dump.
+                            if _sdk_debug_dir is not None and event.raw is not None:
+                                _sdk_preserve_event(_sdk_debug_dir, event.raw)
+
+                            if isinstance(event, AssistantMessageEvent):
+                                # API-error check operates on raw SDK shape;
+                                # only the SDK harness populates event.raw,
+                                # other substrates have raw=None and this
+                                # check is a no-op there.
+                                if event.raw is not None:
+                                    err = check_assistant_message_error(event.raw)
+                                    if err:
+                                        # TASK-FIX-46F2: Retry on transient "unknown" errors.
+                                        if (
+                                            _sdk_attempt < MAX_SDK_STREAM_RETRIES
+                                            and "unknown" in str(err).lower()
+                                        ):
+                                            logger.warning(
+                                                "[%s] SDK stream error (attempt %d/%d), "
+                                                "retrying in %ds: %s",
+                                                task_id,
+                                                _sdk_attempt + 1,
+                                                MAX_SDK_STREAM_RETRIES + 1,
+                                                SDK_STREAM_RETRY_BACKOFF,
+                                                err,
+                                            )
+                                            _sdk_stream_error = err
+                                            break  # Break event loop to retry
+                                        logger.error(
+                                            f"[{task_id}] SDK API error in stream: {err}"
                                         )
-                                        _sdk_stream_error = err
-                                        break  # Break message loop to retry
-                                    logger.error(f"[{task_id}] SDK API error in stream: {err}")
-                                    return TaskWorkResult(success=False, output={}, error=f"SDK agent error: {err}")
+                                        return TaskWorkResult(
+                                            success=False,
+                                            output={},
+                                            error=f"SDK agent error: {err}",
+                                        )
                                 assistant_count += 1
-                                for block in message.content:
-                                    if isinstance(block, TextBlock):
-                                        collected_output.append(block.text)
-                                        # Log progress for debugging
-                                        if "Phase" in block.text or "test" in block.text.lower():
-                                            logger.debug(f"SDK progress: {block.text[:100]}...")
-                                    elif isinstance(block, ToolUseBlock):
+                                # Collect joined text content for parser
+                                if event.text:
+                                    collected_output.append(event.text)
+                                    if "Phase" in event.text or "test" in event.text.lower():
+                                        logger.debug(
+                                            f"SDK progress: {event.text[:100]}..."
+                                        )
+                                # Walk raw content blocks for tool tracking +
+                                # per-bash-exec emission. Substrate-agnostic
+                                # via duck-typing on type(block).__name__ —
+                                # matches the heartbeat scan at
+                                # agent_invoker.py:2974-2989 and the SDK
+                                # harness's own ToolUseBlock emission at
+                                # sdk_harness.py:318-328.
+                                content = (
+                                    getattr(event.raw, "content", None) or []
+                                    if event.raw is not None
+                                    else []
+                                )
+                                for block in content:
+                                    block_class = type(block).__name__
+                                    if block_class == "ToolUseBlock":
                                         tool_count += 1
-                                        logger.debug(f"Tool invoked: {block.name}")
-                                        # TASK-FIX-OBS2: Update progress logger with tool use
+                                        block_name = getattr(block, "name", "")
+                                        logger.debug(f"Tool invoked: {block_name}")
+                                        # TASK-FIX-OBS2: Update progress logger with tool use.
                                         if self._progress_logger:
-                                            self._progress_logger._last_tool = block.name
+                                            self._progress_logger._last_tool = block_name
                                         # TASK-FIX-STUB-C: Track file operations from
                                         # Write/Edit tools to populate files_created/
-                                        # files_modified in task_work_results.json
-                                        if block.name in ("Write", "Edit"):
+                                        # files_modified in task_work_results.json.
+                                        if block_name in ("Write", "Edit"):
                                             tool_input = getattr(block, "input", {})
                                             if isinstance(tool_input, dict):
-                                                # TASK-FIX-PIPELINE: Log actual SDK key names (Fix 1)
+                                                # TASK-FIX-PIPELINE: Log actual SDK key names (Fix 1).
                                                 logger.info(
-                                                    f"[{task_id}] ToolUseBlock {block.name} input keys: "
+                                                    f"[{task_id}] ToolUseBlock {block_name} input keys: "
                                                     f"{list(tool_input.keys())}"
                                                 )
                                                 parser._track_tool_call(
-                                                    block.name, tool_input
+                                                    block_name, tool_input
                                                 )
-                                                # TASK-FIX-OBS2: Track file changes for progress
+                                                # TASK-FIX-OBS2: Track file changes for progress.
                                                 if self._progress_logger:
                                                     self._progress_logger._files_changed += 1
                                             else:
                                                 logger.warning(
-                                                    f"[{task_id}] ToolUseBlock {block.name} input is "
+                                                    f"[{task_id}] ToolUseBlock {block_name} input is "
                                                     f"{type(tool_input).__name__}, not dict: {str(tool_input)[:200]}"
                                                 )
                                         # TASK-INST-005c: Track Bash tool invocations
-                                        # for tool.exec event emission
-                                        elif block.name == "Bash":
+                                        # for tool.exec event emission.
+                                        elif block_name == "Bash":
                                             tool_input = getattr(block, "input", {})
                                             if isinstance(tool_input, dict):
-                                                _pending_bash_tools[block.id] = {
+                                                _pending_bash_tools[getattr(block, "id", "")] = {
                                                     "cmd": tool_input.get("command", ""),
                                                     "start_ns": time.monotonic_ns(),
                                                 }
-                                    elif isinstance(block, ToolResultBlock):
+                                    elif block_class == "ToolResultBlock":
                                         # TASK-INST-005c: Emit tool.exec event for
-                                        # completed Bash tool invocations
+                                        # completed Bash tool invocations.
                                         _tool_use_id = getattr(block, "tool_use_id", "")
                                         if _tool_use_id in _pending_bash_tools:
                                             _bash_info = _pending_bash_tools.pop(_tool_use_id)
-                                            _content = str(block.content) if block.content else ""
+                                            _block_content = getattr(block, "content", None)
+                                            _content_str = (
+                                                str(_block_content) if _block_content else ""
+                                            )
                                             _latency = (
                                                 (time.monotonic_ns() - _bash_info["start_ns"])
                                                 / 1_000_000
@@ -5760,40 +6030,44 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                                 cmd=_bash_info["cmd"],
                                                 exit_code=0,
                                                 latency_ms=_latency,
-                                                stdout_tail=_content,
+                                                stdout_tail=_content_str,
                                                 stderr_tail="",
                                                 task_id=task_id,
                                             )
-                                        # Extract content from tool results if present
-                                        if block.content:
-                                            collected_output.append(str(block.content))
-                            elif isinstance(message, ResultMessage):
+                                        # Extract content from tool results
+                                        # if present (parser sees them too).
+                                        _result_content = getattr(block, "content", None)
+                                        if _result_content:
+                                            collected_output.append(str(_result_content))
+                            elif isinstance(event, ResultMessageEvent):
                                 result_count += 1
-                                # TASK-VPR-003: Capture SDK turns from ResultMessage
-                                sdk_turns_used = message.num_turns
-                                # TASK-RFX-B20B: Capture session_id for resumption
-                                sdk_session_id = getattr(message, "session_id", None)
+                                # TASK-VPR-003: Capture SDK turns from ResultMessage.
+                                # ResultMessageEvent does not expose num_turns at
+                                # the typed-event level (TASK-HMIG-006 D-1 left
+                                # this on raw); read from event.raw which the SDK
+                                # harness populates with the original SDK
+                                # ResultMessage. LangGraph harness leaves raw=None
+                                # so sdk_turns_used stays None on that path.
+                                if event.raw is not None:
+                                    sdk_turns_used = getattr(
+                                        event.raw, "num_turns", None
+                                    )
+                                # TASK-RFX-B20B: Capture session_id for resumption.
+                                # Read from typed field so the same code path
+                                # works for any substrate.
+                                sdk_session_id = event.session_id
                                 self._last_session_id = sdk_session_id
-                                logger.info(f"[{task_id}] SDK completed: turns={message.num_turns}")
+                                logger.info(
+                                    f"[{task_id}] SDK completed: turns={sdk_turns_used}"
+                                )
                                 break
 
-                # TASK-RFX-8332: Explicitly close the query() async generator
-                # after each retry iteration to prevent GC finalization.
-                if _tw_gen is not None:
-                    with suppress(Exception):
-                        try:
-                            async with asyncio.timeout(5):
-                                await _tw_gen.aclose()
-                        except (asyncio.TimeoutError, asyncio.CancelledError):
-                            pass
-                    _tw_gen = None
-
                 if _sdk_stream_error is None:
-                    break  # Stream completed successfully, exit retry loop
-                # TASK-FIX-46F2: Backoff before retry
+                    break  # Stream completed successfully, exit retry loop.
+                # TASK-FIX-46F2: Backoff before retry.
                 await asyncio.sleep(SDK_STREAM_RETRY_BACKOFF)
 
-            # TASK-FIX-46F2: If retries exhausted with transient error, fall through
+            # TASK-FIX-46F2: If retries exhausted with transient error, fall through.
             if _sdk_stream_error is not None:
                 logger.error(
                     f"[{task_id}] SDK API error in stream after "
@@ -5804,27 +6078,27 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                     error=f"SDK agent error: {_sdk_stream_error}",
                 )
 
-            # TASK-FBSDK-011: Log message processing summary
+            # TASK-FBSDK-011: Log message processing summary.
             logger.info(
                 f"[{task_id}] Message summary: total={message_count}, "
                 f"assistant={assistant_count}, tools={tool_count}, results={result_count}"
             )
 
-            # Join collected output for parsing
+            # Join collected output for parsing.
             output_text = "\n".join(collected_output)
 
-            # Parse text output for quality gate metrics (tests, coverage, phases)
-            # Note: parser already has file tracking from ToolUseBlock processing above
+            # Parse text output for quality gate metrics (tests, coverage, phases).
+            # Note: parser already has file tracking from ToolUseBlock processing above.
             parser.parse_message(output_text)
             parsed_result = parser.to_result()
 
-            # TASK-VPR-003: Inject SDK turn metrics into parsed result
-            # These flow through to task_work_results.json for Coach and reporting
-            # TASK-ABSR-MAXT: Report the complexity-scaled value actually passed to the SDK
+            # TASK-VPR-003: Inject SDK turn metrics into parsed result.
+            # These flow through to task_work_results.json for Coach and reporting.
+            # TASK-ABSR-MAXT: Report the complexity-scaled value actually passed to the SDK.
             parsed_result["sdk_turns_used"] = sdk_turns_used
             parsed_result["sdk_max_turns"] = effective_max_turns
 
-            # Write task_work_results.json for Coach validation
+            # Write task_work_results.json for Coach validation.
             self._write_task_work_results(task_id, parsed_result, documentation_level)
 
             logger.info(f"task-work completed successfully for {task_id}")
@@ -5846,39 +6120,32 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             self._write_failure_results(task_id, error_msg, "TimeoutError", collected_output)
             raise SDKTimeoutError(error_msg)
 
-        except CLINotFoundError as e:
-            error_msg = (
-                "Claude Code CLI not installed. "
-                "Run: npm install -g @anthropic-ai/claude-code"
+        except AgentInvocationError as e:
+            # TASK-HMIG-006.1 / D-4: the harness normalises SDK-specific
+            # exceptions (CLINotFoundError / ProcessError /
+            # CLIJSONDecodeError / SDK import failure / harness-internal
+            # ValueError) to AgentInvocationError. The diagnostic info
+            # (exit_code, stderr, error_class) is preserved inside the
+            # exception message string; downstream consumers
+            # (test assertions, log greps) keep working because the
+            # harness mirrors the pre-migration message wording verbatim:
+            #
+            #   * "Claude Agent SDK import failed." (sdk_harness.py:222)
+            #   * "Claude Code CLI not installed."  (sdk_harness.py:422)
+            #   * "SDK process failed (exit ...)"   (sdk_harness.py:427)
+            #   * "Failed to parse SDK response: ..." (sdk_harness.py:431)
+            error_msg = str(e)
+            logger.error(
+                f"[{task_id}] SDK invocation failed via harness "
+                f"(error_class=AgentInvocationError): {error_msg}"
             )
-            logger.error(error_msg)
-            self._write_failure_results(task_id, error_msg, "CLINotFoundError", collected_output)
-            return TaskWorkResult(
-                success=False,
-                output={},
-                error=error_msg,
-            )
-
-        except ProcessError as e:
-            error_msg = f"SDK process failed (exit {e.exit_code}): {e.stderr}"
-            logger.error(f"[{task_id}] SDK PROCESS ERROR")
-            logger.error(f"[{task_id}] Exit code: {e.exit_code}")
-            logger.error(f"[{task_id}] Stderr: {e.stderr}")
             logger.error(f"[{task_id}] Messages processed: {message_count}")
             if collected_output:
                 last_output = " ".join(collected_output)[-500:]
                 logger.error(f"[{task_id}] Last output (500 chars): {last_output}")
-            self._write_failure_results(task_id, error_msg, "ProcessError", collected_output)
-            return TaskWorkResult(
-                success=False,
-                output={},
-                error=error_msg,
+            self._write_failure_results(
+                task_id, error_msg, "AgentInvocationError", collected_output
             )
-
-        except CLIJSONDecodeError as e:
-            error_msg = f"Failed to parse SDK response: {e}"
-            logger.error(error_msg)
-            self._write_failure_results(task_id, error_msg, "CLIJSONDecodeError", collected_output)
             return TaskWorkResult(
                 success=False,
                 output={},
@@ -5888,10 +6155,10 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         except Exception as e:
             error_msg = str(e)
 
-            # Check for rate limit in error message
+            # Check for rate limit in error message.
             is_rate_limit, reset_time = detect_rate_limit(error_msg)
 
-            # Also check collected output for rate limit messages
+            # Also check collected output for rate limit messages.
             if not is_rate_limit and collected_output:
                 last_output = " ".join(collected_output)[-500:]
                 is_rate_limit, reset_time = detect_rate_limit(last_output)
@@ -5905,7 +6172,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                     reset_time=reset_time
                 )
 
-            # Original generic error handling continues...
+            # Catch-all for non-harness failures (e.g. orchestrator-side
+            # state errors, asyncio mishaps). Preserves the pre-migration
+            # log shape.
             error_msg = f"Unexpected error executing task-work: {str(e)}"
             logger.error(f"[{task_id}] SDK UNEXPECTED ERROR: {type(e).__name__}")
             logger.error(f"[{task_id}] Error message: {str(e)}")
@@ -5920,17 +6189,6 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 output={},
                 error=error_msg,
             )
-        finally:
-            # TASK-RFX-8332: Ensure query() generator is closed on ALL exit
-            # paths (timeout, process error, etc.) to prevent GC finalization
-            # from scheduling athrow(GeneratorExit) in a wrong asyncio Task.
-            if _tw_gen is not None:
-                with suppress(Exception):
-                    try:
-                        async with asyncio.timeout(5):
-                            await _tw_gen.aclose()
-                    except (asyncio.TimeoutError, asyncio.CancelledError):
-                        pass
 
     def _parse_task_work_output(self, stdout: str) -> Dict[str, Any]:
         """Parse task-work stdout into structured output.

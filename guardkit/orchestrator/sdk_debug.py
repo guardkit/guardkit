@@ -85,10 +85,18 @@ def _options_to_jsonable(options: Any) -> Any:
     """Best-effort conversion of ClaudeAgentOptions to a JSON-serialisable view.
 
     Tries dataclass.asdict, then pydantic model_dump, then __dict__,
-    then repr() for non-serialisable fields.
+    then repr() for non-serialisable fields. Plain ``dict`` / ``list``
+    inputs are routed straight through ``_coerce_jsonable`` so callers
+    that synthesise an options-shaped record (e.g. the post-HMIG-006.5
+    Coach test path) get a JSON object rather than a stringified
+    ``repr(dict)`` — dict instances do not carry ``__dict__`` and would
+    otherwise fall through to the ``repr`` fallback.
     """
     if options is None:
         return None
+    # Plain JSON-shaped input (dict/list/tuple): pass through directly.
+    if isinstance(options, (dict, list, tuple)):
+        return _coerce_jsonable(options)
     # Dataclass path
     try:
         if dataclasses.is_dataclass(options) and not isinstance(options, type):
@@ -130,6 +138,15 @@ def _event_to_jsonable(event: Any) -> Any:
     ResultMessage, SystemMessage, UserMessage, etc.) are dataclasses or
     plain Python objects. This produces a defensive snapshot that always
     succeeds even for unknown types — diagnostic value over fidelity.
+
+    HarnessEvent typed records (TASK-HMIG-006) carry an optional ``.raw``
+    slot that holds the underlying substrate object (an SDK ``Message``
+    on the SDK path, ``None`` on substrates with no useful raw form).
+    When present, the raw slot is walked recursively so the JSONL line
+    captures the full SDK message shape rather than the ``repr()`` that
+    the dataclass-asdict + coerce path would otherwise emit — restoring
+    parity with the pre-migration coach test stream preserved by
+    TASK-DIAG-F4A2 (see TASK-HMIG-006.5).
     """
     if event is None:
         return {"type": "None"}
@@ -137,10 +154,18 @@ def _event_to_jsonable(event: Any) -> Any:
     type_name = type(event).__name__
     payload: dict[str, Any] = {"type": type_name}
 
-    # Dataclass path (covers most SDK messages)
+    # Dataclass path (covers most SDK messages and all HarnessEvent variants)
     try:
         if dataclasses.is_dataclass(event) and not isinstance(event, type):
             payload.update(_coerce_jsonable(dataclasses.asdict(event)))
+            # HarnessEvent variants carry a ``type: Literal[...]`` field
+            # (e.g. ``"assistant_message"``) that ``asdict`` would write
+            # over the class-name we set above. Re-impose the class
+            # name so the JSONL line always identifies the wrapper type;
+            # nested ``type`` literals on inner content blocks are
+            # preserved by the asdict recursion regardless.
+            payload["type"] = type_name
+            _maybe_inline_raw(payload, event)
             return payload
     except Exception:  # noqa: BLE001
         pass
@@ -149,6 +174,8 @@ def _event_to_jsonable(event: Any) -> Any:
     if hasattr(event, "model_dump"):
         try:
             payload.update(_coerce_jsonable(event.model_dump()))
+            payload["type"] = type_name
+            _maybe_inline_raw(payload, event)
             return payload
         except Exception:  # noqa: BLE001
             pass
@@ -157,6 +184,7 @@ def _event_to_jsonable(event: Any) -> Any:
     if hasattr(event, "__dict__"):
         try:
             payload.update(_coerce_jsonable(dict(event.__dict__)))
+            payload["type"] = type_name
             # Also walk a nested .content list of ContentBlocks if the
             # asdict path missed them (some SDK versions don't decorate
             # blocks as dataclasses).
@@ -167,12 +195,40 @@ def _event_to_jsonable(event: Any) -> Any:
                     if isinstance(content, (list, tuple))
                     else _event_to_jsonable(content)
                 )
+            _maybe_inline_raw(payload, event)
             return payload
         except Exception:  # noqa: BLE001
             pass
 
     payload["repr"] = repr(event)
     return payload
+
+
+def _maybe_inline_raw(payload: dict[str, Any], event: Any) -> None:
+    """Replace ``payload["raw"]`` with a recursive walk when applicable.
+
+    HarnessEvent dataclasses (AssistantMessageEvent, ResultMessageEvent)
+    expose a ``raw`` slot that points at the underlying SDK ``Message``.
+    The default ``dataclasses.asdict`` + ``_coerce_jsonable`` chain
+    records that field as ``repr(message)`` because SDK messages are
+    not themselves dataclasses understood by ``asdict``. To preserve
+    the pre-migration diagnostic fidelity (TASK-HMIG-006.5 AC-002 — the
+    "typed event class name plus underlying raw payload" contract),
+    walk the raw object through :func:`_event_to_jsonable` so its full
+    shape is captured.
+
+    No-op when ``event.raw`` is missing, ``None``, or already a
+    primitive (in which case the asdict pass already recorded it
+    faithfully).
+    """
+    raw = getattr(event, "raw", None)
+    if raw is None or isinstance(raw, (bool, int, float, str)):
+        return
+    try:
+        payload["raw"] = _event_to_jsonable(raw)
+    except Exception:  # noqa: BLE001 — diagnostic-only path
+        # Fall back to repr; never raise into the caller.
+        payload["raw"] = repr(raw)
 
 
 def preserve_prompt(

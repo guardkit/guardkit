@@ -1,0 +1,81 @@
+id: FEAT-AOF
+name: AutoBuild Observability Fixes
+description: "Three orchestrator-side fixes to the AutoBuild observability surface\
+  \ \u2014 exclude internal artifacts from documentation constraint counting (IA03),\
+  \ scope git detection to per-task file changes in shared worktrees (GD02), and add\
+  \ independent test execution for the testing task type (TP05). All three are runtime-agnostic\
+  \ orchestrator/server-side logic, picked as the AC-001 target feature for TASK-HMIG-010's\
+  \ end-to-end LangGraph validation run."
+created: '2026-06-04T18:30:00Z'
+status: failed
+complexity: 5
+estimated_tasks: 3
+tasks:
+- id: TASK-FIX-IA03
+  name: Exclude internal artifacts from documentation constraint count
+  file_path: tasks/backlog/autobuild-observability-fixes/TASK-FIX-IA03-exclude-internal-artifacts-from-doc-constraint.md
+  complexity: 3
+  dependencies: []
+  status: failed
+  implementation_mode: task-work
+  estimated_minutes: 90
+  requires_infrastructure: []
+  result:
+    total_turns: 0
+    final_decision: timeout
+    error: Task TASK-FIX-IA03 timed out after 3000s (50 min)
+    deferred_reason: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: '2026-06-06T10:25:54.882984'
+  completed_at: '2026-06-06T11:15:54.927332'
+- id: TASK-FIX-GD02
+  name: Scope git detection to per-task file changes in shared worktrees
+  file_path: tasks/backlog/autobuild-observability-fixes/TASK-FIX-GD02-shared-worktree-git-detection-baseline.md
+  complexity: 6
+  dependencies:
+  - TASK-FIX-IA03
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 180
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
+- id: TASK-FIX-TP05
+  name: Add independent test execution for testing task type
+  file_path: tasks/backlog/autobuild-observability-fixes/TASK-FIX-TP05-add-test-execution-for-testing-task-type.md
+  complexity: 4
+  dependencies:
+  - TASK-FIX-IA03
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 120
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
+orchestration:
+  parallel_groups:
+  - - TASK-FIX-IA03
+  - - TASK-FIX-GD02
+    - TASK-FIX-TP05
+  estimated_duration_minutes: 390
+  recommended_parallel: 2
+preflight_strict: false
+execution:
+  started_at: '2026-06-06T10:25:51.285446'
+  completed_at: '2026-06-06T11:15:55.854317'
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AOF
+  total_turns: 0
+  tasks_completed: 0
+  tasks_failed: 1
+  current_wave: 1
+  completed_waves: []
+  last_updated: '2026-06-06T11:15:54.927357'
+  archived_at: null
+  archived_to: null

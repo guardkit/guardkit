@@ -8,7 +8,115 @@
 
 ---
 
-## ⚠ Correction (2026-05-27, post-review)
+## ✅ Success — v3.2 (2026-06-03, end of day) — AC-001D PASSED on LangGraph; cutover viable
+
+**The full 6-layer LangGraph integration is fixed.** AC-001D run 6 (2026-06-03 15:08-15:21) reached **APPROVED in 1 turn** on `qwen36-workhorse` via the LangGraph harness, with metrics comparable to or better than the SDK baseline.
+
+**SDK vs LangGraph parity** (TASK-FIX-A7D3 single-task canary):
+
+| Metric | SDK (AC-001C, 2026-06-02) | LangGraph (AC-001D run 6, 2026-06-03) |
+|---|---|---|
+| Decision | APPROVED | APPROVED |
+| Turns | 1 | 1 |
+| Files created/modified | 3 / 16 | 4 / 16 |
+| Tests passing | 1 | 2 |
+| Honesty score | 1.00 | 0.96 |
+| Player wall-clock | 500s / 40 turns | 341s / 34 turns |
+| Coach wall-clock | 287s | **90s** (3× faster) |
+| **Total wall-clock** | ~21 min | **~13.5 min** (~35% faster) |
+
+**Full 6-run iteration journey** — each run unblocked exactly one layer:
+
+| Run | Date | Symptom | Fix (location, who) |
+|---|---|---|---|
+| 1 | 2026-06-02 | `model=None: 'function' object has no attribute 'name'` | TASK-FIX-MODELPLUMB (guardkit) ✅ |
+| 2 | 2026-06-03 | Same error with `model='openai:qwen36-workhorse'`; `tools=[strings]` crash in ToolNode | TASK-FIX-LGTOOLS (guardkitfactory) ✅ |
+| 3 | 2026-06-03 | `backend=None` (factories existed but unused) | TASK-FIX-002R-CONSUME (guardkit selector wiring) ✅ |
+| 4 | 2026-06-03 | `_PermissionMiddleware does not yet support backends with command execution` | TASK-HMIG-002R-NOPERMS (guardkitfactory) ✅ |
+| 5 | 2026-06-03 | `virtual_mode=True` rewrote absolute paths into worktree-nested twins | TASK-HMIG-002R-NOVMODE (guardkitfactory) ✅ |
+| **6** | **2026-06-03** | **none — predicted 6th layer dissolved** | TASK-HMIG-002R-PROMPT closed without code (DeepAgents runtime tool advertisement sufficed) |
+
+**The "each fix reveals exactly one more layer" pattern broke at run 6** — meaningful signal that the integration is now properly aligned end-to-end. Remaining risk is variance across the 12-run batch (different task complexities, edge cases A7D3 didn't exercise), not a known-unknown layer.
+
+**Three quality signals worth tracking across the AC-003 12-run batch**:
+
+1. **LLM Coach overrides honesty oracle's must-fix flag** (run 6 line 194 + 218: `gather_evidence: honesty produced 1 must_fix issue(s) for TASK-FIX-A7D3; downstream gathering skipped` → final honesty 0.96 → Coach approved). The LLM Coach has override authority per TASK-HMIG-008R; the question is whether this is per-run noise or a systematic pattern. Track frequency across the batch + compare SDK vs LangGraph.
+2. **`Criteria Progress 0/1 verified (0%)` with Coach approval** (line 219+221). LLM-Coach-as-fallback shape; consistent with AC-001C SDK behaviour. Track per-run; expected to be invariant across harness choice.
+3. **One `/v1/responses` retry** (line 196). Transient under qwen36-workhorse. Track; if >2 of 12 runs retry, brief look at vLLM queue depth warranted.
+
+**Cutover-deadline impact** vs §8 decision brief: **Path 2 (Partial close) recommended path is now fully viable.** Critical remaining work is AC-003 (~10h GB10 compute) + aggregate + TASK-HMIG-010 cutover decision against 2026-06-15. Comfortable margin.
+
+**Cleanup applied 2026-06-03 EOD** (coordinated with parallel guardkitfactory-side cleanup):
+- TASK-HMIG-009A status `blocked` → `backlog`; AC-001D marked ✅
+- TASK-HMIG-002R-PROMPT **deleted** (closing criterion satisfied by run 6)
+- README + IMPLEMENTATION-GUIDE subtask tables updated
+- guardkitfactory side (operator-tracked): NOPERMS moved to `completed/`; NOVMODE filed + completed; PERMS-CUSTOM-MIDDLEWARE parked for post-cutover restoration
+
+The SDK side (F1 + F4 + AC-001C) remains unchanged. v3 and v3.1 below preserved as historical record of the diagnostic journey.
+
+---
+
+## ⚠ Correction v3.1 (2026-06-03, later same day) — correction of v3's misdiagnosis
+
+The v3 addendum below claimed AC-001D was blocked on TASK-HMIG-002R + TASK-HMIG-002R-PROMPT. **Operator caught a cross-repo coordination error**:
+
+- **TASK-HMIG-002R has been COMPLETE in `../guardkitfactory/`** since 2026-05-20. The `build_autobuild_backend(worktree)` and `build_autobuild_permissions()` factories exist, are exported from `guardkitfactory.__init__`, and have integration tests covering the parent-review §7.1 Wave 1 falsifier dimensions. See [`../guardkitfactory/tasks/completed/TASK-HMIG-002R/`](../../../guardkitfactory/tasks/completed/TASK-HMIG-002R/).
+- **The actual gap is consumer-side wiring in guardkit**: [`guardkit/orchestrator/harness/selector.py`](../../guardkit/orchestrator/harness/selector.py)'s `langgraph` branch constructs `LangGraphHarness(model=...)` without passing `backend=` or `permissions=`. The already-built factories sit unused.
+- **Fix scope collapsed from 12h to ~1h**: filed as [TASK-FIX-002R-CONSUME](../../tasks/backlog/autobuild-harness-migration/TASK-FIX-002R-CONSUME-wire-guardkitfactory-backend-permissions-into-selector.md) — thread `cwd` through `select_harness`, call the existing factories. The v3-filed TASK-HMIG-002R in guardkit has been **deleted as a duplicate**. TASK-HMIG-002R-PROMPT marked **speculative** (`status: speculative`) — may not be needed once wiring lands; revisit after AC-001D re-run.
+
+**Process gap to fix**: I filed cross-repo work without checking the other repo's state. Future cross-repo tasks should be preceded by `ls ../guardkitfactory/tasks/completed/` and a read of `../guardkitfactory/tasks/backlog/autobuild-harness-migration/README.md` (which has the explicit cross-repo task split table).
+
+**Impact on §8 (decision brief) and cutover deadline**: dramatically improved. Critical path is now ~1h dev + AC-001D re-run + ~10h compute against the 12-day window. Comfortable margin. Option (a) "push and accept tight cutover" from the v3 contingency framing is now option (a) "push the 1h fix and ship on schedule."
+
+The SDK side (F1 + F4 + AC-001C APPROVED) remains unchanged. The four-layer-discovery narrative in v3 below is correct in shape (Wave-2 layers exist) but the layer-3 fix is much smaller than v3 implied.
+
+---
+
+## ⚠ Correction v3 (2026-06-03) — LangGraph canary blocked on Wave-1 completion *(SUPERSEDED by v3.1 above)*
+
+**AC-001D iteration surfaced that the LangGraph Wave-2 harness is a skeleton, not a working integration.** Three runs over 2 days exposed four distinct layers of the same root cause: the Wave-2 `LangGraphHarness` was unit-tested with mocks and `tools=[]` but never exercised end-to-end against a real Player/Coach prompt with real tools against a real model. Each fix unblocked one layer and revealed the next.
+
+| Layer | Symptom | Diagnosis | Resolution |
+|---|---|---|---|
+| 1 | `LangGraphHarnessError: ... model=None: 'function' object has no attribute 'name'` | CLI `--model` never plumbed through to `select_harness(model=...)` | ✅ [TASK-FIX-MODELPLUMB](../../tasks/completed/2026-06/TASK-FIX-MODELPLUMB-thread-cli-model-through-harness.md) landed 2026-06-02 |
+| 2 | Same error message but `model='openai:qwen36-workhorse'` | `tools=[strings]` shape crashes `langgraph.prebuilt.ToolNode.__init__` inside DeepAgents | ✅ [TASK-FIX-LGTOOLS](../../tasks/completed/2026-06/TASK-FIX-LGTOOLS-langgraph-harness-drop-sdk-tools.md) landed 2026-06-03 (guardkitfactory) |
+| 3 | Coach + specialists run but produce no output; specialist burns 38.5min in /v1/responses loop; Coach fails with `Coach decision not found: coach_turn_1.json` | `backend=None`/`permissions=None` in LangGraphHarness → no real worktree access; AND Coach/specialist prompts use SDK tool names (`Read`/`Write`/`Bash`) but DeepAgents exposes different names (`read_file`/`write_file`/`execute`) | ⛔ [TASK-HMIG-002R](../../tasks/backlog/autobuild-harness-migration/TASK-HMIG-002R-configure-localshellbackend-and-permissions.md) (backend + permissions, 6h) + [TASK-HMIG-002R-PROMPT](../../tasks/backlog/autobuild-harness-migration/TASK-HMIG-002R-PROMPT-adapt-coach-specialist-prompts-to-deepagents-tool-surface.md) (prompt adaptation, 6h) — both filed 2026-06-03 |
+| 4 (predicted) | After 002R lands but 002R-PROMPT still pending — Coach LLM may still produce nonsense due to prompt/tool mismatch | Same as layer 3 (prompt half) | Handled by 002R-PROMPT |
+
+**Key finding**: TASK-HMIG-002R was **named in the parent review on 2026-05-19** (§7.1 Wave 1, line 1134 of this report) and referenced as a known gap in **9+ subsequent task files** — but **never filed as an actual task** until 2026-06-03. The Wave-2 dispatch refactor (TASK-HMIG-006) was treated as "harness migration complete" when really it was "harness *dispatch* complete; harness *backend* still skeleton." Future Wave-N completion claims should require both dispatch AND target-side integration tests, not just dispatch unit tests with mocks.
+
+**Resolution applied 2026-06-03**:
+1. Filed TASK-HMIG-002R per the parent review's §7.1 Wave 1 spec (6h).
+2. Filed TASK-HMIG-002R-PROMPT as a companion (NEW from AC-001D run 3; not in parent review's scope) for the Coach/specialist prompt-adaptation problem. Estimated 6h.
+3. TASK-HMIG-009A status changed to `blocked`. AC-001D marked blocked on both 002R + 002R-PROMPT.
+4. README + IMPLEMENTATION-GUIDE updated with new dependency chain + collapsed timeline margin.
+
+**Impact on §8 (decision brief) and cutover deadline**: Path 2 (partial close) is at risk. The pre-canary fixes landed but the LangGraph canary cannot produce signal until 002R + 002R-PROMPT close. Operator decision needed: (a) push 002R + 002R-PROMPT this week, accept tight cutover; (b) ship cutover on SDK-only canary signal; (c) defer cutover deadline. Per operator direction 2026-06-03: pursuing (a).
+
+The SDK side of this review (F1 + F4 diagnoses, AC-001C SDK end-to-end PASSING APPROVED) is unchanged and remains valid.
+
+---
+
+## ⚠ Correction v2 (2026-06-02)
+
+**The v1 correction below (2026-05-27) recommended reverting the canary to `qwen-coder-next`. That model was documented in operator state but not actually deployed on the live GB10 llama-swap.** TASK-HMIG-009A's preflight AC-001A caught this on 2026-05-27 (the cheap preflight design worked as intended — surfaced model-deployment drift before any compute was burned). After ~1 week of operator llama-swap reconfiguration work + benchmark/forum research, the operator selected **`qwen36-workhorse`** (Qwen3.6-35B-A3B) as the AutoBuild Player model — see [`docs/research/dgx-spark/gb10-memory-budget-and-macbook-offload.md:37`](../../docs/research/dgx-spark/gb10-memory-budget-and-macbook-offload.md#L37) (measured 2026-05-28): qwen36-workhorse serves `jarvis-reasoner, forge, autobuild, dataset-factory` as a shared workhorse, and NVIDIA developer-forum + benchmark evidence identifies it as the strongest agentic-coding model in the GB10's deployable range.
+
+**Applied 2026-06-02**:
+
+1. [canary-set.json](../../.guardkit/autobuild/TASK-REV-HMIG-canary-set.json) edited in-place — `model_choice_correction_v2` block added; harness models updated to `qwen36-workhorse` / `openai:qwen36-workhorse`; v1 `model_choice_correction` marked superseded; `preflight_findings.AC-001A_2026-05-27` blocker marked resolved-by-v2.
+2. TASK-HMIG-009A unblocked (status: backlog); preflight ACs (001A–001D) reframed against `qwen36-workhorse`. AC-001B is the load-bearing post-reconfig gate (does the workhorse now emit well-formed `tool_use` blocks where smokes v2/v3 saw none pre-reconfig?). Expected pass per operator's benchmark + forum work.
+3. README + IMPLEMENTATION-GUIDE updated.
+4. Memory entries updated — the durable rule is now "**defer to operator on AutoBuild Player model selection; don't lock in a specific model name from documentation alone**." The current choice (qwen36-workhorse) may itself evolve as operator research continues.
+
+**F2 reframe** (the meta-finding of this whole arc): F2 was *not* a parser-config defect, *not* a wrong-model-as-substitute, and not solvable by AI inference from docs. It was an evolving operator decision about model choice that took two corrections + ~1 week of focused infra work to settle. The right system response is: cheap preflights that catch drift, operator-driven decisions on model selection, AI maintaining the audit trail across revisions.
+
+**Impact on §8 (decision brief)**: Path 2 remains the recommended approach. Critical path is now essentially complete: F1 fix landed (006.4 commit `f2c240a7`), F4 fix landed (WTBC in_review), model choice resolved (v2 swap applied). Remaining work is ~30min preflight + ~10h canary compute + cutover decision. Cutover margin against 2026-06-15: ~9 days. Comfortable.
+
+The rest of this review (F1 + F4 diagnoses, recommended remediations, HMIG-009A/B split) is unchanged.
+
+---
+
+## ⚠ Correction v1 (2026-05-27, post-review — superseded by v2)
 
 **§6 (AC-006) framed F2 as "audit llama-swap parser config for `qwen3-coder-30b` and `qwen36-workhorse`." That framing is wrong.** The operator's documented and empirically proven AutoBuild Player model is **Qwen3-Coder-Next** (already configured on llama-swap under alias `qwen-coder-next`; *"Current. Proven with AutoBuild"* per [`docs/research/dgx-spark/gb10-model-requirements-matrix.md:61`](../../docs/research/dgx-spark/gb10-model-requirements-matrix.md#L61)). The TASK-REV-HMIG pilot silently swapped this for `qwen3-coder-30b` post-2026-04-29 ([canary-set.json:21](../../.guardkit/autobuild/TASK-REV-HMIG-canary-set.json#L21)); the operator raised the model-choice question repeatedly during TASK-REV-HMIG execution and it was not actioned.
 

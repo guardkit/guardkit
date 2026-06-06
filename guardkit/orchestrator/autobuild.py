@@ -148,6 +148,7 @@ from guardkit.knowledge.graphiti_client import (
     get_factory,
     GraphitiClientFactory,
     _suppress_httpx_cleanup_errors,
+    _install_graphiti_unraisable_hook,
 )
 
 # Import AutoBuild context loader for job-specific context (TASK-GR6-006)
@@ -917,6 +918,7 @@ class AutoBuildOrchestrator:
         wave_files_lock: Optional[threading.Lock] = None,
         honesty_early_abort_threshold: float = 0.3,
         honesty_early_abort_window: int = 3,
+        model: Optional[str] = None,  # TASK-FIX-MODELPLUMB
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -1021,6 +1023,15 @@ class AutoBuildOrchestrator:
         if max_turns < 1:
             raise ValueError("max_turns must be at least 1")
 
+        # TASK-FIX-FALK01: Install sys.unraisablehook once per process so the
+        # cosmetic "no running event loop" traceback from graphiti-core's
+        # FalkorDB driver (edge_fulltext_search GCed after the loop closes)
+        # never reaches stderr. Idempotent — safe to call from every
+        # AutoBuildOrchestrator(); also no-op when Graphiti is disabled, since
+        # the hook only suppresses errors whose coroutine source lives in
+        # graphiti_core / falkordb / redis.asyncio.
+        _install_graphiti_unraisable_hook()
+
         self.repo_root = Path(repo_root).resolve()
         self.max_turns = max_turns
         self.resume = resume
@@ -1040,6 +1051,14 @@ class AutoBuildOrchestrator:
         # from BootstrapResult.venv_python in the feature orchestrator so
         # Coach verifies against the same interpreter the bootstrap built.
         self._venv_python: Optional[str] = venv_python
+        # TASK-FIX-MODELPLUMB: CLI --model threaded through to AgentInvoker
+        # then used as default when invoke_coach / _invoke_with_role /
+        # specialist invocations don't specify their own model. Load-bearing
+        # for the LangGraph harness path (DeepAgents needs a real model
+        # factory; model=None fails construction with "'function' object has
+        # no attribute 'name'"). Decorative-but-harmless for the SDK path
+        # (routes via ANTHROPIC_BASE_URL).
+        self._model_name: Optional[str] = model
         # Hardcoded reset turns per architectural review (TASK-BRF-001): [3, 5]
         self.perspective_reset_turns: List[int] = [3, 5] if enable_perspective_reset else []
         self._turn_history: List[TurnRecord] = []
@@ -1499,6 +1518,7 @@ class AutoBuildOrchestrator:
                         cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
                         timeout_multiplier=self.timeout_multiplier,  # TASK-FIX-VL05
                         venv_python=self._venv_python,  # TASK-FIX-7A05
+                        model_name=self._model_name,  # TASK-FIX-MODELPLUMB
                     )
                 # TASK-FIX-OBS2: Attach progress logger to agent invoker
                 if self._progress_logger and self._agent_invoker:
@@ -1527,6 +1547,7 @@ class AutoBuildOrchestrator:
                     use_task_work_delegation=True,
                     cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
                     venv_python=self._venv_python,  # TASK-FIX-7A05
+                    model_name=self._model_name,  # TASK-FIX-MODELPLUMB
                 )
             # TASK-FIX-OBS2: Attach progress logger to agent invoker
             if self._progress_logger and self._agent_invoker:
@@ -5397,6 +5418,7 @@ class AutoBuildOrchestrator:
                 wave_size=wave_size,
                 turn=turn,
                 peer_changed_files=peer_changed_files,
+                model_name=self._model_name,  # TASK-FIX-LGFM3
             )
             validation_result = validator.validate(
                 task_id=task_id,
@@ -5538,6 +5560,7 @@ class AutoBuildOrchestrator:
             wave_size=wave_size,
             turn=turn,
             peer_changed_files=peer_changed_files,
+            model_name=self._model_name,  # TASK-FIX-LGFM3
         )
 
         # Step 1: gather evidence bundle. Never falls back to validate() on
@@ -5599,7 +5622,7 @@ class AutoBuildOrchestrator:
                 if "coach_context" in _sig.parameters and context_prompt:
                     invoke_kwargs["coach_context"] = context_prompt
 
-                return asyncio.run(self._agent_invoker.invoke_coach(**invoke_kwargs))
+                result = asyncio.run(self._agent_invoker.invoke_coach(**invoke_kwargs))
             except RuntimeError as runtime_exc:
                 # asyncio.run cannot be called when an event loop is already
                 # running (e.g. in a Jupyter context or test that wraps this
@@ -5615,9 +5638,66 @@ class AutoBuildOrchestrator:
                 except RuntimeError:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
-                return loop.run_until_complete(
+                result = loop.run_until_complete(
                     self._agent_invoker.invoke_coach(**invoke_kwargs)
                 )
+
+            # TASK-FIX-COACHSF01: soft-fail on Coach verdict-emission failures.
+            #
+            # `AgentInvoker.invoke_coach` catches `CoachDecisionNotFoundError`
+            # and `CoachDecisionInvalidError` internally (agent_invoker.py:
+            # 1987-1997) and returns `success=False` with the exception
+            # message as `error` — these never raise out of `invoke_coach`,
+            # so the broader `except Exception` synthetic-feedback safety
+            # net below cannot see them. Without this check the orchestrator
+            # surfaces `coach_decision="error"` to the wave loop, the turn
+            # hard-fails, and the Player gets no opportunity to retry.
+            #
+            # The failure class this catches is canary F2 at Coach level
+            # (qwen36-workhorse-style substrates that discuss the Bash
+            # heredoc verdict-write in prose without actually emitting the
+            # tool_use block). It's a substrate-quality finding, not a
+            # task-quality finding — so we convert it to a synthetic
+            # feedback decision with a rationale naming the failure mode,
+            # write coach_turn_N.json (so downstream consumers see a
+            # consistent shape), and return success=True. The Player gets
+            # a turn N+1 to retry; substrate variance may produce a real
+            # verdict on the second attempt.
+            #
+            # Other `success=False` outcomes (`SDKTimeoutError` → "SDK
+            # timeout after Xs", generic `Exception` → "Unexpected error: X")
+            # are propagated unchanged: those are not verdict-emission
+            # failures and the wave loop's existing handling is correct
+            # for them.
+            if (
+                not result.success
+                and result.error
+                and (
+                    "Coach decision not found" in result.error
+                    or "Coach decision invalid" in result.error
+                )
+            ):
+                logger.warning(
+                    "Coach verdict-emission failed in primary path for %s "
+                    "turn %s: %s. Emitting synthetic feedback decision "
+                    "(substrate F2 at Coach level — Player will retry on "
+                    "turn %s with this feedback).",
+                    task_id, turn, result.error, turn + 1,
+                )
+                return self._emit_synthetic_coach_feedback(
+                    task_id=task_id,
+                    turn=turn,
+                    worktree=worktree,
+                    rationale=(
+                        f"Coach verdict-emission failed: {result.error}. "
+                        f"Likely substrate limitation (qwen36-workhorse F2 "
+                        f"at Coach level). Player should retry on turn "
+                        f"{turn + 1} with this feedback."
+                    ),
+                    start_time=start_time,
+                )
+
+            return result
 
         except NotImplementedError as sdk_error:
             logger.warning(
@@ -6507,6 +6587,7 @@ class AutoBuildOrchestrator:
                     use_task_work_delegation=True,
                     cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
                     venv_python=self._venv_python,  # TASK-FIX-7A05
+                    model_name=self._model_name,  # TASK-FIX-MODELPLUMB
                 )
             # TASK-FIX-OBS2: Attach progress logger to agent invoker
             if self._progress_logger and self._agent_invoker:
