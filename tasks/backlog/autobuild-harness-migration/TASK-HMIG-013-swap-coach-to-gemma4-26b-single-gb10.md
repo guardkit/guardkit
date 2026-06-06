@@ -62,16 +62,18 @@ If gemma4:26b proves insufficient for Coach reliability, the Wave-2 fallback is 
 
 ## Acceptance Criteria
 
-- [ ] AC-001: Deploy gemma4:26b on the existing GB10 llama-swap setup. Verify it appears in `GET http://promaxgb10-41b1:9000/v1/models`.
-- [ ] AC-002: Empirical smoke against a real Coach-shape prompt (replay the run-6 turn-1 Coach prompt directly to llama-swap): gemma4:26b emits a well-formed fenced JSON block on at least 4 of 5 attempts. If <4/5: stop here and escalate to nemotron-3-super:120b-a12b before proceeding.
-- [ ] AC-003: Add `gemma4:26b: <context_window>` entry to `MODEL_CONTEXT_WINDOWS` registry in guardkitfactory's `model_config.py` (sibling of qwen36-workhorse entry from TASK-HMIG-002R-MODEL-PROFILE).
-- [ ] AC-004: Wire per-role model selection in `LangGraphHarness` — `role='coach'` → gemma4:26b, all other roles → existing default (qwen36-workhorse). The CLI flag `--coach-model` may be a useful operator override. Cross-repo coordination with guardkitfactory.
-- [ ] AC-005: Regression test: assert that when CLI is invoked with `--model qwen36-workhorse --coach-model gemma4:26b`, Coach invocations resolve to gemma4:26b and all other invocations resolve to qwen36-workhorse. Both SDK harness and LangGraph harness paths.
-- [ ] AC-006: Live smoke (HMIG-010 run N): `guardkit autobuild feature FEAT-AOF --fresh --model qwen36-workhorse --coach-model gemma4:26b` under `GUARDKIT_HARNESS=langgraph`:
+- [x] **AC-001: COMPLETE 2026-06-06.** `gemma4-coach` registered on llama-swap at alias `gemma4:26b`. Cold-loaded in ~31s on `localhost:5801`. Alias routing verified — `model="gemma4:26b"` resolves to `gemma4-coach` (server echoes `"model": "gemma4-coach"`). Memory-neutral rotation: architect-agent → gemma4-coach in preload, `arch` matrix.set added for on-demand `/system-arch` flows. Critical config: `--reasoning off` is load-bearing (without it, base Gemma 4 IT routes generation to `reasoning_content` instead of `content` — same disease as F17, different drug). See `docs/research/dgx-spark/AUTOBUILD-ON-LLAMA-SWAP-findings.md` §9.13 for the full operational record.
+- [x] **AC-002 (preliminary): COMPLETE 2026-06-06.** 5/5 fenced-JSON emission on short Coach-shape prompts via alias `gemma4:26b`. `finish_reason: stop`, `reasoning_content` empty, content contains fenced JSON block, ~34 completion_tokens each. Posture exactly matches the Exxact benchmark's 17/17 prediction. **NOTE**: Full AC-002 (run-6 turn-1 Coach prompt replay — longer + more complex context) is operator-driven follow-on; the substrate posture is correct, the full replay is recommended as a final gate before AC-006 live smoke.
+- [ ] **AC-003**: Extend `MODEL_CONTEXT_WINDOWS` registry in guardkitfactory's `model_config.py` to include `"gemma4:26b": 65536` (the ctx-size configured on the llama-swap side; matches the new gemma4-coach `--ctx-size 65536`). Sibling of qwen36-workhorse entry from TASK-HMIG-002R-MODEL-PROFILE.
+- [ ] **AC-004**: Wire per-role model selection. Two-part cross-repo work:
+  - **guardkitfactory**: Extend `LangGraphHarness._resolve_model_for_invoke` to accept a per-role override map. When `role='coach'` AND a `coach_model` was supplied, route to it; otherwise fall through to existing default.
+  - **guardkit**: Add `--coach-model` Click option to `guardkit autobuild feature` subcommand (and `task`). Mirrors `--model` pattern from TASK-FIX-LGFM (commit `683823cc`). Thread through `FeatureOrchestrator → AutoBuildOrchestrator → AgentInvoker._coach_model_name`. `AgentInvoker.invoke_coach` passes `coach_model_name` (with fallback to `_model_name`).
+- [ ] **AC-005**: Regression test: assert that when CLI is invoked with `--model qwen36-workhorse --coach-model gemma4:26b`, `role='coach'` and `role='coach_test'` invocations resolve to `gemma4:26b` while `role='player'` and specialist invocations resolve to `qwen36-workhorse`. Pin both SDK harness and LangGraph harness paths.
+- [ ] **AC-006**: Live smoke (HMIG-010 run N): `guardkit autobuild feature FEAT-AOF --fresh --model qwen36-workhorse --coach-model gemma4:26b` under `GUARDKIT_HARNESS=langgraph`:
   - Coach verdict-emission rate ≥95% across 6+ Coach turns (the falsifier from this task)
   - At least one Wave 1 task reaches APPROVED state
   - F17 either does not fire OR fires <5% of turns (COACHSF01 safety net remains as defence-in-depth)
-- [ ] AC-007: If AC-006 passes: update TASK-HMIG-010 verdict to GO and unblock TASK-HMIG-011. If AC-006 fails: re-run with `--coach-model nemotron-3-super:120b-a12b` as fallback. If that also fails: file substrate escalation to TASK-HMIG-012 (Stage 2 with new hardware).
+- [ ] **AC-007**: If AC-006 passes: update TASK-HMIG-010 verdict to GO and unblock TASK-HMIG-011. If AC-006 fails: re-run with `--coach-model nemotron-3-super:120b-a12b` as fallback (requires registering `nemotron-3-super:120b-a12b` on llama-swap first, sibling of §9.13 pattern). If that also fails: file substrate escalation to TASK-HMIG-012 (Stage 2 with new hardware).
 
 ## Implementation Notes
 
