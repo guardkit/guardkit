@@ -57,35 +57,28 @@ Three different things people call "context" or "KV cache":
 
 ### Layer 1: Coach max_tokens budget (orchestrator-side)
 
-- [ ] AC-001: Locate where Coach's `max_tokens` is currently set. Likely candidates: `agent_invoker._invoke_with_role` (line 2855 area), `agent_invoker.invoke_coach` (line 1874 area), `select_harness` in the orchestrator, or `LangGraphHarness` in guardkitfactory. Document the actual setting site in the task notes.
-- [ ] AC-002: Raise Coach `max_tokens` to **16384**. This is large enough that hybrid-reasoning models can reason AND emit a structured verdict without hitting the cap. (Coach verdicts are typically 500-3000 tokens of content; budget for ~13000 tokens of reasoning preamble keeps `--reasoning auto` viable.)
-- [ ] AC-003: Verify Player + specialist `max_tokens` are appropriate (likely already roomy via SDK defaults — confirm and leave alone unless the same gap exists).
+- [x] **AC-001: COMPLETE 2026-06-06.** `max_tokens` is implicit on the guardkit side: `claude-agent-sdk`'s `ClaudeAgentOptions` does NOT expose a `max_tokens` field (see [`sdk_harness.py`](../../../guardkit/orchestrator/harness/sdk_harness.py) §"Build ClaudeAgentOptions" block — the constructor kwargs do not include it). Anthropic API uses model defaults. The actionable setting site for AC-002 is the `LangChain ChatOpenAI(...)` constructor in `guardkitfactory.harness.langgraph_harness` (separate repo, not on this box). Full investigation summary in findings doc §9.14 "Layer 1 finding".
+- [ ] AC-002: Raise Coach `max_tokens` to **16384** at the `LangGraphHarness` `ChatOpenAI(...)` construction site. **BLOCKED ON guardkitfactory** — out of scope for this PR.
+- [ ] AC-003: Verify Player + specialist `max_tokens` at the same construction site. **BLOCKED ON guardkitfactory**.
 
 ### Layer 2: Parser handles reasoning_content (orchestrator-side)
 
-- [ ] AC-004: Extend `guardkit.orchestrator.coach_output_parser.extract_and_write` to look for a fenced ```json block in BOTH `content` AND `reasoning_content` fields of the LLM response. Order: try `content` first (canonical), fall through to `reasoning_content` (hybrid-reasoning fallback). If both contain a block, prefer `content`. If neither contains a block, raise `CoachDecisionNotFoundError` as today (COACHSF01 safety net fires).
-- [ ] AC-005: Both harnesses (SDK + LangGraph) must surface `reasoning_content` to the parser when the model emits it. Investigate `AssistantMessageEvent` shape and confirm `reasoning_content` is preserved through `sdk_harness.py` and `langgraph_harness.py`. If not, extend the event to carry both fields (ADR FB-004's "substrate parity" clause already constrains this — both harnesses must emit the same envelope).
+- [x] **AC-004: COMPLETE 2026-06-06.** [`coach_output_parser.extract_and_write`](../../../guardkit/orchestrator/coach_output_parser.py) extended with "prefer content, fall through to reasoning" precedence. Searches joined `text` first (canonical); on miss, searches joined `reasoning_text` (hybrid fallback); both empty → raises `CoachDecisionNotFoundError` with COACHSF01 substring AND both channel sizes for operator diagnostics. New module helper `_collect_assistant_reasoning`. Module docstring extended with "Hybrid reasoning models — `reasoning_text` fallback" section.
+- [x] **AC-005 SDK side: COMPLETE 2026-06-06.** [`AssistantMessageEvent`](../../../guardkit/orchestrator/harness/adapter.py) extended with optional `reasoning_text: str = ""` field (backwards-compat default). [`sdk_harness._extract_assistant_reasoning`](../../../guardkit/orchestrator/harness/sdk_harness.py) joins all `ThinkingBlock.thinking` fields per Anthropic `AssistantMessage` and populates the new event field. Substrate parity for ADR FB-004 now requires the LangGraph side to populate the same field.
+- [ ] **AC-005 LangGraph side: BLOCKED ON guardkitfactory.** Populate `AssistantMessageEvent.reasoning_text` from llama.cpp's `message.reasoning_content` (LangChain AIMessage `additional_kwargs['reasoning_content']` or the equivalent v3 LangChain field) inside `langgraph_harness._aiter_events()`. See guardkitfactory follow-on.
 
 ### Layer 3: Per-model reasoning_mode config (cross-repo: guardkitfactory)
 
-- [ ] AC-006: Extend `MODEL_CONTEXT_WINDOWS` registry shape in `guardkitfactory/harness/model_config.py` from `{model_name: int}` to `{model_name: {ctx_size: int, max_tokens_coach: int, max_tokens_player: int, reasoning_mode: "off" | "auto" | "on"}}`. Backwards-compatible default: when registry returns int, treat as `{ctx_size: that_int, max_tokens_coach: 16384, max_tokens_player: 8192, reasoning_mode: "auto"}`.
-- [ ] AC-007: Populate the registry for known substrates:
-  - `qwen36-workhorse`: `{ctx_size: 131072, max_tokens_coach: 8192, max_tokens_player: 8192, reasoning_mode: "off"}` (model encodes the lesson per §3.2 of findings doc)
-  - `gemma4:26b`: `{ctx_size: 65536, max_tokens_coach: 16384, max_tokens_player: 8192, reasoning_mode: "auto"}` (the Layer-2 parser robustness lets us run with reasoning ON)
-  - Reserve registry stubs for `nemotron-3-super:120b-a12b`, `deepseek-v4-flash`, `qwen3.5-122b-a10b` — TASK-HMIG-012 fills in the empirical values when those substrates are deployed.
+- [ ] AC-006: Extend `MODEL_CONTEXT_WINDOWS` registry shape. **BLOCKED ON guardkitfactory.**
+- [ ] AC-007: Populate the registry for known substrates. **BLOCKED ON guardkitfactory.**
 
 ### Validation
 
-- [ ] AC-008: Regression tests:
-  - Parser test: response with JSON block in `content` only → parses correctly
-  - Parser test: response with JSON block in `reasoning_content` only → parses correctly
-  - Parser test: response with no JSON block anywhere → raises `CoachDecisionNotFoundError` with the existing substring (COACHSF01 still couples)
-  - Registry test: legacy int entry returns default shape; new dict entry passes through verbatim
-  - Per-role budget test: `_invoke_with_role(role="coach")` uses `max_tokens_coach`; `_invoke_with_role(role="player")` uses `max_tokens_player`
-- [ ] AC-009: Live smoke (gates TASK-HMIG-013 AC-006):
-  - Reconfigure gemma4-coach on llama-swap with `--reasoning auto` (revert the `--reasoning off` workaround)
-  - Replay run-6 turn-1 Coach prompt 5×: ≥4/5 attempts return a parseable verdict (either via `content` or `reasoning_content` — the parser doesn't care which)
-  - This proves the Layer-2 parser fix supersedes the Layer-1 infra workaround. If passes: keep `--reasoning auto` as default. If fails: file the gap as `nemotron-3-super` fallback (TASK-HMIG-013 AC-007 path).
+- [x] **AC-008 parser tests: COMPLETE 2026-06-06.** `tests/unit/orchestrator/test_coach_output_parser.py::TestHybridReasoningFallback` — 7 tests covering content-only, reasoning-only, both-channels-prefer-content, neither-channel-found, both-channels-empty, frozen-dataclass immutability + default-empty backwards-compat, multi-event reasoning stream concatenation. All pass on first run.
+- [x] **AC-008 SDK harness tests: COMPLETE 2026-06-06.** `tests/orchestrator/harness/test_sdk_harness.py::TestThinkingBlockExtraction` — 4 tests covering no-thinking-blocks (backwards-compat), text+thinking-extracted-into-separate-fields, thinking-only (§9.14 failure mode), multi-thinking-block concatenation. All pass.
+- [ ] AC-008 registry tests: **BLOCKED ON guardkitfactory.**
+- [ ] AC-008 LangGraph reasoning tests: **BLOCKED ON guardkitfactory.**
+- [ ] AC-009: Live smoke (gates TASK-HMIG-013 AC-006). **PARTIALLY COMPLETE:** llama-swap already reconfigured with `--reasoning auto` on both `gemma4-coach` and `qwen36-workhorse` as of this revision (preserves the user's empirical state). End-to-end live-data parser smoke (see findings §9.14 "Live-data parser smoke") confirms the Layer-2 contract on this repo's side of the substrate boundary. Full AC-009 (autobuild Player↔Coach loop replay) requires AC-002 + AC-005-LangGraph + AC-006 + AC-007 to land in guardkitfactory first.
 
 ## Implementation Notes
 

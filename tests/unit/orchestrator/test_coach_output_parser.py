@@ -536,3 +536,198 @@ class TestAtomicWrite:
         extract_and_write(events, "TASK-FIX-COACHOUT01", 1, out)
 
         assert json.loads(out.read_text()) == payload
+
+
+# --------------------------------------------------------------------------- #
+# TASK-FIX-COACHBUDG01 — hybrid reasoning models (reasoning_text fallback)
+# --------------------------------------------------------------------------- #
+
+
+class TestHybridReasoningFallback:
+    """Coverage for AssistantMessageEvent.reasoning_text precedence.
+
+    TASK-FIX-COACHBUDG01 (2026-06-06). Hybrid reasoning models (base Gemma 4
+    IT under ``--reasoning auto``, Anthropic Claude with extended thinking,
+    nemotron-3-super, deepseek-v4-flash) route chain-of-thought into a
+    separate channel. The parser uses "prefer content, fall through to
+    reasoning" precedence so:
+
+    1. A model that mirrors the verdict to ``content`` is honoured there
+       even when ``reasoning_text`` also contains a (possibly earlier /
+       exploratory) fenced block.
+    2. A model whose ``content`` channel is empty or has no fenced block
+       still parses successfully when the verdict landed in
+       ``reasoning_text`` — closes the empirical §9.13 failure mode where
+       the F17 prose-before-JSON symptom would re-surface as
+       reasoning-before-JSON.
+    3. A model whose BOTH channels are empty still raises
+       CoachDecisionNotFoundError so COACHSF01 fires.
+
+    Empirical evidence: §9.14 of
+    ``docs/research/dgx-spark/AUTOBUILD-ON-LLAMA-SWAP-findings.md``
+    (gemma4-coach with ``--reasoning auto`` + 16384 max_tokens —
+    content 364 chars + reasoning_content 4450 chars, both fenced).
+    """
+
+    def test_block_in_content_only_parses_canonically(self, tmp_path):
+        """Legacy case — verdict mirrored to content, no thinking blocks.
+
+        Pre-COACHBUDG01 behavior must be preserved bit-for-bit when
+        reasoning_text is empty.
+        """
+        payload = _make_approve_payload()
+        events: List[HarnessEvent] = [
+            AssistantMessageEvent(
+                text="All ACs verified.\n\n" + _fence(payload),
+                reasoning_text="",
+            ),
+            _result_event(),
+        ]
+        out = _output_path(tmp_path)
+
+        result = extract_and_write(events, "TASK-FIX-COACHOUT01", 1, out)
+        assert result == payload
+
+    def test_block_in_reasoning_only_falls_through(self, tmp_path):
+        """COACHBUDG01 core — empty content, verdict in reasoning_text.
+
+        This is the gemma4-coach-with-reasoning-auto failure mode that
+        TASK-FIX-COACHBUDG01 is meant to close. Without the fallback, the
+        Coach turn would raise CoachDecisionNotFoundError and the
+        COACHSF01 safety net would mask a real verdict.
+        """
+        payload = _make_feedback_payload()
+        events: List[HarnessEvent] = [
+            AssistantMessageEvent(
+                text="",  # content stream empty — model emitted only to thinking
+                reasoning_text=(
+                    "Reasoning through AC list...\n"
+                    "AC-001 is partial — tests are red.\n\n"
+                    + _fence(payload)
+                ),
+            ),
+        ]
+        out = _output_path(tmp_path)
+
+        result = extract_and_write(events, "TASK-FIX-COACHOUT01", 1, out)
+        assert result == payload
+        assert json.loads(out.read_text()) == payload
+
+    def test_block_in_both_prefers_content(self, tmp_path):
+        """AC-004 "prefer content" — if both channels have a block, content wins.
+
+        Empirical pattern: gemma4-coach with ``--reasoning auto`` + 16384
+        budget mirrors the verdict to BOTH content AND reasoning_content
+        (see §9.14 probe — 364 chars content + 4450 chars reasoning,
+        both fenced). Content is the authoritative version; reasoning is
+        the exploratory draft. Parser must NOT pick the reasoning block.
+        """
+        # Distinguishable payloads so we can prove which channel won.
+        canonical = _make_approve_payload(turn=1)
+        exploratory = _make_feedback_payload(turn=1)
+        events: List[HarnessEvent] = [
+            AssistantMessageEvent(
+                text="Final verdict:\n\n" + _fence(canonical),
+                reasoning_text=(
+                    "Initial thought: maybe feedback?\n"
+                    + _fence(exploratory)
+                    + "\nBut on reflection, all ACs are met. Approve."
+                ),
+            ),
+        ]
+        out = _output_path(tmp_path)
+
+        result = extract_and_write(events, "TASK-FIX-COACHOUT01", 1, out)
+        assert result["decision"] == "approve"
+        assert result == canonical
+        assert json.loads(out.read_text()) == canonical
+
+    def test_neither_channel_has_block_raises_decision_not_found(self, tmp_path):
+        """Both channels populated but neither has a fenced block.
+
+        Must still raise CoachDecisionNotFoundError with the COACHSF01-
+        coupled substring. The error message records both channel sizes
+        so the operator can tell from the log whether reasoning was
+        emitted (helps diagnose substrate behaviour without re-running).
+        """
+        events: List[HarnessEvent] = [
+            AssistantMessageEvent(
+                text="I think the implementation is fine but I won't emit JSON.",
+                reasoning_text=(
+                    "Pondering... no block here either, the model has "
+                    "decided to ignore the structured-output instruction."
+                ),
+            ),
+        ]
+        out = _output_path(tmp_path)
+
+        with pytest.raises(CoachDecisionNotFoundError) as exc_info:
+            extract_and_write(events, "TASK-FIX-COACHBUDG01", 4, out)
+
+        msg = str(exc_info.value)
+        assert "Coach decision not found" in msg  # COACHSF01 coupling
+        # Both lengths recorded — useful diagnostic for substrate review
+        assert "content" in msg
+        assert "reasoning_content" in msg
+
+    def test_both_channels_empty_raises_decision_not_found(self, tmp_path):
+        """Pre-COACHBUDG01 LangGraph edge case still raises.
+
+        A final tool-call-only AIMessage with empty content AND no
+        thinking blocks collapses to an empty AssistantMessageEvent in
+        both channels. The "no assistant text at all" branch still
+        fires — substrate parity with the legacy behaviour.
+        """
+        events: List[HarnessEvent] = [
+            AssistantMessageEvent(text="", reasoning_text=""),
+        ]
+        out = _output_path(tmp_path)
+
+        with pytest.raises(CoachDecisionNotFoundError) as exc_info:
+            extract_and_write(events, "TASK-FIX-COACHBUDG01", 4, out)
+
+        msg = str(exc_info.value)
+        assert "Coach decision not found" in msg
+        assert "0 AssistantMessageEvent" in msg
+
+    def test_reasoning_text_field_defaults_to_empty_string(self):
+        """AssistantMessageEvent backwards-compat — legacy callers don't break.
+
+        Any code constructing AssistantMessageEvent(text=...) without the
+        new reasoning_text kwarg should still work, with reasoning_text
+        defaulting to "". This is the contract that keeps existing
+        sdk_harness tests, langgraph_harness tests (in guardkitfactory),
+        and the SubstrateParity test class above all unchanged.
+        """
+        event = AssistantMessageEvent(text="hello")
+        assert event.text == "hello"
+        assert event.reasoning_text == ""
+        # The dataclass remains frozen — sanity-check immutability is preserved
+        with pytest.raises((AttributeError, Exception)):
+            event.reasoning_text = "mutated"  # type: ignore[misc]
+
+    def test_multi_event_stream_concatenates_both_channels(self, tmp_path):
+        """SDK-style multi-event streams: reasoning_text joined per-event.
+
+        Mirrors :class:`TestSubstrateParity` for the legacy ``text`` field
+        but applied to ``reasoning_text``. Each AssistantMessageEvent
+        contributes its own reasoning chunk; the parser joins with
+        newlines and treats the result as a single stream when scanning
+        for the fenced block.
+        """
+        payload = _make_approve_payload()
+        events: List[HarnessEvent] = [
+            AssistantMessageEvent(
+                text="",
+                reasoning_text="Reading task plan...\n",
+            ),
+            AssistantMessageEvent(
+                text="",
+                reasoning_text="Confirming AC list ...\n\n" + _fence(payload),
+            ),
+            _result_event(),
+        ]
+        out = _output_path(tmp_path)
+
+        result = extract_and_write(events, "TASK-FIX-COACHBUDG01", 1, out)
+        assert result == payload

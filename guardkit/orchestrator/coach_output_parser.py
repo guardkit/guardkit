@@ -31,6 +31,30 @@ for SDK and identity-correct for LangGraph — see the parity assessment at
 ``docs/state/TASK-FIX-COACHOUT01/architectural_review.md`` §"Substrate Parity
 Assessment".
 
+## Hybrid reasoning models — ``reasoning_text`` fallback (TASK-FIX-COACHBUDG01)
+
+Hybrid reasoning models (base Gemma 4 IT with ``--reasoning auto``,
+Anthropic Claude with extended thinking, nemotron-3-super, deepseek-v4-flash)
+route chain-of-thought into a separate channel. The SDK exposes it as
+``ThinkingBlock.thinking`` inside an ``AssistantMessage``; llama.cpp's
+OpenAI-compatible endpoint exposes it as ``message.reasoning_content``.
+``AssistantMessageEvent.reasoning_text`` (adapter.py) carries the joined
+content of that channel — empty string when reasoning is off or the model
+doesn't emit it.
+
+This module's precedence on hybrid streams is **"prefer content, fall
+through to reasoning"**: ``extract_and_write`` first searches the joined
+``text`` for a fenced ``json`` block; only when no block is found there
+does it search the joined ``reasoning_text``. Rationale and empirical
+evidence: §9.14 of ``docs/research/dgx-spark/AUTOBUILD-ON-LLAMA-SWAP-findings.md``.
+
+This fallback supersedes the §9.13 ``--reasoning off`` infrastructure
+workaround. Once both substrates (SDK + LangGraph) populate
+``reasoning_text``, the orchestrator no longer needs the llama.cpp flag,
+and Coach candidates whose reliability *comes from* reasoning
+(nemotron-3-super's 6-hop agentic depth, deepseek-v4-flash's
+Terminal-Bench score) can run with reasoning ON.
+
 ## COACHSF01 coupling (Gap 2 from Phase 2.5B review)
 
 ``autobuild.py:5676-5678`` (COACHSF01 safety net) matches on the literal
@@ -126,6 +150,29 @@ def _collect_assistant_text(harness_events: Iterable[HarnessEvent]) -> str:
     )
 
 
+def _collect_assistant_reasoning(harness_events: Iterable[HarnessEvent]) -> str:
+    """Concatenate every ``AssistantMessageEvent.reasoning_text`` field.
+
+    TASK-FIX-COACHBUDG01 / 2026-06-06. Hybrid reasoning models (base Gemma 4
+    IT, Anthropic Claude with extended thinking, nemotron, deepseek-v4-flash)
+    emit chain-of-thought into a separate channel: ``ThinkingBlock.thinking``
+    on the SDK side; ``message.reasoning_content`` on llama.cpp's OpenAI-
+    compatible side under ``--reasoning auto``. The fenced ``json`` verdict
+    block sometimes lands here when the model decided "thinking" finished
+    with the verdict body, OR when the model's content stream was truncated
+    mid-emission.
+
+    Used as a FALLBACK by :func:`extract_and_write` when no fenced block is
+    found in :func:`_collect_assistant_text`. See §9.13 / §9.14 of
+    ``docs/research/dgx-spark/AUTOBUILD-ON-LLAMA-SWAP-findings.md``.
+    """
+    return "\n".join(
+        getattr(event, "reasoning_text", "") or ""
+        for event in harness_events
+        if isinstance(event, AssistantMessageEvent)
+    )
+
+
 def _atomic_write(output_path: Path, content: str) -> None:
     """Atomic write via ``.tmp`` + ``os.replace`` to avoid torn-file reads.
 
@@ -190,23 +237,52 @@ def extract_and_write(
             COACHSF01 fires.
     """
     full_text = _collect_assistant_text(harness_events)
+    full_reasoning = _collect_assistant_reasoning(harness_events)
 
-    # No assistant text at all is a known LangGraph edge case: a final
-    # tool-call-only AIMessage with empty content collapses to an empty
-    # AssistantMessageEvent.text. Treat as "decision not found" so COACHSF01
-    # fires and the Player gets a retry turn.
-    if not full_text:
+    # No assistant text AND no reasoning text at all is the legacy LangGraph
+    # edge case: a final tool-call-only AIMessage with empty content collapses
+    # to an empty AssistantMessageEvent.text. Hybrid reasoning models
+    # (TASK-FIX-COACHBUDG01) may also emit an empty content stream while
+    # routing the entire turn to reasoning_text — so "no text at all" only
+    # fires when BOTH channels are empty. Treat as "decision not found" so
+    # COACHSF01 fires and the Player gets a retry turn.
+    if not full_text and not full_reasoning:
         raise CoachDecisionNotFoundError(
             f"Coach decision not found: no assistant text in harness "
             f"events for {task_id} turn {turn} (0 AssistantMessageEvent)"
         )
 
-    matches = _FENCE_PATTERN.findall(full_text)
+    # TASK-FIX-COACHBUDG01 (2026-06-06) — "prefer content" precedence.
+    # Try the canonical content stream first; this is where instruction-
+    # tuned models emit verdicts under typical prompting. Only fall through
+    # to reasoning_text when content has no fenced block. Rationale:
+    #
+    # 1. A model that emits the verdict cleanly to content is doing what
+    #    Coach was prompted to do — prefer that over the exploratory
+    #    thinking-channel block (which can be earlier-in-time and may be
+    #    superseded by the content version).
+    # 2. When the content stream IS truncated (budget cap, or model emits
+    #    only reasoning and forgot to mirror to content), the reasoning
+    #    block IS the verdict — the fallback rescues the turn.
+    # 3. If both channels are populated AND both contain blocks, content
+    #    wins; the reasoning block is ignored entirely. This is the
+    #    common gemma4-coach pattern when reasoning_mode="auto" plus a
+    #    generous max_tokens budget.
+    #
+    # See §9.14 of AUTOBUILD-ON-LLAMA-SWAP-findings.md for the empirical
+    # probe (content 364 chars + reasoning_content 4450 chars; both held
+    # a fenced block; content was the verdict authority).
+    matches = _FENCE_PATTERN.findall(full_text) if full_text else []
+    source = "content"
+    if not matches:
+        matches = _FENCE_PATTERN.findall(full_reasoning) if full_reasoning else []
+        source = "reasoning_content"
     if not matches:
         raise CoachDecisionNotFoundError(
             f"Coach decision not found: no fenced ```json block in Coach "
             f"response for {task_id} turn {turn} "
-            f"({len(full_text)} chars of assistant text)"
+            f"({len(full_text)} chars content + "
+            f"{len(full_reasoning)} chars reasoning_content)"
         )
 
     # Take the LAST block — handles "exploratory JSON then corrected final
@@ -252,8 +328,10 @@ def extract_and_write(
 
     logger.debug(
         "coach_output_parser: extracted %s verdict for %s turn %s "
-        "(%d fenced block(s) seen, used last; %d chars assistant text)",
-        decision["decision"], task_id, turn, len(matches), len(full_text),
+        "(%d fenced block(s) seen in %s, used last; "
+        "%d chars content + %d chars reasoning_content)",
+        decision["decision"], task_id, turn, len(matches), source,
+        len(full_text), len(full_reasoning),
     )
 
     return decision

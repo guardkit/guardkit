@@ -25,7 +25,12 @@ from unittest.mock import patch
 import pytest
 
 import claude_agent_sdk
-from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
+from claude_agent_sdk import (
+    AssistantMessage,
+    ResultMessage,
+    TextBlock,
+    ThinkingBlock,
+)
 from claude_agent_sdk._errors import MessageParseError
 
 from guardkit.orchestrator.exceptions import AgentInvocationError
@@ -73,6 +78,44 @@ class RecordingAsyncGen:
 def _assistant_msg(text: str = "hello") -> AssistantMessage:
     return AssistantMessage(
         content=[TextBlock(text=text)],
+        model="test-model",
+    )
+
+
+def _assistant_msg_with_thinking(
+    text: str = "hello",
+    thinking: str = "Reasoning about the task...",
+) -> AssistantMessage:
+    """Build an AssistantMessage carrying both a TextBlock and ThinkingBlock.
+
+    Anthropic's extended-thinking shape: a single AssistantMessage can hold
+    multiple ThinkingBlock + TextBlock entries in ``content``. The harness
+    joins all TextBlock.text into ``event.text`` and all ThinkingBlock.thinking
+    into ``event.reasoning_text`` (TASK-FIX-COACHBUDG01).
+    """
+    return AssistantMessage(
+        content=[
+            ThinkingBlock(thinking=thinking, signature="sig-test"),
+            TextBlock(text=text),
+        ],
+        model="test-model",
+    )
+
+
+def _assistant_msg_thinking_only(
+    thinking: str = "Internal monologue, no content emission.",
+) -> AssistantMessage:
+    """Build an AssistantMessage that has ONLY a ThinkingBlock (no TextBlock).
+
+    Matches the empirical gemma4-coach pattern observed in §9.14: the
+    model emits the entire turn into the thinking channel and the content
+    channel comes back empty. The harness must surface this as
+    ``AssistantMessageEvent(text="", reasoning_text=<thinking>)`` so the
+    orchestrator-side parser's reasoning-fallback branch can rescue the
+    verdict.
+    """
+    return AssistantMessage(
+        content=[ThinkingBlock(thinking=thinking, signature="sig-test")],
         model="test-model",
     )
 
@@ -215,6 +258,131 @@ class TestSingleTurnTranslation:
         """Property returns None before any ResultMessage observed."""
         harness = _make_harness()
         assert harness.session_id is None
+
+
+# ----------------------------------------------------------------------
+# TASK-FIX-COACHBUDG01 — ThinkingBlock extraction → reasoning_text
+# ----------------------------------------------------------------------
+
+
+class TestThinkingBlockExtraction:
+    """Anthropic extended-thinking blocks → AssistantMessageEvent.reasoning_text.
+
+    The harness joins ``ThinkingBlock.thinking`` separately from
+    ``TextBlock.text`` and populates ``AssistantMessageEvent.reasoning_text``
+    so the orchestrator-side ``coach_output_parser`` can apply the
+    "prefer content, fall through to reasoning" precedence documented in
+    that module's "Hybrid reasoning models" section (TASK-FIX-COACHBUDG01,
+    §9.14 of AUTOBUILD-ON-LLAMA-SWAP-findings.md).
+    """
+
+    @pytest.mark.asyncio
+    async def test_no_thinking_blocks_yields_empty_reasoning_text(self, tmp_path):
+        """Backwards-compat: messages without ThinkingBlock get reasoning_text=''.
+
+        Pre-COACHBUDG01 callers / models / SDK versions that never emit
+        ``ThinkingBlock`` must observe the legacy event shape, with the
+        ``reasoning_text`` default-string sliding in transparently.
+        """
+        harness = _make_harness()
+        good = _assistant_msg("plain text only")
+        done = _result_msg()
+        fake_gen = RecordingAsyncGen([("yield", good), ("yield", done)])
+
+        with patch.object(claude_agent_sdk, "query", return_value=fake_gen):
+            events = await _drain(harness, tmp_path)
+
+        assistant_event = events[0]
+        assert isinstance(assistant_event, AssistantMessageEvent)
+        assert assistant_event.text == "plain text only"
+        assert assistant_event.reasoning_text == ""
+
+    @pytest.mark.asyncio
+    async def test_text_and_thinking_both_extracted_into_separate_fields(
+        self, tmp_path
+    ):
+        """Anthropic mixed shape: ThinkingBlock + TextBlock in one message.
+
+        ``content`` joins all TextBlock; ``reasoning_text`` joins all
+        ThinkingBlock; neither contaminates the other.
+        """
+        harness = _make_harness()
+        msg = _assistant_msg_with_thinking(
+            text="```json\n{\"task_id\": \"X\", \"turn\": 1, \"decision\": \"approve\"}\n```",
+            thinking="Reviewing the diff... acceptance criteria look met.",
+        )
+        done = _result_msg()
+        fake_gen = RecordingAsyncGen([("yield", msg), ("yield", done)])
+
+        with patch.object(claude_agent_sdk, "query", return_value=fake_gen):
+            events = await _drain(harness, tmp_path)
+
+        assistant_event = events[0]
+        assert isinstance(assistant_event, AssistantMessageEvent)
+        assert "```json" in assistant_event.text  # canonical verdict in content
+        assert assistant_event.text.startswith("```json")
+        assert assistant_event.reasoning_text == (
+            "Reviewing the diff... acceptance criteria look met."
+        )
+
+    @pytest.mark.asyncio
+    async def test_thinking_only_message_has_empty_text_and_populated_reasoning(
+        self, tmp_path
+    ):
+        """The §9.14 failure mode: model emits only thinking, no content.
+
+        Without TASK-FIX-COACHBUDG01 this would have collapsed to
+        ``AssistantMessageEvent(text="")`` and the parser would have
+        raised CoachDecisionNotFoundError even though the verdict was
+        present in the thinking channel.
+        """
+        harness = _make_harness()
+        msg = _assistant_msg_thinking_only(
+            thinking=(
+                "Internal monologue: the implementation looks fine.\n"
+                "```json\n"
+                '{"task_id": "X", "turn": 1, "decision": "approve"}\n'
+                "```"
+            )
+        )
+        done = _result_msg()
+        fake_gen = RecordingAsyncGen([("yield", msg), ("yield", done)])
+
+        with patch.object(claude_agent_sdk, "query", return_value=fake_gen):
+            events = await _drain(harness, tmp_path)
+
+        assistant_event = events[0]
+        assert isinstance(assistant_event, AssistantMessageEvent)
+        assert assistant_event.text == ""
+        assert "```json" in assistant_event.reasoning_text
+        assert "approve" in assistant_event.reasoning_text
+
+    @pytest.mark.asyncio
+    async def test_multiple_thinking_blocks_concatenated_in_order(self, tmp_path):
+        """An AssistantMessage carrying multiple ThinkingBlocks joins them.
+
+        Mirrors the legacy multi-TextBlock join: parts concatenate without
+        a separator (``"".join``) — preserves the SDK's per-block split
+        semantics and lets the regex tolerate either form.
+        """
+        harness = _make_harness()
+        msg = AssistantMessage(
+            content=[
+                ThinkingBlock(thinking="First thought. ", signature="s1"),
+                ThinkingBlock(thinking="Second thought.", signature="s2"),
+                TextBlock(text="Final answer."),
+            ],
+            model="test-model",
+        )
+        done = _result_msg()
+        fake_gen = RecordingAsyncGen([("yield", msg), ("yield", done)])
+
+        with patch.object(claude_agent_sdk, "query", return_value=fake_gen):
+            events = await _drain(harness, tmp_path)
+
+        assistant_event = events[0]
+        assert assistant_event.text == "Final answer."
+        assert assistant_event.reasoning_text == "First thought. Second thought."
 
 
 # ----------------------------------------------------------------------

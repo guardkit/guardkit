@@ -2144,6 +2144,163 @@ requires the run-6 turn-1 Coach prompt replay (longer + more complex
 context). The substrate posture is correct; the full replay is
 operator-driven follow-on work.
 
+### 9.14 2026-06-06 — TASK-FIX-COACHBUDG01: parser learns to read `reasoning_content`; `--reasoning off` workaround becomes optional
+
+**Trigger.** §9.13's "Reasoning-off lesson" closed the immediate F17
+shape but left a structural debt: every future hybrid-reasoning Coach
+candidate (nemotron-3-super:120b-a12b, deepseek-v4-flash,
+qwen3.5-122b-a10b) would inherit the same brittle `--reasoning off`
+infrastructure workaround. That is unacceptable for substrates whose
+reliability *comes from* reasoning (nemotron-3-super's 6-hop agentic
+depth; deepseek-v4-flash's Terminal-Bench score). Filed as
+[`TASK-FIX-COACHBUDG01`](../../../tasks/backlog/autobuild-harness-migration/TASK-FIX-COACHBUDG01-coach-token-budget-and-reasoning-mode.md);
+the canonical fix is orchestrator-side: parse the fenced verdict from
+EITHER channel, not the llama.cpp content stream alone.
+
+**Empirical evidence (the §9.13 → §9.14 hand-off).** Probed gemma4-coach
+with `--reasoning auto` and a generous `max_tokens=16384` budget against
+a Coach-shape prompt:
+
+```
+finish_reason: stop
+content_chars:           364
+reasoning_content_chars: 4450
+completion_tokens:       1262
+fenced-JSON in content:           True
+fenced-JSON in reasoning_content: True
+```
+
+With enough budget, the model mirrors the verdict into BOTH channels
+— content carries the final answer (364 chars), reasoning_content
+carries the chain-of-thought + an exploratory copy of the JSON
+(4450 chars). At smaller budgets (e.g. the §9.13 pre-fix smoke at
+`max_tokens=80`), the content channel comes back empty
+(`finish_reason: length`) and the entire turn lives in
+reasoning_content. The orchestrator must handle both shapes.
+
+**What landed.**
+
+*Layer 2 — parser + SDK harness (this repo):*
+
+1. **`AssistantMessageEvent` shape extension** (
+   [`guardkit/orchestrator/harness/adapter.py`](../../../guardkit/orchestrator/harness/adapter.py)).
+   Added optional `reasoning_text: str = ""` field. Backwards-compatible
+   default — any caller constructing the event without thinking blocks
+   (the legacy code path, or substrates whose models do not emit
+   reasoning) gets the identical shape as before.
+2. **`coach_output_parser.extract_and_write` precedence**
+   ([`guardkit/orchestrator/coach_output_parser.py`](../../../guardkit/orchestrator/coach_output_parser.py)).
+   "Prefer content, fall through to reasoning":
+   * Search joined `text` for a fenced `\`\`\`json` block first
+     (canonical answer channel).
+   * On miss, search joined `reasoning_text` (hybrid-reasoning
+     fallback).
+   * Both channels empty → still raises `CoachDecisionNotFoundError`
+     with the COACHSF01-coupled substring; the error message now
+     records both channel sizes so operators can diagnose substrate
+     behaviour from the log without re-running.
+3. **SDK harness ThinkingBlock plumbing**
+   ([`guardkit/orchestrator/harness/sdk_harness.py`](../../../guardkit/orchestrator/harness/sdk_harness.py)).
+   Added `_extract_assistant_reasoning(message)` that joins all
+   `ThinkingBlock.thinking` fields per `AssistantMessage`. Emitted on
+   `AssistantMessageEvent.reasoning_text` alongside the existing
+   text-block content. Anthropic extended-thinking turns now surface
+   their reasoning to the parser. Empty string when no `ThinkingBlock`
+   is present — the dominant case for non-thinking-mode invocations.
+4. **Regression tests.** `tests/unit/orchestrator/test_coach_output_parser.py::TestHybridReasoningFallback`
+   (7 tests) covers content-only, reasoning-only, both-channels,
+   neither-channel, multi-event streams, frozen-dataclass immutability,
+   and backwards-compat (default `reasoning_text=""`).
+   `tests/orchestrator/harness/test_sdk_harness.py::TestThinkingBlockExtraction`
+   (4 tests) covers no-thinking, text+thinking, thinking-only, and
+   multi-thinking-block concatenation. All pass on first run.
+
+*Live-data parser smoke (end-to-end).* Captured a real gemma4-coach
+response (`--reasoning auto`, 16 K budget) — 596 chars content + 5461
+chars reasoning_content, both fenced. Fed through the parser via a
+synthetic `AssistantMessageEvent(text=content, reasoning_text=reasoning)`.
+Parser parsed `decision="feedback"` from `content` (correct
+precedence), atomic write succeeded, file-on-disk matches the returned
+dict. Then captured a no-block response (`HELLO` probe) — 5 chars
+content + 280 chars reasoning, neither fenced. Parser raised
+`CoachDecisionNotFoundError("Coach decision not found: no fenced
+\`\`\`json block in Coach response for TASK-TEST turn 1
+(5 chars content + 280 chars reasoning_content)")`. COACHSF01 coupling
+preserved — both channel sizes reported. The empirical Layer-2 contract
+is validated end-to-end on this repo's side of the substrate boundary.
+
+*Layer 1 finding — `max_tokens` is implicit (AC-001).* Searched the
+guardkit orchestrator tree exhaustively. `claude-agent-sdk`'s
+`ClaudeAgentOptions` (the SDK harness's only knob) does NOT accept a
+`max_tokens` field; Anthropic's API uses model defaults. The LangChain
+`ChatOpenAI` client used by `LangGraphHarness` accepts `max_tokens=`
+on construction, but that construction site lives in
+**`guardkitfactory`** (separate repo, not on this box). Layer 1 of
+TASK-FIX-COACHBUDG01 (raising Coach `max_tokens` to 16 384) is
+therefore a guardkitfactory-side change — see the cross-repo plan
+below.
+
+**What's NOT yet wired (cross-repo, guardkitfactory follow-on).**
+
+The §9.14 changes ship the SDK side and the parser. The LangGraph side
+of substrate parity, the per-model registry shape, and the live
+end-to-end AC-009 smoke against the real autobuild loop are blocked on
+the sibling repo:
+
+| AC | Status | Owner |
+|---|---|---|
+| AC-001 | ✓ Investigated. `max_tokens` is implicit in guardkit; settable on `ChatOpenAI(...)` in guardkitfactory. | guardkit (this PR — documentation only) |
+| AC-002 | ⏳ Raise Coach `max_tokens` to 16 384 at the `LangGraphHarness` `ChatOpenAI(...)` construction site. | guardkitfactory |
+| AC-003 | ⏳ Confirm Player/specialist budgets in the same construction. | guardkitfactory |
+| AC-004 | ✓ Parser extended with content-first / reasoning-fallback precedence. | guardkit (this PR) |
+| AC-005 SDK | ✓ `AssistantMessageEvent.reasoning_text` populated from `ThinkingBlock.thinking`. | guardkit (this PR) |
+| AC-005 LangGraph | ⏳ Populate `AssistantMessageEvent.reasoning_text` from llama.cpp's `message.reasoning_content` in `langgraph_harness._aiter_events()` (or equivalent). | guardkitfactory |
+| AC-006 | ⏳ Extend `MODEL_CONTEXT_WINDOWS` registry shape from `{name: int}` to `{name: {ctx_size, max_tokens_coach, max_tokens_player, reasoning_mode}}`; backwards-compat int → default dict. | guardkitfactory |
+| AC-007 | ⏳ Populate registry: `qwen36-workhorse` (off / 8 K / 8 K / 131 K), `gemma4:26b` (auto / 16 K / 8 K / 65 K), reserve stubs for nemotron / deepseek-v4-flash / qwen3.5-122b-a10b. | guardkitfactory |
+| AC-008 parser tests | ✓ 7 new tests in `TestHybridReasoningFallback` (this PR). | guardkit |
+| AC-008 SDK tests | ✓ 4 new tests in `TestThinkingBlockExtraction` (this PR). | guardkit |
+| AC-008 LangGraph tests | ⏳ Mirror `TestThinkingBlockExtraction` against the LangChain `AIMessage` shape carrying `additional_kwargs={'reasoning_content': ...}`. | guardkitfactory |
+| AC-008 registry tests | ⏳ Legacy-int passthrough; new-dict passthrough; per-role getter. | guardkitfactory |
+| AC-009 live smoke | ⏳ Once AC-002 + AC-005-LG + AC-006 + AC-007 land: revert llama-swap's `--reasoning off` workaround (already done — both gemma4-coach and qwen36-workhorse on `--reasoning auto` as of this revision), replay run-6 turn-1 Coach prompt 5×, assert ≥4/5 parseable verdicts. | guardkitfactory + operator |
+
+**llama-swap state under this revision.** Both `gemma4-coach` and
+`qwen36-workhorse` are now configured with `--reasoning auto`
+(reverting §9.13's stop-gap `--reasoning off` on gemma4-coach AND the
+historic `--reasoning off` on qwen36-workhorse). Until the
+guardkitfactory side of AC-005 lands, the LangGraph path still cannot
+*see* the reasoning channel — so workhorse-with-reasoning-on may
+exhibit the F17 prose-before-JSON failure mode that COACHSF01 will
+mask. The SDK path, which is what autobuild uses by default until the
+2026-06-15 cutover, now handles both channels correctly via the
+ThinkingBlock plumbing landed here.
+
+**Meta-lesson (candidate `.claude/rules/` seed once empirically
+confirmed across 2-3 substrates).** *"Hybrid reasoning models route
+generation to `reasoning_content` by default. Orchestrator parsers must
+check both `content` and `reasoning_content` fields. Per-model
+reasoning_mode metadata in the substrate registry lets future model
+swaps stay config-driven."* The §9.13 + §9.14 pair is the first
+instance of this pattern; the second (nemotron-3-super) and third
+(deepseek-v4-flash) will surface during TASK-HMIG-012 registry
+population.
+
+#### Pointers
+
+- Task file: [`tasks/backlog/autobuild-harness-migration/TASK-FIX-COACHBUDG01-coach-token-budget-and-reasoning-mode.md`](../../../tasks/backlog/autobuild-harness-migration/TASK-FIX-COACHBUDG01-coach-token-budget-and-reasoning-mode.md)
+- Parser source (the load-bearing precedence rule):
+  [`guardkit/orchestrator/coach_output_parser.py`](../../../guardkit/orchestrator/coach_output_parser.py)
+  §"Hybrid reasoning models — `reasoning_text` fallback"
+- Adapter ABC extension:
+  [`guardkit/orchestrator/harness/adapter.py`](../../../guardkit/orchestrator/harness/adapter.py)
+  `AssistantMessageEvent.reasoning_text`
+- SDK ThinkingBlock plumbing:
+  [`guardkit/orchestrator/harness/sdk_harness.py`](../../../guardkit/orchestrator/harness/sdk_harness.py)
+  `_extract_assistant_reasoning`
+- Predecessor finding (the substrate-side workaround this revision
+  supersedes): §9.13 above
+- ADR FB-004 (Coach is read-only; orchestrator parses verdict from
+  fenced JSON): [`.claude/rules/feature-build-invariants.md`](../../../.claude/rules/feature-build-invariants.md)
+
 #### Pointers
 
 - TASK file: `tasks/backlog/autobuild-harness-migration/TASK-HMIG-013-swap-coach-to-gemma4-26b-single-gb10.md`

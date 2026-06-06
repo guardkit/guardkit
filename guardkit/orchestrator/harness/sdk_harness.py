@@ -49,6 +49,20 @@ order (tool-uses first, then the joined-text assistant event) keeps the
 typed-event ordering aligned with the textual order in the source
 message — useful when partial-extract output is interleaved.
 
+TASK-FIX-COACHBUDG01 extension (2026-06-06): When an
+``AssistantMessage`` carries ``ThinkingBlock`` content blocks (Anthropic
+extended thinking), the harness now joins their ``thinking`` field and
+populates :attr:`AssistantMessageEvent.reasoning_text`. This lets the
+orchestrator-side ``coach_output_parser`` fall through to the
+thinking-channel text when the canonical content channel has no fenced
+``json`` verdict block — see that module's "Hybrid reasoning models"
+docstring section and §9.14 of
+``docs/research/dgx-spark/AUTOBUILD-ON-LLAMA-SWAP-findings.md`` for the
+load-bearing rationale and empirical evidence. Substrate parity
+requires ``LangGraphHarness`` (guardkitfactory) to populate the same
+field from llama.cpp's ``message.reasoning_content`` — tracked as a
+guardkitfactory follow-on to this task.
+
 The :meth:`invoke` ``tools`` and ``timeout_seconds`` parameters are
 accepted to satisfy the :class:`HarnessAdapter` ABC contract, but the
 SDK harness primarily uses the constructor-supplied ``allowed_tools``
@@ -337,7 +351,21 @@ class ClaudeSDKHarness(HarnessAdapter):
                                 input=tool_input,
                             )
                         text = _extract_assistant_text(message)
-                        yield AssistantMessageEvent(text=text, raw=message)
+                        # TASK-FIX-COACHBUDG01 (2026-06-06): collect any
+                        # ThinkingBlock content so the orchestrator-side
+                        # parser can fall through to it when the content
+                        # stream lacks a fenced JSON block (hybrid reasoning
+                        # models route the verdict into thinking under
+                        # certain prompt shapes / budget conditions). Empty
+                        # string when no ThinkingBlock is present — the
+                        # dominant case for non-thinking models and for
+                        # extended-thinking-off invocations.
+                        reasoning_text = _extract_assistant_reasoning(message)
+                        yield AssistantMessageEvent(
+                            text=text,
+                            raw=message,
+                            reasoning_text=reasoning_text,
+                        )
                     elif isinstance(message, ResultMessage):
                         # TASK-RFX-B20B: capture session_id for resumption.
                         self._session_id = getattr(
@@ -528,6 +556,11 @@ def _extract_assistant_text(message: Any) -> str:
     contribute to the joined text. ``ToolUseBlock`` blocks are NOT
     joined into the text — they are accessible via the raw SDK message
     on :class:`AssistantMessageEvent.raw` per Design Decision D-1.
+    ``ThinkingBlock`` blocks are also NOT joined here — they belong on
+    :attr:`AssistantMessageEvent.reasoning_text` (see
+    :func:`_extract_assistant_reasoning`) so the orchestrator-side parser
+    can apply the "prefer content, fall through to reasoning" precedence
+    documented in ``coach_output_parser`` (TASK-FIX-COACHBUDG01).
 
     Duck-typed on ``type(block).__name__`` to match the rest of the
     orchestrator's lenient inspection — keeps the harness importable
@@ -541,6 +574,39 @@ def _extract_assistant_text(message: Any) -> str:
         text = getattr(block, "text", None)
         if isinstance(text, str):
             parts.append(text)
+    return "".join(parts)
+
+
+def _extract_assistant_reasoning(message: Any) -> str:
+    """Join all ``ThinkingBlock.thinking`` fields in an ``AssistantMessage``.
+
+    TASK-FIX-COACHBUDG01 (2026-06-06). Anthropic's claude-agent-sdk
+    exposes extended-thinking chain-of-thought as ``ThinkingBlock``
+    blocks alongside ``TextBlock`` inside ``AssistantMessage.content``;
+    each ``ThinkingBlock`` carries ``thinking`` (the reasoning text) and
+    ``signature`` (Anthropic's cryptographic attestation of the
+    thinking content — preserved on
+    :attr:`AssistantMessageEvent.raw` but NOT joined here, since the
+    parser cares only about the text).
+
+    Duck-typed on ``type(block).__name__`` for the same reason
+    :func:`_extract_assistant_text` is — fixture compatibility and
+    SDK-version-independence.
+
+    Returns the empty string when no ``ThinkingBlock`` is present, which
+    is the dominant case for non-thinking-mode invocations and for
+    models without extended thinking — preserves the legacy
+    ``AssistantMessageEvent(text=..., raw=...)`` shape via the
+    default-value dataclass field.
+    """
+    content = getattr(message, "content", None) or []
+    parts: List[str] = []
+    for block in content:
+        if type(block).__name__ != "ThinkingBlock":
+            continue
+        thinking = getattr(block, "thinking", None)
+        if isinstance(thinking, str):
+            parts.append(thinking)
     return "".join(parts)
 
 

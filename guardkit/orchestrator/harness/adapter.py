@@ -38,10 +38,23 @@ class AssistantMessageEvent:
     holds the original SDK-side object (typed ``object`` here to keep this
     module SDK-free per AC-006); concrete harnesses populate it when the
     raw form is useful downstream, otherwise leave it ``None``.
+
+    ``reasoning_text`` (TASK-FIX-COACHBUDG01, 2026-06-06) carries the joined
+    chain-of-thought / thinking-block content from hybrid reasoning models:
+    Anthropic ``ThinkingBlock.thinking`` on the SDK side; llama.cpp's
+    ``message.reasoning_content`` field (emitted under ``--reasoning auto``)
+    on the LangGraph side. Default ``""`` for backwards compatibility — any
+    caller constructing the event without thinking blocks (the legacy
+    code path before this field landed, or substrates whose models do not
+    emit reasoning) gets the same shape as before. ``coach_output_parser``
+    falls through to this field when no fenced ``json`` block is found in
+    ``text``; see that module's docstring for the "prefer content"
+    precedence rule.
     """
 
     text: str
     raw: object | None = None
+    reasoning_text: str = ""
     type: Literal["assistant_message"] = "assistant_message"
 
 
