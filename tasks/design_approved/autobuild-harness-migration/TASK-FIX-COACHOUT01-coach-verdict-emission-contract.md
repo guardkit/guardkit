@@ -1,10 +1,24 @@
 ---
 id: TASK-FIX-COACHOUT01
 title: Replace Coach Bash-heredoc verdict-emission contract with structured-output parsing or constrained Write tool
-status: backlog
+status: design_approved
 task_type: bug
 created: 2026-06-06T08:00:00Z
-updated: 2026-06-06T08:00:00Z
+updated: 2026-06-06T11:15:00Z
+previous_state: in_progress
+state_transition_reason: "Phase 2.8 checkpoint approved (Shape A, score 82/100, strict intensity)"
+design:
+  status: approved
+  approved_at: "2026-06-06T11:15:00Z"
+  approved_by: "human"
+  implementation_plan_version: v1
+  architectural_review_score: 82
+  complexity_score: 7
+  chosen_shape: A
+  design_session_id: "design-TASK-FIX-COACHOUT01-20260606"
+  design_notes: "Shape A (Structured-Output Parsing) chosen by architectural-reviewer with high confidence. Three implementation constraints recorded in task body (return_events parameter, COACHSF01 error-string coupling, module-level function). GuardKit-only, ~150 LOC. Live falsifier deferred to HMIG-010 run N+1."
+  plan_file: "docs/state/TASK-FIX-COACHOUT01/implementation_plan.md"
+  review_file: "docs/state/TASK-FIX-COACHOUT01/architectural_review.md"
 priority: critical
 complexity: 7
 deadline: 2026-06-15
@@ -133,12 +147,13 @@ This is **canary F2 confirmed at Coach scope** (`canary-analysis.md §3.F2`): "m
 
 | Field | Value |
 |---|---|
-| chosen_shape | **A** or **B** (defer to Phase 2 architectural review) |
-| rationale | _to be filled by reviewer_ |
-| picked_at | _to be filled_ |
-| picked_by | _to be filled_ |
+| chosen_shape | **A** (Structured-Output Parsing) |
+| rationale | Root-cause elimination (removes the Bash-heredoc primitive entirely, not just simplifies the tool call). Zero cross-repo blast radius — TASK-HMIG-011 cutover doesn't gain a guardkitfactory release dependency. Structural substrate parity — both `ClaudeSDKHarness` and `LangGraphHarness` already emit `AssistantMessageEvent` carrying full response text; no harness changes. Read-only invariant fully preserved (vs Shape B's documented constrained-write exception). Lower Sonnet regression risk — "end response with fenced JSON block" is strictly simpler than the current heredoc construction. |
+| picked_at | 2026-06-06 |
+| picked_by | architectural-reviewer (Phase 2.5B, score 82/100, confidence high) |
+| review_file | `docs/state/TASK-FIX-COACHOUT01/architectural_review.md` |
 
-**Recommendation**: Shape A is the cleaner long-term answer (eliminates the architectural asymmetry that produced F17 in the first place, no read-only-invariant violation, works for any model). Shape B is the smaller-blast-radius answer (changes less code, doesn't touch existing prompt). Phase 2 architectural review picks.
+**Phase 2 recommendation history**: The original task body recommended Shape A as cleaner long-term and Shape B as smaller blast radius. The Phase 2.5B architectural review confirmed Shape A on the architectural-asymmetry, cross-repo blast radius, and substrate-parity criteria. See review file for full SOLID/DRY/YAGNI scoring (84/82/80) and AC coverage matrix.
 
 ## Acceptance Criteria
 
@@ -175,6 +190,16 @@ This is **canary F2 confirmed at Coach scope** (`canary-analysis.md §3.F2`): "m
 - **Must preserve substrate parity**: SDK harness path (Sonnet) and LangGraph harness path (qwen36-workhorse) must both produce the same `coach_turn_N.json` so the cutover decision is on substrate quality, not output-format divergence
 
 Intensity = strict per [`/task-work` intensity table](../../../installer/core/commands/task-work.md).
+
+## Implementation constraints (from Phase 2.5B review — must hold before Phase 3 ships)
+
+These three constraints close gaps the Phase 2.5B architectural review flagged. The Phase 3 implementer MUST treat them as preconditions, not suggestions. Full justification in `docs/state/TASK-FIX-COACHOUT01/architectural_review.md` "Plan Gaps / Required Revisions".
+
+1. **Event-passing mechanism is the `return_events: bool = False` parameter on `_invoke_with_role`**, NOT an instance attribute. When `True` (set only at the Coach call site `agent_invoker.py:1956`), `_invoke_with_role` returns `(None, harness_events)` instead of `None`. Player and specialist call sites are unchanged. Rejects the `self._last_harness_events` instance-attribute alternative because it carries hidden stale-state risk that any future concurrent-invocation refactor would silently activate.
+
+2. **COACHSF01 error-string coupling must be verified.** `autobuild.py:5676–5678` matches on the literal substrings `"Coach decision not found"` and `"Coach decision invalid"`. The parser MUST raise exceptions whose `str(...)` representation contains those exact substrings — either by re-using `CoachDecisionNotFoundError`/`CoachDecisionInvalidError` (whose existing `__str__` already produces matching strings) or by prefixing custom raise messages with them verbatim. Add ONE unit test asserting that a `CoachDecisionNotFoundError` raised by the parser causes the COACHSF01 safety net to fire in `autobuild.py`.
+
+3. **`coach_output_parser.extract_and_write` is a module-level function, not a method on a stateless class.** A `CoachOutputParser` class with no constructor arguments and no instance state would be a YAGNI violation. If parameterisation is needed for testing (e.g. swappable regex pattern or output-path strategy), the parameters become function kwargs with sensible defaults, not constructor arguments.
 
 ## Implementation sequencing recommendation
 
