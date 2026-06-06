@@ -1763,6 +1763,185 @@ registration work on the GB10 side.
 
 ---
 
+### 9.13 2026-05-31 — LPA POC pivots off VLMs to Docling StandardPdfPipeline (CPU-only); no GB10 model changes, but four LPA-side defects surfaced in first GB10 smoke
+
+**Trigger.** The LPA POC team filed
+[`TASK-FIX-LPA02-G`](../../../../lpa-platform-poc/tasks/in_review/TASK-FIX-LPA02-G-bypass-vlm-with-standard-pdf-pipeline.md)
+to bypass the Granite Vision ladder entirely after §9.11 (4.1-4b) and
+§9.12 (3.3-2b) were both ruled out by smoke-4 + smoke-5. The new path
+runs Docling's `StandardPdfPipeline` (Tesseract OCR + layout +
+table-structure recognition) **inside the api container on this GB10
+host**, CPU-only, with only the downstream JSON-extraction stage hitting
+GB10 llama-swap (qwen36-workhorse). Task lands in `in_review` with code
+changes done at the unit-test layer; this GB10-side pickup ran the
+first end-to-end smoke.
+
+**Headline result (Ashworth only, the AC-001 blocker).**
+
+| AC | Verdict | Evidence |
+|---|---|---|
+| AC-001 (Section 2 primary attorneys ≥1) | ❌ | `primary_attorneys: []`. Section 2 OCR output is essentially blank — Tesseract's default PSM reads the form-field grid as `<!-- image -->` placeholders, not text. |
+| AC-005 (no hallucination loops) | ✅ | OCR is deterministic; no degenerate column-header loops à la 3.3-2b. |
+| AC-006 (donor quality) | ✅ | `full_name`, `address_lines`, `postcode`, `date_of_birth` all populated; confidence ≥ 0.95 on every field. |
+| AC-007 (<8 min runtime) | ✅✅ | **54.3 s** vs 8-min budget — ~9× under. Run C 4.1-4b best was 32.3 min, so this is also **~36× faster than the best VLM run**. |
+| Bonus | ✅ | Both Section 4 replacement attorneys (Sarah Bennett, Thomas Ashworth) extracted with full name + DOB + address + postcode. Run C only got 1. |
+
+Net: OCR-pipeline is a clear **infrastructure win** (deterministic, fast,
+small memory footprint, no GB10 vision model dependency) but the
+**same Section 2 attorney-extraction hole** that defeated the VLM ladder
+defeats this approach too — Tesseract default PSM doesn't read the
+per-character form-field box grid that OPG's digital service uses for
+Section 2. Replacement attorneys (Section 4) use a more conventional
+table layout that Tesseract handles. So Section 2 ≠ Section 4 layout,
+and the OCR pipeline only fixes the half of the form that wasn't the
+problem. Tuning PSM (`--psm 6` / `--psm 11`) and/or
+`PdfPipelineOptions(images_scale=...)` is the next inexpensive lever;
+the hybrid (OCR + per-page VLM fallback the task left as
+[LPA02-H](../../../../lpa-platform-poc/tasks/in_review/TASK-FIX-LPA02-G-bypass-vlm-with-standard-pdf-pipeline.md))
+candidate) is the next expensive lever.
+
+**GB10-side findings (the actual purpose of this section).**
+
+1. **Zero new model registrations.** OCR mode needs only
+   `qwen36-workhorse` (downstream JSON extraction) which is already
+   in the `all` set, always-on, currently warm. `granite-vision-4-1-4b`
+   and `granite-vision-3-3-2b` stay registered as rollback /
+   hybrid-fallback per the task's AC-009 and §"Hybrid fallback"; both
+   are on-demand and stay unloaded during OCR-mode runs.
+2. **No keepalive pause needed.** The §9.11 / §9.12 operational caveat
+   ("long LPA sessions need the keepalive paused") **does not apply** in
+   OCR mode. The keepalive's ALWAYS_ON allowlist
+   (`/usr/local/bin/llama-swap-keepalive.sh` lines 44-49) is
+   `[qwen-graphiti, nomic-embed, qwen36-workhorse, architect-agent]` —
+   exactly the set OCR mode needs warm. Vision models are on-demand
+   and intentionally not revived. So OCR-mode is **operationally
+   simpler** than VLM-mode from the GB10 side: nothing to switch, nothing
+   to pause, nothing to evict.
+3. **`finproxy-keycloak` host port 9000:9000 clashes with llama-swap.**
+   The LPA compose maps Keycloak management :9000 to host :9000, but
+   llama-swap owns host :9000 on this GB10. **Remapped to `9001:9000`**
+   in `lpa-platform-poc/docker-compose.poc.yml` line 33 with an
+   in-file comment pointing at this section. Containers in the docker
+   network still reach Keycloak via service name `keycloak:9000`; the
+   host mapping is only for ad-hoc curl from the host.
+4. **Four LPA-side image gaps the task code missed** — discovered by
+   running the actual GB10 smoke (not visible at the unit-test layer):
+   - **`scripts/` not COPYed into the api image and not volume-mounted.**
+     `Dockerfile.poc` COPYs `src/`, `templates/`, `static/` but not
+     `scripts/`. The smoke script wasn't reachable from the running
+     container; workaround was `docker cp` for this one-shot. LPA-side
+     task needs to either COPY scripts/ or mount it in compose.
+   - **No `PYTHONPATH=/app`.** `uvicorn src.main:app` sets cwd via
+     entrypoint, so `import src.*` works at runtime — but
+     `docker compose exec ... python scripts/X.py` runs with the
+     script's dir on sys.path, not `/app/`. Smoke fails
+     `ModuleNotFoundError: No module named 'src'`. Workaround is
+     `-e PYTHONPATH=/app` on the exec. LPA-side `Dockerfile.poc` should
+     set `ENV PYTHONPATH=/app`.
+   - **`tesserocr` Python binding missing.** Task code wired Docling to
+     `TesseractOcrOptions()` which uses the `tesserocr` Python binding,
+     not the `tesseract` CLI. The binding requires `libtesseract-dev` +
+     `libleptonica-dev` apt deps + a native pip compile that
+     `pip install docling` does NOT pull. The task's implementation
+     status claim *"Docling already pinned >=2.0; the Tesseract Python
+     bindings are transitive. No `docling[ocr]` extra needed"* is
+     **incorrect**. **Fixed by switching to
+     `TesseractCliOcrOptions(lang=["eng"])`** which shells out to the
+     `tesseract` 5.5.0 CLI that the apt-installed `tesseract-ocr`
+     package provides. One-line code change in
+     [`src/lpa/clients/docling.py`](../../../../lpa-platform-poc/src/lpa/clients/docling.py)
+     `_build_standard_converter`; no rebuild needed because `src/` is
+     volume-mounted.
+   - **`libGL.so.1` missing.** `opencv-python` (transitive Docling dep)
+     needs `libgl1` + `libglib2.0-0` apt packages on Debian slim images.
+     Installed at runtime in the running container for this smoke
+     (`apt-get install -y libgl1 libglib2.0-0`); LPA-side
+     `Dockerfile.poc` should bake these in alongside the existing
+     `tesseract-ocr` line so future rebuilds work.
+
+The combined hot-fix recipe to land all four in `Dockerfile.poc`:
+
+```dockerfile
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        libpq-dev \
+        curl \
+        tesseract-ocr \
+        tesseract-ocr-eng \
+        libgl1 \
+        libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/ scripts/
+ENV PYTHONPATH=/app
+```
+
+— plus the `TesseractCliOcrOptions` code change already applied in this
+session.
+
+**Smoke recipe (canonical, for the next smoke run).**
+
+```bash
+# 0. one-time seed of donor user (lpa_records.donor_id → users.id FK)
+docker exec finproxy-postgres psql -U finproxy -d finproxy <<'SQL'
+INSERT INTO users (id, keycloak_sub, email, role, first_name, last_name)
+VALUES (1, '00000000-0000-0000-0000-000000000001',
+        'donor1@finproxy.test', 'donor', 'Smoke', 'Donor')
+ON CONFLICT (id) DO NOTHING;
+SELECT setval('users_id_seq', GREATEST((SELECT MAX(id) FROM users), 1));
+SQL
+
+# 1. copy script + PDF in (until Dockerfile.poc COPYs scripts/)
+docker exec finproxy-api mkdir -p /app/scripts
+docker cp scripts/_smoke_lpa_extraction.py finproxy-api:/app/scripts/
+docker cp lpa-test-data/generated/LPA_test_A-ashworth.pdf finproxy-api:/tmp/ashworth.pdf
+
+# 2. run with PYTHONPATH (until Dockerfile.poc sets it)
+docker compose -f docker-compose.poc.yml exec -T -e PYTHONPATH=/app api \
+    python scripts/_smoke_lpa_extraction.py /tmp/ashworth.pdf 1
+
+# 3. inspect extraction_json
+docker exec finproxy-postgres psql -U finproxy -d finproxy -t \
+    -c "SELECT jsonb_pretty(extraction_json) FROM lpa_extracted_rules WHERE lpa_record_id = $LPA_ID;"
+```
+
+Wall-clock on Ashworth: **54.3 s end-to-end** (Docling layout + table-
+structure weight load + 23-page Tesseract OCR + qwen36-workhorse JSON
+pass).
+
+**Memory + matrix-set behaviour during the smoke.** No matrix-set switch
+fired — the smoke ran entirely under the existing `all` set
+(`qg + ne + qw + aa + dl + gv` per §9.11, ~80 GB resident). No vision
+model loaded; no eviction. This confirms the operational simplicity
+claim above: OCR-mode is **strictly less invasive on GB10 than any of
+the §9.3 / §9.10 / §9.11 / §9.12 VLM modes**.
+
+**What this leaves available on the GB10.** Unchanged:
+
+| Model | Resident | Set | Use when |
+|---|---:|---|---|
+| `granite-vision-4-1-4b` | ~26 GB | `lpa` | Rollback / future hybrid-fallback consultation (LPA02-G AC-009) |
+| `granite-vision-3-3-2b` | ~15 GB | `lpa_v3` | Comparison option |
+| `qwen36-workhorse` | always-on | `all` | OCR-mode JSON extraction (the new default) |
+
+If the LPA team escalates back to a VLM after PSM tuning, both vision
+models are one env-flip away (`DOCLING_PIPELINE_MODE=vlm` +
+`DOCLING_VLM_MODEL=<id>` in `docker-compose.poc.yml`). Until then they
+stay quiet at zero memory cost.
+
+#### Pointers
+
+- [`lpa-platform-poc/tasks/in_review/TASK-FIX-LPA02-G-bypass-vlm-with-standard-pdf-pipeline.md`](../../../../lpa-platform-poc/tasks/in_review/TASK-FIX-LPA02-G-bypass-vlm-with-standard-pdf-pipeline.md)
+  — task scope, AC list, §"Hybrid fallback" plan
+- [`lpa-platform-poc/src/lpa/clients/docling.py`](../../../../lpa-platform-poc/src/lpa/clients/docling.py)
+  `_build_standard_converter` — TesseractCliOcrOptions code change
+- §9.11 / §9.12 — Granite Vision registration history (kept for rollback)
+- `docs/history/lpa-extraction-e2e-smoke-6.md` — to-be-written LPA-side
+  evidence doc (Fairfax + Pengelly + AC-009 rollback smoke still
+  pending)
+
+---
+
 ## 10. Provenance
 
 This document captures findings from an interactive session on
