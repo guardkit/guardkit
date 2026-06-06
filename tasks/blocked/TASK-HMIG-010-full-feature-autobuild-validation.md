@@ -3,7 +3,7 @@ id: TASK-HMIG-010
 title: Full feature autobuild end-to-end validation under LangGraph
 status: blocked
 previous_state: in_progress
-state_transition_reason: "Run 4 (2026-06-05T16:05, 13m30s, post-CTOUT01+LGFM3) failed at Wave 1 IA03 turn 1 with 'Coach decision not found'. New finding F17 (canary F2 at Coach level): qwen36-workhorse Coach completed 140s of LLM activity (12 successful HTTP 200s) but never emitted the Bash heredoc tool call to write coach_turn_1.json. The orchestrator's synthetic-feedback safety net at autobuild.py:5663 exists but only fires on raised exceptions — invoke_coach catches CoachDecisionNotFoundError internally at agent_invoker.py:1987 and returns success=False, bypassing the safety net. Substantive Player work was correct (14/14 doc-level exclusion tests passing, 517/580 suite passes — phase_4_summary.json). Filed F17 as TASK-FIX-COACHSF01 (fix-shape a: wire safety net to fire on success=False with 'Coach decision not found' error). Also recorded F18 (cosmetic pip-cache ghost-path filter gap) as I-008. Prior fixes confirmed landed: LGFM3 in completed/2026-06/, CTOUT01 in completed/2026-06/."
+state_transition_reason: "Run 5 (2026-06-05T22:20, 41m31s, post-COACHSF01) executed first full adversarial loop: 3 Player↔Coach turns. Turn 1+2 Coach emitted real verdict files with real Coach feedback; turn 3 Coach hit F17 again and COACHSF01 safety net fired correctly. F7 unrecoverable_stall guard then triggered after 3 consecutive test failures with no passing checkpoint. Every migration layer confirmed working. Substrate quality finding: qwen36-workhorse Coach verdict-emission rate ~67% per 3-turn sample. Operator decision 2026-06-06: F17 must be fundamentally fixed before cutover. Filed TASK-FIX-COACHOUT01 (strict intensity, ~4h) to replace Coach Bash-heredoc emission contract with either structured-output parsing (shape A) or constrained Write tool (shape B). COACHSF01 remains as defence-in-depth."
 task_type: validation
 created: 2026-05-19T20:30:00Z
 updated: 2026-06-05T17:30:00Z
@@ -19,10 +19,11 @@ implementation_mode: manual    # operator-monitored end-to-end run; /task-work p
 intensity: standard
 effort_hours: 8
 blocked_by:
-  - TASK-FIX-COACHSF01  # F17 — Coach verdict-emission failure (canary F2 at Coach level) needs synthetic-feedback safety net wired. ~1.5h fix.
-# Resolved blockers (landed 2026-06-05):
-#   - TASK-FIX-CTOUT01 (F14) — substrate-agnostic harness.cancel() landed, in completed/2026-06/
-#   - TASK-FIX-LGFM3 (F12)   — coach_test model threading landed, in completed/2026-06/
+  - TASK-FIX-COACHOUT01  # F17 fundamental fix — replace Coach Bash-heredoc verdict-emission contract with structured-output parsing OR constrained Write tool. Operator-requested cutover-blocker per 2026-06-06. ~4h strict-intensity.
+# Resolved blockers (landed):
+#   - TASK-FIX-CTOUT01 (F14)   — substrate-agnostic harness.cancel() landed 2026-06-05, in completed/2026-06/
+#   - TASK-FIX-LGFM3 (F12)     — coach_test model threading landed 2026-06-05, in completed/2026-06/
+#   - TASK-FIX-COACHSF01 (F17 soft-fail) — synthetic-feedback safety net landed 2026-06-05, exercised + working in run 5, in completed/2026-06/. Remains as defence-in-depth post-COACHOUT01.
 # Soft-fail follow-ons (don't block 010, deferrable):
 #   - TASK-FIX-FALK01 (F16)  — Graphiti FalkorDB teardown race. Cosmetic.
 # Substrate-quality findings recorded for AC-008 evidence:

@@ -21,14 +21,15 @@ tasks:
   estimated_minutes: 90
   requires_infrastructure: []
   result:
-    total_turns: 1
-    final_decision: error
-    error: 'Coach decision not found: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AOF/.guardkit/autobuild/TASK-FIX-IA03/coach_turn_1.json'
+    total_turns: 3
+    final_decision: unrecoverable_stall
+    error: Unrecoverable stall detected after 3 turn(s). AutoBuild cannot make forward
+      progress.
     deferred_reason: null
-  turns_completed: 1
+  turns_completed: 3
   current_turn: 0
-  started_at: '2026-06-05T17:05:16.907332'
-  completed_at: '2026-06-05T17:18:47.271883'
+  started_at: '2026-06-05T23:20:13.290579'
+  completed_at: '2026-06-06T00:01:44.446433'
 - id: TASK-FIX-GD02
   name: Scope git detection to per-task file changes in shared worktrees
   file_path: tasks/backlog/autobuild-observability-fixes/TASK-FIX-GD02-shared-worktree-git-detection-baseline.md
@@ -68,14 +69,14 @@ orchestration:
   recommended_parallel: 2
 preflight_strict: false
 execution:
-  started_at: '2026-06-05T17:05:13.407339'
-  completed_at: '2026-06-05T17:18:47.275913'
+  started_at: '2026-06-05T23:20:10.191427'
+  completed_at: '2026-06-06T00:01:44.450776'
   worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AOF
-  total_turns: 1
+  total_turns: 3
   tasks_completed: 0
   tasks_failed: 1
   current_wave: 1
   completed_waves: []
-  last_updated: '2026-06-05T17:18:47.271892'
+  last_updated: '2026-06-06T00:01:44.446444'
   archived_at: null
   archived_to: null
