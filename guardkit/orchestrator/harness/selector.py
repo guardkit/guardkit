@@ -138,19 +138,58 @@ def _translate_kwargs_for_langgraph(harness_kwargs: dict[str, Any]) -> dict[str,
     # prefix. If the caller already supplied a prefix (`openai:...`,
     # `anthropic:...`) or a BaseChatModel instance (non-string), pass
     # through unchanged.
+    #
+    # TASK-FIX-COACHBUDG01 follow-up (2026-06-06): the original check
+    # ``":" not in model`` is too naive. Some model aliases contain ``:``
+    # in the name itself — notably ``gemma4:26b``, the COACHBUDG01 Coach
+    # candidate. ``gemma4:26b`` would slip through as already-prefixed and
+    # reach ``init_chat_model("gemma4:26b")``, which fails with "Unable to
+    # infer model provider for model='gemma4:26b'" (see
+    # ``autobuild-FEAT-AOF-run-7.md`` line 205). Robust check: identify
+    # the first segment via partition; treat as already-prefixed only when
+    # the first segment matches a recognised LangChain provider.
     model = harness_kwargs.get("model")
-    if isinstance(model, str) and ":" not in model:
-        prefixed = f"openai:{model}"
-        logger.debug(
-            "TASK-FIX-MODELPLUMB: auto-prefixed bare model alias %r -> %r "
-            "for LangGraph (DeepAgents init_chat_model requires a provider "
-            "prefix).",
-            model,
-            prefixed,
-        )
-        model = prefixed
+    if isinstance(model, str):
+        first_segment, separator, _rest = model.partition(":")
+        already_prefixed = bool(separator) and first_segment in _KNOWN_PROVIDER_PREFIXES
+        if not already_prefixed:
+            prefixed = f"openai:{model}"
+            logger.debug(
+                "TASK-FIX-MODELPLUMB: auto-prefixed model alias %r -> %r for "
+                "LangGraph (DeepAgents init_chat_model requires a provider "
+                "prefix; bare name OR first segment %r not in known providers).",
+                model,
+                prefixed,
+                first_segment,
+            )
+            model = prefixed
 
     return {"model": model}
+
+
+# LangChain init_chat_model providers we recognise as "already prefixed".
+# Anything else gets auto-prefixed with ``openai:`` for llama-swap routing.
+# Conservative list — additions safe, removals require a falsifier test.
+_KNOWN_PROVIDER_PREFIXES: frozenset[str] = frozenset({
+    "openai",
+    "anthropic",
+    "azure_openai",
+    "google_vertexai",
+    "google_genai",
+    "bedrock",
+    "anthropic_bedrock",
+    "cohere",
+    "fireworks",
+    "together",
+    "ollama",
+    "deepseek",
+    "groq",
+    "mistralai",
+    "nvidia",
+    "xai",
+    "perplexity",
+    "huggingface",
+})
 
 
 def select_harness(

@@ -91,6 +91,55 @@ class TestTranslateKwargsForLangGraph:
 
         assert translated == {"model": "openai:gpt-4o-mini"}
 
+    def test_bare_alias_auto_prefixed_with_openai(self) -> None:
+        """``qwen36-workhorse`` → ``openai:qwen36-workhorse``.
+
+        TASK-FIX-MODELPLUMB: bare aliases without a provider prefix need
+        ``openai:`` for DeepAgents' ``init_chat_model`` to route via the
+        OpenAI provider (llama-swap speaks the OpenAI API).
+        """
+        translated = _translate_kwargs_for_langgraph(
+            _sdk_kwargs(model="qwen36-workhorse")
+        )
+
+        assert translated == {"model": "openai:qwen36-workhorse"}
+
+    def test_model_alias_with_colon_in_name_auto_prefixed(self) -> None:
+        """``gemma4:26b`` (colon-in-name) → ``openai:gemma4:26b``.
+
+        TASK-FIX-COACHBUDG01 follow-up (run-7 line 205): the original
+        ``":" not in model`` check was too naive — it treated any colon
+        as a provider prefix. ``gemma4:26b`` slipped through unchanged
+        and ``init_chat_model("gemma4:26b")`` failed with "Unable to
+        infer model provider". Fixed by checking the first segment
+        against a known-providers set.
+        """
+        translated = _translate_kwargs_for_langgraph(
+            _sdk_kwargs(model="gemma4:26b")
+        )
+
+        assert translated == {"model": "openai:gemma4:26b"}
+
+    def test_already_prefixed_model_unchanged(self) -> None:
+        """``anthropic:claude-sonnet-4-5`` already carries a known provider
+        prefix — translator must NOT prepend ``openai:`` on top.
+        """
+        translated = _translate_kwargs_for_langgraph(
+            _sdk_kwargs(model="anthropic:claude-sonnet-4-5")
+        )
+
+        assert translated == {"model": "anthropic:claude-sonnet-4-5"}
+
+    def test_openai_prefixed_colon_in_name_unchanged(self) -> None:
+        """``openai:gemma4:26b`` is the canonical post-prefix form — translator
+        must not re-prefix or strip the colon-in-name segment.
+        """
+        translated = _translate_kwargs_for_langgraph(
+            _sdk_kwargs(model="openai:gemma4:26b")
+        )
+
+        assert translated == {"model": "openai:gemma4:26b"}
+
     def test_missing_model_yields_none(self) -> None:
         """If the caller omits ``model``, translator returns ``{"model": None}``."""
         translated = _translate_kwargs_for_langgraph({})
