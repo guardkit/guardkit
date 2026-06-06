@@ -544,6 +544,7 @@ class FeatureOrchestrator:
         honesty_early_abort_threshold: float = 0.3,
         honesty_early_abort_window: int = 3,
         model: Optional[str] = None,
+        coach_model: Optional[str] = None,
     ):
         """
         Initialize FeatureOrchestrator.
@@ -640,6 +641,12 @@ class FeatureOrchestrator:
         # model=None fails construction). Sibling of TASK-FIX-MODELPLUMB which
         # closed the same path for the `task` subcommand.
         self.model = model
+        # TASK-FIX-COACHBUDG01 (2026-06-06): optional per-role override for Coach.
+        # When set, Coach (and coach_test) invocations route to this model while
+        # Player and specialists stay on self.model. Substrate-quality lever for
+        # the F17 verdict-emission reliability gap (HMIG-013, swap Coach to
+        # gemma4:26b while Player stays on qwen36-workhorse).
+        self.coach_model = coach_model
         # TASK-FIX-HEAB: rolling-average honesty early-abort settings.
         # Propagated to per-task AutoBuildOrchestrator so feature.yaml /
         # CLI overrides flow down to every task in every wave.
@@ -2979,6 +2986,8 @@ The detailed specifications are in the task markdown file.
                 # AgentInvoker. Without this, model=None reaches LangGraphHarness
                 # and DeepAgents falls back to Anthropic (auth error under llama-swap).
                 model=self.model,
+                # TASK-FIX-COACHBUDG01: per-role Coach model override
+                coach_model=self.coach_model,
             )
 
             # Execute task orchestration

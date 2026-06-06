@@ -544,6 +544,7 @@ class CoachValidator:
         turn: int = 1,
         peer_changed_files: Optional[Dict[str, Any]] = None,
         model_name: Optional[str] = None,
+        coach_model_name: Optional[str] = None,  # TASK-FIX-COACHBUDG01
     ):
         """
         Initialize CoachValidator.
@@ -602,6 +603,12 @@ class CoachValidator:
         # TASK-FIX-LGFM3: orchestrator model threaded through for SDK test
         # execution path; falls back to None when caller didn't supply one.
         self._model_name: Optional[str] = model_name
+        # TASK-FIX-COACHBUDG01 (2026-06-06): per-role Coach override. When
+        # non-None, takes precedence over _model_name for the coach_test
+        # path (consumed by _get_coach_test_model). Lets the operator
+        # route Coach SDK test execution to the same Coach-specific model
+        # (gemma4:26b) the Player↔Coach loop uses.
+        self._coach_model_name: Optional[str] = coach_model_name
         self.wave_size = max(1, int(wave_size))
         # TASK-DIAG-F4A2: Turn number for sdk_debug preservation paths.
         # Default 1 keeps backwards-compat for callers that don't pass it.
@@ -750,16 +757,22 @@ class CoachValidator:
         Resolution order:
         1. ``GUARDKIT_COACH_TEST_MODEL`` env var (operator override — e.g.
            claude-haiku-4-5-20251001 for cost reduction on the real Anthropic API).
-        2. Orchestrator-supplied ``model_name`` (TASK-FIX-LGFM3): same value
+        2. Orchestrator-supplied ``coach_model_name`` (TASK-FIX-COACHBUDG01):
+           per-role Coach override (e.g. ``gemma4:26b`` while Player stays on
+           ``qwen36-workhorse`` — TASK-HMIG-013). Takes precedence over the
+           generic ``model_name`` for this Coach-specific path.
+        3. Orchestrator-supplied ``model_name`` (TASK-FIX-LGFM3): same value
            threaded into ``AgentInvoker.select_harness`` calls. Without this
            fallback, the LangGraph harness receives ``model=None`` for
            ``role='coach_test'`` and the SDK path errors out (F12).
-        3. ``None`` (harness uses CLI default).
+        4. ``None`` (harness uses CLI default).
         """
         import os
         env_model = os.environ.get("GUARDKIT_COACH_TEST_MODEL") or None
         if env_model is not None:
             return env_model
+        if self._coach_model_name is not None:
+            return self._coach_model_name
         return self._model_name
 
     def _resolve_task_type(self, task: Dict[str, Any]) -> TaskType:

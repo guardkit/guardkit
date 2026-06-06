@@ -919,6 +919,7 @@ class AutoBuildOrchestrator:
         honesty_early_abort_threshold: float = 0.3,
         honesty_early_abort_window: int = 3,
         model: Optional[str] = None,  # TASK-FIX-MODELPLUMB
+        coach_model: Optional[str] = None,  # TASK-FIX-COACHBUDG01: per-role Coach override
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -1059,6 +1060,12 @@ class AutoBuildOrchestrator:
         # no attribute 'name'"). Decorative-but-harmless for the SDK path
         # (routes via ANTHROPIC_BASE_URL).
         self._model_name: Optional[str] = model
+        # TASK-FIX-COACHBUDG01 (2026-06-06): optional per-role override for Coach.
+        # When non-None, AgentInvoker routes role='coach' and role='coach_test'
+        # invocations to this model while Player and specialists stay on
+        # self._model_name. None preserves the pre-COACHBUDG01 behaviour
+        # (Coach uses the same model as Player) for backwards compatibility.
+        self._coach_model_name: Optional[str] = coach_model
         # Hardcoded reset turns per architectural review (TASK-BRF-001): [3, 5]
         self.perspective_reset_turns: List[int] = [3, 5] if enable_perspective_reset else []
         self._turn_history: List[TurnRecord] = []
@@ -1519,6 +1526,7 @@ class AutoBuildOrchestrator:
                         timeout_multiplier=self.timeout_multiplier,  # TASK-FIX-VL05
                         venv_python=self._venv_python,  # TASK-FIX-7A05
                         model_name=self._model_name,  # TASK-FIX-MODELPLUMB
+                        coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
                     )
                 # TASK-FIX-OBS2: Attach progress logger to agent invoker
                 if self._progress_logger and self._agent_invoker:
@@ -1548,6 +1556,7 @@ class AutoBuildOrchestrator:
                     cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
                     venv_python=self._venv_python,  # TASK-FIX-7A05
                     model_name=self._model_name,  # TASK-FIX-MODELPLUMB
+                    coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
                 )
             # TASK-FIX-OBS2: Attach progress logger to agent invoker
             if self._progress_logger and self._agent_invoker:
@@ -5419,6 +5428,7 @@ class AutoBuildOrchestrator:
                 turn=turn,
                 peer_changed_files=peer_changed_files,
                 model_name=self._model_name,  # TASK-FIX-LGFM3
+                coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
             )
             validation_result = validator.validate(
                 task_id=task_id,
@@ -5561,6 +5571,7 @@ class AutoBuildOrchestrator:
             turn=turn,
             peer_changed_files=peer_changed_files,
             model_name=self._model_name,  # TASK-FIX-LGFM3
+            coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
         )
 
         # Step 1: gather evidence bundle. Never falls back to validate() on
@@ -6588,6 +6599,7 @@ class AutoBuildOrchestrator:
                     cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
                     venv_python=self._venv_python,  # TASK-FIX-7A05
                     model_name=self._model_name,  # TASK-FIX-MODELPLUMB
+                    coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
                 )
             # TASK-FIX-OBS2: Attach progress logger to agent invoker
             if self._progress_logger and self._agent_invoker:

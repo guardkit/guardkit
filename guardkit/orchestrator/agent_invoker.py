@@ -1164,6 +1164,7 @@ class AgentInvoker:
         emitter: Optional[Any] = None,
         venv_python: Optional[str] = None,
         model_name: Optional[str] = None,  # TASK-FIX-MODELPLUMB
+        coach_model_name: Optional[str] = None,  # TASK-FIX-COACHBUDG01
     ):
         """Initialize AgentInvoker.
 
@@ -1229,6 +1230,17 @@ class AgentInvoker:
         # decorative-but-harmless for the SDK path (routes via
         # ANTHROPIC_BASE_URL).
         self._model_name: Optional[str] = model_name
+        # TASK-FIX-COACHBUDG01 (2026-06-06): optional per-role override for
+        # Coach. When non-None, `_invoke_with_role` uses this for role='coach'
+        # and role='coach_test' invocations; Player and specialist roles stay
+        # on `_model_name`. None preserves pre-COACHBUDG01 behaviour (Coach
+        # shares Player's model). Sibling pattern to LGFM3 which threaded the
+        # model_name kwarg through CoachValidator's SDK test-exec path; the
+        # difference here is that LGFM3 unified model selection across all
+        # roles while COACHBUDG01 allows per-role divergence (the load-bearing
+        # mechanic for swapping Coach to gemma4:26b while Player stays on
+        # qwen36-workhorse — TASK-HMIG-013).
+        self._coach_model_name: Optional[str] = coach_model_name
 
         if self.timeout_multiplier != 1.0:
             logger.info(
@@ -2911,8 +2923,22 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # _invoke_with_role without a model= kwarg (comments at those sites
         # say "Model selection delegated to CLI default" — this is the
         # mechanism that actually carries the CLI default through).
+        #
+        # TASK-FIX-COACHBUDG01 (2026-06-06): per-role override. When the
+        # role is coach or coach_test AND a coach_model_name was supplied
+        # to the orchestrator, prefer that over _model_name. Lets the
+        # operator route Coach to gemma4:26b while Player + specialists
+        # stay on qwen36-workhorse (the load-bearing mechanic for the
+        # F17 substrate-quality fix, TASK-HMIG-013).
         if model is None:
-            model = self._model_name
+            # `agent_type` is typed Literal["player", "coach"]; only "coach"
+            # ever matches here. The coach_test path uses a different
+            # invocation route (CoachValidator._get_coach_test_model →
+            # select_harness directly), which has its own COACHBUDG01 wire.
+            if agent_type == "coach" and self._coach_model_name is not None:
+                model = self._coach_model_name
+            else:
+                model = self._model_name
 
         try:
             # Construct the harness. select_harness() routes via

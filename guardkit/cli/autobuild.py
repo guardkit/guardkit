@@ -209,6 +209,19 @@ def autobuild():
     show_default=True,
 )
 @click.option(
+    "--coach-model",
+    "coach_model",
+    default=None,
+    help=(
+        "Optional model override for the Coach role. When set, Coach (and "
+        "coach_test) invocations route to this model while Player and "
+        "specialist invocations stay on --model. TASK-FIX-COACHBUDG01 / "
+        "TASK-HMIG-013 — substrate-quality lever for the F17 verdict-"
+        "emission reliability gap. Example: --model qwen36-workhorse "
+        "--coach-model gemma4:26b."
+    ),
+)
+@click.option(
     "--base-branch",
     "base_branch",
     default=None,
@@ -332,6 +345,7 @@ def task(
     task_id: str,
     max_turns: int,
     model: str,
+    coach_model: Optional[str],
     base_branch: Optional[str],
     verbose: bool,
     resume: bool,
@@ -553,6 +567,7 @@ def task(
         honesty_early_abort_threshold=float(effective_honesty_threshold),
         honesty_early_abort_window=int(effective_honesty_window),
         model=model,  # TASK-FIX-MODELPLUMB: thread --model to harness construction (load-bearing for LangGraph)
+        coach_model=coach_model,  # TASK-FIX-COACHBUDG01: optional per-role override for Coach
     )
 
     # Resolve base branch: --base-branch > cwd HEAD > "main" (TASK-FIX-WTBC)
@@ -657,6 +672,19 @@ def status(ctx, task_id: str, verbose: bool):
     default="claude-sonnet-4-5-20250929",
     help="Claude model to use",
     show_default=True,
+)
+@click.option(
+    "--coach-model",
+    "coach_model",
+    default=None,
+    help=(
+        "Optional model override for the Coach role. When set, Coach (and "
+        "coach_test) invocations route to this model while Player and "
+        "specialist invocations stay on --model. TASK-FIX-COACHBUDG01 / "
+        "TASK-HMIG-013 — substrate-quality lever for the F17 verdict-"
+        "emission reliability gap. Example: --model qwen36-workhorse "
+        "--coach-model gemma4:26b."
+    ),
 )
 @click.option(
     "--stop-on-failure/--no-stop-on-failure",
@@ -821,6 +849,7 @@ def feature(
     feature_id: str,
     max_turns: int,
     model: str,
+    coach_model: Optional[str],
     stop_on_failure: bool,
     resume: bool,
     fresh: bool,
@@ -1006,6 +1035,7 @@ def feature(
             honesty_early_abort_threshold=honesty_early_abort_threshold,
             honesty_early_abort_window=honesty_early_abort_window,
             model=model,  # TASK-FIX-LGFM: thread --model to per-task AutoBuildOrchestrator (load-bearing for LangGraph)
+            coach_model=coach_model,  # TASK-FIX-COACHBUDG01: optional per-role override for Coach
         )
 
         # Resolve base branch: --base-branch > cwd HEAD > "main" (TASK-FIX-WTBC)
