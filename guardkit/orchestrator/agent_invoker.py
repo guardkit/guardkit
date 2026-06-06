@@ -1952,17 +1952,54 @@ class AgentInvoker:
 
             # Invoke SDK with Coach permissions (Read, Bash only - no Write/Edit)
             # Coach uses bypassPermissions since it's read-only anyway
-            # Model selection delegated to CLI default
-            await self._invoke_with_role(
+            # Model selection delegated to CLI default.
+            #
+            # TASK-FIX-COACHOUT01 Shape A: request return_events=True so the
+            # typed HarnessEvent stream comes back here for the structured-
+            # output parser. Coach's allowed_tools list is intentionally
+            # UNCHANGED — the verdict is no longer written by Coach at all;
+            # the orchestrator extracts it from Coach's response text and
+            # writes coach_turn_N.json itself. Per AC-A4 of the task file.
+            result_tuple = await self._invoke_with_role(
                 prompt=prompt,
                 agent_type="coach",
                 allowed_tools=["Read", "Bash", "Grep", "Glob"],
                 permission_mode="bypassPermissions",
                 task_id=task_id,
                 turn=turn,
+                return_events=True,
+            )
+            assert result_tuple is not None, (
+                "_invoke_with_role(return_events=True) must return a tuple "
+                "on success; got None"
+            )
+            _, harness_events = result_tuple
+
+            # TASK-FIX-COACHOUT01 Shape A: extract the structured verdict from
+            # Coach's response text and persist coach_turn_N.json from the
+            # orchestrator side. The parser raises CoachDecisionNotFoundError
+            # / CoachDecisionInvalidError with messages COACHSF01 greps for
+            # (autobuild.py:5676-5678) on every failure path — the exceptions
+            # propagate to the existing except block at the bottom of this
+            # method, which converts them to AgentInvocationResult(
+            # success=False, error=str(e)). COACHSF01 then fires the
+            # synthetic-feedback safety net unchanged.
+            from guardkit.orchestrator.coach_output_parser import (
+                extract_and_write as _coach_extract_and_write,
+            )
+            coach_output_path = self._get_report_path(task_id, turn, "coach")
+            _coach_extract_and_write(
+                harness_events=harness_events,
+                task_id=task_id,
+                turn=turn,
+                output_path=coach_output_path,
             )
 
-            # Load and validate Coach decision
+            # Load and validate Coach decision — the file on disk was just
+            # written by the parser, so this re-read keeps the existing
+            # consumer contract intact. _validate_coach_decision still owns
+            # the deep schema check (criteria_verification, severity values,
+            # decision-specific field presence) the parser doesn't replicate.
             decision = self._load_agent_report(task_id, turn, "coach")
             self._validate_coach_decision(decision)
 
@@ -2390,12 +2427,23 @@ Turn: {turn}
 
 ## Decision Format
 
-Write your decision to:
-{self.worktree_path}/.guardkit/autobuild/{task_id}/coach_turn_{turn}.json
+End your response with a fenced JSON block. Do **NOT** use Bash to write a file —
+the orchestrator parses your decision directly from your response text.
 
-Your decision MUST be valid JSON with these fields:
+The fenced JSON block MUST appear at the end of your response, after all prose
+reasoning, in this exact form:
 
-For APPROVAL:
+```json
+{{
+  "task_id": "{task_id}",
+  "turn": {turn},
+  "decision": "approve" | "feedback",
+  ...fields as specified below...
+}}
+```
+
+For APPROVAL, the JSON block must contain:
+```json
 {{
   "task_id": "{task_id}",
   "turn": {turn},
@@ -2411,8 +2459,10 @@ For APPROVAL:
   }},{verification_example}
   "rationale": "Why you approved"
 }}
+```
 
-For FEEDBACK:
+For FEEDBACK, the JSON block must contain:
+```json
 {{
   "task_id": "{task_id}",
   "turn": {turn},
@@ -2428,13 +2478,17 @@ For FEEDBACK:
   ],{verification_example}
   "rationale": "Why you're providing feedback"
 }}
+```
 
 **IMPORTANT**: For each acceptance criterion, create a criteria_verification with:
 - criterion_id: The ID (e.g., "AC-001") matching the Player's completion_promise
 - result: "verified" if criterion is satisfied, "rejected" if not
 - notes: Your reasoning - what you checked and found
 
-Follow the decision format specified in your agent definition.
+**CRITICAL**: The fenced ```json block MUST be the last thing in your response.
+Do not write any prose after the closing ``` fence. If you emit exploratory JSON
+blocks earlier in your response (e.g. while sketching alternatives), the
+orchestrator takes only the **last** fenced block.
 """
         return prompt
 
@@ -2727,7 +2781,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         task_id: Optional[str] = None,
         turn: Optional[int] = None,
         heartbeat_label_override: Optional[str] = None,
-    ) -> None:
+        return_events: bool = False,
+    ) -> Optional[Tuple[None, List[HarnessEvent]]]:
         """Low-level SDK invocation with role-based permissions.
 
         This method handles the actual Claude Agent SDK invocation with
@@ -2750,6 +2805,26 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 :func:`run_specialist` so orchestrator-invoked specialists
                 surface as ``"specialist:{name} invocation"`` instead of
                 masquerading as Player/Coach invocations (TASK-ABSR-DIAG).
+            return_events: When ``True``, return ``(None, harness_events)``
+                instead of ``None`` so callers can inspect the typed event
+                stream the harness emitted. Used by the Coach call site
+                (``invoke_coach``) to feed ``coach_output_parser`` the
+                substrate-agnostic ``AssistantMessageEvent`` list it needs
+                to extract the structured verdict (TASK-FIX-COACHOUT01
+                Shape A). Player and specialist call sites leave this
+                ``False`` and continue to receive ``None``.
+
+                The parameter-based mechanism (rather than an instance
+                attribute like ``self._last_harness_events``) was chosen by
+                the Phase 2.5B architectural review (Gap 1) to avoid the
+                hidden stale-state risk a future concurrent-invocation
+                refactor would silently activate.
+
+        Returns:
+            ``None`` by default. ``(None, harness_events)`` when
+            ``return_events=True``. Returns from BOTH the success path AND
+            the SDK-timeout / AgentInvocationError paths re-raise — the
+            tuple is only returned on a clean invocation completion.
 
         Raises:
             AgentInvocationError: If SDK invocation fails
@@ -3138,6 +3213,17 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 f"({type(e).__name__}): {str(e)}",
                 error_class=type(e).__name__,
             ) from e
+
+        # TASK-FIX-COACHOUT01 Shape A: hand the typed event stream back to
+        # the Coach call site so coach_output_parser.extract_and_write can
+        # consume AssistantMessageEvent text without round-tripping through
+        # an instance attribute. Reached only on the success path — the
+        # except branches above all raise. Player and specialist sites
+        # leave return_events at its default and continue to receive None
+        # (the implicit fall-through here).
+        if return_events:
+            return (None, harness_events)
+        return None
 
     def _emit_llm_call_event(
         self,

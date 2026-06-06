@@ -123,6 +123,34 @@ def create_report_file(worktree_path: Path, task_id: str, turn: int, agent_type:
     return report_path
 
 
+def _coach_harness_events(payload: Dict[str, Any]):
+    """Build a single-AssistantMessageEvent stream wrapping a fenced Coach JSON.
+
+    TASK-FIX-COACHOUT01 Shape A: Coach no longer writes
+    ``coach_turn_N.json`` itself — it ends its response with a fenced
+    ``json`` block, and the orchestrator's
+    ``coach_output_parser.extract_and_write`` writes the file. The unit
+    tests below mock ``_invoke_with_role(return_events=True)`` to return
+    a synthetic event stream that the parser will see.
+    """
+    from guardkit.orchestrator.harness.adapter import AssistantMessageEvent
+
+    fenced = f"```json\n{json.dumps(payload, indent=2)}\n```"
+    return [AssistantMessageEvent(text=f"Verification reasoning.\n\n{fenced}")]
+
+
+def _coach_mock(payload: Dict[str, Any] | None):
+    """Build an ``AsyncMock`` for ``_invoke_with_role`` Coach-style.
+
+    Returns ``(None, harness_events)`` so the new
+    ``invoke_coach`` destructure (``_, harness_events = result_tuple``)
+    works. When ``payload`` is ``None``, returns an empty event list —
+    drives the ``CoachDecisionNotFoundError`` path.
+    """
+    events = _coach_harness_events(payload) if payload is not None else []
+    return AsyncMock(return_value=(None, events))
+
+
 # ==================== Initialization Tests ====================
 
 
@@ -333,15 +361,18 @@ class TestCoachInvocation:
     async def test_invoke_coach_success(
         self, agent_invoker, worktree_path, sample_player_report, sample_coach_approval
     ):
-        """Coach invocation succeeds and returns decision."""
-        # Setup: Create Coach decision file
-        create_report_file(
-            worktree_path, "TASK-001", 1, "coach", sample_coach_approval
-        )
+        """Coach invocation succeeds and returns decision.
 
-        # Mock SDK
+        TASK-FIX-COACHOUT01 Shape A: Coach's verdict comes back as a fenced
+        JSON block in ``AssistantMessageEvent.text``. The orchestrator's
+        ``coach_output_parser.extract_and_write`` writes
+        ``coach_turn_N.json`` from the parser side, then
+        ``_load_agent_report`` re-reads it for ``_validate_coach_decision``.
+        """
+        # Mock SDK to return the verdict as a structured event stream.
         with patch.object(
-            agent_invoker, "_invoke_with_role", new_callable=AsyncMock
+            agent_invoker, "_invoke_with_role",
+            _coach_mock(sample_coach_approval),
         ) as mock_sdk:
             # Execute
             result = await agent_invoker.invoke_coach(
@@ -364,30 +395,33 @@ class TestCoachInvocation:
             assert "honesty_verification" in result.report
             assert result.duration_seconds > 0
 
-            # Verify SDK was called with read-only permissions
+            # Verify SDK was called with read-only permissions and the
+            # COACHOUT01 return_events=True opt-in.
             mock_sdk.assert_called_once()
             call_kwargs = mock_sdk.call_args.kwargs
             assert call_kwargs["agent_type"] == "coach"
             assert call_kwargs["allowed_tools"] == ["Read", "Bash", "Grep", "Glob"]
             assert call_kwargs["permission_mode"] == "bypassPermissions"
+            assert call_kwargs["return_events"] is True
             assert "Write" not in call_kwargs["allowed_tools"]
             assert "Edit" not in call_kwargs["allowed_tools"]
+
+            # Verify parser actually wrote the file the loader reads.
+            coach_file = (
+                worktree_path / ".guardkit" / "autobuild" / "TASK-001"
+                / "coach_turn_1.json"
+            )
+            assert coach_file.exists()
 
     @pytest.mark.asyncio
     async def test_invoke_coach_approval(
         self, agent_invoker, worktree_path, sample_player_report, sample_coach_approval
     ):
         """Coach approves implementation."""
-        # Setup
-        create_report_file(
-            worktree_path, "TASK-001", 1, "coach", sample_coach_approval
-        )
-
-        # Mock SDK
         with patch.object(
-            agent_invoker, "_invoke_with_role", new_callable=AsyncMock
+            agent_invoker, "_invoke_with_role",
+            _coach_mock(sample_coach_approval),
         ):
-            # Execute
             result = await agent_invoker.invoke_coach(
                 task_id="TASK-001",
                 turn=1,
@@ -395,7 +429,6 @@ class TestCoachInvocation:
                 player_report=sample_player_report,
             )
 
-            # Verify
             assert result.success is True
             assert result.report["decision"] == "approve"
 
@@ -404,16 +437,10 @@ class TestCoachInvocation:
         self, agent_invoker, worktree_path, sample_player_report, sample_coach_feedback
     ):
         """Coach provides feedback."""
-        # Setup
-        create_report_file(
-            worktree_path, "TASK-001", 1, "coach", sample_coach_feedback
-        )
-
-        # Mock SDK
         with patch.object(
-            agent_invoker, "_invoke_with_role", new_callable=AsyncMock
+            agent_invoker, "_invoke_with_role",
+            _coach_mock(sample_coach_feedback),
         ):
-            # Execute
             result = await agent_invoker.invoke_coach(
                 task_id="TASK-001",
                 turn=1,
@@ -421,19 +448,24 @@ class TestCoachInvocation:
                 player_report=sample_player_report,
             )
 
-            # Verify
             assert result.success is True
             assert result.report["decision"] == "feedback"
             assert len(result.report["issues"]) > 0
 
     @pytest.mark.asyncio
     async def test_invoke_coach_decision_not_found(self, agent_invoker, sample_player_report):
-        """Raises error if Coach doesn't create decision."""
-        # Mock SDK (decision file won't be created)
+        """Raises error if Coach doesn't emit a fenced JSON block.
+
+        TASK-FIX-COACHOUT01 Shape A: the failure mode is no event stream
+        (or an event stream with no fenced ``json`` block). The parser
+        raises ``CoachDecisionNotFoundError`` which propagates to
+        ``invoke_coach``'s except branch.
+        """
+        # Mock SDK to return an empty event stream (no AssistantMessageEvent).
         with patch.object(
-            agent_invoker, "_invoke_with_role", new_callable=AsyncMock
+            agent_invoker, "_invoke_with_role",
+            _coach_mock(None),
         ):
-            # Execute
             result = await agent_invoker.invoke_coach(
                 task_id="TASK-001",
                 turn=1,
@@ -441,30 +473,31 @@ class TestCoachInvocation:
                 player_report=sample_player_report,
             )
 
-            # Verify
             assert result.success is False
+            # COACHSF01 greps for this substring in autobuild.py:5676-5678.
             assert "Coach decision not found" in result.error
 
     @pytest.mark.asyncio
     async def test_invoke_coach_invalid_decision_value(
         self, agent_invoker, worktree_path, sample_player_report
     ):
-        """Raises error if Coach decision has invalid value."""
-        # Setup: Create decision with invalid value
+        """Raises error if Coach decision has an invalid ``decision`` value.
+
+        TASK-FIX-COACHOUT01 Shape A: the parser validates the decision
+        field against ``{"approve", "feedback"}`` before writing
+        ``coach_turn_N.json``. ``"maybe"`` triggers
+        ``CoachDecisionInvalidError`` directly from the parser, so the
+        file is never created.
+        """
         invalid_decision = {
             "task_id": "TASK-001",
             "turn": 1,
             "decision": "maybe",  # Invalid - must be "approve" or "feedback"
         }
-        create_report_file(
-            worktree_path, "TASK-001", 1, "coach", invalid_decision
-        )
-
-        # Mock SDK
         with patch.object(
-            agent_invoker, "_invoke_with_role", new_callable=AsyncMock
+            agent_invoker, "_invoke_with_role",
+            _coach_mock(invalid_decision),
         ):
-            # Execute
             result = await agent_invoker.invoke_coach(
                 task_id="TASK-001",
                 turn=1,
@@ -474,7 +507,13 @@ class TestCoachInvocation:
 
             # Verify
             assert result.success is False
-            assert "validation failed" in result.error
+            # TASK-FIX-COACHOUT01 Shape A: the parser catches the invalid
+            # ``decision`` value earlier in the pipeline (before
+            # ``_validate_coach_decision`` runs), so the error string now
+            # carries the parser's prefix instead of the validator's
+            # "validation failed" wording. COACHSF01 greps for this
+            # substring in autobuild.py:5676-5678.
+            assert "Coach decision invalid" in result.error
 
 
 # ==================== Prompt Building Tests ====================
@@ -515,7 +554,14 @@ class TestPromptBuilding:
         assert "Please address all feedback points" in prompt
 
     def test_build_coach_prompt(self, agent_invoker, worktree_path, sample_player_report):
-        """Coach prompt includes requirements and Player report."""
+        """Coach prompt includes requirements and Player report.
+
+        TASK-FIX-COACHOUT01 Shape A: the Coach prompt no longer embeds the
+        ``coach_turn_N.json`` worktree path because Coach does not write
+        the file. The orchestrator parses the verdict from Coach's
+        response text and writes the file itself. The prompt must instead
+        instruct Coach to end its response with a fenced ``json`` block.
+        """
         prompt = agent_invoker._build_coach_prompt(
             task_id="TASK-001",
             turn=1,
@@ -527,11 +573,22 @@ class TestPromptBuilding:
         assert "Turn: 1" in prompt
         assert "Implement OAuth2 authentication" in prompt
         assert "Player's Report" in prompt
-        # Verify absolute path with worktree_path prefix
-        assert f"{worktree_path}/.guardkit/autobuild/TASK-001/coach_turn_1.json" in prompt
         # Verify Player report is included as JSON
         assert '"task_id": "TASK-001"' in prompt
         assert '"tests_passed": true' in prompt
+
+        # TASK-FIX-COACHOUT01 Shape A — Decision Format contract.
+        # The old "Write your decision to {path}" instruction is gone;
+        # Coach is told to end its response with a fenced JSON block.
+        assert "Write your decision to" not in prompt
+        assert (
+            f"{worktree_path}/.guardkit/autobuild/TASK-001/coach_turn_1.json"
+            not in prompt
+        )
+        assert "fenced JSON block" in prompt
+        assert "```json" in prompt
+        # The "last fenced block wins" rule is load-bearing — pin it.
+        assert "last" in prompt.lower()
 
 
 # ==================== Report Validation Tests ====================
