@@ -1940,6 +1940,226 @@ stay quiet at zero memory cost.
   evidence doc (Fairfax + Pengelly + AC-009 rollback smoke still
   pending)
 
+### 9.13 2026-06-06 — register `gemma4-coach` (base Gemma 4 26B-A4B-IT UD-Q4_K_XL); rotate preload architect-agent→gemma4-coach; add `arch` matrix.set
+
+**Trigger.** TASK-HMIG-013 (Stage 1 of the two-stage substrate strategy
+adopted in commit `86cf71be` for the 2026-06-15 cutover deadline).
+FEAT-AOF runs 1-6 closed every F1-F19 migration finding empirically but
+left substrate quality as a load-bearing constraint:
+`qwen36-workhorse` (`Qwen3.6-35B-A3B-UD-Q4_K_XL`) Coach verdict-emission
+sits at ~67 % per run-5 sample, and run 6 produced 602 chars of prose
+without the fenced-JSON block on turn 1 even under COACHOUT01's simpler
+Shape A parser. The Exxact DGX Spark agentic-benchmark report
+([source](https://www.exxactcorp.com/blog/benchmarks/benchmarking-local-ai-agents-on-nvidia-dgx-spark))
+scored base **gemma4:26b at 17/17 (perfect)** on JSON-discipline +
+tool-calling + argument-validation tests with 52.7 tok/s — exactly the
+substrate posture the Coach role needs. Anthropic-API budget is zero
+and the cutover ships from local-only substrate, so the substrate fix
+must run on the existing single GB10. See
+`tasks/backlog/autobuild-harness-migration/TASK-HMIG-013-swap-coach-to-gemma4-26b-single-gb10.md`
+for the falsifier (Coach verdict-emission rate ≥95% across 6+ Coach
+turns under `--coach-model gemma4:26b`).
+
+**Decision.** Register the *base* Gemma 4 26B-A4B-IT (not the
+fine-tuned `gemma4-tutor` GCSE-Socratic variant or the fine-tuned
+`architect-agent` DDD-thinking variant — those were post-trained for
+the wrong posture for terse Coach verdict emission) as a new
+always-on llama-swap entry `gemma4-coach`. Rotate the preload set so
+`gemma4-coach` takes `architect-agent`'s always-on slot; create a
+dedicated `arch` matrix.set so `/system-arch` / `/system-design` /
+`/arch-refine` / `/system-plan` flows continue to work on-demand. This
+mirrors the §9.9 tutor→architect rotation pattern exactly (same
+Gemma 4 26B-A4B-Q4_K_M weight footprint, same ctx 65536, same
+~17 GB resident + ~5-10 GB KV → net always-on RAM delta ≈ 0).
+
+**GGUF source.** Unsloth publishes pre-quantised base-model GGUFs.
+Use `gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf` (17.01 GB) —  same Unsloth
+Dynamic Q4_K_XL quant family already used by `qwen36-workhorse` and
+`qwen3-coder-30b`, so per-token accuracy expectations transfer.
+
+```bash
+mkdir -p /opt/llama-swap/models/gemma4-coach
+curl -L --fail --retry 3 --retry-delay 5 \
+    -o /opt/llama-swap/models/gemma4-coach/gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf \
+    'https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf?download=true'
+```
+
+No conversion or quantisation needed — Unsloth's pre-quant skips both
+steps (`convert_hf_to_gguf.py` in `~/llama.cpp-new/` does not have
+`Gemma4ForConditionalGeneration` support, and `llama-quantize` was not
+built in `~/llama.cpp-new/build/bin/`; Unsloth's
+`save_pretrained_gguf()` path is what produced the existing tutor +
+architect GGUFs via a vendored llama.cpp tree, which we deliberately do
+not vendor here).
+
+**Coach-posture parameters.** `--temp 0.1 --top-p 0.9`, `--jinja` (base
+IT chat template, *not* `gemma4-tutor.jinja` or `gemma4-thinking.jinja`
+— both encode the wrong role for terse JSON Coach output), and
+load-bearingly **`--reasoning off`**. `--ctx-size 65536` (matches
+architect's outgoing ctx so the KV-footprint stays budget-neutral).
+The model entry exposes the new alias `gemma4:26b` (the form
+TASK-HMIG-013 AC-004 / AC-006 use for the `--coach-model gemma4:26b`
+operator override) and the alias `coach_test` (used by
+`CoachValidator`'s test-execution path).
+
+**Reasoning-off lesson (2026-06-06).** First deployment of this entry
+omitted `--reasoning off`. The first smoke chat-completion against
+`model="gemma4-coach"` returned HTTP 200 with `finish_reason: "length"`,
+`message.content: ""`, and the entire generation routed to
+`message.reasoning_content`:
+
+```json
+{
+  "choices": [{
+    "finish_reason": "length",
+    "message": {
+      "role": "assistant",
+      "content": "",
+      "reasoning_content": "The user wants me to reply with a single token: \"HELLO\".\n\n    *   Input: \"Reply with the single token: HELLO\"\n    *   Constraint: Single token.\n    *   Content: \"HELLO\"\n\n    *   ..."
+    }
+  }]
+}
+```
+
+Root cause: base Gemma 4 IT is a hybrid reasoning model and its
+embedded chat template defaults to `--reasoning auto`, which detects
+the template's thinking-mode markers and routes pre-content tokens
+into `reasoning_content`. With Coach's narrow `max_tokens` budget the
+thinking phase never finishes, content never emits, and the
+orchestrator sees an empty Coach turn. That is *exactly the F17
+failure mode* the swap was meant to close — qwen36-workhorse emits
+prose before JSON; without `--reasoning off`, gemma4-coach would emit
+reasoning before JSON. Same disease, different drug.
+
+`qwen36-workhorse` already encodes this lesson in its config block
+(`--reasoning off`). The fix is to mirror it on `gemma4-coach`. After
+adding the flag, the smoke routes generation back to
+`message.content` and produces fenced JSON directly — see the
+"Verified" timestamp below.
+
+> **Routing transition note.** The legacy `coach` alias stays on
+> `qwen36-workhorse` for now to preserve behaviour for any caller that
+> still requests model `coach`. The routing flip itself (per-role model
+> selection in `LangGraphHarness`, TASK-HMIG-013 AC-004) is
+> orchestrator-side and ships through `guardkitfactory` —
+> AC-006's `guardkit autobuild feature ... --model qwen36-workhorse
+> --coach-model gemma4:26b` invocation requests `gemma4:26b` *by name*,
+> so the new alias is the load-bearing piece on the llama-swap side.
+> Once AC-004 lands, the `coach` alias can move to `gemma4-coach` and
+> be removed from `qwen36-workhorse`.
+
+**New layout (post-change).**
+
+| Set | Members | Resident (GB, approx) | When |
+|---|---|---:|---|
+| `all` (default) | qg + ne + qw + **gc** + dl | ~80 (dl loads on demand) | always-on |
+| `tutor` | gt + qw | ~45 | on first `study-tutor` request; auto-unload after 30 min idle |
+| `arch` | aa + qw | ~50 | on first `software-architect` / `architect-agent` request; auto-unload after 30 min idle |
+| `coder_30b` | qc | ~22 | on first `autobuild-coder` request; evicts the family |
+
+Preload list rotated: `architect-agent` → `gemma4-coach`. Architect's
+TTL flipped `0` → `1800`; gemma4-coach's TTL set to `0`. New matrix.var
+`gc: gemma4-coach`; new matrix.set `arch: "aa & qw"` parallel to the
+existing `tutor: "gt & qw"`.
+
+**Keepalive script update.** `MODEL_PROBE_KIND` in
+`/usr/local/bin/llama-swap-keepalive.sh` swapped `[architect-agent]=chat`
+→ `[gemma4-coach]=chat` to match the new preload set. The keepalive
+MUST equal the preload set or §9.4-class incidents recur. Deploy:
+
+```bash
+sudo sed -i 's/\[architect-agent\]=chat/[gemma4-coach]=chat/' \
+    /usr/local/bin/llama-swap-keepalive.sh
+```
+
+(Tested in place — same pattern §9.9 used for tutor → architect.)
+
+**Operational caveat for `/system-arch` sessions.** The `arch`
+matrix.set does not contain `qg`/`ne`/`gc`. When the keepalive fires
+(5-min cadence) it probes `qwen-graphiti` (in `all` only), causing the
+solver to switch from `arch` back to `all`, evicting `architect-agent`
+mid-session. Same mitigation as §9.9 for tutor sessions:
+
+- **Short turns** (under 5 min between user messages) won't notice —
+  architect reloads on the next message in ~8 s (warm-cache cold
+  reload).
+- **Long sessions** should pause the timer first:
+  ```bash
+  sudo systemctl stop llama-swap-keepalive.timer
+  # ...architect session...
+  sudo systemctl start llama-swap-keepalive.timer
+  ```
+
+**Smoke recipe (TASK-HMIG-013 AC-002).** Replay a run-6 turn-1 Coach
+prompt directly against llama-swap five times:
+
+```bash
+for i in 1 2 3 4 5; do
+  curl -sS http://localhost:9000/v1/chat/completions \
+       -H "Content-Type: application/json" \
+       -d @docs/research/dgx-spark/probes/coach-turn-1-replay.json \
+    | jq -r '.choices[0].message.content' \
+    | grep -c '```json' && echo "  attempt $i: FENCED-JSON present" \
+                   || echo "  attempt $i: FENCED-JSON MISSING"
+done
+```
+
+Pass threshold: ≥4 of 5 with a fenced JSON block. If <4/5, AC-002
+escalates to `nemotron-3-super:120b-a12b` before proceeding (out of
+scope for this revision; see TASK-HMIG-013 §"Scope" — fallback path).
+
+**Net memory delta committed.** ~0 (same Gemma 4 26B-A4B-Q4_K_M family
+GGUF, same ctx 65536 as outgoing architect-agent, +~0.05 GB from
+UD-Q4_K_XL being marginally larger than the architect's straight-Q4_K_M).
+
+**Verified (2026-06-06).** Hot-reload via `systemctl --user restart
+llama-swap` picked up the change. Preload settled cleanly:
+`gemma4-coach` cold-loaded in ~31 s on `localhost:5801` and all four
+always-on members reported `state: ready`. Matrix log lines confirmed
+the new shape — `set=all dsl="qg & ne & qw & gc & dl"` on graphiti
+requests and `set=arch dsl="aa & qw"` on architect requests. Steady-
+state memory **~59 GB used / 121 GB total** (compared with ~109 GB
+used pre-restart; the drop is the post-restart cold-cache state, not a
+structural change — additional KV grows on first heavy generation).
+Alias routing verified: `model="gemma4:26b"` resolves to `gemma4-coach`
+(server echoes `"model": "gemma4-coach"` in the response).
+
+**Preliminary AC-002 smoke** (5 attempts of a short Coach-shape
+prompt — `decision/rationale` JSON via alias `gemma4:26b`):
+
+```
+attempt 1: ✓ fenced JSON
+attempt 2: ✓ fenced JSON
+attempt 3: ✓ fenced JSON
+attempt 4: ✓ fenced JSON
+attempt 5: ✓ fenced JSON
+Pass: 5 / 5  (AC-002 threshold: ≥4/5)
+```
+
+`finish_reason: stop` on every attempt, `reasoning_content` empty,
+content contains `\`\`\`json ... \`\`\`` block, `completion_tokens`
+around 34 each — terse JSON emission exactly as the Exxact benchmark's
+17/17 score predicted. This is preliminary evidence only: full AC-002
+requires the run-6 turn-1 Coach prompt replay (longer + more complex
+context). The substrate posture is correct; the full replay is
+operator-driven follow-on work.
+
+#### Pointers
+
+- TASK file: `tasks/backlog/autobuild-harness-migration/TASK-HMIG-013-swap-coach-to-gemma4-26b-single-gb10.md`
+- Two-stage substrate strategy commit: `86cf71be` (TASK-HMIG-010 verdict
+  GO with Stage 1 = this revision, Stage 2 = TASK-HMIG-012 post-cutover
+  on 2× Spark)
+- Substrate F17 root cause: `docs/state/TASK-REV-HMIG/feature-run-incidents.md`
+  I-007
+- Run-6 evidence: `docs/reviews/autobuild-migration/autobuild-FEAT-AOF-run-6.md`
+- Exxact benchmark (load-bearing evidence for the model choice):
+  `https://www.exxactcorp.com/blog/benchmarks/benchmarking-local-ai-agents-on-nvidia-dgx-spark`
+- Sibling rotation pattern: §9.9 (tutor → architect, 2026-05-30)
+- Cross-repo follow-on (orchestrator routing AC-004): guardkitfactory
+  `LangGraphHarness` per-role selection + `MODEL_CONTEXT_WINDOWS`
+  registry entry for `gemma4:26b`
+
 ---
 
 ## 10. Provenance

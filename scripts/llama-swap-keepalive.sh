@@ -41,11 +41,21 @@ LOG_TAG="llama-swap-keepalive"
 # the on-demand intent). architect-agent uses gemma4-thinking.jinja — its
 # thinking-mode output is truncated at max_tokens=1 in the probe, which is
 # harmless. See findings §9.9.
+#
+# 2026-06-06 (TASK-HMIG-013): swapped architect-agent → gemma4-coach to
+# match the next rotated preload set. gemma4-coach (base Gemma 4 26B-A4B-IT
+# UD-Q4_K_XL) takes the always-on slot to close the F17 Coach verdict-
+# emission gap before the 2026-06-15 cutover; architect-agent moves to
+# on-demand via the new `arch` matrix.set and MUST NOT be probed here for
+# the same reason tutor isn't probed (probing would defeat the on-demand
+# intent). gemma4-coach uses the model's embedded IT chat template (no
+# .jinja file) — its single-token probe output is harmless. See findings
+# §9.13.
 declare -A MODEL_PROBE_KIND=(
     [qwen-graphiti]=chat
     [nomic-embed]=embed
     [qwen36-workhorse]=chat
-    [architect-agent]=chat
+    [gemma4-coach]=chat
 )
 
 log() {
