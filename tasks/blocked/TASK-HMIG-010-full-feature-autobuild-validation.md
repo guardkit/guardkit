@@ -3,7 +3,7 @@ id: TASK-HMIG-010
 title: Full feature autobuild end-to-end validation under LangGraph
 status: blocked
 previous_state: in_progress
-state_transition_reason: "Run 5 (2026-06-05T22:20, 41m31s, post-COACHSF01) executed first full adversarial loop: 3 Player↔Coach turns. Turn 1+2 Coach emitted real verdict files with real Coach feedback; turn 3 Coach hit F17 again and COACHSF01 safety net fired correctly. F7 unrecoverable_stall guard then triggered after 3 consecutive test failures with no passing checkpoint. Every migration layer confirmed working. Substrate quality finding: qwen36-workhorse Coach verdict-emission rate ~67% per 3-turn sample. Operator decision 2026-06-06: F17 must be fundamentally fixed before cutover. Filed TASK-FIX-COACHOUT01 (strict intensity, ~4h) to replace Coach Bash-heredoc emission contract with either structured-output parsing (shape A) or constrained Write tool (shape B). COACHSF01 remains as defence-in-depth."
+state_transition_reason: "Run 6 (2026-06-06T09:25, 50m01s, post-COACHOUT01 Shape A) confirmed every architectural finding F1-F19 closed and validated. ADR FB-004 documented (Coach is read-only-for-code; orchestrator parses verdict from fenced JSON). Run 6 hit F17 again at substrate level — Coach produced 602 chars without JSON block on turn 1 — COACHSF01 safety net fired correctly, Player retried turn 2, Coach took >22min on turn 2 (F6 substrate slowness), task_timeout fired at 50min, CTOUT01 cancellation propagated cleanly (no phantom approval). VERDICT: migration is mechanically COMPLETE. Substrate quality is the load-bearing cutover constraint, not architecture. Operator constraints clarified 2026-06-06: hard deadline 2026-06-15 (Anthropic Agent SDK subscription ends), zero API budget, local-only substrate required. Cutover MUST ship by deadline. Two-stage substrate strategy: Stage 1 (TASK-HMIG-013) swap Coach to gemma4:26b on existing single GB10 (17/17 agentic per Exxact benchmark, 52.7 tok/s) — ~2h fix unblocks cutover. Stage 2 (TASK-HMIG-012) post-cutover optimization on 2× DGX Spark + ConnectX-7 (incoming ~2026-06-08) with DeepSeek V4 Flash as primary Player candidate. Nemotron-3-Ultra-550B-A55B DROPPED from candidates (too slow at 5 tok/s even when it fits at 2-bit). TASK-HMIG-010 VERDICT: GO with documented substrate policy; blocked on TASK-HMIG-013."
 task_type: validation
 created: 2026-05-19T20:30:00Z
 updated: 2026-06-05T17:30:00Z
@@ -19,11 +19,14 @@ implementation_mode: manual    # operator-monitored end-to-end run; /task-work p
 intensity: standard
 effort_hours: 8
 blocked_by:
-  - TASK-FIX-COACHOUT01  # F17 fundamental fix — replace Coach Bash-heredoc verdict-emission contract with structured-output parsing OR constrained Write tool. Operator-requested cutover-blocker per 2026-06-06. ~4h strict-intensity.
+  - TASK-HMIG-013  # Stage 1 substrate swap — Coach to gemma4:26b on existing single GB10. ~2h. Critical for cutover-by-2026-06-15.
 # Resolved blockers (landed):
-#   - TASK-FIX-CTOUT01 (F14)   — substrate-agnostic harness.cancel() landed 2026-06-05, in completed/2026-06/
-#   - TASK-FIX-LGFM3 (F12)     — coach_test model threading landed 2026-06-05, in completed/2026-06/
-#   - TASK-FIX-COACHSF01 (F17 soft-fail) — synthetic-feedback safety net landed 2026-06-05, exercised + working in run 5, in completed/2026-06/. Remains as defence-in-depth post-COACHOUT01.
+#   - TASK-FIX-CTOUT01 (F14)    — substrate-agnostic harness.cancel() landed 2026-06-05, in completed/2026-06/
+#   - TASK-FIX-LGFM3 (F12)      — coach_test model threading landed 2026-06-05, in completed/2026-06/
+#   - TASK-FIX-COACHSF01 (F17 soft-fail safety net) — landed 2026-06-05, exercised + working run 5+6, in completed/2026-06/. Remains as defence-in-depth.
+#   - TASK-FIX-COACHOUT01 (F17 Shape A fundamental fix) — landed 2026-06-06, ADR FB-004 documented. Replaced Bash-heredoc contract with fenced-JSON parser. Confirmed working in run 6.
+# Post-cutover optimization (not blocking 010 or 011):
+#   - TASK-HMIG-012  — Stage 2 substrate investigation on 2× DGX Spark + ConnectX-7 (post-hardware-arrival ~2026-06-13). Targets DeepSeek V4 Flash for Player.
 # Soft-fail follow-ons (don't block 010, deferrable):
 #   - TASK-FIX-FALK01 (F16)  — Graphiti FalkorDB teardown race. Cosmetic.
 # Substrate-quality findings recorded for AC-008 evidence:
