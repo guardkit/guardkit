@@ -212,3 +212,159 @@ If F23 turns out to be F23B (operator config) or F23D (transient),
 single-GB10 cutover is still on the table for 2026-06-15.
 
 Forensics in §3 decide which path.
+
+---
+
+## 9. Forensics results (2026-06-07 — GB10 in hand)
+
+### 9.1 Class assignment
+
+**F23A confirmed.** §3.1's "OOM kill" path is the answer. Kernel OOM
+killer chose a process inside `llama-swap.service` mid-Coach at
+2026-06-07 14:30:43 BST (= 13:30:43 UTC), matching the orchestrator's
+HTTP 502 at run-11 log line 344 (within ~7s — same event).
+
+### 9.2 Evidence — `journalctl --user -u llama-swap.service`
+
+```
+Jun 07 14:30:43 promaxgb10-41b1 systemd[2159]: llama-swap.service: A process of this unit has been killed by the OOM killer.
+Jun 07 14:30:48 promaxgb10-41b1 systemd[2159]: llama-swap.service: Failed with result 'oom-kill'.
+Jun 07 14:30:48 promaxgb10-41b1 systemd[2159]: llama-swap.service: Consumed 1h 51min 43.301s CPU time.
+Jun 07 14:30:53 promaxgb10-41b1 systemd[2159]: llama-swap.service: Scheduled restart job, restart counter is at 1.
+Jun 07 14:30:53 promaxgb10-41b1 systemd[2159]: Started llama-swap.service - llama-swap (LLM model multiplexer for the GuardKit/dataset-factory fleet).
+```
+
+Cross-checked against the `llama-swap.log` file (which is on disk and
+survives both the SIGKILL and the subsequent operator-initiated host
+reboot at 14:34 BST):
+
+```
+[INFO] received signal terminated, shutting down
+2026/06/07 14:30:43 http: proxy error: EOF
+[WARN] non-200 response, recording partial metrics: status=502, path=/v1/responses
+[INFO] Request 100.111.236.109 "POST /v1/responses HTTP/1.1" 502 0 "AsyncOpenAI/Python 2.29.0" 1m10.175402548s
+[WARN] matrix: running gemma4-coach exited: [gemma4-coach] shutdown
+[WARN] matrix: running qwen36-workhorse exited: [qwen36-workhorse] shutdown
+[WARN] matrix: running nomic-embed exited: [nomic-embed] shutdown
+[WARN] matrix: running qwen-graphiti exited: [qwen-graphiti] shutdown
+```
+
+The kernel sent SIGTERM (via `oom-kill` mode) to a process inside the
+unit; llama-swap's signal handler caught it, attempted graceful
+shutdown of all 4 always-on children, then exited; systemd noted
+`Failed with result 'oom-kill'` and applied the unit's
+`Restart=on-failure` (10 s later — `RestartSec` plus boot overhead).
+
+Auxiliary detail (rules out §3.2 / §3.3 / §3.4):
+
+- **No matrix-set transitions / evictions** in the failure window —
+  llama-swap was serving the `all` set continuously up to the SIGTERM.
+- **No `Aborted` / segfault / panic / backtrace** lines from llama.cpp
+  — the child processes died by signal, not crash.
+- **Network was fine** — successful 200-response immediately before
+  the OOM (`Request POST /v1/responses 200 4406 41.98s` at the same
+  timestamp band).
+- **Healthcheck / keepalive ruled out as the SIGTERM source** —
+  keepalive is read-only HTTP probes (no `systemctl stop`); healthcheck
+  is weekly Mondays at 09:00 (timer + script doesn't restart anything).
+
+### 9.3 Why the budget gave way
+
+| Source | Approx contribution to 121 GB unified | Notes |
+|---|---:|---|
+| 4 always-on llama-server children (qg + ne + qw + gc) | ~80 GB | Weights + idle KV |
+| gemma4-coach KV growth over 19 min reasoning @ ctx 131 K + q8 | +5 to +10 GB | The load-bearing increment that pushed over the edge |
+| llama-swap parent (1h52m CPU time accumulated) | a few GB |  |
+| forge-autobuild-runner / langgraph / GUI apps on the GB10 desktop | ~5-10 GB | VS Code + Firefox + GitKraken + python sidecars |
+| Total at peak | ~110-120 GB | Tight; kernel made a choice |
+
+The §9.13/§9.14 work bumped `gemma4-coach` ctx 65 K → 131 K paired with
+q8 KV (intended memory-neutral). At idle that holds. Under 19 min of
+sustained Coach reasoning at ctx 131 K, KV growth + the rest of the
+system tipped past the budget.
+
+### 9.4 Pre-run-12 actions taken on the GB10 (2026-06-07)
+
+Following the handoff §4 "F23A → reduce gemma4-coach n_ctx" path:
+
+1. **`gemma4-coach --ctx-size 131072 → 98304`** in
+   `/opt/llama-swap/config/config.yaml`. Pre-edit backup at
+   `config.yaml.bak-2026-06-07-pre-ctx-trim-98K`. Matches the
+   `qwen3-coder-30b` ctx precedent (also `98304`). Still 50% more
+   capacity than the original 65 K that exhausted in pre-bump runs.
+   YAML-validated, llama-swap restarted, 4 always-on members
+   reached `state: ready` in 33 s.
+2. **`systemctl --user stop forge-autobuild-runner.service`**. The
+   user-systemd autobuild sidecar (port 8124) is not needed for
+   Mac→GB10 autobuild runs. The actual `forge-langgraph-sidecar.service`
+   and standalone `forge serve` process were also seen consuming a
+   small amount of RAM (~250 MB combined) — left running for now;
+   stop them too if run-12 OOMs again.
+3. **Live state verified:** gemma4-coach loaded with
+   `--ctx-size 98304 --cache-type-k q8_0 --cache-type-v q8_0
+   --reasoning auto`. Steady-state memory 91 GB used / 30 GB
+   available — the savings from the ctx trim is in the **growth
+   ceiling under sustained reasoning**, not the idle state.
+
+### 9.5 What this resolves and what it doesn't
+
+- **Resolves:** the F23A OOM-kill-mid-Coach failure mode at the
+  scale exhibited in run-11. ~4-5 GB more KV headroom under sustained
+  Coach reasoning.
+- **Does NOT resolve:** AC-009 (the original "can gemma4-coach Coach
+  produce a parseable verdict over a real autobuild loop?"). Run-11
+  OOM'd before the Coach could emit. Run-12 is the next attempt.
+- **Does NOT resolve:** the cross-repo guardkitfactory follow-on
+  documented in TASK-FIX-COACHBUDG01 §"What's NOT yet wired"
+  (`LangGraphHarness` not surfacing `reasoning_content` to
+  `AssistantMessageEvent.reasoning_text`). The orchestrator-side parser
+  fix (§9.14) is in place, but Coach turns still emit
+  `25 K chars content + 0 chars reasoning_content` because the LangGraph
+  side of substrate parity isn't done.
+- **Does NOT confirm:** whether the 20-min Coach reasoning envelope is
+  reproducible or whether ctx 131 K under run-11's specific prompt
+  shape was an outlier. The ctx-98 K trim is a safety move, not an
+  envelope claim.
+
+### 9.6 Rollback recipe
+
+If run-12 hits "out of context" on a complex turn (the original
+problem the ctx 131 K bump was solving), revert in 3 steps:
+
+```bash
+# 1. Restore the ctx 131 K config
+cp /opt/llama-swap/config/config.yaml.bak-2026-06-07-pre-ctx-trim-98K \
+   /opt/llama-swap/config/config.yaml
+
+# 2. Stop competing user services BEFORE the run
+systemctl --user stop forge-autobuild-runner.service \
+                     forge-langgraph-sidecar.service
+
+# 3. Close GUI apps on the GB10 desktop (Firefox, VS Code, GitKraken)
+#    if any are running. They consume 3-4 GB combined.
+
+# 4. Restart llama-swap to pick up the reverted config
+systemctl --user restart llama-swap
+```
+
+### 9.7 Next-step pointer
+
+The handoff §7 invocation for run-12 still applies — it's the same
+shape as run-11, just on the new ctx-98K-trimmed gemma4-coach. Kick
+off from the Mac with the original command:
+
+```bash
+mkdir -p .guardkit/autobuild/TASK-REV-HMIG-feature-run/
+GUARDKIT_HARNESS=langgraph \
+  OPENAI_BASE_URL=http://promaxgb10-41b1:9000/v1 \
+  OPENAI_API_KEY=llama-swap-local-key \
+  guardkit autobuild feature FEAT-AOF \
+    --fresh --model qwen36-workhorse --coach-model gemma4:26b \
+    2>&1 | tee .guardkit/autobuild/TASK-REV-HMIG-feature-run/run-12-stdout.log
+```
+
+The decision matrix in §4 should now read **F23A → resolved by
+ctx-trim; observe run-12 to confirm headroom is sufficient**. If
+run-12 reproduces OOM under the trimmed config, escalate to §9.6
+rollback PLUS the AC-007 path
+(`nemotron-3-super:120b-a12b` substrate fallback).
