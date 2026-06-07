@@ -67,6 +67,72 @@
       "first_pass_success_rate_strict": 0.0,
       "first_pass_success_rate_inclusive_of_substantive_work": "n/a (substantive Player work was correct; verdict-emission was the failure mode)",
       "notes": "Run 4 was the first run with CTOUT01 (F14) + LGFM3 (F12) landed. CTOUT01 was not exercised (no Coach approval to race against cancellation). LGFM3 confirmed working (no model=None on coach_test SDK test execution; no fall-back-to-subprocess log line). F13 (test-orchestrator SPECHANG) did NOT fire — specialist completed in ~300s. New findings: F17 (Coach verdict-emission failure, blocks AC-008, TASK-FIX-COACHSF01 filed), F18 (pip-cache ghost-path filter gap, cosmetic, recorded as I-008). See incidents I-007, I-008."
+    },
+    {
+      "run_number": 8,
+      "started_at": "2026-06-06T16:13:37Z",
+      "finished_at": "2026-06-06T17:03:37Z",
+      "wall_clock_seconds": 3000,
+      "outcome": "feature_orchestrator_halted_on_wave1_task_timeout",
+      "halted_by": "stop_on_failure=True after Wave 1 IA03 task-level 3000s timeout fired (CTOUT01 cancellation propagated cleanly)",
+      "stdout_log": "docs/reviews/autobuild-migration/autobuild-FEAT-AOF-run-8.md",
+      "feature_status": "FAILED",
+      "feature_status_caveat": "Substrate-sizing failure under gemma4-coach (F20: n_ctx=65536 too small for code-reviewer specialist payloads; observed at 69174 tokens). F21 turn-2 Coach hard-stall is downstream consequence of F20. Architecture invariants all confirmed working: COACHSF01 turn-1 synthetic feedback fired correctly; CTOUT01 turn-2 cancellation propagated correctly; selector colon-alias (d526bf0f) and --coach-model plumbing (d07a4209) both end-to-end. AC-006 of TASK-HMIG-013 not met (Coach verdict-emission rate this run = 0% natural). Operator-side llama-swap n_ctx bump (98304 or 131072) unblocks; no code edits required.",
+      "tasks_completed_strict": 0,
+      "tasks_failed_strict": 1,
+      "clean_executions_per_orchestrator": "1/1 (100%) — Player + turn-1 + turn-2 Player + turn-1 Coach (synthetic) completed cleanly; turn-2 Coach hung, cancelled within task-timeout window",
+      "first_pass_success_rate_strict": 0.0,
+      "first_pass_success_rate_inclusive_of_substantive_work": "n/a (substrate-sizing failure prevented Coach verdict signal on turn 2; turn-1 substantive Player work was correct, recovered by COACHSF01 synthetic feedback)",
+      "config": {
+        "harness": "langgraph",
+        "model": "qwen36-workhorse",
+        "coach_model": "gemma4:26b",
+        "openai_base_url": "http://promaxgb10-41b1:9000/v1",
+        "reasoning_mode_player": "off (per qwen36-workhorse §3.2)",
+        "reasoning_mode_coach": "off (per gemma4-coach §9.13)"
+      },
+      "notes": "First run under TASK-HMIG-013 substrate posture (Player=qwen36-workhorse, Coach=gemma4:26b). Run 7 hit the selector colon-alias bug (closed by d526bf0f); run 8 is the first to actually reach gemma4-coach Coach payload depth. Architecture invariants from runs 1-7 ALL confirmed working: COACHSF01 (F17 fix) fired exactly as designed on turn 1 — Coach emitted 4898 chars content + 0 reasoning, no fenced JSON → synthetic feedback emitted → Player produced substantive 46-file turn-2 retry. CTOUT01 (F14 fix) fired exactly as designed on turn 2 — Coach hung 990s+, harness.cancel() propagated, task CANCELLED at 3000s boundary. New findings: F20 (gemma4-coach n_ctx=65536 too small, HIGH operator-fixable, I-009 filed), F21 (turn-2 Coach hard-stall downstream of F20, MEDIUM substrate-quality, I-010 filed). AC-009 NOT exercised (--reasoning off; the 4898-char prose was the COACHSF01-handled shape, not the AC-009 surface). Operator-side mitigation: llama-swap n_ctx bump 65536 → 98304 (recommended) or 131072. Re-run 9 with --fresh after llama-swap reload."
+    },
+    {
+      "run_number": 9,
+      "started_at": "2026-06-06T21:24:30Z",
+      "finished_at": "2026-06-06T22:16:22Z",
+      "wall_clock_seconds": 3111,
+      "outcome": "feature_orchestrator_halted_on_wave1_task_timeout",
+      "halted_by": "stop_on_failure=True after Wave 1 IA03 task-level 3000s timeout fired (CTOUT01 cancellation propagated cleanly; this time the timeout was legitimate time-budget exhaustion, not a substrate hang)",
+      "stdout_log": "docs/reviews/autobuild-migration/autobuild-FEAT-AOF-run-9.md",
+      "feature_status": "FAILED",
+      "feature_status_caveat": "F20 + F21 from run 8 are both RESOLVED empirically (operator-side llama-swap n_ctx bump landed). Architecture invariants from runs 1-8 still working. Run 9 failed because (a) F17 substrate F2-at-Coach-level persists under --reasoning off (turn-1 Coach produced 25211 chars prose, no fenced JSON; COACHSF01 caught it correctly), and (b) F13 SPECHANG (turn-2 test-orchestrator hit 600s cap with the larger Player diff) ate the turn-2 time budget before Coach could complete. AC-006 still not met. AC-009 (COACHBUDG01 parser robustness with --reasoning auto) is the next experiment.",
+      "tasks_completed_strict": 0,
+      "tasks_failed_strict": 1,
+      "clean_executions_per_orchestrator": "1/1 (100%) — Player turn 1 (298s) + turn-1 specialists (~730s) + Coach turn 1 (944s, synthetic feedback) + Player turn 2 (320s) all completed cleanly; turn-2 test-orchestrator hit 600s SPECHANG; turn-2 Coach got ~80s before legitimate task-timeout cancellation",
+      "first_pass_success_rate_strict": 0.0,
+      "first_pass_success_rate_inclusive_of_substantive_work": "n/a (both Player turns substantively succeeded; failure was the F17 verdict-emission pattern persisting under --reasoning off, compounded by F13 SPECHANG time-budget pressure)",
+      "config": {
+        "harness": "langgraph",
+        "model": "qwen36-workhorse",
+        "coach_model": "gemma4:26b",
+        "openai_base_url": "http://promaxgb10-41b1:9000/v1",
+        "reasoning_mode_player": "off (per qwen36-workhorse §3.2)",
+        "reasoning_mode_coach": "off (per gemma4-coach §9.13)",
+        "task_timeout_seconds": 3000,
+        "llama_swap_gemma4_coach_n_ctx": "operator-bumped from 65536 (§9.13 addendum runbook)"
+      },
+      "f17_evidence": {
+        "turn_1_coach_content_chars": 25211,
+        "turn_1_coach_reasoning_chars": 0,
+        "turn_1_coach_wall_seconds": 944,
+        "run_8_comparison_content_chars": 4898,
+        "delta_vs_run_8": "5.1x more prose output in 1.7x the wall-time; the larger n_ctx let deepagents feed Coach a richer prompt and gemma4 responded with proportionally longer prose, but still didn't converge on the fenced-JSON contract under --reasoning off"
+      },
+      "f13_compounding_evidence": {
+        "turn_1_test_orchestrator_wall_seconds": 250,
+        "turn_2_test_orchestrator_wall_seconds": 600,
+        "turn_2_player_files_modified": 45,
+        "turn_1_player_files_changed": 3,
+        "observation": "test-orchestrator wall time scales with Player diff size; with 45-file diff on turn 2 it hits the 600s SPECHANG cap, consuming the turn-2 budget before Coach can complete"
+      },
+      "notes": "F20 + F21 RESOLVED: zero HTTP 400 / exceed_context_size_error in run-9 (grep-confirmed). Architecture invariants all still working: COACHSF01 (turn 1 synthetic feedback fired correctly), CTOUT01 (turn 2 cancellation propagated cleanly at legitimate 3000s task-timeout), d526bf0f selector, d07a4209 --coach-model plumbing. F17 now the dominant load-bearing constraint. Next experiment: run 10 with --reasoning auto (tests AC-009 / COACHBUDG01 parser-fallback empirically) + --task-timeout 4500 (absorbs F13 SPECHANG variance). If run 10 produces >=95% Coach verdict-emission rate, AC-006/AC-009 victory and TASK-HMIG-011 cutover unblocks. If not, escalation path is nemotron-3-super:120b-a12b (gated on 2nd GB10 + ConnectX-7)."
     }
   ],
   "task_outcomes": [
@@ -159,6 +225,38 @@
       "non_recoverable": true,
       "non_recoverable_caveat": "Hard-fail because the orchestrator's synthetic-feedback safety net at autobuild.py:5663 doesn't fire when invoke_coach returns success=False (only on raised exceptions). After TASK-FIX-COACHSF01 wires the safety net to fire on 'Coach decision not found' results, this failure mode will become a soft-fail feedback turn instead.",
       "notes": "F17 hard-blocker. Player + specialists ran cleanly. LGFM3 (F12 fix) confirmed working — no model=None on coach_test SDK test execution. CTOUT01 (F14 fix) not exercised (no Coach approval to race against cancellation). F18 cosmetic: 40+ pip-cache ghost paths in files_modified list (recorded as I-008)."
+    },
+    {
+      "task_id": "TASK-FIX-IA03",
+      "run_number": 8,
+      "wave": 1,
+      "parallel_group": null,
+      "coach_decision": "cancelled_on_substrate_stall",
+      "turns_used": 2,
+      "first_pass_success": false,
+      "first_pass_success_caveat": "Turn 1 Player substantively succeeded (41 files created, 1 modified in 213s). Turn 1 Coach hit F2-at-Coach-level (4898 chars content, 0 reasoning, no fenced JSON) — COACHSF01 synthetic feedback fired correctly. Turn 2 Player produced substantive 46-file recovery in 197s. Turn 2 code-reviewer specialist hit HTTP 400 exceed_context_size_error (F20: 69174 tokens > gemma4-coach n_ctx=65536). Turn 2 Coach validation then hung 990s+ with zero successful HTTP calls (F21, downstream of F20). CTOUT01 cancellation fired cleanly at 3000s task-timeout. So substantive Player work was correct both turns; failure was substrate-sizing on Coach payload.",
+      "resume_used": false,
+      "resume_outcome": "n/a",
+      "wall_clock_seconds": 3000,
+      "non_recoverable": false,
+      "non_recoverable_caveat": "F20 root cause is operator-side llama-swap config (n_ctx=65536), NOT a code defect. Per AC-006 definition ('any failure the operator cannot resolve without code edits to the harness itself'), F20 is RECOVERABLE — operator bumps n_ctx in llama-swap and re-runs. Substrate-sizing fixes do not require code edits.",
+      "notes": "First TASK-HMIG-013-posture run (Player=qwen36-workhorse, Coach=gemma4:26b). Architecture invariants from runs 1-7 ALL confirmed: COACHSF01 (F17 fix) + CTOUT01 (F14 fix) + d526bf0f selector colon-alias + d07a4209 --coach-model plumbing + LGFM3/MODEL-PROFILE/ghost-path filter all working as designed. F20 + F21 are substrate findings (recorded as I-009 and I-010); operator-side llama-swap n_ctx bump (98304 recommended first step, or 131072) unblocks. AC-009 (--reasoning auto parser robustness) NOT exercised this run."
+    },
+    {
+      "task_id": "TASK-FIX-IA03",
+      "run_number": 9,
+      "wave": 1,
+      "parallel_group": null,
+      "coach_decision": "cancelled_on_time_budget_exhaustion",
+      "turns_used": 2,
+      "first_pass_success": false,
+      "first_pass_success_caveat": "Turn 1 Player substantively succeeded (1 file created, 2 modified in 298s). Turn 1 Coach produced 25211 chars prose, 0 reasoning, no fenced JSON — F17 substrate F2-at-Coach persistence under --reasoning off; COACHSF01 synthetic feedback fired correctly. Turn 2 Player produced substantive 45-file recovery in 320s. Turn 2 test-orchestrator specialist hit 600s F13 SPECHANG cap (larger Player diff). Turn 2 Coach got ~80s before task-level 3000s timeout fired — legitimate time-budget exhaustion, NOT F21-style substrate hang. CTOUT01 cancellation propagated cleanly. F20 + F21 from run 8 both RESOLVED empirically (zero HTTP 400 / exceed_context_size_error this run).",
+      "resume_used": false,
+      "resume_outcome": "n/a",
+      "wall_clock_seconds": 3000,
+      "non_recoverable": false,
+      "non_recoverable_caveat": "F17 persistence + F13 SPECHANG compounding are substrate-quality findings, not code defects. Per AC-006 definition ('any failure the operator cannot resolve without code edits to the harness itself'), RECOVERABLE — operator flips gemma4-coach to --reasoning auto (exercises COACHBUDG01 AC-009 parser-fallback) and bumps --task-timeout to 4500s.",
+      "notes": "Architecture invariants from runs 1-8 ALL still working: COACHSF01 + CTOUT01 + selector colon-alias + --coach-model plumbing + LGFM3 + MODEL-PROFILE + ghost-path filter. F20 + F21 RESOLVED by §9.13 n_ctx bump. F17 (25211 chars prose, 5.1x run-8) is now dominant. Next run: --reasoning auto + --task-timeout 4500."
     }
   ],
   "task_outcome_schema": {

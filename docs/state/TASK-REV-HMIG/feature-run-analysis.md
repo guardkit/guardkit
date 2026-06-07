@@ -20,6 +20,36 @@
 - [ ] AC-008 — Falsifier verdict deferred until LGFM lands and a clean run 2 produces data.
 - [〜] AC-009 — This analysis document carries the run-1 narrative (§§0, 6); §§1-5, 7-8 pending real data.
 
+## Status header (2026-06-07T00:16Z, post-run-9)
+
+**TASK-HMIG-010 BLOCKED on F17 persistence under `--reasoning off`** — operator-side llama-swap reasoning-mode flip is the next experiment (AC-009 / COACHBUDG01 surface). F20 + F21 from run 8 are both RESOLVED empirically.
+
+Run 9 (2026-06-06T21:24, 51m 51s, post-llama-swap `n_ctx` bump from 65536 → operator-set value):
+
+- **F20 RESOLVED ✓**: zero `HTTP 400` / `exceed_context_size_error` anywhere in run-9 (grep-confirmed). Turn-1 code-reviewer specialist — the run-8 failure point — completed cleanly with 18+ successful HTTP 200s over ~480s. §9.13 operator runbook validated.
+- **F21 RESOLVED ✓** (was purely downstream of F20): turn-2 Coach in run-9 was cancelled by CTOUT01 at legitimate 3000s task-timeout boundary (time-budget exhaustion after 600s SPECHANG on test-orchestrator), NOT a substrate hang. Two HTTP 200s observed in the ~80s Coach window vs run-8's 990s with zero HTTP calls.
+- **F17 persistence under `--reasoning off`** is now the dominant constraint. Turn-1 Coach produced **25,211 chars content + 0 chars reasoning_content** (vs run-8's 4898 chars — 5.1× longer), still no fenced JSON. COACHSF01 fired correctly. The bigger n_ctx let deepagents feed Coach a richer prompt, gemma4 responded with proportionally longer prose, but didn't converge on the JSON contract. Substrate is using the extra budget for *more prose*, not *structured emission*.
+- **F13 SPECHANG compounding effect**: turn-2 test-orchestrator hit 600s cap (vs ~250s on turn 1) because Player turn-2 diff was much larger (45 modified files vs 1+2). Compounds with Coach-turn-1 wall time (944s) to exhaust the 3000s task budget before turn-2 Coach can complete. Time-budget arithmetic suggests `--task-timeout 4500` would absorb this variance.
+- **AC-006 still not met**: 0 natural verdict emissions / 2 attempts = 0%. Need ≥95% across ≥6 Coach turns.
+- **AC-009 (COACHBUDG01 parser robustness with `--reasoning auto`) NOT exercised**: run 9 deliberately ran `--reasoning off`. **Next experiment** is run 10 with `--reasoning auto` + `--task-timeout 4500` to test AC-009 empirically AND absorb SPECHANG variance.
+
+If run 10 produces ≥95% Coach verdict-emission rate under `--reasoning auto`, AC-006/AC-009 victory and TASK-HMIG-011 cutover unblocks. If not, escalation per TASK-HMIG-013 AC-007 is `nemotron-3-super:120b-a12b` (gated on 2nd GB10 + ConnectX-7 arrival).
+
+## Status header (2026-06-06T17:03Z)
+
+**TASK-HMIG-010 BLOCKED on F20 (gemma4-coach n_ctx sizing)** — operator-side llama-swap config bump, not a code defect. AC-008 verdict still deferred; AC-006 of TASK-HMIG-013 cannot pass until Coach turns complete reliably.
+
+Run 8 (2026-06-06T16:13, 50min, post-`d526bf0f` selector colon-alias + `d07a4209` `--coach-model` plumbing + guardkitfactory `e8350bd` MODEL_CONTEXT_WINDOWS per-role registry):
+
+- **Architecture invariants all confirmed working**: COACHSF01 (turn 1 synthetic feedback fired exactly as designed when Coach emitted 4898 chars + 0 reasoning, no fenced JSON), CTOUT01 (turn 2 hard-stall bounded by `harness.cancel()` at 3000s task-timeout), LGFM3 / ghost-path filter / SUMM-ROOT / MODEL-PROFILE all silent. The `d526bf0f` colon-alias and `d07a4209` `--coach-model` plumbing fixes both work end-to-end (LangGraph error message carries `role='coach' model='openai:gemma4:26b'`).
+- **Two new substrate findings, both class-of-defect substrate-sizing/quality, NOT architecture**:
+  - **F20** (HIGH, operator-fixable) — gemma4-coach's `n_ctx=65536` is too small for Coach + specialist payloads in this codebase. code-reviewer specialist hit HTTP 400 `exceed_context_size_error` at 69174 tokens > 65536 ctx. Operator fix: bump llama-swap `n_ctx` to 98304 (1.5×, recommended first step) or 131072 (2×, matches qwen36-workhorse). No code change. Recorded as I-009.
+  - **F21** (MEDIUM, substrate quality) — turn-2 Coach validation hung for 990s+ with zero successful HTTP calls after the F20 specialist failure. CTOUT01's `harness.cancel()` bounded the failure cleanly at the 3000s task-timeout boundary. Likely downstream consequence of F20 (KV-state corruption after the 400, or model-swap reload deadlock). Goes away when F20 is fixed. Recorded as I-010.
+- **AC-006 (TASK-HMIG-013)**: NOT met. Coach verdict-emission rate this run = 0% natural (1 synthetic-feedback emission via COACHSF01, 1 hard-stall cancelled). Required ≥95% across ≥6 Coach turns.
+- **AC-009 (TASK-FIX-COACHBUDG01)**: NOT exercised. Substrate ran with `--reasoning off` per §9.13 default; the 4898-char prose response on turn 1 is the existing COACHSF01-handled shape, not the AC-009 surface (which fires under `--reasoning auto`).
+
+After F20 is operator-mitigated (n_ctx bump), re-run with `--fresh --model qwen36-workhorse --coach-model gemma4:26b`. Run 9 will produce the first usable AC-006 signal under the new substrate posture.
+
 ## Status header (2026-06-05T17:30Z)
 
 **TASK-HMIG-010 BLOCKED on TASK-FIX-COACHSF01** (verdict-blocker for AC-008).
@@ -333,6 +363,63 @@ Cosmetic process-exit teardown issue. Doesn't affect outcomes. Filed as [TASK-FI
 - (b) Grant Coach a constrained Write tool limited to `coach_turn_*.json` paths (removes the contract complexity but mildly violates the read-only invariant — a controlled exception is plausible)
 
 File as TASK-REV-COACH-OUTPUT-CONTRACT post-cutover.
+
+### F20 (2026-06-06, run 8, substrate-sizing) — **RESOLVED 2026-06-07 (run 9)**: gemma4-coach `n_ctx=65536` too small for Coach + specialist payloads
+
+> **Status update 2026-06-07**: Operator landed the §9.13 n_ctx bump on llama-swap and re-ran. Run 9 produced zero HTTP 400 / `exceed_context_size_error` across all phases including the turn-1 code-reviewer specialist which was the run-8 failure point (480s + 18 successful HTTP 200s). F20 is closed as a substrate-sizing finding; the bumped n_ctx is the new steady-state operator config for gemma4-coach.
+
+
+**Where**: llama-swap config for `gemma4-coach` (§9.13 of [AUTOBUILD-ON-LLAMA-SWAP-findings.md](../../research/dgx-spark/AUTOBUILD-ON-LLAMA-SWAP-findings.md#L1943)) registered with `--ctx-size 65536`; guardkitfactory `MODEL_CONTEXT_WINDOWS["gemma4:26b"]["max_input_tokens"]=65536` (`model_config.py:188-194`) correctly mirrors it; deepagents summarisation threshold computes as `0.85 × 65536 ≈ 55,705`.
+
+**Evidence**: Run-8 log [line 375-376](../../reviews/autobuild-migration/autobuild-FEAT-AOF-run-8.md#L375-L376):
+
+```
+INFO:httpx:HTTP Request: POST http://promaxgb10-41b1:9000/v1/responses "HTTP/1.1 400 Bad Request"
+WARNING:guardkit.orchestrator.specialist_invocations:run_specialist(code-reviewer) failed
+  for TASK-FIX-IA03: AgentInvocationError: SDK invocation failed for coach
+  (LangGraphHarnessError): LangGraphHarness: agent.ainvoke failed for role='coach'
+  model='openai:gemma4:26b': Error code: 400 - {'error': {'code': 400,
+  'message': 'request (69174 tokens) exceeds the available context size (65536 tokens),
+  try increasing it', 'type': 'exceed_context_size_error',
+  'n_prompt_tokens': 69174, 'n_ctx': 65536}}
+```
+
+The code-reviewer specialist (running under Coach role, routed to `gemma4:26b` via `--coach-model`) made several successful HTTP 200s during its tool-use loop, then one call landed at 69174 tokens — 5% over the 65536 ctx. Deepagents summarisation fires between turns, not on a single oversized input, so no recovery was possible.
+
+**Class-of-defect**: **substrate-sizing / operator-policy**, not architecture. The registry contract is honoured top-to-bottom; the substrate is simply too small for this codebase's Coach payload shape under multi-specialist turns. Sibling-of-canary-F6 (substrate-quality recorded not coded) but with an operator-side fix available, unlike F6.
+
+**Why this didn't surface earlier**: runs 1-6 used qwen36-workhorse for Coach (131072 ctx, larger envelope). Run 7 failed at the selector colon-alias bug before reaching Coach payload depth. Run 8 was the first run to actually exercise gemma4-coach Coach validation against a real codebase payload.
+
+**Resolution** — operator-side llama-swap config bump, no code change. Three paths in increasing risk/reward:
+
+| Path | n_ctx | KV delta | Projected GB10 footprint | Time to next signal |
+|---|---:|---:|---|---|
+| **A (recommended)** | 98304 (1.5×) | +2.5-5 GB | 113.5-116 GB / 128 GB (≥12 GB headroom) | Same day after reload |
+| **B** | 131072 (2×) | +5-10 GB | 116-121 GB / 128 GB (7-12 GB headroom) | Same day, watch transient peaks |
+| **C** | wait for 2nd GB10 + nemotron-3-super:120b-a12b | n/a | n/a | ~next week |
+
+Recorded as I-009. **Blocks AC-006 of TASK-HMIG-013** until run 9 confirms the bump unblocks Coach verdict-emission.
+
+### F21 (2026-06-06, run 8, substrate-quality) — **RESOLVED 2026-06-07 (run 9)**: turn-2 Coach hard-stall (downstream of F20)
+
+> **Status update 2026-06-07**: Run 9 did not reproduce. Turn-2 Coach cancellation in run 9 was time-budget exhaustion (3000s task-timeout fired after legitimate phase consumption: 944s Coach turn 1 + 600s SPECHANG turn-2 test-orchestrator + 320s turn-2 Player + ~80s turn-2 Coach start), not a substrate hang. Two successful HTTP 200s observed in the ~80s Coach window. Confirms the run-8 hypothesis: F21 was a KV-corruption / model-swap deadlock downstream of the F20 HTTP 400, and removing F20 removed F21. No residual substrate-stall surface to file separately as TASK-FIX-COACHSTALL01.
+
+
+**Where**: gemma4-coach inference path on llama-swap, observed at `agent_invoker.py` Coach invocation in [autobuild-FEAT-AOF-run-8.md:394-426](../../reviews/autobuild-migration/autobuild-FEAT-AOF-run-8.md#L394-L426).
+
+**Evidence**: Turn-2 Coach validation started at 16:43:33; CTOUT01 cancellation event fired at the 3000s task-timeout (17:03:37). In the 990+ second window between Coach start and cancellation, the 30s-interval progress counter advanced from 30s through 990s but **zero `POST /v1/responses HTTP/1.1 200 OK` log lines appear** (compare to turn-1 Coach which produced ~14 successful HTTP 200s in the same elapsed range). The Coach invocation never made a single successful LLM call.
+
+**Class-of-defect**: **substrate-quality**, almost certainly downstream consequence of F20. Two plausible mechanisms:
+1. The turn-2 Coach validation prompt itself was already over `n_ctx=65536` (carrying turn-1 feedback context + 46-file turn-2 diff + cumulative 10 ACs), and llama-swap wedged on the oversized input instead of returning 400.
+2. The prior F20 400 corrupted gemma4-coach's KV-cache state or triggered a model-swap reload that deadlocked.
+
+Either way, the architecture-side response was correct: CTOUT01 Layer 3 (`harness.cancel()`) fired exactly as designed at the 3000s boundary, bounded the failure window, and surfaced `TASK-FIX-CTOUT01: Cancellation event detected during coach invocation` ([line 430](../../reviews/autobuild-migration/autobuild-FEAT-AOF-run-8.md#L430)).
+
+**Why this matters for AC-008**: masks any signal we'd otherwise get from turn-2 Coach validation. Expected to disappear when F20 is operator-mitigated.
+
+**Resolution**: Same operator-side fix as F20 (bump gemma4-coach `n_ctx`). No code change. Re-validation on run 9 will confirm whether F21 is purely-downstream-of-F20 or has its own residual substrate stall surface; if the latter, file separately as TASK-FIX-COACHSTALL01.
+
+Recorded as I-010.
 
 ### F18 (2026-06-05, run 4, cosmetic): pip-cache ghost-path filter gap
 

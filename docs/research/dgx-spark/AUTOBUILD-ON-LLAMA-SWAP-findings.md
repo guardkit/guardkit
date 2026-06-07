@@ -2144,6 +2144,168 @@ requires the run-6 turn-1 Coach prompt replay (longer + more complex
 context). The substrate posture is correct; the full replay is
 operator-driven follow-on work.
 
+**Addendum (2026-06-06, post-run-8): `n_ctx=65536` is too small for
+the full Coach payload — bump required before AC-006.** FEAT-AOF
+run 8 was the first run to actually exercise gemma4-coach at Coach
+depth (run 7 hit the selector colon-alias bug closed by `d526bf0f`).
+Wave 1 turn-2 code-reviewer specialist hit HTTP 400
+`exceed_context_size_error` at **69174 tokens** against the 65536 ctx
+([autobuild-FEAT-AOF-run-8.md:375-376](../../reviews/autobuild-migration/autobuild-FEAT-AOF-run-8.md#L375-L376)).
+Turn-2 Coach validation then hard-stalled for 990s+ before CTOUT01
+cancellation bounded it — almost certainly downstream of the 400
+corrupting llama.cpp's KV-cache state or triggering a model-swap
+reload deadlock. Recorded as F20 (HIGH, I-009) and F21 (MEDIUM, I-010)
+in [feature-run-incidents.md](../../state/TASK-REV-HMIG/feature-run-incidents.md).
+
+**Operator runbook — proposed bump 65536 → 98304 (1.5×, recommended
+first step).** Edit `/etc/llama-swap/config.yaml` (or whatever path
+the running llama-swap reads — confirm with
+`systemctl --user cat llama-swap`), find the `gemma4-coach` entry, and
+change the `--ctx-size 65536` arg to `--ctx-size 98304`. Restart:
+
+```bash
+sudo systemctl --user restart llama-swap
+sudo systemctl restart llama-swap-keepalive.timer
+```
+
+Wait ~30 s for cold-load, then verify with `curl -s
+http://localhost:9000/v1/models | jq` and re-run the AC-002 smoke
+recipe above to confirm fenced-JSON still emits cleanly under the
+larger ctx (no regression — fraction-based summarisation just fires at
+a higher token threshold: `0.85 × 98304 ≈ 83,558` instead of
+`0.85 × 65536 ≈ 55,705`).
+
+**Memory accounting.** §9.13's net-zero RAM delta assumed `ctx 65536`.
+Bumping to 98304:
+
+| Component | At 65k ctx | At 98k ctx | Delta |
+|---|---:|---:|---:|
+| gemma4-coach weights resident | ~17 GB | ~17 GB | 0 |
+| gemma4-coach KV cache | ~5-10 GB | ~7.5-15 GB | +2.5-5 GB |
+| Pre-bump steady state (observed) | ~111 GB / 128 GB used | — | — |
+| Post-bump projected | — | ~113.5-116 GB / 128 GB | -5 to -2.5 GB headroom |
+
+Headroom remains ≥12 GB even in the pessimistic case. If F20 reappears
+on run 9 at the larger ctx (i.e. the Coach payload exceeds 83k), the
+next step is the 2× bump to `--ctx-size 131072`:
+
+| Component | At 131k ctx | Delta vs 65k |
+|---|---:|---:|
+| gemma4-coach KV cache | ~10-20 GB | +5-10 GB |
+| Post-bump projected | ~116-121 GB / 128 GB | 7-12 GB headroom |
+
+Acceptable but watch `free -h` and the `nvidia-smi`-equivalent for the
+GB10 during the first model reload — transient peaks during llama-swap
+transitions (two models briefly co-resident) could be the OOM surface.
+
+**guardkitfactory registry must follow.** After the llama-swap bump,
+update `src/guardkitfactory/harness/model_config.py:194` to set
+`MODEL_CONTEXT_WINDOWS["gemma4:26b"]["max_input_tokens"]` to match the
+new `n_ctx` (98304 or 131072). Otherwise deepagents' summarisation
+threshold stays anchored at the old 55,705 token line and the
+larger ctx is wasted on KV cache rather than on the summarisation
+band. One-line edit + regression test — same pattern as the
+qwen36-workhorse profile entry above it.
+
+**Re-validation gate.** After bump + registry update, re-run:
+
+```bash
+GUARDKIT_HARNESS=langgraph \
+  OPENAI_BASE_URL=http://promaxgb10-41b1:9000/v1 \
+  OPENAI_API_KEY=llama-swap-local-key \
+  guardkit autobuild feature FEAT-AOF \
+    --fresh --model qwen36-workhorse --coach-model gemma4:26b \
+    2>&1 | tee .guardkit/autobuild/TASK-REV-HMIG-feature-run/run-9-stdout.log
+```
+
+Pass criteria for run 9: ≥1 wave completes; Coach turns ≥6 across all
+tasks emit verdicts without `exceed_context_size_error`. That satisfies
+TASK-HMIG-013 AC-006 and unblocks TASK-HMIG-010 cutover ceremony
+(TASK-HMIG-011).
+
+**Verified (2026-06-07, run 9).** Operator landed the n_ctx bump and
+re-ran FEAT-AOF
+([autobuild-FEAT-AOF-run-9.md](../../reviews/autobuild-migration/autobuild-FEAT-AOF-run-9.md)).
+**Zero** `HTTP 400` / `exceed_context_size_error` /
+`n_prompt_tokens > n_ctx` log lines anywhere in the run (grep-confirmed).
+Turn-1 code-reviewer specialist — the exact run-8 failure point —
+completed cleanly with 18+ successful `HTTP 200`s over ~480 s. F21 (the
+run-8 turn-2 Coach hard-stall) also did not recur, confirming the
+run-8 hypothesis that F21 was purely downstream of F20. **F20 and F21
+closed as substrate-sizing findings; the bumped n_ctx is the new
+steady-state operator config for gemma4-coach.**
+
+**Partial AC-006 progress, but AC-006 not yet met.** Run 9 still failed
+because:
+
+1. **F17 substrate F2-at-Coach-level persistence under `--reasoning
+   off`.** Turn-1 Coach produced **25,211 chars content + 0 chars
+   reasoning_content** (vs run-8's 4,898 chars — 5.1× longer) but still
+   **no fenced JSON block**. The bigger n_ctx let deepagents feed Coach
+   a richer prompt; gemma4 responded with proportionally longer prose
+   without converging on the JSON contract. COACHSF01 caught it
+   correctly and Player produced a substantive 45-file turn-2 recovery.
+2. **F13 SPECHANG compounding.** Turn-2 test-orchestrator hit the 600 s
+   SPECHANG cap (vs ~250 s on turn 1 — the larger Player diff is
+   slower to test). Combined with Coach turn 1's 944 s wall, the 3000 s
+   task-timeout exhausted before Coach turn 2 could complete. Time-
+   budget arithmetic suggests `--task-timeout 4500` (env var
+   `GUARDKIT_TASK_TIMEOUT_SECONDS` or CLI flag) would absorb the
+   variance.
+
+**Next experiment — flip `--reasoning auto` per AC-009 / COACHBUDG01.**
+F20 closure makes `--reasoning auto` safer than it was when this
+section originally ruled it out (the original empty-content +
+`finish_reason=length` problem was symptomatic of running out of token
+budget mid-reasoning; the bigger ctx widens that envelope). And
+TASK-FIX-COACHBUDG01 (commits `d5f1bec6` + `d07a4209` + `d526bf0f`)
+landed the orchestrator-side parser fallback to
+`additional_kwargs['reasoning_content']` — so even if gemma4 dumps
+everything into the reasoning channel, the verdict still gets
+extracted. That is exactly the AC-009 surface.
+
+**Operator runbook for run 10.** Two changes:
+
+1. **Remove `--reasoning off` from the `gemma4-coach` llama-swap entry**
+   (or set `--reasoning auto`). Restart and re-verify with the AC-002
+   5× smoke recipe above — but this time also inspect
+   `.choices[0].message.reasoning_content` for the fenced JSON, not
+   just `.content`:
+
+   ```bash
+   for i in 1 2 3 4 5; do
+     curl -sS http://localhost:9000/v1/chat/completions \
+          -H "Content-Type: application/json" \
+          -d @docs/research/dgx-spark/probes/coach-turn-1-replay.json \
+       | jq -r '.choices[0].message.reasoning_content // .choices[0].message.content' \
+       | grep -c '```json' && echo "  attempt $i: FENCED-JSON present" \
+                      || echo "  attempt $i: FENCED-JSON MISSING"
+   done
+   ```
+
+2. **Bump task-timeout to 4500 s.** Either via CLI (`--task-timeout
+   4500`) or env var (`GUARDKIT_TASK_TIMEOUT_SECONDS=4500`). Absorbs
+   F13 SPECHANG variance on multi-turn tasks.
+
+Then run:
+
+```bash
+GUARDKIT_HARNESS=langgraph \
+  OPENAI_BASE_URL=http://promaxgb10-41b1:9000/v1 \
+  OPENAI_API_KEY=llama-swap-local-key \
+  GUARDKIT_TASK_TIMEOUT_SECONDS=4500 \
+  guardkit autobuild feature FEAT-AOF \
+    --fresh --model qwen36-workhorse --coach-model gemma4:26b \
+    2>&1 | tee .guardkit/autobuild/TASK-REV-HMIG-feature-run/run-10-stdout.log
+```
+
+Pass criteria for run 10: ≥6 Coach turns across all tasks emit verdicts
+(natural fenced JSON in either content or reasoning_content channel, no
+COACHSF01 synthetic feedback fallbacks). Coach verdict-emission rate
+≥95% satisfies TASK-HMIG-013 AC-006 + AC-009 and unblocks
+TASK-HMIG-011 cutover ceremony. If <95%: escalation per AC-007 is
+`nemotron-3-super:120b-a12b` (gated on 2nd GB10 + ConnectX-7).
+
 ### 9.14 2026-06-06 — TASK-FIX-COACHBUDG01: parser learns to read `reasoning_content`; `--reasoning off` workaround becomes optional
 
 **Trigger.** §9.13's "Reasoning-off lesson" closed the immediate F17
