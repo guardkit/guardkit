@@ -188,7 +188,21 @@ MIN_TURN_BUDGET_SECONDS: int = int(os.environ.get("GUARDKIT_MIN_TURN_BUDGET", "6
 # Budget (seconds) granted to Coach when Player succeeds near the timeout
 # boundary (i.e., when the cancellation event is set but Player returned
 # success=True).  Ensures Coach always gets a fair window to validate.
-COACH_GRACE_PERIOD_SECONDS: int = 120
+#
+# TASK-FIX-SPECCOCH01 (Shape B): operator-tunable via
+# ``GUARDKIT_COACH_GRACE_PERIOD_SECONDS``. Default raised from 120 to
+# 1500 to cover empirically-observed Coach turn-1 latencies under the
+# LangGraph harness on the gemma4:26b coach (run-9 of FEAT-AOF measured
+# 944s under ``--reasoning off``; the new default leaves ~50 % headroom
+# for the richer ``--reasoning auto`` reasoning channel). Shape B is the
+# belt-and-braces backstop for the architectural decoupling in Shape A
+# (``specialist_invocations._run_specialist_with_watchdog``); if any
+# code path still routes through the grace-period branch, it now has a
+# realistic budget rather than the original 120 s ceiling that
+# guaranteed Coach silence.
+COACH_GRACE_PERIOD_SECONDS: int = int(
+    os.environ.get("GUARDKIT_COACH_GRACE_PERIOD_SECONDS", "1500")
+)
 
 
 # ============================================================================

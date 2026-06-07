@@ -1053,3 +1053,160 @@ async def test_invoke_test_orchestrator_wires_watchdog(
     on_disk = json.loads(results_path.read_text(encoding="utf-8"))
     assert on_disk["phase_4"]["status"] == "failed"
     assert "hang detected (no model activity" in on_disk["phase_4"]["error"]
+
+
+# =============================================================================
+# Shape A — specialist-hang termination does NOT cascade into the shared
+# task-level cancellation_event (TASK-FIX-SPECCOCH01 AC-1, AC-3).
+# =============================================================================
+#
+# Before the fix the watchdog set the caller-supplied (shared) event to drive
+# ``_cancel_monitor`` into ``harness.cancel()``. The shared event is also the
+# signal autobuild._loop_phase polls for the Coach grace-period branch
+# (autobuild.py:3077-3087), so a healthy hang of the test-orchestrator
+# specialist would cap the subsequent Coach invocation at
+# ``COACH_GRACE_PERIOD_SECONDS`` and silently drop the Coach verdict (F22 /
+# I-011, surfaced in run-10 of FEAT-AOF). Shape A delivers the watchdog signal
+# through a specialist-local event, leaving the shared event untouched.
+
+
+@pytest.mark.asyncio
+async def test_watchdog_does_not_set_shared_cancellation_event(
+    tmp_path: Path,
+) -> None:
+    """AC-1: when the watchdog terminates a hung specialist, the caller's
+    shared task-level cancellation_event must NOT be set.
+
+    Decouples specialist-hang detection from the Coach grace-period
+    cascade — the grace-period branch in autobuild._loop_phase only fires
+    when the shared event is set, and Shape A reserves that signal for
+    the real task-timeout / outer-orchestrator-cancel path.
+    """
+    async def _hang(**_: object) -> None:
+        await asyncio.sleep(10.0)
+
+    invoker = _make_fake_agent_invoker(invoke_side_effect=_hang)
+    shared_event = threading.Event()
+    assert not shared_event.is_set()
+
+    result = await run_specialist(
+        specialist_name="test-orchestrator",
+        worktree_path=tmp_path,
+        task_id="TASK-FIX-SPECCOCH01",
+        sdk_timeout=600,
+        prompt="run the tests",
+        allowed_tools=["Read", "Bash", "Write"],
+        agent_invoker=invoker,
+        cancellation_event=shared_event,
+        no_activity_watchdog_seconds=0.2,
+    )
+
+    # The watchdog fired and reported the hang …
+    assert result.status == "failed"
+    assert "hang detected (no model activity" in (result.error or "")
+    # … but the caller's shared event was NEVER touched. This is the
+    # load-bearing assertion that prevents the F22 grace-period cascade.
+    assert not shared_event.is_set()
+
+
+@pytest.mark.asyncio
+async def test_watchdog_uses_specialist_local_event_distinct_from_shared(
+    tmp_path: Path,
+) -> None:
+    """AC-1 (mechanism check): the event installed on the invoker for the
+    duration of a watchdog-protected call must be a brand-new
+    specialist-local Event — NOT the caller-supplied shared event.
+
+    Pins the implementation contract that the cancel-monitor polling
+    target is decoupled from the caller's task-level signal. Without
+    this, the test above could pass by accident if a future refactor
+    set the shared event back to ``False`` after firing.
+    """
+    seen: dict[str, object] = {}
+
+    async def _capture_then_hang(**_: object) -> None:
+        seen["event_during_call"] = invoker._cancellation_event
+        await asyncio.sleep(10.0)
+
+    invoker = _make_fake_agent_invoker(invoke_side_effect=_capture_then_hang)
+    shared_event = threading.Event()
+
+    await run_specialist(
+        specialist_name="test-orchestrator",
+        worktree_path=tmp_path,
+        task_id="TASK-FIX-SPECCOCH01",
+        sdk_timeout=600,
+        prompt="run the tests",
+        allowed_tools=["Read", "Bash", "Write"],
+        agent_invoker=invoker,
+        cancellation_event=shared_event,
+        no_activity_watchdog_seconds=0.2,
+    )
+
+    installed = seen["event_during_call"]
+    assert isinstance(installed, threading.Event)
+    # The local event is a distinct object from the caller's shared event …
+    assert installed is not shared_event
+    # … the local event WAS set by the watchdog (cooperative cancel) …
+    assert installed.is_set()
+    # … and the shared event remains unset (no grace-period cascade).
+    assert not shared_event.is_set()
+    # And the invoker's _cancellation_event attribute is restored to its
+    # pre-call value (None on the fake), even though we overrode it.
+    assert invoker._cancellation_event is None
+
+
+@pytest.mark.asyncio
+async def test_external_shared_event_still_aborts_specialist(
+    tmp_path: Path,
+) -> None:
+    """AC-1 (CTOUT01 compatibility): when the caller's shared event is set
+    *externally* mid-invocation (real task-timeout path), the watchdog
+    must still terminate the in-flight specialist. The shared event's
+    state is forwarded into the specialist-local event so
+    ``_cancel_monitor`` dispatches ``harness.cancel()`` + SIGTERM.
+
+    Without this, decoupling the watchdog from the shared event would
+    silently break the in-flight LangGraph cleanup contract on the
+    legitimate cancellation path.
+    """
+    shared_event = threading.Event()
+
+    async def _hang_until_external_cancel(**_: object) -> None:
+        # Trip the shared event from inside the specialist coroutine to
+        # simulate an external FeatureOrchestrator timeout firing while
+        # the specialist is still in-flight.
+        await asyncio.sleep(0.1)
+        shared_event.set()
+        await asyncio.sleep(10.0)
+
+    invoker = _make_fake_agent_invoker(invoke_side_effect=_hang_until_external_cancel)
+
+    started = time.monotonic()
+    result = await run_specialist(
+        specialist_name="test-orchestrator",
+        worktree_path=tmp_path,
+        task_id="TASK-FIX-SPECCOCH01",
+        sdk_timeout=600,
+        prompt="run the tests",
+        allowed_tools=["Read", "Bash", "Write"],
+        agent_invoker=invoker,
+        cancellation_event=shared_event,
+        # Watchdog window large enough that the *hang* branch cannot
+        # fire on the first few polls (the no-activity gap grows from 0
+        # and only crosses the threshold near t ≈ 5). Poll interval is
+        # derived as ``watchdog/5`` (capped) so this gives 1 s polling —
+        # the shared-event forward fires on the second poll, well before
+        # the inner 10 s sleep or the hang branch.
+        no_activity_watchdog_seconds=5.0,
+    )
+    elapsed = time.monotonic() - started
+
+    assert result.status == "failed"
+    assert result.error == "specialist invocation cancelled"
+    # Terminated promptly via the shared-event forward, NOT the 10s inner
+    # sleep or the watchdog window.
+    assert elapsed < 3.0
+    # The hang-reason error was NOT used — this is the shared-event
+    # forwarding branch, not the watchdog-detected-hang branch.
+    assert "hang detected" not in (result.error or "")

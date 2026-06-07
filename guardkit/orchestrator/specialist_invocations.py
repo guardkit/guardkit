@@ -195,7 +195,8 @@ async def _run_specialist_with_watchdog(
     agent_invoker: "AgentInvoker",
     invoke_kwargs: dict[str, Any],
     watchdog_seconds: float,
-    cancellation_event: Optional[threading.Event],
+    specialist_local_event: threading.Event,
+    shared_cancellation_event: Optional[threading.Event],
     specialist_name: str,
     task_id: str,
     poll_interval: Optional[float] = None,
@@ -205,14 +206,34 @@ async def _run_specialist_with_watchdog(
     Races the invocation against a poll loop that reads
     ``agent_invoker._last_activity_monotonic`` (updated per harness event
     inside ``_invoke_with_role``). When the no-activity gap reaches
-    ``watchdog_seconds``, the invocation is terminated cooperatively
-    (``cancellation_event`` → the in-flight ``_cancel_monitor`` dispatches
-    ``harness.cancel()`` + SIGTERM) and then hard-cancelled, returning a
-    distinct ``hang detected (no model activity for Ns)`` reason — well
-    before the blunt 600s duration cap fires (AC-1, AC-3).
+    ``watchdog_seconds``, the invocation is terminated cooperatively by
+    setting ``specialist_local_event`` (the event the in-flight
+    ``_cancel_monitor`` polls), which dispatches ``harness.cancel()`` +
+    SIGTERM. The asyncio task is then hard-cancelled so this coroutine
+    returns promptly rather than waiting on the 2s monitor poll. The
+    distinct ``hang detected (no model activity for Ns)`` reason fires
+    well before the blunt 600s duration cap (AC-1, AC-3 of
+    TASK-FIX-SPECHANG2).
+
+    TASK-FIX-SPECCOCH01 (Shape A): the watchdog's cancellation signal is
+    delivered through the **specialist-local** event, NOT through the
+    caller-supplied ``shared_cancellation_event``. The shared event is
+    reserved for the real task-timeout / outer-orchestrator-cancel path
+    that drives the Coach grace-period branch
+    (``autobuild.py`` ``COACH_GRACE_PERIOD_SECONDS``). Without this
+    separation a healthy specialist hang would cascade into Coach being
+    capped at the grace-period budget and silently dropping its verdict
+    (F22 / I-011, surfaced in run-10 of FEAT-AOF).
+
+    The shared event is still monitored on each poll: if it is set
+    externally (e.g. ``FeatureOrchestrator`` timeout) the watchdog
+    forwards the signal into ``specialist_local_event`` so the in-flight
+    LangGraph cleanup contract (CTOUT01, see
+    ``.claude/rules/harness-cancellation-contract.md``) is preserved on
+    the legitimate task-timeout path.
 
     A normally-progressing specialist keeps the activity clock fresh, so
-    the watchdog never trips for it (AC-2).
+    the watchdog never trips for it (AC-2 of TASK-FIX-SPECHANG2).
 
     Returns:
         ``("passed", None)`` on clean completion, or ``("failed", reason)``
@@ -228,11 +249,26 @@ async def _run_specialist_with_watchdog(
         agent_invoker._invoke_with_role(**invoke_kwargs)
     )
     hang_reason: Optional[str] = None
+    external_cancel = False
 
     while True:
         done, _pending = await asyncio.wait({invoke_task}, timeout=poll)
         if invoke_task in done:
             break
+
+        # Forward real (caller-driven) cancellation into the specialist's
+        # local scope so the in-flight _cancel_monitor still terminates the
+        # invocation when the outer task budget is exhausted. The shared
+        # event itself is never written to by this watchdog.
+        if (
+            shared_cancellation_event is not None
+            and shared_cancellation_event.is_set()
+        ):
+            external_cancel = True
+            specialist_local_event.set()
+            invoke_task.cancel()
+            break
+
         now = time.monotonic()
         last_activity = getattr(agent_invoker, "_last_activity_monotonic", now)
         if _no_activity_watchdog_exceeded(last_activity, now, watchdog_seconds):
@@ -246,13 +282,11 @@ async def _run_specialist_with_watchdog(
                 hang_reason,
                 _TEST_ORCHESTRATOR_SDK_TIMEOUT_CAP_SECONDS,
             )
-            # Cooperative cancel first: lets the in-flight _cancel_monitor
-            # dispatch harness.cancel() (unblocks LangGraph's ainvoke) +
-            # SIGTERM (SDK subprocess). Then hard-cancel the asyncio task so
-            # this coroutine returns promptly rather than waiting on the 2s
-            # monitor poll.
-            if cancellation_event is not None:
-                cancellation_event.set()
+            # TASK-FIX-SPECCOCH01: set ONLY the specialist-local event.
+            # The caller's shared cancellation_event MUST NOT be touched —
+            # that is the signal that drives the Coach grace-period
+            # cascade in autobuild._loop_phase.
+            specialist_local_event.set()
             invoke_task.cancel()
             break
 
@@ -271,6 +305,10 @@ async def _run_specialist_with_watchdog(
     if hang_reason is not None:
         _reap_specialist_processes(agent_invoker, specialist_name)
         return "failed", hang_reason
+    if external_cancel:
+        # Shared-event cancellation came from outside; the in-flight LangGraph
+        # cleanup contract has already been honoured via the local forward.
+        return "failed", "specialist invocation cancelled"
     return "passed", None
 
 
@@ -354,14 +392,23 @@ async def run_specialist(
     previous_timeout = agent_invoker.sdk_timeout_seconds
     previous_cancellation = agent_invoker._cancellation_event
 
-    # The watchdog terminates cooperatively through ``_cancel_monitor``,
-    # which only starts if ``agent_invoker._cancellation_event`` is set when
-    # ``_invoke_with_role`` begins. Reuse the caller's event when supplied,
-    # otherwise synthesise one for the watchdog so the cooperative
-    # harness.cancel() + SIGTERM path is available.
-    effective_cancellation = cancellation_event
-    if effective_cancellation is None and watchdog_enabled and previous_cancellation is None:
-        effective_cancellation = threading.Event()
+    # TASK-FIX-SPECCOCH01 (Shape A): when the watchdog is enabled, always
+    # install a fresh **specialist-local** event as the in-flight
+    # ``_cancel_monitor`` polling target. Setting this event signals
+    # ``harness.cancel()`` + SIGTERM without touching the caller's shared
+    # ``cancellation_event``. The shared event is monitored separately
+    # inside ``_run_specialist_with_watchdog`` and forwarded into the
+    # specialist-local event when set externally (preserves the CTOUT01
+    # in-flight LangGraph cleanup contract on the real task-timeout path).
+    #
+    # When the watchdog is disabled the legacy direct-passthrough is kept:
+    # the caller's event (if any) becomes the monitor's polling target.
+    specialist_local_event: Optional[threading.Event] = None
+    if watchdog_enabled:
+        specialist_local_event = threading.Event()
+        effective_cancellation = specialist_local_event
+    else:
+        effective_cancellation = cancellation_event
     cancellation_overridden = (
         effective_cancellation is not None
         and effective_cancellation is not previous_cancellation
@@ -398,11 +445,16 @@ async def run_specialist(
 
     try:
         if watchdog_enabled:
+            # ``specialist_local_event`` is guaranteed non-None inside this
+            # branch by the construction above; assert that for the type
+            # checker and to document the invariant for future readers.
+            assert specialist_local_event is not None
             status, error_message = await _run_specialist_with_watchdog(
                 agent_invoker=agent_invoker,
                 invoke_kwargs=invoke_kwargs,
                 watchdog_seconds=float(no_activity_watchdog_seconds),
-                cancellation_event=effective_cancellation,
+                specialist_local_event=specialist_local_event,
+                shared_cancellation_event=cancellation_event,
                 specialist_name=specialist_name,
                 task_id=task_id,
             )

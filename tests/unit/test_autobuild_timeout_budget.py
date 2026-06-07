@@ -159,8 +159,15 @@ def _make_orchestrator(
 class TestTimeoutBudgetConstants:
     """Verify module-level constants are defined with correct values."""
 
-    def test_coach_grace_period_is_120(self):
-        assert COACH_GRACE_PERIOD_SECONDS == 120
+    def test_coach_grace_period_default_is_1500(self):
+        """TASK-FIX-SPECCOCH01 (Shape B) raised the default from 120 → 1500
+        to cover the empirically-observed gemma4:26b Coach turn-1 latency
+        (run-9 of FEAT-AOF measured 944 s under ``--reasoning off``).
+
+        The original 120 s ceiling guaranteed Coach silence whenever the
+        grace-period branch fired in autobuild._loop_phase.
+        """
+        assert COACH_GRACE_PERIOD_SECONDS == 1500
 
     def test_min_turn_budget_is_600(self):
         assert MIN_TURN_BUDGET_SECONDS == 600
@@ -171,10 +178,13 @@ class TestTimeoutBudgetConstants:
         assert COACH_GRACE_PERIOD_SECONDS > 0
         assert MIN_TURN_BUDGET_SECONDS > 0
 
-    def test_grace_period_less_than_min_turn_budget(self):
-        """Grace period should be smaller than the min turn budget so that
-        we can still grant Coach time even after exhausting the per-turn check."""
-        assert COACH_GRACE_PERIOD_SECONDS < MIN_TURN_BUDGET_SECONDS
+    # NOTE: the legacy ``grace_period < min_turn_budget`` invariant was retired
+    # with TASK-FIX-SPECCOCH01. The grace-period branch only fires after the
+    # outer task budget is already exhausted (``cancellation_event`` set), so
+    # comparing it against the per-turn floor (which gates whether a *new*
+    # turn starts) is no longer meaningful. The grace period now needs to be
+    # large enough to cover real Coach turn-1 latency under slow coaches
+    # (1500 s default, env-tunable).
 
     def test_min_turn_budget_env_override(self):
         """GUARDKIT_MIN_TURN_BUDGET overrides the 600 s default at module load (TASK-ABSR-MTBC)."""
@@ -192,6 +202,51 @@ class TestTimeoutBudgetConstants:
         # patch.dict has now removed the override; reload back to default.
         importlib.reload(autobuild_module)
         assert autobuild_module.MIN_TURN_BUDGET_SECONDS == 600
+
+    def test_coach_grace_period_env_override(self):
+        """GUARDKIT_COACH_GRACE_PERIOD_SECONDS overrides the 1500 s default at
+        module load (TASK-FIX-SPECCOCH01 AC-2). Follows the same env-tunable
+        pattern as ``GUARDKIT_MIN_TURN_BUDGET`` and
+        ``GUARDKIT_TASK_TIMEOUT_SECONDS``.
+        """
+        import guardkit.orchestrator.autobuild as autobuild_module
+
+        with patch.dict(
+            os.environ, {"GUARDKIT_COACH_GRACE_PERIOD_SECONDS": "300"}
+        ):
+            importlib.reload(autobuild_module)
+            try:
+                assert autobuild_module.COACH_GRACE_PERIOD_SECONDS == 300
+            finally:
+                pass
+
+        # Restore module to default state so other tests see the canonical
+        # 1500 s value regardless of run order.
+        importlib.reload(autobuild_module)
+        assert autobuild_module.COACH_GRACE_PERIOD_SECONDS == 1500
+
+    def test_coach_grace_period_unset_resolves_to_default(self):
+        """AC-2 (default branch): when GUARDKIT_COACH_GRACE_PERIOD_SECONDS
+        is unset, the constant resolves to the 1500 s default. Exercised
+        via a clean reload with the env var explicitly removed.
+        """
+        import guardkit.orchestrator.autobuild as autobuild_module
+
+        env_without = {
+            k: v
+            for k, v in os.environ.items()
+            if k != "GUARDKIT_COACH_GRACE_PERIOD_SECONDS"
+        }
+        with patch.dict(os.environ, env_without, clear=True):
+            importlib.reload(autobuild_module)
+            try:
+                assert autobuild_module.COACH_GRACE_PERIOD_SECONDS == 1500
+            finally:
+                pass
+
+        # Restore via final reload under the original env so subsequent
+        # tests see the canonical default.
+        importlib.reload(autobuild_module)
 
 
 # ============================================================================
@@ -817,41 +872,63 @@ class TestCapSpecialistTimeout:
     def test_uses_scaled_when_ample_remaining(
         self, worktree_path, mock_worktree
     ):
-        """Ample remaining_budget → returns scaled value unchanged."""
+        """Ample remaining_budget → returns scaled value unchanged.
+
+        Expressed in terms of ``COACH_GRACE_PERIOD_SECONDS`` so the
+        assertion stays correct as the constant evolves
+        (TASK-FIX-SPECCOCH01 raised the default 120 → 1500).
+        """
+        scaled = 1200
+        # Pick remaining well above scaled + grace so the wall clamp never
+        # bites the scaled value.
+        remaining = float(scaled + COACH_GRACE_PERIOD_SECONDS + 1000)
         orch = self._orchestrator(
-            worktree_path, mock_worktree, scaled_timeout=1200
+            worktree_path, mock_worktree, scaled_timeout=scaled
         )
-        # 2400 remaining - 120 grace = 2280 reserved; min(1200, 2280) = 1200
         result = orch._cap_specialist_timeout(
-            remaining_budget=2400.0, task_id="TASK-AB-001"
+            remaining_budget=remaining, task_id="TASK-AB-001"
         )
-        assert result == 1200
+        assert result == scaled
         orch._agent_invoker._calculate_sdk_timeout.assert_called_once_with(
-            "TASK-AB-001", remaining_budget=2400.0
+            "TASK-AB-001", remaining_budget=remaining
         )
 
     def test_caps_when_low_remaining(
         self, worktree_path, mock_worktree
     ):
-        """Low remaining_budget → cap to remaining minus COACH_GRACE_PERIOD."""
+        """Low remaining_budget → cap to remaining minus COACH_GRACE_PERIOD.
+
+        Numbers chosen so the cap lands between the 60 s floor and the
+        scaled value, regardless of the grace-period default.
+        """
+        scaled = 5000
+        # Pick remaining so the reservation lands at a known, non-floor cap.
+        reserved_target = 680
+        remaining = float(reserved_target + COACH_GRACE_PERIOD_SECONDS)
         orch = self._orchestrator(
-            worktree_path, mock_worktree, scaled_timeout=1200
+            worktree_path, mock_worktree, scaled_timeout=scaled
         )
-        # 800 remaining - 120 grace = 680 reserved; min(1200, 680) = 680
         result = orch._cap_specialist_timeout(
-            remaining_budget=800.0, task_id="TASK-AB-001"
+            remaining_budget=remaining, task_id="TASK-AB-001"
         )
-        assert result == 680
+        assert result == reserved_target
 
     def test_floor_at_60s(self, worktree_path, mock_worktree):
-        """Pathologically-low remaining → floor at 60 s, never zero/negative."""
+        """Pathologically-low remaining → floor at 60 s, never zero/negative.
+
+        Both arms (remaining below the grace reservation, and remaining=0)
+        must hit the floor regardless of the grace-period default.
+        """
         orch = self._orchestrator(
             worktree_path, mock_worktree, scaled_timeout=1200
         )
-        # 100 remaining - 120 grace = -20 reserved; floor 60; min(1200, 60) = 60
+        # Pick remaining strictly below the grace reservation so the
+        # ``reserved = remaining - grace`` arm goes negative and the
+        # ``max(60, ...)`` floor is the only thing that matters.
+        below_grace = float(max(COACH_GRACE_PERIOD_SECONDS - 20, 0))
         assert (
             orch._cap_specialist_timeout(
-                remaining_budget=100.0, task_id="TASK-AB-001"
+                remaining_budget=below_grace, task_id="TASK-AB-001"
             )
             == 60
         )
@@ -908,24 +985,28 @@ class TestCapSpecialistTimeout:
     def test_scaled_value_propagates_from_invoker(
         self, worktree_path, mock_worktree
     ):
-        """The function trusts the scaler's verdict: a 2999 s scaled value
+        """The function trusts the scaler's verdict: a high scaled value
         with ample wall budget passes through unchanged.
 
-        Reproduces the FEAT-RAG-08 / TASK-AIV2-003 scenario from the parent
-        review: complexity=7, mode=task-work, base=1200 → scaled=2999, wall
-        budget ~2787 s. Pre-fix the orchestrator clamped to a flat 1200;
-        post-fix it clamps against the actual wall reserve.
+        Reproduces the FEAT-RAG-08 / TASK-AIV2-003 *intent* from the parent
+        review: when the wall reserve is between the scaled value and the
+        scaled-plus-grace ceiling, the wall reserve wins. Expressed in
+        terms of ``COACH_GRACE_PERIOD_SECONDS`` so the assertion stays
+        correct under TASK-FIX-SPECCOCH01's default-raise.
         """
+        scaled = 2999
+        # Pick remaining so reserved sits below scaled (forces clamp).
+        reserved_target = 2667
+        remaining = float(reserved_target + COACH_GRACE_PERIOD_SECONDS)
         orch = self._orchestrator(
-            worktree_path, mock_worktree, scaled_timeout=2999
+            worktree_path, mock_worktree, scaled_timeout=scaled
         )
-        # 2787 remaining - 120 grace = 2667 reserved; min(2999, 2667) = 2667
         result = orch._cap_specialist_timeout(
-            remaining_budget=2787.0, task_id="TASK-AIV2-003"
+            remaining_budget=remaining, task_id="TASK-AIV2-003"
         )
-        assert result == 2667
+        assert result == reserved_target
         orch._agent_invoker._calculate_sdk_timeout.assert_called_once_with(
-            "TASK-AIV2-003", remaining_budget=2787.0
+            "TASK-AIV2-003", remaining_budget=remaining
         )
 
     def test_task_id_is_required(self, worktree_path, mock_worktree):
