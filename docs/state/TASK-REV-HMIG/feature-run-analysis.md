@@ -20,6 +20,24 @@
 - [ ] AC-008 — Falsifier verdict deferred until LGFM lands and a clean run 2 produces data.
 - [〜] AC-009 — This analysis document carries the run-1 narrative (§§0, 6); §§1-5, 7-8 pending real data.
 
+## Status header (2026-06-07T10:20Z, post-run-10)
+
+**TASK-HMIG-010 BLOCKED on F22 — SPECHANG hang-detection cascades into 120s Coach grace-period.** New code-side defect (not substrate). Filed as TASK-FIX-SPECCOCH01. AC-009 / `--reasoning auto` still not actually tested — Coach was killed before producing any output.
+
+Run 10 (2026-06-07T10:09, 10m 20s, post-`--reasoning auto` + `task_timeout=4800s` + TASK-FIX-COACHPYENV + TASK-OPS-AOFENV):
+
+- **F20 + F21 still RESOLVED ✓** — zero `HTTP 400` / `exceed_context_size_error` in run 10 (grep-confirmed). §9.13 n_ctx bump still validated.
+- **All concurrent task landings empirically validated**:
+  - TASK-FIX-AOFBUDG ✓ — `task_timeout=4800s` effective ([run-10:11](../../reviews/autobuild-migration/autobuild-FEAT-AOF-run-10.md#L11))
+  - TASK-FIX-COACHPYENV ✓ — Coach independent tests pinned to bootstrap venv ran in 84.6s vs 200s+ previously ([run-10:237](../../reviews/autobuild-migration/autobuild-FEAT-AOF-run-10.md#L237))
+  - TASK-OPS-AOFENV ✓ — FalkorDB up, Graphiti context loaded (7 categories, 3210/5200 tokens, 1.0s load — [run-10:220-234](../../reviews/autobuild-migration/autobuild-FEAT-AOF-run-10.md#L220-L234))
+  - TASK-FIX-SPECHANG watchdog ✓ — detected an actual specialist hang at the 150s no-model-activity threshold ([run-10:214](../../reviews/autobuild-migration/autobuild-FEAT-AOF-run-10.md#L214)); detection correct, the cascade is the bug
+  - TASK-ABFIX-004 Player-succeeded grace-period branch ✓ — the mechanism fires as designed when `cancellation_event` is set and Player succeeded ([run-10:218](../../reviews/autobuild-migration/autobuild-FEAT-AOF-run-10.md#L218)); the 120s constant value is what's wrong
+- **F22 (NEW, code-side cascade defect)**: SPECHANG hang-detection reuses the shared `cancellation_event` to abort the in-flight specialist (correct for CTOUT01 in-flight cleanup). But that event is also the trigger the orchestrator uses to detect *task-level* cancellation between Player and Coach — so the Player-succeeded grace branch fires with `COACH_GRACE_PERIOD_SECONDS=120`. 120s is structurally insufficient given run-9's empirical 944s Coach turn 1. In run-10 the Coach LLM got ~80s after Graphiti context + independent tests consumed 85s of the 120s window. CTOUT01 cancelled cleanly with **0 text blocks**. Recorded as I-011. Filed as [TASK-FIX-SPECCOCH01](../../../tasks/backlog/autobuild-harness-migration/TASK-FIX-SPECCOCH01-decouple-specialist-hang-from-coach-grace.md).
+- **AC-006 / AC-009 NOT exercised** — Coach never emitted any output, so we still don't know whether `--reasoning auto` solves F17 by populating `reasoning_content` with the fenced verdict.
+
+After SPECCOCH01 lands, re-run with same invocation (`--reasoning auto` already configured; same `GUARDKIT_TASK_TIMEOUT_SECONDS=4800` or per-task frontmatter). Run 11 will be the actual AC-009 / AC-006 test.
+
 ## Status header (2026-06-07T00:16Z, post-run-9)
 
 **TASK-HMIG-010 BLOCKED on F17 persistence under `--reasoning off`** — operator-side llama-swap reasoning-mode flip is the next experiment (AC-009 / COACHBUDG01 surface). F20 + F21 from run 8 are both RESOLVED empirically.
@@ -363,6 +381,57 @@ Cosmetic process-exit teardown issue. Doesn't affect outcomes. Filed as [TASK-FI
 - (b) Grant Coach a constrained Write tool limited to `coach_turn_*.json` paths (removes the contract complexity but mildly violates the read-only invariant — a controlled exception is plausible)
 
 File as TASK-REV-COACH-OUTPUT-CONTRACT post-cutover.
+
+### F22 (2026-06-07, run 10, code-side cascade defect): SPECHANG hang-detection cascades into 120s Coach grace-period, structurally incompatible with gemma4 Coach reasoning time
+
+**Where**:
+- [`specialist_invocations.py:113`](../../../guardkit/orchestrator/specialist_invocations.py#L113) — `_WATCHDOG_HANG_REASON_TEMPLATE = "hang detected (no model activity for {seconds}s)"` (150s threshold)
+- [`autobuild.py:191`](../../../guardkit/orchestrator/autobuild.py#L191) — `COACH_GRACE_PERIOD_SECONDS: int = 120`
+- [`autobuild.py:3077-3087`](../../../guardkit/orchestrator/autobuild.py#L3077-L3087) — the Player-succeeded → Coach grace-period branch (TASK-ABFIX-004)
+
+**Evidence**: Run-10 sequence ([autobuild-FEAT-AOF-run-10.md:214-253](../../reviews/autobuild-migration/autobuild-FEAT-AOF-run-10.md#L214-L253)):
+
+```
+Line 214: WARNING:guardkit.orchestrator.specialist_invocations:[TASK-FIX-IA03]
+          run_specialist(test-orchestrator): hang detected (no model activity for 150s) —
+          terminating before the 600s duration cap
+Line 218: INFO:guardkit.orchestrator.autobuild: Cancellation detected for TASK-FIX-IA03
+          between Player and Coach at turn 1, but Player succeeded —
+          granting Coach grace period (120s)
+Line 250: INFO:guardkit.orchestrator.agent_invoker: [TASK-FIX-IA03] SDK timeout: 120s
+          (base=1200s, mode=task-work x1.5, complexity=3 x1.3, budget_cap=120s)
+Line 252: INFO:guardkit.orchestrator.agent_invoker: TASK-FIX-CTOUT01: Cancellation event
+          detected during coach invocation; calling harness.cancel() and terminating any
+          SDK subprocess.
+Line 253: INFO:guardkit.orchestrator.agent_invoker: Extracted partial data from 0 events:
+          0 text blocks, 0 tool calls, 0 file mods
+```
+
+The Coach SDK timeout is capped to `COACH_GRACE_PERIOD_SECONDS=120s`. Coach independent tests (TASK-FIX-COACHPYENV-pinned interpreter, running pytest in 84.6s) consumed most of that window. The LLM invocation got ~80s before CTOUT01 cancelled cleanly with **zero text blocks extracted**.
+
+**Class-of-defect**: code-side **cascade defect** — two reasonable defensive features compose into an architectural impossibility. Distinct from F1/F4/F10 (migration-boundary defects) and F17/F20 (substrate-quality defects). Each feature in isolation is correct:
+- SPECHANG watchdog needs to abort the in-flight specialist (correct for CTOUT01 LangGraph cleanup contract — see `.claude/rules/harness-cancellation-contract.md`)
+- TASK-ABFIX-004 Coach grace-period needs to fire when task-level cancellation hits between Player and Coach (so Player's successful work can still be validated)
+
+The architectural mismatch: the same `cancellation_event` is the abort signal AND the task-level-cancellation detector. The orchestrator can't distinguish "specialist hang requires cleanup" from "task budget exhausted, give Coach grace". Both shapes trip the same condition.
+
+**Why this didn't surface earlier**:
+- TASK-FIX-SPECHANG hang-watchdog landed recently (post run 9)
+- Run-9 Coach turn 1 took 944s under `--reasoning off` — the empirical Coach-cost evidence that 120s is structurally insufficient was generated by run 9 itself
+- Run 10 was the first run to exercise both features together: hang-watchdog fires + Player succeeded + grace period activates + Coach LLM cannot complete inside the constant
+
+**Resolution** — [TASK-FIX-SPECCOCH01](../../../tasks/backlog/autobuild-harness-migration/TASK-FIX-SPECCOCH01-decouple-specialist-hang-from-coach-grace.md) (~1-2h, complexity 3):
+
+| Shape | Change | Pros | Cons |
+|---|---|---|---|
+| **A (primary)** | Specialist-hang detection does NOT set the task-level `cancellation_event` — only aborts the specialist. Orchestrator continues normally; specialist failure already injects `validation=violation` records gracefully. | Cleaner separation. Specialist failures are already non-fatal. Doesn't bake in a magic-number budget. | Touches the SPECHANG watchdog wiring; need to verify it doesn't break the in-flight LangGraph cleanup the cancellation-event currently triggers (the abort path can use a specialist-local event instead of the shared one). |
+| **B (defensive backstop)** | Make `COACH_GRACE_PERIOD_SECONDS` env-tunable (`GUARDKIT_COACH_GRACE_PERIOD_SECONDS`, default raised to 1500). Same env-tuning pattern as `GUARDKIT_TASK_TIMEOUT_SECONDS` from TASK-FIX-AOFBUDG. | One-line change. Preserves TASK-ABFIX-004 contract. Cheap belt-and-braces even with Shape A. | Doesn't address the architectural confusion. Magic number drifts as substrates change. |
+
+Recommend **A + B as backstop**. The architectural split is what TASK-ABFIX-004 was originally trying to express ("Player-succeeded near a *timeout boundary*"); a SPECHANG hang isn't the same shape as a task-timeout boundary, so it shouldn't take the same code path.
+
+**Severity**: **HIGH** — blocks AC-006 / AC-009 evaluation. Coach never gets enough budget to emit anything, so we can't tell whether `--reasoning auto` solves F17. AC-009 surface still untested.
+
+Recorded as I-011. **Blocks TASK-HMIG-010** as the verdict-blocker for run 11.
 
 ### F20 (2026-06-06, run 8, substrate-sizing) — **RESOLVED 2026-06-07 (run 9)**: gemma4-coach `n_ctx=65536` too small for Coach + specialist payloads
 

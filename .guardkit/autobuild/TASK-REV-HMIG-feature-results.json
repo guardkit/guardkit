@@ -133,6 +133,58 @@
         "observation": "test-orchestrator wall time scales with Player diff size; with 45-file diff on turn 2 it hits the 600s SPECHANG cap, consuming the turn-2 budget before Coach can complete"
       },
       "notes": "F20 + F21 RESOLVED: zero HTTP 400 / exceed_context_size_error in run-9 (grep-confirmed). Architecture invariants all still working: COACHSF01 (turn 1 synthetic feedback fired correctly), CTOUT01 (turn 2 cancellation propagated cleanly at legitimate 3000s task-timeout), d526bf0f selector, d07a4209 --coach-model plumbing. F17 now the dominant load-bearing constraint. Next experiment: run 10 with --reasoning auto (tests AC-009 / COACHBUDG01 parser-fallback empirically) + --task-timeout 4500 (absorbs F13 SPECHANG variance). If run 10 produces >=95% Coach verdict-emission rate, AC-006/AC-009 victory and TASK-HMIG-011 cutover unblocks. If not, escalation path is nemotron-3-super:120b-a12b (gated on 2nd GB10 + ConnectX-7)."
+    },
+    {
+      "run_number": 10,
+      "started_at": "2026-06-07T10:09:23Z",
+      "finished_at": "2026-06-07T10:19:44Z",
+      "wall_clock_seconds": 620,
+      "outcome": "feature_orchestrator_halted_on_wave1_speccoach_cascade",
+      "halted_by": "stop_on_failure=True after Wave 1 IA03 Coach was killed inside the 120s grace-period window (CTOUT01 propagated correctly, but the grace constant was structurally insufficient for gemma4 Coach reasoning)",
+      "stdout_log": "docs/reviews/autobuild-migration/autobuild-FEAT-AOF-run-10.md",
+      "feature_status": "FAILED",
+      "feature_status_caveat": "F20 + F21 still RESOLVED in run 10 (zero HTTP 400 / exceed_context_size_error). All concurrent task landings empirically validated (TASK-FIX-AOFBUDG 4800s timeout, TASK-FIX-COACHPYENV bootstrap venv pin, TASK-OPS-AOFENV FalkorDB up). NEW finding F22 (code-side cascade defect): SPECHANG hang-detection cascades into TASK-ABFIX-004 Player-succeeded Coach grace-period with COACH_GRACE_PERIOD_SECONDS=120, structurally insufficient given run-9 evidence of 944s gemma4 Coach turn 1. AC-009 / --reasoning auto NOT exercised — Coach was killed before producing any output (0 text blocks extracted).",
+      "tasks_completed_strict": 0,
+      "tasks_failed_strict": 1,
+      "clean_executions_per_orchestrator": "1/1 (100%) — Player turn 1 succeeded (382s, 40 created + 1 modified); specialist test-orchestrator hit the new 150s no-model-activity watchdog correctly; Coach grace-period branch took the right Player-succeeded path; CTOUT01 cancelled Coach cleanly when grace expired. Every individual mechanism worked; the cascade between them is the bug.",
+      "first_pass_success_rate_strict": 0.0,
+      "first_pass_success_rate_inclusive_of_substantive_work": "n/a (Player substantively succeeded but Coach never had budget to validate; the failure was a code-side interaction defect downstream of two independently-correct features)",
+      "config": {
+        "harness": "langgraph",
+        "model": "qwen36-workhorse",
+        "coach_model": "gemma4:26b",
+        "openai_base_url": "http://promaxgb10-41b1:9000/v1",
+        "reasoning_mode_player": "off (per qwen36-workhorse §3.2)",
+        "reasoning_mode_coach": "auto (operator flipped from off per run-9 §9.13 addendum recommendation, COACHBUDG01 AC-009 surface)",
+        "task_timeout_seconds": 4800,
+        "task_timeout_source": "per-task frontmatter override (TASK-FIX-AOFBUDG)",
+        "llama_swap_gemma4_coach_n_ctx": "operator-bumped (§9.13)",
+        "coach_independent_test_interpreter": "bootstrap venv (TASK-FIX-COACHPYENV pinning verified)"
+      },
+      "f22_evidence": {
+        "spechang_watchdog_threshold_seconds": 150,
+        "spechang_fired_at_line": 214,
+        "spechang_specialist": "test-orchestrator (Player-role, qwen36-workhorse)",
+        "coach_grace_period_seconds": 120,
+        "coach_grace_branch_fired_at_line": 218,
+        "coach_grace_branch_rationale": "Player succeeded; TASK-ABFIX-004 Player-succeeded path correctly invoked",
+        "coach_sdk_timeout_capped_at_line": 250,
+        "coach_sdk_timeout_capped_to": "120s (budget_cap=120s)",
+        "coach_independent_tests_consumed_seconds": 84.6,
+        "coach_llm_wall_seconds_before_cancel": 80,
+        "coach_text_blocks_extracted": 0,
+        "ctout01_cancellation_at_line": 252,
+        "comparison_run_9_coach_turn_1_wall_seconds": 944,
+        "comparison_observation": "Run-9 evidence shows gemma4 Coach turn 1 takes 944s under --reasoning off; 120s grace period is fundamentally incompatible regardless of reasoning mode"
+      },
+      "concurrent_task_validation": {
+        "TASK-FIX-AOFBUDG": "VALIDATED — task_timeout=4800s effective at line 11",
+        "TASK-FIX-COACHPYENV": "VALIDATED — interpreter pinning visible at line 237; pytest ran in 84.6s vs 200s+ previously",
+        "TASK-OPS-AOFENV": "VALIDATED — FalkorDB up, Graphiti context loaded (7 categories, 3210/5200 tokens, 1.0s) at lines 220-234",
+        "TASK-FIX-SPECHANG_watchdog": "VALIDATED — detected actual specialist hang at line 214; the 150s no-model-activity threshold detection is correct",
+        "TASK-ABFIX-004_grace_branch": "VALIDATED — fired the right Player-succeeded path at line 218; the 120s constant is what's wrong"
+      },
+      "notes": "F20 + F21 still RESOLVED. All concurrent task landings empirically validated. NEW finding F22 is a code-side interaction defect filed as TASK-FIX-SPECCOCH01 (Shape A: decouple specialist-hang from task-level cancellation_event; Shape B as backstop: env-tunable COACH_GRACE_PERIOD_SECONDS via GUARDKIT_COACH_GRACE_PERIOD_SECONDS, default raised to 1500s). AC-006 / AC-009 still not exercised — Coach produced 0 text blocks. After SPECCOCH01 lands, run 11 with the same invocation (--reasoning auto, task_timeout=4800s) will be the actual AC-009 test."
     }
   ],
   "task_outcomes": [
@@ -257,6 +309,22 @@
       "non_recoverable": false,
       "non_recoverable_caveat": "F17 persistence + F13 SPECHANG compounding are substrate-quality findings, not code defects. Per AC-006 definition ('any failure the operator cannot resolve without code edits to the harness itself'), RECOVERABLE — operator flips gemma4-coach to --reasoning auto (exercises COACHBUDG01 AC-009 parser-fallback) and bumps --task-timeout to 4500s.",
       "notes": "Architecture invariants from runs 1-8 ALL still working: COACHSF01 + CTOUT01 + selector colon-alias + --coach-model plumbing + LGFM3 + MODEL-PROFILE + ghost-path filter. F20 + F21 RESOLVED by §9.13 n_ctx bump. F17 (25211 chars prose, 5.1x run-8) is now dominant. Next run: --reasoning auto + --task-timeout 4500."
+    },
+    {
+      "task_id": "TASK-FIX-IA03",
+      "run_number": 10,
+      "wave": 1,
+      "parallel_group": null,
+      "coach_decision": "cancelled_on_grace_period_cascade",
+      "turns_used": 1,
+      "first_pass_success": false,
+      "first_pass_success_caveat": "Turn 1 Player substantively succeeded (40 created, 1 modified in 382s). Turn 1 test-orchestrator specialist hit the new SPECHANG hang-detection watchdog at 150s of no model activity — correctly aborted. The watchdog set the task-level cancellation_event, which triggered TASK-ABFIX-004's Player-succeeded Coach grace-period branch with COACH_GRACE_PERIOD_SECONDS=120 capped. Coach independent tests (84.6s, TASK-FIX-COACHPYENV-pinned interpreter) consumed most of that window. Coach LLM got ~80s before CTOUT01 cancelled cleanly with 0 text blocks. AC-009 / --reasoning auto NOT actually exercised — Coach never produced output. F20 + F21 still resolved (zero HTTP 400 / exceed_context_size_error).",
+      "resume_used": false,
+      "resume_outcome": "n/a",
+      "wall_clock_seconds": 620,
+      "non_recoverable": true,
+      "non_recoverable_caveat": "F22 root cause is a code-side cascade defect (SPECHANG hang-detection setting task-level cancellation_event + COACH_GRACE_PERIOD_SECONDS=120 baked-in constant). Per AC-006 definition ('any failure the operator cannot resolve without code edits to the harness itself'), this IS non-recoverable until TASK-FIX-SPECCOCH01 lands. Two-shape fix: (A) decouple specialist-hang from task-level cancellation_event; (B) make COACH_GRACE_PERIOD_SECONDS env-tunable as defensive backstop.",
+      "notes": "First run with --reasoning auto on gemma4-coach + task_timeout=4800s + TASK-FIX-COACHPYENV pinned interpreter + TASK-OPS-AOFENV FalkorDB up. All concurrent task landings validated. New code-side defect F22 surfaced — interaction between recently-landed SPECHANG hang-watchdog and earlier TASK-ABFIX-004 grace-period mechanism. Filed as TASK-FIX-SPECCOCH01. After SPECCOCH01 lands, run 11 will be the actual AC-009 test."
     }
   ],
   "task_outcome_schema": {
