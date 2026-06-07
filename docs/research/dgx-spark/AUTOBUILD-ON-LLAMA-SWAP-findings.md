@@ -2436,6 +2436,21 @@ mask. The SDK path, which is what autobuild uses by default until the
 2026-06-15 cutover, now handles both channels correctly via the
 ThinkingBlock plumbing landed here.
 
+**Same-session ctx bump (2026-06-06 follow-on).** `gemma4-coach`
+`--ctx-size 65536 → 131072` after the latest autobuild run ran out of
+context mid-loop on a complex turn — reasoning + full task plan +
+Player report + verdict do not all fit at 65 K when the parser is now
+willing to consume reasoning_text. Paired with `--cache-type-k q8_0
+--cache-type-v q8_0` (matching the gpt-oss-120b historical pattern)
+so the doubled ctx × halved KV precision nets to roughly
+memory-neutral: pre-bump steady-state ~107 GB used / 121 GB total
+under load; post-bump preload (`qg + ne + qw + gc + dl`) 89 GB used /
+32 GB available with all four always-on members healthy. q8 KV at
+q4_k_xl weights is well-validated for instruction-following quality
+on Gemma-4-class models — acceptable trade for the ctx doubling.
+Rollback recipe: revert to `--ctx-size 65536` and drop the two
+`--cache-type-*` flags (single config edit + restart).
+
 **Meta-lesson (candidate `.claude/rules/` seed once empirically
 confirmed across 2-3 substrates).** *"Hybrid reasoning models route
 generation to `reasoning_content` by default. Orchestrator parsers must
