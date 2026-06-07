@@ -16,6 +16,11 @@ parent_review: TASK-REV-A515
 feature_id: FEAT-AOF
 wave: 1
 implementation_mode: task-work
+autobuild:
+  # TASK-FIX-AOFBUDG: 80-min per-task budget so a turn-1-reject → turn-2-accept
+  # run (~3864s wall-clock) survives without a feature-level timeout cancel.
+  # Read by FeatureOrchestrator._resolve_task_timeout (× timeout_multiplier).
+  task_timeout: 4800
 test_results:
   status: pending
   coverage: null
