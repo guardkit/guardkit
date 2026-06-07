@@ -5429,6 +5429,7 @@ class AutoBuildOrchestrator:
                 peer_changed_files=peer_changed_files,
                 model_name=self._model_name,  # TASK-FIX-LGFM3
                 coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
+                venv_python=self._venv_python,  # TASK-FIX-COACHPYENV
             )
             validation_result = validator.validate(
                 task_id=task_id,
@@ -5572,6 +5573,7 @@ class AutoBuildOrchestrator:
             peer_changed_files=peer_changed_files,
             model_name=self._model_name,  # TASK-FIX-LGFM3
             coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
+            venv_python=self._venv_python,  # TASK-FIX-COACHPYENV
         )
 
         # Step 1: gather evidence bundle. Never falls back to validate() on
