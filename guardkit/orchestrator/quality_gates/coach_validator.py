@@ -39,6 +39,7 @@ import re
 import subprocess
 import sys
 import time
+from contextlib import aclosing
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
@@ -46,6 +47,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 from guardkit.orchestrator.coach_verification import (
     CoachVerifier,
     HonestyVerification,
+    _resolve_venv_python,
 )
 from guardkit.orchestrator.quality_gates.coach_evidence import (
     CoachEvidenceBundle,
@@ -545,6 +547,7 @@ class CoachValidator:
         peer_changed_files: Optional[Dict[str, Any]] = None,
         model_name: Optional[str] = None,
         coach_model_name: Optional[str] = None,  # TASK-FIX-COACHBUDG01
+        venv_python: Optional[str] = None,  # TASK-FIX-COACHPYENV
     ):
         """
         Initialize CoachValidator.
@@ -594,12 +597,53 @@ class CoachValidator:
             ``AgentInvoker``. Without this, the LangGraph harness receives
             ``model=None`` for ``role='coach_test'`` and falls back to subprocess
             (TASK-FIX-LGFM3 / F12).
+        venv_python : Optional[str]
+            Path to the bootstrap venv Python interpreter Coach should run its
+            independent tests under (typically ``BootstrapResult.venv_python``
+            threaded from the feature orchestrator). When set, the SDK and
+            subprocess test paths pin pytest to this interpreter instead of the
+            host ``which pytest`` / ``sys.executable``. Resolution follows
+            :func:`guardkit.orchestrator.coach_verification._resolve_venv_python`.
+            Without it, Coach could validate against the wrong interpreter
+            (TASK-FIX-COACHPYENV — sibling of the TASK-FIX-7A05 CoachVerifier fix).
         """
         self.worktree_path = Path(worktree_path)
         self.test_command = test_command
         self.test_timeout = test_timeout
         self.task_id = task_id
         self._coach_test_execution = coach_test_execution
+        # TASK-FIX-COACHPYENV: resolve the interpreter Coach runs independent
+        # tests under. Prefers the explicit bootstrap venv, then a filesystem
+        # ``<worktree>/.guardkit/venv/bin/python`` recovery, else None (PATH
+        # pytest / sys.executable for non-Python projects). Reuses the helper
+        # already battle-tested for CoachVerifier (TASK-FIX-7A05) so the two
+        # Coach verification surfaces resolve interpreters identically.
+        self._configured_venv_python: Optional[str] = venv_python
+        self._venv_python: Optional[Path] = _resolve_venv_python(
+            self.worktree_path, venv_python
+        )
+        if venv_python and (
+            self._venv_python is None
+            or str(self._venv_python) != str(Path(venv_python))
+        ):
+            # AC-4 mismatch guard: a bootstrap interpreter was configured but
+            # the resolved interpreter differs (stale path / disappeared venv).
+            # Loud WARNING — Coach is about to verify against a DIFFERENT
+            # interpreter than the bootstrap installed packages into, which is
+            # exactly the run-9 spurious-failure shape.
+            logger.warning(
+                "Coach test interpreter MISMATCH: configured bootstrap venv "
+                "%s but resolved to %s. Independent tests may run under the "
+                "wrong interpreter (TASK-FIX-COACHPYENV).",
+                venv_python,
+                self._venv_python if self._venv_python is not None else
+                "PATH pytest / sys.executable",
+            )
+        elif self._venv_python is not None:
+            logger.info(
+                "CoachValidator pinning independent-test interpreter to %s",
+                self._venv_python,
+            )
         # TASK-FIX-LGFM3: orchestrator model threaded through for SDK test
         # execution path; falls back to None when caller didn't supply one.
         self._model_name: Optional[str] = model_name
@@ -2450,10 +2494,47 @@ class CoachValidator:
                 else:
                     os.environ["PYTHONPATH"] = original
 
+        @contextmanager
+        def _patched_path(venv_bin: Optional[str]):
+            """Scope a venv-bin PATH prepend to harness.invoke (TASK-FIX-COACHPYENV).
+
+            Defence-in-depth companion to the ``-m pytest`` interpreter pin: the
+            SDK harness spawns a Bash subprocess that inherits ``os.environ``, so
+            prepending the bootstrap venv ``bin`` here means even a bare
+            ``pytest``/``python`` the tests shell out to resolves inside the
+            bootstrap environment, not the host Python 3.14 framework. No-op when
+            no venv is resolved. Same single-coach-turn-per-worktree invariant as
+            ``_patched_pythonpath`` makes this process-global mutation acceptable.
+            """
+            if not venv_bin:
+                yield
+                return
+            original = os.environ.get("PATH")
+            current = os.environ.get("PATH", "")
+            os.environ["PATH"] = (
+                f"{venv_bin}{os.pathsep}{current}" if current else venv_bin
+            )
+            try:
+                yield
+            finally:
+                if original is None:
+                    os.environ.pop("PATH", None)
+                else:
+                    os.environ["PATH"] = original
+
         start_time = time.time()
+        # TASK-FIX-COACHPYENV: pin the interpreter in the command the Bash tool
+        # runs so it cannot resolve a stray PATH ``pytest`` (the run-9 Python
+        # 3.14 framework-pytest mismatch). No-op when no venv is resolved.
+        sdk_test_cmd = self._pin_pytest_command(test_cmd)
+        if sdk_test_cmd != test_cmd:
+            logger.info(
+                "Coach SDK test command pinned to bootstrap interpreter: %s",
+                sdk_test_cmd,
+            )
         prompt = (
             f"Run the following test command and report the output:\n\n"
-            f"```bash\n{test_cmd}\n```\n\nProvide the full test output."
+            f"```bash\n{sdk_test_cmd}\n```\n\nProvide the full test output."
         )
 
         # TASK-HMIG-006.5: Restore sdk_debug preservation for the Coach
@@ -2513,7 +2594,12 @@ class CoachValidator:
             bash_is_error: Optional[bool] = None
             api_error: Optional[str] = None
 
-            with _patched_pythonpath(worktree_str):
+            venv_bin = (
+                str(self._venv_python.parent)
+                if self._venv_python is not None
+                else None
+            )
+            with _patched_pythonpath(worktree_str), _patched_path(venv_bin):
                 harness = select_harness(
                     sdk_timeout_seconds=self.test_timeout,
                     allowed_tools=["Bash"],
@@ -2524,58 +2610,64 @@ class CoachValidator:
                 )
 
                 async with asyncio.timeout(self.test_timeout):
-                    async for event in harness.invoke(
-                        prompt=prompt,
-                        role="coach_test",
-                        tools=["Bash"],
-                        cwd=self.worktree_path,
-                        timeout_seconds=self.test_timeout,
-                    ):
-                        # TASK-HMIG-006.5: record every harness event
-                        # the loop consumes. ``preserve_event`` is a
-                        # no-op when ``_sdk_debug_dir`` is None
-                        # (env var unset), so this is zero-cost in
-                        # production.
-                        _sdk_preserve_event(_sdk_debug_dir, event)
-                        if isinstance(event, AssistantMessageEvent):
-                            # API-error short-circuit mirrors the Player
-                            # dispatch in agent_invoker._invoke_with_role.
-                            # Only the SDK harness sets ``event.raw``;
-                            # other substrates have raw=None and this
-                            # check is a no-op there.
-                            if event.raw is not None:
-                                err = check_assistant_message_error(event.raw)
-                                if err:
-                                    api_error = err
-                                    break
-                            collected_text.append(event.text)
-                        elif isinstance(event, ToolResultEvent):
-                            # NOTE (TASK-HMIG-006.3, Architectural review
-                            # Concern 4): the current SDK harness does NOT
-                            # yield ToolResultEvent — sdk_harness.py only
-                            # handles AssistantMessage / ResultMessage /
-                            # ToolUseEvent. On the SDK path bash_is_error
-                            # therefore stays None and the heuristic
-                            # branch below is the effective pass/fail
-                            # determination. This branch is live for any
-                            # future harness that yields ToolResultEvent
-                            # (e.g. a variant that walks UserMessage
-                            # content) and preserves the pre-migration
-                            # tri-state contract:
-                            #   is_error=True  -> bash_is_error=True (tool errored)
-                            #   is_error=False -> bash_is_error=None (heuristic)
-                            # The False->None mapping is intentional:
-                            # is_error=False means "tool ran cleanly" not
-                            # "tests passed", so we let the heuristic
-                            # branch decide from the output text.
-                            content = event.content
-                            if isinstance(content, str):
-                                bash_output = content
-                            else:
-                                bash_output = self._extract_content_text(content)
-                            bash_is_error = True if event.is_error else None
-                        elif isinstance(event, ResultMessageEvent):
-                            break
+                    # TASK-FIX-LGACLOSE: finalise the harness async generator on
+                    # every exit (incl. timeout/cancel) via aclosing() so no
+                    # orphaned async_generator_athrow survives interpreter shutdown.
+                    async with aclosing(
+                        harness.invoke(
+                            prompt=prompt,
+                            role="coach_test",
+                            tools=["Bash"],
+                            cwd=self.worktree_path,
+                            timeout_seconds=self.test_timeout,
+                        )
+                    ) as _harness_stream:
+                        async for event in _harness_stream:
+                            # TASK-HMIG-006.5: record every harness event
+                            # the loop consumes. ``preserve_event`` is a
+                            # no-op when ``_sdk_debug_dir`` is None
+                            # (env var unset), so this is zero-cost in
+                            # production.
+                            _sdk_preserve_event(_sdk_debug_dir, event)
+                            if isinstance(event, AssistantMessageEvent):
+                                # API-error short-circuit mirrors the Player
+                                # dispatch in agent_invoker._invoke_with_role.
+                                # Only the SDK harness sets ``event.raw``;
+                                # other substrates have raw=None and this
+                                # check is a no-op there.
+                                if event.raw is not None:
+                                    err = check_assistant_message_error(event.raw)
+                                    if err:
+                                        api_error = err
+                                        break
+                                collected_text.append(event.text)
+                            elif isinstance(event, ToolResultEvent):
+                                # NOTE (TASK-HMIG-006.3, Architectural review
+                                # Concern 4): the current SDK harness does NOT
+                                # yield ToolResultEvent — sdk_harness.py only
+                                # handles AssistantMessage / ResultMessage /
+                                # ToolUseEvent. On the SDK path bash_is_error
+                                # therefore stays None and the heuristic
+                                # branch below is the effective pass/fail
+                                # determination. This branch is live for any
+                                # future harness that yields ToolResultEvent
+                                # (e.g. a variant that walks UserMessage
+                                # content) and preserves the pre-migration
+                                # tri-state contract:
+                                #   is_error=True  -> bash_is_error=True (tool errored)
+                                #   is_error=False -> bash_is_error=None (heuristic)
+                                # The False->None mapping is intentional:
+                                # is_error=False means "tool ran cleanly" not
+                                # "tests passed", so we let the heuristic
+                                # branch decide from the output text.
+                                content = event.content
+                                if isinstance(content, str):
+                                    bash_output = content
+                                else:
+                                    bash_output = self._extract_content_text(content)
+                                bash_is_error = True if event.is_error else None
+                            elif isinstance(event, ResultMessageEvent):
+                                break
 
             duration = time.time() - start_time
 
@@ -2719,6 +2811,50 @@ class CoachValidator:
         ".tox", ".mypy_cache", ".pytest_cache", "dist", "build", "*.egg-info",
     }
 
+    def _pytest_interpreter(self) -> str:
+        """Return the interpreter Coach should run pytest under.
+
+        TASK-FIX-COACHPYENV: prefer the resolved bootstrap venv interpreter so
+        independent tests run in the same environment the Player's packages were
+        installed into. Falls back to ``sys.executable`` (the orchestrator
+        interpreter) for non-Python projects / no-venv recovery — never bare
+        ``pytest`` from PATH, which is what produced the run-9 Python-3.14
+        framework-pytest mismatch.
+        """
+        return str(self._venv_python) if self._venv_python is not None else sys.executable
+
+    def _pin_pytest_command(self, test_cmd: str) -> str:
+        """Rewrite a bare ``pytest …`` command to pin the bootstrap interpreter.
+
+        TASK-FIX-COACHPYENV: the SDK test path hands ``test_cmd`` to a Bash tool,
+        which resolves ``pytest`` via PATH. Rewriting to
+        ``<venv_python> -m pytest …`` makes the Bash subprocess invoke the exact
+        interpreter regardless of PATH ordering. No-op when no venv is resolved
+        or the command is not a bare ``pytest`` invocation.
+        """
+        if self._venv_python is None:
+            return test_cmd
+        if test_cmd.startswith("pytest "):
+            return f"{self._pytest_interpreter()} -m {test_cmd}"
+        if test_cmd == "pytest":
+            return f"{self._pytest_interpreter()} -m pytest"
+        return test_cmd
+
+    def _pytest_env(self) -> Dict[str, str]:
+        """Environment for subprocess pytest runs, with venv bin on PATH.
+
+        TASK-FIX-COACHPYENV: pinning ``argv[0]`` to the venv interpreter is the
+        load-bearing fix; prepending the venv ``bin`` to PATH is defence-in-depth
+        so any nested ``python``/console-script the tests shell out to also
+        resolves inside the bootstrap environment. Falls back to the parent
+        environment when no venv exists.
+        """
+        from guardkit.orchestrator.quality_gates.command_models import (
+            build_venv_env,
+        )
+
+        return build_venv_env(self.worktree_path) or dict(os.environ)
+
     def _run_isolated_tests(self, test_cmd: str) -> "IndependentTestResult":
         """
         Run tests in an isolated temporary directory (Option B: tempdir copy).
@@ -2779,14 +2915,16 @@ class CoachValidator:
                 # Run tests in the isolated copy
                 if test_cmd.startswith("pytest"):
                     parts = test_cmd.split()
-                    cmd = [sys.executable, "-m", "pytest"] + parts[1:]
+                    # TASK-FIX-COACHPYENV: pin pytest to the bootstrap venv
+                    # interpreter, never sys.executable / PATH pytest.
+                    cmd = [self._pytest_interpreter(), "-m", "pytest"] + parts[1:]
                     result = subprocess.run(
                         cmd,
                         cwd=str(tmpdir_path),
                         capture_output=True,
                         text=True,
                         timeout=self.test_timeout,
-                        env=os.environ,
+                        env=self._pytest_env(),
                     )
                 else:
                     result = subprocess.run(
@@ -2866,15 +3004,19 @@ class CoachValidator:
         IndependentTestResult
             Result of independent test execution
         """
-        # Interpreter consistency diagnostic (TASK-REV-CB30 R7)
+        # Interpreter consistency diagnostic (TASK-REV-CB30 R7;
+        # TASK-FIX-COACHPYENV adds resolved_interpreter so post-mortems can
+        # confirm Coach ran under the bootstrap venv, not host PATH pytest).
         import shutil
         which_pytest = shutil.which("pytest")
         logger.info(
             "Test execution environment: sys.executable=%s, "
-            "which pytest=%s, coach_test_execution=%s",
+            "which pytest=%s, coach_test_execution=%s, "
+            "resolved_interpreter=%s",
             sys.executable,
             which_pytest,
             self._coach_test_execution,
+            self._pytest_interpreter(),
         )
 
         # Determine test command (pass task_id and results for task-specific filtering)
@@ -3000,14 +3142,16 @@ class CoachValidator:
                 # avoiding discrepancies when the shell resolves `python3` via PATH.
                 if test_cmd.startswith("pytest"):
                     parts = test_cmd.split()
-                    cmd = [sys.executable, "-m", "pytest"] + parts[1:]
+                    # TASK-FIX-COACHPYENV: pin pytest to the bootstrap venv
+                    # interpreter, never sys.executable / PATH pytest.
+                    cmd = [self._pytest_interpreter(), "-m", "pytest"] + parts[1:]
                     result = subprocess.run(
                         cmd,
                         cwd=str(self.worktree_path),
                         capture_output=True,
                         text=True,
                         timeout=self.test_timeout,
-                        env=os.environ,
+                        env=self._pytest_env(),
                     )
                 else:
                     result = subprocess.run(

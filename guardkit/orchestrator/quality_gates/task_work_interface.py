@@ -41,6 +41,7 @@ import logging
 import os
 import re
 import subprocess
+from contextlib import aclosing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -497,40 +498,46 @@ class TaskWorkInterface:
         try:
             async with asyncio.timeout(self.sdk_timeout_seconds):
                 async with async_heartbeat(heartbeat_task_id, "design phase"):
-                    async for event in harness.invoke(
-                        prompt=prompt,
-                        role="design",
-                        tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
-                        cwd=self.worktree_path,
-                        timeout_seconds=self.sdk_timeout_seconds,
-                    ):
-                        # API-error check operates on the raw SDK shape per
-                        # Design Decision D-1 (raw is None on the LangGraph
-                        # path, which carries no bug-#472 surface).
-                        if event.raw is not None:
-                            err = check_assistant_message_error(event.raw)
-                            if err:
-                                raise DesignPhaseError(
-                                    phase="design",
-                                    error=f"SDK agent error: {err}",
-                                )
-
-                        if isinstance(event, AssistantMessageEvent):
-                            # The harness has already joined TextBlock text
-                            # into event.text. Real SDK streams never nest
-                            # tool-result content inside AssistantMessages,
-                            # so collecting event.text matches the
-                            # pre-migration TextBlock collection for any
-                            # production stream.
-                            if event.text:
-                                collected_output.append(event.text)
-                                if "Phase" in event.text or "Plan saved" in event.text:
-                                    logger.debug(
-                                        f"Harness progress: {event.text[:100]}..."
+                    # TASK-FIX-LGACLOSE: finalise the harness async generator on
+                    # every exit (incl. timeout/cancel) via aclosing() so no
+                    # orphaned async_generator_athrow survives interpreter shutdown.
+                    async with aclosing(
+                        harness.invoke(
+                            prompt=prompt,
+                            role="design",
+                            tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+                            cwd=self.worktree_path,
+                            timeout_seconds=self.sdk_timeout_seconds,
+                        )
+                    ) as _harness_stream:
+                        async for event in _harness_stream:
+                            # API-error check operates on the raw SDK shape per
+                            # Design Decision D-1 (raw is None on the LangGraph
+                            # path, which carries no bug-#472 surface).
+                            if event.raw is not None:
+                                err = check_assistant_message_error(event.raw)
+                                if err:
+                                    raise DesignPhaseError(
+                                        phase="design",
+                                        error=f"SDK agent error: {err}",
                                     )
-                        elif isinstance(event, ResultMessageEvent):
-                            logger.info("Harness completed design phase")
-                            break
+
+                            if isinstance(event, AssistantMessageEvent):
+                                # The harness has already joined TextBlock text
+                                # into event.text. Real SDK streams never nest
+                                # tool-result content inside AssistantMessages,
+                                # so collecting event.text matches the
+                                # pre-migration TextBlock collection for any
+                                # production stream.
+                                if event.text:
+                                    collected_output.append(event.text)
+                                    if "Phase" in event.text or "Plan saved" in event.text:
+                                        logger.debug(
+                                            f"Harness progress: {event.text[:100]}..."
+                                        )
+                            elif isinstance(event, ResultMessageEvent):
+                                logger.info("Harness completed design phase")
+                                break
 
         except asyncio.TimeoutError:
             error_msg = f"Harness timeout after {self.sdk_timeout_seconds}s"

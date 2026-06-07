@@ -20,8 +20,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+import asyncio
+import time
+
+from guardkit.orchestrator import specialist_invocations
 from guardkit.orchestrator.specialist_invocations import (
     SpecialistInvocationResult,
+    _no_activity_watchdog_exceeded,
     invoke_code_reviewer,
     invoke_test_orchestrator,
     run_specialist,
@@ -875,3 +880,176 @@ async def test_invoke_code_reviewer_prompt_contains_phase_4_summary_string(
     invoker._invoke_with_role.assert_awaited_once()
     rendered_prompt = invoker._invoke_with_role.await_args.kwargs["prompt"]
     assert "Phase 4 summary" in rendered_prompt
+
+
+# =============================================================================
+# No-model-activity watchdog (TASK-FIX-SPECHANG2)
+# =============================================================================
+#
+# The 600s duration cap (TASK-FIX-SPECHANG) bounds a hang but does not
+# eliminate it. Run-9 turn-2 showed the test-orchestrator make zero
+# /v1/responses calls for ~480s before the cap fired. The watchdog detects
+# that no-model-activity gap and terminates with a distinct reason BEFORE the
+# blunt cap, while a normally-progressing specialist (continuous activity)
+# is never killed.
+
+
+def test_no_activity_watchdog_exceeded_predicate() -> None:
+    """Pure threshold predicate: gap >= threshold fires; disabled when <= 0."""
+    # Gap exactly at threshold → exceeded.
+    assert _no_activity_watchdog_exceeded(100.0, 250.0, 150.0) is True
+    # Gap beyond threshold → exceeded.
+    assert _no_activity_watchdog_exceeded(100.0, 300.0, 150.0) is True
+    # Gap below threshold → not exceeded (AC-2: don't kill progressing run).
+    assert _no_activity_watchdog_exceeded(100.0, 200.0, 150.0) is False
+    # Watchdog disabled (0 or negative threshold) → never fires.
+    assert _no_activity_watchdog_exceeded(0.0, 10_000.0, 0.0) is False
+    assert _no_activity_watchdog_exceeded(0.0, 10_000.0, -1.0) is False
+
+
+@pytest.mark.asyncio
+async def test_run_specialist_watchdog_terminates_hung_specialist(
+    tmp_path: Path,
+) -> None:
+    """AC-1/AC-3: a specialist that stops producing harness events (never
+    refreshes the activity clock) is terminated with the distinct
+    'hang detected (no model activity for Ns)' reason, and child processes
+    are reaped — well before the long inner sleep would complete.
+    """
+    async def _hang(**_: object) -> None:
+        # Simulate a genuine hang: no activity updates for far longer than
+        # the watchdog window.
+        await asyncio.sleep(10.0)
+
+    invoker = _make_fake_agent_invoker(invoke_side_effect=_hang)
+
+    started = time.monotonic()
+    result = await run_specialist(
+        specialist_name="test-orchestrator",
+        worktree_path=tmp_path,
+        task_id="TASK-OSI-001",
+        sdk_timeout=600,
+        prompt="run the tests",
+        allowed_tools=["Read", "Bash", "Write"],
+        agent_invoker=invoker,
+        no_activity_watchdog_seconds=0.2,
+    )
+    elapsed = time.monotonic() - started
+
+    assert result.status == "failed"
+    assert result.error is not None
+    assert "hang detected (no model activity" in result.error
+    assert result.result_file is None
+    # Terminated promptly — did NOT wait for the 10s inner sleep.
+    assert elapsed < 5.0
+    invoker._kill_child_claude_processes.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_run_specialist_watchdog_allows_progressing_specialist(
+    tmp_path: Path,
+) -> None:
+    """AC-2: a specialist that keeps refreshing the activity clock
+    (continuous model calls) completes normally and is never killed by the
+    watchdog.
+    """
+    async def _progressing(**_: object) -> None:
+        # Refresh the activity clock faster than the watchdog window, the way
+        # _invoke_with_role does on every harness event.
+        for _ in range(8):
+            invoker._last_activity_monotonic = time.monotonic()
+            await asyncio.sleep(0.05)
+
+    invoker = _make_fake_agent_invoker(invoke_side_effect=_progressing)
+
+    result = await run_specialist(
+        specialist_name="test-orchestrator",
+        worktree_path=tmp_path,
+        task_id="TASK-OSI-001",
+        sdk_timeout=600,
+        prompt="run the tests",
+        allowed_tools=["Read", "Bash", "Write"],
+        agent_invoker=invoker,
+        no_activity_watchdog_seconds=0.2,
+    )
+
+    assert result.status == "passed"
+    assert result.error is None
+    assert result.result_file == (
+        tmp_path / ".guardkit" / "autobuild" / "TASK-OSI-001" / "specialist_results.json"
+    )
+    invoker._kill_child_claude_processes.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_specialist_watchdog_synthesises_and_restores_cancellation_event(
+    tmp_path: Path,
+) -> None:
+    """When no cancellation_event is supplied, the watchdog synthesises one
+    (so the in-flight _cancel_monitor can dispatch harness.cancel() + SIGTERM)
+    and restores the invoker's original None afterwards.
+    """
+    seen: dict[str, object] = {}
+
+    async def _capture_then_hang(**_: object) -> None:
+        seen["event_during_call"] = invoker._cancellation_event
+        await asyncio.sleep(10.0)
+
+    invoker = _make_fake_agent_invoker(invoke_side_effect=_capture_then_hang)
+    assert invoker._cancellation_event is None
+
+    await run_specialist(
+        specialist_name="test-orchestrator",
+        worktree_path=tmp_path,
+        task_id="TASK-OSI-001",
+        sdk_timeout=600,
+        prompt="run the tests",
+        allowed_tools=["Read", "Bash", "Write"],
+        agent_invoker=invoker,
+        no_activity_watchdog_seconds=0.2,
+    )
+
+    # A real Event was installed for the duration of the call …
+    assert isinstance(seen["event_during_call"], threading.Event)
+    # … and it was set when the watchdog fired (cooperative cancel signal).
+    assert seen["event_during_call"].is_set()
+    # … and the invoker's original (None) is restored afterwards.
+    assert invoker._cancellation_event is None
+
+
+@pytest.mark.asyncio
+async def test_invoke_test_orchestrator_wires_watchdog(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """AC-1 wiring: invoke_test_orchestrator runs the test-orchestrator under
+    the watchdog, so a hung run is written to disk as a failed phase_4 block
+    carrying the distinct hang reason.
+    """
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_004)
+    monkeypatch.setattr(
+        specialist_invocations,
+        "_TEST_ORCHESTRATOR_NO_ACTIVITY_WATCHDOG_SECONDS",
+        0.2,
+    )
+
+    async def _hang(**_: object) -> None:
+        await asyncio.sleep(10.0)
+
+    invoker = _make_fake_agent_invoker(invoke_side_effect=_hang)
+
+    result = await invoke_test_orchestrator(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_OSI_004,
+        sdk_timeout=600,
+        agent_invoker=invoker,
+    )
+
+    assert result.status == "failed"
+    assert "hang detected (no model activity" in (result.error or "")
+
+    results_path = (
+        tmp_path / ".guardkit" / "autobuild" / _TASK_ID_OSI_004 / "specialist_results.json"
+    )
+    on_disk = json.loads(results_path.read_text(encoding="utf-8"))
+    assert on_disk["phase_4"]["status"] == "failed"
+    assert "hang detected (no model activity" in on_disk["phase_4"]["error"]

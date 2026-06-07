@@ -336,3 +336,136 @@ class TestAutoBuildPlumbing:
         )
 
         assert orchestrator._venv_python is None
+
+
+# --------------------------------------------------------------------------
+# CoachValidator: independent-test interpreter pinning (TASK-FIX-COACHPYENV)
+# --------------------------------------------------------------------------
+
+
+class TestCoachValidatorInterpreter:
+    """Coach's *independent* tests must run under the bootstrap venv.
+
+    Sibling of the CoachVerifier fix above (TASK-FIX-7A05). Before
+    TASK-FIX-COACHPYENV the validator never received ``venv_python`` and ran
+    pytest via host PATH (SDK path) or ``sys.executable`` (subprocess path),
+    producing the run-9 Python-3.14 framework-pytest mismatch.
+    """
+
+    def _make_venv(self, tmp_path: Path) -> Path:
+        fake = tmp_path / "venv" / "bin" / "python"
+        fake.parent.mkdir(parents=True)
+        fake.touch()
+        return fake
+
+    def test_resolves_explicit_venv(self, tmp_path: Path) -> None:
+        """AC-2: explicit bootstrap venv is resolved and pinned."""
+        from guardkit.orchestrator.quality_gates.coach_validator import (
+            CoachValidator,
+        )
+
+        fake = self._make_venv(tmp_path)
+        validator = CoachValidator(str(tmp_path), venv_python=str(fake))
+
+        assert validator._venv_python == fake
+        assert validator._pytest_interpreter() == str(fake)
+
+    def test_falls_back_to_sys_executable_when_no_venv(
+        self, tmp_path: Path
+    ) -> None:
+        """No venv anywhere → sys.executable, never bare PATH pytest."""
+        from guardkit.orchestrator.quality_gates.coach_validator import (
+            CoachValidator,
+        )
+
+        validator = CoachValidator(str(tmp_path))
+
+        assert validator._venv_python is None
+        assert validator._pytest_interpreter() == sys.executable
+
+    @patch(
+        "guardkit.orchestrator.quality_gates.coach_validator.subprocess.run"
+    )
+    def test_subprocess_argv_pins_interpreter(
+        self, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        """AC-2: subprocess path uses ``[venv_python, -m, pytest, ...]``."""
+        from guardkit.orchestrator.quality_gates.coach_validator import (
+            CoachValidator,
+        )
+
+        fake = self._make_venv(tmp_path)
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout="3 passed in 0.1s", stderr=""
+        )
+
+        validator = CoachValidator(
+            str(tmp_path),
+            test_command="pytest tests/",
+            coach_test_execution="subprocess",
+            venv_python=str(fake),
+        )
+        result = validator.run_independent_tests()
+
+        assert result.tests_passed is True
+        mock_run.assert_called_once()
+        argv = mock_run.call_args[0][0]
+        assert argv[0] == str(fake)
+        assert argv[1:3] == ["-m", "pytest"]
+        assert "tests/" in argv
+
+    def test_sdk_command_pins_interpreter(self, tmp_path: Path) -> None:
+        """AC-3: SDK Bash command is rewritten to pin the interpreter."""
+        from guardkit.orchestrator.quality_gates.coach_validator import (
+            CoachValidator,
+        )
+
+        fake = self._make_venv(tmp_path)
+        validator = CoachValidator(str(tmp_path), venv_python=str(fake))
+
+        pinned = validator._pin_pytest_command("pytest tests/ -v --tb=short")
+
+        assert pinned == f"{fake} -m pytest tests/ -v --tb=short"
+
+    def test_pin_command_noop_without_venv(self, tmp_path: Path) -> None:
+        """No venv → SDK command is left untouched (non-Python recovery)."""
+        from guardkit.orchestrator.quality_gates.coach_validator import (
+            CoachValidator,
+        )
+
+        validator = CoachValidator(str(tmp_path))
+
+        assert validator._pin_pytest_command("pytest tests/") == "pytest tests/"
+
+    def test_mismatch_guard_warns(
+        self, tmp_path: Path, caplog
+    ) -> None:
+        """AC-4: configured-but-missing bootstrap venv emits a loud warning."""
+        import logging
+
+        from guardkit.orchestrator.quality_gates.coach_validator import (
+            CoachValidator,
+        )
+
+        stale = tmp_path / "missing" / "bin" / "python"  # never created
+
+        with caplog.at_level(logging.WARNING):
+            validator = CoachValidator(str(tmp_path), venv_python=str(stale))
+
+        # Resolution fell through to None (no filesystem venv either).
+        assert validator._venv_python is None
+        assert any(
+            "interpreter MISMATCH" in rec.message for rec in caplog.records
+        )
+
+    def test_constructor_defaults_venv_python_to_none(
+        self, tmp_path: Path
+    ) -> None:
+        """Backward compat: omitting ``venv_python`` resolves to None."""
+        from guardkit.orchestrator.quality_gates.coach_validator import (
+            CoachValidator,
+        )
+
+        validator = CoachValidator(str(tmp_path))
+
+        assert validator._venv_python is None

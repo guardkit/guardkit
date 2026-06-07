@@ -21,8 +21,10 @@ References:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import os
 import re
 import threading
 import time
@@ -85,6 +87,31 @@ _PHASE_5_AGENT_FIELD_DEFAULTS: dict[str, Any] = {
 # should be decomposed at the task level, not papered over here.
 _TEST_ORCHESTRATOR_SDK_TIMEOUT_CAP_SECONDS: int = 600
 
+# TASK-FIX-SPECHANG2: per-specialist no-model-activity watchdog ceiling.
+#
+# The 600s duration cap above bounds a hang but does not *eliminate* it.
+# Run-9 turn-2 (2026-06-07; see
+# ``../guardkitfactory/docs/reviews/autobuild-migration/TASK-REV-AOF-RUN9-pre-next-run-readiness-review.md``)
+# showed the test-orchestrator make its last model call at ~90s, then ZERO
+# ``/v1/responses`` POSTs for ~480s until it hit the 600s cap and
+# ``SDKTimeoutError``d — a genuine agent hang that wasted ~480s of idle
+# wall-clock and returned 0 results. A watchdog keyed on *no model activity*
+# terminates that hang far sooner, with a clearer signal, while the 600s cap
+# stays as the blunt outer backstop.
+#
+# Default 150s sits comfortably above turn-1's healthy continuous-call run
+# (~240s total, with model calls throughout, never a 150s silent gap) so a
+# normally-progressing specialist is never killed (AC-2). Operator-tunable
+# via ``GUARDKIT_SPECIALIST_WATCHDOG_SECONDS``; set to ``0`` to disable.
+_TEST_ORCHESTRATOR_NO_ACTIVITY_WATCHDOG_SECONDS: float = float(
+    os.environ.get("GUARDKIT_SPECIALIST_WATCHDOG_SECONDS", "150")
+)
+
+# Distinct, grep-able reason emitted when the watchdog (not the duration cap)
+# terminates a specialist. AC-3: hang vs cap must be distinguishable in logs
+# and the review summary.
+_WATCHDOG_HANG_REASON_TEMPLATE: str = "hang detected (no model activity for {seconds}s)"
+
 
 # Reverse lookup of guardkit.orchestrator.phase_specialists.STATIC_PHASE_SPECIALISTS
 # scoped to specialists this module is responsible for. Kept inline rather
@@ -126,6 +153,127 @@ class SpecialistInvocationResult:
     error: Optional[str]
 
 
+def _reap_specialist_processes(
+    agent_invoker: "AgentInvoker", specialist_name: str
+) -> None:
+    """Best-effort reap of child ``claude`` processes; never raises.
+
+    Shared by the failure paths in :func:`run_specialist` and
+    :func:`_run_specialist_with_watchdog` so a hung or crashed specialist
+    cannot leak subprocesses across turns.
+    """
+    try:
+        agent_invoker._kill_child_claude_processes()
+    except Exception as cleanup_exc:  # noqa: BLE001
+        logger.warning(
+            "run_specialist(%s): _kill_child_claude_processes raised "
+            "during cleanup: %s",
+            specialist_name,
+            cleanup_exc,
+        )
+
+
+def _no_activity_watchdog_exceeded(
+    last_activity_monotonic: float,
+    now_monotonic: float,
+    watchdog_seconds: float,
+) -> bool:
+    """Pure predicate: has the no-model-activity gap reached the threshold?
+
+    Returns ``True`` when ``now - last_activity >= watchdog_seconds`` and
+    the watchdog is enabled (``watchdog_seconds > 0``). Isolated as a
+    pure function so the threshold decision is unit-testable without
+    spinning up an event loop (TASK-FIX-SPECHANG2 AC-1/AC-2).
+    """
+    if watchdog_seconds <= 0:
+        return False
+    return (now_monotonic - last_activity_monotonic) >= watchdog_seconds
+
+
+async def _run_specialist_with_watchdog(
+    *,
+    agent_invoker: "AgentInvoker",
+    invoke_kwargs: dict[str, Any],
+    watchdog_seconds: float,
+    cancellation_event: Optional[threading.Event],
+    specialist_name: str,
+    task_id: str,
+    poll_interval: Optional[float] = None,
+) -> tuple[Literal["passed", "failed"], Optional[str]]:
+    """Run ``_invoke_with_role`` under a no-model-activity watchdog.
+
+    Races the invocation against a poll loop that reads
+    ``agent_invoker._last_activity_monotonic`` (updated per harness event
+    inside ``_invoke_with_role``). When the no-activity gap reaches
+    ``watchdog_seconds``, the invocation is terminated cooperatively
+    (``cancellation_event`` → the in-flight ``_cancel_monitor`` dispatches
+    ``harness.cancel()`` + SIGTERM) and then hard-cancelled, returning a
+    distinct ``hang detected (no model activity for Ns)`` reason — well
+    before the blunt 600s duration cap fires (AC-1, AC-3).
+
+    A normally-progressing specialist keeps the activity clock fresh, so
+    the watchdog never trips for it (AC-2).
+
+    Returns:
+        ``("passed", None)`` on clean completion, or ``("failed", reason)``
+        on a detected hang, an external cancellation, or any exception
+        raised by the invocation. Never propagates.
+    """
+    poll = (
+        poll_interval
+        if poll_interval is not None
+        else min(max(watchdog_seconds / 5.0, 0.05), 15.0)
+    )
+    invoke_task: asyncio.Task = asyncio.ensure_future(
+        agent_invoker._invoke_with_role(**invoke_kwargs)
+    )
+    hang_reason: Optional[str] = None
+
+    while True:
+        done, _pending = await asyncio.wait({invoke_task}, timeout=poll)
+        if invoke_task in done:
+            break
+        now = time.monotonic()
+        last_activity = getattr(agent_invoker, "_last_activity_monotonic", now)
+        if _no_activity_watchdog_exceeded(last_activity, now, watchdog_seconds):
+            gap = now - last_activity
+            hang_reason = _WATCHDOG_HANG_REASON_TEMPLATE.format(seconds=round(gap))
+            logger.warning(
+                "[%s] run_specialist(%s): %s — terminating before the %ds "
+                "duration cap",
+                task_id,
+                specialist_name,
+                hang_reason,
+                _TEST_ORCHESTRATOR_SDK_TIMEOUT_CAP_SECONDS,
+            )
+            # Cooperative cancel first: lets the in-flight _cancel_monitor
+            # dispatch harness.cancel() (unblocks LangGraph's ainvoke) +
+            # SIGTERM (SDK subprocess). Then hard-cancel the asyncio task so
+            # this coroutine returns promptly rather than waiting on the 2s
+            # monitor poll.
+            if cancellation_event is not None:
+                cancellation_event.set()
+            invoke_task.cancel()
+            break
+
+    try:
+        await invoke_task
+    except asyncio.CancelledError:
+        if hang_reason is None:
+            # External cancellation (e.g. FeatureOrchestrator timeout), not
+            # the watchdog — surface as a generic failed result.
+            return "failed", "specialist invocation cancelled"
+    except Exception as exc:  # noqa: BLE001 — runner must never raise
+        if hang_reason is None:
+            _reap_specialist_processes(agent_invoker, specialist_name)
+            return "failed", f"{type(exc).__name__}: {exc}"
+
+    if hang_reason is not None:
+        _reap_specialist_processes(agent_invoker, specialist_name)
+        return "failed", hang_reason
+    return "passed", None
+
+
 async def run_specialist(
     specialist_name: str,
     worktree_path: Path,
@@ -137,6 +285,7 @@ async def run_specialist(
     *,
     cancellation_event: Optional[threading.Event] = None,
     turn: Optional[int] = None,
+    no_activity_watchdog_seconds: Optional[float] = None,
 ) -> SpecialistInvocationResult:
     """Run a specialist agent under the orchestrator's control.
 
@@ -169,6 +318,13 @@ async def run_specialist(
             ``agent_invoker._cancellation_event`` for the call.
         turn: Optional autobuild turn number, forwarded to
             ``_invoke_with_role`` for instrumentation labelling.
+        no_activity_watchdog_seconds: When set to a positive value, run the
+            invocation under a no-model-activity watchdog: if the specialist
+            stops producing harness events for this many seconds it is
+            terminated with a distinct ``hang detected (no model activity
+            for Ns)`` failure, before the blunt duration cap fires
+            (TASK-FIX-SPECHANG2). ``None`` / ``0`` disables the watchdog and
+            preserves the legacy direct-await behaviour.
 
     Returns:
         :class:`SpecialistInvocationResult` with ``status="passed"`` on
@@ -191,12 +347,32 @@ async def run_specialist(
         / "specialist_results.json"
     )
 
+    watchdog_enabled = bool(
+        no_activity_watchdog_seconds and no_activity_watchdog_seconds > 0
+    )
+
     previous_timeout = agent_invoker.sdk_timeout_seconds
     previous_cancellation = agent_invoker._cancellation_event
-    if cancellation_event is not None:
-        agent_invoker._cancellation_event = cancellation_event
+
+    # The watchdog terminates cooperatively through ``_cancel_monitor``,
+    # which only starts if ``agent_invoker._cancellation_event`` is set when
+    # ``_invoke_with_role`` begins. Reuse the caller's event when supplied,
+    # otherwise synthesise one for the watchdog so the cooperative
+    # harness.cancel() + SIGTERM path is available.
+    effective_cancellation = cancellation_event
+    if effective_cancellation is None and watchdog_enabled and previous_cancellation is None:
+        effective_cancellation = threading.Event()
+    cancellation_overridden = (
+        effective_cancellation is not None
+        and effective_cancellation is not previous_cancellation
+    )
+    if cancellation_overridden:
+        agent_invoker._cancellation_event = effective_cancellation
 
     agent_invoker.sdk_timeout_seconds = sdk_timeout
+    # Seed the activity clock so a watchdog poll that lands before the first
+    # harness event measures the gap from "invocation began".
+    agent_invoker._last_activity_monotonic = time.monotonic()
 
     started_at = time.monotonic()
     error_message: Optional[str] = None
@@ -210,37 +386,49 @@ async def run_specialist(
     # task-work Player and operators reading run history conflate them.
     heartbeat_label_override = f"specialist:{specialist_name} invocation"
 
+    invoke_kwargs: dict[str, Any] = {
+        "prompt": prompt,
+        "agent_type": agent_type,
+        "allowed_tools": allowed_tools,
+        "permission_mode": permission_mode,
+        "task_id": task_id,
+        "turn": turn,
+        "heartbeat_label_override": heartbeat_label_override,
+    }
+
     try:
-        await agent_invoker._invoke_with_role(
-            prompt=prompt,
-            agent_type=agent_type,
-            allowed_tools=allowed_tools,
-            permission_mode=permission_mode,
-            task_id=task_id,
-            turn=turn,
-            heartbeat_label_override=heartbeat_label_override,
-        )
-    except Exception as exc:  # noqa: BLE001 — runner must never raise
-        status = "failed"
-        error_message = f"{type(exc).__name__}: {exc}"
-        logger.warning(
-            "run_specialist(%s) failed for %s: %s",
-            specialist_name,
-            task_id,
-            error_message,
-        )
-        try:
-            agent_invoker._kill_child_claude_processes()
-        except Exception as cleanup_exc:  # noqa: BLE001
-            logger.warning(
-                "run_specialist(%s): _kill_child_claude_processes raised "
-                "during failure cleanup: %s",
-                specialist_name,
-                cleanup_exc,
+        if watchdog_enabled:
+            status, error_message = await _run_specialist_with_watchdog(
+                agent_invoker=agent_invoker,
+                invoke_kwargs=invoke_kwargs,
+                watchdog_seconds=float(no_activity_watchdog_seconds),
+                cancellation_event=effective_cancellation,
+                specialist_name=specialist_name,
+                task_id=task_id,
             )
+            if status == "failed":
+                logger.warning(
+                    "run_specialist(%s) failed for %s: %s",
+                    specialist_name,
+                    task_id,
+                    error_message,
+                )
+        else:
+            try:
+                await agent_invoker._invoke_with_role(**invoke_kwargs)
+            except Exception as exc:  # noqa: BLE001 — runner must never raise
+                status = "failed"
+                error_message = f"{type(exc).__name__}: {exc}"
+                logger.warning(
+                    "run_specialist(%s) failed for %s: %s",
+                    specialist_name,
+                    task_id,
+                    error_message,
+                )
+                _reap_specialist_processes(agent_invoker, specialist_name)
     finally:
         agent_invoker.sdk_timeout_seconds = previous_timeout
-        if cancellation_event is not None:
+        if cancellation_overridden:
             agent_invoker._cancellation_event = previous_cancellation
 
     duration_seconds = time.monotonic() - started_at
@@ -701,6 +889,10 @@ async def invoke_test_orchestrator(
         agent_invoker=agent_invoker,
         cancellation_event=cancellation_event,
         turn=turn,
+        # TASK-FIX-SPECHANG2: terminate a genuinely hung test-orchestrator
+        # (no /v1/responses traffic for N seconds) well before the blunt
+        # capped duration timeout fires.
+        no_activity_watchdog_seconds=_TEST_ORCHESTRATOR_NO_ACTIVITY_WATCHDOG_SECONDS,
     )
 
     if run_result.status == "passed":
