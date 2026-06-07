@@ -39,6 +39,7 @@ import re
 import subprocess
 import sys
 import time
+from contextlib import aclosing
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
@@ -2609,58 +2610,64 @@ class CoachValidator:
                 )
 
                 async with asyncio.timeout(self.test_timeout):
-                    async for event in harness.invoke(
-                        prompt=prompt,
-                        role="coach_test",
-                        tools=["Bash"],
-                        cwd=self.worktree_path,
-                        timeout_seconds=self.test_timeout,
-                    ):
-                        # TASK-HMIG-006.5: record every harness event
-                        # the loop consumes. ``preserve_event`` is a
-                        # no-op when ``_sdk_debug_dir`` is None
-                        # (env var unset), so this is zero-cost in
-                        # production.
-                        _sdk_preserve_event(_sdk_debug_dir, event)
-                        if isinstance(event, AssistantMessageEvent):
-                            # API-error short-circuit mirrors the Player
-                            # dispatch in agent_invoker._invoke_with_role.
-                            # Only the SDK harness sets ``event.raw``;
-                            # other substrates have raw=None and this
-                            # check is a no-op there.
-                            if event.raw is not None:
-                                err = check_assistant_message_error(event.raw)
-                                if err:
-                                    api_error = err
-                                    break
-                            collected_text.append(event.text)
-                        elif isinstance(event, ToolResultEvent):
-                            # NOTE (TASK-HMIG-006.3, Architectural review
-                            # Concern 4): the current SDK harness does NOT
-                            # yield ToolResultEvent — sdk_harness.py only
-                            # handles AssistantMessage / ResultMessage /
-                            # ToolUseEvent. On the SDK path bash_is_error
-                            # therefore stays None and the heuristic
-                            # branch below is the effective pass/fail
-                            # determination. This branch is live for any
-                            # future harness that yields ToolResultEvent
-                            # (e.g. a variant that walks UserMessage
-                            # content) and preserves the pre-migration
-                            # tri-state contract:
-                            #   is_error=True  -> bash_is_error=True (tool errored)
-                            #   is_error=False -> bash_is_error=None (heuristic)
-                            # The False->None mapping is intentional:
-                            # is_error=False means "tool ran cleanly" not
-                            # "tests passed", so we let the heuristic
-                            # branch decide from the output text.
-                            content = event.content
-                            if isinstance(content, str):
-                                bash_output = content
-                            else:
-                                bash_output = self._extract_content_text(content)
-                            bash_is_error = True if event.is_error else None
-                        elif isinstance(event, ResultMessageEvent):
-                            break
+                    # TASK-FIX-LGACLOSE: finalise the harness async generator on
+                    # every exit (incl. timeout/cancel) via aclosing() so no
+                    # orphaned async_generator_athrow survives interpreter shutdown.
+                    async with aclosing(
+                        harness.invoke(
+                            prompt=prompt,
+                            role="coach_test",
+                            tools=["Bash"],
+                            cwd=self.worktree_path,
+                            timeout_seconds=self.test_timeout,
+                        )
+                    ) as _harness_stream:
+                        async for event in _harness_stream:
+                            # TASK-HMIG-006.5: record every harness event
+                            # the loop consumes. ``preserve_event`` is a
+                            # no-op when ``_sdk_debug_dir`` is None
+                            # (env var unset), so this is zero-cost in
+                            # production.
+                            _sdk_preserve_event(_sdk_debug_dir, event)
+                            if isinstance(event, AssistantMessageEvent):
+                                # API-error short-circuit mirrors the Player
+                                # dispatch in agent_invoker._invoke_with_role.
+                                # Only the SDK harness sets ``event.raw``;
+                                # other substrates have raw=None and this
+                                # check is a no-op there.
+                                if event.raw is not None:
+                                    err = check_assistant_message_error(event.raw)
+                                    if err:
+                                        api_error = err
+                                        break
+                                collected_text.append(event.text)
+                            elif isinstance(event, ToolResultEvent):
+                                # NOTE (TASK-HMIG-006.3, Architectural review
+                                # Concern 4): the current SDK harness does NOT
+                                # yield ToolResultEvent — sdk_harness.py only
+                                # handles AssistantMessage / ResultMessage /
+                                # ToolUseEvent. On the SDK path bash_is_error
+                                # therefore stays None and the heuristic
+                                # branch below is the effective pass/fail
+                                # determination. This branch is live for any
+                                # future harness that yields ToolResultEvent
+                                # (e.g. a variant that walks UserMessage
+                                # content) and preserves the pre-migration
+                                # tri-state contract:
+                                #   is_error=True  -> bash_is_error=True (tool errored)
+                                #   is_error=False -> bash_is_error=None (heuristic)
+                                # The False->None mapping is intentional:
+                                # is_error=False means "tool ran cleanly" not
+                                # "tests passed", so we let the heuristic
+                                # branch decide from the output text.
+                                content = event.content
+                                if isinstance(content, str):
+                                    bash_output = content
+                                else:
+                                    bash_output = self._extract_content_text(content)
+                                bash_is_error = True if event.is_error else None
+                            elif isinstance(event, ResultMessageEvent):
+                                break
 
             duration = time.time() - start_time
 

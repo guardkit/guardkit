@@ -8,7 +8,7 @@ import re
 import signal
 import threading
 import time
-from contextlib import asynccontextmanager, suppress
+from contextlib import aclosing, asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -1212,6 +1212,13 @@ class AgentInvoker:
         )
         self.development_mode = development_mode
         self._cancellation_event: Optional[threading.Event] = cancellation_event
+        # TASK-FIX-SPECHANG2: monotonic timestamp of the most recent
+        # model-stream event observed inside ``_invoke_with_role``. Read by
+        # the specialist no-model-activity watchdog
+        # (``specialist_invocations.py``) to distinguish a genuine agent hang
+        # (zero ``/v1/responses`` traffic for N seconds) from a slow-but-
+        # progressing run. ``0.0`` until the first invocation resets it.
+        self._last_activity_monotonic: float = 0.0
         self._baseline_commit: Optional[str] = None
         # TASK-FIX-OBS2: Per-task progress logger for parallel execution diagnostics
         self._progress_logger: Optional["TaskProgressLogger"] = None
@@ -2876,6 +2883,11 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # rather than duck-typing on SDK shapes.
         harness_events: List[HarnessEvent] = []
 
+        # TASK-FIX-SPECHANG2: reset the model-activity clock at the start of
+        # the invocation so the specialist watchdog measures the no-activity
+        # gap from "this invocation began" rather than from a previous one.
+        self._last_activity_monotonic = time.monotonic()
+
         # Extract task_id from prompt for heartbeat logging (substrate-
         # agnostic — the harness does not need it).
         task_id_match = re.search(r"TASK-[A-Z0-9-]+", prompt)
@@ -3043,102 +3055,121 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                                 phase_label,
                                 progress_logger=self._progress_logger,
                             ):
-                                async for event in harness.invoke(
-                                    prompt=prompt,
-                                    role=agent_type,
-                                    tools=allowed_tools,
-                                    cwd=self.worktree_path,
-                                    timeout_seconds=self.sdk_timeout_seconds,
-                                ):
-                                    # TASK-HMIG-006.2: keep the typed-event
-                                    # stream as the canonical record for the
-                                    # post-stream extract path. response_messages
-                                    # retains its D-1 purpose (raw SDK shape for
-                                    # the remaining duck-typed consumers:
-                                    # _emit_llm_call_event token usage, the
-                                    # check_assistant_message_error API-error
-                                    # scan, the heartbeat ToolUseBlock log on
-                                    # the specialist path) but ToolUseEvent
-                                    # entries are skipped — they exist only as
-                                    # typed events for the migrated
-                                    # _track_tool_use / _extract_partial_from_messages
-                                    # consumers, and appending them to
-                                    # response_messages would mix typed events
-                                    # with SDK objects in a list typed
-                                    # List[Any].
-                                    if not isinstance(event, ToolUseEvent):
-                                        raw = event.raw if event.raw is not None else event
-                                        response_messages.append(raw)
-                                    harness_events.append(event)
-
-                                    # TASK-DIAG-F4A2: Preserve each raw event to
-                                    # JSONL when raw is populated.
-                                    if _sdk_debug_dir is not None and event.raw is not None:
-                                        from guardkit.orchestrator.sdk_debug import (
-                                            preserve_event as _sdk_preserve_event,
+                                # TASK-FIX-LGACLOSE: finalise the harness async
+                                # generator on EVERY exit (normal, break, raise,
+                                # or consumer cancellation) via aclosing() so no
+                                # orphaned async_generator_athrow / pending
+                                # ainvoke task survives to interpreter shutdown.
+                                async with aclosing(
+                                    harness.invoke(
+                                        prompt=prompt,
+                                        role=agent_type,
+                                        tools=allowed_tools,
+                                        cwd=self.worktree_path,
+                                        timeout_seconds=self.sdk_timeout_seconds,
+                                    )
+                                ) as _harness_stream:
+                                    async for event in _harness_stream:
+                                        # TASK-FIX-SPECHANG2: record model-
+                                        # stream activity for the specialist
+                                        # no-model-activity watchdog. Every
+                                        # harness event (AssistantMessage /
+                                        # ToolUse / Result) is downstream of a
+                                        # model call, so a stale gap here means
+                                        # zero /v1/responses traffic.
+                                        self._last_activity_monotonic = (
+                                            time.monotonic()
                                         )
-                                        _sdk_preserve_event(_sdk_debug_dir, event.raw)
 
-                                    # TASK-HMIG-006.2: tool-use tracking moved
-                                    # to a dedicated ToolUseEvent branch — the
-                                    # AssistantMessageEvent.raw walk it used to
-                                    # do is gone. Both harnesses now yield one
-                                    # ToolUseEvent per tool call.
-                                    if isinstance(event, ToolUseEvent):
-                                        if self._progress_logger:
-                                            self._track_tool_use(event)
+                                        # TASK-HMIG-006.2: keep the typed-event
+                                        # stream as the canonical record for the
+                                        # post-stream extract path. response_messages
+                                        # retains its D-1 purpose (raw SDK shape for
+                                        # the remaining duck-typed consumers:
+                                        # _emit_llm_call_event token usage, the
+                                        # check_assistant_message_error API-error
+                                        # scan, the heartbeat ToolUseBlock log on
+                                        # the specialist path) but ToolUseEvent
+                                        # entries are skipped — they exist only as
+                                        # typed events for the migrated
+                                        # _track_tool_use / _extract_partial_from_messages
+                                        # consumers, and appending them to
+                                        # response_messages would mix typed events
+                                        # with SDK objects in a list typed
+                                        # List[Any].
+                                        if not isinstance(event, ToolUseEvent):
+                                            raw = event.raw if event.raw is not None else event
+                                            response_messages.append(raw)
+                                        harness_events.append(event)
 
-                                    # API-error check + heartbeat ToolUseBlock
-                                    # log still operate on the raw SDK shape:
-                                    # the API-error structure is SDK-specific
-                                    # and the heartbeat log is intentionally
-                                    # gated to the specialist path.
-                                    if isinstance(event, AssistantMessageEvent) and event.raw is not None:
-                                        err = check_assistant_message_error(event.raw)
-                                        if err:
-                                            raise AgentInvocationError(
-                                                f"Agent {agent_type} received API error: {err}"
+                                        # TASK-DIAG-F4A2: Preserve each raw event to
+                                        # JSONL when raw is populated.
+                                        if _sdk_debug_dir is not None and event.raw is not None:
+                                            from guardkit.orchestrator.sdk_debug import (
+                                                preserve_event as _sdk_preserve_event,
                                             )
-                                        # TASK-FIX-CRSTL-MULT R2: Emit
-                                        # ToolUseBlock log lines on the
-                                        # specialist path so per-tool signal
-                                        # surfaces during long specialist
-                                        # invocations. Player/Coach paths
-                                        # already get this from the task-work
-                                        # delegation path; gating on
-                                        # heartbeat_label_override avoids
-                                        # double-logging.
-                                        if heartbeat_label_override is not None:
-                                            content = getattr(event.raw, "content", None) or []
-                                            for block in content:
-                                                if type(block).__name__ != "ToolUseBlock":
-                                                    continue
-                                                tool_input = getattr(block, "input", {}) or {}
-                                                keys = (
-                                                    sorted(tool_input.keys())
-                                                    if isinstance(tool_input, dict)
-                                                    else []
-                                                )
-                                                logger.info(
-                                                    f"[{task_id}] {heartbeat_label_override} "
-                                                    f"ToolUseBlock "
-                                                    f"{getattr(block, 'name', '?')} "
-                                                    f"input keys: {keys}"
-                                                )
+                                            _sdk_preserve_event(_sdk_debug_dir, event.raw)
 
-                                    # ResultMessageEvent is terminal. The
-                                    # in-loop generator drain is now owned by
-                                    # the harness (TASK-FIX-GEN1 moved per
-                                    # Design Decision D-3); orchestrator only
-                                    # captures session_id and breaks.
-                                    if isinstance(event, ResultMessageEvent):
-                                        # TASK-RFX-B20B: capture session_id for
-                                        # resumption. Read from the event field
-                                        # (which the harness populates from the
-                                        # raw SDK message) so the same code path
-                                        # works for any substrate.
-                                        self._last_session_id = event.session_id
-                                        break
+                                        # TASK-HMIG-006.2: tool-use tracking moved
+                                        # to a dedicated ToolUseEvent branch — the
+                                        # AssistantMessageEvent.raw walk it used to
+                                        # do is gone. Both harnesses now yield one
+                                        # ToolUseEvent per tool call.
+                                        if isinstance(event, ToolUseEvent):
+                                            if self._progress_logger:
+                                                self._track_tool_use(event)
+
+                                        # API-error check + heartbeat ToolUseBlock
+                                        # log still operate on the raw SDK shape:
+                                        # the API-error structure is SDK-specific
+                                        # and the heartbeat log is intentionally
+                                        # gated to the specialist path.
+                                        if isinstance(event, AssistantMessageEvent) and event.raw is not None:
+                                            err = check_assistant_message_error(event.raw)
+                                            if err:
+                                                raise AgentInvocationError(
+                                                    f"Agent {agent_type} received API error: {err}"
+                                                )
+                                            # TASK-FIX-CRSTL-MULT R2: Emit
+                                            # ToolUseBlock log lines on the
+                                            # specialist path so per-tool signal
+                                            # surfaces during long specialist
+                                            # invocations. Player/Coach paths
+                                            # already get this from the task-work
+                                            # delegation path; gating on
+                                            # heartbeat_label_override avoids
+                                            # double-logging.
+                                            if heartbeat_label_override is not None:
+                                                content = getattr(event.raw, "content", None) or []
+                                                for block in content:
+                                                    if type(block).__name__ != "ToolUseBlock":
+                                                        continue
+                                                    tool_input = getattr(block, "input", {}) or {}
+                                                    keys = (
+                                                        sorted(tool_input.keys())
+                                                        if isinstance(tool_input, dict)
+                                                        else []
+                                                    )
+                                                    logger.info(
+                                                        f"[{task_id}] {heartbeat_label_override} "
+                                                        f"ToolUseBlock "
+                                                        f"{getattr(block, 'name', '?')} "
+                                                        f"input keys: {keys}"
+                                                    )
+
+                                        # ResultMessageEvent is terminal. The
+                                        # in-loop generator drain is now owned by
+                                        # the harness (TASK-FIX-GEN1 moved per
+                                        # Design Decision D-3); orchestrator only
+                                        # captures session_id and breaks.
+                                        if isinstance(event, ResultMessageEvent):
+                                            # TASK-RFX-B20B: capture session_id for
+                                            # resumption. Read from the event field
+                                            # (which the harness populates from the
+                                            # raw SDK message) so the same code path
+                                            # works for any substrate.
+                                            self._last_session_id = event.session_id
+                                            break
                     except (Exception, asyncio.CancelledError) as exc:
                         if isinstance(exc, asyncio.CancelledError):
                             logger.debug(f"CancelledError caught at _invoke_with_role: {exc}")
@@ -5930,163 +5961,169 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                         "task-work implementation",
                         progress_logger=self._progress_logger,
                     ):
-                        async for event in harness.invoke(
-                            prompt=prompt,
-                            role="player",
-                            tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task"],
-                            cwd=self.worktree_path,
-                            timeout_seconds=self.sdk_timeout_seconds,
-                        ):
-                            message_count += 1
-                            # TASK-DIAG-F4A2: Preserve raw event to JSONL
-                            # (no-op if disabled). Operates on event.raw to
-                            # preserve the SDK-shape JSON the prior path
-                            # used to dump.
-                            if _sdk_debug_dir is not None and event.raw is not None:
-                                _sdk_preserve_event(_sdk_debug_dir, event.raw)
+                        # TASK-FIX-LGACLOSE: finalise the harness async generator
+                        # on every exit (incl. cancellation) — see the specialist
+                        # call site for the full rationale.
+                        async with aclosing(
+                            harness.invoke(
+                                prompt=prompt,
+                                role="player",
+                                tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task"],
+                                cwd=self.worktree_path,
+                                timeout_seconds=self.sdk_timeout_seconds,
+                            )
+                        ) as _harness_stream:
+                            async for event in _harness_stream:
+                                message_count += 1
+                                # TASK-DIAG-F4A2: Preserve raw event to JSONL
+                                # (no-op if disabled). Operates on event.raw to
+                                # preserve the SDK-shape JSON the prior path
+                                # used to dump.
+                                if _sdk_debug_dir is not None and event.raw is not None:
+                                    _sdk_preserve_event(_sdk_debug_dir, event.raw)
 
-                            if isinstance(event, AssistantMessageEvent):
-                                # API-error check operates on raw SDK shape;
-                                # only the SDK harness populates event.raw,
-                                # other substrates have raw=None and this
-                                # check is a no-op there.
-                                if event.raw is not None:
-                                    err = check_assistant_message_error(event.raw)
-                                    if err:
-                                        # TASK-FIX-46F2: Retry on transient "unknown" errors.
-                                        if (
-                                            _sdk_attempt < MAX_SDK_STREAM_RETRIES
-                                            and "unknown" in str(err).lower()
-                                        ):
-                                            logger.warning(
-                                                "[%s] SDK stream error (attempt %d/%d), "
-                                                "retrying in %ds: %s",
-                                                task_id,
-                                                _sdk_attempt + 1,
-                                                MAX_SDK_STREAM_RETRIES + 1,
-                                                SDK_STREAM_RETRY_BACKOFF,
-                                                err,
-                                            )
-                                            _sdk_stream_error = err
-                                            break  # Break event loop to retry
-                                        logger.error(
-                                            f"[{task_id}] SDK API error in stream: {err}"
-                                        )
-                                        return TaskWorkResult(
-                                            success=False,
-                                            output={},
-                                            error=f"SDK agent error: {err}",
-                                        )
-                                assistant_count += 1
-                                # Collect joined text content for parser
-                                if event.text:
-                                    collected_output.append(event.text)
-                                    if "Phase" in event.text or "test" in event.text.lower():
-                                        logger.debug(
-                                            f"SDK progress: {event.text[:100]}..."
-                                        )
-                                # Walk raw content blocks for tool tracking +
-                                # per-bash-exec emission. Substrate-agnostic
-                                # via duck-typing on type(block).__name__ —
-                                # matches the heartbeat scan at
-                                # agent_invoker.py:2974-2989 and the SDK
-                                # harness's own ToolUseBlock emission at
-                                # sdk_harness.py:318-328.
-                                content = (
-                                    getattr(event.raw, "content", None) or []
-                                    if event.raw is not None
-                                    else []
-                                )
-                                for block in content:
-                                    block_class = type(block).__name__
-                                    if block_class == "ToolUseBlock":
-                                        tool_count += 1
-                                        block_name = getattr(block, "name", "")
-                                        logger.debug(f"Tool invoked: {block_name}")
-                                        # TASK-FIX-OBS2: Update progress logger with tool use.
-                                        if self._progress_logger:
-                                            self._progress_logger._last_tool = block_name
-                                        # TASK-FIX-STUB-C: Track file operations from
-                                        # Write/Edit tools to populate files_created/
-                                        # files_modified in task_work_results.json.
-                                        if block_name in ("Write", "Edit"):
-                                            tool_input = getattr(block, "input", {})
-                                            if isinstance(tool_input, dict):
-                                                # TASK-FIX-PIPELINE: Log actual SDK key names (Fix 1).
-                                                logger.info(
-                                                    f"[{task_id}] ToolUseBlock {block_name} input keys: "
-                                                    f"{list(tool_input.keys())}"
-                                                )
-                                                parser._track_tool_call(
-                                                    block_name, tool_input
-                                                )
-                                                # TASK-FIX-OBS2: Track file changes for progress.
-                                                if self._progress_logger:
-                                                    self._progress_logger._files_changed += 1
-                                            else:
+                                if isinstance(event, AssistantMessageEvent):
+                                    # API-error check operates on raw SDK shape;
+                                    # only the SDK harness populates event.raw,
+                                    # other substrates have raw=None and this
+                                    # check is a no-op there.
+                                    if event.raw is not None:
+                                        err = check_assistant_message_error(event.raw)
+                                        if err:
+                                            # TASK-FIX-46F2: Retry on transient "unknown" errors.
+                                            if (
+                                                _sdk_attempt < MAX_SDK_STREAM_RETRIES
+                                                and "unknown" in str(err).lower()
+                                            ):
                                                 logger.warning(
-                                                    f"[{task_id}] ToolUseBlock {block_name} input is "
-                                                    f"{type(tool_input).__name__}, not dict: {str(tool_input)[:200]}"
+                                                    "[%s] SDK stream error (attempt %d/%d), "
+                                                    "retrying in %ds: %s",
+                                                    task_id,
+                                                    _sdk_attempt + 1,
+                                                    MAX_SDK_STREAM_RETRIES + 1,
+                                                    SDK_STREAM_RETRY_BACKOFF,
+                                                    err,
                                                 )
-                                        # TASK-INST-005c: Track Bash tool invocations
-                                        # for tool.exec event emission.
-                                        elif block_name == "Bash":
-                                            tool_input = getattr(block, "input", {})
-                                            if isinstance(tool_input, dict):
-                                                _pending_bash_tools[getattr(block, "id", "")] = {
-                                                    "cmd": tool_input.get("command", ""),
-                                                    "start_ns": time.monotonic_ns(),
-                                                }
-                                    elif block_class == "ToolResultBlock":
-                                        # TASK-INST-005c: Emit tool.exec event for
-                                        # completed Bash tool invocations.
-                                        _tool_use_id = getattr(block, "tool_use_id", "")
-                                        if _tool_use_id in _pending_bash_tools:
-                                            _bash_info = _pending_bash_tools.pop(_tool_use_id)
-                                            _block_content = getattr(block, "content", None)
-                                            _content_str = (
-                                                str(_block_content) if _block_content else ""
+                                                _sdk_stream_error = err
+                                                break  # Break event loop to retry
+                                            logger.error(
+                                                f"[{task_id}] SDK API error in stream: {err}"
                                             )
-                                            _latency = (
-                                                (time.monotonic_ns() - _bash_info["start_ns"])
-                                                / 1_000_000
+                                            return TaskWorkResult(
+                                                success=False,
+                                                output={},
+                                                error=f"SDK agent error: {err}",
                                             )
-                                            self._emit_tool_exec_event(
-                                                tool_name="Bash",
-                                                cmd=_bash_info["cmd"],
-                                                exit_code=0,
-                                                latency_ms=_latency,
-                                                stdout_tail=_content_str,
-                                                stderr_tail="",
-                                                task_id=task_id,
+                                    assistant_count += 1
+                                    # Collect joined text content for parser
+                                    if event.text:
+                                        collected_output.append(event.text)
+                                        if "Phase" in event.text or "test" in event.text.lower():
+                                            logger.debug(
+                                                f"SDK progress: {event.text[:100]}..."
                                             )
-                                        # Extract content from tool results
-                                        # if present (parser sees them too).
-                                        _result_content = getattr(block, "content", None)
-                                        if _result_content:
-                                            collected_output.append(str(_result_content))
-                            elif isinstance(event, ResultMessageEvent):
-                                result_count += 1
-                                # TASK-VPR-003: Capture SDK turns from ResultMessage.
-                                # ResultMessageEvent does not expose num_turns at
-                                # the typed-event level (TASK-HMIG-006 D-1 left
-                                # this on raw); read from event.raw which the SDK
-                                # harness populates with the original SDK
-                                # ResultMessage. LangGraph harness leaves raw=None
-                                # so sdk_turns_used stays None on that path.
-                                if event.raw is not None:
-                                    sdk_turns_used = getattr(
-                                        event.raw, "num_turns", None
+                                    # Walk raw content blocks for tool tracking +
+                                    # per-bash-exec emission. Substrate-agnostic
+                                    # via duck-typing on type(block).__name__ —
+                                    # matches the heartbeat scan at
+                                    # agent_invoker.py:2974-2989 and the SDK
+                                    # harness's own ToolUseBlock emission at
+                                    # sdk_harness.py:318-328.
+                                    content = (
+                                        getattr(event.raw, "content", None) or []
+                                        if event.raw is not None
+                                        else []
                                     )
-                                # TASK-RFX-B20B: Capture session_id for resumption.
-                                # Read from typed field so the same code path
-                                # works for any substrate.
-                                sdk_session_id = event.session_id
-                                self._last_session_id = sdk_session_id
-                                logger.info(
-                                    f"[{task_id}] SDK completed: turns={sdk_turns_used}"
-                                )
-                                break
+                                    for block in content:
+                                        block_class = type(block).__name__
+                                        if block_class == "ToolUseBlock":
+                                            tool_count += 1
+                                            block_name = getattr(block, "name", "")
+                                            logger.debug(f"Tool invoked: {block_name}")
+                                            # TASK-FIX-OBS2: Update progress logger with tool use.
+                                            if self._progress_logger:
+                                                self._progress_logger._last_tool = block_name
+                                            # TASK-FIX-STUB-C: Track file operations from
+                                            # Write/Edit tools to populate files_created/
+                                            # files_modified in task_work_results.json.
+                                            if block_name in ("Write", "Edit"):
+                                                tool_input = getattr(block, "input", {})
+                                                if isinstance(tool_input, dict):
+                                                    # TASK-FIX-PIPELINE: Log actual SDK key names (Fix 1).
+                                                    logger.info(
+                                                        f"[{task_id}] ToolUseBlock {block_name} input keys: "
+                                                        f"{list(tool_input.keys())}"
+                                                    )
+                                                    parser._track_tool_call(
+                                                        block_name, tool_input
+                                                    )
+                                                    # TASK-FIX-OBS2: Track file changes for progress.
+                                                    if self._progress_logger:
+                                                        self._progress_logger._files_changed += 1
+                                                else:
+                                                    logger.warning(
+                                                        f"[{task_id}] ToolUseBlock {block_name} input is "
+                                                        f"{type(tool_input).__name__}, not dict: {str(tool_input)[:200]}"
+                                                    )
+                                            # TASK-INST-005c: Track Bash tool invocations
+                                            # for tool.exec event emission.
+                                            elif block_name == "Bash":
+                                                tool_input = getattr(block, "input", {})
+                                                if isinstance(tool_input, dict):
+                                                    _pending_bash_tools[getattr(block, "id", "")] = {
+                                                        "cmd": tool_input.get("command", ""),
+                                                        "start_ns": time.monotonic_ns(),
+                                                    }
+                                        elif block_class == "ToolResultBlock":
+                                            # TASK-INST-005c: Emit tool.exec event for
+                                            # completed Bash tool invocations.
+                                            _tool_use_id = getattr(block, "tool_use_id", "")
+                                            if _tool_use_id in _pending_bash_tools:
+                                                _bash_info = _pending_bash_tools.pop(_tool_use_id)
+                                                _block_content = getattr(block, "content", None)
+                                                _content_str = (
+                                                    str(_block_content) if _block_content else ""
+                                                )
+                                                _latency = (
+                                                    (time.monotonic_ns() - _bash_info["start_ns"])
+                                                    / 1_000_000
+                                                )
+                                                self._emit_tool_exec_event(
+                                                    tool_name="Bash",
+                                                    cmd=_bash_info["cmd"],
+                                                    exit_code=0,
+                                                    latency_ms=_latency,
+                                                    stdout_tail=_content_str,
+                                                    stderr_tail="",
+                                                    task_id=task_id,
+                                                )
+                                            # Extract content from tool results
+                                            # if present (parser sees them too).
+                                            _result_content = getattr(block, "content", None)
+                                            if _result_content:
+                                                collected_output.append(str(_result_content))
+                                elif isinstance(event, ResultMessageEvent):
+                                    result_count += 1
+                                    # TASK-VPR-003: Capture SDK turns from ResultMessage.
+                                    # ResultMessageEvent does not expose num_turns at
+                                    # the typed-event level (TASK-HMIG-006 D-1 left
+                                    # this on raw); read from event.raw which the SDK
+                                    # harness populates with the original SDK
+                                    # ResultMessage. LangGraph harness leaves raw=None
+                                    # so sdk_turns_used stays None on that path.
+                                    if event.raw is not None:
+                                        sdk_turns_used = getattr(
+                                            event.raw, "num_turns", None
+                                        )
+                                    # TASK-RFX-B20B: Capture session_id for resumption.
+                                    # Read from typed field so the same code path
+                                    # works for any substrate.
+                                    sdk_session_id = event.session_id
+                                    self._last_session_id = sdk_session_id
+                                    logger.info(
+                                        f"[{task_id}] SDK completed: turns={sdk_turns_used}"
+                                    )
+                                    break
 
                 if _sdk_stream_error is None:
                     break  # Stream completed successfully, exit retry loop.

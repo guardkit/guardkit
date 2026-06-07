@@ -247,8 +247,18 @@ class TestInvokeTaskWorkImplementGeneratorClose:
         assert "harness.invoke(" in source, (
             "Must iterate harness.invoke() events (per AC-001)."
         )
-        assert "async for event in harness.invoke(" in source, (
-            "Must iterate typed HarnessEvent values directly."
+        # TASK-FIX-LGACLOSE: the bare inline ``async for event in
+        # harness.invoke(`` was replaced by an ``aclosing()``-wrapped
+        # iteration over a bound stream so the async generator is
+        # finalised on EVERY exit (including consumer cancellation). The
+        # event taxonomy is unchanged — only the iteration is wrapped.
+        assert "aclosing(" in source, (
+            "Must wrap harness.invoke() in contextlib.aclosing() so the "
+            "async generator is finalised on cancel (TASK-FIX-LGACLOSE)."
+        )
+        assert "async for event in _harness_stream:" in source, (
+            "Must iterate the aclosing-bound stream, not harness.invoke() "
+            "inline (TASK-FIX-LGACLOSE)."
         )
 
     def test_aclose_in_retry_cleanup(self):
@@ -391,3 +401,119 @@ class TestGeneratorDrainAfterResultMessage:
                 permission_mode="acceptEdits",
             )
         # If we reach here, no CancelledError was raised — test passes
+
+
+# ============================================================================
+# 5. TASK-FIX-LGACLOSE: aclosing() wrap on harness.invoke() iteration
+# ============================================================================
+#
+# CTOUT01 wrapped agent.ainvoke in an asyncio.Task so cancel() propagates
+# CancelledError, but the consumer iterating LangGraphHarness.invoke (an
+# async generator) abandoned it on the feature-timeout cancel path without
+# awaiting aclose() — leaving an orphaned async_generator_athrow / pending
+# ainvoke task the GC tried to close at interpreter shutdown ("coroutine
+# method 'aclose' of 'LangGraphHarness.invoke' was never awaited"). AC-1
+# wraps BOTH consumer iteration sites in contextlib.aclosing() so the
+# generator is finalised on every exit, including cancellation. Pairs with
+# the harness-side defensive finally (AC-2, guardkitfactory). These tests
+# pin the call sites via source introspection — the same convention the
+# SDK-path tests above use.
+
+
+class TestHarnessInvokeAclosingOnCancel:
+    """Both harness.invoke() consumer sites must finalise the generator."""
+
+    def test_aclosing_imported(self):
+        """contextlib.aclosing must be imported for the wrap to resolve."""
+        import inspect
+
+        from guardkit.orchestrator import agent_invoker
+
+        source = inspect.getsource(agent_invoker)
+        assert "aclosing" in source, (
+            "agent_invoker must import contextlib.aclosing for the "
+            "TASK-FIX-LGACLOSE generator finalisation wrap."
+        )
+
+    def test_invoke_with_role_wraps_harness_invoke_in_aclosing(self):
+        """_invoke_with_role (specialist/Player/Coach path) wraps the stream."""
+        import inspect
+
+        source = inspect.getsource(AgentInvoker._invoke_with_role)
+
+        assert "harness.invoke(" in source, (
+            "Specialist path must still dispatch through harness.invoke()."
+        )
+        assert "async with aclosing(" in source, (
+            "harness.invoke() must be wrapped in aclosing() so the async "
+            "generator is finalised on cancel (TASK-FIX-LGACLOSE AC-1)."
+        )
+        assert "async for event in _harness_stream:" in source, (
+            "Must iterate the aclosing-bound stream, not harness.invoke() "
+            "inline."
+        )
+        # The pre-fix inline form must NOT survive — its survival is the
+        # exact regression this guards against.
+        assert "async for event in harness.invoke(" not in source, (
+            "Bare inline iteration of harness.invoke() must not survive — "
+            "it leaks the generator on the cancel path."
+        )
+
+    def test_coach_validator_test_exec_wraps_harness_invoke_in_aclosing(self):
+        """Coach independent-test-exec path (coach_test role) wraps the stream.
+
+        This is the path whose ``asyncio.timeout(self.test_timeout)`` can
+        fire mid-stream — the same leak shape as the Player/specialist
+        path, so it gets the same aclosing() finalisation.
+        """
+        import inspect
+
+        from guardkit.orchestrator.quality_gates import coach_validator
+
+        source = inspect.getsource(coach_validator)
+        assert "async with aclosing(" in source, (
+            "coach_validator must wrap its harness.invoke() iteration in "
+            "aclosing() (TASK-FIX-LGACLOSE)."
+        )
+        assert "async for event in harness.invoke(" not in source, (
+            "Bare inline iteration of harness.invoke() must not survive in "
+            "coach_validator."
+        )
+
+    def test_task_work_interface_design_wraps_harness_invoke_in_aclosing(self):
+        """Design-phase path (design role) wraps the stream."""
+        import inspect
+
+        from guardkit.orchestrator.quality_gates import task_work_interface
+
+        source = inspect.getsource(task_work_interface)
+        assert "async with aclosing(" in source, (
+            "task_work_interface must wrap its harness.invoke() iteration "
+            "in aclosing() (TASK-FIX-LGACLOSE)."
+        )
+        assert "async for event in harness.invoke(" not in source, (
+            "Bare inline iteration of harness.invoke() must not survive in "
+            "task_work_interface."
+        )
+
+    def test_task_work_implement_wraps_harness_invoke_in_aclosing(self):
+        """_invoke_task_work_implement (task-work Player path) wraps the stream."""
+        import inspect
+
+        source = inspect.getsource(AgentInvoker._invoke_task_work_implement)
+
+        assert "harness.invoke(" in source, (
+            "Task-work path must still dispatch through harness.invoke()."
+        )
+        assert "async with aclosing(" in source, (
+            "harness.invoke() must be wrapped in aclosing() so the async "
+            "generator is finalised on cancel (TASK-FIX-LGACLOSE AC-1)."
+        )
+        assert "async for event in _harness_stream:" in source, (
+            "Must iterate the aclosing-bound stream, not harness.invoke() "
+            "inline."
+        )
+        assert "async for event in harness.invoke(" not in source, (
+            "Bare inline iteration of harness.invoke() must not survive — "
+            "it leaks the generator on the cancel path."
+        )

@@ -2494,6 +2494,137 @@ population.
   `LangGraphHarness` per-role selection + `MODEL_CONTEXT_WINDOWS`
   registry entry for `gemma4:26b`
 
+### 9.15 2026-06-07 — run-10 launch recipe (post-COACHBUDG01-LG): verified `--task-timeout 4800` + `--no-context`; the AC-006 gate must probe `/v1/responses`, not chat-completions
+
+**Trigger / verdict.** The TASK-REV-AOF-RUN9 pre-next-run readiness review
+(`guardkitfactory/docs/reviews/autobuild-migration/TASK-REV-AOF-RUN9-pre-next-run-readiness-review.md`)
+adjudicated run-9 and concluded: **COACHBUDG01-LG is necessary but NOT sufficient
+→ CONDITIONAL GO on run-10**, only after (R4) the AC-006 live probe passes and
+(R1) the task-timeout is raised. This section is the operator recipe for that run
+and supersedes the stale "⏳ guardkitfactory" rows in §9.14's AC table.
+
+**What landed since §9.14 (the ⏳ rows are now done).** On the guardkitfactory
+side, after §9.14 was written:
+
+- **Per-role `max_tokens`** (Coach 16384 / Player 8192) + `AssistantMessageEvent.reasoning_text`
+  plumbing at the `LangGraphHarness` `ChatOpenAI` construction site — commit `e8350bd`.
+- **Responses-API reasoning extraction** — `extract_last_ai_reasoning` now recovers
+  plaintext reasoning from the `/v1/responses` AIMessage shape (content-block /
+  `additional_kwargs["reasoning"]` / typed `content_blocks`) — commit `44634ea`
+  (TASK-FIX-COACHBUDG01-LG, guardkitfactory).
+- **Caveat (this is exactly what run-10 gates):** verified only against **hermetic
+  fixtures with `langchain-openai` absent from the dev venv**. The live
+  `/v1/responses` reasoning shape from the installed client on the DGX was never
+  observed. **AC-006 live smoke is still pending** → that is the R4 probe below.
+
+**Critical correction to the §9.13 probe.** Run-9 routed every Coach call through
+**`POST /v1/responses`** (deepagents' default `ChatOpenAI` uses the Responses API),
+*not* `/v1/chat/completions`. The §9.13 5× curl recipe hits **chat-completions**,
+where `reasoning_content` was already known to work (a direct chat-completions
+probe returned 145 chars of reasoning). So that curl is a useful **liveness**
+check but it does **NOT** exercise the actual fix — the Responses-API extraction
+in the harness. **The real AC-006 gate must exercise `/v1/responses` through the
+harness extractor.** A green chat-completions curl + an unprobed `/v1/responses`
+path is precisely how run-9's "25211 chars content / 0 chars reasoning_content"
+slipped through.
+
+**Probe BEFORE run-10 — two tiers:**
+
+*Tier 1 — liveness only (cheap, ~30 s; the §9.13 recipe). Confirms gemma4-coach
+is up on `--reasoning auto` and emits `reasoning_content` on the chat path. Does
+NOT validate the Responses-API fix — do not treat a green Tier 1 as AC-006.*
+
+```bash
+curl -sS --max-time 30 http://localhost:9000/v1/chat/completions \
+     -H "Content-Type: application/json" \
+     -d '{"model":"gemma4:26b","messages":[{"role":"user","content":"Reply with a fenced ```json block: {\"decision\":\"accept\"}"}],"max_tokens":2048}' \
+  | jq -r '.choices[0].message | "\(.content|length) content, \((.reasoning_content//"")|length) reasoning"'
+```
+
+*Tier 2 — the real AC-006 gate (R4 → `TASK-FIX-AC006SMOKE-LG`, guardkitfactory).*
+Capture **one** live `/v1/responses` AIMessage from `gemma4:26b` under
+`--reasoning auto`, drive it through `extract_last_ai_reasoning` /
+`LangGraphHarness.invoke`, and assert `reasoning_text > 0` and the
+`coach_output_parser` recovers the fenced verdict (COACHSF01 silent). If
+`reasoning_text == 0`, the installed `langchain-openai` Responses-API shape is
+unhandled — capture it, extend `extract_last_ai_reasoning`, pin it in the AC-005
+fixture, and re-probe. **Do not launch run-10 until Tier 2 is green.**
+
+> Note: the probe fixture `docs/research/dgx-spark/probes/coach-turn-1-replay.json`
+> referenced in §9.13 **does not exist yet** — create it from a real captured
+> run-6/run-9 turn-1 Coach prompt (the exact prompt is load-bearing for AC-006
+> validity; do not synthesize a new one).
+
+**Run-10 launch command (flags verified against `guardkit/cli/autobuild.py` +
+`feature_orchestrator.py`):**
+
+```bash
+mkdir -p .guardkit/autobuild/TASK-REV-HMIG-feature-run/
+GUARDKIT_HARNESS=langgraph \
+  OPENAI_BASE_URL=http://promaxgb10-41b1:9000/v1 \
+  OPENAI_API_KEY=llama-swap-local-key \
+  guardkit autobuild feature FEAT-AOF \
+    --fresh \
+    --model qwen36-workhorse \
+    --coach-model gemma4:26b \
+    --task-timeout 4800 \
+    --no-context \
+    2>&1 | tee .guardkit/autobuild/TASK-REV-HMIG-feature-run/run-10-stdout.log
+```
+
+**Why these flags (each verified, not assumed):**
+
+- `--task-timeout 4800` — real CLI flag (`cli/autobuild.py:756-762`, default 2400).
+  The orchestrator floors at 3000 s then multiplies (`feature_orchestrator.py:664-675`:
+  `int(max(3000, task_timeout) * timeout_multiplier)`). On this substrate the
+  auto-detected multiplier resolved to **1.0** in run-9 (3000 × 1.0 = 3000 s), so
+  `--task-timeout 4800` → `max(3000, 4800) × 1.0` = **4800 s**. That covers a
+  turn-1-reject → turn-2-accept run (~3864 s measured) with ~930 s margin.
+  (§9.13's `--task-timeout 4500` is also adequate; this uses the verified CLI flag
+  with a little more headroom. Prefer the CLI flag over the `GUARDKIT_TASK_TIMEOUT_SECONDS`
+  env var, which was not verified in code.)
+- `--no-context` — real flag (`cli/autobuild.py:750-754`, `--enable-context/--no-context`).
+  Sets `enable_context=False`, which gates out all Graphiti work at
+  `feature_orchestrator.py:1855` **before** the FalkorDB connectivity check — so
+  run-9's `FalkorDB connectivity check failed (whitestocks:6379)` warning is
+  pre-empted at the config level rather than via the failure path.
+- `GUARDKIT_HARNESS=langgraph` — correct and **proven in run-9 on the Mac**.
+  Requires `guardkitfactory` importable in the active env (it was for run-9).
+  Preflight: `python -c "import guardkitfactory"` should succeed before launch.
+
+**Changes vs run-9:**
+
+| Knob | Run-9 | Run-10 | Why |
+|---|---|---|---|
+| task-timeout | default→floored 3000 s | `--task-timeout 4800` | run-9 timed out mid-turn-2 Coach; 4800 s covers a real 2-turn run (~3864 s) with margin |
+| Graphiti | on (FalkorDB check failed, auto-disabled) | `--no-context` | pre-empt the FalkorDB warning cleanly; remove a variable |
+| Reasoning extraction | broken on `/v1/responses` (0 reasoning_content) | fixed (`e8350bd`+`44634ea`), **probe Tier 2 first** | the run-9 headline failure; necessary fix, live-unverified |
+| coach `--reasoning` | `auto` (already flipped, §9.14) | `auto` (unchanged) | no llama-swap change needed |
+| model / coach | qwen36-workhorse / gemma4:26b | unchanged | keep the validated pairing |
+
+**Run-10 go criteria** (joins §9.13's gate): probe Tier 2 green
+(`reasoning_text > 0` on `/v1/responses`); ≥6 Coach turns across the feature emit
+natural fenced-JSON verdicts (content OR reasoning channel) at ≥95% — no run
+dominated by COACHSF01 synthetic fallbacks; no task-timeout exhaustion before
+wave completion.
+
+**Run-10 abort / escalate** (per AC-007, `nemotron-3-super:120b-a12b`, gated on
+2nd GB10): Tier-2 probe shows `reasoning_text == 0` and the shape can't be
+extracted; Coach verdict-emission < 95%; or task-timeout recurs at 4800 s
+(then the substrate, not the budget, is the wall).
+
+**Pointers.**
+
+- Readiness review (verdict + full pre-run checklist):
+  `guardkitfactory/docs/reviews/autobuild-migration/TASK-REV-AOF-RUN9-pre-next-run-readiness-review.md`
+- Fix under live validation: `guardkitfactory` commits `e8350bd`, `44634ea`
+  (TASK-FIX-COACHBUDG01-LG, `tasks/completed/TASK-FIX-COACHBUDG01-LG/`)
+- Follow-up tasks from the review: R4 `TASK-FIX-AC006SMOKE-LG` (guardkitfactory);
+  R1 `TASK-FIX-AOFBUDG`, N `TASK-FIX-COACHPYENV`, R3 `TASK-FIX-LGACLOSE`,
+  R2 `TASK-FIX-SPECHANG2`, R5 `TASK-OPS-AOFENV` (all guardkit
+  `tasks/backlog/autobuild-harness-migration/`)
+- Predecessor proposal this refines: §9.13 "Operator runbook for run 10"
+
 ---
 
 ## 10. Provenance
