@@ -1,7 +1,7 @@
 ---
 id: TASK-FIX-IA03
 title: Exclude internal artifacts from documentation constraint count
-status: in_progress
+status: blocked
 created: 2026-02-20 00:00:00+00:00
 updated: 2026-02-20 00:00:00+00:00
 priority: medium
@@ -17,22 +17,27 @@ feature_id: FEAT-AOF
 wave: 1
 implementation_mode: task-work
 autobuild:
-  # TASK-FIX-AOFBUDG: 80-min per-task budget so a turn-1-reject → turn-2-accept
-  # run (~3864s wall-clock) survives without a feature-level timeout cancel.
-  # Read by FeatureOrchestrator._resolve_task_timeout (× timeout_multiplier).
   task_timeout: 4800
 test_results:
   status: pending
   coverage: null
   last_run: null
 autobuild_state:
-  current_turn: 0
+  current_turn: 1
   max_turns: 5
   worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AOF
   base_branch: main
-  started_at: '2026-06-04T20:33:52.227090'
-  last_updated: '2026-06-04T20:33:52.227093'
-  turns: []
+  started_at: '2026-06-08T10:45:12.639089'
+  last_updated: '2026-06-08T11:32:49.443418'
+  turns:
+  - turn: 1
+    decision: error
+    feedback: null
+    timestamp: '2026-06-08T10:45:12.639089'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: false
 ---
 
 # Task: Exclude internal artifacts from documentation constraint count
