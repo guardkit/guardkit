@@ -1,20 +1,64 @@
 # Coach verdict GBNF grammars
 
-GBNF grammars that enforce the AutoBuild **Coach verdict-emission contract**
-(COACHOUT01 / FB-004) at the llama.cpp inference layer for the `gemma4-coach`
-model alias on the GB10. Closes **F24 / I-013** (gemma4-coach under
-`--reasoning auto` is unreliable at the structured fenced-JSON contract).
+GBNF grammars that constrain `gemma4-coach` generations to a valid AutoBuild
+**Coach verdict** (COACHOUT01 / FB-004) at the llama.cpp inference layer.
 
 **Task:** [`TASK-OPS-COACHGRAMMAR`](../../../../tasks/backlog/autobuild-harness-migration/TASK-OPS-COACHGRAMMAR-enforce-coach-verdict-schema-via-llama-cpp-gbnf.md)
 (Path 1A). **Full runbook:** [`AUTOBUILD-ON-LLAMA-SWAP-findings.md §9.13.1`](../AUTOBUILD-ON-LLAMA-SWAP-findings.md).
 
+> ## ⛔ Route-level `--grammar-file` does NOT reach the autobuild Coach — reverted 2026-06-08
+>
+> **Run 13 ([log](../../reviews/autobuild-migration/autobuild-FEAT-AOF-run-13.md))
+> proved Path 1A as wired is a no-op for the Coach, and the `--grammar-file` flag
+> has been removed from the live `gemma4-coach` route.** Do not re-add it expecting
+> it to enforce the schema.
+>
+> **Mechanism (verified on the GB10):** llama.cpp does **not** apply a server-level
+> `--grammar-file` to any request that includes `tools` — it uses the tool-call
+> grammar instead. The autobuild Coach runs as a `deepagents.create_deep_agent`
+> agent whose **built-in tool set** (`ls`/`read_file`/`write_file`/`edit_file`/
+> `glob`/`grep`/`execute` + planning + sub-agents, supplied via the backend even
+> though the harness passes `tools=[]` — see `guardkitfactory`
+> `harness/langgraph_harness.py` TASK-FIX-LGTOOLS + `harness/backend_config.py`) is
+> bound to the model and sent on **every** `/v1/responses` call, including the final
+> verdict-emission call. So the grammar is bypassed on every Coach call.
+>
+> Probes that establish this (live `gemma4-coach`):
+> | request | result |
+> |---|---|
+> | no tools, single-shot Coach prompt | grammar **applied** → valid verdict (this is what AC-4 tested — and why it looked like it worked) |
+> | `tools` present, "reply DONE" | replied `DONE`, finish=stop, 1.2 s → grammar **bypassed** |
+> | `tools` present, "call read_file" | clean `tool_call` → grammar **bypassed** |
+>
+> **Consequence:** the AC-4 validation in this repo was invalid — it tested a
+> no-tools single-shot request (grammar applies) but the real Coach is tool-bound
+> (grammar bypassed). Run 13's Coach SDK-timeout at 2340s is the **same
+> substrate-quality wall as run 12** (gemma4-coach is a slow, unreliable agentic
+> verifier), NOT a grammar effect.
+>
+> **To actually enforce the schema** you must reach a request the Coach makes
+> **without `tools`**. Options (all forward work, none zero-code):
+> 1. **Toolless verdict-synthesis call** — after the agentic Coach finishes its
+>    tool-based verification, make one final `tools=[]` call ("emit your verdict as
+>    JSON") that *is* grammar-constrained. Needs a guardkitfactory harness change.
+> 2. **Structured output via `response_format` / `json_schema`** on that final call
+>    (test whether it composes with the deepagents flow).
+> 3. **Path 1B** ([`TASK-FIX-COACHSCHEMA`](../../../../tasks/backlog/autobuild-harness-migration/TASK-FIX-COACHSCHEMA-tighten-coach-prompt-schema-emission.md))
+>    — prompt tightening; works regardless of tools.
+> 4. **Path 2** — nemotron-3-super (better agentic substrate), gated on 2nd GB10.
+>
+> The grammar files below remain correct and reusable for option 1/2 (they were
+> validated against the parser + a real single-shot Coach verdict). Only the
+> **route-level wiring** was wrong.
+
 | File | Role |
 |---|---|
-| [`coach-verdict.gbnf`](coach-verdict.gbnf) | **Primary.** Free reasoning prefix + guaranteed final verdict fence + forced EOS. |
-| [`coach-verdict-strict.gbnf`](coach-verdict-strict.gbnf) | **Fallback.** No-backtick prelude; biases toward early emission at the cost of reasoning depth. Use only if the primary under-emits in run 13. |
+| [`coach-verdict.gbnf`](coach-verdict.gbnf) | **Primary.** Free reasoning prefix + guaranteed final verdict fence + forced EOS. Correct for a **toolless** verdict call. |
+| [`coach-verdict-strict.gbnf`](coach-verdict-strict.gbnf) | **Fallback.** No-backtick prelude; biases toward early emission at the cost of reasoning depth. |
 
-Installed (live) at `/opt/llama-swap/grammars/` on `promaxgb10-41b1`. The in-repo
-copies here are the version-tracked source of truth — keep them in sync.
+The in-repo copies here are the version-tracked source of truth. They are also
+installed at `/opt/llama-swap/grammars/` on `promaxgb10-41b1`, but **no live route
+references them** (the `gemma4-coach` `--grammar-file` wiring was reverted).
 
 ---
 

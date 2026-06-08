@@ -1,10 +1,11 @@
 ---
 id: TASK-OPS-COACHGRAMMAR
 title: Enforce Coach verdict schema at the inference layer via llama.cpp GBNF grammar on gemma4-coach
-status: in_progress
+status: blocked
 task_type: ops
 created: 2026-06-08T00:00:00Z
-updated: 2026-06-08T09:30:00Z
+updated: 2026-06-08T14:30:00Z
+blocked_reason: "Path 1A (route-level --grammar-file) invalidated by run 13 — llama.cpp bypasses the server grammar when a request carries tools, and the deepagents Coach sends built-in tools on every call, so the grammar never reaches the Coach. Needs re-scoping to a toolless verdict-synthesis call (code change) or Path 1B / Path 2."
 priority: high
 complexity: 3
 effort_hours: 1
@@ -126,11 +127,11 @@ GUARDKIT_HARNESS=langgraph \
 
 - [x] **AC-2**: Coach verdict GBNF grammar authored, cross-checked against `coach_output_parser.py`, committed to a stable path, and version-tracked. ✓ **Done 2026-06-08.** In-repo source of truth: [`docs/research/dgx-spark/grammars/coach-verdict.gbnf`](../../../docs/research/dgx-spark/grammars/coach-verdict.gbnf) (+ `coach-verdict-strict.gbnf` fallback + [`README.md`](../../../docs/research/dgx-spark/grammars/README.md)). Installed live at `/opt/llama-swap/grammars/coach-verdict.gbnf`. Cross-checked against BOTH `coach_output_parser.py` and `agent_invoker.py` (COACH_DECISION_SCHEMA, `_validate_coach_decision`, `_parse_coach_feedback`, `parse_criteria_verifications`, Coach prompt examples). **The §9.13.1 draft grammar was found defective** (issues-as-strings, wrong field `criteria_results`, missing `validation_results`, non-compiling multi-line rules) and replaced; see README. Compile-verified with `test-gbnf-validator`; 10/10 behavioral cases.
 
-- [x] **AC-3**: `gemma4-coach` llama-swap route updated with `--grammar-file /opt/llama-swap/grammars/coach-verdict.gbnf` (config line 320). ✓ **Done 2026-06-08.** Edited the live `/opt/llama-swap/config/config.yaml` (backed up to `config.yaml.bak-2026-06-08-pre-coachgrammar`); `-watch-config` hot-reloaded; recycled via `/unload?model=gemma4-coach`. The running child carries the flag and the route serves without grammar-compile errors.
+- [~] **AC-3 (REVERTED)**: the `--grammar-file` line was added to the `gemma4-coach` route, hot-reloaded, and verified applied on `/v1/chat/completions` + `/v1/responses` via a `root ::= "PONG"` probe — **then removed 2026-06-08** after run 13 proved it is a no-op for the agentic Coach (see AC-5). Config restored (the one added line was deleted; backup at `config.yaml.bak-2026-06-08-pre-coachgrammar`); route recycled. No live route references the grammar.
 
-- [x] **AC-4 (smoke, corrected vs §9.15)**: ✓ **Done 2026-06-08, on the real path.** Critical finding: the server-level `--grammar-file` applies to the **OpenAI-compat endpoints** (`/v1/chat/completions` AND `/v1/responses`) — confirmed with a `root ::= "PONG"` probe that forced exactly `PONG` on both. End-to-end: a substantive Coach prompt sent via **`/v1/responses`** relying solely on the **config-level** grammar (no inline grammar) produced a valid verdict extracted by the **real `coach_output_parser`** — `decision=approve` (semantically correct), all required fields, 3 `criteria_verification` entries, coherent rationale, `status=completed` (clean stop), reasoning preserved (3302 chars). The pre-validation via inline `grammar` also reproduced F24 in the no-grammar control arm. F24 is closed at the substrate.
+- [✗] **AC-4 (INVALID — superseded)**: the on-config smoke that "passed" used a **no-tools, single-shot** `/v1/responses` request, where `--grammar-file` *does* apply. The real autobuild Coach is a `deepagents` agent that sends DeepAgents' **built-in tools** on every call, and **llama.cpp bypasses `--grammar-file` whenever a request includes `tools`** (verified on the GB10: tools-present requests returned a clean `tool_call` / a free-text `DONE`, never a forced verdict). So AC-4 never exercised the real Coach path. F24 is **not** closed by route-level wiring.
 
-- [ ] **AC-5 (falsifier — run 13)**: **Launch from the Mac orchestrator host** (decided 2026-06-08 — this GB10 is the model host; `guardkitfactory` + the langgraph/deepagents stack are not installed in the GB10 guardkit `.venv`, and run-9/10 ran from the Mac per §9.15). The grammar enforcement lives at the GB10's llama-swap and is live + verified, so a run from the Mac pointing at `http://promaxgb10-41b1:9000/v1` exercises it. **Command + reworded pass criteria** in [`grammars/README.md`](../../../docs/research/dgx-spark/grammars/README.md) "Operator handoff". Pass = `finish_reason=stop` on Coach turns (no `length` truncation), reasoning size within ~2× baseline, and a human spot-check of ≥6 verdicts confirming decisions match the Player diff; COACHSF01 fallback <5%. (Emission rate is ~100% by construction, so it is no longer the falsifier.)
+- [✗] **AC-5 (falsifier — run 13: FAILED)**: Run 13 ([log](../../../docs/reviews/autobuild-migration/autobuild-FEAT-AOF-run-13.md)) launched from the Mac. Player succeeded (46 files, 360s); **Coach SDK-timed-out at 2340s with no verdict** — `error`, feature FAILED 0/3. **Root cause: the grammar was a no-op** (bypassed on every Coach call because DeepAgents binds built-in tools; confirmed via `guardkitfactory` `harness/langgraph_harness.py` TASK-FIX-LGTOOLS + `harness/backend_config.py`, and live GB10 probes). The timeout is the **same substrate-quality wall as run 12** (gemma4-coach is a slow, unreliable agentic verifier), not a grammar effect — the Mac session's "grammar over-constrains / reason-forever" hypotheses (run-13-artifacts/README.md) are based on the false premise that the grammar applied. **Path 1A (route-level `--grammar-file`) is architecturally incompatible with the tool-bound agentic Coach.** Forward options (all non-zero-code) recorded in [`grammars/README.md`](../../../docs/research/dgx-spark/grammars/README.md): (1) a toolless verdict-synthesis call that *is* grammar-constrained, (2) `response_format`/`json_schema` on that call, (3) Path 1B prompt-tightening, (4) Path 2 nemotron.
 
 ## Implementation log (2026-06-08)
 
@@ -156,18 +157,37 @@ Worked through on the GB10 (`promaxgb10-41b1`) directly.
 - **Findings doc**: §9.13.1 annotated with a CORRECTED banner + the 4 draft defects;
   run-13/smoke recipe flagged stale vs §9.15.
 
+### Run-13 outcome (2026-06-08) — Path 1A invalidated
+
+Run 13 FAILED: Coach SDK-timeout at 2340s, no verdict. Root-caused on the GB10:
+
+- **The route-level grammar was a NO-OP for the Coach.** llama.cpp does not apply
+  a CLI `--grammar-file` to any request carrying `tools`; it uses the tool-call
+  grammar instead. The Coach is a `deepagents.create_deep_agent` agent whose
+  built-in tool set (filesystem + execute + planning + sub-agents) is sent on every
+  `/v1/responses` call, so the grammar never applied — verified by live probes
+  (tools-present → clean `tool_call` / free `DONE`; no-tools → grammar applied) and
+  by the harness source (`guardkitfactory` TASK-FIX-LGTOOLS / `backend_config.py`).
+- **The AC-4 "pass" was invalid** — it tested a no-tools single-shot request.
+- **Run-13's timeout = the substrate wall (run-12 shape), not the grammar.**
+- **`--grammar-file` reverted** from the live `gemma4-coach` route.
+- **Meta-lesson (candidate `.claude/rules/` seed):** a substrate-layer enforcement
+  must be validated against the *real* request shape the runtime emits (tools
+  present), not a simplified single-shot — same meta-frame as `namespace-hygiene.md`
+  ("local decisions touching externally-defined contracts must be checked against the
+  external contract").
+
 ## Implementation notes
 
-- **Architecturally correct fix**: enforces the schema *where it's
-  serviceable* — at the inference layer. The orchestrator, parser, and
-  COACHSF01 safety net don't need to know about the grammar; they keep
-  working as defence-in-depth.
-- **No code change** in `guardkit/` or guardkitfactory. This is purely
-  llama-swap config + a small grammar file.
-- **Reasoning channel preserved**: the `root ::= prelude code-fence`
-  shape allows free-form prose before the fence, so gemma4 can still
-  use `reasoning_content` substantively under `--reasoning auto`. The
-  grammar only constrains the *final* response shape.
+- **Path 1A premise FALSIFIED**: "enforce the schema at the inference layer via a
+  route-level `--grammar-file`, zero code change" does NOT work — the tool-bound
+  agentic Coach bypasses the server grammar (see Run-13 outcome above). Enforcement
+  requires reaching a *toolless* Coach request, which is a code change, not config.
+- **Reasoning channel preserved (for a toolless call)**: the `root ::= prefix
+  code-fence` shape allows free-form prose (incl. backticks) before the fence, so
+  gemma4 keeps `reasoning_content` under `--reasoning auto` — validated on a
+  single-shot call; still correct if the grammar is applied to a toolless
+  verdict-synthesis call.
 - **Operator should consider committing the GBNF file in-repo** at
   `docs/research/dgx-spark/grammars/coach-verdict.gbnf` (or
   similar) so future runs / different GB10s / 2nd GB10 can pick up the
