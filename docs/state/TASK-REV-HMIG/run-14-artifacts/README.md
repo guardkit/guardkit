@@ -153,3 +153,28 @@ llama.cpp logs around these timestamps**:
   on 2nd GB10 + ConnectX-7, gated on hardware ETA. If Path 1B is
   conclusively insufficient (which run-14 evidence suggests), this
   becomes the cutover surface.
+
+## ✅ RESOLVED on the GB10 (2026-06-08) — supersedes the hypotheses above
+
+**Conclusion: this is the substrate-capability wall, not a scaffolding bug.**
+Three non-hardware levers are now exhausted across runs 12–14: grammar (Path 1A,
+no-op — bypassed by tools), prompt-tightening (Path 1B, this run — failed), and
+more time (`--sdk-timeout 3600` — made it *worse*: the bigger budget let turn 1
+ramble to 49,720 chars without converging). gemma4-26B-A4B (**3.8B active**)
+cannot organise agentic reasoning to a verdict, no matter the scaffolding.
+
+On the hypotheses: H-A (the self-check clause induced the turn-1 self-review
+explosion) is **plausible but unconfirmable** — the full reasoning text is not in
+any log, and turn 2 was *short* (1347 chars) yet *still* emitted no verdict, so
+the core failure is the model regardless of prompt. H-1 (prompt not routed) was
+checked: `_build_coach_prompt` does feed both harnesses via `_invoke_with_role`,
+so the prompt *did* reach the Coach. H-B/H-C (reasoning-loop vs tool-thrash)
+don't change the conclusion.
+
+**Actions taken:** Path 1B prompt block **reverted** (restore the clean runs-12/13
+baseline so the next substrate test isolates the model variable; also removes the
+suspected self-check backfire). **Next experiment:** swap the substrate to the
+**Gemma 4 31B dense QAT** (30.7B active vs 3.8B, ~17.7 GB ≈ same memory, no new
+hardware) — [`TASK-OPS-COACH31B`](../../../../tasks/backlog/TASK-OPS-COACH31B-evaluate-gemma4-31b-qat-as-coach-substrate.md).
+Distillation seed harvest: [`TASK-DATA-COACHHARVEST`](../../../../tasks/backlog/TASK-DATA-COACHHARVEST-harvest-claude-era-coach-training-data.md).
+nemotron stays the hardware-gated fallback, not the plan.
