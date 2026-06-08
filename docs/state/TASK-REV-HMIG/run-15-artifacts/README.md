@@ -197,3 +197,71 @@ question under gemma4:31b. These are different problems.
   escalation step (gemma4:26b → 31b) may have already done much of the
   work; the cutover decision now hinges on whether the F23-on-31b
   substrate issue is transient or systemic.
+
+## ✅ RESOLVED on the GB10 (2026-06-08) — turn-2 502 is **F23A (global OOM)**
+
+The GB10 session (TASK-OPS-COACH31B) discriminated the run-15 turn-2 502 against
+the four hypotheses in the commit message. **It is F23A — substrate sizing /
+global OOM.** Decisive evidence from the GB10 kernel + llama-swap logs (which the
+Mac session cannot see):
+
+**1. llama-swap proxy log** (`/opt/llama-swap/logs/llama-swap.log`):
+```
+[WARN] non-200 response ... status=502, path=/v1/responses
+[INFO] Request 100.111.236.109 "POST /v1/responses HTTP/1.1" 502 0 ... 4m25.5s
+[WARN] matrix: running gemma4-31b exited: [gemma4-31b] shutdown
+```
+The 502s are `dial tcp 127.0.0.1:5801: connect: connection refused` — i.e. the
+**gemma4-31b llama-server (port 5801) had died**, so the proxy had nothing to
+forward to. The only matrix set-switches in the log are the GB10 session's own
+AC-2 warm-loads (restore-to-gc, then the Mac run's turn-1 g31 load) — **no
+eviction during the run → NOT F23B**, and the keepalive timer was confirmed
+**OFF** for the whole run (no `llama-swap-keepalive.service` runs in the window).
+
+**2. Kernel OOM-killer** (`journalctl -k`, 20:25:47–20:25:49 BST):
+```
+forge invoked oom-killer ... constraint=CONSTRAINT_NONE ... global_oom
+Out of memory: Killed process 3007736 (llama-server)
+   total-vm:109300624kB, anon-rss:28703536kB   ← gemma4-31b on :5801, ~28.7 GB
+llama-swap.service: Failed with result 'oom-kill'
+NVRM: ... Out of memory [NV_ERR_NO_MEMORY]      (unified memory exhausted)
+```
+The kill (20:25:49 BST) lands **7 s before** the orchestrator recorded the
+turn-2 Coach `error` (20:25:56 BST / 19:25:56 UTC). Cause and effect confirmed.
+
+**3. Why it OOM'd:** the OOM process table shows the GB10 was running, at once,
+the model fleet (g31 ~28.7 GB + qw + qg + ne) **plus** dockerd + a vLLM container
+(`python3` under a `docker-*.scope`) + the `forge` runner + a large VS Code (many
+`code`/`node` procs) + firefox + the GB10-side session. The dense 31B's KV growth
+on the turn-2 Coach prompt (the larger `player_turn_2.json`) tipped total memory
+past the ~121 GB ceiling → kernel killed the biggest process (g31). Same shape as
+run-11 F23A, now on the bigger model — exactly the `§9.4 freeze-near-the-ceiling`
+hazard the route comment warned about.
+
+### What this means for the run-15 verdict
+- **F24 (verdict-emission wall) is BROKEN by the substrate swap.** Turn-1 proves
+  it: a real, schema-valid Coach verdict that independently caught a Player
+  honesty discrepancy (claimed test file absent on disk), `coach_primary_synthetic_feedback`
+  absent. This matches the AC-2 single-shot prediction (the dense 31B converges
+  and emits valid verdicts; the MoE spiralled). **The model swap (26B-A4B MoE →
+  31B dense), not prompt/grammar, is the load-bearing fix** — consistent with
+  runs 12–14 ruling out grammar (Path 1A), prompt (Path 1B), and more time.
+- **The remaining blocker is a DIFFERENT, narrower problem: F23A memory sizing**,
+  not structured-emission. The gap shape changed (the commit's AC-006/AC-009
+  note is correct), and F23A is the more tractable, closer-to-cutover problem.
+
+### Fix applied (GB10, 2026-06-08) + run-16 recipe
+- **Config:** `gemma4-31b` route `--ctx-size 98304 → 65536` (task pre-authorised:
+  "if the cold load OOMs, drop to 65536"). Hot-reloaded. Backup:
+  `config.yaml.bak-2026-06-08-pre-coach31b-ctx65k`. Cuts g31 KV ~1/3.
+- **Before run-16, QUIESCE the GB10** (the bigger lever — ctx alone may not
+  clear a 28.7 GB process under this load): close desktop GUI apps (VS Code,
+  firefox), stop docker vLLM containers (`docker stop vllm-docling
+  vllm-granite-vision*`), stop the `forge` autobuild runner, and avoid a heavy
+  GB10-side session during the run. (Run-11 F23A recipe.)
+- **Keep the keepalive timer OFF** for run-16 (as in run-15).
+- If 65536 + quiesce still OOMs → drop to 49152, or fall to the **12B dense QAT**
+  (~7 GB, 12B active — still 3× the MoE) per the TASK-OPS-COACH31B escalation.
+- **AC-3 status:** the convergence/F24 bar is met on turn 1; the "≥4 turns,
+  ≥80% valid" bar was not reached because the OOM ended the run at turn 2. Re-run
+  (run-16) with the fix to complete AC-3.

@@ -1,8 +1,17 @@
-# Run-15 recipe — AC-3 falsifier (31B as Coach)
+# Run-15 / Run-16 recipe — AC-3 falsifier (31B as Coach)
 
-> **Deferred** (operator decision 2026-06-08) until AC-2 single-shot results
-> justify the multi-hour spend. This is the *real* test: the tool-bound agentic
-> Coach, not a single-shot probe.
+> **Run-15 ran 2026-06-08: F24 BROKEN** (turn-1 real verdict) but **turn-2
+> OOM-killed (F23A)**. See [run-15-artifacts GB10 resolution](../../TASK-REV-HMIG/run-15-artifacts/README.md).
+> This recipe now drives **run-16** (the re-run with the OOM fix).
+>
+> **Run-16 deltas vs run-15:**
+> 1. g31 route `--ctx-size 98304 → 65536` (already applied; cuts KV ~1/3).
+> 2. **Quiesce the GB10** before launching (the bigger lever — see Preconditions):
+>    close VS Code + firefox; `docker stop vllm-docling vllm-granite-vision
+>    vllm-granite-vision-3-3-2b 2>/dev/null`; stop the forge autobuild runner;
+>    avoid a heavy GB10-side session during the run.
+> 3. Keepalive stays OFF; check `free -g` shows comfortable headroom after g31
+>    loads on turn 1. If it still OOMs → ctx 49152 or the 12B dense QAT.
 
 ## Falsifier bar (AC-3)
 With the 31B as Coach, across ≥4 Coach turns: ≥1 turn **converges** (emits a

@@ -148,13 +148,35 @@ settled only by AC-3 (run-15).
   **12B dense QAT** (~7 GB, 12B active, faster) or distillation
   ([TASK-DATA-COACHHARVEST](../../../tasks/backlog/TASK-DATA-COACHHARVEST-harvest-claude-era-coach-training-data.md)).
 
-## AC-3 — run-15 falsifier (DEFERRED → recommend GO)
-Operator decision 2026-06-08: defer until AC-2 numbers are in. **Recommendation
-after AC-2: GO** — run-15 is the *only* test that exercises the tool-bound
-agentic loop where run-14 actually failed; single-shot could not settle the
-substrate question. Bar: ≥1 Coach turn converges (valid fenced verdict within the
-SDK timeout) across ≥4 turns, ≥80% valid (vs run-14's 0/2). Recipe:
-[`run-15-recipe.md`](run-15-recipe.md).
+## AC-3 — run-15 falsifier (RAN 2026-06-08 — F24 BROKEN, then F23A OOM)
+
+Run-15 ran from the Mac (langgraph, `gemma4:31b` Coach). Result splits cleanly:
+
+- **✅ F24 (verdict-emission wall) is BROKEN.** Turn-1 Coach emitted a real,
+  schema-valid fenced verdict — **first time in 15 runs** — `decision=feedback`,
+  no `coach_primary_synthetic_feedback` flag, and it *independently caught a
+  Player honesty discrepancy*: the claimed test file
+  `tests/unit/test_doc_level_constraint.py` did not exist on disk. The AC-2
+  single-shot prediction held: the **31B dense substrate** converges and emits
+  valid verdicts where the 3.8B-active MoE spiralled. Model size — not prompt
+  (Path 1B, run-14) or grammar (Path 1A, run-13) — is the load-bearing fix.
+- **❌ Turn-2 blocked by F23A (global OOM)** — a NEW, narrower problem. The GB10
+  kernel OOM-killed gemma4-31b (pid 3007736, ~28.7 GB resident at ctx 98304) at
+  20:25:49 BST, 7 s before the turn-2 Coach `error` (502 Bad Gateway →
+  Connection error). Discriminated via GB10 kernel + llama-swap logs the Mac
+  can't see: **NOT** F23B (no eviction; keepalive was off), **NOT** a verdict
+  failure. The dense 31B + full live load (fleet + docker vLLM + forge runner +
+  VS Code/firefox + Mac orchestrator) crossed the ~121 GB ceiling. Full
+  forensics + evidence:
+  [run-15-artifacts GB10 resolution](../../TASK-REV-HMIG/run-15-artifacts/README.md).
+
+**AC-3 status: partially met** — the convergence/F24 bar is met (turn 1); the
+"≥4 turns, ≥80% valid" bar was not reached because the OOM ended the run at turn
+2. **Fix applied:** g31 route `--ctx-size 98304 → 65536`
+(`config.yaml.bak-2026-06-08-pre-coach31b-ctx65k`). **Run-16** needs ctx 65536 +
+a **quiesced GB10** (close GUI apps, stop docker vLLM containers + the forge
+runner; keepalive stays OFF). If 65536 still OOMs → 49152 or the 12B dense QAT.
+Recipe: [`run-15-recipe.md`](run-15-recipe.md) (now also the run-16 recipe).
 
 ## Rollback
 Delete the `gemma4-31b` model block + `g31` var + `coach31` set from
