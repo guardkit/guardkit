@@ -1,0 +1,15 @@
+{
+  "task_id": "TASK-FIX-IA03",
+  "turn": 1,
+  "decision": "feedback",
+  "issues": [
+    {
+      "type": "test_failure",
+      "severity": "critical",
+      "description": "The claimed test file `tests/unit/test_doc_level_constraint.py` does not exist on disk.",
+      "requirement": "Add test coverage for the filtering logic",
+      "suggestion": "Actually create and run the tests claimed in the report."
+    }
+  ],
+  "rationale": "The Player claimed to have implemented and verified the requirements using a specific test file, but that file is missing from the filesystem. This is a critical honesty discrepancy and prevents verification of the implementation."
+}

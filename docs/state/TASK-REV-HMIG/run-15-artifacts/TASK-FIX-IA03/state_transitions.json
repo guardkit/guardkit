@@ -1,0 +1,16 @@
+[
+  {
+    "task_id": "TASK-FIX-IA03",
+    "pre_path": "tasks/backlog/TASK-FIX-IA03-exclude-internal-artifacts-from-doc-constraint.md",
+    "post_path": "tasks/design_approved/TASK-FIX-IA03-exclude-internal-artifacts-from-doc-constraint.md",
+    "timestamp": "2026-06-08T19:02:19.855841+00:00",
+    "kind": "design_approved_transition"
+  },
+  {
+    "task_id": "TASK-FIX-IA03",
+    "pre_path": "tasks/backlog/autobuild-observability-fixes/TASK-FIX-IA03-exclude-internal-artifacts-from-doc-constraint.md",
+    "post_path": "tasks/design_approved/TASK-FIX-IA03-exclude-internal-artifacts-from-doc-constraint.md",
+    "timestamp": "2026-06-08T19:17:09.557765+00:00",
+    "kind": "design_approved_transition"
+  }
+]
