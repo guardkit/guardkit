@@ -1,10 +1,10 @@
 ---
 id: TASK-OPS-COACHGRAMMAR
 title: Enforce Coach verdict schema at the inference layer via llama.cpp GBNF grammar on gemma4-coach
-status: backlog
+status: in_progress
 task_type: ops
 created: 2026-06-08T00:00:00Z
-updated: 2026-06-08T00:00:00Z
+updated: 2026-06-08T09:30:00Z
 priority: high
 complexity: 3
 effort_hours: 1
@@ -122,15 +122,39 @@ GUARDKIT_HARNESS=langgraph \
 
 ## Acceptance criteria
 
-- [ ] **AC-1**: `llama-server --help` confirms `--grammar-file` support on the GB10 build. If absent, llama.cpp upgraded first.
+- [x] **AC-1**: `llama-server --help` confirms `--grammar-file` support on the GB10 build. ✓ **Verified 2026-06-08** — live build `/home/richardwoollcott/llama.cpp-new/build/bin/llama-server` is llama.cpp **b9430** (`d48a56eff`, aarch64) and advertises `--grammar-file FNAME`. No upgrade needed.
 
-- [ ] **AC-2**: Coach verdict GBNF grammar authored, cross-checked against `coach_output_parser.py`, committed to a stable path (`/opt/llama-swap/grammars/coach-verdict.gbnf`), and version-tracked (operator preference: in-repo at `docs/research/dgx-spark/grammars/coach-verdict.gbnf` for traceability).
+- [x] **AC-2**: Coach verdict GBNF grammar authored, cross-checked against `coach_output_parser.py`, committed to a stable path, and version-tracked. ✓ **Done 2026-06-08.** In-repo source of truth: [`docs/research/dgx-spark/grammars/coach-verdict.gbnf`](../../../docs/research/dgx-spark/grammars/coach-verdict.gbnf) (+ `coach-verdict-strict.gbnf` fallback + [`README.md`](../../../docs/research/dgx-spark/grammars/README.md)). Installed live at `/opt/llama-swap/grammars/coach-verdict.gbnf`. Cross-checked against BOTH `coach_output_parser.py` and `agent_invoker.py` (COACH_DECISION_SCHEMA, `_validate_coach_decision`, `_parse_coach_feedback`, `parse_criteria_verifications`, Coach prompt examples). **The §9.13.1 draft grammar was found defective** (issues-as-strings, wrong field `criteria_results`, missing `validation_results`, non-compiling multi-line rules) and replaced; see README. Compile-verified with `test-gbnf-validator`; 10/10 behavioral cases.
 
-- [ ] **AC-3**: `gemma4-coach` llama-swap route updated with `--grammar-file <path>` arg; llama-swap restarted; the route serves requests without grammar-compile errors.
+- [x] **AC-3**: `gemma4-coach` llama-swap route updated with `--grammar-file /opt/llama-swap/grammars/coach-verdict.gbnf` (config line 320). ✓ **Done 2026-06-08.** Edited the live `/opt/llama-swap/config/config.yaml` (backed up to `config.yaml.bak-2026-06-08-pre-coachgrammar`); `-watch-config` hot-reloaded; recycled via `/unload?model=gemma4-coach`. The running child carries the flag and the route serves without grammar-compile errors.
 
-- [ ] **AC-4 (smoke)**: 5× replay of the run-12 turn-2 Coach prompt produces 5/5 responses with fenced JSON containing `task_id`, `turn`, `decision` required fields. If <5/5, iterate on the GBNF before Run 13.
+- [x] **AC-4 (smoke, corrected vs §9.15)**: ✓ **Done 2026-06-08, on the real path.** Critical finding: the server-level `--grammar-file` applies to the **OpenAI-compat endpoints** (`/v1/chat/completions` AND `/v1/responses`) — confirmed with a `root ::= "PONG"` probe that forced exactly `PONG` on both. End-to-end: a substantive Coach prompt sent via **`/v1/responses`** relying solely on the **config-level** grammar (no inline grammar) produced a valid verdict extracted by the **real `coach_output_parser`** — `decision=approve` (semantically correct), all required fields, 3 `criteria_verification` entries, coherent rationale, `status=completed` (clean stop), reasoning preserved (3302 chars). The pre-validation via inline `grammar` also reproduced F24 in the no-grammar control arm. F24 is closed at the substrate.
 
-- [ ] **AC-5 (falsifier — downstream verification)**: Run 13 (same invocation as run 12, no code or env changes) produces **Coach verdict-emission rate ≥95%** across ≥6 Coach turns. COACHSF01 synthetic-feedback fallback fires <5% of turns. AC-006 + AC-009 of TASK-HMIG-013 satisfied empirically.
+- [ ] **AC-5 (falsifier — run 13)**: **Launch from the Mac orchestrator host** (decided 2026-06-08 — this GB10 is the model host; `guardkitfactory` + the langgraph/deepagents stack are not installed in the GB10 guardkit `.venv`, and run-9/10 ran from the Mac per §9.15). The grammar enforcement lives at the GB10's llama-swap and is live + verified, so a run from the Mac pointing at `http://promaxgb10-41b1:9000/v1` exercises it. **Command + reworded pass criteria** in [`grammars/README.md`](../../../docs/research/dgx-spark/grammars/README.md) "Operator handoff". Pass = `finish_reason=stop` on Coach turns (no `length` truncation), reasoning size within ~2× baseline, and a human spot-check of ≥6 verdicts confirming decisions match the Player diff; COACHSF01 fallback <5%. (Emission rate is ~100% by construction, so it is no longer the falsifier.)
+
+## Implementation log (2026-06-08)
+
+Worked through on the GB10 (`promaxgb10-41b1`) directly.
+
+- **AC-1 ✓ / AC-2 ✓** as above.
+- **Grammar design decision (C over D)**: empirical A/B on the live `gemma4-coach`
+  showed the grammar constrains the *whole* sampled stream (reasoning included), so:
+  - A strict no-backtick prelude + trailing `ws*` (initial candidate) **padded 9,865
+    whitespace chars to the token cap** (`finish_reason=length`) and emitted the
+    verdict after ~128 chars (short-circuited reasoning). Rejected.
+  - **Primary `coach-verdict.gbnf` (Option C)** — free reasoning prefix (backticks
+    allowed) + guaranteed final verdict fence + forced EOS — gives `finish_reason=stop`,
+    preserves CoT, and produced a sound `approve` (correct per-AC `criteria_verification`)
+    through the real parser at the production 16384-token budget.
+  - **Fallback `coach-verdict-strict.gbnf` (Option D)** — no-backtick prelude — kept
+    as a knob if run 13 under-emits (it forces early emission at the cost of depth).
+- **Adversarial verification**: a 4-lens review (parser conformance, downstream
+  schema, GBNF syntax, reasoning/ops) caught a run-breaking blocker the draft and my
+  first candidate shared — a backtick inside a verdict JSON string makes the parser's
+  non-greedy fence regex truncate the body → `json.loads` fails. Fixed by excluding
+  the backtick from `char` (JSON string content only; reasoning prefix still allows it).
+- **Findings doc**: §9.13.1 annotated with a CORRECTED banner + the 4 draft defects;
+  run-13/smoke recipe flagged stale vs §9.15.
 
 ## Implementation notes
 

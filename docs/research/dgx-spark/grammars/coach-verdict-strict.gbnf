@@ -1,0 +1,41 @@
+# coach-verdict-strict.gbnf — FALLBACK variant of coach-verdict.gbnf.
+# (TASK-OPS-COACHGRAMMAR Path 1A; closes F24 / I-013.)
+#
+# Use this ONLY if the primary coach-verdict.gbnf shows under-emission in run 13
+# (model reasons past the 16384-token Coach budget without emitting a verdict).
+#
+# DIFFERENCE FROM THE PRIMARY: the prefix forbids backticks (`prelude ::= [^`]*`),
+# which makes free-form reasoning "expensive" and biases gemma4 toward emitting the
+# verdict fence EARLY. Empirically (2026-06-08) this produced a valid verdict in
+# ~139 tokens / 3 s — i.e. it GUARANTEES emission far more aggressively, at the cost
+# of reasoning DEPTH (the verdict is grounded in much less analysis, raising the
+# risk of semantically-rushed approve/feedback decisions). It also forbids inline
+# `code`/backticks throughout the (whole-stream-constrained) reasoning channel.
+#
+# Like the primary, it forces EOS immediately after the closing fence (root ends at
+# code-fence — no trailing ws*), so it does NOT pad whitespace to the token cap.
+#
+# Prefer the primary grammar. Reach for this only if run 13's COACHSF01 fallback
+# rate exceeds the 5% bar AND the cause is non-emission (not bad-decision content).
+# If the cause is bad-decision content, the answer is Path 1B (prompt tightening) or
+# Path 2 (nemotron-3-super) — a stricter grammar makes shallow verdicts WORSE.
+
+root             ::= prelude code-fence
+prelude          ::= [^`]*
+code-fence       ::= "```json" ws verdict-obj ws "```"
+verdict-obj      ::= "{" ws req-task-id ws "," ws req-turn ws "," ws req-decision trailing-members ws "}"
+req-task-id      ::= "\"task_id\"" ws ":" ws json-string
+req-turn         ::= "\"turn\"" ws ":" ws json-integer
+req-decision     ::= "\"decision\"" ws ":" ws decision-val
+decision-val     ::= "\"approve\"" | "\"feedback\""
+trailing-members ::= ( ws "," ws member )*
+member           ::= json-string ws ":" ws json-value
+json-value       ::= json-object | json-array | json-string | json-number | "true" | "false" | "null"
+json-object      ::= "{" ws ( member ( ws "," ws member )* ws )? "}"
+json-array       ::= "[" ws ( json-value ( ws "," ws json-value )* ws )? "]"
+json-string      ::= "\"" char* "\""
+char             ::= [^"\\`\x00-\x1F] | "\\" ["\\/bfnrt] | "\\u" hex hex hex hex
+hex              ::= [0-9a-fA-F]
+json-number      ::= "-"? json-integer ( "." [0-9]+ )? ( ("e" | "E") ("+" | "-")? [0-9]+ )?
+json-integer     ::= "0" | [1-9] [0-9]*
+ws               ::= [ \t\n\r]*
