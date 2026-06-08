@@ -2437,6 +2437,16 @@ Turn: {turn}
 
 {json.dumps(player_report, indent=2)}
 {evidence_section}{honesty_section}{guards_section}{coach_context_section}{visual_verification_section}
+## Verification Budget — Be Decisive
+
+You have limited time. A run that explores forever and never emits a verdict is a FAILURE. So work efficiently:
+
+- Verify each acceptance criterion ONCE. Read the file, run the tests, gather the evidence — then move on. Do not re-read files you have already seen or re-run passing tests.
+- The instant every criterion is checked and you have run the tests yourself, STOP investigating and emit your verdict. More deliberation adds latency, not certainty.
+- Decisive means efficient, never lazy: still verify EACH criterion and run the tests. A false approve is the worst outcome.
+
+Before emitting, self-check that your fenced json block carries all three required fields: task_id (string), turn (integer), decision ("approve" or "feedback"). If any is missing, add it, then emit.
+
 ## Your Responsibilities
 
 1. Independently verify the Player's claims

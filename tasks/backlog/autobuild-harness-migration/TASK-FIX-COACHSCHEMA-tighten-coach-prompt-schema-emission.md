@@ -1,11 +1,11 @@
 ---
 id: TASK-FIX-COACHSCHEMA
 title: Tighten the Coach prompt template with explicit schema example + self-check at end-of-prompt
-status: backlog
+status: in_progress
 task_type: fix
 created: 2026-06-08T00:00:00Z
-updated: 2026-06-08T00:00:00Z
-priority: medium
+updated: 2026-06-08T15:00:00Z
+priority: high
 complexity: 3
 effort_hours: 2
 deadline: 2026-06-15
@@ -16,40 +16,37 @@ parent_feature: autobuild-harness-migration
 wave: 3
 implementation_mode: direct
 intensity: standard
-blocker: false
-surfaced_in: docs/reviews/autobuild-migration/autobuild-FEAT-AOF-run-12.md
-falsifier: "After landing (only IF Path 1A / TASK-OPS-COACHGRAMMAR is unavailable OR insufficient): run 13/14 of `guardkit autobuild feature FEAT-AOF --fresh --model qwen36-workhorse --coach-model gemma4:26b` produces Coach verdict-emission rate ≥80% across ≥6 Coach turns. (Lower bar than Path 1A's 95% because prompt-shaping is a nudge, not enforcement.)"
+blocker: true
+surfaced_in: docs/reviews/autobuild-migration/autobuild-FEAT-AOF-run-13.md
+falsifier: "Run 14 of `guardkit autobuild feature FEAT-AOF ... --coach-model gemma4:26b --task-timeout 4800` produces ≥1 Coach turn that CONVERGES — emits a valid fenced-JSON verdict (task_id/turn/decision present) and finishes WITHIN the per-invocation SDK timeout (no 2340s reason-forever timeout like run 13) — across ≥4 Coach turns, with ≥80% emitting valid required fields. PRIMARY metric is convergence (Coach completes), not emission-rate alone; run 13 timed out before emitting anything."
 ---
 
 # Task: Tighten Coach prompt template for schema-correct fenced-JSON emission
 
 ## Why this task exists
 
-**This task is the Path 1B fallback to [TASK-OPS-COACHGRAMMAR](TASK-OPS-COACHGRAMMAR-enforce-coach-verdict-schema-via-llama-cpp-gbnf.md).**
-Only land this if Path 1A (substrate-layer GBNF grammar enforcement) is
-unavailable on the operator's llama.cpp build OR if Path 1A lands but
-gemma4-coach still struggles with the semantic side of verdict emission
-under the grammar constraint.
+> **PROMOTED TO PRIMARY 2026-06-08 — Path 1A is invalidated + re-scoped beyond schema.**
+> Path 1A ([TASK-OPS-COACHGRAMMAR](TASK-OPS-COACHGRAMMAR-enforce-coach-verdict-schema-via-llama-cpp-gbnf.md))
+> was a **no-op**: llama.cpp bypasses a route-level `--grammar-file` whenever a
+> request carries `tools`, and the `deepagents` Coach sends built-in tools on every
+> `/v1/responses` call, so the grammar never reached the Coach (see
+> [`grammars/README.md`](../../../docs/research/dgx-spark/grammars/README.md)). This
+> task is therefore the **primary** prompt-side path, and it has been **re-scoped**:
+> run 13 showed the dominant failure is not bad-schema emission (run 12) but
+> **non-convergence** — the Coach ran ~39 min as an agent and timed out (2340s) before
+> emitting *anything*. So the prompt change targets **decisiveness/efficiency first**
+> (converge + emit), schema self-check second.
 
-F24 (recorded as
-[I-013](../../../docs/state/TASK-REV-HMIG/feature-run-incidents.md))
-surfaced in run 12: gemma4-coach under `--reasoning auto` is unreliable
-at the structured fenced-JSON contract. Three Coach turns, three
-different failure shapes, 0/3 natural verdict-emissions. Architecture
-has delivered; substrate is the constraint.
+F24 / run 12: gemma4-coach emitted verdicts but with missing/incomplete schema.
+**Run 13: gemma4-coach as a tool-using agentic Coach never converged — it
+over-explored and hit the SDK timeout with no verdict at all.** The substrate
+(gemma4-26B-A4B-IT as an agentic verifier under a per-invocation timeout) is the
+constraint; this prompt change is a nudge toward convergence, not a guarantee.
 
-Path 1A enforces the schema at the inference layer (architecturally
-correct, zero code change). Path 1B (this task) is the code-side
-defensive fallback: a tighter Coach prompt that nudges the model
-toward the schema with an explicit example and a self-check
-instruction.
-
-The two paths are complementary, not exclusive:
-- Path 1A on its own: enforced schema, may produce syntactically valid
-  but semantically incorrect verdicts (Coach approves work it shouldn't)
-- Path 1B on its own: relies on the model honoring the instruction;
-  partial coverage; some emissions still incomplete
-- Path 1A + 1B together: enforced shape + steered semantics
+This task touches only the Coach prompt template — it works regardless of `tools`
+(unlike the bypassed grammar). If the run-14 falsifier still times out, the
+substrate is the wall → escalate to the **toolless verdict-synthesis call**
+(grammar-constrained, code change) or **Path 2** (nemotron-3-super, 2nd GB10).
 
 ## What to do
 
@@ -100,25 +97,26 @@ required field is missing.
 
 ## Acceptance criteria
 
-- [ ] **AC-1**: Coach prompt template in `agent_invoker.py` updated with explicit schema example and self-check instruction at end-of-prompt. Existing prompt structure preserved (just appended).
+- [x] **AC-1 (re-scoped)**: Coach prompt updated with a **decisiveness/efficiency** block AND a 3-field self-check, inserted before `## Your Responsibilities` in `_build_coach_prompt` ([`agent_invoker.py`](../../../guardkit/orchestrator/agent_invoker.py)). ✓ **Done 2026-06-08** — the `## Verification Budget — Be Decisive` section (verify each AC once → STOP → emit; "decisive means efficient, never lazy / a false approve is the worst outcome"; then self-check `task_id`/`turn`/`decision`). Designed + adversarially reviewed via a judge-panel workflow (verdict: ship). It reaches the LangGraph Coach (`_build_coach_prompt` feeds both harnesses via `_invoke_with_role`) — unlike the bypassed grammar.
 
-- [ ] **AC-2**: Unit test asserts the rendered Coach prompt contains the literal substrings `"task_id"`, `"turn"`, `"decision"`, and `"approve"` / `"feedback"` after a fresh render. Pins the template against silent regression.
+- [x] **AC-2**: Unit test asserts the block is rendered. ✓ **Done** — [`tests/orchestrator/test_coach_decisiveness_prompt.py`](../../../tests/orchestrator/test_coach_decisiveness_prompt.py) (5 tests: section present; the decisiveness/STOP levers; the no-false-approve guardrails; the `task_id (string), turn (integer), decision (...)` self-check; and that the block precedes `## Decision Format`). All pass; adds 0 new failures to the suite.
 
-- [ ] **AC-3 (smoke)**: 5× replay of a representative Coach prompt against gemma4-coach (with the new template) produces ≥4/5 responses with all three required fields present. (Lower bar than Path 1A's 5/5 because we're nudging, not enforcing.)
+- [ ] **AC-3 (smoke — caveated)**: A no-tools single-shot replay against gemma4-coach can sanity-check the new prompt renders + still produces a verdict, BUT **a single-shot smoke does NOT represent the tool-bound agentic Coach** (this is exactly the trap that made Path 1A's AC-4 look like it worked). Do not treat a green single-shot as proof. The real test is AC-4.
 
-- [ ] **AC-4 (falsifier — downstream verification, ONLY if Path 1A is unavailable)**: Run 13/14 produces **Coach verdict-emission rate ≥80%** across ≥6 Coach turns. If ≥95% is achieved, AC-006 / AC-009 satisfied. If <80%, escalate to Path 2 (nemotron-3-super:120b-a12b, gated on 2nd GB10).
+- [ ] **AC-4 (falsifier — run 14, PRIMARY metric = convergence)**: Run 14 (`--task-timeout 4800`, langgraph harness, from the Mac) produces ≥1 Coach turn that **converges** — emits a valid fenced-JSON verdict (`task_id`/`turn`/`decision`) AND finishes within the per-invocation SDK timeout (no 2340s reason-forever timeout) — across ≥4 Coach turns, ≥80% with valid required fields. If the Coach still times out, the substrate is the wall → escalate to the toolless verdict-synthesis call or Path 2 (nemotron-3-super:120b-a12b, 2nd GB10).
 
 ## Implementation notes
 
 - **Prompt-engineering, not architecture**: this task touches only the
   Coach prompt template string. No changes to the parser, COACHSF01
   safety net, harness, or schema. Defensive nudge only.
-- **Idempotent with Path 1A**: if the operator lands both 1A (substrate
-  grammar) AND 1B (prompt tightening), the two are complementary. The
-  grammar enforces shape; the prompt steers semantics. No conflict.
-- **Risk**: too-aggressive prompt-shaping can confuse the model and
-  degrade response quality on the actual *content* of the verdict.
-  Pilot with the 5× smoke (AC-3) before committing to a full run.
+- **Path 1A is moot** (no-op for the tool-bound Coach — see "Why this task
+  exists"). This prompt change stands alone and applies regardless of `tools`.
+- **Primary risk is now the timeout, not schema**: the block is aimed at
+  convergence (the run-13 failure). A *secondary* risk is that too-aggressive
+  decisiveness phrasing induces a fast-but-wrong approve — mitigated by the
+  verbatim "decisive means efficient, never lazy / still verify EACH criterion /
+  a false approve is the worst outcome" guardrails (pinned by AC-2).
 - **Verify the COACHOUT01 schema source-of-truth**: cross-check the
   required-field list against
   [`guardkit/orchestrator/coach_output_parser.py`](../../../guardkit/orchestrator/coach_output_parser.py)

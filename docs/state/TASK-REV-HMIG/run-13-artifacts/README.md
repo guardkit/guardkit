@@ -44,25 +44,40 @@ commit `ea37e112`) appears to have shifted the failure mode from
 | `turn_context.json` | 763 B | Per-thread context loader state | Graphiti / loader inspection |
 | `state_transitions.json` | 340 B | state_bridge mutations log | Ghost-path filter / state-bridge inspection |
 
-## Diagnostic hypotheses for the GB10 session
+## ✅ RESOLVED on the GB10 (2026-06-08) — the grammar was a NO-OP; it did not affect this run
 
-1. **Grammar over-constrains generation**: gemma4 can't satisfy the
-   schema at the conversation's complexity / size, so it explores
-   forever. Try loosening the grammar (more permissive `optional-fields`,
-   allow looser whitespace, etc.) and re-run.
-2. **Grammar conflict with `--reasoning auto`**: with reasoning enabled
-   the model wants to think extensively in `reasoning_content` before
-   committing to the fenced JSON; the grammar applies to `content` only
-   (or both, depending on llama.cpp version), so the model never gets
-   "permission" to terminate.
-3. **SDK timeout too short for grammar-constrained generation**: 2340s
-   per-invocation timeout was tuned for unconstrained generation; under
-   grammar enforcement Coach needs more time. Raise the SDK timeout
-   (env-tunable per other recent fixes) AND see if Coach converges.
-4. **Coach prompt complexity**: turn-1 input is much bigger than the
-   smoke prompt that passed AC-4 of TASK-OPS-COACHGRAMMAR; the model
-   that emits 5/5 valid on a short prompt may struggle on the full
-   Coach prompt. Compare token counts.
+The four hypotheses below all assume the grammar **applied** to the Coach. It did
+**not**. GB10 investigation proved:
+
+- **llama.cpp bypasses a CLI `--grammar-file` for any request that includes
+  `tools`** (uses the tool-call grammar instead). Live probes: tools-present →
+  clean `tool_call` / free-text `DONE`; no-tools → grammar applied.
+- The Coach is a `deepagents.create_deep_agent` agent whose **built-in tool set**
+  (`ls`/`read_file`/`write_file`/`edit_file`/`glob`/`grep`/`execute` + planning +
+  sub-agents) is sent on **every** `/v1/responses` call (`guardkitfactory`
+  `harness/langgraph_harness.py` TASK-FIX-LGTOOLS + `harness/backend_config.py`).
+- Therefore the grammar was bypassed on every Coach call. This run's 2340s timeout
+  is the **same substrate-quality wall as run 12** (gemma4-coach is a slow,
+  unreliable *agentic* verifier), NOT a grammar effect. The "shifted failure mode"
+  is run-to-run variance.
+- The `--grammar-file` line has been **reverted** from the live `gemma4-coach` route.
+
+So H1/H2 (grammar over-constrains / conflicts with reasoning) are **moot** — the
+grammar never ran. H3 (raise SDK timeout) treats the symptom, not the cause. H4 is
+the real story but generalised: gemma4-coach is unreliable as a **tool-using agentic
+Coach**, independent of any grammar. To actually use the grammar it must be applied
+to a **toolless** verdict-synthesis call (code change), or fall to Path 1B
+(prompt-tightening) / Path 2 (nemotron). See
+[`docs/research/dgx-spark/grammars/README.md`](../../../research/dgx-spark/grammars/README.md).
+
+## Original diagnostic hypotheses (SUPERSEDED — see resolution above)
+
+1. **Grammar over-constrains generation** — moot (grammar bypassed).
+2. **Grammar conflict with `--reasoning auto`** — moot (grammar bypassed).
+3. **SDK timeout too short for grammar-constrained generation** — treats symptom;
+   the Coach is slow as an *agentic* verifier regardless of grammar.
+4. **Coach prompt complexity** — closest to correct, generalised: gemma4-coach is
+   an unreliable tool-using agentic Coach at full-prompt scale.
 
 ## What's NOT in this snapshot
 

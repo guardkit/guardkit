@@ -2336,12 +2336,21 @@ as [I-013](../../state/TASK-REV-HMIG/feature-run-incidents.md).
 
 ### 9.13.1 2026-06-08 — Option 1A operator runbook: enforce Coach verdict schema via llama.cpp GBNF grammar
 
-> **⚠️ IMPLEMENTED + CORRECTED 2026-06-08.** The grammar was authored, tested on
-> the live `gemma4-coach`, and committed. **Use the version-tracked grammar at
-> [`grammars/coach-verdict.gbnf`](grammars/coach-verdict.gbnf) and its
+> **⛔ PATH 1A INVALIDATED 2026-06-08 by run 13 — route-level `--grammar-file` is a
+> no-op for the agentic Coach and has been reverted.** llama.cpp bypasses a CLI
+> `--grammar-file` for any request carrying `tools`, and the `deepagents` Coach sends
+> built-in tools on every `/v1/responses` call, so the grammar never reaches the
+> Coach. The run-13 Coach timeout is the substrate wall, not the grammar. Full
+> analysis + forward options (toolless verdict-synthesis call / Path 1B / Path 2) in
+> [`grammars/README.md`](grammars/README.md). The runbook below is retained for
+> provenance only.
+>
+> **⚠️ Grammar artifact (still correct for a *toolless* call).** The grammar was
+> authored, tested on the live `gemma4-coach` (single-shot, no tools), and committed.
+> **Use [`grammars/coach-verdict.gbnf`](grammars/coach-verdict.gbnf) +
 > [`grammars/README.md`](grammars/README.md), NOT the draft below.** The draft in
-> this section is retained for provenance but is **defective** — cross-checking
-> against `coach_output_parser.py` + `agent_invoker.py` found:
+> this section is **defective** — cross-checking against `coach_output_parser.py` +
+> `agent_invoker.py` found:
 >
 > 1. `issues` was modelled as an array of strings; the real Coach feedback shape is
 >    an array of **objects** `{type,severity,description,requirement,suggestion}`.
