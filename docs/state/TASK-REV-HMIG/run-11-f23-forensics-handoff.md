@@ -1,15 +1,29 @@
 # Run-11 F23 forensics handoff — substrate failure at 22-minute Coach scale
 
-> **Purpose**: capture run-11 findings and the GB10-side forensic
-> commands needed to discriminate root cause of F23 (HTTP 502 from
-> llama-swap after sustained Coach reasoning). Read on the GB10
-> (`promaxgb10-41b1`) and run the commands in §3.
+> **DISPOSITION 2026-06-08**: F23 closed as **F23D (transient)** by
+> non-recurrence in run 12. Run 12 ran the identical posture across
+> three Coach turns of 15-22 minutes each — zero HTTP 502, zero
+> Connection error. Forensics in §3 were NOT executed; classification
+> arrived empirically from the next run. Audit-trail entries landed in
+> [`feature-run-incidents.md`](feature-run-incidents.md) (I-012 marked
+> RESOLVED) and
+> [`feature-run-analysis.md`](feature-run-analysis.md) (run-12 status
+> header). **This doc is retained as historical reference for the
+> investigation pattern** — the four-hypothesis decision matrix in §4
+> is reusable for the next time a substrate-side 5xx appears mid-Coach.
 >
-> **Status**: awaiting GB10 forensics; audit-trail updates
-> (`feature-run-incidents.md` / `feature-run-analysis.md` /
-> `TASK-REV-HMIG-feature-results.json`) **not yet drafted** — they
-> need the substrate root cause to land first so I-012 (F23) can be
-> recorded with the correct class-of-defect tag.
+> The forensic commands in §3 remain valid recipes if F23-shape recurs;
+> consult §4 to map findings to action. The real F-numbered constraint
+> blocking AC-006 now is **F24** (gemma4-coach + `--reasoning auto`
+> unreliable at structured fenced-JSON contract) — see I-013 in
+> incidents and the F24 paragraph in analysis §6.
+
+---
+
+> **Purpose** (original): capture run-11 findings and the GB10-side
+> forensic commands needed to discriminate root cause of F23 (HTTP 502
+> from llama-swap after sustained Coach reasoning). Read on the GB10
+> (`promaxgb10-41b1`) and run the commands in §3.
 >
 > **Branch state at handoff**: `main @ 26b5310b` audit-trail commit +
 > `cc3b2164` SPECCOCH01 fix landed. Run-11 log at

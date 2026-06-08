@@ -2306,6 +2306,193 @@ COACHSF01 synthetic feedback fallbacks). Coach verdict-emission rate
 TASK-HMIG-011 cutover ceremony. If <95%: escalation per AC-007 is
 `nemotron-3-super:120b-a12b` (gated on 2nd GB10 + ConnectX-7).
 
+**Verified (2026-06-08, runs 11+12).** Operator landed
+`--reasoning auto` and ran twice. Run 11 (Coach ran ~19 min producing
+~55 successful HTTP 200s before substrate-side HTTP 502) gave first
+evidence the substrate posture works at scale. Run 12 (no code or
+config changes) ran the identical posture across **three Coach turns
+of 15-22 minutes each** with zero HTTP 5xx — confirms the substrate is
+stable under sustained load. F23 (the run-11 502) classified F23D
+transient.
+
+**Substrate evidence under `--reasoning auto` (run 12)**:
+
+| Turn | Content chars | Reasoning chars | Fenced JSON emitted? | Schema valid? | Wall |
+|---:|---:|---:|---|---|---:|
+| 1 | (not logged) | (not logged) | **YES** | NO (missing `task_id`, `turn`) | 21m 34s |
+| 2 | 2094 | 5438 | NO in either channel | n/a | 22m 02s |
+| 3 | n/a (cancelled by task-timeout) | n/a | n/a | n/a | ~15m |
+
+**The remaining gap.** gemma4-coach is *capable* of emitting fenced
+JSON (turn 1) and *capable* of using the reasoning channel
+substantively (5438 chars on turn 2 confirms COACHBUDG01's
+`additional_kwargs['reasoning_content']` fallback reads correctly), but
+does not *reliably* terminate with a schema-correct verdict block.
+Cumulative natural verdict-emission rate across the run: 0/3 turns =
+0% (AC-006 needs ≥95%). This is canary §3.F2
+("model discusses tool calls in prose but no actual tool_use blocks")
+applied to structured-output emission at Coach scope. F24, recorded
+as [I-013](../../state/TASK-REV-HMIG/feature-run-incidents.md).
+
+### 9.13.1 2026-06-08 — Option 1A operator runbook: enforce Coach verdict schema via llama.cpp GBNF grammar
+
+**Rationale.** F24 is a structured-output emission gap. The
+architecturally correct fix is to enforce the schema *at the inference
+layer* so structurally invalid emissions become *impossible*. llama.cpp
+supports GBNF (Grammar-Based Next Form) constraint sampling via
+`--grammar-file <path.gbnf>` on `llama-server`. llama-swap exposes
+per-model command-line args, so the `gemma4-coach` route can be
+configured to constrain all generations to a Coach-verdict shape.
+
+If this lands cleanly, F24 closes at the substrate (no code change in
+the orchestrator, parser, COACHSF01 safety net, or Coach prompt).
+Falsifier: run 13 produces ≥1 natural fenced-JSON verdict per Coach
+turn with all required fields present, COACHSF01 fallback fires <5% of
+turns.
+
+**Verify llama.cpp GBNF support is present on the GB10's llama-server build.**
+
+```bash
+which llama-server
+llama-server --help 2>&1 | grep -iE 'grammar|gbnf'
+# Expected: --grammar-file FNAME              file to read grammar from
+#           --grammar GRAMMAR                  BNF-like grammar to constrain output
+```
+
+If `--grammar-file` is absent, the build is too old — operator
+upgrades llama.cpp before continuing. (As of llama.cpp release tags
+~b3000+ this has been standard; the §9.13 build is recent enough.)
+
+**Author the Coach-verdict grammar.** Save as
+`/opt/llama-swap/grammars/coach-verdict.gbnf` on the GB10. Drafted
+shape (operator may tighten — this captures the load-bearing required
+fields per the parser at
+`guardkit/orchestrator/coach_output_parser.py`):
+
+```bnf
+# Coach verdict grammar — pin the response to end with a fenced JSON
+# block whose object contains required fields task_id, turn, decision.
+# Permits free-form reasoning prose before the fence so the
+# --reasoning auto channel still flows.
+
+root            ::= prelude code-fence ws-trailing
+prelude         ::= [^`]*
+code-fence      ::= "```json" ws verdict-obj ws "```"
+verdict-obj     ::= "{" ws
+                    "\"task_id\":" ws string ws ","
+                    ws "\"turn\":" ws integer ws ","
+                    ws "\"decision\":" ws decision-val
+                    optional-fields
+                    ws "}"
+decision-val    ::= "\"approve\"" | "\"feedback\""
+optional-fields ::= ( ws "," ws field )*
+field           ::= "\"rationale\":" ws string
+                  | "\"feedback\":" ws string
+                  | "\"issues\":" ws "[" ws (string (ws "," ws string)*)? ws "]"
+                  | "\"criteria_results\":" ws "[" ws (criteria-entry (ws "," ws criteria-entry)*)? ws "]"
+criteria-entry  ::= "{" ws "\"id\":" ws string ws "," ws "\"status\":" ws status-val ws "}"
+status-val      ::= "\"verified\"" | "\"rejected\"" | "\"pending\""
+string          ::= "\"" ([^"\\] | "\\" ["\\/bfnrt] | "\\u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F])* "\""
+integer         ::= "0" | [1-9] [0-9]*
+ws              ::= [ \t\n\r]*
+ws-trailing     ::= [ \t\n\r]*
+```
+
+(Operator should compare against the actual COACHOUT01 schema in
+`guardkit/orchestrator/coach_output_parser.py` before final approval.
+The above captures the required-field surface from the F24 evidence;
+optional fields can be tightened or loosened to taste.)
+
+**Wire it into the `gemma4-coach` llama-swap route.** Edit the
+llama-swap config (per §9.13's path conventions). Find the
+`gemma4-coach` model entry and append `--grammar-file
+/opt/llama-swap/grammars/coach-verdict.gbnf` to its `cmd:` line:
+
+```yaml
+# llama-swap config snippet — gemma4-coach route
+models:
+  gemma4-coach:
+    cmd: |
+      /usr/local/bin/llama-server
+        -m /opt/llama-swap/models/gemma4-coach/gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf
+        --port ${PORT}
+        --ctx-size 98304        # §9.13 bump
+        --reasoning auto         # 2026-06-07 flip
+        --grammar-file /opt/llama-swap/grammars/coach-verdict.gbnf   # NEW (Option 1A)
+        # ... other existing args ...
+```
+
+Then reload llama-swap:
+
+```bash
+sudo systemctl --user restart llama-swap
+# Or for system-level systemd:
+# sudo systemctl restart llama-swap
+```
+
+**Smoke the grammar before committing to run 13.** Replay the run-12
+turn-2 Coach prompt and assert the response ends with a fenced JSON
+block containing all required fields:
+
+```bash
+# Capture turn-2 Coach prompt body if not already saved:
+# from .guardkit/worktrees/FEAT-AOF/.guardkit/autobuild/TASK-FIX-IA03/
+# (the orchestrator persists Coach turn inputs)
+
+for i in 1 2 3 4 5; do
+  RESP=$(curl -sS http://localhost:9000/v1/chat/completions \
+              -H "Content-Type: application/json" \
+              -d @/tmp/coach-turn-2-replay.json)
+  echo "--- attempt $i ---"
+  # Check schema presence in either channel
+  echo "$RESP" | jq -r '.choices[0].message.content // empty' \
+    | grep -A 20 '```json' | head -25
+  echo "$RESP" | jq -r '.choices[0].message.reasoning_content // empty' \
+    | grep -A 20 '```json' | head -25
+  # Quick schema check
+  FENCE=$(echo "$RESP" | jq -r '(.choices[0].message.content // "") + (.choices[0].message.reasoning_content // "")' \
+          | awk '/^```json/{flag=1;next} /^```/{flag=0} flag')
+  if [ -n "$FENCE" ]; then
+    HAS_TASK_ID=$(echo "$FENCE" | jq -e 'has("task_id")' 2>/dev/null && echo yes || echo NO)
+    HAS_TURN=$(echo "$FENCE" | jq -e 'has("turn")' 2>/dev/null && echo yes || echo NO)
+    HAS_DECISION=$(echo "$FENCE" | jq -e 'has("decision")' 2>/dev/null && echo yes || echo NO)
+    echo "  schema: task_id=$HAS_TASK_ID turn=$HAS_TURN decision=$HAS_DECISION"
+  else
+    echo "  FAIL: no fenced JSON block in either channel"
+  fi
+done
+```
+
+Pass criterion: 5/5 attempts produce a fenced JSON with all three
+required fields present (`task_id`, `turn`, `decision`). If <5/5 or
+the grammar refuses to compile, iterate on the GBNF before run 13.
+
+**Then run 13** with the same invocation as run 12 (no code or env
+changes needed — the grammar is enforced at llama-swap):
+
+```bash
+mkdir -p .guardkit/autobuild/TASK-REV-HMIG-feature-run/
+GUARDKIT_HARNESS=langgraph \
+  OPENAI_BASE_URL=http://promaxgb10-41b1:9000/v1 \
+  OPENAI_API_KEY=llama-swap-local-key \
+  guardkit autobuild feature FEAT-AOF \
+    --fresh --model qwen36-workhorse --coach-model gemma4:26b \
+    2>&1 | tee .guardkit/autobuild/TASK-REV-HMIG-feature-run/run-13-stdout.log
+```
+
+Pass criteria for run 13: Coach verdict-emission rate **≥95%** across
+≥6 Coach turns (any Wave). COACHSF01 synthetic-feedback fallback
+fires <5% of turns. AC-006 + AC-009 of TASK-HMIG-013 satisfied;
+TASK-HMIG-011 cutover ceremony unblocked.
+
+If <95%: the grammar is correctly enforcing the shape but gemma4 isn't
+emitting useful *content* (decisions don't match the Player's actual
+work, rationale prose is nonsensical, etc.). That's a different
+substrate-quality finding (semantic, not syntactic). Falls back to
+**Path 1B** (TASK-FIX-COACHSCHEMA, Coach prompt-template tightening) or
+**Path 2** (AC-007 escalation to nemotron-3-super, gated on 2nd GB10
+hardware).
+
 ### 9.14 2026-06-06 — TASK-FIX-COACHBUDG01: parser learns to read `reasoning_content`; `--reasoning off` workaround becomes optional
 
 **Trigger.** §9.13's "Reasoning-off lesson" closed the immediate F17

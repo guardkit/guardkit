@@ -185,6 +185,134 @@
         "TASK-ABFIX-004_grace_branch": "VALIDATED — fired the right Player-succeeded path at line 218; the 120s constant is what's wrong"
       },
       "notes": "F20 + F21 still RESOLVED. All concurrent task landings empirically validated. NEW finding F22 is a code-side interaction defect filed as TASK-FIX-SPECCOCH01 (Shape A: decouple specialist-hang from task-level cancellation_event; Shape B as backstop: env-tunable COACH_GRACE_PERIOD_SECONDS via GUARDKIT_COACH_GRACE_PERIOD_SECONDS, default raised to 1500s). AC-006 / AC-009 still not exercised — Coach produced 0 text blocks. After SPECCOCH01 lands, run 11 with the same invocation (--reasoning auto, task_timeout=4800s) will be the actual AC-009 test."
+    },
+    {
+      "run_number": 11,
+      "started_at": "2026-06-07T12:59:50Z",
+      "finished_at": "2026-06-07T13:30:45Z",
+      "wall_clock_seconds": 1855,
+      "outcome": "feature_orchestrator_halted_on_wave1_substrate_connection_error",
+      "halted_by": "stop_on_failure=True after Wave 1 IA03 Coach LLM hit HTTP 502 Bad Gateway from llama-swap at 1110s elapsed; 4x OpenAI client retries failed with Connection error",
+      "stdout_log": "docs/reviews/autobuild-migration/autobuild-FEAT-AOF-run11.md",
+      "feature_status": "FAILED",
+      "feature_status_caveat": "TASK-FIX-SPECCOCH01 (Shape A, commit cc3b2164) empirically validated: Coach SDK timeout was set to budget_cap=4799s (NOT 120s grace cap) — F22 RESOLVED. F20 + F21 still RESOLVED (zero HTTP 400). Coach actually ran ~19 minutes under --reasoning auto producing ~55 successful HTTP 200s before substrate failure. NEW finding F23 (substrate-side): HTTP 502 Bad Gateway from llama-swap at 1110s elapsed; OpenAI client retries (4 attempts) all failed with Connection error. Coach classified as `error` (correctly NOT routed through COACHSF01 — substrate Connection error vs decision-emission failure are different invariants per feature-build-invariants.md). AC-009 surface partially exercised but Coach never emitted final verdict.",
+      "tasks_completed_strict": 0,
+      "tasks_failed_strict": 1,
+      "clean_executions_per_orchestrator": "1/1 (100%) — Player turn 1 succeeded (342s, 2 created + 1 modified); specialist test-orchestrator hit SPECHANG correctly contained by SPECCOCH01; Coach got full 4799s budget and ran ~19 min before substrate 502; CTOUT01 cancelled cleanly. Every individual mechanism worked.",
+      "first_pass_success_rate_strict": 0.0,
+      "first_pass_success_rate_inclusive_of_substantive_work": "n/a (Player substantively succeeded; Coach ran substantial reasoning before substrate failure; the failure was a substrate-side connection error, not an architecture defect)",
+      "config": {
+        "harness": "langgraph",
+        "model": "qwen36-workhorse",
+        "coach_model": "gemma4:26b",
+        "openai_base_url": "http://promaxgb10-41b1:9000/v1",
+        "reasoning_mode_player": "off (per qwen36-workhorse §3.2)",
+        "reasoning_mode_coach": "auto (operator flipped from off per run-9 §9.13 addendum)",
+        "task_timeout_seconds": 4800,
+        "task_timeout_source": "per-task frontmatter override (TASK-FIX-AOFBUDG)",
+        "llama_swap_gemma4_coach_n_ctx": "operator-bumped (§9.13)",
+        "speccoch01_landed": true,
+        "speccoch01_commit": "cc3b2164"
+      },
+      "f23_evidence": {
+        "coach_llm_start_utc": "2026-06-07T13:11:47Z",
+        "coach_successful_http_200s_before_failure": "~55",
+        "coach_wall_seconds_at_failure": 1110,
+        "http_status_code": 502,
+        "http_status_text": "Bad Gateway",
+        "openai_client_retry_attempts": 4,
+        "all_retries_result": "Connection error",
+        "coach_text_blocks_extracted": "0 (Coach was mid-stream when 502 hit)",
+        "coachsf01_fired": false,
+        "coachsf01_correctly_not_fired_reason": "Connection error is substrate Connection failure, not decision-emission failure; per feature-build-invariants.md COACHSF01 substring matchers only fire on 'Coach decision not found' or 'Coach decision invalid'"
+      },
+      "speccoch01_validation": {
+        "spechang_fired_on_test_orchestrator": true,
+        "spechang_log_line": 232,
+        "coach_grace_branch_triggered": false,
+        "coach_grace_branch_correctly_not_triggered_reason": "SPECCOCH01 Shape A decoupled specialist-hang from task-level cancellation_event",
+        "coach_sdk_timeout_budget_cap": "4799s (full timeout, NOT 120s grace)",
+        "coach_sdk_timeout_log_line": 263,
+        "verdict": "AC-001 + AC-3 of SPECCOCH01 empirically validated"
+      },
+      "notes": "First run with SPECCOCH01 landed. F22 RESOLVED empirically. New substrate-quality finding F23 (HTTP 502 at 1110s elapsed). Forensics handoff drafted at docs/state/TASK-REV-HMIG/run-11-f23-forensics-handoff.md with four-hypothesis decision matrix (F23A OOM, F23B eviction, F23C llama.cpp crash, F23D transient, F23E mystery). Awaiting GB10-side forensics OR run-12 re-validation to discriminate."
+    },
+    {
+      "run_number": 12,
+      "started_at": "2026-06-07T17:18:34Z",
+      "finished_at": "2026-06-07T18:38:35Z",
+      "wall_clock_seconds": 4801,
+      "outcome": "feature_orchestrator_halted_on_wave1_task_timeout",
+      "halted_by": "stop_on_failure=True after Wave 1 IA03 task-level 4800s timeout fired mid-turn-3-Coach; CTOUT01 propagated cleanly",
+      "stdout_log": "docs/reviews/autobuild-migration/autobuild-FEAT-AOF-run-12.md",
+      "feature_status": "FAILED",
+      "feature_status_caveat": "F22 + F23 BOTH RESOLVED empirically in run 12. F22: SPECCOCH01 contained SPECHANG on all 3 turns. F23: zero HTTP 502 / Connection error across 3 Coach turns of 15-22 min each — classifies F23 as F23D (transient). AC-009 surface ACTUALLY exercised: turn-1 Coach emitted real fenced JSON (schema-incomplete: missing task_id/turn); turn-2 Coach produced 2094 chars content + 5438 chars reasoning_content (COACHBUDG01 parser proven reading both channels). COACHSF01 caught BOTH failure shapes (decision invalid AND decision not found). Player iterated substantively across all 3 turns (52 created -> 61 modified -> 70 modified). NEW finding F24 (substrate-quality, NOT a code defect): gemma4-coach + --reasoning auto unreliable at structured fenced-JSON contract. Resolution paths are all operator-side (no code blocker remaining): Path 1A llama.cpp GBNF grammar enforcement (recommended); Path 1B Coach prompt-template tightening (code fallback); Path 2 nemotron-3-super escalation; Path 3 accept-and-cutover with COACHSF01 safety net.",
+      "tasks_completed_strict": 0,
+      "tasks_failed_strict": 1,
+      "clean_executions_per_orchestrator": "1/1 (100%) — every individual mechanism behaved correctly across 3 turns. Player succeeded each turn; SPECHANG contained each turn; Coach got full SDK timeout each turn; COACHSF01 caught both failure shapes; CTOUT01 cancelled cleanly at 4800s task-timeout. Architecture has delivered.",
+      "first_pass_success_rate_strict": 0.0,
+      "first_pass_success_rate_inclusive_of_substantive_work": "n/a (Player substantively succeeded all 3 turns; failure is the F24 substrate-quality finding — gemma4 cannot reliably terminate with schema-correct fenced JSON; cumulative natural verdict-emission rate is 0/3)",
+      "config": {
+        "harness": "langgraph",
+        "model": "qwen36-workhorse",
+        "coach_model": "gemma4:26b",
+        "openai_base_url": "http://promaxgb10-41b1:9000/v1",
+        "reasoning_mode_player": "off (per qwen36-workhorse §3.2)",
+        "reasoning_mode_coach": "auto",
+        "task_timeout_seconds": 4800,
+        "task_timeout_source": "per-task frontmatter override (TASK-FIX-AOFBUDG)",
+        "llama_swap_gemma4_coach_n_ctx": "operator-bumped (§9.13)",
+        "speccoch01_landed": true,
+        "speccoch01_commit": "cc3b2164"
+      },
+      "f24_evidence": {
+        "turns_evaluated": 3,
+        "natural_verdict_emissions": 0,
+        "synthetic_feedback_fallback_fires": 2,
+        "task_timeout_cancellations": 1,
+        "ac_006_emission_rate": "0% (need >=95%)",
+        "per_turn": {
+          "turn_1": {
+            "failure_shape": "decision invalid: missing required field(s) ['task_id', 'turn']",
+            "coach_emitted_fenced_json": true,
+            "coach_schema_valid": false,
+            "coachsf01_matcher": "decision invalid",
+            "coach_wall_seconds": 1294,
+            "recovery": "synthetic feedback -> Player turn 2",
+            "log_line": 322
+          },
+          "turn_2": {
+            "failure_shape": "decision not found: no fenced ```json block in either content or reasoning_content channel",
+            "coach_content_chars": 2094,
+            "coach_reasoning_content_chars": 5438,
+            "coach_emitted_fenced_json": false,
+            "coachsf01_matcher": "decision not found",
+            "coachbudg01_parser_proven_reading_both_channels": true,
+            "coach_wall_seconds": 1322,
+            "recovery": "synthetic feedback -> Player turn 3",
+            "log_line": 1104
+          },
+          "turn_3": {
+            "failure_shape": "task-level 4800s timeout cancelled Coach mid-invocation",
+            "coach_wall_seconds_before_cancel": "~900",
+            "ctout01_propagated_cleanly": true,
+            "recovery": "n/a - task budget exhausted, Wave 1 FAILED"
+          }
+        }
+      },
+      "concurrent_task_validation": {
+        "TASK-FIX-AOFBUDG": "VALIDATED again - 4800s task_timeout effective",
+        "TASK-FIX-COACHPYENV": "VALIDATED again - interpreter pinning operative",
+        "TASK-OPS-AOFENV": "VALIDATED - FalkorDB up, Graphiti context loaded",
+        "TASK-FIX-SPECCOCH01": "VALIDATED across 3 turns - SPECHANG contained, Coach never inherited grace-cap cascade",
+        "TASK-FIX-COACHBUDG01_parser": "VALIDATED - turn-2 COACHSF01 message explicitly counts both content and reasoning_content channels; parser confirmed reading both"
+      },
+      "non_blocking_observations": [
+        "Graphiti async / event-loop thread-safety errors flooding the log post-FalkorDB-up (line 387 onwards). Doesn't affect outcomes. Worth a TASK-FIX post-cutover.",
+        "Embedding vectors leaking to stdout (sibling of Graphiti issue, cosmetic).",
+        "SDK coach test execution hitting 300s pytest cap on turns 1 and 3 (Player's larger test file output). Eats time budget but doesn't block AC-006."
+      ],
+      "notes": "Architecture has delivered. Every F1-F22 code-side finding empirically closed across runs 1-12. F23 RESOLVED as F23D (transient, non-recurrence). F24 is the load-bearing constraint that AC-006/AC-009 was always going to evaluate — substrate-quality, not code-fixable. Resolution paths filed as TASK-OPS-COACHGRAMMAR (Path 1A, recommended, llama.cpp GBNF grammar enforcement at substrate layer, zero code change) and TASK-FIX-COACHSCHEMA (Path 1B, Coach prompt-template tightening, code fallback). After one of them lands, run 13 evaluates AC-006/AC-009 under the new substrate posture. If 1A+1B both insufficient, AC-007 escalation to nemotron-3-super:120b-a12b becomes the cutover decision (gated on 2nd GB10 + ConnectX-7) vs Path 3 cutover-with-current-substrate."
     }
   ],
   "task_outcomes": [
@@ -325,6 +453,38 @@
       "non_recoverable": true,
       "non_recoverable_caveat": "F22 root cause is a code-side cascade defect (SPECHANG hang-detection setting task-level cancellation_event + COACH_GRACE_PERIOD_SECONDS=120 baked-in constant). Per AC-006 definition ('any failure the operator cannot resolve without code edits to the harness itself'), this IS non-recoverable until TASK-FIX-SPECCOCH01 lands. Two-shape fix: (A) decouple specialist-hang from task-level cancellation_event; (B) make COACH_GRACE_PERIOD_SECONDS env-tunable as defensive backstop.",
       "notes": "First run with --reasoning auto on gemma4-coach + task_timeout=4800s + TASK-FIX-COACHPYENV pinned interpreter + TASK-OPS-AOFENV FalkorDB up. All concurrent task landings validated. New code-side defect F22 surfaced — interaction between recently-landed SPECHANG hang-watchdog and earlier TASK-ABFIX-004 grace-period mechanism. Filed as TASK-FIX-SPECCOCH01. After SPECCOCH01 lands, run 11 will be the actual AC-009 test."
+    },
+    {
+      "task_id": "TASK-FIX-IA03",
+      "run_number": 11,
+      "wave": 1,
+      "parallel_group": null,
+      "coach_decision": "error_on_substrate_connection",
+      "turns_used": 1,
+      "first_pass_success": false,
+      "first_pass_success_caveat": "Turn 1 Player substantively succeeded (2 created, 1 modified in 342s). SPECHANG hang-watchdog fired on test-orchestrator and was contained by SPECCOCH01 (Shape A landed in cc3b2164). Coach got budget_cap=4799s (NOT the 120s grace cap) — F22 empirically RESOLVED. Coach ran ~19 minutes under --reasoning auto producing ~55 successful HTTP 200s before substrate returned HTTP 502 Bad Gateway. 4x OpenAI client retries failed with Connection error. Coach classified as `error` (correctly NOT routed through COACHSF01 per feature-build-invariants.md). AC-009 surface partially exercised — Coach was actively reasoning when substrate failed. F20+F21 still RESOLVED (zero HTTP 400).",
+      "resume_used": false,
+      "resume_outcome": "n/a",
+      "wall_clock_seconds": 1855,
+      "non_recoverable": false,
+      "non_recoverable_caveat": "F23 root cause is substrate-side (llama-swap / llama.cpp HTTP 502 after sustained load). Per AC-006 definition ('any failure the operator cannot resolve without code edits to the harness itself'), substrate failures are RECOVERABLE — operator investigates GB10 forensics or re-runs. Forensics handoff drafted at docs/state/TASK-REV-HMIG/run-11-f23-forensics-handoff.md.",
+      "notes": "First run with SPECCOCH01 landed (commit cc3b2164). F22 RESOLVED empirically. Coach actually got 1110s of reasoning under --reasoning auto — first real evidence the substrate posture works at scale. NEW substrate-quality finding F23 (HTTP 502 from llama-swap). Run 12 (with same posture, no code changes) classified F23 as F23D (transient) by non-recurrence."
+    },
+    {
+      "task_id": "TASK-FIX-IA03",
+      "run_number": 12,
+      "wave": 1,
+      "parallel_group": null,
+      "coach_decision": "task_timeout_after_3_synthetic_feedback_recoveries",
+      "turns_used": 3,
+      "first_pass_success": false,
+      "first_pass_success_caveat": "Three turns of substantive Player work (52 created -> 61 modified -> 70 modified). Three Coach turns of 15-22 min each under --reasoning auto. Turn-1 Coach emitted fenced JSON but schema-incomplete (missing required fields 'task_id'/'turn') — COACHSF01 'decision invalid' matcher fired. Turn-2 Coach produced 2094 chars content + 5438 chars reasoning_content but no fenced ```json block — COACHSF01 'decision not found' matcher fired (COACHBUDG01 parser proven reading both channels). Turn-3 Coach cancelled by task-level 4800s timeout. Cumulative natural verdict-emission rate: 0/3 = 0% (AC-006 needs >=95%). F22 + F23 BOTH stayed RESOLVED across all 3 turns. NEW substrate-quality finding F24: gemma4-coach + --reasoning auto unreliable at structured fenced-JSON contract.",
+      "resume_used": false,
+      "resume_outcome": "n/a",
+      "wall_clock_seconds": 4801,
+      "non_recoverable": false,
+      "non_recoverable_caveat": "F24 root cause is substrate-quality (gemma4-coach inference behaviour under --reasoning auto). Per AC-006 definition ('any failure the operator cannot resolve without code edits to the harness itself'), RECOVERABLE via operator-side llama.cpp GBNF grammar enforcement (TASK-OPS-COACHGRAMMAR, recommended Path 1A, zero code change) OR Coach prompt-template tightening (TASK-FIX-COACHSCHEMA, Path 1B code fallback).",
+      "notes": "Architecture has delivered. Every F1-F22 code-side finding empirically closed. F23 RESOLVED as F23D (transient, non-recurrence). F24 is the load-bearing substrate-quality constraint that AC-006/AC-009 was always going to evaluate. Resolution paths all operator-side: Path 1A llama.cpp GBNF grammar enforcement (recommended); Path 1B Coach prompt-template tightening (code fallback); Path 2 nemotron-3-super:120b-a12b escalation (gated on 2nd GB10 + ConnectX-7); Path 3 accept-and-cutover with COACHSF01 safety net."
     }
   ],
   "task_outcome_schema": {

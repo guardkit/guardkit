@@ -30,7 +30,44 @@ Each incident gets its own `## I-NNN: <title>` section with:
 
 ## Incidents
 
-## I-011 (F22): SPECHANG hang-detection cascades into 120s Coach grace-period, structurally incompatible with gemma4 Coach reasoning time
+## I-013 (F24): gemma4-coach under `--reasoning auto` is unreliable at the structured fenced-JSON contract — substrate-quality finding
+
+- **Task**: TASK-FIX-IA03 (run 12, Wave 1, Coach turns 1-3)
+- **Wave / parallel group**: Wave 1, multi-turn observation
+- **Symptom**: Across three Coach turns of 15-22 minutes each under `--reasoning auto`, gemma4-coach produced three different verdict-emission failure shapes:
+  - **Turn 1**: emitted fenced ```json block but schema-incomplete: `Coach decision invalid: missing required field(s) ['task_id', 'turn']` ([run-12:322](../../reviews/autobuild-migration/autobuild-FEAT-AOF-run-12.md#L322)). COACHSF01 `decision invalid` substring matcher fired correctly → synthetic feedback emitted.
+  - **Turn 2**: `Coach decision not found: no fenced ```json block in Coach response for TASK-FIX-IA03 turn 2 (2094 chars content + 5438 chars reasoning_content)` ([run-12:1104](../../reviews/autobuild-migration/autobuild-FEAT-AOF-run-12.md#L1104)). COACHSF01 `decision not found` matcher fired correctly. COACHBUDG01 parser confirmed reading both content and reasoning_content channels — no fenced block in either.
+  - **Turn 3**: cancelled by task-level 4800s budget before Coach completed (~15 min of reasoning before cancel).
+- **Attempts made**: 3 Coach invocations across 3 turns. Cumulative natural verdict-emission rate: 0/3. Player iterated substantively each turn (52 created → 61 modified → 70 modified).
+- **Root cause**: substrate-quality. gemma4-coach is *capable* of emitting fenced JSON (turn 1) and *capable* of using the reasoning channel substantively (turn 2 = 5438 chars reasoning_content), but does not *reliably* terminate with a schema-correct verdict block at this prompt/context complexity. This is the canonical canary §3.F2 finding ("model discusses tool calls in prose but no actual tool_use blocks") applied to a structured-output Coach contract. Not code-fixable — the orchestrator, parser, and safety nets all behaved correctly.
+- **Class-of-defect**: substrate-quality, sibling of canary F2 / F6. NOT a code defect. The post-cutover follow-on TASK-REV-COACH-OUTPUT-CONTRACT noted in I-007's notes section is the same shape this finding sits inside.
+- **Severity**: **HIGH for AC-006/AC-009** — natural Coach verdict-emission rate is 0% (3 of 3 turns went through COACHSF01 synthetic-feedback fallback). The Player-Coach loop never converges under the current substrate posture.
+- **Resolution paths** (operator-side, no code changes required):
+  - **Path 1A (recommended first, operator-side, fastest)**: Enforce the Coach verdict schema at the **inference layer** using llama.cpp's GBNF grammar support. Configure `gemma4-coach` in llama-swap with `--grammar-file /opt/llama-swap/grammars/coach-verdict.gbnf` (or equivalent route-level config). This makes structurally invalid emissions *impossible* — F24 closes architecturally at the substrate. Filed as [TASK-OPS-COACHGRAMMAR](../../../tasks/backlog/autobuild-harness-migration/TASK-OPS-COACHGRAMMAR-enforce-coach-verdict-schema-via-llama-cpp-gbnf.md).
+  - **Path 1B (code fallback if Path 1A unavailable)**: Tighten the Coach prompt template with an explicit schema example + self-check instruction at end of prompt. Filed as [TASK-FIX-COACHSCHEMA](../../../tasks/backlog/autobuild-harness-migration/TASK-FIX-COACHSCHEMA-tighten-coach-prompt-schema-emission.md).
+  - **Path 2 (escalation per TASK-HMIG-013 AC-007)**: Move to `nemotron-3-super:120b-a12b` once 2nd GB10 + ConnectX-7 lands.
+  - **Path 3 (accept and cutover)**: Cutover with COACHSF01 synthetic-feedback safety net; tasks expected to take 3-5 Coach turns before max-turns BLOCKED; heavier human-in-the-loop until Path 2 hardware arrives.
+- **Follow-up tasks**: [TASK-OPS-COACHGRAMMAR](../../../tasks/backlog/autobuild-harness-migration/TASK-OPS-COACHGRAMMAR-enforce-coach-verdict-schema-via-llama-cpp-gbnf.md) (Path 1A) and [TASK-FIX-COACHSCHEMA](../../../tasks/backlog/autobuild-harness-migration/TASK-FIX-COACHSCHEMA-tighten-coach-prompt-schema-emission.md) (Path 1B fallback). Both filed 2026-06-08. **Blocks TASK-HMIG-010 AC-006** until one of them lands and run 13 demonstrates ≥95% verdict-emission rate.
+- **Notes**:
+  - All architecture invariants confirmed working across all 3 turns in run 12: COACHSF01 fires on BOTH `decision invalid` AND `decision not found` substring matches; COACHBUDG01 parser reads both content and reasoning_content channels; CTOUT01 cancels cleanly at the legitimate 4800s task-timeout; SPECCOCH01 contains specialist hangs on all three turns; F20/F21 stay resolved (zero HTTP 400 across the whole run).
+  - **AC-009 surface actually exercised this run** — turn-1 Coach produced a real fenced JSON block (just schema-incomplete) and turn-2 Coach used the reasoning_content channel substantively (5438 chars). The `--reasoning auto` posture is **substrate-correct**; the remaining gap is schema-emission reliability.
+  - **Architectural framing**: F24 is the load-bearing constraint that AC-006/AC-009 was always going to evaluate. Architecture has delivered (every F1-F22 code finding closed). The cutover decision is now a substrate-quality acceptance call, not a code blocker.
+
+## I-012 (F23): HTTP 502 Bad Gateway from llama-swap after sustained Coach reasoning — **RESOLVED 2026-06-08 (run 12, classified F23D transient)**
+
+- **Task**: TASK-FIX-IA03 (run 11, Wave 1, turn 1 Coach validation)
+- **Wave / parallel group**: Wave 1
+- **Symptom**: Coach LLM ran 1110s under `--reasoning auto` producing ~55 successful HTTP 200s, then llama-swap returned HTTP 502 Bad Gateway ([run-11:344](../../reviews/autobuild-migration/autobuild-FEAT-AOF-run11.md#L344)). 4× OpenAI client retries failed with Connection error. Coach classified as `error` (correctly NOT routed through COACHSF01 — substrate Connection error vs decision-emission failure are different invariants per [feature-build-invariants.md](../../../.claude/rules/feature-build-invariants.md)).
+- **Attempts made**: Single observation in run 11. Did NOT reproduce in run 12 across three Coach turns of 15-22 minutes each. Substrate held stable.
+- **Root cause** (classified by elimination): **F23D (transient)** — the failure did not reproduce under identical posture in run 12. Single-event substrate blip, possibly network/Tailscale stutter or transient llama-swap state. The GB10 forensics handoff at [`docs/state/TASK-REV-HMIG/run-11-f23-forensics-handoff.md`](run-11-f23-forensics-handoff.md) drafted the four-hypothesis decision matrix (F23A OOM, F23B eviction, F23C llama.cpp crash, F23D transient, F23E mystery); the run-12 empirical disposition closes it as F23D without needing the forensic commands to discriminate.
+- **Class-of-defect**: substrate-quality, transient. NOT a code defect. The orchestrator's response was correct (retry with exponential backoff → fail → classify as error → preserve worktree).
+- **Severity**: **MEDIUM** in run-11 isolation (blocked that single run's AC-006 evaluation), **LOW** post-run-12 (transient, no recurrence under sustained 3-Coach-turn load).
+- **Resolution**: No action required. Run-11 forensics handoff doc retained as historical reference; annotated at top with run-12 disposition.
+- **Follow-up task**: None filed. Substrate-quality finding recorded for AC-008 evidence; revisit only if F23 shape recurs.
+
+## I-011 (F22): SPECHANG hang-detection cascades into 120s Coach grace-period, structurally incompatible with gemma4 Coach reasoning time — **RESOLVED 2026-06-07 (run 11) by TASK-FIX-SPECCOCH01**
+
+> **Status update 2026-06-08**: SPECCOCH01 Shape A landed in commit `cc3b2164` (fix(TASK-FIX-SPECCOCH01): decouple specialist-hang from Coach grace-period cascade). Run 11 empirically validated: Coach SDK invocation got `budget_cap=4799s` ([run-11:263](../../reviews/autobuild-migration/autobuild-FEAT-AOF-run11.md#L263)), NOT the 120s grace cap, after SPECHANG fired correctly on the test-orchestrator. Run 12 reconfirmed across **three** Coach turns of 15-22 minutes each — SPECHANG-watchdog termination contained at the specialist boundary, Coach never inherits the cascade. The task file moved to `tasks/completed/autobuild-harness-migration/`. AC-4 falsifier (Coach produces ≥1 text block — verdict-emission actually exercised) satisfied: turn-1 Coach emitted a fenced JSON block (schema-incomplete; F24 territory), turn-2 Coach produced 5438 chars in reasoning_content. F22 closed.
 
 - **Task**: TASK-FIX-IA03 (run 10, Wave 1, turn 1 Coach validation)
 - **Wave / parallel group**: Wave 1
