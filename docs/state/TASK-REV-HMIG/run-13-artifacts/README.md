@@ -63,19 +63,26 @@ The four hypotheses below all assume the grammar **applied** to the Coach. It di
 - The `--grammar-file` line has been **reverted** from the live `gemma4-coach` route.
 
 So H1/H2 (grammar over-constrains / conflicts with reasoning) are **moot** — the
-grammar never ran. H3 (raise SDK timeout) treats the symptom, not the cause. H4 is
-the real story but generalised: gemma4-coach is unreliable as a **tool-using agentic
-Coach**, independent of any grammar. To actually use the grammar it must be applied
-to a **toolless** verdict-synthesis call (code change), or fall to Path 1B
-(prompt-tightening) / Path 2 (nemotron). See
-[`docs/research/dgx-spark/grammars/README.md`](../../../research/dgx-spark/grammars/README.md).
+grammar never ran. **H3 (SDK timeout too short) was the closest to right** but had the
+wrong lever: the wall is the **per-invocation `--sdk-timeout`** (run 13: base 1200 ×
+1.5 task-work × 1.3 complexity-3 = **2340s**), NOT `--task-timeout` (already 4800).
+`--sdk-timeout` is a CLI override used directly; **3600s is the hard MAX**
+(`MAX_SDK_TIMEOUT`, agent_invoker.py:476). Run 14 should pair `--sdk-timeout 3600`
+(60 min/turn) with the Path 1B decisive-Coach prompt — if it still times out at
+3600s, the substrate is the wall. H4 is the generalised real story: gemma4-coach is
+slow/unreliable as a **tool-using agentic Coach**, independent of any grammar. To use
+the grammar at all it must be applied to a **toolless** verdict-synthesis call (code
+change), or fall to Path 1B (prompt-tightening) / Path 2 (nemotron). See
+[`docs/research/dgx-spark/grammars/README.md`](../../../research/dgx-spark/grammars/README.md)
+and [`TASK-FIX-COACHSCHEMA`](../../../../tasks/backlog/autobuild-harness-migration/TASK-FIX-COACHSCHEMA-tighten-coach-prompt-schema-emission.md).
 
 ## Original diagnostic hypotheses (SUPERSEDED — see resolution above)
 
 1. **Grammar over-constrains generation** — moot (grammar bypassed).
 2. **Grammar conflict with `--reasoning auto`** — moot (grammar bypassed).
-3. **SDK timeout too short for grammar-constrained generation** — treats symptom;
-   the Coach is slow as an *agentic* verifier regardless of grammar.
+3. **SDK timeout too short** — closest to right, but the lever is `--sdk-timeout`
+   (per-invocation; run-13 wall was 2340s), NOT `--task-timeout`. Max is 3600s; pair
+   it with the Path 1B decisive prompt for run 14.
 4. **Coach prompt complexity** — closest to correct, generalised: gemma4-coach is
    an unreliable tool-using agentic Coach at full-prompt scale.
 
