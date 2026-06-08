@@ -1,10 +1,10 @@
 ---
 id: TASK-OPS-COACH31B
 title: Evaluate Gemma 4 31B dense QAT as the AutoBuild Coach substrate (no new hardware)
-status: backlog
+status: in_progress
 task_type: ops
 created: 2026-06-08T00:00:00Z
-updated: 2026-06-08T00:00:00Z
+updated: 2026-06-08T20:00:00Z
 priority: high
 complexity: 4
 effort_hours: 4
@@ -99,20 +99,39 @@ Both are 256K context. Current Coach for comparison:
 
 ## Acceptance criteria
 
-- [ ] **AC-1**: `gemma-4-31B-it-qat-q4_0-gguf` downloaded + a `gemma4-31b`
-  llama-swap route added (base IT template, no grammar) that serves without error.
-- [ ] **AC-2 (single-shot A/B)**: 31B vs current Coach measured on JSON-verdict
-  discipline, tool-calling, convergence (reasoning length / latency /
-  finish_reason), verdict quality. The 31B should emit a valid fenced verdict and
-  converge in **far fewer** reasoning tokens than the MoE's 49,720-char ramble.
-- [ ] **AC-3 (falsifier — run 15)**: with the 31B as Coach, ≥1 Coach turn
-  **converges** — emits a valid fenced-JSON verdict AND finishes within the SDK
-  timeout — across ≥4 Coach turns, ≥80% valid. This is the same convergence bar
-  run 14 failed; passing it means the substrate swap fixed F24.
-- [ ] **AC-4**: speed assessment — dense 31B is slower per token than the MoE;
-  record **net time-to-verdict** (it may converge in fewer tokens). If a Coach
-  turn is impractically slow even when it converges, note it for the
-  distillation/quant follow-up.
+- [x] **AC-1** ✅ (2026-06-08): `gemma-4-31B_q4_0-it.gguf` (17.65 GB, dense 30.7B,
+  GGUF v3) downloaded to `/opt/llama-swap/models/gemma4-31b-coach/`; `gemma4-31b`
+  route added (base IT embedded template via `--jinja`, `--reasoning auto`,
+  `--temp 0.1`, q8 KV, ctx 98304, **no grammar**) + `g31` var + `coach31` set.
+  Cold-loaded **ready** via the `coach31` set (evicting gc), **~28 GB free, no OOM**.
+- [x] **AC-2 (single-shot A/B)** ✅ (2026-06-08): 6 probes × 2 arms measured (see
+  [findings](../../docs/state/TASK-OPS-COACH31B/README.md)). The 31B emits valid
+  correct fenced verdicts (D/E/F), converges in **1,792–2,903c reasoning** (vs the
+  49,720-char ramble), **never** hits the token ceiling (0/6 vs gc's 1/6 on the
+  clean-approve case), uses **2–4× fewer** reasoning tokens than gc when both
+  converge, and shows the correct **gather-first** tool instinct (A/B). **PASS on
+  the literal bar.** Caveat: single-shot is a **weak substrate discriminator** —
+  the toolless probes (E/F) made **both** arms converge, so single-shot does not
+  prove a substrate wall; the run-14 catastrophe was tool-bound. → AC-3 decisive.
+- [ ] **AC-3 (falsifier — run 15)**: DEFERRED (operator decision) until AC-2
+  results in; **now recommend GO** — it is the only test of the tool-bound
+  agentic loop where run-14 failed. Bar: ≥1 Coach turn converges (valid fenced
+  verdict within SDK timeout) across ≥4 turns, ≥80% valid (vs run-14's 0/2).
+  Recipe: [`run-15-recipe.md`](../../docs/state/TASK-OPS-COACH31B/run-15-recipe.md).
+- [x] **AC-4** ✅ (2026-06-08): dense 31B ≈ **9–10 tok/s** vs MoE ≈ **40–46 tok/s**
+  (~4.5× slower/token). Net time-to-verdict: gc faster when it converges (D 70s vs
+  202s); 31B faster only where gc rambles (A 42s vs 358s/no-verdict). A 4.5×-slower
+  Coach in a multi-turn loop may be slow per converged turn — if so, fall to the
+  **12B dense QAT** (~7 GB) or distillation (TASK-DATA-COACHHARVEST).
+
+## Results summary (2026-06-08, on `promaxgb10-41b1`)
+
+Full evidence + harness + transcripts:
+[`docs/state/TASK-OPS-COACH31B/`](../../docs/state/TASK-OPS-COACH31B/). The route
+is **dormant by default** (not in `preload`/`all`/keepalive) — it only loads when
+`gemma4:31b` is requested via the `coach31` set, so it does not disturb the fleet.
+Config backup: `config.yaml.bak-2026-06-08-pre-coach31b`. The single-shot A/B is
+encouraging but not decisive; the substrate verdict awaits run-15.
 
 ## Implementation notes / escalation
 

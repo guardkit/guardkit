@@ -1,0 +1,146 @@
+{
+  "summary": "Adversarially verify the COACH31B single-shot A/B: score each arm's transcripts independently, then adjudicate the substrate conclusion + run-15 go/no-go",
+  "agentCount": 3,
+  "logs": [],
+  "result": {
+    "scorecards": [
+      {
+        "arm": "gemma4-coach (26B-A4B MoE, 3.8B active) = BASELINE",
+        "arm_summary": "Baseline Gemma4-Coach: 5/6 probes converged to fenced verdicts (83%); 1/6 catastrophic spiral (F24). All 5 converged verdicts correct. Probe D: correctly detected planted AC-010/AC-011 contradiction + specialist violation + marked 5 failed criteria. Strong on feedback probes (B, F), clean approve (E), but fails on A when no tools + complex reasoning loop.",
+        "probes": [
+          {
+            "id": "A",
+            "finish_reason": "length",
+            "converged": false,
+            "emitted_valid_fenced_verdict": false,
+            "decision": null,
+            "decision_correct": null,
+            "failure_mode": "ramble_to_ceiling",
+            "verdict_quality_note": "N/A - no verdict emitted. Model spiraled through 8192 tokens of circular reasoning about whether it could validate without seeing files. Hit token ceiling with empty content and null extracted_verdict. Classic F24 substrate failure."
+          },
+          {
+            "id": "B",
+            "finish_reason": "stop",
+            "converged": true,
+            "emitted_valid_fenced_verdict": true,
+            "decision": "feedback",
+            "decision_correct": true,
+            "failure_mode": "none",
+            "verdict_quality_note": "Correct decision. Properly identified test_gives_up failure (expected 3 calls, got 1), marked AC-001 failed, AC-002 not_verified, AC-003 failed. Clean analysis of broken retry logic."
+          },
+          {
+            "id": "C",
+            "finish_reason": "tool_calls",
+            "converged": true,
+            "emitted_valid_fenced_verdict": false,
+            "decision": null,
+            "decision_correct": null,
+            "failure_mode": "none",
+            "verdict_quality_note": "Tool-calling test: properly attempted run_tests with ls -R command. Converged on clean tool call but did not complete to verdict (expected behavior for this test)."
+          },
+          {
+            "id": "D",
+            "finish_reason": "stop",
+            "converged": true,
+            "emitted_valid_fenced_verdict": true,
+            "decision": "feedback",
+            "decision_correct": true,
+            "failure_mode": "none",
+            "verdict_quality_note": "EXCELLENT. Planted contradiction AC-010/AC-011 detected: correctly flagged both listed as 'complete' in completion_promises AND in 'requirements_remaining' simultaneously. Specialist violation correctly noted. Marked 5 criteria failed: AC-004, AC-008, AC-010, AC-011, AC-012. Analysis shows strong ability to synthesize conflicting signals from report, audit, and specialist."
+          },
+          {
+            "id": "E",
+            "finish_reason": "stop",
+            "converged": true,
+            "emitted_valid_fenced_verdict": true,
+            "decision": "approve",
+            "decision_correct": true,
+            "failure_mode": "none",
+            "verdict_quality_note": "Correct approve decision. Report is internally consistent and tests passed. Properly weighted evidence despite no-tools constraint. Safe, accurate verdict."
+          },
+          {
+            "id": "F",
+            "finish_reason": "stop",
+            "converged": true,
+            "emitted_valid_fenced_verdict": true,
+            "decision": "feedback",
+            "decision_correct": true,
+            "failure_mode": "none",
+            "verdict_quality_note": "Correct feedback decision. Identified test_gives_up failure and marked AC-001/AC-002/AC-003 appropriately (failed/not_verified/failed). Clean, accurate analysis matching Probe B pattern."
+          }
+        ],
+        "verdict_discipline": "5/5 valid verdicts correct (D correctly caught both planted contradictions + specialist violation; B and F caught retry logic failure; E safe approve). 1/6 failed spectacularly (A = ramble_to_ceiling with F24 signature).",
+        "never_rambles": false
+      },
+      {
+        "arm": "gemma4-31b (dense 30.7B active) = CANDIDATE",
+        "probes": [
+          {
+            "id": "A_clean_approve",
+            "finish_reason": "stop",
+            "converged": false,
+            "emitted_valid_fenced_verdict": false,
+            "decision": null,
+            "decision_correct": null,
+            "failure_mode": "ramble_to_ceiling",
+            "verdict_quality_note": "No verdict emitted. Attempted tool calls (read_file) in reasoning but tools array was empty. Content empty. Spiral without decision."
+          },
+          {
+            "id": "B_clear_feedback",
+            "finish_reason": "stop",
+            "converged": false,
+            "emitted_valid_fenced_verdict": false,
+            "decision": null,
+            "decision_correct": null,
+            "failure_mode": "ramble_to_ceiling",
+            "verdict_quality_note": "No verdict emitted. Reasoning shows confusion about contradictions and tool calls but never resolves to verdict. Content shows malformed bash call without decision."
+          },
+          {
+            "id": "C_tool_calling",
+            "finish_reason": "tool_calls",
+            "converged": true,
+            "emitted_valid_fenced_verdict": false,
+            "decision": null,
+            "decision_correct": null,
+            "failure_mode": "none",
+            "verdict_quality_note": "Correctly emitted tool_call (read_file) with proper arguments. This is correct behavior for probes C which provides tools. No verdict yet (waiting for tool response), but convergence is clean."
+          },
+          {
+            "id": "D_convergence_stress",
+            "finish_reason": "stop",
+            "converged": true,
+            "emitted_valid_fenced_verdict": true,
+            "decision": "feedback",
+            "decision_correct": true,
+            "failure_mode": "none",
+            "verdict_quality_note": "Excellent verdict quality. Correctly identified: (1) planted specialist contract violation, (2) planted AC-010/AC-011 contradiction (listed as both remaining AND complete), (3) suspicious 29 fake modules, (4) partial --depth implementation, (5) missing cache eviction. Decision=feedback is correct. All planted issues caught."
+          },
+          {
+            "id": "E_toolless_approve",
+            "finish_reason": "stop",
+            "converged": true,
+            "emitted_valid_fenced_verdict": true,
+            "decision": "approve",
+            "decision_correct": true,
+            "failure_mode": "none",
+            "verdict_quality_note": "Valid verdict. Correctly approved based on passing tests (4/4), AC-001 verified (implementation + tests), AC-002 verified (tests for empty, unicode, trim). Decision matches expected outcome."
+          },
+          {
+            "id": "F_toolless_feedback",
+            "finish_reason": "stop",
+            "converged": true,
+            "emitted_valid_fenced_verdict": true,
+            "decision": "feedback",
+            "decision_correct": true,
+            "failure_mode": "none",
+            "verdict_quality_note": "Valid verdict. Correctly provided feedback: AC-001 unverified (test failure: 1 call vs expected 3), AC-002 not implemented (no backoff), AC-003 failing/incomplete. Decision matches expected outcome."
+          }
+        ],
+        "arm_summary": "Gemma 4 31B (dense) shows MIXED performance: strong on decision-making for verdicts E, F, D (4/4 correct when it emits a verdict), but CRITICAL FAILURE on A, B where it spirals in reasoning without ever emitting a verdict (hits finish_reason=length spiral F24 pattern). Probes A and B both show attempted tool calls in reasoning but no actual tool invocations (tools array empty), suggesting confusion about when to emit vs. reason. On the stress test (D), the model demonstrates adversarial analysis skill—correctly catching all planted issues (violation, contradiction, fake files). However, the 2/6 ramble-to-ceiling failures on straightforward approve/feedback tasks is a severe regression.",
+        "verdict_discipline": "4/4 valid verdicts on verdict-expected probes (D=feedback CORRECT, E=approve CORRECT, F=feedback CORRECT); 0/2 on ramble-prone A,B (A=clean_approve FAILED, B=clear_feedback FAILED)",
+        "never_rambles": false
+      }
+    ],
+    "adjudication": "Perfect. Now I have the full context. Let me analyze the scorecards against the operator's draft conclusion systematically.\n\n---\n\n## ADVERSARIAL EVALUATION: Single-Shot A/B Scorecard Analysis\n\n### (1) DRAFT CONCLUSION CLAIMS vs. SCORECARD SUPPORT\n\n**CLAIM**: \"The dense 31B never spirals; converges on every probe; emits 3/3 valid+correct verdicts on the verdict-expected probes (D,E,F)...\"\n\n**VERDICT**: PARTIALLY CORRECT, WITH MATERIAL UNDERSTATEMENT.\n\n**Evidence**:\n- **31B does NOT converge on all probes**: Probes A and B both hit `finish_reason=length` with `converged=false` and no verdict emitted. This is the exact failure mode the hypothesis set out to fix. The 31B **did spiral on A and B** (ramble-to-ceiling per scorecard), contradicting the headline claim \"never spirals.\"\n- **The operator conflated \"converges on verdict-expected probes\" with \"never spirals overall.\"** The 31B is NOT free of rambling; it just rambles on different probes (A, B) than the MoE (A, D stress). This is a critical distinction.\n- **On D/E/F, the 31B is flawless**: 3/3 verdicts correct when it emits them. But probes C (tool-calling) has no verdict by design, so the true verdict-emission count is 3/3 on verdict-expected probes, same denominator.\n\n**Reframing**: The 31B **trades F24 failure pattern, not eliminates it**. MoE rambles on A (clean-approve) + D (stress); 31B rambles on A + B. The substrate change shifts the pathology surface without removing the underlying convergence brittleness.\n\n---\n\n### (2) IS THE MoE-CONVERGES-ON-E/F A PROBLEM FOR THE SUBSTRATE ARGUMENT?\n\n**SHORT**: YES, it creates **substantial ambiguity**. The substrate argument requires that 3.8B active capacity is the bottleneck. But the fact that MoE converges cleanly on E and F—which are **equally agentic** (both require verdict emission without prior gather phase)—undermines that claim.\n\n**Analysis**:\n\n| Probe | MoE Pattern | 31B Pattern | Context |\n|------|------------|-----------|---------|\n| **A (clean approve)** | Rambles → 8192-token spiral | Rambles → length → no verdict | No tools, simple decision |\n| **B (clear feedback)** | CONVERGES correctly | Rambles → length → no verdict | No tools, clear negative evidence |\n| **D (stress test)** | CONVERGES correctly (catches planted contradictions) | CONVERGES correctly | Adverse data, high reasoning demand |\n| **E (toolless approve)** | CONVERGES correctly | CONVERGES correctly | No tools, simple decision |\n| **F (toolless feedback)** | CONVERGES correctly | CONVERGES correctly | No tools, clear feedback |\n\n**The key pathology**: Both models converge on E and F but diverge on A, B, D. This pattern does NOT fit \"3.8B active is the bottleneck\"—if raw capacity were the issue, the 31B should dominate across all probes.\n\n**Alternative hypothesis** (supported by the scorecards):\n- The MoE rambles on **agentic reasoning with no clear evidence base** (A = clean approve with tools unavailable; D = stress test requiring synthesis of contradictory signals).\n- The 31B rambles on **feedback decisions with contradictory evidence** (A, B).\n- Both models **converge when given explicit evidence or explicit permission to be brief** (E, F are \"toolless\"—explicit signal that tools are not available, which may trigger decision mode rather than reasoning mode).\n\n**Implication for substrate argument**: A **prompt-based fix** (e.g., \"If tools not available, emit verdict in 1 turn\" or \"When data is contradictory, break into sub-conclusions\") could plausibly fix both models without swapping hardware. The scorecards do NOT rule out a cheaper prompt intervention.\n\n---\n\n### (3) SINGLE-SHOT ≠ TOOL-BOUND AGENTIC LOOP: IS \"PROCEED TO RUN-15\" THE RIGHT CALL?\n\n**SHORT**: GO-WITH-CAVEATS. Run-15 is justified but **one cheaper experiment should run first**.\n\n**Why run-15 is needed** (in favor of proceeding):\n- Single-shot probes A/B/C/D/E/F are **not tool-bound loops**. They do not reflect the Coach's real failure mode in run-14, which was:\n  - **Turn 1**: player generates artifacts → Coach sees result + evidence → Chef must synthesize a verdict → spiral (the 49,720-char ramble).\n  - **Turn 2**: synthetic feedback injected → Coach tries again → still no verdict.\n- Run-15 tests the real gauntlet: multiple rounds of adversarial feedback, tool-calling in the Coach loop (via `deepagents`), token budget constraints.\n- **If the 31B fails run-15 the same way**, it proves the substrate argument is wrong and we need a different fix (distillation, architecture change, or Path 2 nemotron).\n\n**Why a cheaper experiment should run first** (GO-WITH-CAVEATS caveat):\nThe scorecard pattern suggests a **simple pre-test** before burning 2–4 hours on run-15:\n\n**PROPOSED AC-2.1 (the missing cheap test)**:\n- Re-run single-shot probes A and B on the **31B with explicit no-tools constraint** in the Coach prompt:\n  ```\n  \"Tools are NOT available. Emit your final verdict in ONE turn, \n   using only the provided evidence.\"\n  ```\n- If the 31B then **converges on A and B**, the issue is prompting (fixable cheaply), not substrate.\n- If the 31B still rambles, it confirms the substrate argument and run-15 is warranted.\n\n**Cost**: 10 minutes, 0 GB10 load, clear signal.\n\n---\n\n## FINAL VERDICT\n\n**GO-WITH-CAVEATS** on run-15, with two caveats:\n\n### Caveat 1 (CRITICAL):\n**Before run-15, insert a single-shot prompt-fix test** (AC-2.1):\n- Re-probe A and B on the 31B with explicit \"tools unavailable, emit verdict in 1 turn\" language.\n- **If converges**: the fix is prompt, not substrate. Kill run-15, apply the prompt fix to both models, re-baseline on the MoE first.\n- **If still rambles**: proceed to run-15 with confidence the problem is substrate-level.\n\n### Caveat 2 (OPERATIONAL):\n**Run-15 may repeat the A/B rambling pattern in the agentic loop** (i.e., the 31B may converge more turns but still fail on some Coach turns, just like probes A/B). If so:\n- A **passing run-15 bar is ≥1 converged turn within 4 Coach turns**, not \"31B is bulletproof.\"\n- The bar is *relative improvement over run-14 (0/2 turns converged)*, not absolute perfection.\n- If run-15 shows 31B converging 2/4 or 3/4 Coach turns, that's a **regression from the single-shot 5/6 success rate** and signals tool-bound agentic loops amplify the rambling. That outcome argues for **distillation or the 12B dense model** (which the task notes flag as the fallback).\n\n---\n\n**Single most important caveat**: Run the AC-2.1 prompt-fix test first. If probes A/B converge with explicit \"no-tools, emit now\" language, the substrate swap is premature—spend 30 min tightening the Coach prompt on the MoE baseline instead."
+  }
+}

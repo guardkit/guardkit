@@ -1,0 +1,40 @@
+[
+  {
+    "label": "g31tl",
+    "model": "gemma4:31b",
+    "probe": "E_toolless_approve",
+    "expect_decision": "approve",
+    "ok": true,
+    "latency_s": 102.9,
+    "finish_reason": "stop",
+    "content_chars": 1529,
+    "reasoning_chars": 2127,
+    "completion_tokens": 1045,
+    "prompt_tokens": 773,
+    "has_fenced_verdict": true,
+    "verdict_decision": "approve",
+    "verdict_in_reasoning_only": false,
+    "decision_correct": true,
+    "n_tool_calls": 0,
+    "tool_names": []
+  },
+  {
+    "label": "g31tl",
+    "model": "gemma4:31b",
+    "probe": "F_toolless_feedback",
+    "expect_decision": "feedback",
+    "ok": true,
+    "latency_s": 94.0,
+    "finish_reason": "stop",
+    "content_chars": 1598,
+    "reasoning_chars": 1792,
+    "completion_tokens": 962,
+    "prompt_tokens": 791,
+    "has_fenced_verdict": true,
+    "verdict_decision": "feedback",
+    "verdict_in_reasoning_only": false,
+    "decision_correct": true,
+    "n_tool_calls": 0,
+    "tool_names": []
+  }
+]
