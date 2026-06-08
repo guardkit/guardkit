@@ -1,0 +1,24 @@
+{
+  "task_id": "TASK-FIX-IA03",
+  "checkpoints": [
+    {
+      "turn": 1,
+      "commit_hash": "a6978cc41b897628d07c7a9bea1c2cb52741f3a5",
+      "timestamp": "2026-06-08T15:28:40.177166",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 1 complete (tests: fail)",
+      "from_prior_run": false
+    },
+    {
+      "turn": 2,
+      "commit_hash": "86ebca85e48e994a7530cb8d39ae33f7437c4e41",
+      "timestamp": "2026-06-08T15:50:32.798781",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 2 complete (tests: fail)",
+      "from_prior_run": false
+    }
+  ],
+  "last_updated": "2026-06-08T15:50:32.799073"
+}

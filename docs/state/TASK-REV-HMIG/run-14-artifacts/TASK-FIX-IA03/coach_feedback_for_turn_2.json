@@ -1,0 +1,9 @@
+{
+  "turn": 2,
+  "feedback_from_turn": 1,
+  "feedback_summary": "- Coach verdict-emission failed: Coach decision not found: no fenced ```json block in Coach response for TASK-FIX-IA03 turn 1 (328 chars content + 49720 chars reasoning_content). Likely substrate limitation (qwen36-workhorse F2 at Coach level). Player should retry on turn 2 with this feedback.",
+  "must_fix": [],
+  "should_fix": [],
+  "validation_results": {},
+  "raw_feedback": "- Coach verdict-emission failed: Coach decision not found: no fenced ```json block in Coach response for TASK-FIX-IA03 turn 1 (328 chars content + 49720 chars reasoning_content). Likely substrate limitation (qwen36-workhorse F2 at Coach level). Player should retry on turn 2 with this feedback."
+}
