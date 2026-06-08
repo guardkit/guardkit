@@ -113,11 +113,19 @@ Both are 256K context. Current Coach for comparison:
   the literal bar.** Caveat: single-shot is a **weak substrate discriminator** —
   the toolless probes (E/F) made **both** arms converge, so single-shot does not
   prove a substrate wall; the run-14 catastrophe was tool-bound. → AC-3 decisive.
-- [ ] **AC-3 (falsifier — run 15)**: DEFERRED (operator decision) until AC-2
-  results in; **now recommend GO** — it is the only test of the tool-bound
-  agentic loop where run-14 failed. Bar: ≥1 Coach turn converges (valid fenced
-  verdict within SDK timeout) across ≥4 turns, ≥80% valid (vs run-14's 0/2).
-  Recipe: [`run-15-recipe.md`](../../docs/state/TASK-OPS-COACH31B/run-15-recipe.md).
+- [~] **AC-3 (falsifier — run 15)**: RAN 2026-06-08 (Mac, langgraph, gemma4:31b
+  Coach). **F24 BROKEN** — turn-1 Coach emitted a real schema-valid verdict for
+  the first time in 15 runs (decision=feedback; independently caught a Player
+  honesty discrepancy — claimed test file absent on disk; no synthetic flag).
+  The substrate swap (26B-A4B MoE → 31B dense) is the load-bearing fix, as AC-2
+  predicted. **BUT turn-2 hit a NEW, narrower blocker: F23A global OOM** — the
+  GB10 kernel OOM-killed gemma4-31b (pid 3007736, ~28.7 GB resident at ctx 98304)
+  at 20:25:49 BST, 7 s before the turn-2 Coach `error` (502 → Connection error).
+  Discriminated from logs the Mac can't see (NOT F23B eviction — keepalive was
+  off; NOT a verdict failure). Run reached only 2 turns, so the "≥4 turns, ≥80%"
+  bar is unmet — **AC-3 partially met (convergence ✓, full run blocked by OOM)**.
+  **Fix applied:** g31 route ctx 98304→65536 + quiesce-GB10 recipe for run-16.
+  Forensics: [run-15-artifacts GB10 resolution](../../docs/state/TASK-REV-HMIG/run-15-artifacts/README.md).
 - [x] **AC-4** ✅ (2026-06-08): dense 31B ≈ **9–10 tok/s** vs MoE ≈ **40–46 tok/s**
   (~4.5× slower/token). Net time-to-verdict: gc faster when it converges (D 70s vs
   202s); 31B faster only where gc rambles (A 42s vs 358s/no-verdict). A 4.5×-slower
