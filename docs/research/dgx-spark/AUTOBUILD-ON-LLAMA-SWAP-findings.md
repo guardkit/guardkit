@@ -2336,6 +2336,34 @@ as [I-013](../../state/TASK-REV-HMIG/feature-run-incidents.md).
 
 ### 9.13.1 2026-06-08 — Option 1A operator runbook: enforce Coach verdict schema via llama.cpp GBNF grammar
 
+> **⚠️ IMPLEMENTED + CORRECTED 2026-06-08.** The grammar was authored, tested on
+> the live `gemma4-coach`, and committed. **Use the version-tracked grammar at
+> [`grammars/coach-verdict.gbnf`](grammars/coach-verdict.gbnf) and its
+> [`grammars/README.md`](grammars/README.md), NOT the draft below.** The draft in
+> this section is retained for provenance but is **defective** — cross-checking
+> against `coach_output_parser.py` + `agent_invoker.py` found:
+>
+> 1. `issues` was modelled as an array of strings; the real Coach feedback shape is
+>    an array of **objects** `{type,severity,description,requirement,suggestion}`.
+> 2. Field name `criteria_results` is wrong; the real field is `criteria_verification`
+>    with `{criterion_id,result,notes}` entries.
+> 3. `validation_results` (required by the approve shape) was omitted.
+> 4. The multi-line `verdict-obj` / `json-value` rule bodies **do not compile**
+>    (llama.cpp parses top-level rule bodies with `newline_ok=false`).
+>
+> Installing the draft verbatim would have *forbidden* the Coach's real approve and
+> feedback verdicts. The committed grammar uses a **fixed required-field prefix +
+> generic trailing members** (guarantees `task_id`/`turn`/`decision`; permits every
+> optional field) and a **free-form reasoning prefix + forced EOS** root, validated
+> A/B against the live model (it preserves `--reasoning auto` CoT and stops cleanly
+> with a sound verdict). AC-1 ✓ (b9430 has `--grammar-file`), AC-2 ✓.
+>
+> **The run-13 command + smoke recipe below are STALE vs §9.15** — the real Coach
+> path is `POST /v1/responses` (not chat-completions) and run-13 needs
+> `--task-timeout 4800 --no-context`. Use the §9.15 run-10 command **plus** the
+> grammar at llama-swap; see [`grammars/README.md`](grammars/README.md)
+> "Operator handoff" for the corrected AC-3/AC-4/AC-5 steps.
+
 **Rationale.** F24 is a structured-output emission gap. The
 architecturally correct fix is to enforce the schema *at the inference
 layer* so structurally invalid emissions become *impossible*. llama.cpp
