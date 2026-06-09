@@ -1,12 +1,13 @@
 ---
 id: TASK-ARCH-COACHSPLIT
 title: Split the AutoBuild Coach into tool-using gather + toolless grammar-enforced verdict synthesis (D-3)
-status: in_progress
+status: completed
 task_type: feature
 created: 2026-06-09T00:00:00Z
-updated: 2026-06-09T12:00:00Z
-previous_state: backlog
-state_transition_reason: "Automatic transition for task-work execution (strict-intensity design phase)"
+updated: 2026-06-09T13:00:00Z
+completed: 2026-06-09T13:00:00Z
+previous_state: in_progress
+state_transition_reason: "AC-1/2/3/5/6 implemented + verified; AC-4 falsifier (run-19) PASSED — FEAT-AOF 3/3 first-pass approve"
 priority: high
 complexity: 7
 effort_hours: 12
@@ -138,12 +139,18 @@ Split it into two phases:
 - [x] **AC-3**: grammar enforcement is **active** in synthesis (closes the
   run-13 grammar-no-op). → GB10 probe CASE A: toolless + per-request grammar
   produced a schema-valid verdict on `gemma4:31b`.
-- [ ] **AC-4 (falsifier — run-19)**: an autobuild run with `gemma4:31b` as Coach
+- [x] **AC-4 (falsifier — run-19)**: an autobuild run with `gemma4:31b` as Coach
   (minimal `coach31` fleet, ctx 98304, `--no-context`) **completes ≥1 wave** with
   ≥1 real fenced-JSON Coach verdict and **no** F20/F23A/tool-parse-500 — the bar
   runs 15–18 could not reach. (This is the original TASK-OPS-COACH31B AC-3.)
-  → **OPERATOR step**: synthesis is ON by default; launch per `run-15-recipe.md`
-  with `GUARDKIT_HARNESS=langgraph`. (Not codeable here — requires GB10.)
+  → **PASSED (run-19, 2026-06-09)**: FEAT-AOF COMPLETED, 3/3 first-pass `approve`,
+  all real schema-valid verdicts. Orchestrator log confirms the toolless path for
+  every Coach turn (`grammar=present transport=chat-completions`,
+  `autobuild-FEAT-AOF-run-19.md:200,543,548`) with httpx `200 OK`. No
+  F20/F23A/tool-parse-500. Snapshot: `docs/state/TASK-REV-HMIG/run-19-artifacts/`
+  (commit `c48dd53b`). Caveat: the Coach independent-test leg timed out (300s) on
+  all 3 tasks → tracked separately as **TASK-FIX-COACHTESTTO** (does not affect
+  verdict emission, the AC-4 falsifier).
 - [x] **AC-5**: unit/integration tests for the two-phase flow incl. the
   zero-evidence and gather-failure paths (respect `absence-of-failure-is-not-
   success.md` — a toolless synthesis over an empty bundle must NOT auto-approve).

@@ -22,8 +22,32 @@ Duration: 52m 4s
 ```
 
 All three tasks reached **`Coach approved on turn 1`** — first-pass
-success across the entire feature, no synthetic-feedback fallbacks, no
-substrate failures, no architectural surprises.
+success across the entire feature, with **zero verdict-emission failures**
+(no synthetic-feedback / COACHSF01 fallbacks; every Coach verdict was a
+real, schema-valid `decision: approve`).
+
+> **Post-review caveats (added 2026-06-09 after reviewing the run log +
+> artifacts).** The headline is real, but two verification safeguards were
+> degraded this run and two architecture descriptions below were
+> imprecise — recorded here so this snapshot is an accurate baseline:
+>
+> 1. **Coach independent-test leg did not complete on any task.** The run
+>    log records `ERROR: SDK coach test execution timed out after 300s`
+>    for all three tasks (`autobuild-FEAT-AOF-run-19.md:197,540,545`). The
+>    Coach's "trust-but-verify" independent pytest run timed out every
+>    time, so first-pass approval rested on the **Player's self-reported**
+>    tests plus the deterministic non-test gates (coverage / honesty /
+>    plan_audit / arch_review), NOT on the Coach's own test execution.
+>    Tracked as **TASK-FIX-COACHTESTTO**.
+> 2. **`criteria_verification` is empty in all three verdicts.** The "5/5
+>    / 7/7 / 6/6 ACs" counts come from the flat
+>    `validation_results.requirements_met` list, not the structured
+>    per-criterion `criteria_verification` array (which the grammar leaves
+>    optional, so gemma4:31b satisfied the required keys and skipped it).
+> 3. **Architecture/mechanism wording corrected below** — what shipped is
+>    **B-min** (deterministic gather, single toolless synthesis call), and
+>    the grammar is applied **per-request** (`extra_body`), not via
+>    route-level `--grammar-file`.
 
 | Task | Player | Coach | Decision | ACs | Tests passed |
 |---|---|---|---|---|---|
@@ -50,17 +74,24 @@ addressed:
 | **Run-13 grammar-no-op finding** | Closed architecturally by D-3 — grammar now applies because the verdict call is toolless |
 | **Run-18 HTTP 500 parser error** | Did not recur; presumably the GB10 fixed the chat-template / tokenizer mismatch alongside D-3 |
 
-The **D-3 architectural pivot** was the convergence point. Splitting
-Coach into:
+The **D-3 architectural pivot** was the convergence point. The shipped
+realization is **B-min** (the operator-chosen option in
+TASK-ARCH-COACHSPLIT) — there is **no LLM tool-using investigation phase**;
+the run log confirms the only Coach LLM call per turn is the toolless
+synthesis (`autobuild-FEAT-AOF-run-19.md:200,543,548`). Concretely:
 
-1. **Tool-using investigation phase** — gemma4:31b with the deepagents
-   tool set, big context. Player evidence, file reads, test outputs all
-   live here. F20/F23A constraints are absorbed by treating this phase
-   as a research session, not a verdict-emission call.
-2. **Toolless grammar-enforced verdict-synthesis phase** — small fixed
-   prompt summarising the investigation, GBNF-grammar applies, no
-   tools → llama.cpp's `--grammar-file` actually works (per the run-13
-   finding). Outputs the schema-valid fenced JSON every time.
+1. **Deterministic evidence gather** — `CoachValidator.gather_evidence`
+   (pure Python, no LLM, no tools): independent tests, coverage, honesty,
+   plan_audit, BDD, arch_review packaged into a `CoachEvidenceBundle`.
+   This *replaces* the tool-using investigation an LLM Coach would do, so
+   the F20/F23A big-context constraints never apply to a verdict call.
+   (NB: the independent-test leg timed out this run — see caveat #1 above.)
+2. **Toolless grammar-enforced verdict-synthesis call** — a small fixed
+   prompt over that bundle, invoked with **no tools** so llama.cpp honours
+   a **per-request GBNF grammar** (passed in `extra_body={"grammar": …}`
+   on a chat-completions request — NOT the route-level `--grammar-file`,
+   which stays reverted/no-op per the run-13 finding). Outputs the
+   schema-valid fenced JSON every time.
 
 …closed F20, F23A, and F24 in one architecturally-clean move. The
 run-13 grammar-no-op finding flagged this exact direction; the
@@ -157,9 +188,10 @@ baseline future runs should match unless deliberately changed:
 - **Coach reasoning**: `--reasoning auto`
 - **Coach verdict-synthesis**: TASK-ARCH-COACHSPLIT D-3 — toolless,
   GBNF-grammar-enforced, fixed small context
-- **gemma4:31b llama-swap n_ctx**: whatever the operator settled on
-  for the investigation-phase calls (the verdict-synthesis call is
-  small enough that n_ctx doesn't matter)
+- **gemma4:31b llama-swap n_ctx**: 98304 (route config). Under B-min the
+  ONLY g31 call is the toolless verdict-synthesis, whose prompt is small
+  (the deterministic bundle, not a tool transcript), so n_ctx has wide
+  margin — there is no big-context LLM investigation call to size for
 - **`task_timeout`**: 4800s per-task (TASK-FIX-AOFBUDG)
 - **`COACH_GRACE_PERIOD_SECONDS`**: env-tunable since SPECCOCH01;
   not exercised this run (Coach didn't need to inherit the
