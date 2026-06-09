@@ -185,3 +185,69 @@ broken path, others don't.
   as `error` (substrate parser failure, NOT decision-emission failure
   — the COACHSF01 substring-pinned invariant held); CTOUT01 silent;
   no code regressions
+
+## ✅ RESOLVED on the GB10 (2026-06-09) — NOT a config change; llama.cpp×Gemma-4 tool-parse fragility
+
+GB10 session (TASK-OPS-COACH31B) diagnosis. **The commit's hypothesis (a
+config/template/tokenizer mismatch introduced between run-17 and run-18) is
+incorrect.**
+
+**1. Only the ctx changed.** Diff of `gemma4-31b` cmd, run-17 backup vs run-18:
+the *single* difference is `--ctx-size 65536 → 98304`. Model file, `--jinja`
+(embedded template), `--reasoning auto`, tokenizer, all other args are
+**identical**. The ctx bump cannot introduce a chat-template/tokenizer mismatch.
+
+**2. What actually happened: fixing F20 exposed the next layer.** ctx 98304 let
+run-18 reach **deeper into the tool-bound Coach loop than any prior run** (no
+OOM — verified oom=0 throughout via the GB10 monitor; no F20 — n400 flat at 471;
+~33 GB headroom maintained). There it hit a pre-existing **llama.cpp × Gemma-4
+tool-call OUTPUT-parse bug**: the model intermittently generates a malformed
+token — the Unicode REPLACEMENT CHAR U+FFFD (`�`) inside its
+`<|channel>…<|tool_call>call:read_file{…}` output — and llama.cpp's tool-call
+parser fails on it → HTTP 500 (`Failed to parse input at pos 0`). The run-18
+500s are at llama-swap.log lines 153710–153940 (Mac IP, AsyncOpenAI 2.29.0,
+/v1/responses, 8–17 s each).
+
+**3. Reproducer.** A *clean* multi-turn tool conversation (user → assistant
+tool_call → tool result → user) to `gemma4:31b` returns **HTTP 200** and parses
+fine. So the bug is NOT the tool path per se — it's triggered by the model
+emitting a corrupt token (non-deterministic; more tool turns = more chances).
+The `�` points at a quantization/tokenizer artifact in the `q4_0` QAT GGUF
+and/or a llama.cpp special-token handling bug.
+
+**4. Substrate stack, not model size.** llama.cpp build is **9430 (d48a56eff),
+May 30** — ~10 days old; Gemma-4 tool-call support is recent. **The 12B dense
+QAT would NOT fix this** — it's the same `q4_0` QAT family on the same llama.cpp,
+so the same parse path. Do not spend a run on 12B for this failure.
+
+### The diagnostic progression (each fix peeled a layer)
+| run | model/config | failure | layer fixed → exposed |
+|---|---|---|---|
+| 14 | 26B-A4B MoE | F24 no verdict | substrate capability wall |
+| 15 | 31B, full fleet, ctx 98304 | F24 **broken** (real verdict t1); F23A OOM t2 | capability → memory |
+| 16 | 31B, full fleet | F23A OOM t1 (71-file payload) | memory |
+| 17 | 31B, **minimal fleet** + `--no-context`, ctx 65536 | F23A fixed; **F20** ctx overflow (66 687 tok) | memory → context |
+| 18 | 31B, minimal fleet, **ctx 98304** | F20 fixed; **tool-parse 500** (`�`) deep in tool loop | context → tool-loop parser |
+
+We are now at the deepest layer: **the tool-bound agentic Coach on this
+llama.cpp + Gemma-4-q4_0 stack is the fragile part** — exactly what the run-13
+grammar-no-op finding and the D-3 plan anticipated.
+
+### Recommended fixes (in order)
+- **(D-3, robust) Split the Coach** into a tool-using evidence-gather phase and a
+  **toolless, grammar-enforced verdict-synthesis phase**. The toolless phase
+  re-feeds no tool_call/channel markers, so the parser never sees the fragile
+  path. ~1–2 day orchestrator code change; the architecturally-correct fix that
+  also closes the run-13 grammar-no-op gap. Run-15 already proved the 31B emits
+  a high-quality verdict when it reaches synthesis.
+- **(cheaper, uncertain) Upgrade llama.cpp** to a build with newer Gemma-4
+  tool-call/special-token handling, then re-run. May fix the U+FFFD parse path
+  outright. Fleet-wide change (rebuild + restart) — operator decision.
+- **(alt source) Try a different g31 quant** (e.g. `unsloth/gemma-4-31B-it-qat-GGUF`)
+  if the `�` is a `q4_0` GGUF artifact rather than a llama.cpp bug.
+- **NOT** the 12B QAT for this failure (same stack → same bug).
+
+The 31B substrate question (the original task) is effectively **answered**: the
+dense 31B broke F24 and produces real, high-quality verdicts (run-15). The
+remaining blocker is a stack/architecture issue (tool-loop parsing), not the
+model's reasoning capacity.
