@@ -1,0 +1,83 @@
+# coach-verdict.gbnf — enforce the AutoBuild Coach verdict-emission contract
+# (COACHOUT01 / FB-004) at the llama.cpp inference layer for the gemma4-coach
+# model alias (TASK-OPS-COACHGRAMMAR, Path 1A; closes F24 / I-013).
+#
+# Install at /opt/llama-swap/grammars/coach-verdict.gbnf on the GB10 and wire
+# into the gemma4-coach route with:  --grammar-file /opt/llama-swap/grammars/coach-verdict.gbnf
+#
+# ---------------------------------------------------------------------------
+# DESIGN: "free reasoning prefix + guaranteed final verdict fence + forced EOS"
+# (Option C, chosen after empirical A/B on the live gemma4-coach 2026-06-08).
+#
+#   root ::= prefix code-fence
+#
+#   * prefix  — ANY text, INCLUDING backticks, inline `code` spans, and whole
+#     exploratory ```other fenced blocks. llama.cpp applies the grammar to the
+#     WHOLE sampled token stream (verified empirically — backtick count in the
+#     reasoning channel dropped 80->6 under a no-backtick prelude), so the
+#     prefix MUST permit backticks or it strangles gemma4's --reasoning auto
+#     chain-of-thought and forces premature, shallow verdicts.
+#   * code-fence — the FINAL ```json ... ``` block, guaranteed to be a valid
+#     verdict object. Because root ends here, EOS is the only legal token after
+#     the closing ```  — this forces a clean stop (no whitespace padding to the
+#     token cap, which a trailing `ws*` rule caused: 9865 pad chars observed).
+#   * The block is guaranteed to be the LAST ```json block in the output, so the
+#     parser's "matches[-1]" rule (coach_output_parser.py) selects it; earlier
+#     exploratory blocks in the reasoning are ignored, exactly as the parser does.
+#
+# HARD CONTRACT THE GRAMMAR GUARANTEES (matches coach_output_parser.py
+# _REQUIRED_TOP_LEVEL_KEYS and agent_invoker.py COACH_DECISION_SCHEMA):
+#   * the response ends with a single fenced ```json block
+#   * the block is a JSON OBJECT
+#   * it contains task_id (string), turn (BARE integer — _validate_coach_decision
+#     isinstance-checks int), decision ("approve"|"feedback") — in that order,
+#     matching the order the Coach prompt's examples show
+#
+# THE GRAMMAR PERMITS (never forbids) every other member the Coach prompt asks
+# for and the orchestrator consumes if present — validation_results (object),
+# criteria_verification (array of {criterion_id,result,notes}), issues (array of
+# OBJECTS {type,severity,description,requirement,suggestion}), rationale, and any
+# future field — via the generic `member` / `json-value` productions. Optional
+# field VALUES are deliberately NOT enumerated (e.g. result is any string, not a
+# verified|rejected enum): over-constraining values forbids legitimate generation
+# (gemma4 emitted result:"pass" in testing). This is the deliberate fix for the
+# §9.13.1 DRAFT, which modelled issues as an array of strings, used the wrong
+# field name `criteria_results`, and omitted validation_results — all of which
+# would have FORBIDDEN the Coach's real approve/feedback verdict shapes.
+#
+# ONE PROTECTION THAT IS LOAD-BEARING: `char` excludes the backtick from JSON
+# string CONTENT. Without it the model could emit a rationale containing ``` ,
+# and the parser's non-greedy fence regex (```json\s*\n?(.+?)\s*\n?```) would
+# match that stray ``` , truncate the body mid-string, and json.loads would fail
+# — a grammar-valid output that CRASHES the parser. Backticks are allowed in the
+# reasoning prefix (where the parser never looks) but forbidden inside the verdict.
+#
+# RESIDUAL RISK (operator note): the grammar does NOT force the verdict to appear
+# before the max_tokens cap — the model may, on a very complex turn, reason past
+# the 16384-token Coach budget and stop without a verdict (same non-emission the
+# COACHSF01 safety net already handles). C is a strict improvement over no-grammar
+# (turn-1 "missing fields" malformation becomes impossible; turn-2 non-emission is
+# unchanged and caught by COACHSF01). If run 13 shows under-emission, switch to the
+# stricter fallback grammar coach-verdict-strict.gbnf (forces early emission at the
+# cost of reasoning depth) — see this directory's README.
+# ---------------------------------------------------------------------------
+
+root             ::= prefix code-fence
+prefix           ::= ( [^`] | "`" )*
+code-fence       ::= "```json" ws verdict-obj ws "```"
+verdict-obj      ::= "{" ws req-task-id ws "," ws req-turn ws "," ws req-decision trailing-members ws "}"
+req-task-id      ::= "\"task_id\"" ws ":" ws json-string
+req-turn         ::= "\"turn\"" ws ":" ws json-integer
+req-decision     ::= "\"decision\"" ws ":" ws decision-val
+decision-val     ::= "\"approve\"" | "\"feedback\""
+trailing-members ::= ( ws "," ws member )*
+member           ::= json-string ws ":" ws json-value
+json-value       ::= json-object | json-array | json-string | json-number | "true" | "false" | "null"
+json-object      ::= "{" ws ( member ( ws "," ws member )* ws )? "}"
+json-array       ::= "[" ws ( json-value ( ws "," ws json-value )* ws )? "]"
+json-string      ::= "\"" char* "\""
+char             ::= [^"\\`\x00-\x1F] | "\\" ["\\/bfnrt] | "\\u" hex hex hex hex
+hex              ::= [0-9a-fA-F]
+json-number      ::= "-"? json-integer ( "." [0-9]+ )? ( ("e" | "E") ("+" | "-")? [0-9]+ )?
+json-integer     ::= "0" | [1-9] [0-9]*
+ws               ::= [ \t\n\r]*

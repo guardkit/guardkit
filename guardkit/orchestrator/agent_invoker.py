@@ -532,6 +532,32 @@ _SDK_MAX_TURNS_IS_OVERRIDE = _SDK_MAX_TURNS_EXPLICIT is not None
 # `_calculate_sdk_max_turns`). Strategic fix is TASK-ABSR-CMPL.
 SDK_MAX_TURNS_FLOOR = 150
 
+
+# TASK-ARCH-COACHSPLIT (D-3): the Coach's verdict synthesis runs as a TOOLLESS,
+# grammar-enforced model call over the deterministic evidence bundle by default.
+# Set GUARDKIT_COACH_SYNTHESIS=0 (or false/no/off) to restore the legacy
+# tool-using Coach that investigates with Read/Bash/Grep/Glob and emits the
+# verdict in the same agentic loop (the path that is fragile on the llama.cpp +
+# Gemma stack — see runs 13/18 and the task forensics). The default is ON
+# because the deterministic bundle already carries the evidence the gather
+# phase would seek, and a toolless synthesis is the only way to (a) honour the
+# GBNF verdict grammar (llama.cpp hard-rejects grammar+tools) and (b) avoid the
+# run-18 tool-parse HTTP 500.
+_COACH_SYNTHESIS_DISABLED_VALUES = frozenset({"0", "false", "no", "off"})
+
+
+def _coach_synthesis_enabled() -> bool:
+    """Return True when the toolless grammar-enforced Coach synthesis is active.
+
+    Default ON; disabled only by an explicit GUARDKIT_COACH_SYNTHESIS in
+    ``{"0", "false", "no", "off"}`` (case-insensitive). Read at invocation
+    time (not import time) so tests and operators can toggle it per-run.
+    """
+    raw = os.environ.get("GUARDKIT_COACH_SYNTHESIS")
+    if raw is None:
+        return True
+    return raw.strip().lower() not in _COACH_SYNTHESIS_DISABLED_VALUES
+
 # =========================================================================
 # TASK-PSN-003: Promise format reinforcement near SDK turn ceiling
 # =========================================================================
@@ -1962,32 +1988,91 @@ class AgentInvoker:
             else:
                 honesty_verification = self._verify_player_claims(player_report)
 
-            # Build prompt for Coach with verification context
+            # TASK-ARCH-COACHSPLIT (D-3): default to TOOLLESS, grammar-enforced
+            # verdict synthesis over the deterministic evidence bundle. The
+            # bundle (gather_evidence) already carries the test/coverage/
+            # honesty/plan_audit/bdd/arch_review signal the legacy tool-using
+            # Coach would investigate, so the Coach can synthesise its verdict
+            # without tools — which (a) lets the GBNF grammar enforce the
+            # verdict schema (llama.cpp hard-rejects grammar+tools) and (b)
+            # eliminates the run-18 tool-parse HTTP 500. GUARDKIT_COACH_SYNTHESIS=0
+            # restores the legacy tool-using Coach.
+            #
+            # Synthesis is gated on the bundle ACTUALLY existing: a toolless
+            # "synthesise over the evidence bundle" prompt is incoherent (and an
+            # absence-of-failure false-green hazard — the prompt would assert a
+            # bundle that was never rendered and the structured guards would be
+            # dropped) when no bundle was gathered. Callers without a bundle —
+            # the GUARDKIT_COACH_LEGACY=1 fallback after a CoachValidator
+            # exception (autobuild.py `_invoke_coach_legacy`), or any direct
+            # invoke_coach caller — keep the tool-using Coach so it can
+            # investigate with Read/Bash/Grep/Glob in place of the absent
+            # deterministic evidence. The autobuild PRIMARY path always passes a
+            # bundle (gather_evidence), so it always synthesises.
+            synthesis_enabled = (
+                _coach_synthesis_enabled() and evidence_bundle is not None
+            )
+
+            # Build prompt for Coach with verification context.
             prompt = self._build_coach_prompt(
                 task_id, turn, requirements, player_report, honesty_verification,
                 evidence_bundle=evidence_bundle,
                 coach_context=coach_context,
+                synthesis=synthesis_enabled,
             )
 
-            # Invoke SDK with Coach permissions (Read, Bash only - no Write/Edit)
-            # Coach uses bypassPermissions since it's read-only anyway
-            # Model selection delegated to CLI default.
-            #
-            # TASK-FIX-COACHOUT01 Shape A: request return_events=True so the
-            # typed HarnessEvent stream comes back here for the structured-
-            # output parser. Coach's allowed_tools list is intentionally
-            # UNCHANGED — the verdict is no longer written by Coach at all;
-            # the orchestrator extracts it from Coach's response text and
-            # writes coach_turn_N.json itself. Per AC-A4 of the task file.
-            result_tuple = await self._invoke_with_role(
-                prompt=prompt,
-                agent_type="coach",
-                allowed_tools=["Read", "Bash", "Grep", "Glob"],
-                permission_mode="bypassPermissions",
-                task_id=task_id,
-                turn=turn,
-                return_events=True,
-            )
+            # Invoke the Coach. In both paths return_events=True so the typed
+            # HarnessEvent stream comes back for coach_output_parser
+            # (TASK-FIX-COACHOUT01 Shape A) — the verdict is parsed from the
+            # response text and the orchestrator writes coach_turn_N.json
+            # itself; Coach never writes (ADR FB-004, read-only invariant).
+            if synthesis_enabled:
+                # Load the GBNF verdict grammar; degrade to prompt-only (still
+                # toolless) if the packaged grammar can't be read so a
+                # packaging glitch never hard-fails the Coach.
+                grammar: Optional[str] = None
+                try:
+                    from guardkit.orchestrator.coach_grammar import (
+                        load_coach_verdict_grammar,
+                    )
+
+                    grammar = load_coach_verdict_grammar()
+                except Exception as exc:  # noqa: BLE001 — degrade, never hard-fail
+                    logger.warning(
+                        "TASK-ARCH-COACHSPLIT: failed to load Coach verdict "
+                        "grammar (%s); running TOOLLESS synthesis WITHOUT a "
+                        "grammar constraint (prompt-only). The verdict schema "
+                        "is then only prompt-enforced, not grammar-guaranteed.",
+                        exc,
+                    )
+
+                # allowed_tools=[] makes the harness toolless on EVERY
+                # substrate (the SDK harness reads its tool surface from the
+                # constructor allowed_tools, which select_harness threads from
+                # here). synthesis=True dispatches through invoke_synthesis.
+                result_tuple = await self._invoke_with_role(
+                    prompt=prompt,
+                    agent_type="coach",
+                    allowed_tools=[],
+                    permission_mode="bypassPermissions",
+                    task_id=task_id,
+                    turn=turn,
+                    return_events=True,
+                    synthesis=True,
+                    grammar=grammar,
+                )
+            else:
+                # Legacy tool-using Coach (GUARDKIT_COACH_SYNTHESIS disabled).
+                # Read-only tools; verdict still parsed from response text.
+                result_tuple = await self._invoke_with_role(
+                    prompt=prompt,
+                    agent_type="coach",
+                    allowed_tools=["Read", "Bash", "Grep", "Glob"],
+                    permission_mode="bypassPermissions",
+                    task_id=task_id,
+                    turn=turn,
+                    return_events=True,
+                )
             assert result_tuple is not None, (
                 "_invoke_with_role(return_events=True) must return a tuple "
                 "on success; got None"
@@ -2296,6 +2381,7 @@ Follow the report format specified in your agent definition.
         design_context: Optional["DesignContext"] = None,
         evidence_bundle: Optional["CoachEvidenceBundle"] = None,
         coach_context: Optional[str] = None,
+        synthesis: bool = False,
     ) -> str:
         """Build prompt for Coach agent invocation with promise verification.
 
@@ -2325,6 +2411,16 @@ Follow the report format specified in your agent definition.
                 absence-of-failure.
             coach_context: Optional Graphiti / coach context string. When
                 provided, surfaced in a ``## Coach Context`` section.
+            synthesis: When ``True`` (TASK-ARCH-COACHSPLIT D-3), render the
+                TOOLLESS synthesis variant: the Coach has NO tools and bases
+                its verdict on the deterministic evidence bundle the
+                orchestrator already gathered (tests, coverage, honesty,
+                plan_audit, bdd, arch_review run independently in
+                ``gather_evidence``) rather than re-investigating with
+                Read/Bash/Grep/Glob. The "Your Responsibilities" section is
+                rewritten accordingly and a toolless-framing banner is added.
+                The Decision Format section is identical — the GBNF grammar
+                enforces the same schema the examples describe.
 
         Returns:
             Formatted prompt string for Coach agent
@@ -2424,12 +2520,82 @@ Quality Gates:
 - Design tokens: 100% applied (exact match)
 """
 
+        # TASK-ARCH-COACHSPLIT (D-3): the synthesis variant frames the turn
+        # as evidence-grounded verdict synthesis with NO tools, and rewrites
+        # the responsibilities so the model does not try (and fail) to invoke
+        # Read/Bash/Grep/Glob — it has none. The deterministic evidence the
+        # tool-using gather phase would have sought has already been produced
+        # by CoachValidator.gather_evidence and is rendered above.
+        if synthesis:
+            # Only assert that a Deterministic Evidence Bundle was rendered when
+            # one actually exists. invoke_coach gates synthesis on bundle
+            # presence (synthesis ⇒ a bundle was passed), so the with-bundle
+            # banner is the production path; the no-bundle branch keeps this
+            # builder honest if it is ever invoked with synthesis=True and no
+            # bundle directly (so the prompt never claims evidence it lacks).
+            if evidence_bundle is not None:
+                synthesis_banner = """\
+**TOOLLESS SYNTHESIS** — You have NO tools available (no Read, Bash, Grep, or
+Glob). Do not attempt to run tests or read files; you cannot. The orchestrator
+has ALREADY run the tests, coverage, honesty checks, plan audit, BDD oracle,
+and architectural review independently — their results are in the Deterministic
+Evidence Bundle above. Base your verdict ENTIRELY on that evidence, the
+acceptance criteria, the Player's report, and the honesty verification.
+
+"""
+            else:
+                synthesis_banner = """\
+**TOOLLESS SYNTHESIS** — You have NO tools available (no Read, Bash, Grep, or
+Glob). Do not attempt to run tests or read files; you cannot. No deterministic
+evidence bundle was provided, so you have ONLY the acceptance criteria, the
+Player's report, and the honesty verification to reason from. Absent or
+unverifiable evidence is NOT a pass — when you cannot confirm a criterion from
+the information here, that is FEEDBACK, not approval.
+
+"""
+            responsibilities = (
+                "## Your Responsibilities\n\n"
+                "1. Synthesise a verdict from the Deterministic Evidence "
+                "Bundle above — do NOT attempt to investigate (you have no "
+                "tools)\n"
+                "2. Treat the bundle's independent_tests / tests / coverage "
+                "as the authoritative test signal (the orchestrator ran "
+                "them, not the Player)\n"
+                "3. Verify EACH acceptance criterion against the evidence "
+                "systematically\n"
+                "4. Honour the absence-of-failure guards: an ABSENT or "
+                "zero-cardinality oracle is NOT a pass — when the evidence "
+                "for a criterion is missing, that is FEEDBACK, not approval\n"
+                "5. "
+                + (
+                    "CONSIDER HONESTY DISCREPANCIES in your decision"
+                    if honesty_verification
+                    and honesty_verification.discrepancies
+                    else "Either APPROVE or provide specific FEEDBACK"
+                )
+            )
+        else:
+            synthesis_banner = ""
+            responsibilities = (
+                "## Your Responsibilities\n\n"
+                "1. Independently verify the Player's claims\n"
+                "2. Run the tests yourself (don't trust Player's report)\n"
+                "3. Verify EACH acceptance criterion systematically\n"
+                "4. "
+                + (
+                    "CONSIDER HONESTY DISCREPANCIES in your decision"
+                    if honesty_verification
+                    and honesty_verification.discrepancies
+                    else "Either APPROVE or provide specific FEEDBACK"
+                )
+            )
+
         prompt = f"""You are the Coach agent. Validate the Player's implementation.
 
 Task ID: {task_id}
 Turn: {turn}
 
-## Original Requirements
+{synthesis_banner}## Original Requirements
 
 {requirements}
 {criteria_section}
@@ -2437,12 +2603,7 @@ Turn: {turn}
 
 {json.dumps(player_report, indent=2)}
 {evidence_section}{honesty_section}{guards_section}{coach_context_section}{visual_verification_section}
-## Your Responsibilities
-
-1. Independently verify the Player's claims
-2. Run the tests yourself (don't trust Player's report)
-3. Verify EACH acceptance criterion systematically
-4. {"CONSIDER HONESTY DISCREPANCIES in your decision" if honesty_verification and honesty_verification.discrepancies else "Either APPROVE or provide specific FEEDBACK"}
+{responsibilities}
 
 ## Decision Format
 
@@ -2801,6 +2962,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         turn: Optional[int] = None,
         heartbeat_label_override: Optional[str] = None,
         return_events: bool = False,
+        synthesis: bool = False,
+        grammar: Optional[str] = None,
     ) -> Optional[Tuple[None, List[HarnessEvent]]]:
         """Low-level SDK invocation with role-based permissions.
 
@@ -2838,6 +3001,22 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 the Phase 2.5B architectural review (Gap 1) to avoid the
                 hidden stale-state risk a future concurrent-invocation
                 refactor would silently activate.
+            synthesis: When ``True``, dispatch through
+                ``harness.invoke_synthesis(...)`` instead of
+                ``harness.invoke(...)`` — a TOOLLESS call (no ``tools`` in
+                the substrate request) optionally constrained by ``grammar``.
+                Used by the Coach verdict-synthesis path
+                (TASK-ARCH-COACHSPLIT D-3). The caller MUST also pass
+                ``allowed_tools=[]`` so the harness is constructed toolless
+                on every substrate (the SDK harness reads its tool surface
+                from the constructor ``allowed_tools``, not from the invoke
+                call). All other orchestrator-side concerns (cancel monitor,
+                heartbeat, latency, sdk_debug, llm.call event, return_events)
+                are identical to the ``invoke`` path.
+            grammar: Optional GBNF grammar string forwarded to
+                ``invoke_synthesis``. Honoured only on substrates that
+                support it (LangGraph/llama.cpp); ignored on the SDK path.
+                Ignored entirely when ``synthesis`` is ``False``.
 
         Returns:
             ``None`` by default. ``(None, harness_events)`` when
@@ -3060,14 +3239,34 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                                 # or consumer cancellation) via aclosing() so no
                                 # orphaned async_generator_athrow / pending
                                 # ainvoke task survives to interpreter shutdown.
-                                async with aclosing(
-                                    harness.invoke(
+                                # TASK-ARCH-COACHSPLIT (D-3): the Coach
+                                # verdict-synthesis path dispatches through
+                                # the TOOLLESS invoke_synthesis(...) entry
+                                # (no `tools` in the substrate request) so a
+                                # GBNF grammar can be honoured (llama.cpp
+                                # hard-rejects grammar+tools) and no tool-call
+                                # parser exists to crash. Everything else in
+                                # this loop — events, cancel monitor,
+                                # return_events — is substrate- and
+                                # path-agnostic.
+                                if synthesis:
+                                    _harness_call = harness.invoke_synthesis(
+                                        prompt=prompt,
+                                        role=agent_type,
+                                        grammar=grammar,
+                                        cwd=self.worktree_path,
+                                        timeout_seconds=self.sdk_timeout_seconds,
+                                    )
+                                else:
+                                    _harness_call = harness.invoke(
                                         prompt=prompt,
                                         role=agent_type,
                                         tools=allowed_tools,
                                         cwd=self.worktree_path,
                                         timeout_seconds=self.sdk_timeout_seconds,
                                     )
+                                async with aclosing(
+                                    _harness_call
                                 ) as _harness_stream:
                                     async for event in _harness_stream:
                                         # TASK-FIX-SPECHANG2: record model-

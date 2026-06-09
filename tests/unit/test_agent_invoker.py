@@ -397,6 +397,13 @@ class TestCoachInvocation:
 
             # Verify SDK was called with read-only permissions and the
             # COACHOUT01 return_events=True opt-in.
+            #
+            # TASK-ARCH-COACHSPLIT (D-3): this call passes NO evidence_bundle,
+            # so it stays on the legacy tool-using Coach path — toolless
+            # grammar-enforced synthesis is gated on bundle presence (a
+            # toolless "synthesise over the bundle" prompt is incoherent with
+            # no bundle). The synthesis path (with a bundle) is covered by
+            # test_coach_synthesis_split.TestInvokeCoachRouting.
             mock_sdk.assert_called_once()
             call_kwargs = mock_sdk.call_args.kwargs
             assert call_kwargs["agent_type"] == "coach"

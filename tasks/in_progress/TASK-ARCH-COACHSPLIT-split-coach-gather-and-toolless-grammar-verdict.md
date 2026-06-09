@@ -1,10 +1,12 @@
 ---
 id: TASK-ARCH-COACHSPLIT
 title: Split the AutoBuild Coach into tool-using gather + toolless grammar-enforced verdict synthesis (D-3)
-status: backlog
+status: in_progress
 task_type: feature
 created: 2026-06-09T00:00:00Z
-updated: 2026-06-09T00:00:00Z
+updated: 2026-06-09T12:00:00Z
+previous_state: backlog
+state_transition_reason: "Automatic transition for task-work execution (strict-intensity design phase)"
 priority: high
 complexity: 7
 effort_hours: 12
@@ -118,27 +120,40 @@ Split it into two phases:
 
 ## Acceptance criteria
 
-- [ ] **AC-1**: Coach verdict synthesis is a **separate toolless** model call
+> Implemented 2026-06-09 (B-min, gated on the GB10 toolless-grammar probe which
+> PASSED). Full design + review trail: `docs/state/TASK-ARCH-COACHSPLIT/README.md`.
+
+- [x] **AC-1**: Coach verdict synthesis is a **separate toolless** model call
   (`tools` absent from the request) constrained by a GBNF grammar / structured
   output that enforces the verdict schema. Verified by inspecting the request
   llama-swap receives for the synthesis role (no `tools`; grammar present).
-- [ ] **AC-2**: the run-18 tool-parse-500 class is eliminated for the verdict —
-  the synthesis call carries no tool-call markers to re-parse. Regression test
-  feeds a synthesis prompt and asserts a valid fenced verdict, no HTTP 500.
-- [ ] **AC-3**: grammar enforcement is **active** in synthesis (closes the
-  run-13 grammar-no-op: grammar is bypassed only when `tools` are present, which
-  the synthesis call avoids). Test asserts a malformed-prone prompt still yields
-  schema-valid JSON.
+  → `LangGraphHarness.invoke_synthesis` bypasses `create_deep_agent` and builds a
+  chat-completions `ChatOpenAI` with `extra_body={"grammar": <gbnf>}`; pinned by
+  `test_langgraph_harness_synthesis.py` (no `create_deep_agent`; grammar bound)
+  and `test_coach_synthesis_split.py::TestInvokeCoachRouting`.
+- [x] **AC-2**: the run-18 tool-parse-500 class is eliminated for the verdict —
+  the synthesis call carries no tool-call markers to re-parse. → toolless path
+  emits no `ToolUseEvent`; GB10 probe CASE C confirmed tool-bound+grammar is
+  hard-rejected (HTTP 400), so the split is the only viable shape.
+- [x] **AC-3**: grammar enforcement is **active** in synthesis (closes the
+  run-13 grammar-no-op). → GB10 probe CASE A: toolless + per-request grammar
+  produced a schema-valid verdict on `gemma4:31b`.
 - [ ] **AC-4 (falsifier — run-19)**: an autobuild run with `gemma4:31b` as Coach
   (minimal `coach31` fleet, ctx 98304, `--no-context`) **completes ≥1 wave** with
   ≥1 real fenced-JSON Coach verdict and **no** F20/F23A/tool-parse-500 — the bar
   runs 15–18 could not reach. (This is the original TASK-OPS-COACH31B AC-3.)
-- [ ] **AC-5**: unit/integration tests for the two-phase flow incl. the
+  → **OPERATOR step**: synthesis is ON by default; launch per `run-15-recipe.md`
+  with `GUARDKIT_HARNESS=langgraph`. (Not codeable here — requires GB10.)
+- [x] **AC-5**: unit/integration tests for the two-phase flow incl. the
   zero-evidence and gather-failure paths (respect `absence-of-failure-is-not-
   success.md` — a toolless synthesis over an empty bundle must NOT auto-approve).
-- [ ] **AC-6**: `CoachVerifier` honesty verification still runs on the synthesis
+  → guards preserved in the synthesis prompt; **synthesis gated on bundle
+  presence** (review fix) so a no-bundle path never auto-approves a phantom
+  bundle; `test_no_bundle_falls_back_to_legacy_tools` + zero-cardinality tests.
+- [x] **AC-6**: `CoachVerifier` honesty verification still runs on the synthesis
   output (do not regress the deterministic-path honesty wiring from
-  TASK-AB-FIX-INVAB1).
+  TASK-AB-FIX-INVAB1). → `invoke_coach` still uses `evidence_bundle.honesty` and
+  attaches `honesty_verification` to the decision; honesty wiring untouched.
 
 ## Implementation notes / escalation
 

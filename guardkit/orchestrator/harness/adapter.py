@@ -181,6 +181,66 @@ class HarnessAdapter(ABC):
         # function; ``AsyncIterator`` is the broader protocol it satisfies.
         yield  # type: ignore[unreachable]  # pragma: no cover
 
+    async def invoke_synthesis(
+        self,
+        prompt: str,
+        role: str,
+        *,
+        grammar: str | None,
+        cwd: Path,
+        timeout_seconds: int,
+    ) -> AsyncGenerator[HarnessEvent, None]:
+        """Stream events for a single **toolless** verdict-synthesis turn.
+
+        TASK-ARCH-COACHSPLIT (D-3). A dedicated invocation path for the
+        AutoBuild Coach's verdict synthesis. Unlike :meth:`invoke`, this
+        call MUST NOT expose any tools to the model — the request carries
+        no ``tools`` field at the substrate layer. Two failure modes that
+        bite the tool-bound Coach on the llama.cpp + Gemma stack vanish on
+        the toolless path:
+
+        1. **Grammar enforcement applies.** llama.cpp bypasses (and on the
+           current build *hard-rejects* with HTTP 400 "Cannot use custom
+           grammar constraints with tools") a GBNF grammar when the request
+           carries ``tools``. A toolless request lets the ``grammar``
+           constraint take effect, guaranteeing the verdict schema.
+        2. **No tool-call parser to crash.** The run-18 ``HTTP 500 Failed
+           to parse input`` class is a non-deterministic artefact of the
+           tool-call parser re-reading ``<|tool_call|>`` markers. A toolless
+           synthesis turn emits none, so the class cannot fire.
+
+        :param prompt: The full synthesis prompt (self-contained — it
+            carries the deterministic evidence, the ACs, the Player report,
+            and the verdict-schema instructions).
+        :param role: Agent role tag (``"coach"`` for the synthesis call —
+            preserves per-role model/budget routing).
+        :param grammar: A GBNF grammar string that constrains the output to
+            the verdict schema, or ``None`` to run unconstrained. Substrates
+            that cannot honour a grammar (e.g. the Anthropic SDK, where the
+            model reliably emits the verdict without one) MUST ignore it.
+        :param cwd: Working directory (unused by a toolless call, accepted
+            for parity with :meth:`invoke`).
+        :param timeout_seconds: Per-invocation timeout.
+
+        Default implementation delegates to :meth:`invoke` with an empty
+        ``tools`` list and drops ``grammar``. This is correct for the
+        Anthropic SDK substrate (the SDK request's tool surface is governed
+        by the constructor ``allowed_tools`` — which the synthesis call site
+        sets to ``[]`` — and Claude reliably emits the verdict without a
+        grammar) and for any trivial test fake that only overrides
+        :meth:`invoke`. ``LangGraphHarness`` overrides this to invoke the
+        bare model with the grammar so llama.cpp honours it (the whole
+        point of the split).
+        """
+        async for event in self.invoke(
+            prompt=prompt,
+            role=role,
+            tools=[],
+            cwd=cwd,
+            timeout_seconds=timeout_seconds,
+        ):
+            yield event
+
     @property
     def session_id(self) -> str | None:
         """SDK/harness session token for resumption, or ``None`` if absent.
