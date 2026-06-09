@@ -138,3 +138,69 @@ memory headroom under the prompt sizes this codebase produces.
 - **Run-15 README** (sibling F23A observation):
   [`../run-15-artifacts/README.md`](../run-15-artifacts/README.md) — the
   "breakthrough" Coach verdict + the same F23A failure on turn 2.
+
+## ✅ RESOLVED on the GB10 (2026-06-08) — run-16 OOM is **GPU/unified-memory exhaustion**, ctx + GUI-quiesce were the wrong levers
+
+The GB10 session (TASK-OPS-COACH31B) confirmed run-16 is the same **F23A class**
+as run-15, but the forensics **correct two assumptions** about the fix:
+
+**1. It OOM'd at only ~41 GB of process RSS — because the binding constraint is
+GPU/unified memory, not CPU RAM.** Kernel (21:59:20 BST):
+```
+oom-kill: ... global_oom ... task=llama-server,pid=3178822
+Out of memory: Killed process 3178822 (llama-server)
+   total-vm:118850572kB, anon-rss:36907076kB   ← gemma4-31b
+NVRM: ... Out of memory [NV_ERR_NO_MEMORY]
+```
+Summing **every** process in the OOM table = **41.4 GB anon-rss total** on a
+121 GB box. A global OOM at 41 GB RSS is only possible because the model
+weights + KV live in **GPU/unified memory** (`-ngl 999`), which is the *same
+physical pool* but is **not** counted as process anon-rss. `nvidia-smi` confirms
+the real consumers — single llama-server processes holding **27.9 GB and 25.6 GB
+of GPU memory** (fleet weights + KV). g31's `total-vm` was 118 GB (its CUDA
+mappings) vs anon-rss 36.9 GB — the gap is the GPU-resident portion.
+
+**2. Therefore the two levers tried did NOT address the constraint:**
+- **GUI quiescing** (Firefox + GitKraken + extra VS Code were shut for run-16)
+  freed **CPU RAM (~3 GB)** — but CPU RAM was never the binding constraint, so
+  it could not have helped. (Confirmed: non-model RSS at the OOM was ~3 GB.)
+- **g31 `--ctx-size 98304 → 65536`** bounds only g31's *maximum* KV; it does not
+  bound (a) the *whole coach31 fleet's* GPU footprint, nor (b) the *actual* KV
+  for a given prompt, which scales with the real token count. Run-16's 71-file
+  Player payload made the turn-1 Coach prompt large → g31's actual KV grew →
+  tipped the unified pool over (g31 anon-rss was 36.9 GB, *larger* than run-15's
+  28.7 GB despite the *smaller* ctx cap — proof the driver is payload, not cap).
+
+**The real GPU consumers (coach31 set = qw & g31 & qg & ne):**
+| model | ctx | note |
+|---|---:|---|
+| qwen36-workhorse (Player) | **131072** | huge KV reservation — the largest cheap lever |
+| gemma4-31b (Coach) | 65536 | 17.65 GB weights + KV that grows with the prompt |
+| qwen-graphiti | 65536 | orchestrator context-loading |
+| nomic-embed | 8192 | small |
+
+### Corrected fix levers (cheapest first; supersedes "the envelope is too small")
+The 31B *can* fit and converge (run-15 turn-1 proved verdict quality); the
+problem is **co-resident GPU headroom on a large Coach prompt**. Effective levers:
+
+- **(A) Smaller Coach: 12B dense QAT** — ~7 GB weights (vs 17.65) + a smaller
+  per-token KV → frees ~10 GB *and* is far more payload-tolerant, while still
+  12B active (3× the original MoE's 3.8B, so it should keep the F24 fix). The
+  highest-value cheap experiment; the task already lists it as the fallback.
+- **(B) Trim the Player's ctx for the run** — qw at 131072 is the single biggest
+  KV reservation; the IA03-class tasks don't need 131 K. Dropping qw to e.g.
+  65536 frees GPU headroom (shared-model caveat: affects other qw users).
+- **(C) Cap the Coach prompt** — truncate/budget the player report fed to the
+  Coach so a 71-file payload doesn't produce a giant prompt (orchestrator code
+  change; overlaps the author's D-3 but cheaper than the full split).
+
+Maps to the operator decisions: **(A)/(C) are cheaper than D-2 (2nd GB10 +
+nemotron)**; D-3 (tool-using + toolless-grammar Coach split) remains the
+robust-for-real-codebases option but is the heaviest. Recommendation: try **(A)
+the 12B dense QAT** as run-17 before escalating to D-2/D-3 — it directly attacks
+both the weight footprint and the payload-driven KV that actually caused F23A.
+
+> Note: the original run-16 recipe's "quiesce the GB10 (close GUI apps)" guidance
+> was aimed at CPU RAM and is now known to be largely beside the point for this
+> failure. The effective "quiesce" target is **GPU/unified memory** — shrink the
+> co-resident model fleet / KV, not the desktop.
