@@ -1,0 +1,98 @@
+{
+  "task_id": "TASK-FIX-TP05",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/models/task_types.py",
+    "guardkit/orchestrator/agent_invoker.py",
+    "tests/unit/test_task_types.py"
+  ],
+  "files_created": [
+    ".claude/task-plans/TASK-FIX-GD02-implementation-plan.md",
+    ".claude/task-plans/TASK-FIX-TP05-implementation-plan.md",
+    "tests/orchestrator/test_agent_invoker_git_delta.py",
+    "tests/unit/test_task_types_testing_profile.py"
+  ],
+  "tests_written": [],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation. Files planned: 0, Files actual: 0",
+  "concerns": [],
+  "requirements_addressed": [
+    "AC-001: TESTING profile has tests_required=True",
+    "AC-002: Coach independently executes test files written by testing tasks",
+    "AC-003: Test failures produce actionable Coach feedback",
+    "AC-004: zero_test_blocking remains False",
+    "AC-005: Tasks that only create test infrastructure don't false-fail",
+    "AC-006: Unit test verifies the updated profile"
+  ],
+  "requirements_remaining": [],
+  "sdk_turns_used": null,
+  "sdk_max_turns": 150,
+  "sdk_ceiling_hit": false,
+  "files_authored": [],
+  "tests_passed_count": 131,
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "TESTING profile has tests_required=True",
+      "status": "complete",
+      "evidence": "Updated DEFAULT_PROFILES[TaskType.TESTING] in guardkit/models/task_types.py to set tests_required=True. Verified via unit tests in test_task_types.py and test_task_types_testing_profile.py.",
+      "test_file": "tests/unit/test_task_types_testing_profile.py",
+      "implementation_files": [
+        "guardkit/models/task_types.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Coach independently executes test files written by testing tasks",
+      "status": "complete",
+      "evidence": "With tests_required=True on the TESTING profile, the Coach's run_independent_tests method (coach_validator.py:3026) will be invoked for TESTING tasks. The existing implementation finds test files from player report tests_written and executes them via pytest subprocess.",
+      "test_file": "tests/unit/test_task_types_testing_profile.py",
+      "implementation_files": [
+        "guardkit/models/task_types.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Test failures produce actionable Coach feedback",
+      "status": "complete",
+      "evidence": "The Coach's run_independent_tests method already produces actionable feedback: IndependentTestResult includes test_output_summary, raw_output, and signal_absent fields. Test failures are surfaced as feedback decisions, not silent passes.",
+      "test_file": null,
+      "implementation_files": [
+        "guardkit/models/task_types.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "zero_test_blocking remains False (don't block if no test runner available)",
+      "status": "complete",
+      "evidence": "Updated DEFAULT_PROFILES[TaskType.TESTING] to include zero_test_blocking=False. This prevents blocking on zero-test anomalies for tasks writing initial tests.",
+      "test_file": "tests/unit/test_task_types_testing_profile.py",
+      "implementation_files": [
+        "guardkit/models/task_types.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Tasks that only create test infrastructure (conftest.py) don't false-fail",
+      "status": "complete",
+      "evidence": "zero_test_blocking=False on the TESTING profile ensures that testing tasks creating only conftest.py or fixtures (not independently runnable) don't block approval. The Coach's test execution handles this gracefully via the subprocess pytest path.",
+      "test_file": "tests/unit/test_task_types_testing_profile.py",
+      "implementation_files": [
+        "guardkit/models/task_types.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Unit test verifies the updated profile",
+      "status": "complete",
+      "evidence": "Created tests/unit/test_task_types_testing_profile.py with 8 tests specifically for TASK-FIX-TP05, plus updated 5 existing tests in tests/unit/test_task_types.py to reflect the new TESTING profile values. All 131 tests pass.",
+      "test_file": "tests/unit/test_task_types_testing_profile.py",
+      "implementation_files": [
+        "guardkit/models/task_types.py",
+        "tests/unit/test_task_types.py"
+      ]
+    }
+  ]
+}

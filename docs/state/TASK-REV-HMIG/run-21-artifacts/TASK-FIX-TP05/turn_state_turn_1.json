@@ -1,0 +1,32 @@
+{
+  "id": "TURN-FEAT-AOF-1",
+  "feature_id": "FEAT-AOF",
+  "task_id": "TASK-FIX-TP05",
+  "turn_number": 1,
+  "player_summary": "Implementation attempt",
+  "player_decision": "failed",
+  "coach_decision": "error",
+  "coach_feedback": null,
+  "mode": "fresh_start",
+  "blockers_found": [],
+  "progress_summary": "Turn 1: error",
+  "acceptance_criteria_status": {},
+  "files_modified": [
+    "guardkit/models/task_types.py",
+    "guardkit/orchestrator/agent_invoker.py",
+    "tests/unit/test_task_types.py",
+    ".claude/task-plans/TASK-FIX-GD02-implementation-plan.md",
+    ".claude/task-plans/TASK-FIX-TP05-implementation-plan.md",
+    "tests/orchestrator/test_agent_invoker_git_delta.py",
+    "tests/unit/test_task_types_testing_profile.py"
+  ],
+  "tests_passed": null,
+  "tests_failed": null,
+  "coverage": null,
+  "arch_score": null,
+  "started_at": "2026-06-09T19:53:31.606335",
+  "completed_at": "2026-06-09T19:53:31.606335",
+  "duration_seconds": null,
+  "lessons_from_turn": [],
+  "what_to_try_next": null
+}

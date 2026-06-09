@@ -1,0 +1,9 @@
+[
+  {
+    "task_id": "TASK-FIX-IA03",
+    "pre_path": "tasks/backlog/TASK-FIX-IA03-exclude-internal-artifacts-from-doc-constraint.md",
+    "post_path": "tasks/design_approved/TASK-FIX-IA03-exclude-internal-artifacts-from-doc-constraint.md",
+    "timestamp": "2026-06-09T17:53:45.370718+00:00",
+    "kind": "design_approved_transition"
+  }
+]
