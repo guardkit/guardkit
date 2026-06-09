@@ -183,3 +183,41 @@ the empirical envelope:
   [`../run-15-artifacts/README.md`](../run-15-artifacts/README.md)
 - **Run-16 README** (second F23A observation, on turn 1):
   [`../run-16-artifacts/README.md`](../run-16-artifacts/README.md)
+
+## ✅ RESOLVED on the GB10 (2026-06-09) — F20 confirmed, ctx bumped 65536 → 98304
+
+GB10 session (TASK-OPS-COACH31B) confirmed and fixed the run-17 F20.
+
+**Confirmed F20 in the GB10 log** (`/opt/llama-swap/logs/llama-swap.log`):
+`POST /v1/responses HTTP/1.1" 400` from the Mac (100.111.236.109), matching the
+`exceed_context_size_error` (n_prompt_tokens 66687, n_ctx 65536). The memory fix
+held — **no OOM this run** (the minimal `coach31` set + `--no-context` worked); the
+run simply ran out of *context*, not *memory*. Progress: F23A → F20 (a strictly
+better failure — the substrate is stable, just under-provisioned on ctx).
+
+**Why g31 was at 65536:** TASK-OPS-COACH31B set it there on 2026-06-08 to control
+F23A OOM at the time (when qg was still co-resident). Once qg was dropped from
+`coach31`, that memory rationale was obsolete — but the ctx wasn't raised. Run-17
+exposed it.
+
+**Fix applied:** `gemma4-31b` route `--ctx-size 65536 → 98304` (backup
+`config.yaml.bak-2026-06-09-pre-coach31-ctx98k`). Verified: g31 relaunched with
+`--ctx-size 98304` (confirmed via `ps`), only qw + g31 resident, GPU ~50 GB,
+**~62 GB RAM headroom**. 98304 covers the 66 687-token prompt with ~47 % margin.
+
+**The F20↔F23A tension is now explicit and tuned:**
+- g31's RSS was found **bloated to 48.5 GB** after the failed run (processing the
+  66.7 K prompt at batch 2048) — the per-run peak, not the static ~24.5 GB load.
+  Restarting g31 (the config reload) cleared it. So a run's peak ≈ qw 25.6 + g31
+  ~48 + GUI/docker ~12 ≈ 88 GB → ~36 GB headroom at ctx 98304. Safe.
+- **Residual risk:** the IA03 Player payload is *stochastic and junk-inflated*
+  (run-15: 30 files incl. pip-cache paths; run-16: 71; run-17: 41 = 66.7 K
+  tokens). A 71-file outlier ≈ ~115 K tokens would re-trigger F20 even at 98304.
+  Endless ctx growth re-arms F23A, so the **real fix for big payloads is capping
+  the Coach prompt** (orchestrator code / the D-3 split), and/or stopping the
+  Player from creating junk files. For the typical IA03 payload, 98304 should
+  let run-18 complete.
+
+**Next:** run-18 = identical to run-17 (`--no-context`, minimal fleet) with ctx
+now 98304. If it completes a wave with ≥1 real Coach verdict, AC-3 is met and we
+have 31B evals to compare a later 12B-QAT run against.

@@ -1,4 +1,40 @@
-# Run-15 / Run-16 recipe — AC-3 falsifier (31B as Coach)
+# Run-15 / Run-16 / Run-17 recipe — AC-3 falsifier (31B as Coach)
+
+> ## ▶ RUN-18 (current) — minimal fleet + ctx 98304
+> Run-17 (minimal fleet, ctx 65536) cleared the OOM (F23A) but hit **F20 context
+> overflow**: the 41-file Player payload made a **66,687-token** Coach prompt >
+> the 65536 cap (HTTP 400). Fix for run-18: **g31 `--ctx-size` 65536 → 98304**
+> (covers it with margin; memory-safe now that qg is gone — verified GPU ~50 GB,
+> ~62 GB headroom). Run-18 command is identical to run-17 below (just change the
+> log filename to `run-18-stdout.log`). Keepalive stays OFF; `--no-context` stays.
+> If a stochastic 71-file outlier payload (~115 K tokens) re-triggers F20, the
+> real fix is capping the Coach prompt (code), not more ctx.
+>
+> ## ▶ RUN-17 — minimal GPU fleet, keep the 31B
+> Runs 15+16 OOM'd because the **coach31 fleet's GPU/unified memory** (esp.
+> `qwen-graphiti` ~25.6 GB) left no headroom for g31's KV on a big Coach prompt
+> (run-16: 71-file payload). Fix for run-17 (operator chose: prove the 31B first,
+> get evals before trying the 12B):
+> - **`coach31` set trimmed to `qw & g31`** (Player + Coach only) — frees ~26 GB.
+>   Verified on the GB10: GPU ~49 GB, ~62 GB headroom for g31 KV growth.
+> - **MUST add `--no-context`** so the orchestrator skips Graphiti (qg/ne) — both
+>   retrieval and per-turn writes are gated by `enable_context`, so no set thrash.
+> - g31 ctx 65536 (sufficient for IA03-class prompts); keepalive OFF.
+>
+> ```bash
+> GUARDKIT_HARNESS=langgraph \
+>   OPENAI_BASE_URL=http://promaxgb10-41b1:9000/v1 \
+>   OPENAI_API_KEY=llama-swap-local-key \
+>   guardkit autobuild feature FEAT-AOF \
+>     --fresh --model qwen36-workhorse --coach-model gemma4:31b \
+>     --no-context \
+>     --task-timeout 4800 --sdk-timeout 3600 \
+>     2>&1 | tee .guardkit/autobuild/TASK-REV-HMIG-feature-run/run-17-stdout.log
+> ```
+> If run-17 completes ≥1 Coach turn with a valid verdict AND finishes the wave,
+> AC-3 is met and we have 31B evals to compare a later 12B-QAT run against.
+
+
 
 > **Run-15 ran 2026-06-08: F24 BROKEN** (turn-1 real verdict) but **turn-2
 > OOM-killed (F23A)**. See [run-15-artifacts GB10 resolution](../../TASK-REV-HMIG/run-15-artifacts/README.md).
