@@ -183,3 +183,30 @@ Delete the `gemma4-31b` model block + `g31` var + `coach31` set from
 `config.yaml` (restore `config.yaml.bak-2026-06-08-pre-coach31b`); `rm -rf
 /opt/llama-swap/models/gemma4-31b-coach/`. The route is dormant by default so
 leaving it in place is harmless.
+
+## Conclusion (runs 15–18, 2026-06-09) — substrate ANSWERED; blocker handed to D-3
+
+The substrate question this task posed is **answered: the Gemma-4 31B dense QAT
+is a viable Coach.** It broke the F24 verdict-emission wall on its first real run
+(run-15 turn-1: a schema-valid verdict that independently caught a Player honesty
+discrepancy) — something the 26B-A4B MoE (3.8B active) never managed in 14 runs.
+AC-1/AC-2/AC-4 are met; the single-shot A/B + run-15 confirm the model's
+reasoning and verdict quality.
+
+Runs 16–18 then peeled the operational layers off, one per run:
+**F23A (GPU/unified-memory OOM)** → fixed by trimming the `coach31` set to
+`qw & g31` + `--no-context`; **F20 (ctx overflow)** → fixed by g31 `--ctx-size
+98304`; **tool-parse HTTP 500** (`�`/U+FFFD deep in the tool loop) → the final,
+architectural blocker. The last one is NOT the model and NOT GB10 config (only
+ctx changed across runs 17→18, proven by diff) — it is the **tool-bound agentic
+Coach loop on the llama.cpp + Gemma-4-q4_0 stack** being fragile, exactly as the
+run-13 grammar-no-op finding predicted.
+
+**Handoff:** the fix is architectural, not substrate — filed as
+[**TASK-ARCH-COACHSPLIT**](../../../tasks/backlog/TASK-ARCH-COACHSPLIT-split-coach-gather-and-toolless-grammar-verdict.md)
+(D-3: split the Coach into tool-using gather + a **toolless, grammar-enforced
+verdict-synthesis** call — no `tools` ⇒ grammar applies ⇒ schema guaranteed and
+no tool-call markers to mis-parse). A llama.cpp upgrade was evaluated as the
+cheaper option and **rejected as a gamble** (no targeted Gemma-4 tool-parse fix
+in the b9570 changelog as of 2026-06-09). The GB10 is left tuned for the
+D-3 falsifier run-19 (coach31 = qw & g31, ctx 98304, keepalive OFF, `--no-context`).
