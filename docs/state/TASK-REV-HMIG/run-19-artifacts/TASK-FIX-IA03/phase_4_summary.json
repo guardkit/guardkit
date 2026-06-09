@@ -1,0 +1,7 @@
+{
+  "tests_run": 551,
+  "tests_failed": 41,
+  "coverage_pct": 57.98,
+  "output_summary": "551 tests run: 510 passed, 41 failed (pre-existing failures in SDK/integration tests unrelated to IA03 fix; all file-count constraint tests passed). agent_invoker.py coverage: 57.98%.",
+  "quality_gates_passed": false
+}

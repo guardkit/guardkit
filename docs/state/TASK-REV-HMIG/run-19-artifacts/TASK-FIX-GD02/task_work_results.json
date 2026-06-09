@@ -1,0 +1,155 @@
+{
+  "task_id": "TASK-FIX-GD02",
+  "timestamp": "2026-06-09T11:13:25.966594",
+  "completed": false,
+  "phases": {},
+  "quality_gates": {
+    "tests_passing": true,
+    "tests_passed": 0,
+    "tests_failed": 0,
+    "coverage": null,
+    "coverage_met": null,
+    "all_passed": null
+  },
+  "files_modified": [
+    "guardkit/models/task_types.py",
+    "guardkit/orchestrator/agent_invoker.py",
+    "tests/unit/test_task_types.py"
+  ],
+  "files_created": [
+    ".claude/task-plans/TASK-FIX-GD02-implementation-plan.md",
+    ".claude/task-plans/TASK-FIX-TP05-implementation-plan.md",
+    "tests/unit/test_agent_invoker_git_delta.py"
+  ],
+  "files_authored": [],
+  "tests_written": [],
+  "summary": "Implementation completed",
+  "sdk_turns": {
+    "turns_used": null,
+    "max_turns": 160,
+    "ceiling_hit": false
+  },
+  "task_type": "feature",
+  "agent_invocations_validation": {
+    "status": "violation",
+    "expected_phases": 3,
+    "actual_invocations": 0,
+    "missing_phases": [
+      "3",
+      "4",
+      "5"
+    ],
+    "violation_message": "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n\u274c PROTOCOL VIOLATION: Agent invocation incomplete\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n\nExpected: 3 agent invocations\nActual: 0 completed invocations\n\nMissing phases:\n  - Phase 3 (Implementation)\n  - Phase 4 (Testing)\n  - Phase 5 (Code Review)\n\nCannot generate completion report until all agents are invoked.\nReview the AGENT INVOCATIONS LOG above to see which phases were skipped.\n\nAGENT INVOCATIONS LOG:\n\u2753 Phase 4 (Phase 4): test-orchestrator\n\u274c Phase 5 (Phase 5): SKIPPED (Not invoked)\n\nTASK WILL BE MOVED TO BLOCKED STATE\nReason: Protocol violation - required agents not invoked\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+  },
+  "plan_audit": {
+    "status": "passed",
+    "severity": "low",
+    "violations": 0,
+    "extra_files": [],
+    "missing_files": [],
+    "extra_modifications": [],
+    "missing_modifications": [],
+    "extra_dependencies": [],
+    "missing_dependencies": [],
+    "loc_variance_pct": null,
+    "discrepancies_count": 0,
+    "message": "no plan on disk; all 2 task-body-declared file(s) present"
+  },
+  "unconfirmed_low_confidence_assumptions": {
+    "status": "ok",
+    "unconfirmed": [],
+    "files_scanned": 0,
+    "files_skipped": 0,
+    "message": null
+  },
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Baseline captured before each task invocation (both task-work and direct paths)",
+      "status": "complete",
+      "evidence": "Added _baseline_state attribute to AgentInvoker.__init__. _record_baseline() now calls _snapshot_worktree_state() to capture file-level snapshot. Baseline is captured in invoke_player() via the existing _record_baseline() call at line 1720-1721, which is invoked before both task-work and direct SDK paths.",
+      "test_file": "tests/unit/test_agent_invoker_git_delta.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Git-detected file counts reflect only per-task changes, not cumulative feature changes",
+      "status": "complete",
+      "evidence": "_detect_git_changes() now computes delta by subtracting baseline state (sets of modified/created files) from current git state. This ensures only files changed since the task's baseline are reported, not cumulative changes from all tasks in the shared worktree.",
+      "test_file": "tests/unit/test_agent_invoker_git_delta.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "_create_player_report_from_task_work uses delta instead of union",
+      "status": "complete",
+      "evidence": "_detect_git_changes() now returns delta-computed results. The union logic in _create_player_report_from_task_work (line 3809-3812) merges task_work_results data with the delta from _detect_git_changes(), which is correct since delta represents only per-task changes.",
+      "test_file": "tests/unit/test_agent_invoker_git_delta.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "_create_synthetic_direct_mode_report uses delta instead of raw git state",
+      "status": "complete",
+      "evidence": "_create_synthetic_direct_mode_report() calls _detect_git_changes() which now returns delta-computed results. No additional changes needed to this method since it already delegates to _detect_git_changes().",
+      "test_file": "tests/unit/test_agent_invoker_git_delta.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "First task in worktree still reports correct file counts",
+      "status": "complete",
+      "evidence": "When _baseline_state has empty sets (first task), delta = current - empty = current. Test TestDetectGitChangesDelta::test_delta_first_task_full_state verifies this behavior.",
+      "test_file": "tests/unit/test_agent_invoker_git_delta.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Unit tests verify delta computation with mock git state",
+      "status": "complete",
+      "evidence": "Created tests/unit/test_agent_invoker_git_delta.py with 13 tests covering: snapshot creation, raw detection, delta subtraction for modified/created files, empty delta when no changes, full state when no baseline, sorted results, baseline state capture, and end-to-end shared worktree scenarios.",
+      "test_file": "tests/unit/test_agent_invoker_git_delta.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Logging shows baseline vs delta counts for observability",
+      "status": "complete",
+      "evidence": "Added logger.info() call in _detect_git_changes() with format: f'Git detection: baseline={len(baseline_modified)}+{len(baseline_created)}, delta={len(delta_modified)}+{len(delta_created)}'. Also added logging in _record_baseline() for baseline state capture.",
+      "test_file": "tests/unit/test_agent_invoker_git_delta.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    }
+  ],
+  "agent_invocations": [
+    {
+      "phase": "4",
+      "agent": "test-orchestrator",
+      "status": "failed",
+      "source": "orchestrator",
+      "duration_seconds": 150.05373883293942,
+      "error": "hang detected (no model activity for 150s)"
+    },
+    {
+      "phase": "5",
+      "agent": "code-reviewer",
+      "status": "skipped",
+      "source": "orchestrator",
+      "duration_seconds": 0.0,
+      "error": "phase_4 status=failed"
+    }
+  ]
+}

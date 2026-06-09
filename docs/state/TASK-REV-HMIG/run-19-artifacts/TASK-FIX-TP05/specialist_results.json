@@ -1,0 +1,21 @@
+{
+  "phase_4": {
+    "status": "failed",
+    "duration_seconds": 150.05588787514716,
+    "error": "hang detected (no model activity for 150s)",
+    "tests_run": 0,
+    "tests_failed": 0,
+    "coverage_pct": 0.0,
+    "output_summary": "",
+    "quality_gates_passed": false
+  },
+  "phase_5": {
+    "status": "skipped",
+    "duration_seconds": 0.0,
+    "error": "phase_4 status=failed",
+    "issues": [],
+    "quality_score": 0.0,
+    "recommendations": [],
+    "output_summary": "Review completed by orchestrator-invoked code-reviewer."
+  }
+}
