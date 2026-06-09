@@ -1,10 +1,14 @@
 ---
 id: TASK-FIX-COACHTESTTO
 title: Coach independent-test (SDK) execution times out at 300s — trust-but-verify leg never completes
-status: backlog
+status: completed
 task_type: bugfix
 created: 2026-06-09T00:00:00Z
-updated: 2026-06-09T00:00:00Z
+updated: 2026-06-09T12:05:00Z
+completed: 2026-06-09T12:05:00Z
+completed_location: tasks/completed/2026-06/
+previous_state: in_review
+state_transition_reason: "Task complete — all 4 ACs satisfied, quality gate passed (zero regressions)"
 priority: medium
 complexity: 4
 parent_task: TASK-HMIG-010
@@ -57,23 +61,73 @@ worked); it is an independent-test-execution / environment issue.
 
 ## Acceptance criteria
 
-- [ ] **AC-1**: Root-caused — a written diagnosis of WHERE the 300s goes
+- [x] **AC-1**: Root-caused — a written diagnosis of WHERE the 300s goes
   (venv bootstrap vs pytest collection vs test runtime vs SDK overhead),
   with evidence from a reproduction (a single Coach independent-test run
   instrumented with timing).
-- [ ] **AC-2**: Fix applied so the Coach independent-test leg COMPLETES for
+- [x] **AC-2**: Fix applied so the Coach independent-test leg COMPLETES for
   a representative FEAT-AOF-class task within its budget — whether by
   (a) caching/reusing the bootstrap venv across the run, (b) forcing the
   subprocess path, (c) raising the timeout to a justified value, or a
   combination. The chosen lever is documented.
-- [ ] **AC-3**: When the independent-test leg genuinely cannot run (e.g.
+- [x] **AC-3**: When the independent-test leg genuinely cannot run (e.g.
   real timeout after the fix), the Coach treats the result as **ABSENT
   SIGNAL**, not a pass — verify the evidence bundle marks
   `independent_tests` as absent/failed and the absence-of-failure guard in
   the synthesis prompt still fires (no auto-approve on the missing oracle).
-- [ ] **AC-4**: Regression test for the timeout/absent-result path in
+- [x] **AC-4**: Regression test for the timeout/absent-result path in
   `tests/orchestrator/` (the Coach must not approve purely on the Player's
   self-reported tests when its own independent verification did not run).
+
+## Outcome (2026-06-09, task-work)
+
+**Root cause** (AC-1, full writeup in
+[`docs/state/TASK-FIX-COACHTESTTO/diagnosis.md`](../../docs/state/TASK-FIX-COACHTESTTO/diagnosis.md)):
+the 300s budget is consumed by the **LLM agent turn**, not pytest/venv. Under
+`GUARDKIT_HARNESS=langgraph` the SDK path (`_run_tests_via_sdk`) runs pytest
+through a one-turn LLM invocation against a slow local model; the whole turn is
+bounded by `test_timeout` (300s) and never completes. Run-19 log evidence: the
+test command was already pinned to the ready `.venv` interpreter (no bootstrap
+in the window), the only activity is the `POST /v1/responses` LLM call, then
+the 300s timeout. The existing SDK-disable guard `_is_custom_api_base()` only
+inspects `ANTHROPIC_BASE_URL`, which LangGraph does not set, so the SDK path
+was wrongly selected. Reproduction: the same class of test file runs in **2.6s**
+via subprocess vs **300s** timeout via the LLM path (>100×).
+
+**Fix levers chosen**:
+- **AC-2 — force subprocess under LangGraph** (option (b)). New
+  `CoachValidator._is_langgraph_harness()` added to the `use_sdk` guard in
+  `run_independent_tests`. Subprocess runs the *same* pinned interpreter in the
+  *same* worktree in seconds with no model in the loop — removes the root cause
+  rather than masking it. (Option (a) moot — venv already ready; (c) only slows
+  the symptom; the coach path uses `test_timeout=300`, independent of
+  `--sdk-timeout`.)
+- **AC-3 — mark non-completion as ABSENT**. New `signal_absent: bool` field on
+  `IndependentTestResult`, set `True` (with `tests_passed=False`) on every
+  non-completion path (SDK timeout, SDK API error, subprocess timeout,
+  isolated-test timeout, generic execution error). New 6th absence-of-failure
+  guard ("INDEPENDENT-TEST ABSENT GUARD") in
+  `agent_invoker._render_absence_of_failure_guards` so the LLM Coach surfaces an
+  absent oracle as feedback instead of approving on the Player's self-report.
+  Aligns with `.claude/rules/absence-of-failure-is-not-success.md`.
+
+**Files changed**:
+- `guardkit/orchestrator/quality_gates/coach_validator.py` —
+  `IndependentTestResult.signal_absent`, `_is_langgraph_harness()`, `use_sdk`
+  guard, `signal_absent=True` on all 5 non-completion paths.
+- `guardkit/orchestrator/agent_invoker.py` — guard #6 in
+  `_render_absence_of_failure_guards` (+ docstring).
+- `tests/orchestrator/test_coach_independent_test_timeout.py` — new (AC-4).
+- `tests/orchestrator/test_coach_zero_cardinality_guard.py` — extended the
+  guard-count assertion to include guard #6.
+
+**Quality gate**: new regression suite 19 passed / 1 skipped (the SDK-timeout
+test is skipped on Python < 3.11 because `_run_tests_via_sdk` uses
+`asyncio.timeout()`, 3.11+ only — production/run-19 is 3.11+). Verified via
+baseline `comm` diff that the change introduces **zero new test failures**; all
+remaining failures in the broader suite are pre-existing Python-3.10
+`asyncio.timeout` incompatibilities and pre-existing dead-task-ID-reference debt
+unrelated to this task.
 
 ## Notes
 

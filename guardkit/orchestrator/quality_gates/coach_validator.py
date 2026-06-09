@@ -237,6 +237,19 @@ class IndependentTestResult:
         Time taken to run tests
     raw_output : Optional[str]
         Full stdout+stderr from test execution, used for failure classification
+    signal_absent : bool
+        ``True`` when the independent-test oracle did NOT produce a verdict —
+        the run timed out or failed at the transport layer (SDK timeout, SDK
+        API error, subprocess/isolated-test timeout, or generic execution
+        error) before pytest could report a pass/fail. This is distinct from
+        "ran and failed" (``tests_passed=False`` with ``signal_absent=False``):
+        an absent signal means the trust-but-verify leg never completed.
+        ``tests_passed`` is always ``False`` when ``signal_absent`` is ``True``
+        so the result can never read as a pass. The Coach's
+        absence-of-failure guard (TASK-FIX-COACHTESTTO) treats an absent
+        independent-test signal as ABSENT — surfaced as feedback, never
+        approved on the Player's self-reported tests. See
+        ``.claude/rules/absence-of-failure-is-not-success.md``.
     """
 
     tests_passed: bool
@@ -244,6 +257,7 @@ class IndependentTestResult:
     test_output_summary: str
     duration_seconds: float
     raw_output: Optional[str] = None
+    signal_absent: bool = False
 
 
 @dataclass
@@ -2679,6 +2693,9 @@ class CoachValidator:
                     test_output_summary=f"SDK API error: {api_error}",
                     duration_seconds=duration,
                     raw_output=f"SDK API error: {api_error}",
+                    # TASK-FIX-COACHTESTTO: transport-layer failure — the
+                    # oracle never produced a verdict. ABSENT, not a fail.
+                    signal_absent=True,
                 )
 
             # Determine pass/fail from bash_is_error and output. Branches
@@ -2756,6 +2773,9 @@ class CoachValidator:
                 test_output_summary=f"SDK test execution timed out after {self.test_timeout}s",
                 duration_seconds=duration,
                 raw_output=f"Timeout after {self.test_timeout}s",
+                # TASK-FIX-COACHTESTTO: the oracle did not complete — ABSENT,
+                # not a real pass/fail verdict.
+                signal_absent=True,
             )
         except AgentInvocationError as e:
             # TASK-HMIG-006.3 D-4: the harness normalises
@@ -2786,6 +2806,32 @@ class CoachValidator:
         """Return True when ANTHROPIC_BASE_URL points to a non-Anthropic endpoint (e.g. vLLM)."""
         base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
         return bool(base_url) and "api.anthropic.com" not in base_url
+
+    def _is_langgraph_harness(self) -> bool:
+        """Return True when ``GUARDKIT_HARNESS`` selects the LangGraph substrate.
+
+        TASK-FIX-COACHTESTTO. Under the LangGraph harness the SDK-path
+        independent-test run (``_run_tests_via_sdk``) is dispatched as a
+        one-turn LLM agent invocation: the (typically local) coach-test model
+        is asked to call the ``Bash`` tool, run pytest, and report. That whole
+        turn is bounded by ``self.test_timeout`` (300s). With a slow local
+        model the turn never completes within budget and the trust-but-verify
+        leg times out on every task (run-19, FEAT-AOF). The deterministic
+        subprocess path runs the *same* pinned interpreter in the *same*
+        worktree in seconds with no model in the loop, so under LangGraph we
+        force subprocess.
+
+        This is the LangGraph-substrate complement to ``_is_custom_api_base``:
+        the latter disables the SDK path when ``ANTHROPIC_BASE_URL`` points at
+        a non-Anthropic endpoint, but the LangGraph harness configures its
+        model endpoint through the LangGraph/OpenAI-compatible channel rather
+        than ``ANTHROPIC_BASE_URL``, so ``_is_custom_api_base`` does not catch
+        it. See ``docs/state/TASK-FIX-COACHTESTTO/diagnosis.md``.
+        """
+        return (
+            os.environ.get("GUARDKIT_HARNESS", "sdk").strip().lower()
+            == "langgraph"
+        )
 
     def _resolve_matching_strategy(self) -> str:
         """Resolve effective matching strategy to ``'text'`` or ``'semantic'``.
@@ -2962,6 +3008,8 @@ class CoachValidator:
                 test_command=test_cmd,
                 test_output_summary=f"Isolated test execution timed out after {self.test_timeout}s",
                 duration_seconds=duration,
+                # TASK-FIX-COACHTESTTO: timeout — oracle did not complete.
+                signal_absent=True,
             )
         except Exception as e:
             duration = time.time() - start_time
@@ -2971,6 +3019,8 @@ class CoachValidator:
                 test_command=test_cmd,
                 test_output_summary=f"Isolated test execution failed: {e}",
                 duration_seconds=duration,
+                # TASK-FIX-COACHTESTTO: execution error before any verdict.
+                signal_absent=True,
             )
 
     def run_independent_tests(
@@ -3063,10 +3113,20 @@ class CoachValidator:
             # a different Python than the one the bootstrap installed packages into,
             # causing ModuleNotFoundError at test collection time.
             # The subprocess path uses sys.executable, bypassing PATH entirely.
+            #
+            # TASK-FIX-COACHTESTTO: also force subprocess under the LangGraph
+            # harness. The SDK path runs pytest through a one-turn LLM agent
+            # invocation; under LangGraph (typically a slow local coach-test
+            # model) that turn blows past self.test_timeout (300s) and the
+            # trust-but-verify leg times out on every task (run-19). The
+            # subprocess path runs the same pinned interpreter in seconds with
+            # no model in the loop. _is_custom_api_base() does not catch this
+            # because LangGraph configures its endpoint outside ANTHROPIC_BASE_URL.
             use_sdk = (
                 self._coach_test_execution == "sdk"
                 and not requires_infra
                 and not self._is_custom_api_base()
+                and not self._is_langgraph_harness()
             )
 
             # SDK-first dispatch (GAP-FIX #9): use asyncio bridge to call async SDK method
@@ -3191,6 +3251,8 @@ class CoachValidator:
                     test_command=test_cmd,
                     test_output_summary=f"Test execution timed out after {self.test_timeout}s",
                     duration_seconds=duration,
+                    # TASK-FIX-COACHTESTTO: timeout — oracle did not complete.
+                    signal_absent=True,
                 )
             except Exception as e:
                 duration = time.time() - start_time
@@ -3200,6 +3262,8 @@ class CoachValidator:
                     test_command=test_cmd,
                     test_output_summary=f"Test execution failed: {e}",
                     duration_seconds=duration,
+                    # TASK-FIX-COACHTESTTO: execution error before any verdict.
+                    signal_absent=True,
                 )
 
         finally:

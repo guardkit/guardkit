@@ -239,7 +239,8 @@ class TestZeroCardinalityBDDGuard:
     def test_all_five_guards_present_in_prompt(
         self, worktree: Path,
     ) -> None:
-        """AC-009 + Phase 2.5 finding #2: five guards must always render."""
+        """AC-009 + Phase 2.5 finding #2 + TASK-FIX-COACHTESTTO: six guards
+        must always render."""
         _write_results(
             worktree, "TASK-ZCG-001",
             _passing_results_with_bdd(scenarios_attempted=0),
@@ -269,6 +270,7 @@ class TestZeroCardinalityBDDGuard:
             "SOPHISTICATED-LIE GUARD",
             "LAYER-1 PATH DEMOTION GUARD",
             "GATHERING-STATUS GUARD",
+            "INDEPENDENT-TEST ABSENT GUARD",
         ):
             assert guard_name in prompt, f"Missing guard: {guard_name}"
 

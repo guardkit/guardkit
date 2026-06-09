@@ -2845,11 +2845,15 @@ orchestrator takes only the **last** fenced block.
 """
 
     def _render_absence_of_failure_guards(self) -> str:
-        """Render the five absence-of-failure guard sentences (AC-009 + #5).
+        """Render the six absence-of-failure guard sentences (AC-009 + #5 + #6).
 
-        The four guards from the TASK-HMIG-008R task spec (AC-009 points 1-4)
-        plus the fifth guard added per Phase 2.5 review finding #2
-        (gathering_status guard). The sentences are emitted verbatim inside
+        The four guards from the TASK-HMIG-008R task spec (AC-009 points 1-4),
+        the fifth guard added per Phase 2.5 review finding #2
+        (gathering_status guard), and the sixth guard added by
+        TASK-FIX-COACHTESTTO (independent-test absent guard — treat a
+        timed-out / transport-errored independent-test oracle as ABSENT rather
+        than approving on the Player's self-reported tests). The sentences are
+        emitted verbatim inside
         an ``<absence_of_failure_guards>`` block so the Coach can locate
         them deterministically. Wording mirrors
         ``.claude/rules/absence-of-failure-is-not-success.md`` and
@@ -2898,6 +2902,19 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
    diagnose which stage failed (e.g. "partial_honesty_abort",
    "partial_gate_abort", "partial_exception"). When status is
    "partial_exception", also surface evidence_bundle.gathering_error.
+
+6. INDEPENDENT-TEST ABSENT GUARD.
+   If evidence_bundle.independent_tests is not null AND
+   evidence_bundle.independent_tests.signal_absent == true: the Coach's own
+   trust-but-verify pytest run did NOT complete (it timed out or failed at
+   the transport layer before producing a verdict). This is ABSENT SIGNAL,
+   NOT a passing or failing test result — do NOT approve on the basis of the
+   Player's self-reported tests plus the other gates. Surface as feedback:
+   "Independent test verification did not complete (signal absent) — cannot
+   independently confirm the Player's reported tests." Quote
+   independent_tests.test_output_summary verbatim in the rationale so
+   operators can see whether it timed out or errored. Rule:
+   .claude/rules/absence-of-failure-is-not-success.md.
 </absence_of_failure_guards>
 """
 
