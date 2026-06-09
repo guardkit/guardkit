@@ -1,0 +1,9 @@
+[
+  {
+    "task_id": "TASK-FIX-TP05",
+    "pre_path": "tasks/backlog/TASK-FIX-TP05-add-test-execution-for-testing-task-type.md",
+    "post_path": "tasks/design_approved/TASK-FIX-TP05-add-test-execution-for-testing-task-type.md",
+    "timestamp": "2026-06-09T13:23:27.078345+00:00",
+    "kind": "design_approved_transition"
+  }
+]

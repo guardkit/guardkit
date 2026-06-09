@@ -1,0 +1,152 @@
+{
+  "task_id": "TASK-FIX-TP05",
+  "timestamp": "2026-06-09T14:38:49.937662",
+  "completed": true,
+  "phases": {
+    "phase_3": {
+      "detected": true,
+      "text": "complete. Implementation summary:",
+      "completed": false
+    }
+  },
+  "quality_gates": {
+    "tests_passing": true,
+    "tests_passed": 130,
+    "tests_failed": 0,
+    "coverage": null,
+    "coverage_met": null,
+    "all_passed": null
+  },
+  "files_modified": [
+    "guardkit/models/task_types.py",
+    "guardkit/orchestrator/agent_invoker.py",
+    "tests/unit/test_task_types.py"
+  ],
+  "files_created": [
+    ".claude/task-plans/TASK-FIX-GD02-implementation-plan.md",
+    ".claude/task-plans/TASK-FIX-TP05-implementation-plan.md",
+    "conversation_history/session_830c552b.md",
+    "tests/unit/test_agent_invoker_git_delta.py"
+  ],
+  "files_authored": [],
+  "tests_written": [],
+  "summary": "130 tests passed",
+  "sdk_turns": {
+    "turns_used": null,
+    "max_turns": 150,
+    "ceiling_hit": false
+  },
+  "task_type": "feature",
+  "agent_invocations_validation": {
+    "status": "violation",
+    "expected_phases": 3,
+    "actual_invocations": 0,
+    "missing_phases": [
+      "3",
+      "4",
+      "5"
+    ],
+    "violation_message": "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n\u274c PROTOCOL VIOLATION: Agent invocation incomplete\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n\nExpected: 3 agent invocations\nActual: 0 completed invocations\n\nMissing phases:\n  - Phase 3 (Implementation)\n  - Phase 4 (Testing)\n  - Phase 5 (Code Review)\n\nCannot generate completion report until all agents are invoked.\nReview the AGENT INVOCATIONS LOG above to see which phases were skipped.\n\nAGENT INVOCATIONS LOG:\n\u2753 Phase 4 (Phase 4): test-orchestrator\n\u274c Phase 5 (Phase 5): SKIPPED (Not invoked)\n\nTASK WILL BE MOVED TO BLOCKED STATE\nReason: Protocol violation - required agents not invoked\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+  },
+  "plan_audit": {
+    "status": "passed",
+    "severity": "low",
+    "violations": 0,
+    "extra_files": [],
+    "missing_files": [],
+    "extra_modifications": [],
+    "missing_modifications": [],
+    "extra_dependencies": [],
+    "missing_dependencies": [],
+    "loc_variance_pct": null,
+    "discrepancies_count": 0,
+    "message": "no plan on disk; all 2 task-body-declared file(s) present"
+  },
+  "unconfirmed_low_confidence_assumptions": {
+    "status": "ok",
+    "unconfirmed": [],
+    "files_scanned": 0,
+    "files_skipped": 0,
+    "message": null
+  },
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "TESTING profile has tests_required=True",
+      "status": "complete",
+      "evidence": "Updated guardkit/models/task_types.py DEFAULT_PROFILES to set tests_required=True for TaskType.TESTING. Updated docstrings to reflect this change. All 130 tests in tests/unit/test_task_types.py pass, including 7 new tests in TestTaskFixTp05TestingProfile class.",
+      "test_file": "tests/unit/test_task_types.py",
+      "implementation_files": [
+        "guardkit/models/task_types.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Coach independently executes test files written by testing tasks",
+      "status": "complete",
+      "evidence": "The coach_validator.py already has run_independent_tests method that executes when profile.tests_required=True. With tests_required now True for TESTING, the Coach will invoke pytest on test files created by testing tasks. No code changes needed in coach_validator.py \u2014 the existing mechanism handles this automatically via the profile check at line 1265.",
+      "test_file": "tests/unit/test_task_types.py",
+      "implementation_files": [
+        "guardkit/models/task_types.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Test failures produce actionable Coach feedback",
+      "status": "complete",
+      "evidence": "The coach_validator.py _classify_test_failure method (lines ~1480+) classifies test failures into categories (code, infrastructure, parallel_contention, collection_error) and produces specific feedback for each. This feedback mechanism is already in place and will apply to testing tasks now that tests_required=True.",
+      "test_file": "tests/unit/test_task_types.py",
+      "implementation_files": [
+        "guardkit/models/task_types.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "zero_test_blocking remains False (don't block if no test runner available)",
+      "status": "complete",
+      "evidence": "Updated guardkit/models/task_types.py to set zero_test_blocking=False for TaskType.TESTING. This ensures that if a testing task creates no test files (zero-test anomaly), it produces a warning but does not block Coach approval.",
+      "test_file": "tests/unit/test_task_types.py",
+      "implementation_files": [
+        "guardkit/models/task_types.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Tasks that only create test infrastructure (conftest.py) don't false-fail",
+      "status": "complete",
+      "evidence": "The coach_validator.py run_independent_tests method handles the case where no task-specific tests are found \u2014 it returns IndependentTestResult with tests_passed=True and a message 'No task-specific tests found'. This is triggered when _detect_test_command returns None. Additionally, zero_test_blocking=False ensures no blocking on zero tests.",
+      "test_file": "tests/unit/test_task_types.py",
+      "implementation_files": [
+        "guardkit/models/task_types.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Unit test verifies the updated profile",
+      "status": "complete",
+      "evidence": "Added TestTaskFixTp05TestingProfile class with 7 tests verifying all aspects of the updated TESTING profile. Also updated existing tests (test_create_testing_profile, test_default_profiles_testing_configuration, test_for_type_returns_testing_profile, test_get_profile_with_testing, test_workflow_testing_task) to reflect the new tests_required=True value. All 130 tests pass.",
+      "test_file": "tests/unit/test_task_types.py",
+      "implementation_files": [
+        "guardkit/models/task_types.py"
+      ]
+    }
+  ],
+  "agent_invocations": [
+    {
+      "phase": "4",
+      "agent": "test-orchestrator",
+      "status": "failed",
+      "source": "orchestrator",
+      "duration_seconds": 150.04831104213372,
+      "error": "hang detected (no model activity for 150s)"
+    },
+    {
+      "phase": "5",
+      "agent": "code-reviewer",
+      "status": "skipped",
+      "source": "orchestrator",
+      "duration_seconds": 0.0,
+      "error": "phase_4 status=failed"
+    }
+  ]
+}
