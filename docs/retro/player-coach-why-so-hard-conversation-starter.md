@@ -25,23 +25,40 @@ that the other two repos didn't make?
 |---|---|---|---|
 | orchestrator/src size | **~53,000 LOC** orchestrator | 299 py files | 111 py files |
 | "scar-tissue" design rules | **15** `.claude/rules/*.md` | — | — |
-| topology | **closed-loop adversarial** (Player↔Coach, verdict gates progression) | roles-based; coach/player/verdict markers in **54** files | pipeline / ingestion; adversarial markers in **4** files |
-| substrate | **weak LOCAL model** (gemma4:31b / qwen36 on llama.cpp, self-hosted) | **cloud** (gpt-5.5, claude-sonnet-4) | mostly pipeline (langgraph) |
-| autonomy | fully autonomous multi-turn, multi-wave, resumable | (characterise in the convo) | (characterise) |
+| topology | **closed-loop adversarial** (Player↔Coach, verdict gates progression) | **generative roles** (architect→ADRs, product_owner); NOT a gating adversarial loop | pipeline / ingestion |
+| substrate | local Gemma/Qwen on llama-swap, self-hosted | **same local llama-swap** (`localhost:9000`); architect = fine-tuned Gemma 4 26B (`architect-agent`) | mostly pipeline (langgraph) |
+| **model posture** | **BASE** Gemma 4 26B-A4B-IT (config: chosen base *deliberately*; the existing fine-tunes have "wrong posture", "do not inherit JSON-discipline") | **FINE-TUNED for the role** (architect-agent = DDD; gemma4-tutor = Socratic) | n/a |
+| role demand on the model | **adjudicate** + emit terse **gating** JSON verdict + use tools | **generate** a design doc / ADR (forgiving — any sane output is usable) | transform/ingest |
+| autonomy | fully autonomous multi-turn, multi-wave, resumable | role invocation (single/iterative generation) | batch pipeline |
 | dogfooding | **builds GuardKit itself** (self-referential worktrees) | external artefacts | external datasets |
 
-**The load-bearing clue:** specialist-agent *also* has coach/player/verdict
-machinery (54 files) and was *smooth* — but it runs on **cloud** models. That
-single fact lets us separate "the adversarial pattern is hard" from "the way
-*we ran* it was hard."
+**The load-bearing clue (corrected 2026-06-09 after operator feedback —
+the original "specialist-agent runs on cloud" claim was wrong):**
+specialist-agent's architect runs the **same local Gemma 4 26B family on the
+same llama-swap** — but it is **fine-tuned for a generative role**, whereas the
+Coach is a **base** model asked to **adjudicate** and emit a **gating** JSON
+verdict. Same substrate, opposite posture. So the differentiator is **not**
+substrate strength and **not** "multi-agent vs pipeline" — it's
+**(fine-tuned-for-role + generative) vs (base + adjudicative-gating)**. The
+clincher is in GuardKit's own `llama-swap config.yaml`: the Coach was put on
+**base** Gemma *deliberately* because the existing fine-tunes (`architect-agent`,
+`gemma4-tutor`) have the "wrong posture" and "do not inherit that JSON-
+discipline" — i.e. **there is no fine-tuned Coach model yet.**
 
 ## Candidate hypotheses (seeds — the convo should weight these, not just list them)
 
-- **H1 — Substrate, not architecture.** A large share of F20 (ctx overflow),
-  F23A (GPU OOM), F24 (schema-emission unreliability), the run-13 grammar
-  no-op, and the run-18 tool-parse-500 were **weak-local-model + llama.cpp**
-  failures, not Player-Coach failures. specialist-agent avoided them by using
-  cloud APIs. *How much of the F-taxonomy is substrate vs architecture?*
+- **H1 — Model *posture*, not substrate strength (the leading candidate).**
+  Same local Gemma 26B, opposite outcome: specialist-agent **fine-tuned** its
+  model for a **generative** role and was smooth; the Coach runs a **base**
+  model for an **adjudicative, gating, schema-disciplined, tool-using** role and
+  was fragile. A huge share of the F-taxonomy (F24 schema-emission, run-13
+  grammar no-op, run-18 tool-parse-500, the whole COACHSPLIT/COACHTESTTO saga)
+  is exactly the JSON/verdict *discipline* that fine-tuning instils and a base
+  model lacks. *Implication if true:* the highest-leverage fix is
+  **fine-tuning/distilling a Coach** (the already-noted TASK-DATA-COACHHARVEST
+  direction) — and you've proven it works on this stack twice (`architect-agent`,
+  `gemma4-tutor`). The substrate was never the problem; the **missing role-
+  specific fine-tune** was.
 - **H2 — The Coach is an automated JUDGE, and reliable LLM-as-judge is
   frontier-hard.** A verdict that **gates progression** (approve = ship) makes
   every oracle weakness load-bearing. The entire design-rule family
@@ -68,15 +85,21 @@ single fact lets us separate "the adversarial pattern is hard" from "the way
 
 ## Discriminating tests (how to *tell* which hypotheses dominate)
 
-1. **Run the SAME Player-Coach loop on a cloud model** (Claude/gpt-5.5) instead
-   of gemma-local, on a known feature. If most of the F-failures vanish → H1
-   dominates and much of the pain was the local substrate (a *choice*), not
-   Player-Coach. This is the single highest-information experiment.
-2. **Dissect specialist-agent's coach/player.** It has the markers but was
-   smooth — *what's structurally different?* Is its "coach" **advisory** (not a
-   hard gate), **single-turn**, **cloud**, **stateless between turns**? Pin the
-   exact deltas; each one that explains away pain is an *incidental* cost, not
-   an inherent one.
+1. **Fine-tune/distill a Coach (TASK-DATA-COACHHARVEST) and re-run.** If a
+   role-specific fine-tune collapses the schema/verdict F-failures the way it
+   did for `architect-agent`, **H1 dominates** and the missing Coach fine-tune
+   was the core cost. Highest-leverage *and* highest-information experiment —
+   you have the harvesting infra already.
+2. **Run the *base* Coach on a strong model (Claude) as a control.** If the
+   JSON/verdict fragility vanishes on a strong base model → it's a model-
+   *discipline* problem (base posture), which fine-tuning fixes on local. If it
+   *doesn't* vanish → the hard part is the adjudication/gating *contract*
+   itself (H2), independent of the model.
+3. **Confirm the specialist-agent delta (now grounded).** Its architect is a
+   **fine-tuned, generative** role emitting ADRs — **not** a gating adversarial
+   verdict. So the comparison repos don't run a gating loop *at all*; "multi-
+   agent vs pipeline" isn't even the right axis. The right axis is
+   **generate vs adjudicate** × **fine-tuned vs base**.
 3. **Map the F-taxonomy onto layers.** Tag each of F1–F24 + the 15 design rules
    as: substrate / oracle-gating / state-machine / harness-migration /
    dogfooding / genuine-adversarial-logic. The histogram answers "inherent vs
@@ -92,8 +115,10 @@ A verdict on the mix, and the implication of each:
 - **Inherent (H2/H6)** → accept the cost; invest in the oracle (B-full
   investigation, richer `criteria_verification`, adversarial verification of the
   Coach itself).
-- **Substrate (H1)** → the local-model insistence is the main *self-inflicted*
-  cost; default autobuild to cloud and treat local as an opt-in experiment.
+- **Model posture (H1)** → the *missing role-specific Coach fine-tune* is the
+  main self-inflicted cost; prioritise TASK-DATA-COACHHARVEST (distil/fine-tune
+  a Coach), as proven viable by `architect-agent`. Local stays; the base model
+  was the gap, not the locality.
 - **State/incidental (H4/H5)** → simplify: shrink the 53k-LOC orchestrator,
   finish the harness migration, stop dogfooding-on-self for validation.
 - **Implementation debt** → the run-by-run accretion (24 F-numbers, 15 rules)
@@ -102,12 +127,15 @@ A verdict on the mix, and the implication of each:
 
 ## The reframe to open with
 
-> Is **Player-Coach** hard — or is **"running an automated adversarial *judge*
-> on a weak *local* model, *self-hosted*, while *migrating harnesses* and
-> *dogfooding on itself*"** hard? specialist-agent ran a coach/player on cloud
-> and was smooth. So the real question may not be "is the pattern hard" but
-> "how many of our incidental choices each cost us a multiplier — and which one
-> would, if removed, collapse most of the F-taxonomy?"
+> The same author ran the **same local Gemma 4 26B family** for both. The one
+> that was smooth was **fine-tuned for a generative role**; the one that was a
+> nightmare is a **base** model asked to **adjudicate and emit a gating JSON
+> verdict**. So the question isn't "is Player-Coach hard" or "is the local model
+> weak" — it's: **how much of the F-taxonomy is just "we never fine-tuned a
+> Coach"?** If most of it collapses under a role-specific Coach fine-tune, the
+> stark contrast was largely a *missing-fine-tune* artifact, not an inherent
+> property of adversarial cooperation — and the residue (the adjudication/gating
+> *contract*, H2) is the genuinely-hard, possibly-irreducible core.
 
 ## Evidence pointers
 
