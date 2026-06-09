@@ -5648,6 +5648,32 @@ class AutoBuildOrchestrator:
                     invoke_kwargs["evidence_bundle"] = evidence_bundle
                 if "coach_context" in _sig.parameters and context_prompt:
                     invoke_kwargs["coach_context"] = context_prompt
+                # TASK-ARCH-COACHBFULL (AC-4 / AC-1): thread structured ACs into
+                # the Coach prompt so the synthesis verdict can populate
+                # criteria_verification per AC (the run-19 empty-array fix) and
+                # the B-full Phase-A gather has an explicit per-AC checklist to
+                # investigate. Normalize the List[str] ACs to [{id,text}],
+                # deriving the id with the SAME extractor CoachValidator uses
+                # to match Player completion_promises (TASK-CVAC-001) so the
+                # Coach's criterion IDs line up with the Player's. Behind a
+                # signature probe so a partial rollout never breaks the call.
+                if "acceptance_criteria" in _sig.parameters and acceptance_criteria:
+                    structured_acs: List[Dict[str, str]] = []
+                    for i, criterion_text in enumerate(acceptance_criteria):
+                        try:
+                            cleaned = validator._strip_criterion_prefix(
+                                criterion_text
+                            )
+                            _, extracted_id = validator._extract_ac_id(cleaned)
+                        except Exception:  # noqa: BLE001 — fall back to index ID
+                            extracted_id = None
+                        structured_acs.append(
+                            {
+                                "id": extracted_id or f"AC-{i + 1:03d}",
+                                "text": str(criterion_text),
+                            }
+                        )
+                    invoke_kwargs["acceptance_criteria"] = structured_acs
 
                 result = asyncio.run(self._agent_invoker.invoke_coach(**invoke_kwargs))
             except RuntimeError as runtime_exc:

@@ -1,10 +1,13 @@
 ---
 id: TASK-ARCH-COACHBFULL
 title: Restore the investigating Coach (B-full) — tool-using gather phase before toolless grammar synthesis
-status: backlog
+status: completed
 task_type: feature
 created: 2026-06-09T00:00:00Z
-updated: 2026-06-09T00:00:00Z
+updated: 2026-06-09T14:00:00Z
+completed: 2026-06-09T14:00:00Z
+previous_state: in_review
+state_transition_reason: "Quality gates passed (compile + 22 new tests + 39 existing Coach tests green). AC-1/2/4/5/6 done; AC-3 deterministic leg done, live GB10 leg pending as documented operator follow-up."
 priority: high
 complexity: 7
 parent_task: TASK-ARCH-COACHSPLIT
@@ -73,8 +76,9 @@ verdict quality, never regress reliability.
 - `guardkit/orchestrator/agent_invoker.py` — add the Phase-A gather
   invocation (tool-bound `_invoke_with_role`, `synthesis=False`, role
   `coach`), thread its findings into `_build_coach_prompt`'s synthesis
-  variant. Gate behind an env flag (e.g. `GUARDKIT_COACH_GATHER`,
-  default the operator chooses) so B-min stays the fallback.
+  variant. Gate behind an env flag `GUARDKIT_COACH_GATHER`, **default OFF
+  (opt-in)** — B-min stays the shipped default until B-full earns promotion
+  (see "Flag default + promotion criteria" below).
 - `guardkit/orchestrator/autobuild.py` — `_invoke_coach_primary` wiring.
 - Honour `.claude/rules/harness-cancellation-contract.md` (Phase A is a
   second in-flight invocation per Coach turn — the cancel monitor must
@@ -82,29 +86,92 @@ verdict quality, never regress reliability.
 
 ## Acceptance criteria
 
-- [ ] **AC-1**: A tool-using Phase-A gather invocation runs before the
+- [x] **AC-1**: A tool-using Phase-A gather invocation runs before the
   toolless Phase-B synthesis, producing investigation *findings* (text),
   not a verdict. Verified by inspecting the two distinct harness calls per
   Coach turn (one tool-bound, one toolless+grammar).
-- [ ] **AC-2 (strict dominance)**: a Phase-A failure (tool-parse error,
+  → `invoke_coach` Phase-A wiring + `_invoke_coach_gather` /
+  `_build_coach_gather_prompt`; test
+  `test_coach_gather_bfull.py::test_gather_on_runs_toolbound_then_toolless`.
+- [x] **AC-2 (strict dominance)**: a Phase-A failure (tool-parse error,
   timeout, empty findings) **degrades to B-min** (synthesis over the
   deterministic bundle) and never fails the turn. Regression test drives a
   broken gather and asserts a valid verdict still emerges.
-- [ ] **AC-3 (the falsifier)**: construct a case the deterministic bundle
-  marks green but where an AC is actually unmet (e.g. tests pass but a
-  required behaviour is stubbed / an AC has no corresponding code). B-full
-  Coach (investigating) **catches it and returns feedback**; B-min Coach
-  (current) approves. This is the empirical proof the investigation adds
-  adversarial value.
-- [ ] **AC-4**: the synthesis verdict now carries a populated, structured
-  `criteria_verification` (per-AC result + notes — the paper's compliance
-  checklist), not an empty array. Encourage via prompt and/or grammar
-  without over-constraining (respect the coach-verdict.gbnf design notes).
-- [ ] **AC-5**: cancellation + per-turn budget hold with two LLM calls per
+  → `_invoke_coach_gather` `except Exception → None`; tests
+  `test_gather_failure_degrades_to_bmin`, `test_empty_findings_degrade_to_bmin`.
+- [~] **AC-3 (the falsifier)**: construct a case the deterministic bundle
+  marks green but where an AC is actually unmet. B-full Coach (investigating)
+  **catches it and returns feedback**; B-min Coach (current) approves.
+  → **Deterministic leg DONE**:
+  `tests/integration/orchestrator/test_coach_bfull_falsifier.py` (same green
+  bundle + same honest Coach; only the gather differs; approve↔feedback
+  divergence proven). **Live leg PENDING** (operator GB10 run) —
+  `docs/state/TASK-ARCH-COACHBFULL/ac3-live-confirmation.md`.
+- [x] **AC-4**: the synthesis verdict now carries a populated, structured
+  `criteria_verification` (per-AC result + notes), not an empty array.
+  → root cause fixed: `invoke_coach` now threads `acceptance_criteria` into
+  `_build_coach_prompt` (the run-19 empty-array cause); `autobuild.py`
+  `_invoke_coach_primary` normalizes `List[str]→[{id,text}]` with the same
+  ID extractor CoachValidator uses. Prompt-driven only (grammar left
+  unconstrained per coach-verdict.gbnf notes). Tests
+  `TestCriteriaThreading::*`.
+- [x] **AC-5**: cancellation + per-turn budget hold with two LLM calls per
   turn (the cancel monitor covers Phase A; the combined budget is bounded).
-- [ ] **AC-6**: unit/integration tests for the two-phase flow incl. the
+  → per-call cancel monitor in `_invoke_with_role` covers the gather (free);
+  `CancelledError` (BaseException) propagates; budget split (Phase A ≤
+  `_COACH_GATHER_BUDGET_FRACTION`·effective, floored; Phase B full). Tests
+  `test_cancellation_during_gather_propagates`,
+  `test_gather_budget_is_bounded_synthesis_keeps_full`.
+- [x] **AC-6**: unit/integration tests for the two-phase flow incl. the
   gather-degrades-to-B-min and zero-evidence paths (absence-of-failure:
   an empty gather + empty bundle must NOT auto-approve).
+  → empty/whitespace gather → no findings section (B-min, existing guards
+  intact); `test_empty_findings_degrade_to_bmin` + the falsifier.
+
+## Flag default + promotion criteria
+
+`GUARDKIT_COACH_GATHER` ships **default OFF (opt-in)**. Rationale: B-min
+(toolless synthesis) is the *validated* default — it passed runs 19 and 20 —
+and B-full re-introduces the tool-bound g31 path that D-3 removed for substrate
+reliability (run-18 tool-parse-500 class). The "degrade-to-B-min on gather
+failure" safety net (AC-2) is a *design* claim until proven on the real
+substrate, so the unproven path must not be the default. This is the inverse of
+`GUARDKIT_COACH_SYNTHESIS` (which defaulted ON because B-min was the *fix for a
+broken* substrate; B-full is an *enhancement over a working* baseline — those
+warrant opposite defaults). Error-cost is asymmetric: a wrong opt-in default
+costs a few days of opt-in; a wrong opt-out default ships a regression + ~2× g31
+latency to every autobuild run by default.
+
+**Lifecycle:**
+
+- **Now (this task):** flag defaults OFF. The COACHBFULL validation run sets
+  `GUARDKIT_COACH_GATHER=1` to exercise B-full in isolation; everyone else stays
+  on proven B-min.
+- **Promotion to default ON** is a **separate, dated one-line commit** (flip the
+  default in the gate helper + update the run recipe + this task), made ONLY
+  after ALL of the following hold:
+
+  - [ ] **P-1**: ≥2 consecutive green end-to-end autobuild runs with
+    `GUARDKIT_COACH_GATHER=1` (e.g. FEAT-AOF), 3/3 first-pass approve, no
+    non-recoverable failures.
+  - [ ] **P-2**: the gather phase is observed actually running in those runs
+    (two distinct g31 calls per Coach turn in the llama-swap log — a tool-bound
+    gather *then* a toolless synthesis), i.e. B-full is genuinely exercised, not
+    silently always-degrading to B-min.
+  - [ ] **P-3**: the degrade-to-B-min fallback (AC-2) is observed firing
+    cleanly at least once on a real gather hiccup (or forced via fault
+    injection) with no turn failure — the safety net is *empirically* confirmed,
+    not just unit-tested.
+  - [ ] **P-4**: no verdict-quality or false-reject regression vs the B-min
+    baseline (verdicts schema-valid; ideally `criteria_verification` now
+    populates per AC-4).
+  - [ ] **P-5**: per-turn latency is acceptable as the default — i.e.
+    TASK-PERF-COACHSYNTH has landed (resident g31) OR the measured two-call
+    latency is confirmed to stay well under `sdk_timeout` on a representative
+    feature. (B-full doubles g31 calls/turn; don't make that the default while
+    each call still cold-loads.)
+
+  The promotion commit references the runs that satisfy P-1…P-5.
 
 ## Notes / sequencing
 

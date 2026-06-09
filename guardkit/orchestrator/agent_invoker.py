@@ -558,6 +558,45 @@ def _coach_synthesis_enabled() -> bool:
         return True
     return raw.strip().lower() not in _COACH_SYNTHESIS_DISABLED_VALUES
 
+
+# TASK-ARCH-COACHBFULL: the B-full investigating Coach runs a tool-using
+# Phase-A "gather" (Read/Bash/Grep/Glob) BEFORE the toolless Phase-B verdict
+# synthesis, feeding investigation findings into the synthesis prompt. It is
+# OPT-IN (default OFF) — the inverse default of GUARDKIT_COACH_SYNTHESIS. B-min
+# (toolless synthesis) is the validated default; B-full re-introduces the
+# tool-bound g31 path D-3 removed for substrate reliability, so the unproven
+# enhancement must not be the default until it earns promotion (see the task's
+# "Flag default + promotion criteria"). Any Phase-A failure degrades to B-min
+# (strict dominance), so enabling it can only add investigation, never regress.
+_COACH_GATHER_ENABLED_VALUES = frozenset({"1", "true", "yes", "on"})
+
+
+def _coach_gather_enabled() -> bool:
+    """Return True when the B-full tool-using Phase-A gather is active.
+
+    Default OFF (opt-in); enabled only by an explicit GUARDKIT_COACH_GATHER in
+    ``{"1", "true", "yes", "on"}`` (case-insensitive). Read at invocation time
+    (not import time) so tests and operators can toggle it per-run.
+    """
+    raw = os.environ.get("GUARDKIT_COACH_GATHER")
+    if raw is None:
+        return False
+    return raw.strip().lower() in _COACH_GATHER_ENABLED_VALUES
+
+
+# TASK-ARCH-COACHBFULL (AC-5): Phase-A gather budget slice. The gather is a
+# tool-bound investigation whose findings are advisory; it must not consume the
+# whole per-turn budget and starve the load-bearing Phase-B synthesis. Phase A
+# is capped at ``max(MIN, FRACTION * effective_timeout)`` (never above the
+# effective timeout); Phase B then runs at the FULL effective timeout. Combined
+# wall-clock is therefore bounded at ``(1 + FRACTION) * effective`` — documented
+# as the opt-in cost. A tighter ``<= 1x`` bound (subtracting gather spend from
+# the synthesis budget) was rejected: it risks synthesis timeouts on the slow
+# substrate. Revisit under promotion criterion P-5 / TASK-PERF-COACHSYNTH.
+_COACH_GATHER_BUDGET_FRACTION = 0.4
+_COACH_GATHER_BUDGET_MIN_S = 60
+
+
 # =========================================================================
 # TASK-PSN-003: Promise format reinforcement near SDK turn ceiling
 # =========================================================================
@@ -1925,6 +1964,7 @@ class AgentInvoker:
         remaining_budget: Optional[float] = None,
         evidence_bundle: Optional["CoachEvidenceBundle"] = None,
         coach_context: Optional[str] = None,
+        acceptance_criteria: Optional[List[Dict[str, str]]] = None,
     ) -> AgentInvocationResult:
         """Invoke Coach agent via Claude Agents SDK with honesty verification.
 
@@ -1957,6 +1997,14 @@ class AgentInvoker:
                 arch_review, tests) without re-deriving them.
             coach_context: Optional Graphiti / coach context string. Passed
                 through to ``_build_coach_prompt`` for inclusion in the prompt.
+            acceptance_criteria: Optional structured ACs (``[{"id","text"}]``)
+                threaded into the Coach prompt so the synthesis verdict can
+                carry a populated ``criteria_verification`` per AC
+                (TASK-ARCH-COACHBFULL AC-4 — the run-19 empty-array fix) and so
+                the B-full Phase-A gather (TASK-ARCH-COACHBFULL AC-1) has the
+                explicit per-AC checklist to investigate against. When ``None``
+                the prompt omits the per-criterion section (pre-COACHBFULL
+                behaviour).
 
         Returns:
             AgentInvocationResult with Coach's decision
@@ -2013,12 +2061,46 @@ class AgentInvoker:
                 _coach_synthesis_enabled() and evidence_bundle is not None
             )
 
+            # TASK-ARCH-COACHBFULL (B-full): optional tool-using Phase-A gather
+            # BEFORE the toolless Phase-B synthesis. When enabled (opt-in), the
+            # Coach investigates with Read/Bash/Grep/Glob and produces findings
+            # TEXT (not a verdict); those findings are threaded into the
+            # synthesis prompt below. The gather is gated on synthesis being
+            # active (a B-full gather only makes sense ahead of the toolless
+            # grammar verdict) and on the opt-in flag. Any failure inside
+            # _invoke_coach_gather returns None → degrade to B-min (strict
+            # dominance, AC-2). A genuine cancellation (CancelledError) is NOT
+            # swallowed there and propagates to the except blocks below (AC-5).
+            gather_findings: Optional[str] = None
+            if synthesis_enabled and _coach_gather_enabled():
+                # effective_timeout is currently in self.sdk_timeout_seconds;
+                # cap Phase A at a fraction of it, floored, never above it.
+                gather_timeout = min(
+                    effective_timeout,
+                    max(
+                        _COACH_GATHER_BUDGET_MIN_S,
+                        int(effective_timeout * _COACH_GATHER_BUDGET_FRACTION),
+                    ),
+                )
+                gather_findings = await self._invoke_coach_gather(
+                    task_id=task_id,
+                    turn=turn,
+                    requirements=requirements,
+                    player_report=player_report,
+                    honesty_verification=honesty_verification,
+                    evidence_bundle=evidence_bundle,
+                    acceptance_criteria=acceptance_criteria,
+                    gather_timeout=gather_timeout,
+                )
+
             # Build prompt for Coach with verification context.
             prompt = self._build_coach_prompt(
                 task_id, turn, requirements, player_report, honesty_verification,
+                acceptance_criteria=acceptance_criteria,
                 evidence_bundle=evidence_bundle,
                 coach_context=coach_context,
                 synthesis=synthesis_enabled,
+                gather_findings=gather_findings,
             )
 
             # Invoke the Coach. In both paths return_events=True so the typed
@@ -2161,6 +2243,220 @@ class AgentInvoker:
         finally:
             # TASK-ABFIX-004: Restore original timeout after invocation
             self.sdk_timeout_seconds = original_timeout
+
+    async def _invoke_coach_gather(
+        self,
+        *,
+        task_id: str,
+        turn: int,
+        requirements: str,
+        player_report: Dict[str, Any],
+        honesty_verification: Optional[HonestyVerification],
+        evidence_bundle: Optional["CoachEvidenceBundle"],
+        acceptance_criteria: Optional[List[Dict[str, str]]],
+        gather_timeout: int,
+    ) -> Optional[str]:
+        """Phase-A of the B-full investigating Coach: tool-using gather.
+
+        TASK-ARCH-COACHBFULL. Runs a tool-bound Coach invocation
+        (``Read``/``Bash``/``Grep``/``Glob`` — read-only, FB-004 preserved)
+        that INVESTIGATES the worktree (reads changed files, runs the focused
+        test, checks the ACs it is unsure about) and emits investigation
+        *findings text*, NOT a fenced JSON verdict. The findings are returned
+        as a string for the caller to thread into the toolless Phase-B
+        synthesis prompt.
+
+        **Strict dominance (AC-2).** This method NEVER raises an ordinary
+        exception: a tool-parse error (the run-18 HTTP-500 class can recur on
+        the tool-bound path), an SDK timeout, an ``AgentInvocationError``, or
+        empty findings all return ``None`` so the caller degrades to B-min
+        (synthesis over the deterministic bundle alone). The turn is never
+        failed by a broken gather.
+
+        **Cancellation (AC-5).** ``asyncio.CancelledError`` derives from
+        ``BaseException``, NOT ``Exception``, so it is deliberately NOT caught
+        here: a genuine operator cancellation mid-gather propagates to
+        ``invoke_coach``'s except blocks and aborts the turn rather than
+        silently burning the Phase-B budget. The per-call cancel monitor inside
+        ``_invoke_with_role`` (agent_invoker.py:3220) covers this gather call
+        the same way it covers any other invocation.
+
+        **Budget (AC-5).** ``self.sdk_timeout_seconds`` is set to
+        ``gather_timeout`` for the duration of the gather and restored in
+        ``finally`` so the subsequent Phase-B synthesis runs at the full
+        effective timeout.
+
+        Args:
+            gather_timeout: Per-invocation timeout slice for Phase A (already
+                bounded by the caller to a fraction of the effective Coach
+                timeout).
+
+        Returns:
+            The concatenated findings text, or ``None`` on any failure / empty
+            output (signal to degrade to B-min).
+        """
+        prev_timeout = self.sdk_timeout_seconds
+        self.sdk_timeout_seconds = gather_timeout
+        try:
+            prompt = self._build_coach_gather_prompt(
+                task_id=task_id,
+                turn=turn,
+                requirements=requirements,
+                player_report=player_report,
+                honesty_verification=honesty_verification,
+                evidence_bundle=evidence_bundle,
+                acceptance_criteria=acceptance_criteria,
+            )
+            # Tool-bound, read-only Coach. synthesis=False ⇒ dispatched through
+            # harness.invoke (NOT invoke_synthesis); no grammar. return_events
+            # so we can extract the findings text from the typed stream.
+            result_tuple = await self._invoke_with_role(
+                prompt=prompt,
+                agent_type="coach",
+                allowed_tools=["Read", "Bash", "Grep", "Glob"],
+                permission_mode="bypassPermissions",
+                task_id=task_id,
+                turn=turn,
+                return_events=True,
+                synthesis=False,
+            )
+            if result_tuple is None:
+                return None
+            _, harness_events = result_tuple
+
+            # Reuse the substrate-agnostic text collectors the verdict parser
+            # uses. Prefer the content channel; fall back to the reasoning
+            # channel for hybrid-reasoning models that emit their analysis
+            # there (TASK-FIX-COACHBUDG01).
+            from guardkit.orchestrator.coach_output_parser import (
+                _collect_assistant_reasoning,
+                _collect_assistant_text,
+            )
+
+            findings = _collect_assistant_text(harness_events).strip()
+            if not findings:
+                findings = _collect_assistant_reasoning(harness_events).strip()
+            if not findings:
+                logger.info(
+                    "TASK-ARCH-COACHBFULL: Phase-A gather produced no findings "
+                    "for %s turn %s; degrading to B-min synthesis.",
+                    task_id, turn,
+                )
+                return None
+            logger.info(
+                "TASK-ARCH-COACHBFULL: Phase-A gather produced %d chars of "
+                "findings for %s turn %s.", len(findings), task_id, turn,
+            )
+            return findings
+        except Exception as exc:  # noqa: BLE001 — strict dominance: never fail the turn
+            logger.warning(
+                "TASK-ARCH-COACHBFULL: Phase-A gather failed for %s turn %s "
+                "(%s: %s); degrading to B-min synthesis.",
+                task_id, turn, type(exc).__name__, exc,
+            )
+            return None
+        finally:
+            self.sdk_timeout_seconds = prev_timeout
+
+    def _build_coach_gather_prompt(
+        self,
+        *,
+        task_id: str,
+        turn: int,
+        requirements: str,
+        player_report: Dict[str, Any],
+        honesty_verification: Optional[HonestyVerification],
+        evidence_bundle: Optional["CoachEvidenceBundle"],
+        acceptance_criteria: Optional[List[Dict[str, str]]],
+    ) -> str:
+        """Build the Phase-A gather prompt (TASK-ARCH-COACHBFULL).
+
+        Frames the turn as an INVESTIGATION whose output is findings text — a
+        per-AC compliance checklist (the Block paper's ✅/❌ + notes) — and
+        explicitly NOT a fenced JSON verdict (that is Phase B's job). The
+        deterministic evidence bundle and honesty verification are rendered as
+        the starting dossier so the Coach knows what has already been checked
+        and where to focus its probing (read changed files, run the focused
+        test, confirm an AC it cannot confirm from the dossier alone).
+        """
+        # Reuse the existing renderers for the dossier the Coach starts from.
+        evidence_section = ""
+        if evidence_bundle is not None:
+            evidence_section = self._render_evidence_bundle_section(
+                evidence_bundle
+            )
+
+        honesty_for_section = honesty_verification
+        if (
+            evidence_bundle is not None
+            and evidence_bundle.honesty is not None
+        ):
+            honesty_for_section = evidence_bundle.honesty
+        honesty_section = ""
+        if evidence_bundle is not None and honesty_for_section is not None:
+            honesty_section = self._render_bundle_honesty_section(
+                honesty_for_section
+            )
+        elif honesty_for_section:
+            honesty_section = (
+                "\n## Honesty Verification (Pre-Validated)\n\n"
+                + format_verification_context(honesty_for_section)
+                + "\n"
+            )
+
+        # Per-AC checklist the gather must work through.
+        criteria_section = ""
+        if acceptance_criteria:
+            lines = [
+                "## Acceptance Criteria to Investigate",
+                "",
+                "Work through EACH criterion and report whether the worktree "
+                "actually satisfies it:",
+                "",
+            ]
+            for criterion in acceptance_criteria:
+                lines.append(f"- **{criterion['id']}**: {criterion['text']}")
+            criteria_section = "\n".join(lines) + "\n"
+
+        return f"""You are the Coach agent, performing an INVESTIGATION pass \
+(Phase A of two).
+
+Task ID: {task_id}
+Turn: {turn}
+
+**THIS IS NOT THE VERDICT.** Your job here is to INVESTIGATE and produce
+*findings*, which a second toolless pass will turn into the formal verdict. Do
+NOT emit a fenced ```json decision block in this response — emit prose findings.
+
+You have READ-ONLY tools: Read, Bash, Grep, Glob. Use them to verify the work
+on disk rather than trusting the Player's report:
+- Read the changed files named in the Player's report.
+- Run the focused test(s) for this task if a test command is available.
+- For any acceptance criterion you cannot confirm from the dossier below,
+  probe the code directly (grep for the required behaviour; check that the
+  implementation is real, not a stub returning a hardcoded default).
+
+## Original Requirements
+
+{requirements}
+{criteria_section}## Player's Report
+
+{json.dumps(player_report, indent=2)}
+{evidence_section}{honesty_section}
+## What to Produce
+
+A per-criterion compliance checklist — for EACH acceptance criterion, one line:
+
+    <AC-ID>: PASS|FAIL|UNSURE — what you checked and what you found
+
+Then a short "IMMEDIATE ACTIONS NEEDED" list naming any criterion that is
+unmet, stubbed, or unverifiable, with the file/line evidence you found.
+
+Be concrete and cite file paths and line numbers. These findings are advisory
+input to the verdict pass — absent or unverifiable evidence is a FAIL/UNSURE,
+never an assumed pass. End your response with the checklist; do not write a
+JSON verdict.
+"""
 
     def _build_player_prompt(
         self,
@@ -2382,6 +2678,7 @@ Follow the report format specified in your agent definition.
         evidence_bundle: Optional["CoachEvidenceBundle"] = None,
         coach_context: Optional[str] = None,
         synthesis: bool = False,
+        gather_findings: Optional[str] = None,
     ) -> str:
         """Build prompt for Coach agent invocation with promise verification.
 
@@ -2421,6 +2718,12 @@ Follow the report format specified in your agent definition.
                 rewritten accordingly and a toolless-framing banner is added.
                 The Decision Format section is identical — the GBNF grammar
                 enforces the same schema the examples describe.
+            gather_findings: Optional Phase-A investigation findings text
+                (TASK-ARCH-COACHBFULL B-full). When provided, rendered into a
+                ``## Coach Investigation Findings (Phase A)`` section so the
+                toolless synthesis grounds its per-AC verdict on what the
+                tool-using gather pass actually found on disk. ``None`` (the
+                default, and the B-min path) omits the section entirely.
 
         Returns:
             Formatted prompt string for Coach agent
@@ -2472,6 +2775,27 @@ Follow the report format specified in your agent definition.
 ## Coach Context
 
 {coach_context}
+"""
+
+        # TASK-ARCH-COACHBFULL: Phase-A investigation findings section. Rendered
+        # only when the B-full gather ran and produced findings; advisory input
+        # the toolless synthesis grounds its per-AC verdict on. Absent findings
+        # (B-min path) omit the section — never a new false-green: the
+        # synthesis banner + absence-of-failure guards still treat
+        # unverifiable evidence as FEEDBACK, not approval.
+        gather_findings_section = ""
+        if gather_findings and gather_findings.strip():
+            gather_findings_section = f"""
+## Coach Investigation Findings (Phase A)
+
+A tool-using investigation pass ran BEFORE this verdict and probed the worktree
+directly (read changed files, ran focused tests, checked acceptance criteria).
+Its findings — a per-criterion compliance checklist — are below. Treat them as
+authoritative evidence of what is actually on disk, on equal footing with the
+Deterministic Evidence Bundle. Where a finding marks a criterion FAIL or UNSURE,
+that criterion is NOT satisfied for approval purposes.
+
+{gather_findings.strip()}
 """
 
         # Build acceptance criteria section for verification
@@ -2602,7 +2926,7 @@ Turn: {turn}
 ## Player's Report
 
 {json.dumps(player_report, indent=2)}
-{evidence_section}{honesty_section}{guards_section}{coach_context_section}{visual_verification_section}
+{evidence_section}{honesty_section}{guards_section}{gather_findings_section}{coach_context_section}{visual_verification_section}
 {responsibilities}
 
 ## Decision Format
