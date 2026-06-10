@@ -1,0 +1,103 @@
+{
+  "task_id": "TASK-FIX-GD02",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/orchestrator/agent_invoker.py"
+  ],
+  "files_created": [
+    ".claude/task-plans/TASK-FIX-GD02-implementation-plan.md",
+    "tests/unit/test_agent_invoker_git_delta.py"
+  ],
+  "tests_written": [],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation. Files planned: 0, Files actual: 0",
+  "concerns": [],
+  "requirements_addressed": [
+    "Baseline captured before task invocation",
+    "Delta computation replaces union-based enrichment",
+    "Both task-work and direct paths use delta",
+    "First task reports full diff correctly",
+    "Unit tests verify delta computation",
+    "Logging shows baseline vs delta counts"
+  ],
+  "requirements_remaining": [],
+  "sdk_turns_used": null,
+  "sdk_max_turns": 160,
+  "sdk_ceiling_hit": false,
+  "files_authored": [],
+  "tests_passed_count": 10,
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Baseline captured before each task invocation (both task-work and direct paths)",
+      "status": "complete",
+      "evidence": "Added _baseline_state field to AgentInvoker.__init__ and capture in invoke_player() before both task-work and direct paths. The baseline is captured via _snapshot_worktree_state() which calls _detect_git_changes() and returns sets of modified/created files.",
+      "test_file": "tests/unit/test_agent_invoker_git_delta.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Git-detected file counts reflect only per-task changes, not cumulative feature changes",
+      "status": "complete",
+      "evidence": "Both _create_player_report_from_task_work and _create_synthetic_direct_mode_report now compute delta = current_git_changes - baseline_state. Files in the baseline are excluded from the report, ensuring only per-task changes are attributed.",
+      "test_file": "tests/unit/test_agent_invoker_git_delta.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "_create_player_report_from_task_work uses delta instead of union",
+      "status": "complete",
+      "evidence": "Replaced union-based git enrichment (original_modified | git_modified) with delta computation (git_modified - baseline_modified). The delta is then merged with the task_work_result files via union.",
+      "test_file": "tests/unit/test_agent_invoker_git_delta.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "_create_synthetic_direct_mode_report uses delta instead of raw git state",
+      "status": "complete",
+      "evidence": "Replaced raw git state assignment with delta computation. files_modified and files_created now contain only delta values (git_changes - baseline_state).",
+      "test_file": "tests/unit/test_agent_invoker_git_delta.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "First task in worktree still reports correct file counts",
+      "status": "complete",
+      "evidence": "When baseline_state is empty (first task), delta = current - empty = current, so the full diff is reported. Verified by test_first_task_reports_full_diff.",
+      "test_file": "tests/unit/test_agent_invoker_git_delta.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Unit tests verify delta computation with mock git state",
+      "status": "complete",
+      "evidence": "Created tests/unit/test_agent_invoker_git_delta.py with 10 tests covering: snapshot capture, delta exclusion of baseline files, delta inclusion of new files, first-task full diff, and integration tests for both report paths.",
+      "test_file": "tests/unit/test_agent_invoker_git_delta.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Logging shows baseline vs delta counts for observability",
+      "status": "complete",
+      "evidence": "Added logger.info calls in both _create_player_report_from_task_work and _create_synthetic_direct_mode_report with format: 'Git detection for {task_id}: baseline={N}+{N}, delta={N}+{N}'",
+      "test_file": "tests/unit/test_agent_invoker_git_delta.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    }
+  ]
+}

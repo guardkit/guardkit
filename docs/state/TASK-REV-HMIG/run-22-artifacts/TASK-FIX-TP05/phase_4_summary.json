@@ -1,0 +1,7 @@
+{
+  "tests_run": 123,
+  "tests_failed": 0,
+  "coverage_pct": 100.0,
+  "output_summary": "All 123 tests passed with 100% line coverage on guardkit/models/task_types.py; no failures.",
+  "quality_gates_passed": true
+}
