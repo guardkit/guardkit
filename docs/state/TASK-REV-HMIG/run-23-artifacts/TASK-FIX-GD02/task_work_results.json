@@ -1,0 +1,148 @@
+{
+  "task_id": "TASK-FIX-GD02",
+  "timestamp": "2026-06-10T14:30:48.527628",
+  "completed": true,
+  "phases": {},
+  "quality_gates": {
+    "tests_passing": true,
+    "tests_passed": 13,
+    "tests_failed": 0,
+    "coverage": null,
+    "coverage_met": null,
+    "all_passed": null
+  },
+  "files_modified": [
+    "guardkit/orchestrator/agent_invoker.py"
+  ],
+  "files_created": [
+    ".claude/task-plans/TASK-FIX-GD02-implementation-plan.md",
+    "tests/unit/test_git_baseline_delta.py"
+  ],
+  "files_authored": [],
+  "tests_written": [],
+  "summary": "13 tests passed",
+  "sdk_turns": {
+    "turns_used": null,
+    "max_turns": 160,
+    "ceiling_hit": false
+  },
+  "task_type": "feature",
+  "agent_invocations_validation": {
+    "status": "violation",
+    "expected_phases": 3,
+    "actual_invocations": 2,
+    "missing_phases": [
+      "3"
+    ],
+    "violation_message": "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n\u274c PROTOCOL VIOLATION: Agent invocation incomplete\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n\nExpected: 3 agent invocations\nActual: 2 completed invocations\n\nMissing phases:\n  - Phase 3 (Implementation)\n\nCannot generate completion report until all agents are invoked.\nReview the AGENT INVOCATIONS LOG above to see which phases were skipped.\n\nAGENT INVOCATIONS LOG:\n\u2705 Phase 4 (Phase 4): test-orchestrator (completed in ?s)\n\u2705 Phase 5 (Phase 5): code-reviewer (completed in ?s)\n\nTASK WILL BE MOVED TO BLOCKED STATE\nReason: Protocol violation - required agents not invoked\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+  },
+  "plan_audit": {
+    "status": "passed",
+    "severity": "low",
+    "violations": 0,
+    "extra_files": [],
+    "missing_files": [],
+    "extra_modifications": [],
+    "missing_modifications": [],
+    "extra_dependencies": [],
+    "missing_dependencies": [],
+    "loc_variance_pct": null,
+    "discrepancies_count": 0,
+    "message": "no plan on disk; all 2 task-body-declared file(s) present"
+  },
+  "unconfirmed_low_confidence_assumptions": {
+    "status": "ok",
+    "unconfirmed": [],
+    "files_scanned": 0,
+    "files_skipped": 0,
+    "message": null
+  },
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Baseline captured before each task invocation (both task-work and direct paths)",
+      "status": "complete",
+      "evidence": "Added _task_baseline_state instance variable and _snapshot_worktree_state() method. invoke_player() calls _snapshot_worktree_state() before each task invocation to capture baseline state. Verified by unit test TestInvokePlayerBaselineCapture.",
+      "test_file": "tests/unit/test_git_baseline_delta.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Git-detected file counts reflect only per-task changes, not cumulative feature changes",
+      "status": "complete",
+      "evidence": "Both _create_player_report_from_task_work and _create_synthetic_direct_mode_report now compute delta by subtracting baseline state from current git state. Verified by unit tests TestPlayerReportFromTaskWorkDelta and TestSyntheticDirectModeDelta.",
+      "test_file": "tests/unit/test_git_baseline_delta.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "_create_player_report_from_task_work uses delta instead of union",
+      "status": "complete",
+      "evidence": "Replaced union merge (original_modified | git_modified) with delta computation (git_modified - baseline_modified). Verified by TestPlayerReportFromTaskWorkDelta::test_report_uses_delta_not_union.",
+      "test_file": "tests/unit/test_git_baseline_delta.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "_create_synthetic_direct_mode_report uses delta instead of raw git state",
+      "status": "complete",
+      "evidence": "Replaced direct use of git_changes with delta computation (git_modified - baseline_modified). Verified by TestSyntheticDirectModeDelta::test_synthetic_report_uses_delta.",
+      "test_file": "tests/unit/test_git_baseline_delta.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "First task in worktree still reports correct file counts",
+      "status": "complete",
+      "evidence": "When _task_baseline_state is empty (first task), delta = current git state, so all files are reported correctly. Verified by TestPlayerReportFromTaskWorkDelta::test_first_task_reports_all_files and TestSyntheticDirectModeDelta::test_synthetic_report_first_task_all_files.",
+      "test_file": "tests/unit/test_git_baseline_delta.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Unit tests verify delta computation with mock git state",
+      "status": "complete",
+      "evidence": "Created 13 unit tests in tests/unit/test_git_baseline_delta.py covering: _snapshot_worktree_state (3 tests), invoke_player baseline capture (2 tests), delta computation logic (4 tests), _create_player_report_from_task_work delta (2 tests), _create_synthetic_direct_mode_report delta (2 tests). All 13 tests pass.",
+      "test_file": "tests/unit/test_git_baseline_delta.py",
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Logging shows baseline vs delta counts for observability",
+      "status": "complete",
+      "evidence": "Added logger.info call in _create_player_report_from_task_work that logs: f'Git detection for {task_id}: baseline={baseline_mod_count}+{baseline_cre_count}, delta={delta_mod_count}+{delta_cre_count}'. Also logs baseline capture in invoke_player: f'Captured per-task baseline for {task_id}: {len(baseline_modified)} modified, {len(baseline_created)} created'.",
+      "test_file": null,
+      "implementation_files": [
+        "guardkit/orchestrator/agent_invoker.py"
+      ]
+    }
+  ],
+  "agent_invocations": [
+    {
+      "phase": "4",
+      "agent": "test-orchestrator",
+      "status": "completed",
+      "source": "orchestrator",
+      "duration_seconds": 133.7614950002171
+    },
+    {
+      "phase": "5",
+      "agent": "code-reviewer",
+      "status": "completed",
+      "source": "orchestrator",
+      "duration_seconds": 821.4697136660106
+    }
+  ]
+}

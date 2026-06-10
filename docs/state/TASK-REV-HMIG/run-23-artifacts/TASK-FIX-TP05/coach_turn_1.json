@@ -1,0 +1,61 @@
+{
+  "task_id": "TASK-FIX-TP05",
+  "turn": 1,
+  "decision": "feedback",
+  "issues": [
+    {
+      "type": "test_failure",
+      "severity": "critical",
+      "description": "TypeError in `guardkit/orchestrator/specialist_invocations.py:924` inside `invoke_test_orchestrator`: '<' not supported between instances of 'int' and 'Mock'. This prevents independent test execution from functioning.",
+      "requirement": "AC-002",
+      "suggestion": "Ensure `sdk_timeout` is correctly typed as an integer before passing it to `min()`, or update the mocks in `tests/unit/test_autobuild_orchestrator.py` to provide integer values for timeouts."
+    },
+    {
+      "type": "test_failure",
+      "severity": "major",
+      "description": "AssertionErrors in `TestCoachValidatorPathConstruction` because `CoachValidator` is called with unexpected arguments (`model_name`, `coach_model_name`, `venv_python`).",
+      "requirement": "AC-006",
+      "suggestion": "Update the test expectations in `tests/unit/test_autobuild_orchestrator.py` to match the updated `CoachValidator` signature."
+    },
+    {
+      "type": "missing_requirement",
+      "severity": "critical",
+      "description": "Because `invoke_test_orchestrator` is crashing, there is no evidence that test failures produce actionable feedback.",
+      "requirement": "AC-003",
+      "suggestion": "Fix the crashes in the test execution path and verify that failure outputs are correctly captured and passed to the Coach."
+    }
+  ],
+  "criteria_verification": [
+    {
+      "criterion_id": "AC-001",
+      "result": "verified",
+      "notes": "Unit tests in `test_task_types.py` for testing profile configuration passed."
+    },
+    {
+      "criterion_id": "AC-002",
+      "result": "rejected",
+      "notes": "The implementation crashes with a TypeError in `invoke_test_orchestrator` during independent test runs."
+    },
+    {
+      "criterion_id": "AC-003",
+      "result": "rejected",
+      "notes": "Logic crashes before feedback can be generated."
+    },
+    {
+      "criterion_id": "AC-004",
+      "result": "rejected",
+      "notes": "No evidence provided to verify that `zero_test_blocking` remains False."
+    },
+    {
+      "criterion_id": "AC-005",
+      "result": "verified",
+      "notes": "Verified via evidence bundle (conftest.py existence)."
+    },
+    {
+      "criterion_id": "AC-006",
+      "result": "verified",
+      "notes": "Unit tests in `test_task_types.py` verify the updated profile."
+    }
+  ],
+  "rationale": "The implementation introduces critical regressions in the orchestrator, causing multiple unit tests to fail with TypeErrors and AssertionErrors. The core functionality of independent test execution (AC-002) is currently broken."
+}

@@ -1,0 +1,7 @@
+{
+    "tests_run": 13,
+    "tests_failed": 0,
+    "coverage_pct": 18.0,
+    "output_summary": "13/13 tests passed; agent_invoker.py line coverage 18.0%",
+    "quality_gates_passed": true
+}

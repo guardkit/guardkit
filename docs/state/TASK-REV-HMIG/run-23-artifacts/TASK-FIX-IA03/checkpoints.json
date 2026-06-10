@@ -1,0 +1,15 @@
+{
+  "task_id": "TASK-FIX-IA03",
+  "checkpoints": [
+    {
+      "turn": 1,
+      "commit_hash": "b97f20cb3adc46c4b2dd91b6981e54ee81087ec9",
+      "timestamp": "2026-06-10T14:20:31.438613",
+      "tests_passed": true,
+      "test_count": 33,
+      "message": "[guardkit-checkpoint] Turn 1 complete (tests: pass)",
+      "from_prior_run": false
+    }
+  ],
+  "last_updated": "2026-06-10T14:20:31.439027"
+}
