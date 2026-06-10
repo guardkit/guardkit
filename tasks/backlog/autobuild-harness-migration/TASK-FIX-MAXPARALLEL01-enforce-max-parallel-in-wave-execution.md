@@ -138,3 +138,16 @@ distinguish wave-size from concurrency.
 - Pairs with TASK-PERF-COACHSYNTH: COACHSYNTH fixes the gather F20 overflow;
   MAXPARALLEL01 lets you run serial to validate it cleanly without parallel
   substrate contention as a confound.
+- **Run-23 promoted this from "lets you validate cleanly" to "the actual F20
+  mitigation."** Run-23 (each task in its own single-task wave — the Scenario
+  B+C workaround for *this* unfixed bug) showed **F20 is parallel/wave-pressure
+  amplified, not a single-call envelope issue**: TP05 ran isolated and **no F20
+  fired**, where the same task F20'd at 108,094 tokens when sharing a wave with
+  GD02 (KV cache split → longer agent chains → more context). So the durable
+  operator fix for B-full availability is **keep Coach calls sequential** — land
+  this task (or use the `parallel_groups` YAML split) — **not** bumping `n_ctx`,
+  and not (necessarily) the COACHSYNTH gather token-bound (which run-23 could not
+  cleanly credit, since isolation alone removed the overflow). The 98,304 ctx
+  envelope is fine for single-Coach load.
+  Evidence: `docs/state/TASK-REV-HMIG/run-23-artifacts/README.md` ("F20 was
+  parallel-load amplified").
