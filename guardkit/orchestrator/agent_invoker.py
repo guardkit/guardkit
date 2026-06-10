@@ -2189,6 +2189,25 @@ class AgentInvoker:
             decision = self._load_agent_report(task_id, turn, "coach")
             self._validate_coach_decision(decision)
 
+            # TASK-FIX-COACHFG01: deterministic fail-closed backstop for the
+            # absence-of-failure guard #6 (the INDEPENDENT-TEST ABSENT GUARD in
+            # _build_coach_prompt). The toolless-synthesis Coach is *told* not
+            # to approve when the independent-test oracle produced no signal,
+            # but that instruction is advisory — run-19 showed the local model
+            # emit `approve` anyway after its own trust-but-verify pytest run
+            # timed out (300s). This override makes guard #6 load-bearing CODE,
+            # not a prompt the model may ignore. It fires after the verdict is
+            # loaded + schema-validated and before the AgentInvocationResult is
+            # returned (the natural seam). Narrow: only an `approve` over an
+            # `independent_tests.signal_absent` bundle is overridden.
+            self._reconcile_absent_independent_test_signal(
+                decision=decision,
+                evidence_bundle=evidence_bundle,
+                task_id=task_id,
+                turn=turn,
+                coach_output_path=coach_output_path,
+            )
+
             # Add honesty verification to decision for tracking
             decision["honesty_verification"] = {
                 "verified": honesty_verification.verified,
@@ -4968,6 +4987,115 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             if type_errors:
                 error_msg += f"Type errors: {', '.join(type_errors)}"
             raise CoachDecisionInvalidError(error_msg)
+
+    def _reconcile_absent_independent_test_signal(
+        self,
+        *,
+        decision: Dict[str, Any],
+        evidence_bundle: Optional["CoachEvidenceBundle"],
+        task_id: str,
+        turn: int,
+        coach_output_path: Path,
+    ) -> None:
+        """Fail closed when the Coach's independent-test oracle produced no signal.
+
+        TASK-FIX-COACHFG01. Deterministic backstop for the absence-of-failure
+        guard #6 (``INDEPENDENT-TEST ABSENT GUARD`` in ``_build_coach_prompt``).
+        The toolless-synthesis Coach is *told* not to approve when
+        ``evidence_bundle.independent_tests.signal_absent`` is True, but that
+        instruction is advisory — run-19 showed the local model emit ``approve``
+        anyway after its own trust-but-verify pytest run timed out (300s). This
+        method makes guard #6 load-bearing: it overrides an ``approve`` verdict
+        to ``feedback`` whenever the independent-test oracle signal is absent,
+        independent of what the LLM emitted.
+
+        Narrow and identity-bounded (mirrors
+        ``.claude/rules/absence-of-failure-is-not-success.md``):
+
+        * Only an ``approve`` is overridden. A ``feedback`` verdict already
+          rejects the turn and is left untouched.
+        * Only ``independent_tests.signal_absent is True`` triggers it. A
+          genuine test *failure* (``tests_passed=False, signal_absent=False``)
+          is NOT this case — it flows through the existing conditional-approval
+          / ``_classify_test_failure`` path unchanged. A bundle with no
+          ``independent_tests`` leg is owned by the gathering_status guard (#5),
+          not this one.
+        * The on-disk ``coach_turn_N.json`` is rewritten to match the override
+          so the operator artifact and the Layer-4 late-approval reconciliation
+          (``feature_orchestrator._check_late_approval`` reads ``decision``
+          straight off disk) cannot resurrect the overridden ``approve``. See
+          ``.claude/rules/harness-cancellation-contract.md``.
+
+        Mutates ``decision`` in place. No-op for every case except the single
+        ``approve`` + ``signal_absent`` shape above.
+
+        Args:
+            decision: The loaded, schema-validated Coach verdict dict.
+            evidence_bundle: The bundle the synthesis verdict was built over,
+                or ``None`` for legacy/tool-using callers (no-op when ``None``).
+            task_id: Task identifier (for the WARNING log).
+            turn: Current turn number (for the WARNING log).
+            coach_output_path: Path to ``coach_turn_N.json`` to re-persist on
+                override.
+        """
+        if decision.get("decision") != "approve":
+            return
+        if evidence_bundle is None:
+            return
+        independent = evidence_bundle.independent_tests
+        if independent is None or not getattr(independent, "signal_absent", False):
+            return
+
+        original_decision = decision["decision"]
+        summary = (getattr(independent, "test_output_summary", "") or "").strip()
+
+        # AC-2: name the cause and quote test_output_summary verbatim so the
+        # operator can see whether the oracle timed out or errored. The leading
+        # sentence mirrors guard #6's prompt wording exactly.
+        rationale = (
+            "Independent test verification did not complete (signal absent) — "
+            "cannot independently confirm the Player's reported tests. "
+            f"Independent-test oracle output: {summary or '<empty>'}"
+        )
+
+        decision["decision"] = "feedback"
+        decision["rationale"] = rationale
+        override_issue = {
+            "severity": "must_fix",
+            "category": "absence_of_failure",
+            "description": rationale,
+            "details": {
+                "signal_absent": True,
+                "test_output_summary": summary,
+                "overridden_decision": original_decision,
+            },
+        }
+        decision["issues"] = [override_issue, *decision.get("issues", [])]
+
+        # AC-3: WARNING with task_id, turn, and the original (overridden) decision.
+        logger.warning(
+            "TASK-FIX-COACHFG01: overriding Coach verdict %r->'feedback' for "
+            "%s turn %s — independent-test oracle signal absent "
+            "(absence-of-failure). Oracle output: %s",
+            original_decision,
+            task_id,
+            turn,
+            summary or "<empty>",
+        )
+
+        # Re-persist so the operator-facing coach_turn_N.json and the Layer-4
+        # late-approval reader see the override, not the stale `approve`. A
+        # persistence hiccup must never unblock the turn — the in-memory
+        # override (returned in the result) already rejects it.
+        try:
+            coach_output_path.write_text(json.dumps(decision, indent=2))
+        except OSError as exc:
+            logger.warning(
+                "TASK-FIX-COACHFG01: failed to re-persist overridden verdict "
+                "to %s (%s); in-memory override still applies",
+                coach_output_path,
+                exc,
+            )
 
     # =========================================================================
     # Task-Work Delegation Methods
