@@ -401,6 +401,7 @@ class TestSelectHarnessDispatch:
         from guardkitfactory.harness import LangGraphHarness
         from guardkitfactory.harness.backend_config import LocalShellBackend
         from guardkitfactory.harness.permissions import FilesystemPermission
+        from deepagents.backends.composite import CompositeBackend
 
         harness = select_harness(
             env_var=_TEST_ENV_VAR,
@@ -410,10 +411,21 @@ class TestSelectHarnessDispatch:
 
         assert isinstance(harness, LangGraphHarness)
         assert harness.backend is not None
-        assert isinstance(harness.backend, LocalShellBackend)
+        # TASK-HMIG-002R-SUMM-ROOT wraps the LocalShellBackend in a
+        # CompositeBackend (to carry artifacts_root for summarisation
+        # re-rooting); the LocalShellBackend is its ``default``. (Test
+        # updated under TASK-PERF-COACHSYNTH — the assertion had drifted from
+        # the wrapped-return production shape.)
+        assert isinstance(harness.backend, CompositeBackend)
+        assert isinstance(harness.backend.default, LocalShellBackend)
+        # The permissions factory is wired (returns a list). Note: under
+        # TASK-HMIG-002R-NOPERMS the deny-rule list is intentionally EMPTY
+        # (filesystem confinement moved to virtual_mode/operator-trust, see
+        # backend_config module docstring), so we no longer assert non-empty
+        # — only that the list is wired and every element (if any) is a
+        # FilesystemPermission. (Test updated under TASK-PERF-COACHSYNTH.)
         assert harness.permissions is not None
         assert isinstance(harness.permissions, list)
-        assert len(harness.permissions) > 0
         assert all(
             isinstance(p, FilesystemPermission) for p in harness.permissions
         )
@@ -462,6 +474,88 @@ class TestSelectHarnessDispatch:
             env_var=_TEST_ENV_VAR, cwd=tmp_path, **_sdk_kwargs()
         )
 
+        assert isinstance(harness, ClaudeSDKHarness)
+
+    # ------------------------------------------------------------------
+    # TASK-PERF-COACHSYNTH: gather-bound kwargs (recursion_limit,
+    # max_tool_result_chars). LangGraph-only; dropped on the SDK path.
+    # ------------------------------------------------------------------
+
+    def test_langgraph_forwards_recursion_limit(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    ) -> None:
+        """The gather's recursion ceiling must reach the LangGraphHarness —
+
+        it is the ONLY hard tool-cycle bound on that substrate (max_turns is
+        dropped). Without it the gather can balloon past the model window (F20).
+        """
+        pytest.importorskip("guardkitfactory.harness")
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR,
+            model=MagicMock(),
+            cwd=tmp_path,
+            recursion_limit=7,
+        )
+        assert harness.recursion_limit == 7
+
+    def test_langgraph_forwards_tool_result_cap(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    ) -> None:
+        """A non-None max_tool_result_chars wraps the backend in a
+
+        TruncatingBackend so single tool results cannot blow the window.
+        """
+        pytest.importorskip("guardkitfactory.harness")
+        from guardkitfactory.harness.backend_config import TruncatingBackend
+
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR,
+            model=MagicMock(),
+            cwd=tmp_path,
+            max_tool_result_chars=4096,
+        )
+        assert isinstance(harness.backend.default, TruncatingBackend)
+
+    def test_langgraph_default_no_bounds(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    ) -> None:
+        """Player/synthesis paths (no gather kwargs) are unchanged: LangGraph
+
+        default recursion (None) and an unwrapped backend.
+        """
+        pytest.importorskip("guardkitfactory.harness")
+        from guardkitfactory.harness.backend_config import TruncatingBackend
+
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR, model=MagicMock(), cwd=tmp_path
+        )
+        assert harness.recursion_limit is None
+        assert not isinstance(harness.backend.default, TruncatingBackend)
+
+    def test_sdk_path_drops_gather_bounds(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    ) -> None:
+        """The SDK harness has no recursion_limit / tool-result-cap params;
+
+        the selector must pop them so callers can pass them unconditionally
+        without a TypeError (the SDK bounds cycles via max_turns instead).
+        """
+        monkeypatch.setenv(_TEST_ENV_VAR, "sdk")
+        from guardkit.orchestrator.harness.sdk_harness import ClaudeSDKHarness
+
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR,
+            cwd=tmp_path,
+            recursion_limit=5,
+            max_tool_result_chars=1234,
+            **_sdk_kwargs(),
+        )
         assert isinstance(harness, ClaudeSDKHarness)
 
     def test_sdk_path_threads_setting_sources(

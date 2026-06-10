@@ -240,6 +240,21 @@ def select_harness(
     # bag and callers can pass cwd unconditionally.
     cwd = harness_kwargs.pop("cwd", None)
 
+    # TASK-PERF-COACHSYNTH: gather-bound kwargs. Popped here (like ``cwd``)
+    # so neither concrete harness constructor sees them unexpectedly. They
+    # are LangGraph-only knobs:
+    #   * ``recursion_limit`` — forwarded to ``LangGraphHarness`` to cap the
+    #     DeepAgents super-step count (the F20 substrate drops ``max_turns``,
+    #     so this is the only hard tool-cycle bound there).
+    #   * ``max_tool_result_chars`` — forwarded to ``build_autobuild_backend``
+    #     so each gather tool result is truncated before it re-enters context.
+    # Both default to ``None`` (unbounded / LangGraph-default) so the Player
+    # and synthesis paths are unchanged. On the SDK path they are dropped:
+    # the SDK bounds tool cycles via ``max_turns`` (already forwarded) and has
+    # no per-tool-result truncation hook.
+    recursion_limit = harness_kwargs.pop("recursion_limit", None)
+    max_tool_result_chars = harness_kwargs.pop("max_tool_result_chars", None)
+
     if name == "sdk":
         # Lazy import keeps the package importable when claude_agent_sdk
         # is not installed and the user is on the langgraph path.
@@ -283,8 +298,11 @@ def select_harness(
         translated = _translate_kwargs_for_langgraph(harness_kwargs)
         return LangGraphHarness(
             model=translated["model"],
-            backend=build_autobuild_backend(Path(cwd)),
+            backend=build_autobuild_backend(
+                Path(cwd), max_tool_result_chars=max_tool_result_chars
+            ),
             permissions=build_autobuild_permissions(),
+            recursion_limit=recursion_limit,
         )
 
     raise AgentInvocationError(

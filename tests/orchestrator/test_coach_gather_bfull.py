@@ -418,3 +418,118 @@ class TestCriteriaThreading:
             synthesis=True,
         )
         assert "Acceptance Criteria to Verify" not in prompt
+
+
+# ---------------------------------------------------------------------------
+# TASK-PERF-COACHSYNTH — gather is bounded so it cannot overflow the window
+# (AC-1 / AC-2 plumbing) + synthesis-prompt findings truncation (AC-4).
+# ---------------------------------------------------------------------------
+
+
+class TestGatherBoundPlumbing:
+    """The Phase-A gather call must carry the recursion_limit + tool-result
+
+    truncation bounds (the load-bearing F20 fix), and the toolless synthesis
+    call must NOT (so the verdict generation is unconstrained by gather knobs).
+    """
+
+    def test_gather_call_carries_bounds_synthesis_does_not(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from guardkit.orchestrator.agent_invoker import (
+            _COACH_GATHER_MAX_TOOL_RESULT_CHARS,
+            _COACH_GATHER_RECURSION_LIMIT,
+        )
+
+        monkeypatch.setenv("GUARDKIT_COACH_GATHER", "1")
+        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
+        invoker = _make_invoker(tmp_path)
+
+        calls: list[dict] = []
+
+        async def _iwr(**kwargs):
+            calls.append(kwargs)
+            if not kwargs.get("synthesis"):
+                return _findings_events("AC-001: PASS — verified at src/foo.py:5")
+            return _verdict_events("TASK-BND-001")
+
+        invoker._invoke_with_role = _iwr  # type: ignore[method-assign]
+        asyncio.run(
+            invoker.invoke_coach(
+                task_id="TASK-BND-001",
+                turn=1,
+                requirements="reqs",
+                player_report={"files_modified": ["src/foo.py"]},
+                evidence_bundle=_make_bundle(),
+            )
+        )
+
+        assert len(calls) == 2
+        gather, synth = calls[0], calls[1]
+        # AC-1: gather is bounded — recursion ceiling + per-tool-result cap.
+        assert gather["recursion_limit"] == _COACH_GATHER_RECURSION_LIMIT
+        assert (
+            gather["max_tool_result_chars"]
+            == _COACH_GATHER_MAX_TOOL_RESULT_CHARS
+        )
+        # The bounds must be REAL caps, not disabled.
+        assert gather["recursion_limit"] > 0
+        assert gather["max_tool_result_chars"] > 0
+        # Synthesis (verdict) must not inherit the gather knobs.
+        assert synth.get("recursion_limit") is None
+        assert synth.get("max_tool_result_chars") is None
+
+
+# Plumbing coverage note (TASK-PERF-COACHSYNTH): the two remaining hops are
+# covered elsewhere — the gather → _invoke_with_role kwargs hop by
+# TestGatherBoundPlumbing above, and the select_harness → LangGraphHarness /
+# build_autobuild_backend hop by
+# tests/orchestrator/harness/test_selector.py::TestSelectHarnessGatherBounds.
+
+
+class TestGatherFindingsTruncation:
+    """AC-4: the Phase-A findings injected into the synthesis prompt are
+
+    capped (with a visible marker) so synthesis-prompt size cannot grow
+    unbounded with gather volume (the run-20 latency creep).
+    """
+
+    def test_under_limit_passthrough(self) -> None:
+        small = "AC-001: PASS\nAC-002: PASS"
+        assert AgentInvoker._truncate_gather_findings(small) == small
+
+    def test_over_limit_is_capped_and_marked(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            AgentInvoker, "_COACH_GATHER_FINDINGS_LIMIT_CHARS", 100
+        )
+        big = "F" * 5000
+        out = AgentInvoker._truncate_gather_findings(big)
+        assert len(out) < len(big)
+        assert out.startswith("F" * 100)
+        # The marker is load-bearing — the synthesis must not treat the
+        # truncated checklist as complete (absence-of-failure-is-not-success).
+        assert "truncated" in out
+        assert "FAIL/UNSURE" in out
+
+    def test_truncation_applied_in_synthesis_prompt(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            AgentInvoker, "_COACH_GATHER_FINDINGS_LIMIT_CHARS", 200
+        )
+        prompt = _make_invoker(tmp_path)._build_coach_prompt(
+            task_id="TASK-TRC-001",
+            turn=1,
+            requirements="reqs",
+            player_report={"files_modified": []},
+            evidence_bundle=_make_bundle(),
+            synthesis=True,
+            gather_findings="G" * 8000,
+        )
+        # The findings section is present but bounded + marked.
+        assert "Coach Investigation Findings (Phase A)" in prompt
+        assert "truncated for synthesis-prompt budget" in prompt
+        # The full 8000-char blob must NOT appear verbatim.
+        assert "G" * 8000 not in prompt

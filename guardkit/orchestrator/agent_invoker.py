@@ -596,6 +596,36 @@ def _coach_gather_enabled() -> bool:
 _COACH_GATHER_BUDGET_FRACTION = 0.4
 _COACH_GATHER_BUDGET_MIN_S = 60
 
+# TASK-PERF-COACHSYNTH: the wall-clock budget above was NECESSARY but NOT
+# SUFFICIENT — run-22 TP05 overflowed gemma4:31b's 98 K window *within* the
+# 40% budget (the gather ran ~19.5 min of HTTP 200s, accumulating tool-result
+# tokens, then 400'd at 108 K). The overflow is one request's own growing
+# context, so the bound must live INSIDE the gather. These two knobs, layered
+# with the gemma4:31b summarisation-profile registration (guardkitfactory
+# model_config) and the existing wall-clock budget, give defence-in-depth:
+#
+#   * _COACH_GATHER_RECURSION_LIMIT — hard ceiling on DeepAgents super-steps
+#     (≈ 2 per tool round-trip). 12 ⇒ ~6 tool round-trips then the model must
+#     conclude. ``max_turns`` is DROPPED on the LangGraph substrate, so this
+#     is the ONLY hard tool-cycle bound there. When it trips, the gather
+#     raises GraphRecursionError → degrades to B-min (a verdict still emerges
+#     within budget — AC-2) rather than eating the whole task budget. A
+#     genuine focused investigation (a handful of reads) concludes well below
+#     this; only a runaway trips it.
+#   * _COACH_GATHER_MAX_TOOL_RESULT_CHARS — per-tool-result truncation budget
+#     so a single ``read`` of a 2 k-line file cannot dump its whole body into
+#     the context in one cycle. ~12 k chars ≈ ~3 k tokens; worst case the
+#     gather adds RECURSION_LIMIT × this ≈ well under the 98 K window.
+#
+# Both are env-overridable for operator tuning on the live substrate
+# (AC-3/AC-5 validation runs).
+_COACH_GATHER_RECURSION_LIMIT = int(
+    os.environ.get("GUARDKIT_COACH_GATHER_RECURSION_LIMIT", "12")
+)
+_COACH_GATHER_MAX_TOOL_RESULT_CHARS = int(
+    os.environ.get("GUARDKIT_COACH_GATHER_MAX_TOOL_RESULT_CHARS", "12000")
+)
+
 
 # =========================================================================
 # TASK-PSN-003: Promise format reinforcement near SDK turn ceiling
@@ -2338,6 +2368,16 @@ class AgentInvoker:
                 turn=turn,
                 return_events=True,
                 synthesis=False,
+                # TASK-PERF-COACHSYNTH: bound the tool-using loop so it cannot
+                # overflow the model window (run-22 TP05 F20). recursion_limit
+                # caps tool-cycles; max_tool_result_chars caps single-result
+                # payloads. Both are LangGraph-only (dropped on the SDK path,
+                # which bounds cycles via max_turns). A runaway gather trips
+                # the recursion ceiling → GraphRecursionError → degrade to
+                # B-min (AC-2); the existing wall-clock budget (set above) is
+                # the third layer.
+                recursion_limit=_COACH_GATHER_RECURSION_LIMIT,
+                max_tool_result_chars=_COACH_GATHER_MAX_TOOL_RESULT_CHARS,
             )
             if result_tuple is None:
                 return None
@@ -2804,6 +2844,9 @@ Follow the report format specified in your agent definition.
         # unverifiable evidence as FEEDBACK, not approval.
         gather_findings_section = ""
         if gather_findings and gather_findings.strip():
+            # TASK-PERF-COACHSYNTH (AC-4): bound the findings text injected into
+            # the synthesis prompt — marked, never silently dropped.
+            _bounded_findings = self._truncate_gather_findings(gather_findings.strip())
             gather_findings_section = f"""
 ## Coach Investigation Findings (Phase A)
 
@@ -2814,7 +2857,7 @@ authoritative evidence of what is actually on disk, on equal footing with the
 Deterministic Evidence Bundle. Where a finding marks a criterion FAIL or UNSURE,
 that criterion is NOT satisfied for approval purposes.
 
-{gather_findings.strip()}
+{_bounded_findings}
 """
 
         # Build acceptance criteria section for verification
@@ -3023,6 +3066,34 @@ orchestrator takes only the **last** fenced block.
     _COACH_BDD_DISCOVERIES_LIMIT = 20
     _COACH_BDD_ERRORS_LIMIT = 10
     _COACH_HONESTY_DISCREPANCIES_LIMIT = 20
+
+    # TASK-PERF-COACHSYNTH (AC-4 / Lever C): cap the Phase-A gather findings
+    # text rendered into the Phase-B synthesis prompt. The gather is already
+    # bounded at the source (recursion_limit + per-tool-result truncation),
+    # but the findings the model *produces* can still be large; this is the
+    # final belt so the synthesis prompt size does not grow unbounded with
+    # gather volume (the run-20 latency creep). Truncation is MARKED, never
+    # silent — respecting absence-of-failure-is-not-success.md: a silently
+    # dropped tail would let the synthesis treat a partial checklist as
+    # complete. ~16 k chars ≈ ~4 k tokens of findings.
+    _COACH_GATHER_FINDINGS_LIMIT_CHARS = int(
+        os.environ.get("GUARDKIT_COACH_GATHER_FINDINGS_LIMIT_CHARS", "16000")
+    )
+
+    @classmethod
+    def _truncate_gather_findings(cls, findings: str) -> str:
+        """Cap findings at the char budget with a visible truncation marker."""
+        limit = cls._COACH_GATHER_FINDINGS_LIMIT_CHARS
+        if limit <= 0 or len(findings) <= limit:
+            return findings
+        elided = len(findings) - limit
+        return (
+            findings[:limit]
+            + f"\n\n... [Phase-A findings truncated for synthesis-prompt "
+            f"budget: {elided} more chars elided. Any acceptance criterion "
+            f"NOT explicitly marked PASS above is unverified — treat as "
+            f"FAIL/UNSURE, never an assumed pass.] ..."
+        )
 
     def _render_evidence_bundle_section(
         self,
@@ -3324,6 +3395,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         return_events: bool = False,
         synthesis: bool = False,
         grammar: Optional[str] = None,
+        recursion_limit: Optional[int] = None,
+        max_tool_result_chars: Optional[int] = None,
     ) -> Optional[Tuple[None, List[HarnessEvent]]]:
         """Low-level SDK invocation with role-based permissions.
 
@@ -3377,6 +3450,19 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 ``invoke_synthesis``. Honoured only on substrates that
                 support it (LangGraph/llama.cpp); ignored on the SDK path.
                 Ignored entirely when ``synthesis`` is ``False``.
+            recursion_limit: TASK-PERF-COACHSYNTH. Optional hard ceiling on
+                the LangGraph/DeepAgents super-step count for this single
+                invocation. ``None`` preserves the substrate default (25 on
+                LangGraph; ``max_turns`` governs the SDK). The Coach B-full
+                gather passes a small value so its tool-using loop cannot grow
+                unbounded and overflow the model window (run-22 TP05 F20).
+                Dropped on the SDK path (which bounds cycles via ``max_turns``).
+            max_tool_result_chars: TASK-PERF-COACHSYNTH. Optional per-tool-
+                result truncation budget forwarded to
+                ``build_autobuild_backend``. ``None`` leaves tool results
+                uncapped (Player/synthesis behaviour). The Coach gather passes
+                a limit so a single ``read``/``grep``/``execute`` cannot dump
+                an unbounded payload into the running context. LangGraph-only.
 
         Returns:
             ``None`` by default. ``(None, harness_events)`` when
@@ -3505,6 +3591,12 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 # (same as task-work delegation path fixed in TASK-REV-BB80)
                 # TASK-FIX-7718: Use effective turns (auto-reduced for local backends)
                 max_turns=self._effective_sdk_max_turns,
+                # TASK-PERF-COACHSYNTH: gather-bound knobs. Both default None
+                # (unbounded / substrate-default) and are popped by
+                # select_harness before the SDK harness sees them; only the
+                # LangGraph branch honours them. The Coach gather sets them.
+                recursion_limit=recursion_limit,
+                max_tool_result_chars=max_tool_result_chars,
                 model=model,
                 resume_session_id=resume_session_id,
                 sdk_debug_dir=_sdk_debug_dir,
