@@ -1,0 +1,7 @@
+{
+  "tests_run": 279,
+  "tests_failed": 18,
+  "coverage_pct": 11.06,
+  "output_summary": "279 tests executed: 261 passed, 18 failed (pre-existing mock comparison issues in test_autobuild_orchestrator.py; task_types module at 100% coverage).",
+  "quality_gates_passed": false
+}

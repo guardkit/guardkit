@@ -1,0 +1,30 @@
+{
+  "id": "TURN-FEAT-AOF-1",
+  "feature_id": "FEAT-AOF",
+  "task_id": "TASK-FIX-TP05",
+  "turn_number": 1,
+  "player_summary": "Implementation attempt",
+  "player_decision": "feedback",
+  "coach_decision": "feedback",
+  "coach_feedback": "- TypeError in `guardkit/orchestrator/specialist_invocations.py:924` inside `invoke_test_orchestrator`: '<' not supported between instances of 'int' and 'Mock'. This prevents independent test execution from functioning.: Ensure `sdk_timeout` is correctly typed as an integer before passing it to `min()`, or update the mocks in `tests/unit/test_autobuild_orchestrator.py` to provide integer values for timeouts.\n- AssertionErrors in `TestCoachValidatorPathConstruction` because `CoachValidator` is called with unexpected arguments (`model_name`, `coach_model_name`, `venv_python`).: Update the test expectations in `tests/unit/test_autobuild_orchestrator.py` to match the updated `CoachValidator` signature.\n- Because `invoke_test_orchestrator` is crashing, there is no evidence that test failures produce actionable feedback.: Fix the crashes in the test execution path and verify that failure outputs are correctly captured and passed to the Coach.",
+  "mode": "fresh_start",
+  "blockers_found": [],
+  "progress_summary": "Turn 1: feedback",
+  "acceptance_criteria_status": {},
+  "files_modified": [
+    "guardkit/models/task_types.py",
+    "tests/unit/test_autobuild_orchestrator.py",
+    "tests/unit/test_task_types.py",
+    ".claude/task-plans/TASK-FIX-TP05-implementation-plan.md",
+    "conversation_history/session_67ae6a1d.md"
+  ],
+  "tests_passed": null,
+  "tests_failed": null,
+  "coverage": null,
+  "arch_score": null,
+  "started_at": "2026-06-10T16:22:38.104907",
+  "completed_at": "2026-06-10T16:22:38.104907",
+  "duration_seconds": null,
+  "lessons_from_turn": [],
+  "what_to_try_next": null
+}
