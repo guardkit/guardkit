@@ -1,12 +1,14 @@
 ---
 id: TASK-FIX-MAXPARALLEL01
 title: Enforce --max-parallel in wave execution — strategy computes it, dispatcher ignores it
-status: in_review
+status: completed
 task_type: fix
 created: 2026-06-10T00:00:00Z
-updated: 2026-06-10T12:00:00Z
-previous_state: in_progress
-state_transition_reason: "task-work complete: all quality gates passed (corrected root cause — see Resolution)"
+updated: 2026-06-10T12:30:00Z
+completed: 2026-06-10T12:30:00Z
+completed_location: tasks/completed/autobuild-harness-migration/
+previous_state: in_review
+state_transition_reason: "task-complete: all 5 ACs met, quality gates passed (corrected root cause — see Resolution)"
 priority: high
 complexity: 3
 parent_task: TASK-HMIG-010
