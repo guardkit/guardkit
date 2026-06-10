@@ -757,7 +757,14 @@ def status(ctx, task_id: str, verbose: bool):
     "task_timeout",
     default=2400,
     type=int,
-    help="Per-task timeout in seconds for wave execution (default: 2400 = 40 min)",
+    help=(
+        "Per-task timeout in seconds for wave execution (default: 2400 = 40 min). "
+        "B-full Coach runs (GUARDKIT_COACH_GATHER=1) need a catch->fix cycle of "
+        "TWO Coach turns inside this budget; a single B-full turn on gemma4:31b "
+        "can approach ~40 min, so set this high enough that one turn is <=~50% of "
+        "the budget (TASK-PERF-COACHTURNBUDGET). See "
+        "docs/deep-dives/autobuild_local_vllm.md."
+    ),
     show_default=True,
 )
 @click.option(

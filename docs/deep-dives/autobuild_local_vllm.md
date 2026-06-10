@@ -111,6 +111,47 @@ the runbook in the same change so the documented and live configs reconverge.
   so first-pass-success rates reflect substrate quality, not only harness
   wiring.
 
+## B-full Coach latency budgeting (TASK-PERF-COACHTURNBUDGET)
+
+When the investigating B-full Coach is enabled (`GUARDKIT_COACH_GATHER=1`,
+TASK-ARCH-COACHBFULL), a Coach turn runs a tool-using **gather** (Phase A) then a
+toolless **synthesis** (Phase B). On a dense hybrid-reasoning model
+(`gemma4:31b` under `--reasoning auto`) the synthesis latency is dominated by
+`reasoning_content` generation grinding toward the `max_tokens` ceiling — run-23
+TP05 took **41m43s** (a 16384-token grind) and the 80-min task budget was
+exhausted **before** the Player could apply the fix the Coach correctly caught
+(`TIMEOUT_BUDGET_EXHAUSTED`). A reviewer that catches bugs but starves the fix
+cycle is only half a loop.
+
+Three levers bound this. Two are operator/substrate-side, one is in code:
+
+- **g31 residency (Lever 1, ops).** Keep `gemma4:31b` resident across Player
+  turns so it is not cold-loaded (~50 GB) every Coach turn. This is a llama-swap
+  keepalive policy on the GB10 — tracked under **TASK-OPS-COACH31B**, not a code
+  change.
+- **Reasoning curtailment (Lever 2).** The actual latency driver is the thinking
+  phase, not the verdict. Two knobs, both leaving the verdict substance
+  (`criteria_verification` + `issues`) intact — do **not** just lower
+  `max_tokens`, which truncates the bug report:
+  - **Server-side:** the llama-swap `--reasoning` budget flag for the `coach31`
+    set (operator policy; the `reasoning_mode` field in
+    `guardkitfactory…model_config.MODEL_CONTEXT_WINDOWS` documents intent only).
+  - **Per-request (code, default-off):** set
+    `GUARDKIT_COACH_SYNTHESIS_REASONING_BUDGET` to an int to inject
+    `reasoning_budget` into the toolless-synthesis request body (llama.cpp
+    semantics: `0` disables thinking, `-1` unlimited, `N` caps). Unset → field
+    omitted → behaviour unchanged. The synthesis generation budget itself stays
+    independent of the gather's via `GUARDKIT_COACH_SYNTHESIS_MAX_TOKENS`
+    (default 16384). GB10/`gemma4:31b` live support for the wire-field is
+    confirmed at the catch→fix falsifier run (AC-4).
+- **Task budget for ≥2 turns (Lever 3, config).** A catch→fix cycle is **two**
+  Coach turns. The per-task budget is `--task-timeout` (default 2400s, floored at
+  3000s by `GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR`, then × the local
+  `GUARDKIT_TIMEOUT_MULTIPLIER`, default 4.0). For B-full runs set
+  `--task-timeout` high enough that **one** B-full turn is ≤ ~50% of the budget,
+  so a second turn fits. Until per-turn latency is cut (Levers 1–2), raising the
+  budget is the explicit interim stopgap; the real fix is latency, not budget.
+
 ## References
 
 - Model source of truth: [`gb10-model-requirements-matrix.md`](../research/dgx-spark/gb10-model-requirements-matrix.md)
