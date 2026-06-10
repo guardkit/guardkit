@@ -25,6 +25,7 @@ from guardkit.orchestrator.feature_orchestrator import (
     FeatureOrchestrator,
     TaskExecutionResult,
 )
+from guardkit.orchestrator.parallel_strategy import bound_concurrency
 
 
 # ============================================================================
@@ -238,3 +239,82 @@ class TestMaxParallelWaveExecution:
 
         assert len(results) == 5
         assert max_concurrent == 5  # All ran concurrently
+
+
+# ============================================================================
+# bound_concurrency Wave Dispatch Tests (TASK-FIX-MAXPARALLEL01, AC-4)
+# ============================================================================
+
+
+class TestBoundConcurrencyWaveDispatch:
+    """Drive the *production* wave-dispatch concurrency bound.
+
+    These exercise ``parallel_strategy.bound_concurrency`` — the exact helper
+    ``FeatureOrchestrator._execute_wave_parallel`` now calls — rather than a
+    reconstructed copy of the semaphore pattern. They are the regression guard
+    required by AC-4: a 3-task wave capped at 1 must never overlap, and at 2
+    must never exceed 2 in-flight.
+    """
+
+    @staticmethod
+    async def _peak_concurrency(num_tasks, max_parallel):
+        """Schedule ``num_tasks`` probe coroutines through ``bound_concurrency``
+        and return (peak observed concurrency, sorted results)."""
+        peak = 0
+        current = 0
+        lock = asyncio.Lock()
+
+        async def probe(task_num):
+            nonlocal peak, current
+            async with lock:
+                current += 1
+                peak = max(peak, current)
+            await asyncio.sleep(0.02)  # hold the slot so overlap is observable
+            async with lock:
+                current -= 1
+            return task_num
+
+        bounded = bound_concurrency(
+            [probe(i) for i in range(num_tasks)], max_parallel
+        )
+        results = await asyncio.gather(*bounded)
+        return peak, sorted(results)
+
+    @pytest.mark.asyncio
+    async def test_max_parallel_1_serialises_three_task_wave(self):
+        """AC-4: a 3-task wave with max_parallel=1 runs at most one at a time."""
+        peak, results = await self._peak_concurrency(3, max_parallel=1)
+        assert peak == 1
+        assert results == [0, 1, 2]
+
+    @pytest.mark.asyncio
+    async def test_max_parallel_2_caps_three_task_wave_at_two(self):
+        """AC-4: a 3-task wave with max_parallel=2 runs at most two at a time."""
+        peak, results = await self._peak_concurrency(3, max_parallel=2)
+        assert peak == 2
+        assert results == [0, 1, 2]
+
+    @pytest.mark.asyncio
+    async def test_max_parallel_none_is_unlimited(self):
+        """AC-3: unset max_parallel leaves all wave tasks running concurrently."""
+        peak, results = await self._peak_concurrency(3, max_parallel=None)
+        assert peak == 3
+        assert results == [0, 1, 2]
+
+    @pytest.mark.asyncio
+    async def test_max_parallel_zero_is_unlimited(self):
+        """Defensive: max_parallel<=0 is treated as unlimited (no semaphore)."""
+        peak, _ = await self._peak_concurrency(3, max_parallel=0)
+        assert peak == 3
+
+    def test_unlimited_returns_awaitables_unchanged(self):
+        """The unlimited path returns the awaitables unchanged (no wrapping)."""
+        async def noop():
+            return None
+
+        coros = [noop(), noop()]
+        result = bound_concurrency(coros, None)
+        assert result == coros
+        # Close un-awaited coroutines to avoid ResourceWarning.
+        for c in coros:
+            c.close()

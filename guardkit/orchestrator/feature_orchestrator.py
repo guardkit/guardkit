@@ -80,6 +80,7 @@ from guardkit.tasks.task_loader import TaskLoader
 from guardkit.orchestrator.parallel_strategy import (
     MaxParallelMode,
     ParallelConfig,
+    bound_concurrency,
     resolve_max_parallel,
 )
 from guardkit.worktrees import (
@@ -2091,9 +2092,22 @@ The detailed specifications are in the task markdown file.
                         f"Task {task_id} has unsatisfied dependencies: {task.dependencies}"
                     )
 
-            # Display wave start via progress display
+            # Display wave start via progress display.
+            # TASK-FIX-MAXPARALLEL01: resolve the effective max_parallel (read
+            # only, log=False — the authoritative log is emitted by the
+            # dispatcher in _execute_wave_parallel) so the "(parallel: K)"
+            # banner reflects the concurrency the executor will actually
+            # enforce, not the wave size.
             if self._wave_display:
-                self._wave_display.start_wave(wave_number, task_ids)
+                display_max_parallel = resolve_max_parallel(
+                    self._parallel_config,
+                    wave_number=wave_number,
+                    wave_size=len(task_ids),
+                    log=False,
+                )
+                self._wave_display.start_wave(
+                    wave_number, task_ids, max_parallel=display_max_parallel
+                )
             else:
                 # Fallback to basic display
                 console.print()
@@ -2364,16 +2378,13 @@ The detailed specifications are in the task markdown file.
                 wave_size=len(task_ids),
             )
 
-            # Apply semaphore if max_parallel is set
-            if effective_max_parallel is not None and effective_max_parallel > 0:
-                semaphore = asyncio.Semaphore(effective_max_parallel)
-                original_tasks = tasks_to_execute
-                tasks_to_execute = []
-                for coro in original_tasks:
-                    async def bounded(c=coro):
-                        async with semaphore:
-                            return await c
-                    tasks_to_execute.append(bounded())
+            # Apply concurrency bound if max_parallel is set.
+            # TASK-FIX-MAXPARALLEL01: extracted to parallel_strategy.bound_concurrency
+            # so the wrapping logic is unit-testable in isolation (AC-4). Behaviour
+            # is identical to the previous inline semaphore loop.
+            tasks_to_execute = bound_concurrency(
+                tasks_to_execute, effective_max_parallel
+            )
 
             # TASK-CEF-004: Log gather start for cancellation diagnostics
             # TASK-ATR-001: Show per-task timeouts (may differ via frontmatter override)

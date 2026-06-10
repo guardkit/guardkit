@@ -12,6 +12,8 @@ Tests:
 Coverage Target: >=85%
 """
 
+import logging
+
 import pytest
 
 from guardkit.orchestrator.gpu_monitor import (
@@ -253,3 +255,42 @@ class TestResolveMaxParallel:
         """wave_number is used for logging, should not affect result."""
         config = ParallelConfig(mode=MaxParallelMode.STATIC, static_value=2)
         assert resolve_max_parallel(config, wave_number=5) == 2
+
+
+class TestResolveMaxParallelLogToggle:
+    """TASK-FIX-MAXPARALLEL01: ``log=False`` suppresses the strategy decision
+    log so the display banner's read-only resolution does not double-log the
+    'Wave N: max_parallel=X (static)' line the dispatcher already emits."""
+
+    def test_log_true_emits_static_decision(self, caplog):
+        config = ParallelConfig.from_legacy(1)
+        with caplog.at_level(
+            logging.INFO, logger="guardkit.orchestrator.parallel_strategy"
+        ):
+            value = resolve_max_parallel(
+                config, wave_number=2, wave_size=2, log=True
+            )
+        assert value == 1
+        assert "max_parallel=1 (static)" in caplog.text
+
+    def test_log_false_suppresses_static_decision(self, caplog):
+        config = ParallelConfig.from_legacy(1)
+        with caplog.at_level(
+            logging.INFO, logger="guardkit.orchestrator.parallel_strategy"
+        ):
+            value = resolve_max_parallel(
+                config, wave_number=2, wave_size=2, log=False
+            )
+        # Same value resolved — only the logging side effect is suppressed.
+        assert value == 1
+        assert "max_parallel=1 (static)" not in caplog.text
+
+    def test_log_false_still_returns_unlimited_none(self, caplog):
+        config = ParallelConfig.from_legacy(None)
+        with caplog.at_level(
+            logging.INFO, logger="guardkit.orchestrator.parallel_strategy"
+        ):
+            value = resolve_max_parallel(
+                config, wave_number=1, wave_size=3, log=False
+            )
+        assert value is None

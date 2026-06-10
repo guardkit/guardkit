@@ -150,13 +150,25 @@ class WaveProgressDisplay:
         logger.info(f"WaveProgressDisplay initialized: waves={total_waves}, verbose={verbose}")
 
     @_handle_display_error
-    def start_wave(self, wave_number: int, task_ids: List[str]) -> None:
+    def start_wave(
+        self,
+        wave_number: int,
+        task_ids: List[str],
+        max_parallel: Optional[int] = None,
+    ) -> None:
         """
         Display wave start header with task list.
 
         Args:
             wave_number: Wave number (1-indexed)
             task_ids: List of task IDs in this wave
+            max_parallel: Effective concurrency cap for this wave
+                (TASK-FIX-MAXPARALLEL01). ``None`` or ``<= 0`` means unlimited.
+                The ``(parallel: K)`` indicator reflects
+                ``min(max_parallel, wave_size)`` so it shows the *actual*
+                concurrency the executor enforces, not merely the wave size.
+                A 2-task wave under ``--max-parallel 1`` now correctly shows
+                "(parallel: 1)" because the executor serialises the tasks.
         """
         if self.start_time is None:
             self.start_time = datetime.now()
@@ -168,8 +180,20 @@ class WaveProgressDisplay:
         for task_id in task_ids:
             self.task_statuses[task_id] = WaveTaskStatus(task_id=task_id)
 
-        # Build wave header
-        parallel_indicator = f"[dim](parallel: {len(task_ids)})[/dim]" if len(task_ids) > 1 else ""
+        # Build wave header.
+        # TASK-FIX-MAXPARALLEL01: the indicator reflects the effective
+        # concurrency (min of the max_parallel cap and the wave size), not the
+        # wave size alone — previously "(parallel: 2)" was shown for a 2-task
+        # wave even under --max-parallel 1, which falsely read as parallel
+        # execution when the executor was in fact serialising the tasks.
+        wave_size = len(task_ids)
+        if max_parallel is not None and max_parallel > 0:
+            effective_parallel = min(max_parallel, wave_size)
+        else:
+            effective_parallel = wave_size
+        parallel_indicator = (
+            f"[dim](parallel: {effective_parallel})[/dim]" if wave_size > 1 else ""
+        )
         task_list = ", ".join(task_ids)
         ts = _get_iso_timestamp()
 
@@ -182,7 +206,10 @@ class WaveProgressDisplay:
         )
         self.console.print("━" * 60)
 
-        logger.info(f"[{ts}] Started wave {wave_number}: {task_ids}")
+        logger.info(
+            f"[{ts}] Started wave {wave_number}: {task_ids} "
+            f"(parallel: {effective_parallel})"
+        )
 
     @_handle_display_error
     def update_task_status(

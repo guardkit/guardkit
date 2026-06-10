@@ -1,10 +1,12 @@
 ---
 id: TASK-FIX-MAXPARALLEL01
 title: Enforce --max-parallel in wave execution — strategy computes it, dispatcher ignores it
-status: backlog
+status: in_review
 task_type: fix
 created: 2026-06-10T00:00:00Z
-updated: 2026-06-10T00:00:00Z
+updated: 2026-06-10T12:00:00Z
+previous_state: in_progress
+state_transition_reason: "task-work complete: all quality gates passed (corrected root cause — see Resolution)"
 priority: high
 complexity: 3
 parent_task: TASK-HMIG-010
@@ -64,16 +66,66 @@ already produces the number; the dispatcher must apply it.
 
 ## Acceptance criteria
 
-- [ ] **AC-1**: `--max-parallel 1` runs each wave's tasks **sequentially** — the
+- [x] **AC-1**: `--max-parallel 1` runs each wave's tasks **sequentially** — the
   log shows `(parallel: 1)` and the tasks' Player/Coach turns do not overlap.
-- [ ] **AC-2**: `--max-parallel N` (N≥2) limits in-flight tasks per wave to N
-  (a wave of >N tasks runs at most N concurrently).
-- [ ] **AC-3**: default behaviour (flag unset / strategy default) is unchanged —
+  *Sequential execution was already enforced by the semaphore (see Resolution);
+  the display now shows `(parallel: 1)` —
+  `test_start_wave_max_parallel_1_shows_serial` + `test_max_parallel_1_serialises_three_task_wave`.*
+- [x] **AC-2**: `--max-parallel N` (N≥2) limits in-flight tasks per wave to N
+  (a wave of >N tasks runs at most N concurrently). *`test_max_parallel_2_caps_three_task_wave_at_two`
+  (peak==2) + `test_start_wave_max_parallel_2_caps_display`.*
+- [x] **AC-3**: default behaviour (flag unset / strategy default) is unchanged —
   no regression to the current concurrency for runs that don't set the flag.
-- [ ] **AC-4**: a regression/unit test drives a 3-task wave with `max_parallel=1`
+  *`test_max_parallel_none_is_unlimited` (peak==3) + `test_start_wave_unlimited_shows_wave_size`.*
+- [x] **AC-4**: a regression/unit test drives a 3-task wave with `max_parallel=1`
   and asserts at most one task coroutine is in-flight at a time (e.g. via a
   concurrency counter / semaphore probe), and a second test asserts N=2 caps at 2.
-- [ ] **AC-5**: existing feature-orchestrator + wave tests stay green.
+  *`tests/unit/test_max_parallel.py::TestBoundConcurrencyWaveDispatch` drives the
+  production `bound_concurrency` helper with a concurrency probe.*
+- [x] **AC-5**: existing feature-orchestrator + wave tests stay green. *267 unit +
+  11 integration parallel-wave tests pass; the one pre-existing failure
+  (`test_inter_wave_bootstrap::test_greenfield_scenario_wave1_creates_manifest`,
+  an unrelated `uv venv`/`pip install` mock assertion) fails identically on the
+  clean tree.*
+
+## Resolution (2026-06-10) — corrected root cause
+
+**The task's premise was wrong.** The dispatcher does **not** ignore
+`max_parallel`, and the gather is **not** unbounded. The
+`asyncio.Semaphore(max_parallel)` enforcement has been in
+`_execute_wave_parallel` since 2026-02-27 (commit `524d8aaa`) with the
+`resolve_max_parallel` consumer since 2026-03-09 (`108420b0`) — **both predate
+run-22**. The run-22 log proves execution was already serial:
+`Orchestration complete: TASK-FIX-GD02` (line 621) lands **before**
+`Starting orchestration for TASK-FIX-TP05` (line 627), with zero TP05 activity
+in between. `--max-parallel 1` *was* honoured at the execution level.
+
+**The real defect was display-only.** `WaveProgressDisplay.start_wave`
+computed the `(parallel: N)` indicator as `len(task_ids)` — the wave *size* —
+not the effective concurrency. So a 2-task wave under `--max-parallel 1`
+printed `(parallel: 2)`, which the reviewer correctly read as "ran in parallel"
+even though the executor serialised the tasks. This is another instance of the
+project's *low-fidelity-oracle* meta-frame (cf.
+`.claude/rules/absence-of-failure-is-not-success.md`): a banner that cannot
+distinguish wave-size from concurrency.
+
+**Fix delivered:**
+1. `WaveProgressDisplay.start_wave(..., max_parallel=None)` now shows
+   `min(max_parallel, wave_size)` (and includes it in the INFO log for grep).
+2. `_wave_phase` resolves the effective `max_parallel` once (read-only,
+   `log=False`) and passes it to the banner, so display and executor consume
+   the *same* `resolve_max_parallel` decision and can never diverge in STATIC
+   mode.
+3. The inline semaphore loop was extracted verbatim to
+   `parallel_strategy.bound_concurrency()` — behaviour-preserving — so the
+   concurrency bound is unit-testable in isolation (AC-4) instead of only via
+   full autobuild runs.
+4. Added `log=False` to `resolve_max_parallel` so the display's read-only
+   resolution doesn't double-log the authoritative dispatcher decision.
+
+**Files:** `guardkit/cli/display.py`,
+`guardkit/orchestrator/feature_orchestrator.py`,
+`guardkit/orchestrator/parallel_strategy.py` (+3 test files).
 
 ## Notes
 

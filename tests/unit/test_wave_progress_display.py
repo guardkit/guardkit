@@ -145,6 +145,49 @@ class TestWaveLifecycle:
         output_text = strip_ansi(output.getvalue())
         assert "parallel" in output_text.lower()
 
+    @staticmethod
+    def _normalized(output):
+        """Collapse all whitespace (incl. Rich's width-driven line wraps) to
+        single spaces so '(parallel: N)' assertions are wrap-proof."""
+        return " ".join(strip_ansi(output.getvalue()).split())
+
+    def test_start_wave_max_parallel_1_shows_serial(self, display, mock_console):
+        """TASK-FIX-MAXPARALLEL01/AC-1: a 2-task wave under --max-parallel 1
+        shows '(parallel: 1)' — the concurrency the executor enforces, not the
+        wave size."""
+        _, output = mock_console
+
+        display.start_wave(1, ["TASK-001", "TASK-002"], max_parallel=1)
+
+        assert "(parallel: 1)" in self._normalized(output)
+
+    def test_start_wave_max_parallel_2_caps_display(self, display, mock_console):
+        """TASK-FIX-MAXPARALLEL01/AC-2: a 3-task wave under --max-parallel 2
+        shows '(parallel: 2)'."""
+        _, output = mock_console
+
+        display.start_wave(1, ["TASK-001", "TASK-002", "TASK-003"], max_parallel=2)
+
+        assert "(parallel: 2)" in self._normalized(output)
+
+    def test_start_wave_unlimited_shows_wave_size(self, display, mock_console):
+        """TASK-FIX-MAXPARALLEL01/AC-3: unset max_parallel shows the full wave
+        size (unchanged behaviour for runs that do not set --max-parallel)."""
+        _, output = mock_console
+
+        display.start_wave(1, ["TASK-001", "TASK-002"], max_parallel=None)
+
+        assert "(parallel: 2)" in self._normalized(output)
+
+    def test_start_wave_max_parallel_above_wave_size_caps_at_wave(self, display, mock_console):
+        """A max_parallel larger than the wave caps at the wave size, so the
+        display never claims more concurrency than there are tasks."""
+        _, output = mock_console
+
+        display.start_wave(1, ["TASK-001", "TASK-002"], max_parallel=5)
+
+        assert "(parallel: 2)" in self._normalized(output)
+
     def test_complete_wave_success(self, display, mock_console):
         """Test completing a wave successfully."""
         _, output = mock_console
