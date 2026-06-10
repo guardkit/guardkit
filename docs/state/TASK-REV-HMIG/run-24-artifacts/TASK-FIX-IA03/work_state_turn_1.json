@@ -1,0 +1,44 @@
+{
+  "turn_number": 1,
+  "files_modified": [
+    ".guardkit/bootstrap_state.json"
+  ],
+  "files_created": [
+    ".claude/task-plans/TASK-FIX-IA03-implementation-plan.md",
+    "tasks/backlog/TASK-FIX-GD02-shared-worktree-git-detection-baseline.md",
+    "tasks/backlog/TASK-FIX-TP05-add-test-execution-for-testing-task-type.md",
+    "tasks/design_approved/TASK-FIX-IA03-exclude-internal-artifacts-from-doc-constraint.md"
+  ],
+  "tests_written": [],
+  "tests_passed": false,
+  "test_count": 0,
+  "timestamp": "2026-06-10T19:04:31.693934",
+  "detection_method": "git_only",
+  "git_changes": {
+    "files_modified": [
+      ".guardkit/bootstrap_state.json"
+    ],
+    "files_added": [
+      ".claude/task-plans/TASK-FIX-IA03-implementation-plan.md",
+      "tasks/backlog/TASK-FIX-GD02-shared-worktree-git-detection-baseline.md",
+      "tasks/backlog/TASK-FIX-TP05-add-test-execution-for-testing-task-type.md",
+      "tasks/design_approved/TASK-FIX-IA03-exclude-internal-artifacts-from-doc-constraint.md"
+    ],
+    "files_deleted": [],
+    "diff_stats": ".guardkit/bootstrap_state.json | 7 ++++---\n 1 file changed, 4 insertions(+), 3 deletions(-)",
+    "insertions": 4,
+    "deletions": 3,
+    "timestamp": "2026-06-10T19:04:12.288007"
+  },
+  "test_results": {
+    "tests_run": false,
+    "tests_passed": false,
+    "test_count": 0,
+    "passed_count": 0,
+    "failed_count": 1,
+    "output_summary": "============================= test session starts ==============================\nplatform darwin -- Python 3.14.2, pytest-9.0.2, pluggy-1.6.0\nrootdir: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AOF\nconfigfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)\ntestpaths: tests\nplugins: anyio-4.12.0, timeout-2.4.0, asyncio-1.3.0, langsmith-0.7.22, bdd-8.1.0, Faker-40.11.1, cov-7.0.0\nasyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_",
+    "timestamp": "2026-06-10T19:04:31.693637",
+    "error": null
+  },
+  "player_report_available": false
+}

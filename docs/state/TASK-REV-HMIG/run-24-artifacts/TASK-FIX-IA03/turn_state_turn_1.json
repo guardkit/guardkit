@@ -1,0 +1,30 @@
+{
+  "id": "TURN-FEAT-AOF-1",
+  "feature_id": "FEAT-AOF",
+  "task_id": "TASK-FIX-IA03",
+  "turn_number": 1,
+  "player_summary": "Implementation attempt",
+  "player_decision": "failed",
+  "coach_decision": "error",
+  "coach_feedback": null,
+  "mode": "fresh_start",
+  "blockers_found": [],
+  "progress_summary": "Turn 1: error",
+  "acceptance_criteria_status": {},
+  "files_modified": [
+    ".guardkit/bootstrap_state.json",
+    ".claude/task-plans/TASK-FIX-IA03-implementation-plan.md",
+    "tasks/backlog/TASK-FIX-GD02-shared-worktree-git-detection-baseline.md",
+    "tasks/backlog/TASK-FIX-TP05-add-test-execution-for-testing-task-type.md",
+    "tasks/design_approved/TASK-FIX-IA03-exclude-internal-artifacts-from-doc-constraint.md"
+  ],
+  "tests_passed": null,
+  "tests_failed": null,
+  "coverage": null,
+  "arch_score": null,
+  "started_at": "2026-06-10T19:04:32.187882",
+  "completed_at": "2026-06-10T19:04:32.187882",
+  "duration_seconds": null,
+  "lessons_from_turn": [],
+  "what_to_try_next": null
+}
