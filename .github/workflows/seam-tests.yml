@@ -1,0 +1,105 @@
+# GitHub Actions Workflow: Cross-repo harness contract seam tests
+# Task: TASK-INFRA-XREPOCONTRACT (parent TASK-HMIG-010)
+#
+# Purpose
+#   Merge-gating CI job that exercises the guardkit↔guardkitfactory harness
+#   contract boundary against the REAL installed guardkitfactory — not mocks.
+#   This is the enforcement for the migrated-contract-boundary meta-rule
+#   (.claude/rules/harness-cancellation-contract.md + namespace-hygiene.md):
+#   every cross-repo contract boundary needs all invocation sites audited
+#   PLUS a CI guard (run-23 retro recommendation #5).
+#
+#   It catches, in seconds, the class of drift that previously cost a full
+#   autobuild run to discover:
+#     * run-24 (TASK-FIX-BACKENDKWARG) — build_autobuild_backend() signature
+#       skew (max_tool_result_chars dropped) → 25s TypeError crash.
+#     * F1/F9/F10/F12/F19 — model= not threaded at a migrated call site.
+#     * TASK-FIX-CTOUT01 — a substrate's cancel() not honoured.
+#
+#   The seam tests are marked `@pytest.mark.seam` and skip cleanly in any
+#   environment without the langchain/guardkitfactory stack, so this is the
+#   only place the cross-repo stack is assembled and the contract verified.
+#
+# guardkitfactory resolution
+#   guardkit resolves guardkitfactory from a sibling editable path locally
+#   ([tool.uv.sources] in pyproject.toml). CI mirrors that by checking out the
+#   sibling repo and `pip install -e` ing it. To test against a specific
+#   release rather than guardkitfactory's default branch, set the `ref:` on the
+#   guardkitfactory checkout step to a tag.
+
+name: Seam Tests (harness contract)
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Least privilege. `contents: read` is enough to check out both repos when
+# guardkitfactory is public. If guardkitfactory is PRIVATE, the default
+# GITHUB_TOKEN cannot read it — provision a PAT or deploy key as the
+# `GUARDKITFACTORY_TOKEN` secret (see the checkout step below).
+permissions:
+  contents: read
+
+concurrency:
+  group: seam-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  seam:
+    name: Cross-repo harness contract
+    runs-on: ubuntu-latest
+    steps:
+      # 1. The orchestrator side (this repo) into the workspace root.
+      - name: Checkout guardkit
+        uses: actions/checkout@v4
+
+      # 2. The harness/backend side (sibling repo) into ./guardkitfactory.
+      #    `token` falls back to the workflow's GITHUB_TOKEN when the
+      #    GUARDKITFACTORY_TOKEN secret is absent (public-repo case).
+      - name: Checkout guardkitfactory (sibling contract repo)
+        uses: actions/checkout@v4
+        with:
+          repository: guardkit/guardkitfactory
+          path: guardkitfactory
+          # ref: v0.1.0   # uncomment + pin to test against a tagged release
+          token: ${{ secrets.GUARDKITFACTORY_TOKEN || github.token }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install guardkitfactory (editable) + langchain/deepagents stack
+        run: |
+          python -m pip install --upgrade pip
+          # guardkitfactory's core deps (deepagents, langgraph, langchain*)
+          # come with it; the editable install pulls them in.
+          python -m pip install -e ./guardkitfactory
+
+      - name: Install guardkit (dev extra — pytest, no PyPI autobuild resolve)
+        # Install the dev extra only. The `autobuild` extra would try to
+        # resolve guardkitfactory>=0.1,<1 from PyPI; the editable sibling
+        # install above already satisfies the import, so we skip that extra.
+        run: python -m pip install -e ".[dev]"
+
+      - name: Run harness contract seam tests
+        # Scoped to the cross-repo harness-contract module by PATH (not a
+        # whole-tree `-m seam` sweep): the broader tests/ tree contains
+        # SDK-dependent modules that `import claude_agent_sdk` at collection
+        # time, which is not installed in this job (we install guardkit[dev] +
+        # the editable guardkitfactory, deliberately NOT the autobuild extra to
+        # avoid a PyPI guardkitfactory resolve). A whole-tree collection would
+        # abort on those unrelated import errors. The module's own
+        # `@pytest.mark.seam` + `importorskip` still make it a clean no-op for
+        # any environment lacking the langchain/guardkitfactory stack.
+        #
+        # `-o addopts=""` clears the repo's default --cov flags (the seam job
+        # gates the contract, not coverage). `--strict-markers` fails fast if
+        # the `seam` marker is ever removed from config.
+        run: |
+          python -m pytest \
+            tests/orchestrator/harness/test_xrepo_contract_seam.py \
+            -o addopts="" --strict-markers -v

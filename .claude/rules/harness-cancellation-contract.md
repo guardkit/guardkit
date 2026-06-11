@@ -327,3 +327,17 @@ rg "async def cancel" \
   lines 1555–1601.
 - **Originating fix**: TASK-FIX-CTOUT01 (this task), implemented
   2026-06-05 on branch `fix/ctout01-coach-cancellation-race`.
+- **CI enforcement (TASK-INFRA-XREPOCONTRACT)**: the
+  `rg "async def cancel"` grep signature above is codified as an
+  executable cross-repo seam test at
+  `tests/orchestrator/harness/test_xrepo_contract_seam.py`
+  (`TestSubstrateContract::test_cancel_is_overridden_not_abc_noop` +
+  `test_model_is_threaded_into_constructor`). It asserts every concrete
+  `HarnessAdapter` substrate overrides `cancel` (rather than inheriting
+  the no-op `HarnessAdapter.cancel` default) and threads `model=`,
+  against the **real installed guardkitfactory** — so a new substrate
+  re-introducing the cancel-asymmetry, or the F1/F9/F10/F12/F19
+  model-threading defect, fails CI in seconds instead of after a full
+  autobuild run. `@pytest.mark.seam` + `importorskip` make it a clean
+  no-op without the langchain stack; the merge-gating job is
+  `.github/workflows/seam-tests.yml`.
