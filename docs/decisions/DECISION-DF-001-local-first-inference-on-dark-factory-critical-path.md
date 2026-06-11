@@ -4,6 +4,7 @@
 **Date:** 2026-04-20
 **Author:** Rich (pair-programmed with Claude Opus 4.7 in Claude Desktop)
 **Scope:** All unattended, autonomous, or continuous workloads in the GuardKit dark factory running on the GB10. Specifically: Jarvis, the Forge, architect-agent, AutoBuild Player-Coach loops, Graphiti entity extraction, embeddings.
+**Companions:** DECISION-DF-002 (ledger-based tool selection, `ai-transition/docs/`) · DECISION-DF-003 (hybrid pipeline boundary) — both apply this decision's boundary to the commercial ledger and the pipeline stages respectively; neither amends it.
 
 ---
 

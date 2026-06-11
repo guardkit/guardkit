@@ -4,7 +4,7 @@ title: Harvest preserved Claude-era Coach trajectories + verdict pairs into a tr
 status: backlog
 task_type: ops
 created: 2026-06-08T00:00:00Z
-updated: 2026-06-08T00:00:00Z
+updated: 2026-06-11T00:00:00Z
 priority: high
 complexity: 4
 effort_hours: 4
@@ -29,6 +29,13 @@ failed. The substrate must change. Two non-hardware options are on the table:
 ≈ same memory as today's Coach), and (b) **distilling Coach behaviour** from a
 strong teacher (Claude) into a local model — *pay the teacher once, run free
 forever* (the economics that fit the cost constraint).
+
+> **Update 2026-06-11**: TASK-ARCH-COACHSPLIT's toolless grammar-constrained
+> synthesis was validated 2026-06-09 — verdict JSON/schema validity is now
+> enforced at serving time via GBNF. The fine-tune target is therefore
+> **verdict judgment quality**, not schema emission (the run-12 rationale has
+> partially expired). This shifts the value of this corpus toward the
+> outcome-joined examples (AC-5) and away from raw pair volume.
 
 This task builds the **dataset for (b)** by harvesting the Coach training data
 that *already exists* from past AutoBuild runs that used Claude Sonnet — before
@@ -96,14 +103,28 @@ Write a **read-only harvester** (a Python script, e.g.
    prompt AND ≥1 `tool_use` block; **excludes** the 2026-06-08 GB10-session
    transcripts and design-workflow agents (path contains `/workflows/` or dates
    `2026-06-08`) and May+ study-tutor (operator-confirm each Tier-B file).
-4. **Exports** to a clean corpus:
-   - `coach_verdict_pairs.jsonl` — Tier A: `{task, player_report, verdict}` per line.
+4. **Joins outcomes** (AC-5): for each harvested task ID, sweep the same
+   repos for downstream evidence — `TASK-REV-*` reviews that flag the task,
+   follow-up `TASK-FIX-*` tasks, rework commits touching the same files — and
+   tag each verdict pair `outcome: clean | later_revised | unknown`.
+   Approved-but-`later_revised` pairs form the **false-approval set**: real
+   in-distribution cases where the Coach approved unwired / under-tested work
+   (the exact failure mode the QA Test Verifier targets). These are reserved
+   as hard negatives for relabelling via the dataset factory
+   (Coach-as-relabeller) — never as direct distillation examples.
+5. **Exports** to a clean corpus:
+   - `coach_verdict_pairs.jsonl` — Tier A: `{task, player_report, verdict,
+     outcome}` per line — **raw, unformatted**. Serving-contract
+     transformation (reasoning-prefix + grammar-fence shape per
+     COACHBFULL/COACHSPLIT) is a separate curation step, so the corpus can be
+     re-curated as the B-phase contract evolves without re-sweeping.
    - `coach_trajectories.jsonl` — Tier B: full message streams (system, user,
      assistant w/ tool_use, tool_result, final verdict), one trajectory per line
      or per file.
    - `MANIFEST.md` — hard counts: total pairs, schema-complete pairs, Claude-era
-     pairs by repo, Tier-B trajectory count, what was excluded and why.
-5. Writes to a NEW dir (e.g. `~/coach-dataset/` or a `--out` path) — does NOT
+     pairs by repo, outcome split (clean / later_revised / unknown), Tier-B
+     trajectory count, what was excluded and why.
+6. Writes to a NEW dir (e.g. `~/coach-dataset/` or a `--out` path) — does NOT
    modify any source repo.
 
 ## Acceptance criteria
@@ -122,6 +143,12 @@ Write a **read-only harvester** (a Python script, e.g.
 - [ ] **AC-4**: MANIFEST documents the provenance method (date-based, no model
   field) and lists per-repo counts so the operator can sanity-check the
   Claude-era classification.
+- [ ] **AC-5**: Outcome join executed: every Tier-A pair carries
+  `outcome: clean | later_revised | unknown`, joined from `TASK-REV-*` /
+  `TASK-FIX-*` artefacts in the source repos. MANIFEST reports the outcome
+  split and lists the false-approval set (approved + `later_revised`) by task
+  ID — reserved as hard negatives / relabelling input for the QA Test Verifier
+  dataset, NOT as direct distillation examples.
 
 ## Implementation notes
 
@@ -129,14 +156,34 @@ Write a **read-only harvester** (a Python script, e.g.
   (~81–365 pairs) can bootstrap the *judgment/schema* dimension; Tier B (~4–6
   trajectories) is too few to train *agentic convergence* alone but is perfect as
   golden few-shot templates + a validation set + seeds the
-  **agentic-dataset-factory** imitates to generate the bulk.
+  **agentic-dataset-factory** imitates to generate the bulk. Tier-B
+  trajectories also double as **design reference for the Coach A-phase gather
+  probes** — they show what evidence a strong Coach actually collects before
+  rendering a verdict.
+- **Do not distill the Claude-era verdicts uncritically.** This corpus
+  contains the old Coach's blind spots — including approvals of features that
+  were ~90% complete with unwired seams (the exact failure mode the QA Test
+  Verifier exists to catch). Provenance (Claude vs local) is NOT the quality
+  axis; *verdict correctness* is, and the outcome join (AC-5) is what
+  separates the two. Primary value of this harvest, in order: (1)
+  eval/validation backbone — hold out Claude-era pairs + ALL Tier-B
+  trajectories; (2) few-shot + factory imitation seeds; (3) the
+  false-approval hard-negative set. Bulk training volume still comes from the
+  agentic-dataset-factory.
 - **Intended downstream use**: distill into a QAT base. Per the substrate
   analysis, the eventual fine-tune base should be **Gemma 4 31B dense QAT**
   (`google/gemma-4-31B-it-qat-q4_0-unquantized` for training, re-quantize after),
   not the 3.8B-active 26B-A4B that runs 12–14 proved insufficient.
-- **Provenance is date-only** — no model field exists in the verdicts. If any run
-  log survives that records `coach_model`, cross-reference it to sharpen the
-  Claude-era classification.
+- **Provenance is date-only — sharpen the ambiguous April bin (244 verdicts)
+  by cross-reference rather than discarding it.** The stated counts don't
+  reconcile: "~365 Claude-era" = Feb+Mar only, yet the default cutoff
+  2026-04-15 admits early April. Resolve via artefact markers: (a) run logs in
+  `docs/reviews/autobuild-migration/` record full CLI invocations — any
+  sibling artefact mentioning `--coach-model`, `qwen`, `gemma4`, or llama-swap
+  env exports (`OPENAI_BASE_URL=...:9000`) is definitively **local-era**;
+  (b) SDK/Claude-era runs carry none of these markers. A run-log
+  cross-reference pass should classify most of April confidently instead of
+  contaminating the teacher set or wasting 244 pairs.
 
 ## Related
 
