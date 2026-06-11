@@ -36,6 +36,18 @@ permanent deadlock. Triggered by
 **after** the lock releases. `--timeout-method=thread` could not kill the
 C-level `flock`, so this had to be fixed before any complete run was possible.
 
+## First catch by the new gate: a real 3.11 incompatibility
+
+The local triage ran on 3.12 only (no 3.11 interpreter available locally), so the
+quarantine was 3.12-derived. The very first CI run surfaced a **3.11-specific**
+cluster the quarantine couldn't have known about: `template_packager.py:176` used
+`Path.walk()`, which **only exists on Python 3.12+**, so all 14
+`tests/test_template_packager.py::TestTemplatePackager` tests raised
+`AttributeError: 'PosixPath' object has no attribute 'walk'` on the 3.11 leg
+(green on 3.12). Fixed by switching to `os.walk()` (3.11+) — *not* quarantined,
+because it was a genuine bug in shipped code on the supported floor. This is
+exactly the class of regression the gate exists to catch.
+
 ## The 518 by bucket
 
 | Bucket | ~Count | Root cause | Representative modules |
