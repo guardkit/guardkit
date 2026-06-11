@@ -40,6 +40,12 @@ coverage*.json
 coverage_*.json
 test_coverage*.json
 htmlcov/
+# Exception: archived autobuild artifact snapshots may include
+# coverage_detail.json etc. as part of the per-run handoff. These
+# are intentionally committed under docs/state/**/run-*-artifacts/.
+!docs/state/**/coverage*.json
+!docs/state/**/coverage_*.json
+!docs/state/**/test_coverage*.json
 .pytest_cache/
 .hypothesis/
 .tox/
