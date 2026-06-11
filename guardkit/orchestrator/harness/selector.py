@@ -27,10 +27,11 @@ when a typo is introduced.
 
 from __future__ import annotations
 
+import inspect
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from guardkit.orchestrator.exceptions import AgentInvocationError
 from guardkit.orchestrator.harness.adapter import HarnessAdapter
@@ -192,6 +193,80 @@ _KNOWN_PROVIDER_PREFIXES: frozenset[str] = frozenset({
 })
 
 
+def _factory_accepts_kwarg(factory: Callable[..., Any], name: str) -> bool:
+    """Return ``True`` iff ``factory`` can accept the keyword ``name``.
+
+    Introspects ``factory``'s signature: the keyword is accepted when it
+    appears as a named parameter OR the signature carries a ``**kwargs``
+    catch-all (:class:`inspect.Parameter.VAR_KEYWORD`). When the callable
+    cannot be introspected (a C builtin, a degenerate stub), we report
+    ``False`` so the caller drops the kwarg rather than risking a
+    ``TypeError`` — the conservative, crash-avoiding choice.
+
+    TASK-FIX-BACKENDKWARG Shape 2: this is the compatibility probe the
+    LangGraph branch uses before forwarding ``max_tool_result_chars`` to
+    the separately-versioned ``guardkitfactory.build_autobuild_backend``.
+    """
+    try:
+        sig = inspect.signature(factory)
+    except (TypeError, ValueError):
+        return False
+    params = sig.parameters
+    if name in params:
+        return True
+    return any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()
+    )
+
+
+def _build_backend_with_optional_cap(
+    factory: Callable[..., Any],
+    worktree: Path,
+    max_tool_result_chars: int | None,
+) -> Any:
+    """Call ``build_autobuild_backend``, forwarding the gather cap defensively.
+
+    TASK-FIX-BACKENDKWARG. The guardkit selector and the installed
+    ``guardkitfactory`` are versioned independently (separate packages,
+    separate pins). When the selector forwards ``max_tool_result_chars=``
+    (added by TASK-PERF-COACHSYNTH) to a *stale* ``guardkitfactory`` whose
+    ``build_autobuild_backend`` predates that parameter, the unconditional
+    call raised ``TypeError: build_autobuild_backend() got an unexpected
+    keyword argument 'max_tool_result_chars'`` — the run-24 crash that
+    killed every SDK invocation 25s into the run.
+
+    Shape 2 introspects the installed factory's signature and only forwards
+    the kwarg when it is accepted. Crucially, dropping the kwarg is **not
+    silent**: when a *real* (non-``None``) cap is requested but the factory
+    cannot honour it, we emit a loud ``WARNING`` so the version skew — and
+    the consequent silent disabling of the COACHSYNTH gather bound — is
+    observable. Letting the truncation silently not-happen is exactly the
+    absence-of-failure / silent-degradation trap the project has a rule
+    family about (see ``.claude/rules/absence-of-failure-is-not-success.md``).
+
+    A ``None`` cap is the unbounded default, so dropping it disables nothing
+    and is *not* warned about (it would be pure noise on the Player and
+    synthesis paths, which always pass ``None``).
+    """
+    if _factory_accepts_kwarg(factory, "max_tool_result_chars"):
+        return factory(worktree, max_tool_result_chars=max_tool_result_chars)
+
+    if max_tool_result_chars is not None:
+        logger.warning(
+            "TASK-FIX-BACKENDKWARG: the installed guardkitfactory's "
+            "build_autobuild_backend() does not accept "
+            "'max_tool_result_chars'. The requested gather tool-result cap "
+            "(%d chars) is being DROPPED and per-tool-result truncation is "
+            "DISABLED for this run. This is a guardkit<->guardkitfactory "
+            "version skew — upgrade guardkitfactory to a build that includes "
+            "TASK-PERF-COACHSYNTH to restore the Coach B-full gather bound. "
+            "Proceeding unbounded to avoid the run-24 construction crash.",
+            max_tool_result_chars,
+        )
+
+    return factory(worktree)
+
+
 def select_harness(
     env_var: str = "GUARDKIT_HARNESS",
     **harness_kwargs,
@@ -296,11 +371,15 @@ def select_harness(
             )
 
         translated = _translate_kwargs_for_langgraph(harness_kwargs)
+        # TASK-FIX-BACKENDKWARG Shape 2: forward ``max_tool_result_chars``
+        # only when the installed guardkitfactory's signature accepts it;
+        # drop-with-WARNING on a stale factory instead of crashing (run-24).
+        backend = _build_backend_with_optional_cap(
+            build_autobuild_backend, Path(cwd), max_tool_result_chars
+        )
         return LangGraphHarness(
             model=translated["model"],
-            backend=build_autobuild_backend(
-                Path(cwd), max_tool_result_chars=max_tool_result_chars
-            ),
+            backend=backend,
             permissions=build_autobuild_permissions(),
             recursion_limit=recursion_limit,
         )

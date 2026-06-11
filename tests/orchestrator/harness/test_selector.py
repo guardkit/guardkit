@@ -19,7 +19,9 @@ Coverage Target: >=85% line, >=80% branch on
 
 from __future__ import annotations
 
+import logging
 import sys
+from pathlib import Path
 from types import ModuleType
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -27,7 +29,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from guardkit.orchestrator.exceptions import AgentInvocationError
+from guardkit.orchestrator.harness import selector as selector_module
 from guardkit.orchestrator.harness.selector import (
+    _build_backend_with_optional_cap,
+    _factory_accepts_kwarg,
     _translate_kwargs_for_langgraph,
     select_harness,
 )
@@ -572,3 +577,308 @@ class TestSelectHarnessDispatch:
         # ClaudeSDKHarness stores the value for use in invoke()'s
         # ClaudeAgentOptions construction.
         assert harness._setting_sources == ["project"]
+
+
+# ----------------------------------------------------------------------
+# TASK-FIX-BACKENDKWARG: selector <-> guardkitfactory signature compat
+# ----------------------------------------------------------------------
+#
+# These tests exercise Shape 2 — the selector's defensive introspection of
+# ``build_autobuild_backend``'s signature before forwarding
+# ``max_tool_result_chars``. They inject a *fake* ``guardkitfactory.harness``
+# into ``sys.modules`` so the selector's lazy ``from guardkitfactory.harness
+# import (...)`` resolves to controllable stubs. This means the tests run
+# WITHOUT the real guardkitfactory installed (it is not a guardkit unit-suite
+# dependency) and let us pin both signature shapes: the stale "old" factory
+# that crashed run-24 and the current "new" factory that honours the cap.
+
+
+def _install_fake_guardkitfactory(
+    monkeypatch: pytest.MonkeyPatch,
+    build_autobuild_backend: Any,
+) -> dict[str, Any]:
+    """Inject a stub ``guardkitfactory.harness`` module into ``sys.modules``.
+
+    ``build_autobuild_backend`` is the caller-supplied stub whose *signature*
+    is under test (old vs new). Returns a dict that captures the constructed
+    stub harness under key ``"harness"`` for assertions.
+    """
+    captured: dict[str, Any] = {}
+
+    class _StubLangGraphHarness:
+        def __init__(
+            self,
+            *,
+            model: Any,
+            backend: Any,
+            permissions: Any,
+            recursion_limit: Any = None,
+        ) -> None:
+            self.model = model
+            self.backend = backend
+            self.permissions = permissions
+            self.recursion_limit = recursion_limit
+            captured["harness"] = self
+
+    def _build_autobuild_permissions() -> list[Any]:
+        return []
+
+    fake = ModuleType("guardkitfactory.harness")
+    fake.LangGraphHarness = _StubLangGraphHarness  # type: ignore[attr-defined]
+    fake.build_autobuild_backend = build_autobuild_backend  # type: ignore[attr-defined]
+    fake.build_autobuild_permissions = (  # type: ignore[attr-defined]
+        _build_autobuild_permissions
+    )
+
+    # Seed the parent package defensively so the import machinery never tries
+    # to locate the real (uninstalled) distribution. The leaf lookup
+    # short-circuits on the cached child, but a present parent is harmless.
+    if "guardkitfactory" not in sys.modules:
+        monkeypatch.setitem(
+            sys.modules, "guardkitfactory", ModuleType("guardkitfactory")
+        )
+    monkeypatch.setitem(sys.modules, "guardkitfactory.harness", fake)
+    return captured
+
+
+def _old_factory_no_cap(worktree: Any) -> Any:
+    """Stale ``build_autobuild_backend`` — the pre-COACHSYNTH signature that
+    crashed run-24 (no ``max_tool_result_chars`` parameter)."""
+    return MagicMock(name="composite-backend", _worktree=worktree)
+
+
+class TestFactoryAcceptsKwarg:
+    """Unit tests for the :func:`_factory_accepts_kwarg` signature probe."""
+
+    def test_named_keyword_param_is_accepted(self) -> None:
+        def factory(worktree: Any, *, max_tool_result_chars: int | None = None) -> None:
+            ...
+
+        assert _factory_accepts_kwarg(factory, "max_tool_result_chars") is True
+
+    def test_missing_param_is_rejected(self) -> None:
+        def factory(worktree: Any) -> None:
+            ...
+
+        assert _factory_accepts_kwarg(factory, "max_tool_result_chars") is False
+
+    def test_var_keyword_catch_all_is_accepted(self) -> None:
+        def factory(worktree: Any, **kwargs: Any) -> None:
+            ...
+
+        assert _factory_accepts_kwarg(factory, "max_tool_result_chars") is True
+
+    def test_uninspectable_factory_is_conservatively_false(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When ``inspect.signature`` raises (C builtins, degenerate stubs),
+        the probe reports ``False`` so the caller drops the kwarg rather than
+        risk a ``TypeError`` — the crash-avoiding choice."""
+
+        def _boom(_factory: Any) -> None:
+            raise ValueError("no signature available")
+
+        monkeypatch.setattr(selector_module.inspect, "signature", _boom)
+
+        assert (
+            _factory_accepts_kwarg(lambda w: None, "max_tool_result_chars")
+            is False
+        )
+
+
+class TestBuildBackendWithOptionalCap:
+    """Direct unit tests for :func:`_build_backend_with_optional_cap`."""
+
+    def test_supported_factory_receives_cap(self) -> None:
+        received: dict[str, Any] = {}
+
+        def new_factory(
+            worktree: Any, *, max_tool_result_chars: int | None = None
+        ) -> str:
+            received["worktree"] = worktree
+            received["cap"] = max_tool_result_chars
+            return "backend"
+
+        result = _build_backend_with_optional_cap(
+            new_factory, Path("/tmp/wt"), 4096
+        )
+
+        assert result == "backend"
+        assert received["cap"] == 4096
+        assert received["worktree"] == Path("/tmp/wt")
+
+    def test_stale_factory_drops_cap_and_warns(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(
+            logging.WARNING, logger="guardkit.orchestrator.harness.selector"
+        ):
+            result = _build_backend_with_optional_cap(
+                _old_factory_no_cap, Path("/tmp/wt"), 4096
+            )
+
+        assert result is not None  # no TypeError
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        msg = warnings[0].getMessage()
+        assert "max_tool_result_chars" in msg
+        assert "BACKENDKWARG" in msg
+        assert "4096" in msg
+
+    def test_stale_factory_none_cap_is_silent(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A ``None`` cap disables nothing, so dropping it must NOT warn."""
+        with caplog.at_level(
+            logging.WARNING, logger="guardkit.orchestrator.harness.selector"
+        ):
+            result = _build_backend_with_optional_cap(
+                _old_factory_no_cap, Path("/tmp/wt"), None
+            )
+
+        assert result is not None
+        assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+
+
+class TestSelectHarnessBackendKwargCompat:
+    """End-to-end :func:`select_harness` Shape-2 behaviour (AC-2..AC-5)."""
+
+    def test_stale_factory_drops_cap_with_warning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Any,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """AC-2: a stale guardkitfactory (no ``max_tool_result_chars`` param)
+        must construct the harness WITHOUT crashing, dropping the kwarg and
+        emitting a loud WARNING (not silently)."""
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+
+        received: dict[str, Any] = {}
+
+        def old_factory(worktree: Any) -> Any:
+            received["worktree"] = worktree
+            return MagicMock(name="composite-backend")
+
+        _install_fake_guardkitfactory(monkeypatch, old_factory)
+
+        with caplog.at_level(
+            logging.WARNING, logger="guardkit.orchestrator.harness.selector"
+        ):
+            harness = select_harness(
+                env_var=_TEST_ENV_VAR,
+                model=MagicMock(),
+                cwd=tmp_path,
+                max_tool_result_chars=4096,
+            )
+
+        assert harness is not None
+        # Factory was called WITHOUT the unsupported kwarg.
+        assert received["worktree"] == Path(tmp_path)
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("max_tool_result_chars" in r.getMessage() for r in warnings)
+        assert any("BACKENDKWARG" in r.getMessage() for r in warnings)
+
+    def test_run24_reproducer_no_typeerror(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    ) -> None:
+        """AC-3 (run-24 regression reproducer).
+
+        Pre-fix, ``select_harness`` called
+        ``build_autobuild_backend(Path(cwd), max_tool_result_chars=...)``
+        unconditionally. Against a stale factory that signature raises
+        ``TypeError: ... unexpected keyword argument 'max_tool_result_chars'``
+        — the crash that killed every SDK invocation 25s into run-24. Shape 2
+        must make this construction succeed.
+        """
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        _install_fake_guardkitfactory(monkeypatch, _old_factory_no_cap)
+
+        # Sanity: the stale factory genuinely rejects the kwarg, proving this
+        # test exercises the real incompatibility (the exact call shape the
+        # pre-Shape-2 selector made unconditionally → the run-24 TypeError).
+        with pytest.raises(TypeError):
+            _old_factory_no_cap(tmp_path, max_tool_result_chars=4096)  # type: ignore[call-arg]
+
+        # Yet select_harness must now construct the harness without raising.
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR,
+            model=MagicMock(),
+            cwd=tmp_path,
+            max_tool_result_chars=4096,
+        )
+        assert harness is not None
+
+    def test_current_factory_receives_cap_and_no_warning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Any,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """AC-4 / AC-5: a current guardkitfactory whose signature accepts the
+        cap must RECEIVE ``max_tool_result_chars`` (the COACHSYNTH Lever-2
+        truncation stays active, not silently disabled) and emit NO warning.
+        """
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+
+        received: dict[str, Any] = {}
+
+        def new_factory(
+            worktree: Any, *, max_tool_result_chars: int | None = None
+        ) -> Any:
+            received["worktree"] = worktree
+            received["cap"] = max_tool_result_chars
+            return MagicMock(name="composite-backend")
+
+        _install_fake_guardkitfactory(monkeypatch, new_factory)
+
+        with caplog.at_level(
+            logging.WARNING, logger="guardkit.orchestrator.harness.selector"
+        ):
+            harness = select_harness(
+                env_var=_TEST_ENV_VAR,
+                model=MagicMock(),
+                cwd=tmp_path,
+                max_tool_result_chars=4096,
+            )
+
+        assert harness is not None
+        assert received["cap"] == 4096  # forwarded → truncation active
+        assert [
+            r for r in caplog.records if r.levelno == logging.WARNING
+        ] == []
+
+    def test_current_factory_none_cap_forwarded_without_warning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Any,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Player/synthesis default (``None`` cap) on a current factory: the
+        ``None`` is forwarded explicitly and nothing is warned about."""
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+
+        received: dict[str, Any] = {}
+
+        def new_factory(
+            worktree: Any, *, max_tool_result_chars: int | None = None
+        ) -> Any:
+            received["cap"] = max_tool_result_chars
+            return MagicMock(name="composite-backend")
+
+        _install_fake_guardkitfactory(monkeypatch, new_factory)
+
+        with caplog.at_level(
+            logging.WARNING, logger="guardkit.orchestrator.harness.selector"
+        ):
+            harness = select_harness(
+                env_var=_TEST_ENV_VAR,
+                model=MagicMock(),
+                cwd=tmp_path,
+            )
+
+        assert harness is not None
+        assert received["cap"] is None
+        assert [
+            r for r in caplog.records if r.levelno == logging.WARNING
+        ] == []
