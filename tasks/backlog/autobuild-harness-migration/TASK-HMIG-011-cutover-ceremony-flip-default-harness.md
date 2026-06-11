@@ -4,12 +4,13 @@ title: Wave 4 cutover ceremony — flip GUARDKIT_HARNESS default to langgraph + 
 task_type: deployment
 status: backlog
 created: 2026-06-04T13:30:00Z
-updated: 2026-06-04T13:30:00Z
+updated: 2026-06-11T00:00:00Z
 priority: critical
 complexity: 3
-deadline: 2026-06-15        # Anthropic API-key validation enforcement hard date
-target_cutover_date: 2026-06-10   # D-5 per parent review §7.4 (5-day validation margin)
-target_flip_date: 2026-06-08      # D-7 per parent review §7.4
+deadline: 2026-06-22        # deliberately slipped 2026-06-11 — see "Decision note 2026-06-11" below
+target_cutover_date: 2026-06-20   # re-derived D-2 from new deadline
+target_flip_date: 2026-06-18      # re-derived; gated on the two conditions in the decision note
+original_deadline: 2026-06-15     # Anthropic API-key validation enforcement hard date (external; see note)
 parent_review: TASK-REV-HMIG
 feature_id: FEAT-HMIG
 parent_feature: autobuild-harness-migration
@@ -35,6 +36,31 @@ falsifier: "After D-7 (2026-06-08) flip: invoking `guardkit autobuild task TASK-
 ---
 
 # Task: Wave 4 cutover ceremony
+
+## Decision note 2026-06-11 — deadline deliberately slipped to 2026-06-22
+
+Operator decision (2026-06-11 review session, with the coach-arc retro): the
+flip is **gated on evidence, not the calendar**. Two conditions before AC-001:
+
+1. **First clean fresh-feature green** — FEAT-9DDE re-run after the
+   import-path fix (TSJ shim/bin-entry; note the smoke-gate command invokes the
+   script by repo-relative path, so TSJ-002's bin entry alone does not fix the
+   gate — a `sys.path` shim under `__main__` or a gate-command change is needed).
+2. **Coach substrate decision** — TASK-OPS-COACHMOE01 (26B MoE on the B-min
+   path) resolved, so the cutover canary observes the substrate we intend to
+   keep.
+
+**On the original 2026-06-15 external date**: Anthropic API-key validation
+enforcement proceeds regardless of this slip. From 06-15, the SDK path via
+`ANTHROPIC_BASE_URL`-redirect may break for local-model use — operators must
+set `GUARDKIT_HARNESS=langgraph` explicitly until the default flips. All
+documented run recipes already do this (run-15-recipe onward), so the practical
+exposure is limited to runs that omit the env var. If any consumer hits this
+between 06-15 and the flip, escalate rather than rushing the flip.
+
+Also noted at slip time: TASK-HMIG-010's `blocked_by: TASK-HMIG-013` is stale —
+HMIG-013 is subsumed by TASK-OPS-COACHMOE01 (its AC-006 live smoke is delivered
+there under the post-COACHSPLIT architecture).
 
 ## Spec (verbatim from parent review §7.4 + current code state)
 
