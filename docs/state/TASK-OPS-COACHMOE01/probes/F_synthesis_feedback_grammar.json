@@ -1,0 +1,22 @@
+{
+  "label": "F_synthesis_feedback_grammar",
+  "model": "gemma4-coach",
+  "grammar": true,
+  "reasoning_budget": null,
+  "expect_decision": "feedback",
+  "wall_s": 39.97,
+  "http_ok": true,
+  "http_status": 200,
+  "finish_reason": "stop",
+  "content_chars": 1820,
+  "reasoning_chars": 4904,
+  "total_chars": 6724,
+  "completion_tokens": 1896,
+  "tok_s": 47.4,
+  "grammar_conformant": true,
+  "conformance_detail": "verdict object with task_id/turn(int)/decision",
+  "verdict_decision": "feedback",
+  "decision_matches_expected": true,
+  "criteria_verification_n": 3,
+  "tail": "e give-up behavior test is missing.\"\\n    }\\n  ],\\n  \"rationale\": \"The implementation is incomplete and the tests are failing. The retry logic does not perform the required number of attempts, exponential backoff is missing, and the unit tests do not satisfy the requirements.\"\\n}\\n```"
+}

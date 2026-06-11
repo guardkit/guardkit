@@ -1,0 +1,22 @@
+{
+  "label": "E_synthesis_approve_grammar",
+  "model": "gemma4-coach",
+  "grammar": true,
+  "reasoning_budget": null,
+  "expect_decision": "approve",
+  "wall_s": 24.66,
+  "http_ok": true,
+  "http_status": 200,
+  "finish_reason": "stop",
+  "content_chars": 1602,
+  "reasoning_chars": 2762,
+  "total_chars": 4364,
+  "completion_tokens": 1177,
+  "tok_s": 47.7,
+  "grammar_conformant": true,
+  "conformance_detail": "verdict object with task_id/turn(int)/decision",
+  "verdict_decision": "approve",
+  "decision_matches_expected": true,
+  "criteria_verification_n": 2,
+  "tail": "whitespace trimming, and unicode characters.\"\\n    }\\n  ],\\n  \"rationale\": \"The player implemented the requested functionality and provided comprehensive test coverage for all specified edge cases. The independent test results confirm all tests passed with high code coverage.\"\\n}\\n```"
+}

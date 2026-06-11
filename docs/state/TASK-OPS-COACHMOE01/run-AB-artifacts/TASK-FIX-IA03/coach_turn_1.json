@@ -1,0 +1,42 @@
+{
+  "task_id": "TASK-FIX-IA03",
+  "turn": 1,
+  "decision": "feedback",
+  "issues": [
+    {
+      "type": "code_quality",
+      "severity": "critical",
+      "description": "Critical honesty discrepancy: The player claimed to modify 'tests/unit/test_agent_invoker.py', but the file does not exist on disk (path_exists=False). This caused a 'partial_honesty_abort', preventing any tests or quality gates from running.",
+      "requirement": "All",
+      "suggestion": "Ensure that all files listed in 'files_modified' are actually created and present in the workspace before submitting the report."
+    }
+  ],
+  "criteria_verification": [
+    {
+      "criterion_id": "AC-001",
+      "result": "rejected",
+      "notes": "Cannot verify due to partial_honesty_abort and critical honesty discrepancies regarding file existence."
+    },
+    {
+      "criterion_id": "AC-002",
+      "result": "rejected",
+      "notes": "Cannot verify due to partial_honesty_abort and critical honesty discrepancies regarding file existence."
+    },
+    {
+      "criterion_id": "AC-003",
+      "result": "rejected",
+      "notes": "Cannot verify due to partial_honesty_abort and critical honesty discrepancies regarding file existence."
+    },
+    {
+      "criterion_id": "AC-004",
+      "result": "rejected",
+      "notes": "Cannot verify due to partial_honesty_abort and critical honesty discrepancies regarding file existence."
+    },
+    {
+      "criterion_id": "AC-005",
+      "result": "rejected",
+      "notes": "Cannot verify due to partial_honesty_abort and critical honesty discrepancies regarding file existence."
+    }
+  ],
+  "rationale": "The turn is rejected because the gathering status is 'partial_honesty_abort'. The honesty verification identified critical discrepancies: the player claimed to have modified 'tests/unit/test_agent_invoker.py', but the file does not exist on disk. This prevented the orchestrator from running any tests or quality gates to verify the implementation."
+}

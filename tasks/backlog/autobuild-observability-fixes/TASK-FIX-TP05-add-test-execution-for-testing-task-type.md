@@ -1,27 +1,45 @@
 ---
 id: TASK-FIX-TP05
 title: Add independent test execution for testing task type
-status: backlog
-created: 2026-02-20T00:00:00Z
-updated: 2026-02-20T00:00:00Z
+status: in_review
+created: 2026-02-20 00:00:00+00:00
+updated: 2026-02-20 00:00:00+00:00
 priority: low
-tags: [autobuild, enhancement, quality-gates, testing-profile]
+tags:
+- autobuild
+- enhancement
+- quality-gates
+- testing-profile
 task_type: feature
 complexity: 4
 parent_review: TASK-REV-A515
 feature_id: FEAT-AOF
 wave: 2
 implementation_mode: task-work
-dependencies: [TASK-FIX-TS04]
+dependencies:
+- TASK-FIX-TS04
 autobuild:
-  # TASK-FIX-AOFBUDG: 80-min per-task budget so a turn-1-reject → turn-2-accept
-  # run (~3864s wall-clock) survives without a feature-level timeout cancel.
-  # Read by FeatureOrchestrator._resolve_task_timeout (× timeout_multiplier).
   task_timeout: 4800
 test_results:
   status: pending
   coverage: null
   last_run: null
+autobuild_state:
+  current_turn: 1
+  max_turns: 5
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AOF
+  base_branch: main
+  started_at: '2026-06-11T16:56:44.586640'
+  last_updated: '2026-06-11T17:11:15.127616'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-06-11T16:56:44.586640'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Add independent test execution for testing task type

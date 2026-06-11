@@ -170,10 +170,24 @@ Write a **read-only harvester** (a Python script, e.g.
   trajectories; (2) few-shot + factory imitation seeds; (3) the
   false-approval hard-negative set. Bulk training volume still comes from the
   agentic-dataset-factory.
-- **Intended downstream use**: distill into a QAT base. Per the substrate
-  analysis, the eventual fine-tune base should be **Gemma 4 31B dense QAT**
-  (`google/gemma-4-31B-it-qat-q4_0-unquantized` for training, re-quantize after),
-  not the 3.8B-active 26B-A4B that runs 12–14 proved insufficient.
+- **Intended downstream use**: distill into a QAT base. **Fine-tune base ← the
+  Gemma 4 26B-A4B MoE** (`google/gemma-4-26B-A4B-it-qat-q4_0-unquantized` for
+  training, re-quantize after) — **updated 2026-06-11 by TASK-OPS-COACHMOE01.**
+  The earlier recommendation (Gemma 4 31B dense QAT, "not the 3.8B-active 26B-A4B
+  that runs 12–14 proved insufficient") was scoped to the **tool-bound agentic
+  Coach loop**, which TASK-ARCH-COACHSPLIT (D-3) removed from the verdict path.
+  On the shipped **B-min toolless+grammar** path the 26B MoE is empirically a
+  viable Coach: TASK-OPS-COACHMOE01's grammar gate contained its ramble (finish=
+  `stop`, 24–40s synthesis, per-AC criteria populated) and its live FEAT-AOF A/B
+  approved 3/3 with honest, substantive verdicts (it caught real Player
+  dishonesty). The MoE is the only base with a **validated 71-min LoRA recipe on
+  the GB10**, runs at ~47 tok/s (vs the dense 31B's ~10), and is ~11 GB lighter.
+  One reliability caveat carries into the fine-tune target: the MoE emitted 1/6
+  malformed verdicts under live GBNF (vs g31's 0/3) — the distilled model should
+  be eval'd against the COACHSF01-recovered emission rate. Full evidence:
+  [`docs/state/TASK-OPS-COACHMOE01/README.md`](../../docs/state/TASK-OPS-COACHMOE01/README.md).
+  (g31 dense QAT remains the higher-reliability fallback substrate until the
+  fine-tune lands.)
 - **Provenance is date-only — sharpen the ambiguous April bin (244 verdicts)
   by cross-reference rather than discarding it.** The stated counts don't
   reconcile: "~365 Claude-era" = Feb+Mar only, yet the default cutoff

@@ -1,0 +1,22 @@
+{
+  "label": "A_rambleprone_grammar",
+  "model": "gemma4-coach",
+  "grammar": true,
+  "reasoning_budget": null,
+  "expect_decision": "approve",
+  "wall_s": 75.3,
+  "http_ok": true,
+  "http_status": 200,
+  "finish_reason": "stop",
+  "content_chars": 1559,
+  "reasoning_chars": 11187,
+  "total_chars": 12746,
+  "completion_tokens": 3567,
+  "tok_s": 47.4,
+  "grammar_conformant": true,
+  "conformance_detail": "verdict object with task_id/turn(int)/decision",
+  "verdict_decision": "approve",
+  "decision_matches_expected": true,
+  "criteria_verification_n": 2,
+  "tail": "cases: empty strings, whitespace trimming, and unicode characters.\"\\n    }\\n  ],\\n  \"rationale\": \"The player's implementation and test coverage meet all specified requirements and acceptance criteria. The reported tests specifically address the edge cases requested in AC-002.\"\\n}\\n```"
+}

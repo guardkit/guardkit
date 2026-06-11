@@ -7,7 +7,7 @@ description: "Three orchestrator-side fixes to the AutoBuild observability surfa
   \ orchestrator/server-side logic, picked as the AC-001 target feature for TASK-HMIG-010's\
   \ end-to-end LangGraph validation run."
 created: '2026-06-04T18:30:00Z'
-status: failed
+status: completed
 complexity: 5
 estimated_tasks: 3
 tasks:
@@ -21,56 +21,52 @@ tasks:
   estimated_minutes: 90
   requires_infrastructure: []
   result:
-    total_turns: 1
+    total_turns: 3
     final_decision: approved
     error: null
     deferred_reason: null
-  turns_completed: 1
+  turns_completed: 3
   current_turn: 0
-  started_at: '2026-06-09T18:53:45.320837'
-  completed_at: '2026-06-09T19:19:55.248570'
+  started_at: '2026-06-11T15:26:06.849239'
+  completed_at: '2026-06-11T16:24:24.267746'
 - id: TASK-FIX-GD02
   name: Scope git detection to per-task file changes in shared worktrees
   file_path: tasks/backlog/autobuild-observability-fixes/TASK-FIX-GD02-shared-worktree-git-detection-baseline.md
   complexity: 6
   dependencies:
   - TASK-FIX-IA03
-  status: failed
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 180
   requires_infrastructure: []
   result:
-    total_turns: 1
-    final_decision: error
-    error: 'Unexpected error: SDK invocation failed for coach (LangGraphHarnessError):
-      LangGraphHarness: synthesis ainvoke failed for role=''coach'' model=''openai:gemma4:31b'':
-      Connection error.'
+    total_turns: 2
+    final_decision: approved
+    error: null
     deferred_reason: null
-  turns_completed: 1
+  turns_completed: 2
   current_turn: 0
-  started_at: '2026-06-09T19:19:55.267483'
-  completed_at: '2026-06-09T19:53:31.615778'
+  started_at: '2026-06-11T16:24:38.207901'
+  completed_at: '2026-06-11T17:11:15.129192'
 - id: TASK-FIX-TP05
   name: Add independent test execution for testing task type
   file_path: tasks/backlog/autobuild-observability-fixes/TASK-FIX-TP05-add-test-execution-for-testing-task-type.md
   complexity: 4
   dependencies:
   - TASK-FIX-IA03
-  status: failed
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 120
   requires_infrastructure: []
   result:
     total_turns: 1
-    final_decision: error
-    error: 'Unexpected error: SDK invocation failed for coach (LangGraphHarnessError):
-      LangGraphHarness: synthesis ainvoke failed for role=''coach'' model=''openai:gemma4:31b'':
-      Connection error.'
+    final_decision: approved
+    error: null
     deferred_reason: null
   turns_completed: 1
   current_turn: 0
-  started_at: '2026-06-09T19:19:55.273959'
-  completed_at: '2026-06-09T19:53:31.618864'
+  started_at: '2026-06-11T16:24:38.211086'
+  completed_at: '2026-06-11T17:11:15.130946'
 orchestration:
   parallel_groups:
   - - TASK-FIX-IA03
@@ -80,15 +76,16 @@ orchestration:
   recommended_parallel: 2
 preflight_strict: false
 execution:
-  started_at: '2026-06-09T18:53:41.631433'
-  completed_at: '2026-06-09T19:53:31.623822'
-  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AOF
-  total_turns: 3
-  tasks_completed: 1
-  tasks_failed: 2
+  started_at: '2026-06-11T15:26:05.924409'
+  completed_at: '2026-06-11T17:11:15.134468'
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AOF
+  total_turns: 6
+  tasks_completed: 3
+  tasks_failed: 0
   current_wave: 2
   completed_waves:
   - 1
-  last_updated: '2026-06-09T19:53:31.618869'
+  - 2
+  last_updated: '2026-06-11T17:11:15.132634'
   archived_at: null
   archived_to: null

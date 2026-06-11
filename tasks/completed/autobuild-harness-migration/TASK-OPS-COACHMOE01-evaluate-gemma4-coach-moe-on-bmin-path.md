@@ -1,10 +1,15 @@
 ---
 id: TASK-OPS-COACHMOE01
 title: Evaluate gemma4-coach (26B-A4B MoE) as Coach on the shipped B-min toolless+grammar path (A/B vs run-25)
-status: backlog
+status: completed
+completed: 2026-06-11T17:42:00Z
+completed_location: tasks/completed/autobuild-harness-migration/
 task_type: ops
 created: 2026-06-11T00:00:00Z
-updated: 2026-06-11T00:00:00Z
+updated: 2026-06-11T17:42:00Z
+previous_state: in_progress
+state_transition_reason: "All 4 ACs met: gate PASS, A/B 3/3 approved, Lever-2 characterized, decision recorded. Outcome: 26B MoE is a viable B-min Coach; COACHHARVEST base updated; HMIG-013 superseded."
+outcome: "MoE PASSES — viable B-min Coach (g31 fallback); COACHHARVEST fine-tune base = 26B MoE. Caveat: 1/6 turns malformed (COACHSF01-recovered); speed win needs GATHER=0."
 priority: critical
 complexity: 3
 effort_hours: 4
@@ -96,16 +101,25 @@ whose other ACs were overtaken by COACHSPLIT/--coach-model threading).
 
 ## Acceptance Criteria
 
-- [ ] **AC-001** — gc grammar probe exists and has been run; finish_reason +
-      char counts recorded for approve and feedback paths.
-- [ ] **AC-002** — A/B run executed (or consciously aborted at step-1 FAIL);
-      per-task Coach wall-times and verdict-quality table captured alongside
-      the run-25 baseline numbers.
-- [ ] **AC-003** — Lever-2 reasoning_budget exercised on ≥1 leg with the delta
-      recorded.
-- [ ] **AC-004** — Decision recorded (note + Graphiti `guardkit__project_decisions`),
-      TASK-HMIG-013 closed/superseded, and TASK-DATA-COACHHARVEST's base-model
-      field updated to match the outcome.
+- [x] **AC-001** — gc grammar probe exists
+      ([`probe_toolless_grammar_gc.py`](../../../docs/state/TASK-OPS-COACHMOE01/probe_toolless_grammar_gc.py))
+      and has been run; finish_reason + char counts recorded for approve and
+      feedback paths. **GATE PASS** — grammar contains the ramble (all arms
+      finish=`stop`; production synthesis 24.7s approve / 40s feedback, per-AC
+      criteria populated).
+- [x] **AC-002** — A/B run executed: FEAT-AOF `--fresh` with `--coach-model
+      gemma4:26b`, **3/3 approved (105m)**. Per-task Coach wall-times +
+      verdict-quality table captured vs run-25 (README Step 2 +
+      `run-AB-artifacts/`). No rambles, no false-greens; 1/6 turns malformed
+      (COACHSF01-recovered).
+- [x] **AC-003** — Lever-2 `reasoning_budget` exercised live (rb=2048 and rb=0):
+      **no-op on the gc route** (uncapped/undisabled); delta recorded (README
+      Step 3). A/B legs ran with it unset (matches run-25); harness log confirms
+      `reasoning_budget=unset` threaded cleanly.
+- [x] **AC-004** — Decision recorded (README "Decision" + Graphiti
+      `guardkit__project_decisions`): **MoE passes → COACHHARVEST fine-tune base
+      = 26B MoE; gc viable B-min Coach, g31 fallback.** TASK-HMIG-013 superseded;
+      TASK-DATA-COACHHARVEST base-model field updated.
 
 ## References
 

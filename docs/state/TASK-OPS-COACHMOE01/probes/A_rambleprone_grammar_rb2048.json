@@ -1,0 +1,22 @@
+{
+  "label": "A_rambleprone_grammar_rb2048",
+  "model": "gemma4-coach",
+  "grammar": true,
+  "reasoning_budget": 2048,
+  "expect_decision": "approve",
+  "wall_s": 82.36,
+  "http_ok": true,
+  "http_status": 200,
+  "finish_reason": "stop",
+  "content_chars": 1754,
+  "reasoning_chars": 12064,
+  "total_chars": 13818,
+  "completion_tokens": 3882,
+  "tok_s": 47.1,
+  "grammar_conformant": true,
+  "conformance_detail": "verdict object with task_id/turn(int)/decision",
+  "verdict_decision": "approve",
+  "decision_matches_expected": true,
+  "criteria_verification_n": 2,
+  "tail": " \"Unit tests cover empty strings, leading/trailing whitespace, and unicode characters.\"\\n    }\\n  ],\\n  \"rationale\": \"The player successfully implemented the slugify function and provided a comprehensive test suite that covers all specified acceptance criteria and edge cases.\"\\n}\\n```"
+}

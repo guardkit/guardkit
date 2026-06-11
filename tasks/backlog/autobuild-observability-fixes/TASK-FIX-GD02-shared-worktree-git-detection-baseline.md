@@ -1,27 +1,57 @@
 ---
 id: TASK-FIX-GD02
 title: Scope git detection to per-task file changes in shared worktrees
-status: backlog
-created: 2026-02-20T00:00:00Z
-updated: 2026-02-20T00:00:00Z
+status: in_review
+created: 2026-02-20 00:00:00+00:00
+updated: 2026-02-20 00:00:00+00:00
 priority: high
-tags: [autobuild, bugfix, git-detection, worktree, file-attribution]
+tags:
+- autobuild
+- bugfix
+- git-detection
+- worktree
+- file-attribution
 task_type: feature
 complexity: 6
 parent_review: TASK-REV-A515
 feature_id: FEAT-AOF
 wave: 2
 implementation_mode: task-work
-dependencies: [TASK-FIX-PV01]
+dependencies:
+- TASK-FIX-PV01
 autobuild:
-  # TASK-FIX-AOFBUDG: 80-min per-task budget so a turn-1-reject → turn-2-accept
-  # run (~3864s wall-clock) survives without a feature-level timeout cancel.
-  # Read by FeatureOrchestrator._resolve_task_timeout (× timeout_multiplier).
   task_timeout: 4800
 test_results:
   status: pending
   coverage: null
   last_run: null
+autobuild_state:
+  current_turn: 2
+  max_turns: 5
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-AOF
+  base_branch: main
+  started_at: '2026-06-11T16:24:38.221872'
+  last_updated: '2026-06-11T16:56:44.581307'
+  turns:
+  - turn: 1
+    decision: feedback
+    feedback: '- Coach verdict-emission failed: Coach decision invalid: last fenced
+      JSON block is malformed for TASK-FIX-GD02 turn 1: Expecting value: line 16 column
+      9 (char 961). Likely substrate limitation (qwen36-workhorse F2 at Coach level).
+      Player should retry on turn 2 with this feedback.'
+    timestamp: '2026-06-11T16:24:38.221872'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
+  - turn: 2
+    decision: approve
+    feedback: null
+    timestamp: '2026-06-11T16:42:25.542520'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Scope git detection to per-task file changes in shared worktrees

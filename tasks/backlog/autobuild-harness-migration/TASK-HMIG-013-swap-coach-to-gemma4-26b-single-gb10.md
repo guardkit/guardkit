@@ -1,10 +1,12 @@
 ---
 id: TASK-HMIG-013
 title: Stage 1 — Swap Coach to gemma4:26b on existing single GB10 to close F17 substrate gap
-status: backlog
+status: completed
+resolution: superseded
+superseded_by: TASK-OPS-COACHMOE01
 task_type: bug
 created: 2026-06-06T11:00:00Z
-updated: 2026-06-06T11:00:00Z
+updated: 2026-06-11T17:35:00Z
 priority: critical
 complexity: 4
 deadline: 2026-06-15
@@ -28,6 +30,27 @@ tags:
 ---
 
 # Task: Stage 1 — swap Coach to gemma4:26b on existing GB10
+
+> **SUPERSEDED 2026-06-11 by TASK-OPS-COACHMOE01** (evidence:
+> [`docs/state/TASK-OPS-COACHMOE01/README.md`](../../../docs/state/TASK-OPS-COACHMOE01/README.md)).
+> This task was written 2026-06-06 against the **pre-COACHSPLIT tool-bound Coach
+> loop** (the F17 substrate gap). TASK-ARCH-COACHSPLIT (D-3) then removed the
+> tool-bound loop from the verdict path, so the original framing no longer
+> applies. COACHMOE01 evaluated gemma4:26b as Coach on the shipped **B-min
+> toolless+grammar** path and delivered this task's unrun AC-006 live smoke:
+> a FEAT-AOF `--fresh` run with Coach=gemma4:26b approved **3/3** with honest,
+> substantive verdicts and caught real Player dishonesty.
+>
+> **Falsifier outcome (honest):** the strict "≥95% verdict-emission across 6+
+> Coach turns" bar was **not cleanly met** — **5/6 turns emitted a natural valid
+> verdict (83%); 1 (GD02 t1) was malformed and recovered by the COACHSF01 safety
+> net** (100% effective emission). IA03 took 3 turns / ~58 min (exceeding the
+> 50-min single-turn budget) due to **Player** honesty drift + a `test-orchestrator`
+> SPECHANG, not the Coach. Net: gemma4:26b is a **viable B-min Coach** (substrate
+> question answered), but the production-default-swap / cutover decision
+> (TASK-HMIG-011) should weigh the 1/6 GBNF-emission caveat — keep g31 as the
+> higher-reliability fallback. Full evidence + decision:
+> [`docs/state/TASK-OPS-COACHMOE01/README.md`](../../../docs/state/TASK-OPS-COACHMOE01/README.md).
 
 ## Why this task exists
 

@@ -1,0 +1,11 @@
+{
+  "label": "G_synthesis_approve_grammar_rb0",
+  "reasoning_budget": 0,
+  "finish_reason": "stop",
+  "content_chars": 1752,
+  "reasoning_chars": 2533,
+  "wall_s": 24.97,
+  "verdict_decision": "approve",
+  "criteria_verification_n": 2,
+  "grammar_conformant": true
+}
