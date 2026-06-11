@@ -1,12 +1,14 @@
 ---
 id: TASK-INFRA-CIGREEN
 title: Get the guardkit test suite green and gate merges with a test CI
-status: in_review
+status: completed
 task_type: fix
 created: 2026-06-10T00:00:00Z
-updated: 2026-06-11T00:00:00Z
-previous_state: backlog
-state_transition_reason: "Implemented: green-gating CI via documented quarantine; burn-down tracked by TASK-INFRA-CIGREEN-BURN"
+updated: 2026-06-11T07:10:00Z
+completed: 2026-06-11T07:10:00Z
+completed_location: tasks/completed/TASK-INFRA-CIGREEN/
+previous_state: in_review
+state_transition_reason: "All 6 ACs met; tests.yml green on py3.11+3.12 on GitHub (caught + fixed a real 3.11 Path.walk bug on first run). Burn-down tracked by TASK-INFRA-CIGREEN-BURN"
 priority: high
 complexity: 5
 parent_task: TASK-HMIG-010
