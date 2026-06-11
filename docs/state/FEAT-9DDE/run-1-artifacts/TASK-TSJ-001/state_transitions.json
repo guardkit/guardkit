@@ -1,0 +1,9 @@
+[
+  {
+    "task_id": "TASK-TSJ-001",
+    "pre_path": "tasks/backlog/TASK-TSJ-001-implement-task-status-json-producer.md",
+    "post_path": "tasks/design_approved/TASK-TSJ-001-implement-task-status-json-producer.md",
+    "timestamp": "2026-06-11T12:21:03.619626+00:00",
+    "kind": "design_approved_transition"
+  }
+]
