@@ -1,0 +1,15 @@
+{
+  "task_id": "TASK-FIX-TP05",
+  "checkpoints": [
+    {
+      "turn": 1,
+      "commit_hash": "ad467a3115d6803e74903c3d92d5fcb7e4b2d7fd",
+      "timestamp": "2026-06-11T09:06:00.067017",
+      "tests_passed": true,
+      "test_count": 123,
+      "message": "[guardkit-checkpoint] Turn 1 complete (tests: pass)",
+      "from_prior_run": false
+    }
+  ],
+  "last_updated": "2026-06-11T09:06:00.067295"
+}

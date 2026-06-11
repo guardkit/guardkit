@@ -1,0 +1,93 @@
+{
+  "task_id": "TASK-FIX-TP05",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/models/task_types.py",
+    "tests/unit/test_task_types.py"
+  ],
+  "files_created": [
+    ".claude/task-plans/TASK-FIX-TP05-implementation-plan.md"
+  ],
+  "tests_written": [],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation. Files planned: 0, Files actual: 0",
+  "concerns": [],
+  "requirements_addressed": [
+    "TESTING profile has tests_required=True",
+    "Coach independently executes test files written by testing tasks",
+    "Test failures produce actionable Coach feedback",
+    "zero_test_blocking remains False",
+    "Tasks that only create test infrastructure don't false-fail",
+    "Unit test verifies the updated profile"
+  ],
+  "requirements_remaining": [],
+  "sdk_turns_used": null,
+  "sdk_max_turns": 150,
+  "sdk_ceiling_hit": false,
+  "files_authored": [],
+  "tests_passed_count": 123,
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "TESTING profile has `tests_required=True`",
+      "status": "complete",
+      "evidence": "Updated DEFAULT_PROFILES[TaskType.TESTING] in guardkit/models/task_types.py to set tests_required=True. Also updated zero_test_blocking=False.",
+      "test_file": "tests/unit/test_task_types.py",
+      "implementation_files": [
+        "guardkit/models/task_types.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Coach independently executes test files written by testing tasks",
+      "status": "complete",
+      "evidence": "CoachValidator.run_independent_tests() is generic and already handles all task types. With tests_required=True, the Coach's validate() method will invoke run_independent_tests for TESTING tasks. The Coach detects test commands via _detect_test_command() and runs pytest against collected test files.",
+      "test_file": null,
+      "implementation_files": [
+        "guardkit/models/task_types.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Test failures produce actionable Coach feedback",
+      "status": "complete",
+      "evidence": "CoachValidator.run_independent_tests() returns IndependentTestResult with tests_passed, test_command, test_output_summary, and raw_output. The validate() method uses these results to produce feedback rather than approval when tests fail. The Coach's failure classification logic in _summarize_test_output provides actionable details.",
+      "test_file": null,
+      "implementation_files": [
+        "guardkit/models/task_types.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "`zero_test_blocking` remains False (don't block if no test runner available)",
+      "status": "complete",
+      "evidence": "Set zero_test_blocking=False in the TESTING profile. When tests_required=True but zero_test_blocking=False, the task is not blocked if no tests are found (zero-test anomaly produces a warning, not an error).",
+      "test_file": "tests/unit/test_task_types.py",
+      "implementation_files": [
+        "guardkit/models/task_types.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Tasks that only create test infrastructure (conftest.py) don't false-fail",
+      "status": "complete",
+      "evidence": "zero_test_blocking=False ensures that tasks creating only test infrastructure (conftest.py, fixtures) won't fail due to zero test files. The Coach's _detect_test_command() also handles cases where no matching tests are found by returning None and skipping verification gracefully.",
+      "test_file": null,
+      "implementation_files": [
+        "guardkit/models/task_types.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Unit test verifies the updated profile",
+      "status": "complete",
+      "evidence": "Updated 5 existing tests in tests/unit/test_task_types.py to verify the new TESTING profile: test_create_testing_profile, test_for_type_returns_testing_profile, test_default_profiles_testing_configuration, test_get_profile_with_testing, test_workflow_testing_task. All 123 tests pass.",
+      "test_file": "tests/unit/test_task_types.py",
+      "implementation_files": [
+        "guardkit/models/task_types.py"
+      ]
+    }
+  ]
+}
