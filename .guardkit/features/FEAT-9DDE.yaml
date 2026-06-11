@@ -1,0 +1,43 @@
+id: FEAT-9DDE
+name: Add --json flag to /task-status
+description: Deterministic producer script emitting the task dashboard as machine-readable
+  schema-v1 JSON, wired into both task-status.md specs via a --json flag (R1/R2 producer
+  pattern)
+created: '2026-06-11T13:15:23.823171'
+status: planned
+complexity: 3
+estimated_tasks: 2
+tasks:
+- id: TASK-TSJ-001
+  name: Implement task-status-json producer script
+  file_path: tasks/backlog/task-status-json/TASK-TSJ-001-implement-task-status-json-producer.md
+  complexity: 4
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-TSJ-002
+  name: Register bin entry and wire --json into specs
+  file_path: tasks/backlog/task-status-json/TASK-TSJ-002-register-bin-entry-and-wire-specs.md
+  complexity: 2
+  dependencies:
+  - TASK-TSJ-001
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 22
+orchestration:
+  parallel_groups:
+  - - TASK-TSJ-001
+  - - TASK-TSJ-002
+  estimated_duration_minutes: 72
+  recommended_parallel: 1
+smoke_gates:
+  after_wave: all
+  command: |
+    set -e
+    pytest tests/unit/commands -x -q -k task_status_json
+    python3 installer/core/commands/lib/task_status_json.py --base-path . | python3 -m json.tool > /dev/null
+  expected_exit: 0
+  timeout: 120
