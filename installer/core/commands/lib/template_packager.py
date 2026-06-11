@@ -12,6 +12,7 @@ TASK-012: Template Packaging & Distribution (Sub-task 1: TASK-061)
 
 import hashlib
 import json
+import os
 import tarfile
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -172,10 +173,14 @@ class TemplatePackager:
             arcname = self.template_path.name
             tar.add(self.template_path, arcname=arcname)
 
-            # Collect file list
-            for root, dirs, files in self.template_path.walk():
+            # Collect file list. Use os.walk (3.11+) rather than Path.walk,
+            # which only exists on 3.12+ — the supported floor is 3.11
+            # (TASK-INFRA-CIGREEN); Path.walk raised AttributeError under CI's
+            # 3.11 leg.
+            for root, dirs, files in os.walk(self.template_path):
+                root_path = Path(root)
                 for file in files:
-                    file_path = root / file
+                    file_path = root_path / file
                     relative_path = file_path.relative_to(self.template_path.parent)
                     files_included.append(str(relative_path))
 
