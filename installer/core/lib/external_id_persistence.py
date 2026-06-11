@@ -123,6 +123,7 @@ class ExternalIDPersistence:
         if not path.exists():
             return {}
 
+        should_restore = False
         with self._file_lock(path):
             try:
                 with open(path, 'r') as f:
@@ -133,16 +134,23 @@ class ExternalIDPersistence:
 
                 return data.get(self.MAPPING_KEY, {})
 
-            except (json.JSONDecodeError, ValueError) as e:
-                # Try backup once (only if _retry < 1)
-                if _retry < 1:
-                    backup_path = path.with_suffix(path.suffix + '.bak')
-                    if backup_path.exists():
-                        self._restore_from_backup(path)
-                        return self.load_mappings(_retry=_retry + 1)  # Increment counter
+            except (json.JSONDecodeError, ValueError):
+                # Corrupt/invalid. Decide whether a backup restore is worth
+                # attempting, but perform the restore + recursive retry AFTER
+                # this lock releases. The retry re-acquires the same exclusive
+                # lock, and fcntl.flock(LOCK_EX) on a second fd of the same
+                # file in this process blocks forever — a deadlock that hung
+                # the whole suite at test_load_prevents_infinite_recursion
+                # (TASK-INFRA-CIGREEN). Defer to outside the `with` block.
+                backup_path = path.with_suffix(path.suffix + '.bak')
+                should_restore = _retry < 1 and backup_path.exists()
 
-                # No backup available or already tried, return empty
-                return {}
+        if should_restore:
+            self._restore_from_backup(path)
+            return self.load_mappings(_retry=_retry + 1)
+
+        # No backup available or already tried, return empty
+        return {}
 
     def save_counters(self, counters: Dict[str, Union[int, Dict[str, int]]]) -> None:
         """
@@ -194,6 +202,7 @@ class ExternalIDPersistence:
         if not path.exists():
             return self._default_counter_structure()
 
+        should_restore = False
         with self._file_lock(path):
             try:
                 with open(path, 'r') as f:
@@ -205,14 +214,18 @@ class ExternalIDPersistence:
                 return data.get(self.COUNTER_KEY, self._default_counter_structure())
 
             except (json.JSONDecodeError, ValueError):
-                # Try backup once (only if _retry < 1)
-                if _retry < 1:
-                    backup_path = path.with_suffix(path.suffix + '.bak')
-                    if backup_path.exists():
-                        self._restore_from_backup(path)
-                        return self.load_counters(_retry=_retry + 1)  # Increment counter
+                # Restore + retry must happen AFTER the lock releases — see the
+                # matching comment in load_mappings(); the recursive retry
+                # would otherwise deadlock on fcntl.flock(LOCK_EX)
+                # (TASK-INFRA-CIGREEN).
+                backup_path = path.with_suffix(path.suffix + '.bak')
+                should_restore = _retry < 1 and backup_path.exists()
 
-                return self._default_counter_structure()
+        if should_restore:
+            self._restore_from_backup(path)
+            return self.load_counters(_retry=_retry + 1)
+
+        return self._default_counter_structure()
 
     def _atomic_write(self, path: Path, data: dict) -> None:
         """

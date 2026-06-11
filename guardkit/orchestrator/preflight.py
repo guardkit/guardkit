@@ -68,7 +68,7 @@ class PreflightTypo:
     Attributes
     ----------
     task_id : str
-        The task that declared the path (e.g. ``"TASK-FRR-PEB-006"``).
+        The task that declared the path (e.g. ``"TASK-XXX-YYYY"``).
     line : int
         Absolute line number within the task markdown file (1-indexed).
         ``0`` if the line could not be resolved (defensive default).

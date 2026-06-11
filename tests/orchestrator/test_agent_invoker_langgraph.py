@@ -38,6 +38,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+# Optional dependency (LangGraph harness stack, resolved via guardkitfactory).
+# Skip cleanly when absent so the suite never errors at collection
+# (TASK-INFRA-CIGREEN AC-4). The cross-repo harness contract itself is gated by
+# the seam job (.github/workflows/seam-tests.yml); this module runs wherever the
+# langchain stack is installed (dev machines with the autobuild extra).
+pytest.importorskip("langchain_core")
+
 # Stub-model import — verified working path in this venv (Python 3.14).
 # The 'fake' submodule does not export FakeMessagesListChatModel here,
 # only 'fake_chat_models' does. Keep this import inside the test module

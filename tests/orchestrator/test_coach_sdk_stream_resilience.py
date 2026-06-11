@@ -34,6 +34,11 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
+# Optional dependency (the `autobuild` extra). Skip cleanly when absent so the
+# suite never errors at collection on an environment without the SDK
+# (TASK-INFRA-CIGREEN AC-4). CI installs claude-agent-sdk so these run + gate.
+pytest.importorskip("claude_agent_sdk")
+
 import claude_agent_sdk
 from claude_agent_sdk import (
     ProcessError,

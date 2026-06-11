@@ -1,0 +1,81 @@
+# GitHub Actions Workflow: Run the pytest suite and gate merges
+# Task: TASK-INFRA-CIGREEN (parent TASK-HMIG-010)
+#
+# Purpose
+#   Merge-gating CI for the guardkit unit/integration suite. Before this
+#   workflow the only CI was docs.yml + seam-tests.yml — `pytest tests/` was
+#   never gated, so regressions (run-24's build_autobuild_backend crash, the
+#   run-22 display bug, ...) reached live runs because nothing caught them.
+#
+# Green-on-a-long-red-suite
+#   When this gate was introduced the suite had 518 PRE-EXISTING failures under
+#   Python 3.12 (foreign-machine paths, missing template scaffolds, stale mocks,
+#   optional-dep gaps — full triage in docs/state/TASK-INFRA-CIGREEN/triage.md).
+#   Those are skipped via the explicit, documented quarantine in
+#   tests/quarantine.txt (applied by tests/conftest.py). Everything ELSE —
+#   including every new or newly-fixed test — is gated. The quarantine is
+#   burned down by a follow-up task; removing a line re-arms the gate for it.
+#
+# Floor is 3.11 (TASK-INFRA-CIGREEN): the orchestrator uses asyncio.timeout()
+# (3.11+). The matrix pins 3.11 (floor) and 3.12 (primary).
+
+name: Tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    name: pytest (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install guardkit (dev extra)
+        # `.[dev]` pulls the core deps (incl. the graphiti-core git pin) plus
+        # pytest/pytest-asyncio/pytest-bdd. We deliberately do NOT install the
+        # `autobuild` extra (it would try to resolve guardkitfactory from PyPI);
+        # the cross-repo harness contract is gated separately by seam-tests.yml.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Install SDK + hang-protection (so SDK unit tests run + gate)
+        # claude-agent-sdk is a standalone PyPI package (guardkit's autobuild
+        # extra lower bound). Installing it lets the SDK-guarded unit modules
+        # (importorskip'd in tests/orchestrator/**) actually run rather than
+        # skip. pytest-timeout turns any hang into a fast failure instead of a
+        # stuck runner.
+        run: python -m pip install "claude-agent-sdk>=0.1.49,<0.2" pytest-timeout
+
+      - name: Run test suite (quarantine applied via tests/conftest.py)
+        # `-o addopts=""` clears the repo's default --cov flags (this gate is
+        # pass/fail, not coverage). --timeout bounds any single hang.
+        run: |
+          python -m pytest tests/ \
+            -o addopts="" \
+            -p no:cacheprovider \
+            --timeout=120 --timeout-method=thread \
+            -q -rfE

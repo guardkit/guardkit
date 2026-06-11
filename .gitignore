@@ -48,6 +48,7 @@ venv/
 env/
 .venv/
 .venv-*/
+.venv312/
 venv-*/
 env-*/
 ENV/

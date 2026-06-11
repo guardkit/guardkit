@@ -1,10 +1,12 @@
 ---
 id: TASK-INFRA-CIGREEN
 title: Get the guardkit test suite green and gate merges with a test CI
-status: backlog
+status: in_review
 task_type: fix
 created: 2026-06-10T00:00:00Z
-updated: 2026-06-10T00:00:00Z
+updated: 2026-06-11T00:00:00Z
+previous_state: backlog
+state_transition_reason: "Implemented: green-gating CI via documented quarantine; burn-down tracked by TASK-INFRA-CIGREEN-BURN"
 priority: high
 complexity: 5
 parent_task: TASK-HMIG-010
@@ -57,21 +59,32 @@ CI job that fails the build when it isn't.
 
 ## Acceptance criteria
 
-- [ ] **AC-1 (triage)**: run the full suite in the chosen CI env (3.11+/3.12) and
-  categorize **every** remaining failure as version / lint-debt / env-dependent /
-  genuine-regression, with counts. Document the list.
-- [ ] **AC-2 (version floor)**: `requires-python` bumped to `>=3.11`, 3.10
-  classifier removed, and the floor documented. The ~26 asyncio.timeout failures
-  are gone.
-- [ ] **AC-3 (lint green)**: the dead-task-ID lint passes (the ~14 refs
-  filed/removed/placeholdered).
-- [ ] **AC-4 (env tests hermetic)**: env-dependent tests pass or skip cleanly with
-  no CI dependency on a developer machine's worktree/venv state.
-- [ ] **AC-5 (green on main)**: `pytest tests/` exits 0 on a clean `main` in the CI
-  env; any intentionally-skipped test is documented with its reason.
-- [ ] **AC-6 (test CI gates merges)**: a `.github/workflows/tests.yml` (or equiv)
-  runs the suite on 3.11+/3.12 on push/PR and fails the build on any failure —
-  the suite is now *gated*, not just *green-once*.
+- [x] **AC-1 (triage)**: full suite run under 3.12; **518** failures/errors
+  categorized into 6 buckets with counts. Documented in
+  `docs/state/TASK-INFRA-CIGREEN/triage.md`. (The premise of "~26" was wrong —
+  the suite had never completed; it hung on a `flock` deadlock, now fixed.)
+- [x] **AC-2 (version floor)**: `requires-python` → `>=3.11`, 3.10 classifier
+  removed, floor documented in `pyproject.toml`.
+- [x] **AC-3 (lint green)**: dead-task-ID lint passes — 9 provenance records
+  filed under `docs/state/`, 1 docstring example placeholdered.
+- [x] **AC-4 (env tests hermetic)**: 6 collection-error modules now
+  `importorskip` cleanly; `flock` deadlock fixed so the suite completes.
+- [x] **AC-5 (green on main)**: `pytest tests/` exits **0** (14,041 passed,
+  1,731 skipped). The 518 pre-existing reds are skipped via the documented
+  quarantine (`tests/quarantine.txt` + `tests/conftest.py`), each with a bucket
+  reason. Run them with `GUARDKIT_NO_QUARANTINE=1`.
+- [x] **AC-6 (test CI gates merges)**: `.github/workflows/tests.yml` runs the
+  suite on **3.11 + 3.12** on push/PR and fails on any failure.
+
+## Resolution note (2026-06-11)
+
+The task assumed a near-green suite (~26 version failures). The real suite was
+deeply red (**518** pre-existing failures) and had never run to completion. Per
+the scope decision (recommended + accepted): **land a green merge-gate now over
+the ~14k passing tests, with the 518 reds in a documented, burn-downable
+quarantine**, rather than block the gate for many sessions fixing brittle/obsolete
+tests while new regressions keep landing ungated. Burn-down tracked by
+**TASK-INFRA-CIGREEN-BURN**. Full analysis: `docs/state/TASK-INFRA-CIGREEN/triage.md`.
 
 ## Notes
 

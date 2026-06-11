@@ -1,6 +1,13 @@
 """Comprehensive test suite for users endpoint."""
 
 import pytest
+
+# fastapi is NOT a guardkit dependency — this module + its companion `api/` /
+# `main.py` scaffolding are a FastAPI demo from TASK-TEST-MCP1. Skip cleanly when
+# fastapi is absent so the suite never errors at collection (TASK-INFRA-CIGREEN
+# AC-4).
+pytest.importorskip("fastapi")
+
 from fastapi import status
 from fastapi.testclient import TestClient
 
