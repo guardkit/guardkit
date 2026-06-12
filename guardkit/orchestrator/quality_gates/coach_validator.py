@@ -1857,6 +1857,12 @@ class CoachValidator:
             if agent_invocations_advisory is not None
             else []
         )
+        # TASK-FIX-SPECVIOL01 AC-002: attributed specialist-substrate
+        # failure advisories ride the same channel (legacy validate() path;
+        # the primary gather_evidence path has the same wire).
+        advisory_issues.extend(
+            self._compute_specialist_failure_advisories(task_work_results)
+        )
         advisory_issues.extend(honesty_should_fix)
 
         # 2. Verify quality gates passed with profile
@@ -2555,6 +2561,13 @@ class CoachValidator:
         )
         if agent_invocations_advisory is not None:
             advisory_issues.append(agent_invocations_advisory)
+        # TASK-FIX-SPECVIOL01 AC-002: orchestrator-injected specialist
+        # failures (hang/crash) ride along as attributed advisories so the
+        # substrate failure is never silently dropped — and never read as
+        # a Player honesty issue.
+        advisory_issues.extend(
+            self._compute_specialist_failure_advisories(task_work_results)
+        )
         advisory_issues.extend(honesty_should_fix)
 
         # Honesty short-circuit: don't run downstream gathering. Legacy
@@ -2920,6 +2933,67 @@ class CoachValidator:
                 "actual_invocations": actual_invocations_val,
             },
         }
+
+    def _compute_specialist_failure_advisories(
+        self, task_work_results: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Surface orchestrator-injected specialist failures as advisories.
+
+        TASK-FIX-SPECVIOL01 AC-002. When an orchestrator-invoked specialist
+        (Phase 4 test-orchestrator, Phase 5 code-reviewer) hangs or crashes,
+        ``AgentInvoker._inject_specialist_records_into_task_work_results``
+        writes a ``source: "orchestrator"`` record with ``status`` failed/
+        skipped and an ``error`` into ``agent_invocations``. That is a
+        SUBSTRATE failure — the Player never controlled it — so it must
+        surface as an attributed, non-blocking advisory naming the
+        specialist and the error, never as a Player honesty discrepancy
+        (the path-string-mismatch-is-not-dishonesty meta-class) and never
+        silently dropped (absence of evidence stays absent-signal, per
+        absence-of-failure-is-not-success).
+
+        Only ``status == "failed"`` records advise. ``"skipped"`` records
+        are also synthesized benignly (e.g. direct-mode tasks where
+        ``specialist_results.json`` legitimately never exists) and the
+        phase-absence signal is already carried by the agent-invocations
+        advisory — advising on them would be per-turn noise.
+
+        Returns an empty list when no orchestrator-sourced failure records
+        are present (the overwhelmingly common case).
+        """
+        advisories: List[Dict[str, Any]] = []
+        invocations = task_work_results.get("agent_invocations")
+        if not isinstance(invocations, list):
+            return advisories
+        for inv in invocations:
+            if not isinstance(inv, dict):
+                continue
+            if inv.get("source") != "orchestrator":
+                continue
+            if inv.get("status") != "failed":
+                continue
+            error = inv.get("error")
+            if not error:
+                continue
+            agent = inv.get("agent", "unknown-specialist")
+            phase = inv.get("phase", "?")
+            advisories.append({
+                "severity": "should_fix",
+                "category": "specialist_substrate",
+                "description": (
+                    f"Orchestrator-invoked specialist '{agent}' "
+                    f"(Phase {phase}) did not produce evidence: {error}. "
+                    f"This is a substrate failure attributed to the "
+                    f"orchestrator, not a Player honesty issue — the "
+                    f"phase's evidence is ABSENT, not failed."
+                ),
+                "details": {
+                    "phase": phase,
+                    "agent": agent,
+                    "status": inv.get("status"),
+                    "error": str(error),
+                },
+            })
+        return advisories
 
     def read_quality_gate_results(self, task_id: str) -> Dict[str, Any]:
         """
