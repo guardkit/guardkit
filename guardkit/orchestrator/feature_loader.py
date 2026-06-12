@@ -1597,13 +1597,53 @@ def _read_pyproject_optional_dependencies(
     return optional if isinstance(optional, dict) else {}
 
 
+def _extra_provides_pytest(
+    optional_deps: Dict[str, Any],
+    extra: str,
+) -> bool:
+    """Return True when the named optional-dependency *extra* lists pytest.
+
+    Used by the Coach-always-needs-pytest branch of
+    :func:`derive_bootstrap_extras` (TASK-FIX-BOOTPYTEST01). Unlike the
+    smoke-gate branch — which trusts an operator's pytest command and
+    installs the canonical extra by *name* — this branch has no operator
+    signal, so it only auto-adds an extra that demonstrably carries the
+    pytest toolchain. Reusing ``_PYTEST_COMMAND_PATTERN`` (the ``\\bpytest\\b``
+    word-boundary match) also accepts pytest plugins such as ``pytest-bdd``
+    / ``pytest-asyncio`` as evidence of a test extra, while rejecting a
+    ``[dev]`` group that holds only linters (e.g. ``ruff``, ``mypy``).
+
+    Parameters
+    ----------
+    optional_deps : Dict[str, Any]
+        ``[project.optional-dependencies]`` table as returned by
+        :func:`_read_pyproject_optional_dependencies`.
+    extra : str
+        The extra name to inspect (e.g. ``"dev"``).
+
+    Returns
+    -------
+    bool
+        True when ``optional_deps[extra]`` is a list containing at least
+        one requirement string matching ``\\bpytest\\b``.
+    """
+    deps = optional_deps.get(extra)
+    if not isinstance(deps, list):
+        return False
+    return any(
+        isinstance(dep, str) and _PYTEST_COMMAND_PATTERN.search(dep)
+        for dep in deps
+    )
+
+
 def derive_bootstrap_extras(
     feature: Feature,
     project_dir: Path,
 ) -> List[str]:
     """Resolve the final extras list for a feature's bootstrap step.
 
-    Resolution order (TASK-GK-BS-001 AC-1, AC-3, AC-5):
+    Resolution order (TASK-GK-BS-001 AC-1/AC-3/AC-5; branch 3 added by
+    TASK-FIX-BOOTPYTEST01):
 
     1. **Operator-declared** (``feature.bootstrap_extras``) — wins if
        non-empty. AC-5: explicit declaration suppresses auto-detection.
@@ -1611,11 +1651,20 @@ def derive_bootstrap_extras(
        configured AND ``smoke_gates.command`` references ``pytest`` at a
        word boundary (case-insensitive), probe ``project_dir/pyproject.toml``
        for the canonical test-extra name (``[dev]`` first, then ``[test]``).
-       Returns the first match.
-    3. **No extras** — when neither is declared, return an empty list.
-       If a pytest smoke gate is present but pyproject declares neither
-       ``[dev]`` nor ``[test]``, log a warning naming both candidates
-       (the most actionable feedback for the operator).
+       Returns the first match. If a pytest smoke gate is present but
+       pyproject declares neither ``[dev]`` nor ``[test]``, log a warning
+       naming both candidates (the most actionable operator feedback) and
+       fall through to no extras.
+    3. **Coach-always-needs-pytest** (TASK-FIX-BOOTPYTEST01) — the Coach's
+       independent-test gate runs ``pytest`` in the worktree venv for
+       *every* Python task, unconditionally. So even without an operator
+       declaration or a pytest smoke gate, if the project declares a
+       ``[dev]``/``[test]`` extra that *provides* pytest (see
+       :func:`_extra_provides_pytest`), install it — otherwise the Coach's
+       pinned interpreter cannot ``import pytest`` on early turns and reports
+       "missing pytest dependency" feedback until the Player incidentally
+       installs it. Returns the first candidate extra that carries pytest.
+    4. **No extras** — when none of the above apply, return an empty list.
 
     This is a *pure* function — no side effects on ``feature`` — so the
     auto-detection result is never persisted back to YAML. The orchestrator
@@ -1641,34 +1690,56 @@ def derive_bootstrap_extras(
     if feature.bootstrap_extras:
         return list(feature.bootstrap_extras)
 
-    # 2. Auto-detect from smoke gate command.
-    if feature.smoke_gates is None:
-        return []
-    command = feature.smoke_gates.command
-    if not _PYTEST_COMMAND_PATTERN.search(command):
+    optional_deps = _read_pyproject_optional_dependencies(project_dir)
+
+    # 2. Smoke-gate auto-detection: an operator-authored pytest smoke gate is
+    #    an explicit signal to install the canonical test extra by name.
+    smoke_command = (
+        feature.smoke_gates.command if feature.smoke_gates is not None else None
+    )
+    if smoke_command is not None and _PYTEST_COMMAND_PATTERN.search(smoke_command):
+        for candidate in _AUTO_DETECT_EXTRA_CANDIDATES:
+            if candidate in optional_deps:
+                logger.info(
+                    "Smoke gate references pytest; auto-adding [%s] to "
+                    "bootstrap extras (project: %s).",
+                    candidate,
+                    project_dir,
+                )
+                return [candidate]
+
+        # Pytest smoke gate but no candidate extra — surface the gap. Branch 3
+        # below cannot help either: it probes the same candidates with a
+        # stricter provides-pytest filter, so it would also find nothing.
+        logger.warning(
+            "Smoke gate command %r references pytest but pyproject at %s "
+            "declares neither [dev] nor [test] optional-dependencies. "
+            "Smoke gate may fail with 'No module named pytest'. Either add "
+            "a [dev] or [test] extra to pyproject.toml, or set "
+            "bootstrap_extras: [<your-name>] explicitly in the feature yaml.",
+            smoke_command,
+            project_dir,
+        )
         return []
 
-    optional_deps = _read_pyproject_optional_dependencies(project_dir)
+    # 3. Coach-always-needs-pytest (TASK-FIX-BOOTPYTEST01). The Coach's
+    #    independent-test gate runs pytest in the worktree venv for every
+    #    Python task, regardless of smoke-gate / operator config. Install the
+    #    first [dev]/[test] extra that actually *provides* pytest so the
+    #    Coach's pinned interpreter is test-capable from turn 1 — otherwise it
+    #    reports "missing pytest dependency" until the Player installs it.
     for candidate in _AUTO_DETECT_EXTRA_CANDIDATES:
-        if candidate in optional_deps:
+        if _extra_provides_pytest(optional_deps, candidate):
             logger.info(
-                "Smoke gate references pytest; auto-adding [%s] to "
-                "bootstrap extras (project: %s).",
+                "Coach runs independent pytest unconditionally; auto-adding "
+                "[%s] to bootstrap extras so the worktree venv can import "
+                "pytest from turn 1 (project: %s).",
                 candidate,
                 project_dir,
             )
             return [candidate]
 
-    # 3. Pytest smoke gate but no candidate extra — surface the gap.
-    logger.warning(
-        "Smoke gate command %r references pytest but pyproject at %s "
-        "declares neither [dev] nor [test] optional-dependencies. "
-        "Smoke gate may fail with 'No module named pytest'. Either add "
-        "a [dev] or [test] extra to pyproject.toml, or set "
-        "bootstrap_extras: [<your-name>] explicitly in the feature yaml.",
-        command,
-        project_dir,
-    )
+    # 4. No extras.
     return []
 
 

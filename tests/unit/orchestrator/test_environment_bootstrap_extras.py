@@ -1,14 +1,25 @@
-"""Bootstrap-extras plumbing for smoke-gate test deps (TASK-GK-BS-001).
+"""Bootstrap-extras plumbing for smoke-gate test deps (TASK-GK-BS-001),
+extended for the Coach's unconditional pytest need (TASK-FIX-BOOTPYTEST01).
 
 Pins the contract that ``feature.bootstrap_extras`` (or the auto-detected
-equivalent for a pytest smoke gate) gets threaded into the Python
-``pyproject.toml`` install command, so the worktree's ``.venv`` has the
-test deps the smoke gate needs.
+equivalent for a pytest smoke gate, or — TASK-FIX-BOOTPYTEST01 — a
+pytest-providing ``[dev]``/``[test]`` extra even with no smoke gate) gets
+threaded into the Python ``pyproject.toml`` install command, so the
+worktree's ``.venv`` has the test deps the Coach's independent-test gate
+needs.
 
-The defect this guards against: FEAT-PEBR run-3, where the smoke gate
-ran ``python -m pytest tests/bdd -m smoke -x`` against a worktree venv
-that was bootstrapped with a bare ``uv pip install -e .`` (no extras),
-producing ``No module named pytest`` at the gate boundary.
+The defects this guards against:
+
+- FEAT-PEBR run-3 (TASK-GK-BS-001): a pytest smoke gate ran
+  ``python -m pytest tests/bdd -m smoke -x`` against a worktree venv
+  bootstrapped with a bare ``uv pip install -e .`` (no extras), producing
+  ``No module named pytest`` at the gate boundary.
+- FEAT-E2CB run-1 (TASK-FIX-BOOTPYTEST01): a feature with NEITHER
+  ``bootstrap_extras`` NOR ``smoke_gates`` left the worktree venv without
+  pytest, so the Coach's pinned independent-test interpreter could not
+  ``import pytest`` on turns 1-2 — burning turns and contributing to a
+  timeout. The Coach runs pytest unconditionally, so a pytest-providing
+  test extra must be installed regardless of smoke-gate config.
 
 Coverage Target: >=85%
 """
@@ -263,9 +274,11 @@ class TestSmokeGateExtraDetection:
 
         Conservative regex prevents over-eager auto-detection on commands
         that happen to contain ``pytest`` as a substring of an unrelated
-        tool name.
+        tool name. The ``[dev]`` extra here carries no pytest, so the
+        Coach-always-needs-pytest branch (TASK-FIX-BOOTPYTEST01) also stays
+        silent — isolating this assertion to the smoke-gate regex.
         """
-        _write_pyproject(tmp_path, {"dev": ["pytest"]})
+        _write_pyproject(tmp_path, {"dev": ["ruff"]})
         feature = _make_feature(smoke_command="pytestify-runner --check")
         assert derive_bootstrap_extras(feature, tmp_path) == []
 
@@ -275,15 +288,28 @@ class TestSmokeGateExtraDetection:
         feature = _make_feature(smoke_command="PYTEST -q")
         assert derive_bootstrap_extras(feature, tmp_path) == ["dev"]
 
-    def test_no_smoke_gate_no_extras(self, tmp_path: Path) -> None:
-        """AC-6: no smoke gate AND no explicit extras → ``[]``."""
-        _write_pyproject(tmp_path, {"dev": ["pytest"]})
+    def test_no_smoke_gate_no_test_extra_returns_empty(self, tmp_path: Path) -> None:
+        """No smoke gate AND no pytest-providing extra → ``[]``.
+
+        Supersedes the original TASK-GK-BS-001 AC-6 case (which used a
+        ``[dev]=["pytest"]`` fixture and asserted ``[]``): under
+        TASK-FIX-BOOTPYTEST01 a ``[dev]`` extra that *provides* pytest is now
+        auto-added even without a smoke gate (see ``TestCoachAlwaysNeedsPytest``).
+        The residual no-extras guarantee is the genuinely-no-test-deps case
+        asserted here.
+        """
+        _write_pyproject(tmp_path)  # no optional-dependencies at all
         feature = _make_feature()  # no smoke_gates, no bootstrap_extras
         assert derive_bootstrap_extras(feature, tmp_path) == []
 
     def test_non_pytest_smoke_gate_no_auto_detect(self, tmp_path: Path) -> None:
-        """AC-6: smoke gate that doesn't reference pytest → no auto-detect."""
-        _write_pyproject(tmp_path, {"dev": ["pytest"]})
+        """A smoke gate not referencing pytest → no smoke-gate auto-detect.
+
+        The ``[dev]`` extra carries no pytest, so the Coach-always-needs-pytest
+        branch (TASK-FIX-BOOTPYTEST01) also stays silent — isolating this
+        assertion to branch 2 (the smoke-gate command check).
+        """
+        _write_pyproject(tmp_path, {"dev": ["ruff"]})
         feature = _make_feature(smoke_command="bash scripts/integration.sh")
         assert derive_bootstrap_extras(feature, tmp_path) == []
 
@@ -304,6 +330,116 @@ class TestSmokeGateExtraDetection:
         )
         feature = _make_feature(smoke_command="pytest tests/")
         assert derive_bootstrap_extras(feature, tmp_path) == []
+
+
+# ============================================================================
+# TASK-FIX-BOOTPYTEST01: Coach independent-test gate always needs pytest
+# ============================================================================
+
+
+class TestCoachAlwaysNeedsPytest:
+    """``derive_bootstrap_extras`` branch 3 — the Coach runs pytest
+    unconditionally, so a ``[dev]``/``[test]`` extra that provides pytest is
+    installed even without an operator declaration or a pytest smoke gate.
+
+    Defect this guards against: FEAT-E2CB run-1 (2026-06-12). The feature
+    yaml declared neither ``bootstrap_extras`` nor a ``smoke_gates`` block,
+    so ``derive_bootstrap_extras`` returned ``[]`` and the worktree
+    ``.venv`` was bootstrapped with ``pip install -e .`` (runtime deps
+    only). The Coach pinned its independent-test interpreter to that venv
+    and could not ``import pytest`` on turns 1-2.
+    """
+
+    def test_no_smoke_gate_auto_adds_dev_when_dev_provides_pytest(
+        self, tmp_path: Path
+    ) -> None:
+        """AC-2 core: no smoke gate, ``[dev]`` carries pytest → ``[dev]``.
+
+        This is the exact FEAT-E2CB shape — a Python project (guardkit
+        itself) whose ``[dev]`` extra declares pytest, built by a feature
+        with no smoke gate. Before the fix this returned ``[]``.
+        """
+        _write_pyproject(tmp_path, {"dev": ["pytest>=7.4.3", "pytest-bdd>=8.1,<9"]})
+        feature = _make_feature()  # no smoke_gates, no bootstrap_extras
+        assert derive_bootstrap_extras(feature, tmp_path) == ["dev"]
+
+    def test_pytest_plugin_only_extra_counts_as_test_extra(
+        self, tmp_path: Path
+    ) -> None:
+        """A ``[dev]`` with only a pytest *plugin* (no bare pytest) still counts.
+
+        ``\\bpytest\\b`` matches ``pytest-bdd`` / ``pytest-asyncio`` — a
+        plugin pulls pytest transitively, so the extra is test-capable.
+        """
+        _write_pyproject(tmp_path, {"dev": ["pytest-asyncio>=0.23.0"]})
+        feature = _make_feature()
+        assert derive_bootstrap_extras(feature, tmp_path) == ["dev"]
+
+    def test_dev_without_pytest_is_not_force_added(self, tmp_path: Path) -> None:
+        """Precision guard: a ``[dev]`` of only linters is NOT auto-added.
+
+        The unconditional branch installs an extra only when it demonstrably
+        provides pytest — it must not drag in unrelated dev tooling the
+        Coach doesn't need.
+        """
+        _write_pyproject(tmp_path, {"dev": ["ruff>=0.1", "mypy>=1.0"]})
+        feature = _make_feature()
+        assert derive_bootstrap_extras(feature, tmp_path) == []
+
+    def test_prefers_first_candidate_that_provides_pytest(
+        self, tmp_path: Path
+    ) -> None:
+        """``[dev]`` without pytest but ``[test]`` with it → ``[test]``.
+
+        The content-aware filter skips a pytest-less ``[dev]`` and finds the
+        ``[test]`` extra that actually carries pytest — stricter (and more
+        correct for the Coach) than the smoke-gate branch's name-only probe.
+        """
+        _write_pyproject(tmp_path, {"dev": ["ruff"], "test": ["pytest>=7.4.3"]})
+        feature = _make_feature()
+        assert derive_bootstrap_extras(feature, tmp_path) == ["test"]
+
+    def test_dev_preferred_over_test_when_both_provide_pytest(
+        self, tmp_path: Path
+    ) -> None:
+        """Both extras carry pytest → ``[dev]`` wins (candidate order)."""
+        _write_pyproject(tmp_path, {"dev": ["pytest"], "test": ["pytest"]})
+        feature = _make_feature()
+        assert derive_bootstrap_extras(feature, tmp_path) == ["dev"]
+
+    def test_emits_info_log_explaining_coach_pytest(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The auto-add logs an INFO breadcrumb naming the Coach rationale.
+
+        Future "why did [dev] get installed?" diagnostics should find the
+        reason in the log rather than re-deriving it.
+        """
+        _write_pyproject(tmp_path, {"dev": ["pytest"]})
+        feature = _make_feature()
+        with caplog.at_level(
+            logging.INFO, logger="guardkit.orchestrator.feature_loader"
+        ):
+            extras = derive_bootstrap_extras(feature, tmp_path)
+        assert extras == ["dev"]
+        assert any(
+            "Coach runs independent pytest" in r.getMessage()
+            and "[dev]" in r.getMessage()
+            for r in caplog.records
+        ), f"expected Coach-pytest INFO log; got {[r.getMessage() for r in caplog.records]}"
+
+    def test_no_pyproject_returns_empty(self, tmp_path: Path) -> None:
+        """No pyproject at all (e.g. a non-Python worktree) → ``[]``."""
+        feature = _make_feature()  # no smoke gate, no extras
+        assert derive_bootstrap_extras(feature, tmp_path) == []
+
+    def test_explicit_extras_still_win_without_smoke_gate(
+        self, tmp_path: Path
+    ) -> None:
+        """Operator-declared extras short-circuit branch 3 too (AC-5 preserved)."""
+        _write_pyproject(tmp_path, {"dev": ["pytest"], "test": ["pytest"]})
+        feature = _make_feature(bootstrap_extras=["test"])
+        assert derive_bootstrap_extras(feature, tmp_path) == ["test"]
 
 
 # ============================================================================
@@ -392,6 +528,31 @@ class TestEndToEndBootstrapWithExtras:
         detector = ProjectEnvironmentDetector(
             tmp_path,
             python_extras=("dev",),
+        )
+        manifests = detector.detect()
+        python = [m for m in manifests if m.stack == "python"]
+        assert len(python) == 1
+        assert python[0].install_command[-1] == ".[dev]"
+
+    def test_no_smoke_gate_pytest_extra_threads_to_install_command(
+        self, tmp_path: Path
+    ) -> None:
+        """AC-3 chain: Coach-needs-pytest derive → detector → ``.[dev]`` command.
+
+        Proves end-to-end that a Python project declaring a pytest-providing
+        ``[dev]`` extra, built by a feature with NO smoke gate, produces an
+        install command carrying ``.[dev]`` — i.e. the worktree venv the
+        Coach pins to (``BootstrapResult.venv_python``) will have pytest
+        before the first independent-test run. This is the regression that
+        directly closes the FEAT-E2CB run-1 gap (TASK-FIX-BOOTPYTEST01).
+        """
+        _write_pyproject(tmp_path, {"dev": ["pytest>=7.4.3"]})
+        feature = _make_feature()  # no smoke_gates, no bootstrap_extras
+        extras = derive_bootstrap_extras(feature, tmp_path)
+        assert extras == ["dev"]
+        detector = ProjectEnvironmentDetector(
+            tmp_path,
+            python_extras=tuple(extras),
         )
         manifests = detector.detect()
         python = [m for m in manifests if m.stack == "python"]
