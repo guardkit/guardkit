@@ -1,16 +1,14 @@
 ---
-complexity: 5
-dependencies:
-- TASK-QAWE-001
-feature_id: FEAT-C332
 id: TASK-QAWE-002
-implementation_mode: task-work
-parent_task: TASK-HMIG-BDDWIRE
-priority: medium
-status: design_approved
-task_type: feature
 title: UNWIRED_PATH bundle integration — coach_evidence fields, gather_evidence, render
+task_type: feature
+parent_task: TASK-HMIG-BDDWIRE
+feature_id: FEAT-C332
 wave: 2
+implementation_mode: task-work
+complexity: 5
+dependencies: [TASK-QAWE-001]
+priority: medium
 ---
 
 # Task: UNWIRED_PATH bundle integration (Wave 1)
