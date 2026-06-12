@@ -1,14 +1,16 @@
 ---
-id: TASK-BDDW-002
-title: Multi-stack BDD reachability — route .NET to reqnroll, JS to cucumber-js
-task_type: feature
-parent_task: TASK-HMIG-BDDWIRE
-feature_id: FEAT-E2CB
-wave: 2
-implementation_mode: task-work
 complexity: 4
-dependencies: [TASK-BDDW-001]
+dependencies:
+- TASK-BDDW-001
+feature_id: FEAT-E2CB
+id: TASK-BDDW-002
+implementation_mode: task-work
+parent_task: TASK-HMIG-BDDWIRE
 priority: medium
+status: design_approved
+task_type: feature
+title: Multi-stack BDD reachability — route .NET to reqnroll, JS to cucumber-js
+wave: 2
 ---
 
 # Task: Multi-stack BDD reachability
