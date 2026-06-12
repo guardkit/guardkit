@@ -19,8 +19,22 @@ from unittest import mock
 
 import pytest
 
+# Skip the entire module unless the real cross-repo stack is installed
+# (TASK-FIX-BDDROUTETEST01). In a bare guardkit dev venv or an autobuild
+# worktree venv this skips cleanly instead of breaking collection for the
+# whole quality_gates directory; in the seam-tests CI job it runs.
+pytest.importorskip(
+    "guardkitfactory.bdd",
+    reason=(
+        "guardkitfactory not installed; this seam test runs in the seam-tests "
+        "CI job (pip install -e ../guardkitfactory)."
+    ),
+)
+
 from guardkitfactory.bdd import StackProfile, discover
 from guardkitfactory.bdd.plugins import CucumberJSPlugin, PytestBDDPlugin, ReqnrollPlugin
+
+pytestmark = pytest.mark.seam
 
 
 # ---------------------------------------------------------------------------
