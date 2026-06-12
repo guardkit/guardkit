@@ -14,8 +14,6 @@ Coach validation:
 
 from __future__ import annotations
 
-import json
-import subprocess
 from pathlib import Path
 from unittest import mock
 
@@ -46,11 +44,25 @@ def _make_stack(
     )
 
 
-def _scratch_dir(tmp_path: Path, name: str) -> Path:
-    """Create a sub-directory and return its path."""
-    d = tmp_path / name
-    d.mkdir(exist_ok=True)
-    return d
+# Shared mock for subprocess.run that returns success for any command
+_SUCCESS = mock.MagicMock(returncode=0)
+
+
+def _patch_subprocess_for(plugin_module_name: str):
+    """Return a context manager that patches subprocess.run on the given plugin module."""
+    import guardkitfactory.bdd.plugins.reqnroll_plugin as reqnroll_mod
+    import guardkitfactory.bdd.plugins.cucumber_js_plugin as cucumber_mod
+    import guardkitfactory.bdd.plugins.pytest_bdd_plugin as pytest_bdd_mod
+
+    modules = {
+        "guardkitfactory.bdd.plugins.reqnroll_plugin": reqnroll_mod,
+        "guardkitfactory.bdd.plugins.cucumber_js_plugin": cucumber_mod,
+        "guardkitfactory.bdd.plugins.pytest_bdd_plugin": pytest_bdd_mod,
+    }
+    mod = modules.get(plugin_module_name)
+    if mod is None:
+        raise ValueError(f"Unknown plugin module: {plugin_module_name}")
+    return mock.patch.object(mod.subprocess, "run")
 
 
 # ---------------------------------------------------------------------------
@@ -64,173 +76,137 @@ class TestMultiStackRouting:
     def test_python_routes_to_pytest_bdd(self, tmp_path: Path) -> None:
         """A Python project with pytest discovers ``PytestBDDPlugin``."""
         stack = _make_stack(language="python", test_framework="pytest")
-        # Ensure the worktree has no .sln/csproj or package.json so other
-        # plugins don't match.
-        result = discover(stack, tmp_path)
-        # PytestBDDPlugin requires the pytest_bdd package to be importable;
-        # it won't be in the test env, so discover returns None.  We assert
-        # that the *correct plugin class* would be selected if the package
-        # were present by checking the language check directly.
-        assert PytestBDDPlugin.discover(stack, tmp_path) is None
-        # The language check is the primary gate; the subprocess check is
-        # secondary.  Verify the language gate passes.
-        assert PytestBDDPlugin.discover(
-            _make_stack("python", "pytest"), tmp_path
-        ) is None  # pytest_bdd not importable in test env
-        # Confirm the language gate works by checking a wrong language.
-        assert PytestBDDPlugin.discover(
-            _make_stack("dotnet", "dotnet-test"), tmp_path
-        ) is None
+        with _patch_subprocess_for("guardkitfactory.bdd.plugins.pytest_bdd_plugin") as m:
+            m.return_value = _SUCCESS
+            result = PytestBDDPlugin.discover(stack, tmp_path)
+        assert result is not None
+        assert isinstance(result, PytestBDDPlugin)
 
     def test_dotnet_routes_to_reqnroll(self, tmp_path: Path) -> None:
         """A .NET project with a .sln file discovers ``ReqnrollPlugin``."""
-        # Create a .sln file so the discover check passes.
         (tmp_path / "test.sln").write_text("Microsoft Visual Studio Solution File\n")
         stack = _make_stack(
             language="dotnet",
             test_framework="dotnet-test",
             package_manager="nuget",
         )
-        # ReqnrollPlugin requires the ``dotnet`` CLI.  We mock it so the
-        # test doesn't depend on a .NET SDK being installed.
-        with mock.patch.object(
-            subprocess, "run", return_value=mock.MagicMock(returncode=0)
-        ):
+        with _patch_subprocess_for("guardkitfactory.bdd.plugins.reqnroll_plugin") as m:
+            m.return_value = _SUCCESS
             result = ReqnrollPlugin.discover(stack, tmp_path)
         assert result is not None
         assert isinstance(result, ReqnrollPlugin)
 
     def test_csharp_routes_to_reqnroll(self, tmp_path: Path) -> None:
         """A C# project with a .csproj file discovers ``ReqnrollPlugin``."""
-        (tmp_path / "test.csproj").write_text(
-            '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>'
-            "<TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>"
-        )
+        (tmp_path / "test.csproj").write_text('<Project Sdk="Microsoft.NET.Sdk"></Project>\n')
         stack = _make_stack(
             language="csharp",
             test_framework="dotnet-test",
             package_manager="nuget",
         )
-        with mock.patch.object(
-            subprocess, "run", return_value=mock.MagicMock(returncode=0)
-        ):
+        with _patch_subprocess_for("guardkitfactory.bdd.plugins.reqnroll_plugin") as m:
+            m.return_value = _SUCCESS
             result = ReqnrollPlugin.discover(stack, tmp_path)
         assert result is not None
         assert isinstance(result, ReqnrollPlugin)
 
-    def test_javascript_routes_to_cucumber_js(self, tmp_path: Path) -> None:
-        """A JS project with package.json + cucumber discovers ``CucumberJSPlugin``."""
-        pkg = {
-            "name": "test-project",
-            "devDependencies": {"cucumber": "^9.0.0"},
-        }
-        (tmp_path / "package.json").write_text(json.dumps(pkg))
+    def test_javascript_routes_to_cucumberjs(self, tmp_path: Path) -> None:
+        """A JavaScript project with cucumber dependency discovers ``CucumberJSPlugin``."""
+        (tmp_path / "package.json").write_text('{"dependencies": {"cucumber": "^9.0.0"}}\n')
         stack = _make_stack(
             language="javascript",
-            test_framework="vitest",
+            test_framework="cucumber-js",
             package_manager="npm",
         )
-        with mock.patch.object(
-            subprocess, "run", return_value=mock.MagicMock(returncode=0)
-        ):
+        with _patch_subprocess_for("guardkitfactory.bdd.plugins.cucumber_js_plugin") as m:
+            m.return_value = _SUCCESS
             result = CucumberJSPlugin.discover(stack, tmp_path)
         assert result is not None
         assert isinstance(result, CucumberJSPlugin)
 
-    def test_typescript_routes_to_cucumber_js(self, tmp_path: Path) -> None:
-        """A TS project with package.json + cucumber discovers ``CucumberJSPlugin``."""
-        pkg = {
-            "name": "test-project",
-            "dependencies": {"@cucumber/cucumber": "^9.0.0"},
-        }
-        (tmp_path / "package.json").write_text(json.dumps(pkg))
+    def test_typescript_routes_to_cucumberjs(self, tmp_path: Path) -> None:
+        """A TypeScript project with cucumber dependency discovers ``CucumberJSPlugin``."""
+        (tmp_path / "package.json").write_text('{"dependencies": {"@cucumber/cucumber": "^9.0.0"}}\n')
         stack = _make_stack(
             language="typescript",
-            test_framework="vitest",
-            package_manager="pnpm",
+            test_framework="cucumber-js",
+            package_manager="npm",
         )
-        with mock.patch.object(
-            subprocess, "run", return_value=mock.MagicMock(returncode=0)
-        ):
+        with _patch_subprocess_for("guardkitfactory.bdd.plugins.cucumber_js_plugin") as m:
+            m.return_value = _SUCCESS
             result = CucumberJSPlugin.discover(stack, tmp_path)
         assert result is not None
         assert isinstance(result, CucumberJSPlugin)
 
-    def test_discover_returns_first_matching_plugin(self, tmp_path: Path) -> None:
-        """The factory ``discover`` returns the first plugin that matches."""
+    def test_factory_discover_returns_matching_plugin(self, tmp_path: Path) -> None:
+        """Factory ``discover`` returns the first matching plugin for the stack."""
         (tmp_path / "test.sln").write_text("Solution\n")
         stack = _make_stack(
             language="dotnet",
             test_framework="dotnet-test",
             package_manager="nuget",
         )
-        with mock.patch.object(
-            subprocess, "run", return_value=mock.MagicMock(returncode=0)
-        ):
+        with _patch_subprocess_for("guardkitfactory.bdd.plugins.reqnroll_plugin") as m:
+            m.return_value = _SUCCESS
             result = discover(stack, tmp_path)
         assert result is not None
         assert isinstance(result, ReqnrollPlugin)
 
-
-# ---------------------------------------------------------------------------
-# AC-2b: unsupported stack → absent signal (None)
-# ---------------------------------------------------------------------------
-
-
-class TestUnsupportedStackAbsentSignal:
-    """Stacks with no registered BDD plugin must yield None."""
+    # -----------------------------------------------------------------------
+    # AC-2b: unsupported stack → absent signal (None)
+    # -----------------------------------------------------------------------
 
     def test_unknown_language_returns_none(self, tmp_path: Path) -> None:
-        """A language with no plugin returns None from discover."""
-        stack = _make_stack(
-            language="go",
-            test_framework="go-test",
-            package_manager="go",
-        )
-        result = discover(stack, tmp_path)
-        assert result is None
+        """An unknown language returns ``None`` from all plugins."""
+        stack = _make_stack(language="rust", test_framework="cargo-test")
+        assert PytestBDDPlugin.discover(stack, tmp_path) is None
+        assert ReqnrollPlugin.discover(stack, tmp_path) is None
+        assert CucumberJSPlugin.discover(stack, tmp_path) is None
 
     def test_python_without_pytest_bdd_returns_none(self, tmp_path: Path) -> None:
-        """Python project without pytest_bdd installed returns None."""
+        """Python project without pytest_bdd package returns ``None``."""
         stack = _make_stack(language="python", test_framework="pytest")
-        # PytestBDDPlugin checks for pytest_bdd importability; it won't be
-        # present, so discover should return None.
-        result = PytestBDDPlugin.discover(stack, tmp_path)
+        import guardkitfactory.bdd.plugins.pytest_bdd_plugin as mod
+        with mock.patch.object(mod.subprocess, "run") as m:
+            m.side_effect = FileNotFoundError("pytest_bdd")
+            result = PytestBDDPlugin.discover(stack, tmp_path)
         assert result is None
 
     def test_dotnet_without_project_files_returns_none(self, tmp_path: Path) -> None:
-        """.NET stack without .sln/.csproj returns None."""
+        """A .NET project without .sln or .csproj returns ``None``."""
         stack = _make_stack(
             language="dotnet",
             test_framework="dotnet-test",
             package_manager="nuget",
         )
-        # No .sln or .csproj in tmp_path.
-        result = ReqnrollPlugin.discover(stack, tmp_path)
+        with _patch_subprocess_for("guardkitfactory.bdd.plugins.reqnroll_plugin") as m:
+            m.return_value = _SUCCESS
+            result = ReqnrollPlugin.discover(stack, tmp_path)
         assert result is None
 
-    def test_javascript_without_cucumber_dep_returns_none(self, tmp_path: Path) -> None:
-        """JS project without cucumber in package.json returns None."""
-        pkg = {"name": "test", "dependencies": {"express": "^4.0.0"}}
-        (tmp_path / "package.json").write_text(json.dumps(pkg))
+    def test_js_without_cucumber_dependency_returns_none(self, tmp_path: Path) -> None:
+        """A JS project without cucumber dependency returns ``None``."""
+        (tmp_path / "package.json").write_text('{"dependencies": {"express": "^4.0.0"}}\n')
         stack = _make_stack(
             language="javascript",
-            test_framework="vitest",
+            test_framework="cucumber-js",
             package_manager="npm",
         )
-        result = CucumberJSPlugin.discover(stack, tmp_path)
+        with _patch_subprocess_for("guardkitfactory.bdd.plugins.cucumber_js_plugin") as m:
+            m.return_value = _SUCCESS
+            result = CucumberJSPlugin.discover(stack, tmp_path)
         assert result is None
 
     def test_dotnet_without_dotnet_cli_returns_none(self, tmp_path: Path) -> None:
-        """.NET project with .sln but no dotnet CLI returns None."""
+        """A .NET project without the dotnet CLI returns ``None``."""
         (tmp_path / "test.sln").write_text("Solution\n")
         stack = _make_stack(
             language="dotnet",
             test_framework="dotnet-test",
             package_manager="nuget",
         )
-        with mock.patch.object(
-            subprocess, "run", side_effect=FileNotFoundError("dotnet not found")
-        ):
+        import guardkitfactory.bdd.plugins.reqnroll_plugin as mod
+        with mock.patch.object(mod.subprocess, "run") as m:
+            m.side_effect = FileNotFoundError("dotnet")
             result = ReqnrollPlugin.discover(stack, tmp_path)
         assert result is None
