@@ -57,8 +57,6 @@ from guardkit.orchestrator.coach_verification import (
 from guardkit.orchestrator.schemas import (
     CompletionPromise,
     CriterionVerification,
-    CriterionStatus,
-    VerificationResult,
 )
 
 # TASK-HMIG-006 Phase 3b: HarnessAdapter substrate seam.
@@ -72,7 +70,6 @@ from guardkit.orchestrator.harness import (
     AssistantMessageEvent,
     HarnessEvent,
     ResultMessageEvent,
-    ToolResultEvent,
     ToolUseEvent,
     select_harness,
 )
@@ -429,7 +426,6 @@ async def async_heartbeat(
         # Logs: [TASK-001] Player invocation in progress... (60s elapsed)
         # etc.
     """
-    from guardkit.orchestrator.progress_logger import TaskProgressLogger  # noqa: F811
 
     snapshot_interval = progress_logger.interval if progress_logger else interval
 
@@ -3380,6 +3376,10 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
    acceptance evidence (MOCKED_SEAM), or unexecuted scenarios (SPEC_GAP).
    Require evidence of registration / real-seam execution before approving.
    Surface as feedback unless the Player demonstrates the wiring path.
+   Conversely: a NON-"complete" status (unsupported_stack,
+   parse_degraded, error, skipped_*) with findings:[] is ABSENT
+   evidence — treat it as "probe could not verify", never as a clean
+   wiring verdict.
    Advisory only — does not override on its own; combines with other
    guards for the final decision. Rule:
    .claude/rules/absence-of-failure-is-not-success.md.
