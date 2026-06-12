@@ -2,7 +2,9 @@
 id: TASK-FIX-BDDROUTETEST01
 title: test_bdd_multi_stack_routing.py must importorskip guardkitfactory (collection error in factory-less envs)
 task_type: feature
-status: backlog
+status: completed
+updated: 2026-06-12T20:45:00Z
+completed: 2026-06-12T20:45:00Z
 created: 2026-06-12T19:50:00Z
 priority: medium
 tags: [tests, guardkitfactory, seam, portability]
@@ -48,9 +50,9 @@ the other cross-repo seam tests.
 
 ## Acceptance criteria
 
-- [ ] AC-001: with guardkitfactory absent, the module SKIPS cleanly (no
+- [x] AC-001: with guardkitfactory absent, the module SKIPS cleanly (no
       collection error; sibling tests in the directory still run).
-- [ ] AC-002: with guardkitfactory installed, all 11 routing tests still pass.
+- [x] AC-002: with guardkitfactory installed, all 11 routing tests still pass.
 
 ## Evidence
 
