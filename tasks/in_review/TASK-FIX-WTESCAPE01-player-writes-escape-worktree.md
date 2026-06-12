@@ -2,8 +2,9 @@
 id: TASK-FIX-WTESCAPE01
 title: Player file writes escape the worktree via absolute paths (LangGraph filesystem backend not path-confined)
 task_type: feature
-status: backlog
+status: in_review
 created: 2026-06-12T20:05:00Z
+updated: 2026-06-12T22:30:00Z
 priority: high
 tags: [autobuild, langgraph, harness, sandbox, worktree, evidence-boundary]
 complexity: 5
@@ -70,16 +71,79 @@ reverted (the authoritative implementations live on `autobuild/FEAT-C332`).
 
 ## Acceptance criteria
 
-- [ ] AC-001: a Player Write/Edit to an absolute path outside the worktree
+- [x] AC-001: a Player Write/Edit to an absolute path outside the worktree
       root is rejected (tool error) or rebased into the worktree —
       reproduced by a regression test against the backend.
-- [ ] AC-002: the guardkitfactory symlink policy is explicit (allowed or
+      → **Rejected** (not rebased — rebasing is the doubly-nested-path
+      NOVMODE failure in reverse). `PathConfinedBackend` in
+      `guardkitfactory/src/guardkitfactory/harness/backend_config.py`
+      confines `write`/`awrite`/`edit`/`aedit` via `Path.resolve()` +
+      `is_relative_to(allowed_root)`. Tests: `TestWriteConfinement`
+      (absolute write/edit, relative `../` traversal, in-worktree symlink
+      smuggle, async variants; NOVMODE-preservation positives).
+- [x] AC-002: the guardkitfactory symlink policy is explicit (allowed or
       blocked) and tested.
-- [ ] AC-003: host-repo `git status` is clean after a full autobuild turn
+      → **Allowed**, narrowly: a sibling symlink literally named
+      `guardkitfactory` in `worktree.parent` (the intentional
+      `.guardkit/worktrees/guardkitfactory` convention; cross-repo tasks —
+      TASK-AB-XREPOEV01 lineage — legitimately write through it). Any other
+      sibling symlink is rejected. Plus explicit `extra_write_roots=`
+      parameter on `build_autobuild_backend`. Tests: `TestSymlinkPolicy`.
+- [x] AC-003: host-repo `git status` is clean after a full autobuild turn
       whose prompt contains absolute host-repo paths (integration test or
       recorded fixture).
-- [ ] AC-004: escaped-write attempts surface in the turn log (WARNING) so
+      → Recorded-fixture form: `TestHostRepoStaysClean` builds a real host
+      git repo + nested worktree, replays the FEAT-C332 run-2 escape shapes
+      (edit tracked host file, write new host file, both via absolute
+      paths), asserts tool errors AND `git status --porcelain` empty.
+- [x] AC-004: escaped-write attempts surface in the turn log (WARNING) so
       operators see confinement doing work.
+      → Every rejection logs `WARNING` on
+      `guardkitfactory.harness.backend_config` ("AutoBuild write
+      confinement: rejected …"). Test: `TestEscapeObservability`.
+
+## Outcome (2026-06-12)
+
+Implemented in **guardkitfactory** (sibling repo):
+`PathConfinedBackend` delegating wrapper (same pattern as
+`TruncatingBackend`) wired as the always-on composite default in
+`build_autobuild_backend`. The permissions-middleware route was not
+viable (DeepAgents declined execute-capable-backend permissions, #2894 —
+see `permissions.py` NOPERMS docstring).
+
+**Two latent defects found and fixed en route** (both pre-existing on the
+Coach-gather path, surfaced by the new wrapper):
+
+1. `CompositeBackend.execute` gates on
+   `isinstance(default, SandboxBackendProtocol)` — an ABC, so
+   `__getattr__`-delegating wrappers failed it and `execute` raised
+   `NotImplementedError` whenever `max_tool_result_chars` was set (latent
+   since TASK-PERF-COACHSYNTH). Fixed via
+   `SandboxBackendProtocol.register(...)` for both wrappers + regression
+   test `test_wrapped_default_still_passes_composite_execute_gate`.
+2. `TruncatingBackend.execute(*args, **kwargs)` hid the `timeout` name
+   from `execute_accepts_timeout`'s class-level signature introspection,
+   silently dropping per-call timeout overrides. Fixed with explicit
+   `timeout` parameter + regression test
+   `test_execute_honours_per_call_timeout_override_when_gather_capped`.
+
+guardkit-side: only `tests/orchestrator/harness/test_selector.py` shape
+assertion updated (composite default is now the confinement wrapper;
+`LocalShellBackend` at `default._inner`). The confinement claim at
+`selector.py:363` is now true for file tools.
+
+Tests: guardkitfactory 205 passed / 8 skipped (pre-existing NOVMODE/NOPERMS
+skips); guardkit `tests/orchestrator/harness/` 104 passed / 3 skipped.
+Plan: `docs/state/TASK-FIX-WTESCAPE01/implementation_plan.md`.
+
+## Follow-ups (explicitly NOT done — fix-direction items 2 and 3)
+
+- Orchestrator-side host-repo `git status --porcelain` backstop after each
+  Player turn (defence-in-depth; the task's "can", not a "must").
+- Prompt-assembly rewriting of absolute host-repo path prefixes to
+  worktree-relative ones in scope docs / task context.
+- SDK-harness equivalent confinement (defect observed on LangGraph only;
+  SDK harness has `cwd=worktree` + `acceptEdits`, same theoretical gap).
 
 ## Evidence
 
