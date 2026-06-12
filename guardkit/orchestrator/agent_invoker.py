@@ -3066,6 +3066,8 @@ orchestrator takes only the **last** fenced block.
     _COACH_BDD_DISCOVERIES_LIMIT = 20
     _COACH_BDD_ERRORS_LIMIT = 10
     _COACH_HONESTY_DISCREPANCIES_LIMIT = 20
+    # Wave-1 (TASK-QAWE-002): wiring / mocked_seam / spec_gap findings limit.
+    _COACH_WIRING_FINDINGS_LIMIT = 20
 
     # TASK-PERF-COACHSYNTH (AC-4 / Lever C): cap the Phase-A gather findings
     # text rendered into the Phase-B synthesis prompt. The gather is already
@@ -3095,6 +3097,36 @@ orchestrator takes only the **last** fenced block.
             f"FAIL/UNSURE, never an assumed pass.] ..."
         )
 
+    @classmethod
+    def _truncate_findings(
+        cls,
+        findings_container: Optional[Dict[str, Any]],
+        limit: int,
+    ) -> None:
+        """Truncate the ``findings`` list inside a wiring result dict.
+
+        Keeps the first ``limit`` entries and appends a ``"... and N more"``
+        marker when the list exceeds the limit. Mirrors the
+        ``bdd.discoveries`` truncation pattern. Wave-1, TASK-QAWE-002.
+
+        Parameters
+        ----------
+        findings_container : Optional[Dict[str, Any]]
+            A dict with a ``"findings"`` key (e.g. wiring / mocked_seam /
+            spec_gap result). May be ``None``.
+        limit : int
+            Maximum number of findings to keep.
+        """
+        if not isinstance(findings_container, dict):
+            return
+        findings = findings_container.get("findings")
+        if isinstance(findings, list) and len(findings) > limit:
+            remainder = len(findings) - limit
+            findings_container["findings"] = (
+                findings[:limit]
+                + [f"... and {remainder} more (truncated for token budget)"]
+            )
+
     def _render_evidence_bundle_section(
         self,
         evidence_bundle: "CoachEvidenceBundle",
@@ -3110,6 +3142,9 @@ orchestrator takes only the **last** fenced block.
         * ``evidence_bundle.bdd.discoveries`` — keep first 20 entries.
         * ``evidence_bundle.bdd.errors``     — keep first 10 entries.
         * ``evidence_bundle.honesty.discrepancies`` — keep first 20 entries.
+        * ``evidence_bundle.wiring.findings`` — keep first 20 entries.
+        * ``evidence_bundle.mocked_seam.findings`` — keep first 20 entries.
+        * ``evidence_bundle.spec_gap.findings`` — keep first 20 entries.
 
         Each truncation appends a ``"... and N more"`` marker so the Coach
         knows the list was bounded. Non-list fields are bounded by gate
@@ -3173,6 +3208,13 @@ orchestrator takes only the **last** fenced block.
                         f"in coach_turn_N.json."
                     ),
                 }]
+
+        # Truncate wiring / mocked_seam / spec_gap findings.
+        # Mirrors the bdd.discoveries truncation pattern (keep first 20 +
+        # "... and N more" marker). Wave-1, TASK-QAWE-002.
+        _truncate_findings(bundle_dict.get("wiring"), self._COACH_WIRING_FINDINGS_LIMIT)
+        _truncate_findings(bundle_dict.get("mocked_seam"), self._COACH_WIRING_FINDINGS_LIMIT)
+        _truncate_findings(bundle_dict.get("spec_gap"), self._COACH_WIRING_FINDINGS_LIMIT)
 
         try:
             payload = json.dumps(bundle_dict, indent=2, default=str)
@@ -3328,6 +3370,18 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
    independently confirm the Player's reported tests." Quote
    independent_tests.test_output_summary verbatim in the rationale so
    operators can see whether it timed out or errored. Rule:
+   .claude/rules/absence-of-failure-is-not-success.md.
+
+7. WIRING-EVIDENCE ADVISORY GUARD.
+   If evidence_bundle.wiring, evidence_bundle.mocked_seam, or
+   evidence_bundle.spec_gap is not null AND any of these fields has a
+   non-empty findings list for a FEATURE / REFACTOR / INTEGRATION task:
+   treat the named symbols as candidate dead code (UNWIRED_PATH), suspect
+   acceptance evidence (MOCKED_SEAM), or unexecuted scenarios (SPEC_GAP).
+   Require evidence of registration / real-seam execution before approving.
+   Surface as feedback unless the Player demonstrates the wiring path.
+   Advisory only — does not override on its own; combines with other
+   guards for the final decision. Rule:
    .claude/rules/absence-of-failure-is-not-success.md.
 </absence_of_failure_guards>
 """

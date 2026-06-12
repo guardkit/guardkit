@@ -347,6 +347,162 @@ def _run_factory_bdd(
         return None
 
 
+# ============================================================================
+# Wiring Factory Bridge — wire guardkitfactory.wiring into the Coach evidence
+# ============================================================================
+#
+# TASK-QAWE-002 (Wave-1): Lazy import of the UNWIRED_PATH / MOCKED_SEAM
+# analyzer. The import is guarded so that ``pip install guardkit-py`` without
+# the ``[autobuild]`` extra still works — Coach leaves all three wiring
+# fields as ``None`` when the factory is unavailable.
+#
+# The seam returns a dict (never the dataclass) so coach_evidence.py keeps
+# zero guardkitfactory import.
+
+try:
+    from guardkitfactory.wiring import (  # type: ignore[attr-defined,no-redef]
+        analyze_wiring,
+    )
+
+    _WIRING_FACTORY_AVAILABLE = True
+except ImportError:
+    analyze_wiring = None  # type: ignore[misc,assignment]
+    _WIRING_FACTORY_AVAILABLE = False
+
+_wiring_factory_available_cache: Optional[bool] = None
+
+
+def _is_wiring_factory_available() -> bool:
+    """Return True when the guardkitfactory wiring analyzer is importable."""
+    global _wiring_factory_available_cache
+    if _wiring_factory_available_cache is not None:
+        return _wiring_factory_available_cache
+    _wiring_factory_available_cache = _WIRING_FACTORY_AVAILABLE
+    return _WIRING_FACTORY_AVAILABLE
+
+
+def _reset_wiring_factory_cache() -> None:
+    """Invalidate the wiring factory availability cache."""
+    global _wiring_factory_available_cache
+    _wiring_factory_available_cache = None
+
+
+def _compute_authored_set(
+    task_work_results: Dict[str, Any],
+) -> List[str]:
+    """Compute the set of source files authored by the Player this turn.
+
+    Uses the presence-based fallback from the task-work results:
+    ``files_authored`` when present, else ``files_created ∪ files_modified``.
+
+    This is NOT the git-enriched ``files_modified`` (which can be
+    peer-contaminated in parallel-wave execution).
+
+    Parameters
+    ----------
+    task_work_results : Dict[str, Any]
+        The task-work results dict from ``read_quality_gate_results``.
+
+    Returns
+    -------
+    List[str]
+        List of authored file paths (relative to worktree root).
+    """
+    files_authored = task_work_results.get("files_authored")
+    if files_authored and isinstance(files_authored, list):
+        return [str(f) for f in files_authored]
+
+    # Fallback: files_created ∪ files_modified
+    created = task_work_results.get("files_created") or []
+    modified = task_work_results.get("files_modified") or []
+    authored: List[str] = []
+    seen: set = set()
+    for f in list(created) + list(modified):
+        fs = str(f)
+        if fs not in seen:
+            seen.add(fs)
+            authored.append(fs)
+    return authored
+
+
+def _run_wiring_analysis(
+    worktree_path: Path,
+    authored_files: List[str],
+    task_type: str,
+    stack_template: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    """Run the wiring analysis for the authored files.
+
+    Returns a dict with ``wiring``, ``mocked_seam``, and ``spec_gap`` keys
+    (some may be ``None``). Returns ``None`` when the task type gates out
+    (SCAFFOLDING/DOCUMENTATION) or there are no authored source targets.
+
+    Parameters
+    ----------
+    worktree_path : Path
+        Root of the worktree.
+    authored_files : List[str]
+        Source files authored this turn.
+    task_type : str
+        Resolved task type (e.g. ``"feature"``, ``"scaffolding"``).
+    stack_template : Optional[str]
+        Detected stack template (e.g. ``"python"``, ``"fastapi-python"``).
+
+    Returns
+    -------
+    Optional[Dict[str, Any]]
+        Dict with ``wiring``, ``mocked_seam``, ``spec_gap`` keys, or ``None``
+        when the probe legitimately did not run.
+    """
+    # Task-type gate: SCAFFOLDING / DOCUMENTATION → all fields None.
+    if task_type in ("scaffolding", "documention", "documentation", "testing"):
+        logger.debug(
+            "wiring analysis: task_type=%s gates out; "
+            "all three fields left as None.",
+            task_type,
+        )
+        return None
+
+    # Zero-authored-targets gate → None (probe legitimately did not run).
+    if not authored_files:
+        logger.debug(
+            "wiring analysis: no authored source targets; "
+            "all three fields left as None.",
+        )
+        return None
+
+    # Factory unavailable → all fields None (graceful import absence).
+    if not _is_wiring_factory_available() or analyze_wiring is None:
+        logger.debug(
+            "wiring analysis: guardkitfactory.wiring not available; "
+            "all three fields left as None.",
+        )
+        return None
+
+    # Resolve stack profile for the factory call.
+    stack_profile = _STACK_PROFILE_MAP.get(stack_template) if stack_template else None
+
+    try:
+        result = analyze_wiring(
+            authored_files=authored_files,
+            worktree_path=worktree_path,
+            task_type=task_type,
+            stack=stack_profile,
+        )
+        # analyze_wiring returns a dict with wiring/mocked_seam/spec_gap keys.
+        # If it returns None (task-type gate or zero targets inside the
+        # factory), all three fields stay None.
+        if result is None:
+            return None
+        return result
+    except Exception as exc:  # noqa: BLE001 — analyzer errors must not break gathering
+        logger.warning(
+            "wiring analysis raised %s; all three fields left as None.",
+            exc.__class__.__name__,
+        )
+        return None
+
+
 # TASK-FIX-A7B4: Markers that satisfy a `## Seam Tests` block in a task
 # description. Filename-based detection (the soft gate at
 # ``_check_seam_test_recommendation``) tolerates "integration" too, but the
@@ -2280,6 +2436,7 @@ class CoachValidator:
         #      is unavailable, the stack is unknown, or discovery fails.
         # ------------------------------------------------------------------
         _reset_factory_cache()
+        _reset_wiring_factory_cache()
 
         bdd_raw = task_work_results.get("bdd_results")
         bdd_dict: Optional[Dict[str, Any]] = None
@@ -2410,6 +2567,44 @@ class CoachValidator:
                     profile_name=profile_name,
                 )
 
+        # ------------------------------------------------------------------
+        # 5. Wiring analysis (Wave-1, TASK-QAWE-002).
+        # Populates wiring / mocked_seam / spec_gap at the complete-path
+        # return only. Partial returns (honesty_abort, gate_abort,
+        # exception) leave all three None.
+        # ------------------------------------------------------------------
+        wiring_dict: Optional[Dict[str, Any]] = None
+        mocked_seam_dict: Optional[Dict[str, Any]] = None
+        spec_gap_dict: Optional[Dict[str, Any]] = None
+
+        try:
+            stack_template = detect_stack_template(self.worktree_path)
+            authored = _compute_authored_set(task_work_results)
+            wiring_result = _run_wiring_analysis(
+                worktree_path=self.worktree_path,
+                authored_files=authored,
+                task_type=task_type.value,
+                stack_template=stack_template,
+            )
+            if wiring_result is not None:
+                wiring_dict = wiring_result.get("wiring")
+                mocked_seam_dict = wiring_result.get("mocked_seam")
+                spec_gap_dict = wiring_result.get("spec_gap")
+                logger.info(
+                    "gather_evidence: wiring analysis complete "
+                    "(wiring_findings=%d, mocked_seam_findings=%d, "
+                    "spec_gap_findings=%d).",
+                    len(wiring_dict.get("findings", [])) if wiring_dict else 0,
+                    len(mocked_seam_dict.get("findings", [])) if mocked_seam_dict else 0,
+                    len(spec_gap_dict.get("findings", [])) if spec_gap_dict else 0,
+                )
+        except Exception as exc:  # noqa: BLE001 — wiring errors must not break gathering
+            logger.warning(
+                "gather_evidence: wiring analysis raised %s; "
+                "all three fields left as None.",
+                exc.__class__.__name__,
+            )
+
         return CoachEvidenceBundle(
             honesty=honesty,
             gathering_status="complete",
@@ -2425,6 +2620,9 @@ class CoachValidator:
             advisory_issues=advisory_issues,
             task_type=task_type.value,
             profile_name=profile_name,
+            wiring=wiring_dict,
+            mocked_seam=mocked_seam_dict,
+            spec_gap=spec_gap_dict,
         )
 
     def _compute_agent_invocations_advisory(
