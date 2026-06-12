@@ -9,6 +9,8 @@ implementation_mode: task-work
 complexity: 4
 dependencies: [TASK-QAWE-001]
 priority: medium
+status: completed
+updated: '2026-06-12T20:06:40'
 ---
 
 # Task: MOCKED_SEAM evidence integration (Wave 2)
