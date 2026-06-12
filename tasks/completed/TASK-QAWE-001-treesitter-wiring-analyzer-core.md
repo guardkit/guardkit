@@ -9,6 +9,9 @@ implementation_mode: task-work
 complexity: 6
 dependencies: []
 priority: medium
+status: completed
+completed_at: '2026-06-12T17:30:00'
+completion_mode: manual (cross-repo evidence gap TASK-AB-XREPOEV01)
 ---
 
 # Task: tree-sitter WiringAnalyzer core + dialects (Wave 0)
@@ -52,3 +55,22 @@ MOCKED_SEAM. **Fixture-tested in isolation — no guardkit integration in this w
 ## Coach Validation
 - `pytest` over the new `guardkitfactory/.../tests` wiring fixtures (per-stack).
 - Lint/format pass with zero errors.
+
+
+## Completion record (2026-06-12)
+
+Delivered MANUALLY in guardkitfactory commit `169f16c` (not via autobuild):
+the FEAT-C332 run-1 Player wrote a real WIP into guardkitfactory via the
+worktree symlink, but the Coach evidence loop is scoped to the guardkit
+worktree, so every turn was rejected as "no implementation provided"
+(filed as TASK-AB-XREPOEV01). The WIP was salvaged, then the semantic core
+was rewritten after a 6-lens adversarial AC review.
+
+Verification: 44 wiring tests green; full guardkitfactory suite 191 passed;
+ruff + mypy clean on the wiring package; all four dialects pass smoke_test()
+(query compile + canonical-snippet match); deps pinned tree-sitter>=0.25 +
+tree-sitter-language-pack>=1.0,<2 with uv.lock updated (AC-020).
+
+Public seam for Wave 1/2 (QAWE-002/003): `from guardkitfactory.wiring import
+analyze_wiring` — returns None (probe didn't run) or the §5.1 wiring dict
+with the MOCKED_SEAM result nested under `"mocked_seam"`.
