@@ -425,11 +425,172 @@ def _compute_authored_set(
     return authored
 
 
+def _compute_spec_gap(
+    bdd_dict: Optional[Dict[str, Any]],
+    worktree_path: Path,
+    task_id: str,
+) -> Dict[str, Any]:
+    """Compute the SPEC_GAP evidence for the given BDD run result.
+
+    Detects a ``@task:<TASK-ID>``-tagged Gherkin scenario that is ground truth
+    (declared in a ``features/**/*.feature`` file) but has no executed binding.
+
+    AC-011: Per-scenario gap — a named tagged scenario absent from the executed
+    set produces one advisory ``spec_gap`` finding.
+
+    AC-012: When ``scenarios_attempted`` is **absent** from the BDD dict,
+    ``whole_file_deselection`` is ``False`` and the hard gate does NOT fire.
+    Absent = UNKNOWN, never coerced to 0.
+
+    AC-013: When ``scenarios_attempted`` is present and zero while
+    ``ground_truth_count > 0``, ``whole_file_deselection`` is ``True``.
+
+    AC-022: When ``bdd.discover(stack)`` returns ``None`` (unsupported stack),
+    ``status`` is ``"unsupported_stack"`` and the guard does not fire.
+
+    Parameters
+    ----------
+    bdd_dict : Optional[Dict[str, Any]]
+        The ``bundle.bdd``-shaped dict (from factory or player-reported).
+        ``None`` means no BDD evidence at all.
+    worktree_path : Path
+        Root of the worktree (for scanning feature files).
+    task_id : str
+        The task identifier (e.g. ``"TASK-QAWE-004"``) used to match
+        ``@task:<TASK-ID>`` tags in feature files.
+
+    Returns
+    -------
+    Dict[str, Any]
+        A spec_gap dict with keys: ``status``, ``ground_truth_count``,
+        ``executed_count``, ``pending_count``, ``findings``,
+        ``whole_file_deselection``, ``bdd_plugin_name``,
+        ``executed_evidence``.
+    """
+    # --- Ground truth: scan feature files for @task:<TASK-ID> tags ---
+    ground_truth_count = 0
+    ground_truth_scenarios: List[str] = []
+
+    features_dir = worktree_path / "features"
+    if features_dir.is_dir():
+        for feature_file in features_dir.rglob("*.feature"):
+            try:
+                content = feature_file.read_text(encoding="utf-8")
+            except OSError:
+                continue
+
+            # Track tag block context: tags accumulate until a Scenario line.
+            # After a Scenario line, reset so the next tag block is captured.
+            tag_block: List[str] = []
+
+            for line in content.splitlines():
+                stripped = line.strip()
+
+                # Tag lines start with @
+                if stripped.startswith("@"):
+                    tag_block.append(stripped)
+                    continue
+
+                # Scenario line ends the tag block
+                if re.match(r"^\s*(Scenario:|Scenario Outline:)", line):
+                    # Check if any tag in the block matches our task_id
+                    task_tag = f"@task:{task_id}"
+                    if task_tag in tag_block or any(
+                        t.startswith("@task:") for t in tag_block
+                    ):
+                        # Extract scenario name
+                        match = re.search(
+                            r"(Scenario Outline:|Scenario:)\s+(.+)", line
+                        )
+                        if match:
+                            scenario_name = match.group(2).strip()
+                            ground_truth_count += 1
+                            ground_truth_scenarios.append(
+                                f"{feature_file.relative_to(worktree_path)}:{scenario_name}"
+                            )
+                    tag_block = []
+                    continue
+
+                # Any other non-empty line ends the tag block
+                if stripped and not stripped.startswith("#"):
+                    tag_block = []
+
+    # --- Executed evidence: consume from BDDRunResult ---
+    executed_count = 0
+    pending_count = 0
+    scenarios_attempted_present = False
+    whole_file_deselection = False
+    status = "complete"
+    executed_evidence: str = "counts_only"
+    bdd_plugin_name: Optional[str] = None
+
+    if bdd_dict is not None and isinstance(bdd_dict, dict):
+        # AC-012: Check if scenarios_attempted key is PRESENT (not absent)
+        # Use "in" check, NOT .get(..., 0) — absent = UNKNOWN
+        if "scenarios_attempted" in bdd_dict:
+            scenarios_attempted_present = True
+            executed_count = bdd_dict.get("scenarios_attempted", 0) or 0
+            pending_count = bdd_dict.get("scenarios_pending", 0) or 0
+
+            # AC-013: whole-file deselection when ground_truth > 0 and
+            # scenarios_attempted is present and zero
+            if ground_truth_count > 0 and executed_count == 0:
+                whole_file_deselection = True
+
+        # Determine executed_evidence level
+        if "executed_scenarios" in bdd_dict:
+            executed_evidence = "full"
+        elif "scenarios_attempted" in bdd_dict:
+            executed_evidence = "counts_only"
+        else:
+            executed_evidence = "partial"
+
+        bdd_plugin_name = bdd_dict.get("bdd_plugin_name")
+    else:
+        # No BDD evidence at all — unsupported_stack status
+        status = "unsupported_stack"
+        executed_evidence = "counts_only"
+
+    # --- Per-scenario findings (AC-011) ---
+    # When executed_evidence is "full", we can compare per-scenario
+    findings: List[Dict[str, Any]] = []
+    if executed_evidence == "full" and ground_truth_scenarios:
+        executed_names = set(
+            s.get("name", "")
+            for s in bdd_dict.get("executed_scenarios", [])  # type: ignore[union-attr]
+            if isinstance(s, dict)
+        )
+        for gt_scenario in ground_truth_scenarios:
+            # Simple substring match: scenario name should appear in executed set
+            scenario_name = gt_scenario.split(":")[-1] if ":" in gt_scenario else gt_scenario
+            if not any(scenario_name in en for en in executed_names):
+                findings.append({
+                    "feature_file": gt_scenario.split(":")[0] if ":" in gt_scenario else gt_scenario,
+                    "symbol": scenario_name,
+                    "severity": "warning",
+                    "pattern": "SPEC_GAP",
+                    "why": f"Tagged scenario '{scenario_name}' declared in ground truth but not found in executed set",
+                })
+
+    return {
+        "status": status,
+        "ground_truth_count": ground_truth_count,
+        "executed_count": executed_count,
+        "pending_count": pending_count,
+        "findings": findings,
+        "whole_file_deselection": whole_file_deselection,
+        "bdd_plugin_name": bdd_plugin_name,
+        "executed_evidence": executed_evidence,
+    }
+
+
 def _run_wiring_analysis(
     worktree_path: Path,
     authored_files: List[str],
     task_type: str,
     stack_template: Optional[str],
+    bdd_dict: Optional[Dict[str, Any]] = None,
+    task_id: str = "",
 ) -> Optional[Dict[str, Any]]:
     """Run the wiring analysis for the authored files.
 
@@ -452,6 +613,10 @@ def _run_wiring_analysis(
         Resolved task type (e.g. ``"feature"``, ``"scaffolding"``).
     stack_template : Optional[str]
         Detected stack template (e.g. ``"python"``, ``"fastapi-python"``).
+    bdd_dict : Optional[Dict[str, Any]]
+        The ``bundle.bdd``-shaped dict for SPEC_GAP computation.
+    task_id : str
+        Task identifier for SPEC_GAP tag matching.
 
     Returns
     -------
@@ -526,10 +691,16 @@ def _run_wiring_analysis(
         if isinstance(mocked_seam, dict) and "external_mocks_ignored" not in mocked_seam:
             # TASK-QAWE-003 AC-006: the field is always present downstream.
             mocked_seam["external_mocks_ignored"] = []
+        # Wave-3 (TASK-QAWE-004): compute spec_gap from BDDRunResult.
+        spec_gap_dict = _compute_spec_gap(
+            bdd_dict=bdd_dict,
+            worktree_path=worktree_path,
+            task_id=task_id,
+        )
         return {
             "wiring": result,
             "mocked_seam": mocked_seam,
-            "spec_gap": None,  # Wave-3 (TASK-QAWE-004)
+            "spec_gap": spec_gap_dict,
         }
     except Exception as exc:  # noqa: BLE001 — analyzer errors must not break gathering
         logger.warning(
@@ -2621,6 +2792,8 @@ class CoachValidator:
                 authored_files=authored,
                 task_type=task_type.value,
                 stack_template=stack_template,
+                bdd_dict=bdd_dict,
+                task_id=task_id,
             )
             if wiring_result is not None:
                 wiring_dict = wiring_result.get("wiring")
