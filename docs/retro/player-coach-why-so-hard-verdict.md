@@ -72,6 +72,13 @@ failure frontier migrated *down the stack* over time — harness/timeout plumbin
 
 ## The kicker: the "green" is a false-green
 
+> **Now resolved — see [Update 2026-06-11](#update-2026-06-11--task-ops-coachmoe01-reconciliation) below.**
+> Both halves of this finding are closed: the *empty-criteria substance* half by
+> COACHBFULL (validated by the MoE A/B — 100%-populated verdicts, caught real
+> dishonesty), and the *`signal_absent` deterministic-backstop* half by
+> **TASK-FIX-COACHFG01 (completed 2026-06-10)**. The only item this section
+> flagged that is still open is the *N=1 frozen-fixture* generalization gap (H6).
+
 The whole retro is premised on "the run-13→20 arc finally produced two
 consecutive green runs." **By the project's own `absence-of-failure-is-not-success`
 rule, those greens are hollow.** Verified directly in the logs:
@@ -165,3 +172,65 @@ multipliers we mostly *have*.
   `../agentic-dataset-factory/` (accept/revise CoachVerdict, base model).
 - Oracle scar cluster: `.claude/rules/absence-of-failure-is-not-success.md`,
   `path-string-mismatch-is-not-dishonesty.md`, `harness-cancellation-contract.md`.
+
+## Update 2026-06-11 — TASK-OPS-COACHMOE01 reconciliation
+
+Two days after this verdict, [`docs/state/TASK-OPS-COACHMOE01/README.md`](../state/TASK-OPS-COACHMOE01/README.md)
+ran the first live A/B of the base **26B-A4B MoE** (`gemma4-coach`) as Coach on the
+shipped B-min toolless+grammar path, with COACHBFULL's gather leg enabled. It moves
+two of this doc's findings and **strengthens** the central thesis. What changed:
+
+**1. The substance half of the false-green is closed (on the fixture).** With the
+gather leg live, the MoE Coach produced **100%-populated `criteria_verification`**
+(5/5, 7/7, 6/6 per-AC), ran a genuine **catch→fix→approve** loop — it caught a real
+Player honesty discrepancy *twice* on IA03 and approved only when fixed — and
+delivered **3/3 approvals with zero false-greens**. The run-19 `0/5 verified`
+rubber-stamp was a pre-COACHBFULL B-min artefact; it does not reproduce now. The
+verdict's "irreducible core is *not yet solved*" should be read as *"demonstrated
+working on the frozen fixture; generalization still untested,"* not *"unsolved."*
+
+**2. Correction #1 sharpens — and the anti-H1 conclusion gets *stronger*.** This doc
+said "F24 was collapsed by model-upsize (26B→31B) + grammar." That is imprecise: the
+**26B-A4B MoE itself passes** on the toolless+grammar path (grammar contains the
+ramble; zero `finish=length`; ~24-40s substantive synthesis). The 49,720-char run-14
+ramble was in the **tool-bound agentic loop** that D-3 *removed* — not a model-size
+ceiling. So the real bottleneck was **architecture (tool-bound vs toolless+grammar),
+not the model**, and the 31B upsize was a reliability margin, not a necessity.
+H1 (model posture) is *more* refuted as a cause, not less.
+
+**3. The fine-tune direction is now decided** — TASK-DATA-COACHHARVEST base ← the
+26B MoE (the only base with a validated 71-min GB10 LoRA recipe *and* now empirically
+validated as a working Coach). HMIG-013 is superseded. The fine-tune is confirmed as
+a *hardening/quality* lever, not a prerequisite — exactly this doc's framing.
+
+**Both false-green halves are now closed (the COACHFG01 backstop landed too):**
+- **TASK-FIX-COACHFG01 completed 2026-06-10** — the day before COACHMOE01. The
+  deterministic backstop now exists: `agent_invoker.py:5085-5165`
+  (`_apply_independent_test_absent_guard`, wired at `:2232`) overrides an
+  `approve`→`feedback` in code whenever
+  `evidence_bundle.independent_tests.signal_absent is True`, independent of what the
+  LLM emitted, and re-persists `coach_turn_N.json` so the Layer-4 late-approval path
+  cannot resurrect it. Reproducer at
+  `tests/orchestrator/test_coach_independent_test_absent_guard.py` (red→green). Guard
+  #6 is no longer advisory. COACHMOE01's caveat #1 — **1 of 6 turns emitted malformed
+  JSON despite `grammar=present`**, caught only by the COACHSF01 net — is the live
+  evidence that this class of deterministic backstop is load-bearing on the MoE.
+
+**What is genuinely still open:**
+- **N=1 frozen fixture (H6)** — the A/B ran the same IA03/GD02/TP05 family. Two more
+  greens on the frozen quartet is still not a generalization signal. This is now the
+  single highest-value open question: run the loop on a *fresh, un-tuned* task set.
+- **B-full `GATHER=1` overhead (operational, not a blocker)** — wasted wall-time on
+  *both* substrates: Phase-A degrades to B-min on 100% of turns (recursion_limit=12
+  reached). Either raise/scale `recursion_limit` so Phase-A can converge, or default
+  to `GATHER=0` (where the MoE's ~30-60s synthesis is ~6-10× faster than g31).
+- **Player-side drift** (independent of the Coach): qwen36-workhorse honesty drift
+  (avg 0.75 < 0.8) and the SPECHANG `test-orchestrator` hang — worth their own tasks.
+
+**Net:** COACHMOE01 confirms the verdict's framing (the oracle contract over a
+mutating substrate was the hard part; once shape (grammar) + substance (gather) +
+the deterministic absent-signal backstop are enforced, a *base* model adjudicates
+honestly and catches real dishonesty) and converts "the green is hollow" into "the
+green is now substantive on the frozen fixture — the remaining question is whether it
+generalizes." The irreducible H2/H3 core has moved from *unsolved* to *demonstrated
+on N=1*; H6 (generalization) is what's left to prove.

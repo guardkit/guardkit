@@ -1,0 +1,57 @@
+id: FEAT-C332
+name: Stack-agnostic wiring evidence (QA-Verifier piece 2)
+description: One tree-sitter WiringAnalyzer + declarative dialects (py/js/ts/csharp)
+  producing UNWIRED_PATH/MOCKED_SEAM/SPEC_GAP evidence into the Coach bundle; SPEC_GAP
+  consumes factory BDDRunResult. Stack-agnostic by default; plugins only for BDD execution.
+created: '2026-06-12T08:15:33.875876'
+status: planned
+complexity: 6
+estimated_tasks: 4
+tasks:
+- id: TASK-QAWE-001
+  name: tree-sitter WiringAnalyzer core and dialects
+  file_path: tasks/backlog/qa-wiring-evidence/TASK-QAWE-001-treesitter-wiring-analyzer-core.md
+  complexity: 6
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 113
+- id: TASK-QAWE-002
+  name: UNWIRED_PATH bundle integration
+  file_path: tasks/backlog/qa-wiring-evidence/TASK-QAWE-002-unwired-bundle-integration.md
+  complexity: 5
+  dependencies:
+  - TASK-QAWE-001
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-QAWE-003
+  name: MOCKED_SEAM evidence integration
+  file_path: tasks/backlog/qa-wiring-evidence/TASK-QAWE-003-mocked-seam-integration.md
+  complexity: 4
+  dependencies:
+  - TASK-QAWE-001
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-QAWE-004
+  name: SPEC_GAP evidence plus deterministic hard-guard
+  file_path: tasks/backlog/qa-wiring-evidence/TASK-QAWE-004-spec-gap-and-hard-guard.md
+  complexity: 5
+  dependencies:
+  - TASK-QAWE-002
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+orchestration:
+  parallel_groups:
+  - - TASK-QAWE-001
+  - - TASK-QAWE-002
+    - TASK-QAWE-003
+  - - TASK-QAWE-004
+  estimated_duration_minutes: 313
+  recommended_parallel: 2

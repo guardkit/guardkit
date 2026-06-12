@@ -1,0 +1,35 @@
+id: FEAT-E2CB
+name: Wire factory BDD plugins into the Coach
+description: Wire guardkitfactory.bdd discover(stack)->BDDRunResult->bundle.bdd into
+  the Coach evidence path; make .NET/JS BDD verification reachable; preserve per-task
+  glue + absence-of-failure + scenarios_failed gate.
+created: '2026-06-12T08:12:30.526149'
+status: planned
+complexity: 5
+estimated_tasks: 2
+tasks:
+- id: TASK-BDDW-001
+  name: Wire factory BDD plugin discovery into the Coach (core, Python e2e)
+  file_path: tasks/backlog/bddwire/TASK-BDDW-001-wire-factory-bdd-discovery-into-coach.md
+  complexity: 5
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-BDDW-002
+  name: Multi-stack BDD reachability - route .NET to reqnroll, JS to cucumber-js
+  file_path: tasks/backlog/bddwire/TASK-BDDW-002-multi-stack-bdd-reachability.md
+  complexity: 4
+  dependencies:
+  - TASK-BDDW-001
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+orchestration:
+  parallel_groups:
+  - - TASK-BDDW-001
+  - - TASK-BDDW-002
+  estimated_duration_minutes: 125
+  recommended_parallel: 1
