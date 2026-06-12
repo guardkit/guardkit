@@ -129,8 +129,8 @@ class TestAbsentVsEmpty:
 class TestGracefulImportAbsence:
     """AC-017: with guardkitfactory absent, gather_evidence does not crash."""
 
-    def test_factory_unavailable_returns_none_fields(self) -> None:
-        """When factory is unavailable, _run_wiring_analysis returns None."""
+    def test_factory_unavailable_no_acceptance_files(self) -> None:
+        """When factory unavailable + no acceptance files -> skipped mocked_seam."""
         with patch(
             "guardkit.orchestrator.quality_gates.coach_validator."
             "_is_wiring_factory_available",
@@ -142,7 +142,9 @@ class TestGracefulImportAbsence:
                 task_type="feature",
                 stack_template="python",
             )
-        assert result is None
+        assert result is not None
+        assert result["mocked_seam"]["ran"] is False
+        assert "skip_reason" in result["mocked_seam"]
 
     def test_scaffolding_task_gates_out(self) -> None:
         """AC-008: SCAFFOLDING task → all three fields None."""
@@ -346,10 +348,10 @@ class TestGatherEvidenceWiring:
         )
         return tmp_path
 
-    def test_wiring_fields_none_when_factory_unavailable(
+    def test_wiring_fields_no_acceptance_files_returns_skipped(
         self, tmp_path: Path, mock_honesty: MagicMock,
     ) -> None:
-        """When factory unavailable, gather_evidence returns None for wiring fields."""
+        """When factory unavailable + no acceptance files -> skipped mocked_seam."""
         worktree = self._make_worktree(tmp_path)
         validator = CoachValidator(str(worktree))
         task = {
@@ -371,7 +373,10 @@ class TestGatherEvidenceWiring:
                 task_id="TASK-W1", turn=1, task=task,
             )
         assert bundle.wiring is None
-        assert bundle.mocked_seam is None
+        # No acceptance files -> mocked_seam is skipped (ran: false)
+        assert bundle.mocked_seam is not None
+        assert bundle.mocked_seam["ran"] is False
+        assert "skip_reason" in bundle.mocked_seam
         assert bundle.spec_gap is None
 
     def test_scaffolding_task_returns_none_wiring_fields(

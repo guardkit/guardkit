@@ -437,6 +437,11 @@ def _run_wiring_analysis(
     (some may be ``None``). Returns ``None`` when the task type gates out
     (SCAFFOLDING/DOCUMENTATION) or there are no authored source targets.
 
+    For the MOCKED_SEAM probe specifically:
+    - When authored files exist but no acceptance files are present,
+      returns a dict with ``mocked_seam`` set to ``ran: false`` + ``skip_reason``.
+    - When acceptance files are present, the factory runs the scan.
+
     Parameters
     ----------
     worktree_path : Path
@@ -471,6 +476,24 @@ def _run_wiring_analysis(
         )
         return None
 
+    # TASK-QAWE-003: Detect acceptance files among authored files.
+    # MOCKED_SEAM only runs when acceptance files are present.
+    acceptance_files = _detect_acceptance_files(authored_files)
+
+    if not acceptance_files:
+        logger.debug(
+            "wiring analysis: no acceptance files among %d authored files; "
+            "mocked_seam set to ran:false + skip_reason.",
+            len(authored_files),
+        )
+        return {
+            "wiring": None,
+            "mocked_seam": _make_mocked_seam_skipped(
+                "no acceptance files authored",
+            ),
+            "spec_gap": None,
+        }
+
     # Factory unavailable → all fields None (graceful import absence).
     if not _is_wiring_factory_available() or analyze_wiring is None:
         logger.debug(
@@ -494,6 +517,11 @@ def _run_wiring_analysis(
         # factory), all three fields stay None.
         if result is None:
             return None
+        # Ensure mocked_seam has external_mocks_ignored field (TASK-QAWE-003 AC-006).
+        if isinstance(result, dict):
+            mocked = result.get("mocked_seam")
+            if isinstance(mocked, dict) and "external_mocks_ignored" not in mocked:
+                mocked["external_mocks_ignored"] = []
         return result
     except Exception as exc:  # noqa: BLE001 — analyzer errors must not break gathering
         logger.warning(
@@ -501,6 +529,111 @@ def _run_wiring_analysis(
             exc.__class__.__name__,
         )
         return None
+
+
+# TASK-QAWE-003: Acceptance file detection for MOCKED_SEAM scan.
+# These patterns identify test/acceptance files among authored files.
+# The MOCKED_SEAM probe only runs when acceptance files are present;
+# otherwise it returns ran:false + skip_reason.
+_ACCEPTANCE_FILE_GLOBS = (
+    # Python test files
+    "test_*.py",
+    "*_test.py",
+    # JS/TS test files
+    "test_*.js",
+    "test_*.ts",
+    "*.test.js",
+    "*.test.ts",
+    "*.spec.js",
+    "*.spec.ts",
+    # C# test files
+    "*Test.cs",
+    "*Spec.cs",
+    # Generic test directories
+    "tests/**",
+    "test/**",
+    "__tests__/**",
+    "tests/**/*",
+    "test/**/*",
+    "__tests__/**/*",
+)
+
+
+def _is_acceptance_file(file_path: str) -> bool:
+    """Determine if a file path matches acceptance/test file patterns.
+
+    Used by the MOCKED_SEAM probe to detect whether authored files include
+    acceptance tests. Returns True if the file appears to be a test or
+    acceptance file.
+
+    Parameters
+    ----------
+    file_path : str
+        File path (relative to worktree root).
+
+    Returns
+    -------
+    bool
+        True if the file matches acceptance file patterns.
+    """
+    # Check if the path is under a test directory (case-insensitive)
+    parts = file_path.replace("\\", "/").split("/")
+    for part in parts[:-1]:  # Check directory components, not filename
+        if part.lower() in ("tests", "test", "__tests__"):
+            return True
+
+    # Check filename patterns
+    filename = parts[-1] if parts else ""
+    for pattern in _ACCEPTANCE_FILE_GLOBS:
+        # Simple glob matching for common patterns
+        if pattern.endswith("/**") or pattern.endswith("/*"):
+            continue  # Directory patterns handled above
+        if fnmatch.fnmatch(filename, pattern):
+            return True
+
+    return False
+
+
+def _detect_acceptance_files(authored_files: List[str]) -> List[str]:
+    """Filter authored files to find acceptance test files.
+
+    Parameters
+    ----------
+    authored_files : List[str]
+        List of authored file paths.
+
+    Returns
+    -------
+    List[str]
+        Subset of authored files that are acceptance test files.
+    """
+    return [f for f in authored_files if _is_acceptance_file(f)]
+
+
+def _make_mocked_seam_skipped(skip_reason: str) -> Dict[str, Any]:
+    """Create a MOCKED_SEAM result dict indicating the scan was skipped.
+
+    Used when authored files exist but no acceptance files are present.
+
+    Parameters
+    ----------
+    skip_reason : str
+        Human-readable reason why the scan was skipped.
+
+    Returns
+    -------
+    Dict[str, Any]
+        MOCKED_SEAM result dict with ran:false and skip_reason.
+    """
+    return {
+        "status": "skipped",
+        "ran": False,
+        "dialect": None,
+        "language": None,
+        "findings": [],
+        "external_mocks_ignored": [],
+        "skip_reason": skip_reason,
+    }
 
 
 # TASK-FIX-A7B4: Markers that satisfy a `## Seam Tests` block in a task

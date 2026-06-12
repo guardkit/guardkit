@@ -310,8 +310,8 @@ class TestRunWiringAnalysis:
         )
         assert result is None
 
-    def test_factory_unavailable_returns_none(self, tmp_path: Path) -> None:
-        """Wiring factory not available -> None."""
+    def test_factory_unavailable_no_acceptance_files(self, tmp_path: Path) -> None:
+        """Factory not available + no acceptance files -> skipped mocked_seam."""
         with patch(
             "guardkit.orchestrator.quality_gates.coach_validator._is_wiring_factory_available",
             return_value=False,
@@ -322,10 +322,12 @@ class TestRunWiringAnalysis:
                 task_type="feature",
                 stack_template="python",
             )
-        assert result is None
+        assert result is not None
+        assert result["mocked_seam"]["ran"] is False
+        assert "skip_reason" in result["mocked_seam"]
 
-    def test_exception_returns_none(self, tmp_path: Path) -> None:
-        """Exception in analyze_wiring -> None, no crash."""
+    def test_exception_no_acceptance_files(self, tmp_path: Path) -> None:
+        """Exception in analyze_wiring + no acceptance files -> skipped mocked_seam."""
         with patch(
             "guardkit.orchestrator.quality_gates.coach_validator._is_wiring_factory_available",
             return_value=True,
@@ -339,10 +341,11 @@ class TestRunWiringAnalysis:
                 task_type="feature",
                 stack_template="python",
             )
-        assert result is None
+        assert result is not None
+        assert result["mocked_seam"]["ran"] is False
 
-    def test_none_result_returns_none(self, tmp_path: Path) -> None:
-        """analyze_wiring returns None -> None."""
+    def test_none_result_no_acceptance_files(self, tmp_path: Path) -> None:
+        """analyze_wiring returns None + no acceptance files -> skipped mocked_seam."""
         with patch(
             "guardkit.orchestrator.quality_gates.coach_validator._is_wiring_factory_available",
             return_value=True,
@@ -356,7 +359,8 @@ class TestRunWiringAnalysis:
                 task_type="feature",
                 stack_template="python",
             )
-        assert result is None
+        assert result is not None
+        assert result["mocked_seam"]["ran"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -573,7 +577,7 @@ class TestAC011ReachesVerdict:
 
 
 class TestAC017GracefulImportAbsence:
-    """AC-017: with guardkitfactory/tree-sitter absent, all three fields None."""
+    """AC-017: with guardkitfactory/tree-sitter absent, graceful handling."""
 
     def test_import_error_does_not_crash_gather_evidence(self, tmp_path: Path) -> None:
         """When analyze_wiring raises ImportError, gather_evidence does not crash."""
@@ -603,7 +607,10 @@ class TestAC017GracefulImportAbsence:
 
         assert bundle.gathering_status == "complete"
         assert bundle.wiring is None
-        assert bundle.mocked_seam is None
+        # No acceptance files -> mocked_seam is skipped (ran: false)
+        assert bundle.mocked_seam is not None
+        assert bundle.mocked_seam["ran"] is False
+        assert "skip_reason" in bundle.mocked_seam
         assert bundle.spec_gap is None
 
 
