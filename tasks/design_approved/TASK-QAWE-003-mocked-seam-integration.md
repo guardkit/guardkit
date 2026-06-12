@@ -1,14 +1,16 @@
 ---
-id: TASK-QAWE-003
-title: MOCKED_SEAM evidence — wire the mock-seam scan into the bundle
-task_type: feature
-parent_task: TASK-HMIG-BDDWIRE
-feature_id: FEAT-C332
-wave: 3
-implementation_mode: task-work
 complexity: 4
-dependencies: [TASK-QAWE-001]
+dependencies:
+- TASK-QAWE-001
+feature_id: FEAT-C332
+id: TASK-QAWE-003
+implementation_mode: task-work
+parent_task: TASK-HMIG-BDDWIRE
 priority: medium
+status: design_approved
+task_type: feature
+title: MOCKED_SEAM evidence — wire the mock-seam scan into the bundle
+wave: 3
 ---
 
 # Task: MOCKED_SEAM evidence integration (Wave 2)
