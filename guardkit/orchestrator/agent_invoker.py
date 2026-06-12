@@ -3212,9 +3212,9 @@ orchestrator takes only the **last** fenced block.
         # Truncate wiring / mocked_seam / spec_gap findings.
         # Mirrors the bdd.discoveries truncation pattern (keep first 20 +
         # "... and N more" marker). Wave-1, TASK-QAWE-002.
-        _truncate_findings(bundle_dict.get("wiring"), self._COACH_WIRING_FINDINGS_LIMIT)
-        _truncate_findings(bundle_dict.get("mocked_seam"), self._COACH_WIRING_FINDINGS_LIMIT)
-        _truncate_findings(bundle_dict.get("spec_gap"), self._COACH_WIRING_FINDINGS_LIMIT)
+        self._truncate_findings(bundle_dict.get("wiring"), self._COACH_WIRING_FINDINGS_LIMIT)
+        self._truncate_findings(bundle_dict.get("mocked_seam"), self._COACH_WIRING_FINDINGS_LIMIT)
+        self._truncate_findings(bundle_dict.get("spec_gap"), self._COACH_WIRING_FINDINGS_LIMIT)
 
         try:
             payload = json.dumps(bundle_dict, indent=2, default=str)
