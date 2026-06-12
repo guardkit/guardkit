@@ -418,11 +418,14 @@ class TestSelectHarnessDispatch:
         assert harness.backend is not None
         # TASK-HMIG-002R-SUMM-ROOT wraps the LocalShellBackend in a
         # CompositeBackend (to carry artifacts_root for summarisation
-        # re-rooting); the LocalShellBackend is its ``default``. (Test
-        # updated under TASK-PERF-COACHSYNTH — the assertion had drifted from
-        # the wrapped-return production shape.)
+        # re-rooting). TASK-FIX-WTESCAPE01 then interposed a
+        # PathConfinedBackend as the composite ``default`` (write/edit
+        # confinement to the worktree); the LocalShellBackend sits one
+        # level down at ``default._inner`` and every non-write attribute
+        # delegates through.
         assert isinstance(harness.backend, CompositeBackend)
-        assert isinstance(harness.backend.default, LocalShellBackend)
+        assert isinstance(harness.backend.default._inner, LocalShellBackend)
+        assert harness.backend.default.cwd == tmp_path.resolve()
         # The permissions factory is wired (returns a list). Note: under
         # TASK-HMIG-002R-NOPERMS the deny-rule list is intentionally EMPTY
         # (filesystem confinement moved to virtual_mode/operator-trust, see
