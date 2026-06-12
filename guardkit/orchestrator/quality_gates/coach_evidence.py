@@ -155,6 +155,23 @@ class CoachEvidenceBundle:
 
         Pre-populated so the LLM Coach can read them without re-computing the
         Layer-2 demotion.
+    wiring
+        UNWIRED_PATH analysis result (dict) from ``guardkitfactory.wiring``.
+        Contains ``status``, ``dialect``, ``language``, ``targets_scanned``,
+        ``symbols_examined``, ``findings``, ``degraded_files``. ``None`` when
+        the task type gates out (SCAFFOLDING/DOCUMENTATION), there are no
+        authored source targets, or the factory is unavailable.
+    mocked_seam
+        MOCKED_SEAM analysis result (dict). Contains ``status``, ``ran``,
+        ``dialect``, ``findings``, ``external_mocks_ignored``. ``None`` when
+        the task type gates out, there are no authored acceptance files, or
+        the factory is unavailable.
+    spec_gap
+        SPEC_GAP analysis result (dict). Contains ``status``,
+        ``ground_truth_count``, ``executed_count``, ``findings``,
+        ``whole_file_deselection``. ``None`` when the task type gates out,
+        the factory BDD plugin is unavailable, or Wave-3 wiring is not yet
+        implemented.
     """
 
     honesty: "HonestyVerification"
@@ -167,6 +184,14 @@ class CoachEvidenceBundle:
     bdd: Optional[Dict[str, Any]] = None
     arch_review: Optional[Dict[str, Any]] = None
     tests: Optional[Dict[str, Any]] = None
+
+    # Wave-1 wiring evidence fields (TASK-QAWE-002).
+    # Populated by CoachValidator.gather_evidence at the complete-path return.
+    # Left None for SCAFFOLDING/DOCUMENTATION tasks, zero-target turns,
+    # or when guardkitfactory.wiring is unavailable (ImportError).
+    wiring: Optional[Dict[str, Any]] = None         # UNWIRED_PATH analysis
+    mocked_seam: Optional[Dict[str, Any]] = None    # MOCKED_SEAM analysis
+    spec_gap: Optional[Dict[str, Any]] = None       # SPEC_GAP (Wave-3)
 
     independent_tests: Optional["IndependentTestResult"] = None
     requirements: Optional[Any] = None  # RequirementsValidation; avoid circular import
