@@ -1,5 +1,6 @@
 {
-  "content_hash": "d405c3b470fc293881fa12ac81321cba24d37817ca71686a5b7123ebb02b716b",
+  "content_hash": "fed43f88646a5deafc12465f6132debb6c33fb0101f4f3982435c681aaf2d12e",
   "success": false,
-  "timestamp": "2026-04-11T17:15:17.497095"
+  "timestamp": "2026-06-12T18:59:00.122347",
+  "venv_python": "/home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-C332/.venv/bin/python"
 }

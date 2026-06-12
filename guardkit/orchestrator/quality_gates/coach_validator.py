@@ -42,6 +42,7 @@ import time
 from contextlib import aclosing
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from guardkit.orchestrator.coach_verification import (
@@ -343,6 +344,376 @@ def _run_factory_bdd(
             "falling back to Player-reported bdd_results.",
             exc.__class__.__name__,
             stack_profile,
+        )
+        return None
+
+
+# ============================================================================
+# Wiring Factory Bridge — wire guardkitfactory.wiring into the Coach evidence
+# ============================================================================
+#
+# TASK-QAWE-002 (Wave-1): Lazy import of the UNWIRED_PATH / MOCKED_SEAM
+# analyzer. The import is guarded so that ``pip install guardkit-py`` without
+# the ``[autobuild]`` extra still works — Coach leaves all three wiring
+# fields as ``None`` when the factory is unavailable.
+#
+# The seam returns a dict (never the dataclass) so coach_evidence.py keeps
+# zero guardkitfactory import.
+
+try:
+    from guardkitfactory.wiring import (  # type: ignore[attr-defined,no-redef]
+        analyze_wiring,
+    )
+
+    _WIRING_FACTORY_AVAILABLE = True
+except ImportError:
+    analyze_wiring = None  # type: ignore[misc,assignment]
+    _WIRING_FACTORY_AVAILABLE = False
+
+def _is_wiring_factory_available() -> bool:
+    """Return True when the guardkitfactory wiring analyzer is importable.
+
+    A plain module-level check (the import happens once at module load);
+    kept as a function so tests can patch availability.
+    """
+    return _WIRING_FACTORY_AVAILABLE and analyze_wiring is not None
+
+
+def _reset_wiring_factory_cache() -> None:
+    """Kept for call-site compatibility; availability is no longer cached."""
+    return None
+
+
+def _compute_authored_set(
+    task_work_results: Dict[str, Any],
+) -> List[str]:
+    """Compute the set of source files authored by the Player this turn.
+
+    Uses the presence-based fallback from the task-work results:
+    ``files_authored`` when present, else ``files_created ∪ files_modified``.
+
+    This is NOT the git-enriched ``files_modified`` (which can be
+    peer-contaminated in parallel-wave execution).
+
+    Parameters
+    ----------
+    task_work_results : Dict[str, Any]
+        The task-work results dict from ``read_quality_gate_results``.
+
+    Returns
+    -------
+    List[str]
+        List of authored file paths (relative to worktree root).
+    """
+    if "files_authored" in task_work_results and isinstance(
+        task_work_results["files_authored"], list
+    ):
+        # Presence-based: an explicit empty list is authoritative (the
+        # Player authored nothing), NOT a trigger for the fallback union.
+        return [str(f) for f in task_work_results["files_authored"]]
+
+    # Fallback: files_created ∪ files_modified
+    created = task_work_results.get("files_created") or []
+    modified = task_work_results.get("files_modified") or []
+    authored: List[str] = []
+    seen: set = set()
+    for f in list(created) + list(modified):
+        fs = str(f)
+        if fs not in seen:
+            seen.add(fs)
+            authored.append(fs)
+    return authored
+
+
+def _compute_spec_gap(
+    bdd_dict: Optional[Dict[str, Any]],
+    worktree_path: Path,
+    task_id: str,
+) -> Dict[str, Any]:
+    """Compute the SPEC_GAP evidence for the given BDD run result.
+
+    Detects a ``@task:<TASK-ID>``-tagged Gherkin scenario that is ground truth
+    (declared in a ``features/**/*.feature`` file) but has no executed binding.
+
+    AC-011: Per-scenario gap — a named tagged scenario absent from the executed
+    set produces one advisory ``spec_gap`` finding.
+
+    AC-012: When ``scenarios_attempted`` is **absent** from the BDD dict,
+    ``whole_file_deselection`` is ``False`` and the hard gate does NOT fire.
+    Absent = UNKNOWN, never coerced to 0.
+
+    AC-013: When ``scenarios_attempted`` is present and zero while
+    ``ground_truth_count > 0``, ``whole_file_deselection`` is ``True``.
+
+    AC-022: When ``bdd.discover(stack)`` returns ``None`` (unsupported stack),
+    ``status`` is ``"unsupported_stack"`` and the guard does not fire.
+
+    Parameters
+    ----------
+    bdd_dict : Optional[Dict[str, Any]]
+        The ``bundle.bdd``-shaped dict (from factory or player-reported).
+        ``None`` means no BDD evidence at all.
+    worktree_path : Path
+        Root of the worktree (for scanning feature files).
+    task_id : str
+        The task identifier (e.g. ``"TASK-QAWE-004"``) used to match
+        ``@task:<TASK-ID>`` tags in feature files.
+
+    Returns
+    -------
+    Dict[str, Any]
+        A spec_gap dict with keys: ``status``, ``ground_truth_count``,
+        ``executed_count``, ``pending_count``, ``findings``,
+        ``whole_file_deselection``, ``bdd_plugin_name``,
+        ``executed_evidence``.
+    """
+    # --- Ground truth: scan feature files for @task:<TASK-ID> tags ---
+    ground_truth_count = 0
+    # (feature_file, scenario_name) tuples — tuples, not joined strings, so
+    # scenario names containing ":" never mis-split downstream.
+    ground_truth_scenarios: List[tuple] = []
+
+    features_dir = worktree_path / "features"
+    if features_dir.is_dir():
+        for feature_file in features_dir.rglob("*.feature"):
+            try:
+                content = feature_file.read_text(encoding="utf-8")
+            except OSError:
+                continue
+
+            # Track tag block context: tags accumulate until a Scenario line.
+            # After a Scenario line, reset so the next tag block is captured.
+            tag_block: List[str] = []
+
+            for line in content.splitlines():
+                stripped = line.strip()
+
+                # Tag lines start with @
+                if stripped.startswith("@"):
+                    tag_block.append(stripped)
+                    continue
+
+                # Scenario line ends the tag block
+                if re.match(r"^\s*(Scenario:|Scenario Outline:)", line):
+                    # Ground truth is THIS task's scenarios ONLY: an exact
+                    # @task:<TASK-ID> token match. Counting other tasks'
+                    # @task: tags would inflate ground_truth_count and
+                    # false-fire the whole-file hard gate for a task that
+                    # legitimately owns zero scenarios (parallel-wave
+                    # features). Tag lines may carry multiple tags
+                    # ("@task:X @smoke"), so match TOKENS, not whole lines.
+                    task_tag = f"@task:{task_id}"
+                    tag_tokens = {
+                        token
+                        for tag_line in tag_block
+                        for token in tag_line.split()
+                    }
+                    if task_tag in tag_tokens:
+                        match = re.search(
+                            r"(Scenario Outline:|Scenario:)\s+(.+)", line
+                        )
+                        if match:
+                            scenario_name = match.group(2).strip()
+                            ground_truth_count += 1
+                            ground_truth_scenarios.append((
+                                str(feature_file.relative_to(worktree_path)),
+                                scenario_name,
+                            ))
+                    tag_block = []
+                    continue
+
+                # Any other non-empty line ends the tag block
+                if stripped and not stripped.startswith("#"):
+                    tag_block = []
+
+    # --- Executed evidence: consume from BDDRunResult ---
+    executed_count = 0
+    pending_count = 0
+    whole_file_deselection = False
+    status = "complete"
+    executed_evidence: str = "counts_only"
+    bdd_plugin_name: Optional[str] = None
+
+    if bdd_dict is not None and isinstance(bdd_dict, dict):
+        # AC-012: Check if scenarios_attempted key is PRESENT (not absent)
+        # Use "in" check, NOT .get(..., 0) — absent = UNKNOWN
+        if "scenarios_attempted" in bdd_dict:
+            executed_count = bdd_dict.get("scenarios_attempted", 0) or 0
+            pending_count = bdd_dict.get("scenarios_pending", 0) or 0
+
+            # AC-013: whole-file deselection when ground_truth > 0 and
+            # scenarios_attempted is present and zero
+            if ground_truth_count > 0 and executed_count == 0:
+                whole_file_deselection = True
+
+        # Determine executed_evidence level
+        if "executed_scenarios" in bdd_dict:
+            executed_evidence = "full"
+        elif "scenarios_attempted" in bdd_dict:
+            executed_evidence = "counts_only"
+        else:
+            executed_evidence = "partial"
+
+        bdd_plugin_name = bdd_dict.get("bdd_plugin_name")
+    else:
+        # No BDD evidence at all — unsupported_stack status
+        status = "unsupported_stack"
+        executed_evidence = "counts_only"
+
+    # --- Per-scenario findings (AC-011) ---
+    # When executed_evidence is "full", we can compare per-scenario
+    findings: List[Dict[str, Any]] = []
+    if executed_evidence == "full" and ground_truth_scenarios:
+        executed_names = set(
+            s.get("name", "")
+            for s in bdd_dict.get("executed_scenarios", [])  # type: ignore[union-attr]
+            if isinstance(s, dict)
+        )
+        for gt_file, scenario_name in ground_truth_scenarios:
+            # Substring match: name-matching carries FP risk, hence advisory.
+            if not any(scenario_name in en for en in executed_names):
+                findings.append({
+                    "feature_file": gt_file,
+                    "symbol": scenario_name,
+                    "severity": "warning",
+                    "pattern": "SPEC_GAP",
+                    "why": f"Tagged scenario '{scenario_name}' declared in ground truth but not found in executed set",
+                })
+
+    return {
+        "status": status,
+        "ground_truth_count": ground_truth_count,
+        "executed_count": executed_count,
+        "pending_count": pending_count,
+        "findings": findings,
+        "whole_file_deselection": whole_file_deselection,
+        "bdd_plugin_name": bdd_plugin_name,
+        "executed_evidence": executed_evidence,
+    }
+
+
+def _run_wiring_analysis(
+    worktree_path: Path,
+    authored_files: List[str],
+    task_type: str,
+    stack_template: Optional[str],
+    bdd_dict: Optional[Dict[str, Any]] = None,
+    task_id: str = "",
+) -> Optional[Dict[str, Any]]:
+    """Run the wiring analysis for the authored files.
+
+    Returns a dict with ``wiring``, ``mocked_seam``, and ``spec_gap`` keys
+    (some may be ``None``). Returns ``None`` when the task type gates out
+    (SCAFFOLDING/DOCUMENTATION) or there are no authored source targets.
+
+    For the MOCKED_SEAM probe specifically:
+    - When authored files exist but no acceptance files are present,
+      returns a dict with ``mocked_seam`` set to ``ran: false`` + ``skip_reason``.
+    - When acceptance files are present, the factory runs the scan.
+
+    Parameters
+    ----------
+    worktree_path : Path
+        Root of the worktree.
+    authored_files : List[str]
+        Source files authored this turn.
+    task_type : str
+        Resolved task type (e.g. ``"feature"``, ``"scaffolding"``).
+    stack_template : Optional[str]
+        Detected stack template (e.g. ``"python"``, ``"fastapi-python"``).
+    bdd_dict : Optional[Dict[str, Any]]
+        The ``bundle.bdd``-shaped dict for SPEC_GAP computation.
+    task_id : str
+        Task identifier for SPEC_GAP tag matching.
+
+    Returns
+    -------
+    Optional[Dict[str, Any]]
+        Dict with ``wiring``, ``mocked_seam``, ``spec_gap`` keys, or ``None``
+        when the probe legitimately did not run.
+    """
+    # Positive task-type gate (scope §4): only FEATURE / REFACTOR /
+    # INTEGRATION are analyzed. Everything else (scaffolding, documentation,
+    # testing, infrastructure, …) legitimately produces un-wired stubs →
+    # all three fields None. Case-insensitive: frontmatter uses lowercase.
+    if (task_type or "").upper() not in ("FEATURE", "REFACTOR", "INTEGRATION"):
+        logger.debug(
+            "wiring analysis: task_type=%s gates out; "
+            "all three fields left as None.",
+            task_type,
+        )
+        return None
+
+    # Zero-authored-targets gate → None (probe legitimately did not run).
+    if not authored_files:
+        logger.debug(
+            "wiring analysis: no authored source targets; "
+            "all three fields left as None.",
+        )
+        return None
+
+    # Factory unavailable → all fields None (graceful import absence,
+    # AC-017). Checked before any other work so factory-absent behaviour
+    # is uniform regardless of authored-file composition.
+    if not _is_wiring_factory_available() or analyze_wiring is None:
+        logger.debug(
+            "wiring analysis: guardkitfactory.wiring not available; "
+            "all three fields left as None.",
+        )
+        return None
+
+    # Resolve the stack hint. analyze_wiring reads ``stack.language``
+    # (scope §5.5: StackProfile | None) — a bare string would be silently
+    # dropped, so wrap it in a namespace object.
+    stack_language = (
+        _STACK_PROFILE_MAP.get(stack_template) if stack_template else None
+    )
+    stack_obj = (
+        SimpleNamespace(language=stack_language) if stack_language else None
+    )
+
+    try:
+        result = analyze_wiring(
+            authored_files=authored_files,
+            worktree_path=worktree_path,
+            task_type=task_type,
+            stack=stack_obj,
+        )
+        # analyze_wiring returns None (probe didn't run), or the §5.1
+        # wiring shape FLAT at top level with the MOCKED_SEAM result
+        # nested under "mocked_seam" (acceptance-file selection, skip
+        # statuses, and the UNWIRED/MOCKED probe independence all live
+        # in the factory — guardkit does not re-implement them).
+        if result is None:
+            return None
+        if not isinstance(result, dict):
+            logger.warning(
+                "wiring analysis returned unexpected type %s; "
+                "all three fields left as None.",
+                type(result).__name__,
+            )
+            return None
+        # Normalize into the three-field envelope gather_evidence consumes.
+        # pop() keeps bundle.wiring free of the nested mocked_seam copy.
+        mocked_seam = result.pop("mocked_seam", None)
+        if isinstance(mocked_seam, dict) and "external_mocks_ignored" not in mocked_seam:
+            # TASK-QAWE-003 AC-006: the field is always present downstream.
+            mocked_seam["external_mocks_ignored"] = []
+        # Wave-3 (TASK-QAWE-004): compute spec_gap from BDDRunResult.
+        spec_gap_dict = _compute_spec_gap(
+            bdd_dict=bdd_dict,
+            worktree_path=worktree_path,
+            task_id=task_id,
+        )
+        return {
+            "wiring": result,
+            "mocked_seam": mocked_seam,
+            "spec_gap": spec_gap_dict,
+        }
+    except Exception as exc:  # noqa: BLE001 — analyzer errors must not break gathering
+        logger.warning(
+            "wiring analysis raised %s; all three fields left as None.",
+            exc.__class__.__name__,
         )
         return None
 
@@ -1806,7 +2177,7 @@ class CoachValidator:
                 issues=advisory_issues + [{
                     "severity": "must_fix",
                     "category": "missing_requirement",
-                    "description": f"Not all acceptance criteria met",
+                    "description": "Not all acceptance criteria met",
                     "missing_criteria": requirements.missing,
                 }],
                 rationale=f"Missing {len(requirements.missing)} acceptance criteria: {', '.join(requirements.missing)}",
@@ -2280,6 +2651,7 @@ class CoachValidator:
         #      is unavailable, the stack is unknown, or discovery fails.
         # ------------------------------------------------------------------
         _reset_factory_cache()
+        _reset_wiring_factory_cache()
 
         bdd_raw = task_work_results.get("bdd_results")
         bdd_dict: Optional[Dict[str, Any]] = None
@@ -2410,6 +2782,46 @@ class CoachValidator:
                     profile_name=profile_name,
                 )
 
+        # ------------------------------------------------------------------
+        # 5. Wiring analysis (Wave-1, TASK-QAWE-002).
+        # Populates wiring / mocked_seam / spec_gap at the complete-path
+        # return only. Partial returns (honesty_abort, gate_abort,
+        # exception) leave all three None.
+        # ------------------------------------------------------------------
+        wiring_dict: Optional[Dict[str, Any]] = None
+        mocked_seam_dict: Optional[Dict[str, Any]] = None
+        spec_gap_dict: Optional[Dict[str, Any]] = None
+
+        try:
+            stack_template = detect_stack_template(self.worktree_path)
+            authored = _compute_authored_set(task_work_results)
+            wiring_result = _run_wiring_analysis(
+                worktree_path=self.worktree_path,
+                authored_files=authored,
+                task_type=task_type.value,
+                stack_template=stack_template,
+                bdd_dict=bdd_dict,
+                task_id=task_id,
+            )
+            if wiring_result is not None:
+                wiring_dict = wiring_result.get("wiring")
+                mocked_seam_dict = wiring_result.get("mocked_seam")
+                spec_gap_dict = wiring_result.get("spec_gap")
+                logger.info(
+                    "gather_evidence: wiring analysis complete "
+                    "(wiring_findings=%d, mocked_seam_findings=%d, "
+                    "spec_gap_findings=%d).",
+                    len(wiring_dict.get("findings", [])) if wiring_dict else 0,
+                    len(mocked_seam_dict.get("findings", [])) if mocked_seam_dict else 0,
+                    len(spec_gap_dict.get("findings", [])) if spec_gap_dict else 0,
+                )
+        except Exception as exc:  # noqa: BLE001 — wiring errors must not break gathering
+            logger.warning(
+                "gather_evidence: wiring analysis raised %s; "
+                "all three fields left as None.",
+                exc.__class__.__name__,
+            )
+
         return CoachEvidenceBundle(
             honesty=honesty,
             gathering_status="complete",
@@ -2425,6 +2837,9 @@ class CoachValidator:
             advisory_issues=advisory_issues,
             task_type=task_type.value,
             profile_name=profile_name,
+            wiring=wiring_dict,
+            mocked_seam=mocked_seam_dict,
+            spec_gap=spec_gap_dict,
         )
 
     def _compute_agent_invocations_advisory(
@@ -5855,8 +6270,8 @@ class CoachValidator:
             severity = "error" if profile.zero_test_blocking else "warning"
             log_func = logger.error if profile.zero_test_blocking else logger.warning
             log_func(
-                f"Zero-test anomaly: all_passed=true but tests_passed=0 and coverage=null. "
-                f"Player may have reported quality gates as passed without running tests."
+                "Zero-test anomaly: all_passed=true but tests_passed=0 and coverage=null. "
+                "Player may have reported quality gates as passed without running tests."
             )
             return [{
                 "severity": severity,
@@ -6799,7 +7214,7 @@ class CoachValidator:
             issues.append({
                 "severity": "must_fix",
                 "category": "architectural",
-                "description": f"Architectural review score below threshold",
+                "description": "Architectural review score below threshold",
                 "details": {
                     "score": code_review.get("score", 0),
                     "threshold": code_review.get("score", 0) >= 60 and 60 or code_review.get("score", 0),
@@ -6966,7 +7381,6 @@ class CoachValidator:
         """
         from guardkit.orchestrator.quality_gates.security_review import (
             load_security_review,
-            SecurityReviewResult,
         )
 
         logger.debug(f"Verifying security review for {task_id} (read-only)")
