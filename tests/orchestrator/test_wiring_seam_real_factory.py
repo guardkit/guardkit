@@ -210,4 +210,7 @@ class TestRealFactoryGatherEndToEnd:
         symbols = {f["symbol"] for f in bundle.wiring["findings"]}
         assert "totally_unwired_zzqx_handler" in symbols
         assert bundle.mocked_seam is not None
-        assert bundle.spec_gap is None
+        # Wave-3 populates spec_gap; no BDD evidence here -> absent-signal,
+        # hard gate not armed.
+        assert bundle.spec_gap is not None
+        assert bundle.spec_gap["whole_file_deselection"] is False

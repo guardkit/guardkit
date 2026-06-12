@@ -169,7 +169,9 @@ class TestEnvelopeNormalization:
         # The wiring dict is the FLAT factory dict, without the nested copy.
         assert result["wiring"]["status"] == "complete"
         assert "mocked_seam" not in result["wiring"]
-        assert result["spec_gap"] is None  # Wave-3
+        # Wave-3 (QAWE-004) populates spec_gap; with no BDD evidence in this
+        # fixture it is an absent-signal dict, never an armed hard gate.
+        assert result["spec_gap"]["whole_file_deselection"] is False
 
     def test_factory_skip_result_passes_through(self, tmp_path: Path) -> None:
         """The factory's own skipped_no_acceptance_files result reaches the
@@ -409,7 +411,8 @@ class TestGatherIntegration:
         assert bundle.wiring["findings"] == [finding]
         assert bundle.mocked_seam is not None
         assert bundle.mocked_seam["ran"] is True
-        assert bundle.spec_gap is None
+        assert bundle.spec_gap is not None  # Wave-3 populates it
+        assert bundle.spec_gap["whole_file_deselection"] is False
 
     def test_zero_authored_files_all_fields_none(self, tmp_path: Path) -> None:
         _init_git_worktree(tmp_path)
