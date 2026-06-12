@@ -94,6 +94,259 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# ============================================================================
+# BDD Factory Bridge — wire guardkitfactory.bdd into the Coach evidence path
+# ============================================================================
+#
+# TASK-BDDW-001: Replace the legacy pytest-hardcoded bdd_runner.py path in the
+# Coach evidence path with guardkitfactory's plugin-discovery subsystem.
+#
+# The bridge uses a lazy import (try/except ImportError) so that
+# ``pip install guardkit-py`` without the ``[autobuild]`` extra still works.
+# When guardkitfactory is unavailable, the Coach falls back to the Player's
+# self-reported ``bdd_results`` (legacy behaviour).
+#
+# Mapping: BDDRunResult (factory) → bundle.bdd dict (legacy shape)
+#
+#   BDDRunResult.scenarios_attempted  → bundle.bdd["scenarios_attempted"]
+#   BDDRunResult.scenarios_passed     → bundle.bdd["scenarios_passed"]
+#   BDDRunResult.scenarios_failed     → bundle.bdd["scenarios_failed"]
+#   BDDRunResult.scenarios_pending    → bundle.bdd["scenarios_pending"]
+#   BDDRunResult.failures             → bundle.bdd["failures"]
+#   BDDRunResult.pending              → bundle.bdd["pending"]
+#   BDDRunResult.feature_files        → bundle.bdd["feature_files"]
+#
+# Key contract: ``scenarios_attempted`` is non-Optional on BDDRunResult and
+# must be preserved verbatim for the absence-of-failure gate. A value of 0
+# means "no scenarios ran" (ABSENT SIGNAL), NOT "zero failures = pass".
+
+# StackProfile values consumed by guardkitfactory.bdd.discover().
+# Mapped from the worktree's project.template string.
+_STACK_PROFILE_MAP: Dict[str, str] = {
+    "python": "python",
+    "fastapi-python": "python",
+    "django-python": "python",
+    "flask-python": "python",
+    ".net": "dotnet",
+    "aspnet-core": "dotnet",
+    "csharp": "dotnet",
+    "node-js": "javascript",
+    "javascript": "javascript",
+    "typescript": "javascript",
+}
+"""Mapping from ``project.template`` to ``StackProfile`` string."""
+
+
+def _detect_stack_profile(workspace_root: Optional[Path]) -> Optional[str]:
+    """Detect the stack profile from the worktree's template string.
+
+    Parameters
+    ----------
+    workspace_root : Optional[Path]
+        Root of the worktree. Used to find ``.claude/settings.json``.
+
+    Returns
+    -------
+    Optional[str]
+        A ``StackProfile``-compatible string (``"python"``, ``"dotnet"``,
+        ``"javascript"``) or ``None`` when the template is unknown.
+    """
+    template = detect_stack_template(workspace_root)
+    if template is None:
+        return None
+    return _STACK_PROFILE_MAP.get(template)
+
+
+def _map_bdd_run_result_to_bundle(
+    run_result: "BDDRunResult",
+) -> Dict[str, Any]:
+    """Map a ``BDDRunResult`` into the legacy ``bundle.bdd`` dict shape.
+
+    Preserves ``scenarios_attempted`` verbatim — never coerces a missing key
+    to 0. This is critical for the absence-of-failure gate: when
+    ``scenarios_attempted == 0``, the Coach must treat it as ABSENT SIGNAL,
+    not as a silent pass.
+
+    Parameters
+    ----------
+    run_result : BDDRunResult
+        Result from the factory BDD plugin.
+
+    Returns
+    -------
+    Dict[str, Any]
+        A dict with keys: ``scenarios_attempted``, ``scenarios_passed``,
+        ``scenarios_failed``, ``scenarios_pending``, ``failures``,
+        ``pending``, ``feature_files``.
+    """
+    # Import here to avoid circular import at module level.
+    # BDDRunResult is imported lazily from guardkitfactory.
+    from dataclasses import asdict
+
+    failures = run_result.failures
+    pending = run_result.pending
+
+    # Convert FailureDetail/PendingDetail to dicts if they are dataclass instances.
+    failure_dicts: List[Dict[str, Any]] = []
+    for f in failures:
+        if hasattr(f, "asdict") or hasattr(f, "_asdict"):
+            failure_dicts.append(asdict(f))
+        elif isinstance(f, dict):
+            failure_dicts.append(f)
+        else:
+            failure_dicts.append({
+                "scenario_name": getattr(f, "scenario_name", "<unknown>"),
+                "failing_step": getattr(f, "failing_step", ""),
+                "reason": getattr(f, "reason", ""),
+            })
+
+    pending_dicts: List[Dict[str, Any]] = []
+    for p in pending:
+        if hasattr(p, "asdict") or hasattr(p, "_asdict"):
+            pending_dicts.append(asdict(p))
+        elif isinstance(p, dict):
+            pending_dicts.append(p)
+        else:
+            pending_dicts.append({
+                "scenario_name": getattr(p, "scenario_name", "<unknown>"),
+                "pending_step": getattr(p, "pending_step", ""),
+            })
+
+    return {
+        "scenarios_attempted": run_result.scenarios_attempted,
+        "scenarios_passed": run_result.scenarios_passed,
+        "scenarios_failed": run_result.scenarios_failed,
+        "scenarios_pending": run_result.scenarios_pending,
+        "failures": failure_dicts,
+        "pending": pending_dicts,
+        "feature_files": list(run_result.feature_files),
+    }
+
+
+# Lazy import of guardkitfactory BDD plugin subsystem.
+# The import is guarded so that ``pip install guardkit-py`` without
+# ``[autobuild]`` still works — Coach falls back to Player-reported
+# bdd_results when the factory is unavailable.
+try:
+    from guardkitfactory.bdd import (
+        BDDRunResult,
+        discover,
+    )
+    from guardkitfactory.bdd.plugin import StackProfile
+
+    _FACTORY_AVAILABLE = True
+except ImportError:
+    BDDRunResult = None  # type: ignore[misc,assignment]
+    discover = None  # type: ignore[misc,assignment]
+    StackProfile = None  # type: ignore[misc,assignment]
+    _FACTORY_AVAILABLE = False
+
+# Module-level cache for the factory import status.
+# Re-checked at runtime for each Coach invocation so that a late-installed
+# guardkitfactory (e.g. via a post-gather pip install) is picked up.
+_factory_available_cache: Optional[bool] = None
+
+
+def _is_factory_available() -> bool:
+    """Return True when the guardkitfactory BDD plugin subsystem is importable.
+
+    Uses a module-level cache that is invalidated on each call to
+    ``gather_evidence`` (see the ``_reset_factory_cache`` helper).
+    """
+    global _factory_available_cache
+    if _factory_available_cache is not None:
+        return _factory_available_cache
+    _factory_available_cache = _FACTORY_AVAILABLE
+    return _FACTORY_AVAILABLE
+
+
+def _reset_factory_cache() -> None:
+    """Invalidate the factory availability cache.
+
+    Called at the start of each ``gather_evidence`` invocation so that
+    a late-installed guardkitfactory is picked up on subsequent runs.
+    """
+    global _factory_available_cache
+    _factory_available_cache = None
+
+
+def _run_factory_bdd(
+    worktree_path: Path,
+    stack_profile: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    """Discover and run the BDD plugin for the given stack profile.
+
+    Uses ``guardkitfactory.bdd.discover(stack_profile)`` to find the plugin,
+    invokes it to get a ``BDDRunResult``, and maps the result into the legacy
+    ``bundle.bdd`` dict shape.
+
+    Parameters
+    ----------
+    worktree_path : Path
+        Root of the worktree containing the BDD scenarios.
+    stack_profile : Optional[str]
+        Detected stack profile (``"python"``, ``"dotnet"``, ``"javascript"``).
+
+    Returns
+    -------
+    Optional[Dict[str, Any]]
+        A ``bundle.bdd``-shaped dict, or ``None`` when the factory is
+        unavailable, the stack profile is unknown, or discovery fails.
+    """
+    if not _is_factory_available():
+        logger.debug(
+            "BDD factory bridge: guardkitfactory not available; "
+            "falling back to Player-reported bdd_results.",
+        )
+        return None
+
+    if stack_profile is None:
+        logger.debug(
+            "BDD factory bridge: no stack profile detected; "
+            "falling back to Player-reported bdd_results.",
+        )
+        return None
+
+    # Guard against StackProfile being None (factory not importable).
+    if StackProfile is None:
+        return None
+
+    try:
+        plugin = discover(stack_profile)
+        if plugin is None:
+            logger.debug(
+                "BDD factory bridge: no plugin discovered for stack %s; "
+                "falling back to Player-reported bdd_results.",
+                stack_profile,
+            )
+            return None
+
+        # Invoke the plugin to get BDDRunResult.
+        # The plugin is responsible for running the scenarios and returning
+        # a BDDRunResult with the counts-only contract.
+        result = plugin.run(worktree_path)
+
+        if result is None:
+            logger.debug(
+                "BDD factory bridge: plugin returned None for stack %s; "
+                "falling back to Player-reported bdd_results.",
+                stack_profile,
+            )
+            return None
+
+        # Map BDDRunResult → bundle.bdd shape.
+        return _map_bdd_run_result_to_bundle(result)
+
+    except Exception as exc:  # noqa: BLE001 — BDD failures must not break evidence gathering
+        logger.warning(
+            "BDD factory bridge raised %s for stack %s; "
+            "falling back to Player-reported bdd_results.",
+            exc.__class__.__name__,
+            stack_profile,
+        )
+        return None
+
+
 # TASK-FIX-A7B4: Markers that satisfy a `## Seam Tests` block in a task
 # description. Filename-based detection (the soft gate at
 # ``_check_seam_test_recommendation``) tolerates "integration" too, but the
@@ -2015,10 +2268,50 @@ class CoachValidator:
                 if sub in code_review_raw:
                     arch_review_dict[sub] = code_review_raw[sub]
 
+        # ------------------------------------------------------------------
+        # BDD evidence. TASK-BDDW-001: wire factory BDD plugin discovery
+        # into the Coach evidence path.
+        #
+        # Priority:
+        #   1. Factory discovery (guardkitfactory.bdd.discover) — if available
+        #      and stack profile is known, run the BDD plugin and map the
+        #      result into bundle.bdd shape.
+        #   2. Player-reported bdd_results — legacy fallback when the factory
+        #      is unavailable, the stack is unknown, or discovery fails.
+        # ------------------------------------------------------------------
+        _reset_factory_cache()
+
         bdd_raw = task_work_results.get("bdd_results")
-        bdd_dict: Optional[Dict[str, Any]] = (
-            bdd_raw if isinstance(bdd_raw, dict) else None
-        )
+        bdd_dict: Optional[Dict[str, Any]] = None
+
+        if bdd_raw is not None and isinstance(bdd_raw, dict):
+            # Player already produced BDD results — use them as-is.
+            bdd_dict = bdd_raw
+        elif _is_factory_available():
+            # Factory is available but Player didn't produce results.
+            # Attempt independent discovery via the factory plugin.
+            stack_profile = _detect_stack_profile(self.worktree_path)
+            factory_result = _run_factory_bdd(self.worktree_path, stack_profile)
+            if factory_result is not None:
+                bdd_dict = factory_result
+                logger.info(
+                    "gather_evidence: BDD evidence from factory plugin "
+                    "(stack=%s, scenarios_attempted=%s).",
+                    stack_profile,
+                    factory_result.get("scenarios_attempted"),
+                )
+            else:
+                logger.debug(
+                    "gather_evidence: factory BDD discovery returned None; "
+                    "bdd field left as absent signal.",
+                )
+        else:
+            # Factory unavailable — bdd_dict stays None (absent signal).
+            logger.debug(
+                "gather_evidence: guardkitfactory not available; "
+                "Player-reported bdd_results were empty; "
+                "bdd field left as absent signal.",
+            )
 
         # Quality-gate-failure short-circuit. Legacy validate() also
         # short-circuits here via _feedback_from_gates.
