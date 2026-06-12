@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -790,3 +790,139 @@ class TestRunWiringAnalysisSpecGap:
             "bdd_plugin_name", "executed_evidence",
         }
         assert required_keys.issubset(set(result.keys()))
+
+
+# ===========================================================================
+# Ground truth is identity-bounded: THIS task's @task tags only
+# ===========================================================================
+
+
+class TestGroundTruthIdentityBounded:
+    """Other tasks' @task: tags must NOT count toward this task's ground
+    truth — cross-task counting would false-fire the whole-file hard gate
+    for a task that legitimately owns zero scenarios (parallel-wave
+    features, the FEAT-FG class)."""
+
+    def test_other_tasks_tags_do_not_count(self, tmp_path: Path) -> None:
+        _write_feature_file(
+            tmp_path,
+            "peer.feature",
+            """Feature: Peer task's feature
+  @task:TASK-OTHER-001
+  Scenario: Peer scenario one
+    Given something
+  @task:TASK-OTHER-002
+  Scenario: Peer scenario two
+    Given something
+""",
+        )
+        bdd_dict = {
+            "scenarios_attempted": 0,
+            "scenarios_passed": 0,
+            "scenarios_failed": 0,
+        }
+        result = _compute_spec_gap(
+            bdd_dict=bdd_dict,
+            worktree_path=tmp_path,
+            task_id="TASK-QAWE-004",
+        )
+        # Zero ground truth for THIS task -> the hard gate must NOT arm.
+        assert result["ground_truth_count"] == 0
+        assert result["whole_file_deselection"] is False
+
+    def test_own_tag_among_peers_counts_exactly_once(
+        self, tmp_path: Path,
+    ) -> None:
+        _write_feature_file(
+            tmp_path,
+            "mixed.feature",
+            """Feature: Mixed feature
+  @task:TASK-OTHER-001
+  Scenario: Peer scenario
+    Given something
+  @task:TASK-QAWE-004
+  Scenario: Own scenario
+    Given something
+""",
+        )
+        bdd_dict = {"scenarios_attempted": 0}
+        result = _compute_spec_gap(
+            bdd_dict=bdd_dict,
+            worktree_path=tmp_path,
+            task_id="TASK-QAWE-004",
+        )
+        assert result["ground_truth_count"] == 1
+        assert result["whole_file_deselection"] is True
+
+    def test_multiple_tags_on_one_line_match_by_token(
+        self, tmp_path: Path,
+    ) -> None:
+        """Tag lines can carry several tags ("@task:X @smoke") — matching
+        must be token-based, not whole-line equality."""
+        _write_feature_file(
+            tmp_path,
+            "multi.feature",
+            """Feature: Multi-tag feature
+  @task:TASK-QAWE-004 @smoke
+  Scenario: Tagged with two tags
+    Given something
+""",
+        )
+        bdd_dict = {"scenarios_attempted": 0}
+        result = _compute_spec_gap(
+            bdd_dict=bdd_dict,
+            worktree_path=tmp_path,
+            task_id="TASK-QAWE-004",
+        )
+        assert result["ground_truth_count"] == 1
+        assert result["whole_file_deselection"] is True
+
+    def test_task_id_prefix_does_not_match(self, tmp_path: Path) -> None:
+        """@task:TASK-QAWE-0041 must not count for TASK-QAWE-004 (exact
+        token, not prefix)."""
+        _write_feature_file(
+            tmp_path,
+            "prefix.feature",
+            """Feature: Prefix feature
+  @task:TASK-QAWE-0041
+  Scenario: Near-miss tag
+    Given something
+""",
+        )
+        bdd_dict = {"scenarios_attempted": 0}
+        result = _compute_spec_gap(
+            bdd_dict=bdd_dict,
+            worktree_path=tmp_path,
+            task_id="TASK-QAWE-004",
+        )
+        assert result["ground_truth_count"] == 0
+        assert result["whole_file_deselection"] is False
+
+    def test_scenario_name_containing_colon_kept_intact(
+        self, tmp_path: Path,
+    ) -> None:
+        """Scenario names with ':' must not be mis-split in findings."""
+        _write_feature_file(
+            tmp_path,
+            "colon.feature",
+            """Feature: Colon feature
+  @task:TASK-QAWE-004
+  Scenario: Edge case: empty payload
+    Given something
+""",
+        )
+        bdd_dict = {
+            "scenarios_attempted": 1,
+            "executed_scenarios": [
+                {"name": "Some other scenario", "outcome": "passed"},
+            ],
+        }
+        result = _compute_spec_gap(
+            bdd_dict=bdd_dict,
+            worktree_path=tmp_path,
+            task_id="TASK-QAWE-004",
+        )
+        assert result["ground_truth_count"] == 1
+        assert len(result["findings"]) == 1
+        assert result["findings"][0]["symbol"] == "Edge case: empty payload"
+        assert result["findings"][0]["feature_file"].endswith("colon.feature")

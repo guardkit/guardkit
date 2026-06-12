@@ -469,7 +469,9 @@ def _compute_spec_gap(
     """
     # --- Ground truth: scan feature files for @task:<TASK-ID> tags ---
     ground_truth_count = 0
-    ground_truth_scenarios: List[str] = []
+    # (feature_file, scenario_name) tuples — tuples, not joined strings, so
+    # scenario names containing ":" never mis-split downstream.
+    ground_truth_scenarios: List[tuple] = []
 
     features_dir = worktree_path / "features"
     if features_dir.is_dir():
@@ -493,21 +495,30 @@ def _compute_spec_gap(
 
                 # Scenario line ends the tag block
                 if re.match(r"^\s*(Scenario:|Scenario Outline:)", line):
-                    # Check if any tag in the block matches our task_id
+                    # Ground truth is THIS task's scenarios ONLY: an exact
+                    # @task:<TASK-ID> token match. Counting other tasks'
+                    # @task: tags would inflate ground_truth_count and
+                    # false-fire the whole-file hard gate for a task that
+                    # legitimately owns zero scenarios (parallel-wave
+                    # features). Tag lines may carry multiple tags
+                    # ("@task:X @smoke"), so match TOKENS, not whole lines.
                     task_tag = f"@task:{task_id}"
-                    if task_tag in tag_block or any(
-                        t.startswith("@task:") for t in tag_block
-                    ):
-                        # Extract scenario name
+                    tag_tokens = {
+                        token
+                        for tag_line in tag_block
+                        for token in tag_line.split()
+                    }
+                    if task_tag in tag_tokens:
                         match = re.search(
                             r"(Scenario Outline:|Scenario:)\s+(.+)", line
                         )
                         if match:
                             scenario_name = match.group(2).strip()
                             ground_truth_count += 1
-                            ground_truth_scenarios.append(
-                                f"{feature_file.relative_to(worktree_path)}:{scenario_name}"
-                            )
+                            ground_truth_scenarios.append((
+                                str(feature_file.relative_to(worktree_path)),
+                                scenario_name,
+                            ))
                     tag_block = []
                     continue
 
@@ -518,7 +529,6 @@ def _compute_spec_gap(
     # --- Executed evidence: consume from BDDRunResult ---
     executed_count = 0
     pending_count = 0
-    scenarios_attempted_present = False
     whole_file_deselection = False
     status = "complete"
     executed_evidence: str = "counts_only"
@@ -528,7 +538,6 @@ def _compute_spec_gap(
         # AC-012: Check if scenarios_attempted key is PRESENT (not absent)
         # Use "in" check, NOT .get(..., 0) — absent = UNKNOWN
         if "scenarios_attempted" in bdd_dict:
-            scenarios_attempted_present = True
             executed_count = bdd_dict.get("scenarios_attempted", 0) or 0
             pending_count = bdd_dict.get("scenarios_pending", 0) or 0
 
@@ -560,12 +569,11 @@ def _compute_spec_gap(
             for s in bdd_dict.get("executed_scenarios", [])  # type: ignore[union-attr]
             if isinstance(s, dict)
         )
-        for gt_scenario in ground_truth_scenarios:
-            # Simple substring match: scenario name should appear in executed set
-            scenario_name = gt_scenario.split(":")[-1] if ":" in gt_scenario else gt_scenario
+        for gt_file, scenario_name in ground_truth_scenarios:
+            # Substring match: name-matching carries FP risk, hence advisory.
             if not any(scenario_name in en for en in executed_names):
                 findings.append({
-                    "feature_file": gt_scenario.split(":")[0] if ":" in gt_scenario else gt_scenario,
+                    "feature_file": gt_file,
                     "symbol": scenario_name,
                     "severity": "warning",
                     "pattern": "SPEC_GAP",
