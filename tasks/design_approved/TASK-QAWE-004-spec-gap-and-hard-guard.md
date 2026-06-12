@@ -1,14 +1,24 @@
 ---
-id: TASK-QAWE-004
-title: SPEC_GAP evidence (consumes factory BDDRunResult) + the one deterministic hard-guard
-task_type: feature
-parent_task: TASK-HMIG-BDDWIRE
-feature_id: FEAT-C332
-wave: 4
-implementation_mode: task-work
+autobuild_state:
+  base_branch: autobuild/FEAT-C332
+  current_turn: 0
+  last_updated: '2026-06-12T18:59:00.129604'
+  max_turns: 5
+  started_at: '2026-06-12T18:59:00.129602'
+  turns: []
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-C332
 complexity: 5
-dependencies: [TASK-QAWE-002]
+dependencies:
+- TASK-QAWE-002
+feature_id: FEAT-C332
+id: TASK-QAWE-004
+implementation_mode: task-work
+parent_task: TASK-HMIG-BDDWIRE
 priority: medium
+status: design_approved
+task_type: feature
+title: SPEC_GAP evidence (consumes factory BDDRunResult) + the one deterministic hard-guard
+wave: 4
 ---
 
 # Task: SPEC_GAP evidence + deterministic hard-guard (Wave 3)

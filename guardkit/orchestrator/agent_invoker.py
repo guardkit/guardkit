@@ -2234,6 +2234,18 @@ class AgentInvoker:
                 coach_output_path=coach_output_path,
             )
 
+            # TASK-QAWE-004: SPEC_GAP whole-file deselection hard-gate.
+            # Modelled on _reconcile_absent_independent_test_signal; fires
+            # when spec_gap.whole_file_deselection is True (ground truth > 0,
+            # scenarios_attempted present and zero). AC-013.
+            self._apply_spec_gap_absent_guard(
+                decision=decision,
+                evidence_bundle=evidence_bundle,
+                task_id=task_id,
+                turn=turn,
+                coach_output_path=coach_output_path,
+            )
+
             # Add honesty verification to decision for tracking
             decision["honesty_verification"] = {
                 "verified": honesty_verification.verified,
@@ -5238,6 +5250,123 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         except OSError as exc:
             logger.warning(
                 "TASK-FIX-COACHFG01: failed to re-persist overridden verdict "
+                "to %s (%s); in-memory override still applies",
+                coach_output_path,
+                exc,
+            )
+
+    def _apply_spec_gap_absent_guard(
+        self,
+        *,
+        decision: Dict[str, Any],
+        evidence_bundle: Optional["CoachEvidenceBundle"],
+        task_id: str,
+        turn: int,
+        coach_output_path: Path,
+    ) -> None:
+        """Fail closed when SPEC_GAP reports whole-file silent deselection.
+
+        TASK-QAWE-004 AC-013. Deterministic backstop for the SPEC_GAP
+        whole-file deselection hard-gate. Fires **only** when
+        ``spec_gap.whole_file_deselection == True`` — i.e. the ground truth
+        declares ``@task:<TASK-ID>`` scenarios but the BDD plugin ran zero
+        scenarios (``scenarios_attempted`` present and zero).
+
+        This is **absence-of-failure instance #2** (scenario-granularity
+        false-green): the unit oracle reports green over code that was never
+        exercised at the acceptance layer.
+
+        Narrow and identity-bounded:
+
+        * Only an ``approve`` is overridden. A ``feedback`` verdict is left
+          untouched.
+        * Only ``spec_gap.whole_file_deselection is True`` triggers it. A
+          bundle with no ``spec_gap`` leg or ``whole_file_deselection == False``
+          is NOT this case.
+        * **None-safety mirrors `_reconcile_absent_independent_test_signal`:**
+          no-op when ``evidence_bundle is None``,
+          ``evidence_bundle.spec_gap is None``, or
+          ``whole_file_deselection`` absent/falsey.
+        * **CRITICAL absent-key safety:** ``whole_file_deselection`` is set
+          using ``if "scenarios_attempted" in bdd_dict and
+          bdd_dict["scenarios_attempted"] == 0`` — **never**
+          ``.get(..., 0)``, which coerces a missing key to 0 and fires a
+          false-red. A missing key is UNKNOWN.
+
+        Mutates ``decision`` in place. No-op for every case except the single
+        ``approve`` + ``whole_file_deselection`` shape above.
+
+        Args:
+            decision: The loaded, schema-validated Coach verdict dict.
+            evidence_bundle: The bundle the synthesis verdict was built over,
+                or ``None`` for legacy/tool-using callers (no-op when ``None``).
+            task_id: Task identifier (for the WARNING log).
+            turn: Current turn number (for the WARNING log).
+            coach_output_path: Path to ``coach_turn_N.json`` to re-persist on
+                override.
+        """
+        if decision.get("decision") != "approve":
+            return
+        if evidence_bundle is None:
+            return
+        spec_gap = evidence_bundle.spec_gap
+        if spec_gap is None:
+            return
+        if not spec_gap.get("whole_file_deselection", False):
+            return
+
+        original_decision = decision["decision"]
+        ground_truth_count = spec_gap.get("ground_truth_count", 0)
+        executed_count = spec_gap.get("executed_count", 0)
+        bdd_plugin = spec_gap.get("bdd_plugin_name") or "<unknown>"
+
+        # AC-013: name the cause and include ground-truth / executed counts
+        # so the operator can see the exact mismatch.
+        rationale = (
+            f"SPEC_GAP whole-file silent deselection detected: "
+            f"{ground_truth_count} tagged scenario(s) in ground truth, "
+            f"but {executed_count} scenario(s) were attempted by the "
+            f"{bdd_plugin} BDD plugin. No acceptance-layer execution "
+            f"evidence exists for this task."
+        )
+
+        decision["decision"] = "feedback"
+        decision["rationale"] = rationale
+        override_issue = {
+            "severity": "must_fix",
+            "category": "absence_of_failure",
+            "description": rationale,
+            "details": {
+                "whole_file_deselection": True,
+                "ground_truth_count": ground_truth_count,
+                "executed_count": executed_count,
+                "bdd_plugin_name": bdd_plugin,
+                "overridden_decision": original_decision,
+            },
+        }
+        decision["issues"] = [override_issue, *decision.get("issues", [])]
+
+        # WARNING with task_id, turn, and the original (overridden) decision.
+        logger.warning(
+            "TASK-QAWE-004: overriding Coach verdict %r->'feedback' for "
+            "%s turn %s — SPEC_GAP whole-file deselection "
+            "(absence-of-failure at scenario granularity). "
+            "Ground truth: %d, Executed: %d, Plugin: %s",
+            original_decision,
+            task_id,
+            turn,
+            ground_truth_count,
+            executed_count,
+            bdd_plugin,
+        )
+
+        # Re-persist so the operator-facing coach_turn_N.json and the Layer-4
+        # late-approval reader see the override, not the stale `approve`.
+        try:
+            coach_output_path.write_text(json.dumps(decision, indent=2))
+        except OSError as exc:
+            logger.warning(
+                "TASK-QAWE-004: failed to re-persist overridden verdict "
                 "to %s (%s); in-memory override still applies",
                 coach_output_path,
                 exc,
