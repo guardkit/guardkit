@@ -2,8 +2,11 @@
 id: TASK-FIX-SPECVIOL01
 title: Orchestrator-injected specialist-violation records must not be attributed to Player honesty
 task_type: feature
-status: backlog
+status: in_review
 created: 2026-06-12T19:50:00Z
+updated: 2026-06-12T21:00:00Z
+previous_state: in_progress
+state_transition_reason: "All quality gates passed via /task-work"
 priority: high
 tags: [autobuild, coach, honesty, specialist, false-red]
 complexity: 5
@@ -60,17 +63,56 @@ There, the orchestrator injected ghost *paths*; here it injects
 
 ## Acceptance criteria
 
-- [ ] AC-001: a turn where a specialist hangs and the orchestrator injects
+- [x] AC-001: a turn where a specialist hangs and the orchestrator injects
       `validation=violation` records does NOT produce a `must_fix` honesty
       discrepancy attributed to the Player; criteria verification proceeds.
-- [ ] AC-002: the substrate failure is still surfaced (advisory/should_fix
+- [x] AC-002: the substrate failure is still surfaced (advisory/should_fix
       issue naming the specialist and the hang), never silently dropped —
       absence of evidence stays absent-signal.
-- [ ] AC-003: regression test reproducing the FEAT-C332 run-2 shape:
+- [x] AC-003: regression test reproducing the FEAT-C332 run-2 shape:
       synthetic task_work_results with orchestrator-injected violation
       records + honest Player file claims → no `partial_honesty_abort`.
-- [ ] AC-004: genuine Player test-claim fabrication (no specialist
+- [x] AC-004: genuine Player test-claim fabrication (no specialist
       injection in scope) still short-circuits as today.
+
+## Resolution (2026-06-12)
+
+**Corrected root cause.** Forensics on the run-2 artifacts showed the
+turn-1 `must_fix` discrepancy did NOT come from the injected
+`agent_invocations` records (the honesty checks never read that field).
+It fired from the **claim-audit gate**: the Player's honest promise
+AC-018 carried `test_file: "tests/orchestrator/test_coach_evidence_bundle.py,
+tests/unit/orchestrator/quality_gates/test_coach_validator.py"` — a
+comma-joined string of two test files the Player *ran* (both exist,
+tracked). `_verify_claims_were_staged` audited the whole string as ONE
+path → `Path.exists()` False → "fabricated" → `claim_audit` critical
+(exempt from the FFC3 demotion) → `partial_honesty_abort`. The specialist
+hang was correlated substrate noise, not the discrepancy's source.
+
+**Fixes** (see `docs/state/TASK-FIX-SPECVIOL01/implementation_plan.md`):
+
+1. `coach_verification.py::_verify_claims_were_staged` — claims are now
+   partitioned by provenance: `test_file` entries are **run-claims**
+   (comma-split per path), not authored-file claims. A run-claim on an
+   existing tracked-unmodified test file emits nothing (zero signal); a
+   run-claim on a nonexistent path stays `claim_audit` critical (AC-004).
+2. `coach_validator.py::_compute_specialist_failure_advisories` — new
+   helper wired into both `gather_evidence` and legacy `validate()`:
+   orchestrator-injected `source: "orchestrator"`, `status: "failed"`
+   specialist records surface as `should_fix` advisories
+   (`category: "specialist_substrate"`) naming the specialist and the
+   hang error (AC-002). Benign `skipped` records do not advise.
+
+**Tests:** 4 new unit tests in
+`tests/unit/test_coach_verification_claim_audit.py`; 3 regression tests in
+`tests/orchestrator/test_specialist_violation_attribution.py` (run-2
+reproducer, advisory attribution, AC-004 fabrication preserved). Affected
+suites: 335 passed; full `tests/unit`: 7947 passed (7 pre-existing
+environment-dependent failures unchanged with/without this fix).
+
+**Hang root cause (half 2)** remains open — substrate question (llama-swap
+model-swap latency / lost stream under LangGraph), bounded by the
+SPECHANG2 watchdog. Split out if it recurs.
 
 ## Evidence
 

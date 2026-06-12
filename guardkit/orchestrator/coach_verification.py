@@ -453,20 +453,42 @@ class CoachVerifier:
                 infrastructure errors).
               * Every claimed path is in the would-be-staged set.
         """
-        claimed: set[str] = set()
+        # TASK-FIX-SPECVIOL01: partition claims by provenance.
+        #   * authored_claims — files the Player says it wrote
+        #     (files_created / files_modified / tests_written /
+        #     completion_promises[*].implementation_files). These must show
+        #     up in the would-be-staged set or something is wrong.
+        #   * run_claims — completion_promises[*].test_file names tests the
+        #     Player *ran*, not files it authored. An existing, tracked,
+        #     unmodified test file legitimately produces no staged change,
+        #     so auditing run-claims against the would-be-staged set
+        #     misattributes protocol noise as Player dishonesty (the
+        #     path-string-mismatch-is-not-dishonesty meta-class; FEAT-C332
+        #     run-2 turn-1 false-red).
+        authored_claims: set[str] = set()
+        run_claims: set[str] = set()
         for key in ("files_created", "files_modified", "tests_written"):
             for entry in report.get(key) or []:
                 if entry:
-                    claimed.add(self._normalize_claimed_path(str(entry)))
+                    authored_claims.add(self._normalize_claimed_path(str(entry)))
         for promise in report.get("completion_promises") or []:
             if not isinstance(promise, dict):
                 continue
             for entry in promise.get("implementation_files") or []:
                 if entry:
-                    claimed.add(self._normalize_claimed_path(str(entry)))
+                    authored_claims.add(self._normalize_claimed_path(str(entry)))
             test_file = promise.get("test_file")
             if test_file:
-                claimed.add(self._normalize_claimed_path(str(test_file)))
+                # Players routinely emit a comma-joined list in this
+                # free-text field (FEAT-C332 run 2, promise AC-018:
+                # "a.py, b.py"). Split it, or the whole string is audited
+                # as one path and false-fails Path.exists() — a guaranteed
+                # "fabricated" critical on an honest report.
+                for part in str(test_file).split(","):
+                    part = part.strip()
+                    if part:
+                        run_claims.add(self._normalize_claimed_path(part))
+        claimed: set[str] = authored_claims | run_claims
 
         # TASK-FIX-CAUD-J6F1 AC-003b — defence-in-depth allowlist.
         # The orchestrator-side filter at
@@ -611,6 +633,12 @@ class CoachVerifier:
                     )
                 )
             elif classification == "tracked_unmodified":
+                if path in run_claims and path not in authored_claims:
+                    # TASK-FIX-SPECVIOL01: a run-claim (test_file) on an
+                    # existing tracked test file. No staged change is the
+                    # *expected* outcome of running a test — zero signal,
+                    # not a Player-honesty observation. Emit nothing.
+                    continue
                 discrepancies.append(
                     Discrepancy(
                         claim_type="claim_audit_unmodified",

@@ -734,3 +734,145 @@ def test_fabricated_discrepancy_diagnostic_includes_path_exists_and_no_match(
     assert "tracked=no" in disc.actual_value
     # And does NOT carry the speculative gitignore-rule guess:
     assert "Most common cause: an unanchored" not in disc.actual_value
+
+
+# ---------------------------------------------------------------------------
+# TASK-FIX-SPECVIOL01: completion_promises[*].test_file is a run-claim,
+# not an authored-file claim. Comma-joined lists are split; existing
+# tracked-unmodified test files produce zero signal; fabricated test
+# paths stay critical (AC-004).
+# ---------------------------------------------------------------------------
+
+
+def test_comma_joined_test_file_run_claims_no_discrepancy(
+    git_worktree: Path, verifier: CoachVerifier
+) -> None:
+    """FEAT-C332 run-2 turn-1 reproducer at the verifier layer.
+
+    Player promise AC-018 carried
+    ``test_file: "tests/a.py, tests/b.py"`` — a comma-joined string of two
+    test files the Player *ran* (both committed, tracked, unmodified).
+    Pre-fix, the whole string was normalised as ONE path, missed
+    ``Path.exists()``, classified "fabricated", and produced a critical
+    ``claim_audit`` discrepancy → ``partial_honesty_abort`` on an honest
+    turn. Post-fix: the string is split and each existing tracked test
+    file is recognised as a legitimate run-claim — zero discrepancies.
+    """
+    tests_dir = git_worktree / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_evidence.py").write_text("def test_a(): assert True\n")
+    (tests_dir / "test_validator.py").write_text("def test_b(): assert True\n")
+    _git("add", "-A", cwd=git_worktree)
+    _git("commit", "-m", "existing test suites", cwd=git_worktree)
+
+    report: Dict[str, Any] = {
+        "completion_promises": [
+            {
+                "criterion_id": "AC-018",
+                "status": "complete",
+                "implementation_files": [],
+                "test_file": (
+                    "tests/test_evidence.py, tests/test_validator.py"
+                ),
+            }
+        ],
+    }
+
+    discrepancies = verifier._verify_claims_were_staged(report)
+
+    assert discrepancies == []
+
+
+def test_single_tracked_unmodified_test_file_run_claim_skipped(
+    git_worktree: Path, verifier: CoachVerifier
+) -> None:
+    """A single existing tracked test file in ``test_file`` produces no
+    discrepancy — running a test legitimately stages nothing. Contrast
+    with the same path claimed via ``files_modified``, which keeps the
+    TASK-FIX-PCN ``claim_audit_unmodified`` should_fix advisory.
+    """
+    tests_dir = git_worktree / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_existing.py").write_text("def test_x(): assert True\n")
+    _git("add", "-A", cwd=git_worktree)
+    _git("commit", "-m", "existing test", cwd=git_worktree)
+
+    run_only_report: Dict[str, Any] = {
+        "completion_promises": [
+            {
+                "criterion_id": "AC-001",
+                "status": "complete",
+                "implementation_files": [],
+                "test_file": "tests/test_existing.py",
+            }
+        ],
+    }
+    assert verifier._verify_claims_were_staged(run_only_report) == []
+
+    # Same path claimed as authored work: advisory still fires.
+    authored_report: Dict[str, Any] = {
+        "files_modified": ["tests/test_existing.py"],
+    }
+    discrepancies = verifier._verify_claims_were_staged(authored_report)
+    assert len(discrepancies) == 1
+    assert discrepancies[0].claim_type == "claim_audit_unmodified"
+    assert discrepancies[0].severity == "should_fix"
+
+
+def test_fabricated_test_file_claim_still_critical(
+    git_worktree: Path, verifier: CoachVerifier
+) -> None:
+    """AC-004: genuine Player test-claim fabrication still short-circuits.
+
+    A ``test_file`` naming a path that does not exist on disk remains a
+    critical ``claim_audit`` discrepancy — the run-claim suppression only
+    applies to existing tracked files.
+    """
+    report: Dict[str, Any] = {
+        "completion_promises": [
+            {
+                "criterion_id": "AC-001",
+                "status": "complete",
+                "implementation_files": [],
+                "test_file": "tests/test_never_written.py",
+            }
+        ],
+    }
+
+    discrepancies = verifier._verify_claims_were_staged(report)
+
+    assert len(discrepancies) == 1
+    assert discrepancies[0].claim_type == "claim_audit"
+    assert discrepancies[0].severity == "critical"
+    assert "tests/test_never_written.py" in discrepancies[0].player_claim
+
+
+def test_comma_joined_test_file_with_one_fabricated_path_flags_only_it(
+    git_worktree: Path, verifier: CoachVerifier
+) -> None:
+    """Splitting is per-path: one real run-claim + one fabricated path in
+    the same comma-joined ``test_file`` flags only the fabricated one.
+    """
+    tests_dir = git_worktree / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_real.py").write_text("def test_r(): assert True\n")
+    _git("add", "-A", cwd=git_worktree)
+    _git("commit", "-m", "real test", cwd=git_worktree)
+
+    report: Dict[str, Any] = {
+        "completion_promises": [
+            {
+                "criterion_id": "AC-002",
+                "status": "complete",
+                "implementation_files": [],
+                "test_file": "tests/test_real.py, tests/test_ghost.py",
+            }
+        ],
+    }
+
+    discrepancies = verifier._verify_claims_were_staged(report)
+
+    assert len(discrepancies) == 1
+    assert discrepancies[0].claim_type == "claim_audit"
+    assert discrepancies[0].severity == "critical"
+    assert "tests/test_ghost.py" in discrepancies[0].player_claim
