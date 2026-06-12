@@ -12,7 +12,6 @@ Verifies:
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -21,14 +20,11 @@ import pytest
 from guardkit.orchestrator.agent_invoker import AgentInvoker
 from guardkit.orchestrator.quality_gates.coach_evidence import (
     CoachEvidenceBundle,
-    GatheringStatus,
 )
 from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
     _compute_authored_set,
     _run_wiring_analysis,
-    _is_wiring_factory_available,
-    _reset_wiring_factory_cache,
 )
 
 
@@ -129,22 +125,25 @@ class TestAbsentVsEmpty:
 class TestGracefulImportAbsence:
     """AC-017: with guardkitfactory absent, gather_evidence does not crash."""
 
-    def test_factory_unavailable_no_acceptance_files(self) -> None:
-        """When factory unavailable + no acceptance files -> skipped mocked_seam."""
+    def test_factory_unavailable_returns_none(self) -> None:
+        """AC-017: factory unavailable -> all three fields None, regardless
+        of whether the authored set looks test-shaped."""
         with patch(
             "guardkit.orchestrator.quality_gates.coach_validator."
             "_is_wiring_factory_available",
             return_value=False,
         ):
-            result = _run_wiring_analysis(
-                worktree_path=Path("/tmp"),
-                authored_files=["src/main.py"],
-                task_type="feature",
-                stack_template="python",
-            )
-        assert result is not None
-        assert result["mocked_seam"]["ran"] is False
-        assert "skip_reason" in result["mocked_seam"]
+            for authored in (
+                ["src/main.py"],
+                ["src/main.py", "tests/test_main.py"],
+            ):
+                result = _run_wiring_analysis(
+                    worktree_path=Path("/tmp"),
+                    authored_files=authored,
+                    task_type="feature",
+                    stack_template="python",
+                )
+                assert result is None
 
     def test_scaffolding_task_gates_out(self) -> None:
         """AC-008: SCAFFOLDING task → all three fields None."""
@@ -348,10 +347,10 @@ class TestGatherEvidenceWiring:
         )
         return tmp_path
 
-    def test_wiring_fields_no_acceptance_files_returns_skipped(
+    def test_wiring_fields_factory_unavailable_all_none(
         self, tmp_path: Path, mock_honesty: MagicMock,
     ) -> None:
-        """When factory unavailable + no acceptance files -> skipped mocked_seam."""
+        """AC-017: factory unavailable -> all three fields None at gather."""
         worktree = self._make_worktree(tmp_path)
         validator = CoachValidator(str(worktree))
         task = {
@@ -373,10 +372,7 @@ class TestGatherEvidenceWiring:
                 task_id="TASK-W1", turn=1, task=task,
             )
         assert bundle.wiring is None
-        # No acceptance files -> mocked_seam is skipped (ran: false)
-        assert bundle.mocked_seam is not None
-        assert bundle.mocked_seam["ran"] is False
-        assert "skip_reason" in bundle.mocked_seam
+        assert bundle.mocked_seam is None
         assert bundle.spec_gap is None
 
     def test_scaffolding_task_returns_none_wiring_fields(

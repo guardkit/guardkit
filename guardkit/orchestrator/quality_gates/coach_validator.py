@@ -42,6 +42,7 @@ import time
 from contextlib import aclosing
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from guardkit.orchestrator.coach_verification import (
@@ -369,22 +370,18 @@ except ImportError:
     analyze_wiring = None  # type: ignore[misc,assignment]
     _WIRING_FACTORY_AVAILABLE = False
 
-_wiring_factory_available_cache: Optional[bool] = None
-
-
 def _is_wiring_factory_available() -> bool:
-    """Return True when the guardkitfactory wiring analyzer is importable."""
-    global _wiring_factory_available_cache
-    if _wiring_factory_available_cache is not None:
-        return _wiring_factory_available_cache
-    _wiring_factory_available_cache = _WIRING_FACTORY_AVAILABLE
-    return _WIRING_FACTORY_AVAILABLE
+    """Return True when the guardkitfactory wiring analyzer is importable.
+
+    A plain module-level check (the import happens once at module load);
+    kept as a function so tests can patch availability.
+    """
+    return _WIRING_FACTORY_AVAILABLE and analyze_wiring is not None
 
 
 def _reset_wiring_factory_cache() -> None:
-    """Invalidate the wiring factory availability cache."""
-    global _wiring_factory_available_cache
-    _wiring_factory_available_cache = None
+    """Kept for call-site compatibility; availability is no longer cached."""
+    return None
 
 
 def _compute_authored_set(
@@ -408,9 +405,12 @@ def _compute_authored_set(
     List[str]
         List of authored file paths (relative to worktree root).
     """
-    files_authored = task_work_results.get("files_authored")
-    if files_authored and isinstance(files_authored, list):
-        return [str(f) for f in files_authored]
+    if "files_authored" in task_work_results and isinstance(
+        task_work_results["files_authored"], list
+    ):
+        # Presence-based: an explicit empty list is authoritative (the
+        # Player authored nothing), NOT a trigger for the fallback union.
+        return [str(f) for f in task_work_results["files_authored"]]
 
     # Fallback: files_created ∪ files_modified
     created = task_work_results.get("files_created") or []
@@ -459,8 +459,11 @@ def _run_wiring_analysis(
         Dict with ``wiring``, ``mocked_seam``, ``spec_gap`` keys, or ``None``
         when the probe legitimately did not run.
     """
-    # Task-type gate: SCAFFOLDING / DOCUMENTATION → all fields None.
-    if task_type in ("scaffolding", "documention", "documentation", "testing"):
+    # Positive task-type gate (scope §4): only FEATURE / REFACTOR /
+    # INTEGRATION are analyzed. Everything else (scaffolding, documentation,
+    # testing, infrastructure, …) legitimately produces un-wired stubs →
+    # all three fields None. Case-insensitive: frontmatter uses lowercase.
+    if (task_type or "").upper() not in ("FEATURE", "REFACTOR", "INTEGRATION"):
         logger.debug(
             "wiring analysis: task_type=%s gates out; "
             "all three fields left as None.",
@@ -476,25 +479,9 @@ def _run_wiring_analysis(
         )
         return None
 
-    # TASK-QAWE-003: Detect acceptance files among authored files.
-    # MOCKED_SEAM only runs when acceptance files are present.
-    acceptance_files = _detect_acceptance_files(authored_files)
-
-    if not acceptance_files:
-        logger.debug(
-            "wiring analysis: no acceptance files among %d authored files; "
-            "mocked_seam set to ran:false + skip_reason.",
-            len(authored_files),
-        )
-        return {
-            "wiring": None,
-            "mocked_seam": _make_mocked_seam_skipped(
-                "no acceptance files authored",
-            ),
-            "spec_gap": None,
-        }
-
-    # Factory unavailable → all fields None (graceful import absence).
+    # Factory unavailable → all fields None (graceful import absence,
+    # AC-017). Checked before any other work so factory-absent behaviour
+    # is uniform regardless of authored-file composition.
     if not _is_wiring_factory_available() or analyze_wiring is None:
         logger.debug(
             "wiring analysis: guardkitfactory.wiring not available; "
@@ -502,138 +489,54 @@ def _run_wiring_analysis(
         )
         return None
 
-    # Resolve stack profile for the factory call.
-    stack_profile = _STACK_PROFILE_MAP.get(stack_template) if stack_template else None
+    # Resolve the stack hint. analyze_wiring reads ``stack.language``
+    # (scope §5.5: StackProfile | None) — a bare string would be silently
+    # dropped, so wrap it in a namespace object.
+    stack_language = (
+        _STACK_PROFILE_MAP.get(stack_template) if stack_template else None
+    )
+    stack_obj = (
+        SimpleNamespace(language=stack_language) if stack_language else None
+    )
 
     try:
         result = analyze_wiring(
             authored_files=authored_files,
             worktree_path=worktree_path,
             task_type=task_type,
-            stack=stack_profile,
+            stack=stack_obj,
         )
-        # analyze_wiring returns a dict with wiring/mocked_seam/spec_gap keys.
-        # If it returns None (task-type gate or zero targets inside the
-        # factory), all three fields stay None.
+        # analyze_wiring returns None (probe didn't run), or the §5.1
+        # wiring shape FLAT at top level with the MOCKED_SEAM result
+        # nested under "mocked_seam" (acceptance-file selection, skip
+        # statuses, and the UNWIRED/MOCKED probe independence all live
+        # in the factory — guardkit does not re-implement them).
         if result is None:
             return None
-        # Ensure mocked_seam has external_mocks_ignored field (TASK-QAWE-003 AC-006).
-        if isinstance(result, dict):
-            mocked = result.get("mocked_seam")
-            if isinstance(mocked, dict) and "external_mocks_ignored" not in mocked:
-                mocked["external_mocks_ignored"] = []
-        return result
+        if not isinstance(result, dict):
+            logger.warning(
+                "wiring analysis returned unexpected type %s; "
+                "all three fields left as None.",
+                type(result).__name__,
+            )
+            return None
+        # Normalize into the three-field envelope gather_evidence consumes.
+        # pop() keeps bundle.wiring free of the nested mocked_seam copy.
+        mocked_seam = result.pop("mocked_seam", None)
+        if isinstance(mocked_seam, dict) and "external_mocks_ignored" not in mocked_seam:
+            # TASK-QAWE-003 AC-006: the field is always present downstream.
+            mocked_seam["external_mocks_ignored"] = []
+        return {
+            "wiring": result,
+            "mocked_seam": mocked_seam,
+            "spec_gap": None,  # Wave-3 (TASK-QAWE-004)
+        }
     except Exception as exc:  # noqa: BLE001 — analyzer errors must not break gathering
         logger.warning(
             "wiring analysis raised %s; all three fields left as None.",
             exc.__class__.__name__,
         )
         return None
-
-
-# TASK-QAWE-003: Acceptance file detection for MOCKED_SEAM scan.
-# These patterns identify test/acceptance files among authored files.
-# The MOCKED_SEAM probe only runs when acceptance files are present;
-# otherwise it returns ran:false + skip_reason.
-_ACCEPTANCE_FILE_GLOBS = (
-    # Python test files
-    "test_*.py",
-    "*_test.py",
-    # JS/TS test files
-    "test_*.js",
-    "test_*.ts",
-    "*.test.js",
-    "*.test.ts",
-    "*.spec.js",
-    "*.spec.ts",
-    # C# test files
-    "*Test.cs",
-    "*Spec.cs",
-    # Generic test directories
-    "tests/**",
-    "test/**",
-    "__tests__/**",
-    "tests/**/*",
-    "test/**/*",
-    "__tests__/**/*",
-)
-
-
-def _is_acceptance_file(file_path: str) -> bool:
-    """Determine if a file path matches acceptance/test file patterns.
-
-    Used by the MOCKED_SEAM probe to detect whether authored files include
-    acceptance tests. Returns True if the file appears to be a test or
-    acceptance file.
-
-    Parameters
-    ----------
-    file_path : str
-        File path (relative to worktree root).
-
-    Returns
-    -------
-    bool
-        True if the file matches acceptance file patterns.
-    """
-    # Check if the path is under a test directory (case-insensitive)
-    parts = file_path.replace("\\", "/").split("/")
-    for part in parts[:-1]:  # Check directory components, not filename
-        if part.lower() in ("tests", "test", "__tests__"):
-            return True
-
-    # Check filename patterns
-    filename = parts[-1] if parts else ""
-    for pattern in _ACCEPTANCE_FILE_GLOBS:
-        # Simple glob matching for common patterns
-        if pattern.endswith("/**") or pattern.endswith("/*"):
-            continue  # Directory patterns handled above
-        if fnmatch.fnmatch(filename, pattern):
-            return True
-
-    return False
-
-
-def _detect_acceptance_files(authored_files: List[str]) -> List[str]:
-    """Filter authored files to find acceptance test files.
-
-    Parameters
-    ----------
-    authored_files : List[str]
-        List of authored file paths.
-
-    Returns
-    -------
-    List[str]
-        Subset of authored files that are acceptance test files.
-    """
-    return [f for f in authored_files if _is_acceptance_file(f)]
-
-
-def _make_mocked_seam_skipped(skip_reason: str) -> Dict[str, Any]:
-    """Create a MOCKED_SEAM result dict indicating the scan was skipped.
-
-    Used when authored files exist but no acceptance files are present.
-
-    Parameters
-    ----------
-    skip_reason : str
-        Human-readable reason why the scan was skipped.
-
-    Returns
-    -------
-    Dict[str, Any]
-        MOCKED_SEAM result dict with ran:false and skip_reason.
-    """
-    return {
-        "status": "skipped",
-        "ran": False,
-        "dialect": None,
-        "language": None,
-        "findings": [],
-        "external_mocks_ignored": [],
-        "skip_reason": skip_reason,
-    }
 
 
 # TASK-FIX-A7B4: Markers that satisfy a `## Seam Tests` block in a task
@@ -2095,7 +1998,7 @@ class CoachValidator:
                 issues=advisory_issues + [{
                     "severity": "must_fix",
                     "category": "missing_requirement",
-                    "description": f"Not all acceptance criteria met",
+                    "description": "Not all acceptance criteria met",
                     "missing_criteria": requirements.missing,
                 }],
                 rationale=f"Missing {len(requirements.missing)} acceptance criteria: {', '.join(requirements.missing)}",
@@ -6186,8 +6089,8 @@ class CoachValidator:
             severity = "error" if profile.zero_test_blocking else "warning"
             log_func = logger.error if profile.zero_test_blocking else logger.warning
             log_func(
-                f"Zero-test anomaly: all_passed=true but tests_passed=0 and coverage=null. "
-                f"Player may have reported quality gates as passed without running tests."
+                "Zero-test anomaly: all_passed=true but tests_passed=0 and coverage=null. "
+                "Player may have reported quality gates as passed without running tests."
             )
             return [{
                 "severity": severity,
@@ -7130,7 +7033,7 @@ class CoachValidator:
             issues.append({
                 "severity": "must_fix",
                 "category": "architectural",
-                "description": f"Architectural review score below threshold",
+                "description": "Architectural review score below threshold",
                 "details": {
                     "score": code_review.get("score", 0),
                     "threshold": code_review.get("score", 0) >= 60 and 60 or code_review.get("score", 0),
@@ -7297,7 +7200,6 @@ class CoachValidator:
         """
         from guardkit.orchestrator.quality_gates.security_review import (
             load_security_review,
-            SecurityReviewResult,
         )
 
         logger.debug(f"Verifying security review for {task_id} (read-only)")

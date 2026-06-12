@@ -21,7 +21,6 @@ import pytest
 
 from guardkit.orchestrator.quality_gates.coach_evidence import (
     CoachEvidenceBundle,
-    GatheringStatus,
 )
 from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
@@ -310,24 +309,27 @@ class TestRunWiringAnalysis:
         )
         assert result is None
 
-    def test_factory_unavailable_no_acceptance_files(self, tmp_path: Path) -> None:
-        """Factory not available + no acceptance files -> skipped mocked_seam."""
+    def test_factory_unavailable_returns_none(self, tmp_path: Path) -> None:
+        """AC-017: factory not available -> ALL THREE fields None, uniformly
+        (no synthesized skip dicts, regardless of authored-file mix)."""
         with patch(
             "guardkit.orchestrator.quality_gates.coach_validator._is_wiring_factory_available",
             return_value=False,
         ):
-            result = _run_wiring_analysis(
-                worktree_path=tmp_path,
-                authored_files=["src/main.py"],
-                task_type="feature",
-                stack_template="python",
-            )
-        assert result is not None
-        assert result["mocked_seam"]["ran"] is False
-        assert "skip_reason" in result["mocked_seam"]
+            for authored in (
+                ["src/main.py"],
+                ["src/main.py", "tests/test_main.py"],
+            ):
+                result = _run_wiring_analysis(
+                    worktree_path=tmp_path,
+                    authored_files=authored,
+                    task_type="feature",
+                    stack_template="python",
+                )
+                assert result is None
 
-    def test_exception_no_acceptance_files(self, tmp_path: Path) -> None:
-        """Exception in analyze_wiring + no acceptance files -> skipped mocked_seam."""
+    def test_exception_returns_none(self, tmp_path: Path) -> None:
+        """Exception in analyze_wiring -> None (fail-open, never a raise)."""
         with patch(
             "guardkit.orchestrator.quality_gates.coach_validator._is_wiring_factory_available",
             return_value=True,
@@ -341,11 +343,10 @@ class TestRunWiringAnalysis:
                 task_type="feature",
                 stack_template="python",
             )
-        assert result is not None
-        assert result["mocked_seam"]["ran"] is False
+        assert result is None
 
-    def test_none_result_no_acceptance_files(self, tmp_path: Path) -> None:
-        """analyze_wiring returns None + no acceptance files -> skipped mocked_seam."""
+    def test_none_result_returns_none(self, tmp_path: Path) -> None:
+        """analyze_wiring returns None -> None (probe legitimately didn't run)."""
         with patch(
             "guardkit.orchestrator.quality_gates.coach_validator._is_wiring_factory_available",
             return_value=True,
@@ -359,8 +360,7 @@ class TestRunWiringAnalysis:
                 task_type="feature",
                 stack_template="python",
             )
-        assert result is not None
-        assert result["mocked_seam"]["ran"] is False
+        assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -606,11 +606,9 @@ class TestAC017GracefulImportAbsence:
             )
 
         assert bundle.gathering_status == "complete"
+        # Fail-open: analyzer error -> all three fields None, never a crash.
         assert bundle.wiring is None
-        # No acceptance files -> mocked_seam is skipped (ran: false)
-        assert bundle.mocked_seam is not None
-        assert bundle.mocked_seam["ran"] is False
-        assert "skip_reason" in bundle.mocked_seam
+        assert bundle.mocked_seam is None
         assert bundle.spec_gap is None
 
 
