@@ -196,6 +196,14 @@ class CoachEvidenceBundle:
     independent_tests: Optional["IndependentTestResult"] = None
     requirements: Optional[Any] = None  # RequirementsValidation; avoid circular import
 
+    # TASK-AB-XREPOEV01 (AC-002): Coach's independent test runs in declared
+    # sibling repos (``evidence_repos``). Each entry is an
+    # ``EvidenceTestResult.to_dict()``. Empty when no sibling repos are
+    # declared. These results reach ``coach_turn_N.json`` (this bundle is
+    # serialised verbatim) and the Coach prompt, and a ran-and-failed suite
+    # deterministically blocks the turn in the orchestrator.
+    evidence_repo_tests: List[Dict[str, Any]] = field(default_factory=list)
+
     severity_recommendations: List[Dict[str, str]] = field(default_factory=list)
     advisory_issues: List[Dict[str, Any]] = field(default_factory=list)
 

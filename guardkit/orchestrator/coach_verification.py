@@ -23,6 +23,12 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 if TYPE_CHECKING:
     from guardkit.tasks.state_bridge import TaskStateBridge
 
+from guardkit.orchestrator.evidence_repos import (
+    EvidenceRepo,
+    resolve_qualified_path,
+    split_qualified,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -185,6 +191,7 @@ class CoachVerifier:
         venv_python: Optional[Union[str, Path]] = None,
         task_id: Optional[str] = None,
         state_bridge: Optional["TaskStateBridge"] = None,
+        evidence_repos: Optional[List["EvidenceRepo"]] = None,
     ):
         """Initialize CoachVerifier.
 
@@ -205,6 +212,14 @@ class CoachVerifier:
                 the same worktree. When either ``task_id`` or ``state_bridge``
                 is None, identity resolution is disabled and exact-match
                 behaviour is preserved (fail-open).
+            evidence_repos: Optional declared sibling repos
+                (TASK-AB-XREPOEV01). When a claimed file is repo-qualified
+                (``<repo>:<path>``) and names one of these, file-existence is
+                checked against ``repo.root / path`` instead of the worktree.
+                A qualified claim naming an *undeclared* repo is fail-open
+                (skipped, never a new false-red) per
+                ``path-string-mismatch-is-not-dishonesty``. Default None ->
+                exact worktree-only behaviour preserved.
         """
         self.worktree_path = Path(worktree_path)
         self._cached_test_result: Optional[TestResult] = None
@@ -217,6 +232,7 @@ class CoachVerifier:
             )
         self.task_id: Optional[str] = task_id
         self.state_bridge: Optional["TaskStateBridge"] = state_bridge
+        self.evidence_repos: List["EvidenceRepo"] = list(evidence_repos or [])
         self._resolved_paths: List[ResolvedPath] = []
 
     def verify_player_report(self, player_report: Dict[str, Any]) -> HonestyVerification:
@@ -352,6 +368,38 @@ class CoachVerifier:
             claimed_files = report.get(file_list_key, [])
 
             for file_path in claimed_files:
+                # TASK-AB-XREPOEV01: repo-qualified claim (``<repo>:<path>``).
+                # Resolve against the declared sibling repo root, not the
+                # worktree. An unknown repo name resolves to None -> fail-open
+                # (skip, never a new false-red) per
+                # path-string-mismatch-is-not-dishonesty.
+                if split_qualified(file_path) is not None:
+                    sibling_path = resolve_qualified_path(
+                        file_path, self.evidence_repos
+                    )
+                    if sibling_path is None:
+                        logger.debug(
+                            "CoachVerifier: repo-qualified claim %s names an "
+                            "undeclared evidence repo; skipping existence check "
+                            "(fail-open)",
+                            file_path,
+                        )
+                        continue
+                    if sibling_path.exists():
+                        continue
+                    discrepancies.append(
+                        Discrepancy(
+                            claim_type="file_existence",
+                            player_claim=f"{file_list_key}: {file_path}",
+                            actual_value=(
+                                f"File does not exist in sibling repo "
+                                f"({sibling_path})"
+                            ),
+                            severity="critical",
+                        )
+                    )
+                    continue
+
                 full_path = self.worktree_path / file_path
                 if full_path.exists():
                     continue
@@ -489,6 +537,16 @@ class CoachVerifier:
                     if part:
                         run_claims.add(self._normalize_claimed_path(part))
         claimed: set[str] = authored_claims | run_claims
+
+        # TASK-AB-XREPOEV01: drop repo-qualified claims (``<repo>:<path>``).
+        # This audit runs ``git status`` in the WORKTREE to learn what the
+        # next ``git add -A`` checkpoint would stage; the worktree knows
+        # nothing about sibling repos, so auditing a qualified path here would
+        # manufacture a false-red (the path-string-mismatch meta-class).
+        # Sibling-repo existence is verified by ``_verify_files_exist`` against
+        # the right root, and sibling-repo staging is the per-repo checkpoint
+        # manager's job (AC-004).
+        claimed = {c for c in claimed if split_qualified(c) is None}
 
         # TASK-FIX-CAUD-J6F1 AC-003b — defence-in-depth allowlist.
         # The orchestrator-side filter at
@@ -923,6 +981,33 @@ class CoachVerifier:
             criterion_id = promise.get("criterion_id", "?")
             for impl_file in impl_files:
                 if not impl_file:
+                    continue
+                # TASK-AB-XREPOEV01: resolve a repo-qualified promise file
+                # against the declared sibling repo root. Unknown repo ->
+                # fail-open skip (path-string-mismatch rule); known + missing
+                # -> critical, same rigor as a worktree promise.
+                if split_qualified(impl_file) is not None:
+                    sibling_path = resolve_qualified_path(
+                        impl_file, self.evidence_repos
+                    )
+                    if sibling_path is None:
+                        continue
+                    if not sibling_path.exists():
+                        discrepancies.append(
+                            Discrepancy(
+                                claim_type="promise_file_existence",
+                                player_claim=(
+                                    f"completion_promises[{criterion_id}]"
+                                    f".status=complete with implementation_files "
+                                    f"including {impl_file}"
+                                ),
+                                actual_value=(
+                                    f"File does not exist in sibling repo "
+                                    f"({sibling_path})"
+                                ),
+                                severity="critical",
+                            )
+                        )
                     continue
                 if not (self.worktree_path / impl_file).exists():
                     discrepancies.append(

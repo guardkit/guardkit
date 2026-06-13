@@ -71,6 +71,8 @@ from guardkit.worktrees import (
 
 # Import local orchestrator components
 from guardkit.orchestrator.agent_invoker import AgentInvoker, AgentInvocationResult
+from guardkit.orchestrator import evidence_repos as evidence_repos_lib
+from guardkit.orchestrator.evidence_repos import EvidenceRepo
 from guardkit.orchestrator.phase_specialists import (
     detect_stack_template,
     render_missing_phase_list,
@@ -934,6 +936,7 @@ class AutoBuildOrchestrator:
         honesty_early_abort_window: int = 3,
         model: Optional[str] = None,  # TASK-FIX-MODELPLUMB
         coach_model: Optional[str] = None,  # TASK-FIX-COACHBUDG01: per-role Coach override
+        evidence_repos: Optional[List[EvidenceRepo]] = None,  # TASK-AB-XREPOEV01
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -1109,6 +1112,12 @@ class AutoBuildOrchestrator:
         self.verbose = verbose
         self._context_loader = context_loader  # For DI/testing only; thread-local loaders used at runtime
         self._feature_id: Optional[str] = feature_id  # Passed from FeatureOrchestrator or set during orchestration
+        # TASK-AB-XREPOEV01: resolved sibling repos whose writes count as task
+        # evidence. Threaded into AgentInvoker (report enrichment + honesty
+        # resolution), CoachValidator (independent sibling tests), and the
+        # checkpoint manager (per-repo commits). Empty -> worktree-only
+        # behaviour, so undeclared sibling-repo writes stay invisible (AC-003).
+        self._evidence_repos: List[EvidenceRepo] = list(evidence_repos or [])
         self._cancellation_event: Optional[threading.Event] = cancellation_event  # Cooperative cancellation (TASK-ASF-007)
         self._timeout_event: Optional[threading.Event] = timeout_event  # Feature-level timeout signal (TASK-ABFIX-006)
         self._progress_logger = progress_logger  # TASK-FIX-OBS2: Per-task progress logging
@@ -1299,6 +1308,21 @@ class AutoBuildOrchestrator:
             consumer_context = frontmatter.get("consumer_context")
             if isinstance(consumer_context, list):
                 logger.debug(f"Loaded consumer_context from task file: {consumer_context}")
+            # TASK-AB-XREPOEV01: single-task path may declare evidence_repos in
+            # frontmatter. Only resolve from frontmatter when a feature did NOT
+            # already supply them (feature config wins; avoids double-counting).
+            if not self._evidence_repos:
+                declared = frontmatter.get("evidence_repos")
+                if declared:
+                    self._evidence_repos = evidence_repos_lib.resolve_evidence_repos(
+                        declared, self.repo_root
+                    )
+                    if self._evidence_repos:
+                        logger.info(
+                            "Loaded %d evidence repo(s) from task frontmatter: %s",
+                            len(self._evidence_repos),
+                            ", ".join(r.name for r in self._evidence_repos),
+                        )
         except TaskNotFoundError:
             logger.debug(f"Task file not found for {task_id}, continuing with task_type=None")
         except Exception as e:
@@ -1541,6 +1565,7 @@ class AutoBuildOrchestrator:
                         venv_python=self._venv_python,  # TASK-FIX-7A05
                         model_name=self._model_name,  # TASK-FIX-MODELPLUMB
                         coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
+                        evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01
                     )
                 # TASK-FIX-OBS2: Attach progress logger to agent invoker
                 if self._progress_logger and self._agent_invoker:
@@ -1571,6 +1596,7 @@ class AutoBuildOrchestrator:
                     venv_python=self._venv_python,  # TASK-FIX-7A05
                     model_name=self._model_name,  # TASK-FIX-MODELPLUMB
                     coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
+                    evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01
                 )
             # TASK-FIX-OBS2: Attach progress logger to agent invoker
             if self._progress_logger and self._agent_invoker:
@@ -2168,6 +2194,7 @@ class AutoBuildOrchestrator:
             self._checkpoint_manager = WorktreeCheckpointManager(
                 worktree_path=worktree.path,
                 task_id=task_id,
+                evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01 (AC-004)
             )
             logger.info(
                 f"Checkpoint manager initialized for {task_id} "
@@ -5444,7 +5471,22 @@ class AutoBuildOrchestrator:
                 model_name=self._model_name,  # TASK-FIX-LGFM3
                 coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
                 venv_python=self._venv_python,  # TASK-FIX-COACHPYENV
+                evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01 (AC-002)
             )
+
+            # TASK-AB-XREPOEV01 (AC-002): same sibling-repo gate as the primary
+            # path. Without this, GUARDKIT_COACH_LEGACY=1 silently ignores a
+            # declared sibling test_command (the BDDW-002 false-green re-opens
+            # under the legacy revert). No bundle here — validate() returns a
+            # CoachValidationResult, not a CoachEvidenceBundle — so the gate
+            # blocks but does not attach (the rejection rationale names the
+            # failing repos).
+            gate_result = self._evidence_repo_gate(
+                validator, task_id, turn, worktree, start_time
+            )
+            if gate_result is not None:
+                return gate_result
+
             validation_result = validator.validate(
                 task_id=task_id,
                 turn=turn,
@@ -5588,6 +5630,7 @@ class AutoBuildOrchestrator:
             model_name=self._model_name,  # TASK-FIX-LGFM3
             coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
             venv_python=self._venv_python,  # TASK-FIX-COACHPYENV
+            evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01 (AC-002)
         )
 
         # Step 1: gather evidence bundle. Never falls back to validate() on
@@ -5620,6 +5663,20 @@ class AutoBuildOrchestrator:
                 rationale=f"Evidence gathering failed: {exc}",
                 start_time=start_time,
             )
+
+        # TASK-AB-XREPOEV01 (AC-002): run the Coach's independent tests in any
+        # declared sibling repo, attach the results to the evidence bundle (so
+        # they reach coach_turn_N.json and the Coach prompt), and block the
+        # turn deterministically when a declared sibling suite failed or could
+        # not run. A red sibling suite must not be approved over by the LLM
+        # Coach's leniency (the BDDW-002 false-green). Shared with the legacy
+        # path via _evidence_repo_gate so neither Coach implementation can
+        # bypass it.
+        gate_result = self._evidence_repo_gate(
+            validator, task_id, turn, worktree, start_time, bundle=evidence_bundle
+        )
+        if gate_result is not None:
+            return gate_result
 
         # Step 2: invoke LLM Coach via AgentInvoker, threading the bundle.
         # Part C (this PR) extends invoke_coach + _build_coach_prompt to
@@ -5783,6 +5840,60 @@ class AutoBuildOrchestrator:
                 rationale=f"LLM Coach invocation failed: {sdk_error}",
                 start_time=start_time,
             )
+
+    def _evidence_repo_gate(
+        self,
+        validator: "CoachValidator",
+        task_id: str,
+        turn: int,
+        worktree: Worktree,
+        start_time: float,
+        bundle: Optional["CoachEvidenceBundle"] = None,
+    ) -> Optional[AgentInvocationResult]:
+        """Run declared sibling-repo tests and gate the turn (TASK-AB-XREPOEV01 AC-002).
+
+        Shared by BOTH Coach paths (primary LLM Coach and legacy
+        ``GUARDKIT_COACH_LEGACY=1``) so the sibling-repo gate cannot be
+        bypassed by toggling the Coach implementation. Runs each declared
+        repo's ``test_command`` independently; attaches results to ``bundle``
+        (when provided, so they reach ``coach_turn_N.json`` and the Coach
+        prompt); and returns a blocking synthetic-feedback result when a
+        declared suite failed or could not run (a red sibling suite must not
+        be approved over by Coach leniency — the BDDW-002 false-green). Returns
+        None when there is nothing to block on.
+        """
+        try:
+            results = validator.run_evidence_repo_tests()
+        except Exception as exc:  # noqa: BLE001 — sibling tests must not crash Coach
+            logger.warning(
+                "Evidence-repo test execution failed for %s turn %s: %s "
+                "(continuing without sibling-repo gate).",
+                task_id, turn, exc,
+            )
+            return None
+        if not results:
+            return None
+        if bundle is not None:
+            try:
+                bundle.evidence_repo_tests = [r.to_dict() for r in results]
+            except Exception:  # noqa: BLE001 — attachment is best-effort
+                pass
+        blocking_reason = evidence_repos_lib.evidence_repo_tests_blocking_reason(
+            results
+        )
+        if blocking_reason is None:
+            return None
+        logger.warning(
+            "Sibling-repo tests block %s turn %s:\n%s",
+            task_id, turn, blocking_reason,
+        )
+        return self._emit_synthetic_coach_feedback(
+            task_id=task_id,
+            turn=turn,
+            worktree=worktree,
+            rationale=blocking_reason,
+            start_time=start_time,
+        )
 
     def _emit_synthetic_coach_feedback(
         self,
@@ -6642,6 +6753,7 @@ class AutoBuildOrchestrator:
                     venv_python=self._venv_python,  # TASK-FIX-7A05
                     model_name=self._model_name,  # TASK-FIX-MODELPLUMB
                     coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
+                    evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01
                 )
             # TASK-FIX-OBS2: Attach progress logger to agent invoker
             if self._progress_logger and self._agent_invoker:

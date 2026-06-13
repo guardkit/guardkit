@@ -2,8 +2,13 @@
 id: TASK-AB-XREPOEV01
 title: Cross-repo evidence support for autobuild (Coach must see declared sibling-repo writes)
 task_type: feature
-status: backlog
+status: completed
 created: 2026-06-12T16:20:00Z
+updated: 2026-06-13T00:00:00Z
+completed: 2026-06-13T00:00:00Z
+previous_state: in_review
+state_transition_reason: "All 5 ACs verified; Phase-5 review findings fixed; gates passed (task-complete)"
+completed_location: tasks/completed/TASK-AB-XREPOEV01/
 priority: high
 tags: [autobuild, coach, evidence, cross-repo, guardkitfactory]
 complexity: 7
@@ -73,18 +78,73 @@ guardkitfactory boundary strikes again.
 
 ## Acceptance criteria
 
-- [ ] AC-001: a task writing only to a declared sibling repo produces a
+- [x] AC-001: a task writing only to a declared sibling repo produces a
       Player report whose `files_modified`/`files_created` include the
       repo-qualified paths; the Coach can verify ACs against them.
-- [ ] AC-002: Coach independent tests can execute in the sibling repo and
+      → `agent_invoker._create_player_report_from_task_work` merges
+      `<repo>:<path>` paths; `CoachVerifier._verify_files_exist` /
+      `_verify_completion_promises_files_exist` resolve them against the repo
+      root. Tests: `test_evidence_repos_false_red_regression.py`.
+- [x] AC-002: Coach independent tests can execute in the sibling repo and
       their results reach the evidence bundle.
-- [ ] AC-003: undeclared sibling-repo writes remain invisible (no implicit
+      → `CoachValidator.run_evidence_repo_tests` +
+      `CoachEvidenceBundle.evidence_repo_tests`; deterministic gate
+      (`_evidence_repo_gate`) on BOTH primary and legacy Coach paths.
+- [x] AC-003: undeclared sibling-repo writes remain invisible (no implicit
       scanning of arbitrary parent dirs).
-- [ ] AC-004: turn checkpoint/restore covers (or explicitly disclaims)
+      → only declared+resolved repos are baselined/diffed; empty by default.
+      Test: `...::test_undeclared_repo_writes_stay_invisible`.
+- [x] AC-004: turn checkpoint/restore covers (or explicitly disclaims)
       sibling-repo state.
-- [ ] AC-005: regression test reproducing the FEAT-C332 run-1 false-red:
+      → commit form: `WorktreeCheckpointManager` per-repo commit + guarded
+      per-repo rollback (`evidence_commits`). Tests:
+      `test_worktree_checkpoints_evidence.py`.
+- [x] AC-005: regression test reproducing the FEAT-C332 run-1 false-red:
       synthetic task whose only writes are in a declared sibling repo must
       NOT be rejected as "no implementation provided".
+      → `test_evidence_repos_false_red_regression.py::TestSiblingRepoOnlyFalseRedRegression`.
+
+## Implementation summary (2026-06-13, task-work)
+
+**Scope chosen:** Full — all 5 ACs incl. per-repo Coach test execution (AC-002)
+and per-repo checkpoint commits (AC-004 commit form).
+
+**Central contract** (single source of truth, per namespace-hygiene):
+`guardkit/orchestrator/evidence_repos.py` — repo-qualified path scheme
+`<repo>:<path>` (`qualify`/`split_qualified`/`resolve_qualified_path`),
+`EvidenceRepo`, `resolve_evidence_repos` (relative to source repo root,
+follows symlinks, AC-003 fail-safe), per-repo git baseline+diff,
+`run_repo_tests`, and `evidence_repo_tests_blocking_reason`
+(absence-of-failure: a declared-but-unrunnable suite blocks, never silently
+passes).
+
+**Declaration:** `Feature.evidence_repos` (feature YAML, validated) and
+single-task frontmatter fallback. Resolved once per feature in
+`FeatureOrchestrator._setup_phase`, threaded to every per-task
+`AutoBuildOrchestrator` → `AgentInvoker` / `CoachValidator` /
+`WorktreeCheckpointManager`.
+
+**Rule adherence:**
+- `path-string-mismatch-is-not-dishonesty`: unknown/unresolvable repo-qualified
+  claims are fail-open (skipped), never a new false-red; worktree-specific
+  audits (`_verify_claims_were_staged`) drop qualified paths.
+- `absence-of-failure-is-not-success`: unrunnable sibling tests are feedback,
+  not approval.
+- `namespace-hygiene` / `harness-cancellation-contract`: cross-repo seam test
+  (`test_evidence_repos_seam.py`) fails loudly in CI if any wiring link is
+  removed.
+
+**Code review (Phase 5):** independent review found and FIXED a CRITICAL
+(Coach's own honesty `CoachVerifier` in `coach_validator._verify_honesty`
+lacked `evidence_repos` → sibling-file lies undetected), a HIGH (AC-002 gate
+absent on the legacy `GUARDKIT_COACH_LEGACY=1` path → factored into the shared
+`_evidence_repo_gate`), a HIGH (unbounded sibling git commit under an fcntl
+lock → `_EVIDENCE_GIT_TIMEOUT_S` timeout), and a MEDIUM (rollback divergence
+logging). All guarded by seam/behavioural tests.
+
+**Tests:** 64 new tests pass; new module at 88% line coverage. Zero regressions
+(the 16 pre-existing orchestrator failures — drifted prompt-token counts,
+unrelated langgraph/SDK-stream/BDD tests — fail identically on baseline).
 
 ## References
 

@@ -438,7 +438,54 @@ class Feature(BaseModel):
     smoke_gates: Optional[SmokeGates] = None
     bootstrap_extras: List[str] = Field(default_factory=list)
     preflight_strict: bool = False
+    # TASK-AB-XREPOEV01: declared sibling repositories whose writes count as
+    # task evidence. Each entry is either a bare path string
+    # (``"../guardkitfactory"``) or a mapping
+    # ``{"path": "../guardkitfactory", "test_command": "pytest -q tests/"}``.
+    # Empty by default -> the evidence boundary stays scoped to the worktree
+    # and undeclared sibling-repo writes remain invisible (AC-003). Resolution
+    # and per-repo git/test plumbing live in
+    # ``guardkit.orchestrator.evidence_repos``.
+    evidence_repos: List[Any] = Field(default_factory=list)
     file_path: Optional[Path] = None
+
+    @field_validator("evidence_repos")
+    @classmethod
+    def _validate_evidence_repos(cls, v: List[Any]) -> List[Any]:
+        """Reject malformed ``evidence_repos`` declarations at parse time.
+
+        Each entry must be a non-empty path string, or a mapping carrying a
+        ``path`` (string) and an optional ``test_command`` (string). Failing
+        loudly here is the namespace-hygiene / seam-test posture: a feature
+        that declares cross-repo evidence must not be silently degraded to
+        absent-signal by a typo (TASK-AB-XREPOEV01).
+        """
+        if not isinstance(v, list):
+            raise ValueError("evidence_repos must be a list")
+        for entry in v:
+            if isinstance(entry, str):
+                if not entry.strip():
+                    raise ValueError("evidence_repos entries must be non-empty paths")
+                continue
+            if isinstance(entry, dict):
+                path = entry.get("path") or entry.get("repo")
+                if not isinstance(path, str) or not path.strip():
+                    raise ValueError(
+                        "evidence_repos mapping entries require a non-empty "
+                        f"'path' string; got {entry!r}"
+                    )
+                test_command = entry.get("test_command") or entry.get("tests")
+                if test_command is not None and not isinstance(test_command, str):
+                    raise ValueError(
+                        "evidence_repos 'test_command' must be a string; got "
+                        f"{test_command!r}"
+                    )
+                continue
+            raise ValueError(
+                "evidence_repos entries must be a path string or a mapping "
+                f"with a 'path' key; got {entry!r}"
+            )
+        return v
 
     @field_validator("bootstrap_extras")
     @classmethod

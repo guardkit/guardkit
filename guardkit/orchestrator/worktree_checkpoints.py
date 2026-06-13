@@ -56,7 +56,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import ClassVar, Dict, List, Optional, Protocol, Tuple
 
+from guardkit.orchestrator.evidence_repos import EvidenceRepo
+
 logger = logging.getLogger(__name__)
+
+# TASK-AB-XREPOEV01: bound sibling-repo git commits. The commit runs while
+# holding a cross-process fcntl lock on the shared sibling repo, so an
+# unbounded `git add -A`/`commit` (slow disk, network mount, git hang) would
+# deadlock every other task that shares that repo. The worktree checkpoint
+# itself keeps its legacy no-timeout behaviour.
+_EVIDENCE_GIT_TIMEOUT_S: int = 120
 
 
 # ============================================================================
@@ -79,6 +88,7 @@ class GitCommandExecutor(Protocol):
         command: List[str],
         cwd: Path,
         check: bool = True,
+        timeout: Optional[int] = None,
     ) -> subprocess.CompletedProcess:
         """Execute git command with error handling.
 
@@ -86,12 +96,17 @@ class GitCommandExecutor(Protocol):
             command: Git command as list (e.g., ["git", "add", "-A"])
             cwd: Working directory for command execution
             check: Whether to raise on non-zero exit code
+            timeout: Optional seconds before the subprocess is killed. None
+                means no timeout (legacy worktree behaviour). Set for
+                sibling-repo commits, which hold a cross-process fcntl lock
+                and must not be able to deadlock the turn (TASK-AB-XREPOEV01).
 
         Returns:
             CompletedProcess with stdout/stderr
 
         Raises:
             subprocess.CalledProcessError: If check=True and command fails
+            subprocess.TimeoutExpired: If timeout is set and exceeded
         """
         ...
 
@@ -131,6 +146,12 @@ class Checkpoint:
     test_count: int = 0
     message: str = ""
     from_prior_run: bool = False
+    # TASK-AB-XREPOEV01: per-declared-sibling-repo checkpoint commit hashes,
+    # keyed by repo name (e.g. {"guardkitfactory": "<sha>"}). Empty for
+    # worktree-only checkpoints and for checkpoints written before evidence
+    # support existed -- the default keeps old checkpoints.json deserialising
+    # via ``Checkpoint(**data)``.
+    evidence_commits: Dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for JSON serialization.
@@ -170,6 +191,7 @@ class SubprocessGitExecutor:
         command: List[str],
         cwd: Path,
         check: bool = True,
+        timeout: Optional[int] = None,
     ) -> subprocess.CompletedProcess:
         """Execute git command with subprocess.
 
@@ -177,12 +199,15 @@ class SubprocessGitExecutor:
             command: Git command as list
             cwd: Working directory
             check: Raise on non-zero exit
+            timeout: Optional seconds before the subprocess is killed
+                (None = no timeout, legacy behaviour).
 
         Returns:
             CompletedProcess with stdout/stderr
 
         Raises:
             subprocess.CalledProcessError: If check=True and command fails
+            subprocess.TimeoutExpired: If timeout is set and exceeded
         """
         try:
             result = subprocess.run(
@@ -191,6 +216,7 @@ class SubprocessGitExecutor:
                 capture_output=True,
                 text=True,
                 check=check,
+                timeout=timeout,
             )
             return result
         except subprocess.CalledProcessError as e:
@@ -261,6 +287,7 @@ class WorktreeCheckpointManager:
         worktree_path: Path,
         task_id: str,
         git_executor: Optional[GitCommandExecutor] = None,
+        evidence_repos: Optional[List[EvidenceRepo]] = None,
     ):
         """Initialize WorktreeCheckpointManager.
 
@@ -268,10 +295,18 @@ class WorktreeCheckpointManager:
             worktree_path: Path to git worktree
             task_id: Task identifier
             git_executor: Optional git executor (default: SubprocessGitExecutor)
+            evidence_repos: Optional declared sibling repos
+                (TASK-AB-XREPOEV01). When provided, every checkpoint also
+                commits each repo's working tree so approved sibling-repo work
+                is versioned (closes the BDDW-002 hazard: approved factory
+                work that was never committed anywhere, one ``git clean`` from
+                breaking merged main). Default None -> worktree-only
+                checkpoints, unchanged behaviour.
         """
         self.worktree_path = Path(worktree_path)
         self.task_id = task_id
         self.git_executor = git_executor or SubprocessGitExecutor()
+        self.evidence_repos: List[EvidenceRepo] = list(evidence_repos or [])
         self.checkpoints: List[Checkpoint] = []
 
         # Checkpoint persistence path
@@ -427,6 +462,13 @@ class WorktreeCheckpointManager:
         )
         commit_hash = result.stdout.strip()
 
+        # TASK-AB-XREPOEV01 (AC-004): also commit each declared sibling repo so
+        # approved sibling-repo work is versioned, not left as uncommitted
+        # working-tree edits. Best-effort and per-repo isolated: a failure in
+        # one repo must never abort the worktree checkpoint that already
+        # landed.
+        evidence_commits = self._checkpoint_evidence_repos(turn, tests_passed)
+
         return Checkpoint(
             turn=turn,
             commit_hash=commit_hash,
@@ -434,7 +476,115 @@ class WorktreeCheckpointManager:
             tests_passed=tests_passed,
             test_count=test_count,
             message=message,
+            evidence_commits=evidence_commits,
         )
+
+    def _checkpoint_evidence_repos(
+        self, turn: int, tests_passed: bool
+    ) -> Dict[str, str]:
+        """Commit each declared sibling repo's working tree at this turn.
+
+        Returns a ``{repo_name: commit_hash}`` map for the repos that were
+        successfully committed. Each repo is committed under its own
+        ``.guardkit-git.lock`` so parallel features writing to the same
+        sibling repo cannot collide on ``index.lock``. Best-effort: any
+        per-repo failure is logged and skipped, never raised -- AC-004's
+        explicit-disclaim fallback is honoured by logging the gap.
+        """
+        evidence_commits: Dict[str, str] = {}
+        if not self.evidence_repos:
+            return evidence_commits
+
+        status = "pass" if tests_passed else "fail"
+        message = (
+            f"[guardkit-checkpoint] {self.task_id} turn {turn} "
+            f"(sibling evidence, tests: {status})"
+        )
+        for repo in self.evidence_repos:
+            try:
+                commit = self._commit_one_evidence_repo(repo, message)
+                if commit is not None:
+                    evidence_commits[repo.name] = commit
+                    logger.info(
+                        "Checkpointed sibling repo %s at %s (turn %d)",
+                        repo.name,
+                        commit[:8],
+                        turn,
+                    )
+                else:
+                    logger.warning(
+                        "Sibling repo %s NOT checkpointed at turn %d "
+                        "(no git HEAD / commit failed); its state is "
+                        "UNVERSIONED for this turn.",
+                        repo.name,
+                        turn,
+                    )
+            except Exception as exc:  # noqa: BLE001 -- never abort the checkpoint
+                logger.warning(
+                    "Sibling repo %s checkpoint failed at turn %d: %s "
+                    "(state UNVERSIONED for this turn).",
+                    repo.name,
+                    turn,
+                    exc,
+                )
+        return evidence_commits
+
+    def _commit_one_evidence_repo(
+        self, repo: EvidenceRepo, message: str
+    ) -> Optional[str]:
+        """``git add -A && git commit`` one sibling repo under its own lock.
+
+        Returns the new commit hash, or None when the repo is not a usable git
+        repository. The commit lands on the repo's CURRENT branch (no branch
+        switch -- switching the operator's shared sibling repo is the riskier
+        option the task flagged; an additive commit is recoverable, a branch
+        switch is disruptive).
+        """
+        if not repo.root.exists():
+            return None
+
+        repo_lock_path = repo.root / ".guardkit-git.lock"
+        try:
+            repo_lock_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+
+        with open(repo_lock_path, "w") as lock_file:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+            try:
+                # Bounded so a hung git cannot hold the cross-process lock
+                # indefinitely and stall every task sharing this repo.
+                self.git_executor.execute(
+                    ["git", "add", "-A"],
+                    cwd=repo.root,
+                    check=False,
+                    timeout=_EVIDENCE_GIT_TIMEOUT_S,
+                )
+                self.git_executor.execute(
+                    ["git", "commit", "-m", message, "--allow-empty"],
+                    cwd=repo.root,
+                    check=False,
+                    timeout=_EVIDENCE_GIT_TIMEOUT_S,
+                )
+                result = self.git_executor.execute(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=repo.root,
+                    check=False,
+                    timeout=_EVIDENCE_GIT_TIMEOUT_S,
+                )
+            except subprocess.TimeoutExpired:
+                logger.warning(
+                    "Sibling repo %s git commit timed out after %ds; state "
+                    "UNVERSIONED for this turn.",
+                    repo.name,
+                    _EVIDENCE_GIT_TIMEOUT_S,
+                )
+                return None
+            finally:
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
+
+        commit = (result.stdout or "").strip()
+        return commit or None
 
     def rollback_to(self, turn: int) -> bool:
         """Rollback worktree to checkpoint at specified turn.
@@ -494,6 +644,14 @@ class WorktreeCheckpointManager:
                 ["git", "reset", "--hard", checkpoint.commit_hash],
                 cwd=self.worktree_path,
             )
+
+            # TASK-AB-XREPOEV01 (AC-004): reset declared sibling repos to the
+            # hash they were committed at in THIS target checkpoint. Guarded:
+            # only repos with a recorded hash in the target are reset (we never
+            # hard-reset a sibling repo to an unknown state); best-effort so a
+            # sibling reset failure cannot break the worktree rollback that
+            # already succeeded.
+            self._rollback_evidence_repos(checkpoint)
 
             # Remove checkpoints after rollback point
             self.checkpoints = [cp for cp in self.checkpoints if cp.turn <= turn]
@@ -612,6 +770,68 @@ class WorktreeCheckpointManager:
             if checkpoint.turn == turn:
                 return checkpoint
         return None
+
+    def _rollback_evidence_repos(self, checkpoint: Checkpoint) -> None:
+        """Hard-reset declared sibling repos to their hash in ``checkpoint``.
+
+        Only repos with a recorded ``evidence_commits[name]`` in the target
+        checkpoint are reset -- we never hard-reset a shared sibling repo to a
+        state we did not record. Best-effort: a sibling reset failure is logged
+        and skipped so the (already-completed) worktree rollback stands.
+
+        Repos declared now but absent from the target checkpoint (e.g. the
+        checkpoint predates a config change) are surfaced as a WARNING: their
+        sibling state is NOT rolled back, which the operator must know.
+        """
+        if not self.evidence_repos:
+            return
+
+        rolled_back: List[str] = []
+        not_rolled_back: List[str] = []
+        for repo in self.evidence_repos:
+            target = checkpoint.evidence_commits.get(repo.name)
+            if not target:
+                not_rolled_back.append(repo.name)
+                logger.warning(
+                    "Rollback: sibling repo %s has no recorded commit in the "
+                    "target checkpoint (turn %d); its state is NOT rolled back.",
+                    repo.name,
+                    checkpoint.turn,
+                )
+                continue
+            try:
+                self.git_executor.execute(
+                    ["git", "reset", "--hard", target],
+                    cwd=repo.root,
+                    check=False,
+                    timeout=_EVIDENCE_GIT_TIMEOUT_S,
+                )
+                rolled_back.append(repo.name)
+                logger.info(
+                    "Rollback: reset sibling repo %s to %s (turn %d)",
+                    repo.name,
+                    target[:8],
+                    checkpoint.turn,
+                )
+            except Exception as exc:  # noqa: BLE001 -- never break the rollback
+                not_rolled_back.append(repo.name)
+                logger.warning(
+                    "Rollback: failed to reset sibling repo %s to %s: %s",
+                    repo.name,
+                    target[:8],
+                    exc,
+                )
+
+        # Summary line so an operator diagnosing a worktree/sibling mismatch can
+        # see at a glance which repos diverged from the rolled-back worktree.
+        if not_rolled_back:
+            logger.warning(
+                "Rollback turn %d: sibling repos rolled back=%s; NOT rolled "
+                "back=%s (worktree and these repos may be inconsistent).",
+                checkpoint.turn,
+                rolled_back or "[]",
+                not_rolled_back,
+            )
 
     # Audit JSONs the rollback wipes when their committing turn is rolled
     # away by ``git reset --hard``. Pattern groups: 1=turn number.
