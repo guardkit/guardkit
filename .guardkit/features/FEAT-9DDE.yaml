@@ -4,7 +4,7 @@ description: Deterministic producer script emitting the task dashboard as machin
   schema-v1 JSON, wired into both task-status.md specs via a --json flag (R1/R2 producer
   pattern)
 created: '2026-06-11T13:15:23.823171'
-status: planned
+status: merged
 complexity: 3
 estimated_tasks: 2
 tasks:
@@ -13,20 +13,38 @@ tasks:
   file_path: tasks/backlog/task-status-json/TASK-TSJ-001-implement-task-status-json-producer.md
   complexity: 4
   dependencies: []
-  status: pending
-  description: ''
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 50
+  requires_infrastructure: []
+  result:
+    total_turns: 2
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 2
+  current_turn: 0
+  started_at: '2026-06-13T11:02:27.210163'
+  completed_at: '2026-06-13T12:17:26.550923'
 - id: TASK-TSJ-002
   name: Register bin entry and wire --json into specs
   file_path: tasks/backlog/task-status-json/TASK-TSJ-002-register-bin-entry-and-wire-specs.md
   complexity: 2
   dependencies:
   - TASK-TSJ-001
-  status: pending
-  description: ''
+  status: completed
   implementation_mode: direct
   estimated_minutes: 22
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-06-13T12:17:38.981278'
+  completed_at: '2026-06-13T12:34:56.990524'
 orchestration:
   parallel_groups:
   - - TASK-TSJ-001
@@ -35,9 +53,30 @@ orchestration:
   recommended_parallel: 1
 smoke_gates:
   after_wave: all
-  command: |
-    set -e
+  command: 'set -e
+
     pytest tests/unit/commands -x -q -k task_status_json
-    python3 installer/core/commands/lib/task_status_json.py --base-path . | python3 -m json.tool > /dev/null
+
+    python3 installer/core/commands/lib/task_status_json.py --base-path . | python3
+    -m json.tool > /dev/null
+
+    '
   expected_exit: 0
   timeout: 120
+  exit5_is_hard_fail: false
+preflight_strict: false
+evidence_repos: []
+execution:
+  started_at: '2026-06-13T11:02:26.021778'
+  completed_at: '2026-06-13T12:35:01.455161'
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-9DDE
+  total_turns: 3
+  tasks_completed: 2
+  tasks_failed: 0
+  current_wave: 2
+  completed_waves:
+  - 1
+  - 2
+  last_updated: '2026-06-13T12:34:56.992295'
+  archived_at: null
+  archived_to: null
