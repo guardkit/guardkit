@@ -321,8 +321,11 @@ Generates:
 ```
 
 ### JSON Export
+Use the `--json` flag (machine-readable schema-v1 output, produced by the
+`task-status-json` bin entry). The legacy `export:json` format had no producer
+and is removed (TASK-FIX-DIRECTFG01 follow-up):
 ```bash
-/task-status export:json > tasks.json
+/task-status --json > tasks.json
 ```
 
 ### Markdown Report
