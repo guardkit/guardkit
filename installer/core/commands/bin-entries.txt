@@ -63,3 +63,7 @@ installer/core/commands/lib/generate_feature_yaml.py
 # documented in TASK-REV-RWOP1 Finding #1 — same shape as TASK-FIX-3C9D
 # applied to R1.
 installer/core/commands/lib/feature_plan_bdd_link.py
+
+# Task Status JSON producer: task-status.md command with --json flag
+# Added by TASK-TSJ-002 to provide machine-readable task status output
+installer/core/commands/task-status-json.py
