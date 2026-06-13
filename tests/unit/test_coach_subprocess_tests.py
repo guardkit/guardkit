@@ -166,3 +166,66 @@ class TestNonPythonCommandsUseShell:
             result = validator.run_independent_tests()
 
         assert result.tests_passed is False
+
+
+class TestSubprocessCwdPinnedToWorktree:
+    """The independent-test subprocess must run with cwd pinned to the worktree.
+
+    Regression guard for TASK-FIX-COACHCWD01: pytest's ``--cov-report``
+    artifacts (``coverage.json``, ``coverage.xml``, ``.coverage``) are written
+    relative to the subprocess cwd. If cwd leaks to the host repo, those files
+    pollute the host root (FEAT-9DDE run 3). The cwd pin keeps every relative
+    artifact inside the worktree, which is later cleaned up — satisfying the
+    ``evidence-boundary-narrower-than-write-surface`` family (every arm of the
+    evidence loop scoped to the declared evidence root). A future edit that
+    drops the ``cwd=`` kwarg silently re-opens the leak; this test fails loud
+    instead.
+    """
+
+    def test_pytest_subprocess_cwd_is_worktree(self, tmp_path):
+        """pytest commands run with cwd == the worktree root, not the host."""
+        validator = _make_validator(
+            tmp_path, test_cmd="pytest tests/test_foo.py -v --tb=short"
+        )
+
+        with patch("subprocess.run", return_value=_make_completed_process()) as mock_run:
+            validator.run_independent_tests()
+
+        _, kwargs = mock_run.call_args
+        assert kwargs.get("cwd") == str(tmp_path), (
+            "pytest subprocess cwd must be pinned to the worktree so "
+            "coverage artifacts land inside it, never the host repo"
+        )
+
+    def test_shell_subprocess_cwd_is_worktree(self, tmp_path):
+        """Non-Python (shell) commands also run with cwd == the worktree root."""
+        validator = _make_validator(tmp_path, test_cmd="npm test")
+
+        with patch("subprocess.run", return_value=_make_completed_process()) as mock_run:
+            validator.run_independent_tests()
+
+        _, kwargs = mock_run.call_args
+        assert kwargs.get("cwd") == str(tmp_path), (
+            "shell test-command subprocess cwd must be pinned to the worktree"
+        )
+
+    def test_worktree_relative_test_paths_preserved(self, tmp_path):
+        """Worktree-relative test paths survive the cwd pin (discovery resolves).
+
+        AC-2: the run-3 invocation used worktree-relative ``tests/...`` paths,
+        so pinning cwd to the worktree keeps discovery working — the paths are
+        passed through unchanged and resolve against the pinned cwd.
+        """
+        validator = _make_validator(
+            tmp_path,
+            test_cmd="pytest tests/test_a.py tests/unit/test_b.py -v --tb=short",
+        )
+
+        with patch("subprocess.run", return_value=_make_completed_process()) as mock_run:
+            validator.run_independent_tests()
+
+        args, kwargs = mock_run.call_args
+        cmd = args[0]
+        assert "tests/test_a.py" in cmd
+        assert "tests/unit/test_b.py" in cmd
+        assert kwargs.get("cwd") == str(tmp_path)
