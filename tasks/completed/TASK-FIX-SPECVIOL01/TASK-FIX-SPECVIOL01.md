@@ -2,11 +2,13 @@
 id: TASK-FIX-SPECVIOL01
 title: Orchestrator-injected specialist-violation records must not be attributed to Player honesty
 task_type: feature
-status: in_review
+status: completed
 created: 2026-06-12T19:50:00Z
-updated: 2026-06-12T21:00:00Z
-previous_state: in_progress
-state_transition_reason: "All quality gates passed via /task-work"
+updated: 2026-06-13T00:00:00Z
+completed: 2026-06-13T00:00:00Z
+previous_state: in_review
+completed_location: tasks/completed/TASK-FIX-SPECVIOL01/
+state_transition_reason: "All quality gates passed; reviewed and completed via /task-complete"
 priority: high
 tags: [autobuild, coach, honesty, specialist, false-red]
 complexity: 5
