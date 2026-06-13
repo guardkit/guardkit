@@ -1,0 +1,128 @@
+{
+  "task_id": "TASK-TSJ-001",
+  "timestamp": "2026-06-13T10:16:46.952007",
+  "completed": false,
+  "phases": {},
+  "quality_gates": {
+    "tests_passing": true,
+    "tests_passed": 0,
+    "tests_failed": 0,
+    "coverage": null,
+    "coverage_met": null,
+    "all_passed": null
+  },
+  "files_modified": [
+    ".claude/task-plans/TASK-TSJ-001-implementation-plan.md",
+    ".local/lib/python3.12/site-packages/a1_coverage.pth",
+    ".local/lib/python3.12/site-packages/coverage-7.14.1.dist-info/INSTALLER",
+    ".local/lib/python3.12/site-packages/coverage-7.14.1.dist-info/METADATA",
+    ".local/lib/python3.12/site-packages/coverage-7.14.1.dist-info/RECORD",
+    ".local/lib/python3.12/site-packages/coverage-7.14.1.dist-info/REQUESTED",
+    ".local/lib/python3.12/site-packages/coverage-7.14.1.dist-info/WHEEL",
+    ".local/lib/python3.12/site-packages/coverage-7.14.1.dist-info/entry_points.txt",
+    ".local/lib/python3.12/site-packages/coverage-7.14.1.dist-info/licenses/LICENSE.txt",
+    ".local/lib/python3.12/site-packages/coverage-7.14.1.dist-info/top_level.txt",
+    "installer/core/commands/lib/task_status_json.py",
+    "tests/unit/commands/test_task_status_json.py"
+  ],
+  "files_created": [],
+  "files_authored": [],
+  "tests_written": [],
+  "summary": "Implementation completed",
+  "sdk_turns": {
+    "turns_used": null,
+    "max_turns": 150,
+    "ceiling_hit": false
+  },
+  "task_type": "feature",
+  "agent_invocations_validation": {
+    "status": "violation",
+    "expected_phases": 3,
+    "actual_invocations": 1,
+    "missing_phases": [
+      "3",
+      "5"
+    ],
+    "violation_message": "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n\u274c PROTOCOL VIOLATION: Agent invocation incomplete\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n\nExpected: 3 agent invocations\nActual: 1 completed invocations\n\nMissing phases:\n  - Phase 3 (Implementation)\n  - Phase 5 (Code Review)\n\nCannot generate completion report until all agents are invoked.\nReview the AGENT INVOCATIONS LOG above to see which phases were skipped.\n\nAGENT INVOCATIONS LOG:\n\u2705 Phase 4 (Phase 4): test-orchestrator (completed in ?s)\n\u2753 Phase 5 (Phase 5): code-reviewer\n\nTASK WILL BE MOVED TO BLOCKED STATE\nReason: Protocol violation - required agents not invoked\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+  },
+  "plan_audit": {
+    "status": "skipped",
+    "severity": null,
+    "violations": 0,
+    "extra_files": [],
+    "missing_files": [],
+    "extra_modifications": [],
+    "missing_modifications": [],
+    "extra_dependencies": [],
+    "missing_dependencies": [],
+    "loc_variance_pct": null,
+    "discrepancies_count": 0,
+    "message": "no implementation plan on disk"
+  },
+  "unconfirmed_low_confidence_assumptions": {
+    "status": "ok",
+    "unconfirmed": [],
+    "files_scanned": 0,
+    "files_skipped": 0,
+    "message": null
+  },
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "installer/core/commands/lib/task_status_json.py exists with a main() entry point and if __name__ == '__main__': guard",
+      "status": "complete",
+      "evidence": "Source file exists at installer/core/commands/lib/task_status_json.py with main() function (line 219) and if __name__ == '__main__': guard (line 258). CLI tested: python3 task_status_json.py --base-path . produces valid JSON dashboard.",
+      "test_file": "tests/unit/commands/test_task_status_json.py",
+      "implementation_files": [
+        "installer/core/commands/lib/task_status_json.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Scans tasks/backlog/, tasks/in_progress/, tasks/in_review/, tasks/blocked/, tasks/completed/ recursively (including feature subfolders and archive folders)",
+      "status": "complete",
+      "evidence": "scan_task_files() iterates STATUS_DIRS = ['backlog', 'in_progress', 'in_review', 'blocked', 'completed'] and uses Path.rglob('*.md') for recursive scanning. Tests verify nested feature subfolders (feat-sub/) and archive folders (2026-01/) are found. Live test against real project: 2174 tasks found across all 5 status dirs.",
+      "test_file": "tests/unit/commands/test_task_status_json.py",
+      "implementation_files": [
+        "installer/core/commands/lib/task_status_json.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Parses frontmatter via task_utils.parse_task_frontmatter (no duplicate YAML-parsing logic)",
+      "status": "complete",
+      "evidence": "parse_task_record() imports and calls parse_task_frontmatter from installer.core.commands.lib.task_utils. No YAML parsing logic is duplicated in task_status_json.py.",
+      "test_file": "tests/unit/commands/test_task_status_json.py",
+      "implementation_files": [
+        "installer/core/commands/lib/task_status_json.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Emits schema v1 JSON to stdout with fixed key order and tasks sorted by (status, id)",
+      "status": "complete",
+      "evidence": "OUTPUT_KEYS, TASK_KEYS, SUMMARY_KEYS define fixed key orders. build_dashboard() sorts tasks by (status, id) tuple. json.dumps(..., sort_keys=False) preserves insertion order. Tests verify schema_version='1.0', fixed key orders, and sort order. Live test output confirms correct structure.",
+      "test_file": "tests/unit/commands/test_task_status_json.py",
+      "implementation_files": [
+        "installer/core/commands/lib/task_status_json.py"
+      ]
+    }
+  ],
+  "agent_invocations": [
+    {
+      "phase": "4",
+      "agent": "test-orchestrator",
+      "status": "completed",
+      "source": "orchestrator",
+      "duration_seconds": 135.0813345130009
+    },
+    {
+      "phase": "5",
+      "agent": "code-reviewer",
+      "status": "failed",
+      "source": "orchestrator",
+      "duration_seconds": 249.03582798301068,
+      "error": "SDKTimeoutError: Agent invocation exceeded 249s timeout"
+    }
+  ]
+}

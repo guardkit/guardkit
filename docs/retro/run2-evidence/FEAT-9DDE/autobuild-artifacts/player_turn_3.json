@@ -1,0 +1,78 @@
+{
+  "task_id": "TASK-TSJ-001",
+  "turn": 3,
+  "files_modified": [
+    ".claude/task-plans/TASK-TSJ-001-implementation-plan.md",
+    ".local/lib/python3.12/site-packages/a1_coverage.pth",
+    ".local/lib/python3.12/site-packages/coverage-7.14.1.dist-info/INSTALLER",
+    ".local/lib/python3.12/site-packages/coverage-7.14.1.dist-info/METADATA",
+    ".local/lib/python3.12/site-packages/coverage-7.14.1.dist-info/RECORD",
+    ".local/lib/python3.12/site-packages/coverage-7.14.1.dist-info/REQUESTED",
+    ".local/lib/python3.12/site-packages/coverage-7.14.1.dist-info/WHEEL",
+    ".local/lib/python3.12/site-packages/coverage-7.14.1.dist-info/entry_points.txt",
+    ".local/lib/python3.12/site-packages/coverage-7.14.1.dist-info/licenses/LICENSE.txt",
+    ".local/lib/python3.12/site-packages/coverage-7.14.1.dist-info/top_level.txt",
+    "installer/core/commands/lib/task_status_json.py",
+    "tests/unit/commands/test_task_status_json.py"
+  ],
+  "files_created": [],
+  "tests_written": [],
+  "tests_run": false,
+  "tests_passed": false,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation. Files planned: 0, Files actual: 0",
+  "concerns": [],
+  "requirements_addressed": [
+    "AC-001: main() entry point with __name__ guard",
+    "AC-002: Recursive scanning of 5 status directories",
+    "AC-003: Frontmatter parsing via task_utils",
+    "AC-004: Schema v1 JSON with fixed key order and (status, id) sorting"
+  ],
+  "requirements_remaining": [],
+  "sdk_turns_used": null,
+  "sdk_max_turns": 150,
+  "sdk_ceiling_hit": false,
+  "files_authored": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "installer/core/commands/lib/task_status_json.py exists with a main() entry point and if __name__ == '__main__': guard",
+      "status": "complete",
+      "evidence": "Source file exists at installer/core/commands/lib/task_status_json.py with main() function (line 219) and if __name__ == '__main__': guard (line 258). CLI tested: python3 task_status_json.py --base-path . produces valid JSON dashboard.",
+      "test_file": "tests/unit/commands/test_task_status_json.py",
+      "implementation_files": [
+        "installer/core/commands/lib/task_status_json.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Scans tasks/backlog/, tasks/in_progress/, tasks/in_review/, tasks/blocked/, tasks/completed/ recursively (including feature subfolders and archive folders)",
+      "status": "complete",
+      "evidence": "scan_task_files() iterates STATUS_DIRS = ['backlog', 'in_progress', 'in_review', 'blocked', 'completed'] and uses Path.rglob('*.md') for recursive scanning. Tests verify nested feature subfolders (feat-sub/) and archive folders (2026-01/) are found. Live test against real project: 2174 tasks found across all 5 status dirs.",
+      "test_file": "tests/unit/commands/test_task_status_json.py",
+      "implementation_files": [
+        "installer/core/commands/lib/task_status_json.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Parses frontmatter via task_utils.parse_task_frontmatter (no duplicate YAML-parsing logic)",
+      "status": "complete",
+      "evidence": "parse_task_record() imports and calls parse_task_frontmatter from installer.core.commands.lib.task_utils. No YAML parsing logic is duplicated in task_status_json.py.",
+      "test_file": "tests/unit/commands/test_task_status_json.py",
+      "implementation_files": [
+        "installer/core/commands/lib/task_status_json.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Emits schema v1 JSON to stdout with fixed key order and tasks sorted by (status, id)",
+      "status": "complete",
+      "evidence": "OUTPUT_KEYS, TASK_KEYS, SUMMARY_KEYS define fixed key orders. build_dashboard() sorts tasks by (status, id) tuple. json.dumps(..., sort_keys=False) preserves insertion order. Tests verify schema_version='1.0', fixed key orders, and sort order. Live test output confirms correct structure.",
+      "test_file": "tests/unit/commands/test_task_status_json.py",
+      "implementation_files": [
+        "installer/core/commands/lib/task_status_json.py"
+      ]
+    }
+  ]
+}

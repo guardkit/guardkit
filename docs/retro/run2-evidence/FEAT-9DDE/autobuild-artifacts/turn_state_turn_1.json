@@ -1,0 +1,28 @@
+{
+  "id": "TURN-FEAT-9DDE-1",
+  "feature_id": "FEAT-9DDE",
+  "task_id": "TASK-TSJ-001",
+  "turn_number": 1,
+  "player_summary": "Implementation attempt",
+  "player_decision": "feedback",
+  "coach_decision": "feedback",
+  "coach_feedback": "- The evidence collection aborted with status 'partial_gate_abort', meaning critical verification signals (tests_run, coverage) are absent.: Ensure the environment is stable and re-run the verification pipeline.\n- AC-005, AC-006, and AC-007 (null fields, malformed frontmatter handling, and single-task lookup) are not addressed in the implementation report.: Implement the missing logic for null fields, parse errors, and the positional TASK-ID argument.\n- Test file is located at 'tests/test_task_status_json.py' instead of the required 'tests/unit/commands/test_task_status_json.py'.: Move the test file to the correct directory: tests/unit/commands/test_task_status_json.py",
+  "mode": "fresh_start",
+  "blockers_found": [],
+  "progress_summary": "Turn 1: feedback",
+  "acceptance_criteria_status": {},
+  "files_modified": [
+    ".claude/task-plans/TASK-TSJ-001-implementation-plan.md",
+    "installer/core/commands/lib/task_status_json.py",
+    "tests/test_task_status_json.py"
+  ],
+  "tests_passed": null,
+  "tests_failed": null,
+  "coverage": null,
+  "arch_score": null,
+  "started_at": "2026-06-13T09:49:45.816028",
+  "completed_at": "2026-06-13T09:49:45.816028",
+  "duration_seconds": null,
+  "lessons_from_turn": [],
+  "what_to_try_next": null
+}

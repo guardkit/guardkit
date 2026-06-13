@@ -1,0 +1,4 @@
+{"run_id":"run-TASK-TSJ-001-20260613090313","feature_id":null,"task_id":"TASK-TSJ-001","agent_role":"player","attempt":1,"timestamp":"2026-06-13T09:03:13.626810","schema_version":"1.0.0"}
+{"run_id":"run-TASK-TSJ-001-20260613092442","feature_id":null,"task_id":"TASK-TSJ-001","agent_role":"player","attempt":1,"timestamp":"2026-06-13T09:24:42.095690","schema_version":"1.0.0"}
+{"run_id":"run-TASK-TSJ-001-20260613103646","feature_id":null,"task_id":"TASK-TSJ-001","agent_role":"player","attempt":1,"timestamp":"2026-06-13T10:36:46.834932","schema_version":"1.0.0","failure_category":"other"}
+{"run_id":"run-FEAT-9DDE","feature_id":"FEAT-9DDE","task_id":"FEAT-9DDE","agent_role":"router","attempt":1,"timestamp":"2026-06-13T10:36:46.837655","schema_version":"1.0.0","wave_id":"wave-1","worker_count":1,"queue_depth_start":1,"queue_depth_end":0,"tasks_completed":0,"task_failures":1,"rate_limit_count":0,"p95_task_latency_ms":null}

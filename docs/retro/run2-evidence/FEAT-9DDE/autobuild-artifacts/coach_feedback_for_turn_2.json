@@ -1,0 +1,9 @@
+{
+  "turn": 2,
+  "feedback_from_turn": 1,
+  "feedback_summary": "- The evidence collection aborted with status 'partial_gate_abort', meaning critical verification signals (tests_run, coverage) are absent.: Ensure the environment is stable and re-run the verification pipeline.\n- AC-005, AC-006, and AC-007 (null fields, malformed frontmatter handling, and single-task lookup) are not addressed in the implementation report.: Implement the missing logic for null fields, parse errors, and the positional TASK-ID argument.\n- Test file is located at 'tests/test_task_status_json.py' instead of the required 'tests/unit/commands/test_task_status_json.py'.: Move the test file to the correct directory: tests/unit/commands/test_task_status_json.py",
+  "must_fix": [],
+  "should_fix": [],
+  "validation_results": {},
+  "raw_feedback": "- The evidence collection aborted with status 'partial_gate_abort', meaning critical verification signals (tests_run, coverage) are absent.: Ensure the environment is stable and re-run the verification pipeline.\n- AC-005, AC-006, and AC-007 (null fields, malformed frontmatter handling, and single-task lookup) are not addressed in the implementation report.: Implement the missing logic for null fields, parse errors, and the positional TASK-ID argument.\n- Test file is located at 'tests/test_task_status_json.py' instead of the required 'tests/unit/commands/test_task_status_json.py'.: Move the test file to the correct directory: tests/unit/commands/test_task_status_json.py"
+}
