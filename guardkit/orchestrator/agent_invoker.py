@@ -2246,6 +2246,19 @@ class AgentInvoker:
                 coach_output_path=coach_output_path,
             )
 
+            # TASK-FIX-COACHNARR01: keep the synthesized narrative faithful to
+            # the deterministic records. Embeds honesty discrepancies verbatim
+            # and strips fabricated "does not exist on disk" claims (the
+            # FEAT-C332 run-2 B-min hallucination). Narrative-only — does not
+            # flip the verdict direction the two guards above own.
+            self._reconcile_coach_narrative_with_records(
+                decision=decision,
+                evidence_bundle=evidence_bundle,
+                task_id=task_id,
+                turn=turn,
+                coach_output_path=coach_output_path,
+            )
+
             # Add honesty verification to decision for tracking
             decision["honesty_verification"] = {
                 "verified": honesty_verification.verified,
@@ -5368,6 +5381,85 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             logger.warning(
                 "TASK-QAWE-004: failed to re-persist overridden verdict "
                 "to %s (%s); in-memory override still applies",
+                coach_output_path,
+                exc,
+            )
+
+    def _reconcile_coach_narrative_with_records(
+        self,
+        *,
+        decision: Dict[str, Any],
+        evidence_bundle: Optional["CoachEvidenceBundle"],
+        task_id: str,
+        turn: int,
+        coach_output_path: Path,
+    ) -> None:
+        """Keep the synthesized Coach narrative faithful to deterministic records.
+
+        TASK-FIX-COACHNARR01. Sibling of
+        :meth:`_reconcile_absent_independent_test_signal` and
+        :meth:`_apply_spec_gap_absent_guard`, but it corrects the *narrative*
+        rather than overriding the verdict direction. Under the degraded B-min
+        synthesis path (TASK-PERF-COACHGATHER01) the toolless model narrates
+        discrepancy records it cannot inspect and can fabricate a cause — the
+        FEAT-C332 run-2 "files ... do not exist on disk" hallucination, where
+        the named files were tracked repo files present in every checkpoint.
+
+        Delegates to
+        :func:`guardkit.orchestrator.coach_narrative_reconciler.reconcile_narrative`
+        which (AC-001) embeds the deterministic honesty records verbatim into the
+        feedback issue list and (AC-002 / AC-003) strips any "does not exist on
+        disk"-style claim naming a path absent from every ``file_existence``-class
+        discrepancy. Mutates ``decision`` in place and re-persists
+        ``coach_turn_N.json`` on change so the operator artifact and the Layer-4
+        late-approval reader see the corrected narrative.
+
+        No-op when ``evidence_bundle`` is ``None`` (legacy/tool-using callers),
+        its ``honesty`` leg is ``None``, or no reconciliation was needed.
+        """
+        if evidence_bundle is None:
+            return
+        honesty = getattr(evidence_bundle, "honesty", None)
+        if honesty is None:
+            return
+
+        from guardkit.orchestrator.coach_narrative_reconciler import (
+            reconcile_narrative,
+        )
+
+        result = reconcile_narrative(decision, honesty)
+        if not result.changed:
+            return
+
+        if result.corrected_paths:
+            logger.warning(
+                "TASK-FIX-COACHNARR01: corrected unsupported non-existence "
+                "claim(s) in Coach narrative for %s turn %s — path(s) %s have "
+                "no file_existence discrepancy on record (likely B-min "
+                "synthesis fabrication)",
+                task_id,
+                turn,
+                result.corrected_paths,
+            )
+        if result.embedded_issue_count:
+            logger.info(
+                "TASK-FIX-COACHNARR01: embedded %d deterministic honesty "
+                "record(s) verbatim into Coach feedback for %s turn %s",
+                result.embedded_issue_count,
+                task_id,
+                turn,
+            )
+
+        # Re-persist so the operator-facing coach_turn_N.json carries the
+        # corrected narrative and embedded records. A persistence hiccup must
+        # never block the turn — the in-memory decision (returned in the
+        # result) already carries the correction.
+        try:
+            coach_output_path.write_text(json.dumps(decision, indent=2))
+        except OSError as exc:
+            logger.warning(
+                "TASK-FIX-COACHNARR01: failed to re-persist reconciled verdict "
+                "to %s (%s); in-memory correction still applies",
                 coach_output_path,
                 exc,
             )
