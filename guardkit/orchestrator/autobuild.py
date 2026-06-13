@@ -258,6 +258,17 @@ UNRECOVERABLE_ERRORS = (
 
 
 # ============================================================================
+# Direct-mode evidence gate (TASK-FIX-DIRECTFG01)
+# ============================================================================
+
+# Wall-clock budget for executing a single registered bin-entry producer in the
+# AC3 bin-entry probe. A registered CLI producer that loads cleanly returns in
+# well under a second; a hang (e.g. blocking on stdin despite DEVNULL, or an
+# import that triggers network I/O) is treated as ABSENT signal, not PRESENT.
+_DIRECT_MODE_BIN_PROBE_TIMEOUT_S = 10
+
+
+# ============================================================================
 # Failure Category Mapping (TASK-INST-004)
 # ============================================================================
 
@@ -573,6 +584,151 @@ def classify_stall(
         actual_invocations=actual_invocations,
         co_fires=co_fires,
     )
+
+
+# ============================================================================
+# Direct-mode bin-entry producer probe (TASK-FIX-DIRECTFG01, AC3)
+# ============================================================================
+
+
+def _read_bin_entries(worktree_path: Path) -> List[str]:
+    """Read the registered CLI manifest under the worktree.
+
+    The manifest at ``installer/core/commands/bin-entries.txt`` is the SOLE
+    source of truth for which scripts install.sh promotes to shell commands
+    (see the file's own header). Format: one repo-relative path per line; blank
+    lines and ``#`` comments ignored.
+
+    Returns an empty list when the manifest is absent (most worktrees that are
+    not guardkit-self do not carry it) or unreadable — absent signal, never a
+    crash.
+    """
+    manifest = Path(worktree_path) / "installer" / "core" / "commands" / "bin-entries.txt"
+    if not manifest.exists():
+        return []
+    try:
+        raw = manifest.read_text(encoding="utf-8")
+    except OSError as exc:
+        logger.debug("bin-entries probe: could not read %s: %s", manifest, exc)
+        return []
+    entries: List[str] = []
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        entries.append(stripped)
+    return entries
+
+
+def _check_direct_mode_bin_entries(
+    worktree_path: Path,
+    authored_files: List[str],
+    python_exe: str,
+    timeout_s: int = _DIRECT_MODE_BIN_PROBE_TIMEOUT_S,
+) -> List[Dict[str, Any]]:
+    """Probe registered bin-entry producers the task authored this turn (AC3).
+
+    For each path that is BOTH listed in ``bin-entries.txt`` AND authored this
+    turn (``files_created ∪ files_modified``), run it as a subprocess
+    (``python <path>``) and classify the producer signal as PRESENT or ABSENT.
+    A registered CLI producer that raises on plain ``python <path>`` (the
+    FEAT-9DDE ``ModuleNotFoundError`` false-green) is the core defect this
+    closes.
+
+    Scoping invariant: only authored, registered entries are executed — never
+    an arbitrary script, and never an entry the task did not touch.
+
+    Per ``stack-plugin-architecture.md`` this is an *execution* check: non-Python
+    entries degrade to an advisory ``should_fix`` (absent signal), never a crash
+    and never a false-pass.
+
+    Returns a list of issue dicts (``must_fix`` for broken producers,
+    ``should_fix`` for unverifiable non-Python entries). Empty list when nothing
+    to probe or every probed producer loaded cleanly.
+    """
+    worktree = Path(worktree_path)
+    bin_entries = _read_bin_entries(worktree)
+    if not bin_entries:
+        return []
+
+    authored_set = set(authored_files)
+    targets = [p for p in bin_entries if p in authored_set]
+    if not targets:
+        return []
+
+    # Clean PYTHONPATH = worktree ONLY. Inheriting the ambient PYTHONPATH would
+    # let guardkit's own installed ``src`` satisfy an import the producer is
+    # actually missing, masking the failure (the false-green this gate closes).
+    # cwd is the worktree, not the host (TASK-FIX-COACHCWD01 cwd-leak lesson).
+    probe_env = {**os.environ, "PYTHONPATH": str(worktree)}
+
+    issues: List[Dict[str, Any]] = []
+    for rel_path in targets:
+        if not rel_path.endswith(".py"):
+            issues.append(
+                {
+                    "severity": "should_fix",
+                    "category": "direct_mode_bin_entry_unverifiable",
+                    "description": (
+                        f"Non-Python bin-entry {rel_path}; execution check "
+                        f"skipped (absent signal)."
+                    ),
+                }
+            )
+            continue
+
+        target_path = worktree / rel_path
+        try:
+            proc = subprocess.run(
+                [python_exe, str(target_path)],
+                cwd=str(worktree),
+                env=probe_env,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+            )
+        except subprocess.TimeoutExpired:
+            issues.append(
+                {
+                    "severity": "must_fix",
+                    "category": "direct_mode_bin_entry_broken",
+                    "description": (
+                        f"Registered bin-entry {rel_path} execution timed out "
+                        f"after {timeout_s}s. Producer signal absent."
+                    ),
+                    "details": {"path": rel_path, "timed_out": True},
+                }
+            )
+            continue
+
+        stderr = proc.stderr or ""
+        stdout = proc.stdout or ""
+        traceback_seen = "Traceback (most recent call last)" in stderr
+        # ABSENT iff a Python traceback was raised (the AC3 "raises" /
+        # ModuleNotFoundError case — the actual FEAT-9DDE failure), OR a
+        # non-zero exit produced no stdout at all. PRESENT (no issue) iff
+        # returncode == 0 — a module that loads cleanly and prints nothing is
+        # fine (do NOT penalise exit-0 with empty stdout).
+        if traceback_seen or (proc.returncode != 0 and stdout.strip() == ""):
+            issues.append(
+                {
+                    "severity": "must_fix",
+                    "category": "direct_mode_bin_entry_broken",
+                    "description": (
+                        f"Registered bin-entry {rel_path} is broken: exit "
+                        f"{proc.returncode}; stderr head: {stderr[:300]!r}. "
+                        f"Producer signal absent."
+                    ),
+                    "details": {
+                        "path": rel_path,
+                        "returncode": proc.returncode,
+                        "stderr_head": stderr[:300],
+                    },
+                }
+            )
+
+    return issues
 
 
 # ============================================================================
@@ -5487,6 +5643,23 @@ class AutoBuildOrchestrator:
             if gate_result is not None:
                 return gate_result
 
+            # TASK-FIX-DIRECTFG01: deterministic direct-mode verification gate.
+            # Closes the implementation_mode=direct false-green (relaxed gates +
+            # unverified AC delivery / wiring / runnable producer). No-op for
+            # non-direct tasks (AC5 guard). Shared with the primary path so the
+            # legacy revert cannot bypass it.
+            direct_gate_result = self._direct_mode_evidence_gate(
+                validator,
+                task_id,
+                turn,
+                worktree,
+                start_time,
+                acceptance_criteria=acceptance_criteria,
+                task_type=task_type,
+            )
+            if direct_gate_result is not None:
+                return direct_gate_result
+
             validation_result = validator.validate(
                 task_id=task_id,
                 turn=turn,
@@ -5677,6 +5850,25 @@ class AutoBuildOrchestrator:
         )
         if gate_result is not None:
             return gate_result
+
+        # TASK-FIX-DIRECTFG01: deterministic direct-mode verification gate.
+        # Closes the implementation_mode=direct false-green where relaxed gates
+        # let the LLM Coach approve without verifying AC delivery, authored
+        # wiring, or that a registered CLI producer actually runs. Runs AFTER
+        # _evidence_repo_gate and BEFORE the LLM Coach so a red signal cannot be
+        # approved over by Coach leniency (the BDDW-002 lesson). No-op for every
+        # non-direct task (AC5 guard).
+        direct_gate_result = self._direct_mode_evidence_gate(
+            validator,
+            task_id,
+            turn,
+            worktree,
+            start_time,
+            acceptance_criteria=acceptance_criteria,
+            task_type=task_type,
+        )
+        if direct_gate_result is not None:
+            return direct_gate_result
 
         # Step 2: invoke LLM Coach via AgentInvoker, threading the bundle.
         # Part C (this PR) extends invoke_coach + _build_coach_prompt to
@@ -5892,6 +6084,235 @@ class AutoBuildOrchestrator:
             turn=turn,
             worktree=worktree,
             rationale=blocking_reason,
+            start_time=start_time,
+        )
+
+    def _direct_mode_evidence_gate(
+        self,
+        validator: "CoachValidator",
+        task_id: str,
+        turn: int,
+        worktree: Worktree,
+        start_time: float,
+        *,
+        acceptance_criteria: Optional[List[str]],
+        task_type: Optional[str],
+    ) -> Optional[AgentInvocationResult]:
+        """Deterministic direct-mode verification gate (TASK-FIX-DIRECTFG01).
+
+        Closes the ``implementation_mode: direct`` false-green: in direct mode
+        the Player's quality gates are written ``quality_gates_relaxed: True``
+        (coverage/arch relaxed), and the Coach would otherwise approve without
+        verifying that the acceptance criteria were actually delivered, that
+        authored wiring resolves, or that a registered CLI producer the task
+        authored actually runs.
+
+        Mirrors ``_evidence_repo_gate`` EXACTLY: shared by BOTH Coach paths
+        (primary LLM Coach and legacy ``GUARDKIT_COACH_LEGACY=1``) so neither
+        implementation can bypass it; returns a blocking synthetic-feedback
+        ``AgentInvocationResult`` (``decision: "feedback"``) when an authored
+        deliverable is unverified, or ``None`` when there is nothing to block on
+        (including for every non-direct-mode task — the AC5 guard).
+
+        Three checks, collected into ``must_fix`` issues:
+
+        - **AC1** — AC-level disk verification via ``validator.validate_requirements``.
+          An unmet criterion (no disk/promise evidence) blocks in direct mode.
+        - **AC2** — wiring consultation via ``_run_wiring_analysis``. An UNWIRED
+          authored bin-entry blocks; everything else (factory absent, advisory
+          findings) is non-blocking (fail-open — no invented false-reds).
+        - **AC3** — bin-entry producer execution: a registered, authored CLI
+          producer that raises on ``python <path>`` blocks (the FEAT-9DDE case).
+
+        Non-blocking advisories (e.g. non-Python bin-entries) are logged but do
+        not block — they ride alongside the synthetic feedback only when some
+        ``must_fix`` issue already fired.
+        """
+        # AC5 guard: only direct mode (quality_gates_relaxed) is ever gated.
+        # This flag is written ONLY by agent_invoker._write_direct_mode_results;
+        # full task-work never sets it, so this gate is a structural no-op for
+        # every non-direct task.
+        task_work_results = validator.read_quality_gate_results(task_id)
+        if not isinstance(task_work_results, dict):
+            return None
+        quality_gates = task_work_results.get("quality_gates")
+        if not (
+            isinstance(quality_gates, dict)
+            and quality_gates.get("quality_gates_relaxed") is True
+        ):
+            return None
+
+        authored = sorted(
+            set(
+                (task_work_results.get("files_created") or [])
+                + (task_work_results.get("files_modified") or [])
+            )
+        )
+
+        must_fix: List[Dict[str, Any]] = []
+        advisories: List[Dict[str, Any]] = []
+
+        # --- AC1: AC-level disk verification ----------------------------------
+        criteria = acceptance_criteria or []
+        if criteria:
+            try:
+                req_validation = validator.validate_requirements(
+                    task={
+                        "acceptance_criteria": criteria,
+                        "task_type": task_type,
+                    },
+                    task_work_results=task_work_results,
+                    turn=turn,
+                )
+            except Exception as exc:  # noqa: BLE001 — verification must not crash Coach
+                logger.warning(
+                    "Direct-mode AC verification raised for %s turn %s: %s "
+                    "(skipping AC1 check).",
+                    task_id, turn, exc,
+                )
+                req_validation = None
+
+            if req_validation is not None and not req_validation.all_criteria_met:
+                unmet_ids = [
+                    cr.criterion_id
+                    for cr in req_validation.criteria_results
+                    if cr.result != "verified"
+                ]
+                total = req_validation.criteria_total
+                unmet = total - req_validation.criteria_met
+                must_fix.append(
+                    {
+                        "severity": "must_fix",
+                        "category": "direct_mode_ac_unverified",
+                        "description": (
+                            f"Direct mode: {unmet}/{total} acceptance criteria "
+                            f"have no disk evidence (unmet: {unmet_ids}). Direct "
+                            f"mode relaxes coverage/arch but NOT AC delivery."
+                        ),
+                        "details": {"unmet_ids": unmet_ids, "total": total},
+                    }
+                )
+
+        # --- AC2: wiring consultation -----------------------------------------
+        try:
+            from guardkit.orchestrator.quality_gates.coach_validator import (
+                _run_wiring_analysis,
+            )
+
+            stack_template = detect_stack_template(worktree.path)
+            # task_type is pinned to "feature" so the FEATURE/REFACTOR/INTEGRATION
+            # outer gate lets the probe run for direct-mode tasks. We do NOT
+            # mutate any resolved task_type elsewhere — the factory uses task_type
+            # only for that outer gate.
+            wiring_result = _run_wiring_analysis(
+                worktree_path=worktree.path,
+                authored_files=authored,
+                task_type="feature",
+                stack_template=stack_template,
+                bdd_dict=None,
+                task_id=task_id,
+            )
+        except Exception as exc:  # noqa: BLE001 — wiring must not crash Coach
+            logger.warning(
+                "Direct-mode wiring analysis raised for %s turn %s: %s "
+                "(skipping AC2 check).",
+                task_id, turn, exc,
+            )
+            wiring_result = None
+
+        if wiring_result is not None:
+            wiring = wiring_result.get("wiring") or {}
+            # Re-read the manifest here (AC3's _check_direct_mode_bin_entries
+            # reads it too, but does not expose its parsed set): the AC2 gate
+            # only blocks UNWIRED findings on a *registered* bin-entry. The
+            # manifest is small and worktree-local, so the second read is
+            # negligible.
+            bin_entries = set(_read_bin_entries(Path(worktree.path)))
+            authored_bin_entries = bin_entries & set(authored)
+            # The factory serialises each finding as
+            # ``{file, symbol, kind, severity, pattern}`` (guardkitfactory
+            # wiring/analyzer.py): the UNWIRED/MOCKED discriminator is
+            # ``pattern`` (``kind`` is the *symbol* kind, e.g. "function"),
+            # and the file path is ``file``. Read ``path`` as a defensive
+            # fallback for hand-built finding shapes — it can only ever match
+            # an already-authored registered entry, so it cannot manufacture a
+            # false-red.
+            unwired_registered = [
+                (finding.get("file") or finding.get("path"))
+                for finding in wiring.get("findings", [])
+                if finding.get("pattern") == "UNWIRED_PATH"
+                and (finding.get("file") or finding.get("path"))
+                in authored_bin_entries
+            ]
+            if unwired_registered:
+                must_fix.append(
+                    {
+                        "severity": "must_fix",
+                        "category": "direct_mode_wiring_gap",
+                        "description": (
+                            f"Direct mode: registered bin-entry path(s) "
+                            f"{unwired_registered} are UNWIRED (no non-test "
+                            f"reference / registration). A registered CLI "
+                            f"producer must be reachable."
+                        ),
+                        "details": {"unwired_registered": unwired_registered},
+                    }
+                )
+
+        # --- AC3: bin-entry producer execution --------------------------------
+        python_exe = (
+            str(validator._venv_python)
+            if getattr(validator, "_venv_python", None) is not None
+            else sys.executable
+        )
+        try:
+            bin_issues = _check_direct_mode_bin_entries(
+                Path(worktree.path), authored, python_exe
+            )
+        except Exception as exc:  # noqa: BLE001 — probe must not crash Coach
+            logger.warning(
+                "Direct-mode bin-entry probe raised for %s turn %s: %s "
+                "(skipping AC3 check).",
+                task_id, turn, exc,
+            )
+            bin_issues = []
+        for issue in bin_issues:
+            if issue.get("severity") == "must_fix":
+                must_fix.append(issue)
+            else:
+                advisories.append(issue)
+
+        if advisories:
+            logger.info(
+                "Direct-mode gate advisories for %s turn %s: %s",
+                task_id,
+                turn,
+                [a.get("category") for a in advisories],
+            )
+
+        if not must_fix:
+            return None
+
+        categories = sorted({issue["category"] for issue in must_fix})
+        detail_lines = "\n".join(
+            f"- [{issue['category']}] {issue['description']}" for issue in must_fix
+        )
+        rationale = (
+            "Direct-mode evidence gate blocked the turn "
+            f"({', '.join(categories)}). Direct mode relaxes coverage/arch "
+            "gates but still requires verifiable AC delivery, resolved wiring, "
+            "and runnable registered producers:\n"
+            f"{detail_lines}"
+        )
+        logger.warning(
+            "Direct-mode evidence gate blocks %s turn %s:\n%s",
+            task_id, turn, rationale,
+        )
+        return self._emit_synthetic_coach_feedback(
+            task_id=task_id,
+            turn=turn,
+            worktree=worktree,
+            rationale=rationale,
             start_time=start_time,
         )
 

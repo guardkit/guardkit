@@ -1,10 +1,14 @@
 ---
 id: TASK-FIX-DIRECTFG01
 title: Close the direct-mode false-green — run AC-level / wiring verification even when Coach gates are required=False
-status: backlog
+status: completed
 task_type: fix
 created: 2026-06-13T12:40:00Z
-updated: 2026-06-13T12:40:00Z
+updated: 2026-06-13T15:10:00Z
+completed: 2026-06-13T15:10:00Z
+previous_state: in_review
+completed_location: tasks/completed/2026-06/
+state_transition_reason: "Quality gates passed (compile + 22/22 tests, code review 88/100 APPROVE); completed via /task-complete"
 priority: high
 complexity: 5
 related: [TASK-AB-FIX-INVAB1, TASK-AB-XREPOEV01, FEAT-C332, FEAT-9DDE]
@@ -47,23 +51,62 @@ This task is the *systemic* fix so the class can't recur.)
 
 ## Acceptance Criteria
 
-- [ ] In `direct` implementation_mode, the Coach still runs AC-level verification
+- [x] In `direct` implementation_mode, the Coach still runs AC-level verification
       against disk (the task's acceptance criteria are checked for evidence, not
       assumed met) before `decision=approve`. Relaxed `required=False` gates may
       stay relaxed for *test/coverage thresholds*, but **AC delivery must not be
       assumed**.
-- [ ] Wiring evidence (the FEAT-C332 `WiringWiringAnalyzer` UNWIRED_PATH /
+- [x] Wiring evidence (the FEAT-C332 `WiringWiringAnalyzer` UNWIRED_PATH /
       MOCKED_SEAM probes) is consulted on the direct-mode path too — a registered
       bin entry / composition-root edge that does not resolve is surfaced as
       feedback, never silently approved.
-- [ ] A registered CLI bin-entry whose target raises on `python <path>` (import
+- [x] A registered CLI bin-entry whose target raises on `python <path>` (import
       error / traceback / non-zero exit with empty stdout) is treated as an
       ABSENT producer signal → feedback, not approve.
-- [ ] Regression test: a synthetic direct-mode task whose deliverable is a
+- [x] Regression test: a synthetic direct-mode task whose deliverable is a
       broken wrapper (imports a missing module) and whose own test is green must
       NOT receive `decision=approve`.
-- [ ] No change to `task-work` (full) mode behaviour, which already verified
+- [x] No change to `task-work` (full) mode behaviour, which already verified
       correctly in run 3 (TSJ-001 real green).
+
+## Implementation Result (2026-06-13, /task-work)
+
+A deterministic `_direct_mode_evidence_gate` was added to
+`guardkit/orchestrator/autobuild.py`, mirroring the existing `_evidence_repo_gate`
+precedent: it runs in BOTH Coach paths (`_invoke_coach_legacy` and
+`_invoke_coach_primary`) AFTER `_evidence_repo_gate` and BEFORE the LLM Coach, so
+neither path (incl. a `GUARDKIT_COACH_LEGACY=1` revert) can bypass it. It is a
+structural no-op unless `task_work_results.quality_gates.quality_gates_relaxed is
+True` — the flag written ONLY by `_write_direct_mode_results` — so full task-work
+mode is untouched (AC5).
+
+- **AC1**: `validator.validate_requirements(...)` is run in direct mode; an unmet
+  criterion (no disk/promise evidence) blocks the turn (`direct_mode_ac_unverified`).
+- **AC2**: `_run_wiring_analysis(..., task_type="feature", ...)` is consulted; an
+  `UNWIRED_PATH` finding on an authored, registered bin-entry blocks
+  (`direct_mode_wiring_gap`). Fail-open otherwise (no invented false-reds).
+- **AC3**: `_check_direct_mode_bin_entries` executes each `bin-entries.txt ∩
+  authored` `.py` target as a subprocess (`cwd=worktree`, clean
+  `PYTHONPATH=worktree` only, `stdin=DEVNULL`, 10 s timeout, never imported). A
+  Python traceback / non-zero-exit-with-empty-stdout / timeout → ABSENT producer
+  → block (`direct_mode_bin_entry_broken`). Non-Python entry → non-blocking
+  `should_fix` advisory. Exit-0 (even empty stdout) → PRESENT.
+- **Block mechanism**: `_emit_synthetic_coach_feedback` (decision `feedback`),
+  rationale naming the categories + specifics for the Player's next turn.
+
+**Verification**: 22 targeted tests in
+`tests/orchestrator/test_direct_mode_false_green_regression.py` (AC4 asserts the
+LLM Coach `invoke_coach` is NOT called when the gate blocks — proving the block is
+pre-LLM). 81 pass across all touched Coach suites. A dead-code bug in AC2 (the
+wiring discriminator filtered on `kind` instead of the factory's `pattern` key)
+was caught during independent verification and fixed; the regression test was
+empirically falsified (reverting `pattern`→`kind` makes it fail).
+
+**Quality gates**: compilation ✅ · tests 100% (22/22 new, 81 across touched
+suites) ✅ · new code branch-covered by the 22 tests ✅. Phases run via agents:
+planning → architectural review (74/100) → implementation → testing → code review
+(88/100, APPROVE). Change surface: `guardkit/orchestrator/autobuild.py` (+421) and
+the new test file only.
 
 ## Evidence
 - Result writeup: `docs/retro/coder-player-experiment-RESULT-2026-06-13.md` §"Finding 2".
