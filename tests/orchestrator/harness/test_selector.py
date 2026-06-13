@@ -300,6 +300,56 @@ class TestSelectHarnessDispatch:
         assert isinstance(harness, LangGraphHarness)
         assert harness.model is stub_model
 
+    def test_langgraph_forwards_on_model_activity(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Any,
+    ) -> None:
+        """TASK-FIX-SPECINVOKE01: ``on_model_activity`` reaches LangGraphHarness.
+
+        The orchestrator threads ``AgentInvoker._bump_activity`` here so the
+        no-model-activity specialist watchdog measures real model progress
+        through the harness's await-then-yield event cadence.
+        """
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+
+        from guardkitfactory.harness import LangGraphHarness
+
+        sentinel = lambda: None  # noqa: E731 — minimal callable sink
+
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR,
+            model=MagicMock(),
+            cwd=tmp_path,
+            on_model_activity=sentinel,
+        )
+
+        assert isinstance(harness, LangGraphHarness)
+        assert harness.on_model_activity is sentinel
+
+    def test_sdk_pops_on_model_activity(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """TASK-FIX-SPECINVOKE01: the SDK harness never sees ``on_model_activity``.
+
+        It already streams events incrementally, so the kwarg is LangGraph-only
+        and must be popped before ``ClaudeSDKHarness(**harness_kwargs)`` (which
+        has no such parameter) — otherwise selection raises ``TypeError``.
+        """
+        monkeypatch.setenv(_TEST_ENV_VAR, "sdk")
+
+        from guardkit.orchestrator.harness.sdk_harness import ClaudeSDKHarness
+
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR,
+            on_model_activity=lambda: None,
+            **_sdk_kwargs(),
+        )
+
+        assert isinstance(harness, ClaudeSDKHarness)
+        assert not hasattr(harness, "on_model_activity")
+
     def test_langgraph_when_guardkitfactory_unimportable_raises(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

@@ -3479,6 +3479,22 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             # Return default verification (assume honest) to not block workflow
             return HonestyVerification(verified=True, discrepancies=[], honesty_score=1.0)
 
+    def _bump_activity(self) -> None:
+        """Refresh the no-model-activity clock from a substrate callback.
+
+        TASK-FIX-SPECINVOKE01. Threaded into the LangGraph harness as
+        ``on_model_activity`` so each real LLM/tool boundary refreshes the
+        same ``_last_activity_monotonic`` the specialist watchdog polls. The
+        consumer loop in :meth:`_invoke_with_role` only updates that clock when
+        a :class:`HarnessEvent` is *yielded*, but the LangGraph harness awaits
+        the whole ``agent.ainvoke()`` before yielding any event — so without
+        this callback the clock froze for the entire run and the watchdog
+        false-killed a live, model-active specialist at 150 s (FEAT-9DDE
+        run 3). Synchronous and trivial: a single atomic attribute store on the
+        event-loop thread, safe against the sibling watchdog task's read.
+        """
+        self._last_activity_monotonic = time.monotonic()
+
     async def _invoke_with_role(
         self,
         prompt: str,
@@ -3707,6 +3723,14 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 # ``select_harness``); passing unconditionally keeps the
                 # call site harness-agnostic.
                 cwd=self.worktree_path,
+                # TASK-FIX-SPECINVOKE01: substrate-aware activity signal.
+                # LangGraph-only (popped before the SDK harness sees it). The
+                # harness pings this on every LLM/tool boundary so the
+                # specialist no-model-activity watchdog measures real model
+                # progress rather than this harness's await-then-yield event
+                # cadence (which froze ``_last_activity_monotonic`` and
+                # false-killed live specialists at 150 s — FEAT-9DDE run 3).
+                on_model_activity=self._bump_activity,
             )
 
             # TASK-FIX-ASPF-004 + TASK-FIX-CTOUT01: dispatch cancellation
