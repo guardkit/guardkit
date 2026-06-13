@@ -2,9 +2,11 @@
 id: TASK-FIX-WTESCAPE01
 title: Player file writes escape the worktree via absolute paths (LangGraph filesystem backend not path-confined)
 task_type: feature
-status: in_review
+status: completed
 created: 2026-06-12T20:05:00Z
-updated: 2026-06-12T22:30:00Z
+updated: 2026-06-13T00:00:00Z
+completed: 2026-06-13T00:00:00Z
+completed_location: tasks/completed/2026-06/TASK-FIX-WTESCAPE01-player-writes-escape-worktree.md
 priority: high
 tags: [autobuild, langgraph, harness, sandbox, worktree, evidence-boundary]
 complexity: 5
