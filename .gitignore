@@ -179,3 +179,7 @@ site/
 
 # Per-machine Claude Code overrides
 .claude/settings.local.json
+
+# Autobuild merge-cruft (TASK-FIX-COACHCWD01 / checkpoint sweep)
+coverage.xml
+large_tool_results/
