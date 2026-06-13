@@ -22,7 +22,8 @@ def read_task_file(file_path: Path) -> tuple[Dict[str, Any], str]:
     Read task file and return frontmatter and body separately.
     """
     try:
-        from installer.core.commands.lib.task_utils import parse_task_frontmatter
+        from installer.core.commands.lib.task_utils import parse_task_frontmatter, read_task_file as read_task_file_util
+        return read_task_file_util(file_path)
     except ImportError:
         # Fallback for when the module is not available in the current context
         import yaml
@@ -57,14 +58,14 @@ def read_task_file(file_path: Path) -> tuple[Dict[str, Any], str]:
 
             return frontmatter
 
-    content = file_path.read_text(encoding='utf-8')
-    frontmatter = parse_task_frontmatter(content)
+        content = file_path.read_text(encoding='utf-8')
+        frontmatter = parse_task_frontmatter(content)
 
-    # Extract body
-    parts = content.split('---', 2)
-    body = parts[2] if len(parts) >= 3 else ""
-    
-    return frontmatter, body
+        # Extract body
+        parts = content.split('---', 2)
+        body = parts[2] if len(parts) >= 3 else ""
+        
+        return frontmatter, body
 
 
 def get_task_directories(base_path: Path) -> List[Path]:
@@ -115,8 +116,18 @@ def scan_tasks(base_path: Path) -> List[Dict[str, Any]]:
                     frontmatter["file_path"] = str(task_file.relative_to(base_path))
                     tasks.append(frontmatter)
                 except Exception as e:
-                    # Skip invalid task files
-                    # print(f"Warning: Could not parse task file {task_file}: {e}", file=sys.stderr)
+                    # Handle malformed frontmatter gracefully - create minimal task entry
+                    # Extract task ID from filename
+                    task_id = task_file.stem
+                    if task_id.startswith("TASK-"):
+                        # Create a minimal task entry with parse_error flag
+                        minimal_task = {
+                            "id": task_id,
+                            "parse_error": True,
+                            "file_path": str(task_file.relative_to(base_path))
+                        }
+                        tasks.append(minimal_task)
+                    # Skip if we can't extract a valid task ID
                     continue
         except Exception:
             # Skip if directory access fails
@@ -133,13 +144,17 @@ def get_task_summary(tasks: List[Dict[str, Any]]) -> Dict[str, int]:
         "in_review": 0,
         "blocked": 0,
         "completed": 0,
-        "total": len(tasks)
+        "total": 0
     }
     
     for task in tasks:
+        # Skip tasks with parse errors
+        if task.get("parse_error"):
+            continue
         status = task.get("status", "backlog")
         if status in summary:
             summary[status] += 1
+        summary["total"] += 1
     
     return summary
 
@@ -158,7 +173,33 @@ def sort_tasks(tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         task_id = task.get("id", "")
         return (status_order.get(status, 999), task_id)
     
-    return sorted(tasks, key=sort_key)
+    # Sort tasks, but put tasks with parse errors at the end
+    def sort_key_with_errors(task):
+        if task.get("parse_error"):
+            return (999, task.get("id", ""))
+        return sort_key(task)
+    
+    return sorted(tasks, key=sort_key_with_errors)
+
+
+def build_task_json(task_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Build a task object that matches the schema exactly.
+    All fields that can be null are included as null, not omitted.
+    """
+    # Define all fields that should be present in the output
+    schema_fields = [
+        "id", "title", "status", "priority", "task_type", "complexity", "tags",
+        "created", "updated", "epic", "feature", "parent_review", "feature_id",
+        "file_path", "parse_error", "external_ids", "legacy_id"
+    ]
+    
+    # Create output with all fields, using None for missing fields
+    result = {}
+    for field in schema_fields:
+        result[field] = task_data.get(field, None)
+    
+    return result
 
 
 def main() -> None:
@@ -190,16 +231,18 @@ def main() -> None:
             print(f"Task {args.task_id} not found", file=sys.stderr)
             sys.exit(1)
         
-        # Remove summary from single task output
-        task.pop("summary", None)
-        print(json.dumps(task, indent=2, ensure_ascii=False))
+        # Build single task output with schema compliance
+        single_task = build_task_json(task)
+        # Remove summary from single task output (it shouldn't be there anyway)
+        single_task.pop("summary", None)
+        print(json.dumps(single_task, indent=2, ensure_ascii=False, default=str))
     else:
         # Return full dashboard JSON
         tasks = scan_tasks(base_path)
         sorted_tasks = sort_tasks(tasks)
         summary = get_task_summary(sorted_tasks)
         
-        # Build the full JSON structure
+        # Build the full JSON structure with fixed key order
         output = {
             "schema_version": "1.0",
             "generated_at": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -208,7 +251,7 @@ def main() -> None:
             "tasks": sorted_tasks
         }
         
-        print(json.dumps(output, indent=2, ensure_ascii=False))
+        print(json.dumps(output, indent=2, ensure_ascii=False, default=str))
 
 
 if __name__ == "__main__":
