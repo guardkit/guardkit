@@ -1,0 +1,16 @@
+[
+  {
+    "task_id": "TASK-TSJ-001",
+    "pre_path": "tasks/backlog/TASK-TSJ-001-implement-task-status-json-producer.md",
+    "post_path": "tasks/design_approved/TASK-TSJ-001-implement-task-status-json-producer.md",
+    "timestamp": "2026-06-13T08:24:42.109086+00:00",
+    "kind": "design_approved_transition"
+  },
+  {
+    "task_id": "TASK-TSJ-001",
+    "pre_path": "tasks/backlog/task-status-json/TASK-TSJ-001-implement-task-status-json-producer.md",
+    "post_path": "tasks/design_approved/TASK-TSJ-001-implement-task-status-json-producer.md",
+    "timestamp": "2026-06-13T08:49:45.879855+00:00",
+    "kind": "design_approved_transition"
+  }
+]

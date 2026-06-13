@@ -1,0 +1,36 @@
+{
+  "task_id": "TASK-TSJ-001",
+  "checkpoints": [
+    {
+      "turn": 1,
+      "commit_hash": "c3217d918175789b99c62aae287d61611f9ff3ad",
+      "timestamp": "2026-06-13T09:49:45.873803",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 1 complete (tests: fail)",
+      "from_prior_run": false,
+      "evidence_commits": {}
+    },
+    {
+      "turn": 2,
+      "commit_hash": "fc2cfc5f3015c81e08eaea62fc5c4c074b468127",
+      "timestamp": "2026-06-13T10:13:17.018508",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 2 complete (tests: fail)",
+      "from_prior_run": false,
+      "evidence_commits": {}
+    },
+    {
+      "turn": 3,
+      "commit_hash": "e8bb92143422f14c44571f32f2afda53b7b53734",
+      "timestamp": "2026-06-13T10:36:46.827606",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 3 complete (tests: fail)",
+      "from_prior_run": false,
+      "evidence_commits": {}
+    }
+  ],
+  "last_updated": "2026-06-13T10:36:46.827665"
+}
