@@ -1,80 +1,88 @@
+"""Integration tests for the task-status-json producer script.
+
+Hermetic: each test builds its own minimal ``tasks/`` tree under ``tmp_path``
+and runs the producer with ``--base-path`` so the assertions never depend on
+the live repo's task set (the original version depended on a committed
+``TEST-001`` fixture — removed as repo cruft — which made it environment-fragile).
+"""
+import json
 import subprocess
 import sys
-import json
 from pathlib import Path
 
-def test_task_status_json_script():
-    """Test that the task_status_json script runs correctly."""
-    
-    # Test 1: Run without arguments (should return full dashboard)
-    result = subprocess.run([
-        sys.executable, 
-        "installer/core/commands/lib/task_status_json.py"
-    ], capture_output=True, text=True, cwd=Path(__file__).parent.parent)
-    
-    print("Exit code:", result.returncode)
-    print("Stdout:", result.stdout[:200] + "..." if len(result.stdout) > 200 else result.stdout)
-    print("Stderr:", result.stderr)
-    
-    # Should succeed
-    assert result.returncode == 0, f"Script failed with exit code {result.returncode}"
-    
-    # Should output valid JSON
-    try:
-        data = json.loads(result.stdout)
-        assert "schema_version" in data
-        assert "generated_at" in data
-        assert "base_path" in data
-        assert "summary" in data
-        assert "tasks" in data
-        print("✓ Full dashboard JSON is valid")
-    except json.JSONDecodeError as e:
-        print(f"✗ Invalid JSON output: {e}")
-        raise
-    
-    # Test 2: Run with specific task ID (should return single task)
-    result2 = subprocess.run([
-        sys.executable, 
-        "installer/core/commands/lib/task_status_json.py",
-        "TEST-001"
-    ], capture_output=True, text=True, cwd=Path(__file__).parent.parent)
-    
-    print("\nSingle task test:")
-    print("Exit code:", result2.returncode)
-    print("Stdout:", result2.stdout)
-    print("Stderr:", result2.stderr)
-    
-    # Should succeed
-    assert result2.returncode == 0, f"Single task script failed with exit code {result2.returncode}"
-    
-    # Should output valid JSON for single task
-    try:
-        data = json.loads(result2.stdout)
-        assert "id" in data
-        assert data["id"] == "TEST-001"
-        print("✓ Single task JSON is valid")
-    except json.JSONDecodeError as e:
-        print(f"✗ Invalid JSON output for single task: {e}")
-        raise
-    
-    # Test 3: Run with non-existent task ID (should fail)
-    result3 = subprocess.run([
-        sys.executable, 
-        "installer/core/commands/lib/task_status_json.py",
-        "NON-EXISTENT"
-    ], capture_output=True, text=True, cwd=Path(__file__).parent.parent)
-    
-    print("\nNon-existent task test:")
-    print("Exit code:", result3.returncode)
-    print("Stdout:", result3.stdout)
-    print("Stderr:", result3.stderr)
-    
-    # Should fail with exit code 1
-    assert result3.returncode == 1, f"Expected exit code 1, got {result3.returncode}"
-    assert "not found" in result3.stderr.lower()
-    print("✓ Non-existent task correctly handled")
+SCRIPT = Path(__file__).parent.parent / "installer/core/commands/lib/task_status_json.py"
+
+_FIXTURE = (
+    "---\n"
+    "id: TEST-001\n"
+    "title: Test Task\n"
+    "status: backlog\n"
+    "priority: high\n"
+    "task_type: feature\n"
+    "complexity: 4\n"
+    "---\n\n"
+    "# Test Task\n\n"
+    "Hermetic fixture for the task-status-json integration tests.\n"
+)
+
+
+def _make_tasks(tmp_path: Path) -> Path:
+    """Build a minimal hermetic tasks/ tree with one known task (TEST-001)."""
+    backlog = tmp_path / "tasks" / "backlog"
+    backlog.mkdir(parents=True)
+    (backlog / "TEST-001.md").write_text(_FIXTURE)
+    return tmp_path
+
+
+def _run(*args: str, base: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), *args, "--base-path", str(base)],
+        capture_output=True,
+        text=True,
+        cwd=str(base),
+    )
+
+
+def test_full_dashboard(tmp_path):
+    """No task-id arg → full dashboard JSON with the expected schema keys."""
+    base = _make_tasks(tmp_path)
+    result = _run(base=base)
+
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    for key in ("schema_version", "generated_at", "base_path", "summary", "tasks"):
+        assert key in data, f"missing {key}"
+    assert data["summary"]["backlog"] == 1
+    assert data["summary"]["total"] == 1
+    assert any(t.get("id") == "TEST-001" for t in data["tasks"])
+
+
+def test_single_task_lookup(tmp_path):
+    """A known task-id → single-task object carrying that id (AC-007)."""
+    base = _make_tasks(tmp_path)
+    result = _run("TEST-001", base=base)
+
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data.get("id") == "TEST-001"
+    assert data.get("status") == "backlog"
+
+
+def test_nonexistent_task_errors(tmp_path):
+    """An unknown task-id → exit 1 + 'not found' on stderr (error handling)."""
+    base = _make_tasks(tmp_path)
+    result = _run("NON-EXISTENT", base=base)
+
+    assert result.returncode == 1, f"expected exit 1, got {result.returncode}"
+    assert "not found" in result.stderr.lower()
 
 
 if __name__ == "__main__":
-    test_task_status_json_script()
-    print("\n✓ All integration tests passed!")
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d)
+        _make_tasks(p)
+        for fn in (test_full_dashboard, test_single_task_lookup, test_nonexistent_task_errors):
+            fn(Path(tempfile.mkdtemp()))
+    print("✓ All integration tests passed!")
