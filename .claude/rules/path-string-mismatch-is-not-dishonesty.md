@@ -212,6 +212,14 @@ rg "absence-of-failure" .claude/rules/
   `Path.exists() == False` rejecting when the path string was not
   authored by the Player and a peer path under the same identity does
   exist.
+- **Sibling rule (collection-boundary instance)**:
+  [`evidence-boundary-narrower-than-write-surface.md`](evidence-boundary-narrower-than-write-surface.md)
+  — same meta-frame. This rule keeps a path miss from becoming a false-red
+  when the orchestrator moved the file; the collection-boundary sibling keeps
+  the *fix* for one of its directions (resolving a repo-qualified claim
+  against a sibling repo root) from re-introducing a ghost-path false-red:
+  unknown / undeclared repo-qualified claims fail open, exactly as this rule
+  requires. Seeded by TASK-AB-XREPOEV01 (2026-06-13).
 - **Pair fact in Graphiti** (`guardkit__project_decisions`): node
   *"path-string-mismatch-is-not-dishonesty"* with an
   `IS_INVERSE_SHAPE_OF` edge to *"absence-of-failure-is-not-success"*
