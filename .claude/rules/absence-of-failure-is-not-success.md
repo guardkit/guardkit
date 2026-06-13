@@ -141,6 +141,13 @@ turn-rejecting.
   (symptom + detection recipe + remediation recipe + grep signature).
   Same meta-class-of-defect (local decisions touching externally-defined
   contracts: PyPI namespaces vs. honesty contracts).
+- **Sibling rule (collection-boundary instance)**:
+  [`evidence-boundary-narrower-than-write-surface.md`](evidence-boundary-narrower-than-write-surface.md)
+  — same meta-frame, but the spurious "no signal" comes from the oracle's
+  spatial *collection* aperture being narrower than the task's write surface
+  (a declared sibling repo), not from interpreting a present signal. Seeded by
+  TASK-AB-XREPOEV01 (2026-06-13); produces both a false-green and a false-red
+  from the same too-narrow boundary.
 - **Pair fact in Graphiti** (`guardkit__project_decisions`): node
   *"absence-of-failure-is-not-success"* with edges to the three known
   instance uuids enumerated above, and an `IS_INVERSE_SHAPE_OF` edge

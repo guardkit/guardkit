@@ -316,6 +316,14 @@ rg "async def cancel" \
   [`path-string-mismatch-is-not-dishonesty.md`](path-string-mismatch-is-not-dishonesty.md)
   — same meta-frame, opposite direction
   (orchestrator-injected ghost path triggering a false-fail).
+- **Sibling rule (same guardkit ↔ guardkitfactory cross-repo seam)**:
+  [`evidence-boundary-narrower-than-write-surface.md`](evidence-boundary-narrower-than-write-surface.md)
+  — the other rule born of the guardkit ↔ guardkitfactory boundary. This rule
+  guards a *migrated contract* (the harness `cancel()` interface) at the seam;
+  that one guards the *evidence boundary* at the same seam (sibling-repo writes
+  the orchestrator must collect). Both are enforced by a fast `inspect`-based
+  cross-repo seam test (`test_xrepo_contract_seam.py` here;
+  `test_evidence_repos_seam.py` there). Seeded by TASK-AB-XREPOEV01 (2026-06-13).
 - **Pair fact in Graphiti** (`guardkit__project_decisions`): node
   *"harness-cancellation-contract"* with citations to the
   TASK-FIX-CTOUT01 reproducer test
