@@ -63,3 +63,9 @@ installer/core/commands/lib/generate_feature_yaml.py
 # documented in TASK-REV-RWOP1 Finding #1 — same shape as TASK-FIX-3C9D
 # applied to R1.
 installer/core/commands/lib/feature_plan_bdd_link.py
+
+# Task Status JSON producer: /task-status --json producer script.
+# Added by TASK-TSJ-002; corrected (TASK-FIX-DIRECTFG01 follow-up) to point at
+# the real producer at lib/ rather than a broken wrapper. Basename underscores
+# -> hyphens yields the symlink ~/.agentecflow/bin/task-status-json.
+installer/core/commands/lib/task_status_json.py

@@ -1,42 +1,42 @@
 ---
-id: TASK-TSJ-001
-title: Implement task-status-json producer script
-task_type: feature
-parent_review: TASK-REV-9DDE
-feature_id: FEAT-9DDE
-wave: 1
-implementation_mode: task-work
+autobuild_state:
+  base_branch: main
+  current_turn: 1
+  last_updated: '2026-06-11T13:39:45.963433'
+  max_turns: 5
+  started_at: '2026-06-11T13:21:03.594118'
+  turns:
+  - coach_success: true
+    decision: approve
+    feedback: null
+    player_success: true
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    timestamp: '2026-06-11T13:21:03.594118'
+    turn: 1
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-9DDE
 complexity: 4
-dependencies: []
-priority: high
-status: in_review
 created: 2026-06-11 12:08:26+00:00
-updated: 2026-06-11 12:08:26+00:00
+dependencies: []
+feature_id: FEAT-9DDE
+id: TASK-TSJ-001
+implementation_mode: task-work
+parent_review: TASK-REV-9DDE
+priority: high
+status: design_approved
 tags:
 - task-status
 - json-output
 - cli
 - producer-script
+task_type: feature
 test_results:
-  status: pending
   coverage: null
   last_run: null
-autobuild_state:
-  current_turn: 1
-  max_turns: 5
-  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-9DDE
-  base_branch: main
-  started_at: '2026-06-11T13:21:03.594118'
-  last_updated: '2026-06-11T13:39:45.963433'
-  turns:
-  - turn: 1
-    decision: approve
-    feedback: null
-    timestamp: '2026-06-11T13:21:03.594118'
-    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
-      actual: 0'
-    player_success: true
-    coach_success: true
+  status: pending
+title: Implement task-status-json producer script
+updated: 2026-06-11 12:08:26+00:00
+wave: 1
 ---
 
 # Task: Implement task-status-json producer script
