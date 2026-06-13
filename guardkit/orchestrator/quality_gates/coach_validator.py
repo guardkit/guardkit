@@ -50,6 +50,8 @@ from guardkit.orchestrator.coach_verification import (
     HonestyVerification,
     _resolve_venv_python,
 )
+from guardkit.orchestrator import evidence_repos as evidence_repos_lib
+from guardkit.orchestrator.evidence_repos import EvidenceRepo, EvidenceTestResult
 from guardkit.orchestrator.quality_gates.coach_evidence import (
     CoachEvidenceBundle,
 )
@@ -1186,6 +1188,7 @@ class CoachValidator:
         model_name: Optional[str] = None,
         coach_model_name: Optional[str] = None,  # TASK-FIX-COACHBUDG01
         venv_python: Optional[str] = None,  # TASK-FIX-COACHPYENV
+        evidence_repos: Optional[List["EvidenceRepo"]] = None,  # TASK-AB-XREPOEV01
     ):
         """
         Initialize CoachValidator.
@@ -1244,6 +1247,13 @@ class CoachValidator:
             :func:`guardkit.orchestrator.coach_verification._resolve_venv_python`.
             Without it, Coach could validate against the wrong interpreter
             (TASK-FIX-COACHPYENV — sibling of the TASK-FIX-7A05 CoachVerifier fix).
+        evidence_repos : Optional[List[EvidenceRepo]]
+            Declared sibling repos whose independent tests the Coach runs
+            (TASK-AB-XREPOEV01 AC-002). When a repo carries a ``test_command``,
+            :meth:`run_evidence_repo_tests` executes it in that repo with the
+            pinned interpreter; results reach the evidence bundle and a
+            ran-and-failed (or declared-but-unrunnable) suite blocks the turn.
+            Default None -> no sibling-repo test execution.
         """
         self.worktree_path = Path(worktree_path)
         self.test_command = test_command
@@ -1291,6 +1301,9 @@ class CoachValidator:
         # route Coach SDK test execution to the same Coach-specific model
         # (gemma4:26b) the Player↔Coach loop uses.
         self._coach_model_name: Optional[str] = coach_model_name
+        # TASK-AB-XREPOEV01 (AC-002): declared sibling repos whose tests the
+        # Coach runs independently. Empty -> no sibling test execution.
+        self._evidence_repos: List[EvidenceRepo] = list(evidence_repos or [])
         self.wave_size = max(1, int(wave_size))
         # TASK-DIAG-F4A2: Turn number for sdk_debug preservation paths.
         # Default 1 keeps backwards-compat for callers that don't pass it.
@@ -3032,6 +3045,35 @@ class CoachValidator:
         except Exception as e:
             logger.error(f"Failed to read task-work results: {e}")
             return {"error": f"Failed to read task-work results: {e}"}
+
+    def run_evidence_repo_tests(self) -> List[EvidenceTestResult]:
+        """Run independent tests in every declared sibling repo (AC-002).
+
+        Trust-but-verify for sibling-repo deliverables: each declared repo's
+        ``test_command`` runs in that repo's root under the same interpreter
+        Coach pins for worktree tests. Returns one
+        :class:`EvidenceTestResult` per declared repo (empty list when no
+        sibling repos are declared). The orchestrator attaches these to the
+        evidence bundle and blocks the turn on a failed/unrunnable suite via
+        :func:`evidence_repos.evidence_repo_tests_blocking_reason`.
+        """
+        if not self._evidence_repos:
+            return []
+        venv = str(self._venv_python) if self._venv_python is not None else None
+        results = evidence_repos_lib.run_all_repo_tests(
+            self._evidence_repos,
+            venv_python=venv,
+            timeout=self.test_timeout,
+        )
+        for r in results:
+            logger.info(
+                "Evidence-repo tests for %s: ran=%s passed=%s rc=%s",
+                r.repo_name,
+                r.ran,
+                r.passed,
+                r.returncode,
+            )
+        return results
 
     def verify_quality_gates(
         self,
@@ -6901,6 +6943,12 @@ class CoachValidator:
                 self.worktree_path,
                 task_id=self.task_id,
                 state_bridge=state_bridge,
+                # TASK-AB-XREPOEV01: without this, the Coach's own honesty gate
+                # fail-open-skips every repo-qualified claim, so a Player lying
+                # about a sibling file (guardkitfactory:src/fake.py) is never
+                # caught here. The agent_invoker-side CoachVerifier has it too;
+                # this is the load-bearing adversarial check.
+                evidence_repos=self._evidence_repos,
             )
             discrepancies = []
             discrepancies.extend(verifier._verify_files_exist(task_work_results))

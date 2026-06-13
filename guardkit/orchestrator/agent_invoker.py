@@ -54,6 +54,8 @@ from guardkit.orchestrator.coach_verification import (
     HonestyVerification,
     format_verification_context,
 )
+from guardkit.orchestrator import evidence_repos as evidence_repos_lib
+from guardkit.orchestrator.evidence_repos import EvidenceRepo
 from guardkit.orchestrator.schemas import (
     CompletionPromise,
     CriterionVerification,
@@ -1256,6 +1258,7 @@ class AgentInvoker:
         venv_python: Optional[str] = None,
         model_name: Optional[str] = None,  # TASK-FIX-MODELPLUMB
         coach_model_name: Optional[str] = None,  # TASK-FIX-COACHBUDG01
+        evidence_repos: Optional[List["EvidenceRepo"]] = None,  # TASK-AB-XREPOEV01
     ):
         """Initialize AgentInvoker.
 
@@ -1287,6 +1290,13 @@ class AgentInvoker:
                 ``BootstrapResult.venv_python`` threaded from the feature
                 orchestrator. When None, CoachVerifier falls back to
                 filesystem discovery and then PATH pytest. (TASK-FIX-7A05)
+            evidence_repos: Resolved sibling repos whose writes count as task
+                evidence (TASK-AB-XREPOEV01). Default None -> empty -> zero
+                behaviour change; the evidence boundary stays scoped to the
+                worktree. When populated, the post-turn diff merges per-repo
+                git changes into the Player report as repo-qualified paths
+                (``<repo>:<path>``) and CoachVerifier resolves those claims
+                against the right repo root.
         """
         self.worktree_path = Path(worktree_path)
         self._venv_python: Optional[str] = venv_python
@@ -1311,6 +1321,13 @@ class AgentInvoker:
         # progressing run. ``0.0`` until the first invocation resets it.
         self._last_activity_monotonic: float = 0.0
         self._baseline_commit: Optional[str] = None
+        # TASK-AB-XREPOEV01: declared sibling repos whose writes count as task
+        # evidence (default empty -> undeclared sibling-repo writes stay
+        # invisible, AC-003). Per-repo HEAD baselines are recorded alongside
+        # the worktree baseline so the post-turn diff attributes only this
+        # task's sibling-repo writes.
+        self._evidence_repos: List[EvidenceRepo] = list(evidence_repos or [])
+        self._evidence_baselines: Dict[str, Optional[str]] = {}
         # TASK-FIX-OBS2: Per-task progress logger for parallel execution diagnostics
         self._progress_logger: Optional["TaskProgressLogger"] = None
         # TASK-CRV-1540: Partial data extracted from response_messages on CancelledError
@@ -3434,7 +3451,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         """
         try:
             verifier = CoachVerifier(
-                self.worktree_path, venv_python=self._venv_python
+                self.worktree_path,
+                venv_python=self._venv_python,
+                evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01
             )
             verification = verifier.verify_player_report(player_report)
 
@@ -4405,6 +4424,48 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         except Exception as e:
             logger.warning(f"Failed to detect git changes: {e}")
 
+        # TASK-AB-XREPOEV01: merge sibling-repo writes as repo-qualified paths.
+        # This runs AFTER the worktree filters (ghost-path subtraction,
+        # _is_valid_file_path) precisely so qualified paths bypass those
+        # worktree-specific filters: a "guardkitfactory:src/foo.py" claim is
+        # not a worktree path and must not be measured against the worktree's
+        # .gitignore or ghost-path set. Without this block a task whose only
+        # writes land in a declared sibling repo produces "0 files modified"
+        # and Coach honestly rejects it as "no implementation provided"
+        # (the FEAT-C332 run-1 false-red). Undeclared repos contribute
+        # nothing here, so their writes stay invisible (AC-003).
+        if self._evidence_repos:
+            try:
+                repo_changes = evidence_repos_lib.detect_all_repo_changes(
+                    self._evidence_repos, self._evidence_baselines
+                )
+                ev_modified, ev_created = evidence_repos_lib.qualified_paths_for_changes(
+                    repo_changes
+                )
+                if ev_modified:
+                    report["files_modified"] = sorted(
+                        set(report.get("files_modified", [])) | set(ev_modified)
+                    )
+                if ev_created:
+                    report["files_created"] = sorted(
+                        set(report.get("files_created", [])) | set(ev_created)
+                    )
+                if ev_modified or ev_created:
+                    logger.info(
+                        "Evidence-repo detection added %d modified, %d created "
+                        "sibling-repo file(s) for %s: %s",
+                        len(ev_modified),
+                        len(ev_created),
+                        task_id,
+                        sorted(set(ev_modified) | set(ev_created))[:10],
+                    )
+            except Exception as exc:  # noqa: BLE001 -- never block the report
+                logger.warning(
+                    "Evidence-repo change detection failed for %s: %s",
+                    task_id,
+                    exc,
+                )
+
         # Also use task_work_result.output if available
         if task_work_result.output:
             output = task_work_result.output
@@ -4747,6 +4808,21 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 logger.warning("git rev-parse HEAD timed out, falling back to HEAD")
             except Exception as e:
                 logger.warning(f"Failed to record baseline commit: {e}")
+
+        # TASK-AB-XREPOEV01: record a per-task baseline for every declared
+        # sibling repo too, so the post-turn diff attributes only this task's
+        # sibling-repo writes (mirrors the per-task worktree baseline above).
+        if self._evidence_repos:
+            self._evidence_baselines = evidence_repos_lib.record_repo_baselines(
+                self._evidence_repos
+            )
+            for repo in self._evidence_repos:
+                base = self._evidence_baselines.get(str(repo.root))
+                logger.info(
+                    "Recorded evidence-repo baseline for %s: %s",
+                    repo.name,
+                    base[:8] if base else "(no git HEAD)",
+                )
 
     def _detect_git_changes(self) -> Dict[str, list]:
         """Detect git changes in worktree.

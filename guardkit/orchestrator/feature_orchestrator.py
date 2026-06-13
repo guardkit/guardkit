@@ -49,6 +49,8 @@ from guardkit.orchestrator.feature_loader import (
     FeatureValidationError,
     derive_bootstrap_extras,
 )
+from guardkit.orchestrator import evidence_repos as evidence_repos_lib
+from guardkit.orchestrator.evidence_repos import EvidenceRepo
 from guardkit.orchestrator.smoke_gates import (
     SmokeGateResult,
     run_smoke_gate,
@@ -636,6 +638,9 @@ class FeatureOrchestrator:
 
         self.repo_root = Path(repo_root).resolve()
         self.max_turns = max_turns
+        # TASK-AB-XREPOEV01: declared sibling evidence repos, resolved in
+        # _setup_phase from the loaded feature. Empty until then.
+        self._evidence_repos_resolved: List[EvidenceRepo] = []
         # TASK-FIX-LGFM: thread --model from `guardkit autobuild feature` CLI
         # down to every per-task AutoBuildOrchestrator. Load-bearing for the
         # LangGraph harness path (DeepAgents needs a real model factory;
@@ -895,6 +900,21 @@ class FeatureOrchestrator:
             )
 
         console.print("[green]✓[/green] Feature validation passed")
+
+        # TASK-AB-XREPOEV01: resolve declared sibling evidence repos once per
+        # feature, relative to the source repo root. Threaded into every
+        # per-task AutoBuildOrchestrator so the post-turn diff, Coach honesty
+        # resolution, sibling-repo tests, and checkpoints all see the same
+        # set. Empty when the feature declares none (AC-003).
+        self._evidence_repos_resolved = evidence_repos_lib.resolve_evidence_repos(
+            feature.evidence_repos, self.repo_root
+        )
+        if self._evidence_repos_resolved:
+            names = ", ".join(r.name for r in self._evidence_repos_resolved)
+            console.print(
+                f"[green]✓[/green] Evidence repos: {names} "
+                f"({len(self._evidence_repos_resolved)} declared)"
+            )
 
         # Pre-flight frontmatter validation (TASK-FIX-7537)
         if not self.skip_validation:
@@ -2999,6 +3019,8 @@ The detailed specifications are in the task markdown file.
                 model=self.model,
                 # TASK-FIX-COACHBUDG01: per-role Coach model override
                 coach_model=self.coach_model,
+                # TASK-AB-XREPOEV01: declared sibling evidence repos
+                evidence_repos=self._evidence_repos_resolved,
             )
 
             # Execute task orchestration

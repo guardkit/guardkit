@@ -290,7 +290,7 @@ class TestAgentInvokerPlumbing:
             invoker._verify_player_claims({"tests_run": False})
 
             mock_verifier_cls.assert_called_once_with(
-                tmp_path, venv_python=str(fake_venv)
+                tmp_path, venv_python=str(fake_venv), evidence_repos=[]
             )
 
     def test_agent_invoker_defaults_venv_python_to_none(
