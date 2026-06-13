@@ -411,6 +411,26 @@ class TestSignaturePin:
                 f"(guardkit/orchestrator/harness/selector.py:299-306)."
             )
 
+    def test_langgraph_harness_init_accepts_on_model_activity(self) -> None:
+        """``LangGraphHarness.__init__`` accepts ``on_model_activity`` (SPECINVOKE01).
+
+        The orchestrator threads ``AgentInvoker._bump_activity`` through
+        ``select_harness(on_model_activity=...)`` so the no-model-activity
+        specialist watchdog measures real model progress rather than the
+        harness's await-then-yield event cadence (FEAT-9DDE run 3). The
+        selector degrades gracefully (drop-with-WARNING) if a stale factory
+        lacks the param, but on the REAL installed factory the parameter MUST
+        exist — otherwise the watchdog silently reverts to the substrate-blind
+        event-arrival clock and the run-3 false-kill regresses with no error.
+        """
+        params = inspect.signature(LangGraphHarness.__init__).parameters
+        assert "on_model_activity" in params, (
+            "Installed guardkitfactory LangGraphHarness.__init__ dropped "
+            "on_model_activity; the SPECINVOKE01 specialist watchdog fix "
+            "depends on it (guardkit/orchestrator/harness/selector.py forwards "
+            "it, agent_invoker._bump_activity supplies it)."
+        )
+
     def test_invoke_signature_matches_adapter_contract(self) -> None:
         """Each substrate's ``invoke`` keeps the orchestrator-facing parameter names.
 

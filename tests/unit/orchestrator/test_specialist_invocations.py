@@ -982,6 +982,58 @@ async def test_run_specialist_watchdog_allows_progressing_specialist(
 
 
 @pytest.mark.asyncio
+async def test_run_specialist_watchdog_survives_buffered_langgraph_run(
+    tmp_path: Path,
+) -> None:
+    """TASK-FIX-SPECINVOKE01 regression: a specialist that yields ZERO harness
+    events for the whole run (the LangGraph harness's await-then-yield cadence)
+    but whose model activity is surfaced ONLY via the ``on_model_activity``
+    callback is NOT false-killed by the watchdog.
+
+    This is the exact FEAT-9DDE run-3 scenario: ~18 successful ``/v1/responses``
+    POSTs, but ``0 events`` reached the consumer loop, so the event-keyed clock
+    froze and the watchdog wrongly fired at 150 s. The fix threads
+    ``AgentInvoker._bump_activity`` into the harness as ``on_model_activity``;
+    here we drive the *real* ``_bump_activity`` from the callback channel (never
+    touching the clock via event yields) and prove the watchdog stays quiet —
+    in deliberate contrast to ``test_run_specialist_watchdog_terminates_hung_
+    specialist`` (no callback pings → still killed).
+    """
+    from guardkit.orchestrator.agent_invoker import AgentInvoker
+
+    invoker = _make_fake_agent_invoker()
+    # Bind the production _bump_activity onto the mock so the callback channel
+    # updates the same attribute the watchdog polls.
+    invoker._bump_activity = lambda: AgentInvoker._bump_activity(invoker)
+
+    async def _buffered_run(**_: object) -> None:
+        # Mimic LangGraph: the consumer loop sees NO events (never sets the
+        # clock itself); the only activity signal is the harness callback,
+        # which fires on each model/tool boundary. Pings span well past the
+        # 0.2 s watchdog window.
+        for _ in range(8):
+            invoker._bump_activity()  # what _ModelActivityCallbackHandler does
+            await asyncio.sleep(0.05)
+
+    invoker._invoke_with_role = AsyncMock(side_effect=_buffered_run)
+
+    result = await run_specialist(
+        specialist_name="test-orchestrator",
+        worktree_path=tmp_path,
+        task_id="TASK-OSI-001",
+        sdk_timeout=600,
+        prompt="run the tests",
+        allowed_tools=["Read", "Bash", "Write"],
+        agent_invoker=invoker,
+        no_activity_watchdog_seconds=0.2,
+    )
+
+    assert result.status == "passed"
+    assert result.error is None
+    invoker._kill_child_claude_processes.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_run_specialist_watchdog_synthesises_and_restores_cancellation_event(
     tmp_path: Path,
 ) -> None:

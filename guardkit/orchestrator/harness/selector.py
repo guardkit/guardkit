@@ -330,6 +330,16 @@ def select_harness(
     recursion_limit = harness_kwargs.pop("recursion_limit", None)
     max_tool_result_chars = harness_kwargs.pop("max_tool_result_chars", None)
 
+    # TASK-FIX-SPECINVOKE01: optional model-activity sink. LangGraph-only —
+    # the harness wires it into a LangChain callback so the no-model-activity
+    # watchdog (specialist_invocations._run_specialist_with_watchdog) measures
+    # real LLM/tool progress rather than this harness's await-then-yield event
+    # cadence (which froze the activity clock and false-killed live, model-
+    # active specialists at 150 s — FEAT-9DDE run 3). Popped here (like ``cwd``
+    # / ``recursion_limit``) so the SDK harness — which already streams events
+    # incrementally and needs no callback — never sees it.
+    on_model_activity = harness_kwargs.pop("on_model_activity", None)
+
     if name == "sdk":
         # Lazy import keeps the package importable when claude_agent_sdk
         # is not installed and the user is on the langgraph path.
@@ -377,12 +387,33 @@ def select_harness(
         backend = _build_backend_with_optional_cap(
             build_autobuild_backend, Path(cwd), max_tool_result_chars
         )
-        return LangGraphHarness(
-            model=translated["model"],
-            backend=backend,
-            permissions=build_autobuild_permissions(),
-            recursion_limit=recursion_limit,
-        )
+        # TASK-FIX-SPECINVOKE01: forward ``on_model_activity`` only when the
+        # installed guardkitfactory's signature accepts it; drop-with-WARNING
+        # on a stale factory instead of crashing (mirrors the
+        # ``max_tool_result_chars`` Shape-2 forward at ``_build_backend_with_
+        # optional_cap``). The cross-repo seam test
+        # ``tests/orchestrator/harness/test_xrepo_contract_seam.py`` fails loud
+        # if a real installed factory ever drops the parameter.
+        langgraph_kwargs: dict = {
+            "model": translated["model"],
+            "backend": backend,
+            "permissions": build_autobuild_permissions(),
+            "recursion_limit": recursion_limit,
+        }
+        if on_model_activity is not None:
+            if "on_model_activity" in inspect.signature(
+                LangGraphHarness.__init__
+            ).parameters:
+                langgraph_kwargs["on_model_activity"] = on_model_activity
+            else:
+                logger.warning(
+                    "select_harness(langgraph): installed guardkitfactory "
+                    "LangGraphHarness does not accept on_model_activity; the "
+                    "no-model-activity specialist watchdog will fall back to "
+                    "the (substrate-blind) event-arrival clock. Upgrade "
+                    "guardkitfactory to restore TASK-FIX-SPECINVOKE01."
+                )
+        return LangGraphHarness(**langgraph_kwargs)
 
     raise AgentInvocationError(
         f"Unknown GUARDKIT_HARNESS value: {name!r}. "
