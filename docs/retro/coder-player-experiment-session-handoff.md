@@ -88,17 +88,22 @@ curl -s --max-time 10 http://promaxgb10-41b1:9000/v1/models | python3 -c "import
 # Probe the two models this run uses — both should answer 'READY' with finish=stop and NO reasoning_content:
 for M in qwen3-coder-30b gemma4-31b; do curl -s --max-time 120 http://promaxgb10-41b1:9000/v1/chat/completions -H "Content-Type: application/json" -H "Authorization: Bearer llama-swap-local-key" -d "{\"model\":\"$M\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly one word: READY\"}],\"max_tokens\":64}" | python3 -c "import json,sys;c=json.load(sys.stdin)['choices'][0];print('$M ->',repr((c['message'].get('content') or '')[:30]),'reasoning:',repr((c['message'].get('reasoning_content') or '')[:20]),c.get('finish_reason'))"; done
 
-# 3) LAUNCH — Player=qwen3-coder-30b, Coach=gemma4-31b, GATHER unset (=0, the shipped default).
-#    Run in BACKGROUND (it takes ~30-60+ min) and tee to a log.
-#    NOTE (post-run-3 fix, TASK-FIX-COACHREASON01): gemma4-31b on this llama-swap
-#    endpoint serves in reasoning mode → ~31-min Coach turns. Set
-#    GUARDKIT_COACH_SYNTHESIS_DISABLE_THINKING=1 to inject enable_thinking=false
-#    (the toggle the server honours; reasoning_budget is IGNORED here).
+# 3) LAUNCH — Player=qwen3-coder-30b, Coach=gemma4-coach (26b MoE), GATHER unset.
+#    Run in BACKGROUND and tee to a log.
+#    COACH MODEL (run-4/5 empirical review, supersedes the gemma4-31b guidance
+#    at the top of this handoff): the dense gemma4-31b Coach is ~32 min/turn —
+#    NOT a reasoning tax you can toggle off (it reasons in the verdict grammar's
+#    unbounded prefix regardless). The 26b-A4B MoE `gemma4-coach` is ~6x faster
+#    (~15-22s/turn, self-bounding) and emits valid verdicts — BUT only WITH
+#    GUARDKIT_COACH_SYNTHESIS_DISABLE_THINKING=1 (without it the MoE rambles to
+#    the token ceiling and emits no verdict — the F2 that benched it). So the
+#    DISABLE_THINKING toggle (TASK-FIX-COACHREASON01) is the load-bearing enabler
+#    for the MoE Coach, even though it does nothing for gemma4-31b.
 GUARDKIT_COACH_SYNTHESIS_DISABLE_THINKING=1 \
 GUARDKIT_HARNESS=langgraph \
   OPENAI_BASE_URL=http://promaxgb10-41b1:9000/v1 OPENAI_API_KEY=llama-swap-local-key \
   guardkit autobuild feature FEAT-9DDE \
-    --fresh --model qwen3-coder-30b --coach-model gemma4-31b \
+    --fresh --model qwen3-coder-30b --coach-model gemma4-coach \
     --task-timeout 4800 --sdk-timeout 3600 --no-context --max-parallel 1 \
     2>&1 | tee .guardkit/autobuild/FEAT-9DDE-run3-stdout.log
 ```

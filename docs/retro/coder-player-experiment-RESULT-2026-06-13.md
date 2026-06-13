@@ -142,17 +142,43 @@ it's **not** the catastrophic gemma4:26b F2 case — but with `reasoning_budget=
 Turn 2 was ~15 min (enough variance to converge inside the 80-min budget, but
 narrowly).
 
-**FIXED (TASK-FIX-COACHREASON01, guardkitfactory `7526b55`):** the empirical
-falsifier deferred by COACHTURNBUDGET is now resolved — the GB10 llama-swap
-endpoint **ignores** the llama.cpp `reasoning_budget` field for gemma4-31b
-(`reasoning_budget:0` probe → still 3041 chars reasoning_content), but **honours
-`chat_template_kwargs.enable_thinking=false`** (147→0 chars, 47→2 tokens). Added a
-default-off env var `GUARDKIT_COACH_SYNTHESIS_DISABLE_THINKING=1` that injects it
-into the synthesis body; set it in the recipe. The handoff's server-side
-"pin out of reasoning mode on llama-swap" fix remains valid (helps all consumers)
-but needs GB10 access; the client-side toggle is the portable fix.
+**CORRECTED (runs 4–5, supersedes the "reasoning tax" diagnosis above):** the
+~32-min Coach is **NOT a reasoning tax you can toggle off**. Verified empirically:
+
+- `disable_thinking` (TASK-FIX-COACHREASON01, gkfactory `7526b55`) transmits
+  correctly through langchain `extra_body` and suppresses `reasoning_content`
+  (probe: `reasoning_len 0`, 19s) — but the real Coach is still ~32 min.
+- Root cause: the Coach verdict grammar
+  ([`coach-verdict.gbnf`](../../guardkit/orchestrator/grammars/coach-verdict.gbnf))
+  is `root ::= prefix code-fence` with an **unbounded free-reasoning `prefix`**.
+  gemma4-31b just relocates its reasoning into the grammar's *content* prefix and
+  rambles toward `max_tokens` regardless of the toggle (1950s ≈ 16384 tok ÷ 8.4 t/s).
+  Run 3 (reasoning channel) and run 4 (content prefix) were both ~32 min for the
+  same reason: **gemma4-31b is just slow (6.5 t/s) and the grammar permits it.**
+- **Fix = the Coach model, not the toggle.** Empirical review (real grammar +
+  realistic prompt): **`gemma4-coach` (26b-A4B MoE) + `DISABLE_THINKING=1` →
+  ~15–22s/turn, 3/3 valid verdicts, self-bounding at ~685 tok** (6× faster than
+  gemma4-31b). And `disable_thinking` is **load-bearing for the MoE**: without it
+  the MoE rambles to the ceiling and emits no verdict (the exact F2 that benched
+  it post-06-13-restart). So COACHREASON01 is the *wrong* lever for dense
+  gemma4-31b but the *right* one for the MoE. **Recipe Coach = `gemma4-coach` +
+  `GUARDKIT_COACH_SYNTHESIS_DISABLE_THINKING=1`.**
 
 ---
+
+## Runs 4–5 — validating the follow-up fixes live (FEAT-9DDE re-run from pre-merge base `740e1585`)
+
+**Run 4** (Coach=`gemma4-31b` + DISABLE_THINKING=1) — killed mid-turn-2:
+- **SPECINVOKE01 ✅**: specialists run with real model activity (`code-reviewer` 8.5 min, **no false 150s hang**); `validation=violation` is now a *real* review finding, not a hang artifact.
+- **COACHREASON01 ❌ (latency)**: Coach still ~32 min — the corrected grammar-reasoning-prefix root cause above.
+
+**Run 5** (Coach=`gemma4-coach` 26b MoE + DISABLE_THINKING=1):
+- **Coach latency SOLVED ✅✅**: gemma4-coach turns were **35s and 51s** (vs gemma4-31b's ~32 min, ~55×).
+- **gemma4-coach is a stricter judge**: feedback on all 3 turns, rejecting AC-005–010 (missing-frontmatter / malformed-file / single-task handling) — ACs that gemma4-31b *approved* at run-3 turn 2. Plausibly **more accurate** (the merged run-3 producer had the latent agent/task conflation gap from Finding 1).
+- **NEW harness false-red → `unrecoverable_stall` (turn 3)**: the checkpoint pollution detector derives `tests_passed`/`test_count` from the **Player's self-report** (`tests_run=None` → `tests: fail, count: 0`), NOT the Coach gate (`tests=True`) or an independent run. Three turns of the Player not reporting counts read as "3 consecutive test failures" → false stall. Same `absence-of-failure-is-not-success` family, in the checkpoint layer. Only surfaced because the stricter Coach didn't approve early (run 3 exited at turn 2 before the counter hit 3). → **`TASK-FIX-CKPTTESTRED01`** (checkpoint pollution must key off the Coach gate / an independent run, or treat absent counts as *unknown*, never *failure*).
+- **DIRECTFG01 / COACHCWD01: still unvalidated live** (wave 2 never ran; TSJ-001 stalled). DIRECTFG01 has a deterministic regression test; live validation needs a *converging* run, now blocked on the checkpoint false-red.
+
+**Net:** Coach latency is solved (`gemma4-coach` + `disable_thinking`). The remaining blocker to a clean converging run — and to live-validating DIRECTFG01/COACHCWD01 — is the checkpoint-pollution false-red (CKPTTESTRED01). Evidence: `docs/retro/run5-evidence/`.
 
 ## Harness-health scorecard — everything that should hold, held
 
