@@ -31,6 +31,10 @@ Additional filters: `--epic`, `--feature`, `--hierarchy`, `--sync-status`
 /task-status [task-id] [options]
 ```
 
+## Options
+- `--json` - Output task status in machine-readable JSON format
+- `--base-path PATH` - Specify project root path (default: current directory)
+
 ## Examples
 ```bash
 # View all active tasks with hierarchy
@@ -59,6 +63,15 @@ Additional filters: `--epic`, `--feature`, `--hierarchy`, `--sync-status`
 
 # Legacy kanban board view
 /task-status --format kanban
+
+# Output in JSON format
+/task-status --json
+
+# Output specific task in JSON format
+/task-status TASK-001 --json
+
+# Output with custom base path
+/task-status --json --base-path /path/to/project
 ```
 
 ## Output Formats

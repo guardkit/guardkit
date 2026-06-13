@@ -4,15 +4,50 @@ View the current task board with all tasks organized by status.
 
 ## Usage
 ```bash
-/task-status [filter:all|mine|today|week] [format:board|list|metrics]
+/task-status [task-id] [options]
 ```
+
+## Options
+- `--json` - Output task status in machine-readable JSON format
+- `--base-path PATH` - Specify project root path (default: current directory)
 
 ## Examples
 ```bash
-/task-status                    # Default kanban board view
-/task-status filter:mine        # Only tasks assigned to you
-/task-status format:metrics     # Show metrics dashboard
-/task-status filter:week        # Tasks updated this week
+# View all active tasks with hierarchy
+/task-status
+
+# View specific task details
+/task-status TASK-001
+
+# Show tasks by feature
+/task-status --feature FEAT-001
+
+# Show tasks by epic
+/task-status --epic EPIC-001
+
+# Show only blocked tasks
+/task-status --blocked
+
+# View tasks with hierarchy context
+/task-status TASK-001 --hierarchy
+
+# Show PM tool sync status
+/task-status --sync-status
+
+# View developer dashboard
+/task-status --dev-dashboard
+
+# Legacy kanban board view
+/task-status --format kanban
+
+# Output in JSON format
+/task-status --json
+
+# Output specific task in JSON format
+/task-status TASK-001 --json
+
+# Output with custom base path
+/task-status --json --base-path /path/to/project
 ```
 
 ## Display Formats
@@ -286,8 +321,11 @@ Generates:
 ```
 
 ### JSON Export
+Use the `--json` flag (machine-readable schema-v1 output, produced by the
+`task-status-json` bin entry). The legacy `export:json` format had no producer
+and is removed (TASK-FIX-DIRECTFG01 follow-up):
 ```bash
-/task-status export:json > tasks.json
+/task-status --json > tasks.json
 ```
 
 ### Markdown Report
