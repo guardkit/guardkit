@@ -152,6 +152,21 @@ _PARSER_PHASE_TO_VALIDATOR_PHASE = {
 #   * ``tasks/{backlog,design_approved,in_progress,in_review,completed}/...``
 #     — task-scaffold markdown files the orchestrator copies during setup
 #     (including subfolder variants under feature folders)
+#   * ``.local/...`` / ``**/site-packages/...`` / ``.venv*/...`` —
+#     environment-install artefacts the *bootstrap* writes into the worktree
+#     (TASK-FIX-EVBINST01). The bootstrap's ``pip install`` (and any PEP-668
+#     ``--user``/userbase fallback) lands packages under ``.local/`` or a
+#     ``site-packages/`` tree; ``.local/`` is not in the worktree
+#     ``.gitignore`` (only ``.venv*/`` is), so the per-turn checkpoint
+#     ``git add -A`` commits it and the post-baseline ``git diff`` sweeps
+#     every package file into ``files_modified``. FEAT-9DDE run-6 saw 136
+#     ``.local/.../site-packages/_pytest/*`` paths attributed to the Player,
+#     generating 136 spurious ``claim_audit_unmodified`` honesty records that
+#     drowned the 2 real Coach findings. This is the *over-wide* direction of
+#     the evidence-boundary defect (``.claude/rules/
+#     evidence-boundary-narrower-than-write-surface.md``): the diff aperture
+#     collects orchestrator-installed environment artefacts and attributes
+#     them to the Player.
 #
 # These paths are NOT gitignored (so TASK-FIX-IGNR's gitignored→should_fix
 # demotion does not apply) and they DO exist on disk (so file-existence
@@ -175,6 +190,22 @@ _ORCHESTRATOR_MANAGED_PATH_PATTERNS: Tuple[re.Pattern, ...] = (
     re.compile(
         r"^tasks/(?:backlog|design_approved|in_progress|in_review|completed)/"
     ),
+    # Environment-install artefacts the bootstrap writes into the worktree
+    # (TASK-FIX-EVBINST01). Anchored / segment-scoped so no legitimate Player
+    # source/test/doc path matches:
+    #   ^\.local/             PEP-668 --user / userbase installs
+    #   (?:.*/)?site-packages/  any site-packages tree (venv or user). NOTE:
+    #                         these patterns are applied with ``re.match``
+    #                         (anchored at start), so the leading ``(?:.*/)?``
+    #                         is required to catch a ``site-packages/`` segment
+    #                         that appears mid-path (e.g.
+    #                         ``lib/python3.12/site-packages/...``).
+    #   ^\.venv[^/]*/         .venv, .venv-*, .venv312 (defence-in-depth;
+    #                         already gitignored, but absolute-form or
+    #                         already-tracked variants still flow through diff)
+    re.compile(r"^\.local/"),
+    re.compile(r"(?:.*/)?site-packages/"),
+    re.compile(r"^\.venv[^/]*/"),
 )
 
 

@@ -554,3 +554,62 @@ class TestStripOrchestratorManagedPathsEmptyReport:
         assert report["files_created"] == ["tests/test_a.py"]
         assert report["tests_written"] == []
         assert report["completion_promises"] == []
+
+
+# ---------------------------------------------------------------------------
+# TASK-FIX-EVBINST01 — strip bootstrap install artefacts (.local /
+# site-packages / .venv) from the evidence boundary. FEAT-9DDE run-6: the
+# bootstrap wrote pytest into .local/.../site-packages, the checkpoint
+# ``git add -A`` committed it (.local not gitignored), and the post-baseline
+# ``git diff`` swept 136 package files into files_modified → 136 spurious
+# ``claim_audit_unmodified`` honesty records that drowned the 2 real findings.
+# The over-WIDE direction of the evidence-boundary defect
+# (.claude/rules/evidence-boundary-narrower-than-write-surface.md).
+# ---------------------------------------------------------------------------
+
+
+class TestInstallArtifactFilter:
+    """Bootstrap install artefacts must be stripped from Player-report claim
+    lists (and the Coach claim audit, which shares
+    ``_is_orchestrator_managed_path`` via a late import)."""
+
+    def test_install_artifacts_match(self):
+        assert _is_orchestrator_managed_path(
+            ".local/lib/python3.12/site-packages/_pytest/__init__.py"
+        )
+        assert _is_orchestrator_managed_path(
+            "lib/python3.12/site-packages/pytest/main.py"
+        )
+        assert _is_orchestrator_managed_path(".venv/lib/site-packages/foo.py")
+        assert _is_orchestrator_managed_path(".venv312/lib/foo.py")
+
+    def test_real_player_paths_not_matched(self):
+        # AC-4 over-reach guard: real source/test/doc/plan paths pass through.
+        assert not _is_orchestrator_managed_path("guardkit/cli/task_status_json.py")
+        assert not _is_orchestrator_managed_path("tests/test_task_status_json.py")
+        assert not _is_orchestrator_managed_path(".claude/task-plans/x.md")
+        # ".local" only matched as a leading path segment, not a substring.
+        assert not _is_orchestrator_managed_path("docs/local-setup.md")
+        assert not _is_orchestrator_managed_path("src/relocal/mod.py")
+
+    def test_strip_removes_install_artifacts_keeps_real_work(self):
+        report = {
+            "files_modified": [
+                ".local/lib/python3.12/site-packages/_pytest/__init__.py",
+                "lib/python3.12/site-packages/pytest/main.py",
+                ".venv/lib/site-packages/foo.py",
+                "guardkit/cli/task_status_json.py",
+                "tests/test_task_status_json.py",
+            ],
+            "files_created": [],
+            "tests_written": [],
+            "completion_promises": [],
+        }
+        stripped = _strip_orchestrator_managed_paths(report, "TASK-TSJ-001")
+        assert report["files_modified"] == [
+            "guardkit/cli/task_status_json.py",
+            "tests/test_task_status_json.py",
+        ]
+        assert ".local/lib/python3.12/site-packages/_pytest/__init__.py" in stripped
+        assert "lib/python3.12/site-packages/pytest/main.py" in stripped
+        assert ".venv/lib/site-packages/foo.py" in stripped
