@@ -1,10 +1,12 @@
 ---
 id: TASK-FIX-EVBINST02
 title: Extend the evidence-boundary filter to large_tool_results/ and .claude/task-plans/ (residual claim_audit noise)
-status: backlog
+status: in_review
 task_type: fix
 created: 2026-06-14T16:25:00Z
-updated: 2026-06-14T16:25:00Z
+updated: 2026-06-14T19:30:00Z
+previous_state: backlog
+state_transition_reason: "task-work complete — all quality gates passed"
 priority: low
 complexity: 2
 related: [TASK-FIX-EVBINST01, TASK-FIX-PCN, FEAT-9DDE]
@@ -50,14 +52,34 @@ audit (shared `_is_orchestrator_managed_path`), so both are fixed.
 
 ## Acceptance Criteria
 
-- [ ] `large_tool_results/...` and `.claude/task-plans/...` are stripped from
+- [x] `large_tool_results/...` and `.claude/task-plans/...` are stripped from
       `files_modified`/`files_created`/`tests_written` before the report
       reaches the Coach, and generate no `claim_audit_unmodified` records.
-- [ ] Over-reach guard: real Player paths under `.claude/` other than
+      Two anchored patterns added to `_ORCHESTRATOR_MANAGED_PATH_PATTERNS`
+      ([agent_invoker.py:209-225](../../../guardkit/orchestrator/agent_invoker.py#L209));
+      the constant is shared by the Player-report writer
+      (`_strip_orchestrator_managed_paths`) and the Coach claim audit
+      ([coach_verification.py:573](../../../guardkit/orchestrator/coach_verification.py#L573)).
+- [x] Over-reach guard: real Player paths under `.claude/` other than
       `task-plans/` (if any are legitimately Player-authored) are not
-      over-broadened — keep the pattern anchored to `^\.claude/task-plans/`.
-- [ ] Regression test in `tests/unit/test_orchestrator_induced_path_filter.py`
-      (extend `TestInstallArtifactFilter` or a sibling class).
+      over-broadened — pattern anchored to `^\.claude/task-plans/`. Verified by
+      `TestResidualHarnessNamespaceFilter::test_residual_over_reach_guard`
+      (`.claude/agents/`, `.claude/rules/`, `.claude/settings.json`,
+      `.claude/task-plans-notes.md` all pass through).
+- [x] Regression test in `tests/unit/test_orchestrator_induced_path_filter.py`
+      — new `TestResidualHarnessNamespaceFilter` class (match, over-reach
+      guard, strip-keeps-real-work) + updated the now-reversed
+      `.claude/task-plans/` assertion in `TestInstallArtifactFilter`.
+
+## Outcome
+
+Fix landed in `guardkit/orchestrator/agent_invoker.py`
+(`_ORCHESTRATOR_MANAGED_PATH_PATTERNS` gained `^large_tool_results/` and
+`^\.claude/task-plans/`). 61/61 tests pass in the path-filter suite;
+135 pass across the combined Coach-verification + claim-audit + path-filter
+run. Same class as EVBINST01 (orchestrator-induced paths swept into the
+evidence boundary, over-wide direction —
+`evidence-boundary-narrower-than-write-surface.md`).
 
 ## Evidence
 - `docs/retro/run8-evidence/coach_turn_2.json` (4 claim_audit records: 2

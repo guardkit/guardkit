@@ -206,6 +206,22 @@ _ORCHESTRATOR_MANAGED_PATH_PATTERNS: Tuple[re.Pattern, ...] = (
     re.compile(r"^\.local/"),
     re.compile(r"(?:.*/)?site-packages/"),
     re.compile(r"^\.venv[^/]*/"),
+    # Residual harness/orchestrator-managed namespaces (TASK-FIX-EVBINST02).
+    # FEAT-9DDE run-8 coach_turn_2.json still raised should_fix
+    # ``claim_audit_unmodified`` records on two more namespaces the Player
+    # never authors. Anchored at ``^`` (worktree-root-relative) so no
+    # legitimate Player path matches:
+    #   ^large_tool_results/   harness tool-result spillover (fc_<hash> files
+    #                          the SDK writes when a tool result is too large
+    #                          to inline; swept into files_modified by the
+    #                          post-turn ``git diff``)
+    #   ^\.claude/task-plans/  orchestrator-created plan stubs
+    #                          (``TASK-XXX-implementation-plan.md``). Kept
+    #                          anchored to ``task-plans/`` so other
+    #                          ``.claude/`` paths a Player might legitimately
+    #                          author are not over-broadened (AC-2).
+    re.compile(r"^large_tool_results/"),
+    re.compile(r"^\.claude/task-plans/"),
 )
 
 
