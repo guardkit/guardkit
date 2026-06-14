@@ -313,8 +313,18 @@ class TestExtractTestsPassed:
 
         assert orchestrator._extract_tests_passed(turn_record) is False
 
-    def test_returns_false_when_no_validation_results(self):
-        """Returns False when validation_results key is missing."""
+    def test_returns_none_when_no_validation_results(self):
+        """Returns None (UNKNOWN) when validation_results key is missing.
+
+        TASK-FIX-CKPTTESTRED01 supersedes the prior ``→ False`` behaviour for
+        this case. A Coach report with no ``validation_results`` (the default
+        LLM-Coach report shape: decision/issues/criteria_verification/rationale)
+        carries no authoritative test verdict — that is *absent* evidence, not
+        a failure. Collapsing it to ``False`` recorded every LLM-Coach feedback
+        turn as ``tests: fail`` and produced FEAT-9DDE run 5's false-red
+        ``unrecoverable_stall``. See
+        ``.claude/rules/absence-of-failure-is-not-success.md``.
+        """
         orchestrator = AutoBuildOrchestrator(
             repo_root=Path.cwd(),
             max_turns=5,
@@ -325,7 +335,7 @@ class TestExtractTestsPassed:
         turn_record.coach_result.success = True
         turn_record.coach_result.report = {}
 
-        assert orchestrator._extract_tests_passed(turn_record) is False
+        assert orchestrator._extract_tests_passed(turn_record) is None
 
 
 # ============================================================================

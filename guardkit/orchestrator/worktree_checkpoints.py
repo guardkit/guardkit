@@ -116,6 +116,24 @@ class GitCommandExecutor(Protocol):
 # ============================================================================
 
 
+def format_test_status(tests_passed: Optional[bool]) -> str:
+    """Render a tri-state checkpoint test signal for logs and commit messages.
+
+    ``True`` → ``"pass"`` (a test oracle ran and passed), ``False`` →
+    ``"fail"`` (ran and failed), ``None`` → ``"unknown"`` (no test oracle
+    produced a verdict for this turn).
+
+    Rendering ``None`` as ``"unknown"`` rather than ``"fail"`` is the
+    checkpoint-layer instance of the absence-of-failure rule
+    (TASK-FIX-CKPTTESTRED01): an *absent* self-reported / gate test signal
+    must not read as a *negative* one. See
+    ``.claude/rules/absence-of-failure-is-not-success.md``.
+    """
+    if tests_passed is None:
+        return "unknown"
+    return "pass" if tests_passed else "fail"
+
+
 @dataclass
 class Checkpoint:
     """Immutable checkpoint record for a worktree state.
@@ -127,7 +145,14 @@ class Checkpoint:
         turn: Turn number (1-indexed)
         commit_hash: Git commit SHA for rollback
         timestamp: ISO 8601 timestamp when checkpoint created
-        tests_passed: Whether tests passed at this checkpoint
+        tests_passed: Tri-state test signal for this checkpoint —
+            ``True`` (a test oracle ran and passed), ``False`` (ran and
+            failed), or ``None`` (UNKNOWN: no test oracle produced a verdict
+            this turn, e.g. the LLM Coach report carried no quality-gate
+            result). ``None`` is excluded from the consecutive-failure
+            pollution tally in ``should_rollback`` — it is *absent* evidence,
+            not a failure (TASK-FIX-CKPTTESTRED01). See
+            ``.claude/rules/absence-of-failure-is-not-success.md``.
         test_count: Number of tests run (0 if no tests)
         message: Checkpoint commit message
         from_prior_run: True if this checkpoint was loaded from a prior
@@ -142,7 +167,7 @@ class Checkpoint:
     turn: int
     commit_hash: str
     timestamp: str
-    tests_passed: bool
+    tests_passed: Optional[bool]
     test_count: int = 0
     message: str = ""
     from_prior_run: bool = False
@@ -324,7 +349,7 @@ class WorktreeCheckpointManager:
     def create_checkpoint(
         self,
         turn: int,
-        tests_passed: bool,
+        tests_passed: Optional[bool],
         test_count: int = 0,
     ) -> Checkpoint:
         """Create a checkpoint commit at current worktree state.
@@ -338,7 +363,10 @@ class WorktreeCheckpointManager:
 
         Args:
             turn: Turn number (1-indexed)
-            tests_passed: Whether tests passed at this turn
+            tests_passed: Tri-state test signal — ``True`` (ran and passed),
+                ``False`` (ran and failed), or ``None`` (UNKNOWN: no test
+                oracle verdict for this turn). ``None`` is NOT a failure for
+                pollution-detection purposes (TASK-FIX-CKPTTESTRED01).
             test_count: Number of tests run (0 if no tests)
 
         Returns:
@@ -349,7 +377,7 @@ class WorktreeCheckpointManager:
         """
         logger.info(
             f"Creating checkpoint for {self.task_id} turn {turn} "
-            f"(tests: {'pass' if tests_passed else 'fail'}, count: {test_count})"
+            f"(tests: {format_test_status(tests_passed)}, count: {test_count})"
         )
 
         # Serialize git operations to prevent index.lock conflicts
@@ -385,7 +413,7 @@ class WorktreeCheckpointManager:
     def _create_checkpoint_locked(
         self,
         turn: int,
-        tests_passed: bool,
+        tests_passed: Optional[bool],
         test_count: int,
     ) -> Checkpoint:
         """Execute git checkpoint operations under a file-based lock.
@@ -396,7 +424,7 @@ class WorktreeCheckpointManager:
 
         Args:
             turn: Turn number (1-indexed)
-            tests_passed: Whether tests passed at this turn
+            tests_passed: Tri-state test signal (True/False/None=unknown)
             test_count: Number of tests run
 
         Returns:
@@ -423,7 +451,7 @@ class WorktreeCheckpointManager:
     def _execute_git_checkpoint(
         self,
         turn: int,
-        tests_passed: bool,
+        tests_passed: Optional[bool],
         test_count: int,
     ) -> Checkpoint:
         """Execute the git add/commit/rev-parse sequence.
@@ -433,7 +461,7 @@ class WorktreeCheckpointManager:
 
         Args:
             turn: Turn number (1-indexed)
-            tests_passed: Whether tests passed at this turn
+            tests_passed: Tri-state test signal (True/False/None=unknown)
             test_count: Number of tests run
 
         Returns:
@@ -446,7 +474,7 @@ class WorktreeCheckpointManager:
         )
 
         # Create checkpoint commit message
-        status = "pass" if tests_passed else "fail"
+        status = format_test_status(tests_passed)
         message = f"[guardkit-checkpoint] Turn {turn} complete (tests: {status})"
 
         # Create commit (allow empty for turns with no changes)
@@ -480,7 +508,7 @@ class WorktreeCheckpointManager:
         )
 
     def _checkpoint_evidence_repos(
-        self, turn: int, tests_passed: bool
+        self, turn: int, tests_passed: Optional[bool]
     ) -> Dict[str, str]:
         """Commit each declared sibling repo's working tree at this turn.
 
@@ -495,7 +523,7 @@ class WorktreeCheckpointManager:
         if not self.evidence_repos:
             return evidence_commits
 
-        status = "pass" if tests_passed else "fail"
+        status = format_test_status(tests_passed)
         message = (
             f"[guardkit-checkpoint] {self.task_id} turn {turn} "
             f"(sibling evidence, tests: {status})"
@@ -679,6 +707,18 @@ class WorktreeCheckpointManager:
         current run, and counting them would trigger a spurious context-pollution
         short-circuit on turn 1 of any ``[R]esume`` (TASK-FIX-F4A3).
 
+        A checkpoint counts as a "failure" ONLY when its test signal is
+        explicitly ``tests_passed is False`` (a test oracle ran and failed).
+        A checkpoint with an UNKNOWN signal (``tests_passed is None`` — no
+        oracle produced a verdict that turn, e.g. the LLM Coach report carried
+        no quality-gate result) is NOT a failure: it is absent evidence, and
+        treating it as a failure is a false-red generator (TASK-FIX-CKPTTESTRED01,
+        the checkpoint-layer instance of
+        ``.claude/rules/absence-of-failure-is-not-success.md``). An unknown
+        checkpoint in the recent window therefore breaks the consecutive-failure
+        run and suppresses the spurious stall — while genuine consecutive
+        ran-and-failed turns still stall as designed.
+
         Args:
             consecutive_failures: Number of consecutive failures to trigger rollback
                                  (default: 3, allows recovery from incomplete sessions)
@@ -691,9 +731,11 @@ class WorktreeCheckpointManager:
         if len(current_run) < consecutive_failures:
             return False
 
-        # Check last N current-run checkpoints for consecutive failures
+        # Check last N current-run checkpoints for consecutive failures.
+        # Only an explicit ``tests_passed is False`` counts as a failure;
+        # ``None`` (unknown) and ``True`` (pass) both break the run.
         recent = current_run[-consecutive_failures:]
-        all_failing = all(not cp.tests_passed for cp in recent)
+        all_failing = all(cp.tests_passed is False for cp in recent)
 
         if all_failing:
             logger.warning(
@@ -714,7 +756,9 @@ class WorktreeCheckpointManager:
             Turn number of last passing checkpoint, or None if none found
         """
         for checkpoint in reversed(self.checkpoints):
-            if checkpoint.tests_passed:
+            # Only an explicit pass is a rollback target. ``None`` (unknown)
+            # is not a known-good state (TASK-FIX-CKPTTESTRED01).
+            if checkpoint.tests_passed is True:
                 logger.info(
                     f"Found last passing checkpoint at turn {checkpoint.turn} "
                     f"(commit: {checkpoint.commit_hash[:8]})"

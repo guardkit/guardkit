@@ -1,10 +1,14 @@
 ---
 id: TASK-FIX-CKPTTESTRED01
 title: Checkpoint pollution detector false-reds on absent Player test-counts (tests_run=None read as "tests failed" → false unrecoverable_stall)
-status: backlog
+status: completed
 task_type: fix
 created: 2026-06-14T09:00:00Z
-updated: 2026-06-14T09:00:00Z
+updated: 2026-06-14T12:30:00Z
+completed: 2026-06-14T12:30:00Z
+completed_location: tasks/completed/TASK-FIX-CKPTTESTRED01/
+previous_state: in_review
+state_transition_reason: "task-complete — all ACs met, quality gates passed, zero regressions"
 priority: high
 complexity: 4
 related: [TASK-FIX-SPECINVOKE01, TASK-FIX-COACHREASON01, TASK-AB-FIX-INVAB1, FEAT-9DDE]
@@ -96,17 +100,69 @@ rg -n "tests=True|tests: (pass|fail), count" .guardkit/autobuild/FEAT-9DDE-run5-
 
 ## Acceptance Criteria
 
-- [ ] Checkpoint pollution detection no longer counts a turn as a "test failure"
+- [x] Checkpoint pollution detection no longer counts a turn as a "test failure"
       solely because the Player report's `tests_run`/`tests_passed` is `None`/absent.
-- [ ] Checkpoint `tests_passed` is sourced from an authoritative signal (Coach
+- [x] Checkpoint `tests_passed` is sourced from an authoritative signal (Coach
       gate result or an independent run), not the Player self-report — or absent
       counts are treated as `unknown` and excluded from the consecutive-failure tally.
-- [ ] A turn where the Coach gate is `tests=True` is never recorded as `tests: fail`.
-- [ ] Regression test reproduces the run-5 false-red (Player `tests_run=None` +
+- [x] A turn where the Coach gate is `tests=True` is never recorded as `tests: fail`.
+- [x] Regression test reproduces the run-5 false-red (Player `tests_run=None` +
       Coach `tests=True`, N turns of Coach feedback) and asserts no
       `unrecoverable_stall` from pollution.
-- [ ] No change to the *genuine* pollution case (real consecutive test failures
+- [x] No change to the *genuine* pollution case (real consecutive test failures
       with a real failing oracle still stall as designed).
+
+## Implementation Summary (2026-06-14)
+
+**Root cause confirmed.** The default Coach is the LLM Coach (TASK-HMIG-008R),
+whose `coach_result.report` carries `{decision, issues, criteria_verification,
+rationale}` — NOT `validation_results.quality_gates`. The deterministic gate
+(which logs `tests=True`) lives in the Coach *evidence bundle*, not in that
+report. `AutoBuildOrchestrator._extract_tests_passed` looked for
+`validation_results.quality_gates.tests_passed`, did not find it, and fell
+through to `return validation.get("tests_passed", False)` → `False`. So every
+LLM-Coach feedback turn was checkpointed `tests: fail, count: 0`; after 3 such
+turns the pollution detector fired "3 consecutive test failures" and, finding
+no passing checkpoint, declared `unrecoverable_stall` (FEAT-9DDE run 5). Run 3's
+lenient gemma4-31b Coach approved at turn 2 and exited before the counter
+reached 3, masking the defect.
+
+**Fix (tri-state, surgical — the `absence-of-failure` "or" branch of AC2):**
+
+- `guardkit/orchestrator/autobuild.py::_extract_tests_passed` now returns
+  `Optional[bool]`: `True`/`False` when an authoritative gate verdict is
+  present, `None` (UNKNOWN) when the signal is absent (no `validation_results`,
+  explicit `tests_passed=None`, or `independent_tests.signal_absent`). Absent is
+  no longer collapsed to `False`.
+- `guardkit/orchestrator/worktree_checkpoints.py`:
+  - `Checkpoint.tests_passed` → `Optional[bool]`; new `format_test_status`
+    helper renders `pass`/`fail`/`unknown`; `create_checkpoint` chain threads
+    the tri-state through.
+  - `should_rollback` counts a failure only when `cp.tests_passed is False`
+    (an `UNKNOWN` in the window breaks the consecutive-failure run); genuine
+    consecutive `False` turns still stall.
+  - `find_last_passing_checkpoint` treats only `tests_passed is True` as a
+    rollback target.
+
+**Policy supersession.** This reverses, for the *absent-signal* case only, the
+`None → False → failure` coercion introduced by TASK-FIX-64EE. Three of its
+tests were updated in place (with rationale citing this task):
+`test_null_quality_gates.py` (×2) and `test_checkpoint_extraction_and_ordering.py`
+(`test_returns_none_when_no_validation_results`). A genuine `False` is unchanged.
+
+**Scope boundary.** The deterministic `tests=True` gate result is not *threaded*
+into the LLM-Coach report (would close the gate↔checkpoint gap fully, recording
+run-5 turns as `pass` rather than `unknown`); deferred as a larger change. The
+gate/checkpoint *contradiction* (`fail` vs `tests=True`) is resolved here —
+the checkpoint now reads `unknown`, never `fail`.
+
+**Tests.** New `tests/unit/test_checkpoint_pollution_absent_test_signal.py`
+(12 tests) reproduces the run-5 pipeline (extract → checkpoint → pollution) and
+asserts no stall, plus genuine-pollution preservation and tri-state rendering.
+All affected unit tests pass (93 passed in the touched files; full `tests/unit`
+green except 12 pre-existing failures in untouched files — coach_validator,
+autobuild_context_integration, coach_seam_tests — confirmed failing identically
+on unmodified `main`).
 
 ## Evidence
 - Run log: `.guardkit/autobuild/FEAT-9DDE-run5-stdout.log` (checkpoint lines 234/416/591; stall 594–596; Coach gate `tests=True` 219/395/570; independent test run 398/573).
