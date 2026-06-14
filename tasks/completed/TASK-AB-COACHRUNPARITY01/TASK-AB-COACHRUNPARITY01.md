@@ -1,10 +1,14 @@
 ---
 id: TASK-AB-COACHRUNPARITY01
 title: Coach approves on pytest while the smoke gate rejects a non-runnable deliverable — thread runtime parity + feed smoke-gate failure back to the Player
-status: backlog
+status: completed
 task_type: fix
 created: 2026-06-14T16:20:00Z
-updated: 2026-06-14T16:20:00Z
+updated: 2026-06-14T19:45:00Z
+completed: 2026-06-14T19:45:00Z
+completed_location: tasks/completed/TASK-AB-COACHRUNPARITY01/
+previous_state: in_review
+state_transition_reason: "task-complete — both arms implemented, 32 new tests pass, code review APPROVE-WITH-FIXES (addressed)"
 priority: high
 complexity: 7
 related: [TASK-FIX-BSEXTRAS01, TASK-FIX-COACHTESTTO, FEAT-9DDE]
@@ -86,22 +90,54 @@ honour `feature-build-invariants.md` (never auto-merge; preserve worktrees).
 
 ## Acceptance Criteria
 
-- [ ] A smoke-gate failure after a wave feeds the failure (stderr) back to the
+- [x] A smoke-gate failure after a wave feeds the failure (stderr) back to the
       Player as feedback and re-enters the wave for a **bounded** number of
       additional turns, instead of terminating the feature outright.
-- [ ] The retry budget is bounded; exhaustion leaves `final_status=failed`
+      *(arm a: `_run_post_wave_smoke_gate` + `seed_feedback` thread;
+      `test_smoke_failure_retries_then_passes`)*
+- [x] The retry budget is bounded; exhaustion leaves `final_status=failed`
       with the worktree preserved (never auto-merge).
-- [ ] Interaction with `stop_on_failure`, the smoke-gate classifier
+      *(`GUARDKIT_SMOKE_GATE_MAX_RETRIES`, default 1;
+      `test_smoke_retries_exhausted_terminates`)*
+- [x] Interaction with `stop_on_failure`, the smoke-gate classifier
       (`:3373-3422`), and `completed_waves`/`current_wave` is correct (no
-      state corruption, no runaway retry).
-- [ ] (Parity arm) The Coach exercises the deliverable's declared runtime
+      state corruption, no runaway retry). *(replace-not-append +
+      C1 fix: `_mark_wave_completed` moved to smoke-gated call-site;
+      `test_smoke_{pass,fail}_*mark_wave_completed`)*
+- [x] (Parity arm) The Coach exercises the deliverable's declared runtime
       entry point (smoke command) before approving, so a "passes pytest but
       fails to run" deliverable is caught pre-approval, surfaced as
       absent/failed runtime signal (not a silent pass — `absence-of-failure-is-not-success.md`).
-- [ ] Regression: a deliverable whose Coach pytest passes but whose standalone
+      *(arm b: `CoachValidator._gather_runtime_parity` +
+      `AgentInvoker._apply_runtime_parity_guard`, single-task-wave guard;
+      `test_runtime_parity.py`)*
+- [x] Regression: a deliverable whose Coach pytest passes but whose standalone
       `python3 <module>` raises `ModuleNotFoundError` reaches the Player as
       feedback (reproduces run-8) and the feature does not terminate on the
-      first smoke failure.
+      first smoke failure. *(`test_smoke_failure_retries_then_passes`
+      asserts RUNTIME-PARITY feedback reaches the retry; arm b
+      `test_runtime_entry_point_fails` + guard override)*
+
+## Implementation outcome (2026-06-14)
+
+**Both arms implemented** (Phase 2.8 human checkpoint decision). Phase 2.5
+architectural review (66/100, approve-with-recommendations) caught a critical
+state-corruption hazard (C1: `_mark_wave_completed` persisted `completed_waves`
+before the smoke gate ran → resume could skip an unverified wave) + two
+should-fixes (S2 duplicate telemetry `wave_id`; S1 retry display), all folded
+in. Phase 5 code review (APPROVE-WITH-FIXES) found the per-task parity check
+hardcoded `expected_exit=0`; fixed by threading `smoke_expected_exit` so it
+agrees with the feature's configured gate.
+
+**Files:** `feature_orchestrator.py` (bounded retry + C1/S2 + threading),
+`autobuild.py` (`seed_feedback`/`smoke_command`/`smoke_expected_exit` thread +
+injection), `coach_evidence.py` (`RuntimeParityResult` + bundle field),
+`coach_validator.py` (`_gather_runtime_parity`), `agent_invoker.py`
+(`_apply_runtime_parity_guard`). **Tests:** 32 new/updated across
+`test_smoke_feedback_retry.py`, `test_runtime_parity.py`,
+`test_smoke_gate_blocks_wave.py`, `test_autobuild_smoke_placement.py`,
+`test_smoke_gate_noop.py`. Full plan + review trail:
+`docs/state/TASK-AB-COACHRUNPARITY01/implementation_plan.md`.
 
 ## Test plan
 Extend `tests/integration/autobuild/test_smoke_gate_blocks_wave.py` (~85, ~155)

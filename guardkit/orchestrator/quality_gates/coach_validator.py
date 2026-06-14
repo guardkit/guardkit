@@ -54,6 +54,7 @@ from guardkit.orchestrator import evidence_repos as evidence_repos_lib
 from guardkit.orchestrator.evidence_repos import EvidenceRepo, EvidenceTestResult
 from guardkit.orchestrator.quality_gates.coach_evidence import (
     CoachEvidenceBundle,
+    RuntimeParityResult,
 )
 from guardkit.orchestrator.docker_fixtures import (
     get_container_name,
@@ -1189,6 +1190,8 @@ class CoachValidator:
         coach_model_name: Optional[str] = None,  # TASK-FIX-COACHBUDG01
         venv_python: Optional[str] = None,  # TASK-FIX-COACHPYENV
         evidence_repos: Optional[List["EvidenceRepo"]] = None,  # TASK-AB-XREPOEV01
+        smoke_command: Optional[str] = None,  # TASK-AB-COACHRUNPARITY01 (arm b)
+        smoke_expected_exit: int = 0,  # TASK-AB-COACHRUNPARITY01 (arm b)
     ):
         """
         Initialize CoachValidator.
@@ -1304,6 +1307,16 @@ class CoachValidator:
         # TASK-AB-XREPOEV01 (AC-002): declared sibling repos whose tests the
         # Coach runs independently. Empty -> no sibling test execution.
         self._evidence_repos: List[EvidenceRepo] = list(evidence_repos or [])
+        # TASK-AB-COACHRUNPARITY01 (arm b): the feature smoke command (the
+        # deliverable's real runtime entry point). When set AND wave_size == 1,
+        # gather_evidence runs it and records a RuntimeParityResult so a
+        # "passes pytest but does not run" deliverable is caught pre-approval.
+        # None -> no per-task runtime-parity check.
+        self.smoke_command: Optional[str] = smoke_command
+        # Exit code that counts as a clean standalone run for the parity check.
+        # Threaded from the feature's smoke_gates.expected_exit so the per-task
+        # check agrees with the post-wave gate (default 0).
+        self.smoke_expected_exit: int = smoke_expected_exit
         self.wave_size = max(1, int(wave_size))
         # TASK-DIAG-F4A2: Turn number for sdk_debug preservation paths.
         # Default 1 keeps backwards-compat for callers that don't pass it.
@@ -2848,6 +2861,17 @@ class CoachValidator:
                 exc.__class__.__name__,
             )
 
+        # ------------------------------------------------------------------
+        # 6. Runtime parity (TASK-AB-COACHRUNPARITY01, arm b). Run the
+        # deliverable's declared runtime entry point (the feature smoke
+        # command) before approving, so a "passes pytest but does not run"
+        # deliverable is caught pre-approval. Guarded to single-task waves
+        # (the multi-task-wave caveat: a deliverable may not run standalone
+        # until peers finish). Never breaks gathering; a runner error is an
+        # absent (ran=False) signal, not a pass.
+        # ------------------------------------------------------------------
+        runtime_parity = self._gather_runtime_parity()
+
         return CoachEvidenceBundle(
             honesty=honesty,
             gathering_status="complete",
@@ -2866,6 +2890,111 @@ class CoachValidator:
             wiring=wiring_dict,
             mocked_seam=mocked_seam_dict,
             spec_gap=spec_gap_dict,
+            runtime_parity=runtime_parity,
+        )
+
+    def _gather_runtime_parity(self) -> Optional["RuntimeParityResult"]:
+        """Run the deliverable's runtime entry point (TASK-AB-COACHRUNPARITY01, arm b).
+
+        Returns ``None`` when no smoke command was threaded (older callers /
+        feature with no smoke gate). Returns a ``RuntimeParityResult`` with
+        ``ran=False`` (and a ``skipped_reason``) when the check is intentionally
+        skipped (parallel wave) or the runner itself errors — an ABSENT signal
+        that never blocks and never counts as a pass
+        (``absence-of-failure-is-not-success.md``). Returns ``ran=True`` with
+        ``passed`` reflecting a clean (exit 0) standalone run otherwise.
+
+        Guard: runs only on a single-task wave (``wave_size == 1``). On a
+        multi-task wave the deliverable may not run standalone until peers
+        finish, so a per-task smoke run would false-fail; those waves rely on
+        the feature-level post-wave smoke gate instead.
+        """
+        if not self.smoke_command:
+            return None
+
+        command = self.smoke_command
+        if self.wave_size > 1:
+            return RuntimeParityResult(
+                ran=False,
+                passed=False,
+                command=command,
+                skipped_reason="parallel_wave",
+            )
+
+        # PATH-prepend the bootstrap venv so a bare ``python`` / ``pytest`` in
+        # the smoke command resolves to the right interpreter (mirrors
+        # smoke_gates.run_smoke_gate's venv handling).
+        env: Optional[dict] = None
+        if self._venv_python is not None:
+            env = os.environ.copy()
+            env["PATH"] = (
+                str(Path(self._venv_python).parent)
+                + os.pathsep
+                + env.get("PATH", "")
+            )
+
+        try:
+            proc = subprocess.run(
+                command,
+                shell=True,
+                cwd=str(self.worktree_path),
+                capture_output=True,
+                text=True,
+                timeout=self.test_timeout,
+                env=env,
+            )
+        except subprocess.TimeoutExpired as exc:
+            stderr_tail = "\n".join(
+                (
+                    (exc.stderr.decode() if isinstance(exc.stderr, bytes)
+                     else exc.stderr) or ""
+                ).rstrip().splitlines()[-40:]
+            )
+            logger.warning(
+                "Runtime-parity check timed out after %ss: %s",
+                self.test_timeout, command,
+            )
+            return RuntimeParityResult(
+                ran=True,
+                passed=False,
+                command=command,
+                exit_code=None,
+                expected_exit=self.smoke_expected_exit,
+                timed_out=True,
+                stderr_tail=stderr_tail,
+            )
+        except Exception as exc:  # noqa: BLE001 — runner errors are ABSENT, not fail
+            logger.warning(
+                "Runtime-parity check runner error for %s: %s", command, exc,
+            )
+            return RuntimeParityResult(
+                ran=False,
+                passed=False,
+                command=command,
+                skipped_reason=f"runner_error: {exc}",
+            )
+
+        stderr_tail = "\n".join(
+            (proc.stderr or "").rstrip().splitlines()[-40:]
+        )
+        passed = proc.returncode == self.smoke_expected_exit
+        if passed:
+            logger.info("Runtime-parity check passed: %s", command)
+        else:
+            logger.warning(
+                "Runtime-parity check FAILED (exit=%d, expected=%d): %s\n"
+                "stderr (tail):\n%s",
+                proc.returncode, self.smoke_expected_exit, command,
+                stderr_tail or "(empty)",
+            )
+        return RuntimeParityResult(
+            ran=True,
+            passed=passed,
+            command=command,
+            exit_code=proc.returncode,
+            expected_exit=self.smoke_expected_exit,
+            timed_out=False,
+            stderr_tail=stderr_tail,
         )
 
     def _compute_agent_invocations_advisory(

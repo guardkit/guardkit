@@ -2294,6 +2294,20 @@ class AgentInvoker:
                 coach_output_path=coach_output_path,
             )
 
+            # TASK-AB-COACHRUNPARITY01 (arm b): runtime-parity hard-gate.
+            # Modelled on _apply_spec_gap_absent_guard; fires when the
+            # deliverable's declared runtime entry point ran and FAILED
+            # (runtime_parity.ran and not passed). A "passes pytest but does
+            # not run" deliverable is blocked pre-approval. Absent / skipped /
+            # ran-and-passed signals are no-ops (absence-of-failure safety).
+            self._apply_runtime_parity_guard(
+                decision=decision,
+                evidence_bundle=evidence_bundle,
+                task_id=task_id,
+                turn=turn,
+                coach_output_path=coach_output_path,
+            )
+
             # TASK-FIX-COACHNARR01: keep the synthesized narrative faithful to
             # the deterministic records. Embeds honesty discrepancies verbatim
             # and strips fabricated "does not exist on disk" claims (the
@@ -5512,6 +5526,118 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             logger.warning(
                 "TASK-QAWE-004: failed to re-persist overridden verdict "
                 "to %s (%s); in-memory override still applies",
+                coach_output_path,
+                exc,
+            )
+
+    def _apply_runtime_parity_guard(
+        self,
+        *,
+        decision: Dict[str, Any],
+        evidence_bundle: Optional["CoachEvidenceBundle"],
+        task_id: str,
+        turn: int,
+        coach_output_path: Path,
+    ) -> None:
+        """Fail closed when the deliverable runs its tests but not its entry point.
+
+        TASK-AB-COACHRUNPARITY01 (arm b). Deterministic backstop for the
+        runtime-parity hard-gate. Fires **only** when
+        ``runtime_parity.ran is True and runtime_parity.passed is False`` — the
+        per-task Coach ran the deliverable's declared runtime entry point (the
+        feature smoke command, single-task waves only) and it FAILED. This is
+        the "passes pytest but does not run" defect: pytest puts the worktree
+        root on ``sys.path`` so imports resolve, but a standalone
+        ``python <module>`` invocation does not.
+
+        Narrow and absence-of-failure-safe (mirrors
+        :meth:`_apply_spec_gap_absent_guard`):
+
+        * Only an ``approve`` is overridden; a ``feedback`` verdict is untouched.
+        * No-op when ``evidence_bundle`` or ``evidence_bundle.runtime_parity``
+          is ``None``.
+        * No-op when ``ran is False`` (ABSENT signal — no command, parallel
+          wave, or runner error) or ``passed is True`` (the entry point ran
+          cleanly). An absent runtime signal NEVER blocks
+          (``absence-of-failure-is-not-success.md``); only a ran-and-failed one.
+
+        Mutates ``decision`` in place and re-persists ``coach_turn_N.json``.
+
+        Args:
+            decision: The loaded, schema-validated Coach verdict dict.
+            evidence_bundle: The bundle the synthesis verdict was built over,
+                or ``None`` for legacy/tool-using callers (no-op when ``None``).
+            task_id: Task identifier (for the WARNING log).
+            turn: Current turn number (for the WARNING log).
+            coach_output_path: Path to ``coach_turn_N.json`` to re-persist on
+                override.
+        """
+        if decision.get("decision") != "approve":
+            return
+        if evidence_bundle is None:
+            return
+        runtime_parity = getattr(evidence_bundle, "runtime_parity", None)
+        if runtime_parity is None:
+            return
+        # Only a ran-and-failed result blocks. Absent (ran=False) or
+        # ran-and-passed are no-ops.
+        if not getattr(runtime_parity, "ran", False):
+            return
+        if getattr(runtime_parity, "passed", False):
+            return
+
+        original_decision = decision["decision"]
+        command = getattr(runtime_parity, "command", "<unknown>")
+        exit_code = getattr(runtime_parity, "exit_code", None)
+        timed_out = getattr(runtime_parity, "timed_out", False)
+        stderr_tail = getattr(runtime_parity, "stderr_tail", "") or ""
+
+        reason_detail = (
+            f"timed out after the runtime-parity timeout"
+            if timed_out
+            else f"exit={exit_code}, expected=0"
+        )
+        rationale = (
+            "Runtime-parity failure: the deliverable passed pytest but its "
+            "declared runtime entry point FAILED to run "
+            f"({reason_detail}). This is a 'passes tests but does not run' "
+            "defect — fix the deliverable so it runs standalone. "
+            f"Command: {command}"
+        )
+
+        decision["decision"] = "feedback"
+        decision["rationale"] = rationale
+        override_issue = {
+            "severity": "must_fix",
+            "category": "runtime_parity",
+            "description": rationale,
+            "details": {
+                "command": command,
+                "exit_code": exit_code,
+                "timed_out": timed_out,
+                "stderr_tail": stderr_tail[-2000:],
+                "overridden_decision": original_decision,
+            },
+        }
+        decision["issues"] = [override_issue, *decision.get("issues", [])]
+
+        logger.warning(
+            "TASK-AB-COACHRUNPARITY01: overriding Coach verdict %r->'feedback' "
+            "for %s turn %s — runtime-parity failure (passes pytest but the "
+            "deliverable's runtime entry point failed: %s). Command: %s",
+            original_decision,
+            task_id,
+            turn,
+            reason_detail,
+            command,
+        )
+
+        try:
+            coach_output_path.write_text(json.dumps(decision, indent=2))
+        except OSError as exc:
+            logger.warning(
+                "TASK-AB-COACHRUNPARITY01: failed to re-persist overridden "
+                "verdict to %s (%s); in-memory override still applies",
                 coach_output_path,
                 exc,
             )

@@ -190,6 +190,34 @@ class WaveExecutionResult:
 
 
 @dataclass
+class SmokeGatePhaseOutcome:
+    """Outcome of the post-wave smoke-gate phase (TASK-AB-COACHRUNPARITY01).
+
+    Returned by :meth:`FeatureOrchestrator._run_post_wave_smoke_gate`, which
+    owns the bounded smoke-feedback-retry loop. Keeping the retry loop in a
+    helper that returns this object (rather than mutating the caller's
+    ``wave_results`` list) keeps the wave-enumerate loop readable and the
+    retry logic unit-testable.
+
+    Attributes
+    ----------
+    terminate : bool
+        ``True`` when the wave-enumerate loop should ``break`` (smoke failed
+        terminally — exit-5 gate-not-wired, retries exhausted, or a re-run wave
+        the Coach rejected under ``stop_on_failure``). ``False`` to continue to
+        the next wave (smoke passed, possibly after a retry).
+    final_wave_result : WaveExecutionResult
+        The wave result that should replace ``wave_results[-1]`` — the FINAL
+        attempt's result, carrying the final ``smoke_gate_result``. Replacing
+        (never appending) is what keeps the outcome classifier from
+        double-counting a re-run wave's tasks/turns.
+    """
+
+    terminate: bool
+    final_wave_result: WaveExecutionResult
+
+
+@dataclass
 class FeatureOrchestrationResult:
     """
     Complete result of feature orchestration.
@@ -659,6 +687,18 @@ class FeatureOrchestrator:
         self.honesty_early_abort_threshold = honesty_early_abort_threshold
         self.honesty_early_abort_window = honesty_early_abort_window
         self.stop_on_failure = stop_on_failure
+        # TASK-AB-COACHRUNPARITY01 (arm a): bounded retry budget for the
+        # post-wave smoke gate. On a real (non-gate_not_wired) smoke failure
+        # the wave is re-entered with the smoke stderr fed back to the Player
+        # as turn-1 feedback, up to this many extra rounds, before the feature
+        # terminates. Default 1 keeps the blast radius minimal (one feedback
+        # round); 0 restores the legacy immediate-terminate behaviour.
+        try:
+            self._smoke_gate_max_retries = max(
+                0, int(os.environ.get("GUARDKIT_SMOKE_GATE_MAX_RETRIES", "1"))
+            )
+        except (TypeError, ValueError):
+            self._smoke_gate_max_retries = 1
         self.resume = resume
         self.fresh = fresh
         self.refresh = refresh
@@ -2166,51 +2206,126 @@ The detailed specifications are in the task markdown file.
             # composition failures the per-task Player-Coach loop is blind to.
             # Placement is between-waves, never per-task — per-task smoke is
             # the per-task Coach with extra steps.
+            #
+            # TASK-AB-COACHRUNPARITY01 (arm a): the gate is no longer a hard
+            # terminator. On a real (non-gate_not_wired) failure the helper
+            # re-enters the wave with the smoke stderr fed back to the Player as
+            # turn-1 feedback, bounded by _smoke_gate_max_retries, before
+            # terminating. The helper REPLACES wave_results[-1] (never appends),
+            # so the outcome classifier counts the wave once.
             if feature.smoke_gates is not None and should_fire_for_wave(
                 feature.smoke_gates, wave_number
             ):
-                smoke_result = run_smoke_gate(
-                    feature.smoke_gates,
-                    cwd=Path(worktree.path),
-                    wave_number=wave_number,
-                    venv_python=self._bootstrap_venv_python,
+                outcome = self._run_post_wave_smoke_gate(
+                    wave_number, task_ids, feature, worktree, wave_result
                 )
-                wave_result.smoke_gate_result = smoke_result
-                if not smoke_result.passed:
-                    # TASK-FIX-SG05: distinct wording for exit 5 (gate not
-                    # wired) so post-mortems can immediately tell a marker
-                    # mis-config apart from a real regression.
-                    if smoke_result.gate_not_wired:
-                        console.print(
-                            f"[red]✗ Smoke gate unwired after wave {wave_number}[/red] "
-                            f"(exit=5 — no tests collected); treating as hard failure "
-                            f"(exit5_is_hard_fail=True). Subsequent waves not started; "
-                            f"worktree preserved at {worktree.path}."
-                        )
-                    else:
-                        reason = (
-                            f"timed out after {smoke_result.timeout}s"
-                            if smoke_result.timed_out
-                            else f"exit={smoke_result.exit_code}, "
-                                 f"expected={feature.smoke_gates.expected_exit}"
-                        )
-                        console.print(
-                            f"[red]✗ Smoke gate failed after wave {wave_number}[/red] "
-                            f"({reason}). Subsequent waves not started; worktree "
-                            f"preserved at {worktree.path}."
-                        )
-                        # TASK-SGER-001: append a stderr tail so the banner is
-                        # itself self-diagnosing. Full output goes to the log;
-                        # 20 lines is enough to land most pytest tracebacks.
-                        stderr_tail = "\n".join(
-                            (smoke_result.stderr or "").rstrip().splitlines()[-20:]
-                        )
-                        if stderr_tail:
-                            console.print(
-                                f"[red]stderr (last 20 lines):[/red]\n{stderr_tail}"
-                            )
+                wave_result = outcome.final_wave_result
+                wave_results[-1] = wave_result
+                if outcome.terminate:
                     break
-                elif smoke_result.gate_not_wired:
+
+            # TASK-AB-COACHRUNPARITY01 (C1): mark the wave completed only AFTER
+            # the smoke phase resolves — gated on task success AND smoke success
+            # (or no smoke gate fired for this wave). This is the single place
+            # completion is persisted; _execute_wave no longer does it. A wave
+            # whose tasks pass but whose smoke gate fails is therefore never
+            # recorded as completed on disk, so a resume cannot skip an
+            # unverified wave.
+            smoke_blocked = (
+                wave_result.smoke_gate_result is not None
+                and not wave_result.smoke_gate_result.passed
+            )
+            if wave_result.all_succeeded and not smoke_blocked:
+                self._mark_wave_completed(feature, wave_number)
+
+        return wave_results
+
+    def _build_smoke_feedback(
+        self, smoke_result: "SmokeGateResult", feature: Feature
+    ) -> str:
+        """Compose Player-facing feedback from a failed post-wave smoke gate.
+
+        TASK-AB-COACHRUNPARITY01 (arm a). Frames the smoke failure as a
+        runtime-parity defect ("passes pytest but does not run") so the Player
+        fixes the real runtime entry point — the failure mode the per-task
+        Coach's pytest run is structurally blind to (pytest puts the worktree
+        root on ``sys.path``; a standalone ``python <module>`` invocation does
+        not). Includes the command, the failure reason, and a stderr tail.
+        """
+        reason = (
+            f"timed out after {smoke_result.timeout}s"
+            if smoke_result.timed_out
+            else (
+                f"exit={smoke_result.exit_code}, "
+                f"expected={feature.smoke_gates.expected_exit}"
+            )
+        )
+        stderr_tail = "\n".join(
+            (smoke_result.stderr or "").rstrip().splitlines()[-40:]
+        )
+        return (
+            "RUNTIME-PARITY FAILURE (feature smoke gate)\n"
+            "Your task's pytest passed, but the feature's post-wave smoke "
+            "gate — which runs the deliverable's REAL runtime entry point — "
+            "FAILED. This is a 'passes tests but does not run' defect: pytest "
+            "puts the worktree root on sys.path so imports like "
+            "`from installer.core...` resolve, but a standalone "
+            "`python <module>` invocation does not. Fix the runtime failure "
+            "below so the deliverable runs standalone, not just under pytest.\n\n"
+            f"Smoke command:\n{smoke_result.command}\n\n"
+            f"Result: {reason}\n\n"
+            f"stderr (last 40 lines):\n{stderr_tail or '(empty)'}"
+        )
+
+    def _run_post_wave_smoke_gate(
+        self,
+        wave_number: int,
+        task_ids: List[str],
+        feature: Feature,
+        worktree: Worktree,
+        wave_result: WaveExecutionResult,
+    ) -> SmokeGatePhaseOutcome:
+        """Run the post-wave smoke gate with a bounded feedback-retry loop.
+
+        TASK-AB-COACHRUNPARITY01 (arm a). Owns the retry loop extracted from the
+        wave-enumerate loop so the control flow stays readable and the retry
+        logic is unit-testable. The caller is the wave-enumerate loop; this
+        helper is tightly coupled to it (it calls back into ``_execute_wave``)
+        and must not be invoked from any other context.
+
+        Behaviour, per smoke result:
+
+        * **passed** (incl. exit-5 ``gate_not_wired`` with
+          ``exit5_is_hard_fail=False``): return ``terminate=False`` (continue to
+          the next wave); emit the existing soft-warn banner for the unwired case.
+        * **failed, ``gate_not_wired``** (exit-5 hard fail): no retry — a marker
+          mis-config is not a fixable runtime bug. Return ``terminate=True``.
+        * **failed, real**, retries remaining: feed the smoke stderr back to the
+          Player as turn-1 ``seed_feedback`` and re-execute the wave (attempt N),
+          then loop to re-run the gate. ``stop_on_failure`` is honoured on a
+          re-run the Coach rejects.
+        * **failed, real**, retries exhausted: emit the existing terminate
+          banner + stderr tail and return ``terminate=True``.
+
+        Returns
+        -------
+        SmokeGatePhaseOutcome
+            ``terminate`` (whether the wave-enumerate loop should break) and
+            ``final_wave_result`` (the result to replace ``wave_results[-1]``).
+        """
+        retries_remaining = self._smoke_gate_max_retries
+        attempt = 0
+        while True:
+            smoke_result = run_smoke_gate(
+                feature.smoke_gates,
+                cwd=Path(worktree.path),
+                wave_number=wave_number,
+                venv_python=self._bootstrap_venv_python,
+            )
+            wave_result.smoke_gate_result = smoke_result
+
+            if smoke_result.passed:
+                if smoke_result.gate_not_wired:
                     # Soft-warn path: build continues, but the operator sees
                     # the same actionable hint emitted at WARNING in the log.
                     console.print(
@@ -2219,8 +2334,98 @@ The detailed specifications are in the task markdown file.
                         f"regression. Verify markers are registered in pyproject.toml "
                         f"and that at least one test carries the marker expression."
                     )
+                return SmokeGatePhaseOutcome(
+                    terminate=False, final_wave_result=wave_result
+                )
 
-        return wave_results
+            # Smoke gate FAILED.
+            if smoke_result.gate_not_wired:
+                # TASK-FIX-SG05: distinct wording for exit 5 (gate not wired) so
+                # post-mortems can tell a marker mis-config apart from a real
+                # regression. No retry — re-running the Player cannot fix an
+                # unwired marker expression.
+                console.print(
+                    f"[red]✗ Smoke gate unwired after wave {wave_number}[/red] "
+                    f"(exit=5 — no tests collected); treating as hard failure "
+                    f"(exit5_is_hard_fail=True). Subsequent waves not started; "
+                    f"worktree preserved at {worktree.path}."
+                )
+                return SmokeGatePhaseOutcome(
+                    terminate=True, final_wave_result=wave_result
+                )
+
+            # Real failure (timeout or wrong exit code).
+            if retries_remaining <= 0:
+                # Retries exhausted (or disabled): terminate, preserving the
+                # worktree. Existing terminate banner + stderr tail (TASK-SGER-001).
+                reason = (
+                    f"timed out after {smoke_result.timeout}s"
+                    if smoke_result.timed_out
+                    else (
+                        f"exit={smoke_result.exit_code}, "
+                        f"expected={feature.smoke_gates.expected_exit}"
+                    )
+                )
+                console.print(
+                    f"[red]✗ Smoke gate failed after wave {wave_number}[/red] "
+                    f"({reason}). Subsequent waves not started; worktree "
+                    f"preserved at {worktree.path}."
+                )
+                stderr_tail = "\n".join(
+                    (smoke_result.stderr or "").rstrip().splitlines()[-20:]
+                )
+                if stderr_tail:
+                    console.print(
+                        f"[red]stderr (last 20 lines):[/red]\n{stderr_tail}"
+                    )
+                return SmokeGatePhaseOutcome(
+                    terminate=True, final_wave_result=wave_result
+                )
+
+            # Retry: feed the smoke error back to the Player and re-enter the
+            # wave. Bounded by _smoke_gate_max_retries.
+            retries_remaining -= 1
+            attempt += 1
+            smoke_feedback = self._build_smoke_feedback(smoke_result, feature)
+            console.print(
+                f"[yellow]↻ Smoke gate failed after wave {wave_number}[/yellow] "
+                f"— re-entering the wave with the runtime error as Player "
+                f"feedback (retry {attempt}/{self._smoke_gate_max_retries})."
+            )
+            if self._wave_display:
+                self._wave_display.start_wave(
+                    wave_number, task_ids, max_parallel=len(task_ids)
+                )
+            wave_result = self._execute_wave(
+                wave_number, task_ids, feature, worktree,
+                seed_feedback=smoke_feedback, attempt=attempt,
+            )
+            # Refresh the wave-completion display for the re-run (S1).
+            if self._wave_display:
+                passed = sum(1 for r in wave_result.results if r.success)
+                failed = len(wave_result.results) - passed
+                skipped = sum(
+                    1 for r in wave_result.results
+                    if r.final_decision == "skipped"
+                )
+                recovered = sum(
+                    1 for r in wave_result.results if r.recovery_count > 0
+                )
+                self._wave_display.complete_wave(
+                    wave_number, passed, failed, skipped, recovered
+                )
+
+            # A re-run the Coach rejected: honour stop_on_failure (the same
+            # gate the wave-enumerate loop applies before the smoke gate).
+            if not wave_result.all_succeeded and self.stop_on_failure:
+                console.print(
+                    "[yellow]⚠[/yellow] Stopping execution after smoke re-run "
+                    "(stop_on_failure=True)"
+                )
+                return SmokeGatePhaseOutcome(
+                    terminate=True, final_wave_result=wave_result
+                )
+            # Loop: re-run the smoke gate against the re-executed wave.
 
     async def _execute_wave_parallel(
         self,
@@ -2228,6 +2433,9 @@ The detailed specifications are in the task markdown file.
         task_ids: List[str],
         feature: Feature,
         worktree: Worktree,
+        seed_feedback: Optional[str] = None,
+        smoke_command: Optional[str] = None,
+        smoke_expected_exit: int = 0,
     ) -> List[TaskExecutionResult]:
         """
         Execute all tasks in a wave in parallel using asyncio.
@@ -2383,6 +2591,9 @@ The detailed specifications are in the task markdown file.
                         effective_task_timeout=effective_task_timeout,
                         wave_changed_files=wave_changed_files,  # TASK-FIX-A7B2
                         wave_files_lock=wave_files_lock,  # TASK-FIX-A7B2
+                        seed_feedback=seed_feedback,  # TASK-AB-COACHRUNPARITY01 (arm a)
+                        smoke_command=smoke_command,  # TASK-AB-COACHRUNPARITY01 (arm b)
+                        smoke_expected_exit=smoke_expected_exit,  # TASK-AB-COACHRUNPARITY01 (arm b)
                     ),
                     timeout=effective_task_timeout,
                 )
@@ -2662,6 +2873,8 @@ The detailed specifications are in the task markdown file.
         task_ids: List[str],
         feature: Feature,
         worktree: Worktree,
+        seed_feedback: Optional[str] = None,
+        attempt: int = 0,
     ) -> WaveExecutionResult:
         """
         Execute all tasks in a single wave in parallel.
@@ -2680,37 +2893,82 @@ The detailed specifications are in the task markdown file.
             Parent feature
         worktree : Worktree
             Shared worktree
+        seed_feedback : Optional[str]
+            TASK-AB-COACHRUNPARITY01 (arm a). Turn-1 feedback injected into
+            every task's Player in this wave run. Non-None only on a
+            smoke-gate re-run, carrying the smoke stderr so the Player fixes
+            the runtime failure the Coach's pytest missed.
+        attempt : int
+            TASK-AB-COACHRUNPARITY01 (arm a, S2). 0 for the first execution of
+            this wave, 1+ for smoke-feedback re-runs. Suffixed onto the
+            ``wave.completed`` telemetry ``wave_id`` so a re-run emits a
+            distinct, non-duplicate event (TASK-INST-004 consumers key on it).
 
         Returns
         -------
         WaveExecutionResult
             Results for this wave
+
+        Notes
+        -----
+        TASK-AB-COACHRUNPARITY01 (C1): this method no longer calls
+        ``_mark_wave_completed``. Marking a wave completed persists
+        ``completed_waves`` to disk; doing it here (the instant tasks pass)
+        would record a wave as completed *before* its post-wave smoke gate has
+        run, so a smoke failure + retry (or a crash in that window) would let a
+        resume skip an unverified wave. The wave-enumerate loop now marks
+        completion only after the smoke phase resolves successfully.
         """
         # Update current wave tracking
         feature.execution.current_wave = wave_number
         feature.execution.last_updated = datetime.now().isoformat()
         FeatureLoader.save_feature(feature, self.repo_root)
 
+        # TASK-AB-COACHRUNPARITY01 (arm b): the deliverable's runtime entry
+        # point, derived once here (this method already holds `feature`) and
+        # threaded to the per-task Coach as a plain string. `_execute_task`
+        # stays ignorant of the smoke-gate config object.
+        smoke_command = (
+            feature.smoke_gates.command
+            if feature.smoke_gates is not None
+            else None
+        )
+        smoke_expected_exit = (
+            feature.smoke_gates.expected_exit
+            if feature.smoke_gates is not None
+            else 0
+        )
+
         # Execute tasks in parallel
         results = asyncio.run(
-            self._execute_wave_parallel(wave_number, task_ids, feature, worktree)
+            self._execute_wave_parallel(
+                wave_number, task_ids, feature, worktree,
+                seed_feedback=seed_feedback,
+                smoke_command=smoke_command,
+                smoke_expected_exit=smoke_expected_exit,
+            )
         )
 
         # Check for stop-on-failure AFTER all parallel tasks complete
         all_succeeded = all(r.success for r in results)
 
-        # Mark wave as completed if all tasks succeeded
-        if all_succeeded:
-            self._mark_wave_completed(feature, wave_number)
+        # NOTE (C1): wave-completion marking moved to the wave-enumerate loop,
+        # gated on smoke-gate success. See the class/method docstring above.
 
-        # Emit wave.completed event (TASK-INST-004)
+        # Emit wave.completed event (TASK-INST-004). S2: a smoke-feedback
+        # re-run (attempt > 0) gets a distinct wave_id suffix so consumers see
+        # both executions instead of a duplicate-id collision.
+        wave_event_id = (
+            f"wave-{wave_number}" if attempt == 0
+            else f"wave-{wave_number}-retry-{attempt}"
+        )
         tasks_completed_count = sum(1 for r in results if r.success)
         task_failures_count = sum(1 for r in results if not r.success)
         try:
             asyncio.run(
                 self._emit_wave_completed(
                     feature_id=feature.id,
-                    wave_id=f"wave-{wave_number}",
+                    wave_id=wave_event_id,
                     wave_number=wave_number,
                     worker_count=len(task_ids),
                     queue_depth_start=len(task_ids),
@@ -2923,6 +3181,9 @@ The detailed specifications are in the task markdown file.
         effective_task_timeout: Optional[int] = None,
         wave_changed_files: Optional[Dict[str, Any]] = None,
         wave_files_lock: Optional[threading.Lock] = None,
+        seed_feedback: Optional[str] = None,
+        smoke_command: Optional[str] = None,
+        smoke_expected_exit: int = 0,
     ) -> TaskExecutionResult:
         """
         Execute single task using AutoBuildOrchestrator with shared worktree.
@@ -3021,6 +3282,18 @@ The detailed specifications are in the task markdown file.
                 coach_model=self.coach_model,
                 # TASK-AB-XREPOEV01: declared sibling evidence repos
                 evidence_repos=self._evidence_repos_resolved,
+                # TASK-AB-COACHRUNPARITY01 (arm a): turn-1 smoke-feedback seed.
+                # Non-None only on a smoke-gate re-run of this wave.
+                seed_feedback=seed_feedback,
+                # TASK-AB-COACHRUNPARITY01 (arm b): the deliverable's real
+                # runtime entry point, threaded in as a plain command string
+                # (NOT the feature smoke-gate config — this per-task layer must
+                # stay ignorant of the between-wave gate machinery; see
+                # test_autobuild_smoke_placement). The per-task Coach runs it
+                # only on a single-task wave; the wave_size guard lives in
+                # CoachValidator.gather_evidence.
+                smoke_command=smoke_command,
+                smoke_expected_exit=smoke_expected_exit,
             )
 
             # Execute task orchestration

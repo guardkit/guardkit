@@ -93,7 +93,7 @@ def test_no_smoke_gates_key_runs_unchanged(tmp_path: Path) -> None:
         patch.object(orchestrator, "_preflight_check"),
         patch.object(orchestrator, "_pre_init_graphiti"),
         patch.object(orchestrator, "_bootstrap_environment"),
-        patch.object(orchestrator, "_mark_wave_completed"),
+        patch.object(orchestrator, "_mark_wave_completed") as mock_mark,
         patch.object(
             orchestrator,
             "_execute_wave",
@@ -121,3 +121,8 @@ def test_no_smoke_gates_key_runs_unchanged(tmp_path: Path) -> None:
     mock_run_smoke.assert_not_called()
     for wr in results:
         assert wr.smoke_gate_result is None
+    # TASK-AB-COACHRUNPARITY01 (C1): the no-smoke-gate path still marks each
+    # successful wave completed. The C1 fix moved _mark_wave_completed out of
+    # _execute_wave into the smoke-gated _wave_phase call-site; this pins that
+    # the move did not drop completion-marking for features without smoke gates.
+    assert mock_mark.call_count == 3

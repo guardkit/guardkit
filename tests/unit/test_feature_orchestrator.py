@@ -1318,8 +1318,14 @@ def test_execute_wave_uses_asyncio_run(temp_repo, sample_feature, mock_worktree,
         # Execute wave
         result = orchestrator._execute_wave(1, ["TASK-T-001"], sample_feature, mock_worktree)
 
-        # Verify async method was called
-        mock_parallel.assert_called_once_with(1, ["TASK-T-001"], sample_feature, mock_worktree)
+        # Verify async method was called. TASK-AB-COACHRUNPARITY01 threads
+        # seed_feedback (arm a) and smoke_command (arm b, derived from the
+        # feature — None here as sample_feature has no smoke_gates) into the
+        # parallel dispatch.
+        mock_parallel.assert_called_once_with(
+            1, ["TASK-T-001"], sample_feature, mock_worktree,
+            seed_feedback=None, smoke_command=None, smoke_expected_exit=0,
+        )
 
         # Verify result
         assert result.wave_number == 1
