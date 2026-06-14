@@ -11,10 +11,10 @@ as a passing verdict, instead of as an absent verdict, is a false-green
 generator. When the count of failures is zero **and** the count of attempts
 is also zero, "did not fail" is not the same as "passed".
 
-The rule applies to **any** boolean approval gate downstream of a self-reported
-counter. Three known instances are documented below; future incidents that
-match the same shape should be folded under this rule rather than retried as
-ad-hoc fixes.
+The rule applies to **any** boolean approval-or-rejection gate downstream of a
+self-reported counter. Four known instances are documented below; future
+incidents that match the same shape should be folded under this rule rather
+than retried as ad-hoc fixes.
 
 ## Why this rule exists
 
@@ -38,12 +38,35 @@ The class-of-defect recurs:
    entirely (Option D — TASK-REV-0414, 2025-12-30). Filed as TASK-INV-AB1;
    fix in TASK-AB-FIX-INVAB1.
 
-The unifying observation across all three: a "lightweight" / "deterministic"
-validator path was added in parallel to an LLM-with-tools verification path,
-and the lightweight path silently dropped the verification step. From
-outside, both paths look like they enforce the same contract; from inside,
-the lightweight path interprets *absence of evidence* as *evidence of
-absence of failure*, which is the false-green generator.
+4. **2026-06-14** — checkpoint-layer **false-red**
+   (TASK-FIX-CKPTTESTRED01, commit `c6b5e7d9`, FEAT-9DDE run 5). The
+   checkpoint pollution detector read an **absent** test signal as a
+   **negative** one. The default LLM Coach's `coach_result.report` carries
+   only `{decision, issues, criteria_verification, rationale}` — not
+   `validation_results.quality_gates` — so `_extract_tests_passed` fell
+   through to `False`. Every LLM-Coach feedback turn was checkpointed
+   `tests: fail`; after three turns
+   `WorktreeCheckpointManager.should_rollback` declared an
+   `unrecoverable_stall` even though the Coach gate reported `tests=True`
+   all three turns. Fix: make the checkpoint test signal **tri-state**
+   (`True` / `False` / `None`=UNKNOWN); only an explicit
+   `tests_passed is False` counts toward the consecutive-failure tally, and
+   an absent signal (`None`) breaks the run instead of extending it. This is
+   the **false-red** direction of the meta-frame (see "Meta-frame" below)
+   landing in this rule's own instance set — its mechanism is the
+   absence-of-failure one (an absent oracle signal misread), not the
+   path-mismatch mechanism of the false-red sibling. See "Prior art" for the
+   supersession of TASK-FIX-64EE and the grep fingerprint.
+
+The unifying observation across the first three: a "lightweight" /
+"deterministic" validator path was added in parallel to an LLM-with-tools
+verification path, and the lightweight path silently dropped the
+verification step. From outside, both paths look like they enforce the same
+contract; from inside, the lightweight path interprets *absence of evidence*
+as *evidence of absence of failure*, which is the false-green generator.
+(The fourth instance generalises the family to the false-red direction: the
+same "absent ≠ negative" confusion, read the other way — a rejection gate
+that stalls a healthy run because no oracle signal was present that turn.)
 
 ## Symptom
 
@@ -106,6 +129,11 @@ rg "task_work_results\.get\(" guardkit/orchestrator/quality_gates/coach_validato
 # Verification-was-skipped fingerprint
 rg "CoachVerifier|honesty_verification" guardkit/orchestrator/quality_gates/
 
+# Checkpoint-layer instance (TASK-FIX-CKPTTESTRED01): an absent test signal
+# must stay tri-state UNKNOWN, never collapsed to a failure in the tally.
+rg -n "cp.tests_passed is False" guardkit/orchestrator/worktree_checkpoints.py
+rg -n "_extract_tests_passed" guardkit/orchestrator/autobuild.py  # -> Optional[bool]
+
 # Sibling-rule lookup (this rule)
 rg "absence-of-failure" .claude/rules/
 ```
@@ -126,6 +154,15 @@ positive-evidence precondition (count of attempts > 0; identity-based
 resolution before path-equality discrepancy) so "absent oracle output"
 is surfaced as feedback, never silently approved or silently
 turn-rejecting.
+
+The checkpoint-layer instance (item 4 in "Why this rule exists") shows that
+the false-red direction can arise *inside this rule's own mechanism*, not
+only in the path-mismatch sibling: an absent oracle signal (no quality-gate
+verdict in the LLM-Coach report) misread as a ran-and-failed verdict,
+stalling a healthy run. The fix is the same positive-evidence precondition
+applied to a rejection gate — only count a failure when the oracle actually
+ran and returned `False`, and let an absent (`None`) signal break the
+consecutive-failure run rather than extend it.
 
 ## Prior art
 
@@ -148,10 +185,26 @@ turn-rejecting.
   (a declared sibling repo), not from interpreting a present signal. Seeded by
   TASK-AB-XREPOEV01 (2026-06-13); produces both a false-green and a false-red
   from the same too-narrow boundary.
+- **Instance (checkpoint-layer false-red)**: the checkpoint pollution
+  detector — `guardkit/orchestrator/worktree_checkpoints.py`
+  (`should_rollback`, `Checkpoint.tests_passed: Optional[bool]`,
+  `format_test_status`) and `guardkit/orchestrator/autobuild.py`
+  (`_extract_tests_passed -> Optional[bool]`) — now treats an absent test
+  signal as **tri-state UNKNOWN** (`None`), excluded from the
+  consecutive-failure tally; only an explicit `tests_passed is False` counts.
+  Landed by TASK-FIX-CKPTTESTRED01 (commit `c6b5e7d9`, 2026-06-14, FEAT-9DDE
+  run 5). It **supersedes TASK-FIX-64EE's `None → False` coercion for the
+  absent-signal case only** — a genuine ran-and-failed `False` still stalls
+  the run. Reproducer:
+  `tests/unit/test_checkpoint_pollution_absent_test_signal.py` (12 tests).
+  Graphiti node (`guardkit__project_decisions`): *"checkpoint test signal is
+  tri-state (absent is UNKNOWN not failure)"*.
 - **Pair fact in Graphiti** (`guardkit__project_decisions`): node
-  *"absence-of-failure-is-not-success"* with edges to the three known
-  instance uuids enumerated above, and an `IS_INVERSE_SHAPE_OF` edge
-  to the *"path-string-mismatch-is-not-dishonesty"* node.
+  *"absence-of-failure-is-not-success"* with edges to the first three
+  (false-green) instance uuids enumerated above, and an `IS_INVERSE_SHAPE_OF`
+  edge to the *"path-string-mismatch-is-not-dishonesty"* node. The fourth
+  (checkpoint-layer, false-red) instance has its own node, cited in the
+  bullet above.
 - **Architectural review report**: `.claude/reviews/TASK-INV-AB1-review-report.md`
   contains the C4 component diagram and four sequence diagrams that
   motivate this rule.
@@ -168,6 +221,11 @@ turn-rejecting.
   counter.
 - Before adding a new "lightweight" / "deterministic" validator that
   parallels an LLM-with-tools path.
+- Before changing the checkpoint pollution detector
+  (`worktree_checkpoints.py` `should_rollback`) or the signal that feeds it
+  (`autobuild.py` `_extract_tests_passed`) — an absent test signal must stay
+  tri-state UNKNOWN, never collapsed to a failure in the consecutive-failure
+  tally.
 - During Phase 2.5 architectural review for any task that touches
   `coach_validator.py`, `coach_verification.py`, or `agent_invoker.py`.
 - During any diagnostic session investigating a "Coach approved but the
