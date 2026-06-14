@@ -5999,6 +5999,17 @@ class AutoBuildOrchestrator:
                     start_time=start_time,
                 )
 
+            # TASK-AB-CKPTGATE01: thread the deterministic gate's test signal
+            # from the evidence bundle into the returned report so the
+            # checkpoint layer (_extract_tests_passed) records a genuinely
+            # passing turn as `pass`, not `unknown` — restoring it as a valid
+            # find_last_passing_checkpoint rollback target. No-op when the
+            # report already carries the signal or the bundle lacks it. The
+            # synthetic-feedback returns above are intentionally NOT enriched
+            # (the Coach produced no verdict there → stays UNKNOWN).
+            self._merge_evidence_test_signal_into_report(
+                result.report, evidence_bundle
+            )
             return result
 
         except NotImplementedError as sdk_error:
@@ -6397,6 +6408,77 @@ class AutoBuildOrchestrator:
             duration_seconds=duration,
             error=None,
         )
+
+    def _merge_evidence_test_signal_into_report(
+        self,
+        report: Optional[Dict[str, Any]],
+        evidence_bundle: Optional["CoachEvidenceBundle"],
+    ) -> Optional[Dict[str, Any]]:
+        """Thread the deterministic gate's test signal into the LLM-Coach report.
+
+        TASK-AB-CKPTGATE01. The default LLM Coach's ``coach_result.report``
+        carries only ``{decision, issues, criteria_verification, rationale}`` —
+        it omits ``validation_results.quality_gates``. The authoritative
+        ``tests=True`` verdict the deterministic gate computed lives in the Coach
+        *evidence bundle*, not in the returned report. ``_extract_tests_passed``
+        (the checkpoint-layer consumer) therefore found nothing and recorded a
+        genuinely-passing turn as ``UNKNOWN`` rather than ``pass`` — costing
+        ``find_last_passing_checkpoint`` a valid rollback target. This is the
+        residual gap left by TASK-FIX-CKPTTESTRED01's scope boundary.
+
+        This helper copies the bundle's ``quality_gates.tests_passed`` and
+        ``independent_tests.signal_absent`` (+ ``tests_passed``) into
+        ``report["validation_results"]`` so the checkpoint layer reads the same
+        oracle the gate logged. It is an orchestrator-side enrichment of the
+        returned report object — NOT a Coach write — so the Coach read-only
+        invariant (``feature-build-invariants.md`` FB-004) is preserved.
+
+        Invariants honoured:
+
+        * **Absence-of-failure**
+          (``.claude/rules/absence-of-failure-is-not-success.md``): when the
+          bundle's ``independent_tests.signal_absent`` is ``True`` the merged
+          report still resolves to ``UNKNOWN``. ``_extract_tests_passed`` reads
+          ``signal_absent`` *before* ``quality_gates.tests_passed``, so a passing
+          deterministic gate never overrides an absent independent signal.
+        * **Non-clobbering**: a field already present in the report wins (a real
+          Coach verdict that carries its own ``validation_results`` is never
+          overwritten). The synthetic-feedback path is never routed through this
+          helper, so it stays absent → ``UNKNOWN`` (the Coach produced no
+          verdict there).
+
+        Returns the (mutated) ``report`` for call-site convenience; no-ops and
+        returns the input unchanged when either argument is absent.
+        """
+        if not isinstance(report, dict) or evidence_bundle is None:
+            return report
+
+        validation = report.get("validation_results")
+        if not isinstance(validation, dict):
+            validation = {}
+            report["validation_results"] = validation
+
+        # Deterministic quality-gate test signal (the authoritative tests=True).
+        gates = evidence_bundle.quality_gates
+        if gates is not None:
+            gates_dict = validation.get("quality_gates")
+            if not isinstance(gates_dict, dict):
+                gates_dict = {}
+                validation["quality_gates"] = gates_dict
+            gates_dict.setdefault("tests_passed", gates.tests_passed)
+
+        # Independent-test absence signal — read FIRST by _extract_tests_passed,
+        # so it gates the quality-gate signal above (absence-of-failure).
+        independent = evidence_bundle.independent_tests
+        if independent is not None:
+            indep_dict = validation.get("independent_tests")
+            if not isinstance(indep_dict, dict):
+                indep_dict = {}
+                validation["independent_tests"] = indep_dict
+            indep_dict.setdefault("signal_absent", independent.signal_absent)
+            indep_dict.setdefault("tests_passed", independent.tests_passed)
+
+        return report
 
     def _load_coach_config(self) -> Dict[str, Any]:
         """
