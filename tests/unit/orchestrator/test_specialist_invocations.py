@@ -883,6 +883,119 @@ async def test_invoke_code_reviewer_prompt_contains_phase_4_summary_string(
 
 
 # =============================================================================
+# Code-reviewer SDK-timeout cap + watchdog (TASK-PERF-SPECLAT01)
+# =============================================================================
+#
+# Before SPECLAT01 the Phase 5 code-reviewer had NEITHER the duration cap nor
+# the no-activity watchdog the Phase 4 test-orchestrator has. On a slow model
+# it ran to whatever (large) sdk_timeout it was handed — FEAT-9DDE run-6 turn-2
+# saw a 35.6-min (2138s) code-reviewer SDKTimeout that exhausted the task
+# budget. These tests pin the symmetric guards.
+
+
+@pytest.mark.asyncio
+async def test_invoke_code_reviewer_caps_sdk_timeout_above_ceiling(
+    tmp_path: Path,
+) -> None:
+    """Caller passes sdk_timeout > 600s; SDK call sees the capped value.
+
+    Symmetric with ``test_invoke_test_orchestrator_caps_sdk_timeout_above_ceiling``.
+    2138 is the run-6 code-reviewer's observed SDKTimeout — exactly the class
+    of value this cap exists to bound.
+    """
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    _seed_specialist_results_with_phase_4(tmp_path, _TASK_ID_OSI_005)
+
+    captured: dict[str, object] = {}
+
+    async def _capture(**_: object) -> None:
+        captured["timeout"] = invoker.sdk_timeout_seconds
+
+    invoker = _make_fake_agent_invoker(invoke_side_effect=_capture)
+
+    await invoke_code_reviewer(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_OSI_005,
+        phase4_result=_make_passed_phase4_result(),
+        sdk_timeout=2138,
+        agent_invoker=invoker,
+    )
+
+    assert captured["timeout"] == 600
+
+
+@pytest.mark.asyncio
+async def test_invoke_code_reviewer_passes_smaller_sdk_timeout_through(
+    tmp_path: Path,
+) -> None:
+    """Caller passes sdk_timeout < 600s; cap is a no-op."""
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    _seed_specialist_results_with_phase_4(tmp_path, _TASK_ID_OSI_005)
+
+    captured: dict[str, object] = {}
+
+    async def _capture(**_: object) -> None:
+        captured["timeout"] = invoker.sdk_timeout_seconds
+
+    invoker = _make_fake_agent_invoker(invoke_side_effect=_capture)
+
+    await invoke_code_reviewer(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_OSI_005,
+        phase4_result=_make_passed_phase4_result(),
+        sdk_timeout=300,
+        agent_invoker=invoker,
+    )
+
+    assert captured["timeout"] == 300
+
+
+@pytest.mark.asyncio
+async def test_invoke_code_reviewer_wires_no_activity_watchdog(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The code-reviewer runs under the same no-activity watchdog as the
+    test-orchestrator, so a genuinely-hung review (no /v1/responses traffic)
+    dies fast instead of running to the duration cap (TASK-PERF-SPECLAT01).
+    """
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    _seed_specialist_results_with_phase_4(tmp_path, _TASK_ID_OSI_005)
+    invoker = _make_fake_agent_invoker()
+
+    captured: dict[str, object] = {}
+
+    async def _fake_run_specialist(**kwargs: object) -> SpecialistInvocationResult:
+        captured.update(kwargs)
+        return SpecialistInvocationResult(
+            specialist_name="code-reviewer",
+            phase="5",
+            status="passed",
+            duration_seconds=1.0,
+            result_file=None,
+            error=None,
+        )
+
+    monkeypatch.setattr(
+        specialist_invocations, "run_specialist", _fake_run_specialist
+    )
+
+    await invoke_code_reviewer(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_OSI_005,
+        phase4_result=_make_passed_phase4_result(),
+        sdk_timeout=300,
+        agent_invoker=invoker,
+    )
+
+    assert captured["specialist_name"] == "code-reviewer"
+    assert (
+        captured["no_activity_watchdog_seconds"]
+        == specialist_invocations._SPECIALIST_NO_ACTIVITY_WATCHDOG_SECONDS
+    )
+
+
+# =============================================================================
 # No-model-activity watchdog (TASK-FIX-SPECHANG2)
 # =============================================================================
 #

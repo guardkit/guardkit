@@ -32,6 +32,7 @@ from guardkit.orchestrator.autobuild import (
     AutoBuildOrchestrator,
     COACH_GRACE_PERIOD_SECONDS,
     MIN_TURN_BUDGET_SECONDS,
+    SPECIALIST_BUDGET_FRACTION,
     TurnRecord,
 )
 from guardkit.worktrees import Worktree
@@ -171,6 +172,50 @@ class TestTimeoutBudgetConstants:
 
     def test_min_turn_budget_is_600(self):
         assert MIN_TURN_BUDGET_SECONDS == 600
+
+    def test_specialist_budget_fraction_default_is_half(self):
+        """TASK-PERF-SPECLAT01: the specialist phase may consume at most this
+        fraction of the post-Player remaining budget by default."""
+        assert SPECIALIST_BUDGET_FRACTION == 0.5
+        assert isinstance(SPECIALIST_BUDGET_FRACTION, float)
+
+    def test_specialist_budget_fraction_env_override(self):
+        """GUARDKIT_SPECIALIST_BUDGET_FRACTION overrides the 0.5 default at
+        module load (TASK-PERF-SPECLAT01)."""
+        import guardkit.orchestrator.autobuild as autobuild_module
+
+        with patch.dict(os.environ, {"GUARDKIT_SPECIALIST_BUDGET_FRACTION": "0.25"}):
+            importlib.reload(autobuild_module)
+            try:
+                assert autobuild_module.SPECIALIST_BUDGET_FRACTION == 0.25
+            finally:
+                pass
+
+        importlib.reload(autobuild_module)
+        assert autobuild_module.SPECIALIST_BUDGET_FRACTION == 0.5
+
+    def test_specialist_budget_fraction_clamped_to_unit_interval(self):
+        """Out-of-range values are clamped to (0, 1] — a fraction > 1 would
+        let the specialist phase exceed the whole remaining budget, and <= 0
+        would block specialists entirely (TASK-PERF-SPECLAT01)."""
+        import guardkit.orchestrator.autobuild as autobuild_module
+
+        with patch.dict(os.environ, {"GUARDKIT_SPECIALIST_BUDGET_FRACTION": "5"}):
+            importlib.reload(autobuild_module)
+            try:
+                assert autobuild_module.SPECIALIST_BUDGET_FRACTION == 1.0
+            finally:
+                pass
+
+        with patch.dict(os.environ, {"GUARDKIT_SPECIALIST_BUDGET_FRACTION": "0"}):
+            importlib.reload(autobuild_module)
+            try:
+                assert autobuild_module.SPECIALIST_BUDGET_FRACTION == 0.01
+            finally:
+                pass
+
+        importlib.reload(autobuild_module)
+        assert autobuild_module.SPECIALIST_BUDGET_FRACTION == 0.5
 
     def test_constants_are_positive_integers(self):
         assert isinstance(COACH_GRACE_PERIOD_SECONDS, int)
@@ -1018,6 +1063,110 @@ class TestCapSpecialistTimeout:
             # Missing task_id should raise TypeError, not silently fall back.
             orch._cap_specialist_timeout(remaining_budget=2400.0)
 
+    # -- TASK-PERF-SPECLAT01: phase_budget_remaining clamp --------------------
+
+    def test_phase_budget_remaining_binds_below_grace_cap(
+        self, worktree_path, mock_worktree
+    ):
+        """phase_budget_remaining smaller than the grace-reserved cap wins.
+
+        This is the dominant SPECLAT01 scenario: the wall is ample (so the
+        grace-reserved cap and the scaled value both pass), but the
+        specialist-phase budget (a fraction of remaining) is the binding
+        ceiling — the specialist must not exceed its slice of the budget.
+        """
+        scaled = 2160  # the run-6 code-reviewer scaled value
+        # Ample wall: neither scaled nor the grace cap bites.
+        remaining = float(scaled + COACH_GRACE_PERIOD_SECONDS + 5000)
+        orch = self._orchestrator(
+            worktree_path, mock_worktree, scaled_timeout=scaled
+        )
+        result = orch._cap_specialist_timeout(
+            remaining_budget=remaining,
+            task_id="TASK-AB-001",
+            phase_budget_remaining=900.0,
+        )
+        assert result == 900
+
+    def test_phase_budget_remaining_none_preserves_legacy_cap(
+        self, worktree_path, mock_worktree
+    ):
+        """phase_budget_remaining=None → identical to the pre-SPECLAT01 cap."""
+        scaled = 1200
+        remaining = float(scaled + COACH_GRACE_PERIOD_SECONDS + 1000)
+        orch = self._orchestrator(
+            worktree_path, mock_worktree, scaled_timeout=scaled
+        )
+        result = orch._cap_specialist_timeout(
+            remaining_budget=remaining,
+            task_id="TASK-AB-001",
+            phase_budget_remaining=None,
+        )
+        assert result == scaled
+
+    def test_phase_budget_remaining_floored_at_60s(
+        self, worktree_path, mock_worktree
+    ):
+        """A tiny (or negative) residual phase budget still floors at 60 s, so
+        Phase 5 is never starved to zero after Phase 4 ate the phase budget."""
+        scaled = 1200
+        remaining = float(scaled + COACH_GRACE_PERIOD_SECONDS + 1000)
+        orch = self._orchestrator(
+            worktree_path, mock_worktree, scaled_timeout=scaled
+        )
+        assert (
+            orch._cap_specialist_timeout(
+                remaining_budget=remaining,
+                task_id="TASK-AB-001",
+                phase_budget_remaining=5.0,
+            )
+            == 60
+        )
+        assert (
+            orch._cap_specialist_timeout(
+                remaining_budget=remaining,
+                task_id="TASK-AB-001",
+                phase_budget_remaining=-100.0,
+            )
+            == 60
+        )
+
+    def test_phase_budget_does_not_raise_low_grace_cap(
+        self, worktree_path, mock_worktree
+    ):
+        """When the grace-reserved cap is already lower than the phase budget,
+        the smaller (grace) value wins — the phase budget only ever tightens,
+        never loosens, the result."""
+        scaled = 5000
+        reserved_target = 680
+        remaining = float(reserved_target + COACH_GRACE_PERIOD_SECONDS)
+        orch = self._orchestrator(
+            worktree_path, mock_worktree, scaled_timeout=scaled
+        )
+        result = orch._cap_specialist_timeout(
+            remaining_budget=remaining,
+            task_id="TASK-AB-001",
+            phase_budget_remaining=2000.0,  # larger than the 680 grace cap
+        )
+        assert result == reserved_target
+
+    def test_phase_budget_ignored_when_circuit_breaker_disabled(
+        self, worktree_path, mock_worktree, monkeypatch
+    ):
+        """GUARDKIT_SPECIALIST_TIMEOUT_CAP=disable nukes BOTH wall clamps,
+        including the phase-budget fraction — the scaled value passes through
+        even when a small phase budget is supplied (emergency backout)."""
+        orch = self._orchestrator(
+            worktree_path, mock_worktree, scaled_timeout=1200
+        )
+        monkeypatch.setenv("GUARDKIT_SPECIALIST_TIMEOUT_CAP", "disable")
+        result = orch._cap_specialist_timeout(
+            remaining_budget=100.0,
+            task_id="TASK-AB-001",
+            phase_budget_remaining=80.0,
+        )
+        assert result == 1200
+
 
 # ============================================================================
 # Tests: post-Player budget refresh before pre-specialist guard (TASK-ABSR-FRSH)
@@ -1253,14 +1402,15 @@ class TestTaskTimeoutFloor:
 
 
 class TestSpecialistBudgetRefresh:
-    """Phase 5 ``_cap_specialist_timeout`` input is refreshed after Phase 4.
+    """Specialist ``_cap_specialist_timeout`` inputs reflect wall already burned.
 
-    The original ``remaining_budget`` is the start-of-turn value and does not
-    reflect wall consumed by Phase 4 (test-orchestrator). Reusing it for
-    Phase 5 (code-reviewer) over-allocates time Phase 5 doesn't actually have
-    and lets the post-specialist Coach validation overrun the feature
-    ``task_timeout``. The fix subtracts ``phase4_elapsed`` before computing
-    the Phase 5 cap (TASK-ATR-002).
+    TASK-ATR-002 subtracted ``phase4_elapsed`` before computing the Phase 5
+    cap. TASK-PERF-SPECLAT01 completed the fix: BOTH Phase 4 and Phase 5 caps
+    are now based on ``post_player_remaining`` (the budget recomputed from
+    ``task_timeout - elapsed`` after the Player phase), NOT the stale
+    start-of-turn ``remaining_budget`` parameter — which over-allocated by the
+    wall the Player already burned and let the specialist phase / post-
+    specialist Coach overrun the feature ``task_timeout``.
     """
 
     def _stage_orchestrator(self, worktree_path, mock_worktree, sdk_timeout=1200):
@@ -1289,10 +1439,14 @@ class TestSpecialistBudgetRefresh:
         )
         original_cap = orchestrator._cap_specialist_timeout
 
-        def capture_cap(remaining_budget=None, task_id=None):
+        def capture_cap(
+            remaining_budget=None, task_id=None, phase_budget_remaining=None
+        ):
             cap_inputs.append(remaining_budget)
             return original_cap(
-                remaining_budget=remaining_budget, task_id=task_id
+                remaining_budget=remaining_budget,
+                task_id=task_id,
+                phase_budget_remaining=phase_budget_remaining,
             )
 
         orchestrator._cap_specialist_timeout = capture_cap
@@ -1301,7 +1455,12 @@ class TestSpecialistBudgetRefresh:
     def test_phase5_cap_input_refreshed_after_phase4_wall(
         self, worktree_path, mock_worktree
     ):
-        """Phase 4 takes 200s wall → Phase 5 cap input is start - 200s ± 5s."""
+        """Phase 4 uses post_player_remaining; Phase 5 = post_player - 200s ± 5s.
+
+        TASK-PERF-SPECLAT01: the start-of-turn ``remaining_budget`` (2000)
+        passed in is deliberately different from the recomputed
+        ``post_player_remaining`` (2400) to prove the caps now use the latter.
+        """
         orchestrator = self._stage_orchestrator(worktree_path, mock_worktree)
         cap_inputs = self._wrap_cap(orchestrator)
 
@@ -1351,13 +1510,15 @@ class TestSpecialistBudgetRefresh:
 
         # Two cap calls: Phase 4, Phase 5
         assert len(cap_inputs) == 2, f"expected 2 cap calls, got {cap_inputs!r}"
-        # Phase 4 uses the start-of-turn budget unchanged
-        assert cap_inputs[0] == 2000.0
-        # Phase 5 cap input is start_budget - phase4_elapsed (within 5s tolerance)
+        # TASK-PERF-SPECLAT01: Phase 4 uses post_player_remaining (recomputed
+        # 2400 - 0 = 2400), NOT the stale start-of-turn remaining_budget (2000).
+        assert cap_inputs[0] == 2400.0
+        # Phase 5 cap input is post_player_remaining - phase4_elapsed (200s),
+        # within 5s tolerance.
         phase5_input = cap_inputs[1]
         assert phase5_input is not None
-        assert abs(phase5_input - (2000.0 - 200.0)) < 5.0, (
-            f"expected Phase 5 cap input ~1800.0, got {phase5_input}"
+        assert abs(phase5_input - (2400.0 - 200.0)) < 5.0, (
+            f"expected Phase 5 cap input ~2200.0, got {phase5_input}"
         )
 
     def test_phase5_remaining_is_none_when_remaining_budget_is_none(
@@ -1415,7 +1576,7 @@ class TestSpecialistBudgetRefresh:
     def test_phase5_remaining_floored_at_zero_when_phase4_overruns(
         self, worktree_path, mock_worktree
     ):
-        """Phase 4 elapsed > remaining_budget → Phase 5 sees 0.0 (floored)."""
+        """Phase 4 elapsed > post_player_remaining → Phase 5 sees 0.0 (floored)."""
         orchestrator = self._stage_orchestrator(worktree_path, mock_worktree)
         cap_inputs = self._wrap_cap(orchestrator)
 
@@ -1429,9 +1590,10 @@ class TestSpecialistBudgetRefresh:
         async def fake_invoke_code_reviewer(**kwargs):
             return Mock()
 
-        # Phase 4 burns more wall (1500s) than the start-of-turn budget (1000s).
-        # phase5_remaining must floor at 0.0, not go negative.
-        time_seq = [0.0, 0.0, 1500.0]
+        # Phase 4 burns more wall (2500s) than post_player_remaining (2400s,
+        # recomputed from task_timeout 2400 - 0). phase5_remaining must floor
+        # at 0.0, not go negative (TASK-PERF-SPECLAT01).
+        time_seq = [0.0, 0.0, 2500.0]
 
         with patch.object(
             orchestrator,
@@ -1462,5 +1624,7 @@ class TestSpecialistBudgetRefresh:
             )
 
         assert len(cap_inputs) == 2
+        # Phase 4 uses post_player_remaining (2400), not start-of-turn 1000.
+        assert cap_inputs[0] == 2400.0
         # Phase 5 receives the 0.0 floor, not a negative value.
         assert cap_inputs[1] == 0.0
