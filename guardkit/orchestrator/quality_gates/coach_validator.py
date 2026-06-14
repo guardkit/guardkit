@@ -4054,8 +4054,33 @@ class CoachValidator:
                 output = result.stdout or result.stderr or "No output"
                 summary = self._summarize_test_output(output)
 
+                # TASK-FIX-BSEXTRAS01 (absence-of-failure-is-not-success):
+                # distinguish "the oracle ran and the Player's tests failed"
+                # from "the oracle never ran". When the pinned interpreter has
+                # no pytest (``python -m pytest`` → "No module named pytest")
+                # or pytest collected zero tests (exit code 5), there is NO
+                # signal about the Player's work — it must surface as
+                # signal_absent (UNKNOWN), never a Player test failure.
+                # Narrowly scoped to the runner itself: a Player test importing
+                # a missing *app* module ("No module named myapp") still fails
+                # as a real defect.
+                signal_absent = False
+                if not tests_passed:
+                    combined = (result.stdout or "") + (result.stderr or "")
+                    if "No module named pytest" in combined or result.returncode == 5:
+                        signal_absent = True
+                        logger.warning(
+                            "Independent test oracle did not run "
+                            "(returncode=%s, runner-absent/no-tests-collected) "
+                            "— treating as absent signal, not a test failure. "
+                            "cmd=%s",
+                            result.returncode,
+                            test_cmd,
+                        )
+
                 logger.info(
-                    f"Independent tests {'passed' if tests_passed else 'failed'} "
+                    f"Independent tests "
+                    f"{'passed' if tests_passed else ('absent' if signal_absent else 'failed')} "
                     f"in {duration:.1f}s"
                 )
 
@@ -4065,6 +4090,7 @@ class CoachValidator:
                     test_output_summary=summary,
                     duration_seconds=duration,
                     raw_output=(result.stdout or "") + (result.stderr or ""),
+                    signal_absent=signal_absent,
                 )
 
             except subprocess.TimeoutExpired:

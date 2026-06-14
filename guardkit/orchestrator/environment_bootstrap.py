@@ -102,12 +102,24 @@ class DetectedManifest:
         for the same (directory, stack) pair.
     install_command : List[str]
         argv list for the install command, suitable for subprocess.run().
+    python_extras : tuple[str, ...]
+        PEP 621 optional-dependency group names (e.g. ``("dev",)``) the
+        bootstrap requested. Only meaningful for Python ``pyproject.toml``
+        manifests. Threaded into the *incomplete-project* per-dependency
+        install path (:py:meth:`get_dependency_install_commands` →
+        :py:meth:`_python_dep_commands`) so extras such as ``dev`` (pytest)
+        are installed even when the project source dir is absent and the
+        editable ``pip install -e .[dev]`` path is skipped. Without this the
+        worktree venv would get only base deps, and the Coach independent
+        test would fail 0.0s with "No module named pytest" (TASK-FIX-BSEXTRAS01,
+        FEAT-9DDE run-6).
     """
 
     path: Path
     stack: str
     is_lock_file: bool
     install_command: List[str]
+    python_extras: tuple[str, ...] = ()
 
     # ---- Completeness detection ----------------------------------------
 
@@ -236,7 +248,17 @@ class DetectedManifest:
         return (directory / entry).exists()
 
     def _python_dep_commands(self) -> Optional[List[List[str]]]:
-        """Parse [project.dependencies] from pyproject.toml for per-dep installs."""
+        """Parse [project.dependencies] (+ requested extras) for per-dep installs.
+
+        Base ``[project.dependencies]`` are always installed. When
+        ``self.python_extras`` is non-empty, the matching
+        ``[project.optional-dependencies]`` groups are appended too
+        (TASK-FIX-BSEXTRAS01) — otherwise the incomplete-project path would
+        silently drop test extras like ``dev`` (pytest), leaving the worktree
+        venv without pytest and the Coach independent test failing 0.0s with
+        "No module named pytest". A requested extra absent from the manifest
+        is logged and skipped (mirrors the auto-detect warning convention).
+        """
         try:
             try:
                 import tomllib  # Python 3.11+
@@ -249,7 +271,23 @@ class DetectedManifest:
             )
             return None
 
-        deps: List[str] = data.get("project", {}).get("dependencies", [])
+        project = data.get("project", {}) or {}
+        deps: List[str] = list(project.get("dependencies", []) or [])
+
+        optional = project.get("optional-dependencies", {}) or {}
+        for extra in self.python_extras:
+            group = optional.get(extra)
+            if group is None:
+                logger.warning(
+                    "pyproject %s declares no optional-dependency group '%s'; "
+                    "skipping (bootstrap requested extras=%s)",
+                    self.path,
+                    extra,
+                    list(self.python_extras),
+                )
+                continue
+            deps.extend(group)
+
         if not deps:
             return None
 
@@ -955,6 +993,12 @@ class ProjectEnvironmentDetector:
                     stack="python",
                     is_lock_file=False,
                     install_command=install_command,
+                    # TASK-FIX-BSEXTRAS01: carry the requested extras so the
+                    # incomplete-project per-dep path installs them too (the
+                    # editable `.[dev]` path above is skipped when the source
+                    # dir is absent — e.g. guardkit-py whose import name
+                    # `guardkit_py` does not match the `guardkit/` dir).
+                    python_extras=self._python_extras,
                 )
             )
             locked_stacks.add("python")  # prevent requirements.txt from also running

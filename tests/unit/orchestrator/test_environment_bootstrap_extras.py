@@ -35,6 +35,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from guardkit.orchestrator.environment_bootstrap import (
+    DetectedManifest,
     EnvironmentBootstrapper,
     ProjectEnvironmentDetector,
     _resolve_python_pyproject_install_command,
@@ -615,3 +616,118 @@ class TestEndToEndBootstrapWithExtras:
         assert install_cmd[-1] == ".[dev]", (
             f"install command did not carry [dev] extra: {install_cmd}"
         )
+
+
+# ============================================================================
+# TASK-FIX-BSEXTRAS01 — the INCOMPLETE-project per-dependency install path
+# must honour requested extras too. FEAT-9DDE run-6: guardkit-py's import name
+# (guardkit_py) does not match the guardkit/ dir, so
+# ``_python_pyproject_is_complete()`` is False → the editable ``.[dev]`` path
+# above is skipped and the per-dep path ran instead — which dropped pytest
+# ([dev]) entirely. The worktree venv then lacked pytest and the Coach
+# independent test failed 0.0s with "No module named pytest".
+# ============================================================================
+
+
+def _write_incomplete_pyproject_with_base_and_dev(directory: Path) -> Path:
+    """pyproject with a base dep AND a [dev] extra whose ``name`` has no
+    matching source dir → ``_python_pyproject_is_complete()`` is False (the
+    incomplete-project per-dependency install path is taken)."""
+    pyproject = directory / "pyproject.toml"
+    pyproject.write_text(
+        "[build-system]\n"
+        'requires = ["setuptools>=61"]\n'
+        'build-backend = "setuptools.build_meta"\n'
+        "\n"
+        "[project]\n"
+        'name = "fixture-pkg"\n'  # no fixture_pkg/ dir → incomplete
+        'version = "0.0.0"\n'
+        'dependencies = ["click>=8.0.0"]\n'
+        "\n"
+        "[project.optional-dependencies]\n"
+        'dev = ["pytest>=7.4.3", "pytest-cov"]\n',
+        encoding="utf-8",
+    )
+    return pyproject
+
+
+class TestPerDepPathHonoursExtras:
+    """The incomplete-project per-dependency install path installs base deps
+    AND requested extras; the default (no extras) is unchanged."""
+
+    def test_per_dep_commands_include_requested_extra(self, tmp_path: Path) -> None:
+        pyproject = _write_incomplete_pyproject_with_base_and_dev(tmp_path)
+        manifest = DetectedManifest(
+            path=pyproject,
+            stack="python",
+            is_lock_file=False,
+            install_command=[sys.executable, "-m", "pip", "install", "-e", ".[dev]"],
+            python_extras=("dev",),
+        )
+        # Confirm we are exercising the per-dep (incomplete) path.
+        assert manifest.is_project_complete() is False
+        cmds = manifest.get_dependency_install_commands()
+        assert cmds is not None
+        targets = [c[-1] for c in cmds]
+        assert any(t.startswith("pytest") for t in targets), targets  # extra installed
+        assert any(t.startswith("click") for t in targets), targets   # base dep kept
+
+    def test_no_extras_installs_only_base_deps(self, tmp_path: Path) -> None:
+        pyproject = _write_incomplete_pyproject_with_base_and_dev(tmp_path)
+        manifest = DetectedManifest(
+            path=pyproject,
+            stack="python",
+            is_lock_file=False,
+            install_command=[sys.executable, "-m", "pip", "install", "-e", "."],
+            python_extras=(),  # backward-compat: no extras requested
+        )
+        targets = [c[-1] for c in manifest.get_dependency_install_commands()]
+        assert any(t.startswith("click") for t in targets)
+        assert not any(t.startswith("pytest") for t in targets)  # extra NOT pulled
+
+    def test_missing_extra_group_warns_and_skips(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text(
+            "[project]\n"
+            'name = "fixture-pkg"\n'
+            'version = "0.0.0"\n'
+            'dependencies = ["click"]\n',
+            encoding="utf-8",
+        )
+        manifest = DetectedManifest(
+            path=pyproject,
+            stack="python",
+            is_lock_file=False,
+            install_command=[sys.executable, "-m", "pip", "install", "-e", "."],
+            python_extras=("dev",),  # requested but not declared
+        )
+        with caplog.at_level(
+            logging.WARNING, logger="guardkit.orchestrator.environment_bootstrap"
+        ):
+            targets = [c[-1] for c in manifest.get_dependency_install_commands()]
+        assert targets == ["click"]  # base only; missing extra skipped, not fatal
+        assert any(
+            "optional-dependency group 'dev'" in r.getMessage()
+            for r in caplog.records
+        ), [r.getMessage() for r in caplog.records]
+
+    def test_detector_threads_extras_onto_incomplete_manifest(
+        self, tmp_path: Path
+    ) -> None:
+        """End-to-end guard for the construction-site threading: a detector
+        built with ``python_extras=('dev',)`` stamps them onto the pyproject
+        manifest, so the per-dep path can see them."""
+        _write_incomplete_pyproject_with_base_and_dev(tmp_path)
+        detector = ProjectEnvironmentDetector(tmp_path, python_extras=("dev",))
+        python = [
+            m
+            for m in detector.detect()
+            if m.stack == "python" and m.path.name == "pyproject.toml"
+        ]
+        assert len(python) == 1
+        assert python[0].python_extras == ("dev",)
+        assert python[0].is_project_complete() is False
+        targets = [c[-1] for c in python[0].get_dependency_install_commands()]
+        assert any(t.startswith("pytest") for t in targets), targets
