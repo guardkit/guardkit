@@ -1,10 +1,14 @@
 ---
 id: TASK-DOC-CKPTABSF01
 title: Document the checkpoint-layer false-red as an instance of absence-of-failure-is-not-success
-status: backlog
+status: completed
 task_type: documentation
 created: 2026-06-14T13:00:00Z
-updated: 2026-06-14T13:00:00Z
+updated: 2026-06-14T14:45:00Z
+completed: 2026-06-14T14:45:00Z
+previous_state: in_review
+completed_location: tasks/completed/TASK-DOC-CKPTABSF01/
+state_transition_reason: "Docs-only task complete; all ACs verified"
 priority: medium
 complexity: 2
 related: [TASK-FIX-CKPTTESTRED01, TASK-AB-FIX-INVAB1, TASK-DOC-1B4D]
@@ -63,18 +67,24 @@ self-documenting and greppable.
 
 ## Acceptance Criteria
 
-- [ ] `.claude/rules/absence-of-failure-is-not-success.md` lists
+- [x] `.claude/rules/absence-of-failure-is-not-success.md` lists
       TASK-FIX-CKPTTESTRED01 as the checkpoint-layer, false-red instance,
       with date (2026-06-14), origin (FEAT-9DDE run 5), and fix commit
-      (`c6b5e7d9`).
-- [ ] The rule includes a grep-able fingerprint for the new instance that
+      (`c6b5e7d9`). — instance 4 in "Why this rule exists" + Prior-art bullet.
+- [x] The rule includes a grep-able fingerprint for the new instance that
       actually matches the committed code (`cp.tests_passed is False` in
       `worktree_checkpoints.py`; tri-state `_extract_tests_passed` in
-      `autobuild.py`).
-- [ ] The supersession of TASK-FIX-64EE's `None → False` coercion (absent
-      case only) is stated in the rule.
-- [ ] No code changes (documentation/rules only); no existing rule's grep
-      signatures are broken by the edit.
+      `autobuild.py`). — added to "Grep-able signature"; both `rg` commands
+      verified to return hits against the committed tree.
+- [x] The supersession of TASK-FIX-64EE's `None → False` coercion (absent
+      case only) is stated in the rule. — stated in instance 4 and the
+      Prior-art bullet ("a genuine ran-and-failed `False` still stalls").
+- [x] No code changes (documentation/rules only); no existing rule's grep
+      signatures are broken by the edit. — only the rule `.md` was edited;
+      existing `rg` signatures were appended-to, not modified. (The
+      `autobuild.py` working-tree change present in this checkout belongs to
+      the separate in-flight TASK-AB-CKPTGATE01 and was NOT touched by this
+      task.)
 
 ## Evidence
 - Landed fix: commit `c6b5e7d9` (TASK-FIX-CKPTTESTRED01); task at
