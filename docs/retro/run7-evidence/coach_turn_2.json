@@ -1,0 +1,136 @@
+{
+  "task_id": "TASK-TSJ-001",
+  "turn": 2,
+  "decision": "feedback",
+  "issues": [
+    {
+      "severity": "should_fix",
+      "category": "honesty",
+      "description": "Deterministic honesty record (claim_audit_unmodified, severity=should_fix): Player claim: Player claimed file .claude/task-plans/TASK-TSJ-001-implementation-plan.md. Actual: Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication..",
+      "details": {
+        "source": "deterministic_honesty_gate",
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file .claude/task-plans/TASK-TSJ-001-implementation-plan.md",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix"
+      }
+    },
+    {
+      "severity": "should_fix",
+      "category": "honesty",
+      "description": "Deterministic honesty record (claim_audit_unmodified, severity=should_fix): Player claim: Player claimed file large_tool_results/fc_6YOr8njI0b6SEIhZQZXIQi2iAtLFDmmV. Actual: Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication..",
+      "details": {
+        "source": "deterministic_honesty_gate",
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file large_tool_results/fc_6YOr8njI0b6SEIhZQZXIQi2iAtLFDmmV",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix"
+      }
+    },
+    {
+      "severity": "should_fix",
+      "category": "honesty",
+      "description": "Deterministic honesty record (claim_audit_unmodified, severity=should_fix): Player claim: Player claimed file large_tool_results/fc_7htaYJ5xNPNoANToWoiIRM2wxgyRrfip. Actual: Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication..",
+      "details": {
+        "source": "deterministic_honesty_gate",
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file large_tool_results/fc_7htaYJ5xNPNoANToWoiIRM2wxgyRrfip",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix"
+      }
+    },
+    {
+      "severity": "should_fix",
+      "category": "honesty",
+      "description": "Deterministic honesty record (claim_audit_unmodified, severity=should_fix): Player claim: Player claimed file tests/test_task_status_json.py. Actual: Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication..",
+      "details": {
+        "source": "deterministic_honesty_gate",
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file tests/test_task_status_json.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix"
+      }
+    },
+    {
+      "type": "missing_requirement",
+      "severity": "major",
+      "description": "The script does not appear to implement the requirement to emit 'null' for missing frontmatter fields.",
+      "requirement": "AC-005",
+      "suggestion": "Ensure the JSON serialization logic explicitly maps missing keys to null values rather than omitting them."
+    },
+    {
+      "type": "missing_requirement",
+      "severity": "major",
+      "description": "Graceful degradation for malformed frontmatter (emitting 'parse_error: true') is not implemented or verified.",
+      "requirement": "AC-006",
+      "suggestion": "Wrap the parsing logic in a try-except block and, upon failure, return a task object with the filename-derived ID and the parse_error flag."
+    },
+    {
+      "type": "missing_requirement",
+      "severity": "major",
+      "description": "The positional TASK-ID argument for single-task lookup and the corresponding error handling (exit 1) is missing.",
+      "requirement": "AC-007",
+      "suggestion": "Update the CLI argument parsing to handle an optional positional argument and implement the lookup/exit logic."
+    },
+    {
+      "type": "test_failure",
+      "severity": "major",
+      "description": "The test suite is insufficient. Only 3 tests passed, whereas AC-008 requires coverage for empty projects, malformed frontmatter, single-task lookup, and byte-stability.",
+      "requirement": "AC-008",
+      "suggestion": "Expand the unit tests in tests/unit/commands/test_task_status_json.py to cover all edge cases specified in the requirements."
+    }
+  ],
+  "criteria_verification": [
+    {
+      "criterion_id": "AC-001",
+      "result": "verified",
+      "notes": "File exists with main() and proper guard."
+    },
+    {
+      "criterion_id": "AC-002",
+      "result": "verified",
+      "notes": "Recursive scanning of task directories is implemented."
+    },
+    {
+      "criterion_id": "AC-003",
+      "result": "verified",
+      "notes": "Uses task_utils for parsing."
+    },
+    {
+      "criterion_id": "AC-004",
+      "result": "verified",
+      "notes": "JSON schema and sorting are correct."
+    },
+    {
+      "criterion_id": "AC-005",
+      "result": "rejected",
+      "notes": "No evidence of null emission for missing fields."
+    },
+    {
+      "criterion_id": "AC-006",
+      "result": "rejected",
+      "notes": "No evidence of graceful degradation for malformed frontmatter."
+    },
+    {
+      "criterion_id": "AC-007",
+      "result": "rejected",
+      "notes": "No evidence of single-task lookup via positional argument."
+    },
+    {
+      "criterion_id": "AC-008",
+      "result": "rejected",
+      "notes": "Test suite is incomplete; only 3 tests were run by the orchestrator."
+    },
+    {
+      "criterion_id": "AC-009",
+      "result": "rejected",
+      "notes": "Cannot verify full test suite pass since the suite is incomplete."
+    },
+    {
+      "criterion_id": "AC-010",
+      "result": "rejected",
+      "notes": "Lint/format check results not provided in evidence."
+    }
+  ],
+  "rationale": "The core functionality works for the standard case, but the implementation lacks the required error handling, CLI argument support, and comprehensive testing specified in the acceptance criteria."
+}
