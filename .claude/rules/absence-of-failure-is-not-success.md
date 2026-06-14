@@ -185,6 +185,18 @@ consecutive-failure run rather than extend it.
   (a declared sibling repo), not from interpreting a present signal. Seeded by
   TASK-AB-XREPOEV01 (2026-06-13); produces both a false-green and a false-red
   from the same too-narrow boundary.
+- **Sibling rule (disposition-locus instance) + arm-b home**:
+  [`smoke-gate-is-feedback-not-terminator.md`](smoke-gate-is-feedback-not-terminator.md)
+  — its *arm a* is a genuinely new shape (a *correct high-fidelity* failure used
+  to terminate the adversarial loop instead of being fed back), but its *arm b*
+  (per-task Coach approving on pytest — which puts the worktree root on
+  `sys.path` so `from installer.core...` resolves — while the standalone entry
+  point `ModuleNotFoundError`s) is an instance of THIS rule: a low-fidelity
+  oracle (pytest) misread as high-fidelity. The fix's `RuntimeParityResult` is
+  built absence-of-failure-safe — `ran=False` (no command / parallel wave /
+  runner error) NEVER blocks and NEVER counts as a pass; only a ran-and-failed
+  result overrides approve→feedback. Seeded by TASK-AB-COACHRUNPARITY01
+  (commit `a11708d0`, 2026-06-14, FEAT-9DDE run 8).
 - **Instance (checkpoint-layer false-red)**: the checkpoint pollution
   detector — `guardkit/orchestrator/worktree_checkpoints.py`
   (`should_rollback`, `Checkpoint.tests_passed: Optional[bool]`,
