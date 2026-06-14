@@ -1,0 +1,54 @@
+{
+  "task_id": "TASK-TSJ-001",
+  "turn": 1,
+  "decision": "feedback",
+  "issues": [
+    {
+      "type": "missing_requirement",
+      "severity": "major",
+      "description": "The test file was created at 'tests/test_task_status_json.py' instead of the required path 'tests/unit/commands/test_task_status_json.py'.",
+      "requirement": "AC-008",
+      "suggestion": "Move the test file to 'tests/unit/commands/test_task_status_json.py' and ensure it covers all required scenarios (empty project, nested folders, malformed frontmatter, etc.)."
+    },
+    {
+      "type": "code_quality",
+      "severity": "minor",
+      "description": "Gathering status was 'partial_gate_abort', meaning no independent verification of test results or coverage could be completed.",
+      "requirement": "AC-009",
+      "suggestion": "Fix the file path violation to allow the orchestrator to run the full test suite and complete the evidence gathering."
+    }
+  ],
+  "criteria_verification": [
+    {
+      "criterion_id": "AC-001",
+      "result": "rejected",
+      "notes": "Verification aborted due to partial_gate_abort."
+    },
+    {
+      "criterion_id": "AC-002",
+      "result": "rejected",
+      "notes": "Verification aborted due to partial_gate_abort."
+    },
+    {
+      "criterion_id": "AC-003",
+      "result": "rejected",
+      "notes": "Verification aborted due to partial_gate_abort."
+    },
+    {
+      "criterion_id": "AC-004",
+      "result": "rejected",
+      "notes": "Verification aborted due to partial_gate_abort."
+    },
+    {
+      "criterion_id": "AC-008",
+      "result": "rejected",
+      "notes": "Test file path mismatch: expected 'tests/unit/commands/test_task_status_json.py', found 'tests/test_task_status_json.py'."
+    },
+    {
+      "criterion_id": "AC-009",
+      "result": "rejected",
+      "notes": "Cannot verify tests passed because gathering_status is 'partial_gate_abort'."
+    }
+  ],
+  "rationale": "The implementation failed the plan audit because the test file was placed in the incorrect directory. This caused a 'partial_gate_abort' in the evidence collection, meaning no tests, coverage, or remaining ACs could be verified."
+}
