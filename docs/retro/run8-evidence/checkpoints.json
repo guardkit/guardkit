@@ -1,0 +1,26 @@
+{
+  "task_id": "TASK-TSJ-001",
+  "checkpoints": [
+    {
+      "turn": 1,
+      "commit_hash": "69fe0c504ebefae23e215668ae2009c103e00f38",
+      "timestamp": "2026-06-14T16:33:20.394583",
+      "tests_passed": true,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 1 complete (tests: pass)",
+      "from_prior_run": false,
+      "evidence_commits": {}
+    },
+    {
+      "turn": 2,
+      "commit_hash": "3a1ff12241918e0ac79386a3c323f875198c5850",
+      "timestamp": "2026-06-14T16:53:58.552549",
+      "tests_passed": true,
+      "test_count": 7,
+      "message": "[guardkit-checkpoint] Turn 2 complete (tests: pass)",
+      "from_prior_run": false,
+      "evidence_commits": {}
+    }
+  ],
+  "last_updated": "2026-06-14T16:53:58.552602"
+}
