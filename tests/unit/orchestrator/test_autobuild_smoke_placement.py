@@ -71,13 +71,25 @@ def test_smoke_gate_hook_lives_in_wave_phase_only() -> None:
     ``_wave_phase`` is the only place that knows the 1-indexed wave
     boundary from ``enumerate(parallel_groups, 1)``; that's the only
     coherent place the hook can live.
+
+    TASK-AB-COACHRUNPARITY01: the actual ``run_smoke_gate`` call (plus the
+    bounded feedback-retry loop) was extracted into the
+    ``_run_post_wave_smoke_gate`` helper for readability and unit-testability.
+    ``_wave_phase`` still owns the wave-boundary gate (``should_fire_for_wave``)
+    and delegates to that helper; the helper owns ``run_smoke_gate``.
     """
     wave_phase_src = inspect.getsource(feature_orchestrator.FeatureOrchestrator._wave_phase)
-    assert "run_smoke_gate" in wave_phase_src, (
-        "_wave_phase must invoke run_smoke_gate after a wave completes."
-    )
     assert "should_fire_for_wave" in wave_phase_src, (
         "_wave_phase must gate the smoke invocation on should_fire_for_wave."
+    )
+    assert "_run_post_wave_smoke_gate" in wave_phase_src, (
+        "_wave_phase must delegate the smoke gate to _run_post_wave_smoke_gate."
+    )
+    helper_src = inspect.getsource(
+        feature_orchestrator.FeatureOrchestrator._run_post_wave_smoke_gate
+    )
+    assert "run_smoke_gate" in helper_src, (
+        "_run_post_wave_smoke_gate must invoke run_smoke_gate after a wave."
     )
 
 

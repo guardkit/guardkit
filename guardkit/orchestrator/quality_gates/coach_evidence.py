@@ -73,6 +73,52 @@ GatheringStatus = Literal[
 
 
 @dataclass
+class RuntimeParityResult:
+    """Outcome of the per-task Coach runtime-parity check (TASK-AB-COACHRUNPARITY01, arm b).
+
+    The per-task Coach runs the feature's declared smoke command — the
+    deliverable's REAL runtime entry point — before approving, so a "passes
+    pytest but does not run" deliverable is caught pre-approval rather than
+    only by the post-wave smoke gate. Honours
+    ``absence-of-failure-is-not-success.md``: a ran-and-FAILED result blocks
+    approval; an ABSENT result (``ran=False`` — no command, parallel wave, or
+    runner error) never blocks and never counts as a pass.
+
+    Attributes
+    ----------
+    ran : bool
+        ``True`` only when the smoke command actually executed and produced an
+        exit code. ``False`` for every skip/absent case (``skipped_reason`` set).
+    passed : bool
+        ``True`` when ``ran`` and the observed exit code equals ``expected_exit``.
+        Always ``False`` when ``ran`` is ``False`` (absent != pass).
+    command : str
+        The smoke command that was (or would have been) run.
+    exit_code : Optional[int]
+        Observed exit code; ``None`` when the command did not run (or timed out).
+    expected_exit : int
+        The exit code that counts as success (the feature's configured value).
+    timed_out : bool
+        ``True`` when the command exceeded its timeout before completing.
+    stderr_tail : str
+        Last lines of captured stderr (for Player-facing feedback). Empty when
+        ``ran`` is ``False``.
+    skipped_reason : Optional[str]
+        Why the check did not run (``"no_smoke_command"``, ``"parallel_wave"``,
+        ``"runner_error: ..."``). ``None`` when the check ran.
+    """
+
+    ran: bool
+    passed: bool
+    command: str
+    exit_code: Optional[int] = None
+    expected_exit: int = 0
+    timed_out: bool = False
+    stderr_tail: str = ""
+    skipped_reason: Optional[str] = None
+
+
+@dataclass
 class CoachEvidenceBundle:
     """Structured evidence gathered by CoachValidator for the LLM Coach.
 
@@ -195,6 +241,15 @@ class CoachEvidenceBundle:
 
     independent_tests: Optional["IndependentTestResult"] = None
     requirements: Optional[Any] = None  # RequirementsValidation; avoid circular import
+
+    # TASK-AB-COACHRUNPARITY01 (arm b): per-task runtime-parity check. The
+    # Coach runs the deliverable's declared runtime entry point (the feature
+    # smoke command) before approving, on single-task waves only. ``None`` when
+    # no check was attempted (no smoke command threaded / older callers).
+    # ``ran=False`` records an attempted-but-skipped check (parallel wave /
+    # runner error). A ``ran=True, passed=False`` result deterministically
+    # blocks the turn via ``AgentInvoker._apply_runtime_parity_guard``.
+    runtime_parity: Optional["RuntimeParityResult"] = None
 
     # TASK-AB-XREPOEV01 (AC-002): Coach's independent test runs in declared
     # sibling repos (``evidence_repos``). Each entry is an

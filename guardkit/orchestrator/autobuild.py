@@ -1111,6 +1111,9 @@ class AutoBuildOrchestrator:
         model: Optional[str] = None,  # TASK-FIX-MODELPLUMB
         coach_model: Optional[str] = None,  # TASK-FIX-COACHBUDG01: per-role Coach override
         evidence_repos: Optional[List[EvidenceRepo]] = None,  # TASK-AB-XREPOEV01
+        seed_feedback: Optional[str] = None,  # TASK-AB-COACHRUNPARITY01 (arm a)
+        smoke_command: Optional[str] = None,  # TASK-AB-COACHRUNPARITY01 (arm b)
+        smoke_expected_exit: int = 0,  # TASK-AB-COACHRUNPARITY01 (arm b)
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -1292,6 +1295,21 @@ class AutoBuildOrchestrator:
         # checkpoint manager (per-repo commits). Empty -> worktree-only
         # behaviour, so undeclared sibling-repo writes stay invisible (AC-003).
         self._evidence_repos: List[EvidenceRepo] = list(evidence_repos or [])
+        # TASK-AB-COACHRUNPARITY01 (arm a): turn-1 seed feedback. When a
+        # post-wave smoke gate fails, the feature orchestrator re-enters the
+        # wave with the smoke error injected here so the Player's first turn
+        # carries it as `previous_feedback` (see _loop_phase). Default None ->
+        # identical to today for every non-retry task.
+        self._seed_feedback: Optional[str] = seed_feedback
+        # TASK-AB-COACHRUNPARITY01 (arm b): the feature smoke command (the
+        # deliverable's real runtime entry point). Threaded into CoachValidator
+        # so the per-task Coach can exercise it before approving on a
+        # single-task wave (the "passes pytest but does not run" oracle).
+        # Default None -> no per-task runtime-parity check.
+        self._smoke_command: Optional[str] = smoke_command
+        # Exit code that counts as a clean standalone run (feature's
+        # smoke_gates.expected_exit; default 0).
+        self._smoke_expected_exit: int = smoke_expected_exit
         self._cancellation_event: Optional[threading.Event] = cancellation_event  # Cooperative cancellation (TASK-ASF-007)
         self._timeout_event: Optional[threading.Event] = timeout_event  # Feature-level timeout signal (TASK-ABFIX-006)
         self._progress_logger = progress_logger  # TASK-FIX-OBS2: Per-task progress logging
@@ -2366,7 +2384,16 @@ class AutoBuildOrchestrator:
 
         # Use existing turn history if resuming
         turn_history: List[TurnRecord] = list(self._turn_history)
-        previous_feedback: Optional[str] = self._get_last_feedback() if self.resume else None
+        # TASK-AB-COACHRUNPARITY01 (arm a): on a fresh (non-resume) task the
+        # turn-1 feedback is the smoke-gate seed (None for normal tasks). On a
+        # smoke-feedback re-run the feature orchestrator constructs this
+        # orchestrator with seed_feedback set, so the Player's first turn sees
+        # the runtime failure the Coach's pytest missed. Perspective reset only
+        # fires at turns [3, 5] (_should_reset_perspective), so a turn-1 seed
+        # always survives to the Player invocation below.
+        previous_feedback: Optional[str] = (
+            self._get_last_feedback() if self.resume else self._seed_feedback
+        )
 
         # Initialize checkpoint manager if enabled
         if self.enable_checkpoints and self._checkpoint_manager is None:
@@ -5695,6 +5722,8 @@ class AutoBuildOrchestrator:
                 coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
                 venv_python=self._venv_python,  # TASK-FIX-COACHPYENV
                 evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01 (AC-002)
+                smoke_command=self._smoke_command,  # TASK-AB-COACHRUNPARITY01 (arm b)
+                smoke_expected_exit=self._smoke_expected_exit,  # TASK-AB-COACHRUNPARITY01 (arm b)
             )
 
             # TASK-AB-XREPOEV01 (AC-002): same sibling-repo gate as the primary
@@ -5871,6 +5900,8 @@ class AutoBuildOrchestrator:
             coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
             venv_python=self._venv_python,  # TASK-FIX-COACHPYENV
             evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01 (AC-002)
+            smoke_command=self._smoke_command,  # TASK-AB-COACHRUNPARITY01 (arm b)
+            smoke_expected_exit=self._smoke_expected_exit,  # TASK-AB-COACHRUNPARITY01 (arm b)
         )
 
         # Step 1: gather evidence bundle. Never falls back to validate() on
