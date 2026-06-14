@@ -1282,6 +1282,11 @@ class AutoBuildOrchestrator:
         # Used by _execute_turn to refresh the pre-specialist budget guard after the Player
         # phase consumes wall (TASK-ABSR-FRSH).
         self._loop_start_time: Optional[float] = None
+        # Remaining wall budget (seconds) captured at the instant a per-turn
+        # budget check fails, so the finalize-phase summary/error builders can
+        # report "remaining=<X>s < min=<MIN>s" instead of the generic
+        # "Unknown error occurred" (TASK-FIX-TBXMSG01).
+        self._timeout_budget_remaining: Optional[float] = None
         self.wave_size: int = max(1, int(wave_size))  # Parallel wave context (TASK-ABFIX-005)
         # TASK-FIX-A7B2: Wave-shared map of per-task file edits, populated as
         # each Player finishes. Coach reads peer entries (everyone but self) to
@@ -2390,6 +2395,10 @@ class AutoBuildOrchestrator:
                             f"Timeout budget exhausted for {task_id} at turn {turn}: "
                             f"remaining={remaining_budget:.1f}s < min={MIN_TURN_BUDGET_SECONDS}s"
                         )
+                        # Capture the remaining budget so the finalize-phase
+                        # summary/error builders can report the precise
+                        # "remaining=<X>s < min=<MIN>s" cause (TASK-FIX-TBXMSG01).
+                        self._timeout_budget_remaining = remaining_budget
                         return turn_history, "timeout_budget_exhausted"
                 else:
                     remaining_budget = None
@@ -6770,7 +6779,7 @@ class AutoBuildOrchestrator:
     def _build_summary_details(
         self,
         turn_history: List[TurnRecord],
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "design_extraction_failed", "honesty_collapse"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "timeout_budget_exhausted", "configuration_error", "pre_loop_blocked", "design_extraction_failed", "honesty_collapse"],
     ) -> str:
         """
         Build detailed summary text for final report.
@@ -7072,6 +7081,28 @@ class AutoBuildOrchestrator:
                 f"Review partial implementation and resume manually if needed."
             )
 
+        elif final_decision == "timeout_budget_exhausted":
+            # TASK-FIX-TBXMSG01: this is a clean, well-classified budget
+            # exhaustion (the loop refused to start a turn it could not
+            # finish), NOT an unknown crash. Name the cause and quote the
+            # turns-used and remaining-vs-minimum so the operator does not
+            # go chasing a non-existent error.
+            remaining = getattr(self, "_timeout_budget_remaining", None)
+            remaining_str = (
+                f"remaining={remaining:.1f}s"
+                if remaining is not None
+                else "remaining budget unknown"
+            )
+            return (
+                f"Time budget exhausted after {len(turn_history)} turn(s).\n"
+                f"The task's wall-clock budget fell below the per-turn minimum "
+                f"({remaining_str} < min={MIN_TURN_BUDGET_SECONDS}s), so no "
+                f"further turn could start. This is a clean budget-exhaustion "
+                f"exit, not a crash.\n"
+                f"Worktree preserved for inspection.\n"
+                f"Resume with a larger feature/task timeout budget if needed."
+            )
+
         else:  # error
             error_turn = next(
                 (t for t in reversed(turn_history) if t.decision == "error"), None
@@ -7092,7 +7123,7 @@ class AutoBuildOrchestrator:
 
     def _build_error_message(
         self,
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "design_extraction_failed", "honesty_collapse"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "timeout_budget_exhausted", "configuration_error", "pre_loop_blocked", "design_extraction_failed", "honesty_collapse"],
         turn_history: List[TurnRecord],
     ) -> str:
         """
@@ -7157,6 +7188,21 @@ class AutoBuildOrchestrator:
             return (
                 f"Task cancelled via cooperative cancellation (stop_on_failure) after "
                 f"{len(turn_history)} turn(s)"
+            )
+
+        elif final_decision == "timeout_budget_exhausted":
+            # TASK-FIX-TBXMSG01: a clean budget exhaustion must not surface as
+            # an empty error string (which reads as "no error"). Name the
+            # cause and quote turns-used + remaining-vs-minimum.
+            remaining = getattr(self, "_timeout_budget_remaining", None)
+            remaining_str = (
+                f"remaining={remaining:.1f}s"
+                if remaining is not None
+                else "remaining budget unknown"
+            )
+            return (
+                f"Time budget exhausted after {len(turn_history)} turn(s): "
+                f"{remaining_str} < min={MIN_TURN_BUDGET_SECONDS}s per turn"
             )
 
         elif final_decision == "error":
