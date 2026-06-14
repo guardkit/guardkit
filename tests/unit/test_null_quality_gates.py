@@ -4,8 +4,11 @@ and incomplete session feedback.
 
 Tests cover:
 1. verify_quality_gates() handles all_passed: null by falling through to tests_failed
-2. _extract_tests_passed() returns False (not None) when tests_passed is null
-3. should_rollback() default threshold is 3 consecutive failures
+2. _extract_tests_passed() tri-state handling of null/absent test signals
+   (UPDATED by TASK-FIX-CKPTTESTRED01: an absent verdict is UNKNOWN/None, not
+   False — see .claude/rules/absence-of-failure-is-not-success.md)
+3. should_rollback() default threshold is 3 consecutive failures, and UNKNOWN
+   (None) checkpoints are excluded from the tally (TASK-FIX-CKPTTESTRED01)
 4. Coach feedback for incomplete sessions mentions exhausted turns
 5. No regression of TASK-FIX-CKPT fixes (approval-before-stall ordering)
 6. No regression of TASK-AB-SD01 (both stall mechanisms still active)
@@ -212,10 +215,23 @@ class TestVerifyQualityGatesNullHandling:
 
 
 class TestExtractTestsPassedNullCoercion:
-    """Test _extract_tests_passed() returns False (not None) for null values."""
+    """Test _extract_tests_passed() tri-state handling of null/absent values.
 
-    def test_null_tests_passed_returns_false(self):
-        """When quality_gates.tests_passed is None, returns False not None."""
+    TASK-FIX-CKPTTESTRED01 supersedes TASK-FIX-64EE's ``None → False``
+    coercion for the *absent-signal* case: an absent test verdict is now
+    UNKNOWN (``None``), not a failure. A genuine ``False`` (oracle ran and
+    failed) is unchanged.
+    """
+
+    def test_null_tests_passed_returns_none_unknown(self):
+        """When quality_gates.tests_passed is None, returns None (UNKNOWN).
+
+        Superseded behaviour: TASK-FIX-64EE coerced this to ``False`` so the
+        checkpoint recorded ``tests: fail``. TASK-FIX-CKPTTESTRED01 treats an
+        explicit ``None`` gate value as absent evidence (UNKNOWN), which the
+        pollution detector excludes from the consecutive-failure tally. See
+        ``.claude/rules/absence-of-failure-is-not-success.md``.
+        """
         orchestrator = AutoBuildOrchestrator(
             repo_root=Path.cwd(),
             max_turns=5,
@@ -234,8 +250,7 @@ class TestExtractTestsPassedNullCoercion:
         }
 
         result = orchestrator._extract_tests_passed(turn_record)
-        assert result is False
-        assert result is not None
+        assert result is None
 
     def test_true_tests_passed_returns_true(self):
         """Regression: True values still work."""
@@ -344,17 +359,26 @@ class TestShouldRollbackThreshold:
         # With default threshold=3, should not trigger
         assert checkpoint_manager.should_rollback() is False
 
-    def test_null_tests_passed_treated_as_failure(self, checkpoint_manager):
-        """Checkpoints with tests_passed=None are treated as failures."""
-        # Directly set checkpoints to simulate null scenario
+    def test_null_tests_passed_treated_as_unknown_not_failure(self, checkpoint_manager):
+        """Checkpoints with tests_passed=None are UNKNOWN, NOT failures.
+
+        Superseded behaviour: TASK-FIX-64EE treated ``None`` as falsy, so 3
+        ``None`` checkpoints triggered a rollback (and, with no passing
+        checkpoint, an ``unrecoverable_stall``). That is the FEAT-9DDE run-5
+        false-red. TASK-FIX-CKPTTESTRED01 treats ``None`` as absent evidence
+        excluded from the consecutive-failure tally, so 3 unknown checkpoints
+        do NOT trigger rollback. See
+        ``.claude/rules/absence-of-failure-is-not-success.md``.
+        """
+        # Directly set checkpoints to simulate the absent-signal scenario
         checkpoint_manager.checkpoints = [
             Checkpoint(turn=1, tests_passed=None, test_count=0, commit_hash="a1", timestamp="2026-01-01T00:00:00Z", message="Turn 1"),
             Checkpoint(turn=2, tests_passed=None, test_count=0, commit_hash="a2", timestamp="2026-01-01T00:01:00Z", message="Turn 2"),
             Checkpoint(turn=3, tests_passed=None, test_count=0, commit_hash="a3", timestamp="2026-01-01T00:02:00Z", message="Turn 3"),
         ]
 
-        # None is falsy, so 3 Nones should trigger rollback
-        assert checkpoint_manager.should_rollback() is True
+        # 3 unknown signals must NOT be read as 3 consecutive failures.
+        assert checkpoint_manager.should_rollback() is False
 
 
 # ============================================================================

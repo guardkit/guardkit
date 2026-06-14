@@ -7361,29 +7361,75 @@ class AutoBuildOrchestrator:
             return self._turn_history[-1].feedback
         return None
 
-    def _extract_tests_passed(self, turn_record: TurnRecord) -> bool:
+    def _extract_tests_passed(self, turn_record: TurnRecord) -> Optional[bool]:
         """
-        Extract test pass/fail status from turn record.
+        Extract the tri-state test signal from a turn record for checkpointing.
+
+        Returns
+        -------
+        Optional[bool]
+            - ``True``  — a test oracle ran and passed.
+            - ``False`` — a test oracle ran and failed.
+            - ``None``  — UNKNOWN: no authoritative test verdict is available
+              for this turn.
+
+        Why tri-state (TASK-FIX-CKPTTESTRED01)
+        --------------------------------------
+        This signal feeds ``WorktreeCheckpointManager.create_checkpoint`` and,
+        through it, the consecutive-failure pollution detector. The default
+        Coach is now the LLM Coach (TASK-HMIG-008R), whose ``coach_result.report``
+        carries ``{decision, issues, criteria_verification, rationale}`` — it
+        does NOT carry ``validation_results.quality_gates``. The deterministic
+        quality gate (which logs ``tests=True``) lives in the Coach evidence
+        bundle, not in this report. Collapsing that absent signal to ``False``
+        recorded every LLM-Coach feedback turn as ``tests: fail`` and triggered
+        a spurious ``unrecoverable_stall`` from "3 consecutive test failures"
+        even though tests existed and passed (FEAT-9DDE run 5).
+
+        Returning ``None`` for an absent signal — instead of ``False`` — lets
+        the pollution detector treat it as absent evidence rather than a
+        failure. This is the checkpoint-layer instance of
+        ``.claude/rules/absence-of-failure-is-not-success.md``. It supersedes
+        the ``None → False`` coercion introduced by TASK-FIX-64EE for the
+        *absent-signal* case; a genuine ``tests_passed is False`` (oracle ran
+        and failed) still records as a failure.
 
         Args:
             turn_record: Turn record with Coach validation results
 
         Returns:
-            True if tests passed, False otherwise
+            Tri-state test signal (see above).
         """
+        # No Coach verdict object at all (Coach invocation failed → "error"
+        # turn, which returns before a checkpoint is created). Conservative
+        # ``False`` preserves the existing no-coach-result contract; it does
+        # not reach the pollution tally in practice.
         if not turn_record.coach_result or not turn_record.coach_result.success:
             return False
 
-        validation = turn_record.coach_result.report.get("validation_results", {})
-        # Primary path: quality_gates.tests_passed (Coach stores results here)
+        validation = turn_record.coach_result.report.get("validation_results", {}) or {}
+
+        # An explicitly-absent independent-test signal (the trust-but-verify
+        # leg never produced a verdict — SDK/subprocess timeout or transport
+        # error) is UNKNOWN, never a failure. Mirrors IndependentTestResult.
+        independent = validation.get("independent_tests") or {}
+        if independent.get("signal_absent") is True:
+            return None
+
+        # Primary path: quality_gates.tests_passed (deterministic Coach gate).
         quality_gates = validation.get("quality_gates") or {}
         if "tests_passed" in quality_gates:
             value = quality_gates.get("tests_passed")
-            if value is None:
-                return False
-            return bool(value)
-        # Fallback: top-level tests_passed (backward compatibility)
-        return validation.get("tests_passed", False)
+            return None if value is None else bool(value)
+
+        # Fallback: top-level tests_passed (backward compatibility).
+        if "tests_passed" in validation:
+            value = validation.get("tests_passed")
+            return None if value is None else bool(value)
+
+        # No authoritative test verdict in the report (e.g. the LLM-Coach
+        # path, whose report omits validation_results). UNKNOWN, not failure.
+        return None
 
     def _extract_test_count(self, turn_record: TurnRecord) -> int:
         """
