@@ -1,10 +1,14 @@
 ---
 id: TASK-AB-CKPTGATE01
 title: Thread the deterministic Coach gate test signal into the LLM-Coach report (record real passes as pass, not unknown)
-status: backlog
+status: completed
 task_type: fix
 created: 2026-06-14T13:00:00Z
-updated: 2026-06-14T13:00:00Z
+updated: 2026-06-14T14:30:00Z
+completed: 2026-06-14T14:30:00Z
+completed_location: tasks/completed/TASK-AB-CKPTGATE01/
+previous_state: in_review
+state_transition_reason: "Implementation complete; all quality gates passed (task-work)"
 priority: medium
 complexity: 5
 related: [TASK-FIX-CKPTTESTRED01, TASK-HMIG-008R, TASK-AB-FIX-INVAB1]
@@ -91,23 +95,57 @@ the same oracle the gate logged.
 
 ## Acceptance Criteria
 
-- [ ] In the primary (LLM-Coach) path, a turn whose deterministic gate is
+- [x] In the primary (LLM-Coach) path, a turn whose deterministic gate is
       `tests=True` (independent signal present and passing) is recorded with
       `Checkpoint.tests_passed is True` (not `None`/`unknown`).
-- [ ] `find_last_passing_checkpoint` returns that turn as a rollback target.
-- [ ] An absent independent-test signal (`signal_absent=True`) still resolves
+- [x] `find_last_passing_checkpoint` returns that turn as a rollback target.
+- [x] An absent independent-test signal (`signal_absent=True`) still resolves
       to `UNKNOWN` (regression guard for TASK-FIX-CKPTTESTRED01 — absent is not
       a pass and not a fail).
-- [ ] A genuine ran-and-failed gate (`tests=False`) is still recorded as
+- [x] A genuine ran-and-failed gate (`tests=False`) is still recorded as
       `False` and still contributes to the consecutive-failure pollution tally.
-- [ ] Coach read-only invariant preserved (no `Write`/`Edit`; no change to
+- [x] Coach read-only invariant preserved (no `Write`/`Edit`; no change to
       `coach_output_parser` verdict emission).
-- [ ] Regression test: an LLM-Coach turn with a populated evidence bundle
+- [x] Regression test: an LLM-Coach turn with a populated evidence bundle
       (`quality_gates.tests_passed=True`) yields a checkpoint recorded as
       `pass`, reproducing the FEAT-9DDE run-5 turns now being correctly
       classified as passing rather than unknown.
-- [ ] No regression of the run-5 false-red fix (absent-signal turns still do
+- [x] No regression of the run-5 false-red fix (absent-signal turns still do
       not stall).
+
+## Implementation Summary (2026-06-14)
+
+**Change** (orchestrator-side enrichment only; Coach untouched):
+
+- New helper `AutoBuildOrchestrator._merge_evidence_test_signal_into_report`
+  (`guardkit/orchestrator/autobuild.py`) copies the evidence bundle's
+  `quality_gates.tests_passed` and `independent_tests.signal_absent`
+  (+ `tests_passed`) into `report["validation_results"]`, using `setdefault`
+  so a report that already carries the signal is never clobbered.
+- Wired into `_invoke_coach_primary` at the **normal success return only**
+  (the `return result` after the COACHSF01 soft-fail check). All
+  synthetic-feedback returns (`_emit_synthetic_coach_feedback`,
+  `_evidence_repo_gate`, `_direct_mode_evidence_gate`, exception paths) are
+  intentionally **not** enriched — the Coach produced no verdict there, so they
+  stay absent → `UNKNOWN` per remediation #1.
+- `_extract_tests_passed` was **not** changed: it already reads
+  `independent_tests.signal_absent` before `quality_gates.tests_passed`, so the
+  absence-of-failure ordering is preserved by construction.
+
+**Tests**: `tests/unit/test_checkpoint_gate_signal_threading.py` (13 tests, all
+passing) covering all 7 ACs: pass-threading + rollback-target restoration,
+absent-signal → UNKNOWN regression guard, ran-and-failed still stalls,
+non-clobber, None-guards, and verdict-field read-only.
+
+**Verification**:
+- New suite: 13 passed.
+- Named regression suites (`test_checkpoint_pollution_absent_test_signal.py`,
+  `test_checkpoint_extraction_and_ordering.py`, `test_null_quality_gates.py`):
+  35 passed, 3 skipped.
+- Coach-primary path (`test_llm_coach_primary.py`,
+  `test_direct_mode_false_green_regression.py`): 39 passed.
+- Pre-existing, unrelated: 4 BDD `test_coach_validator.py` failures fail
+  identically on unmodified `autobuild.py` (different module; out of scope).
 
 ## Notes / risk
 
