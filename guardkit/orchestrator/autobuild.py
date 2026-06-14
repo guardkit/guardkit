@@ -206,6 +206,24 @@ COACH_GRACE_PERIOD_SECONDS: int = int(
     os.environ.get("GUARDKIT_COACH_GRACE_PERIOD_SECONDS", "1500")
 )
 
+# TASK-PERF-SPECLAT01: maximum fraction of the *post-Player remaining* task
+# budget the orchestrator-side specialist phase (Phase 4 test-orchestrator +
+# Phase 5 code-reviewer, combined) may consume in a single turn.
+#
+# AC1 of SPECLAT01 requires the specialist phase to be "bounded so it cannot
+# consume more than a configurable fraction of the remaining task budget".
+# FEAT-9DDE run-6 turn-2 burned >½ the 80-min budget in one turn's specialists
+# (a 35-min code-reviewer + an 8.5-min test-orchestrator), refusing turn 4 at
+# ``remaining=397s < min=600s``. Capping the phase at this fraction leaves the
+# remainder for subsequent Player turns so multi-turn convergence stays
+# arithmetically possible. The per-specialist hard ceilings (600s each, in
+# ``specialist_invocations``) bound the phase to <=1200s on their own; this
+# fraction binds when the remaining budget is modest. Clamped to (0, 1];
+# operator-tunable via ``GUARDKIT_SPECIALIST_BUDGET_FRACTION`` (default 0.5).
+SPECIALIST_BUDGET_FRACTION: float = min(
+    1.0, max(0.01, float(os.environ.get("GUARDKIT_SPECIALIST_BUDGET_FRACTION", "0.5")))
+)
+
 
 # ============================================================================
 # Runtime Command Execution Constants (TASK-CRV-537E)
@@ -2697,6 +2715,8 @@ class AutoBuildOrchestrator:
         self,
         remaining_budget: Optional[float],
         task_id: str,
+        *,
+        phase_budget_remaining: Optional[float] = None,
     ) -> int:
         """Cap orchestrator-invoked specialist sdk_timeout via the Player-side scaler.
 
@@ -2713,9 +2733,19 @@ class AutoBuildOrchestrator:
         pathologically-low values from blocking specialists entirely
         (TASK-ABSR-WALL).
 
-        Set ``GUARDKIT_SPECIALIST_TIMEOUT_CAP=disable`` to short-circuit the
-        wall clamp (the scaling still applies — disable means "no wall cap",
-        not "no scaling"). Emergency backout only.
+        ``phase_budget_remaining`` (TASK-PERF-SPECLAT01) is the wall still
+        available *within this turn's specialist-phase budget*
+        (``SPECIALIST_BUDGET_FRACTION`` of the post-Player remaining, shared
+        across Phase 4 + Phase 5). When provided, it is applied as an extra
+        ceiling **after** the grace reservation — so the COACH grace is
+        reserved from the full remaining budget while the fraction bounds only
+        the specialist phase. Also floored at 60 s.
+
+        Set ``GUARDKIT_SPECIALIST_TIMEOUT_CAP=disable`` to short-circuit BOTH
+        wall clamps (the grace-reserved cap and the phase-budget fraction); the
+        scaling still applies — disable means "no wall cap", not "no scaling".
+        Emergency backout only. The per-specialist hard ceilings in
+        ``specialist_invocations`` (600 s each) remain in force regardless.
         """
         if os.environ.get("GUARDKIT_SPECIALIST_TIMEOUT_CAP") == "disable":
             return self._agent_invoker._calculate_sdk_timeout(
@@ -2726,10 +2756,16 @@ class AutoBuildOrchestrator:
             task_id, remaining_budget=remaining_budget
         )
         if remaining_budget is None:
-            return scaled
-        reserved = remaining_budget - COACH_GRACE_PERIOD_SECONDS
-        cap = max(60, int(reserved))
-        return min(scaled, cap)
+            capped = scaled
+        else:
+            reserved = remaining_budget - COACH_GRACE_PERIOD_SECONDS
+            cap = max(60, int(reserved))
+            capped = min(scaled, cap)
+
+        if phase_budget_remaining is not None:
+            capped = min(capped, max(60, int(phase_budget_remaining)))
+
+        return capped
 
     def _execute_turn(
         self,
@@ -3203,6 +3239,19 @@ class AutoBuildOrchestrator:
                         _loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(_loop)
 
+                    # TASK-PERF-SPECLAT01: the orchestrator-side specialist
+                    # phase (Phase 4 + Phase 5) may consume at most
+                    # SPECIALIST_BUDGET_FRACTION of the post-Player remaining
+                    # budget, shared across both specialists. Computed from
+                    # post_player_remaining (NOT the start-of-turn
+                    # remaining_budget) so the wall the Player already burned is
+                    # accounted for.
+                    specialist_phase_budget: Optional[float] = (
+                        post_player_remaining * SPECIALIST_BUDGET_FRACTION
+                        if post_player_remaining is not None
+                        else None
+                    )
+
                     # Phase 4: test-orchestrator
                     # TASK-ABSR-WALL: cap specialist sdk_timeout at remaining wall
                     _phase4_start = time.monotonic()
@@ -3211,8 +3260,9 @@ class AutoBuildOrchestrator:
                             worktree_path=worktree.path,
                             task_id=task_id,
                             sdk_timeout=self._cap_specialist_timeout(
-                                remaining_budget=remaining_budget,
+                                remaining_budget=post_player_remaining,
                                 task_id=task_id,
+                                phase_budget_remaining=specialist_phase_budget,
                             ),
                             agent_invoker=self._agent_invoker,
                             cancellation_event=self._cancellation_event,
@@ -3220,19 +3270,26 @@ class AutoBuildOrchestrator:
                         )
                     )
 
-                    # TASK-ATR-002: refresh remaining_budget post-Phase-4 so the
-                    # Phase 5 cap reflects actual wall consumed by Phase 4.
-                    # The original `remaining_budget` is the start-of-turn
-                    # value; reusing it here would over-allocate Phase 5 by
-                    # the wall Phase 4 already burned, risking post-specialist
-                    # Coach overrun of the feature task_timeout.
-                    if remaining_budget is not None:
-                        _phase4_elapsed = time.monotonic() - _phase4_start
+                    # TASK-ATR-002 / TASK-PERF-SPECLAT01: refresh the remaining
+                    # budget post-Phase-4 so the Phase 5 cap reflects the wall
+                    # Phase 4 actually consumed. Both the wall budget and the
+                    # shared specialist-phase budget are reduced by Phase 4's
+                    # elapsed time. Basing this on post_player_remaining (not
+                    # the start-of-turn remaining_budget) avoids over-allocating
+                    # Phase 5 by the wall the Player + Phase 4 already burned.
+                    _phase4_elapsed = time.monotonic() - _phase4_start
+                    if post_player_remaining is not None:
                         phase5_remaining: Optional[float] = max(
-                            0.0, remaining_budget - _phase4_elapsed
+                            0.0, post_player_remaining - _phase4_elapsed
                         )
                     else:
                         phase5_remaining = None
+                    if specialist_phase_budget is not None:
+                        phase5_phase_budget: Optional[float] = max(
+                            0.0, specialist_phase_budget - _phase4_elapsed
+                        )
+                    else:
+                        phase5_phase_budget = None
 
                     # Phase 5: code-reviewer (only if Phase 4 passed)
                     if phase4_result.status == "passed":
@@ -3244,6 +3301,7 @@ class AutoBuildOrchestrator:
                                 sdk_timeout=self._cap_specialist_timeout(
                                     remaining_budget=phase5_remaining,
                                     task_id=task_id,
+                                    phase_budget_remaining=phase5_phase_budget,
                                 ),
                                 agent_invoker=self._agent_invoker,
                                 cancellation_event=self._cancellation_event,

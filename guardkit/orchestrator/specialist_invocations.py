@@ -87,6 +87,26 @@ _PHASE_5_AGENT_FIELD_DEFAULTS: dict[str, Any] = {
 # should be decomposed at the task level, not papered over here.
 _TEST_ORCHESTRATOR_SDK_TIMEOUT_CAP_SECONDS: int = 600
 
+# TASK-PERF-SPECLAT01: per-specialist SDK-timeout ceiling for the Phase 5
+# code-reviewer.
+#
+# The code-reviewer is an *agentic* read-only specialist (Read/Grep/Search)
+# that makes many tool round-trips and never self-terminates — on a slow
+# locally-served model it runs to whatever ``sdk_timeout`` it is handed. Before
+# this cap existed the only bound was the wall clamp in
+# ``AgentInvoker``-derived ``_cap_specialist_timeout``; with the (large) default
+# ``COACH_GRACE_PERIOD_SECONDS`` reservation that left ~2130s available, so
+# FEAT-9DDE run-6 turn-2's code-reviewer ran **35.6 min (2138s)** to its
+# ``SDKTimeoutError`` and consumed >½ the 80-min task budget in one turn,
+# foreclosing convergence with ``timeout_budget_exhausted``. This is the exact
+# symmetric counterpart of ``_TEST_ORCHESTRATOR_SDK_TIMEOUT_CAP_SECONDS``:
+# convert the SDK timeout into a graceful bounded specialist failure at the
+# 10-minute mark instead of letting it eat the whole Player/Coach budget.
+# Operator-tunable via ``GUARDKIT_CODE_REVIEWER_TIMEOUT_CAP``.
+_CODE_REVIEWER_SDK_TIMEOUT_CAP_SECONDS: int = int(
+    os.environ.get("GUARDKIT_CODE_REVIEWER_TIMEOUT_CAP", "600")
+)
+
 # TASK-FIX-SPECHANG2: per-specialist no-model-activity watchdog ceiling.
 #
 # The 600s duration cap above bounds a hang but does not *eliminate* it.
@@ -105,6 +125,14 @@ _TEST_ORCHESTRATOR_SDK_TIMEOUT_CAP_SECONDS: int = 600
 # via ``GUARDKIT_SPECIALIST_WATCHDOG_SECONDS``; set to ``0`` to disable.
 _TEST_ORCHESTRATOR_NO_ACTIVITY_WATCHDOG_SECONDS: float = float(
     os.environ.get("GUARDKIT_SPECIALIST_WATCHDOG_SECONDS", "150")
+)
+
+# TASK-PERF-SPECLAT01: the no-activity watchdog is specialist-agnostic (its env
+# var is already named ``GUARDKIT_SPECIALIST_WATCHDOG_SECONDS``). Expose a
+# generic alias so both the test-orchestrator and the code-reviewer can share
+# the same threshold without the misleading ``_TEST_ORCHESTRATOR_`` prefix.
+_SPECIALIST_NO_ACTIVITY_WATCHDOG_SECONDS: float = (
+    _TEST_ORCHESTRATOR_NO_ACTIVITY_WATCHDOG_SECONDS
 )
 
 # Distinct, grep-able reason emitted when the watchdog (not the duration cap)
@@ -1041,16 +1069,34 @@ async def invoke_code_reviewer(
         phase_4_summary=phase_4_summary,
     )
 
+    # TASK-PERF-SPECLAT01: cap the caller-supplied sdk_timeout at the
+    # code-reviewer-specific ceiling so an agentic review pass on a slow model
+    # cannot burn the full Player/Coach budget (symmetric with the Phase 4
+    # test-orchestrator cap).
+    capped_sdk_timeout = min(sdk_timeout, _CODE_REVIEWER_SDK_TIMEOUT_CAP_SECONDS)
+    if capped_sdk_timeout < sdk_timeout:
+        logger.info(
+            "[%s] code-reviewer sdk_timeout capped from %ds to %ds "
+            "(TASK-PERF-SPECLAT01)",
+            task_id,
+            sdk_timeout,
+            capped_sdk_timeout,
+        )
+
     run_result = await run_specialist(
         specialist_name="code-reviewer",
         worktree_path=Path(worktree_path),
         task_id=task_id,
-        sdk_timeout=sdk_timeout,
+        sdk_timeout=capped_sdk_timeout,
         prompt=prompt,
         allowed_tools=["Read", "Search", "Grep"],
         agent_invoker=agent_invoker,
         cancellation_event=cancellation_event,
         turn=turn,
+        # TASK-PERF-SPECLAT01: terminate a genuinely hung code-reviewer
+        # (no /v1/responses traffic for N seconds) well before the capped
+        # duration timeout fires — same protection the test-orchestrator has.
+        no_activity_watchdog_seconds=_SPECIALIST_NO_ACTIVITY_WATCHDOG_SECONDS,
     )
 
     phase_5_block: dict[str, Any] = {

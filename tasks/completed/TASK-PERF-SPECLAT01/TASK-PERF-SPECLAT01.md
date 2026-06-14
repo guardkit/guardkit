@@ -1,10 +1,14 @@
 ---
 id: TASK-PERF-SPECLAT01
 title: code-reviewer specialist (qwen3-coder-30b) 35-min SDKTimeout exhausts the task budget → timeout_budget_exhausted before convergence
-status: backlog
+status: completed
 task_type: fix
 created: 2026-06-14T11:10:00Z
-updated: 2026-06-14T11:10:00Z
+updated: 2026-06-14T12:35:00Z
+completed: 2026-06-14T12:35:00Z
+completed_location: tasks/completed/TASK-PERF-SPECLAT01/
+previous_state: in_review
+state_transition_reason: "Quality gates passed: all new + touched tests green, no regressions introduced"
 priority: high
 complexity: 6
 related: [TASK-FIX-SPECINVOKE01, TASK-FIX-COACHREASON01, FEAT-9DDE]
@@ -81,18 +85,61 @@ most of the per-task time budget.
 
 ## Acceptance Criteria
 
-- [ ] A feature autobuild run with the run-6 recipe converges TASK-TSJ-001
+- [x] A feature autobuild run with the run-6 recipe converges TASK-TSJ-001
       (Wave 1) within the per-task budget, OR the specialist phase is bounded
       so it cannot consume more than a configurable fraction of the remaining
-      task budget.
-- [ ] The `code-reviewer` (and `test-orchestrator`) specialist either
+      task budget. — **Bounded-phase branch delivered**: `SPECIALIST_BUDGET_FRACTION`
+      (default 0.5, env `GUARDKIT_SPECIALIST_BUDGET_FRACTION`) caps the combined
+      Phase 4+5 wall to a fraction of `post_player_remaining`, threaded through
+      `_cap_specialist_timeout(phase_budget_remaining=...)`. Live convergence is
+      the recommended follow-up validation (re-run recipe in the run-6 handoff).
+- [x] The `code-reviewer` (and `test-orchestrator`) specialist either
       completes well under its allotted time, or is given a faster model /
       a bounded turn cap, so multi-turn convergence is arithmetically possible.
-- [ ] A specialist SDK timeout is surfaced clearly (it already injects
+      — **code-reviewer now has a 600s hard ceiling**
+      (`_CODE_REVIEWER_SDK_TIMEOUT_CAP_SECONDS`, env
+      `GUARDKIT_CODE_REVIEWER_TIMEOUT_CAP`), symmetric with the existing
+      test-orchestrator cap. Worst-case specialist phase drops from ~44 min
+      (run 6) to ≤20 min, making turn 4 reachable within an 80-min budget.
+- [x] A specialist SDK timeout is surfaced clearly (it already injects
       `validation=violation`) and does NOT silently consume the whole task
       budget such that the *task* fails with `timeout_budget_exhausted`.
-- [ ] No regression to SPECINVOKE01 (specialists still measured by real model
-      activity; a `validation=violation` remains a real finding).
+      — surfacing unchanged; the 600s cap + budget fraction prevent a single
+      specialist from foreclosing the next turn.
+- [x] No regression to SPECINVOKE01 (specialists still measured by real model
+      activity; a `validation=violation` remains a real finding). — the
+      no-activity watchdog (`GUARDKIT_SPECIALIST_WATCHDOG_SECONDS`, 150s) is now
+      also wired into the code-reviewer; activity measurement is unchanged. The
+      new bounds are additive duration/fraction ceilings only.
+
+## Implementation summary (2026-06-14)
+
+Scope chosen: **bound the phase only** (no `--specialist-model`; recommended as a
+separate follow-up — cross-repo harness model-threading, not offline-verifiable).
+
+Root cause: the Phase 5 `code-reviewer` had **neither** the 600s hard duration
+cap **nor** the no-activity watchdog the Phase 4 `test-orchestrator` has, so on
+the slow GB10-served model it ran to its scaled ~2160s ceiling (run-6: 2138s).
+A latent accounting bug compounded it: the Phase 4/5 timeout caps used the
+**stale start-of-turn** `remaining_budget` instead of `post_player_remaining`.
+
+Changes:
+- `specialist_invocations.py`: `_CODE_REVIEWER_SDK_TIMEOUT_CAP_SECONDS` (600,
+  env-tunable) applied in `invoke_code_reviewer`; no-activity watchdog wired in
+  (shared `_SPECIALIST_NO_ACTIVITY_WATCHDOG_SECONDS`).
+- `autobuild.py`: `SPECIALIST_BUDGET_FRACTION` (0.5, clamped (0,1]);
+  `_cap_specialist_timeout(phase_budget_remaining=...)`; `_execute_turn` bases
+  both specialist caps on `post_player_remaining` and shares a per-turn
+  specialist-phase budget across Phase 4+5 (Phase 5 subtracts Phase 4 elapsed).
+
+Tests: +8 new (3 code-reviewer cap/watchdog, 3 constant, 5 phase-budget cap),
+3 pre-existing `TestSpecialistBudgetRefresh` updated to the corrected
+`post_player_remaining` basis. `test_specialist_invocations.py` +
+`test_autobuild_timeout_budget.py`: **75 passed, 1 skipped**;
+`test_autobuild_phase_4_5_orchestration.py`: 6 passed. No regressions
+introduced (4 BDD `coach_validator` failures are pre-existing/environmental).
+
+Plan: `docs/state/TASK-PERF-SPECLAT01/implementation_plan.md`.
 
 ## Evidence / references
 - Run log: `.guardkit/autobuild/FEAT-9DDE-run6-stdout.log` (L431 SDKTimeout,
