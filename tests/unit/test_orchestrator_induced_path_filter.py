@@ -584,10 +584,11 @@ class TestInstallArtifactFilter:
         assert _is_orchestrator_managed_path(".venv312/lib/foo.py")
 
     def test_real_player_paths_not_matched(self):
-        # AC-4 over-reach guard: real source/test/doc/plan paths pass through.
+        # AC-4 over-reach guard: real source/test/doc paths pass through.
         assert not _is_orchestrator_managed_path("guardkit/cli/task_status_json.py")
         assert not _is_orchestrator_managed_path("tests/test_task_status_json.py")
-        assert not _is_orchestrator_managed_path(".claude/task-plans/x.md")
+        # NOTE: ``.claude/task-plans/`` is now orchestrator-managed
+        # (TASK-FIX-EVBINST02) — see TestResidualHarnessNamespaceFilter.
         # ".local" only matched as a leading path segment, not a substring.
         assert not _is_orchestrator_managed_path("docs/local-setup.md")
         assert not _is_orchestrator_managed_path("src/relocal/mod.py")
@@ -613,3 +614,94 @@ class TestInstallArtifactFilter:
         assert ".local/lib/python3.12/site-packages/_pytest/__init__.py" in stripped
         assert "lib/python3.12/site-packages/pytest/main.py" in stripped
         assert ".venv/lib/site-packages/foo.py" in stripped
+
+
+# ---------------------------------------------------------------------------
+# TASK-FIX-EVBINST02 — strip residual harness/orchestrator-managed namespaces
+# (``large_tool_results/`` tool-result spillover and ``.claude/task-plans/``
+# plan stubs) from the evidence boundary. FEAT-9DDE run-8 coach_turn_2.json
+# still raised should_fix ``claim_audit_unmodified`` records on these two
+# namespaces after EVBINST01 stripped the install artefacts. Same class as
+# EVBINST01 — orchestrator-induced paths swept into the evidence boundary
+# (.claude/rules/evidence-boundary-narrower-than-write-surface.md, over-wide
+# direction). One constant; consumed by both the Player-report writer and the
+# Coach claim audit via the shared ``_is_orchestrator_managed_path``.
+# ---------------------------------------------------------------------------
+
+
+class TestResidualHarnessNamespaceFilter:
+    """``large_tool_results/`` and ``.claude/task-plans/`` must be stripped
+    from Player-report claim lists (and the shared Coach claim audit)."""
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            # large_tool_results/fc_<hash> harness tool-result spillover
+            "large_tool_results/fc_0a1b2c3d4e5f.txt",
+            "large_tool_results/fc_deadbeef/result.json",
+            # ./ prefix and backslashes (Windows) are normalised
+            "./large_tool_results/fc_0a1b2c3d4e5f.txt",
+            "large_tool_results\\fc_0a1b2c3d4e5f.txt",
+            # .claude/task-plans/ orchestrator-created plan stubs
+            ".claude/task-plans/TASK-FIX-EVBINST02-implementation-plan.md",
+            "./.claude/task-plans/TASK-XXX-implementation-plan.md",
+            ".claude\\task-plans\\TASK-XXX-implementation-plan.md",
+        ],
+    )
+    def test_residual_namespaces_match(self, path: str):
+        assert _is_orchestrator_managed_path(path), (
+            f"Expected {path!r} to be classified as orchestrator-managed."
+        )
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            # AC-2 over-reach guard: anchored to ^large_tool_results/ —
+            # a Player path that merely contains the segment as a substring,
+            # or a similarly-named sibling, must pass through.
+            "src/large_tool_results_helper.py",
+            "docs/large_tool_results.md",
+            "tests/test_large_tool_results.py",
+            # AC-2 over-reach guard: anchored to ^.claude/task-plans/ —
+            # other .claude/ paths a Player might legitimately author are
+            # NOT over-broadened.
+            ".claude/agents/python-api-specialist.md",
+            ".claude/rules/autobuild.md",
+            ".claude/settings.json",
+            ".claude/task-plans-notes.md",  # sibling, not under task-plans/
+        ],
+    )
+    def test_residual_over_reach_guard(self, path: str):
+        assert not _is_orchestrator_managed_path(path), (
+            f"Expected {path!r} to be treated as Player work, not "
+            f"orchestrator-managed."
+        )
+
+    def test_strip_removes_residual_namespaces_keeps_real_work(self):
+        """AC-1: residual namespaces stripped from every claim list; real
+        Player work (the run-8 ``tests/`` path) retained."""
+        report = {
+            "files_modified": [
+                "large_tool_results/fc_0a1b2c3d4e5f.txt",
+                "large_tool_results/fc_deadbeef/result.json",
+                ".claude/task-plans/TASK-FIX-EVBINST02-implementation-plan.md",
+                "guardkit/orchestrator/agent_invoker.py",
+            ],
+            "files_created": [],
+            "tests_written": [
+                "tests/unit/test_orchestrator_induced_path_filter.py",
+            ],
+            "completion_promises": [],
+        }
+        stripped = _strip_orchestrator_managed_paths(report, "TASK-FIX-EVBINST02")
+        assert report["files_modified"] == [
+            "guardkit/orchestrator/agent_invoker.py",
+        ]
+        assert report["tests_written"] == [
+            "tests/unit/test_orchestrator_induced_path_filter.py",
+        ]
+        assert stripped == {
+            "large_tool_results/fc_0a1b2c3d4e5f.txt",
+            "large_tool_results/fc_deadbeef/result.json",
+            ".claude/task-plans/TASK-FIX-EVBINST02-implementation-plan.md",
+        }
