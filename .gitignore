@@ -59,6 +59,11 @@ venv-*/
 env-*/
 ENV/
 .env/
+# PEP-668 --user / userbase install target (TASK-FIX-EVBINST01): autobuild
+# bootstrap can write packages here inside a worktree; keep the checkpoint
+# `git add -A` from committing them (defence-in-depth for the agent_invoker
+# evidence-boundary filter, which is the load-bearing fix).
+.local/
 
 # Environment variables file (contains secrets)
 .env
