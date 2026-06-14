@@ -193,6 +193,7 @@ produces the spurious "no signal"**:
 | `path-string-mismatch-is-not-dishonesty` | interpretation | false-red | a path miss read as a lie when the orchestrator moved the file |
 | `harness-cancellation-contract` | dispatch | divergence | a cancel that no-ops on a substrate it wasn't written for |
 | **`evidence-boundary-narrower-than-write-surface`** | **collection** | **both** | **work done outside the oracle's spatial aperture** |
+| `smoke-gate-is-feedback-not-terminator` | disposition | wasted-signal | a *correct* high-fidelity failure used to terminate the loop instead of being fed back into it |
 
 The shared remediation is to pair the binary verdict with a positive-evidence
 precondition. The other three pair it with a *logical* precondition (count of
@@ -211,6 +212,15 @@ the declared write surface before any "no work here" verdict is trusted.
   guardkit ↔ guardkitfactory boundary again; its cross-repo seam test
   (`tests/orchestrator/harness/test_xrepo_contract_seam.py`) is the CI-guard
   analogue of this rule's `tests/orchestrator/test_evidence_repos_seam.py`.
+- **Sibling rule (disposition-locus, fifth meta-frame row)**:
+  [`smoke-gate-is-feedback-not-terminator.md`](smoke-gate-is-feedback-not-terminator.md)
+  — adds the **disposition** row to the meta-frame table above: a *correct*
+  high-fidelity failure (the post-wave smoke gate) used to terminate the
+  Player-Coach loop instead of being fed back into it. Unlike the four rows it
+  joins, its signal is not spurious — the oracle was right; the defect is the
+  loop discarding the failure rather than acting on it. Its arm b (per-task
+  runtime parity) is an absence-of-failure instance. Seeded by
+  TASK-AB-COACHRUNPARITY01 (commit `a11708d0`, 2026-06-14).
 - **Sibling rule (single-source-of-truth contract)**:
   [`namespace-hygiene.md`](namespace-hygiene.md) — the broader "local decision
   touching an externally-defined contract must be audited against that

@@ -324,6 +324,15 @@ rg "async def cancel" \
   the orchestrator must collect). Both are enforced by a fast `inspect`-based
   cross-repo seam test (`test_xrepo_contract_seam.py` here;
   `test_evidence_repos_seam.py` there). Seeded by TASK-AB-XREPOEV01 (2026-06-13).
+- **Sibling rule (disposition-locus instance)**:
+  [`smoke-gate-is-feedback-not-terminator.md`](smoke-gate-is-feedback-not-terminator.md)
+  — same meta-family (binary verdicts in the autobuild loop), new locus:
+  *disposition*. This rule guards the *dispatch* of a cancellation across
+  substrates; that one guards the *disposition* of a believed high-fidelity
+  failure (feed it back via `seed_feedback`, bounded by
+  `GUARDKIT_SMOKE_GATE_MAX_RETRIES`, rather than terminating the loop with a
+  bare `break`). Seeded by TASK-AB-COACHRUNPARITY01 (commit `a11708d0`,
+  2026-06-14).
 - **Pair fact in Graphiti** (`guardkit__project_decisions`): node
   *"harness-cancellation-contract"* with citations to the
   TASK-FIX-CTOUT01 reproducer test

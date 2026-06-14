@@ -220,6 +220,14 @@ rg "absence-of-failure" .claude/rules/
   against a sibling repo root) from re-introducing a ghost-path false-red:
   unknown / undeclared repo-qualified claims fail open, exactly as this rule
   requires. Seeded by TASK-AB-XREPOEV01 (2026-06-13).
+- **Sibling rule (disposition-locus, wasted-signal direction)**:
+  [`smoke-gate-is-feedback-not-terminator.md`](smoke-gate-is-feedback-not-terminator.md)
+  — the fifth member of the low-fidelity-oracle family, but the only one whose
+  signal is NOT spurious: a *correct* high-fidelity smoke-gate failure routed to
+  a bare `break` (loop termination) instead of fed back to the Player as turn-1
+  feedback. Where this rule keeps a correct path miss from becoming a false-red,
+  that rule keeps a correct runtime failure from becoming a *wasted* signal.
+  Seeded by TASK-AB-COACHRUNPARITY01 (commit `a11708d0`, 2026-06-14).
 - **Pair fact in Graphiti** (`guardkit__project_decisions`): node
   *"path-string-mismatch-is-not-dishonesty"* with an
   `IS_INVERSE_SHAPE_OF` edge to *"absence-of-failure-is-not-success"*
