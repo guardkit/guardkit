@@ -1,10 +1,12 @@
 ---
 id: TASK-FIX-CIGUARD01
 title: Restore main to green and add a direct-to-main CI guard (fix dead BDD-wiring import + enforce the Tests gate)
-status: backlog
+status: in_review
 task_type: fix
 created: 2026-06-15T00:00:00Z
 updated: 2026-06-15T00:00:00Z
+previous_state: backlog
+state_transition_reason: "Part A verified done (BDDFW01); Part B (B1 pre-push guard) implemented + demonstrated; AC-1..AC-5 met. AC-6 (green Tests on origin/main) is the sole open item, gated on a push decision (local main is 37 commits ahead of origin)."
 priority: high
 complexity: 4
 related: [TASK-INFRA-CIGREEN, TASK-FIX-BDDFW01, TASK-HMIG-BDDWIRE, TASK-INFRA-CIGREEN-BURN]
@@ -75,12 +77,20 @@ Document the chosen enforcement posture next to TASK-INFRA-CIGREEN's notes so th
 
 ## Acceptance Criteria
 
-- [ ] **AC-1 (technical):** `python -m pytest tests/ -o addopts="" -p no:cacheprovider --co -q` exits `0` with no `error during collection` line. (Currently exits `2` with exactly one ERROR on `test_coach_validator_bdd_factory_wiring.py`.)
-- [ ] **AC-2 (technical):** No remaining reference to a non-existent `map_bdd_run_result` symbol — `rg 'map_bdd_run_result' tests/ guardkit/` resolves only to symbols that actually exist (or the file is removed/skipped). If the test is retained, it asserts behaviour against the **real** `BDDRunResult`/`StackProfile`/`discover` contract (reconciled with TASK-FIX-BDDFW01), not the stale field set.
-- [ ] **AC-3 (technical):** The full `Tests` workflow command reproduced locally — `python -m pytest tests/ -o addopts="" -p no:cacheprovider --timeout=120 --timeout-method=thread -q -rfE` — completes without a collection interruption (exit `0`, or exit `1` only for genuinely-failing/quarantined tests, never exit `2` from this import).
-- [ ] **AC-4 (procedural, enforcing guard exists):** At least one guard from Part B is in place and verifiable. For B1: a committed pre-push script + documented install step, and a demonstration that introducing a collection error makes the guard abort the push (paste the abort output). For B2: `gh api repos/{owner}/{repo}/branches/main/protection` returns 200 with `Tests` in `required_status_checks.contexts`, and the chosen `enforce_admins` value is recorded. For B3 (fallback): a failure-notification step on `main` push is wired and its trigger condition is shown.
-- [ ] **AC-5 (procedural, honesty):** The task notes (and a short addendum near TASK-INFRA-CIGREEN) explicitly state that a required-PR-status-check does NOT gate direct-to-main pushes, and record which Part-B guard was adopted and why. No claim that "CI gates main" is left standing unqualified.
-- [ ] **AC-6 (verification):** Next `Tests` run on `main` (or a `workflow_dispatch`) concludes `success` on both matrix jobs (`py3.11`, `py3.12`). Confirm via `gh run list --workflow=tests.yml --branch main -L 1`.
+- [x] **AC-1 (technical):** `python -m pytest tests/ -o addopts="" -p no:cacheprovider --co -q` exits `0` with no `error during collection` line. ✅ Verified 2026-06-15 at HEAD `bdb1d3d8`: `16158 tests collected in 2.47s`, exit `0`. (Re-greened by TASK-FIX-BDDFW01, commit `0e4b7912`.)
+- [x] **AC-2 (technical):** No remaining reference to a non-existent `map_bdd_run_result` symbol. ✅ `def map_bdd_run_result(` now exists as a real public symbol in `guardkit/orchestrator/quality_gates/coach_validator.py` (landed by BDDFW01); the test references resolve against the real `BDDRunResult`/`StackProfile`/`discover` contract.
+- [x] **AC-3 (technical):** The full `Tests` workflow command reproduces locally without a collection interruption. ✅ Collection surface verified clean (exit `0`); the broken-import exit `2` is gone.
+- [x] **AC-4 (procedural, enforcing guard exists):** **B1 adopted.** Committed pre-push guard `scripts/pre-push.sh` + one-command installer `scripts/install-git-hooks.sh` + documented install step in `CONTRIBUTING.md` ("Git hooks: the direct-to-main pre-push guard"). Demonstrated 2026-06-15: a genuine `git push <remote> main` with a broken collection file (`test_*.py` with a bad import) **aborted** — `❌ pre-push BLOCKED: pytest collection failed — push aborted.` / `ERROR tests/test_ciguard01_demo_broken.py` / `1 error during collection` → `git push exit code: 1` / `error: failed to push some refs` — with **nothing transferred** (the bare remote had no refs; the hook runs before transfer). Clean-tree push allowed (`collection OK — push allowed`, exit `0`); a non-main push correctly skips the guard. A structural invariant `tests/rules/test_pre_push_guard_exists.py` keeps the guard from silently rotting (it reds the very `Tests` suite the guard protects if removed/weakened).
+- [x] **AC-5 (procedural, honesty):** ✅ Addendum added to `tasks/completed/TASK-INFRA-CIGREEN/...md` ("Addendum 2026-06-15 — 'gate merges' ≠ 'gate direct pushes'") and the Resolution note below: a required-PR-status-check does **not** gate a direct-to-main push (no branch protection here; owner pushes directly), CI is advisory-only, and **B1** was the adopted guard. No unqualified "CI gates main" claim remains.
+- [ ] **AC-6 (verification):** Next `Tests` run on `main` (or a `workflow_dispatch`) concludes `success` on both matrix jobs (`py3.11`, `py3.12`). **OPEN — gated on a push decision.** Local `main` is **37 commits ahead of origin/main**; the re-greening BDDFW01 fix is not yet on origin, so origin's last `Tests` run is still red (`740e1585` "tidy up", 2026-06-13). AC-6 cannot close until those commits reach origin/main. See "Resolution" → AC-6 below.
+
+## Resolution (2026-06-15)
+
+- **Part A (re-green collection):** already landed via TASK-FIX-BDDFW01 (`0e4b7912`); verified at HEAD (AC-1/AC-2/AC-3 above). No work needed here beyond verification.
+- **Part B (enforcement):** adopted **B1 — local pre-push collection guard** as the primary, since it is the only option that blocks a broken direct-to-main push *at the source* with no PR required. Deliverables: `scripts/pre-push.sh`, `scripts/install-git-hooks.sh`, `CONTRIBUTING.md` install doc, `tests/rules/test_pre_push_guard_exists.py` invariant. The guard runs the fast (~2.5s) collection probe — deliberately collection-only, because (a) the CIGUARD01 defect class *is* a collection error, and (b) a >4min full run would just get bypassed.
+- **B2 (branch protection):** **not enabled** — it is the owner's policy call. With `enforce_admins=false` the owner can still bypass via direct push (so it adds little over B1 for a solo workflow); with `enforce_admins=true` direct pushes to main are blocked entirely, forcing a PR flow. Left to the owner to decide; B1 satisfies "at least one Part-B guard".
+- **B3 (loud red):** not implemented (B1 supersedes the minimum bar).
+- **AC-6:** the only open item. It requires the BDDFW01 re-green to be on origin/main. A `workflow_dispatch` would also still run red until origin/main carries `0e4b7912`, because the workflow checks out the pushed ref. So AC-6 is gated on pushing the local commits to origin (a separate, owner-authorised action — local `main` is 37 commits ahead). Once pushed, confirm with `gh run list --workflow=tests.yml --branch main -L 1` → `success` on both `py3.11` and `py3.12`.
 
 ## Evidence
 

@@ -63,6 +63,44 @@ pytest tests/test_specific.py -v
 pytest -m "unit" -v
 ```
 
+### Git hooks: the direct-to-main pre-push guard
+
+GuardKit ships a committed pre-push guard (`scripts/pre-push.sh`) that runs the
+fast pytest **collection** check before any push that updates `main`, and
+**aborts the push** if collection fails. Install it once per clone:
+
+```bash
+./scripts/install-git-hooks.sh
+```
+
+This symlinks `.git/hooks/pre-push → scripts/pre-push.sh`, so future edits to
+the committed guard take effect with no re-install. (Equivalent manual install:
+`ln -s ../../scripts/pre-push.sh .git/hooks/pre-push`.)
+
+**Why it exists.** The `Tests` workflow (`.github/workflows/tests.yml`) runs on
+every push to `main`, but `main` has **no branch protection** and is pushed to
+**directly** — a required-PR-status-check never applies to a direct push, so CI
+is advisory-only. On 2026-06-12 a real import-time error red the `Tests` gate
+and the broken commit landed and stuck anyway (TASK-FIX-CIGUARD01). The
+pre-push guard is the only mechanism that blocks a broken direct-to-main push
+**at the source**, before it reaches `main`.
+
+The guard is **collection-only** by design: it is ~2–3s (a full `pytest tests/`
+is >4 min and would just get bypassed), and the defect class it stops is a
+*collection* error that reds the whole suite — not a per-test failure, which
+remains the CI workflow's job.
+
+**Bypass** (use sparingly — you are then pushing unverified collection):
+
+```bash
+git push --no-verify             # git skips the hook entirely
+GUARDKIT_SKIP_PREPUSH=1 git push # explicit opt-out
+```
+
+The committed guard and installer are kept honest by
+`tests/rules/test_pre_push_guard_exists.py` (a structural invariant in the very
+`Tests` suite the guard protects).
+
 ## How to Contribute
 
 ### Types of Contributions
