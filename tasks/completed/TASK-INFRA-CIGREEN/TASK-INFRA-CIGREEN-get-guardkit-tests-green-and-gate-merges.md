@@ -97,3 +97,30 @@ tests while new regressions keep landing ungated. Burn-down tracked by
   be part of the same CI gate) and TASK-FIX-BACKENDKWARG (the acute run-24 fix).
 - The only existing workflow is `docs.yml` (Python 3.12) — reuse its
   setup-python pattern for the test job.
+
+## Addendum 2026-06-15 (TASK-FIX-CIGUARD01) — "gate merges" ≠ "gate direct pushes"
+
+The AC-6 framing above ("test CI gates merges") is **honest but incomplete for
+this repo's actual workflow**. `tests.yml` runs on `push: [main]` AND
+`pull_request: [main]`, so the verdict is *computed* on every direct push — but
+**a required-PR-status-check does NOT gate a direct-to-main push.** Required
+status checks are a *branch-protection* feature evaluated when a PR merges;
+this repo has **no branch protection** (`gh api .../branches/main/protection`
+→ 404) and the owner pushes **directly to main**, so there is no PR for the
+check to gate. CI here is **advisory-only**.
+
+That gap let TASK-FIX-CIGUARD01's defect persist: on 2026-06-12 a direct push
+carried an import-time `ImportError` that interrupted pytest *collection* for
+the whole tree, `tests.yml` correctly went **red**, and the broken commit
+**landed and stuck anyway** because nothing acts on a red advisory verdict.
+
+**Correction:** do not read "CI gates main" unqualified. CI *reports* on main;
+it does not *gate* direct pushes. The enforcing guard adopted to close this
+(TASK-FIX-CIGUARD01 Part B) is **B1 — a committed local pre-push collection
+guard** (`scripts/pre-push.sh` + `scripts/install-git-hooks.sh`, install
+documented in `CONTRIBUTING.md`). B1 is the only Part-B option that blocks a
+broken direct-to-main push *before* it reaches main, with no PR required.
+Branch protection (B2) was left **not enabled** (it is the owner's policy
+call — with `enforce_admins=false` the owner can still bypass; with
+`enforce_admins=true` direct pushes to main are blocked entirely, forcing a PR
+flow). See TASK-FIX-CIGUARD01 for the full disposition.
