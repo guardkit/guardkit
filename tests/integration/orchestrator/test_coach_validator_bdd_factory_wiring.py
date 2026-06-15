@@ -324,11 +324,11 @@ class TestFactoryDiscoveryIntegration:
     def test_guardkitfactory_available_flag(self):
         """The availability flag reflects whether the package is installed."""
         from guardkit.orchestrator.quality_gates.coach_validator import (
-            _GUARDKITFACTORY_AVAILABLE,
+            _FACTORY_AVAILABLE,
         )
         # This test is informational — the flag should be True in the
         # development environment where guardkitfactory is installed.
-        assert _GUARDKITFACTORY_AVAILABLE is True
+        assert _FACTORY_AVAILABLE is True
 
     def test_detect_stack_profile_returns_python(self, worktree: Path):
         """Stack detection returns a Python profile for a pyproject.toml."""
