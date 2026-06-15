@@ -14,6 +14,22 @@ tags: [ci, tests-gate, branch-protection, direct-to-main, collection-error, enfo
 
 # Task: Restore main to green and add a direct-to-main CI guard
 
+> [!NOTE] UPDATE 2026-06-15 — Part A (re-green collection) is DONE via TASK-FIX-BDDFW01 (commit `0e4b7912`).
+>
+> The "preferred" disposition in Part A landed: BDDFW01 corrected the production
+> bridge contract and made `map_bdd_run_result` a real public symbol, then
+> reconciled `test_coach_validator_bdd_factory_wiring.py` against the real
+> `BDDRunResult`/`StackProfile`/`discover(StackProfile, worktree)` contract.
+> Status now: **AC-1 ✅** (`pytest tests/ --co` → 16158 collected, 0 errors),
+> **AC-2 ✅** (`map_bdd_run_result` exists; the test asserts the real contract),
+> **AC-3 ✅** (full Tests command reproduces locally without a collection
+> interruption). **Remaining work is Part B only** (the direct-to-main
+> enforcing guard — B1 pre-push hook recommended) plus **AC-4/AC-5/AC-6**
+> (guard exists + honesty note + a confirmed green `Tests` run on `main`).
+> Recommend re-titling to "Add a direct-to-main CI guard" and dropping Part A
+> on pickup. (Contract-drift recurrence prevention is a separate task,
+> **TASK-INFRA-BDDSEAM01**.)
+
 Follow-up to **TASK-INFRA-CIGREEN** (which created `.github/workflows/tests.yml` to "gate merges"). That task made the suite green and wired a gating job — but the gate is structurally inert on this repo's actual workflow (solo owner, direct-to-main, no branch protection), and a real broken import slipped past it.
 
 ## Why this task exists

@@ -8,10 +8,39 @@ updated: 2026-06-15T00:00:00Z
 priority: medium
 complexity: 6
 parent_task: TASK-HMIG-007
-blocked_by: [TASK-FIX-BDDFW01]
-related: [TASK-HMIG-007, TASK-HMIG-011, TASK-ARCH-COACHSPLIT, TASK-FIX-BDDFW01, TASK-BDDW-001, TASK-BDDW-002]
+blocked_by: []
+related: [TASK-HMIG-007, TASK-HMIG-011, TASK-ARCH-COACHSPLIT, TASK-FIX-BDDFW01, TASK-BDDW-001, TASK-BDDW-002, TASK-INFRA-BDDSEAM01]
 implementation_mode: task-work
 ---
+
+> [!NOTE] UPDATE 2026-06-15 — TASK-FIX-BDDFW01 has LANDED (commit `0e4b7912`); this task is now UNBLOCKED.
+>
+> Recommended-action step 1 below ("land BDDFW01 first") is **done**. BDDFW01:
+> - corrected all three contract mismatches in the note below **plus a 4th the
+>   diagnosis missed** — `plugin.run(worktree_path)` → the real
+>   `run(scenarios, task_id, worktree)`. The bridge now drives the real
+>   lifecycle `discover(stack, worktree)` → `preflight(task_id, worktree)` →
+>   `run([], task_id, worktree)` and is live + green;
+> - **resolved the CI-hazard / dead-on-arrival wiring test** (now 18 passed;
+>   `pytest tests/ --co` 0 collection errors);
+> - **largely absorbed residual AC-4** — `task_id` is now threaded into
+>   `plugin.run(...)` and `PytestBDDPlugin.run` sets `GUARDKIT_BDD_TASK_ID`
+>   itself, and BDDFW01 added a `preflight(task_id, worktree)` gate. The note's
+>   "today `coach_validator.py:331` passes only `worktree_path`, no task-id env"
+>   is now STALE.
+>
+> **Re-scoped residual after BDDFW01** (the genuinely-remaining work):
+> - **AC-2 / multi-stack scenario pre-discovery** — BDDFW01 passes `scenarios=[]`
+>   (correct for pytest-bdd, which re-discovers from `features/`); real
+>   `Scenario` pre-discovery for reqnroll/cucumber-js stacks is still unbuilt.
+> - **AC-5 — legacy `bdd_runner.py`** — BDDFW01 *documented* it as the demoted
+>   fallback (docstring); physically removing/switch-gating it so two oracles
+>   cannot disagree is still open.
+> - **AC-4 per-task-glue end-to-end verification** against a real bound feature
+>   (BDDFW01 wired + preflight-gated it but did not add an integration test that
+>   a real `@task:`-tagged scenario is collected and run).
+> Recurrence-prevention for the contract seam is now its own task,
+> **TASK-INFRA-BDDSEAM01**.
 
 > [!IMPORTANT] Reconciliation note — added 2026-06-15 (triage, do not delete original content below)
 >
