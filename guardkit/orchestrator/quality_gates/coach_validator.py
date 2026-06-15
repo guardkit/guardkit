@@ -112,13 +112,25 @@ logger = logging.getLogger(__name__)
 #
 # Mapping: BDDRunResult (factory) → bundle.bdd dict (legacy shape)
 #
-#   BDDRunResult.scenarios_attempted  → bundle.bdd["scenarios_attempted"]
-#   BDDRunResult.scenarios_passed     → bundle.bdd["scenarios_passed"]
-#   BDDRunResult.scenarios_failed     → bundle.bdd["scenarios_failed"]
-#   BDDRunResult.scenarios_pending    → bundle.bdd["scenarios_pending"]
-#   BDDRunResult.failures             → bundle.bdd["failures"]
-#   BDDRunResult.pending              → bundle.bdd["pending"]
-#   BDDRunResult.feature_files        → bundle.bdd["feature_files"]
+#   BDDRunResult.scenarios_attempted          → bundle.bdd["scenarios_attempted"]
+#   BDDRunResult.scenarios_passed             → bundle.bdd["scenarios_passed"]
+#   BDDRunResult.scenarios_failed             → bundle.bdd["scenarios_failed"]
+#   BDDRunResult.scenarios_skipped            → bundle.bdd["scenarios_pending"]
+#   BDDRunResult.scenarios_errored            → bundle.bdd["scenarios_errored"]
+#   BDDRunResult.duration_seconds             → bundle.bdd["duration_seconds"]
+#   BDDRunResult.raw_report_path              → bundle.bdd["raw_report_path"] (str|None)
+#   BDDRunResult.discoveries[*]["feature_file"] → bundle.bdd["feature_files"]
+#   BDDRunResult.errors[*]                    → bundle.bdd["failures"][*]["error"]
+#   (bundle.bdd["pending"] is always [] — the real contract carries no
+#    per-scenario pending list; the pending COUNT derives from scenarios_skipped.)
+#
+# TASK-FIX-BDDFW01: the bridge originally targeted an ABANDONED BDDRunResult
+# contract (``.failures``/``.pending``/``.scenarios_pending``/``.feature_files``)
+# and a one-arg ``discover``/``plugin.run`` shape. Every call on the live path
+# raised AttributeError/TypeError, was swallowed by the broad ``except`` below,
+# and degraded to the Player-reported fallback — so the bridge was SILENTLY
+# DEAD. The mapping above now reflects the REAL guardkitfactory contract
+# (``guardkitfactory/src/guardkitfactory/bdd/plugin.py``).
 #
 # Key contract: ``scenarios_attempted`` is non-Optional on BDDRunResult and
 # must be preserved verbatim for the absence-of-failure gate. A value of 0
@@ -138,38 +150,112 @@ _STACK_PROFILE_MAP: Dict[str, str] = {
     "javascript": "javascript",
     "typescript": "javascript",
 }
-"""Mapping from ``project.template`` to ``StackProfile`` string."""
+"""Mapping from ``project.template`` to a stack profile-key."""
 
 
-def _detect_stack_profile(workspace_root: Optional[Path]) -> Optional[str]:
-    """Detect the stack profile from the worktree's template string.
+# Translate a profile-key (the value side of ``_STACK_PROFILE_MAP``, also
+# produced by the filesystem-marker fallback below) into the real
+# guardkitfactory ``StackProfile`` field-set. Only ``PytestBDDPlugin.discover``
+# matches on ``test_framework`` (it requires ``"pytest"``);
+# ``ReqnrollPlugin``/``CucumberJSPlugin`` match on ``language`` alone, so the
+# dotnet/javascript ``test_framework`` strings are advisory.
+_PROFILE_KEY_TO_STACK: Dict[str, Tuple[str, str, str]] = {
+    # profile_key: (language, test_framework, package_manager)
+    "python": ("python", "pytest", "pip"),
+    "dotnet": ("csharp", "dotnet-test", "nuget"),
+    "javascript": ("typescript", "vitest", "npm"),
+}
+
+
+def _detect_profile_key(workspace_root: Path) -> Optional[str]:
+    """Return a stack profile-key for the worktree, or ``None`` when unknown.
+
+    Resolution order:
+      1. ``.claude/settings.json`` → ``project.template`` (mapped via
+         ``_STACK_PROFILE_MAP``) — authoritative when present.
+      2. Filesystem markers (worktrees created without a ``settings.json``):
+         ``pyproject.toml``/``requirements.txt`` → python,
+         ``*.csproj``/``*.sln`` → dotnet, ``package.json`` → javascript.
+    """
+    template = detect_stack_template(workspace_root)
+    if template is not None:
+        key = _STACK_PROFILE_MAP.get(template)
+        if key is not None:
+            return key
+
+    if (workspace_root / "pyproject.toml").exists() or (
+        workspace_root / "requirements.txt"
+    ).exists():
+        return "python"
+    if any(workspace_root.glob("*.csproj")) or any(workspace_root.glob("*.sln")):
+        return "dotnet"
+    if (workspace_root / "package.json").exists():
+        return "javascript"
+    return None
+
+
+def _detect_stack_profile(
+    workspace_root: Optional[Path],
+) -> Optional["StackProfile"]:
+    """Detect a guardkitfactory ``StackProfile`` for the worktree.
+
+    Returns a real ``StackProfile`` dataclass — the type that
+    ``guardkitfactory.bdd.discover`` requires — or ``None`` when the worktree
+    is missing, the stack is unknown, or guardkitfactory is unavailable.
+
+    TASK-FIX-BDDFW01: previously annotated ``-> Optional[str]`` and returned a
+    bare profile string, which ``discover`` cannot consume — the live factory
+    path raised ``TypeError`` and was silently swallowed.
 
     Parameters
     ----------
     workspace_root : Optional[Path]
-        Root of the worktree. Used to find ``.claude/settings.json``.
+        Root of the worktree.
 
     Returns
     -------
-    Optional[str]
-        A ``StackProfile``-compatible string (``"python"``, ``"dotnet"``,
-        ``"javascript"``) or ``None`` when the template is unknown.
+    Optional[StackProfile]
+        A populated ``StackProfile`` (``language``/``test_framework``/
+        ``package_manager``/``project_root``/``extras``) or ``None``.
     """
-    template = detect_stack_template(workspace_root)
-    if template is None:
+    if workspace_root is None:
         return None
-    return _STACK_PROFILE_MAP.get(template)
+    root = Path(workspace_root)
+    if not root.exists():
+        return None
+    # StackProfile is the lazily-imported factory dataclass; None when the
+    # factory is unavailable. The live path only calls this when the factory
+    # IS available, but guard defensively.
+    if StackProfile is None:
+        return None
+    key = _detect_profile_key(root)
+    if key is None:
+        return None
+    language, test_framework, package_manager = _PROFILE_KEY_TO_STACK[key]
+    return StackProfile(
+        language=language,
+        test_framework=test_framework,
+        package_manager=package_manager,
+        project_root=root,
+        extras={},
+    )
 
 
-def _map_bdd_run_result_to_bundle(
+def map_bdd_run_result(
     run_result: "BDDRunResult",
 ) -> Dict[str, Any]:
-    """Map a ``BDDRunResult`` into the legacy ``bundle.bdd`` dict shape.
+    """Map a guardkitfactory ``BDDRunResult`` into the legacy ``bundle.bdd`` dict.
+
+    Reads ONLY real ``BDDRunResult`` fields (see
+    ``guardkitfactory/src/guardkitfactory/bdd/plugin.py``):
+    ``scenarios_attempted``/``passed``/``failed``/``skipped``/``errored``,
+    ``duration_seconds``, ``raw_report_path``, ``discoveries``, ``errors``.
 
     Preserves ``scenarios_attempted`` verbatim — never coerces a missing key
     to 0. This is critical for the absence-of-failure gate: when
     ``scenarios_attempted == 0``, the Coach must treat it as ABSENT SIGNAL,
-    not as a silent pass.
+    not as a silent pass
+    (``.claude/rules/absence-of-failure-is-not-success.md``).
 
     Parameters
     ----------
@@ -179,52 +265,53 @@ def _map_bdd_run_result_to_bundle(
     Returns
     -------
     Dict[str, Any]
-        A dict with keys: ``scenarios_attempted``, ``scenarios_passed``,
-        ``scenarios_failed``, ``scenarios_pending``, ``failures``,
-        ``pending``, ``feature_files``.
+        A ``bundle.bdd``-shaped dict with keys: ``scenarios_attempted``,
+        ``scenarios_passed``, ``scenarios_failed``, ``scenarios_pending``
+        (from ``scenarios_skipped``), ``scenarios_errored``,
+        ``duration_seconds``, ``raw_report_path`` (str|None), ``feature_files``
+        (from ``discoveries``), ``failures`` (from ``errors``), and ``pending``
+        (always ``[]`` — the real contract carries no per-scenario pending list).
     """
-    # Import here to avoid circular import at module level.
-    # BDDRunResult is imported lazily from guardkitfactory.
-    from dataclasses import asdict
+    # feature_files: derive from discoveries[*]["feature_file"].
+    feature_files: List[str] = []
+    for disc in run_result.discoveries:
+        if isinstance(disc, dict):
+            feature_file = disc.get("feature_file")
+            if feature_file:
+                feature_files.append(str(feature_file))
 
-    failures = run_result.failures
-    pending = run_result.pending
+    # failures: one dict per error string. Carry the error text under both
+    # "error" (factory-native) and "reason" (so the legacy
+    # ``_check_bdd_results`` consumer surfaces it in Player feedback).
+    failure_dicts: List[Dict[str, Any]] = [
+        {"error": err, "reason": err} for err in run_result.errors
+    ]
 
-    # Convert FailureDetail/PendingDetail to dicts if they are dataclass instances.
-    failure_dicts: List[Dict[str, Any]] = []
-    for f in failures:
-        if hasattr(f, "asdict") or hasattr(f, "_asdict"):
-            failure_dicts.append(asdict(f))
-        elif isinstance(f, dict):
-            failure_dicts.append(f)
-        else:
-            failure_dicts.append({
-                "scenario_name": getattr(f, "scenario_name", "<unknown>"),
-                "failing_step": getattr(f, "failing_step", ""),
-                "reason": getattr(f, "reason", ""),
-            })
-
-    pending_dicts: List[Dict[str, Any]] = []
-    for p in pending:
-        if hasattr(p, "asdict") or hasattr(p, "_asdict"):
-            pending_dicts.append(asdict(p))
-        elif isinstance(p, dict):
-            pending_dicts.append(p)
-        else:
-            pending_dicts.append({
-                "scenario_name": getattr(p, "scenario_name", "<unknown>"),
-                "pending_step": getattr(p, "pending_step", ""),
-            })
+    raw_report_path = (
+        str(run_result.raw_report_path)
+        if run_result.raw_report_path is not None
+        else None
+    )
 
     return {
         "scenarios_attempted": run_result.scenarios_attempted,
         "scenarios_passed": run_result.scenarios_passed,
         "scenarios_failed": run_result.scenarios_failed,
-        "scenarios_pending": run_result.scenarios_pending,
+        "scenarios_pending": run_result.scenarios_skipped,
+        "scenarios_errored": run_result.scenarios_errored,
+        "duration_seconds": run_result.duration_seconds,
+        "raw_report_path": raw_report_path,
+        "feature_files": feature_files,
         "failures": failure_dicts,
-        "pending": pending_dicts,
-        "feature_files": list(run_result.feature_files),
+        "pending": [],
     }
+
+
+# Backward-compatible alias: TASK-BDDW-001 shipped this function privately as
+# ``_map_bdd_run_result_to_bundle``; ``map_bdd_run_result`` is the public name
+# the wiring test (TASK-FIX-BDDFW01) imports. Both refer to ONE corrected
+# implementation so producer and consumer cannot drift.
+_map_bdd_run_result_to_bundle = map_bdd_run_result
 
 
 # Lazy import of guardkitfactory BDD plugin subsystem.
@@ -276,26 +363,41 @@ def _reset_factory_cache() -> None:
 
 def _run_factory_bdd(
     worktree_path: Path,
-    stack_profile: Optional[str],
+    stack_profile: Optional["StackProfile"],
+    task_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Discover and run the BDD plugin for the given stack profile.
 
-    Uses ``guardkitfactory.bdd.discover(stack_profile)`` to find the plugin,
-    invokes it to get a ``BDDRunResult``, and maps the result into the legacy
-    ``bundle.bdd`` dict shape.
+    Drives the real guardkitfactory plugin lifecycle:
+    ``discover(stack, worktree)`` → ``preflight(task_id, worktree)`` →
+    ``run(scenarios, task_id, worktree)`` → :func:`map_bdd_run_result`.
+
+    TASK-FIX-BDDFW01: the original implementation targeted an ABANDONED
+    contract — it called ``discover(stack_profile)`` (one positional ``str``)
+    and ``plugin.run(worktree_path)``. Both raised ``TypeError`` against the
+    real guardkitfactory signatures and were silently swallowed, leaving the
+    bridge dead on the live path. This version uses the real two-arg
+    ``discover(stack: StackProfile, worktree: Path)`` and the real
+    ``run(scenarios, task_id, worktree)`` signature.
 
     Parameters
     ----------
     worktree_path : Path
         Root of the worktree containing the BDD scenarios.
-    stack_profile : Optional[str]
-        Detected stack profile (``"python"``, ``"dotnet"``, ``"javascript"``).
+    stack_profile : Optional[StackProfile]
+        Detected stack profile from :func:`_detect_stack_profile`.
+    task_id : Optional[str]
+        Active task identity. Required to honour the per-task glue contract
+        (``GUARDKIT_BDD_TASK_ID`` / ``-m task_<id>``); without it the per-task
+        oracle cannot run and the bridge returns ABSENT SIGNAL.
 
     Returns
     -------
     Optional[Dict[str, Any]]
         A ``bundle.bdd``-shaped dict, or ``None`` when the factory is
-        unavailable, the stack profile is unknown, or discovery fails.
+        unavailable, the stack profile is unknown, preflight fails, or
+        discovery/execution fails. ``None`` is ABSENT SIGNAL — never a silent
+        pass (``.claude/rules/absence-of-failure-is-not-success.md``).
     """
     if not _is_factory_available():
         logger.debug(
@@ -311,12 +413,19 @@ def _run_factory_bdd(
         )
         return None
 
-    # Guard against StackProfile being None (factory not importable).
-    if StackProfile is None:
+    # Guard against discover/StackProfile being None (factory not importable).
+    if discover is None or StackProfile is None:
+        return None
+
+    if not task_id:
+        logger.debug(
+            "BDD factory bridge: no task_id in scope; the per-task BDD oracle "
+            "cannot run. Returning ABSENT SIGNAL.",
+        )
         return None
 
     try:
-        plugin = discover(stack_profile)
+        plugin = discover(stack_profile, worktree_path)
         if plugin is None:
             logger.debug(
                 "BDD factory bridge: no plugin discovered for stack %s; "
@@ -325,10 +434,24 @@ def _run_factory_bdd(
             )
             return None
 
-        # Invoke the plugin to get BDDRunResult.
-        # The plugin is responsible for running the scenarios and returning
-        # a BDDRunResult with the counts-only contract.
-        result = plugin.run(worktree_path)
+        # Lifecycle: preflight before run. A failed preflight means the
+        # per-task glue convention is not satisfied (no bound scenarios), so a
+        # blind ``-m task_<id>`` run would deselect everything — surface ABSENT
+        # SIGNAL rather than subprocessing a guaranteed-zero run.
+        preflight = getattr(plugin, "preflight", None)
+        if callable(preflight) and not preflight(task_id, worktree_path):
+            logger.debug(
+                "BDD factory bridge: preflight failed for task %s on stack %s; "
+                "ABSENT SIGNAL (per-task glue not configured).",
+                task_id,
+                stack_profile,
+            )
+            return None
+
+        # scenarios=[] — pytest-bdd re-discovers from features/ internally
+        # (Contract C4). Pre-discovering Scenario objects for every stack is
+        # the remit of TASK-HMIG-BDDWIRE, not this contract fix.
+        result = plugin.run([], task_id, worktree_path)
 
         if result is None:
             logger.debug(
@@ -339,7 +462,7 @@ def _run_factory_bdd(
             return None
 
         # Map BDDRunResult → bundle.bdd shape.
-        return _map_bdd_run_result_to_bundle(result)
+        return map_bdd_run_result(result)
 
     except Exception as exc:  # noqa: BLE001 — BDD failures must not break evidence gathering
         logger.warning(
@@ -2702,7 +2825,9 @@ class CoachValidator:
             # Factory is available but Player didn't produce results.
             # Attempt independent discovery via the factory plugin.
             stack_profile = _detect_stack_profile(self.worktree_path)
-            factory_result = _run_factory_bdd(self.worktree_path, stack_profile)
+            factory_result = _run_factory_bdd(
+                self.worktree_path, stack_profile, task_id
+            )
             if factory_result is not None:
                 bdd_dict = factory_result
                 logger.info(

@@ -7976,6 +7976,15 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         not importable), this returns ``None`` and behaviour is identical to
         before BDD wiring existed. Errors during execution are swallowed and
         logged — BDD failures must never break task-work result writing.
+
+        Demotion (TASK-BDDW-001 / TASK-FIX-BDDFW01): this legacy
+        ``bdd_runner.py`` path is the documented **fallback** oracle. The
+        primary oracle is the guardkitfactory plugin-discovery bridge in
+        ``coach_validator._run_factory_bdd`` (the multi-stack
+        ``BDDPlugin``/``BDDRunResult`` subsystem). The Coach prefers
+        Player-reported ``bdd_results`` (produced via this path) when present,
+        and only falls back to independent factory discovery when they are
+        absent — so this remains a demoted, pytest-bdd-only fallback.
         """
         try:
             from guardkit.orchestrator.quality_gates.bdd_runner import (

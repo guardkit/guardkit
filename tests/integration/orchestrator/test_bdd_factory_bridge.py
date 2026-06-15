@@ -24,45 +24,47 @@ import pytest
 
 
 # ---------------------------------------------------------------------------
-# Minimal BDDRunResult stub for testing when guardkitfactory is not installed
+# Minimal fakes mirroring the REAL guardkitfactory contract
+# (guardkitfactory/src/guardkitfactory/bdd/plugin.py). TASK-FIX-BDDFW01
+# realigned these from the abandoned BDDRunResult shape
+# (.failures/.pending/.feature_files + one-arg discover/run) so this sibling
+# test and test_coach_validator_bdd_factory_wiring.py share ONE contract.
 # ---------------------------------------------------------------------------
-
-@dataclass
-class _FakeFailureDetail:
-    """Minimal failure detail matching the factory's FailureDetail shape."""
-    scenario_name: str = ""
-    failing_step: str = ""
-    reason: str = ""
-    feature_file: str = ""
-
-
-@dataclass
-class _FakePendingDetail:
-    """Minimal pending detail matching the factory's PendingDetail shape."""
-    scenario_name: str = ""
-    pending_step: str = ""
-    feature_file: str = ""
 
 
 @dataclass
 class _FakeBDDRunResult:
-    """Minimal BDDRunResult matching the factory's contract."""
+    """Minimal BDDRunResult mirroring the real guardkitfactory contract."""
     scenarios_attempted: int = 0
     scenarios_passed: int = 0
     scenarios_failed: int = 0
-    scenarios_pending: int = 0
-    failures: List[Any] = field(default_factory=list)
-    pending: List[Any] = field(default_factory=list)
-    feature_files: List[str] = field(default_factory=list)
+    scenarios_skipped: int = 0
+    scenarios_errored: int = 0
+    duration_seconds: float = 0.0
+    raw_report_path: Optional[Path] = None
+    discoveries: List[Dict[str, Any]] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
 
 
 class _FakePlugin:
-    """Minimal plugin matching the factory's BDDPlugin ABC."""
+    """Minimal plugin matching the factory's BDDPlugin lifecycle."""
+
+    name = "fake-bdd"
 
     def __init__(self, result: _FakeBDDRunResult):
         self._result = result
 
-    def run(self, worktree_path: Path) -> Optional[_FakeBDDRunResult]:
+    def preflight(self, task_id: str, worktree: Path) -> bool:
+        return True
+
+    def run(
+        self,
+        scenarios: List[Any],
+        task_id: str,
+        worktree: Path,
+        *,
+        timeout_seconds: int = 600,
+    ) -> Optional[_FakeBDDRunResult]:
         return self._result
 
 
@@ -74,8 +76,8 @@ class _FakeStackProfile:
 
 
 def _make_fake_discover(result: _FakeBDDRunResult):
-    """Create a fake discover() function that returns a plugin."""
-    def discover(stack_profile: str):
+    """Create a fake discover() matching the real 2-arg ``(stack, worktree)``."""
+    def discover(stack: Any, worktree: Path):
         return _FakePlugin(result)
     return discover
 
@@ -102,9 +104,6 @@ def test_bdd_run_result_maps_attempted_count():
         scenarios_attempted=0,
         scenarios_passed=0,
         scenarios_failed=0,
-        failures=[],
-        pending=[],
-        feature_files=[],
     )
     mapped = _map_bdd_run_result_to_bundle(result)
 
@@ -119,25 +118,22 @@ def test_bdd_run_result_maps_attempted_count():
 @pytest.mark.seam
 @pytest.mark.integration_contract("BDDRunResult")
 def test_bdd_run_result_maps_nonzero_attempted():
-    """A BDDRunResult with scenarios_attempted > 0 maps correctly."""
+    """A BDDRunResult with scenarios_attempted > 0 maps correctly.
+
+    feature_files derive from ``discoveries[*]["feature_file"]`` and failures
+    derive from the ``errors`` string list (real contract).
+    """
     from guardkit.orchestrator.quality_gates.coach_validator import (
         _map_bdd_run_result_to_bundle,
     )
 
-    failures = [_FakeFailureDetail(
-        scenario_name="Login with valid credentials",
-        failing_step="When I submit the form",
-        reason="AssertionError: expected 200, got 401",
-        feature_file="features/auth/login.feature",
-    )]
     result = _FakeBDDRunResult(
         scenarios_attempted=3,
         scenarios_passed=2,
         scenarios_failed=1,
-        scenarios_pending=0,
-        failures=failures,
-        pending=[],
-        feature_files=["features/auth/login.feature"],
+        scenarios_skipped=0,
+        discoveries=[{"feature_file": "features/auth/login.feature"}],
+        errors=["AssertionError: expected 200, got 401"],
     )
     mapped = _map_bdd_run_result_to_bundle(result)
 
@@ -146,38 +142,31 @@ def test_bdd_run_result_maps_nonzero_attempted():
     assert mapped["scenarios_failed"] == 1
     assert mapped["scenarios_pending"] == 0
     assert len(mapped["failures"]) == 1
-    assert mapped["failures"][0]["scenario_name"] == "Login with valid credentials"
+    assert mapped["failures"][0]["error"] == "AssertionError: expected 200, got 401"
     assert mapped["feature_files"] == ["features/auth/login.feature"]
 
 
 @pytest.mark.seam
 @pytest.mark.integration_contract("BDDRunResult")
-def test_bdd_run_result_maps_pending_details():
-    """Pending details are correctly mapped."""
+def test_bdd_run_result_maps_skipped_to_pending_count():
+    """``scenarios_skipped`` maps to the ``scenarios_pending`` COUNT; the
+    per-scenario ``pending`` list is always empty (the real BDDRunResult
+    carries no pending-detail list).
+    """
     from guardkit.orchestrator.quality_gates.coach_validator import (
         _map_bdd_run_result_to_bundle,
     )
 
-    pending = [_FakePendingDetail(
-        scenario_name="Admin dashboard loads",
-        pending_step="Then I see the admin panel",
-        feature_file="features/admin/dashboard.feature",
-    )]
     result = _FakeBDDRunResult(
         scenarios_attempted=1,
         scenarios_passed=0,
         scenarios_failed=0,
-        scenarios_pending=1,
-        failures=[],
-        pending=pending,
-        feature_files=["features/admin/dashboard.feature"],
+        scenarios_skipped=1,
     )
     mapped = _map_bdd_run_result_to_bundle(result)
 
     assert mapped["scenarios_pending"] == 1
-    assert len(mapped["pending"]) == 1
-    assert mapped["pending"][0]["scenario_name"] == "Admin dashboard loads"
-    assert mapped["pending"][0]["pending_step"] == "Then I see the admin panel"
+    assert mapped["pending"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +207,7 @@ def test_coach_validator_uses_factory_when_available(monkeypatch: pytest.Fixture
     with tempfile.TemporaryDirectory() as tmpdir:
         worktree = Path(tmpdir)
 
-        factory_bdd = _run_factory_bdd(worktree, "python")
+        factory_bdd = _run_factory_bdd(worktree, "python", "TASK-TEST-001")
 
         assert factory_bdd is not None
         assert factory_bdd["scenarios_attempted"] == 2

@@ -1,10 +1,14 @@
 ---
 id: TASK-FIX-BDDFW01
 title: Fix Coach BDD-factory bridge — mapper/discover/stack-profile target a stale BDDRunResult contract (silently dead on the live path)
-status: backlog
+status: completed
 task_type: fix
 created: 2026-06-15T00:00:00Z
-updated: 2026-06-15T00:00:00Z
+updated: 2026-06-15T12:00:00Z
+completed: 2026-06-15T12:00:00Z
+completed_location: tasks/completed/TASK-FIX-BDDFW01/
+previous_state: in_review
+state_transition_reason: "task-complete — all acceptance criteria met, quality gates passed, 0 collection errors"
 priority: high
 complexity: 5
 related: [TASK-BDDW-001, TASK-BDDW-002, TASK-HMIG-BDDWIRE, TASK-REV-STKB, TASK-INFRA-XREPOCONTRACT]
@@ -118,16 +122,16 @@ paper over with a rename.
 
 ## Acceptance Criteria
 
-- [ ] `python -m pytest tests/integration/orchestrator/test_coach_validator_bdd_factory_wiring.py -o addopts= -q` collects and exits 0 (all tests pass).
-- [ ] The test's two stale imports are reconciled; no symbol it imports is absent from `coach_validator.py`.
-- [ ] `_run_factory_bdd` calls `discover(stack: StackProfile, worktree: Path)` correctly — no `TypeError` on the live path.
-- [ ] `_detect_stack_profile` returns a `discover`-compatible value; `test_detect_stack_profile_returns_python` (`.language`/`.test_framework`) passes against real production.
-- [ ] `_map_bdd_run_result_to_bundle` reads only real `BDDRunResult` fields; calling it on a real instance does NOT raise `AttributeError`.
-- [ ] Mapper emits `scenarios_errored`, `duration_seconds`, `raw_report_path`, `feature_files` (from `discoveries`), `failures[*]['error']` (from `errors`), `scenarios_pending` (from `scenarios_skipped`); `scenarios_attempted` preserved verbatim.
-- [ ] The stale mapping comment (`coach_validator.py:113-125`) documents the real field names.
-- [ ] GUARD: `python -m pytest tests/integration/orchestrator/test_bdd_factory_bridge.py -o addopts= -q` -> 8 passed (realign its `_FakeBDDRunResult`/`_check_bdd_results` if needed so both tests share one contract).
-- [ ] `python -m pytest tests/ --co -q -o addopts=` reports 0 collection errors (currently 1).
-- [ ] No new broad-except masking; unsupported stack surfaces as ABSENT SIGNAL, never a silent pass (`.claude/rules/absence-of-failure-is-not-success.md`).
+- [x] `python -m pytest tests/integration/orchestrator/test_coach_validator_bdd_factory_wiring.py -o addopts= -q` collects and exits 0 (all tests pass). → **18 passed**.
+- [x] The test's two stale imports are reconciled; no symbol it imports is absent from `coach_validator.py`. → `map_bdd_run_result` is now the public production name; the test's `_GUARDKITFACTORY_AVAILABLE` import was changed to the shipped `_FACTORY_AVAILABLE`.
+- [x] `_run_factory_bdd` calls `discover(stack: StackProfile, worktree: Path)` correctly — no `TypeError` on the live path. → **also fixed a 4th mismatch the diagnosis missed: `plugin.run(worktree_path)` → real `run(scenarios, task_id, worktree)`** (see completion note).
+- [x] `_detect_stack_profile` returns a `discover`-compatible value; `test_detect_stack_profile_returns_python` (`.language`/`.test_framework`) passes against real production. → returns a real `StackProfile` via settings.json template OR a filesystem-marker fallback (the test worktree has only `pyproject.toml`).
+- [x] `_map_bdd_run_result_to_bundle` reads only real `BDDRunResult` fields; calling it on a real instance does NOT raise `AttributeError`.
+- [x] Mapper emits `scenarios_errored`, `duration_seconds`, `raw_report_path`, `feature_files` (from `discoveries`), `failures[*]['error']` (from `errors`), `scenarios_pending` (from `scenarios_skipped`); `scenarios_attempted` preserved verbatim.
+- [x] The stale mapping comment (`coach_validator.py:113-125`) documents the real field names.
+- [x] GUARD: `python -m pytest tests/integration/orchestrator/test_bdd_factory_bridge.py -o addopts= -q` -> 8 passed (realigned its `_FakeBDDRunResult`/`_FakePlugin`/`_make_fake_discover` to the real contract so both tests share one shape). → **8 passed**.
+- [x] `python -m pytest tests/ --co -q -o addopts=` reports 0 collection errors (was 1). → **16158 collected, 0 errors**.
+- [x] No new broad-except masking; unsupported stack surfaces as ABSENT SIGNAL, never a silent pass (`.claude/rules/absence-of-failure-is-not-success.md`). → the pre-existing `except` is retained (warns + returns `None`); a failed `preflight`, an unknown stack, a `None` discover, and a missing `task_id` all return `None` (absent signal) with a log line.
 
 ## Evidence
 
@@ -192,3 +196,64 @@ BDD-bridge tests (`test_bdd_factory_bridge.py`,
 `tests/orchestrator/test_qawe_004_spec_gap.py`) use correct names and
 collect/pass. No sibling stale references exist beyond the two symbol-name
 imports inside the one failing file.
+
+## Completion Note (2026-06-15)
+
+Production fix landed in `guardkit/orchestrator/quality_gates/coach_validator.py`
++ `guardkit/orchestrator/agent_invoker.py`; tests reconciled in both
+`test_coach_validator_bdd_factory_wiring.py` and `test_bdd_factory_bridge.py`.
+
+**A 4th contract mismatch the diagnosis missed.** Verifying the real
+`guardkitfactory` contract by hand surfaced one mismatch beyond the three filed:
+`coach_validator.py:331` called `plugin.run(worktree_path)`, but the real
+`BDDPlugin.run` signature is `run(scenarios, task_id, worktree, *, timeout_seconds=600)`
+(`guardkitfactory/src/guardkitfactory/bdd/plugin.py:119-127`, confirmed in
+`plugins/pytest_bdd_plugin.py:158`). Fixing only `discover` (the filed item 2)
+would have relocated the `TypeError` to `plugin.run` — exactly the "rename just
+moves the crash" failure this task warns against. So `_run_factory_bdd` now
+threads `task_id` (in scope at the `gather_evidence` call site,
+`coach_validator.py:2704`) and drives the real lifecycle:
+`discover(stack, worktree)` → `preflight(task_id, worktree)` →
+`run([], task_id, worktree)` → `map_bdd_run_result`.
+
+**Blast-radius decision (preflight gate).** Fixing the contract *activates* a
+previously-dead code path. To keep the activation minimal, `_run_factory_bdd`
+calls `preflight` first: the now-live factory oracle only runs when per-task BDD
+glue actually exists in the worktree (per `bdd-per-task-glue.md`). For every
+non-BDD task — the overwhelming majority — preflight returns `False`, the bridge
+returns `None` (ABSENT SIGNAL), and Coach behaviour is unchanged from before.
+Scenario pre-discovery for non-pytest stacks is deliberately left to
+**TASK-HMIG-BDDWIRE** (pytest-bdd re-discovers from `features/` internally,
+Contract C4, so `scenarios=[]` is correct for the python path).
+
+**`_detect_stack_profile` filesystem fallback.** `detect_stack_template` only
+reads `.claude/settings.json`; the wiring test's worktree has only a
+`pyproject.toml`. Added `_detect_profile_key`: settings.json template first,
+then filesystem markers (`pyproject.toml`/`requirements.txt`→python,
+`*.csproj`/`*.sln`→dotnet, `package.json`→javascript), mapped to a real
+`StackProfile` via `_PROFILE_KEY_TO_STACK`. `_STACK_PROFILE_MAP` is unchanged
+(the sibling `test_stack_profile_mapping` pins its values).
+
+**Symbol reconciliation.** `map_bdd_run_result` is the canonical public name;
+`_map_bdd_run_result_to_bundle` is retained as a back-compat alias to the *same*
+corrected function so producer/consumer cannot drift (the sibling test imports
+the private name; the wiring test imports the public name).
+
+**AC-5 docstring.** `AgentInvoker._run_bdd_oracle` docstring now documents the
+legacy `bdd_runner.py` path as the demoted fallback (satisfies
+`test_agent_invoker_bdd_oracle_has_demotion_comment`, which had never run before
+because the file failed at collection).
+
+**Recurrence prevention (still recommended, NOT done here — separate task).**
+An executable cross-repo seam test asserting `discover`/`run` arity + the
+`BDDRunResult` field reads against the *real installed* `guardkitfactory` (the
+analogue of `tests/orchestrator/harness/test_xrepo_contract_seam.py`,
+TASK-INFRA-XREPOCONTRACT) would turn a future `BDDRunResult` rename into a red
+CI build instead of a silently-dead branch. Worth filing alongside the
+"CI gap to investigate" note above (why `740e1585` was not blocked by
+`tests.yml`).
+
+**Verification.** Wiring test 18 passed; sibling 8 passed; `pytest tests/ --co`
+16158 collected / 0 errors (was 1); regression sweep across
+coach_validator/bdd/spec_gap/qawe/factory_bridge/stack_profile = 666 passed, 0
+failed; spec-gap module 30 passed; import smoke clean.
