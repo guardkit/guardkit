@@ -408,6 +408,171 @@ def test_clean_state_resets_feature_state(temp_repo, sample_feature, mock_worktr
 
 
 # ============================================================================
+# Test: Fresh Start — Terminal Feature (TASK-FIX-FRESHCLEAN01)
+# ============================================================================
+
+
+def _drive_feature_to_disk(repo_root, *, status, task_status, worktree_dir=None):
+    """Helper: load FEAT-TEST, force it into a given state, persist it.
+
+    Returns the in-memory feature after mutation (the on-disk copy matches).
+    """
+    feature = FeatureLoader.load_feature("FEAT-TEST", repo_root)
+    feature.status = status
+    feature.execution.started_at = "2026-06-13T11:02:27Z"
+    if worktree_dir is not None:
+        worktree_dir.mkdir(parents=True, exist_ok=True)
+        feature.execution.worktree_path = str(worktree_dir)
+    for task in feature.tasks:
+        task.status = task_status
+    FeatureLoader.save_feature(feature, repo_root)
+    return feature
+
+
+def test_fresh_cleans_terminal_feature_without_branch_error(
+    temp_repo, mock_worktree, mock_worktree_manager
+):
+    """--fresh on a terminal (completed/merged) feature cleans the stale
+    worktree + branch and resets tasks, instead of failing with
+    'branch already exists' (TASK-FIX-FRESHCLEAN01, AC-001/002/006)."""
+    wt_dir = temp_repo / ".guardkit" / "worktrees" / "FEAT-TEST"
+    feature = _drive_feature_to_disk(
+        temp_repo, status="completed", task_status="completed", worktree_dir=wt_dir
+    )
+
+    # Sanity: the feature is terminal, so the pre-fix is_incomplete guard
+    # would have skipped cleanup entirely.
+    assert FeatureLoader.is_incomplete(feature) is False
+
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        fresh=True,
+        skip_validation=True,
+    )
+
+    feature_out, worktree = orchestrator._setup_phase("FEAT-TEST", "main")
+
+    # The stale worktree+branch were force-cleaned — the guard is gone.
+    mock_worktree_manager.cleanup.assert_called_once()
+    assert mock_worktree_manager.cleanup.call_args[1]["force"] is True
+    # A fresh worktree was created (no 'branch already exists' failure).
+    mock_worktree_manager.create.assert_called_once()
+    assert worktree == mock_worktree
+    # Tasks reset to pending → Wave 1 re-runs (not skipped as completed).
+    assert all(t.status == "pending" for t in feature_out.tasks)
+    assert feature_out.status == "in_progress"
+
+
+def test_fresh_no_existing_state_still_creates_worktree(
+    temp_repo, mock_worktree, mock_worktree_manager
+):
+    """--fresh on a feature with no recorded worktree behaves as before:
+    no cleanup call, fresh worktree created, no error (AC-004)."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        fresh=True,
+        skip_validation=True,
+    )
+
+    # temp_repo's FEAT-TEST is 'planned' with execution.worktree_path unset.
+    feature_out, worktree = orchestrator._setup_phase("FEAT-TEST", "main")
+
+    mock_worktree_manager.cleanup.assert_not_called()
+    mock_worktree_manager.create.assert_called_once()
+    assert worktree == mock_worktree
+
+
+def test_fresh_incomplete_feature_still_cleans(
+    temp_repo, mock_worktree, mock_worktree_manager
+):
+    """--fresh on an incomplete feature still cleans — behaviour unchanged
+    from before the fix (AC-003)."""
+    wt_dir = temp_repo / ".guardkit" / "worktrees" / "FEAT-TEST-INC"
+    feature = _drive_feature_to_disk(
+        temp_repo, status="in_progress", task_status="pending", worktree_dir=wt_dir
+    )
+    assert FeatureLoader.is_incomplete(feature) is True
+
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        fresh=True,
+        skip_validation=True,
+    )
+
+    _feature_out, worktree = orchestrator._setup_phase("FEAT-TEST", "main")
+
+    mock_worktree_manager.cleanup.assert_called_once()
+    assert worktree == mock_worktree
+
+
+def test_fresh_warns_on_unmerged_commits(temp_repo, mock_worktree_manager):
+    """_warn_unmerged_before_fresh emits a WARNING naming the unmerged count
+    when the autobuild branch is ahead of base (AC-005)."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    def fake_run(cmd, **kwargs):
+        if "rev-parse" in cmd:
+            return MagicMock(returncode=0, stdout="")
+        if "rev-list" in cmd:
+            return MagicMock(returncode=0, stdout="3\n")
+        return MagicMock(returncode=1, stdout="")
+
+    with patch("subprocess.run", side_effect=fake_run), patch(
+        "guardkit.orchestrator.feature_orchestrator.console"
+    ) as mock_console:
+        orchestrator._warn_unmerged_before_fresh("FEAT-TEST", "main")
+
+    printed = " ".join(
+        str(c.args[0]) for c in mock_console.print.call_args_list if c.args
+    )
+    assert "3" in printed
+    assert "unmerged" in printed.lower()
+    assert "autobuild/FEAT-TEST" in printed
+
+
+def test_fresh_no_warning_when_autobuild_branch_absent(
+    temp_repo, mock_worktree_manager
+):
+    """No unmerged-work warning when the autobuild branch does not exist
+    (AC-005, negative case)."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    # rev-parse --verify fails for a non-existent branch.
+    with patch("subprocess.run", return_value=MagicMock(returncode=1, stdout="")), \
+            patch(
+                "guardkit.orchestrator.feature_orchestrator.console"
+            ) as mock_console:
+        orchestrator._warn_unmerged_before_fresh("FEAT-TEST", "main")
+
+    printed = " ".join(
+        str(c.args[0]) for c in mock_console.print.call_args_list if c.args
+    )
+    assert "unmerged" not in printed.lower()
+
+
+def test_fresh_warn_helper_suppresses_git_errors(temp_repo, mock_worktree_manager):
+    """The warn helper is warning-only: a git failure must never raise, so it
+    can never abort the cleanup that follows it (AC-005 robustness)."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    with patch("subprocess.run", side_effect=OSError("git not found")):
+        # Must not raise.
+        orchestrator._warn_unmerged_before_fresh("FEAT-TEST", "main")
+
+
+# ============================================================================
 # Test: Task Execution Result Dataclass
 # ============================================================================
 

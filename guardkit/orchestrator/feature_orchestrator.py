@@ -991,10 +991,20 @@ class FeatureOrchestrator:
             )
 
         # Handle fresh start
+        #
+        # TASK-FIX-FRESHCLEAN01: --fresh is unconditional. The previous
+        # ``is_incomplete`` guard skipped cleanup for terminal
+        # (completed / merged / planned) features, so a stale worktree and
+        # ``autobuild/<id>`` branch survived and ``_create_new_worktree``
+        # failed with "branch already exists" — while the still-``completed``
+        # tasks would have been skipped as already-done even if it hadn't.
+        # ``_clean_state`` is idempotent (it no-ops when there is nothing to
+        # clean), so running it for every ``--fresh`` is safe and matches the
+        # flag's contract ("Start from scratch, ignoring saved state").
         if self.fresh:
-            if FeatureLoader.is_incomplete(feature):
-                console.print("[yellow]⚠[/yellow] Clearing previous incomplete state")
-                self._clean_state(feature)
+            self._warn_unmerged_before_fresh(feature_id, base_branch)
+            console.print("[yellow]⚠[/yellow] Clearing previous state (--fresh)")
+            self._clean_state(feature)
             return self._create_new_worktree(feature, feature_id, base_branch)
 
         # Check for incomplete state
@@ -1828,6 +1838,67 @@ The detailed specifications are in the task markdown file.
         except (EOFError, KeyboardInterrupt):
             console.print("\n[yellow]Cancelled[/yellow]")
             raise FeatureOrchestrationError("User cancelled resume prompt")
+
+    def _warn_unmerged_before_fresh(
+        self,
+        feature_id: str,
+        base_branch: str,
+    ) -> None:
+        """
+        Warn when ``--fresh`` is about to discard unmerged autobuild work.
+
+        ``--fresh`` is destructive by design ("ignoring saved state"), but the
+        never-auto-merge spirit — humans own merges — means the operator should
+        be told what is being thrown away. If the ``autobuild/<feature_id>``
+        branch holds commits not reachable from ``base_branch``, emit a WARNING
+        naming the count before ``_clean_state`` deletes the branch.
+
+        Read-only and warning-only: every git call is wrapped so a failure here
+        can never abort the cleanup that follows (mirrors the pth-leak scan
+        guard in ``_clean_state``).
+
+        Parameters
+        ----------
+        feature_id : str
+            Feature identifier, used to derive the ``autobuild/<id>`` branch.
+        base_branch : str
+            Branch the autobuild commits would need to be merged into.
+        """
+        import subprocess
+
+        branch_name = f"autobuild/{feature_id}"
+        try:
+            # Only warn if the branch actually exists.
+            verify = subprocess.run(
+                ["git", "rev-parse", "--verify", "--quiet",
+                 f"refs/heads/{branch_name}"],
+                cwd=self.repo_root,
+                capture_output=True,
+                text=True,
+            )
+            if verify.returncode != 0:
+                return
+
+            # Count commits on the branch not reachable from base_branch.
+            result = subprocess.run(
+                ["git", "rev-list", "--count", f"{base_branch}..{branch_name}"],
+                cwd=self.repo_root,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                return
+
+            unmerged = int((result.stdout or "").strip() or "0")
+            if unmerged > 0:
+                console.print(
+                    f"[yellow]⚠[/yellow] --fresh will discard {unmerged} "
+                    f"unmerged commit(s) on branch '{branch_name}' not in "
+                    f"'{base_branch}'. Merge or cherry-pick them first if you "
+                    f"need them."
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("unmerged-work warn hook failed, suppressing: %s", exc)
 
     def _clean_state(self, feature: Feature) -> None:
         """
