@@ -4,13 +4,48 @@ title: Wire the guardkitfactory BDD plugin subsystem into the autobuild Coach ev
 status: backlog
 task_type: feature
 created: 2026-06-09T00:00:00Z
-updated: 2026-06-09T00:00:00Z
+updated: 2026-06-15T00:00:00Z
 priority: medium
 complexity: 6
 parent_task: TASK-HMIG-007
-related: [TASK-HMIG-007, TASK-HMIG-011, TASK-ARCH-COACHSPLIT]
+blocked_by: [TASK-FIX-BDDFW01]
+related: [TASK-HMIG-007, TASK-HMIG-011, TASK-ARCH-COACHSPLIT, TASK-FIX-BDDFW01, TASK-BDDW-001, TASK-BDDW-002]
 implementation_mode: task-work
 ---
+
+> [!IMPORTANT] Reconciliation note — added 2026-06-15 (triage, do not delete original content below)
+>
+> **Disposition: RESCOPE** (not SUPERSEDE_CLOSE, not KEEP_AS_IS). This task was **decomposed**, not abandoned: subtasks **TASK-BDDW-001** and **TASK-BDDW-002** (`parent_task: TASK-HMIG-BDDWIRE`, `feature_id: FEAT-E2CB`, both `completed` 2026-06-12, in `tasks/completed/bddwire/`) split these 6 ACs by wave — BDDW-001 took AC-1/AC-3/AC-4/AC-5/AC-6 for the Python stack; BDDW-002 took AC-2 + unsupported-stack absent-signal.
+>
+> **This task's core premise is now STALE.** The premise ("`BDDRunResult` returns **zero hits**" / nothing in the orchestrator consumes `guardkitfactory.bdd`) is **factually false**: `guardkit/orchestrator/quality_gates/coach_validator.py:235` imports `BDDRunResult, discover` and `:239` imports `StackProfile`, and `gather_evidence` (factory branch ~`:2701-2718`) calls `_is_factory_available -> _detect_stack_profile -> _run_factory_bdd -> discover(...)/plugin.run(...)`. **The premise's INTENT, however, is still true** — factory verification is unreachable from a real run — for a subtler reason: the bridge is **consumed-but-dead**.
+>
+> **What BDDW-001/002 actually delivered (verified against source 2026-06-15):**
+> - **AC-1: partial / superficial.** The wiring exists (`_detect_stack_profile` / `_run_factory_bdd` / `_map_bdd_run_result_to_bundle`) but is **silently dead** on the live path — it targets a stale guardkitfactory contract, raises, and is swallowed by `except Exception ... return None` (`coach_validator.py:344-351`, noqa BLE001), degrading to the legacy oracle.
+> - **AC-3: partial.** Intent in code (zero-cardinality preserved) but unverified live because the branch never executes.
+> - **AC-2 / AC-4 / AC-5 / AC-6: not delivered** (see residual scope below).
+>
+> **Why the live path is dead (three contract mismatches vs the REAL installed `guardkitfactory`):**
+> 1. `discover` arity — production calls `discover(stack_profile)` 1-arg (`coach_validator.py:319`); real signature is `discover(stack: StackProfile, worktree: Path)` 2-arg (`guardkitfactory/.../bdd/loader.py:52`) → `TypeError`.
+> 2. `_detect_stack_profile` returns `Optional[str]` (`coach_validator.py:144`), not the `StackProfile` frozen dataclass `discover` requires (`bdd/plugin.py:23-29`).
+> 3. `_map_bdd_run_result_to_bundle` reads `.failures/.pending/.scenarios_pending/.feature_files` (`coach_validator.py:190-191,223,226`) — fields that **do not exist** on the real `BDDRunResult` (real: `scenarios_attempted/passed/failed/skipped/errored`, `duration_seconds`, `raw_report_path`, `discoveries`, `errors` — `bdd/plugin.py:43-62`) → `AttributeError`.
+>
+> **CI hazard (orthogonal but blocking AC-6):** the one real-contract test `tests/integration/orchestrator/test_coach_validator_bdd_factory_wiring.py` is **dead-on-arrival** — `pytest --co` exits with `ImportError: cannot import name 'map_bdd_run_result'` (production exports only the private `_map_bdd_run_result_to_bundle`). It is **not** in `tests/quarantine.txt`, so it is an unmasked live collection error on `main` (introduced by direct commit `740e1585` "tidy up"). The green sibling `test_bdd_factory_bridge.py` passes only via a local `_FakeBDDRunResult` mirroring the **stale** shape — illusory coverage.
+>
+> **What TASK-FIX-BDDFW01 covers** (`tasks/backlog/TASK-FIX-BDDFW01-coach-factory-bridge-stale-bddrunresult-contract.md`, priority **high**): corrects all three contract mismatches above against the real `guardkitfactory`, and reconciles the failing wiring test. BDDFW01 itself flags this task's premise as stale and asks the picker-up to reconcile — this note is that reconciliation.
+>
+> **Recommended action:**
+> 1. **Land TASK-FIX-BDDFW01 FIRST** to make the bridge live + green and fix/delete the dead-on-arrival test.
+> 2. **Then RESCOPE this task** to its residual, genuinely-undelivered value (below), rewriting the stale premise and the AC-1/AC-6 verification to depend on BDDFW01's corrected `discover(StackProfile, worktree)` / real-`BDDRunResult` contract.
+> 3. Set `status: backlog` with `blocked_by: [TASK-FIX-BDDFW01]`. **Do NOT close as superseded** on current evidence — the per-task-glue and legacy-removal value below has not shipped. (Folding the residual directly into a BDDFW01 follow-up and closing this as superseded is an acceptable maintainer alternative, but only if that residual is explicitly carried over.)
+>
+> **Residual scope (the only genuinely-remaining work):**
+> - **AC-4 — per-task glue:** thread `GUARDKIT_BDD_TASK_ID` into the factory `plugin.run(...)` (today `coach_validator.py:331` passes only `worktree_path`, no task-id env; the `.claude/rules/bdd-per-task-glue.md` contract is entirely unaddressed).
+> - **AC-5 — legacy oracle:** remove or demote-with-a-**documented switch** the still-present `guardkit/orchestrator/quality_gates/bdd_runner.py` (27 KB, dated May 10) so the factory bridge is no longer a **silent** fallback and two oracles cannot disagree.
+> - **AC-2 — multi-stack reachability:** make `.NET -> ReqnrollPlugin` and `JS -> CucumberJSPlugin` **actually execute** (not dead-code routing) on top of the now-correct 2-arg `discover` call.
+> - **AC-1/AC-3/AC-6 (verification only):** re-base the end-to-end / rejection-gate verification on BDDFW01's fixed contract; convert the illusory `_FakeBDDRunResult`-shaped coverage to the real `BDDRunResult` shape.
+>
+> _Refs: `coach_validator.py:235,239,144,190-191,223,319,331,344-351,2701-2718`; `guardkitfactory/src/guardkitfactory/bdd/loader.py:52`, `bdd/plugin.py:23-29,43-62`; `tasks/completed/bddwire/TASK-BDDW-001-*.md:5-7`, `TASK-BDDW-002-*.md:5-6`; `tasks/backlog/TASK-FIX-BDDFW01-*.md`._
+
 
 # Task: Wire the factory BDD plugin subsystem into the Coach
 
