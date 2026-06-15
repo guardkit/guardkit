@@ -1,12 +1,15 @@
 ---
 id: TASK-FIX-CIGUARD01
 title: Restore main to green and add a direct-to-main CI guard (fix dead BDD-wiring import + enforce the Tests gate)
-status: in_review
+status: completed
 task_type: fix
 created: 2026-06-15T00:00:00Z
 updated: 2026-06-15T00:00:00Z
-previous_state: backlog
-state_transition_reason: "Part A verified done (BDDFW01); Part B (B1 pre-push guard) implemented + demonstrated; AC-1..AC-5 met. AC-6 (green Tests on origin/main) is the sole open item, gated on a push decision (local main is 37 commits ahead of origin)."
+completed: 2026-06-15T00:00:00Z
+completed_location: tasks/completed/TASK-FIX-CIGUARD01/
+previous_state: in_review
+state_transition_reason: "Owner-accepted completion. AC-1..AC-5 met and verified; Part B (B1 pre-push guard) implemented, demonstrated, committed (3ebf7371). AC-6 (green Tests on origin/main) DEFERRED — not satisfied: owner chose commit-locally-no-push, so the BDDFW01 re-green is not yet on origin. AC-6 auto-confirms on the next push to origin/main; tracked in the Resolution note. NOT marked satisfied (avoids false-green per .claude/rules/absence-of-failure-is-not-success.md)."
+ac6_status: deferred_pending_push
 priority: high
 complexity: 4
 related: [TASK-INFRA-CIGREEN, TASK-FIX-BDDFW01, TASK-HMIG-BDDWIRE, TASK-INFRA-CIGREEN-BURN]
@@ -91,6 +94,18 @@ Document the chosen enforcement posture next to TASK-INFRA-CIGREEN's notes so th
 - **B2 (branch protection):** **not enabled** — it is the owner's policy call. With `enforce_admins=false` the owner can still bypass via direct push (so it adds little over B1 for a solo workflow); with `enforce_admins=true` direct pushes to main are blocked entirely, forcing a PR flow. Left to the owner to decide; B1 satisfies "at least one Part-B guard".
 - **B3 (loud red):** not implemented (B1 supersedes the minimum bar).
 - **AC-6:** the only open item. It requires the BDDFW01 re-green to be on origin/main. A `workflow_dispatch` would also still run red until origin/main carries `0e4b7912`, because the workflow checks out the pushed ref. So AC-6 is gated on pushing the local commits to origin (a separate, owner-authorised action — local `main` is 37 commits ahead). Once pushed, confirm with `gh run list --workflow=tests.yml --branch main -L 1` → `success` on both `py3.11` and `py3.12`.
+
+### Completion (2026-06-15) — owner-accepted, AC-6 deferred
+
+Marked **completed** at the owner's explicit request (`/task-complete … then commit`)
+after choosing commit-locally-no-push. **AC-6 is NOT satisfied** — it is
+**deferred**: it will auto-confirm on the next push of local `main` to origin
+(the BDDFW01 re-green `0e4b7912` carries the fix; the `Tests` workflow runs on
+`push: [main]`). Deliberately not checked off, to avoid a false-green (this
+repo's `absence-of-failure-is-not-success` rule). If AC-6 ever needs to be
+*verified before* the next natural push, run `gh workflow run tests.yml --ref main`
+**after** pushing, then `gh run list --workflow=tests.yml --branch main -L 1`.
+The deliverable (B1 guard, `3ebf7371`) is complete and independently usable now.
 
 ## Evidence
 
