@@ -85,16 +85,25 @@ jobs:
         # install above already satisfies the import, so we skip that extra.
         run: python -m pip install -e ".[dev]"
 
-      - name: Run harness contract seam tests
-        # Scoped to the cross-repo harness-contract module by PATH (not a
-        # whole-tree `-m seam` sweep): the broader tests/ tree contains
-        # SDK-dependent modules that `import claude_agent_sdk` at collection
-        # time, which is not installed in this job (we install guardkit[dev] +
-        # the editable guardkitfactory, deliberately NOT the autobuild extra to
-        # avoid a PyPI guardkitfactory resolve). A whole-tree collection would
-        # abort on those unrelated import errors. The module's own
+      - name: Run cross-repo contract seam tests
+        # Scoped to the cross-repo contract modules by PATH (not a whole-tree
+        # `-m seam` sweep): the broader tests/ tree contains SDK-dependent
+        # modules that `import claude_agent_sdk` at collection time (e.g.
+        # tests/orchestrator/harness/test_sdk_harness.py), which is not
+        # installed in this job (we install guardkit[dev] + the editable
+        # guardkitfactory, deliberately NOT the autobuild extra to avoid a PyPI
+        # guardkitfactory resolve). A whole-tree (or whole-directory)
+        # collection would abort on those unrelated import errors, so each
+        # cross-repo seam module is listed explicitly. Each module's own
         # `@pytest.mark.seam` + `importorskip` still make it a clean no-op for
-        # any environment lacking the langchain/guardkitfactory stack.
+        # any environment lacking the guardkitfactory stack.
+        #
+        # Modules covered (the whole guardkit↔guardkitfactory seam):
+        #   * test_xrepo_contract_seam.py     — harness/backend contract
+        #     (TASK-INFRA-XREPOCONTRACT): construction + cancel/model/invoke.
+        #   * test_bdd_xrepo_contract_seam.py — guardkitfactory.bdd contract
+        #     (TASK-INFRA-BDDSEAM01): discover/run arity, BDDRunResult /
+        #     StackProfile field sets the Coach BDD bridge depends on.
         #
         # `-o addopts=""` clears the repo's default --cov flags (the seam job
         # gates the contract, not coverage). `--strict-markers` fails fast if
@@ -102,4 +111,5 @@ jobs:
         run: |
           python -m pytest \
             tests/orchestrator/harness/test_xrepo_contract_seam.py \
+            tests/orchestrator/harness/test_bdd_xrepo_contract_seam.py \
             -o addopts="" --strict-markers -v
