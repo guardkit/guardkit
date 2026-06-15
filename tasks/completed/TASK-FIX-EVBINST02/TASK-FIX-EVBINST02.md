@@ -1,12 +1,15 @@
 ---
 id: TASK-FIX-EVBINST02
 title: Extend the evidence-boundary filter to large_tool_results/ and .claude/task-plans/ (residual claim_audit noise)
-status: in_review
+status: completed
 task_type: fix
 created: 2026-06-14T16:25:00Z
-updated: 2026-06-14T19:30:00Z
-previous_state: backlog
-state_transition_reason: "task-work complete — all quality gates passed"
+updated: 2026-06-15T00:00:00Z
+completed: 2026-06-15T00:00:00Z
+previous_state: in_review
+state_transition_reason: "task-complete — all acceptance criteria met, quality gates passed"
+completed_location: tasks/completed/TASK-FIX-EVBINST02/
+commit: bfe4e0fa
 priority: low
 complexity: 2
 related: [TASK-FIX-EVBINST01, TASK-FIX-PCN, FEAT-9DDE]
