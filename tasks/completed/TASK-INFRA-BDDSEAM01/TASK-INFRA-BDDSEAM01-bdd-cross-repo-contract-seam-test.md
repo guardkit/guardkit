@@ -1,10 +1,14 @@
 ---
 id: TASK-INFRA-BDDSEAM01
 title: Add a cross-repo BDD-contract seam test (guardkit ↔ guardkitfactory) to the merge-gating seam-tests.yml
-status: backlog
+status: completed
 task_type: infrastructure
 created: 2026-06-15T00:00:00Z
-updated: 2026-06-15T00:00:00Z
+updated: 2026-06-15T12:30:00Z
+completed: 2026-06-15T12:30:00Z
+completed_location: tasks/completed/TASK-INFRA-BDDSEAM01/
+previous_state: in_review
+state_transition_reason: "Seam test implemented + wired into seam-tests.yml; all ACs verified (task-work)"
 priority: medium
 complexity: 3
 related: [TASK-FIX-BDDFW01, TASK-INFRA-XREPOCONTRACT, TASK-HMIG-BDDWIRE, TASK-BDDW-001, TASK-HMIG-007]
@@ -63,17 +67,60 @@ Wire it into the merge-gating `seam-tests.yml` job (it likely already collects
 
 ## Acceptance Criteria
 
-- [ ] A `@pytest.mark.seam` test module asserts `discover`/`run` arity and the
+- [x] A `@pytest.mark.seam` test module asserts `discover`/`run` arity and the
       `BDDRunResult`/`StackProfile` field sets against the **real installed**
       `guardkitfactory` via `inspect`/`dataclasses` (NOT a local fake).
-- [ ] The test FAILS (red) if any of the four contracts above drifts — verified
+- [x] The test FAILS (red) if any of the four contracts above drifts — verified
       by a local mutation experiment (e.g. temporarily rename a `BDDRunResult`
       field and confirm the seam test goes red).
-- [ ] `importorskip("guardkitfactory")` makes it a clean skip without the
+- [x] `importorskip("guardkitfactory")` makes it a clean skip without the
       `[autobuild]` extra.
-- [ ] The module is collected by `.github/workflows/seam-tests.yml` (the
+- [x] The module is collected by `.github/workflows/seam-tests.yml` (the
       merge-gating job), confirmed by inspecting its `-m seam` selection.
-- [ ] `python -m pytest -m seam -o addopts= -q` stays green on current main.
+- [x] `python -m pytest -m seam -o addopts= -q` stays green on current main.
+
+## Implementation Summary (2026-06-15)
+
+**Module**: [tests/orchestrator/harness/test_bdd_xrepo_contract_seam.py](tests/orchestrator/harness/test_bdd_xrepo_contract_seam.py)
+— co-located with the harness seam test so the whole guardkit↔guardkitfactory
+seam is covered by one CI job (per the Notes steer). 7 tests, `inspect`/
+`dataclasses`-only, runs in ~0.1s.
+
+Four contracts pinned against the **real installed** `guardkitfactory.bdd`
+(verified by introspection, not assumption — the lesson from BDDFW01's missed
+4th mismatch):
+
+1. `discover(stack, worktree)` — 2 positional params, names+order pinned.
+2. `BDDPlugin.run(self, scenarios, task_id, worktree, *, timeout_seconds=600)`
+   — leading positional order + `timeout_seconds` keyword-only-with-default.
+3. `BDDRunResult` is a dataclass exposing every field `map_bdd_run_result`
+   reads (`scenarios_attempted/passed/failed/skipped/errored`,
+   `duration_seconds`, `raw_report_path`, `discoveries`, `errors`).
+4. `StackProfile` is a dataclass exposing every field `_detect_stack_profile`
+   constructs (`language`, `test_framework`, `package_manager`, `project_root`,
+   `extras`).
+
+**Subset vs exact**: field assertions check *presence* (subset), not exact
+equality — a removed/renamed field is the drift that breaks production; an
+additive field does not, so failing on it would be a merge-gating false-red
+(cf. `path-string-mismatch-is-not-dishonesty.md`). Documented in the module.
+
+**CI wiring**: [.github/workflows/seam-tests.yml](.github/workflows/seam-tests.yml)
+now runs both seam modules by explicit path. A whole-tree / whole-directory
+`-m seam` sweep is deliberately NOT used in CI because
+`tests/orchestrator/harness/test_sdk_harness.py` `import`s `claude_agent_sdk`
+at collection time and the seam job omits the autobuild extra.
+
+**Mutation experiment** (red-on-drift, both directions):
+- Renaming `BDDRunResult.scenarios_attempted` in the real installed sibling
+  source → seam test red (import-level `TypeError`; `importorskip` only
+  swallows `ImportError`, not `TypeError`). Reverted via `git checkout`.
+- Assertion-level: a `BDDRunResult` dropping a mapper-read field → clean
+  `AssertionError` (`drift caught: ['scenarios_attempted']`).
+
+**Verification**:
+- `pytest <both seam modules> -o addopts="" --strict-markers` → 23 passed (0.43s).
+- `python -m pytest -m seam -o addopts= -q` → 103 passed, 50 skipped (green on main).
 
 ## Notes
 
