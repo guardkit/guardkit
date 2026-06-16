@@ -1,0 +1,76 @@
+id: FEAT-FAUD
+name: Feature-status staleness auditor (guardkit feature audit)
+description: A `guardkit feature audit` command that detects stale feature-YAML statuses
+  by inferring each feature's real status from whether its tasks live under tasks/completed/
+  vs tasks/backlog/, and reconciles them with --fix. Hand-crafted 2026-06-16 as a fresh
+  bounded feature to validate the gpt-oss-120b autobuild Player end-to-end.
+created: '2026-06-16T00:00:00'
+status: planned
+complexity: 5
+estimated_tasks: 3
+tasks:
+- id: TASK-FAUD-001
+  name: Implement feature-status auditor core module
+  file_path: tasks/backlog/feature-audit/TASK-FAUD-001-auditor-core.md
+  complexity: 5
+  dependencies: []
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 45
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
+- id: TASK-FAUD-002
+  name: Add guardkit feature audit CLI subcommand with --fix
+  file_path: tasks/backlog/feature-audit/TASK-FAUD-002-cli-subcommand.md
+  complexity: 4
+  dependencies:
+  - TASK-FAUD-001
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 35
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
+- id: TASK-FAUD-003
+  name: Document the feature audit command
+  file_path: tasks/backlog/feature-audit/TASK-FAUD-003-docs.md
+  complexity: 2
+  dependencies:
+  - TASK-FAUD-002
+  status: pending
+  implementation_mode: direct
+  estimated_minutes: 15
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
+orchestration:
+  parallel_groups:
+  - - TASK-FAUD-001
+  - - TASK-FAUD-002
+  - - TASK-FAUD-003
+  estimated_duration_minutes: 95
+  recommended_parallel: 1
+preflight_strict: false
+evidence_repos: []
+execution:
+  started_at: null
+  completed_at: null
+  worktree_path: null
+  total_turns: 0
+  tasks_completed: 0
+  tasks_failed: 0
+  current_wave: 0
+  completed_waves: []
+  last_updated: null
+  archived_at: null
+  archived_to: null
