@@ -1,5 +1,10 @@
 # 🚀 Conversation Starter — GPT-OSS-120B Player validated; autobuild cutover unblocked (2026-06-16)
 
+> ⛔ **SUPERSEDED (2026-06-16):** its "one thing to do" (build FEAT-FAUD) is done —
+> FEAT-FAUD built green, was hand-corrected, and merged to main; HMIG-011 cutover
+> is flipped. Read **`session-handoff-2026-06-16-faud-merged-hmig011-flipped.md`**
+> instead. Kept for historical context (config recipe + gotchas).
+
 > **How to use:** open a fresh session and say *"Read
 > `docs/retro/CONVERSATION-STARTER-2026-06-16-gptoss-player-validated-cutover.md`
 > and continue."* Self-contained.
