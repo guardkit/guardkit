@@ -1,7 +1,7 @@
 ---
 id: TASK-FAUD-003
 title: Document the `guardkit feature audit` command
-status: backlog
+status: completed
 task_type: documentation
 feature_id: FEAT-FAUD
 wave: 3

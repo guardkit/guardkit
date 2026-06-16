@@ -1,7 +1,7 @@
 ---
 id: TASK-FAUD-001
 title: Implement feature-status auditor core module
-status: backlog
+status: completed
 task_type: feature
 feature_id: FEAT-FAUD
 wave: 1
