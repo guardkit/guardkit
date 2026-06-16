@@ -16,7 +16,7 @@ tasks:
   file_path: tasks/backlog/autobuild-observability-fixes/TASK-FIX-IA03-exclude-internal-artifacts-from-doc-constraint.md
   complexity: 3
   dependencies: []
-  status: completed
+  status: pending
   implementation_mode: task-work
   estimated_minutes: 90
   requires_infrastructure: []
@@ -71,7 +71,7 @@ orchestration:
   parallel_groups:
   - - TASK-FIX-IA03
   - - TASK-FIX-GD02
-    - TASK-FIX-TP05
+  - - TASK-FIX-TP05
   estimated_duration_minutes: 390
   recommended_parallel: 2
 preflight_strict: false
