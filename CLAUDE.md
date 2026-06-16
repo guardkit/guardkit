@@ -84,6 +84,15 @@ guardkit feature audit [--fix]         # Audit feature YAML statuses (declared v
 Autonomous task implementation using Player-Coach adversarial workflow.
 See: `.claude/rules/autobuild.md` for full documentation.
 
+**Harness default (TASK-HMIG-011 cutover, 2026-06-16):** AutoBuild runs on the
+**LangGraph** harness by default (`GUARDKIT_HARNESS` unset → `langgraph`). The
+Claude Agent SDK path remains an opt-in fallback for emergency revert — set
+`GUARDKIT_HARNESS=sdk` (per-invocation or in the environment). The default lives
+in one place, `guardkit/orchestrator/harness/selector.py` (`DEFAULT_HARNESS`);
+permanent rollback = change that one constant back to `"sdk"`. The SDK adapter
+stays in-repo until Phase 3 (post-cutover dependency-removal cleanup); no SDK
+code was removed in the cutover.
+
 ## Hash-Based Task IDs
 
 Format: `TASK-{hash}` or `TASK-{prefix}-{hash}` (e.g., `TASK-FIX-a3f8`)

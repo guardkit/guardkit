@@ -139,6 +139,12 @@ class TestInvokeWithRoleConfig:
     It constructs ClaudeAgentOptions with setting_sources=["project"].
     """
 
+    @pytest.fixture(autouse=True)
+    def _force_sdk_harness(self, monkeypatch):
+        # TASK-HMIG-011 cutover (2026-06-16): default harness is now "langgraph";
+        # these SDK-path tests opt into the SDK harness explicitly.
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+
     @pytest.mark.asyncio
     async def test_player_setting_sources_project_only(self, worktree_path):
         """Player invocation uses setting_sources=['project']."""

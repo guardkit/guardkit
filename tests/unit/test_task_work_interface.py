@@ -1252,6 +1252,12 @@ class TestSDKOptionsForInlineProtocol:
     inline protocol does not invoke skills or subagents.
     """
 
+    @pytest.fixture(autouse=True)
+    def _force_sdk_harness(self, monkeypatch):
+        # TASK-HMIG-011 cutover (2026-06-16): default harness is now "langgraph";
+        # these SDK-path tests opt into the SDK harness explicitly.
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+
     @pytest.mark.asyncio
     async def test_sdk_uses_project_only_setting_sources(self, interface, tmp_worktree):
         """Test setting_sources is ["project"], not ["user", "project"]."""
