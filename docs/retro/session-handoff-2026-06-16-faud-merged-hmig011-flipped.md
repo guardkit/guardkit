@@ -107,11 +107,19 @@ swap pressure dropped 5 GB→2.6 GB. Peak under the run was ~110-114 GB / 121 GB
    `completed`/`planned`/`in_progress`, so a feature declared `merged`/`failed`/
    `superseded` reads as "stale". Fine for now; widen the terminal-status set if
    `feature audit` is wired into CI.
-4. **Repo hygiene leftovers (uncommitted, unrelated):** `.guardkit/features/FEAT-9DDE.yaml`
-   + `tasks/backlog/task-status-json/TASK-TSJ-00{1,2}-*.md` — orchestrator state
-   churn from the FEAT-9DDE run; tidy or `git checkout --` them.
-5. Stale autobuild worktrees remain for FEAT-9DDE / FEAT-AOF / TASK-GLI-004 /
-   TASK-OBS-ABST (`git worktree list`) — clean up if their work is merged.
+4. **FEAT-9DDE fully cleaned up (2026-06-16, later in session).** Its deliverable
+   (TSJ-001/002 producer + unit tests + bin-entry) was already merged to main and
+   works; the leftover worktree + 4 branches (`autobuild/FEAT-9DDE`,
+   `feat9dde-rerun-base/run8-base/run9-base`) were a redundant 2026-06-15 Player
+   re-validation rerun — removed. TSJ task files now live only in
+   `tasks/completed/2026-06/` (the stale `tasks/backlog/task-status-json/` dupes
+   were deleted, commit `e5c59d69`). `FEAT-9DDE.yaml` churn discarded (committed
+   `status: completed`, audit-consistent). Run logs `FEAT-9DDE-run*.log` kept;
+   autobuild state archived to `.guardkit/archive/FEAT-9DDE/`. **Working tree is
+   clean.**
+5. Stale autobuild worktrees remain for **FEAT-AOF / TASK-GLI-004 / TASK-OBS-ABST**
+   (`git worktree list`) — clean up if their work is merged (same pattern as the
+   FEAT-9DDE cleanup above; verify each deliverable is on main first).
 
 ---
 
