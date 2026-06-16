@@ -74,6 +74,7 @@ A lightweight, pragmatic task workflow system with built-in quality gates that p
 guardkit autobuild task TASK-XXX       # CLI autobuild
 guardkit graphiti capture --interactive # Knowledge capture
 guardkit graphiti search "query"       # Search knowledge
+guardkit feature audit [--fix]         # Audit feature YAML statuses (declared vs task locations); non-zero exit code when stale features exist, unless --fix reconciles them
 ```
 
 **See**: `installer/core/commands/*.md` for complete command specifications.

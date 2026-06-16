@@ -1,7 +1,7 @@
 ---
 id: TASK-FAUD-002
 title: Add `guardkit feature audit` CLI subcommand with --fix
-status: backlog
+status: completed
 task_type: feature
 feature_id: FEAT-FAUD
 wave: 2

@@ -2,10 +2,10 @@ id: FEAT-FAUD
 name: Feature-status staleness auditor (guardkit feature audit)
 description: A `guardkit feature audit` command that detects stale feature-YAML statuses
   by inferring each feature's real status from whether its tasks live under tasks/completed/
-  vs tasks/backlog/, and reconciles them with --fix. Hand-crafted 2026-06-16 as a fresh
-  bounded feature to validate the gpt-oss-120b autobuild Player end-to-end.
+  vs tasks/backlog/, and reconciles them with --fix. Hand-crafted 2026-06-16 as a
+  fresh bounded feature to validate the gpt-oss-120b autobuild Player end-to-end.
 created: '2026-06-16T00:00:00'
-status: planned
+status: completed
 complexity: 5
 estimated_tasks: 3
 tasks:
@@ -14,45 +14,57 @@ tasks:
   file_path: tasks/backlog/feature-audit/TASK-FAUD-001-auditor-core.md
   complexity: 5
   dependencies: []
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 45
   requires_infrastructure: []
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 1
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-06-16T06:52:17.939469'
+  completed_at: '2026-06-16T07:00:53.008958'
 - id: TASK-FAUD-002
   name: Add guardkit feature audit CLI subcommand with --fix
   file_path: tasks/backlog/feature-audit/TASK-FAUD-002-cli-subcommand.md
   complexity: 4
   dependencies:
   - TASK-FAUD-001
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 35
   requires_infrastructure: []
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 3
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 3
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-06-16T07:01:02.435382'
+  completed_at: '2026-06-16T07:50:09.369192'
 - id: TASK-FAUD-003
   name: Document the feature audit command
   file_path: tasks/backlog/feature-audit/TASK-FAUD-003-docs.md
   complexity: 2
   dependencies:
   - TASK-FAUD-002
-  status: pending
+  status: completed
   implementation_mode: direct
   estimated_minutes: 15
   requires_infrastructure: []
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 3
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 3
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-06-16T07:50:18.266564'
+  completed_at: '2026-06-16T08:01:06.402663'
 orchestration:
   parallel_groups:
   - - TASK-FAUD-001
@@ -63,14 +75,17 @@ orchestration:
 preflight_strict: false
 evidence_repos: []
 execution:
-  started_at: null
-  completed_at: null
-  worktree_path: null
-  total_turns: 0
-  tasks_completed: 0
+  started_at: '2026-06-16T06:52:16.548159'
+  completed_at: '2026-06-16T08:01:06.406486'
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-FAUD
+  total_turns: 7
+  tasks_completed: 3
   tasks_failed: 0
-  current_wave: 0
-  completed_waves: []
-  last_updated: null
+  current_wave: 3
+  completed_waves:
+  - 1
+  - 2
+  - 3
+  last_updated: '2026-06-16T08:01:06.405028'
   archived_at: null
   archived_to: null
