@@ -348,6 +348,12 @@ class TestGeneratorDrainAfterResultMessage:
     """Verify _invoke_with_role drains the generator after ResultMessage
     to prevent AnyIO cancel-scope CancelledError from gen.aclose()."""
 
+    @pytest.fixture(autouse=True)
+    def _force_sdk_harness(self, monkeypatch):
+        # TASK-HMIG-011 cutover (2026-06-16): default harness is now "langgraph";
+        # this SDK-path test opts into the SDK harness explicitly.
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+
     def test_drain_loop_present_in_source(self):
         """Source contains the drain loop after ResultMessage."""
         import inspect

@@ -231,8 +231,13 @@ def mock_sdk():
 # ----------------------------------------------------------------------
 
 
-class TestLazyImportWhenSdkDefault:
-    """AC-003: SDK path imports nothing from guardkitfactory."""
+class TestLazyImportOnSdkPath:
+    """AC-003: the SDK path imports nothing from guardkitfactory.
+
+    TASK-HMIG-011 cutover (2026-06-16): the SDK path is now the explicit
+    ``GUARDKIT_HARNESS=sdk`` fallback (no longer the default), so these tests
+    opt into it explicitly.
+    """
 
     @pytest.mark.asyncio
     async def test_sdk_path_does_not_construct_langgraph_harness(
@@ -250,8 +255,8 @@ class TestLazyImportWhenSdkDefault:
         """
         from guardkit.orchestrator.harness.sdk_harness import ClaudeSDKHarness
 
-        # Default env var (unset) → SDK path.
-        monkeypatch.delenv("GUARDKIT_HARNESS", raising=False)
+        # Explicit SDK fallback (post-2026-06-16 cutover; was the default).
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
 
         # Sentinel: construction raises so the assertion in the SDK
         # default path is unmistakable.
@@ -301,12 +306,13 @@ class TestLazyImportWhenSdkDefault:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Direct check that ``select_harness`` on the SDK default path
+        """Direct check that ``select_harness`` on the explicit SDK fallback
         returns :class:`ClaudeSDKHarness`, not :class:`LangGraphHarness`."""
         from guardkit.orchestrator.harness.sdk_harness import ClaudeSDKHarness
         from guardkit.orchestrator.harness.selector import select_harness
 
-        monkeypatch.delenv(_TEST_ENV_VAR, raising=False)
+        # TASK-HMIG-011 cutover (2026-06-16): opt into the SDK fallback.
+        monkeypatch.setenv(_TEST_ENV_VAR, "sdk")
 
         harness = select_harness(
             env_var=_TEST_ENV_VAR,

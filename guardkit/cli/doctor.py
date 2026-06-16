@@ -202,7 +202,9 @@ class ActiveHarnessCheck(Check):
         self.name = "active harness"
 
     def run(self) -> CheckResult:
-        harness = os.environ.get("GUARDKIT_HARNESS", "sdk").lower()
+        from guardkit.orchestrator.harness.selector import DEFAULT_HARNESS
+
+        harness = os.environ.get("GUARDKIT_HARNESS", DEFAULT_HARNESS).lower()
 
         if harness == "sdk":
             return CheckResult(

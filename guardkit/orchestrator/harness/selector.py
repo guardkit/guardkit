@@ -1,18 +1,19 @@
 """Env-var-driven :class:`HarnessAdapter` selector.
 
 Resolves the active harness implementation from the ``GUARDKIT_HARNESS``
-environment variable (default ``"sdk"``). Lives in a dedicated module
+environment variable (default ``"langgraph"`` since the TASK-HMIG-011
+cutover on 2026-06-16; was ``"sdk"`` before). Lives in a dedicated module
 per TASK-HMIG-006 OQ-3 so :mod:`guardkit.orchestrator.harness.__init__`
 remains a pure re-exports module that does not import :mod:`os`.
 
 Supported values
 ----------------
 
-``"sdk"`` (default)
+``"sdk"`` (opt-in fallback; was the default before the 2026-06-16 cutover)
     Constructs a fresh :class:`~guardkit.orchestrator.harness.sdk_harness.ClaudeSDKHarness`
     wrapping the claude-agent-sdk path.
 
-``"langgraph"``
+``"langgraph"`` (default since the 2026-06-16 TASK-HMIG-011 cutover)
     Lazily imports ``guardkitfactory.harness.LangGraphHarness`` and
     constructs it with the supplied kwargs. The import is deferred so
     callers running on the default SDK path do not need guardkitfactory
@@ -37,6 +38,15 @@ from guardkit.orchestrator.exceptions import AgentInvocationError
 from guardkit.orchestrator.harness.adapter import HarnessAdapter
 
 logger = logging.getLogger(__name__)
+
+# TASK-HMIG-011 (cutover ceremony, 2026-06-16): single source of truth for the
+# default harness — flipped "sdk" -> "langgraph". Every site that resolves
+# GUARDKIT_HARNESS with a fallback imports this constant instead of hardcoding
+# the literal, so the default cannot drift across the codebase (the doctor
+# active-harness check, the coach_validator harness snapshot, and the
+# _is_langgraph_harness gate all consume it). Rollback to the SDK default =
+# change this one line back to "sdk".
+DEFAULT_HARNESS = "langgraph"
 
 
 def _translate_kwargs_for_langgraph(harness_kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -306,7 +316,10 @@ def select_harness(
         be imported, OR if the langgraph branch is selected without a
         ``cwd=`` kwarg, OR if the env var names an unsupported value.
     """
-    name = os.environ.get(env_var, "sdk").lower()
+    # TASK-HMIG-011 (cutover ceremony, parent review §7.4): the default is now
+    # DEFAULT_HARNESS ("langgraph" since 2026-06-16). The SDK path stays an
+    # opt-in fallback via GUARDKIT_HARNESS=sdk. No SDK code removed (Phase 3).
+    name = os.environ.get(env_var, DEFAULT_HARNESS).lower()
 
     # TASK-FIX-002R-CONSUME: ``cwd`` is consumed by the langgraph branch
     # below to build the LocalShellBackend; ``ClaudeSDKHarness.__init__``
@@ -421,4 +434,4 @@ def select_harness(
     )
 
 
-__all__ = ["select_harness"]
+__all__ = ["select_harness", "DEFAULT_HARNESS"]

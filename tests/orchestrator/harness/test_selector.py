@@ -204,48 +204,50 @@ class TestTranslateKwargsForLangGraph:
 class TestSelectHarnessDispatch:
     """Env-var-driven dispatch behaviour for :func:`select_harness`."""
 
-    def test_default_returns_claude_sdk_harness(
-        self, monkeypatch: pytest.MonkeyPatch
+    def test_default_returns_langgraph_harness(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
     ) -> None:
-        """Default (env-var unset) → ClaudeSDKHarness."""
+        """Default (env-var unset) → LangGraphHarness.
+
+        TASK-HMIG-011 cutover (2026-06-16): the default flipped ``"sdk"`` ->
+        ``"langgraph"``. The SDK path is now an opt-in fallback (see
+        ``test_explicit_sdk_returns_claude_sdk_harness``).
+        """
         monkeypatch.delenv(_TEST_ENV_VAR, raising=False)
 
-        from guardkit.orchestrator.harness.sdk_harness import ClaudeSDKHarness
+        from guardkitfactory.harness import LangGraphHarness
 
-        harness = select_harness(env_var=_TEST_ENV_VAR, **_sdk_kwargs())
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR, model=MagicMock(), cwd=tmp_path
+        )
 
-        assert isinstance(harness, ClaudeSDKHarness)
+        assert isinstance(harness, LangGraphHarness)
 
-    def test_default_does_not_import_guardkitfactory(
+    def test_sdk_fallback_does_not_import_guardkitfactory(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """SDK path must NOT touch guardkitfactory — AC-003 lazy-import."""
-        monkeypatch.delenv(_TEST_ENV_VAR, raising=False)
+        """Explicit SDK fallback must NOT touch guardkitfactory — AC-003 lazy-import.
 
-        # Install a sentinel that explodes if anyone imports it.
-        sentinel = ModuleType("guardkitfactory_sentinel_proof")
+        TASK-HMIG-011 cutover (2026-06-16): the lazy-import invariant moved
+        from the (former ``"sdk"``) default to the explicit ``GUARDKIT_HARNESS=sdk``
+        fallback. The default path now intentionally imports guardkitfactory
+        (it routes to LangGraph).
+        """
+        monkeypatch.setenv(_TEST_ENV_VAR, "sdk")
 
-        def _explode(*args: Any, **kwargs: Any) -> None:
-            raise AssertionError(
-                "guardkitfactory should not be touched on the SDK default path"
-            )
-
-        # Use a tracker that records any access to guardkitfactory imports.
         original = sys.modules.get("guardkitfactory")
         original_harness = sys.modules.get("guardkitfactory.harness")
 
-        # Track whether guardkitfactory.harness is freshly imported.
-        # If it's already cached in sys.modules from a previous test,
-        # we can't observe imports against it, so we test the next-best
-        # invariant: select_harness on SDK never raises and returns the
-        # SDK harness without consulting the langgraph branch.
+        # If guardkitfactory.harness is already cached from a previous test we
+        # can't observe a fresh import, so we test the next-best invariant:
+        # the explicit SDK path returns the SDK harness without consulting the
+        # langgraph branch (which would raise without a cwd= kwarg).
         try:
             harness = select_harness(env_var=_TEST_ENV_VAR, **_sdk_kwargs())
             from guardkit.orchestrator.harness.sdk_harness import ClaudeSDKHarness
 
             assert isinstance(harness, ClaudeSDKHarness)
         finally:
-            # Sanity: restore state in case the test loaded anything weird.
             if original is None:
                 sys.modules.pop("guardkitfactory", None)
             if original_harness is None:

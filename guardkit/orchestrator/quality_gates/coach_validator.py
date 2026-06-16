@@ -84,6 +84,7 @@ from guardkit.orchestrator.harness import (
     ToolResultEvent,
     select_harness,
 )
+from guardkit.orchestrator.harness.selector import DEFAULT_HARNESS
 from guardkit.orchestrator.sdk_utils import check_assistant_message_error
 
 # Optional coach context integration (TASK-SC-009)
@@ -3668,7 +3669,7 @@ class CoachValidator:
                 "permission_mode": "bypassPermissions",
                 "max_turns": 1,
                 "model": model,
-                "harness": os.environ.get("GUARDKIT_HARNESS", "sdk"),
+                "harness": os.environ.get("GUARDKIT_HARNESS", DEFAULT_HARNESS),
                 "pythonpath_prepend": worktree_str,
                 "sdk_timeout_seconds": self.test_timeout,
             }
@@ -3907,7 +3908,7 @@ class CoachValidator:
         it. See ``docs/state/TASK-FIX-COACHTESTTO/diagnosis.md``.
         """
         return (
-            os.environ.get("GUARDKIT_HARNESS", "sdk").strip().lower()
+            os.environ.get("GUARDKIT_HARNESS", DEFAULT_HARNESS).strip().lower()
             == "langgraph"
         )
 

@@ -2,7 +2,7 @@
 id: TASK-HMIG-011
 title: Wave 4 cutover ceremony — flip GUARDKIT_HARNESS default to langgraph + announce + canary observation
 task_type: deployment
-status: backlog
+status: in_progress
 created: 2026-06-04T13:30:00Z
 updated: 2026-06-11T00:00:00Z
 priority: critical
@@ -99,18 +99,56 @@ Communicate LangGraph as the recommended harness. SDK path stays available for e
 
 ## Acceptance Criteria
 
-- [ ] **AC-001** — `selector.py:131` default flipped from `"sdk"` to `"langgraph"`. Single-line commit with a clear message referencing this task ID + parent review §7.4. Land by D-7 (2026-06-08).
-- [ ] **AC-002** — Falsifier verified: with NO `GUARDKIT_HARNESS` env var set, `guardkit autobuild task TASK-{small fixture}` routes through `LangGraphHarness`. Verifiable via log line absence (`claude_agent_sdk.subprocess_cli` should NOT appear during Player invocation) or presence (`LangGraphHarness` instantiation).
-- [ ] **AC-003** — Existing test suite still passes with `GUARDKIT_HARNESS=sdk` explicit (SDK path remains fully functional as fallback). No SDK code removed.
-- [ ] **AC-004** — Operator-facing documentation updated:
+- [x] **AC-001** — `selector.py:131` default flipped from `"sdk"` to `"langgraph"`. Single-line commit with a clear message referencing this task ID + parent review §7.4. Land by D-7 (2026-06-08).
+- [x] **AC-002** — Falsifier verified: with NO `GUARDKIT_HARNESS` env var set, `guardkit autobuild task TASK-{small fixture}` routes through `LangGraphHarness`. Verifiable via log line absence (`claude_agent_sdk.subprocess_cli` should NOT appear during Player invocation) or presence (`LangGraphHarness` instantiation).
+- [x] **AC-003** — Existing test suite still passes with `GUARDKIT_HARNESS=sdk` explicit (SDK path remains fully functional as fallback). No SDK code removed.
+- [x] **AC-004** — Operator-facing documentation updated:
   - `README.md` (if it documents harness selection)
   - `CLAUDE.md` files (root + `.claude/CLAUDE.md` if relevant)
   - `docs/guides/` autobuild guides (`autobuild_local_vllm.md` at minimum)
   - **New deprecation/migration note**: brief paragraph explaining the new default, how to opt back to SDK, expected duration of SDK fallback (until Phase 3 post-2026-06-15+).
 - [ ] **AC-005** — D-5 (2026-06-10) cutover announce sent. Operator-determined channel + audience. Cross-link to this task ID for traceability.
 - [ ] **AC-006** — D-2 to D-0 observation window: no failure-rate regression vs Wave 3 baseline. Observation evidence captured (link to logs / canary re-runs / etc.) in this task's completion notes.
-- [ ] **AC-007** — Rollback procedure validated by dry-run: confirm that setting `GUARDKIT_HARNESS=sdk` in a fresh shell environment routes through `ClaudeSDKHarness` (existing AC-001D path proven this works pre-flip; verify post-flip the SDK fallback still works).
+- [x] **AC-007** — Rollback procedure validated by dry-run: confirm that setting `GUARDKIT_HARNESS=sdk` in a fresh shell environment routes through `ClaudeSDKHarness` (existing AC-001D path proven this works pre-flip; verify post-flip the SDK fallback still works).
 - [ ] **AC-008** — On 2026-06-15 D-0: if no regression observed in window, mark this task complete + file post-cutover follow-ups (see "Post-cutover follow-ups" below). If regression observed, file rollback task + escalate.
+
+## Cutover execution note (2026-06-16)
+
+The flip landed **2026-06-16** (this session). Status: **flip + verifiable ACs
+done; announce + observation window remain operator follow-ups.**
+
+**Done (verified this session) — AC-001, 002, 003, 004, 007:**
+- **AC-001** — default flipped in `selector.py`, centralised into a single
+  `DEFAULT_HARNESS = "langgraph"` constant so the documented one-line rollback is
+  real. Consumers updated to read it: `cli/doctor.py`, and
+  `quality_gates/coach_validator.py` (the harness snapshot **and** the
+  load-bearing `_is_langgraph_harness` gate — without this the post-flip default
+  would have been mis-detected as non-langgraph). The task's `selector.py:131`
+  reference is stale; the default now resolves in `select_harness()`.
+- **AC-002** — falsifier verified: with `GUARDKIT_HARNESS` unset,
+  `select_harness(cwd=...)` returns `LangGraphHarness` and `claude_agent_sdk` is
+  never imported during selection.
+- **AC-003** — suite green with the flip; SDK-path tests opt into
+  `GUARDKIT_HARNESS=sdk` explicitly (selector, coach-timeout, sdk-session-config,
+  task-work-interface, generator-close, sdk-environment-parity, agent-invoker
+  lazy-import). Two unrelated **pre-existing** reds remain
+  (`test_env_var_routes_to_langgraph` — calls `select_harness(langgraph)` with no
+  `cwd=`; `test_task_work_sdk_max_turns_is_50` — stale `assert 100 == 50`); both
+  fail identically pre-flip (verified via stash) and are out of scope here.
+- **AC-004** — `selector.py` docstring + `CLAUDE.md` AutoBuild section updated
+  (new default, opt-back-to-SDK, `DEFAULT_HARNESS` rollback pointer). README and
+  `docs/guides/autobuild_local_vllm.md` had no harness-selection content to
+  update (the latter does not exist).
+- **AC-007** — rollback routing verified post-flip: `GUARDKIT_HARNESS=sdk` →
+  `ClaudeSDKHarness`; `GUARDKIT_HARNESS=langgraph` → `LangGraphHarness`.
+
+**Remaining (operator / calendar) — AC-005, 006, 008:**
+- **AC-005** — cutover announce (operator channel/audience). Not automatable.
+- **AC-006** — observation window: no failure-rate regression vs the Wave-3
+  baseline. FEAT-9DDE + FEAT-FAUD green (2026-06-14/16) are supporting evidence;
+  capture formal window observations here.
+- **AC-008** — mark complete + file Phase-3 follow-ups once the window passes
+  clean. (Original external D-0 was 2026-06-15; deadline slipped to 2026-06-22.)
 
 ## Rollback procedure
 

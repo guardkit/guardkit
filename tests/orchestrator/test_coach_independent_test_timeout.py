@@ -74,7 +74,8 @@ class TestLangGraphForcesSubprocess:
         assert validator._is_langgraph_harness() is False
 
         monkeypatch.delenv("GUARDKIT_HARNESS", raising=False)
-        assert validator._is_langgraph_harness() is False  # default "sdk"
+        # TASK-HMIG-011 cutover (2026-06-16): default flipped "sdk" -> "langgraph".
+        assert validator._is_langgraph_harness() is True  # default "langgraph"
 
     def test_langgraph_dispatch_skips_sdk_path(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -110,9 +111,14 @@ class TestLangGraphForcesSubprocess:
     def test_sdk_harness_still_uses_sdk_path(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Negative control: with the default SDK harness (no LangGraph, no
-        custom API base), the SDK path is still selected."""
-        monkeypatch.delenv("GUARDKIT_HARNESS", raising=False)
+        """Negative control: with the explicit SDK harness (no LangGraph, no
+        custom API base), the SDK path is still selected.
+
+        TASK-HMIG-011 cutover (2026-06-16): the default flipped to "langgraph",
+        so the SDK path is now opted into via GUARDKIT_HARNESS=sdk rather than
+        relying on the (former) default.
+        """
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
         monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
 
         validator = CoachValidator(
