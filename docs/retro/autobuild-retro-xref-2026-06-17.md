@@ -1,0 +1,132 @@
+# Cross-Reference: OLD-guardkit autobuild issues — fixed vs still-open in CURRENT guardkit
+
+> **Generated:** 2026-06-17 via the `autobuild-retro-xref` multi-agent workflow.
+> **Inputs:** 11 autobuild retros from two repos built with **cloud (Claude Agent SDK)** autobuild on an *older* guardkit (MacBook, 2026-06-13/14):
+> - `lpa-platform-poc/docs/poc/retros/` — FEAT-5A64/POC-003, POC-004, POC-005, POC-006
+> - `fleet-memory/docs/retros/` — FEAT-MEM-01 … FEAT-MEM-07
+> **Method:** extract every documented issue, classify each against **current** guardkit
+> source (verified in-tree, not from memory): already-fixed / still-open / usage-config.
+> **Follow-ups filed:** the five still-open items are in `tasks/backlog/autobuild-retro-fixes/`.
+
+---
+
+## 1. Headline
+
+The 11 retros record **~16 distinct issues**. After auditing current guardkit (HEAD on
+`main`, post-COACHRUNPARITY01/EVBINST02/CKPTTESTRED01/HMIG-011), **9 are already fixed**
+(a pull + re-run resolves them), **5 remain open** (need new fixes), and **2 are
+usage/config, not guardkit bugs**.
+
+The single most important takeaway: the dominant failure mode in every retro —
+`unrecoverable_stall` on a *false* `tests: fail` signal — is now **substantially
+defanged** in current guardkit (checkpoint tri-state, `claim_audit_unmodified` demoted
+to `should_fix`, specialist 600s cap + watchdog, smoke-gate feed-back), so most of the
+operator pain those retros document would not recur. Since the fixes live in the
+**shared orchestrator** (above the harness), the SDK/cloud path gets them too. The
+highest-value remaining gap is the **mocked-seam "green-but-broken" class**
+(FEAT-POC-006) — the same `green ≠ correct` lesson FEAT-FAUD taught locally — and the
+**plan-audit markdown-link-label false-positive** (FEAT-MEM-07).
+
+## 2. Already fixed by current guardkit (re-run resolves)
+
+| # | Issue (retro) | Repo / feature (recurrence) | Fix in current guardkit | Citation |
+|---|---|---|---|---|
+| A1 | **`unrecoverable_stall` on false `tests: fail`** when an UNKNOWN/absent oracle signal was counted as a failure | lpa POC-004, POC-005, FEAT-5A64; **recurs** fleet MEM-01, MEM-07 | Checkpoint signal is now **tri-state** (`Optional[bool]`); only an explicit `tests_passed is False` counts toward the pollution tally; `None` (no oracle ran) breaks the run | `worktree_checkpoints.py:698-747` (`should_rollback`, CKPTTESTRED01); `.claude/rules/absence-of-failure-is-not-success.md` |
+| A2 | **Pollution guard early-exits despite an earlier passing checkpoint** | fleet MEM-07 Error 3 (RIP-007); lpa POC-005 | `should_rollback` only scans the **current-run** window (`from_prior_run` excluded); a passing/unknown checkpoint in the last-N window breaks the consecutive-failure run | `worktree_checkpoints.py:705-745` |
+| A3 | **Honesty gate aborts evidence gathering** on files committed in earlier turns / orchestrator-managed paths (`coverage.json`, `.claude/task-plans/*`, pytest node-IDs) | fleet MEM-01 Error 8, MEM-07 Error 3; lpa POC-004 §3.3 | `claim_audit_unmodified` is now **`severity="should_fix"`** (non-turn-rejecting); test-file run-claims with no staged change suppressed (SPECVIOL01) | `coach_verification.py:693-718` |
+| A4 | **plan-audit reads a grep command / prose path as a missing file** | fleet MEM-01 Error 3 (MEM-006); lpa POC-004 trigger | Scanner restricted to the **`## Acceptance Criteria` section** (PA-002), **skips bare basenames** (AC-001), skips glob tokens | `agent_invoker.py:8484-8606` (`_scan_ac_for_missing_paths`) |
+| A5 | **60-second specialist timeout** nulls evidence → false `tests: fail`; `test-orchestrator`/`code-reviewer` hang | lpa POC-005 §4.2; fleet MEM-03 Error 4 | SDK timeout capped at **600s** (SPECHANG) + per-specialist **no-activity watchdog** (SPECHANG2) + **phase-budget bound** (SPECLAT01) | `specialist_invocations.py:75-119, 949-955`; commit `dacbed55` |
+| A6 | **Smoke-gate failure terminates the feature with no Player feedback** (deadlock) | fleet MEM-01 Error 5; related lpa POC-006 | Post-wave smoke failure **fed back to the Player** as turn-1 `seed_feedback`, bounded by `GUARDKIT_SMOKE_GATE_MAX_RETRIES`; wave completed only when smoke-gated | `feature_orchestrator.py:2290,2351,2472,698`; `.claude/rules/smoke-gate-is-feedback-not-terminator.md` |
+| A7 | **`guardkit autobuild complete` is a no-op** (Phase 2/3 placeholders) | fleet MEM-02 #3, MEM-03 #5, MEM-04 #4, MEM-05 #4 (recurs every fleet feature) | `complete` now drives a real `FeatureCompleteOrchestrator` (marks tasks complete, archives, cleans up) | `cli/autobuild.py:1109-1161` |
+| A8 | **Spurious turn-1 pollution stall on `--resume`** (prior-run checkpoints counted as current failures) | fleet MEM-01/05/07 | `from_prior_run` checkpoints explicitly excluded from the pollution tally (F4A3) | `worktree_checkpoints.py:705-708,729` |
+| A9 | **Graphiti context-load hang (~31 min / `Search request failed: timed out`)** dominating wall-clock | fleet MEM-02 #1 | Context-load search calls wrapped in **`asyncio.wait_for`** with a hard <2s budget + fallback-to-empty | `knowledge/graphiti_client.py:639,654,887,1209` |
+
+## 3. Still open — new guardkit fixes needed (prioritised)
+
+> Filed as task files in `tasks/backlog/autobuild-retro-fixes/`.
+
+1. **Mocked-seam "green-but-broken" feature (highest value — the only *correctness* gap).**
+   A whole feature passed every per-task Coach + 345 tests yet was non-functional, because
+   router/"integration" tests `AsyncMock(spec=VoiceService)` the very seam they claim to
+   integrate, and `main.py` constructs a service with the wrong/missing args. Current
+   guardkit has `mocked_seam`/`UNWIRED_PATH` wiring evidence (`coach_evidence.py:204-239`)
+   and a `direct_mode_wiring_gap` *must_fix* (`autobuild.py:6349-6369`), but that gate only
+   fires on a **registered bin-entry in direct mode** — it does not assert "no in-loop
+   integration test mocks the primary service seam" nor "`main.py` constructs each service
+   with all required `__init__` args" for a normal feature wave. *Fix:* a post-wave wiring
+   lint that (a) flags `AsyncMock(spec=Service)` of a primary in-repo service in an
+   integration-tier test, and (b) diffs router `<svc>.<method>(` calls against the service
+   surface + asserts composition-root constructor arity. **→ TASK-AB-WIREGATE01.**
+2. **plan-audit extracts the markdown-link *label* (not the *href*) as a path.**
+   `[relay/service.py](src/fleet_memory/relay/service.py)` → the scanner's
+   `[\w./\-]+\.\w{1,5}` regex matches the label `relay/service.py` (has a `/`, so the
+   basename-skip does not save it) → flagged missing → HIGH violation → stall. *Verified
+   live: the regex returns both tokens.* `agent_invoker.py:8567`. *Fix:* resolve markdown
+   links to their **href** before tokenizing, and resolve multi-segment tokens as path
+   **suffixes** before declaring missing. **→ TASK-GK-PA-003.**
+3. **Python 3.10 bootstrap trap.** `uv venv` is still invoked with **no `--python` flag**
+   (`environment_bootstrap.py:1675-1681` + `_ensure_worktree_venv`), so on a host with a
+   uv-managed cpython-3.10 it builds the worktree venv on 3.10 and hard-fails
+   `requires-python >=3.12`. `get_requires_python()` exists (`:313,1328`) but is not
+   threaded into venv interpreter selection. *Fix:* pass `--python` derived from the
+   manifest's `requires-python`. **→ TASK-AB-BOOTPY01.**
+4. **Stale Coach venv when a dependency is added *and consumed within the same wave*.**
+   The venv is bootstrapped once per feature and re-bootstrapped *between* waves
+   (`feature_orchestrator.py:2216`), so a dep added+used inside one wave (`tiktoken`,
+   fleet MEM-05) `ModuleNotFoundError`s the Coach's pytest → rejects every AC → stall.
+   *Fix:* detect a `pyproject` change during a turn and reinstall into the worktree venv
+   before the Coach's independent run. **→ TASK-AB-COACHVENV01.**
+5. **BDD runner surfaces a *synthetic failure* when no `.feature` file matches.** A missing
+   gate input should be **neutral/not-applicable**, not `failed=1` (`bdd_runner.py:627,706`).
+   Non-blocking alone but stacks into a stall (FEAT-MEM-07 Error 1). The conftest bridge
+   template now ships, so a freshly-`init`'d project gets it, but a pre-existing repo
+   without it still exit-4s. *Fix:* classify "no matching `.feature`" as `not_applicable`,
+   and have `init`/bootstrap auto-drop `features/conftest.py`. **→ TASK-AB-BDDNEUTRAL01.**
+
+## 4. Usage / config (not guardkit bugs)
+
+- **`--fresh` used to "retry a task" destroyed approved work** (fleet MEM-07 Error 4):
+  `--fresh` hard-resets the worktree to base, discarding worktree-branch commits.
+  *Prevention:* use `--resume` to retry; reserve `--fresh` for a genuine from-scratch
+  rebuild with fixes already on base.
+- **Coach SDK test runner narrates "I'll run that test command…" and never runs pytest**
+  (fleet MEM-01 Error 2; FEAT-5A64): local-model substrate behaviour of
+  `coach_test_execution="sdk"` (still the default — `coach_validator.py:1308`).
+  *Prevention:* set `.guardkit/config.yaml` → `autobuild.coach.test_execution: subprocess`.
+  *(Borderline: making `subprocess` the default, or auto-falling-back when the SDK runner
+  emits no Bash call, would be a legitimate guardkit improvement — TASK-AB-COACHSUBPROC01
+  if pursued.)*
+- **Launch hygiene:** unset env vars → test skips → "absent oracle" reject (MEM-01 Error 6);
+  launching from inside the worktree → "Feature file not found" (POC-004, FEAT-5A64);
+  `tee` masks the orchestrator exit code (MEM-01 Error 7). *Prevention:* export required
+  env vars, launch from the main repo root, use `>> log 2>&1; echo EXIT_CODE=$?`.
+- **`guardkit worktree cleanup` is an unknown command** (every fleet retro): no top-level
+  `worktree` group is registered, yet `display.py:497` still prints it. Use raw
+  `git worktree remove --force` + `git branch -d`. (Tiny fix candidate.)
+
+## 5. Cross-cutting patterns
+
+- **The recurring defect-class is exactly the existing meta-frame** — *"a binary verdict
+  from a low-fidelity oracle that cannot distinguish 'no signal' from 'positive/negative
+  signal'"* (`.claude/rules/absence-of-failure-is-not-success.md` + its five siblings).
+  Every false `unrecoverable_stall` here (POC-004/005, FEAT-5A64, MEM-01/05/07) is an
+  absence-of-failure / false-red instance. Current guardkit's A1-A5/A8 fixes are precisely
+  the "pair the verdict with a positive-evidence precondition" remediation that rule
+  prescribes — **no new rule needed**; these retros are strong **field validation** that
+  the fixes work, on the SDK substrate, on real features.
+- **The mocked-seam / wiring class (still-open #1)** extends
+  `evidence-boundary-narrower-than-write-surface.md` and `stack-plugin-architecture.md`:
+  per-task Coach isolation is an evidence aperture narrower than the *assembled-feature*
+  write surface. Warrants either widening the wiring gate or a short companion rule —
+  *"per-task-green is not feature-green; a mocked primary seam is absent integration
+  evidence"* — under the same meta-frame. (The wiring lint must be **stack-agnostic** per
+  `stack-plugin-architecture.md` — tree-sitter, not Python-`ast`.)
+- **The plan-audit path-scanner false-positives** (A4 fixed-portion + still-open #2) are the
+  inverse-shape sibling `path-string-mismatch-is-not-dishonesty.md`: a path-string miss
+  treated as a hard failure. The markdown-link-label case is an un-patched corner of that
+  same rule's surface — fits the existing meta-frame, needs only the href/path-suffix fix.
+
+**Net:** pulling current guardkit and re-running these features would eliminate the
+operator-time cost of A1-A9 (the bulk of every retro). The five still-open items are real
+follow-ups, with #1 (mocked-seam wiring gate) being the only one that changes a
+*correctness* outcome rather than operator friction.
