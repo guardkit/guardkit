@@ -136,15 +136,28 @@ swap pressure dropped 5 GB→2.6 GB. Peak under the run was ~110-114 GB / 121 GB
   cloud (SDK) autobuild retros from **lpa-platform-poc** + **fleet-memory** (built on
   older guardkit, MacBook 2026-06-13/14) against current main: **9 of ~16 issues already
   fixed** (a pull + re-run resolves them — field validation of the absence-of-failure
-  rule family on the SDK substrate), 2 usage/config, **5 still open**. Full report:
+  rule family on the SDK substrate), 2 usage/config, and **5 then-open — all now
+  implemented 2026-06-17** (see next bullet). Full report:
   `docs/retro/autobuild-retro-xref-2026-06-17.md`.
-- **5 follow-up tasks filed** in `tasks/backlog/autobuild-retro-fixes/`:
-  **TASK-AB-WIREGATE01** (high — post-wave mocked-seam/wiring gate; the only *correctness*
-  gap, same green≠correct class as FEAT-FAUD), **TASK-GK-PA-003** (high — plan-audit
-  href/path-suffix), TASK-AB-BOOTPY01, TASK-AB-COACHVENV01, TASK-AB-BDDNEUTRAL01.
-- **Recommended:** re-run lpa-platform-poc + fleet-memory features on current guardkit to
-  confirm the 9 fixes hold; build TASK-GK-PA-003 (small) + design TASK-AB-WIREGATE01
-  (needs Phase 2.5 — must be stack-agnostic per `stack-plugin-architecture.md`).
+- **All 5 follow-up tasks are now IMPLEMENTED** (2026-06-17, each in `tasks/completed/`
+  with its own fix commit; backlog folder is down to just the README):
+  - `8720fa88` **TASK-GK-PA-003** — plan-audit resolves markdown-link hrefs + path-suffix.
+  - `49b52a11` **TASK-AB-WIREGATE01** (the only *correctness* gap, same green≠correct
+    class as FEAT-FAUD) — post-wave mocked-seam + composition-root wiring gate. Landed
+    **cross-repo**: a **stack-agnostic** wiring analyzer (`CTOR_ARITY`) in
+    `guardkitfactory/src/guardkitfactory/wiring/` (tree-sitter dialect descriptors, per
+    `stack-plugin-architecture.md`) + the post-wave gate in guardkit
+    `feature_orchestrator.py`; companion rule
+    `.claude/rules/per-task-green-is-not-feature-green.md`.
+  - `fb1696d1` **TASK-AB-BDDNEUTRAL01** — uncollectable `.feature` (exit-4) → neutral, not
+    a stacking false-red (F584 preserved via a positive-evidence discriminator); conftest
+    bridge auto-installed at `WorktreeManager.create()` + `guardkit init`.
+  - `5b6bead2` **TASK-AB-BOOTPY01** — pin `uv venv` interpreter to `requires-python`.
+  - `a9c0022c` **TASK-AB-COACHVENV01** — refresh Coach venv on intra-wave dependency change.
+  HEAD is now `a9c0022c`. (The borderline TASK-AB-COACHSUBPROC01 was not filed — see report §4.)
+- **Recommended next:** re-run lpa-platform-poc + fleet-memory features on current guardkit
+  to confirm the now-14-of-16 fixes (the original 9 + these 5) hold in practice — in
+  particular that TASK-AB-WIREGATE01 catches the FEAT-POC-006 mocked-seam shape end-to-end.
 
 ---
 
