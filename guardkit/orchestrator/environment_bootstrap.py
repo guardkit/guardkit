@@ -45,7 +45,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -2449,6 +2449,152 @@ def _example_version_from_specifier(specifier: str) -> Optional[str]:
 
 
 # ============================================================================
+# Intra-wave manifest-change refresh (TASK-AB-COACHVENV01)
+# ============================================================================
+#
+# The worktree venv is bootstrapped once per feature and re-bootstrapped
+# BETWEEN waves (feature_orchestrator inter-wave hook). When a single task adds
+# a dependency and consumes it WITHIN the same wave (e.g. tiktoken in
+# FEAT-MEM-05), the Coach's independent pytest run executes against the STALE
+# venv → ModuleNotFoundError → the Coach rejects every AC even though the
+# implementation + pyproject edit are correct. That is a false-red: the Coach's
+# environment lags the Player's manifest edit by one wave.
+#
+# The fix is a per-turn refresh: when a turn's reported file changes touch a
+# dependency manifest, reinstall into the existing worktree venv BEFORE the
+# Coach's independent test run for that turn. ``changed_dependency_manifests``
+# is the cheap diff gate (so unaffected turns pay nothing);
+# ``refresh_environment_for_changes`` performs the reinstall by re-running the
+# idempotent bootstrap (the content-hash dedup re-runs because the manifest
+# changed, and the eager-venv path reuses the existing ``<root>/.venv``).
+
+# Basename set of dependency manifests whose modification within a wave
+# warrants a venv refresh. ``requirements*.txt`` is matched separately by
+# ``_REQUIREMENTS_RE`` because its name is not fixed.
+_DEPENDENCY_MANIFEST_NAMES = frozenset(
+    {
+        "pyproject.toml",
+        "uv.lock",
+        "poetry.lock",
+        "package.json",
+        "package-lock.json",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+        "go.mod",
+        "go.sum",
+        "Cargo.toml",
+        "Cargo.lock",
+        "pubspec.yaml",
+        "pubspec.lock",
+    }
+)
+
+# Matches requirements.txt / requirements-dev.txt / requirements/base.txt etc.
+_REQUIREMENTS_RE = re.compile(r"requirements[\w.-]*\.txt$")
+
+
+def changed_dependency_manifests(changed_paths: Iterable[str]) -> List[str]:
+    """
+    Return the subset of ``changed_paths`` that are dependency manifests.
+
+    Matching is on the path *basename* so it is robust to repo-relative,
+    worktree-relative, absolute, or repo-qualified (``repo:path``) strings as
+    they appear in a Player report's ``files_modified`` / ``files_created``.
+
+    Parameters
+    ----------
+    changed_paths : Iterable[str]
+        File path strings reported as changed this turn.
+
+    Returns
+    -------
+    List[str]
+        The original path strings that name a dependency manifest, de-duplicated
+        and order-preserving. Empty when no manifest changed (the caller treats
+        an empty result as "no refresh needed").
+    """
+    matched: List[str] = []
+    seen: set[str] = set()
+    for raw in changed_paths:
+        if not raw or raw in seen:
+            continue
+        path_part = str(raw)
+        # Strip a repo-qualified prefix (``<repo>:<path>``) introduced by the
+        # cross-repo evidence loop, where the token before the first ``:`` is a
+        # repo name with no path separator (not a Windows drive — autobuild is
+        # POSIX). Leave ordinary paths untouched.
+        head, sep, tail = path_part.partition(":")
+        if sep and tail and "/" not in head and "\\" not in head:
+            path_part = tail
+        name = Path(path_part).name
+        if name in _DEPENDENCY_MANIFEST_NAMES or _REQUIREMENTS_RE.search(name):
+            matched.append(raw)
+            seen.add(raw)
+    return matched
+
+
+def refresh_environment_for_changes(
+    worktree_root: Path,
+    changed_paths: Iterable[str],
+    *,
+    python_extras: Sequence[str] = (),
+    relevant_stacks: Optional[List[str]] = None,
+) -> Optional[BootstrapResult]:
+    """
+    Reinstall dependencies into the worktree venv when a turn changed a manifest.
+
+    No-op (returns ``None``) when ``changed_paths`` contains no dependency
+    manifest, or when no manifest is detected in ``worktree_root`` — so a turn
+    that did not touch dependencies pays only the cost of the cheap basename
+    scan in :func:`changed_dependency_manifests`.
+
+    When a manifest did change, the idempotent
+    :meth:`EnvironmentBootstrapper.bootstrap` is re-run: its content-hash dedup
+    re-executes the install because the manifest content differs from the saved
+    state, and the eager-venv path reuses the existing ``<root>/.venv`` so the
+    interpreter path is stable across the refresh.
+
+    Parameters
+    ----------
+    worktree_root : Path
+        Absolute path to the worktree root.
+    changed_paths : Iterable[str]
+        File path strings reported as changed this turn (Player report
+        ``files_modified`` + ``files_created``).
+    python_extras : Sequence[str], optional
+        PEP 621 optional-dependency groups to thread into the Python install
+        command (mirrors the feature bootstrap). Defaults to none — the editable
+        reinstall preserves extras installed by the initial bootstrap.
+    relevant_stacks : Optional[List[str]], optional
+        Forwarded to :meth:`EnvironmentBootstrapper.bootstrap`. Defaults to None
+        (all detected stacks treated as essential).
+
+    Returns
+    -------
+    Optional[BootstrapResult]
+        ``None`` when no manifest changed or none was detected; otherwise the
+        :class:`BootstrapResult` from the reinstall. The caller is responsible
+        for surfacing ``result.success is False`` as actionable feedback rather
+        than swallowing it into a silent pass
+        (``absence-of-failure-is-not-success``). ``bootstrap`` may also raise
+        :class:`UvSourcesRequireUvError` / :class:`BootstrapEnvironmentLeakError`;
+        those propagate to the caller for the same reason.
+    """
+    if not changed_dependency_manifests(changed_paths):
+        return None
+
+    detector = ProjectEnvironmentDetector(
+        worktree_root, python_extras=tuple(python_extras)
+    )
+    manifests = detector.detect()
+    if not manifests:
+        return None
+
+    bootstrapper = EnvironmentBootstrapper(worktree_root)
+    return bootstrapper.bootstrap(manifests, relevant_stacks=relevant_stacks)
+
+
+# ============================================================================
 # Public API
 # ============================================================================
 
@@ -2459,6 +2605,8 @@ __all__ = [
     "BootstrapFailureDetail",
     "ProjectEnvironmentDetector",
     "EnvironmentBootstrapper",
+    "changed_dependency_manifests",
+    "refresh_environment_for_changes",
     "RequiresPythonMismatch",
     "UvSourcesRequireUvError",
     "BootstrapEnvironmentLeakError",
