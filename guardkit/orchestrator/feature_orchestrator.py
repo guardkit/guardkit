@@ -218,6 +218,39 @@ class SmokeGatePhaseOutcome:
 
 
 @dataclass
+class WiringGatePhaseOutcome:
+    """Outcome of the post-wave wiring-gate phase (TASK-AB-WIREGATE01).
+
+    Returned by :meth:`FeatureOrchestrator._run_post_wave_wiring_gate`, which
+    owns the bounded wiring-feedback-retry loop (mocked-seam-of-authored-service
+    + composition-root ctor-arity). Mirrors :class:`SmokeGatePhaseOutcome` so
+    the wave-enumerate loop handles both gates uniformly.
+
+    Attributes
+    ----------
+    terminate : bool
+        ``True`` only when a re-run wave the Coach rejected must stop the build
+        under ``stop_on_failure``. Wiring findings themselves NEVER terminate
+        the feature (warning-severity heuristics — AC#1 "not a hard
+        terminator"): an unresolved finding after the retry budget is spent
+        becomes advisory and the build continues (``terminate=False``).
+    final_wave_result : WaveExecutionResult
+        The wave result that should replace ``wave_results[-1]`` (the FINAL
+        attempt's result — replace, never append, so the outcome classifier
+        does not double-count a re-run wave).
+    findings_unresolved : bool
+        ``True`` when turn-rejecting wiring findings remained after the retry
+        budget was spent. The wave-enumerate loop uses this to gate
+        ``_mark_wave_completed`` only while a retry is still in flight, never as
+        a terminal block.
+    """
+
+    terminate: bool
+    final_wave_result: WaveExecutionResult
+    findings_unresolved: bool = False
+
+
+@dataclass
 class FeatureOrchestrationResult:
     """
     Complete result of feature orchestration.
@@ -699,6 +732,21 @@ class FeatureOrchestrator:
             )
         except (TypeError, ValueError):
             self._smoke_gate_max_retries = 1
+        # TASK-AB-WIREGATE01: bounded retry budget for the post-wave wiring
+        # gate (mocked-seam-of-authored-service + composition-root ctor-arity).
+        # On turn-rejecting findings the wave is re-entered with the findings
+        # fed back to the Player as turn-1 feedback, up to this many extra
+        # rounds. Default 1; 0 disables feed-back (the gate still runs and
+        # logs → advisory-only). Unlike the smoke gate, exhausting the budget
+        # NEVER hard-terminates the feature — wiring findings are
+        # warning-severity heuristics, so an unresolved finding becomes
+        # advisory and the build continues (per AC#1: "not a hard terminator").
+        try:
+            self._wiring_gate_max_retries = max(
+                0, int(os.environ.get("GUARDKIT_WIRING_GATE_MAX_RETRIES", "1"))
+            )
+        except (TypeError, ValueError):
+            self._wiring_gate_max_retries = 1
         self.resume = resume
         self.fresh = fresh
         self.refresh = refresh
@@ -2295,6 +2343,22 @@ The detailed specifications are in the task markdown file.
                 if outcome.terminate:
                     break
 
+            # Post-wave wiring gate (TASK-AB-WIREGATE01). Fires AFTER the smoke
+            # gate (skipped if smoke already terminated above) and BEFORE
+            # wave-completion is persisted. Statically analyzes the assembled
+            # feature and feeds mocked-primary-seam + composition-root
+            # ctor-arity findings back to the Player as turn-1 feedback, bounded
+            # by _wiring_gate_max_retries. It REPLACES wave_results[-1] (never
+            # appends) and NEVER hard-terminates on findings — only a
+            # Coach-rejected re-run under stop_on_failure terminates.
+            wiring_outcome = self._run_post_wave_wiring_gate(
+                wave_number, task_ids, feature, worktree, wave_result
+            )
+            wave_result = wiring_outcome.final_wave_result
+            wave_results[-1] = wave_result
+            if wiring_outcome.terminate:
+                break
+
             # TASK-AB-COACHRUNPARITY01 (C1): mark the wave completed only AFTER
             # the smoke phase resolves — gated on task success AND smoke success
             # (or no smoke gate fired for this wave). This is the single place
@@ -2302,6 +2366,13 @@ The detailed specifications are in the task markdown file.
             # whose tasks pass but whose smoke gate fails is therefore never
             # recorded as completed on disk, so a resume cannot skip an
             # unverified wave.
+            #
+            # TASK-AB-WIREGATE01: wiring findings do NOT block completion — they
+            # are warning-severity heuristics, and once the retry budget is
+            # spent they are advisory only. The mid-retry case never reaches
+            # here (the gate loops internally until findings clear or the budget
+            # is spent), so no wave with an in-flight wiring retry is ever
+            # marked completed.
             smoke_blocked = (
                 wave_result.smoke_gate_result is not None
                 and not wave_result.smoke_gate_result.passed
@@ -2497,6 +2568,276 @@ The detailed specifications are in the task markdown file.
                     terminate=True, final_wave_result=wave_result
                 )
             # Loop: re-run the smoke gate against the re-executed wave.
+
+    # -----------------------------------------------------------------------
+    # Post-wave wiring gate (TASK-AB-WIREGATE01)
+    # -----------------------------------------------------------------------
+
+    def _wave_authored_files(self, task_ids: List[str]) -> List[str]:
+        """Union the worktree-relative files authored across a whole wave.
+
+        Reads each task's ``task_work_results.json`` (across every direct /
+        worktree autobuild dir via ``_autobuild_candidate_dirs``) and unions the
+        presence-based authored set — ``files_authored`` when present, else
+        ``files_created ∪ files_modified`` — exactly as
+        ``coach_validator._compute_authored_set`` does per task. This is the
+        assembled-feature write surface the per-task Coach aperture is too
+        narrow to see (evidence-boundary-narrower-than-write-surface).
+
+        Never raises: an unreadable / missing results file contributes nothing.
+        """
+        authored: List[str] = []
+        seen: set = set()
+        for task_id in task_ids:
+            data: Optional[Dict[str, Any]] = None
+            for d in self._autobuild_candidate_dirs(task_id):
+                results_path = d / "task_work_results.json"
+                if not results_path.exists():
+                    continue
+                try:
+                    data = json.loads(results_path.read_text())
+                    break
+                except (OSError, ValueError) as exc:
+                    logger.debug(
+                        f"[{task_id}] task_work_results read skipped in {d}: {exc}"
+                    )
+            if not isinstance(data, dict):
+                continue
+            if isinstance(data.get("files_authored"), list):
+                files = [str(f) for f in data["files_authored"]]
+            else:
+                files = [
+                    str(f)
+                    for f in list(data.get("files_created") or [])
+                    + list(data.get("files_modified") or [])
+                ]
+            for f in files:
+                if f not in seen:
+                    seen.add(f)
+                    authored.append(f)
+        return authored
+
+    @staticmethod
+    def _collect_turn_rejecting_wiring_findings(
+        wiring_result: Optional[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Extract the turn-rejecting findings from an ``analyze_wiring`` dict.
+
+        Only the two high-confidence correctness signals are turn-rejecting
+        (operator decision, TASK-AB-WIREGATE01):
+
+        * a MOCKED_SEAM finding with ``authored_this_turn=True`` — an
+          integration-tier test mocking a *primary in-repo* service seam;
+        * any CTOR_ARITY finding — a composition root constructing a first-party
+          service with the wrong arity.
+
+        UNWIRED_PATH findings stay advisory (already surfaced to Coach as
+        evidence; lower-confidence heuristic) and are NOT returned here.
+
+        Absence-of-failure-safe: ``None`` / ``error`` / ``unsupported_stack`` /
+        ``parse_degraded`` (or any non-``ran`` sub-result) yields ``[]`` — an
+        absent signal is never turn-rejecting.
+        """
+        if not isinstance(wiring_result, dict):
+            return []
+        if wiring_result.get("status") in {"error", "unsupported_stack"}:
+            return []
+        findings: List[Dict[str, Any]] = []
+
+        seam = wiring_result.get("mocked_seam") or {}
+        if seam.get("status") == "ran":
+            for f in seam.get("findings", []):
+                if f.get("authored_this_turn") is True:
+                    findings.append(f)
+
+        ctor = wiring_result.get("ctor_arity") or {}
+        if ctor.get("status") == "ran":
+            findings.extend(ctor.get("findings", []))
+
+        return findings
+
+    @staticmethod
+    def _build_wiring_feedback(findings: List[Dict[str, Any]]) -> str:
+        """Compose Player-facing feedback from turn-rejecting wiring findings.
+
+        Frames the failure as per-task-green ≠ feature-green: the unit suite
+        passed but the assembled feature is wired wrong (a primary seam is
+        mocked away, or the composition root constructs a service with the
+        wrong arity). See
+        ``.claude/rules/per-task-green-is-not-feature-green.md``.
+        """
+        seam = [f for f in findings if f.get("pattern") == "MOCKED_SEAM"]
+        ctor = [f for f in findings if f.get("pattern") == "CTOR_ARITY"]
+        lines = [
+            "FEATURE WIRING FAILURE (post-wave wiring gate)",
+            "",
+            "Your tasks' unit tests passed, but the ASSEMBLED feature is wired "
+            "incorrectly. Per-task-green is not feature-green: a passing unit "
+            "suite that mocks the seam it claims to integrate, or a composition "
+            "root that constructs a service with the wrong constructor args, "
+            "ships a non-functional feature. Fix the wiring below.",
+        ]
+        if seam:
+            lines.append("")
+            lines.append(
+                "MOCKED PRIMARY SEAM — an integration-tier test mocks a "
+                "first-party service this feature is supposed to wire together. "
+                "Replace the mock of the in-repo seam with the real object (mock "
+                "only true external boundaries — HTTP clients, DB drivers):"
+            )
+            for f in seam:
+                lines.append(
+                    f"  - {f.get('file')}:{f.get('lineno')} mocks "
+                    f"'{f.get('symbol')}'"
+                )
+        if ctor:
+            lines.append("")
+            lines.append(
+                "COMPOSITION-ROOT CONSTRUCTOR ARITY — the composition root "
+                "constructs a first-party service with the wrong number of "
+                "__init__ arguments. Pass every required argument:"
+            )
+            for f in ctor:
+                lines.append(
+                    f"  - {f.get('file')}:{f.get('lineno')} — {f.get('why')}"
+                )
+        return "\n".join(lines)
+
+    def _run_post_wave_wiring_gate(
+        self,
+        wave_number: int,
+        task_ids: List[str],
+        feature: Feature,
+        worktree: Worktree,
+        wave_result: WaveExecutionResult,
+    ) -> WiringGatePhaseOutcome:
+        """Run the post-wave wiring gate with a bounded feedback-retry loop.
+
+        TASK-AB-WIREGATE01. After a wave's tasks pass, statically analyze the
+        ASSEMBLED feature (the wave-aggregate authored set) via
+        ``guardkitfactory.wiring.analyze_wiring`` and feed turn-rejecting
+        findings (mocked-primary-seam + composition-root ctor-arity) back to the
+        Player as turn-1 ``seed_feedback``, re-entering the wave bounded by
+        ``_wiring_gate_max_retries``.
+
+        Disposition (per smoke-gate-is-feedback-not-terminator + AC#1):
+
+        * No findings (or an absent signal — analyzer unavailable, unsupported
+          stack, parse-degraded, probe didn't run): ``terminate=False``,
+          ``findings_unresolved=False`` — neutral, the wave proceeds.
+        * Findings + retries remaining: feed back, re-execute the wave, re-run
+          the gate. ``stop_on_failure`` honoured on a Coach-rejected re-run.
+        * Findings + retries exhausted: log a prominent warning and continue
+          (``terminate=False``, ``findings_unresolved=True``). Wiring findings
+          are warning-severity heuristics and NEVER hard-terminate the feature.
+        """
+        # Lazy import: the orchestrator must import without guardkitfactory
+        # (pip install guardkit-py without the [autobuild] extra). Absent ⇒
+        # the gate is a no-op (absent signal, never a block).
+        try:
+            from guardkitfactory.wiring import analyze_wiring
+        except ImportError:
+            logger.debug(
+                "[wave %s] wiring gate skipped: guardkitfactory.wiring "
+                "unavailable", wave_number,
+            )
+            return WiringGatePhaseOutcome(
+                terminate=False, final_wave_result=wave_result
+            )
+
+        retries_remaining = self._wiring_gate_max_retries
+        attempt = 0
+        while True:
+            authored = self._wave_authored_files(task_ids)
+            if not authored:
+                return WiringGatePhaseOutcome(
+                    terminate=False, final_wave_result=wave_result
+                )
+            try:
+                wiring_result = analyze_wiring(
+                    authored_files=authored,
+                    worktree_path=worktree.path,
+                    task_type="feature",
+                    stack=None,  # infer dialects from authored file extensions
+                )
+            except Exception as exc:  # fail-open: absent signal, never a block
+                logger.warning(
+                    "[wave %s] wiring gate analyzer error (continuing): %s",
+                    wave_number, exc, exc_info=exc,
+                )
+                return WiringGatePhaseOutcome(
+                    terminate=False, final_wave_result=wave_result
+                )
+
+            findings = self._collect_turn_rejecting_wiring_findings(wiring_result)
+            if not findings:
+                return WiringGatePhaseOutcome(
+                    terminate=False, final_wave_result=wave_result
+                )
+
+            if retries_remaining <= 0:
+                # Budget spent (or disabled): the finding becomes advisory and
+                # the build continues. NEVER a hard terminator (AC#1).
+                console.print(
+                    f"[yellow]⚠ Wiring gate found {len(findings)} unresolved "
+                    f"finding(s) after wave {wave_number}[/yellow] "
+                    f"(retry budget spent); continuing with the findings as "
+                    f"advisory evidence."
+                )
+                for f in findings:
+                    console.print(
+                        f"[yellow]  - {f.get('pattern')} {f.get('file')}:"
+                        f"{f.get('lineno')} {f.get('symbol')}[/yellow]"
+                    )
+                return WiringGatePhaseOutcome(
+                    terminate=False,
+                    final_wave_result=wave_result,
+                    findings_unresolved=True,
+                )
+
+            # Retry: feed the wiring findings back and re-enter the wave.
+            retries_remaining -= 1
+            attempt += 1
+            wiring_feedback = self._build_wiring_feedback(findings)
+            console.print(
+                f"[yellow]↻ Wiring gate found {len(findings)} finding(s) after "
+                f"wave {wave_number}[/yellow] — re-entering the wave with the "
+                f"wiring errors as Player feedback "
+                f"(retry {attempt}/{self._wiring_gate_max_retries})."
+            )
+            if self._wave_display:
+                self._wave_display.start_wave(
+                    wave_number, task_ids, max_parallel=len(task_ids)
+                )
+            wave_result = self._execute_wave(
+                wave_number, task_ids, feature, worktree,
+                seed_feedback=wiring_feedback, attempt=attempt,
+            )
+            if self._wave_display:
+                passed = sum(1 for r in wave_result.results if r.success)
+                failed = len(wave_result.results) - passed
+                skipped = sum(
+                    1 for r in wave_result.results
+                    if r.final_decision == "skipped"
+                )
+                recovered = sum(
+                    1 for r in wave_result.results if r.recovery_count > 0
+                )
+                self._wave_display.complete_wave(
+                    wave_number, passed, failed, skipped, recovered
+                )
+
+            # A re-run the Coach rejected: honour stop_on_failure (parity with
+            # the smoke gate's re-run handling).
+            if not wave_result.all_succeeded and self.stop_on_failure:
+                console.print(
+                    "[yellow]⚠[/yellow] Stopping execution after wiring re-run "
+                    "(stop_on_failure=True)"
+                )
+                return WiringGatePhaseOutcome(
+                    terminate=True, final_wave_result=wave_result
+                )
+            # Loop: re-run the wiring gate against the re-executed wave.
 
     async def _execute_wave_parallel(
         self,
