@@ -46,6 +46,29 @@ from guardkit.orchestrator.harness.selector import (
 _TEST_ENV_VAR = "GUARDKIT_HARNESS_TEST_ONLY"
 
 
+def _has_guardkitfactory() -> bool:
+    """True iff guardkitfactory is importable.
+
+    The langgraph-branch dispatch tests construct a real ``LangGraphHarness``
+    (``from guardkitfactory.harness import ...``), so they require
+    guardkitfactory. They are skipped in CI's tests.yml (which does not
+    install it) and run locally / in the seam suite. The SDK-default and
+    error-path tests in this module need no such guard.
+    """
+    try:
+        import importlib.util
+
+        return importlib.util.find_spec("guardkitfactory") is not None
+    except Exception:
+        return False
+
+
+_requires_guardkitfactory = pytest.mark.skipif(
+    not _has_guardkitfactory(),
+    reason="constructs LangGraphHarness; requires guardkitfactory installed",
+)
+
+
 def _sdk_kwargs(**overrides: Any) -> dict[str, Any]:
     """Build the canonical SDK-shaped kwarg bag the orchestrator forwards.
 
@@ -204,6 +227,7 @@ class TestTranslateKwargsForLangGraph:
 class TestSelectHarnessDispatch:
     """Env-var-driven dispatch behaviour for :func:`select_harness`."""
 
+    @_requires_guardkitfactory
     def test_default_returns_langgraph_harness(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
     ) -> None:
@@ -302,6 +326,7 @@ class TestSelectHarnessDispatch:
         assert isinstance(harness, LangGraphHarness)
         assert harness.model is stub_model
 
+    @_requires_guardkitfactory
     def test_langgraph_forwards_on_model_activity(
         self,
         monkeypatch: pytest.MonkeyPatch,

@@ -139,6 +139,12 @@ def _make_orchestrator(
     orchestrator._last_coach_context_status = None
     orchestrator.verbose = False
     orchestrator.perspective_reset_turns = []
+    # TASK-AB-COACHRUNPARITY01: _loop_phase reads these (set in __init__,
+    # bypassed by __new__ here). Mirror the real constructor defaults so the
+    # bare-orchestrator helper stays faithful.
+    orchestrator._seed_feedback = None
+    orchestrator._smoke_command = None
+    orchestrator._smoke_expected_exit = 0
 
     # Progress display - silent mock
     progress = Mock()

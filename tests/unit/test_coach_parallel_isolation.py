@@ -250,8 +250,16 @@ class TestIsolationRouting:
         mock_isolated.assert_not_called()
         mock_run.assert_called_once()
 
-    def test_sdk_mode_bypasses_isolation_even_when_parallel(self, tmp_path: Path) -> None:
+    def test_sdk_mode_bypasses_isolation_even_when_parallel(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """wave_size=2 + SDK mode → isolation NOT applied (SDK has its own isolation)."""
+        # TASK-HMIG-011: run_independent_tests gates the SDK path on
+        # `not _is_langgraph_harness()` (TASK-FIX-COACHTESTTO forces subprocess
+        # under langgraph). Post-cutover the default harness is langgraph, so
+        # the SDK path is only taken when GUARDKIT_HARNESS=sdk is in scope.
+        # Pin it so this test exercises the sdk-bypasses-isolation branch.
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
         validator = _make_validator(tmp_path, wave_size=2)
         # Override to SDK mode
         validator._coach_test_execution = "sdk"

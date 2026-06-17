@@ -95,6 +95,16 @@ def _make_invoker(
 
 
 @pytest.fixture(autouse=True)
+def _pin_sdk_harness(monkeypatch):
+    """TASK-HMIG-011: pin the SDK substrate for these harness-agnostic
+    instrumentation tests. CI's tests.yml installs claude-agent-sdk but NOT
+    guardkitfactory/langchain, so resolving the post-cutover ``langgraph``
+    default would raise. The langgraph path's event emission is covered by
+    tests/orchestrator/test_agent_invoker_langgraph.py."""
+    monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+
+
+@pytest.fixture(autouse=True)
 def _patch_cleanup():
     """Disable SDK cleanup handler in all tests."""
     with patch("guardkit.orchestrator.agent_invoker._install_sdk_cleanup_handler"):
