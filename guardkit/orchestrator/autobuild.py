@@ -2794,6 +2794,114 @@ class AutoBuildOrchestrator:
 
         return capped
 
+    def _maybe_refresh_venv_for_manifest_change(
+        self,
+        player_result: Any,
+        worktree: Any,
+        turn: int,
+    ) -> Optional[str]:
+        """
+        Refresh the worktree venv when this turn changed a dependency manifest.
+
+        Detects manifest changes from the Player report's ``files_modified`` /
+        ``files_created`` (the post-turn diff) and, when one is found, reinstalls
+        into the existing worktree venv so the Coach's independent pytest run for
+        THIS turn sees newly declared dependencies (TASK-AB-COACHVENV01). No-op
+        when no manifest changed — unaffected turns pay only a cheap basename
+        scan.
+
+        Parameters
+        ----------
+        player_result : Any
+            The Player's turn result (carries ``.report`` with file lists).
+        worktree : Any
+            The shared worktree (carries ``.path``).
+        turn : int
+            Current turn number (for logging).
+
+        Returns
+        -------
+        Optional[str]
+            ``None`` on no-op or a successful reinstall. On a reinstall failure,
+            an actionable feedback string the caller feeds back to the Player —
+            so a failed reinstall is never swallowed into a silent pass
+            (``absence-of-failure-is-not-success``). On success, updates
+            ``self._venv_python`` from the refreshed interpreter when available.
+        """
+        from guardkit.orchestrator.environment_bootstrap import (
+            BootstrapEnvironmentLeakError,
+            UvSourcesRequireUvError,
+            changed_dependency_manifests,
+            refresh_environment_for_changes,
+        )
+
+        if worktree is None or player_result is None:
+            return None
+        report = getattr(player_result, "report", None) or {}
+        changed = list(report.get("files_modified", []) or []) + list(
+            report.get("files_created", []) or []
+        )
+        manifests_changed = changed_dependency_manifests(changed)
+        if not manifests_changed:
+            return None
+
+        logger.info(
+            "Turn %d modified dependency manifest(s) %s — refreshing worktree "
+            "venv before Coach verification (TASK-AB-COACHVENV01)",
+            turn,
+            manifests_changed,
+        )
+        try:
+            result = refresh_environment_for_changes(
+                Path(worktree.path), changed
+            )
+        except UvSourcesRequireUvError as exc:
+            return (
+                "Dependency reinstall could not run after this turn modified "
+                f"{', '.join(manifests_changed)}: {exc}"
+            )
+        except BootstrapEnvironmentLeakError as exc:
+            return (
+                "Dependency reinstall after this turn's manifest change landed "
+                f"outside the worktree venv: {exc}"
+            )
+        except Exception as exc:  # noqa: BLE001 - surface, never silently pass
+            logger.warning(
+                "Worktree venv refresh raised for turn %d: %s",
+                turn,
+                exc,
+                exc_info=True,
+            )
+            return (
+                "Dependency reinstall failed after this turn modified "
+                f"{', '.join(manifests_changed)}: {exc}"
+            )
+
+        if result is None:
+            return None
+
+        if not result.success:
+            details = "; ".join(
+                f"{d.stack} ({Path(d.manifest_path).name}): {d.stderr_excerpt}"
+                for d in result.failure_details
+                if d.essential
+            ) or (result.error or "unknown install error")
+            return (
+                "Dependency reinstall failed after this turn modified "
+                f"{', '.join(manifests_changed)}. The Coach would otherwise "
+                "verify against a stale environment. Fix the dependency "
+                f"declaration so the install succeeds. Details: {details}"
+            )
+
+        if result.venv_python:
+            self._venv_python = result.venv_python
+        logger.info(
+            "Worktree venv refreshed for turn %d (stacks: %s)",
+            turn,
+            ", ".join(result.stacks_detected),
+        )
+        return None
+
     def _execute_turn(
         self,
         turn: int,
@@ -3418,6 +3526,35 @@ class AutoBuildOrchestrator:
                 coach_result=None,
                 decision="approve",  # Auto-approve in ablation mode
                 feedback=None,
+                timestamp=timestamp,
+                player_context_status=player_context_status,
+                sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
+                sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
+                sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
+                command_results=tuple(command_exec_results) if command_exec_results else None,
+            )
+
+        # TASK-AB-COACHVENV01: when THIS turn modified a dependency manifest,
+        # reinstall into the worktree venv BEFORE the Coach's independent test
+        # run — not only between waves. Otherwise a dep added+consumed in one
+        # wave (e.g. tiktoken in FEAT-MEM-05) makes the Coach's pytest run
+        # against the stale venv and ModuleNotFoundError-reject a sound
+        # deliverable (false-red). A reinstall failure is surfaced as turn
+        # feedback, never swallowed into a silent pass
+        # (absence-of-failure-is-not-success).
+        venv_refresh_feedback = self._maybe_refresh_venv_for_manifest_change(
+            player_result, worktree, turn
+        )
+        if venv_refresh_feedback is not None:
+            self._progress_display.complete_turn(
+                "feedback", "Dependency reinstall failed - feeding back to Player"
+            )
+            return TurnRecord(
+                turn=turn,
+                player_result=player_result,
+                coach_result=None,
+                decision="feedback",
+                feedback=venv_refresh_feedback,
                 timestamp=timestamp,
                 player_context_status=player_context_status,
                 sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
