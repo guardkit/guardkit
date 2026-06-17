@@ -1,11 +1,16 @@
 ---
 id: TASK-GK-PA-003
 title: plan-audit resolves markdown-link hrefs and path-suffix matches
-status: backlog
+status: completed
 task_type: bug
 priority: high
 complexity: 3
 created: 2026-06-17T11:00:00Z
+updated: 2026-06-17T12:00:00Z
+completed: 2026-06-17T12:00:00Z
+previous_state: in_review
+completed_location: tasks/completed/TASK-GK-PA-003/
+state_transition_reason: "task-complete — all 4 ACs met, 5 regression tests + full scanner suite (32) green, lint clean"
 tags: [autobuild, plan-audit, false-positive, path-string-mismatch]
 source: docs/retro/autobuild-retro-xref-2026-06-17.md
 provenance: fleet-memory FEAT-MEM-07 Error 2 (RIP-002 unrecoverable_stall)
