@@ -57,7 +57,7 @@ def _task_identifier(task: object) -> str:
     """Return the task-id string for a feature's task entry.
 
     Feature YAMLs declare ``tasks`` as a list of mappings
-    (``{"id": "TASK-XYZ-001", "name": ..., "file_path": ...}``). Older or
+    (``{"id": "TASK-XXX-YYYY", "name": ..., "file_path": ...}``). Older or
     hand-written forms may use a bare id string. Extract the id either way,
     returning ``""`` when no id is present.
     """
