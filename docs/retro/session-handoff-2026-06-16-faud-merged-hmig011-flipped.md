@@ -123,10 +123,37 @@ swap pressure dropped 5 GB→2.6 GB. Peak under the run was ~110-114 GB / 121 GB
 
 ---
 
+## 🆕 Addendum — 2026-06-17 (SDK stays viable + cross-repo retro analysis)
+
+- **Anthropic cancelled the planned SDK paid-subscription cutoff.** Cloud autobuild
+  (`GUARDKIT_HARNESS=sdk`) stays a first-class option alongside local LangGraph. The
+  session's fixes live in the **shared orchestrator above the harness**, so both paths
+  get them; the HMIG-011 default flip left the SDK path fully functional (AC-007
+  verified). The default is now a *free* choice (the 2026-06-15 key-enforcement that
+  partly motivated the flip is moot) — keep LangGraph-default or revert via the one
+  `DEFAULT_HARNESS` constant.
+- **Cross-repo autobuild retro analysis (commit `1c3eae0b`).** Cross-referenced **11**
+  cloud (SDK) autobuild retros from **lpa-platform-poc** + **fleet-memory** (built on
+  older guardkit, MacBook 2026-06-13/14) against current main: **9 of ~16 issues already
+  fixed** (a pull + re-run resolves them — field validation of the absence-of-failure
+  rule family on the SDK substrate), 2 usage/config, **5 still open**. Full report:
+  `docs/retro/autobuild-retro-xref-2026-06-17.md`.
+- **5 follow-up tasks filed** in `tasks/backlog/autobuild-retro-fixes/`:
+  **TASK-AB-WIREGATE01** (high — post-wave mocked-seam/wiring gate; the only *correctness*
+  gap, same green≠correct class as FEAT-FAUD), **TASK-GK-PA-003** (high — plan-audit
+  href/path-suffix), TASK-AB-BOOTPY01, TASK-AB-COACHVENV01, TASK-AB-BDDNEUTRAL01.
+- **Recommended:** re-run lpa-platform-poc + fleet-memory features on current guardkit to
+  confirm the 9 fixes hold; build TASK-GK-PA-003 (small) + design TASK-AB-WIREGATE01
+  (needs Phase 2.5 — must be stack-agnostic per `stack-plugin-architecture.md`).
+
+---
+
 ## 🔗 KEY REFERENCES
 - **Memory:** `[[gptoss-player-autobuild-traits]]` (Player traits + green≠correct),
   `[[dgx-spark-player-model-selection]]` (model pick + llama-swap config recipe).
 - **Cutover task:** `tasks/backlog/autobuild-harness-migration/TASK-HMIG-011-...md`
   (Cutover execution note + rollback).
 - **Flip point:** `guardkit/orchestrator/harness/selector.py` (`DEFAULT_HARNESS`).
+- **Cross-repo retro analysis (2026-06-17):** `docs/retro/autobuild-retro-xref-2026-06-17.md`
+  + follow-up tasks `tasks/backlog/autobuild-retro-fixes/` (README indexes the 5).
 - **Prior handoff (superseded):** `CONVERSATION-STARTER-2026-06-16-gptoss-player-validated-cutover.md`.
