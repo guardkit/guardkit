@@ -1,11 +1,15 @@
 ---
 id: TASK-AB-BOOTPY01
 title: Pin uv venv interpreter to requires-python
-status: backlog
+status: completed
 task_type: bug
 priority: medium
 complexity: 3
 created: 2026-06-17T11:00:00Z
+updated: 2026-06-17T12:15:00Z
+completed: 2026-06-17T12:15:00Z
+completed_location: tasks/completed/TASK-AB-BOOTPY01/
+previous_state: in_review
 tags: [autobuild, environment-bootstrap, uv, python-version]
 source: docs/retro/autobuild-retro-xref-2026-06-17.md
 provenance: fleet-memory FEAT-MEM-01 Error 1 (Python 3.10 bootstrap trap)
@@ -27,15 +31,33 @@ into** the `uv venv` interpreter selection.
 
 ## Acceptance Criteria
 
-- [ ] `uv venv` is invoked with an explicit `--python` derived from the project's
+- [x] `uv venv` is invoked with an explicit `--python` derived from the project's
       `requires-python` (via `get_requires_python()`), so the worktree venv is created
       on a compatible interpreter.
-- [ ] Applies to **both** the feature bootstrap (`:1675-1681`) and
-      `_ensure_worktree_venv`.
-- [ ] When `requires-python` is absent/unparseable, behaviour is unchanged (no
+- [x] Applies to **both** the feature bootstrap (`:1675-1681`, `_ensure_uv_venv`) and
+      `_ensure_worktree_venv` (eager creation path).
+- [x] When `requires-python` is absent/unparseable, behaviour is unchanged (no
       `--python` → uv default); no crash.
-- [ ] Regression test: a project manifest with `requires-python = ">=3.12"` results in a
+- [x] Regression test: a project manifest with `requires-python = ">=3.12"` results in a
       `uv venv` call carrying a `--python` constraint that excludes 3.10.
+
+## Resolution
+
+`_uv_python_request()` (new module-level helper in `environment_bootstrap.py`)
+maps a `requires-python` specifier to the lowest `major.minor` it admits
+(`>=3.12` → `3.12`, `>=3.12,<4.0` → `3.12`, `^3.11` → `3.11`, `~=3.10` → `3.10`),
+returning `None` when absent/unparseable. It is threaded into both `uv venv`
+sites:
+
+- `_ensure_worktree_venv(worktree, requires_python=None)` — eager creation; the
+  `bootstrap()` call site derives the constraint from the first python manifest
+  that declares one. The `python -m venv` fallback (no uv on PATH) is unaffected.
+- `_ensure_uv_venv(cwd, requires_python=None)` — AB60 retry; the `_run_install`
+  call site passes `manifest.get_requires_python()`.
+
+Both default args preserve the existing call shapes (no `--python` when the
+constraint is absent). Tests: `tests/unit/test_environment_bootstrap_python_pin.py`
+(18 tests). Full `environment_bootstrap` suite: 230 passed, 12 skipped.
 
 ## Implementation Notes
 

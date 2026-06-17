@@ -37,6 +37,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -521,6 +522,47 @@ class BootstrapEnvironmentLeakError(RuntimeError):
 def _uv_on_path() -> bool:
     """Return True when ``uv`` is resolvable via PATH."""
     return shutil.which("uv") is not None
+
+
+_PY_VERSION_RE = re.compile(r"(\d+)\.(\d+)")
+
+
+def _uv_python_request(requires_python: Optional[str]) -> Optional[str]:
+    """
+    Map a ``requires-python`` specifier to a uv ``--python`` request.
+
+    Returns a concrete ``major.minor`` version string (e.g. ``"3.12"``) derived
+    from the *lower bound* of the constraint — the smallest ``major.minor`` the
+    constraint admits — which is sufficient for ``uv venv --python`` to select
+    (or download) a compatible interpreter. Returns ``None`` when the constraint
+    is absent or no version token can be parsed, so callers fall back to uv's
+    default interpreter selection (behaviour unchanged).
+
+    Taking the minimum across every version token in the specifier yields the
+    floor for the common forms without having to classify each bound:
+
+    Examples
+    --------
+    ``">=3.12"``      -> ``"3.12"``
+    ``">=3.12,<4.0"`` -> ``"3.12"``
+    ``">=3.9,<4.0"``  -> ``"3.9"``
+    ``"^3.11"``       -> ``"3.11"``
+    ``"~=3.10"``      -> ``"3.10"``
+    ``None`` / ``""`` -> ``None``
+
+    See TASK-AB-BOOTPY01 (FEAT-MEM-01 Error 1: Python 3.10 bootstrap trap).
+    """
+    if not requires_python:
+        return None
+    candidates: List[tuple] = []
+    for token in requires_python.split(","):
+        match = _PY_VERSION_RE.search(token)
+        if match:
+            candidates.append((int(match.group(1)), int(match.group(2))))
+    if not candidates:
+        return None
+    major, minor = min(candidates)
+    return f"{major}.{minor}"
 
 
 def _pyproject_has_uv_sources(pyproject_path: Path) -> bool:
@@ -1299,7 +1341,22 @@ class EnvironmentBootstrapper:
             or not str(self._venv_python).startswith(str(self._root))
         ):
             try:
-                self._venv_python = self._ensure_worktree_venv(self._root)
+                # Pin the eager venv to the project's requires-python (first
+                # python manifest that declares one) so uv does not silently
+                # build it on an incompatible host interpreter (TASK-AB-BOOTPY01).
+                eager_requires_python = next(
+                    (
+                        rp
+                        for m in manifests
+                        if m.stack == "python"
+                        for rp in (m.get_requires_python(),)
+                        if rp
+                    ),
+                    None,
+                )
+                self._venv_python = self._ensure_worktree_venv(
+                    self._root, eager_requires_python
+                )
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
                 logger.warning(
                     "FFC6: eager worktree venv creation failed at %s/.venv: %s. "
@@ -1633,7 +1690,9 @@ class EnvironmentBootstrapper:
         """
         return UV_NO_VENV_SENTINEL in stderr
 
-    def _ensure_uv_venv(self, cwd: Path) -> Path:
+    def _ensure_uv_venv(
+        self, cwd: Path, requires_python: Optional[str] = None
+    ) -> Path:
         """
         Create a worktree-local venv at ``<cwd>/.venv`` (if needed).
 
@@ -1653,6 +1712,13 @@ class EnvironmentBootstrapper:
         cwd : Path
             Working directory of the failing ``uv pip install`` call —
             typically the manifest's parent directory.
+        requires_python : Optional[str]
+            The manifest's ``requires-python`` constraint, if any. When it
+            maps to a concrete interpreter request (via
+            :func:`_uv_python_request`), ``uv venv`` is pinned to that version
+            so the venv is not silently built on an incompatible host
+            interpreter (TASK-AB-BOOTPY01). Absent/unparseable → no ``--python``
+            (uv default), behaviour unchanged.
 
         Returns
         -------
@@ -1668,12 +1734,18 @@ class EnvironmentBootstrapper:
         venv_python = venv_dir / "bin" / "python"
 
         if not venv_python.exists():
+            cmd = ["uv", "venv"]
+            py_request = _uv_python_request(requires_python)
+            if py_request:
+                cmd += ["--python", py_request]
+            cmd.append(str(venv_dir))
             logger.info(
-                "uv-sources: creating worktree-local virtualenv at %s",
+                "uv-sources: creating worktree-local virtualenv at %s%s",
                 venv_dir,
+                f" (python {py_request})" if py_request else "",
             )
             subprocess.run(
-                ["uv", "venv", str(venv_dir)],
+                cmd,
                 check=True,
                 capture_output=True,
                 text=True,
@@ -1688,7 +1760,9 @@ class EnvironmentBootstrapper:
         self._uv_venv_python = venv_python
         return venv_dir
 
-    def _ensure_worktree_venv(self, worktree: Path) -> Path:
+    def _ensure_worktree_venv(
+        self, worktree: Path, requires_python: Optional[str] = None
+    ) -> Path:
         """
         Create ``<worktree>/.venv`` eagerly (idempotent) and return the
         Python interpreter path.
@@ -1722,6 +1796,15 @@ class EnvironmentBootstrapper:
         worktree : Path
             Worktree root (absolute). The venv is created at
             ``<worktree>/.venv``.
+        requires_python : Optional[str]
+            The project's ``requires-python`` constraint, if any. When it maps
+            to a concrete interpreter request (via :func:`_uv_python_request`),
+            ``uv venv`` is pinned to that version so the worktree venv is not
+            silently built on an incompatible host interpreter — e.g. a
+            uv-managed cpython-3.10 against a ``requires-python >=3.12`` project
+            (TASK-AB-BOOTPY01, FEAT-MEM-01 Error 1). Absent/unparseable → no
+            ``--python`` (uv default), behaviour unchanged. The ``python -m
+            venv`` fallback cannot honour a pin and is unaffected.
 
         Returns
         -------
@@ -1751,10 +1834,15 @@ class EnvironmentBootstrapper:
             # pip install <pkg>`` via :meth:`_run_install`) fail with "No
             # module named pip" — manifests as a hard-fail bootstrap error
             # despite uv being present.
-            cmd = ["uv", "venv", "--seed", str(venv_dir)]
+            cmd = ["uv", "venv", "--seed"]
+            py_request = _uv_python_request(requires_python)
+            if py_request:
+                cmd += ["--python", py_request]
+            cmd.append(str(venv_dir))
             logger.info(
-                "FFC6: creating worktree-local venv via uv (seeded) at %s",
+                "FFC6: creating worktree-local venv via uv (seeded) at %s%s",
                 venv_dir,
+                f" (python {py_request})" if py_request else "",
             )
         else:
             cmd = [sys.executable, "-m", "venv", str(venv_dir)]
@@ -1979,7 +2067,9 @@ class EnvironmentBootstrapper:
                 and self._is_uv_no_venv_error(proc.stderr or "")
             ):
                 try:
-                    venv_dir = self._ensure_uv_venv(Path(cwd))
+                    venv_dir = self._ensure_uv_venv(
+                        Path(cwd), manifest.get_requires_python()
+                    )
                 except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
                     logger.warning(
                         "uv-sources: failed to create worktree-local venv at "
