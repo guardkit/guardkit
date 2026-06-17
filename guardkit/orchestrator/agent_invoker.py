@@ -8564,6 +8564,18 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         )
         if ac_match:
             body = ac_match.group(1)
+        # TASK-GK-PA-003 AC-1: resolve markdown links ``[label](href)`` to
+        # their href before tokenizing. A link *label* may itself be a
+        # path-shaped string (e.g. ``[relay/service.py](src/pkg/relay/
+        # service.py)``) — but the label is a display string, not a cited
+        # file. Only the href is the real referent. Dropping the label
+        # stops a non-existent label path tripping the escalation while
+        # the href that actually exists on disk goes unchecked. This is
+        # the inverse-shape sibling of
+        # ``path-string-mismatch-is-not-dishonesty``: a path-string miss
+        # treated as a hard failure when the file exists under a
+        # resolvable path.
+        body = _re.sub(r"\[[^\]]*\]\(([^)]+)\)", r"\1", body)
         primary = _re.findall(r"[\w./\-]+\.\w{1,5}", body)
         backtick = _re.findall(r"`([^`]+\.[a-zA-Z]+)`", body)
         double_q = _re.findall(r'"([^"]+\.[a-zA-Z]+)"', body)
@@ -8601,9 +8613,52 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             # false-positive root cause (TASK-GK-AC-001).
             if not flag_basenames and "/" not in p:
                 continue
-            if not (self.worktree_path / p).exists():
+            if not self._ac_path_exists(p):
                 missing.append(p)
         return sorted(set(missing))
+
+    def _ac_path_exists(self, token: str) -> bool:
+        """Return ``True`` when an AC-cited path token resolves on disk.
+
+        TASK-GK-PA-003 AC-2: a multi-segment token (one containing ``/``)
+        is treated as a **path suffix**. AC text — and markdown-link hrefs
+        resolved by :meth:`_scan_ac_for_missing_paths` — routinely cite a
+        path relative to a package root (``relay/service.py``) when the
+        file actually lives at ``src/pkg/relay/service.py``. A direct
+        ``worktree / token`` check misses that; a match anywhere in the
+        tree whose path *ends with* the token (on segment boundaries)
+        counts as present.
+
+        The walk skips dependency / VCS / cache directories and does NOT
+        follow symlinks — the ``.guardkit/worktrees`` tree carries a
+        sibling-repo symlink, so ``followlinks=False`` avoids walking (or
+        looping) into it. AC-003's no-masking guarantee is preserved: a
+        genuinely-missing path (no direct hit and no suffix match) still
+        returns ``False``, so it stays a violation.
+        """
+        if (self.worktree_path / token).exists():
+            return True
+        # Suffix fallback applies to multi-segment tokens only. Bare
+        # basenames are already handled by the caller's skip rule; a lone
+        # segment here keeps the strict worktree-root semantics.
+        suffix_parts = tuple(seg for seg in token.split("/") if seg)
+        if len(suffix_parts) < 2:
+            return False
+        n = len(suffix_parts)
+        basename = suffix_parts[-1]
+        prune = {
+            ".git", ".hg", ".svn", "node_modules", "__pycache__",
+            ".venv", "venv", ".mypy_cache", ".pytest_cache", ".tox",
+            ".guardkit",
+        }
+        for dirpath, dirnames, filenames in os.walk(
+            self.worktree_path, followlinks=False
+        ):
+            dirnames[:] = [d for d in dirnames if d not in prune]
+            if basename in filenames:
+                if Path(dirpath, basename).parts[-n:] == suffix_parts:
+                    return True
+        return False
 
     def _compute_code_review_block(
         self, task_work_data: Dict[str, Any]
