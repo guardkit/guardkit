@@ -40,6 +40,14 @@ from guardkit.orchestrator.quality_gates.coach_validator import (
 # ============================================================================
 
 
+@pytest.fixture(autouse=True)
+def _pin_sdk_harness(monkeypatch):
+    """TASK-HMIG-011: SDK-environment-parity tests run on the SDK substrate.
+    Pin GUARDKIT_HARNESS=sdk so the post-cutover ``langgraph`` default (not
+    importable in CI's tests.yml) is not resolved."""
+    monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+
+
 def _make_mock_sdk_module() -> MagicMock:
     """Build a minimal mock of the claude_agent_sdk module."""
     mock_module = MagicMock(spec=ModuleType)

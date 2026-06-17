@@ -191,10 +191,11 @@ class PackageCheck(Check):
 class ActiveHarnessCheck(Check):
     """Report the active autobuild harness substrate (TASK-HMIG-006 AC-006).
 
-    Reads the ``GUARDKIT_HARNESS`` env var (default ``"sdk"``) and reports
-    it alongside the version of ``guardkitfactory`` if the langgraph path
-    can be resolved. Always a non-required (WARNING-on-issue) check — the
-    doctor surfaces the configuration, it does not validate it.
+    Reads the ``GUARDKIT_HARNESS`` env var (default ``DEFAULT_HARNESS``,
+    ``"langgraph"`` since the TASK-HMIG-011 cutover on 2026-06-16) and
+    reports it alongside the version of ``guardkitfactory`` if the langgraph
+    path can be resolved. Always a non-required (WARNING-on-issue) check —
+    the doctor surfaces the configuration, it does not validate it.
     """
 
     def __init__(self, required: bool = False):
