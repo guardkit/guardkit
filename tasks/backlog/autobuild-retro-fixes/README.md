@@ -16,16 +16,21 @@ cross-referencing all 11 retros against current main.
   Cross-repo: new `CTOR_ARITY` analysis in `guardkitfactory.wiring` + post-wave gate
   in guardkit `feature_orchestrator.py`; companion rule
   [`per-task-green-is-not-feature-green.md`](../../../.claude/rules/per-task-green-is-not-feature-green.md).
+- TASK-AB-BDDNEUTRAL01 — neutral BDD verdict on absent feature file + auto-install
+  conftest bridge; completed at
+  [`tasks/completed/TASK-AB-BDDNEUTRAL01/`](../../completed/TASK-AB-BDDNEUTRAL01/TASK-AB-BDDNEUTRAL01.md).
+  Exit-4 "not found" (uncollectable `.feature`) → neutral, not a stacking false-red
+  (F584 preserved via a positive-evidence discriminator); bridge auto-installed at
+  `WorktreeManager.create()` + `guardkit init`.
 
-That leaves the 3 below still open here.
+That leaves the 2 below still open here.
 
 | Task | Priority | What | Class |
 |---|---|---|---|
 | [TASK-AB-BOOTPY01](TASK-AB-BOOTPY01-pin-uv-venv-interpreter-to-requires-python.md) | medium | Pin `uv venv` interpreter to `requires-python` | bootstrap trap |
 | [TASK-AB-COACHVENV01](TASK-AB-COACHVENV01-refresh-coach-venv-on-intrawave-dep-change.md) | medium | Refresh Coach venv on intra-wave dependency change | false-red stall |
-| [TASK-AB-BDDNEUTRAL01](TASK-AB-BDDNEUTRAL01-neutral-bdd-verdict-on-absent-feature-file.md) | medium | Neutral BDD verdict on absent feature file + auto-install conftest | false-red stall |
 
-**Recommended order:** the three remaining bootstrap/BDD items are operator-friction
+**Recommended order:** the two remaining bootstrap/BDD items are operator-friction
 fixes. (Both high-impact correctness items — TASK-GK-PA-003 and TASK-AB-WIREGATE01 —
 are done; see above.)
 

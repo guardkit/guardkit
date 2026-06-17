@@ -43,6 +43,7 @@ from guardkit.integrations.graphiti.episodes.project_overview import ProjectOver
 from guardkit.knowledge.config import _find_project_root, load_graphiti_config
 from guardkit.knowledge.graphiti_client import GraphitiClient, GraphitiConfig, normalize_project_id
 from guardkit.knowledge.project_seeding import estimate_episode_count, seed_project_knowledge
+from guardkit.templates.conftest_bridge import install_features_conftest_bridge
 from guardkit.templates.resolver import (
     _get_templates_base_dir as _get_templates_base_dir,
     _get_user_templates_dir as _get_user_templates_dir,
@@ -1335,6 +1336,13 @@ async def _cmd_init(
         console.print(f"  [green]Applied template: {template}[/green]")
     else:
         console.print(f"  [yellow]Warning: Template '{template}' not found, using defaults[/yellow]")
+
+    # Step 1.0b: Auto-install the features/conftest.py pytest-bdd bridge when the
+    # project already has tagged ``.feature`` files but no bridge
+    # (TASK-AB-BDDNEUTRAL01). Guarded + non-raising: a no-op for projects that
+    # do not use task-scoped BDD, and never clobbers an existing conftest.
+    if install_features_conftest_bridge(project_dir):
+        console.print("  [green]Installed features/conftest.py BDD bridge[/green]")
 
     # Step 1.1: Write Graphiti config with project_id
     # Track whether we obtained a full config (with connection details).

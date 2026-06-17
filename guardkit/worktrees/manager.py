@@ -17,10 +17,15 @@ Example:
     >>> manager.preserve_on_failure(worktree)  # Failure path
 """
 
+import logging
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, Optional
+
+from guardkit.templates.conftest_bridge import install_features_conftest_bridge
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -433,6 +438,14 @@ class WorktreeManager:
                 raise WorktreeCreationError(
                     f"Failed to create worktree for {task_id}: {e}"
                 )
+
+        # Auto-install the features/conftest.py pytest-bdd bridge when the
+        # checked-out worktree carries tagged ``.feature`` files but no bridge
+        # (TASK-AB-BDDNEUTRAL01). Single bootstrap chokepoint for both
+        # standalone-task and shared-feature worktrees. Guarded + non-raising:
+        # a no-op for any worktree without BDD features, and it never fails
+        # worktree creation.
+        install_features_conftest_bridge(worktree_path)
 
         return Worktree(
             task_id=task_id,
