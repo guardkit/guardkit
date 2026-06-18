@@ -236,9 +236,8 @@ becomes a felt pain is a **toolless grammar-constrained verdict-synthesis call**
 (`docs/research/dgx-spark/grammars/README.md`), or the deprioritized fine-tuned/
 distilled coach (TASK-DATA-COACHHARVEST) — NOT route-level GBNF or 31B.
 
-**Still genuinely open (NOT deferred, honest backlog):** **TASK-FIX-COACHBUDG01**
-(5/8 ACs — partially landed; its shipped parts — reasoning_content parser +
-`--coach-model` plumbing — are what make gemma4:26b usable today).
+**Genuinely open: none.** (See the two 2026-06-18 updates below — both of the
+items first thought open turned out already-done once the code was checked.)
 
 > **Update 2026-06-18 — TASK-FIX-FRESHRESET01 was NOT open after all: already
 > fixed, superseded by TASK-FIX-FRESHCLEAN01** (commit `3b39764e`, "--fresh
@@ -248,5 +247,22 @@ distilled coach (TASK-DATA-COACHHARVEST) — NOT route-level GBNF or 31B.
 > `feature_orchestrator.py` now calls `_clean_state` unconditionally under
 > `if self.fresh:` (Shape A), and `_clean_state → reset_state`
 > (`feature_loader.py`) resets exactly the per-task fields FRESHRESET01 asked for.
-> Closed as superseded, no new code. So **COACHBUDG01 is the only genuinely-open
-> FEAT-HMIG item** (everything else completed, deferred, or optional).
+> Closed as superseded, no new code.
+
+> **Update 2026-06-18 — TASK-FIX-COACHBUDG01 was also NOT open: a stale
+> 2026-06-06 snapshot, now reconciled to completed.** When filed, guardkitfactory
+> "was not on this box," so every cross-repo AC was conservatively marked BLOCKED
+> ON guardkitfactory. They have all since landed and are tested: per-role
+> `max_tokens` (Coach 16384) at `langgraph_harness.py:520-521`
+> (`_SYNTHESIS_MAX_TOKENS_DEFAULT = 16384`); `reasoning_content → reasoning_text`
+> in `_aiter_events` at `langgraph_harness.py:606-616`
+> (`extract_last_ai_reasoning`); `MODEL_CONTEXT_WINDOWS` in
+> `guardkitfactory/harness/model_config.py`; cross-repo tests in
+> `tests/harness/test_langgraph_harness*.py` + `test_model_config.py`. Closed as
+> completed, no new code.
+>
+> **Net: FEAT-HMIG is fully closed.** Every task is completed,
+> deferred-with-rationale (HMIG-012; the F24 coach-polish pair), or optional
+> (HMIG-014). The two items that looked like an open tail were both reality-checked
+> to already-done — a reminder that a backlog task's "BLOCKED"/"open" status is a
+> claim about a past moment, and the code on disk is the source of truth.
