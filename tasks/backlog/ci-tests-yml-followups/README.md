@@ -13,7 +13,7 @@ coverage gap the fix introduced and remove latent flakiness.
 |---|---|---|
 | [TASK-FIX-WIREGATECI01](TASK-FIX-WIREGATECI01-gate-wiring-gate-tests-in-ci.md) | medium | The 7 `test_wiring_gate` orchestration tests now run in **no** CI job (skipped in `tests.yml`, not listed in `seam-tests.yml`). Gate them in `seam-tests.yml` after an import-chain check. |
 | ✅ [TASK-FIX-SDKPINCLEAN01](../../completed/TASK-FIX-SDKPINCLEAN01/TASK-FIX-SDKPINCLEAN01-remove-redundant-sdk-pin.md) (done 2026-06-18) | low | Remove the now-redundant per-test `GUARDKIT_HARNESS=sdk` pin in `test_sdk_environment_parity.py` (a module autouse fixture now covers it). |
-| [TASK-FIX-DIGESTTOK01](TASK-FIX-DIGESTTOK01-deterministic-digest-token-tests.md) | low | `test_digest_in_target_token_range` passes in CI only via the word-based fallback (tiktoken absent); with tiktoken it fails (`player.md`=291<300). Make it deterministic across both. |
+| ✅ [TASK-FIX-DIGESTTOK01](../../completed/TASK-FIX-DIGESTTOK01/TASK-FIX-DIGESTTOK01-deterministic-digest-token-tests.md) (done 2026-06-18) | low | `test_digest_in_target_token_range` passed in CI only via the word-based fallback (tiktoken absent); with tiktoken it failed (`player.md`=291<300). Fixed: added genuine per-role guidance so all four digests clear 300 under `cl100k_base` (336/333/350/352) AND stay in-band under the fallback; new `TestDigestTokenBudgetCrossCounter` asserts both counters in 300–600 so the split can't recur. |
 
 ## Background
 
