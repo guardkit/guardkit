@@ -1,10 +1,13 @@
 ---
 id: TASK-FIX-SDKPINCLEAN01
 title: Remove now-redundant per-test GUARDKIT_HARNESS=sdk pin in test_sdk_environment_parity
-status: backlog
+status: completed
 task_type: fix
 created: 2026-06-17T00:00:00Z
-updated: 2026-06-17T00:00:00Z
+updated: 2026-06-18T00:00:00Z
+completed: 2026-06-18T00:00:00Z
+previous_state: in_review
+completed_location: tasks/completed/TASK-FIX-SDKPINCLEAN01/
 priority: low
 related: [TASK-HMIG-011]
 implementation_mode: task-work
@@ -25,13 +28,16 @@ review flagged it.
 
 ## Acceptance criteria
 
-- [ ] **AC-001:** remove the now-redundant
+- [x] **AC-001:** remove the now-redundant
   `monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")` line from
   `test_sdk_first_dispatch` (the module autouse fixture already pins it).
-- [ ] **AC-002:** keep the `monkeypatch` fixture parameter if the test still uses
+- [x] **AC-002:** keep the `monkeypatch` fixture parameter if the test still uses
   it for other `setenv`/`setattr`/`setitem` calls; drop it only if fully unused.
-- [ ] **AC-003:** `test_sdk_first_dispatch` (and the full
-  `test_sdk_environment_parity.py` module) still pass.
+  → `monkeypatch` was used *only* for that one pin, so the parameter was dropped
+  from the test signature.
+- [x] **AC-003:** `test_sdk_first_dispatch` (and the full
+  `test_sdk_environment_parity.py` module) still pass — verified
+  `19 passed, 6 skipped` under `GUARDKIT_HARNESS=sdk`.
 
 ## Notes
 

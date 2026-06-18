@@ -373,11 +373,11 @@ class TestRunTestsViaSdk:
 class TestRunIndependentTestsSdkFallback:
     """Tests for CoachValidator.run_independent_tests() SDK-first + subprocess fallback."""
 
-    def test_sdk_first_dispatch(self, tmp_path, monkeypatch):
+    def test_sdk_first_dispatch(self, tmp_path):
         """coach_test_execution='sdk' calls _run_tests_via_sdk via asyncio bridge."""
         # TASK-HMIG-011 cutover (2026-06-16): default harness is now "langgraph"
-        # (which forces the subprocess path); opt into the SDK dispatch explicitly.
-        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+        # (which forces the subprocess path); the module-level autouse fixture
+        # `_pin_sdk_harness` pins GUARDKIT_HARNESS=sdk so the SDK dispatch is used.
         validator = CoachValidator(
             str(tmp_path),
             test_command="pytest tests/",
