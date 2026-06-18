@@ -8340,6 +8340,49 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         )
         task_work_data["agent_invocations_validation"] = new_validation
 
+        # TASK-AB-PERTASKFG01 fix #2 (absence-of-failure-is-not-success):
+        # reconcile the narrative-derived quality_gates block against the
+        # AUTHORITATIVE phase_4 (test-orchestrator) specialist record before the
+        # Coach reads it. ``_write_task_work_results`` assembles quality_gates by
+        # regex-parsing the Player's PROSE, so a hung/failed test-orchestrator
+        # (0 tests run) can still yield {all_passed: true, coverage: 100,
+        # tests_passed: 0} when the prose happens to match the coverage/gate
+        # patterns (the TASK-SMOKE-REDACT01 false-green). When the authoritative
+        # specialist record says the test phase FAILED, the narrative is a
+        # false-green and the record wins. Only the false-green direction is
+        # overridden (specialist failed AND narrative claims a pass); a
+        # "skipped" phase (e.g. direct-mode Phase-4-not-run) or a genuine pass
+        # is left untouched.
+        phase_4_block = (specialist_data or {}).get("phase_4")
+        qg = task_work_data.get("quality_gates")
+        if (
+            isinstance(phase_4_block, dict)
+            and isinstance(qg, dict)
+            and phase_4_block.get("status") == "failed"
+            and (qg.get("all_passed") or qg.get("tests_passing"))
+        ):
+            logger.warning(
+                "Reconciling quality_gates against authoritative phase_4 "
+                "specialist record for %s: test-orchestrator status=failed "
+                "(error=%s, tests_run=%s) but quality_gates claimed "
+                "all_passed=%s/tests_passing=%s — overriding to NOT passed "
+                "(narrative false-green).",
+                task_id,
+                phase_4_block.get("error"),
+                phase_4_block.get("tests_run"),
+                qg.get("all_passed"),
+                qg.get("tests_passing"),
+            )
+            qg["all_passed"] = False
+            qg["tests_passing"] = False
+            qg["tests_passed"] = phase_4_block.get("tests_run", 0) or 0
+            if phase_4_block.get("tests_failed") is not None:
+                qg["tests_failed"] = phase_4_block.get("tests_failed")
+            qg["coverage"] = phase_4_block.get("coverage_pct", qg.get("coverage"))
+            qg["coverage_met"] = False
+            qg["reconciled_from_specialist"] = True
+            task_work_data["quality_gates"] = qg
+
         try:
             results_path.write_text(json.dumps(task_work_data, indent=2))
         except OSError as exc:

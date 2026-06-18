@@ -2628,6 +2628,33 @@ class TestApprovalRationaleAndZeroTestAnomaly:
         assert issues[0]["severity"] == "error"  # blocking for feature tasks
         assert "no tests were executed" in issues[0]["description"]
 
+    def test_zero_test_anomaly_detected_despite_fabricated_coverage(self, tmp_worktree):
+        """TASK-AB-PERTASKFG01 fix #3b: a FABRICATED coverage number must not mask
+        the zero-test anomaly. The TASK-SMOKE-REDACT01 false-green had
+        all_passed=True, tests_passed=0, coverage=100.0 (parsed from gpt-oss
+        narrative after the test-orchestrator specialist hung) — before the fix the
+        `coverage is None` clause meant the non-null 100.0 suppressed the anomaly."""
+        from guardkit.models.task_types import get_profile, TaskType
+
+        profile = get_profile(TaskType.FEATURE)
+        task_work_results = {
+            "quality_gates": {
+                "tests_passing": True,
+                "tests_passed": 0,
+                "tests_failed": 0,
+                "coverage": 100.0,   # fabricated — no tests actually ran
+                "coverage_met": True,
+                "all_passed": True,
+            },
+        }
+
+        validator = CoachValidator(str(tmp_worktree))
+        issues = validator._check_zero_test_anomaly(task_work_results, profile)
+
+        assert len(issues) == 1
+        assert issues[0]["category"] == "zero_test_anomaly"
+        assert issues[0]["severity"] == "error"
+
     def test_zero_test_anomaly_not_raised_for_scaffolding(self, tmp_worktree):
         """Test that zero-test anomaly is NOT raised for scaffolding tasks."""
         from guardkit.models.task_types import get_profile, TaskType
