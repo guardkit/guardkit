@@ -2,11 +2,12 @@
 id: TASK-OPS-COACHGRAMMAR
 title: Enforce Coach verdict schema at the inference layer via llama.cpp GBNF grammar on gemma4-coach
 status: blocked
+deferred: 2026-06-18   # accepted gemma4:26b + COACHSF01 safety net; native-emission hardening is optional polish
 task_type: ops
 created: 2026-06-08T00:00:00Z
-updated: 2026-06-08T14:30:00Z
+updated: 2026-06-18T16:15:00Z
 blocked_reason: "Path 1A (route-level --grammar-file) invalidated by run 13 — llama.cpp bypasses the server grammar when a request carries tools, and the deepagents Coach sends built-in tools on every call, so the grammar never reaches the Coach. Needs re-scoping to a toolless verdict-synthesis call (code change) or Path 1B / Path 2."
-priority: high
+priority: low   # deferred 2026-06-18 (was: high) — see banner
 complexity: 3
 effort_hours: 1
 deadline: 2026-06-15
@@ -23,6 +24,19 @@ falsifier: "After landing: run 13 of `guardkit autobuild feature FEAT-AOF --fres
 ---
 
 # Task: Enforce Coach verdict schema via llama.cpp GBNF grammar
+
+> **DEFERRED 2026-06-18 (priority → low).** Path 1A (route-level `--grammar-file`)
+> is a **dead end** — run 13 proved llama.cpp bypasses the server grammar whenever
+> a request carries tools, and the DeepAgents Coach binds built-in tools on every
+> call. The operator's settled resolution is to **accept gemma4:26b + the COACHSF01
+> synthetic-feedback safety net**, which works in practice (FEAT-9DDE 2026-06-14
+> and FEAT-FAUD 2026-06-16 both ran green on gemma4:26b). Native-emission hardening
+> is therefore **optional polish, not a blocker**. If coach reliability later
+> becomes a felt pain, revive via the recorded forward options (a **toolless
+> grammar-constrained verdict-synthesis call**, `response_format`/`json_schema` on
+> that call, or a stronger coach substrate) — NOT route-level GBNF. See
+> `docs/research/dgx-spark/grammars/README.md`. Sibling: TASK-FIX-COACHSCHEMA
+> (Path 1B, also falsified). Recorded in the autobuild retro xref.
 
 ## Why this task exists
 
