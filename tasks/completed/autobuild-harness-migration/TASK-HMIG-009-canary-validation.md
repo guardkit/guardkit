@@ -1,14 +1,17 @@
 ---
 id: TASK-HMIG-009
 title: Canary validation — TASK-GLI-004 + 2 additional canary tasks under LangGraph
-status: blocked
+status: completed
+resolution: superseded
+superseded_by: TASK-HMIG-009A
+completed: 2026-06-18
+completed_location: tasks/completed/autobuild-harness-migration/
 task_type: validation
 created: 2026-05-19T20:30:00Z
-updated: 2026-05-27T15:00:00Z
-previous_state: in_progress
-state_transition_reason: "Halted after pilot smokes v1–v7 (2026-05-27) surfaced F1 (pre-loop bypasses harness adapter) + F4 (worktree manager ignores cwd branch). 18-rep canary execution paused pending TASK-REV-HM09 review. See docs/state/TASK-REV-HMIG/canary-analysis.md §5 for recommendation."
-blocked_by:
-  - TASK-REV-HM09
+updated: 2026-06-18T16:00:00Z
+previous_state: blocked
+state_transition_reason: "Halted after pilot smokes v1–v7 (2026-05-27) surfaced F1 (pre-loop bypasses harness adapter) + F4 (worktree manager ignores cwd branch). 18-rep canary execution paused pending TASK-REV-HM09 review; the review substituted the substitute partial canary TASK-HMIG-009A (12-run batch, 83.3% any-turn / passed the ≥75% central falsifier, completed 2026-06-04) and CANCELLED the full-spec redo TASK-HMIG-009B. The canary question this task exists to answer was answered (YES, LangGraph ≥75%); superseded 2026-06-18."
+# blocked_by: TASK-REV-HM09 — RESOLVED: the review produced 009A (substitute, passed) + 009B (cancelled).
 priority: critical
 complexity: 4
 deadline: 2026-06-15
@@ -33,6 +36,18 @@ tags:
 ---
 
 # Task: Canary validation under LangGraph
+
+> **COMPLETED (superseded) 2026-06-18.** This task's original 18-run spec was
+> halted 2026-05-27 at F1/F4 and never resumed in that form. The TASK-REV-HM09
+> review resolved the block by **substituting TASK-HMIG-009A** — a partial
+> 12-run canary (no pre-loop, backlog tasks) that ran 2026-06-04 and **passed
+> the central ≥75% falsifier at 5/6 = 83.3% any-turn-approve** (LangGraph 67%
+> first-pass / SDK 50%) — and **cancelling TASK-HMIG-009B** (the optional
+> full-original-spec redo, in `tasks/cancelled/`). The canary question ("is
+> LangGraph ≥75%?") was answered YES by 009A, which gated TASK-HMIG-010 and the
+> cutover (TASK-HMIG-011, shipped 2026-06-16). No further canary work is needed;
+> closing this as superseded-by-009A. Evidence:
+> `docs/state/TASK-REV-HMIG/canary-analysis.md`.
 
 ## Description
 
