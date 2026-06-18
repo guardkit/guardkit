@@ -130,3 +130,57 @@ highest-value remaining gap is the **mocked-seam "green-but-broken" class**
 operator-time cost of A1-A9 (the bulk of every retro). The five still-open items are real
 follow-ups, with #1 (mocked-seam wiring gate) being the only one that changes a
 *correctness* outcome rather than operator friction.
+
+---
+
+## 8. Update 2026-06-18 — the `green ≠ correct` class found LIVE on the per-task path, and FIXED
+
+A validation re-run (the recommendation to re-run a feature on current guardkit) surfaced
+a **new live instance of this retro's dominant correctness risk** — not the
+*feature-assembly* mocked-seam (still-open #1, FEAT-POC-006) but its **per-task sibling**:
+`guardkit autobuild task` on the local **LangGraph / gpt-oss-120b / gemma4-coach** stack
+**APPROVED a deliverable the pipeline never verified**. Filed + fixed as
+**`TASK-AB-PERTASKFG01`** (now `tasks/completed/`; commits `3b3ba070`, `b793b2d2`,
+`982a0209`; CI green `5e160198`).
+
+**Chain (all four holes had to fail together):** the LLM `test-orchestrator` specialist
+hung (gpt-oss emitted no tool call → watchdog 162s → `tests_run=0`) → the Player
+`quality_gates` were **fabricated from narrative regex** (`all_passed:true, coverage:100,
+tests_passed:0`) → the Coach's own independent test couldn't run (broken worktree venv)
+and it **rationalised the env error and approved**. The code was correct *by luck*.
+
+**Confirmed structural, not the Coach model** (settles this retro's open question on coach
+quality): the LLM Coach merely narrated a deterministically-fabricated false-green; the
+investigation also **corroborated `gemma4-31b` is slower / no better** than the MoE.
+→ **Keep the `gemma4-coach` MoE; `TASK-DATA-COACHHARVEST` (fine-tuned coach) stays
+deprioritized** as a false-green lever. The four fixes are all deterministic /
+model-independent:
+
+1. **#2** reconcile `quality_gates` vs the authoritative `phase_4` specialist record
+   (`agent_invoker`) — the false-green never reaches the Coach.
+2. **#3b** drop the `coverage is None` escape in the zero-test anomaly (`coach_validator`).
+3. **#4** widen the `signal_absent` classifier for conftest/collection import failures
+   (`coach_validator`) — re-arms the deterministic `_reconcile_absent_independent_test_signal`
+   override the LLM can't bypass.
+4. **AC-004** Phase-4 EXECUTION is now a deterministic venv-pinned `pytest` subprocess
+   (`specialist_invocations`) reusing the Coach's runner — *"running tests must not be
+   able to hang"* (root cause); env-revert `GUARDKIT_PHASE4_TEST_EXECUTION=sdk`.
+
+**Live-validated:** the smoke that APPROVED on turn 1 now **FEEDBACKs** (the reconcile
+warning fires) → not approved. +28 regression tests.
+
+**Stack-agnostic preserved (verified empirically):** bootstrap still detects dotnet/node/
+go/rust/flutter; the AC-004 deterministic runner is gated to projects with Python tests
+and **falls back to the stack-agnostic LLM specialist** for non-Python — no Python lock.
+The *can't-hang* benefit is Python-first today; extending the deterministic runner to
+`dotnet test`/`npm test`/`go test` is a clean optional follow-up — the same
+`stack-plugin-architecture.md` "execution is the legitimate per-stack case" framing this
+retro already noted for the wiring lint.
+
+**Relation to still-open #1:** distinct but same meta-frame. #1 is the *feature-assembly*
+aperture (post-wave wiring, FEAT-POC-006); this is the *per-task* aperture (the Coach
+can't see what it never ran). Both are `absence-of-failure-is-not-success` /
+`per-task-green-is-not-feature-green` instances. This find+fix is the **field validation**
+§1 anticipated — now with a concrete live reproduction and a landed, validated fix.
+
+> **Handoff:** `docs/retro/session-handoff-2026-06-18-pertaskfg01-false-green-closed.md`.
