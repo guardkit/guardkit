@@ -6,6 +6,7 @@ status: completed
 created: 2026-06-18T13:30:00Z
 updated: 2026-06-18T15:00:00Z
 completed: 2026-06-18T15:00:00Z
+completed_location: tasks/completed/TASK-AB-NPDET01/
 priority: medium
 complexity: 5
 parent_task: TASK-AB-PERTASKFG01
