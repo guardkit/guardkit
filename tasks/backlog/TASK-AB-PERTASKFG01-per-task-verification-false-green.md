@@ -5,7 +5,7 @@ status: backlog
 task_type: fix
 priority: high
 created: 2026-06-18T00:00:00Z
-updated: 2026-06-18T00:00:00Z
+updated: 2026-06-18T12:00:00Z
 related: [TASK-AB-COACHRUNPARITY01, TASK-AB-WIREGATE01, TASK-DATA-COACHHARVEST]
 implementation_mode: task-work
 tags: [autobuild, coach, test-execution, absence-of-failure, green-not-correct, gpt-oss, langgraph]
@@ -83,9 +83,28 @@ post-wave / feature-only and do not protect `autobuild task`.
   **E2e smoke on lpa still needs an lpa-side fix** (declare `pytest-asyncio`, which
   its conftest imports but `requirements.poc.txt` omits) before a clean APPROVE;
   the broken-env case is SAFE meanwhile (#4 → absent-signal → feedback).
-- **AC-004 (deterministic Player-side test execution) — OPEN, efficiency.** Kills
-  the ~2-3 min/turn test-orchestrator hang. Lower priority: #2 already makes the
-  Player report honest, and the Coach is the deterministic verifier.
+- **AC-004 (deterministic Player-side test execution) — LANDED, unit-validated.**
+  Phase-4 test EXECUTION is now a deterministic venv-pinned `<venv_python> -m
+  pytest` subprocess by default (no hangable LLM turn — running tests can no
+  longer hang). Implemented by reusing the Coach's proven
+  `CoachValidator(coach_test_execution="subprocess").run_independent_tests`
+  runner (`specialist_invocations._run_deterministic_phase_4`), so Player
+  Phase-4 execution and Coach independent verification run the IDENTICAL pinned
+  pytest command — single source of truth, no divergence. Wired into
+  `invoke_test_orchestrator` behind `GUARDKIT_PHASE4_TEST_EXECUTION`
+  (default `subprocess`; `sdk` is the emergency revert lever to the legacy LLM
+  specialist, mirroring `GUARDKIT_HARNESS`). The result→phase_4 mapping is
+  absence-of-failure-safe: an ABSENT oracle (collection/conftest import
+  failure, runner absent, returncode-5, timeout) maps to `status="failed"`
+  (never a pass) so the #2 reconcile fires and Phase 5 is skipped; "no
+  detectable pytest command" returns to the LLM `test-orchestrator` specialist
+  unchanged (preserves non-Python / npm / dotnet stacks). +14 regression tests
+  (`tests/unit/orchestrator/test_specialist_invocations.py`), incl. a real
+  subprocess-execution e2e proving genuine pytest runs with no LLM in the loop.
+  403 affected tests pass.
+
+**All four acceptance criteria are now LANDED + validated.** This task is
+complete and ready for `/task-complete`.
 
 ## Acceptance Criteria
 
@@ -109,12 +128,20 @@ post-wave / feature-only and do not protect `autobuild task`.
   verification can actually run; if it genuinely cannot, that is an absent
   signal per AC-002, never a silent pass. (Builds on TASK-AB-BOOTPY01 /
   TASK-AB-COACHVENV01.)
-- **AC-004 — deterministic test execution (root cause).** Investigate and
-  remove the dependency on a hangable LLM `test-orchestrator` specialist for the
-  *execution* of tests on the per-task path; prefer a deterministic subprocess
-  run whose real result feeds the gate (the LLM may still author tests, but must
-  not be the thing that "runs" them and self-reports pass/coverage). Captures
-  the user's point: running tests must not be able to hang.
+- **AC-004 — deterministic test execution (root cause). ✅ LANDED.** Removed
+  the dependency on a hangable LLM `test-orchestrator` specialist for the
+  *execution* of tests on the per-task path: Phase-4 now runs a deterministic
+  venv-pinned `pytest` subprocess whose real result feeds the gate (the LLM may
+  still author tests in Phase 3, but no longer "runs" them or self-reports
+  pass/coverage). Running tests can no longer hang. Default
+  `GUARDKIT_PHASE4_TEST_EXECUTION=subprocess`; `=sdk` reverts to the legacy
+  specialist. The deterministic runner reuses the Coach's `run_independent_tests`
+  (single source of truth) and is absence-of-failure-safe (absent oracle ⇒
+  `failed`, never a pass). Non-pytest stacks fall back to the specialist
+  unchanged. Implemented in
+  `guardkit/orchestrator/specialist_invocations.py`
+  (`_run_deterministic_phase_4`, `_resolve_phase_4_execution_mode`,
+  `_parse_pytest_counts`); +14 regression tests.
 
 ## Notes / pointers
 
