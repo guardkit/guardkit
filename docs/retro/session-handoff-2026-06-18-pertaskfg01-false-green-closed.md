@@ -127,9 +127,14 @@ sudo systemctl start llama-swap-keepalive.timer
    (`TASK-HMIG-012`, remove `ClaudeSDKHarness` + `claude-agent-sdk`). Note: SDK
    path is now a *free* choice again (Anthropic cancelled the key cutoff), so
    Phase-3 removal is optional. Flip point: `selector.py` `DEFAULT_HARNESS`.
-2. **(Optional) non-Python deterministic test execution** — extend AC-004's
-   runner to `dotnet test`/`npm test`/`go test` so those stacks get can't-hang
-   execution too. Clean follow-up; file if wanted.
+2. ~~**(Optional) non-Python deterministic test execution**~~ — **DONE
+   2026-06-18 (`TASK-AB-NPDET01`, commits `4dbbf925` + `3ab2504f`,
+   `tasks/completed/TASK-AB-NPDET01/`).** AC-004's runner now extends to
+   `dotnet test`/`npm test`/`go test` for single-task non-Python waves via a
+   declarative DATA registry (`quality_gates/stack_test_execution.py`).
+   Adversarially verified (2 DATA-only holes found+fixed: node exit-0 zero-test
+   false-green; `': not found'` false-red). Residual: non-Python *parallel*
+   waves still use the LLM specialist. See retro xref §8 update.
 3. **lpa-platform-poc** has an own-side gap: `requirements.poc.txt` omits
    `pytest-asyncio` (its `conftest.py` imports it). Not GuardKit's bug; a clean
    e2e autobuild on lpa needs lpa to declare it. The broken-env case is SAFE

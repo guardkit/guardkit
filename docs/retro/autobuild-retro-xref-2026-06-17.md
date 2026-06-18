@@ -177,6 +177,22 @@ The *can't-hang* benefit is Python-first today; extending the deterministic runn
 `stack-plugin-architecture.md` "execution is the legitimate per-stack case" framing this
 retro already noted for the wiring lint.
 
+> **Update 2026-06-18 — that follow-up landed: `TASK-AB-NPDET01`** (`tasks/completed/TASK-AB-NPDET01/`,
+> commits `4dbbf925` + `3ab2504f`). New pure-stdlib `quality_gates/stack_test_execution.py`
+> gives `dotnet`/`node`/`go` single-task waves the same can't-hang deterministic execution.
+> Design adjudicated to a **declarative DATA registry, NOT a guardkitfactory ABC+loader
+> plugin** — the letter-vs-spirit ruling on `stack-plugin-architecture.md`: that rule's
+> plugin mandate is grounded in per-stack *report-format* parsing (the `bdd/` JUnit/.trx/
+> cucumber-json case); this oracle's verdict is uniform `returncode==0`, so "a new stack =
+> a DATA row." Absence-of-failure-safe (missing toolchain / zero-test → absent, never a
+> pass); parallel-wave-guarded (whole-suite commands defer to the LLM specialist when
+> `wave_size>1`). An **adversarial verification panel caught two real DATA-only holes**
+> before merge: a node exit-0 zero-test false-green (`--passWithNoTests` / `echo`
+> placeholder → fixed with a positive ran-marker precondition) and a `': not found'`
+> false-red (incidental in passing output → dropped; toolchain-missing caught by rc 127).
+> 419 tests green. **Residual:** non-Python *parallel* waves still use the LLM specialist
+> (retain hang risk); per-task non-Python test filtering is a separate task.
+
 **Relation to still-open #1:** distinct but same meta-frame. #1 is the *feature-assembly*
 aperture (post-wave wiring, FEAT-POC-006); this is the *per-task* aperture (the Coach
 can't see what it never ran). Both are `absence-of-failure-is-not-success` /
