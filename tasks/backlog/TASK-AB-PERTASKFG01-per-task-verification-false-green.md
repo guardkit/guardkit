@@ -73,11 +73,16 @@ post-wave / feature-only and do not protect `autobuild task`.
   smoke on langgraph/gpt-oss-120b/gemma4-coach: the turn-1 **APPROVE** false-green
   is now a turn-1 **FEEDBACK** (reconcile fires; Coach gives actionable feedback)
   → not approved. 788 affected unit tests pass; +10 new regression tests.
-- **AC-003 (bootstrap-venv test deps) — OPEN, usability priority.** The Coach's
-  independent test run is *already* deterministic (subprocess); it — not the hung
-  Player specialist — is the real verifier. It can only verify+approve real work if
-  the worktree venv has the target repo's test deps (the smoke's venv was missing
-  `pytest_asyncio`). This is the unlock for gpt-oss autobuild to COMPLETE tasks.
+- **AC-003 (bootstrap-venv test deps) — GuardKit fix LANDED (commit `b793b2d2`),
+  unit-validated.** Root cause: `ProjectEnvironmentDetector` only recognised
+  standard manifests, so a project declaring deps solely in a non-standard
+  `requirements*.txt` (lpa's `requirements.poc.txt`) installed NOTHING → empty
+  worktree venv → the (deterministic) Coach independent test couldn't import
+  app/test deps. Fix: detect `requirements*.txt` additively when no editable
+  manifest exists (+4 tests; confirmed it now detects lpa's `requirements.poc.txt`).
+  **E2e smoke on lpa still needs an lpa-side fix** (declare `pytest-asyncio`, which
+  its conftest imports but `requirements.poc.txt` omits) before a clean APPROVE;
+  the broken-env case is SAFE meanwhile (#4 → absent-signal → feedback).
 - **AC-004 (deterministic Player-side test execution) — OPEN, efficiency.** Kills
   the ~2-3 min/turn test-orchestrator hang. Lower priority: #2 already makes the
   Player report honest, and the Coach is the deterministic verifier.
