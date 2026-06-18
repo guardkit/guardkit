@@ -61,6 +61,31 @@ _PYTEST_EXIT_INTERRUPTED = 2       # user/system interrupt (SIGINT, KeyboardInte
 _PYTEST_EXIT_INTERNAL_ERROR = 3    # pytest internal error (usually a crash)
 _PYTEST_EXIT_USAGE_ERROR = 4       # pytest usage error (e.g. "not found", bad argv)
 
+# Absent-feature collection markers (TASK-AB-BDDNEUTRAL01). pytest exits 4 with
+# one of these signatures when it could not COLLECT the ``.feature`` path(s) we
+# passed — almost always because the project has no ``features/conftest.py``
+# bridge to map ``.feature`` argv onto the glue module (or the path does not
+# resolve). pytest never imported a conftest or ran a scenario, so this is an
+# ABSENT BDD input, not a runner failure: per
+# ``.claude/rules/absence-of-failure-is-not-success.md`` an absent oracle signal
+# must be neutral, never a synthetic failure that stacks into an
+# ``unrecoverable_stall`` (the FEAT-MEM-07 Error 1 "exit-4 affects every task"
+# mechanism). Verified against pytest 9.0.2.
+_PYTEST_UNCOLLECTABLE_MARKERS: Tuple[str, ...] = (
+    "ERROR: not found:",
+    "ERROR: file or directory not found:",
+)
+
+# Genuine runner/environment errors can ALSO exit 4 — most notably a conftest
+# import failure. Those must STILL surface as a synthetic failure (TASK-FIX-F584),
+# so a conftest-load signature vetoes the neutral mapping above. Defence in depth:
+# a conftest ImportError does not print "not found:" on its own, but if any
+# pytest version emitted both we keep treating it as a failure (bias toward
+# surfacing on ambiguity, per the absence-of-failure remediation pattern).
+_PYTEST_RUNNER_ERROR_MARKERS: Tuple[str, ...] = (
+    "while loading conftest",
+)
+
 # Cap raw output captured into BDDResult to keep result JSON small.
 _MAX_RAW_OUTPUT_CHARS = 8_000
 
@@ -484,6 +509,32 @@ def _synthesise_runner_error_failure(
     )
 
 
+def _is_absent_feature_collection(invocation: "_PytestInvocation") -> bool:
+    """Return True when a pytest exit 4 means "could not collect the feature".
+
+    Distinguishes the ABSENT-input case — a tagged ``.feature`` file that pytest
+    could not collect (no ``features/conftest.py`` bridge to map it to glue, or
+    a path that does not resolve) — from a genuine runner error (a conftest
+    ImportError, an internal pytest crash). Only the former is neutral /
+    not-applicable (TASK-AB-BDDNEUTRAL01); the latter must still surface as a
+    synthetic failure (TASK-FIX-F584).
+
+    The neutral verdict is paired with a *positive-evidence* precondition (a
+    pytest "not found" collection signature) rather than blanket-neutralising
+    every exit 4 — that would re-open F584's silent-approval hole for conftest
+    import failures. A conftest-load signature explicitly vetoes the mapping, and
+    an ambiguous exit 4 with no diagnostic output is NOT treated as absent (it
+    falls through to the runner-error path). See
+    ``.claude/rules/absence-of-failure-is-not-success.md``.
+    """
+    if invocation.returncode != _PYTEST_EXIT_USAGE_ERROR:
+        return False
+    blob = f"{invocation.stdout or ''}\n{invocation.stderr or ''}"
+    if any(marker in blob for marker in _PYTEST_RUNNER_ERROR_MARKERS):
+        return False
+    return any(marker in blob for marker in _PYTEST_UNCOLLECTABLE_MARKERS)
+
+
 def _build_pytest_argv(
     feature_files: Sequence[Path],
     tag: str,
@@ -589,10 +640,15 @@ def run_bdd_for_task(
 ) -> Optional[BDDResult]:
     """Run task-scoped BDD scenarios for ``task_id`` in ``worktree_path``.
 
-    Returns ``None`` (legitimately skipped) when:
+    Returns ``None`` (legitimately skipped / not-applicable) when:
 
     * No ``features/*.feature`` file exists in the worktree, or
-    * No matching ``.feature`` file contains ``@task:<TASK-ID>``.
+    * No matching ``.feature`` file contains ``@task:<TASK-ID>``, or
+    * pytest collected zero scenarios (exit 5), or
+    * pytest could not COLLECT the tagged ``.feature`` file(s) — exit 4 with a
+      "not found" signature, typically a project missing the
+      ``features/conftest.py`` bridge or a ``.feature`` with no glue module yet
+      (TASK-AB-BDDNEUTRAL01). This is an absent BDD input, not a failure.
 
     When tagged feature files DO exist but ``pytest_bdd`` is not importable
     in the target environment, returns a synthetic :class:`BDDResult` with
@@ -683,6 +739,38 @@ def run_bdd_for_task(
             "BDD runner: pytest collected zero scenarios for %s (exit=%s).",
             task_id,
             invocation.returncode,
+        )
+        return None
+
+    # Absent-feature collection (TASK-AB-BDDNEUTRAL01). pytest exit 4 with a
+    # "not found" collection signature and zero parsed testcases means the
+    # tagged ``.feature`` file(s) could not be collected — almost always a
+    # project missing the ``features/conftest.py`` bridge (auto-installed at
+    # bootstrap, but a pre-existing repo may still lack it; the bridge also
+    # declines to collect a ``.feature`` with no sibling glue module yet). This
+    # is an ABSENT BDD input, NOT a failure: returning ``None`` here leaves the
+    # ``bdd_results`` key out of ``task_work_results`` entirely, so Coach's
+    # ``_check_bdd_results`` treats the gate as not-applicable and it never
+    # contributes a failure to the gate tally or the pollution checkpoint. A
+    # genuine runner error (conftest ImportError, internal crash, exit 2/3,
+    # timeout, or an exit 4 with no "not found" signature) is excluded by
+    # ``_is_absent_feature_collection`` and still surfaces below (TASK-FIX-F584).
+    if (
+        passed == 0
+        and not failures
+        and not pending
+        and _is_absent_feature_collection(invocation)
+    ):
+        logger.warning(
+            "BDD runner for %s: pytest exit 4 with no collectable scenarios "
+            "(tagged .feature present but uncollectable — most likely a missing "
+            "features/conftest.py bridge or no glue module yet). Treating as "
+            "not-applicable/absent, NOT a failure. Install the bridge "
+            "(auto-installed at worktree/init bootstrap) to actually run these "
+            "scenarios. First %d chars: %r",
+            task_id,
+            _RUNNER_ERROR_REASON_MAX,
+            (invocation.stderr or invocation.stdout or "")[:_RUNNER_ERROR_REASON_MAX],
         )
         return None
 

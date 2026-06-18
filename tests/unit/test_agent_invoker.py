@@ -123,6 +123,16 @@ def create_report_file(worktree_path: Path, task_id: str, turn: int, agent_type:
     return report_path
 
 
+@pytest.fixture(autouse=True)
+def _pin_sdk_harness(monkeypatch):
+    """TASK-HMIG-011: these are SDK-path tests (they mock claude_agent_sdk).
+    Pin GUARDKIT_HARNESS=sdk so harness selection does not resolve the
+    post-cutover ``langgraph`` default, which CI's tests.yml cannot import
+    (no guardkitfactory/langchain). The single langgraph test in this module
+    sets GUARDKIT_HARNESS=langgraph explicitly, overriding this fixture."""
+    monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+
+
 def _coach_harness_events(payload: Dict[str, Any]):
     """Build a single-AssistantMessageEvent stream wrapping a fenced Coach JSON.
 

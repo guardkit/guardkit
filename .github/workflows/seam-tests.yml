@@ -104,6 +104,19 @@ jobs:
         #   * test_bdd_xrepo_contract_seam.py — guardkitfactory.bdd contract
         #     (TASK-INFRA-BDDSEAM01): discover/run arity, BDDRunResult /
         #     StackProfile field sets the Coach BDD bridge depends on.
+        #   * test_wiring_gate.py             — post-wave wiring-gate orchestration
+        #     (TASK-AB-WIREGATE01, gated here by TASK-FIX-WIREGATECI01): exercises
+        #     guardkit-OWNED wave-loop disposition logic (feedback-retry,
+        #     replace-not-append, advisory-after-budget, stop-on-failure). Its 7
+        #     `@_requires_guardkitfactory` tests patch
+        #     `guardkitfactory.wiring.analyze_wiring`, so they un-skip only where
+        #     the editable sibling is installed — i.e. here, NOT in tests.yml
+        #     (which omits guardkitfactory). Without this gate those 7 tests ran
+        #     in no CI job. Its import chain (→ feature_orchestrator) is
+        #     SDK-clean: claude_agent_sdk is imported only lazily inside the SDK
+        #     harness (sdk_harness.py / agent_invoker.invoke), never at module
+        #     load, so this module collects without the (deliberately absent)
+        #     claude-agent-sdk — no SDK install or source change was needed.
         #
         # `-o addopts=""` clears the repo's default --cov flags (the seam job
         # gates the contract, not coverage). `--strict-markers` fails fast if
@@ -112,4 +125,5 @@ jobs:
           python -m pytest \
             tests/orchestrator/harness/test_xrepo_contract_seam.py \
             tests/orchestrator/harness/test_bdd_xrepo_contract_seam.py \
+            tests/unit/orchestrator/test_wiring_gate.py \
             -o addopts="" --strict-markers -v

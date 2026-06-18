@@ -140,6 +140,45 @@ _SPECIALIST_NO_ACTIVITY_WATCHDOG_SECONDS: float = (
 # and the review summary.
 _WATCHDOG_HANG_REASON_TEMPLATE: str = "hang detected (no model activity for {seconds}s)"
 
+# TASK-AB-PERTASKFG01 AC-004: Phase-4 test EXECUTION mode.
+#
+# Root cause of the per-task verification false-green (validation-smoke repro,
+# 2026-06-18): Phase-4 ran tests by asking a hangable LLM ``test-orchestrator``
+# specialist to emit ``Bash`` tool calls and self-report pass/coverage. Under
+# gpt-oss the specialist emitted no parseable tool call, the no-activity
+# watchdog tripped at 162s, ``tests_run=0`` was returned, and the narrative
+# regex then fabricated ``all_passed/100% coverage`` (closed downstream by
+# fixes #2/#3b/#4, but still a 2-3 min/turn hang). ``running tests must not be
+# able to hang`` — so by default Phase-4 execution is a DETERMINISTIC
+# venv-pinned ``<venv_python> -m pytest`` subprocess (no model in the loop),
+# reusing the Coach's proven ``run_independent_tests`` runner so Player Phase-4
+# and Coach independent verification execute the IDENTICAL pinned-pytest
+# command (single source of truth — no divergence).
+#
+# ``subprocess`` (default): deterministic-first; the LLM specialist is used
+#   ONLY as a fallback when no pytest test command is detectable (preserves
+#   non-Python / npm / dotnet stacks).
+# ``sdk``: emergency revert to the legacy LLM ``test-orchestrator`` specialist
+#   for execution (mirrors the ``GUARDKIT_HARNESS`` revert lever).
+def _resolve_phase_4_execution_mode() -> str:
+    """Return the Phase-4 test-execution mode (``"subprocess"`` | ``"sdk"``).
+
+    Reads ``GUARDKIT_PHASE4_TEST_EXECUTION`` at call time (not import time) so
+    tests and operators can flip it per-invocation. Any unrecognised value
+    degrades to the deterministic default.
+    """
+    mode = os.environ.get("GUARDKIT_PHASE4_TEST_EXECUTION", "subprocess").strip().lower()
+    return mode if mode in ("subprocess", "sdk") else "subprocess"
+
+
+# Tokens a pytest summary line uses for each outcome class. ``error``/``errors``
+# both fold to ``error``; ``skipped`` is intentionally excluded from
+# ``tests_run`` (a skipped test executed no assertions).
+_PYTEST_COUNT_RE = re.compile(
+    r"(\d+)\s+(passed|failed|errors?|xpassed|xfailed)\b",
+    re.IGNORECASE,
+)
+
 
 # Reverse lookup of guardkit.orchestrator.phase_specialists.STATIC_PHASE_SPECIALISTS
 # scoped to specialists this module is responsible for. Kept inline rather
@@ -897,6 +936,195 @@ def _build_code_reviewer_prompt(
     return prompt
 
 
+def _parse_pytest_counts(output: Optional[str]) -> tuple[int, int]:
+    """Parse ``(tests_run, tests_failed)`` from pytest stdout/stderr.
+
+    ``tests_run`` = passed + failed + errors + xpassed + xfailed (skipped
+    excluded). Best-effort: returns ``(0, 0)`` when no recognisable summary
+    token is present. Counts are metadata only — the authoritative pass/fail
+    signal is the subprocess return code (carried by
+    :attr:`IndependentTestResult.tests_passed`), so a parse miss never changes
+    the gate verdict. ``max`` per class tolerates pytest reprinting the summary.
+    """
+    if not output:
+        return 0, 0
+    counts: dict[str, int] = {}
+    for match in _PYTEST_COUNT_RE.finditer(output):
+        key = match.group(2).lower().rstrip("s")  # error/errors -> error
+        counts[key] = max(counts.get(key, 0), int(match.group(1)))
+    passed = counts.get("passed", 0)
+    failed = counts.get("failed", 0)
+    errors = counts.get("error", 0)
+    xpassed = counts.get("xpassed", 0)
+    xfailed = counts.get("xfailed", 0)
+    tests_failed = failed + errors
+    tests_run = passed + failed + errors + xpassed + xfailed
+    return tests_run, tests_failed
+
+
+def _load_task_work_results(
+    worktree_path: Path, task_id: str
+) -> Optional[dict[str, Any]]:
+    """Load the Player's ``task_work_results.json`` for test-command detection.
+
+    The deterministic Phase-4 runner passes this to the Coach's
+    ``run_independent_tests`` so it detects the same task-specific test files
+    the Coach will. Best-effort: returns ``None`` (degrade to glob/diff
+    detection) on any read/parse failure. Never raises.
+    """
+    path = (
+        Path(worktree_path)
+        / ".guardkit"
+        / "autobuild"
+        / task_id
+        / "task_work_results.json"
+    )
+    try:
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except Exception as exc:  # noqa: BLE001 — detection is best-effort
+        logger.warning("[%s] _load_task_work_results failed: %s", task_id, exc)
+        return None
+
+
+def _run_deterministic_phase_4(
+    worktree_path: Path,
+    task_id: str,
+    agent_invoker: "AgentInvoker",
+    *,
+    sdk_timeout: int,
+    turn: Optional[int],
+) -> Optional[dict[str, Any]]:
+    """Execute Phase-4 tests deterministically and return a phase_4 block.
+
+    TASK-AB-PERTASKFG01 AC-004. Reuses the Coach's venv-pinned
+    ``CoachValidator(coach_test_execution="subprocess").run_independent_tests``
+    so Player Phase-4 execution and Coach independent verification run the
+    IDENTICAL ``<venv_python> -m pytest`` command — no LLM in the loop, so it
+    cannot hang.
+
+    Returns
+    -------
+    Optional[dict]
+        A phase_4 block (``status`` ∈ {passed, failed} + the agent-derived
+        fields) when a deterministic run produced a usable signal, or ``None``
+        when no pytest test command could be detected, the runner is
+        unavailable, or it raised — in which case the caller falls back to the
+        LLM ``test-orchestrator`` specialist so non-Python / npm / dotnet stacks
+        (and unexpected runner errors) keep their existing behaviour.
+
+    Result mapping is absence-of-failure-safe
+    (``.claude/rules/absence-of-failure-is-not-success.md``): an ABSENT oracle
+    signal (collection/conftest import failure, runner absent, timeout) is
+    NEVER a pass — it maps to ``status="failed"`` so the #2 quality_gates
+    reconcile fires against any narrative false-green and Phase 5 is skipped.
+    """
+    # Lazy import: avoid any import-time coupling between this module and the
+    # quality-gates package (no cycle today, but keep it loose).
+    try:
+        from guardkit.orchestrator.quality_gates.coach_validator import (
+            CoachValidator,
+        )
+    except Exception as exc:  # noqa: BLE001 — degrade to the specialist path
+        logger.warning(
+            "[%s] deterministic Phase-4 unavailable (CoachValidator import "
+            "failed: %s); falling back to test-orchestrator specialist",
+            task_id,
+            exc,
+        )
+        return None
+
+    # Cap the subprocess timeout at the same ceiling as the LLM specialist so a
+    # pathological suite cannot exceed the Player/Coach budget; on timeout the
+    # runner reports signal_absent -> the absent branch below (never a pass).
+    test_timeout = min(int(sdk_timeout), _TEST_ORCHESTRATOR_SDK_TIMEOUT_CAP_SECONDS)
+    venv_python = getattr(agent_invoker, "_venv_python", None)
+
+    start = time.monotonic()
+    try:
+        validator = CoachValidator(
+            worktree_path=str(worktree_path),
+            task_id=task_id,
+            coach_test_execution="subprocess",  # never an LLM turn — cannot hang
+            test_timeout=test_timeout,
+            venv_python=venv_python,
+            turn=turn or 1,
+        )
+        task_work_results = _load_task_work_results(Path(worktree_path), task_id)
+        result = validator.run_independent_tests(
+            task_work_results=task_work_results, turn=turn
+        )
+    except Exception as exc:  # noqa: BLE001 — degrade to the specialist path
+        logger.warning(
+            "[%s] deterministic Phase-4 run raised (%s); falling back to "
+            "test-orchestrator specialist",
+            task_id,
+            exc,
+        )
+        return None
+
+    duration = time.monotonic() - start
+    summary = (result.test_output_summary or "")[:200]
+
+    # No pytest test command detected (``run_independent_tests`` returns the
+    # "skipped" sentinel when ``_detect_test_command`` finds nothing). This is
+    # NOT an absent oracle — there is simply nothing for the deterministic
+    # runner to execute. Return None so the caller falls back to the LLM
+    # ``test-orchestrator`` specialist, preserving non-Python / npm / dotnet
+    # stacks and the shared-worktree "no task-specific tests" path unchanged.
+    # The deterministic runner only TAKES OVER when there ARE pytest tests to
+    # run — exactly the case the hang was observed in.
+    if result.test_command == "skipped" and not result.signal_absent:
+        return None
+
+    # ABSENT signal: the oracle ran but produced NO verdict (collection/conftest
+    # import failure, runner absent, returncode-5 no-tests-collected, timeout).
+    # absence-of-failure: NEVER a pass. status="failed" arms the #2 reconcile
+    # and skips Phase 5. (This is the validation-smoke conftest-import repro that
+    # motivated TASK-AB-PERTASKFG01.)
+    if result.signal_absent:
+        return {
+            "status": "failed",
+            "duration_seconds": duration,
+            "error": f"absent test signal (deterministic Phase 4): {summary[:160]}",
+            **{**_PHASE_4_AGENT_FIELD_DEFAULTS, "output_summary": summary},
+        }
+
+    tests_run, tests_failed = _parse_pytest_counts(result.raw_output)
+
+    if result.tests_passed:
+        # returncode 0 (and not signal_absent, so not the returncode-5
+        # no-tests-collected case) => >=1 test ran and passed. coverage_pct is
+        # left at the default: the deterministic run is a pass/fail oracle, not
+        # a coverage measurement (parity with the Coach). On a pass the #2
+        # reconcile does NOT fire, so the Player's narrative coverage is
+        # untouched — no fabricated coverage enters the gate from here.
+        return {
+            "status": "passed",
+            "duration_seconds": duration,
+            "error": None,
+            "tests_run": tests_run,
+            "tests_failed": 0,
+            "coverage_pct": 0.0,
+            "output_summary": summary,
+            "quality_gates_passed": True,
+        }
+
+    # ran-and-failed: a genuine pytest failure verdict.
+    return {
+        "status": "failed",
+        "duration_seconds": duration,
+        "error": f"tests failed (deterministic Phase 4): {summary[:160]}",
+        "tests_run": tests_run,
+        "tests_failed": tests_failed or max(1, tests_run),
+        "coverage_pct": 0.0,
+        "output_summary": summary,
+        "quality_gates_passed": False,
+    }
+
+
 async def invoke_test_orchestrator(
     worktree_path: Path,
     task_id: str,
@@ -936,6 +1164,44 @@ async def invoke_test_orchestrator(
     )
     summary_path = autobuild_dir / "phase_4_summary.json"
     specialist_results_path = autobuild_dir / "specialist_results.json"
+
+    # TASK-AB-PERTASKFG01 AC-004: deterministic-first Phase-4 execution.
+    # Run tests as a venv-pinned subprocess (no hangable LLM turn) by default;
+    # the legacy ``test-orchestrator`` specialist is reached only when this is
+    # explicitly reverted (``GUARDKIT_PHASE4_TEST_EXECUTION=sdk``) or when no
+    # pytest test command is detectable (non-Python stack safety valve).
+    if _resolve_phase_4_execution_mode() == "subprocess":
+        det_block = _run_deterministic_phase_4(
+            worktree_path=Path(worktree_path),
+            task_id=task_id,
+            agent_invoker=agent_invoker,
+            sdk_timeout=sdk_timeout,
+            turn=turn,
+        )
+        if det_block is not None:
+            _write_specialist_results(specialist_results_path, det_block)
+            logger.info(
+                "[%s] Phase-4 executed deterministically (subprocess pytest): "
+                "status=%s tests_run=%s tests_failed=%s in %.1fs",
+                task_id,
+                det_block.get("status"),
+                det_block.get("tests_run"),
+                det_block.get("tests_failed"),
+                det_block.get("duration_seconds", 0.0),
+            )
+            return SpecialistInvocationResult(
+                specialist_name="test-orchestrator",
+                phase="4",
+                status=det_block["status"],
+                duration_seconds=float(det_block.get("duration_seconds", 0.0)),
+                result_file=specialist_results_path,
+                error=det_block.get("error"),
+            )
+        logger.info(
+            "[%s] deterministic Phase-4 found no detectable test command; "
+            "falling back to the test-orchestrator specialist",
+            task_id,
+        )
 
     task_context = _load_task_context(Path(worktree_path), task_id)
     phase_3_summary = _load_phase_3_summary(Path(worktree_path), task_id)

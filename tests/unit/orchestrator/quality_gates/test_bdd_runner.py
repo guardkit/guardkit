@@ -724,16 +724,19 @@ class TestRunnerErrorSurfacing:
         )
         return result
 
-    def test_runner_error_exit_4_usage_error_surfaces_as_failure(
+    def test_runner_error_exit_4_conftest_import_error_surfaces_as_failure(
         self, worktree: Path, monkeypatch
     ):
-        # AC (TASK-FIX-F584 primary): reproduction of Outcome D from
-        # .claude/reviews/TASK-BDD-JBKF-r2-backfill-evidence.md. pytest
-        # exit=4 ("not found" / usage error) with empty junit_xml must
-        # NOT be silently approved as (0, 0, 0).
+        # AC (TASK-FIX-F584): a GENUINE exit=4 runner error — a conftest
+        # ImportError — with empty junit_xml must NOT be silently approved as
+        # (0, 0, 0). TASK-AB-BDDNEUTRAL01 carves ONLY the *uncollectable*
+        # ("not found") exit-4 case out to neutral; a conftest-load failure is
+        # a real broken-environment signal, not an absent BDD input, so it
+        # still surfaces as a synthetic failure.
         stderr = (
-            "ERROR: not found: /worktree/features/login.feature\n"
-            "(no match in any of [<Dir features>])\n"
+            "ImportError while loading conftest "
+            "'/worktree/features/conftest.py'.\n"
+            "E   ModuleNotFoundError: No module named 'common'\n"
         )
         result = self._run_with_error(
             worktree, monkeypatch, returncode=4, stderr=stderr
@@ -748,7 +751,7 @@ class TestRunnerErrorSurfacing:
         assert f.scenario_name == "pytest_runner_error"
         assert "pytest_runner_error: exit=4" in f.reason
         # Stderr snippet should be embedded so Coach feedback names the cause.
-        assert "not found" in f.reason
+        assert "conftest" in f.reason
 
     def test_runner_error_exit_3_internal_error_surfaces_as_failure(
         self, worktree: Path, monkeypatch
@@ -826,6 +829,157 @@ class TestRunnerErrorSurfacing:
 
 
 # ---------------------------------------------------------------------------
+# Absent-feature collection is neutral, not a failure (TASK-AB-BDDNEUTRAL01)
+#
+# pytest exit 4 with a "not found" collection signature and zero parsed
+# testcases means the tagged .feature could not be COLLECTED — typically a
+# project missing the features/conftest.py bridge (FEAT-MEM-07 Error 1, "BDD
+# exit-4 affects every task") or a .feature with no glue module yet. That is an
+# ABSENT BDD input, not a runner failure: run_bdd_for_task must return None
+# (-> bdd_results key absent -> Coach treats the gate as not-applicable), never
+# a synthetic failure that stacks into an unrecoverable_stall. A genuine runner
+# error (conftest ImportError, exit 2/3, empty-stream exit 4) STILL surfaces
+# (F584 preserved). See .claude/rules/absence-of-failure-is-not-success.md.
+# ---------------------------------------------------------------------------
+
+
+class TestAbsentFeatureCollectionIsNeutral:
+    def _run(
+        self,
+        worktree: Path,
+        monkeypatch,
+        *,
+        returncode: int,
+        stderr: str = "",
+        stdout: str = "",
+    ):
+        _write_feature(worktree, "login.feature", _PASS_FEATURE)
+        monkeypatch.setattr(bdd_runner, "has_pytest_bdd", lambda **_: True)
+        monkeypatch.setattr(
+            bdd_runner,
+            "_invoke_pytest_bdd",
+            _Patcher("", returncode=returncode, stderr=stderr, stdout=stdout),
+        )
+        return run_bdd_for_task("TASK-001", worktree)
+
+    def test_exit_4_not_found_is_neutral(self, worktree: Path, monkeypatch):
+        # THE BUG: .feature passed with no conftest bridge -> exit 4
+        # "ERROR: not found:". Must be neutral (None), not failed=1.
+        stderr = (
+            "ERROR: not found: /worktree/features/login.feature\n"
+            "(no match in any of [<Dir features>])\n"
+        )
+        assert self._run(worktree, monkeypatch, returncode=4, stderr=stderr) is None
+
+    def test_exit_4_file_or_directory_not_found_is_neutral(
+        self, worktree: Path, monkeypatch
+    ):
+        # A non-resolving .feature path: "file or directory not found".
+        stderr = "ERROR: file or directory not found: features/login.feature\n"
+        assert self._run(worktree, monkeypatch, returncode=4, stderr=stderr) is None
+
+    def test_exit_4_not_found_on_stdout_is_neutral(
+        self, worktree: Path, monkeypatch
+    ):
+        # The signature can land on stdout rather than stderr — still neutral.
+        stdout = "ERROR: not found: features/login.feature\n"
+        assert self._run(worktree, monkeypatch, returncode=4, stdout=stdout) is None
+
+    def test_exit_4_conftest_import_error_is_not_neutral(
+        self, worktree: Path, monkeypatch
+    ):
+        # F584 PRESERVED: a genuine conftest ImportError also exits 4, but it
+        # is a broken-environment signal, not an absent input -> surfaces.
+        stderr = (
+            "ImportError while loading conftest "
+            "'/worktree/features/conftest.py'.\n"
+            "ModuleNotFoundError: No module named 'common'\n"
+        )
+        result = self._run(worktree, monkeypatch, returncode=4, stderr=stderr)
+        assert result is not None
+        assert result.scenarios_failed == 1
+
+    def test_exit_4_empty_streams_is_not_neutral(
+        self, worktree: Path, monkeypatch
+    ):
+        # ABSENCE-OF-FAILURE SAFETY: an exit 4 with no diagnostic output has no
+        # positive evidence of the absent-feature reason. Bias to surfacing
+        # (failure), not neutral.
+        result = self._run(worktree, monkeypatch, returncode=4, stderr="", stdout="")
+        assert result is not None
+        assert result.scenarios_failed == 1
+
+    def test_only_exit_4_is_eligible_for_neutral(
+        self, worktree: Path, monkeypatch
+    ):
+        # Only exit 4 is eligible for neutral. An interrupt (2) / internal
+        # error (3) is never neutral even if "not found" appears in the noise.
+        for rc in (2, 3):
+            result = self._run(
+                worktree, monkeypatch, returncode=rc, stderr="x not found: x"
+            )
+            assert result is not None, f"exit {rc} must surface, not go neutral"
+            assert result.scenarios_failed == 1
+
+    def test_collected_testcases_override_neutral(
+        self, worktree: Path, monkeypatch
+    ):
+        # If pytest actually parsed testcases, the neutral guard
+        # (passed==0 and not failures and not pending) does not apply — the
+        # real result wins even on an exit-4 "not found" code.
+        _write_feature(worktree, "login.feature", _PASS_FEATURE)
+        monkeypatch.setattr(bdd_runner, "has_pytest_bdd", lambda **_: True)
+        monkeypatch.setattr(
+            bdd_runner,
+            "_invoke_pytest_bdd",
+            _Patcher(_FAILED_JUNIT, returncode=4, stderr="ERROR: not found:"),
+        )
+        result = run_bdd_for_task("TASK-001", worktree)
+        assert result is not None
+        assert result.scenarios_failed >= 1
+
+    def test_neutral_result_leaves_coach_gate_inactive(
+        self, worktree: Path, monkeypatch, tmp_path: Path
+    ):
+        # END-TO-END: a neutral (None) BDD verdict means agent_invoker omits
+        # the bdd_results key (autobuild.py: `if bdd_results is not None`), so
+        # Coach's _check_bdd_results sees no gate and returns no blocking
+        # issues. The absent input never contributes a failure to the tally.
+        stderr = "ERROR: not found: /worktree/features/login.feature\n"
+        assert self._run(worktree, monkeypatch, returncode=4, stderr=stderr) is None
+
+        from guardkit.orchestrator.quality_gates.coach_validator import (
+            CoachValidator,
+        )
+
+        # Key absent, exactly as the agent_invoker would leave it.
+        task_work_results: dict = {}
+        validator = CoachValidator(worktree_path=str(tmp_path))
+        blocking, non_blocking = validator._check_bdd_results(task_work_results)
+        assert blocking == []
+        assert non_blocking == []
+
+
+class TestGenuineScenarioFailureStillFails:
+    def test_failing_scenario_with_feature_present_reports_failed(
+        self, worktree: Path, monkeypatch
+    ):
+        # AC-2: a .feature exists and a scenario FAILS (real assertion failure
+        # in the junit) -> still `failed`. Only the absent-INPUT case is
+        # neutral; a collected-and-failed scenario is a real Coach-blocking bug.
+        _write_feature(worktree, "login.feature", _PASS_FEATURE)
+        monkeypatch.setattr(bdd_runner, "has_pytest_bdd", lambda **_: True)
+        monkeypatch.setattr(
+            bdd_runner,
+            "_invoke_pytest_bdd",
+            _Patcher(_FAILED_JUNIT, returncode=1),
+        )
+        result = run_bdd_for_task("TASK-001", worktree)
+        assert result is not None
+        assert result.scenarios_failed >= 1
+
+
+# ---------------------------------------------------------------------------
 # Coach-rejection end-to-end (TASK-FIX-F584)
 #
 # The primary motivation for the runner-error fix is that Coach's approval
@@ -852,10 +1006,14 @@ class TestCoachRejectsRunnerError:
         # approval validator to reject.
         _write_feature(worktree, "login.feature", _PASS_FEATURE)
         monkeypatch.setattr(bdd_runner, "has_pytest_bdd", lambda **_: True)
+        # Use a GENUINE runner error (exit 3 internal error) as the trigger.
+        # The exit-4 "not found" case is now neutral (TASK-AB-BDDNEUTRAL01) and
+        # would no longer produce a blocking BDDResult, but the end-to-end
+        # Coach-rejection contract still holds for real runner errors.
         monkeypatch.setattr(
             bdd_runner,
             "_invoke_pytest_bdd",
-            _Patcher("", returncode=4, stderr="ERROR: not found"),
+            _Patcher("", returncode=3, stderr="INTERNALERROR> Traceback ..."),
         )
 
         # 1. Runner produces a BDDResult with runner-error synthetic failure.

@@ -40,6 +40,14 @@ from guardkit.orchestrator.quality_gates.coach_validator import (
 # ============================================================================
 
 
+@pytest.fixture(autouse=True)
+def _pin_sdk_harness(monkeypatch):
+    """TASK-HMIG-011: SDK-environment-parity tests run on the SDK substrate.
+    Pin GUARDKIT_HARNESS=sdk so the post-cutover ``langgraph`` default (not
+    importable in CI's tests.yml) is not resolved."""
+    monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+
+
 def _make_mock_sdk_module() -> MagicMock:
     """Build a minimal mock of the claude_agent_sdk module."""
     mock_module = MagicMock(spec=ModuleType)
@@ -365,11 +373,11 @@ class TestRunTestsViaSdk:
 class TestRunIndependentTestsSdkFallback:
     """Tests for CoachValidator.run_independent_tests() SDK-first + subprocess fallback."""
 
-    def test_sdk_first_dispatch(self, tmp_path, monkeypatch):
+    def test_sdk_first_dispatch(self, tmp_path):
         """coach_test_execution='sdk' calls _run_tests_via_sdk via asyncio bridge."""
         # TASK-HMIG-011 cutover (2026-06-16): default harness is now "langgraph"
-        # (which forces the subprocess path); opt into the SDK dispatch explicitly.
-        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+        # (which forces the subprocess path); the module-level autouse fixture
+        # `_pin_sdk_harness` pins GUARDKIT_HARNESS=sdk so the SDK dispatch is used.
         validator = CoachValidator(
             str(tmp_path),
             test_command="pytest tests/",
