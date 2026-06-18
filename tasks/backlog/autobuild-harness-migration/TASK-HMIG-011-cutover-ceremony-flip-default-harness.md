@@ -143,7 +143,10 @@ done; announce + observation window remain operator follow-ups.**
   `ClaudeSDKHarness`; `GUARDKIT_HARNESS=langgraph` → `LangGraphHarness`.
 
 **Remaining (operator / calendar) — AC-005, 006, 008:**
-- **AC-005** — cutover announce (operator channel/audience). Not automatable.
+- **AC-005** — cutover announce (operator channel/audience). **Announce text
+  DRAFTED 2026-06-18** (short + full versions) in
+  [`TASK-HMIG-011-cutover-announce.md`](./TASK-HMIG-011-cutover-announce.md) —
+  ready to send; check AC-005 once delivered on the chosen channel.
 - **AC-006** — observation window: no failure-rate regression vs the Wave-3
   baseline. FEAT-9DDE + FEAT-FAUD green (2026-06-14/16) are supporting evidence;
   capture formal window observations here.
