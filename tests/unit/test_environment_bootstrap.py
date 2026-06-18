@@ -214,6 +214,38 @@ class TestProjectEnvironmentDetectorPython:
         assert manifests[0].stack == "python"
         assert "requirements.txt" in manifests[0].install_command
 
+    def test_detects_nonstandard_requirements_file(self, tmp_path: Path) -> None:
+        """TASK-AB-PERTASKFG01 AC-003: a non-standard sole requirements file
+        (requirements.poc.txt — lpa-platform-poc) is detected and installed,
+        not silently skipped (which left the worktree venv empty)."""
+        (tmp_path / "requirements.poc.txt").write_text("fastapi>=0.115.0\n")
+        detector = ProjectEnvironmentDetector(root=tmp_path)
+        manifests = detector.detect()
+        assert len(manifests) == 1
+        assert manifests[0].stack == "python"
+        assert manifests[0].install_command == [
+            sys.executable, "-m", "pip", "install", "-r", "requirements.poc.txt",
+        ]
+
+    def test_detects_multiple_requirements_files_additively(self, tmp_path: Path) -> None:
+        """AC-003: a base + dev/test split installs BOTH files (the test deps
+        in requirements-dev.txt were previously dropped)."""
+        (tmp_path / "requirements.txt").write_text("fastapi>=0.115.0\n")
+        (tmp_path / "requirements-dev.txt").write_text("pytest-asyncio>=0.23\n")
+        detector = ProjectEnvironmentDetector(root=tmp_path)
+        names = sorted(m.path.name for m in detector.detect() if m.stack == "python")
+        assert names == ["requirements-dev.txt", "requirements.txt"]
+
+    def test_pyproject_still_suppresses_requirements_glob(self, tmp_path: Path) -> None:
+        """No over-reach: an editable pyproject project still installs via
+        `pip install -e .` — the requirements*.txt glob must not also fire."""
+        (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
+        (tmp_path / "requirements.poc.txt").write_text("fastapi\n")
+        detector = ProjectEnvironmentDetector(root=tmp_path)
+        python_manifests = [m for m in detector.detect() if m.stack == "python"]
+        assert len(python_manifests) == 1
+        assert python_manifests[0].path.name == "pyproject.toml"
+
     def test_detects_poetry_lock_as_lock_file(self, tmp_path: Path) -> None:
         """poetry.lock is detected as a python lock manifest."""
         (tmp_path / "poetry.lock").write_text("# lock\n")
