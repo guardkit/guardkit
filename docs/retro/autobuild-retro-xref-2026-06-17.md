@@ -200,3 +200,44 @@ can't see what it never ran). Both are `absence-of-failure-is-not-success` /
 §1 anticipated — now with a concrete live reproduction and a landed, validated fix.
 
 > **Handoff:** `docs/retro/session-handoff-2026-06-18-pertaskfg01-false-green-closed.md`.
+
+## 9. Update 2026-06-18 — FEAT-HMIG cutover closed out; F24 coach-reliability tail DEFERRED
+
+The LangGraph harness migration (FEAT-HMIG) is **closed out** as of 2026-06-18. The
+cutover ceremony (TASK-HMIG-011) completed Path-A/GO; the two stale-blocked
+validation tasks were resolved — **TASK-HMIG-009** completed/superseded-by-009A
+(the canary question answered YES at 83.3%), **TASK-HMIG-010** completed/goal-met
+(GO verdict reached, executed by the cutover, proven by FEAT-9DDE + FEAT-FAUD green
+merges). TASK-HMIG-013 was already superseded by COACHMOE01 (relocated);
+TASK-REV-HM09 (review, delivered) relocated to `completed/`. TASK-HMIG-012
+(2×-Spark optimization) and TASK-HMIG-014 (optional Phase-3 SDK removal) are
+hardware-gated / optional and deferred-by-design.
+
+**Deferred: the F24 coach-substrate-reliability tail.** Two fix tasks are
+**deferred (priority → low) 2026-06-18**, because both of their fix-approaches were
+empirically falsified and the operator's settled resolution is *gemma4:26b (the 26B
+MoE) + the COACHSF01 synthetic-feedback safety net*, which runs green in practice:
+
+- **TASK-OPS-COACHGRAMMAR** (Path 1A, route-level llama.cpp GBNF) — **dead end**:
+  run 13 proved llama.cpp bypasses the server `--grammar-file` whenever a request
+  carries tools, and the DeepAgents Coach binds built-in tools on every call, so the
+  grammar never reaches the Coach.
+- **TASK-FIX-COACHSCHEMA** (Path 1B, prompt-tightening) — **falsified by run 14**:
+  more time + a decisive prompt made gemma4:26b *worse* (49,720 chars of reasoning,
+  no verdict). The run-14 analysis recommended escalating to a **Gemma 4 31B dense**
+  substrate, but the operator's 2026-06-18 investigation **evaluated 31B and
+  rejected it** ("slower, no better than the 26B MoE").
+
+The genuine residual: under `--reasoning auto`, gemma4:26b does not *natively* emit
+the fenced-JSON verdict 100% of the time; **COACHSF01** covers the gap (and much of
+the runs-8→13 pain was operator-fixable substrate config — F20 `n_ctx`, grace-period
+constants — since resolved). **The live forward option** if coach reliability ever
+becomes a felt pain is a **toolless grammar-constrained verdict-synthesis call**
+(`docs/research/dgx-spark/grammars/README.md`), or the deprioritized fine-tuned/
+distilled coach (TASK-DATA-COACHHARVEST) — NOT route-level GBNF or 31B.
+
+**Still genuinely open (NOT deferred, honest backlog):** **TASK-FIX-FRESHRESET01**
+(a real `--fresh`-flag bug: silently no-ops on a previously-COMPLETED feature;
+unrelated to the coach) and **TASK-FIX-COACHBUDG01** (5/8 ACs — partially landed;
+its shipped parts — reasoning_content parser + `--coach-model` plumbing — are what
+make gemma4:26b usable today).
