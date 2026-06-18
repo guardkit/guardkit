@@ -201,68 +201,70 @@ can't see what it never ran). Both are `absence-of-failure-is-not-success` /
 
 > **Handoff:** `docs/retro/session-handoff-2026-06-18-pertaskfg01-false-green-closed.md`.
 
-## 9. Update 2026-06-18 — FEAT-HMIG cutover closed out; F24 coach-reliability tail DEFERRED
+## 9. FEAT-HMIG closed out — 2026-06-18
 
-The LangGraph harness migration (FEAT-HMIG) is **closed out** as of 2026-06-18. The
-cutover ceremony (TASK-HMIG-011) completed Path-A/GO; the two stale-blocked
-validation tasks were resolved — **TASK-HMIG-009** completed/superseded-by-009A
-(the canary question answered YES at 83.3%), **TASK-HMIG-010** completed/goal-met
-(GO verdict reached, executed by the cutover, proven by FEAT-9DDE + FEAT-FAUD green
-merges). TASK-HMIG-013 was already superseded by COACHMOE01 (relocated);
-TASK-REV-HM09 (review, delivered) relocated to `completed/`. TASK-HMIG-012
-(2×-Spark optimization) and TASK-HMIG-014 (optional Phase-3 SDK removal) are
-hardware-gated / optional and deferred-by-design.
+The LangGraph harness migration (**FEAT-HMIG**) is **fully closed** as of 2026-06-18:
+the cutover shipped and is validated, the substrate is settled, and **no task is
+genuinely open** — every one is completed, deferred-with-rationale, or optional. Two
+items that first looked like an open tail were reality-checked against the code on
+disk and found **already-done**.
 
-**Deferred: the F24 coach-substrate-reliability tail.** Two fix tasks are
-**deferred (priority → low) 2026-06-18**, because both of their fix-approaches were
-empirically falsified and the operator's settled resolution is *gemma4:26b (the 26B
-MoE) + the COACHSF01 synthetic-feedback safety net*, which runs green in practice:
+### Disposition — all FEAT-HMIG tasks
 
-- **TASK-OPS-COACHGRAMMAR** (Path 1A, route-level llama.cpp GBNF) — **dead end**:
-  run 13 proved llama.cpp bypasses the server `--grammar-file` whenever a request
-  carries tools, and the DeepAgents Coach binds built-in tools on every call, so the
-  grammar never reaches the Coach.
-- **TASK-FIX-COACHSCHEMA** (Path 1B, prompt-tightening) — **falsified by run 14**:
-  more time + a decisive prompt made gemma4:26b *worse* (49,720 chars of reasoning,
-  no verdict). The run-14 analysis recommended escalating to a **Gemma 4 31B dense**
-  substrate, but the operator's 2026-06-18 investigation **evaluated 31B and
-  rejected it** ("slower, no better than the 26B MoE").
+| Task | Disposition | Note |
+|---|---|---|
+| HMIG-011 cutover ceremony | ✅ completed | Path-A / GO; LangGraph default shipped 2026-06-16 |
+| HMIG-009 canary validation | ✅ completed — superseded | by 009A; canary question answered YES (83.3%) |
+| HMIG-010 full-feature validation | ✅ completed — goal-met | GO verdict reached, executed by the cutover, proven by FEAT-9DDE + FEAT-FAUD green |
+| HMIG-013 coach swap | ✅ completed — superseded | by COACHMOE01 (gemma4:26b in production) |
+| REV-HM09 pilot review | ✅ completed — delivered | produced 009A/009B |
+| FRESHRESET01 | ✅ completed — superseded | already fixed by FRESHCLEAN01 (`3b39764e`) — see meta-lesson |
+| COACHBUDG01 | ✅ completed | stale snapshot; all cross-repo ACs landed — see meta-lesson |
+| HMIG-012 2×-Spark optimization | ⏸️ deferred | hardware-gated (2nd Spark + ConnectX-7) |
+| HMIG-014 Phase-3 SDK removal | 📋 optional | key cutoff cancelled → SDK fallback is free |
+| COACHGRAMMAR (F24, Path 1A) | ⏸️ deferred | route-level GBNF — dead end |
+| COACHSCHEMA (F24, Path 1B) | ⏸️ deferred | prompt-tightening — falsified |
 
-The genuine residual: under `--reasoning auto`, gemma4:26b does not *natively* emit
-the fenced-JSON verdict 100% of the time; **COACHSF01** covers the gap (and much of
-the runs-8→13 pain was operator-fixable substrate config — F20 `n_ctx`, grace-period
-constants — since resolved). **The live forward option** if coach reliability ever
-becomes a felt pain is a **toolless grammar-constrained verdict-synthesis call**
-(`docs/research/dgx-spark/grammars/README.md`), or the deprioritized fine-tuned/
-distilled coach (TASK-DATA-COACHHARVEST) — NOT route-level GBNF or 31B.
+### The F24 coach-substrate-reliability tail (deferred)
 
-**Genuinely open: none.** (See the two 2026-06-18 updates below — both of the
-items first thought open turned out already-done once the code was checked.)
+Settled resolution: **gemma4:26b (the 26B MoE) + the COACHSF01 synthetic-feedback
+safety net**, which runs green in practice (FEAT-9DDE, FEAT-FAUD). Both native-reliability
+fixes were empirically falsified, so COACHGRAMMAR + COACHSCHEMA are deferred (priority → low):
 
-> **Update 2026-06-18 — TASK-FIX-FRESHRESET01 was NOT open after all: already
-> fixed, superseded by TASK-FIX-FRESHCLEAN01** (commit `3b39764e`, "--fresh
-> force-cleans terminal features, not just incomplete ones"; in `completed/`). An
-> attempt to implement FRESHRESET01 found the code contradicts the task premise:
-> the `is_incomplete` guard around `_clean_state` is gone —
-> `feature_orchestrator.py` now calls `_clean_state` unconditionally under
-> `if self.fresh:` (Shape A), and `_clean_state → reset_state`
-> (`feature_loader.py`) resets exactly the per-task fields FRESHRESET01 asked for.
-> Closed as superseded, no new code.
+- **Route-level llama.cpp GBNF** (Path 1A) — **dead end**: llama.cpp bypasses
+  `--grammar-file` whenever a request carries tools, and the DeepAgents Coach binds
+  built-in tools on every call, so the grammar never reaches the Coach (run 13).
+- **Prompt-tightening** (Path 1B) — **falsified by run 14**: more time + a decisive
+  prompt made gemma4:26b *worse* (49,720 chars of reasoning, no verdict).
+- **Gemma 4 31B dense escalation** (the run-14 recommendation) — **evaluated and
+  rejected 2026-06-18**: "slower, no better than the 26B MoE."
 
-> **Update 2026-06-18 — TASK-FIX-COACHBUDG01 was also NOT open: a stale
-> 2026-06-06 snapshot, now reconciled to completed.** When filed, guardkitfactory
-> "was not on this box," so every cross-repo AC was conservatively marked BLOCKED
-> ON guardkitfactory. They have all since landed and are tested: per-role
-> `max_tokens` (Coach 16384) at `langgraph_harness.py:520-521`
-> (`_SYNTHESIS_MAX_TOKENS_DEFAULT = 16384`); `reasoning_content → reasoning_text`
-> in `_aiter_events` at `langgraph_harness.py:606-616`
-> (`extract_last_ai_reasoning`); `MODEL_CONTEXT_WINDOWS` in
-> `guardkitfactory/harness/model_config.py`; cross-repo tests in
-> `tests/harness/test_langgraph_harness*.py` + `test_model_config.py`. Closed as
-> completed, no new code.
->
-> **Net: FEAT-HMIG is fully closed.** Every task is completed,
-> deferred-with-rationale (HMIG-012; the F24 coach-polish pair), or optional
-> (HMIG-014). The two items that looked like an open tail were both reality-checked
-> to already-done — a reminder that a backlog task's "BLOCKED"/"open" status is a
-> claim about a past moment, and the code on disk is the source of truth.
+Genuine residual: under `--reasoning auto`, gemma4:26b doesn't *natively* emit the
+fenced-JSON verdict 100% of the time; COACHSF01 covers the gap (much of the runs-8→13
+pain was operator-fixable substrate config — F20 `n_ctx`, grace-period constants —
+since resolved). **Live forward option** if coach reliability ever becomes a felt pain:
+a **toolless grammar-constrained verdict-synthesis call**
+(`docs/research/dgx-spark/grammars/README.md`), or the deprioritized fine-tuned/distilled
+coach (TASK-DATA-COACHHARVEST) — NOT route-level GBNF and NOT 31B. Recorded as a Graphiti
+`guardkit__project_decisions` node.
+
+### Meta-lesson — recurred twice in this closeout
+
+Both **FRESHRESET01** and **COACHBUDG01** were parked in backlog as "open"/"BLOCKED" but
+were **already done** once the code was checked:
+
+- **FRESHRESET01** — superseded by **FRESHCLEAN01** (`3b39764e`, "--fresh force-cleans
+  terminal features, not just incomplete ones"). The `is_incomplete` guard around
+  `_clean_state` is gone; `feature_orchestrator.py` calls `_clean_state` unconditionally
+  under `if self.fresh:`, and `_clean_state → reset_state` resets the per-task fields it
+  asked for.
+- **COACHBUDG01** — a stale 2026-06-06 snapshot that marked every cross-repo AC "BLOCKED
+  ON guardkitfactory" (not on the box then). All have since landed + tested: per-role
+  `max_tokens` (Coach 16384, `langgraph_harness.py:520-521`); `reasoning_content →
+  reasoning_text` in `_aiter_events` (`:606-616`, `extract_last_ai_reasoning`);
+  `MODEL_CONTEXT_WINDOWS` (`model_config.py`); tests in
+  `tests/harness/test_langgraph_harness*.py` + `test_model_config.py`.
+
+A backlog task's "BLOCKED"/"open" status is a claim about a *past moment*; **the code on
+disk is the source of truth.** Reality-check the premise before running an implementation
+workflow — it saved two no-op runs here.
