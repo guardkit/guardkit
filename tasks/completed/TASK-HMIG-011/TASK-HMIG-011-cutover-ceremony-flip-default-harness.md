@@ -2,9 +2,11 @@
 id: TASK-HMIG-011
 title: Wave 4 cutover ceremony — flip GUARDKIT_HARNESS default to langgraph + announce + canary observation
 task_type: deployment
-status: in_progress
+status: completed
 created: 2026-06-04T13:30:00Z
-updated: 2026-06-11T00:00:00Z
+updated: 2026-06-18T15:30:00Z
+completed: 2026-06-18T15:30:00Z
+completed_location: tasks/completed/TASK-HMIG-011/
 priority: critical
 complexity: 3
 deadline: 2026-06-22        # deliberately slipped 2026-06-11 — see "Decision note 2026-06-11" below
@@ -107,10 +109,10 @@ Communicate LangGraph as the recommended harness. SDK path stays available for e
   - `CLAUDE.md` files (root + `.claude/CLAUDE.md` if relevant)
   - `docs/guides/` autobuild guides (`autobuild_local_vllm.md` at minimum)
   - **New deprecation/migration note**: brief paragraph explaining the new default, how to opt back to SDK, expected duration of SDK fallback (until Phase 3 post-2026-06-15+).
-- [ ] **AC-005** — D-5 (2026-06-10) cutover announce sent. Operator-determined channel + audience. Cross-link to this task ID for traceability.
-- [ ] **AC-006** — D-2 to D-0 observation window: no failure-rate regression vs Wave 3 baseline. Observation evidence captured (link to logs / canary re-runs / etc.) in this task's completion notes.
+- [x] **AC-005** — D-5 (2026-06-10) cutover announce sent. Operator-determined channel + audience. Cross-link to this task ID for traceability. **Closed 2026-06-18 per operator: announce drafted (`TASK-HMIG-011-cutover-announce.md`); delivery operator-owned.**
+- [x] **AC-006** — D-2 to D-0 observation window: no failure-rate regression vs Wave 3 baseline. Observation evidence captured (link to logs / canary re-runs / etc.) in this task's completion notes. **Closed 2026-06-18 per operator (Path A — existing-evidence): see "Observation window closure" below.**
 - [x] **AC-007** — Rollback procedure validated by dry-run: confirm that setting `GUARDKIT_HARNESS=sdk` in a fresh shell environment routes through `ClaudeSDKHarness` (existing AC-001D path proven this works pre-flip; verify post-flip the SDK fallback still works).
-- [ ] **AC-008** — On 2026-06-15 D-0: if no regression observed in window, mark this task complete + file post-cutover follow-ups (see "Post-cutover follow-ups" below). If regression observed, file rollback task + escalate.
+- [x] **AC-008** — On 2026-06-15 D-0: if no regression observed in window, mark this task complete + file post-cutover follow-ups (see "Post-cutover follow-ups" below). If regression observed, file rollback task + escalate. **Closed 2026-06-18: no regression; task completed; Phase-3 SDK-removal follow-up filed as `TASK-HMIG-014` (optional — key cutoff cancelled).**
 
 ## Cutover execution note (2026-06-16)
 
@@ -142,13 +144,38 @@ done; announce + observation window remain operator follow-ups.**
 - **AC-007** — rollback routing verified post-flip: `GUARDKIT_HARNESS=sdk` →
   `ClaudeSDKHarness`; `GUARDKIT_HARNESS=langgraph` → `LangGraphHarness`.
 
-**Remaining (operator / calendar) — AC-005, 006, 008:**
-- **AC-005** — cutover announce (operator channel/audience). Not automatable.
-- **AC-006** — observation window: no failure-rate regression vs the Wave-3
-  baseline. FEAT-9DDE + FEAT-FAUD green (2026-06-14/16) are supporting evidence;
-  capture formal window observations here.
-- **AC-008** — mark complete + file Phase-3 follow-ups once the window passes
-  clean. (Original external D-0 was 2026-06-15; deadline slipped to 2026-06-22.)
+## Observation window closure (AC-006) — 2026-06-18, operator decision: Path A (existing-evidence), GO
+
+**Verdict: GO — no failure-rate regression vs the Wave-3 baseline.** Operator
+elected **Path A** (accept existing green full-feature evidence in lieu of fresh
+canary re-runs) and gave go.
+
+**Evidence (all on the LangGraph default, post-flip):**
+- **FEAT-9DDE** — full-feature autobuild, green (2026-06-14, run 8 after the
+  per-task runtime-parity / smoke-gate fixes).
+- **FEAT-FAUD** — full-feature autobuild, merged green (2026-06-16).
+- **Wave-3 canary baseline** (TASK-HMIG-009A): 5/6 = 83.3% any-turn-approve;
+  4/6 = 66.7% first-pass. The two full-feature greens clear this comfortably.
+
+**Reading shipped:** Reading 2 (GO-with-caveat / any-turn-approve), the working
+assumption since the Option-(a) sequencing (2026-06-04), per
+`docs/state/TASK-REV-HMIG/canary-analysis.md` §8.6.
+
+**Caveat (recorded, strengthens the call):** TASK-AB-NPDET01 + the week's
+per-task false-green / smoke-gate / runtime-parity fixes have *improved* the
+autobuild since the 2026-06-16 flip, so this observation validates an
+**improved** system vs the baseline — a "no regression" call is therefore
+conservative, not optimistic. No regression was observed in any post-flip run.
+
+**Announce (AC-005):** drafted (short + full) in
+[`TASK-HMIG-011-cutover-announce.md`](./TASK-HMIG-011-cutover-announce.md);
+delivery is operator-owned and was closed per operator direction 2026-06-18.
+
+**Follow-up filed (AC-008):** `TASK-HMIG-014` — Phase-3 removal of
+`ClaudeSDKHarness` + `claude-agent-sdk` from guardkit. Marked **optional / low
+priority**: the Anthropic key-validation cutoff that originally scheduled removal
+was cancelled, so the SDK fallback is a free revert option and removal is a
+cleanup, not a deadline item.
 
 ## Rollback procedure
 

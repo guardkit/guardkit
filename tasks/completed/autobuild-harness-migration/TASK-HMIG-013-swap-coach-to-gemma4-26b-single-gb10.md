@@ -4,6 +4,8 @@ title: Stage 1 — Swap Coach to gemma4:26b on existing single GB10 to close F17
 status: completed
 resolution: superseded
 superseded_by: TASK-OPS-COACHMOE01
+completed_location: tasks/completed/autobuild-harness-migration/
+relocated: 2026-06-18  # file moved backlog/ -> completed/ to match its completed status (gemma4:26b coach is in production use)
 task_type: bug
 created: 2026-06-06T11:00:00Z
 updated: 2026-06-11T17:35:00Z
