@@ -8340,6 +8340,49 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         )
         task_work_data["agent_invocations_validation"] = new_validation
 
+        # TASK-AB-PERTASKFG01 fix #2 (absence-of-failure-is-not-success):
+        # reconcile the narrative-derived quality_gates block against the
+        # AUTHORITATIVE phase_4 (test-orchestrator) specialist record before the
+        # Coach reads it. ``_write_task_work_results`` assembles quality_gates by
+        # regex-parsing the Player's PROSE, so a hung/failed test-orchestrator
+        # (0 tests run) can still yield {all_passed: true, coverage: 100,
+        # tests_passed: 0} when the prose happens to match the coverage/gate
+        # patterns (the TASK-AB-PERTASKFG01 false-green repro). When the authoritative
+        # specialist record says the test phase FAILED, the narrative is a
+        # false-green and the record wins. Only the false-green direction is
+        # overridden (specialist failed AND narrative claims a pass); a
+        # "skipped" phase (e.g. direct-mode Phase-4-not-run) or a genuine pass
+        # is left untouched.
+        phase_4_block = (specialist_data or {}).get("phase_4")
+        qg = task_work_data.get("quality_gates")
+        if (
+            isinstance(phase_4_block, dict)
+            and isinstance(qg, dict)
+            and phase_4_block.get("status") == "failed"
+            and (qg.get("all_passed") or qg.get("tests_passing"))
+        ):
+            logger.warning(
+                "Reconciling quality_gates against authoritative phase_4 "
+                "specialist record for %s: test-orchestrator status=failed "
+                "(error=%s, tests_run=%s) but quality_gates claimed "
+                "all_passed=%s/tests_passing=%s — overriding to NOT passed "
+                "(narrative false-green).",
+                task_id,
+                phase_4_block.get("error"),
+                phase_4_block.get("tests_run"),
+                qg.get("all_passed"),
+                qg.get("tests_passing"),
+            )
+            qg["all_passed"] = False
+            qg["tests_passing"] = False
+            qg["tests_passed"] = phase_4_block.get("tests_run", 0) or 0
+            if phase_4_block.get("tests_failed") is not None:
+                qg["tests_failed"] = phase_4_block.get("tests_failed")
+            qg["coverage"] = phase_4_block.get("coverage_pct", qg.get("coverage"))
+            qg["coverage_met"] = False
+            qg["reconciled_from_specialist"] = True
+            task_work_data["quality_gates"] = qg
+
         try:
             results_path.write_text(json.dumps(task_work_data, indent=2))
         except OSError as exc:
@@ -8564,6 +8607,18 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         )
         if ac_match:
             body = ac_match.group(1)
+        # TASK-GK-PA-003 AC-1: resolve markdown links ``[label](href)`` to
+        # their href before tokenizing. A link *label* may itself be a
+        # path-shaped string (e.g. ``[relay/service.py](src/pkg/relay/
+        # service.py)``) — but the label is a display string, not a cited
+        # file. Only the href is the real referent. Dropping the label
+        # stops a non-existent label path tripping the escalation while
+        # the href that actually exists on disk goes unchecked. This is
+        # the inverse-shape sibling of
+        # ``path-string-mismatch-is-not-dishonesty``: a path-string miss
+        # treated as a hard failure when the file exists under a
+        # resolvable path.
+        body = _re.sub(r"\[[^\]]*\]\(([^)]+)\)", r"\1", body)
         primary = _re.findall(r"[\w./\-]+\.\w{1,5}", body)
         backtick = _re.findall(r"`([^`]+\.[a-zA-Z]+)`", body)
         double_q = _re.findall(r'"([^"]+\.[a-zA-Z]+)"', body)
@@ -8601,9 +8656,52 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             # false-positive root cause (TASK-GK-AC-001).
             if not flag_basenames and "/" not in p:
                 continue
-            if not (self.worktree_path / p).exists():
+            if not self._ac_path_exists(p):
                 missing.append(p)
         return sorted(set(missing))
+
+    def _ac_path_exists(self, token: str) -> bool:
+        """Return ``True`` when an AC-cited path token resolves on disk.
+
+        TASK-GK-PA-003 AC-2: a multi-segment token (one containing ``/``)
+        is treated as a **path suffix**. AC text — and markdown-link hrefs
+        resolved by :meth:`_scan_ac_for_missing_paths` — routinely cite a
+        path relative to a package root (``relay/service.py``) when the
+        file actually lives at ``src/pkg/relay/service.py``. A direct
+        ``worktree / token`` check misses that; a match anywhere in the
+        tree whose path *ends with* the token (on segment boundaries)
+        counts as present.
+
+        The walk skips dependency / VCS / cache directories and does NOT
+        follow symlinks — the ``.guardkit/worktrees`` tree carries a
+        sibling-repo symlink, so ``followlinks=False`` avoids walking (or
+        looping) into it. AC-003's no-masking guarantee is preserved: a
+        genuinely-missing path (no direct hit and no suffix match) still
+        returns ``False``, so it stays a violation.
+        """
+        if (self.worktree_path / token).exists():
+            return True
+        # Suffix fallback applies to multi-segment tokens only. Bare
+        # basenames are already handled by the caller's skip rule; a lone
+        # segment here keeps the strict worktree-root semantics.
+        suffix_parts = tuple(seg for seg in token.split("/") if seg)
+        if len(suffix_parts) < 2:
+            return False
+        n = len(suffix_parts)
+        basename = suffix_parts[-1]
+        prune = {
+            ".git", ".hg", ".svn", "node_modules", "__pycache__",
+            ".venv", "venv", ".mypy_cache", ".pytest_cache", ".tox",
+            ".guardkit",
+        }
+        for dirpath, dirnames, filenames in os.walk(
+            self.worktree_path, followlinks=False
+        ):
+            dirnames[:] = [d for d in dirnames if d not in prune]
+            if basename in filenames:
+                if Path(dirpath, basename).parts[-n:] == suffix_parts:
+                    return True
+        return False
 
     def _compute_code_review_block(
         self, task_work_data: Dict[str, Any]

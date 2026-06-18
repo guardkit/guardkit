@@ -272,3 +272,114 @@ class TestComputePlanAuditFixtureRegression:
         )
         assert verdict["violations"] == 0
         assert verdict["missing_files"] == []
+
+
+# ============ TASK-GK-PA-003: markdown-link hrefs + path suffixes ============
+
+
+class TestScanACMarkdownLinkResolution:
+    """TASK-GK-PA-003 AC-1: an AC line written as a markdown link
+    ``[label](href)`` must be checked against the *href*, not the
+    *label*. The label is a display string that may itself look like a
+    path (``relay/service.py``); flagging it as missing when the href
+    exists on disk is the FEAT-MEM-07 Error 2 false positive
+    (RIP-002 unrecoverable_stall). Inverse-shape sibling of
+    ``path-string-mismatch-is-not-dishonesty``.
+    """
+
+    def test_markdown_link_checks_href_not_label(
+        self, worktree: Path, invoker: AgentInvoker
+    ) -> None:
+        """AC-4 reproducer: the label path ``relay/service.py`` is absent
+        but the href ``src/pkg/relay/service.py`` exists → no violation.
+
+        Pre-fix this returned ``["relay/service.py"]`` (the label).
+        """
+        href_dir = worktree / "src" / "pkg" / "relay"
+        href_dir.mkdir(parents=True)
+        (href_dir / "service.py").write_text("")
+        _write_task(
+            worktree,
+            "TASK-PA003-001",
+            ["AC-1: Wire up [relay/service.py](src/pkg/relay/service.py)."],
+        )
+
+        missing = invoker._scan_ac_for_missing_paths("TASK-PA003-001")
+
+        assert missing == []
+
+    def test_markdown_link_control_neither_exists_is_violation(
+        self, worktree: Path, invoker: AgentInvoker
+    ) -> None:
+        """AC-4 control: when neither the label path nor the href exists,
+        the *href* (the real referent, not the label) is reported missing
+        — AC-003's no-masking guarantee."""
+        _write_task(
+            worktree,
+            "TASK-PA003-002",
+            ["AC-1: Wire up [relay/service.py](src/pkg/relay/service.py)."],
+        )
+
+        missing = invoker._scan_ac_for_missing_paths("TASK-PA003-002")
+
+        assert missing == ["src/pkg/relay/service.py"]
+
+
+class TestScanACPathSuffixMatching:
+    """TASK-GK-PA-003 AC-2: a multi-segment token cited relative to a
+    package root counts as present when a file anywhere in the tree ends
+    with that path suffix (on segment boundaries)."""
+
+    def test_path_suffix_match_is_not_missing(
+        self, worktree: Path, invoker: AgentInvoker
+    ) -> None:
+        """``relay/service.py`` in AC text +
+        ``src/fleet_memory/relay/service.py`` on disk → no violation,
+        even though ``worktree / "relay/service.py"`` does not exist."""
+        deep = worktree / "src" / "fleet_memory" / "relay"
+        deep.mkdir(parents=True)
+        (deep / "service.py").write_text("")
+        _write_task(
+            worktree,
+            "TASK-PA003-003",
+            ["AC-1: Implement `relay/service.py` for the relay."],
+        )
+
+        missing = invoker._scan_ac_for_missing_paths("TASK-PA003-003")
+
+        assert missing == []
+
+    def test_path_suffix_no_match_still_fires(
+        self, worktree: Path, invoker: AgentInvoker
+    ) -> None:
+        """AC-003: a multi-segment token with no direct hit AND no
+        tree-suffix match remains a violation (no masking)."""
+        _write_task(
+            worktree,
+            "TASK-PA003-004",
+            ["AC-1: Implement `relay/service.py` for the relay."],
+        )
+
+        missing = invoker._scan_ac_for_missing_paths("TASK-PA003-004")
+
+        assert missing == ["relay/service.py"]
+
+    def test_suffix_match_requires_segment_boundary(
+        self, worktree: Path, invoker: AgentInvoker
+    ) -> None:
+        """A suffix match must align on path-segment boundaries. A file at
+        ``src/myrelay/service.py`` shares the trailing *characters* of the
+        token ``relay/service.py`` but not its *segments*, so the token is
+        still missing — guards against a naive string ``endswith``."""
+        deep = worktree / "src" / "myrelay"
+        deep.mkdir(parents=True)
+        (deep / "service.py").write_text("")
+        _write_task(
+            worktree,
+            "TASK-PA003-005",
+            ["AC-1: Implement `relay/service.py` for the relay."],
+        )
+
+        missing = invoker._scan_ac_for_missing_paths("TASK-PA003-005")
+
+        assert missing == ["relay/service.py"]

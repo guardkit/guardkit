@@ -4322,14 +4322,39 @@ class CoachValidator:
                 signal_absent = False
                 if not tests_passed:
                     combined = (result.stdout or "") + (result.stderr or "")
-                    if "No module named pytest" in combined or result.returncode == 5:
+                    runner_absent = "No module named pytest" in combined
+                    no_tests_collected = result.returncode == 5
+                    # TASK-AB-PERTASKFG01 fix #4 (absence-of-failure-is-not-success):
+                    # a conftest/collection import failure means pytest could not
+                    # even load the suite, so ZERO tests executed — the oracle
+                    # produced NO verdict on the Player's code. That is an ABSENT
+                    # signal (the test framework / its deps could not load, e.g. a
+                    # missing pytest_asyncio / app dep in the bootstrap venv —
+                    # exit code 2/4, not 5), NOT a Player test failure. Without
+                    # this, the conftest ModuleNotFoundError was mis-recorded as
+                    # "ran-and-failed" (signal_absent=False), which DISARMED the
+                    # deterministic _reconcile_absent_independent_test_signal
+                    # backstop and let the LLM Coach rationalise the env error and
+                    # approve an unverified deliverable (the TASK-AB-PERTASKFG01
+                    # false-green repro). A Player *test* that imports a missing app
+                    # module still surfaces as a real failure: those report a test
+                    # summary and exit 1, not a collection error.
+                    collection_failed = (
+                        "ImportError while loading conftest" in combined
+                        or "errors during collection" in combined
+                        or "error collecting" in combined
+                    )
+                    if runner_absent or no_tests_collected or collection_failed:
                         signal_absent = True
                         logger.warning(
                             "Independent test oracle did not run "
-                            "(returncode=%s, runner-absent/no-tests-collected) "
-                            "— treating as absent signal, not a test failure. "
-                            "cmd=%s",
+                            "(returncode=%s, runner-absent=%s/no-tests-collected=%s"
+                            "/collection-failed=%s) — treating as absent signal, "
+                            "not a test failure. cmd=%s",
                             result.returncode,
+                            runner_absent,
+                            no_tests_collected,
+                            collection_failed,
                             test_cmd,
                         )
 
@@ -6663,19 +6688,29 @@ class CoachValidator:
         tests_passed_count = quality_gates.get("tests_passed", 0) or 0
         coverage = quality_gates.get("coverage")
 
-        if all_passed is True and tests_passed_count == 0 and coverage is None:
+        # TASK-AB-PERTASKFG01 fix #3b: do NOT require `coverage is None`. A
+        # fabricated coverage number (e.g. 100.0 parsed from the Player's
+        # narrative when the test-orchestrator specialist hung and ran zero
+        # tests) must not mask the zero-test anomaly. all_passed=True with
+        # tests_passed==0 is the anomaly regardless of the reported coverage;
+        # a *genuine* independent-test pass is already suppressed above
+        # (6647-6652), so this only fires when no real test signal exists.
+        if all_passed is True and tests_passed_count == 0:
             severity = "error" if profile.zero_test_blocking else "warning"
             log_func = logger.error if profile.zero_test_blocking else logger.warning
             log_func(
-                "Zero-test anomaly: all_passed=true but tests_passed=0 and coverage=null. "
-                "Player may have reported quality gates as passed without running tests."
+                "Zero-test anomaly: all_passed=true but tests_passed=0 "
+                "(coverage=%s). Player may have reported quality gates as passed "
+                "without running tests.",
+                coverage,
             )
             return [{
                 "severity": severity,
                 "category": "zero_test_anomaly",
                 "description": (
                     "Quality gates reported as passed but no tests were executed "
-                    "(tests_passed=0, coverage=null). Player may not have run tests."
+                    f"(tests_passed=0, coverage={coverage}). Player may not have "
+                    "run tests."
                 ),
             }]
 
