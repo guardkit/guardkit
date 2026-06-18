@@ -52,6 +52,11 @@ from guardkit.orchestrator.coach_verification import (
 )
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
 from guardkit.orchestrator.evidence_repos import EvidenceRepo, EvidenceTestResult
+from guardkit.orchestrator.quality_gates.stack_test_execution import (
+    StackTestProfile,
+    classify_absent_for_stack,
+    detect_stack_profile,
+)
 from guardkit.orchestrator.quality_gates.coach_evidence import (
     CoachEvidenceBundle,
     RuntimeParityResult,
@@ -1442,6 +1447,11 @@ class CoachValidator:
         # check agrees with the post-wave gate (default 0).
         self.smoke_expected_exit: int = smoke_expected_exit
         self.wave_size = max(1, int(wave_size))
+        # TASK-AB-NPDET01: the non-Python stack test-execution profile resolved
+        # by ``_detect_test_command`` for THIS run (None for Python / no match /
+        # parallel-wave deferral). ``run_independent_tests`` reads it to classify
+        # absence stack-awarely (missing toolchain / zero-test => signal_absent).
+        self._active_stack_profile: Optional[StackTestProfile] = None
         # TASK-DIAG-F4A2: Turn number for sdk_debug preservation paths.
         # Default 1 keeps backwards-compat for callers that don't pass it.
         self._turn = max(1, int(turn))
@@ -4320,7 +4330,34 @@ class CoachValidator:
                 # a missing *app* module ("No module named myapp") still fails
                 # as a real defect.
                 signal_absent = False
-                if not tests_passed:
+                # TASK-AB-NPDET01: a non-Python deterministic run classifies
+                # absence stack-awarely on BOTH the success and failure branch —
+                # the exit-0 zero-test guard. A runner that exits 0 having
+                # executed ZERO tests (go ``[no test files]`` only; dotnet
+                # "No test is available"; npm "no test specified") is an ABSENT
+                # signal (UNKNOWN), never a pass; a missing toolchain (exit 127 /
+                # "command not found") is ABSENT, never a Player test failure.
+                # The pytest classifier below is left byte-for-byte (the
+                # TASK-AB-PERTASKFG01 fix) and stays the path when no non-Python
+                # stack profile is active (``_active_stack_profile is None``).
+                if self._active_stack_profile is not None:
+                    stack_combined = (result.stdout or "") + (result.stderr or "")
+                    if classify_absent_for_stack(
+                        self._active_stack_profile,
+                        result.returncode,
+                        stack_combined,
+                    ):
+                        signal_absent = True
+                        tests_passed = False  # IndependentTestResult invariant
+                        logger.warning(
+                            "Non-Python independent test oracle did not run "
+                            "(stack=%s, returncode=%s) — absent signal, not a "
+                            "test failure. cmd=%s",
+                            self._active_stack_profile.stack,
+                            result.returncode,
+                            test_cmd,
+                        )
+                elif not tests_passed:
                     combined = (result.stdout or "") + (result.stderr or "")
                     runner_absent = "No module named pytest" in combined
                     no_tests_collected = result.returncode == 5
@@ -5928,6 +5965,9 @@ class CoachValidator:
             Detected test command, or None if task_id was provided but no
             task-specific tests were found (signals to skip verification)
         """
+        # TASK-AB-NPDET01: clear any stack profile from a prior call on a reused
+        # validator; only the non-Python registry branch below sets it.
+        self._active_stack_profile = None
         # Try task-specific filtering first (for shared worktrees)
         if task_id:
             # Primary: extract test files from task_work_results (already in memory)
@@ -6068,6 +6108,37 @@ class CoachValidator:
                             logger.debug(
                                 f"Failed to read player_turn_{prev_turn}.json: {e}"
                             )
+
+            # TASK-AB-NPDET01: no Python task-specific tests were found. Before
+            # deferring to the LLM ``test-orchestrator`` specialist (the
+            # historic non-Python path, which can hang on a tool-call-shy model),
+            # try a deterministic non-Python whole-suite command (dotnet/npm/go).
+            #
+            # GUARD: a whole-suite command runs SIBLING tasks' tests too, so in a
+            # parallel wave it would attribute their failures to this task
+            # (false-red). Only take over when this is a SINGLE-task wave
+            # (``not self.is_parallel``); a parallel wave returns None below and
+            # keeps today's LLM-specialist fallback. Mirrors the runtime-parity
+            # ``wave_size > 1`` deferral.
+            if not self.is_parallel:
+                profile = detect_stack_profile(self.worktree_path)
+                if profile is not None:
+                    self._active_stack_profile = profile
+                    logger.info(
+                        "No Python task-specific tests for %s; running "
+                        "deterministic %s suite: %s",
+                        task_id,
+                        profile.stack,
+                        profile.whole_suite_command,
+                    )
+                    return profile.whole_suite_command
+            elif detect_stack_profile(self.worktree_path) is not None:
+                logger.info(
+                    "Non-Python stack detected for %s but wave_size>1 "
+                    "(parallel wave); deferring to the test-orchestrator "
+                    "specialist to avoid running sibling tasks' tests.",
+                    task_id,
+                )
 
             return None
 

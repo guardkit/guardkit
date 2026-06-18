@@ -996,6 +996,7 @@ def _run_deterministic_phase_4(
     *,
     sdk_timeout: int,
     turn: Optional[int],
+    wave_size: int = 1,
 ) -> Optional[dict[str, Any]]:
     """Execute Phase-4 tests deterministically and return a phase_4 block.
 
@@ -1051,6 +1052,10 @@ def _run_deterministic_phase_4(
             test_timeout=test_timeout,
             venv_python=venv_python,
             turn=turn or 1,
+            # TASK-AB-NPDET01: the non-Python whole-suite guard needs the real
+            # wave size — without it the runner believes wave_size=1 and would
+            # run a parallel wave's sibling tests.
+            wave_size=wave_size,
         )
         task_work_results = _load_task_work_results(Path(worktree_path), task_id)
         result = validator.run_independent_tests(
@@ -1133,6 +1138,7 @@ async def invoke_test_orchestrator(
     cancellation_event: Optional[threading.Event] = None,
     *,
     turn: Optional[int] = None,
+    wave_size: int = 1,
 ) -> SpecialistInvocationResult:
     """Run the Phase 4 test-orchestrator specialist under orchestrator control.
 
@@ -1177,6 +1183,7 @@ async def invoke_test_orchestrator(
             agent_invoker=agent_invoker,
             sdk_timeout=sdk_timeout,
             turn=turn,
+            wave_size=wave_size,
         )
         if det_block is not None:
             _write_specialist_results(specialist_results_path, det_block)
