@@ -50,7 +50,26 @@ def _make_fake_agent_invoker(
     invoker._cancellation_event = cancellation_event
     invoker._invoke_with_role = AsyncMock(side_effect=invoke_side_effect)
     invoker._kill_child_claude_processes = MagicMock()
+    # TASK-AB-PERTASKFG01 AC-004: real value (not a child MagicMock) so the
+    # deterministic Phase-4 runner's getattr(..., "_venv_python", None) yields
+    # None — no venv pinned, CoachValidator resolves the interpreter itself.
+    invoker._venv_python = None
     return invoker
+
+
+@pytest.fixture(autouse=True)
+def _default_phase4_execution_to_sdk(monkeypatch):
+    """Pin Phase-4 execution to the legacy LLM-specialist path by default.
+
+    TASK-AB-PERTASKFG01 AC-004 flipped the runtime DEFAULT of
+    ``invoke_test_orchestrator`` to a deterministic subprocess pytest run, so
+    on the default it no longer calls ``_invoke_with_role``. The pre-existing
+    ``invoke_test_orchestrator`` tests in this module assert on the SDK
+    boundary (``_invoke_with_role``), so they exercise the legacy path — pin it
+    here so they are env-independent. The deterministic-path tests below opt
+    back in with ``monkeypatch.setenv(..., "subprocess")``.
+    """
+    monkeypatch.setenv("GUARDKIT_PHASE4_TEST_EXECUTION", "sdk")
 
 
 @pytest.mark.asyncio
@@ -1375,3 +1394,356 @@ async def test_external_shared_event_still_aborts_specialist(
     # The hang-reason error was NOT used — this is the shared-event
     # forwarding branch, not the watchdog-detected-hang branch.
     assert "hang detected" not in (result.error or "")
+
+
+# =============================================================================
+# Deterministic Phase-4 execution (TASK-AB-PERTASKFG01 AC-004)
+# =============================================================================
+#
+# AC-004: Phase-4 test EXECUTION must be a deterministic venv-pinned subprocess
+# (no hangable LLM turn). The runner reuses the Coach's
+# ``run_independent_tests`` and maps its ``IndependentTestResult`` to a phase_4
+# block that is absence-of-failure-safe — an ABSENT oracle signal
+# (collection/conftest import failure, timeout, runner absent) is NEVER a pass.
+# See ``.claude/rules/absence-of-failure-is-not-success.md``.
+
+from guardkit.orchestrator.specialist_invocations import (  # noqa: E402
+    _parse_pytest_counts,
+    _resolve_phase_4_execution_mode,
+)
+from guardkit.orchestrator.quality_gates import coach_validator as _cv_mod  # noqa: E402
+from guardkit.orchestrator.quality_gates.coach_validator import (  # noqa: E402
+    IndependentTestResult,
+)
+
+_TASK_ID_DET = "TASK-AB-PERTASKFG01-DET"
+
+
+def _patch_run_independent_tests(monkeypatch, result: IndependentTestResult) -> None:
+    """Force the deterministic runner's Coach subprocess oracle to return
+    ``result`` (the real CoachValidator constructor still runs; only the test
+    EXECUTION is stubbed)."""
+
+    def _fake(self, *args, **kwargs):  # noqa: ANN001
+        return result
+
+    monkeypatch.setattr(_cv_mod.CoachValidator, "run_independent_tests", _fake)
+
+
+def _det_results_path(tmp_path: Path) -> Path:
+    return (
+        tmp_path
+        / ".guardkit"
+        / "autobuild"
+        / _TASK_ID_DET
+        / "specialist_results.json"
+    )
+
+
+# --- flag resolution --------------------------------------------------------
+
+
+def test_phase4_execution_mode_defaults_to_subprocess(monkeypatch):
+    """Unset env => deterministic subprocess is the default (AC-004)."""
+    monkeypatch.delenv("GUARDKIT_PHASE4_TEST_EXECUTION", raising=False)
+    assert _resolve_phase_4_execution_mode() == "subprocess"
+
+
+def test_phase4_execution_mode_sdk_revert(monkeypatch):
+    """The legacy LLM-specialist path is reachable via the revert lever."""
+    monkeypatch.setenv("GUARDKIT_PHASE4_TEST_EXECUTION", "sdk")
+    assert _resolve_phase_4_execution_mode() == "sdk"
+
+
+def test_phase4_execution_mode_unknown_degrades_to_subprocess(monkeypatch):
+    monkeypatch.setenv("GUARDKIT_PHASE4_TEST_EXECUTION", "nonsense")
+    assert _resolve_phase_4_execution_mode() == "subprocess"
+
+
+# --- pytest count parser ----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "output,expected",
+    [
+        ("===== 5 passed, 2 failed in 0.3s =====", (7, 2)),
+        ("3 passed in 0.1s", (3, 0)),
+        ("1 passed, 3 errors in 1s", (4, 3)),
+        ("2 passed, 1 xfailed, 1 skipped in 1s", (3, 0)),
+        ("", (0, 0)),
+        (None, (0, 0)),
+        ("no recognisable summary here", (0, 0)),
+    ],
+)
+def test_parse_pytest_counts(output, expected):
+    assert _parse_pytest_counts(output) == expected
+
+
+# --- result mapping (the absence-of-failure-critical surface) ---------------
+
+
+@pytest.mark.asyncio
+async def test_deterministic_phase4_real_pass(tmp_path, monkeypatch):
+    """A genuine pass => phase_4 status=passed with parsed counts; the LLM
+    specialist (``_invoke_with_role``) is NEVER awaited (cannot hang)."""
+    monkeypatch.setenv("GUARDKIT_PHASE4_TEST_EXECUTION", "subprocess")
+    _patch_run_independent_tests(
+        monkeypatch,
+        IndependentTestResult(
+            tests_passed=True,
+            test_command="pytest tests/test_foo.py -v --tb=short",
+            test_output_summary="3 passed in 0.1s",
+            duration_seconds=0.4,
+            raw_output="===== 3 passed in 0.10s =====",
+            signal_absent=False,
+        ),
+    )
+    invoker = _make_fake_agent_invoker()
+
+    result = await invoke_test_orchestrator(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_DET,
+        sdk_timeout=900,
+        agent_invoker=invoker,
+    )
+
+    assert result.status == "passed"
+    invoker._invoke_with_role.assert_not_awaited()
+
+    block = json.loads(_det_results_path(tmp_path).read_text())["phase_4"]
+    assert block["status"] == "passed"
+    assert block["tests_run"] == 3
+    assert block["tests_failed"] == 0
+    assert block["quality_gates_passed"] is True
+
+
+@pytest.mark.asyncio
+async def test_deterministic_phase4_ran_and_failed(tmp_path, monkeypatch):
+    """A real pytest failure => phase_4 status=failed, never a pass."""
+    monkeypatch.setenv("GUARDKIT_PHASE4_TEST_EXECUTION", "subprocess")
+    _patch_run_independent_tests(
+        monkeypatch,
+        IndependentTestResult(
+            tests_passed=False,
+            test_command="pytest tests/test_foo.py -v --tb=short",
+            test_output_summary="1 passed, 2 failed in 0.2s",
+            duration_seconds=0.5,
+            raw_output="===== 1 passed, 2 failed in 0.20s =====",
+            signal_absent=False,
+        ),
+    )
+    invoker = _make_fake_agent_invoker()
+
+    result = await invoke_test_orchestrator(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_DET,
+        sdk_timeout=900,
+        agent_invoker=invoker,
+    )
+
+    assert result.status == "failed"
+    invoker._invoke_with_role.assert_not_awaited()
+
+    block = json.loads(_det_results_path(tmp_path).read_text())["phase_4"]
+    assert block["status"] == "failed"
+    assert block["tests_failed"] == 2
+    assert block["quality_gates_passed"] is False
+
+
+@pytest.mark.asyncio
+async def test_deterministic_phase4_absent_signal_is_not_a_pass(tmp_path, monkeypatch):
+    """ABSENT oracle (conftest ImportError, 0 tests executed) => status=failed,
+    tests_run=0, quality_gates_passed=False. This is the TASK-SMOKE-REDACT01
+    false-green repro: it must NOT read as a pass (absence-of-failure)."""
+    monkeypatch.setenv("GUARDKIT_PHASE4_TEST_EXECUTION", "subprocess")
+    _patch_run_independent_tests(
+        monkeypatch,
+        IndependentTestResult(
+            tests_passed=False,
+            test_command="pytest tests/ -v --tb=short",
+            test_output_summary="ImportError while loading conftest: No module named 'fastapi'",
+            duration_seconds=0.3,
+            raw_output="ImportError while loading conftest ... errors during collection",
+            signal_absent=True,
+        ),
+    )
+    invoker = _make_fake_agent_invoker()
+
+    result = await invoke_test_orchestrator(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_DET,
+        sdk_timeout=900,
+        agent_invoker=invoker,
+    )
+
+    assert result.status == "failed"
+    invoker._invoke_with_role.assert_not_awaited()
+
+    block = json.loads(_det_results_path(tmp_path).read_text())["phase_4"]
+    assert block["status"] == "failed"
+    assert block["tests_run"] == 0
+    assert block["quality_gates_passed"] is False
+    assert "absent" in (block["error"] or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_deterministic_phase4_no_tests_falls_back_to_specialist(tmp_path, monkeypatch):
+    """No detectable pytest command (run_independent_tests "skipped" sentinel)
+    => fall back to the LLM ``test-orchestrator`` specialist so non-Python /
+    npm / dotnet stacks keep their behaviour. ``_invoke_with_role`` IS awaited."""
+    monkeypatch.setenv("GUARDKIT_PHASE4_TEST_EXECUTION", "subprocess")
+    _patch_run_independent_tests(
+        monkeypatch,
+        IndependentTestResult(
+            tests_passed=True,
+            test_command="skipped",
+            test_output_summary="No task-specific tests found, skipping",
+            duration_seconds=0.0,
+            raw_output=None,
+            signal_absent=False,
+        ),
+    )
+    _seed_task_markdown(tmp_path, _TASK_ID_DET)
+    invoker = _make_fake_agent_invoker(
+        invoke_side_effect=_make_summary_writer(
+            tmp_path,
+            _TASK_ID_DET,
+            {
+                "tests_run": 4,
+                "tests_failed": 0,
+                "coverage_pct": 80.0,
+                "output_summary": "specialist ran",
+                "quality_gates_passed": True,
+            },
+        ),
+    )
+
+    result = await invoke_test_orchestrator(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_DET,
+        sdk_timeout=900,
+        agent_invoker=invoker,
+    )
+
+    # Fell back to the specialist path.
+    invoker._invoke_with_role.assert_awaited_once()
+    assert result.status == "passed"
+
+
+@pytest.mark.asyncio
+async def test_phase4_sdk_revert_uses_specialist_not_subprocess(tmp_path, monkeypatch):
+    """GUARDKIT_PHASE4_TEST_EXECUTION=sdk bypasses the deterministic runner
+    entirely and uses the legacy specialist (emergency revert lever)."""
+    monkeypatch.setenv("GUARDKIT_PHASE4_TEST_EXECUTION", "sdk")
+
+    # Make the deterministic runner explode if it is ever reached.
+    def _boom(self, *args, **kwargs):  # noqa: ANN001
+        raise AssertionError("deterministic runner must not run in sdk mode")
+
+    monkeypatch.setattr(_cv_mod.CoachValidator, "run_independent_tests", _boom)
+    _seed_task_markdown(tmp_path, _TASK_ID_DET)
+    invoker = _make_fake_agent_invoker(
+        invoke_side_effect=_make_summary_writer(
+            tmp_path,
+            _TASK_ID_DET,
+            {
+                "tests_run": 2,
+                "tests_failed": 0,
+                "coverage_pct": 75.0,
+                "output_summary": "ok",
+                "quality_gates_passed": True,
+            },
+        ),
+    )
+
+    result = await invoke_test_orchestrator(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_DET,
+        sdk_timeout=900,
+        agent_invoker=invoker,
+    )
+
+    invoker._invoke_with_role.assert_awaited_once()
+    assert result.status == "passed"
+
+
+@pytest.mark.asyncio
+async def test_deterministic_phase4_runner_error_falls_back(tmp_path, monkeypatch):
+    """If the deterministic runner raises unexpectedly, it returns None and the
+    caller falls back to the specialist (never silently loses Phase 4)."""
+    monkeypatch.setenv("GUARDKIT_PHASE4_TEST_EXECUTION", "subprocess")
+
+    def _raise(self, *args, **kwargs):  # noqa: ANN001
+        raise RuntimeError("unexpected oracle explosion")
+
+    monkeypatch.setattr(_cv_mod.CoachValidator, "run_independent_tests", _raise)
+    _seed_task_markdown(tmp_path, _TASK_ID_DET)
+    invoker = _make_fake_agent_invoker(
+        invoke_side_effect=_make_summary_writer(
+            tmp_path,
+            _TASK_ID_DET,
+            {
+                "tests_run": 1,
+                "tests_failed": 0,
+                "coverage_pct": 100.0,
+                "output_summary": "fallback ran",
+                "quality_gates_passed": True,
+            },
+        ),
+    )
+
+    result = await invoke_test_orchestrator(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_DET,
+        sdk_timeout=900,
+        agent_invoker=invoker,
+    )
+
+    invoker._invoke_with_role.assert_awaited_once()
+    assert result.status == "passed"
+
+
+@pytest.mark.asyncio
+async def test_deterministic_phase4_real_subprocess_execution(tmp_path, monkeypatch):
+    """End-to-end (no mocks): a real passing pytest file is executed by a real
+    venv-pinned subprocess (no LLM in the loop, so it cannot hang). Proves the
+    deterministic path runs genuine tests, not a self-report."""
+    monkeypatch.setenv("GUARDKIT_PHASE4_TEST_EXECUTION", "subprocess")
+
+    # Real test file on disk in the worktree.
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    (tests_dir / "test_real_det.py").write_text(
+        "def test_a():\n    assert 1 + 1 == 2\n\n\ndef test_b():\n    assert True\n",
+        encoding="utf-8",
+    )
+    # task_work_results so _detect_tests_from_results finds the file.
+    autobuild_dir = tmp_path / ".guardkit" / "autobuild" / _TASK_ID_DET
+    autobuild_dir.mkdir(parents=True, exist_ok=True)
+    (autobuild_dir / "task_work_results.json").write_text(
+        json.dumps(
+            {
+                "task_id": _TASK_ID_DET,
+                "files_created": ["tests/test_real_det.py"],
+                "files_modified": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    invoker = _make_fake_agent_invoker()
+
+    result = await invoke_test_orchestrator(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_DET,
+        sdk_timeout=900,
+        agent_invoker=invoker,
+    )
+
+    assert result.status == "passed"
+    invoker._invoke_with_role.assert_not_awaited()
+
+    block = json.loads(_det_results_path(tmp_path).read_text())["phase_4"]
+    assert block["status"] == "passed"
+    assert block["tests_run"] == 2
+    assert block["quality_gates_passed"] is True
