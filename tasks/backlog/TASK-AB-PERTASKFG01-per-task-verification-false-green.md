@@ -111,3 +111,58 @@ post-wave / feature-only and do not protect `autobuild task`.
   deterministic gate fixes above come first and are model-independent.
 - Reproduction artefacts: `lpa-platform-poc/.guardkit/worktrees/TASK-SMOKE-REDACT01/`
   (`.guardkit/autobuild/TASK-SMOKE-REDACT01/{player_turn_1,coach_turn_1}.json`).
+
+## Root causes & precise fixes (investigated 2026-06-18 — all model-independent)
+
+The false-green required **four independent deterministic-logic holes** on the
+per-task path to all fail together. Fix order: the two `S` fixes close the live
+reproduction; the two `M` fixes are the durable root fix.
+
+1. **[AC-004] Test execution is a hangable LLM turn, not a subprocess.**
+   `invoke_test_orchestrator` (`specialist_invocations.py:962-976`) runs tests by
+   asking the model to emit `Bash` tool calls (`_build_test_orchestrator_prompt`
+   `:639-682`). gpt-oss (harmony format) emitted no parseable tool call → no
+   harness activity ping → no-activity watchdog (`:204-218`, default 150s
+   `:126-128`) tripped at 162s → specialist returns `failed`, `tests_run=0`
+   (`:978-988`). **Fix (M/high):** reuse the Coach's existing venv-pinned
+   `<venv_python> -m pytest` subprocess runner (`coach_validator.py:3063`,
+   `4287-4296`, pin `:1366-1372`) for Phase-4 execution. **Interim (S/high):**
+   on specialist `hang detected`/`tests_run==0`, run a subprocess pytest
+   fallback before writing the phase-4 block.
+
+2. **[AC-001] Player `quality_gates` is fabricated from narrative regex, not the
+   authoritative specialist record.** `agent_invoker.py:9119-9132` builds
+   `quality_gates` by regex-parsing the Player's prose (`COVERAGE_PATTERN`
+   `:851` → 100.0; `QUALITY_GATES_PASSED_PATTERN` `:852` → True) even though
+   `specialist_results.json` phase_4 = `status:failed, tests_run:0`. **Fix
+   (M/high):** reconcile `quality_gates` against `specialist_results.json` at the
+   merge (`agent_invoker.py:~8177`) — phase_4 failed / `tests_run==0` ⇒
+   `all_passed` cannot be True; never write the false-green to disk.
+
+3. **[AC-001] Coach trusts `all_passed==True` with no `tests_run>0`
+   precondition.** `CoachValidator.verify_quality_gates`
+   (`coach_validator.py:3389-3406`) sets `tests_passed=True` from
+   `quality_gates['all_passed']` with no cardinality guard; the zero-test anomaly
+   precondition (`:6666`) has a `coverage is None` clause a fabricated 100%
+   slips past. **Fix (S/high):** add a positive-evidence precondition
+   (`tests_run>0`/`tests_passed>0`) and drop the `coverage is None` escape so
+   only a *genuine* independent pass suppresses the anomaly.
+
+4. **[AC-002] Coach independent-test absent-signal classifier too narrow.**
+   `run_independent_tests` (`coach_validator.py:4322-4334`) flags `signal_absent`
+   only for "No module named pytest" or exit-5; a conftest `ModuleNotFoundError`
+   (fastapi) is **exit-4** → recorded as a real "ran-and-failed"
+   (`signal_absent=False`) → disarms the deterministic backstop
+   `_reconcile_absent_independent_test_signal` (`agent_invoker.py:5323`) → LLM
+   Coach rationalises and approves. **Fix (S/high):** widen `signal_absent` to
+   treat collection/conftest import failures (exit 2/4 + "ImportError while
+   loading conftest" + 0 tests executed) as absent → re-arms the existing
+   approve→feedback override. (AC-003 venv-deps complements this.)
+
+**Coach MODEL is NOT a root cause.** The investigation corroborated that
+`gemma4-coach` (MoE, ~47 tok/s) and `gemma4-31b` (~9-10 tok/s, up to ~32
+min/turn) are on-par on verdict quality — 31b is "slower, no better". This
+failure was the Coach *narrating a deterministically-fabricated false-green*;
+a fine-tuned/bigger Coach would not fix it. Keep the MoE Coach; **deprioritise**
+the fine-tuned-coach lever (`TASK-DATA-COACHHARVEST`) for this defect — it is a
+longer-term judgment-quality investment, not a false-green fix.
