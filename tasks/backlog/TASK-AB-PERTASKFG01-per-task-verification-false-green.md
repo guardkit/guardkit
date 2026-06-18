@@ -64,6 +64,24 @@ post-wave / feature-only and do not protect `autobuild task`.
   the Coach gate (independent test could not run) converted an *absent* signal
   into a *pass*.
 
+## Status (2026-06-18)
+
+- **AC-001 + AC-002 LANDED + live-validated** (commit `3b3ba070`): fixes #2
+  (reconcile quality_gates vs authoritative phase_4), #3b (zero-test anomaly no
+  longer masked by fabricated coverage), #4 (Coach absent-signal classifier
+  widened for conftest/collection import failures). Re-ran the TASK-SMOKE-REDACT01
+  smoke on langgraph/gpt-oss-120b/gemma4-coach: the turn-1 **APPROVE** false-green
+  is now a turn-1 **FEEDBACK** (reconcile fires; Coach gives actionable feedback)
+  → not approved. 788 affected unit tests pass; +10 new regression tests.
+- **AC-003 (bootstrap-venv test deps) — OPEN, usability priority.** The Coach's
+  independent test run is *already* deterministic (subprocess); it — not the hung
+  Player specialist — is the real verifier. It can only verify+approve real work if
+  the worktree venv has the target repo's test deps (the smoke's venv was missing
+  `pytest_asyncio`). This is the unlock for gpt-oss autobuild to COMPLETE tasks.
+- **AC-004 (deterministic Player-side test execution) — OPEN, efficiency.** Kills
+  the ~2-3 min/turn test-orchestrator hang. Lower priority: #2 already makes the
+  Player report honest, and the Coach is the deterministic verifier.
+
 ## Acceptance Criteria
 
 - **AC-001 — 0 tests is not a pass (per-task path).** When `tests_run == 0`
