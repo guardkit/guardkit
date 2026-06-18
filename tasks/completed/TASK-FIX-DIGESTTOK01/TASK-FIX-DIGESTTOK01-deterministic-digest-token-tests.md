@@ -1,10 +1,14 @@
 ---
 id: TASK-FIX-DIGESTTOK01
 title: Make digest token-budget tests deterministic (tiktoken-present vs -absent divergence)
-status: backlog
+status: completed
 task_type: fix
 created: 2026-06-17T00:00:00Z
-updated: 2026-06-17T00:00:00Z
+updated: 2026-06-18T00:00:00Z
+completed: 2026-06-18T00:00:00Z
+completed_location: tasks/completed/TASK-FIX-DIGESTTOK01/
+previous_state: in_review
+state_transition_reason: "All ACs met; tests green under both counters"
 priority: low
 related: [TASK-HMIG-011]
 implementation_mode: task-work
@@ -35,7 +39,7 @@ absence-of-fidelity smell." Not caused by, but surfaced during, that work
 
 ## Acceptance criteria
 
-- [ ] **AC-001 — pick a source of truth.** Either:
+- [x] **AC-001 — pick a source of truth.** Either:
   - (a) declare `tiktoken` in the `[dev]` extra (`pyproject.toml`) so CI counts
     with the real `cl100k_base` encoder, AND adjust the tracked
     `.guardkit/digests/*.md` so each lands in 300–600 under tiktoken (in
@@ -44,11 +48,31 @@ absence-of-fidelity smell." Not caused by, but surfaced during, that work
     deterministic across BOTH counters (e.g. assert against whichever counter is
     active and document the fallback's looser bound, or skip cleanly when tiktoken
     is absent rather than passing on the approximation).
-- [ ] **AC-002 — no environment divergence:** the test must pass deterministically
+
+  **Resolved via path (b), strengthened with the digest fix from (a):** kept
+  `tiktoken` optional (no `pyproject.toml`/CI change → no `cl100k_base`
+  network-download flake) AND brought all four digests into the 300–600 band
+  under the faithful counter by adding genuine per-role guidance, so *both*
+  counters now agree. `test_digest_in_target_token_range` (active counter) is
+  unchanged and passes under either counter precisely because the content
+  satisfies both. The faithful `cl100k_base` count is the documented source of
+  truth (`TestDigestTokenBudgetCrossCounter.test_tiktoken_count_in_range`),
+  with the word-fallback arm guarding the tiktoken-absent CI path.
+- [x] **AC-002 — no environment divergence:** the test must pass deterministically
   whether or not tiktoken is installed — no silent pass-on-fallback / fail-on-real
   split.
-- [ ] **AC-003:** if path (a), run with tiktoken present locally and confirm all
+
+  New `TestDigestTokenBudgetCrossCounter` asserts the 300–600 band under BOTH
+  counters (faithful `cl100k_base` + word fallback), so a future edit that drifts
+  under either fails loudly. Verified: tiktoken present → 38 passed; tiktoken
+  import blocked → 34 passed, 4 skipped (only the `cl100k_base`-specific arm,
+  which `importorskip`s — the env still carries two unconditional range
+  assertions, so it never passes on the approximation alone).
+- [x] **AC-003:** if path (a), run with tiktoken present locally and confirm all
   four roles (`router`, `resolver`, `player`, `coach`) are in 300–600.
+
+  Confirmed under tiktoken `cl100k_base`: router 336, resolver 333, player 350,
+  coach 352 (all in 300–600; word fallback 441/426/454/441 also in band).
 
 ## Notes
 
