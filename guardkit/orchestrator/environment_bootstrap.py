@@ -1054,7 +1054,7 @@ class ProjectEnvironmentDetector:
         # TASK-AB-PERTASKFG01 AC-003: a project declaring deps solely in a
         # non-standard requirements file otherwise produced an EMPTY worktree
         # venv, so the Coach's independent test could not import the app/test
-        # deps and tests could not run (the TASK-SMOKE-REDACT01 broken-venv
+        # deps and tests could not run (the TASK-AB-PERTASKFG01 broken-venv
         # root cause). Glob is depth-0 within `directory`; `requirements.txt`
         # itself is included so the common single-file case is unchanged.
         if "python" not in locked_stacks:

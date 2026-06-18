@@ -4335,8 +4335,8 @@ class CoachValidator:
                     # "ran-and-failed" (signal_absent=False), which DISARMED the
                     # deterministic _reconcile_absent_independent_test_signal
                     # backstop and let the LLM Coach rationalise the env error and
-                    # approve an unverified deliverable (the TASK-SMOKE-REDACT01
-                    # false-green). A Player *test* that imports a missing app
+                    # approve an unverified deliverable (the TASK-AB-PERTASKFG01
+                    # false-green repro). A Player *test* that imports a missing app
                     # module still surfaces as a real failure: those report a test
                     # summary and exit 1, not a collection error.
                     collection_failed = (

@@ -8347,7 +8347,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         # regex-parsing the Player's PROSE, so a hung/failed test-orchestrator
         # (0 tests run) can still yield {all_passed: true, coverage: 100,
         # tests_passed: 0} when the prose happens to match the coverage/gate
-        # patterns (the TASK-SMOKE-REDACT01 false-green). When the authoritative
+        # patterns (the TASK-AB-PERTASKFG01 false-green repro). When the authoritative
         # specialist record says the test phase FAILED, the narrative is a
         # false-green and the record wins. Only the false-green direction is
         # overridden (specialist failed AND narrative claims a pass); a
