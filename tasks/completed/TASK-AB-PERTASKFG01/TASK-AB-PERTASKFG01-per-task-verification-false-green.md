@@ -1,11 +1,14 @@
 ---
 id: TASK-AB-PERTASKFG01
 title: "Per-task autobuild ships a verification false-green (hung test-orchestrator -> 0 tests read as 100% pass -> Coach approves unverified)"
-status: backlog
+status: completed
 task_type: fix
 priority: high
 created: 2026-06-18T00:00:00Z
 updated: 2026-06-18T12:00:00Z
+completed: 2026-06-18T12:00:00Z
+previous_state: backlog
+completed_location: tasks/completed/TASK-AB-PERTASKFG01/
 related: [TASK-AB-COACHRUNPARITY01, TASK-AB-WIREGATE01, TASK-DATA-COACHHARVEST]
 implementation_mode: task-work
 tags: [autobuild, coach, test-execution, absence-of-failure, green-not-correct, gpt-oss, langgraph]
