@@ -1,10 +1,12 @@
 ---
 id: TASK-FIX-WIREGATECI01
 title: Gate the guardkitfactory-requiring wiring-gate tests in CI (close the skip coverage gap)
-status: backlog
+status: completed
 task_type: fix
 created: 2026-06-17T00:00:00Z
-updated: 2026-06-17T00:00:00Z
+updated: 2026-06-18T00:00:00Z
+completed: 2026-06-18T00:00:00Z
+completed_location: tasks/completed/TASK-FIX-WIREGATECI01/
 priority: medium
 related: [TASK-HMIG-011, TASK-AB-WIREGATE01, TASK-INFRA-XREPOCONTRACT]
 implementation_mode: task-work
@@ -39,7 +41,7 @@ follow-up; verdict was otherwise `fix-is-sound`.)
 
 ## Acceptance criteria
 
-- [ ] **AC-001 — import-chain check (blocking precondition):** confirm
+- [x] **AC-001 — import-chain check (blocking precondition):** confirm
   `tests/unit/orchestrator/test_wiring_gate.py` (which imports
   `guardkit.orchestrator.feature_orchestrator.FeatureOrchestrator`) does NOT
   `import claude_agent_sdk` at collection time. `seam-tests.yml` installs editable
@@ -48,17 +50,43 @@ follow-up; verdict was otherwise `fix-is-sound`.)
   collection. If the wiring-gate import chain pulls the SDK, either (a) add
   `claude-agent-sdk` to the seam job's install, or (b) make the SDK import lazy /
   guarded — document which and why.
-- [ ] **AC-002 — gate it:** add `tests/unit/orchestrator/test_wiring_gate.py` to the
+  → **VERIFIED SDK-clean; neither remediation needed (option (b) already
+  holds).** Simulated the exact seam env (blocked `claude_agent_sdk` via a
+  `sitecustomize` `sys.modules['claude_agent_sdk'] = None`, guardkitfactory +
+  langchain present) and ran pytest collection on `test_wiring_gate.py`:
+  21 collected, exit 0. `claude_agent_sdk` is imported **only lazily** —
+  inside `sdk_harness.py` method bodies (`sdk_harness.py:231`) and
+  `agent_invoker.invoke()` — never at module load in the
+  `→ feature_orchestrator` chain (`harness/adapter.py` "deliberately imports
+  nothing from claude_agent_sdk"). So no SDK install and no source change were
+  required; documented inline in the `seam-tests.yml` "Modules covered" comment.
+- [x] **AC-002 — gate it:** add `tests/unit/orchestrator/test_wiring_gate.py` to the
   explicit `python -m pytest ...` file list in `.github/workflows/seam-tests.yml`.
   With editable guardkitfactory present there, the 7 `@_requires_guardkitfactory`
   tests un-skip and run.
-- [ ] **AC-003 — green:** the seam job stays green (the 7 tests pass with
+  → **DONE.** Added to the file list; "Modules covered" comment block documents
+  the module, the un-skip behaviour, and the AC-001 SDK-clean finding.
+- [x] **AC-003 — green:** the seam job stays green (the 7 tests pass with
   guardkitfactory installed — verified locally during the CI-green fix).
-- [ ] **AC-004 — do NOT regress seam:** do **not** naively add
+  → **VERIFIED.** Ran the exact post-edit seam command (all 3 modules in one
+  session) under the simulated seam env: **44 passed, exit 0** — the 7
+  `@_requires_guardkitfactory` `TestRunPostWaveWiringGate` tests un-skipped and
+  passed. Edited `seam-tests.yml` parses as valid YAML.
+- [x] **AC-004 — do NOT regress seam:** do **not** naively add
   `tests/orchestrator/test_agent_invoker_langgraph.py` to the seam job — it has a
   pre-existing `test_env_var_routes_to_langgraph` "no `cwd=`" failure and is
   `importorskip("langchain_core")`-gated, so it WOULD run under seam and turn it
   red. Track/fix that separately (see Notes).
+  → **RESPECTED.** `test_agent_invoker_langgraph.py` was NOT added (grep-verified
+  absent from `seam-tests.yml`). Only `test_wiring_gate.py` was gated.
+
+## Completion note (2026-06-17)
+
+One-line CI change: `tests/unit/orchestrator/test_wiring_gate.py` added to the
+`seam-tests.yml` pytest file list, plus a documenting comment. No production
+source touched (the SDK import was already lazy). The deliverable is the CI
+config; verification was done by reproducing the SDK-absent / guardkitfactory-
+present seam environment locally rather than waiting on a CI round-trip.
 
 ## Notes
 
