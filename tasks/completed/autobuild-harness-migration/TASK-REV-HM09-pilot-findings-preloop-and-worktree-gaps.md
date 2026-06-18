@@ -2,9 +2,12 @@
 id: TASK-REV-HM09
 title: Review pre-loop harness bypass (F1) + worktree-manager cwd-branch gap (F4) surfaced by TASK-HMIG-009 pilot
 task_type: review
-status: review_complete
+status: completed
+resolution: delivered
+completed: 2026-06-18
+completed_location: tasks/completed/autobuild-harness-migration/
 created: 2026-05-27T14:55:00Z
-updated: 2026-05-27T15:30:00Z
+updated: 2026-06-18T16:15:00Z
 priority: critical
 complexity: 6
 deadline: 2026-06-10

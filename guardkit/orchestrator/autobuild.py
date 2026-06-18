@@ -3402,6 +3402,10 @@ class AutoBuildOrchestrator:
                             agent_invoker=self._agent_invoker,
                             cancellation_event=self._cancellation_event,
                             turn=turn,
+                            # TASK-AB-NPDET01: the deterministic non-Python
+                            # whole-suite guard defers to the LLM specialist in a
+                            # parallel wave; it needs the real wave size here.
+                            wave_size=self.wave_size,
                         )
                     )
 

@@ -2,11 +2,12 @@
 id: TASK-FIX-COACHSCHEMA
 title: Tighten the Coach prompt template with explicit schema example + self-check at end-of-prompt
 status: blocked
+deferred: 2026-06-18   # Path 1B falsified (run 14) AND the 31B-dense escalation rejected (06-18: "slower, no better"); accept gemma4:26b + COACHSF01
 blocked_reason: "Path 1B FALSIFIED by run 14 — the decisive prompt + --sdk-timeout 3600 did NOT make gemma4-coach converge. Turn 1: 49,720 chars reasoning_content (9x run-12), no verdict, ~45 min; turn 2: 1347 chars, still no verdict. More time made it worse, not better → not a time/prompt problem, it's the substrate (3.8B-active model can't converge). Escalate to a substrate change: Gemma 4 31B dense QAT (30.7B active, ~same memory) + distillation; see TASK-DATA-COACHHARVEST."
 task_type: fix
 created: 2026-06-08T00:00:00Z
-updated: 2026-06-08T15:00:00Z
-priority: high
+updated: 2026-06-18T16:15:00Z
+priority: low   # deferred 2026-06-18 (was: high) — see banner
 complexity: 3
 effort_hours: 2
 deadline: 2026-06-15
@@ -23,6 +24,19 @@ falsifier: "Run 14 of `guardkit autobuild feature FEAT-AOF ... --coach-model gem
 ---
 
 # Task: Tighten Coach prompt template for schema-correct fenced-JSON emission
+
+> **DEFERRED 2026-06-18 (priority → low).** Path 1B (prompt-tightening) was
+> **falsified by run 14** (more time + a decisive prompt made gemma4:26b *worse*,
+> not better — 49,720 chars of reasoning, no verdict). The run-14 analysis
+> recommended escalating to a **Gemma 4 31B dense** substrate, but the operator's
+> **2026-06-18 investigation evaluated 31B and rejected it** ("slower, no better
+> than the gemma4:26b MoE"). Both fix-approaches in this thread (GBNF / prompt /
+> 31B) are therefore exhausted. The settled resolution is **gemma4:26b + the
+> COACHSF01 safety net**, which runs green in practice (FEAT-9DDE, FEAT-FAUD). If
+> coach reliability later becomes a felt pain, the live forward option is a
+> **toolless grammar-constrained verdict-synthesis call** (see TASK-OPS-COACHGRAMMAR
+> banner), or the deprioritized fine-tuned/distilled coach (TASK-DATA-COACHHARVEST).
+> Recorded in the autobuild retro xref.
 
 ## Why this task exists
 
