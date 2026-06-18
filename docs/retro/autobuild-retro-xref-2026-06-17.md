@@ -236,8 +236,17 @@ becomes a felt pain is a **toolless grammar-constrained verdict-synthesis call**
 (`docs/research/dgx-spark/grammars/README.md`), or the deprioritized fine-tuned/
 distilled coach (TASK-DATA-COACHHARVEST) — NOT route-level GBNF or 31B.
 
-**Still genuinely open (NOT deferred, honest backlog):** **TASK-FIX-FRESHRESET01**
-(a real `--fresh`-flag bug: silently no-ops on a previously-COMPLETED feature;
-unrelated to the coach) and **TASK-FIX-COACHBUDG01** (5/8 ACs — partially landed;
-its shipped parts — reasoning_content parser + `--coach-model` plumbing — are what
-make gemma4:26b usable today).
+**Still genuinely open (NOT deferred, honest backlog):** **TASK-FIX-COACHBUDG01**
+(5/8 ACs — partially landed; its shipped parts — reasoning_content parser +
+`--coach-model` plumbing — are what make gemma4:26b usable today).
+
+> **Update 2026-06-18 — TASK-FIX-FRESHRESET01 was NOT open after all: already
+> fixed, superseded by TASK-FIX-FRESHCLEAN01** (commit `3b39764e`, "--fresh
+> force-cleans terminal features, not just incomplete ones"; in `completed/`). An
+> attempt to implement FRESHRESET01 found the code contradicts the task premise:
+> the `is_incomplete` guard around `_clean_state` is gone —
+> `feature_orchestrator.py` now calls `_clean_state` unconditionally under
+> `if self.fresh:` (Shape A), and `_clean_state → reset_state`
+> (`feature_loader.py`) resets exactly the per-task fields FRESHRESET01 asked for.
+> Closed as superseded, no new code. So **COACHBUDG01 is the only genuinely-open
+> FEAT-HMIG item** (everything else completed, deferred, or optional).
