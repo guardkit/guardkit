@@ -30,6 +30,7 @@ which Coach path is active.
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -40,7 +41,8 @@ import pytest
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 from guardkit.orchestrator.agent_invoker import AgentInvocationResult, AgentInvoker
 from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
-from guardkit.orchestrator.coach_verification import HonestyVerification
+from guardkit.orchestrator.coach_verification import Discrepancy, HonestyVerification
+from guardkit.orchestrator.quality_gates.coach_validator import IndependentTestResult
 from guardkit.worktrees.manager import Worktree
 
 
@@ -759,3 +761,127 @@ class TestPrimaryFlowVerdictEmissionSoftFail:
         assert result.report.get("decision") == "approve"
         # No synthetic-feedback marker on a real approval.
         assert "coach_primary_synthetic_feedback" not in result.report
+
+
+# ---------------------------------------------------------------------------
+# Coach v3 Step 1 — persist the INPUT evidence bundle per turn
+# ---------------------------------------------------------------------------
+
+
+class TestPrimaryFlowEvidenceBundlePersistence:
+    """Coach v3 Step 1: the ``CoachEvidenceBundle`` that DROVE the verdict is
+    persisted to ``coach_evidence_turn_N.json`` beside ``coach_turn_N.json``.
+
+    ``coach_turn_N.json`` records only the Coach's OUTPUT (decision / issues /
+    criteria / rationale); the input bundle was never saved, so the dataset
+    harvest had to reconstruct it lossily and ended up training the Coach on
+    ``player_report`` ONLY — the train!=serve mismatch behind the rubber-stamp.
+    Persisting the bundle yields production-faithful
+    ``(prompt-with-bundle -> verdict)`` training pairs for every future run.
+    """
+
+    def _rich_bundle(self) -> CoachEvidenceBundle:
+        """A bundle carrying the exact signals reconstruction could NOT recover
+        (the Coach's own independent_tests + honesty discrepancy + a
+        zero-cardinality BDD oracle)."""
+        return CoachEvidenceBundle(
+            honesty=HonestyVerification(
+                verified=False,
+                discrepancies=[
+                    Discrepancy(
+                        "test_result", "all tests pass", "3 failed", "critical"
+                    )
+                ],
+                honesty_score=0.3,
+            ),
+            gathering_status="complete",
+            tests={"tests_passed": True, "tests_run": 30},
+            bdd={"scenarios_attempted": 0},
+            independent_tests=IndependentTestResult(
+                tests_passed=False,
+                test_command="pytest -q",
+                test_output_summary="3 failed, 27 passed",
+                duration_seconds=8.0,
+            ),
+            task_type="feature",
+        )
+
+    def test_evidence_bundle_persisted_to_disk(
+        self,
+        orchestrator: AutoBuildOrchestrator,
+        mock_worktree: Worktree,
+        mock_agent_invoker: MagicMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
+        mock_worktree.path = tmp_path
+
+        with patch(
+            "guardkit.orchestrator.autobuild.CoachValidator"
+        ) as mock_validator_class:
+            mock_instance = MagicMock()
+            mock_instance.gather_evidence.return_value = self._rich_bundle()
+            mock_validator_class.return_value = mock_instance
+
+            _invoke_coach(orchestrator, mock_worktree)
+
+        evidence_path = (
+            tmp_path
+            / ".guardkit"
+            / "autobuild"
+            / "TASK-LCP-001"
+            / "coach_evidence_turn_1.json"
+        )
+        assert evidence_path.exists(), (
+            "Coach v3 Step 1: the input CoachEvidenceBundle must be persisted to "
+            "coach_evidence_turn_N.json so future harvests can build "
+            "production-faithful (prompt-with-bundle -> verdict) training pairs."
+        )
+        saved = json.loads(evidence_path.read_text())
+        # The discriminating signals that bundle reconstruction could NOT recover
+        # (Coach's own verification) are present verbatim.
+        assert saved["bdd"]["scenarios_attempted"] == 0
+        assert saved["independent_tests"]["tests_passed"] is False
+        assert saved["honesty"]["discrepancies"][0]["claim_type"] == "test_result"
+
+    def test_persistence_failure_does_not_block_turn(
+        self,
+        orchestrator: AutoBuildOrchestrator,
+        mock_worktree: Worktree,
+        mock_agent_invoker: MagicMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Best-effort: a serialisation failure when persisting the bundle MUST
+        NOT block the turn — the Coach verdict still flows through. (The write
+        is wrapped in a guarded try/except.)"""
+        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
+        mock_worktree.path = tmp_path
+
+        bundle = self._rich_bundle()
+
+        with patch(
+            "guardkit.orchestrator.autobuild.CoachValidator"
+        ) as mock_validator_class, patch(
+            "guardkit.orchestrator.autobuild.json.dump",
+            side_effect=RuntimeError("serialise boom"),
+        ):
+            mock_instance = MagicMock()
+            mock_instance.gather_evidence.return_value = bundle
+            mock_validator_class.return_value = mock_instance
+
+            result = _invoke_coach(orchestrator, mock_worktree)
+
+        # Turn completes with the Coach's decision despite the persistence error.
+        assert result.report.get("decision") == "approve"
+        evidence_path = (
+            tmp_path
+            / ".guardkit"
+            / "autobuild"
+            / "TASK-LCP-001"
+            / "coach_evidence_turn_1.json"
+        )
+        # The write was attempted but failed — no (or empty) artifact, and crucially
+        # no exception escaped to fail the turn.
+        assert not evidence_path.exists() or evidence_path.read_text() == ""
