@@ -7447,6 +7447,18 @@ class CoachValidator:
             if d.claim_type == "claim_audit_unmodified"
             and d.severity == "should_fix"
         ]
+        # TASK-FIX-XREPO-CAUD: sibling-repo claims — the file exists, but in
+        # a *different* git repo than the worktree, and that repo is NOT
+        # declared in evidence_repos. should_fix advisory: the work is real,
+        # but the feature must declare the sibling repo before it can be
+        # staged or independently verified. Worktree git cannot audit it, so
+        # the old path mis-classified it as a critical fabrication
+        # (FEAT-RBX / TASK-RBX-002). Same ``claim_audit`` category bucket.
+        cross_repo = [
+            d for d in honesty.discrepancies
+            if d.claim_type == "claim_audit_cross_repo"
+            and d.severity == "should_fix"
+        ]
         demote = (
             len(non_audit) == 1
             and non_audit[0].claim_type == "file_existence"
@@ -7545,6 +7557,25 @@ class CoachValidator:
                         f"it — the Player likely swept an orchestrator-"
                         f"managed path into files_modified. "
                         f"{d.player_claim}. {d.actual_value}"
+                    ),
+                    "details": {
+                        "claim_type": d.claim_type,
+                        "player_claim": d.player_claim,
+                        "actual_value": d.actual_value,
+                    },
+                }
+            )
+        for d in cross_repo:
+            issues.append(
+                {
+                    "severity": "should_fix",
+                    "category": "claim_audit",
+                    "description": (
+                        f"Player-claimed file lives in a sibling git "
+                        f"repository the feature has not declared in "
+                        f"evidence_repos, so it cannot be staged or "
+                        f"independently verified. {d.player_claim}. "
+                        f"{d.actual_value}"
                     ),
                     "details": {
                         "claim_type": d.claim_type,
