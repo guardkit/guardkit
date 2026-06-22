@@ -876,3 +876,83 @@ def test_comma_joined_test_file_with_one_fabricated_path_flags_only_it(
     assert discrepancies[0].claim_type == "claim_audit"
     assert discrepancies[0].severity == "critical"
     assert "tests/test_ghost.py" in discrepancies[0].player_claim
+
+
+# ---------------------------------------------------------------------------
+# TASK-FIX-XREPO-CAUD: a claimed file authored in a *sibling* git repo must
+# not be flagged as a critical fabrication. Worktree ``git status`` /
+# ``git check-ignore`` cannot speak to a different repo (check-ignore returns
+# exit 128), which the old code mis-bucketed as ``infra_error`` → critical.
+# FEAT-RBX / TASK-RBX-002 repro: runbook lifecycle events authored in the
+# sibling ``nats-core`` repo false-failed every turn until max_turns.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def sibling_repo(tmp_path: Path) -> Path:
+    """A second, independent git repo next to the worktree (a sibling)."""
+    repo = tmp_path / "nats-core"
+    repo.mkdir()
+    _git("init", "--initial-branch=main", cwd=repo)
+    _git("config", "user.email", "test@example.com", cwd=repo)
+    _git("config", "user.name", "Test", cwd=repo)
+    (repo / "README.md").write_text("sibling base\n")
+    _git("add", "README.md", cwd=repo)
+    _git("commit", "-m", "base", cwd=repo)
+    return repo
+
+
+def test_xrepo_undeclared_sibling_file_is_should_fix_not_critical(
+    git_worktree: Path, sibling_repo: Path, verifier: CoachVerifier
+) -> None:
+    """Player authored a file in an undeclared sibling repo and reported it
+    by absolute path. The file exists, so it is real work — the audit must
+    surface a should_fix advisory under ``claim_audit_cross_repo``, never a
+    turn-rejecting critical fabrication.
+    """
+    src = sibling_repo / "src" / "nats_core"
+    src.mkdir(parents=True)
+    events = src / "_runbook.py"
+    events.write_text("class RunbookStarted: pass\n")
+
+    report: Dict[str, Any] = {
+        # Absolute, *unqualified* path into the sibling repo — exactly what
+        # the FEAT-RBX player emitted.
+        "files_created": [str(events)],
+    }
+
+    discrepancies = verifier._verify_claims_were_staged(report)
+
+    assert len(discrepancies) == 1
+    assert discrepancies[0].claim_type == "claim_audit_cross_repo"
+    assert discrepancies[0].severity == "should_fix"
+    assert str(events) in discrepancies[0].player_claim
+    assert "evidence_repos" in discrepancies[0].actual_value
+
+
+def test_xrepo_declared_evidence_repo_file_is_silent(
+    git_worktree: Path, sibling_repo: Path
+) -> None:
+    """When the sibling repo is declared in ``evidence_repos``, the per-repo
+    checkpoint manager and ``_verify_files_exist`` own its verification — the
+    worktree claim-audit must stay silent rather than emit an advisory.
+    """
+    from guardkit.orchestrator.evidence_repos import EvidenceRepo
+
+    verifier = CoachVerifier(
+        git_worktree,
+        evidence_repos=[EvidenceRepo(name="nats-core", root=sibling_repo)],
+    )
+
+    src = sibling_repo / "src" / "nats_core"
+    src.mkdir(parents=True)
+    events = src / "_runbook.py"
+    events.write_text("class RunbookStarted: pass\n")
+
+    report: Dict[str, Any] = {
+        "files_created": [str(events)],
+    }
+
+    discrepancies = verifier._verify_claims_were_staged(report)
+
+    assert discrepancies == []
