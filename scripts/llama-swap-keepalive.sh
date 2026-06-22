@@ -51,11 +51,16 @@ LOG_TAG="llama-swap-keepalive"
 # intent). gemma4-coach uses the model's embedded IT chat template (no
 # .jinja file) — its single-token probe output is harmless. See findings
 # §9.13.
+# 2026-06-21: swapped gemma4-coach → coach-ft-v3 to match the rotated preload
+# set in config.yaml (the fine-tuned bundle-format Coach took the always-on slot;
+# memory-neutral — same 26B-A4B family). The deployed /usr/local/bin copy was
+# already updated; this repo copy was lagging. MODEL_PROBE_KIND MUST equal
+# hooks.on_startup.preload in config.yaml. See RESULTS-coach-v3.md.
 declare -A MODEL_PROBE_KIND=(
     [qwen-graphiti]=chat
     [nomic-embed]=embed
     [qwen36-workhorse]=chat
-    [gemma4-coach]=chat
+    [coach-ft-v3]=chat
 )
 
 log() {

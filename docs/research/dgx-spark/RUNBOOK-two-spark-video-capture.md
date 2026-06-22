@@ -15,6 +15,7 @@ Audience: AI engineers. Target: ~12–18 min build-log + architecture explainer.
 
 - `diagrams/two-spark-fleet-serving-architecture.svg` and `diagrams/two-spark-request-routing.svg`
 - `DECISION-DF-004-two-spark-serving-topology-unified-front-door.md` (§2.1 topology, §2.2 memory rule)
+- **`../../dgx-spark/RUNBOOK-two-spark-bring-up.md`** — the executable, gated arc this video *films* (P2 = its Phases 2–6, P3 = its Phase 9). Run it once before recording.
 - `two-spark-serving-research-and-references.md` (the gotchas + the expected numbers)
 
 ## Pre-flight — recording setup &nbsp; · &nbsp; **Gate:** scenes ready, diagrams loaded, terminal legible
@@ -27,8 +28,8 @@ Audience: AI engineers. Target: ~12–18 min build-log + architecture explainer.
 | # | On screen | Say (prompts, not lines) | Gate (pass/fail) |
 |---|-----------|--------------------------|------------------|
 | **P1 Hook** | The two Sparks + the cable | Beat 1 then beat 3 in ~30s: "I stacked two of these — and the lesson wasn't what I expected." | Thesis stated on camera |
-| **P2 Bring-up** *(the war story)* | firmware / `dgx-spark-mlnx-hotplug` update → cable in the **same physical port** both ends → `ip link` showing the **`enp1…`** names (CX-7 shows 4 names for 2 ports) → pin `NCCL/UCX/GLOO/TP_SOCKET_IFNAME` to the QSFP iface → `all_gather_perf` | Narrate each gotcha as you hit it. Call out the firmware **hard power-off under load** and the `sudo nvidia-smi -lgc 200,2150` clamp that prevents it. | Link up + `all_gather_perf` passes on camera |
-| **P3 Proof** *(the number)* | Launch vLLM `--tp 2` (pinned commit, `--no-ray`/mp backend), then the *same* model single-node; read decode tok/s off both; show the ~6 min cold start | "Here's the number that settles it." Compare TP=2 vs single-node tok/s; note the expectation (≈40 tok/s warm, weak long-context prefill, decode collapses under concurrency). | Both tok/s + cold-start time captured |
+| **P2 Bring-up** *(the war story)* | OS+firmware update BOTH nodes (CX-7 FW ≥ 28.45.4028 — fixes the Apr-2026 *all_gather-halving* throttle; **hold `mlnx-fw-updater`** — an auto-flash bricked both cards) → cable to **any** QSFP port each end (same-port is tidiness, *not* required; don't cable both ports or it halves to 100 GbE) → `ibdev2netdev (Up)`, use `enp1…` (4 names for 2 ports) → pin fabric `NCCL_SOCKET_IFNAME/UCX_NET_DEVICES/OMPI_MCA_btl_tcp_if_include` → `all_gather_perf -b 16G -e 16G -f 2` | Narrate each gotcha live. The money gotcha: the firmware **hard power-off under load** (still open Jun-2026) — show `-lgc 200,2150` **and** say it's unverified, the real fix is thermal (repaste/airflow). Then the silent one: busbw can look fine while NCCL fell back to **TCP** — prove RoCE with `NCCL_DEBUG=INFO` = `NET/IB`. | Link `(Up)` + busbw ≥ ~20 GB/s + `NET/IB` (not `NET/Socket`) on camera |
+| **P3 Proof** *(the number)* | Launch vLLM `--tp 2` (pin `jasl/vllm dda4668b` + **torch 2.9.1**; mp/`--no-ray`; **MTP on** or decode collapses ~44→~5; cudagraph mode avoiding bug #40969), then the *same* model single-node; read decode tok/s off both; show the ~6 min cold start. If time: PP=2 too. | "Here's the number that settles it." Compare TP=2 vs single-node (≈44 tok/s warm *with MTP*; weak long-context prefill; decode collapses under concurrency → treat the seat as single-stream). Note PP=2 beats TP=2 *under concurrency* but TP wins single-stream. | Both tok/s + cold-start captured |
 | **P4 Payoff** *(architecture)* | The two SVG diagrams | Walk the layered stack: one **LiteLLM :4000** front door → **llama-swap** pool (fleet + always-on nomic) on Node A → **vLLM TP=2** proposer across both nodes → Postgres+pgvector on the NAS. State the **memory rule** (the big proposer and a full swap pool can't co-reside — choose per session) and the **no auto cloud fallback** guard (DF-001). | Topology + "share by time" rule explained |
 | **P5 Close** | Back to hardware / diagram | Restate beat 3; one-line tease of fleet-memory and the dark factory. | Lesson restated |
 
@@ -43,4 +44,4 @@ Audience: AI engineers. Target: ~12–18 min build-log + architecture explainer.
 - **Must-haves to make the video** (any gate that failed → a second session is fine): (1) thesis on camera, (2) ≥2 bring-up gotchas captured live, (3) the benchmark numbers, (4) the architecture explainer, (5) the close.
 
 ---
-*Source material: DECISION-DF-004, `two-spark-serving-research-and-references.md`, and the `diagrams/` SVGs. Numbers in P3 are captured live, not pre-stated.*
+*Source material: DECISION-DF-004 (corrected 2026-06-22), the executable `../../dgx-spark/RUNBOOK-two-spark-bring-up.md`, `two-spark-serving-research-and-references.md`, and the `diagrams/` SVGs. Numbers in P3 are captured live, not pre-stated. The same-physical-port "requirement" was a myth — any QSFP port works (official connect-two-sparks playbook).*
