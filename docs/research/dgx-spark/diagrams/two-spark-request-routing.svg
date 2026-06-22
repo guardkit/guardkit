@@ -14,17 +14,17 @@
 <rect x="600" y="150" width="240" height="66" rx="12" fill="#fff3bf" fill-opacity="1.00" stroke="#f59e0b" stroke-width="2" stroke-opacity="1.00"/>
 <text x="720" y="183" font-size="17" text-anchor="middle" dominant-baseline="central" fill="#1e1e1e">llama-swap :9000</text>
 <rect x="920" y="150" width="240" height="66" rx="12" fill="#b2f2bb" fill-opacity="1.00" stroke="#22c55e" stroke-width="2" stroke-opacity="1.00"/>
-<text x="1040" y="183" font-size="15" text-anchor="middle" dominant-baseline="central" fill="#1e1e1e">Node A: architect loaded</text>
+<text x="1040" y="183" font-size="15" text-anchor="middle" dominant-baseline="central" fill="#1e1e1e">Node A: coach loaded</text>
 <path d="M 230,183 L 320,183" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#ah_1e1e1e)"/>
 <rect x="222" y="174" width="106" height="18" fill="#ffffff" fill-opacity="0.82"/>
-<text x="275" y="183" font-size="14" text-anchor="middle" dominant-baseline="central" fill="#1e1e1e">1 . architect</text>
+<text x="275" y="183" font-size="14" text-anchor="middle" dominant-baseline="central" fill="#1e1e1e">1 . coach</text>
 <path d="M 520,183 L 600,183" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#ah_1e1e1e)"/>
 <rect x="522" y="174" width="75" height="18" fill="#ffffff" fill-opacity="0.82"/>
 <text x="560" y="183" font-size="14" text-anchor="middle" dominant-baseline="central" fill="#1e1e1e">2 . route</text>
 <path d="M 840,183 L 920,183" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#ah_1e1e1e)"/>
 <rect x="838" y="174" width="85" height="17" fill="#ffffff" fill-opacity="0.82"/>
 <text x="880" y="183" font-size="13" text-anchor="middle" dominant-baseline="central" fill="#1e1e1e">3 . swap in</text>
-<text x="600" y="226" font-size="13" text-anchor="start" dominant-baseline="hanging" fill="#b45309">evict current resident, load architect</text>
+<text x="600" y="226" font-size="13" text-anchor="start" dominant-baseline="hanging" fill="#b45309">evict current resident, load coach</text>
 <path d="M 920,270 L 50,270" fill="none" stroke="#1971c2" stroke-width="2" stroke-dasharray="9 6" marker-end="url(#ah_1971c2)"/>
 <rect x="397" y="261" width="175" height="18" fill="#ffffff" fill-opacity="0.82"/>
 <text x="485" y="270" font-size="14" text-anchor="middle" dominant-baseline="central" fill="#1971c2">4 . tokens stream back</text>
@@ -50,5 +50,5 @@
 <text x="905" y="476" font-size="12" text-anchor="start" dominant-baseline="hanging" fill="#b45309">weights + compute split over 200G CX-7</text>
 <path d="M 920,512 L 50,512" fill="none" stroke="#b45309" stroke-width="2" stroke-dasharray="9 6" marker-end="url(#ah_b45309)"/>
 <rect x="378" y="503" width="214" height="18" fill="#ffffff" fill-opacity="0.82"/>
-<text x="485" y="512" font-size="14" text-anchor="middle" dominant-baseline="central" fill="#b45309">4 . tokens back (~40 tok/s)</text>
+<text x="485" y="512" font-size="14" text-anchor="middle" dominant-baseline="central" fill="#b45309">4 . tokens back (~44 tok/s, MTP)</text>
 </svg>
