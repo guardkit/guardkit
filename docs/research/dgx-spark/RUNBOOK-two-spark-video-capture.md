@@ -13,7 +13,7 @@ Audience: AI engineers. Target: ~12–18 min build-log + architecture explainer.
 
 ## Pre-read (open in tabs before recording)
 
-- `diagrams/two-spark-fleet-serving-architecture.svg` and `diagrams/two-spark-request-routing.svg`
+- `diagrams/two-spark-fleet-serving-architecture.svg` and `diagrams/two-spark-request-routing.svg` — the **only two diagrams for this video** (the static topology + the request-routing). The `fleet-memory-write-path` diagram is a fleet-memory subsystem asset, out of scope for the two-Spark story.
 - `DECISION-DF-004-two-spark-serving-topology-unified-front-door.md` (§2.1 topology, §2.2 memory rule)
 - **`../../dgx-spark/RUNBOOK-two-spark-bring-up.md`** — the executable, gated arc this video *films* (P2 = its Phases 2–6, P3 = its Phase 9). Run it once before recording.
 - `two-spark-serving-research-and-references.md` (the gotchas + the expected numbers)
