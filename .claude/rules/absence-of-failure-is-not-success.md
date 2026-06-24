@@ -226,6 +226,14 @@ consecutive-failure run rather than extend it.
   report's claim *"Maintains adversarial rigor (Coach still validates
   independently)"* was delivered only when `CoachVerifier` was wired
   into the deterministic path. See AC-014 addendum.
+- **Child rule (preservation-locus generalization)**:
+  [`absence-must-survive-every-reconciliation-layer.md`](absence-must-survive-every-reconciliation-layer.md)
+  — generalizes the checkpoint-layer false-red (item 4, CKPTTESTRED01) upstream:
+  the terminal guard being tri-state-correct is necessary but not sufficient;
+  absence must be preserved as `None` through every reconciliation/synthesis/
+  serialization layer between oracle and guard. Documents three coercion layers
+  (L1 reconciliation, L2 BDD runner, L3 runtime parity). ACTIVE HAZARD — fix
+  tracked in TASK-ABFIX-010 (seeded 2026-06-24).
 
 ## When this rule triggers
 
