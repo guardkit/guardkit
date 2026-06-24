@@ -1045,23 +1045,38 @@ class ProjectEnvironmentDetector:
             )
             locked_stacks.add("python")  # prevent requirements.txt from also running
 
-        if (directory / "requirements.txt").exists() and "python" not in locked_stacks:
-            results.append(
-                DetectedManifest(
-                    path=(directory / "requirements.txt").resolve(),
-                    stack="python",
-                    is_lock_file=False,
-                    install_command=[
-                        sys.executable,
-                        "-m",
-                        "pip",
-                        "install",
-                        "-r",
-                        "requirements.txt",
-                    ],
+        # requirements*.txt — ADDITIVE: install EVERY matching file, so both a
+        # base+dev/test split (requirements.txt + requirements-dev.txt) AND a
+        # non-standard sole manifest (requirements.poc.txt — lpa-platform-poc)
+        # land in the worktree venv. Only when no editable manifest
+        # (poetry.lock / pyproject.toml) already locked the python stack —
+        # those projects install via `pip install -e .[extras]` instead.
+        # TASK-AB-PERTASKFG01 AC-003: a project declaring deps solely in a
+        # non-standard requirements file otherwise produced an EMPTY worktree
+        # venv, so the Coach's independent test could not import the app/test
+        # deps and tests could not run (the TASK-AB-PERTASKFG01 broken-venv
+        # root cause). Glob is depth-0 within `directory`; `requirements.txt`
+        # itself is included so the common single-file case is unchanged.
+        if "python" not in locked_stacks:
+            req_files = sorted(directory.glob("requirements*.txt"))
+            for req_file in req_files:
+                results.append(
+                    DetectedManifest(
+                        path=req_file.resolve(),
+                        stack="python",
+                        is_lock_file=False,
+                        install_command=[
+                            sys.executable,
+                            "-m",
+                            "pip",
+                            "install",
+                            "-r",
+                            req_file.name,
+                        ],
+                    )
                 )
-            )
-            locked_stacks.add("python")
+            if req_files:
+                locked_stacks.add("python")
 
         # ---- Node ----
         if (directory / "pnpm-lock.yaml").exists():

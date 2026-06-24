@@ -1032,14 +1032,26 @@ class TestDoctorIntegration:
 class TestActiveHarnessCheck:
     """Test ActiveHarnessCheck reports the active GUARDKIT_HARNESS substrate."""
 
-    def test_sdk_default_when_env_unset(self, monkeypatch):
-        """Default (no env var) reports sdk substrate."""
-        monkeypatch.delenv("GUARDKIT_HARNESS", raising=False)
-        result = ActiveHarnessCheck().run()
+    def test_langgraph_default_when_env_unset(self, monkeypatch):
+        """Default (no env var) reports the langgraph substrate.
 
-        assert result.status == CheckStatus.PASS
-        assert "sdk" in result.message.lower()
-        assert result.required is False
+        TASK-HMIG-011 cutover (2026-06-16): ``DEFAULT_HARNESS`` flipped
+        ``sdk`` -> ``langgraph``, so env-unset must behave identically to an
+        explicit ``GUARDKIT_HARNESS=langgraph`` (PASS + version when
+        guardkitfactory is importable, FAIL when it is not). Pinning
+        env-unset == explicit-langgraph keeps this assertion
+        environment-independent (it holds whether or not guardkitfactory is
+        installed, e.g. in CI's tests.yml which does not install it).
+        """
+        monkeypatch.delenv("GUARDKIT_HARNESS", raising=False)
+        default_result = ActiveHarnessCheck().run()
+
+        monkeypatch.setenv("GUARDKIT_HARNESS", "langgraph")
+        explicit_result = ActiveHarnessCheck().run()
+
+        assert default_result.status == explicit_result.status
+        assert default_result.message == explicit_result.message
+        assert default_result.required is False
 
     def test_sdk_explicit(self, monkeypatch):
         """Explicit GUARDKIT_HARNESS=sdk reports sdk substrate."""

@@ -364,3 +364,106 @@ def test_specialist_results_json_format(tmp_path: Path):
         assert block["status"] in ("passed", "failed", "skipped"), \
             f"{block_name}.status must be passed/failed/skipped"
         assert "duration_seconds" in block, f"{block_name} must have duration_seconds"
+
+
+# ===========================================================================
+# TASK-AB-PERTASKFG01 fix #2 — quality_gates reconciled vs authoritative phase_4
+# ===========================================================================
+
+
+def _seed_false_green_results(worktree: Path) -> Path:
+    """task_work_results.json whose quality_gates were fabricated from the
+    Player's narrative (all_passed=True, coverage=100, 0 tests) — the
+    TASK-SMOKE-REDACT01 shape produced when the test-orchestrator hung."""
+    TaskArtifactPaths.ensure_autobuild_dir(TASK_ID, worktree)
+    results_path = TaskArtifactPaths.task_work_results_path(TASK_ID, worktree)
+    results_path.write_text(json.dumps({
+        "task_id": TASK_ID,
+        "completed": True,
+        "files_modified": [],
+        "files_created": [],
+        "quality_gates": {
+            "tests_passing": True,
+            "tests_passed": 0,
+            "tests_failed": 0,
+            "coverage": 100.0,
+            "coverage_met": True,
+            "all_passed": True,
+        },
+    }, indent=2))
+    return results_path
+
+
+_HUNG_PHASE_4 = {
+    "status": "failed",
+    "duration_seconds": 300.0,
+    "error": "hang detected (no model activity for 162s)",
+    "tests_run": 0,
+    "tests_failed": 0,
+    "coverage_pct": 0.0,
+    "quality_gates_passed": False,
+}
+
+
+class TestQualityGatesReconciliation:
+    """fix #2: a narrative false-green is overridden by the authoritative
+    phase_4 specialist record before the Coach reads task_work_results.json."""
+
+    def test_failed_phase4_overrides_narrative_false_green(
+        self, worktree: Path, invoker: AgentInvoker
+    ) -> None:
+        results_path = _seed_false_green_results(worktree)
+        _seed_specialist_results(worktree, phase_4=_HUNG_PHASE_4)
+
+        invoker._inject_specialist_records_into_task_work_results(TASK_ID)
+
+        qg = json.loads(results_path.read_text())["quality_gates"]
+        assert qg["all_passed"] is False
+        assert qg["tests_passing"] is False
+        assert qg["tests_passed"] == 0
+        assert qg["coverage_met"] is False
+        assert qg.get("reconciled_from_specialist") is True
+
+    def test_passed_phase4_leaves_quality_gates_untouched(
+        self, worktree: Path, invoker: AgentInvoker
+    ) -> None:
+        """No over-reach: a genuinely passing phase_4 must not alter a real pass."""
+        TaskArtifactPaths.ensure_autobuild_dir(TASK_ID, worktree)
+        results_path = TaskArtifactPaths.task_work_results_path(TASK_ID, worktree)
+        results_path.write_text(json.dumps({
+            "task_id": TASK_ID, "completed": True,
+            "files_modified": [], "files_created": [],
+            "quality_gates": {
+                "tests_passing": True, "tests_passed": 12, "tests_failed": 0,
+                "coverage": 88.0, "coverage_met": True, "all_passed": True,
+            },
+        }, indent=2))
+        _seed_specialist_results(worktree, phase_4={
+            "status": "passed", "duration_seconds": 5.0, "error": None,
+            "tests_run": 12, "tests_failed": 0, "coverage_pct": 88.0,
+            "quality_gates_passed": True,
+        })
+
+        invoker._inject_specialist_records_into_task_work_results(TASK_ID)
+
+        qg = json.loads(results_path.read_text())["quality_gates"]
+        assert qg["all_passed"] is True
+        assert qg["tests_passed"] == 12
+        assert "reconciled_from_specialist" not in qg
+
+    def test_skipped_phase4_does_not_override(
+        self, worktree: Path, invoker: AgentInvoker
+    ) -> None:
+        """Narrow scope: only an explicit 'failed' phase_4 reconciles; a skipped
+        phase (e.g. direct-mode Phase-4-not-run) is left to the Coach-side gates
+        (zero-test anomaly / independent-test absent guard)."""
+        results_path = _seed_false_green_results(worktree)
+        _seed_specialist_results(worktree, phase_4={
+            "status": "skipped", "duration_seconds": 0.0, "error": None,
+        })
+
+        invoker._inject_specialist_records_into_task_work_results(TASK_ID)
+
+        qg = json.loads(results_path.read_text())["quality_gates"]
+        assert qg["all_passed"] is True
+        assert "reconciled_from_specialist" not in qg

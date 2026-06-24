@@ -3402,6 +3402,10 @@ class AutoBuildOrchestrator:
                             agent_invoker=self._agent_invoker,
                             cancellation_event=self._cancellation_event,
                             turn=turn,
+                            # TASK-AB-NPDET01: the deterministic non-Python
+                            # whole-suite guard defers to the LLM specialist in a
+                            # parallel wave; it needs the real wave size here.
+                            wave_size=self.wave_size,
                         )
                     )
 
@@ -6070,6 +6074,29 @@ class AutoBuildOrchestrator:
                 worktree=worktree,
                 rationale=f"Evidence gathering failed: {exc}",
                 start_time=start_time,
+            )
+
+        # Coach v3 Step 1 (coach-finetune training-data enabler): persist the
+        # INPUT evidence bundle alongside coach_turn_N.json. coach_turn_N.json
+        # records only the Coach's OUTPUT (decision/issues/criteria/rationale);
+        # the CoachEvidenceBundle that DROVE the verdict was never saved, which
+        # forced lossy reconstruction at harvest time and made the harvest train
+        # the Coach on player_report ONLY (the train!=serve mismatch). Saving it
+        # here yields production-faithful (prompt-with-bundle -> verdict) pairs
+        # for every future run. Written right after gather_evidence so a turn
+        # blocked by a downstream gate still records its bundle. Best-effort:
+        # a write failure must never block the turn.
+        try:
+            _evidence_dir = worktree.path / ".guardkit" / "autobuild" / task_id
+            _evidence_dir.mkdir(parents=True, exist_ok=True)
+            _evidence_path = _evidence_dir / f"coach_evidence_turn_{turn}.json"
+            with open(_evidence_path, "w") as _evidence_f:
+                json.dump(evidence_bundle.to_dict(), _evidence_f, indent=2, default=str)
+            logger.debug("Persisted coach evidence bundle to %s", _evidence_path)
+        except Exception as _evidence_exc:  # noqa: BLE001 — persistence must never block the turn
+            logger.warning(
+                "Failed to persist coach evidence bundle for %s turn %s: %s",
+                task_id, turn, _evidence_exc,
             )
 
         # TASK-AB-XREPOEV01 (AC-002): run the Coach's independent tests in any

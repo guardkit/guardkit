@@ -1,12 +1,15 @@
 ---
 id: TASK-HMIG-010
 title: Full feature autobuild end-to-end validation under LangGraph
-status: blocked
-previous_state: in_progress
+status: completed
+resolution: goal-met
+completed: 2026-06-18
+completed_location: tasks/completed/autobuild-harness-migration/
+previous_state: blocked
 state_transition_reason: "Run 6 (2026-06-06T09:25, 50m01s, post-COACHOUT01 Shape A) confirmed every architectural finding F1-F19 closed and validated. ADR FB-004 documented (Coach is read-only-for-code; orchestrator parses verdict from fenced JSON). Run 6 hit F17 again at substrate level — Coach produced 602 chars without JSON block on turn 1 — COACHSF01 safety net fired correctly, Player retried turn 2, Coach took >22min on turn 2 (F6 substrate slowness), task_timeout fired at 50min, CTOUT01 cancellation propagated cleanly (no phantom approval). VERDICT: migration is mechanically COMPLETE. Substrate quality is the load-bearing cutover constraint, not architecture. Operator constraints clarified 2026-06-06: hard deadline 2026-06-15 (Anthropic Agent SDK subscription ends), zero API budget, local-only substrate required. Cutover MUST ship by deadline. Two-stage substrate strategy: Stage 1 (TASK-HMIG-013) swap Coach to gemma4:26b on existing single GB10 (17/17 agentic per Exxact benchmark, 52.7 tok/s) — ~2h fix unblocks cutover. Stage 2 (TASK-HMIG-012) post-cutover optimization on 2× DGX Spark + ConnectX-7 (incoming ~2026-06-08) with DeepSeek V4 Flash as primary Player candidate. Nemotron-3-Ultra-550B-A55B DROPPED from candidates (too slow at 5 tok/s even when it fits at 2-bit). TASK-HMIG-010 VERDICT: GO with documented substrate policy; blocked on TASK-HMIG-013."
 task_type: validation
 created: 2026-05-19T20:30:00Z
-updated: 2026-06-05T17:30:00Z
+updated: 2026-06-18T16:00:00Z
 priority: critical
 complexity: 5
 deadline: 2026-06-15
@@ -18,8 +21,12 @@ parallel_group: 3B
 implementation_mode: manual    # operator-monitored end-to-end run; /task-work produces scaffolding only
 intensity: standard
 effort_hours: 8
-blocked_by:
-  - TASK-HMIG-013  # Stage 1 substrate swap — Coach to gemma4:26b on existing single GB10. ~2h. Critical for cutover-by-2026-06-15.
+# blocked_by RESOLVED 2026-06-18: TASK-HMIG-013 (substrate swap) was superseded by
+# TASK-OPS-COACHMOE01 (gemma4:26b coach in production). The GO verdict below was
+# reached, the cutover (TASK-HMIG-011) shipped, and FEAT-9DDE + FEAT-FAUD validated
+# full-feature autobuild under LangGraph. See "Closure" section.
+resolved_blocked_by:
+  - TASK-HMIG-013  # superseded by TASK-OPS-COACHMOE01; substrate question answered
 # Resolved blockers (landed):
 #   - TASK-FIX-CTOUT01 (F14)    — substrate-agnostic harness.cancel() landed 2026-06-05, in completed/2026-06/
 #   - TASK-FIX-LGFM3 (F12)      — coach_test model threading landed 2026-06-05, in completed/2026-06/
@@ -46,6 +53,31 @@ tags:
 ---
 
 # Task: Full feature autobuild end-to-end validation
+
+> **COMPLETED (goal-met) 2026-06-18.** This task's purpose was to validate
+> full-feature autobuild under LangGraph and make the GO/halt cutover decision.
+> That decision was **GO** (recorded in this task's own `state_transition_reason`:
+> "VERDICT: GO with documented substrate policy") after run 6 confirmed F1–F19
+> closed; the task then sat `blocked_by: TASK-HMIG-013` (the substrate swap).
+>
+> All three closure conditions are now met:
+> 1. **Blocker cleared** — TASK-HMIG-013 was superseded by TASK-OPS-COACHMOE01;
+>    gemma4:26b (gemma4-coach) is the production Coach.
+> 2. **Decision executed** — the cutover (TASK-HMIG-011) shipped 2026-06-16 on
+>    the LangGraph default; HMIG-011 listed HMIG-010 as a `depends_on`, so the GO
+>    gate was honoured.
+> 3. **End-to-end validation proven** — the formal single-clean-HMIG-010-run was
+>    overtaken by events, but its falsifier ("a representative ≥3-task feature
+>    completes under LangGraph with ≥80% first-pass, merge succeeds") was met by
+>    the post-cutover full-feature runs **FEAT-9DDE** (green, 2026-06-14) and
+>    **FEAT-FAUD** (green + merged, 2026-06-16), plus the run-series records in
+>    `.guardkit/autobuild/TASK-REV-HMIG-feature-results.json` (AC-003) and
+>    incidents (AC-006) in `docs/state/TASK-REV-HMIG/feature-run-incidents.md`.
+>
+> Closing as **goal-met** rather than ticking the original per-AC operator-run
+> checklist (AC-001–009 below describe a single clean run that was superseded by
+> the substrate iteration + the actual cutover). The validation *outcome* — a
+> GO decision, executed and proven green end-to-end — is delivered.
 
 ## Description
 

@@ -826,6 +826,13 @@ class FeatureLoader:
                 "execution": execution,
                 "smoke_gates": smoke_gates,
                 "bootstrap_extras": data.get("bootstrap_extras", []),
+                # TASK-FIX-XREPO-CAUD: thread declared sibling repos through.
+                # Without this the field is silently dropped here and
+                # ``feature.evidence_repos`` is always [], so the cross-repo
+                # contract (resolve_evidence_repos in feature_orchestrator)
+                # never activates on the feature path — declaring
+                # ``evidence_repos`` in the YAML was inert (FEAT-RBX repro).
+                "evidence_repos": data.get("evidence_repos", []),
             })
         except ValidationError as e:
             raise FeatureParseError(

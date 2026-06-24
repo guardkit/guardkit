@@ -157,6 +157,7 @@ When using `mcp__graphiti__add_memory`, choose the group_id based on content typ
 - Server config: see `.mcp.json` for MCP server launch configuration
 - Project config: see `.guardkit/graphiti.yaml` for group_ids and infrastructure
 - Graph database: FalkorDB at `whitestocks:6379` (Synology NAS via Tailscale)
-- LLM backend: vLLM at `promaxgb10-41b1:8000` (Qwen2.5-14B for extraction)
-- Embedding: vLLM at `promaxgb10-41b1:8001` (nomic-embed-text-v1.5, 1024 dims)
+- LLM backend: llama-swap at `promaxgb10-41b1:9000` (alias `qwen-graphiti` = Qwen2.5-14B-Instruct Q8_0 for extraction, served by llama.cpp)
+- Embedding: llama-swap at `promaxgb10-41b1:9000` (alias `nomic-embed` = nomic-embed-text-v1.5 F16, **768 dims**)
+  - > **Updated 2026-06-21:** the standalone vLLM servers on `:8000`/`:8001` were retired in the 2026-04-29 all-llama.cpp consolidation (RESULTS-v2) — both the LLM and the embedder are now served by the single llama-swap front door on `:9000`. The model identities are unchanged (Qwen2.5-14B; nomic-embed-text-v1.5); only the substrate (vLLM→llama.cpp) and port changed. The embedding dimension is **768**, not 1024 — `.guardkit/graphiti.yaml` already encodes this; a config claiming 1024 silently corrupts Graphiti writes.
 - **No hyphens in group_ids** — use underscores only (hyphens break RediSearch)

@@ -262,6 +262,11 @@ class TestExecuteTurnPropagatesConfigError:
         orch._last_coach_context_status = None
         orch._feature_id = None
         orch.perspective_reset_turns = []
+        # TASK-AB-COACHRUNPARITY01: _loop_phase reads these (set in __init__,
+        # bypassed by __new__). Mirror the real constructor defaults.
+        orch._seed_feedback = None
+        orch._smoke_command = None
+        orch._smoke_expected_exit = 0
         orch._worktree_manager = Mock()
         orch._worktree_manager.worktrees_dir = Path("/tmp/worktrees")
         orch._agent_invoker = None
@@ -361,6 +366,11 @@ class TestLoopPhaseFastExit:
         orch._last_coach_context_status = None
         orch._feature_id = None
         orch.perspective_reset_turns = []
+        # TASK-AB-COACHRUNPARITY01: _loop_phase reads these (set in __init__,
+        # bypassed by __new__). Mirror the real constructor defaults.
+        orch._seed_feedback = None
+        orch._smoke_command = None
+        orch._smoke_expected_exit = 0
         orch._worktree_manager = Mock()
         orch._worktree_manager.worktrees_dir = Path("/tmp/worktrees")
         orch._agent_invoker = None

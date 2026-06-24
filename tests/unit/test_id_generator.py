@@ -416,10 +416,20 @@ def test_concurrent_generation():
     """Test that concurrent generation produces unique IDs."""
     # Simulate rapid sequential generation (not truly concurrent, but tests timing)
     ids = []
+    seen: Set[str] = set()
 
-    # Generate 100 IDs as fast as possible
+    # Generate 100 IDs as fast as possible, threading the accumulated set
+    # through ``existing_ids`` so the generator's collision-detection-and-retry
+    # path is exercised. Without it the 4-hex space (65,536) yields a ~7%
+    # birthday-paradox collision over 100 raw IDs — a statistically flaky
+    # assertion that does NOT test the uniqueness contract the function
+    # provides (it dedups against ``existing_ids`` / the filesystem, never
+    # against in-memory siblings it was not told about). See the CI flake on
+    # commit 4d478818 (TASK-XXXX collision, py3.11).
     for _ in range(100):
-        ids.append(generate_task_id())
+        task_id = generate_task_id(existing_ids=seen)
+        ids.append(task_id)
+        seen.add(task_id)
 
     # All should be unique despite rapid generation
     assert len(set(ids)) == 100

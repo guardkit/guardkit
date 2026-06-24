@@ -315,6 +315,7 @@ orchestration:
 | `status` | string | No | "planned", "in_progress", "completed", "failed", "paused" |
 | `complexity` | int | No | Aggregate complexity (1-10) |
 | `estimated_tasks` | int | No | Task count |
+| `evidence_repos` | array | No | Sibling repos the feature writes to (see **Cross-Repo Features** below). Default `[]`. |
 
 **Task-level fields:**
 | Field | Type | Required | Description |
@@ -334,6 +335,42 @@ orchestration:
 | `parallel_groups` | array | ✅ Yes | List of lists - each inner list is a wave of parallel tasks |
 | `estimated_duration_minutes` | int | No | Total estimated duration |
 | `recommended_parallel` | int | No | Max recommended parallel tasks |
+
+#### Cross-Repo Features: evidence_repos
+
+If any task in this feature writes its deliverable into a **sibling git
+repository** rather than the project worktree, you **MUST** declare that repo
+in a top-level `evidence_repos` list. This is the only mechanism that widens
+the autobuild evidence boundary (post-turn `git diff`, Coach file-existence
+checks, turn checkpoints, independent tests) beyond the worktree — the
+orchestrator never implicitly scans parent directories for you (AC-003).
+
+**How to detect it at plan time:** a task targets a sibling repo when its
+description names another repo/package (e.g. "in `nats-core`", "the shared
+events library") or its deliverable path resolves *outside* the project root.
+A sibling repo reached via a symlink under `.guardkit/worktrees/` is still a
+separate repo and still needs declaring.
+
+**Symptom if you forget:** the Player authors real files in the sibling repo,
+but the worktree `git add -A` checkpoint cannot stage them and the Coach
+claim-audit cannot verify them. Every turn is rejected
+(`max_turns_exceeded`) on what is actually correct work — this is exactly the
+FEAT-RBX / TASK-RBX-002 failure mode.
+
+```yaml
+# Declare each sibling repo. Entry is a bare path (relative to the project
+# root) or a mapping with an optional per-repo test_command the Coach runs
+# independently to verify the cross-repo work.
+evidence_repos:
+  - path: "../nats-core"
+    test_command: "python -m pytest tests -q"
+```
+
+When a feature declares `evidence_repos`, tasks that touch those repos should
+report their files **repo-qualified** — `<repo-name>:<rel-path>` (e.g.
+`nats-core:src/nats_core/events/_runbook.py`) — rather than as absolute paths,
+so the producer and verifier route through the same cross-repo contract.
+Leave `evidence_repos` absent (or `[]`) for single-repo features.
 
 #### Critical: file_path Field
 

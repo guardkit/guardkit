@@ -1,10 +1,16 @@
 ---
 id: TASK-FIX-FRESHRESET01
 title: --fresh flag silently no-ops on a previously-COMPLETED feature; should reset feature-state YAML alongside worktree wipe (Shape A)
-status: backlog
+status: completed
+resolution: superseded
+superseded_by: TASK-FIX-FRESHCLEAN01
 task_type: fix
 created: 2026-06-09T13:30:00Z
-updated: 2026-06-09T13:30:00Z
+updated: 2026-06-18T00:00:00Z
+completed: 2026-06-18T00:00:00Z
+previous_state: backlog
+state_transition_reason: "Superseded — the Shape A fix landed under TASK-FIX-FRESHCLEAN01 (commit 3b39764e, completed 2026-06-15); all ACs verified met on current main, no new code required."
+completed_location: tasks/completed/TASK-FIX-FRESHRESET01/
 priority: high
 complexity: 2
 effort_hours: 1
@@ -22,6 +28,59 @@ falsifier: "After landing: running `guardkit autobuild feature FEAT-AOF --fresh 
 ---
 
 # Task: --fresh flag silently no-ops on a previously-COMPLETED feature
+
+## ⛔ Resolution — SUPERSEDED by TASK-FIX-FRESHCLEAN01 (2026-06-18)
+
+This task was **filed** as a bug report (commit `0be5fcff2`) but the fix it
+specifies (Shape A — drop the `is_incomplete` guard so `_clean_state` fires on
+*every* `--fresh`) was independently **implemented and completed under
+[`TASK-FIX-FRESHCLEAN01`](../../completed/TASK-FIX-FRESHCLEAN01/TASK-FIX-FRESHCLEAN01.md)**
+(commit `3b39764e`, completed 2026-06-15), which surfaced from the same
+class of failure during FEAT-9DDE run 12.
+
+Verified against current `main` (no new code required):
+
+- **Root-cause guard is gone.** [`feature_orchestrator.py:1052-1056`](../../../guardkit/orchestrator/feature_orchestrator.py#L1052-L1056)
+  now calls `_clean_state` **unconditionally** under `if self.fresh:` (the
+  `is_incomplete` guard cited in this task's root-cause section was removed),
+  with an inline comment crediting FRESHCLEAN01.
+- **State reset is complete.** `_clean_state` → `FeatureLoader.reset_state`
+  ([`feature_loader.py:1569-1589`](../../../guardkit/orchestrator/feature_loader.py#L1569-L1589))
+  resets feature `status` → `planned` and every task's `status` → `pending`,
+  `result` → `None`, `turns_completed`/`current_turn` → `0`,
+  `started_at`/`completed_at` → `None` — exactly the field list this task's
+  "Verify `_clean_state` resets all relevant fields" section requested. This is
+  what stops the Phase-2 skip-check (`task.status == "completed"`) from firing.
+
+### AC verification (all met by FRESHCLEAN01)
+
+- [x] **AC-1** — `--fresh` after a successful run re-executes all tasks (task
+      statuses `pending` at Phase 2). Covered by `reset_state` + test
+      `test_fresh_cleans_terminal_feature_without_branch_error`
+      ([`tests/unit/test_feature_orchestrator.py:432`](../../../tests/unit/test_feature_orchestrator.py#L432))
+      which asserts `all(t.status == "pending" ...)`.
+- [x] **AC-2** — unit test covering the previously-completed → `--fresh` path:
+      same test (drives the feature to `status: completed` + tasks `completed`,
+      asserts cleanup + reset).
+- [x] **AC-3** — `--fresh` on a previously-FAILED feature still clears state
+      (no regression): `test_fresh_incomplete_feature_still_cleans`
+      (`failed` ∈ `is_incomplete` states).
+- [x] **AC-4** — downstream falsifier removed: the manual-revert bottleneck is
+      gone; an operator can re-run a completed feature with `--fresh`.
+
+`GUARDKIT_HARNESS=sdk pytest tests/unit/test_feature_orchestrator.py -k fresh`
+→ **10 passed** on current main (2026-06-18).
+
+**Out-of-scope note honoured as-written:** this task's optional sub-item
+(also reset per-task markdown frontmatter `autobuild_state` blocks) was *not*
+implemented by FRESHCLEAN01 — `reset_state` operates on the feature YAML, not
+the `tasks/**/TASK-*.md` files. This is harmless for the documented falsifier
+because the Phase-2 skip-check reads `task.status` from the feature object
+(YAML), which *is* reset. This task explicitly marked that sub-item
+"OR documented as out-of-scope and operator must revert manually," so no
+follow-up is filed.
+
+---
 
 ## Why this task exists
 

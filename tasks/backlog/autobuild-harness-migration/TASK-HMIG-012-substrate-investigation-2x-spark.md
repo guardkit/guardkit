@@ -4,10 +4,11 @@ title: Stage 2 — Substrate quality investigation on 2× DGX Spark + ConnectX-7
 status: backlog
 task_type: research
 created: 2026-06-06T11:00:00Z
-updated: 2026-06-06T11:00:00Z
-priority: high
+updated: 2026-06-18T15:45:00Z
+priority: low   # deferred 2026-06-18 — gemma4:26b substrate is sufficient (was: high)
+deferred: 2026-06-18   # optional optimization; activates only when 2nd Spark is live AND a stronger Player is wanted
 complexity: 6
-deadline: 2026-07-15  # post-cutover; targets the wider hardware deployment window
+deadline: 2026-07-15  # post-cutover; targets the wider hardware deployment window (deferred — see banner)
 parent_review: TASK-REV-HMIG
 parent_task: TASK-HMIG-010
 feature_id: FEAT-HMIG
@@ -30,6 +31,20 @@ tags:
 ---
 
 # Task: Substrate quality investigation on 2× DGX Spark + ConnectX-7
+
+> **DEFERRED 2026-06-18 (priority → low).** The cutover shipped on the
+> single-GB10 **gemma4:26b** Coach (TASK-HMIG-011 completed; TASK-HMIG-013 /
+> TASK-OPS-COACHMOE01), and that substrate is **sufficient for ongoing
+> operations** — exactly the condition under which this task's own Notes say it
+> "can be deferred indefinitely or used purely as an optimization investigation
+> when bandwidth permits." This is a *post-cutover optimization* (stronger/faster
+> Player via DeepSeek V4 Flash on 2× Spark), NOT pending or blocking work.
+>
+> **Reactivation conditions (both required):** (1) the 2nd DGX Spark +
+> ConnectX-7 is deployed and operational with llama-swap routing TP=2 across both
+> Sparks (AC-001); AND (2) there is a concrete need for a faster/stronger Player
+> than qwen36-workhorse. Until both hold, this stays parked. Bump priority back to
+> high when reactivating.
 
 ## Why this task exists
 
