@@ -1090,10 +1090,17 @@ def _run_deterministic_phase_4(
     # and skips Phase 5. (This is the validation-smoke conftest-import repro that
     # motivated TASK-AB-PERTASKFG01.)
     if result.signal_absent:
+        # TASK-ABFIX-010 (W2): carry an explicit ``signal_absent`` boolean
+        # (not just the error-string prefix) so the downstream
+        # narrative-false-green reconciliation in ``agent_invoker`` can branch
+        # on it deterministically and keep the absent signal as ``None``
+        # (UNKNOWN) rather than coercing it to an explicit ``False``. See
+        # ``.claude/rules/absence-must-survive-every-reconciliation-layer.md``.
         return {
             "status": "failed",
             "duration_seconds": duration,
             "error": f"absent test signal (deterministic Phase 4): {summary[:160]}",
+            "signal_absent": True,
             **{**_PHASE_4_AGENT_FIELD_DEFAULTS, "output_summary": summary},
         }
 

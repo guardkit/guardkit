@@ -3,6 +3,13 @@
 **Scope (confirmed at Phase 1.6):** W1 + W2 + W2b. W3 (`--timeout` injection) and
 W4 (required test gate) are explicitly deferred to separate follow-on tasks.
 
+> **Implementation outcome (2026-06-24):** W1 + W2 + W2b/**L2** landed (473 tests
+> pass, 0 regressions). **W2b/L3 was reverted during implementation** — it
+> overturns a deliberate TASK-AB-COACHRUNPARITY01 decision pinned by an existing
+> test (`test_timeout_is_ran_and_failed`); surfaced for an explicit operator
+> decision rather than silently flipped. See the task file's Implementation
+> Summary.
+
 **Mode:** standard · **Intensity:** standard · **Complexity:** 7/10 · **Workflow:** design-only
 
 **One-sentence design:** keep an absent test signal representable as `None`

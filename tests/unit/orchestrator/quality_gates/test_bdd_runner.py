@@ -724,6 +724,30 @@ class TestRunnerErrorSurfacing:
         )
         return result
 
+    def test_timeout_is_absent_not_a_synthesised_failure(
+        self, worktree: Path, monkeypatch
+    ):
+        # AC (TASK-ABFIX-010, W2b/L2): a pytest-bdd TIMEOUT (TimeoutExpired ->
+        # _PYTEST_EXIT_TIMEOUT sentinel, empty junit) is an ABSENT oracle signal,
+        # NOT a ran-and-failed scenario. run_bdd_for_task must return None
+        # (absent) — NOT a synthesised scenarios_failed>=1 — so the timeout is
+        # never coerced into a failure that three turns running would trip the
+        # context-pollution guard with, killing a converging task. A genuine
+        # non-timeout runner error (the test below) still surfaces a failure.
+        # See .claude/rules/absence-must-survive-every-reconciliation-layer.md
+        _write_feature(worktree, "login.feature", _PASS_FEATURE)
+        monkeypatch.setattr(bdd_runner, "has_pytest_bdd", lambda **_: True)
+        monkeypatch.setattr(
+            bdd_runner,
+            "_invoke_pytest_bdd",
+            _Patcher("", returncode=bdd_runner._PYTEST_EXIT_TIMEOUT, stderr="timed out"),
+        )
+        result = run_bdd_for_task("TASK-001", worktree)
+        assert result is None, (
+            "A BDD-runner timeout must be ABSENT (None), not a synthesised "
+            "scenarios_failed>=1 failure (TASK-ABFIX-010)."
+        )
+
     def test_runner_error_exit_4_conftest_import_error_surfaces_as_failure(
         self, worktree: Path, monkeypatch
     ):

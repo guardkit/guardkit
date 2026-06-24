@@ -949,7 +949,16 @@ class QualityGateStatus:
         Whether plan audit was required by task type profile
     """
 
-    tests_passed: bool
+    # TASK-ABFIX-010 (W1): ``tests_passed`` is tri-state. ``True``/``False`` are
+    # a ran-and-passed / ran-and-failed verdict; ``None`` (UNKNOWN) is an ABSENT
+    # oracle signal (Coach test run timed out / produced no verdict). ``None``
+    # is APPENDED to ``required_gates`` in ``__post_init__`` (not skipped), so
+    # ``all([None, ...])`` is ``False`` and the gate does NOT auto-approve on an
+    # absent signal; the checkpoint pollution tally reads ``None`` separately
+    # (via to_dict) and does NOT count it as a failure. Skipping ``None`` would
+    # let the OTHER gates approve despite absent tests — a gate-level
+    # false-green. See ``.claude/rules/absence-must-survive-every-reconciliation-layer.md``.
+    tests_passed: Optional[bool]
     coverage_met: bool
     arch_review_passed: bool
     plan_audit_passed: bool
@@ -1162,6 +1171,13 @@ class CoachValidationResult:
                     "test_command": self.independent_tests.test_command,
                     "test_output_summary": self.independent_tests.test_output_summary,
                     "duration_seconds": self.independent_tests.duration_seconds,
+                    # TASK-ABFIX-010 (W2): serialize signal_absent so the
+                    # checkpoint's _extract_tests_passed (autobuild.py) can read
+                    # an absent Coach-run signal and return None (UNKNOWN) rather
+                    # than counting it as a failure. Without this the
+                    # ``independent.get("signal_absent") is True`` guard there is
+                    # dead on arrival for the Coach's own run.
+                    "signal_absent": self.independent_tests.signal_absent,
                 } if self.independent_tests else None,
                 "requirements": {
                     "criteria_total": self.requirements.criteria_total,
@@ -3396,6 +3412,22 @@ class CoachValidator:
         if not profile.tests_required:
             tests_passed = True
             logger.debug("Tests not required per task type profile, skipping")
+        elif quality_gates.get("reconciled_absent"):
+            # TASK-ABFIX-010 (W1): the upstream reconciliation flagged an ABSENT
+            # test oracle (Coach isolated pytest timed out / no verdict). This is
+            # UNKNOWN, not a verdict: propagate ``None`` (NOT False, NOT the
+            # ``tests_failed == 0 → True`` fallback below, which would be a
+            # false-GREEN). ``None`` flows through QualityGateStatus → to_dict →
+            # the checkpoint pollution tally, which treats it as absent (not a
+            # counted failure); ``all_gates_passed`` stays falsy so the Coach
+            # does not approve and feeds back instead. Checked BEFORE the
+            # ``all_passed`` / ``tests_failed`` logic so neither can override it.
+            # See ``.claude/rules/absence-must-survive-every-reconciliation-layer.md``.
+            tests_passed = None
+            logger.debug(
+                "reconciled_absent set → tests_passed=None (UNKNOWN, not counted "
+                "as failure, not approved)"
+            )
         elif "all_passed" in quality_gates:
             all_passed_value = quality_gates["all_passed"]
             if all_passed_value is None:
@@ -7707,7 +7739,26 @@ class CoachValidator:
         quality_gates = task_work_results.get("quality_gates", {})
 
         # Only report failures for required gates
-        if gates.tests_required and not gates.tests_passed:
+        if gates.tests_required and gates.tests_passed is None:
+            # TASK-ABFIX-010 (W1): ABSENT test oracle (timed out / produced no
+            # verdict). Drive a feedback turn (do NOT approve) but message it as
+            # ABSENT, not "tests failed". The checkpoint reads tests_passed=None
+            # and does NOT count this turn as a failure (CKPTTESTRED01); the loop
+            # feeds back until the tests run or max_turns terminates the task.
+            # See .claude/rules/absence-must-survive-every-reconciliation-layer.md
+            issues.append({
+                "severity": "must_fix",
+                "category": "test_signal_absent",
+                "description": (
+                    "Test oracle did not produce a verdict (timed out / absent "
+                    "signal) — the independent test run did not complete. Ensure "
+                    "the task's tests execute and finish within the time budget; "
+                    "a hanging test consumes the whole budget and yields no "
+                    "pass/fail result."
+                ),
+                "details": {"signal_absent": True},
+            })
+        elif gates.tests_required and gates.tests_passed is False:
             # Detect incomplete session (all_passed is null, no test counts)
             all_passed_value = quality_gates.get("all_passed")
             tests_passed_count = quality_gates.get("tests_passed", 0) or 0

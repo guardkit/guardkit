@@ -1,14 +1,15 @@
 ---
 id: TASK-ABFIX-010
 title: "Harness false-red/false-green on Coach test-timeouts: keep an absent test signal as UNKNOWN (None) through every reconciliation/synthesis layer, not coerced to False"
-status: design_approved
+status: in_review
 task_type: fix
 created: 2026-06-24T00:00:00Z
 updated: 2026-06-24T00:00:00Z
 previous_state: in_progress
-state_transition_reason: "design-only run complete — Phase 2.8 checkpoint approved by human"
+state_transition_reason: "W1+W2+L2 implemented; 473 targeted tests pass (9 new reproducers); zero regressions. L3 reverted pending operator decision (see Implementation Summary)."
 priority: high
 complexity: 7
+landed_scope: "W1 + W2 + W2b/L2 (L3 reverted — overturns a deliberate prior decision; surfaced for operator decision)"
 design:
   status: approved
   approved_by: human
@@ -366,3 +367,51 @@ CKPTTESTRED01 instance.
   `.claude/rules/stack-plugin-architecture.md`.
 - Pre-implementation regression review: workflow `abfix-010-regression-review`
   (2026-06-24) — 10 agents, all four load-bearing facts confirmed against `main`.
+
+## Implementation Summary (2026-06-24)
+
+**Landed: W1 + W2 + W2b/L2.** Zero regressions — 473 targeted tests pass
+(9 new reproducers); the only failures in the broader sweep
+(`test_coach_validator.py` BDD-set, ×4) are **pre-existing on clean main**
+(confirmed by git-stash A/B), unrelated to this change.
+
+**W1 (reconciliation keeps absent as `None`, carried through the gate chain):**
+- `agent_invoker.py` reconciliation branches on `signal_absent`/`error` prefix:
+  absent → `all_passed=None`, `tests_passing=None`, `tests_passed=None`,
+  `reconciled_absent=True`; does NOT copy the absent block's `tests_failed=0`;
+  leaves `coverage_met` untouched. Genuine fail unchanged.
+- `coach_validator.verify_quality_gates` short-circuits on `reconciled_absent`
+  BEFORE the `all_passed`/`tests_failed` logic → `tests_passed=None` (prevents
+  the `tests_failed==0 → True` false-green).
+- `QualityGateStatus.tests_passed: Optional[bool]`; `None` is **appended** to
+  `required_gates` (not skipped) so `all_gates_passed` is `False` (does not
+  auto-approve), while the checkpoint reads `None` separately.
+- `_feedback_from_gates` distinguishes `is None` (absent → `test_signal_absent`
+  feedback) from `is False` (genuine → `test_failure`).
+
+**W2 (serialization):** `specialist_invocations` absent branch emits
+`signal_absent=True`; `CoachValidationResult.to_dict()` serializes
+`independent_tests.signal_absent` (was dead-on-arrival for the Coach's own run).
+
+**W2b/L2 (BDD runner):** a `subprocess.TimeoutExpired` (`_PYTEST_EXIT_TIMEOUT`
+sentinel) returns `None` (absent), not a synthesised `pytest_runner_error`
+scenario. Genuine non-timeout runner errors still surface as `scenarios_failed≥1`.
+
+**W2b/L3 — REVERTED, surfaced for operator decision.** L3 (runtime-parity
+timeout → `ran=False`) was reverted during implementation: it overturns a
+**deliberate** TASK-AB-COACHRUNPARITY01 decision pinned by
+`tests/unit/orchestrator/test_runtime_parity.py::test_timeout_is_ran_and_failed`
+(+ its companion `test_runner_error_is_absent_not_fail`), which intentionally
+distinguishes a *timeout* (entry point ran but hung = ran-and-failed/blocks)
+from a *runner error* (couldn't start = absent). The originating FMDR incident
+never involved runtime parity. Per "surface contradictions rather than overwrite
+a deliberate prior decision," L3 is left for an explicit operator call (keep the
+COACHRUNPARITY01 semantics, or flip timeout→absent and update that test with
+rationale). W1+W2+L2 fully close the FMDR-001 kill on the pytest-oracle and BDD
+paths.
+
+**Tests:** `tests/unit/test_abfix010_absent_reconciliation.py` (8) +
+`test_bdd_runner.py::test_timeout_is_absent_not_a_synthesised_failure` (1).
+
+**Follow-on (unchanged):** W3 (`--timeout` injection), W4 (required test gate);
+plus the L3 operator decision above.
