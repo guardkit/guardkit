@@ -303,10 +303,11 @@ flip in [`task_types.py`](../../guardkit/models/task_types.py#L129).
 - [x] **No regression:** the false-green backstop
       (`_reconcile_absent_independent_test_signal`) still overrides approve→feedback
       on a Coach-isolated timeout (`signal_absent` stays `True`). *(not disarmed)*
-- [ ] **W3 (DEFERRED — separate follow-on task):** `--timeout` injection, gated.
-      Out of scope for this task.
-- [ ] **W4 (DEFERRED — separate follow-on task):** required test gate for
-      TESTING-type tasks + classifier widening. Out of scope for this task.
+- [ ] **W3 → filed as `TASK-ABFIX-011`** (`tasks/backlog/TASK-ABFIX-011/`):
+      gated per-test `--timeout` injection. Out of scope for this task.
+- [ ] **W4 → filed as `TASK-ABFIX-012`** (`tasks/backlog/TASK-ABFIX-012/`):
+      required test gate for TESTING-type tasks + classifier widening. Out of scope
+      for this task.
 - [x] **CI:** the new tests do not touch harness dispatch
       (`select_harness`/SDK-harness); they import `coach_validator`/`bdd_runner`
       only, so they run on `tests.yml` without guardkitfactory/langchain. *(N/A — satisfied)*
@@ -417,5 +418,7 @@ fully close the FMDR-001 kill on the pytest-oracle and BDD paths.
 **Tests:** `tests/unit/test_abfix010_absent_reconciliation.py` (8) +
 `test_bdd_runner.py::test_timeout_is_absent_not_a_synthesised_failure` (1).
 
-**Follow-on (unchanged):** W3 (`--timeout` injection), W4 (required test gate);
-plus the L3 operator decision above.
+**Follow-on (filed 2026-06-24):** W3 → `TASK-ABFIX-011` (gated `--timeout`
+injection), W4 → `TASK-ABFIX-012` (required TESTING test gate + substrate-vs-code
+classifier widening), both in `tasks/backlog/`. L3 closed-as-wontfix per the
+operator decision above.

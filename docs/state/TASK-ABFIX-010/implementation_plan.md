@@ -142,10 +142,12 @@ CI: harness-touching tests pin `GUARDKIT_HARNESS=sdk` or `skipif`.
 
 ## Out of scope (deferred follow-on tasks)
 
-- **W3** — per-test `--timeout` injection: pytest-timeout dependency handling,
-  stack-agnostic gate, 4 injection sites, usage-error classifier.
-- **W4** — required test gate for TESTING-type tasks: requires
-  `_classify_test_failure` substrate-vs-code widening + parallel-amnesty handling.
+- **W3 → `TASK-ABFIX-011`** (filed `tasks/backlog/`) — per-test `--timeout`
+  injection: pytest-timeout dependency handling, stack-agnostic gate, 4 injection
+  sites, usage-error classifier.
+- **W4 → `TASK-ABFIX-012`** (filed `tasks/backlog/`) — required test gate for
+  TESTING-type tasks: requires `_classify_test_failure` substrate-vs-code widening
+  + parallel-amnesty handling.
 
 ---
 
