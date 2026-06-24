@@ -2,11 +2,20 @@
 
 > **Source**: Seeded by TASK-ABFIX-010 (2026-06-24) from the FEAT-FMDR autobuild
 > post-mortem (`forge/docs/reviews/FEAT-FMDR-autobuild-false-green-analysis.md`)
-> and its pre-implementation regression review. **Status: ACTIVE HAZARD —
-> documents a defect class whose fix is tracked in TASK-ABFIX-010 and has NOT yet
-> landed on `main`.** The grep fingerprints below describe current-main as the
-> hazard state; once TASK-ABFIX-010 lands, the "remediation landed" markers should
-> be filled in (commit, reproducer tests) the way the sibling rules are.
+> and its pre-implementation regression review. **Status: FIXED for L1 + L2
+> (commit `069086a0`, 2026-06-24, TASK-ABFIX-010 W1+W2+L2). L3 (runtime-parity
+> timeout) is NOT in scope — see below.** The L1 fingerprints below now describe
+> the *fixed* state (the reconciliation branches on `signal_absent`/error and
+> emits `None`); the pre-fix coercion is gone from `main`.
+>
+> **L3 is a deliberate exception, not an instance of this rule.** A runtime-parity
+> *timeout* is intentionally treated as ran-and-failed (blocks), distinct from a
+> runner-error (absent) — TASK-AB-COACHRUNPARITY01, operator-reaffirmed 2026-06-24.
+> Rationale: a smoke entry point that *starts and hangs* is a genuine deliverable
+> defect (it would hang in production), unlike a test-oracle timeout which is a
+> verification artifact. Do NOT "fix" `_gather_runtime_parity`'s timeout branch to
+> `ran=False` under this rule — that test (`test_timeout_is_ran_and_failed`) pins
+> the intended behaviour.
 >
 > Pair with the Graphiti design-rule node *"absence must survive every
 > reconciliation layer (CKPTTESTRED01 generalized upstream)"* under
@@ -51,22 +60,25 @@ green (34/34 pass in 0.18s run directly). The Coach's isolated pytest run timed
 out at 60s with `tests_run=0` — an *absent* signal — which was then coerced into
 an explicit failure three turns running.
 
-The regression review found the absent→False coercion is **not unique to one
-site** — it recurs at three independent layers, all between the oracle and the
-(correct) terminal guard:
+The regression review found the absent→False coercion at two genuine layers (L1,
+L2 — both fixed by TASK-ABFIX-010) and one layer (L3) that on inspection was a
+**deliberate prior decision, NOT a coercion bug**:
 
-| # | Layer | File:line (current main) | What it does to a timeout | Direction |
+| # | Layer | File:line | Pre-fix behaviour | Status |
 |---|---|---|---|---|
-| L1 | Phase-4 reconciliation (pytest oracle) | [`agent_invoker.py:8358-8384`](../../guardkit/orchestrator/agent_invoker.py#L8358) (`tests_passed = tests_run or 0` → `False`; `coverage_met=False`) | absent → explicit `False` | false-red kill |
-| L2 | BDD runner | [`bdd_runner.py:604-611`](../../guardkit/orchestrator/quality_gates/bdd_runner.py#L604) → [`_synthesise_runner_error_failure:482-506`](../../guardkit/orchestrator/quality_gates/bdd_runner.py#L482) (`returncode=-1` → synthesised `scenarios_failed≥1`) | absent → ran-and-failed | false-red kill (`--mode=bdd`) |
-| L3 | Runtime parity | [`coach_validator.py:3092-3101`](../../guardkit/orchestrator/quality_gates/coach_validator.py#L3092) → [`_apply_runtime_parity_guard:5549`](../../guardkit/orchestrator/agent_invoker.py#L5549) (timeout branch sets `ran=True, passed=False`) | absent → ran-and-failed | wasted-signal / non-convergence |
+| L1 | Phase-4 reconciliation (pytest oracle) | [`agent_invoker.py:8358+`](../../guardkit/orchestrator/agent_invoker.py#L8358) (was `tests_passed = tests_run or 0` → `False`; `coverage_met=False`) | absent → explicit `False` (false-red kill) | **FIXED** — branches on `signal_absent`/error → `None`; carried through `verify_quality_gates` → `QualityGateStatus(Optional[bool])` → `to_dict` → checkpoint |
+| L2 | BDD runner | [`bdd_runner.py`](../../guardkit/orchestrator/quality_gates/bdd_runner.py) (was `TimeoutExpired` → synthesised `scenarios_failed≥1`) | absent → ran-and-failed (false-red, `--mode=bdd`) | **FIXED** — `_PYTEST_EXIT_TIMEOUT` sentinel → `run_bdd_for_task` returns `None` (absent), never a synthesised failure |
+| L3 | Runtime parity | [`coach_validator.py` `_gather_runtime_parity`](../../guardkit/orchestrator/quality_gates/coach_validator.py) timeout branch sets `ran=True, passed=False` | (NOT a bug) | **OUT OF SCOPE — deliberate.** A runtime-parity *timeout* (smoke entry point ran but hung) is intentionally ran-and-failed per TASK-AB-COACHRUNPARITY01, distinct from a runner-error (absent). A hung entry point is a real deliverable defect. Pinned by `test_timeout_is_ran_and_failed`. Do NOT flip it under this rule. |
 
-L1 is the kill mechanism for the standard pytest oracle; CKPTTESTRED01 sits
-*downstream* of L1 and cannot see the absent signal because L1 already replaced it
-with `False`. L2 deliberately classifies a BDD timeout as ran-and-failed (the
-*opposite* of the pytest oracle). L3's `except Exception` branch correctly uses
-`ran=False` ("runner errors are ABSENT") but its **timeout** branch sets
-`ran=True`, contradicting that posture. Three layers, one defect class.
+L1 was the kill mechanism for the standard pytest oracle; CKPTTESTRED01 sits
+*downstream* of L1 and could not see the absent signal because L1 already replaced
+it with `False` (now fixed → `None`). L2 (pre-fix) classified a BDD timeout as
+ran-and-failed — also fixed to absent (`None`). L3 looked like a third instance
+(its timeout branch sets `ran=True` while its `except Exception` branch uses
+`ran=False`), but that asymmetry is **deliberate**: TASK-AB-COACHRUNPARITY01 draws
+a real line between a smoke entry point that *ran and hung* (a deliverable defect
+worth blocking) and one that *could not start* (absent). So this rule covers L1
+and L2 (genuine absent→False coercions); L3 is explicitly excluded.
 
 A contributing structural fact: at the oracle layer, the absent branch
 ([`specialist_invocations.py` ~1092](../../guardkit/orchestrator/specialist_invocations.py#L1092),
@@ -153,12 +165,15 @@ rg "absence-must-survive|absence-of-failure|per-task-green-is-not-feature-green"
 ## Grep-able signature (for next agent)
 
 ```bash
-# Active-hazard fingerprint (PRE-FIX): the absent→False coercion at L1.
-# Until TASK-ABFIX-010 lands, this MATCHES and the line does NOT branch on error:
+# Regression fingerprint (POST-FIX, commit 069086a0): the L1 fix must persist —
+# the reconciliation MUST branch on signal_absent and emit None. These MUST MATCH;
+# absence is a regression (the absent→False coercion has returned):
+rg -n "reconciled_absent" guardkit/orchestrator/agent_invoker.py
+rg -n "reconciled_absent" guardkit/orchestrator/quality_gates/coach_validator.py  # verify_quality_gates short-circuit
+rg -n "tests_passed: Optional\[bool\]" guardkit/orchestrator/quality_gates/coach_validator.py
+# The OLD coercion (unconditional ``tests_run or 0`` for the absent case) MUST NOT
+# return on the absent path — it now lives only under the genuine-fail else-branch:
 rg -n "qg\[.tests_passed.\] = phase_4_block.get\(.tests_run., 0\) or 0" \
-   guardkit/orchestrator/agent_invoker.py
-# Post-fix fingerprint (fill in once landed): the error-prefix branch + None.
-rg -n "reconciled_absent|absent test signal.*None|signal_absent" \
    guardkit/orchestrator/agent_invoker.py
 # Terminal guard intact (must remain TRUE both before and after):
 rg -n "cp.tests_passed is False" guardkit/orchestrator/worktree_checkpoints.py
@@ -198,15 +213,20 @@ representable as `None` — at *every* layer the signal passes through.
 - **Tests-pass / production-fails lineage**:
   [`namespace-hygiene.md`](namespace-hygiene.md),
   [`smoke-gate-is-feedback-not-terminator.md`](smoke-gate-is-feedback-not-terminator.md)
-  (arm b RuntimeParityResult — the same L3 component this rule flags has a
-  timeout branch inconsistent with its own absence-of-failure posture).
+  (arm b RuntimeParityResult — the L3 component; its timeout branch's
+  `ran=True` is a *deliberate* COACHRUNPARITY01 distinction, NOT an instance of
+  this rule — see "What the rule does NOT cover").
 - **Originating defect**: FEAT-FMDR autobuild run — TASK-FMDR-001 false `unrecoverable_stall`
   on a green codebase via the L1 timeout coercion.
-- **Tracking fix (NOT yet landed)**: TASK-ABFIX-010
-  (`tasks/backlog/TASK-ABFIX-010/TASK-ABFIX-010.md`). W1 = L1 reconciliation
-  branch-on-error → `None`; W2 = thread + serialize `signal_absent`; W2b = extend
-  to L2/L3 or scope out. Reproducer tests T1-T7 enumerated there; expected to
-  mirror `tests/unit/test_checkpoint_pollution_absent_test_signal.py`.
+- **Fix (LANDED, commit `069086a0`, 2026-06-24)**: TASK-ABFIX-010
+  (`tasks/in_review/TASK-ABFIX-010/`). W1 = L1 reconciliation branch-on-
+  `signal_absent`/error → `None`, carried through `verify_quality_gates` (a
+  `reconciled_absent` short-circuit) → `QualityGateStatus.tests_passed:
+  Optional[bool]` (None appended, not skipped) → `to_dict` → checkpoint; W2 =
+  thread + serialize `signal_absent`; W2b/L2 = BDD timeout → `None`. **L3 closed
+  as wontfix** (deliberate COACHRUNPARITY01 semantics, operator-reaffirmed).
+  Reproducers: `tests/unit/test_abfix010_absent_reconciliation.py` (8) +
+  `test_bdd_runner.py::test_timeout_is_absent_not_a_synthesised_failure` (1).
 
 ## When this rule triggers
 
@@ -237,3 +257,10 @@ representable as `None` — at *every* layer the signal passes through.
 - **Non-test oracles** outside the autobuild test/runtime signal path (e.g.
   honesty path-existence checks) — those have their own absence rules
   (`path-string-mismatch-is-not-dishonesty.md`).
+- **Runtime-parity timeouts (L3).** `_gather_runtime_parity`'s timeout branch
+  deliberately sets `ran=True` (ran-and-failed/blocks), per TASK-AB-COACHRUNPARITY01
+  (operator-reaffirmed 2026-06-24). A smoke entry point that *starts and hangs* is
+  a genuine deliverable defect (it would hang in production), unlike a verification
+  timeout. This is NOT an absent→False coercion and must not be "fixed" under this
+  rule; `test_timeout_is_ran_and_failed` pins it. A runner-error (couldn't start)
+  remains absent (`ran=False`) — that asymmetry is the intended design.

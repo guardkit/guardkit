@@ -6,10 +6,10 @@ task_type: fix
 created: 2026-06-24T00:00:00Z
 updated: 2026-06-24T00:00:00Z
 previous_state: in_progress
-state_transition_reason: "W1+W2+L2 implemented; 473 targeted tests pass (9 new reproducers); zero regressions. L3 reverted pending operator decision (see Implementation Summary)."
+state_transition_reason: "W1+W2+L2 implemented; 473 targeted tests pass (9 new reproducers); zero regressions. L3 closed as wontfix (operator kept COACHRUNPARITY01 semantics)."
 priority: high
 complexity: 7
-landed_scope: "W1 + W2 + W2b/L2 (L3 reverted — overturns a deliberate prior decision; surfaced for operator decision)"
+landed_scope: "W1 + W2 + W2b/L2. L3 closed-as-wontfix (operator decision: keep COACHRUNPARITY01 timeout=ran-and-failed). W3/W4 deferred."
 design:
   status: approved
   approved_by: human
@@ -397,18 +397,20 @@ CKPTTESTRED01 instance.
 sentinel) returns `None` (absent), not a synthesised `pytest_runner_error`
 scenario. Genuine non-timeout runner errors still surface as `scenarios_failed≥1`.
 
-**W2b/L3 — REVERTED, surfaced for operator decision.** L3 (runtime-parity
+**W2b/L3 — CLOSED AS WONTFIX (operator decision 2026-06-24).** L3 (runtime-parity
 timeout → `ran=False`) was reverted during implementation: it overturns a
 **deliberate** TASK-AB-COACHRUNPARITY01 decision pinned by
 `tests/unit/orchestrator/test_runtime_parity.py::test_timeout_is_ran_and_failed`
 (+ its companion `test_runner_error_is_absent_not_fail`), which intentionally
 distinguishes a *timeout* (entry point ran but hung = ran-and-failed/blocks)
 from a *runner error* (couldn't start = absent). The originating FMDR incident
-never involved runtime parity. Per "surface contradictions rather than overwrite
-a deliberate prior decision," L3 is left for an explicit operator call (keep the
-COACHRUNPARITY01 semantics, or flip timeout→absent and update that test with
-rationale). W1+W2+L2 fully close the FMDR-001 kill on the pytest-oracle and BDD
-paths.
+never involved runtime parity. **Operator decided to keep the COACHRUNPARITY01
+semantics**: a hung smoke entry point is a genuine deliverable defect (it would
+hang in production too), and the guard only fires on single-task waves with a
+declared smoke command. L3 is therefore NOT a coercion bug — it is a deliberate
+design choice and is excluded from this rule's scope (see the rule update in
+`.claude/rules/absence-must-survive-every-reconciliation-layer.md`). W1+W2+L2
+fully close the FMDR-001 kill on the pytest-oracle and BDD paths.
 
 **Tests:** `tests/unit/test_abfix010_absent_reconciliation.py` (8) +
 `test_bdd_runner.py::test_timeout_is_absent_not_a_synthesised_failure` (1).
