@@ -4,14 +4,14 @@
 **Date:** 2026-06-18
 **Author:** Rich (pair-programmed with Claude in Claude Desktop)
 **Scope:** The physical and serving topology of the dark-factory inference layer once a second GB10 joins the fleet over a ConnectX-7 link — how the two nodes are organised to serve both the swappable specialist fleet and models too large for one node, behind a single OpenAI-compatible endpoint.
-**Companions:** DECISION-DF-001 (governs the unattended critical path; this decision *implements its §6.4 "Peer federation" revisit* and *supersedes its §2.2 single-node diagram*) · DECISION-DF-003 (attended-frontier-planning / local-unattended-build boundary — unchanged; this decision serves the local half and does not move planning local) · fleet-memory phase-CORE (retires the always-on `qwen-graphiti` extraction model that DF-001 §2.2 still depicts)
+**Companions:** DECISION-DF-001 (governs the unattended critical path; this decision *implements its §6.4 "Peer federation" revisit* and *supersedes its §2.2 single-node diagram*) · DECISION-DF-003 (attended-frontier-planning / local-unattended-build boundary — unchanged; this decision serves the local half and does not move planning local) · **DECISION-DF-005** (single-Spark LiteLLM `:4000` front door — the single-node *precursor* to this decision; the two-node fabric here is its **superset**) · fleet-memory phase-CORE (retires the always-on `qwen-graphiti` extraction model that DF-001 §2.2 still depicts)
 **Related:** `docs/research/dgx-spark/two-spark-serving-research-and-references.md` (annotated research + links) · `docs/research/dgx-spark/dark-factory-economics-and-model-serving.md` (single-node baseline) · `docs/research/dgx-spark/llama-swap-config.yaml` · `forge/docs/research/ideas/fleet-master-index.md` (Proposer / Player seats)
 
 ---
 
 ## Summary
 
-**A second GB10, linked to the first over a 200G ConnectX-7 cable, is organised as one logical inference fabric behind a single OpenAI-compatible front door (LiteLLM on :4000). Node A carries the always-resident swap pool (llama-swap) plus the nomic embedder; the swappable specialist fleet runs there exactly as today. A model too large for one node — the meta-harness Proposer seat, DeepSeek-V4-Flash class, ~149GB — runs with tensor parallelism across both nodes (vLLM `--tp 2`), and only while it is deliberately launched. The two cannot fully co-reside; memory is budgeted per session, not per pipeline. DF-001's no-cloud-fallback guard is carried onto the LiteLLM layer.**
+**A second GB10, linked to the first over a 200G ConnectX-7 cable, is organised as one logical inference fabric behind a single OpenAI-compatible front door (LiteLLM on :4000). Node A carries the always-resident swap pool (llama-swap) plus the nomic embedder; the swappable specialist fleet runs there exactly as today. A model too large for one node — the meta-harness Proposer seat (the **Strategist** in the public `RUNBOOK-two-spark-bring-up.md`), DeepSeek-V4-Flash class, ~149GB — runs with tensor parallelism across both nodes (vLLM `--tp 2`), and only while it is deliberately launched. The two cannot fully co-reside; memory is budgeted per session, not per pipeline. DF-001's no-cloud-fallback guard is carried onto the LiteLLM layer.**
 
 The correction this decision encodes for everyone who buys a second Spark expecting it to go faster: **stacking two Sparks buys capacity and parallelism, not single-stream speed.** A model that already fits on one node is faster on one node; the second node earns its place by running models that do not fit, and by running different models in parallel.
 
@@ -97,6 +97,7 @@ LiteLLM's headline convenience is automatic failover — exactly the mechanism t
 
 - **DF-001** — unchanged in principle (no cloud on the unattended path). This decision implements its §6.4 peer-federation revisit and **supersedes its §2.2 diagram**: the `forever` group no longer contains `qwen-graphiti` (fleet-memory), and the fabric is now two-node. A one-line addendum should point DF-001 §2.2 here.
 - **DF-003** — unchanged. The TP "Proposer" is the meta-harness outer-loop local model, *not* DF-003's planning stages, which remain attended on frontier Claude. The `claude-opus` entry in the front door is that attended path.
+- **DF-005 — the single-node precursor; this fabric is its superset.** DF-005 promotes LiteLLM `:4000` to the *single*-Spark front door too, so the single→two-node front door is **continuous** rather than a divergence: both stand on the same community stack (martinB78 → Dre Dyson → dasroot — `client → LiteLLM → llama-swap → vLLM/llama.cpp/Ollama`), and this two-node topology is a genuine **superset** of it (it adds the cross-node TP seat and the swap-pool-XOR-Strategist memory budget). The CPU-pinning gate DF-005 adds for a co-resident LiteLLM + llama-swap pair applies here on **Node A**, which runs both (see §4.2).
 
 ## 3. Consequences
 
@@ -119,6 +120,7 @@ LiteLLM's headline convenience is automatic failover — exactly the mechanism t
 ### 4.2 Stand up the fabric
 
 - **LiteLLM front door** from the `model_list` drafted in the design session (fleet -> llama-swap :9000; proposer -> vLLM :8080; nomic; `claude-opus` attended-only; no cloud fallback).
+- **▶ GATE — CPU-pin LiteLLM disjoint from llama-swap on Node A** (per DF-005 §3 — **WARN, not STOP**: the disjointness check is self-verifying, but the 504s rationale is community-sourced, not authoritative). Node A runs *both* the LiteLLM front door and the llama-swap pool, so set non-overlapping `CPUAffinity=` on the two user units and assert the sets are disjoint. Re-derive the ranges for the **20-core** GB10 CPU (10× Cortex-X925 + 10× Cortex-A725) — *not* a 72-core Grace. Symptom under concurrent multi-model load if they share a core: LiteLLM 504s + flaky llama-swap health checks. The mechanism and its source-corrections live in DF-005 / `RUNBOOK-single-spark-bring-up.md` Phase 5.4 (which owns the LiteLLM phase); this is a pointer, not a re-derivation.
 - **Pin the vLLM build** for the Proposer (GB10 validation is commit-specific — e.g. `jasl/vllm dda4668b`) **and pin `torch 2.9.1`** (2.10.0 breaks CUDA graphs → one-node-drop hang); `--distributed-executor-backend mp --nnodes 2` (mp preferred at two nodes — no Ray; Ray is the official-playbook path and the natural 3+-node path). **Enable MTP** (`deepseek_mtp`, `num_speculative_tokens=2`) or decode collapses ~44 → ~5 tok/s; choose a cudagraph mode that **avoids open vLLM bug #40969** (silent hang after ~6–7 requests with `FULL_AND_PIECEWISE` + chunked prefill on GB10).
 - **Benchmark `--tp 2` vs single-node** on the Proposer and on a fleet model, via `sparkrun arena benchmark` / llama-benchy — the numbers, not the README, decide whether TP earns its place for any given model.
 
@@ -144,7 +146,7 @@ LiteLLM's headline convenience is automatic failover — exactly the mechanism t
 
 Full annotated link set: `docs/research/dgx-spark/two-spark-serving-research-and-references.md`. Key sources:
 
-- DF-001, DF-003; fleet-memory phase-CORE scope/build-plan.
+- DF-001, DF-003, **DF-005** (single-Spark LiteLLM `:4000` front door — the single-node precursor; this two-node fabric is its superset); fleet-memory phase-CORE scope/build-plan.
 - Single-node prior art: martinB78 reference repo; the Dre Dyson series; dasroot.
 - Two-node TP prior art: NVIDIA dgx-spark-playbooks (Connect Two Sparks; vLLM Ray Cluster); eugr/spark-vllm-docker; the DeepSeek-V4-Flash 2x Spark forum thread; corti "Two Sparks, One Cluster".
 - Serving layer: mostlygeek/llama-swap; LiteLLM docs; Sparkrun docs; spark-arena.com benchmarks.
