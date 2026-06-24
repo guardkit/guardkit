@@ -104,6 +104,17 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# TASK-ABFIX-011: default per-test pytest-timeout (seconds) the Coach injects
+# into its isolated pytest run so a single hanging test is marked FAILED while
+# the others still run, instead of consuming the whole subprocess budget and
+# yielding ``tests_run=0``. Generous by design — the Coach runs focused
+# per-task suites, so a test exceeding 60s is almost certainly hung, not slow.
+# Operator-tunable via ``GUARDKIT_COACH_PYTEST_TIMEOUT_SECONDS``; injection is
+# triple-gated (operator flag, Python stack, plugin-resolvable). See
+# ``.claude/rules/stack-plugin-architecture.md`` and
+# ``.claude/rules/absence-of-failure-is-not-success.md``.
+_DEFAULT_COACH_PER_TEST_TIMEOUT_S = 60
+
 # ============================================================================
 # BDD Factory Bridge — wire guardkitfactory.bdd into the Coach evidence path
 # ============================================================================
@@ -1468,6 +1479,11 @@ class CoachValidator:
         # parallel-wave deferral). ``run_independent_tests`` reads it to classify
         # absence stack-awarely (missing toolchain / zero-test => signal_absent).
         self._active_stack_profile: Optional[StackTestProfile] = None
+        # TASK-ABFIX-011: cached result of the pytest-timeout availability probe
+        # against the pinned interpreter (``None`` = not yet probed). The pinned
+        # interpreter is fixed per validator instance, so one probe per instance
+        # is sufficient and is shared across all three pytest injection sites.
+        self._pytest_timeout_available_cache: Optional[bool] = None
         # TASK-DIAG-F4A2: Turn number for sdk_debug preservation paths.
         # Default 1 keeps backwards-compat for callers that don't pass it.
         self._turn = max(1, int(turn))
@@ -4000,11 +4016,21 @@ class CoachValidator:
         or the command is not a bare ``pytest`` invocation.
         """
         if self._venv_python is None:
+            # No pinned venv: the Bash tool resolves ``pytest`` via PATH, so the
+            # probe interpreter (sys.executable) would not match the run
+            # interpreter — skip both the pin and the --timeout injection here.
             return test_cmd
+        # TASK-ABFIX-011: append a gated per-test --timeout to the pinned string.
+        # Only the venv-pinned branches reach here, so the probe interpreter
+        # (self._pytest_interpreter()) matches the interpreter that runs.
+        timeout_suffix = ""
+        timeout_argv = self._pytest_timeout_argv()
+        if timeout_argv:
+            timeout_suffix = " " + " ".join(timeout_argv)
         if test_cmd.startswith("pytest "):
-            return f"{self._pytest_interpreter()} -m {test_cmd}"
+            return f"{self._pytest_interpreter()} -m {test_cmd}{timeout_suffix}"
         if test_cmd == "pytest":
-            return f"{self._pytest_interpreter()} -m pytest"
+            return f"{self._pytest_interpreter()} -m pytest{timeout_suffix}"
         return test_cmd
 
     def _pytest_env(self) -> Dict[str, str]:
@@ -4021,6 +4047,163 @@ class CoachValidator:
         )
 
         return build_venv_env(self.worktree_path) or dict(os.environ)
+
+    # ------------------------------------------------------------------
+    # TASK-ABFIX-011: gated per-test pytest-timeout injection
+    # ------------------------------------------------------------------
+    # A single hanging test otherwise consumes the whole Coach subprocess budget
+    # and yields ``tests_run=0`` (no per-test attribution). Injecting
+    # ``--timeout N --timeout-method signal`` marks the *specific* hung test
+    # FAILED while the others still run (``signal`` lets the session continue;
+    # ``thread`` would ``os._exit``-kill it). Injection is TRIPLE-gated so it can
+    # never become the harness-wide false-fail an *unconditional* ``--timeout``
+    # would be (returncode-4 ``unrecognized arguments`` on any project lacking the
+    # plugin — the already-reverted FEAT-FMDR-003 regression, replayed
+    # harness-wide). Defence-in-depth: a mis-fired injection (plugin vanished
+    # between probe and run) degrades to ``signal_absent=True`` via
+    # ``_is_pytest_timeout_usage_error``, which ABFIX-010 carries as ``None``
+    # (fed back), never a counted Player failure. Fail toward feedback.
+
+    @staticmethod
+    def _is_pytest_timeout_usage_error(returncode: int, combined_output: str) -> bool:
+        """True iff a pytest run failed because ``--timeout`` was unrecognised.
+
+        pytest exits ``4`` (usage error) with ``unrecognized arguments:
+        --timeout`` when the plugin is absent. That means our gated injection
+        mis-fired — the oracle produced NO verdict on the Player's code, so it is
+        an ABSENT signal, not a Player test failure (constraint 3,
+        ``.claude/rules/absence-of-failure-is-not-success.md``). The match is
+        deliberately narrow so it can never mask a genuine exit-1 failure, which
+        reports a test summary and never ``unrecognized arguments``.
+        """
+        return (
+            returncode == 4
+            and "unrecognized arguments" in combined_output
+            and "--timeout" in combined_output
+        )
+
+    def _pytest_timeout_injection_enabled(self) -> bool:
+        """Master gate for per-test ``--timeout`` injection (all three must hold).
+
+        1. operator flag — ``GUARDKIT_COACH_PYTEST_TIMEOUT`` not in
+           ``{0, false, off, no}`` (escape hatch; default enabled);
+        2. Python stack — ``self._active_stack_profile is None`` (a non-Python
+           profile means a non-pytest ``whole_suite_command``; never inject a
+           Python-only arg — ``.claude/rules/stack-plugin-architecture.md``);
+        3. plugin resolvable in the pinned interpreter (cached probe).
+        """
+        flag = os.environ.get("GUARDKIT_COACH_PYTEST_TIMEOUT", "").strip().lower()
+        if flag in ("0", "false", "off", "no"):
+            return False
+        if self._active_stack_profile is not None:
+            return False
+        return self._pytest_timeout_available()
+
+    def _pytest_timeout_available(self) -> bool:
+        """Cached: is ``pytest-timeout`` importable in the pinned interpreter?"""
+        if self._pytest_timeout_available_cache is None:
+            self._pytest_timeout_available_cache = self._probe_pytest_timeout()
+        return self._pytest_timeout_available_cache
+
+    def _probe_pytest_timeout(self) -> bool:
+        """Probe whether ``pytest_timeout`` is importable where Coach runs pytest.
+
+        When the pinned interpreter is the orchestrator's own
+        (``self._venv_python is None`` → ``sys.executable``) the check is
+        in-process (``importlib.util.find_spec`` — no subprocess, so it does not
+        perturb the many tests that patch ``subprocess.run``). When a distinct
+        bootstrap venv is pinned, the plugin must be probed *in that interpreter*,
+        so a tiny out-of-process ``find_spec`` is run. Any failure (non-zero exit,
+        timeout, OSError) returns ``False`` — fail toward NO injection, never a
+        spurious ``--timeout``.
+        """
+        import importlib.util
+
+        interpreter = self._pytest_interpreter()
+        if interpreter == sys.executable:
+            return importlib.util.find_spec("pytest_timeout") is not None
+        try:
+            proc = subprocess.run(
+                [
+                    interpreter,
+                    "-c",
+                    "import importlib.util, sys; "
+                    "sys.exit(0 if importlib.util.find_spec('pytest_timeout') "
+                    "else 1)",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            return proc.returncode == 0
+        except Exception as exc:  # subprocess error / timeout / OSError
+            logger.debug(
+                "pytest-timeout probe failed for %s (%s); not injecting --timeout",
+                interpreter,
+                exc,
+            )
+            return False
+
+    def _per_test_timeout_seconds(self) -> int:
+        """Per-test timeout (seconds). Env override, else the module default."""
+        raw = os.environ.get("GUARDKIT_COACH_PYTEST_TIMEOUT_SECONDS")
+        if raw:
+            try:
+                value = int(raw)
+                if value > 0:
+                    return value
+                logger.warning(
+                    "GUARDKIT_COACH_PYTEST_TIMEOUT_SECONDS=%r is not positive; "
+                    "using default %ss",
+                    raw,
+                    _DEFAULT_COACH_PER_TEST_TIMEOUT_S,
+                )
+            except ValueError:
+                logger.warning(
+                    "GUARDKIT_COACH_PYTEST_TIMEOUT_SECONDS=%r is not an int; "
+                    "using default %ss",
+                    raw,
+                    _DEFAULT_COACH_PER_TEST_TIMEOUT_S,
+                )
+        return _DEFAULT_COACH_PER_TEST_TIMEOUT_S
+
+    def _pytest_timeout_method(self) -> str:
+        """``--timeout-method``: ``signal`` (default) or ``thread``.
+
+        ``signal`` raises inside the hung test and lets the session CONTINUE, so
+        the other tests still run and report verdicts — the per-test attribution
+        the AC requires. ``thread`` dumps tracebacks then ``os._exit``-kills the
+        session (the others never report), so it is not the default. The alarm
+        fires only once a test exceeds the deadline, so a healthy asyncio test
+        (event loop on the main thread) is never spuriously interrupted (empirically
+        validated, constraint 5). Operator override:
+        ``GUARDKIT_COACH_PYTEST_TIMEOUT_METHOD``.
+        """
+        method = (
+            os.environ.get("GUARDKIT_COACH_PYTEST_TIMEOUT_METHOD", "")
+            .strip()
+            .lower()
+        )
+        if method in ("signal", "thread"):
+            return method
+        return "signal"
+
+    def _pytest_timeout_argv(self) -> List[str]:
+        """argv fragment injecting a gated per-test ``--timeout``, or ``[]``.
+
+        Shared by all three pytest construction sites (SDK pin, isolated/parallel
+        subprocess, standard subprocess) so the gate logic cannot drift between
+        them — the recurring "Nth-injection-site" lesson of the absence-of-failure
+        rule family.
+        """
+        if not self._pytest_timeout_injection_enabled():
+            return []
+        return [
+            "--timeout",
+            str(self._per_test_timeout_seconds()),
+            "--timeout-method",
+            self._pytest_timeout_method(),
+        ]
 
     def _run_isolated_tests(self, test_cmd: str) -> "IndependentTestResult":
         """
@@ -4084,7 +4267,14 @@ class CoachValidator:
                     parts = test_cmd.split()
                     # TASK-FIX-COACHPYENV: pin pytest to the bootstrap venv
                     # interpreter, never sys.executable / PATH pytest.
-                    cmd = [self._pytest_interpreter(), "-m", "pytest"] + parts[1:]
+                    # TASK-ABFIX-011: append a gated per-test --timeout so a hung
+                    # test on a PARALLEL wave is named-FAILED, not tests_run=0
+                    # (the easy-to-miss 4th injection site — ABFIX-010 GAP 3).
+                    cmd = (
+                        [self._pytest_interpreter(), "-m", "pytest"]
+                        + parts[1:]
+                        + self._pytest_timeout_argv()
+                    )
                     result = subprocess.run(
                         cmd,
                         cwd=str(tmpdir_path),
@@ -4108,8 +4298,29 @@ class CoachValidator:
                 output = result.stdout or result.stderr or "No output"
                 summary = self._summarize_test_output(output)
 
+                # TASK-ABFIX-011 (constraint 3): a mis-fired --timeout injection
+                # (plugin vanished post-probe) exits rc-4 'unrecognized arguments:
+                # --timeout' — an ABSENT signal (ABFIX-010 carries it as None, fed
+                # back), never a Player test failure. Parity with the standard
+                # subprocess path so the parallel-wave isolated oracle classifies
+                # this absence identically.
+                signal_absent = False
+                combined = (result.stdout or "") + (result.stderr or "")
+                if not tests_passed and self._is_pytest_timeout_usage_error(
+                    result.returncode, combined
+                ):
+                    signal_absent = True
+                    logger.warning(
+                        "[TASK-ABFIX-005/011] Isolated pytest rejected --timeout "
+                        "(returncode=%s, 'unrecognized arguments') — absent signal, "
+                        "not a test failure. cmd=%s",
+                        result.returncode,
+                        test_cmd,
+                    )
+
                 logger.info(
-                    f"[TASK-ABFIX-005] Isolated tests {'passed' if tests_passed else 'failed'} "
+                    f"[TASK-ABFIX-005] Isolated tests "
+                    f"{'passed' if tests_passed else ('absent' if signal_absent else 'failed')} "
                     f"in {duration:.1f}s"
                 )
 
@@ -4119,6 +4330,7 @@ class CoachValidator:
                     test_output_summary=summary,
                     duration_seconds=duration,
                     raw_output=(result.stdout or "") + (result.stderr or ""),
+                    signal_absent=signal_absent,
                 )
 
         except subprocess.TimeoutExpired:
@@ -4325,7 +4537,13 @@ class CoachValidator:
                     parts = test_cmd.split()
                     # TASK-FIX-COACHPYENV: pin pytest to the bootstrap venv
                     # interpreter, never sys.executable / PATH pytest.
-                    cmd = [self._pytest_interpreter(), "-m", "pytest"] + parts[1:]
+                    # TASK-ABFIX-011: append a gated per-test --timeout (no-op
+                    # unless Python stack + pytest-timeout resolvable).
+                    cmd = (
+                        [self._pytest_interpreter(), "-m", "pytest"]
+                        + parts[1:]
+                        + self._pytest_timeout_argv()
+                    )
                     result = subprocess.run(
                         cmd,
                         cwd=str(self.worktree_path),
@@ -4413,17 +4631,33 @@ class CoachValidator:
                         or "errors during collection" in combined
                         or "error collecting" in combined
                     )
-                    if runner_absent or no_tests_collected or collection_failed:
+                    # TASK-ABFIX-011 (constraint 3, defence-in-depth): if our
+                    # gated --timeout injection ever mis-fires (plugin vanished
+                    # between probe and run), pytest exits rc-4 'unrecognized
+                    # arguments: --timeout' having run ZERO tests. That is an
+                    # ABSENT signal (ABFIX-010 carries it as None, fed back), never
+                    # a counted Player failure — fail toward feedback. The match is
+                    # narrow, so a genuine exit-1 test failure is never masked.
+                    timeout_usage_error = self._is_pytest_timeout_usage_error(
+                        result.returncode, combined
+                    )
+                    if (
+                        runner_absent
+                        or no_tests_collected
+                        or collection_failed
+                        or timeout_usage_error
+                    ):
                         signal_absent = True
                         logger.warning(
                             "Independent test oracle did not run "
                             "(returncode=%s, runner-absent=%s/no-tests-collected=%s"
-                            "/collection-failed=%s) — treating as absent signal, "
-                            "not a test failure. cmd=%s",
+                            "/collection-failed=%s/timeout-usage-error=%s) — "
+                            "treating as absent signal, not a test failure. cmd=%s",
                             result.returncode,
                             runner_absent,
                             no_tests_collected,
                             collection_failed,
+                            timeout_usage_error,
                             test_cmd,
                         )
 

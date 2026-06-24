@@ -69,6 +69,14 @@ dev = [
     "pytest>=7.4.3",
     "pytest-cov>=4.1.0",
     "pytest-asyncio>=0.23.0",
+    # pytest-timeout: GuardKit dogfoods the per-test timeout the Coach injects
+    # into its isolated pytest run so a single hanging test is named-FAILED
+    # rather than consuming the whole subprocess budget (TASK-ABFIX-011). Inert
+    # by default (no global `timeout` in addopts) and the Coach injection is
+    # probe-gated, so it only takes effect for guardkit's own worktree venvs.
+    # Lower bound 2.1 = `--timeout-method` stable; upper bound <3 = 2.x stable
+    # surface — re-audit before bumping.
+    "pytest-timeout>=2.1,<3",
     # pytest-bdd: GuardKit dogfoods the dependency it requires of all consumers
     # of the BDD oracle (TASK-FIX-BDDM-1 strict-fail behaviour). Added per
     # TASK-OPS-BDDM-10 / FEAT-BDDM (2026-04-26). Lower bound 8.1 = forge's pin
@@ -85,7 +93,8 @@ all = [
     "pytest>=7.4.3",
     "pytest-cov>=4.1.0",
     "pytest-asyncio>=0.23.0",
-    # See dev group above (TASK-OPS-BDDM-10 / FEAT-BDDM).
+    # See dev group above (TASK-ABFIX-011 / TASK-OPS-BDDM-10 / FEAT-BDDM).
+    "pytest-timeout>=2.1,<3",
     "pytest-bdd>=8.1,<9",
     "httpx>=0.25.1",
 ]

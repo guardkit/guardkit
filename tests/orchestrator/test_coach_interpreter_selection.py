@@ -405,6 +405,12 @@ class TestCoachValidatorInterpreter:
             coach_test_execution="subprocess",
             venv_python=str(fake),
         )
+        # TASK-ABFIX-011: this test isolates interpreter-pinning. Disable the
+        # gated per-test --timeout injection so its probe (a subprocess against
+        # the pinned venv) does not consume the mocked subprocess.run and so the
+        # argv stays the bare pinned form. Timeout injection has its own suite
+        # (tests/unit/test_coach_pytest_timeout_injection.py).
+        validator._pytest_timeout_available_cache = False
         result = validator.run_independent_tests()
 
         assert result.tests_passed is True
