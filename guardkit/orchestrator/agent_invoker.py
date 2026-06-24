@@ -8373,13 +8373,42 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 qg.get("all_passed"),
                 qg.get("tests_passing"),
             )
-            qg["all_passed"] = False
-            qg["tests_passing"] = False
-            qg["tests_passed"] = phase_4_block.get("tests_run", 0) or 0
-            if phase_4_block.get("tests_failed") is not None:
-                qg["tests_failed"] = phase_4_block.get("tests_failed")
-            qg["coverage"] = phase_4_block.get("coverage_pct", qg.get("coverage"))
-            qg["coverage_met"] = False
+            # TASK-ABFIX-010 (W1): an ABSENT phase-4 signal (Coach isolated
+            # pytest timed out / produced no verdict, tests_run=0) is UNKNOWN —
+            # never a failure and never a pass. Coercing it to an explicit
+            # ``False`` here is the false-red that killed TASK-FMDR-001: three
+            # such turns trip the context-pollution guard even though the code
+            # is converging to green. Carry ``None`` through the gate chain
+            # (verify_quality_gates → QualityGateStatus → to_dict → checkpoint)
+            # so the pollution tally (CKPTTESTRED01) sees ``None``, not a
+            # counted failure, while ``all_passed=None`` keeps the gate from
+            # auto-approving (Coach feeds back instead). A genuine ran-and-failed
+            # verdict is unchanged. See
+            # ``.claude/rules/absence-must-survive-every-reconciliation-layer.md``.
+            err = phase_4_block.get("error") or ""
+            is_absent = bool(phase_4_block.get("signal_absent")) or err.startswith(
+                "absent test signal"
+            )
+            if is_absent:
+                qg["all_passed"] = None
+                qg["tests_passing"] = None
+                qg["tests_passed"] = None
+                qg["reconciled_absent"] = True
+                # Deliberately do NOT copy the absent block's ``tests_failed=0``
+                # into ``qg`` — verify_quality_gates would otherwise resolve
+                # ``tests_passed = (0 == 0) = True``, a false-GREEN. The
+                # ``reconciled_absent`` short-circuit in verify_quality_gates is
+                # the primary guard; not copying ``tests_failed`` is
+                # defence-in-depth. ``coverage_met`` is left untouched (an absent
+                # test signal is not evidence of a coverage failure).
+            else:
+                qg["all_passed"] = False
+                qg["tests_passing"] = False
+                qg["tests_passed"] = phase_4_block.get("tests_run", 0) or 0
+                if phase_4_block.get("tests_failed") is not None:
+                    qg["tests_failed"] = phase_4_block.get("tests_failed")
+                qg["coverage"] = phase_4_block.get("coverage_pct", qg.get("coverage"))
+                qg["coverage_met"] = False
             qg["reconciled_from_specialist"] = True
             task_work_data["quality_gates"] = qg
 

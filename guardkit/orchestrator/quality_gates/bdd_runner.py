@@ -60,6 +60,14 @@ _PYTEST_EXIT_TEST_FAILURES = 1     # tests collected, some failed — normal pat
 _PYTEST_EXIT_INTERRUPTED = 2       # user/system interrupt (SIGINT, KeyboardInterrupt)
 _PYTEST_EXIT_INTERNAL_ERROR = 3    # pytest internal error (usually a crash)
 _PYTEST_EXIT_USAGE_ERROR = 4       # pytest usage error (e.g. "not found", bad argv)
+# TASK-ABFIX-010 (W2b/L2): sentinel returncode set ONLY by the
+# subprocess.TimeoutExpired handler below. A BDD-runner TIMEOUT is an ABSENT
+# oracle signal (pytest produced no verdict), NOT a ran-and-failed scenario —
+# synthesising a failure for it (the F584 path) coerces absence into a failure,
+# which three turns running trips the context-pollution guard and kills a
+# converging task. See
+# ``.claude/rules/absence-must-survive-every-reconciliation-layer.md``.
+_PYTEST_EXIT_TIMEOUT = -1          # our sentinel; never a real pytest exit code
 
 # Absent-feature collection markers (TASK-AB-BDDNEUTRAL01). pytest exits 4 with
 # one of these signatures when it could not COLLECT the ``.feature`` path(s) we
@@ -604,7 +612,7 @@ def _invoke_pytest_bdd(
     except subprocess.TimeoutExpired as exc:
         logger.warning("pytest-bdd timed out after %ss: %s", timeout, exc)
         return _PytestInvocation(
-            returncode=-1,
+            returncode=_PYTEST_EXIT_TIMEOUT,  # TASK-ABFIX-010 (W2b/L2): absent sentinel
             stdout=exc.stdout.decode("utf-8", "replace") if isinstance(exc.stdout, bytes) else (exc.stdout or ""),
             stderr=exc.stderr.decode("utf-8", "replace") if isinstance(exc.stderr, bytes) else (exc.stderr or ""),
             junit_xml="",
@@ -774,10 +782,34 @@ def run_bdd_for_task(
         )
         return None
 
+    # TASK-ABFIX-010 (W2b/L2): a BDD-runner TIMEOUT is an ABSENT signal, NOT a
+    # failure. The subprocess timed out (TimeoutExpired → _PYTEST_EXIT_TIMEOUT
+    # sentinel) so pytest produced no verdict. Return None (not-applicable /
+    # absent), mirroring the absent-feature-collection path above, so the
+    # timeout NEVER reaches the F584 synthetic-failure path below — synthesising
+    # ``scenarios_failed >= 1`` for it would coerce an absent signal into a
+    # failure, which three turns running trips the context-pollution guard and
+    # kills a converging task. A hanging scenario consumed the whole budget.
+    # See ``.claude/rules/absence-must-survive-every-reconciliation-layer.md``.
+    if (
+        passed == 0
+        and not failures
+        and not pending
+        and invocation.returncode == _PYTEST_EXIT_TIMEOUT
+    ):
+        logger.warning(
+            "BDD runner for %s: pytest-bdd TIMED OUT (no verdict). Treating as "
+            "ABSENT signal, NOT a failure (TASK-ABFIX-010). Ensure scenarios "
+            "complete within the time budget.",
+            task_id,
+        )
+        return None
+
     # Runner-error surfacing (TASK-FIX-F584). If pytest exited with any
     # non-zero code OTHER than 5 (NO_TESTS) and produced no parsed testcases,
     # something went wrong inside pytest itself (usage error, internal error,
-    # interrupt, timeout, conftest import error, ...). Returning
+    # interrupt, conftest import error, ...). A TIMEOUT is handled above as an
+    # absent signal (TASK-ABFIX-010), not here. Returning
     # ``BDDResult(0, 0, 0, [], [])`` here would be silently approved by
     # Coach's ``scenarios_failed == 0`` rule — that is strictly a silent-
     # false-approval bug. Instead, surface a synthetic FailureDetail so
