@@ -1,9 +1,14 @@
 ---
 id: TASK-ABFIX-011
 title: "Coach isolated pytest: inject a per-test --timeout (gated) so a single hanging test yields a named FAILED, not a whole-budget tests_run=0"
-status: backlog
+status: completed
 task_type: fix
 created: 2026-06-24T00:00:00Z
+updated: 2026-06-24T00:00:00Z
+completed: 2026-06-24T00:00:00Z
+completed_location: tasks/completed/TASK-ABFIX-011/
+previous_state: in_review
+state_transition_reason: "Quality gates passed: 39 new tests green, all new code covered, no regressions"
 priority: medium
 complexity: 6
 related:
@@ -84,21 +89,69 @@ exactly on parallel waves.
 
 ## Acceptance Criteria
 
-- [ ] `--timeout` is injected **only** when `pytest-timeout` is resolvable in the
+- [x] `--timeout` is injected **only** when `pytest-timeout` is resolvable in the
       pinned/worktree interpreter AND the stack is Python.
-- [ ] When `pytest-timeout` is absent, no injection occurs and the run falls back
+      → `_pytest_timeout_injection_enabled()` (triple gate); `TestTimeoutArgvGating`.
+- [x] When `pytest-timeout` is absent, no injection occurs and the run falls back
       to the existing process-level timeout — no `unrecognized arguments` failure on
       any project.
-- [ ] A non-Python stack profile yields no `--timeout` arg.
-- [ ] A `--timeout` usage error (returncode 4 / `unrecognized arguments`) is
+      → probe returns False ⇒ `_pytest_timeout_argv() == []`; `test_argv_empty_when_plugin_absent`,
+      `test_not_injected_when_unavailable*`.
+- [x] A non-Python stack profile yields no `--timeout` arg.
+      → gate #2 (`_active_stack_profile is None`); `test_argv_empty_for_non_python_stack`.
+- [x] A `--timeout` usage error (returncode 4 / `unrecognized arguments`) is
       classified `signal_absent=True`, not ran-and-failed.
-- [ ] All injection surfaces covered, including the `wave_size > 1` isolated path
-      (:4325). A regression test exercises a hung test on a parallel wave.
-- [ ] `--timeout-method` validated against an asyncio test (no spurious interrupt).
-- [ ] With pytest-timeout present, a single hanging test in a multi-test file
+      → `_is_pytest_timeout_usage_error` wired into BOTH subprocess paths;
+      `test_standard_path_usage_error_is_absent`, `test_isolated_path_usage_error_is_absent`.
+- [x] All injection surfaces covered, including the `wave_size > 1` isolated path.
+      A regression test exercises a hung test on a parallel wave.
+      → SDK `_pin_pytest_command`, isolated `_run_isolated_tests`, standard subprocess
+      (shared `_pytest_timeout_argv()`); `test_parallel_wave_hung_test_is_attributed`.
+- [x] `--timeout-method` validated against an asyncio test (no spurious interrupt).
+      → default `signal`; `TestRealAsyncioNotInterrupted::test_fast_asyncio_test_passes_under_signal`.
+- [x] With pytest-timeout present, a single hanging test in a multi-test file
       yields a named FAILED for that test and pass/fail verdicts for the others
       (not `tests_run=0`).
-- [ ] CI: harness-touching tests pin `GUARDKIT_HARNESS=sdk` or `skipif`.
+      → `TestRealHungTest::test_single_wave_hung_test_is_attributed` (real pytest-timeout).
+- [x] CI: harness-touching tests pin `GUARDKIT_HARNESS=sdk` or `skipif`.
+      → all new tests use `coach_test_execution="subprocess"` (no harness dispatch);
+      real-execution tests `skipif` on plugin availability.
+
+## Implementation summary (2026-06-24)
+
+**Approach**: probe-and-inject (constraint 1b, load-bearing) + dogfood
+(constraint 1a) — `pytest-timeout` added to guardkit `dev`+`all` extras so
+guardkit self-build worktrees carry the plugin; `uv.lock` regenerated (also
+synced a *pre-existing* `tree-sitter` staleness — CI is pip-based so the lock
+had drifted). `environment_bootstrap.py` left untouched (its `python_extras`
+installs only project-declared extras, so it cannot inject a helper generically).
+
+**Files**:
+- `guardkit/orchestrator/quality_gates/coach_validator.py` — 7 helpers
+  (`_pytest_timeout_argv` / `_pytest_timeout_injection_enabled` /
+  `_pytest_timeout_available` (cached) / `_probe_pytest_timeout` /
+  `_per_test_timeout_seconds` / `_pytest_timeout_method` /
+  `_is_pytest_timeout_usage_error`), injection at all 3 pytest sites, absent
+  classifier extended on both subprocess paths, ctor cache field, module constant.
+- `pyproject.toml` + `uv.lock` — `pytest-timeout>=2.1,<3` dogfood.
+- `tests/unit/test_coach_pytest_timeout_injection.py` — 39 tests (gating, probe,
+  3 injection sites, classifier ×2, real hung-test single + parallel-wave, asyncio).
+- `tests/orchestrator/test_coach_interpreter_selection.py` — 1-line accommodation
+  (`test_subprocess_argv_pins_interpreter` disables injection so its argv-equality
+  assertion stays scoped to interpreter-pinning).
+
+**Empirical decision**: `--timeout-method=signal` is the default — verified to
+fail-the-hung-test-and-continue (`1 failed, 2 passed`); `thread` `os._exit`-kills
+the session (others never report), so it's opt-in only.
+
+**Key design**: defence-in-depth per the absence-of-failure family — a mis-fired
+injection (plugin vanished post-probe) degrades to `signal_absent=True` (carried
+as `None`/feedback by ABFIX-010), never a counted Player failure.
+
+**Tests**: 39 new pass; ~2300 in the touched-surface sweep pass; the only failures
+(9 in `test_coach_sdk_stream_resilience.py`) are **pre-existing** LangGraph-harness
+auth failures (proven via `git stash`), unrelated to this change. 100% of new code
+lines covered.
 
 ## Test strategy
 
