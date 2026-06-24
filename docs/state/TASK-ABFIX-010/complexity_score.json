@@ -1,0 +1,22 @@
+{
+  "task_id": "TASK-ABFIX-010",
+  "total_score": 7,
+  "level": "complex",
+  "review_mode": "FULL_REQUIRED",
+  "factors": {
+    "file_complexity": 2,
+    "pattern_familiarity": 2,
+    "risk_level": 3
+  },
+  "forced_review_triggers": [
+    "touches Coach gate-evaluation chain (verify_quality_gates, QualityGateStatus, _feedback_from_gates)",
+    "tri-state signal change with dual decoupled consumers (approval vs checkpoint)",
+    "false-green and false-red both reachable if mis-implemented"
+  ],
+  "rationale": "Contained to 6 files / ~5 functions, but high-risk: the change carries a tri-state (None) through the Coach gate-evaluation chain that two consumers read with opposite required semantics. Phase 2.5B found a blocking gap in the naive design and a latent false-green from tests_failed=0 on the absent branch. Risk, not size, drives the 7.",
+  "architectural_review": {
+    "score": 64,
+    "status": "approved_with_mandatory_corrections",
+    "corrections_folded_into_plan_v2": true
+  }
+}
