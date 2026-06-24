@@ -1,12 +1,14 @@
 ---
 id: TASK-ABFIX-010
 title: "Harness false-red/false-green on Coach test-timeouts: keep an absent test signal as UNKNOWN (None) through every reconciliation/synthesis layer, not coerced to False"
-status: in_review
+status: completed
 task_type: fix
 created: 2026-06-24T00:00:00Z
 updated: 2026-06-24T00:00:00Z
-previous_state: in_progress
-state_transition_reason: "W1+W2+L2 implemented; 473 targeted tests pass (9 new reproducers); zero regressions. L3 closed as wontfix (operator kept COACHRUNPARITY01 semantics)."
+completed: 2026-06-24T00:00:00Z
+completed_location: tasks/completed/TASK-ABFIX-010/
+previous_state: in_review
+state_transition_reason: "task-complete — in-scope ACs (W1+W2+L2, no-regression, new rule) met; 473 tests pass, 0 regressions; W3/W4 deferred, L3 wontfix."
 priority: high
 complexity: 7
 landed_scope: "W1 + W2 + W2b/L2. L3 closed-as-wontfix (operator decision: keep COACHRUNPARITY01 timeout=ran-and-failed). W3/W4 deferred."
@@ -282,35 +284,35 @@ flip in [`task_types.py`](../../guardkit/models/task_types.py#L129).
 
 ## Acceptance Criteria
 
-- [ ] **W1:** the reconciliation override branches on the phase-4 `error` prefix;
+- [x] **W1:** the reconciliation override branches on the phase-4 `error` prefix;
       an `"absent test signal"` timeout yields `quality_gates.tests_passed=None`
       (not `0`/False) and does not hard-set `coverage_met=False`; a `"tests
-      failed"` result is unchanged.
-- [ ] **W2:** `phase_4_block["signal_absent"]` is set in `specialist_invocations`
+      failed"` result is unchanged. *(Extended in Phase 2.5B: the `None` is carried
+      through `verify_quality_gates`'s `reconciled_absent` short-circuit +
+      `QualityGateStatus.tests_passed: Optional[bool]` + `to_dict`; T1a/T1c/T1d.)*
+- [x] **W2:** `phase_4_block["signal_absent"]` is set in `specialist_invocations`
       and `IndependentTestResult.to_dict()` serializes `signal_absent`;
-      `_extract_tests_passed` returns `None` for a Coach-run absent signal.
-- [ ] **W2b:** L2 (BDD timeout) and L3 (runtime-parity timeout) are EITHER routed
-      to an absent/UNKNOWN signal OR explicitly scoped out with a written
-      rationale in this task's Implementation Summary.
-- [ ] **No regression:** CKPTTESTRED01's tri-state guard is unchanged; three
+      `_extract_tests_passed` returns `None` for a Coach-run absent signal. *(T4)*
+- [x] **W2b:** L2 (BDD timeout) → absent (`None`, `_PYTEST_EXIT_TIMEOUT` sentinel;
+      T5a). L3 (runtime-parity timeout) **scoped out with rationale** — closed as
+      wontfix, deliberate COACHRUNPARITY01 semantics (operator decision; see
+      Implementation Summary).
+- [x] **No regression:** CKPTTESTRED01's tri-state guard is unchanged; three
       genuine consecutive ran-and-failed turns still produce `unrecoverable_stall`.
-- [ ] **No regression:** the false-green backstop
+      *(guard untouched; T1b)*
+- [x] **No regression:** the false-green backstop
       (`_reconcile_absent_independent_test_signal`) still overrides approve→feedback
-      on a Coach-isolated timeout (`signal_absent` stays `True`).
-- [ ] **W3 (if included):** `--timeout` is injected only when `pytest-timeout` is
-      resolvable in the worktree interpreter AND the stack is Python; absence
-      falls back to process-level timeout with no `unrecognized arguments`
-      failure; a usage error degrades to `signal_absent=True`; all injection sites
-      covered.
-- [ ] **W4 (if included):** `_classify_test_failure` maps host-substrate gaps to
-      an absent signal; TESTING-type real code bugs are rejected in BOTH
-      single-task and parallel waves; substrate-blocked TESTING tasks do NOT
-      `unrecoverable_stall`.
-- [ ] **CI:** any new test that touches harness dispatch
-      (`select_harness`/SDK-harness paths) pins `GUARDKIT_HARNESS=sdk` or
-      `skipif` — the main `tests.yml` runs without guardkitfactory/langchain
-      (see `.claude/rules` memory `ci-tests-yml-no-guardkitfactory`).
-- [ ] **New rule seeded** (see below).
+      on a Coach-isolated timeout (`signal_absent` stays `True`). *(not disarmed)*
+- [ ] **W3 (DEFERRED — separate follow-on task):** `--timeout` injection, gated.
+      Out of scope for this task.
+- [ ] **W4 (DEFERRED — separate follow-on task):** required test gate for
+      TESTING-type tasks + classifier widening. Out of scope for this task.
+- [x] **CI:** the new tests do not touch harness dispatch
+      (`select_harness`/SDK-harness); they import `coach_validator`/`bdd_runner`
+      only, so they run on `tests.yml` without guardkitfactory/langchain. *(N/A — satisfied)*
+- [x] **New rule seeded:** `.claude/rules/absence-must-survive-every-reconciliation-layer.md`
+      (+ back-link from `absence-of-failure-is-not-success.md`; L1/L2 marked fixed,
+      L3 documented as a deliberate exception).
 
 ## Tests / regression-proofs (reproducers)
 
