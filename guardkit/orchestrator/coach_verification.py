@@ -716,6 +716,43 @@ class CoachVerifier:
                         severity="should_fix",
                     )
                 )
+            elif classification == "cross_repo":
+                # TASK-FIX-XREPO-CAUD: the claimed path exists on disk but
+                # inside a *different* git repo than the worktree (the
+                # FEAT-RBX / TASK-RBX-002 repro: runbook lifecycle events
+                # authored in the sibling ``nats-core`` repo). Worktree
+                # ``git add -A`` cannot stage it and worktree
+                # ``git check-ignore`` returns exit 128, so the old code
+                # mis-bucketed it as ``infra_error`` → a turn-rejecting
+                # critical false-red. When the owning repo is a declared
+                # evidence repo, sibling verification (``_verify_files_exist``)
+                # and the per-repo checkpoint manager own it — stay silent.
+                # Otherwise surface a should_fix advisory: the work is real
+                # but the feature never declared the sibling repo, so it
+                # cannot be staged or independently verified. Never critical:
+                # the file is on disk.
+                repo_name = self._path_under_declared_repo(
+                    self.worktree_path / path
+                )
+                if repo_name is not None:
+                    continue
+                discrepancies.append(
+                    Discrepancy(
+                        claim_type="claim_audit_cross_repo",
+                        player_claim=f"Player claimed file {path}",
+                        actual_value=(
+                            "Path is on disk inside a different git "
+                            "repository than the worktree, so worktree "
+                            "'git add -A' cannot stage it and the worktree "
+                            "claim-audit cannot verify it. Declare the "
+                            "sibling repo in the feature's evidence_repos "
+                            "and report the path repo-qualified "
+                            "('<repo>:<relpath>') to enable cross-repo "
+                            "checkpointing and verification."
+                        ),
+                        severity="should_fix",
+                    )
+                )
             else:
                 # "fabricated" or "infra_error" — keep the critical
                 # behaviour. infra_error here means ``git check-ignore``
@@ -796,6 +833,11 @@ class CoachVerifier:
             swept an orchestrator-managed path into ``files_modified``
             (TASK-FIX-PCN). Caller demotes to ``should_fix`` so the gate
             surfaces a warning rather than rejecting the turn.
+          * ``"cross_repo"`` — path exists on disk but resolves into a
+            *different* git working tree than the worktree (a sibling
+            repo). The worktree audit cannot speak to it; the caller
+            either stays silent (declared evidence repo) or emits a
+            should_fix advisory (undeclared). Never critical.
           * ``"infra_error"`` — ``git check-ignore`` (or the
             ``ls-files`` follow-up) itself failed (exit 128 or a
             subprocess crash). Caller falls back to critical to preserve
@@ -809,6 +851,23 @@ class CoachVerifier:
         abs_path = self.worktree_path / path
         if not abs_path.exists():
             return "fabricated"
+
+        # TASK-FIX-XREPO-CAUD: an absolute claim that exists but lives in a
+        # *different* git repo than the worktree must not be probed with
+        # worktree-cwd git — ``git check-ignore`` against an out-of-worktree
+        # path returns exit 128, which the logic below mis-buckets as
+        # ``infra_error`` → a critical false-red on real sibling-repo work
+        # (FEAT-RBX / TASK-RBX-002). Only absolute paths can point outside
+        # the worktree; relative claims always resolve under it, so gate the
+        # (two-subprocess) repo probe on ``is_absolute()`` to keep the common
+        # path zero-cost.
+        if Path(path).is_absolute():
+            owning_top = self._git_toplevel(abs_path)
+            if (
+                owning_top is not None
+                and owning_top != self._git_toplevel(self.worktree_path)
+            ):
+                return "cross_repo"
 
         try:
             result = subprocess.run(
@@ -864,6 +923,58 @@ class CoachVerifier:
             result.stderr.strip(),
         )
         return "infra_error"
+
+    def _git_toplevel(self, start: Path) -> Optional[Path]:
+        """Return the git working-tree root that owns ``start``, or None.
+
+        ``start`` may be a file or directory; the probe runs from the
+        nearest existing directory. Returns the resolved toplevel Path, or
+        None when ``start`` is not inside any git repo, git is unavailable,
+        or the probe fails. Used by :py:meth:`_classify_dropped_path` to
+        detect cross-repo claims (TASK-FIX-XREPO-CAUD).
+        """
+        probe_dir = start if start.is_dir() else start.parent
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--show-toplevel"],
+                cwd=probe_dir,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            return None
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+        try:
+            return Path(result.stdout.strip()).resolve()
+        except OSError:
+            return None
+
+    def _path_under_declared_repo(self, abs_path: Path) -> Optional[str]:
+        """Return the name of the declared evidence repo containing ``abs_path``.
+
+        Returns None when no ``evidence_repos`` are declared or the path is
+        outside every declared repo root. Lets the claim-audit ``cross_repo``
+        branch stay silent on sibling-repo work the feature has opted into
+        (verified by ``_verify_files_exist`` and staged by the per-repo
+        checkpoint manager) rather than emitting an advisory
+        (TASK-FIX-XREPO-CAUD).
+        """
+        if not self.evidence_repos:
+            return None
+        try:
+            resolved = abs_path.resolve()
+        except OSError:
+            return None
+        for repo in self.evidence_repos:
+            try:
+                resolved.relative_to(Path(repo.root).resolve())
+            except (ValueError, OSError):
+                continue
+            return repo.name
+        return None
 
     def _git_check_ignore_rule(self, path: str) -> str:
         """Return the matched ``<source>:<line>:<pattern>`` for ``path``.

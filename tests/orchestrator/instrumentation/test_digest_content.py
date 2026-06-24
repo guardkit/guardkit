@@ -9,6 +9,7 @@ Coverage Target: >=85%
 Test Count: 10+ tests
 """
 
+import math
 import re
 from pathlib import Path
 from typing import get_args
@@ -67,6 +68,69 @@ class TestDigestTokenBudgets:
         tokens = count_tokens(content)
         assert tokens <= MAX_TOKENS, (
             f"{role}.md has {tokens} tokens, exceeds {MAX_TOKENS} hard limit"
+        )
+
+
+# ============================================================================
+# 1b. Cross-Counter Determinism (TASK-FIX-DIGESTTOK01)
+# ============================================================================
+
+
+def _word_fallback_count(text: str) -> int:
+    """Replicate digests.count_tokens' word-based fallback (tiktoken absent).
+
+    Kept in lock-step with ``count_tokens``' ``except ImportError`` branch
+    (``guardkit/orchestrator/instrumentation/digests.py``): ~1 token per 4
+    characters, floored at 1 for non-empty text.
+    """
+    if not text:
+        return 0
+    return max(1, math.ceil(len(text) / 4.0))
+
+
+class TestDigestTokenBudgetCrossCounter:
+    """Both token counters must agree the digests are in the 300-600 band.
+
+    Regression guard for TASK-FIX-DIGESTTOK01: the 300-600 target previously
+    passed in CI (where tiktoken is absent, so ``count_tokens`` uses the
+    word-based fallback) while failing locally (tiktoken present -> real
+    ``cl100k_base`` count below 300). Asserting BOTH counters land in range
+    makes that environment-dependent split impossible to re-introduce
+    silently: a future digest edit that drifts under either counter fails here.
+
+    The faithful ``cl100k_base`` arm is the source of truth; the word-fallback
+    arm guards the CI path that has no tiktoken. ``count_tokens`` (the active
+    counter used by the rest of the suite) is exercised by
+    ``TestDigestTokenBudgets`` and lands in range under whichever counter is
+    installed precisely because both bounds below hold.
+    """
+
+    @pytest.mark.parametrize("role", list(DIGEST_ROLES))
+    def test_word_fallback_count_in_range(self, digest_dir: Path, role: str) -> None:
+        """Word-based fallback count is in 300-600 (the tiktoken-absent / CI path)."""
+        content = (digest_dir / f"{role}.md").read_text()
+        fallback = _word_fallback_count(content)
+        assert 300 <= fallback <= 600, (
+            f"{role}.md word-fallback count {fallback} outside 300-600 "
+            f"(tiktoken-absent path would diverge)"
+        )
+
+    @pytest.mark.parametrize("role", list(DIGEST_ROLES))
+    def test_tiktoken_count_in_range(self, digest_dir: Path, role: str) -> None:
+        """Faithful cl100k_base count is in 300-600 (the tiktoken-present path).
+
+        Skipped only when tiktoken is genuinely uninstalled (e.g. the CI unit
+        job); the word-fallback arm above still guards that environment, so no
+        verdict is ever rendered on the low-fidelity counter alone.
+        """
+        tiktoken = pytest.importorskip(
+            "tiktoken", reason="cl100k_base fidelity check requires tiktoken"
+        )
+        content = (digest_dir / f"{role}.md").read_text()
+        tokens = len(tiktoken.get_encoding("cl100k_base").encode(content))
+        assert 300 <= tokens <= 600, (
+            f"{role}.md cl100k_base count {tokens} outside 300-600 "
+            f"(faithful counter; bring the digest back into the target band)"
         )
 
 

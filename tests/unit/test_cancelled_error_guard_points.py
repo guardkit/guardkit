@@ -43,6 +43,14 @@ def tmp_worktree(tmp_path):
     return wt
 
 
+@pytest.fixture(autouse=True)
+def _pin_sdk_harness(monkeypatch):
+    """TASK-HMIG-011: pin GUARDKIT_HARNESS=sdk so the cancellation guard-point
+    tests exercise the in-repo SDK harness rather than resolving the
+    post-cutover ``langgraph`` default (not importable in CI's tests.yml)."""
+    monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+
+
 @pytest.fixture
 def agent_invoker(tmp_worktree):
     """AgentInvoker with minimal configuration for testing."""

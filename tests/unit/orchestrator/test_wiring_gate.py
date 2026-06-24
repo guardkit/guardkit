@@ -31,6 +31,31 @@ from guardkit.orchestrator.feature_orchestrator import (
 )
 
 
+def _has_guardkitfactory() -> bool:
+    """True iff guardkitfactory is importable.
+
+    Tests that ``patch("guardkitfactory.wiring.analyze_wiring")`` cannot run
+    without it — the patch target import fails. They are skipped in CI's
+    tests.yml (which deliberately does not install guardkitfactory) and run
+    locally / in the seam suite. The gate SOURCE degrades gracefully when
+    guardkitfactory is absent (lazy import + skip-log in
+    ``_run_post_wave_wiring_gate``); that path is covered by
+    ``test_guardkitfactory_unavailable_is_noop``, which does NOT need it.
+    """
+    try:
+        import importlib.util
+
+        return importlib.util.find_spec("guardkitfactory") is not None
+    except Exception:
+        return False
+
+
+_requires_guardkitfactory = pytest.mark.skipif(
+    not _has_guardkitfactory(),
+    reason="patches guardkitfactory.wiring.analyze_wiring; requires guardkitfactory installed",
+)
+
+
 def _orchestrator(tmp_path: Path) -> FeatureOrchestrator:
     return FeatureOrchestrator(
         repo_root=tmp_path,
@@ -187,6 +212,7 @@ class TestBuildWiringFeedback:
 
 
 class TestRunPostWaveWiringGate:
+    @_requires_guardkitfactory
     def test_no_findings_is_neutral_no_reentry(self, tmp_path):
         orch = _orchestrator(tmp_path)
         wr = _wave_result(["TASK-A"])
@@ -201,6 +227,7 @@ class TestRunPostWaveWiringGate:
         assert outcome.findings_unresolved is False
         exec_wave.assert_not_called()
 
+    @_requires_guardkitfactory
     def test_empty_authored_set_is_noop(self, tmp_path):
         orch = _orchestrator(tmp_path)
         wr = _wave_result(["TASK-A"])
@@ -214,6 +241,7 @@ class TestRunPostWaveWiringGate:
         az.assert_not_called()
         exec_wave.assert_not_called()
 
+    @_requires_guardkitfactory
     def test_analyzer_error_is_absent_signal_no_reentry(self, tmp_path):
         orch = _orchestrator(tmp_path)
         wr = _wave_result(["TASK-A"])
@@ -239,6 +267,7 @@ class TestRunPostWaveWiringGate:
         assert outcome.terminate is False
         exec_wave.assert_not_called()
 
+    @_requires_guardkitfactory
     def test_findings_feed_back_and_clear_on_retry(self, tmp_path):
         orch = _orchestrator(tmp_path)
         orch._wiring_gate_max_retries = 1
@@ -262,6 +291,7 @@ class TestRunPostWaveWiringGate:
         # replace-not-append: the final result is the re-executed wave.
         assert outcome.final_wave_result is rerun
 
+    @_requires_guardkitfactory
     def test_findings_persist_after_budget_advisory_not_terminate(self, tmp_path):
         orch = _orchestrator(tmp_path)
         orch._wiring_gate_max_retries = 1
@@ -279,6 +309,7 @@ class TestRunPostWaveWiringGate:
         assert outcome.terminate is False      # NEVER hard-terminates on findings
         assert outcome.findings_unresolved is True
 
+    @_requires_guardkitfactory
     def test_retries_disabled_runs_once_advisory(self, tmp_path):
         orch = _orchestrator(tmp_path)
         orch._wiring_gate_max_retries = 0
@@ -294,6 +325,7 @@ class TestRunPostWaveWiringGate:
         assert outcome.terminate is False
         assert outcome.findings_unresolved is True
 
+    @_requires_guardkitfactory
     def test_stop_on_failure_terminates_on_rejected_rerun(self, tmp_path):
         orch = _orchestrator(tmp_path)
         orch._wiring_gate_max_retries = 1

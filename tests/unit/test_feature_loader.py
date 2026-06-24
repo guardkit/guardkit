@@ -160,6 +160,46 @@ def test_load_feature_not_found(temp_features_dir):
         FeatureLoader.load_feature("FEAT-XXXX", repo_root=temp_features_dir)
 
 
+def test_load_feature_threads_evidence_repos(tmp_path):
+    """TASK-FIX-XREPO-CAUD: declared ``evidence_repos`` must survive the
+    loader and reach ``feature.evidence_repos``.
+
+    Regression for the FEAT-RBX gap: ``_parse_feature`` built the Feature
+    from an explicit key allowlist that omitted ``evidence_repos``, so the
+    field was silently dropped and ``feature.evidence_repos`` was always [].
+    That made the cross-repo contract (resolve_evidence_repos in
+    feature_orchestrator) inert on the feature path — declaring sibling
+    repos in the YAML had no effect.
+    """
+    features_dir = tmp_path / ".guardkit" / "features"
+    features_dir.mkdir(parents=True)
+    feature_yaml = {
+        "id": "FEAT-XREPO",
+        "name": "Cross-repo feature",
+        "status": "planned",
+        "tasks": [
+            {
+                "id": "TASK-001",
+                "name": "Sibling-repo task",
+                "file_path": "tasks/backlog/TASK-001.md",
+                "status": "pending",
+            }
+        ],
+        "orchestration": {"parallel_groups": [["TASK-001"]]},
+        "evidence_repos": [
+            {"path": "../nats-core", "test_command": "python -m pytest tests -q"}
+        ],
+    }
+    with open(features_dir / "FEAT-XREPO.yaml", "w") as f:
+        yaml.dump(feature_yaml, f)
+
+    feature = FeatureLoader.load_feature("FEAT-XREPO", repo_root=tmp_path)
+
+    assert feature.evidence_repos == [
+        {"path": "../nats-core", "test_command": "python -m pytest tests -q"}
+    ]
+
+
 def test_load_feature_yaml_extension(temp_features_dir):
     """Test loading feature with .yaml extension works - REMOVED."""
     # This test is stale - feature_id should not include the extension

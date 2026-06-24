@@ -362,6 +362,10 @@ class TestCoachTurnContextInjection:
         # Mock CoachValidator
         with patch('guardkit.orchestrator.autobuild.CoachValidator') as MockValidator:
             mock_validator_instance = Mock()
+            # TASK-AB-XREPOEV01: _evidence_repo_gate iterates
+            # run_evidence_repo_tests(); the real CoachValidator returns a list
+            # ([] with no evidence repos). A bare Mock is truthy + non-iterable.
+            mock_validator_instance.run_evidence_repo_tests.return_value = []
             mock_validator_instance.validate.return_value = Mock(
                 decision="approve",
                 to_dict=Mock(return_value={"decision": "approve"}),
@@ -413,6 +417,10 @@ class TestCoachTurnContextInjection:
 
         with patch('guardkit.orchestrator.autobuild.CoachValidator') as MockValidator:
             mock_validator_instance = Mock()
+            # TASK-AB-XREPOEV01: _evidence_repo_gate iterates
+            # run_evidence_repo_tests(); the real CoachValidator returns a list
+            # ([] with no evidence repos). A bare Mock is truthy + non-iterable.
+            mock_validator_instance.run_evidence_repo_tests.return_value = []
             mock_validator_instance.validate.return_value = Mock(
                 decision="approve",
                 to_dict=Mock(return_value={"decision": "approve"}),
@@ -622,6 +630,10 @@ class TestGracefulDegradation:
 
         with patch('guardkit.orchestrator.autobuild.CoachValidator') as MockValidator:
             mock_validator_instance = Mock()
+            # TASK-AB-XREPOEV01: _evidence_repo_gate iterates
+            # run_evidence_repo_tests(); the real CoachValidator returns a list
+            # ([] with no evidence repos). A bare Mock is truthy + non-iterable.
+            mock_validator_instance.run_evidence_repo_tests.return_value = []
             mock_validator_instance.validate.return_value = Mock(
                 decision="approve",
                 to_dict=Mock(return_value={"decision": "approve"}),
@@ -1413,6 +1425,10 @@ class TestContextStatusTracking:
 
         with patch('guardkit.orchestrator.autobuild.CoachValidator') as MockValidator:
             mock_validator_instance = Mock()
+            # TASK-AB-XREPOEV01: _evidence_repo_gate iterates
+            # run_evidence_repo_tests(); the real CoachValidator returns a list
+            # ([] with no evidence repos). A bare Mock is truthy + non-iterable.
+            mock_validator_instance.run_evidence_repo_tests.return_value = []
             mock_validator_instance.validate.return_value = Mock(
                 decision="approve",
                 to_dict=Mock(return_value={"decision": "approve"}),
@@ -1468,6 +1484,10 @@ class TestContextStatusTracking:
 
         with patch('guardkit.orchestrator.autobuild.CoachValidator') as MockValidator:
             mock_validator_instance = Mock()
+            # TASK-AB-XREPOEV01: _evidence_repo_gate iterates
+            # run_evidence_repo_tests(); the real CoachValidator returns a list
+            # ([] with no evidence repos). A bare Mock is truthy + non-iterable.
+            mock_validator_instance.run_evidence_repo_tests.return_value = []
             mock_validator_instance.validate.return_value = Mock(
                 decision="approve",
                 to_dict=Mock(return_value={"decision": "approve"}),
