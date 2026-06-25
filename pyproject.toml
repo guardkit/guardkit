@@ -85,9 +85,18 @@ dev = [
     "pytest-bdd>=8.1,<9",
     "httpx>=0.25.1",
 ]
+# Memory write-path harvest publisher (FEAT-HARV / P4). nats-core is the
+# canonical NATS publisher helper (NATSClient.publish_episode + MemoryEpisodeV1),
+# resolved as an editable sibling via [tool.uv.sources] below. Threaded into the
+# autobuild worktree venv via the FEAT-HARV feature YAML's
+# `bootstrap_extras: [dev, memory]` (a bare extra is never installed otherwise).
+memory = [
+    "nats-core>=0.4,<1",
+]
 all = [
     "claude-agent-sdk>=0.1.49,<0.2",
     "guardkitfactory>=0.1,<1",
+    "nats-core>=0.4,<1",
     "graphiti-core[falkordb] @ git+https://github.com/guardkit/graphiti.git@v0.29.5-guardkit.1",
     "graphiti-core[google-genai] @ git+https://github.com/guardkit/graphiti.git@v0.29.5-guardkit.1",
     "pytest>=7.4.3",
@@ -108,6 +117,14 @@ all = [
 # release once guardkitfactory ships there; until then, the [tool.uv.sources]
 # block is the resolution path. See docs/guides/portfolio-python-pinning.md.
 guardkitfactory = { path = "../guardkitfactory", editable = true }
+# FEAT-HARV / P4: nats-core (NATS memory publisher helper) resolved as an
+# editable sibling, same convention as guardkitfactory above. The autobuild
+# orchestrator auto-creates a bridging symlink so this "../nats-core" relative
+# path resolves from the nested worktree at .guardkit/worktrees/<feat>/
+# (env_bootstrap._arrange_uv_sources_symlinks). It is installed into a worktree
+# venv only when an extra naming it is threaded — FEAT-HARV.yaml sets
+# `bootstrap_extras: [dev, memory]`. Requires ../nats-core checked out alongside.
+nats-core = { path = "../nats-core", editable = true }
 
 [project.scripts]
 guardkit-py = "guardkit.cli.main:main"
