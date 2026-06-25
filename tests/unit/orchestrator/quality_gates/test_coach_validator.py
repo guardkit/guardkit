@@ -28,6 +28,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from guardkit.orchestrator.quality_gates import CoachValidator
+from guardkit.orchestrator.quality_gates.coach_validator import IndependentTestResult
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +119,22 @@ def test_bdd_failure_rejects(tmp_worktree, task_work_results_dir):
     )
 
     # Independent verification passes — only the BDD gate must reject.
-    with patch("subprocess.run") as mock_run:
+    # Isolate the BDD gate: the (incidental) independent-test run is routed
+    # through select_harness, which under GUARDKIT_HARNESS=sdk hits the SDK
+    # harness (unmockable via subprocess.run) and would derail before the BDD
+    # gate. Mock it to a passing result so this test exercises ONLY the
+    # bdd_results gate, harness-agnostically. The bdd_failure issue still comes
+    # from the real _check_bdd_results reading the real bdd_results.
+    with patch("subprocess.run") as mock_run, patch.object(
+        CoachValidator,
+        "run_independent_tests",
+        return_value=IndependentTestResult(
+            tests_passed=True,
+            test_command="pytest",
+            test_output_summary="15 passed in 1.45s",
+            duration_seconds=1.45,
+        ),
+    ):
         mock_run.return_value = MagicMock(
             returncode=0,
             stdout="15 passed in 1.45s",
@@ -161,7 +177,22 @@ def test_bdd_pending_approves_with_feedback(tmp_worktree, task_work_results_dir)
         }),
     )
 
-    with patch("subprocess.run") as mock_run:
+    # Isolate the BDD gate: the (incidental) independent-test run is routed
+    # through select_harness, which under GUARDKIT_HARNESS=sdk hits the SDK
+    # harness (unmockable via subprocess.run) and would derail before the BDD
+    # gate. Mock it to a passing result so this test exercises ONLY the
+    # bdd_results gate, harness-agnostically. The bdd_failure issue still comes
+    # from the real _check_bdd_results reading the real bdd_results.
+    with patch("subprocess.run") as mock_run, patch.object(
+        CoachValidator,
+        "run_independent_tests",
+        return_value=IndependentTestResult(
+            tests_passed=True,
+            test_command="pytest",
+            test_output_summary="15 passed in 1.45s",
+            duration_seconds=1.45,
+        ),
+    ):
         mock_run.return_value = MagicMock(
             returncode=0,
             stdout="15 passed in 1.45s",
@@ -183,7 +214,22 @@ def test_bdd_results_absent_is_silent_skip(tmp_worktree, task_work_results_dir):
     """No ``bdd_results`` key → gate inactive (back-compat: identical to today)."""
     _write(task_work_results_dir, _make_task_work_results(bdd_block=None))
 
-    with patch("subprocess.run") as mock_run:
+    # Isolate the BDD gate: the (incidental) independent-test run is routed
+    # through select_harness, which under GUARDKIT_HARNESS=sdk hits the SDK
+    # harness (unmockable via subprocess.run) and would derail before the BDD
+    # gate. Mock it to a passing result so this test exercises ONLY the
+    # bdd_results gate, harness-agnostically. The bdd_failure issue still comes
+    # from the real _check_bdd_results reading the real bdd_results.
+    with patch("subprocess.run") as mock_run, patch.object(
+        CoachValidator,
+        "run_independent_tests",
+        return_value=IndependentTestResult(
+            tests_passed=True,
+            test_command="pytest",
+            test_output_summary="15 passed in 1.45s",
+            duration_seconds=1.45,
+        ),
+    ):
         mock_run.return_value = MagicMock(
             returncode=0,
             stdout="15 passed in 1.45s",
@@ -227,7 +273,18 @@ def test_bdd_failure_and_pending_both_surfaced(tmp_worktree, task_work_results_d
         }),
     )
 
-    with patch("subprocess.run") as mock_run:
+    # Isolate the BDD gate from the harness-routed independent-test run
+    # (see test_bdd_failure_rejects for the rationale).
+    with patch("subprocess.run") as mock_run, patch.object(
+        CoachValidator,
+        "run_independent_tests",
+        return_value=IndependentTestResult(
+            tests_passed=True,
+            test_command="pytest",
+            test_output_summary="ok",
+            duration_seconds=1.0,
+        ),
+    ):
         mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
         validator = CoachValidator(str(tmp_worktree))
         result = validator.validate("TASK-001", 1, _make_task())
