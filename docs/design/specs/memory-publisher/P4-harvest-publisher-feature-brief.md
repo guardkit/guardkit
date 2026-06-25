@@ -24,9 +24,10 @@ as a canonical MemoryEpisodeV1 onto the NATS MEMORY stream via nats_core.NATSCli
 project_id='guardkit'; episode_type per source (adr / feature_outcome / review_report / document);
 content_format markdown|text for prose docs (the relay chunks + embeds them), json for structured
 payloads. episode_id is a DETERMINISTIC hash of the artifact's natural key so re-harvest is idempotent
-(JetStream dedupes on Nats-Msg-Id=episode_id). Connect with a DEDICATED publisher NATS identity that has
-publish rights on memory.episode.> — the fleet-memory user is a least-privilege CONSUMER and cannot
-publish. Idempotent + resumable: safe to run repeatedly. Tests: subject resolves to
+(JetStream dedupes on Nats-Msg-Id=episode_id). Connect as the dedicated 'guardkit' NATS user (already
+provisioned; password in nats-infrastructure/.env GUARDKIT_NATS_PASSWORD) which has publish rights on
+memory.episode.> (the fleet-memory user is consumer-only and cannot publish). Idempotent + resumable:
+safe to run repeatedly. Tests: subject resolves to
 memory.episode.guardkit.{episode_type}; episode_id stable across runs; >900KB body rejected with an
 actionable error; dry-run mode lists what would publish without connecting." --context docs/design/specs/memory-publisher/P4-harvest-publisher-feature-brief.md
 ```
@@ -92,19 +93,23 @@ await client.disconnect()              # NOT .close()
 Prose (`markdown`/`text`) routes through the relay's heading-aware chunker → embed → store. Use `json`
 + `payload_type` only for structured records that match a `fleet_memory` payload-registry type.
 
-## Hard prerequisite — a publisher NATS identity (NOT in any plan yet)
+## Publisher NATS identity — DONE (provisioned + verified live, 2026-06-25)
 
-The `fleet-memory` user is **consumer-only** (subscribe `memory.episode.>`, publish `memory.dlq.>`). The
-harvest needs publish rights on `memory.episode.>`. Two options:
+The dedicated **`guardkit`** APPMILLA user is provisioned (`nats-infrastructure` commit `5c3b8df`) and
+live on the GB10 broker. The harvest just connects as it — no further infra change needed.
 
-1. **Add a dedicated `guardkit` APPMILLA user** in `nats-infrastructure` — mirrors the `forge`/`fleet-memory`
-   user pattern (`config/accounts/accounts.conf.template` + `FLEET_MEMORY_*`-style env var +
-   entrypoint envsubst allow-list + `.env.example`). Least-privilege: `publish memory.episode.>`,
-   `$JS.>`, `_INBOX.>`. **A broker rebuild is required** (`docker compose up -d --build`) because the
-   entrypoint is baked into the image. This is a small parallel to the FEAT-MEM-04 user change.
-2. **Reuse `rich`** (full `>` publish) for a first run — fine for bring-up, not for a scheduled service.
+- **Identity:** user `guardkit`, password in `nats-infrastructure/.env` as `GUARDKIT_NATS_PASSWORD`
+  (gitignored, GB10-local). Connect: `NATSConfig(url="nats://127.0.0.1:4222", user="guardkit",
+  password=SecretStr(<GUARDKIT_NATS_PASSWORD>), name="guardkit-harvest")`.
+- **Least privilege (publisher):** `publish memory.episode.>` + `subscribe _INBOX.>` (for PubAcks).
+  Deliberately **no `$JS.>`** (no JetStream admin — cannot create/purge streams or consumers) and
+  **no subscribe on `memory.episode.>`** (it does not consume — that is the relay's job).
+- **Verified end-to-end:** publishing via `nats_core.publish_episode` as `guardkit` lands a row in the
+  live Postgres store (G1) and a hyphenated `project_id` correctly parks on `memory.dlq.*` (G3).
 
-`/feature-plan` should treat option 1 as a sibling task (or a one-line nats-infrastructure follow-up).
+> The harvest's only remaining job re: identity is to **read `GUARDKIT_NATS_PASSWORD`** (from the
+> nats-infrastructure `.env`, an injected secret, or wherever guardkit keeps its NATS creds) and build the
+> `NATSConfig` above. `/feature-plan` should NOT re-plan the broker user — it exists.
 
 ## Hard constraints (the relay enforces these — getting them wrong = poison/DLQ)
 
