@@ -292,8 +292,27 @@ class DetectedManifest:
         if not deps:
             return None
 
-        # Pass the full PEP 508 string to pip; pip handles version resolution.
-        return [[sys.executable, "-m", "pip", "install", dep] for dep in deps]
+        # Redirect any dependency that [tool.uv.sources] pins to a local sibling
+        # to an editable install of that path. Plain `pip install <name><spec>`
+        # ignores [tool.uv.sources] (a uv-only mechanism) and resolves the name
+        # from PyPI — where an unrelated public package may share it and win (or
+        # fail the spec), silently producing a broken worktree venv. The editable
+        # `uv pip install -e .` path already honours uv-sources; this closes the
+        # same gap for the incomplete-project per-dependency fallback (e.g.
+        # guardkit-py + the FEAT-HARV nats-core collision). (TASK-FIX-UVSRCDEP01)
+        uv_sources = _uv_sources_editable_targets(self.path)
+
+        commands: List[List[str]] = []
+        for dep in deps:
+            editable_target = uv_sources.get(_requirement_dist_name(dep))
+            if editable_target is not None:
+                commands.append(
+                    [sys.executable, "-m", "pip", "install", "-e", editable_target]
+                )
+            else:
+                # Pass the full PEP 508 string to pip; pip handles resolution.
+                commands.append([sys.executable, "-m", "pip", "install", dep])
+        return commands
 
     def _node_dep_commands(self) -> Optional[List[List[str]]]:
         """Parse dependencies from package.json for per-dep installs."""
@@ -587,6 +606,87 @@ def _pyproject_has_uv_sources(pyproject_path: Path) -> bool:
         return False
     sources = data.get("tool", {}).get("uv", {}).get("sources")
     return isinstance(sources, dict) and bool(sources)
+
+
+def _normalise_dist_name(name: str) -> str:
+    """PEP 503 distribution-name normalisation: lowercase, collapse runs of
+    ``-``, ``_`` and ``.`` to a single ``-`` (so ``nats_core`` == ``nats-core``)."""
+    return re.sub(r"[-_.]+", "-", name.strip()).lower()
+
+
+def _requirement_dist_name(requirement: str) -> str:
+    """Extract the PEP 503-normalised distribution name from a PEP 508
+    requirement string.
+
+    ``nats-core>=0.4,<1`` -> ``nats-core``;
+    ``graphiti-core[falkordb] @ git+https://...`` -> ``graphiti-core``.
+    Returns ``""`` for an unparseable requirement.
+    """
+    match = re.match(r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)", requirement or "")
+    return _normalise_dist_name(match.group(1)) if match else ""
+
+
+def _uv_sources_editable_targets(pyproject_path: Path) -> dict[str, str]:
+    """Map PEP 503-normalised distribution names to editable install targets for
+    every *path-typed* ``[tool.uv.sources]`` entry whose resolved path exists.
+
+    The incomplete-project per-dependency install path
+    (:py:meth:`DetectedManifest._python_dep_commands`) consults this so a
+    dependency that ``[tool.uv.sources]`` redirects to a sibling checkout is
+    installed editably from that sibling (``pip install -e <path>``) instead of
+    being resolved from PyPI. Plain ``pip install <name><spec>`` ignores
+    ``[tool.uv.sources]`` (a uv-only mechanism); when an *unrelated* public
+    package shares the name, pip silently resolves the wrong one — or fails the
+    version spec — leaving a broken worktree venv. This is the FEAT-HARV
+    ``nats-core`` collision: the private ``>=0.4`` sibling versus the unrelated
+    public PyPI ``nats-core`` (only 0.0.0/0.1.0/0.2.0 exist). The editable
+    ``uv pip install -e .`` path (:func:`_resolve_python_pyproject_install_command`)
+    already honours uv-sources; this closes the same gap for the per-dependency
+    fallback that runs when the project source dir is absent (e.g. ``guardkit-py``,
+    whose import name does not match its ``guardkit/`` package dir).
+
+    Paths resolve relative to the pyproject's own directory (uv's rule) and are
+    ``.resolve()``-d through the worktree-local bridge symlink the orchestrator
+    pre-creates (:func:`_resolve_uv_sources_symlinks`). Entries whose resolved
+    path does not exist are omitted so the caller falls back to plain pip
+    (fail-open — never emit a known-broken ``-e`` target). Non-path entries
+    (git, index, workspace, url) are skipped. (TASK-FIX-UVSRCDEP01)
+    """
+    try:
+        try:
+            import tomllib  # Python 3.11+
+        except ImportError:
+            import tomli as tomllib  # type: ignore[import,no-redef]
+        data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.debug(
+            "Could not parse %s for uv-sources editable-target resolution: %s",
+            pyproject_path,
+            exc,
+        )
+        return {}
+
+    sources = data.get("tool", {}).get("uv", {}).get("sources")
+    if not isinstance(sources, dict) or not sources:
+        return {}
+
+    base_dir = pyproject_path.parent
+    targets: dict[str, str] = {}
+    for key, entry in sources.items():
+        if not isinstance(entry, dict):
+            continue
+        path_value = entry.get("path")
+        if not isinstance(path_value, str):
+            # Non-path sources (git / index / workspace / url): leave to pip.
+            continue
+        resolved = (base_dir / path_value).resolve()
+        if not resolved.exists():
+            # Fail-open: sibling not checked out / bridge symlink absent. Plain
+            # pip preserves the pre-existing behaviour rather than emitting a
+            # guaranteed-broken editable target.
+            continue
+        targets[_normalise_dist_name(key)] = str(resolved)
+    return targets
 
 
 def _resolve_uv_sources_symlinks(
