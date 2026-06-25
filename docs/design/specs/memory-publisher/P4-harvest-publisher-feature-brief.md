@@ -58,8 +58,9 @@ from nats_core.config import NATSConfig
 from nats_core.events import MemoryEpisodeV1
 from pydantic import SecretStr
 
-cfg = NATSConfig(url="nats://127.0.0.1:4222", user="<publisher-user>",
-                 password=SecretStr("<pw>"), name="guardkit-harvest")
+cfg = NATSConfig(url="nats://127.0.0.1:4222", user="guardkit",
+                 password=SecretStr(gk_pw),  # gk_pw = GUARDKIT_NATS_PASSWORD (nats-infrastructure/.env)
+                 name="guardkit-harvest")
 client = NATSClient(cfg, source_id="guardkit-harvest")
 await client.connect()                 # uses cfg; connect() takes NO url arg
 await client.publish_episode(episode)  # one MemoryEpisodeV1
@@ -106,6 +107,15 @@ live on the GB10 broker. The harvest just connects as it — no further infra ch
   **no subscribe on `memory.episode.>`** (it does not consume — that is the relay's job).
 - **Verified end-to-end:** publishing via `nats_core.publish_episode` as `guardkit` lands a row in the
   live Postgres store (G1) and a hyphenated `project_id` correctly parks on `memory.dlq.*` (G3).
+- **Operational notes:**
+  - `nats server check connection` as `guardkit` prints a `CRITICAL` round-trip warning — **expected, not
+    a fault**: a scoped publisher can't publish the health-check's request subject, but the connection +
+    auth succeed (`OK:connected ...`), which is all the harvest needs. A plain `publish_episode` (core
+    publish to `memory.episode.>`) works.
+  - **Rotating the password** = edit `nats-infrastructure/.env` (`GUARDKIT_NATS_PASSWORD`) then
+    `docker compose up -d --build` in `nats-infrastructure`. The `--build` is required because the
+    entrypoint is baked into the broker image, so a plain restart won't re-run envsubst over the template.
+    (Connected clients — the relay, forge — auto-reconnect across the rebuild.)
 
 > The harvest's only remaining job re: identity is to **read `GUARDKIT_NATS_PASSWORD`** (from the
 > nats-infrastructure `.env`, an injected secret, or wherever guardkit keeps its NATS creds) and build the
