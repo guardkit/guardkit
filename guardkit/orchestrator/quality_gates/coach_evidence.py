@@ -119,6 +119,46 @@ class RuntimeParityResult:
 
 
 @dataclass
+class IndependentTestClassification:
+    """Substrate-vs-code classification of a ran-and-failed independent test run.
+
+    TASK-ABFIX-012. Computed by ``CoachValidator.gather_evidence`` ONLY when the
+    Coach's own independent test run RAN and FAILED (``tests_passed is False`` AND
+    ``signal_absent is False``) — never for a passing run and never for an ABSENT
+    signal (an absent signal must never manufacture a code verdict;
+    ``absence-of-failure-is-not-success.md``). ``None`` on the bundle otherwise.
+
+    A ``failure_class == "code"`` result for a TESTING task deterministically
+    blocks the turn via
+    ``AgentInvoker._apply_independent_test_code_failure_guard`` — the deterministic
+    backstop the LLM Coach lacked when it false-approved FEAT-FMDR-004 (a 5/9-red
+    TESTING task whose real code bugs were reasoned away as "substrate, absent").
+
+    Attributes
+    ----------
+    failure_class : str
+        One of ``"code"`` / ``"infrastructure"`` / ``"parallel_contention"`` /
+        ``"collection_error"`` / ``"sdk_api_error"`` (see
+        ``CoachValidator._classify_test_failure``). Only ``"code"`` blocks; a
+        substrate gap classifies ``"infrastructure"`` and genuine cross-task
+        contention classifies ``"parallel_contention"`` — neither reaches the
+        blocking guard, preserving the parallel-contention amnesty for non-code
+        failures.
+    confidence : str
+        ``"high"`` / ``"ambiguous"`` / ``"n/a"``. The guard blocks on any
+        confidence (a single-wave failure with no recognised exception token is
+        still ``("code", "n/a")`` and IS a real failure for a TESTING task).
+    raw_output_excerpt : str
+        Last 500 chars of the independent-test raw output, for the Player-facing
+        feedback. Bounded so ``coach_turn_N.json`` stays small.
+    """
+
+    failure_class: str
+    confidence: str
+    raw_output_excerpt: str = ""
+
+
+@dataclass
 class CoachEvidenceBundle:
     """Structured evidence gathered by CoachValidator for the LLM Coach.
 
@@ -175,6 +215,13 @@ class CoachEvidenceBundle:
         ``IndependentTestResult`` from Coach's own pytest pass. ``None`` when
         gathering aborted before independent tests or when the task type's
         profile opts out of independent verification.
+    independent_test_classification
+        ``IndependentTestClassification`` (TASK-ABFIX-012) — substrate-vs-code
+        verdict for a RAN-AND-FAILED independent test run. Populated only when
+        ``independent_tests`` ran and failed (``tests_passed`` False AND
+        ``signal_absent`` False); ``None`` for passing / absent / skipped runs.
+        A ``("code", ...)`` result for a TESTING task deterministically blocks
+        the turn via ``AgentInvoker._apply_independent_test_code_failure_guard``.
     requirements
         ``RequirementsValidation`` from ``validate_requirements``. ``None``
         when gathering aborted before requirements validation.
@@ -240,6 +287,17 @@ class CoachEvidenceBundle:
     spec_gap: Optional[Dict[str, Any]] = None       # SPEC_GAP (Wave-3)
 
     independent_tests: Optional["IndependentTestResult"] = None
+    # TASK-ABFIX-012: substrate-vs-code classification of a ran-and-failed
+    # independent test run. Populated by gather_evidence ONLY when independent
+    # tests RAN and FAILED (tests_passed False AND signal_absent False). A
+    # ("code", ...) result for a TESTING task deterministically blocks via
+    # AgentInvoker._apply_independent_test_code_failure_guard. ``None`` for
+    # passing / absent / skipped runs — an absent signal never manufactures a
+    # code verdict (absence-of-failure-is-not-success). Serialised automatically
+    # by ``to_dict``/``asdict`` (it is a dataclass), so the verdict reaches
+    # coach_turn_N.json with no to_dict change (the ABFIX-010 serialization
+    # invariant).
+    independent_test_classification: Optional["IndependentTestClassification"] = None
     requirements: Optional[Any] = None  # RequirementsValidation; avoid circular import
 
     # TASK-AB-COACHRUNPARITY01 (arm b): per-task runtime-parity check. The

@@ -678,9 +678,10 @@ class TestQualityGateStateTransitions:
         assert scaffolding_profile.arch_review_required is False
         assert scaffolding_profile.plan_audit_required is True  # Still need audit
 
-        # TESTING profile - no tests required (meta-task)
+        # TESTING profile - TASK-ABFIX-012: tests ARE required (deliverable IS
+        # passing tests); coverage still not required.
         testing_profile = get_profile(TaskType.TESTING)
-        assert testing_profile.tests_required is False
+        assert testing_profile.tests_required is True
         assert testing_profile.coverage_required is False
 
         # REFACTOR profile - full validation like FEATURE
