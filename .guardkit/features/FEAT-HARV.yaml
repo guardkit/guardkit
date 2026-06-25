@@ -1,0 +1,100 @@
+id: FEAT-HARV
+name: Guardkit memory harvest publisher
+description: Walk guardkit's curated knowledge artifacts and publish each as a canonical
+  MemoryEpisodeV1 onto the NATS MEMORY stream via nats_core.NATSClient.publish_episode();
+  idempotent + resumable (deterministic episode_id; JetStream dedupes on Nats-Msg-Id).
+  nats-core dependency pre-wired in pyproject + bootstrap_extras.
+created: '2026-06-25T18:31:11.962487'
+status: planned
+complexity: 5
+estimated_tasks: 6
+tasks:
+- id: TASK-HARV-002
+  name: Harvest taxonomy config and deterministic episode_id
+  file_path: tasks/backlog/memory-harvest-publisher/TASK-HARV-002-harvest-taxonomy-and-episode-id.md
+  complexity: 3
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+- id: TASK-HARV-003
+  name: Harvest walker
+  file_path: tasks/backlog/memory-harvest-publisher/TASK-HARV-003-harvest-walker.md
+  complexity: 5
+  dependencies:
+  - TASK-HARV-002
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-HARV-004
+  name: NATS publisher integration
+  file_path: tasks/backlog/memory-harvest-publisher/TASK-HARV-004-nats-publisher-integration.md
+  complexity: 5
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-HARV-005
+  name: guardkit memory harvest CLI with dry-run
+  file_path: tasks/backlog/memory-harvest-publisher/TASK-HARV-005-memory-harvest-cli.md
+  complexity: 4
+  dependencies:
+  - TASK-HARV-003
+  - TASK-HARV-004
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-HARV-006
+  name: Acceptance tests for the harvest contract
+  file_path: tasks/backlog/memory-harvest-publisher/TASK-HARV-006-acceptance-tests.md
+  complexity: 3
+  dependencies:
+  - TASK-HARV-005
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+- id: TASK-HARV-007
+  name: Live GB10 harvest run and G1 verification
+  file_path: tasks/backlog/memory-harvest-publisher/TASK-HARV-007-live-gb10-harvest-run.md
+  complexity: 3
+  dependencies:
+  - TASK-HARV-005
+  - TASK-HARV-006
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+orchestration:
+  parallel_groups:
+  - - TASK-HARV-002
+    - TASK-HARV-004
+  - - TASK-HARV-003
+  - - TASK-HARV-005
+  - - TASK-HARV-006
+  - - TASK-HARV-007
+  estimated_duration_minutes: 299
+  recommended_parallel: 2
+# Threads `uv pip install -e .[dev,memory]` into every wave's isolated worktree venv.
+# `memory` installs the editable ../nats-core sibling (declared in [tool.uv.sources] +
+# the `memory` extra in pyproject.toml) so `import nats_core` resolves in waves 2-5.
+# `dev` is REQUIRED here: an operator-declared bootstrap_extras suppresses the
+# Coach-needs-pytest auto-add, so omitting it would strip pytest from the worktree venv
+# and break the Coach independent-test gate. (Verified: env_bootstrap derive_bootstrap_extras.)
+bootstrap_extras:
+- dev
+- memory
+# Feature-level smoke gate (R3): after the CLI wave (wave 3 = TASK-HARV-005), run the
+# assembled walker→CLI dry-run. Catches composition/import failures the per-task Coach
+# misses, with NO live broker (--dry-run short-circuits before any NATS connect /
+# GUARDKIT_NATS_PASSWORD read). `python -m guardkit.cli.main` is robust against
+# console-script PATH uncertainty (editable package + venv python on PATH).
+smoke_gates:
+  after_wave: 3
+  command: python -m guardkit.cli.main memory harvest --dry-run
+  expected_exit: 0
+  timeout: 180
