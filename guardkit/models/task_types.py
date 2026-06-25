@@ -82,7 +82,8 @@ class QualityGateProfile:
             Default for features: 80
             Ignored if coverage_required is False
         tests_required: Whether test execution is required.
-            Required for: FEATURE, INFRASTRUCTURE
+            Required for: FEATURE, INFRASTRUCTURE, TESTING (TASK-ABFIX-012 — a
+                TESTING task's deliverable IS passing tests)
             Optional for: SCAFFOLDING (e.g., validation scripts)
             Skipped for: DOCUMENTATION
         plan_audit_required: Whether plan audit (Phase 5.5) is required.
@@ -92,8 +93,9 @@ class QualityGateProfile:
         zero_test_blocking: Whether zero-test anomaly blocks approval (default: False).
             When True and tests_required is True, a zero-test anomaly returns
             an error that blocks Coach approval instead of a warning.
-            Enabled for: FEATURE, REFACTOR
-            Disabled for: SCAFFOLDING, INFRASTRUCTURE, DOCUMENTATION, TESTING
+            Enabled for: FEATURE, REFACTOR, TESTING (TASK-ABFIX-012 — a TESTING
+                task with zero runnable tests is itself suspect)
+            Disabled for: SCAFFOLDING, INFRASTRUCTURE, DOCUMENTATION
         seam_tests_recommended: Whether seam tests are recommended for this task type.
             When True, Coach validation will note if cross-boundary features
             lack seam tests (soft gate, not blocking in first iteration).
@@ -241,8 +243,20 @@ DEFAULT_PROFILES: Dict[TaskType, QualityGateProfile] = {
         arch_review_threshold=0,
         coverage_required=False,
         coverage_threshold=0.0,
-        tests_required=False,
+        # TASK-ABFIX-012: a TESTING task's deliverable IS passing tests, so the
+        # Coach MUST run them independently (was False, which let the LLM Coach
+        # reason a 5/9-red run away as "substrate" and false-approve FMDR-004).
+        # Safe only because this ships WITH the substrate-vs-code classifier
+        # (a substrate gap → signal_absent → feedback, not a false-red) and the
+        # deterministic _apply_independent_test_code_failure_guard (a real code
+        # bug → block). Do not flip this back without those guards.
+        tests_required=True,
         plan_audit_required=True,
+        # TASK-ABFIX-012: a TESTING task that produced zero runnable tests is
+        # itself suspect — block rather than silently UNKNOWN-pass. A genuinely
+        # passing independent run is exempt (_check_zero_test_anomaly skips when
+        # independent_tests.tests_passed and test_command != "skipped").
+        zero_test_blocking=True,
     ),
     TaskType.REFACTOR: QualityGateProfile(
         arch_review_required=True,

@@ -59,6 +59,7 @@ from guardkit.orchestrator.quality_gates.stack_test_execution import (
 )
 from guardkit.orchestrator.quality_gates.coach_evidence import (
     CoachEvidenceBundle,
+    IndependentTestClassification,
     RuntimeParityResult,
 )
 from guardkit.orchestrator.docker_fixtures import (
@@ -1331,6 +1332,44 @@ class CoachValidator:
         "cassandra",
     ]
 
+    # TASK-ABFIX-012: stack-agnostic HOST-SUBSTRATE gap signals. A test command
+    # that could not run because a host tool is missing (the command itself, or a
+    # tool a test shells out to — e.g. psql/docker/dotnet/npm/node). Routed to
+    # ("infrastructure", "high") in ``_classify_test_failure`` AND to
+    # ``signal_absent=True`` in ``run_independent_tests`` (via
+    # ``_is_host_substrate_gap``), so a substrate-blocked TESTING task surfaces as
+    # ABSENT / feedback (bounded by max_turns) — never a code-class block (the
+    # false-red ABFIX-010 prevents) and never a false pass
+    # (absence-of-failure-is-not-success). Stack-agnostic shell vocabulary, not
+    # Python-specific. NOTE: the bare ": not found" / "no such file or directory"
+    # idioms are intentionally EXCLUDED — they false-match legitimate code
+    # failures ("key: not found", a test asserting FileNotFoundError), which would
+    # mis-route a real bug to infrastructure and re-open a false-green. The
+    # definitive rc-126/127 signal in ``_is_host_substrate_gap`` covers those.
+    _HOST_SUBSTRATE_MISSING_PATTERNS: List[str] = [
+        "command not found",
+        "executable file not found",
+        "is not recognized as an internal or external command",
+    ]
+
+    # TASK-ABFIX-012: high-confidence OWN-CODE-BUG signals. A genuine Python
+    # exception token in a TESTING task's own test output is a deterministic code
+    # defect — a filesystem race (the contention ABFIX-005 amnesties) surfaces as
+    # import / collection errors, not a clean AssertionError/AttributeError. Used
+    # ONLY to neutralise the parallel-wave ``parallel_contention`` amnesty for
+    # TESTING: a token match returns ("code", "high") regardless of wave_size, so a
+    # real assertion failure is rejected in BOTH single and parallel waves. (Single
+    # waves already classify ("code", "n/a") via the natural fallback, which the
+    # guard also blocks.)
+    _CODE_FAILURE_HIGH_CONFIDENCE: List[str] = [
+        "assertionerror",
+        "attributeerror",
+        "has no attribute",
+        "nameerror",
+        "is not defined",
+        "typeerror",
+    ]
+
     def __init__(
         self,
         worktree_path: str,
@@ -2112,6 +2151,9 @@ class CoachValidator:
             failure_class, failure_confidence = self._classify_test_failure(
                 test_result.raw_output,
                 requires_infrastructure=task.get("requires_infrastructure") if task else None,
+                # TASK-ABFIX-012: thread task_type so the TESTING own-code override
+                # fires on the legacy validate() path too (GUARDKIT_COACH_LEGACY=1).
+                task_type=task.get("task_type") if task else None,
             )
             logger.warning(
                 f"Independent test verification failed for {task_id} "
@@ -3040,6 +3082,61 @@ class CoachValidator:
         # ------------------------------------------------------------------
         runtime_parity = self._gather_runtime_parity()
 
+        # ------------------------------------------------------------------
+        # 7. Independent-test substrate-vs-code classification (TASK-ABFIX-012).
+        # The live gather_evidence path carries NO failure classification on the
+        # bundle today (the legacy validate() path's _classify_test_failure is
+        # not on this path), so a genuine independent CODE failure has no
+        # deterministic blocking guard — the FMDR-004 false-approval. Compute the
+        # verdict HERE (the single place where the classifier + wave-context
+        # is_parallel/wave_size + task_type converge) and carry it on the bundle
+        # for AgentInvoker._apply_independent_test_code_failure_guard.
+        #
+        # Computed ONLY for a RAN-AND-FAILED run (tests_passed False AND
+        # signal_absent False). An ABSENT signal (signal_absent True — e.g. a
+        # host-substrate gap) is owned by the absent guard and must NEVER
+        # manufacture a code verdict (absence-of-failure-is-not-success). A
+        # passing / skipped run leaves it None.
+        independent_test_classification: Optional[IndependentTestClassification] = None
+        if (
+            test_result.tests_passed is False
+            and test_result.signal_absent is False
+        ):
+            fc, conf = self._classify_test_failure(
+                test_result.raw_output,
+                requires_infrastructure=(
+                    task.get("requires_infrastructure") if task else None
+                ),
+                task_type=task_type.value,
+            )
+            # TASK-ABFIX-012: for a TESTING task the parallel-wave
+            # parallel_contention amnesty must not cover the task's OWN failures.
+            # A recognised own-code exception token is already ('code','high').
+            # A NON-token failure (e.g. ValueError / KeyError / a custom
+            # exception) in a parallel wave classifies parallel_contention here;
+            # reclassify it to ('code','high') so the guard blocks it — UNLESS
+            # there is genuine cross-task source-file contention (this task's
+            # authored files overlap a peer's edits in the same wave), the one
+            # case the amnesty must keep (constraint 3). The original ABFIX-005
+            # contention (import / collection races) is caught earlier in the
+            # classifier and never reaches here, so this only reclassifies real
+            # own-code test failures, never a genuine race. Single-task waves
+            # never produce parallel_contention, so this is a no-op there.
+            if task_type == TaskType.TESTING and fc == "parallel_contention":
+                if not self._detect_source_file_contention(task_work_results):
+                    logger.info(
+                        "gather_evidence: TESTING parallel failure with no peer "
+                        "source-file overlap reclassified parallel_contention -> "
+                        "('code','high') for %s (own-code failure, not contention).",
+                        task_id,
+                    )
+                    fc, conf = "code", "high"
+            independent_test_classification = IndependentTestClassification(
+                failure_class=fc,
+                confidence=conf,
+                raw_output_excerpt=(test_result.raw_output or "")[-500:],
+            )
+
         return CoachEvidenceBundle(
             honesty=honesty,
             gathering_status="complete",
@@ -3050,6 +3147,7 @@ class CoachValidator:
             arch_review=arch_review_dict,
             tests=tests_dict,
             independent_tests=test_result,
+            independent_test_classification=independent_test_classification,
             requirements=requirements,
             severity_recommendations=severity_recommendations,
             advisory_issues=advisory_issues,
@@ -3845,12 +3943,25 @@ class CoachValidator:
                 logger.debug(
                     f"[{self.task_id}] _run_tests_via_sdk raw output (first 2000 chars): {output_text[:2000]}"
                 )
+                # TASK-ABFIX-012: a missing host tool ("command not found") makes
+                # this an ABSENT signal (the oracle could not run), not a Player
+                # test failure. No subprocess return code is available on the SDK
+                # path, so match the explicit shell strings.
+                substrate_absent = self._is_host_substrate_gap(None, output_text)
+                if substrate_absent:
+                    logger.warning(
+                        "[TASK-ABFIX-012] SDK independent test oracle hit a "
+                        "host-substrate gap (missing host tool) — absent signal, "
+                        "not a test failure. cmd=%s",
+                        test_cmd,
+                    )
                 return IndependentTestResult(
                     tests_passed=False,
                     test_command=test_cmd,
                     test_output_summary=summary,
                     duration_seconds=duration,
                     raw_output=output_text,
+                    signal_absent=substrate_absent,
                 )
             elif bash_is_error is False:
                 # NOTE (TASK-HMIG-006.3 code-review nit): this branch is
@@ -3882,6 +3993,24 @@ class CoachValidator:
                 logger.debug(
                     f"[{self.task_id}] _run_tests_via_sdk raw output (first 2000 chars): {output_text[:2000]}"
                 )
+                # TASK-ABFIX-012: a host-substrate gap ("command not found") is an
+                # ABSENT signal — short-circuit before the pass/fail heuristic so a
+                # missing host tool is never read as a Player test failure or pass.
+                if self._is_host_substrate_gap(None, output_text):
+                    logger.warning(
+                        "[TASK-ABFIX-012] SDK independent test oracle (heuristic "
+                        "branch) hit a host-substrate gap — absent signal, not a "
+                        "test failure. cmd=%s",
+                        test_cmd,
+                    )
+                    return IndependentTestResult(
+                        tests_passed=False,
+                        test_command=test_cmd,
+                        test_output_summary=summary,
+                        duration_seconds=duration,
+                        raw_output=output_text,
+                        signal_absent=True,
+                    )
                 # Heuristic: check for failure indicators in output
                 lower = output_text.lower()
                 has_failure = any(
@@ -4317,6 +4446,21 @@ class CoachValidator:
                         result.returncode,
                         test_cmd,
                     )
+                # TASK-ABFIX-012: parity with the standard subprocess path — a
+                # missing host tool (rc 126/127 or "command not found") is an
+                # ABSENT signal, never a Player test failure, in the isolated
+                # parallel-wave oracle too.
+                elif not tests_passed and self._is_host_substrate_gap(
+                    result.returncode, combined
+                ):
+                    signal_absent = True
+                    logger.warning(
+                        "[TASK-ABFIX-012] Isolated test oracle hit a host-substrate "
+                        "gap (returncode=%s, missing host tool) — absent signal, "
+                        "not a test failure. cmd=%s",
+                        result.returncode,
+                        test_cmd,
+                    )
 
                 logger.info(
                     f"[TASK-ABFIX-005] Isolated tests "
@@ -4641,23 +4785,35 @@ class CoachValidator:
                     timeout_usage_error = self._is_pytest_timeout_usage_error(
                         result.returncode, combined
                     )
+                    # TASK-ABFIX-012: a missing host tool (the test command itself,
+                    # or a tool a test shells out to — rc 126/127 or a shell
+                    # "command not found") means the oracle could not run. ABSENT
+                    # signal (routes through the existing absent guard → feedback,
+                    # bounded by max_turns), never a Player test failure (the
+                    # false-red ABFIX-010 prevents).
+                    host_substrate_gap = self._is_host_substrate_gap(
+                        result.returncode, combined
+                    )
                     if (
                         runner_absent
                         or no_tests_collected
                         or collection_failed
                         or timeout_usage_error
+                        or host_substrate_gap
                     ):
                         signal_absent = True
                         logger.warning(
                             "Independent test oracle did not run "
                             "(returncode=%s, runner-absent=%s/no-tests-collected=%s"
-                            "/collection-failed=%s/timeout-usage-error=%s) — "
+                            "/collection-failed=%s/timeout-usage-error=%s"
+                            "/host-substrate-gap=%s) — "
                             "treating as absent signal, not a test failure. cmd=%s",
                             result.returncode,
                             runner_absent,
                             no_tests_collected,
                             collection_failed,
                             timeout_usage_error,
+                            host_substrate_gap,
                             test_cmd,
                         )
 
@@ -6605,10 +6761,37 @@ class CoachValidator:
             )
         return plain
 
+    def _is_host_substrate_gap(
+        self, returncode: Optional[int], combined_output: str
+    ) -> bool:
+        """Return True when a test run could not execute due to a missing host tool.
+
+        TASK-ABFIX-012. Stack-agnostic: a shell return code of 126 (found but not
+        executable) or 127 (command not found), or one of the explicit
+        ``_HOST_SUBSTRATE_MISSING_PATTERNS`` shell-error strings in the captured
+        output. Deliberately does NOT match a bare "No such file or directory" or
+        ": not found" (a pytest test legitimately asserting FileNotFoundError, or
+        a "key: not found" message, would false-match and mis-route a real code
+        bug to infrastructure → false-green) — only the definitive rc 126/127
+        signal and the unambiguous shell strings, which a normal pytest assertion
+        does not emit.
+
+        A host-substrate gap is an ABSENT signal (the oracle could not run); the
+        caller routes it to ``signal_absent=True`` so it surfaces as feedback
+        bounded by ``max_turns`` — never a Player code failure (the false-red
+        ABFIX-010 prevents) and never a pass
+        (``absence-of-failure-is-not-success.md``).
+        """
+        if returncode in (126, 127):
+            return True
+        low = (combined_output or "").lower()
+        return any(p in low for p in self._HOST_SUBSTRATE_MISSING_PATTERNS)
+
     def _classify_test_failure(
         self,
         test_output: Optional[str],
         requires_infrastructure: Optional[List[str]] = None,
+        task_type: Optional[str] = None,
     ) -> Tuple[str, str]:
         """Classify a test failure as infrastructure or code with confidence.
 
@@ -6698,6 +6881,18 @@ class CoachValidator:
                     f" matched '{pattern}' → ('sdk_api_error', 'high')"
                 )
                 return ("sdk_api_error", "high")
+        # TASK-ABFIX-012: a HOST-SUBSTRATE gap (missing host tool) is
+        # high-confidence infrastructure. Checked BEFORE the is_parallel
+        # reclassification below so a substrate miss in a parallel wave is never
+        # amnestied as parallel_contention, and never classified as a code-class
+        # block — a substrate gap is the environment's problem, not the Player's.
+        for pattern in self._HOST_SUBSTRATE_MISSING_PATTERNS:
+            if pattern in output_lower:
+                logger.debug(
+                    f"[{self.task_id}] _classify_test_failure: host-substrate "
+                    f"pattern matched '{pattern}' → ('infrastructure', 'high')"
+                )
+                return ("infrastructure", "high")
         for pattern in self._INFRA_HIGH_CONFIDENCE:
             if pattern.lower() in output_lower:
                 logger.debug(
@@ -6712,6 +6907,24 @@ class CoachValidator:
                     f" '{pattern}' → ('infrastructure', 'ambiguous')"
                 )
                 return ("infrastructure", "ambiguous")
+        # TASK-ABFIX-012: for a TESTING task, a genuine own-code exception token
+        # (AssertionError / AttributeError / NameError / TypeError) is the task's
+        # OWN bug, not transient parallel contention. Classify it ("code", "high")
+        # REGARDLESS of wave_size so it is rejected in BOTH single and parallel
+        # waves — neutralising the wave_size swing that lets the
+        # parallel_contention amnesty (below) approve a real assertion failure.
+        # Failures WITHOUT such a token still fall through to the amnesty, so
+        # genuine cross-task contention (import / collection races, which do NOT
+        # produce a clean exception token) is preserved.
+        if (task_type or "").lower() == "testing":
+            for pattern in self._CODE_FAILURE_HIGH_CONFIDENCE:
+                if pattern in output_lower:
+                    logger.debug(
+                        f"[{self.task_id}] _classify_test_failure: TESTING own-code "
+                        f"token matched '{pattern}' → ('code', 'high') "
+                        f"(wave_size={self.wave_size}, swing neutralised)"
+                    )
+                    return ("code", "high")
         # TASK-ABFIX-005: In a parallel wave, a code failure might be caused by
         # concurrent worktree mutations (e.g. another task partially writing
         # __init__.py). Reclassify as parallel_contention to allow conditional

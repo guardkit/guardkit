@@ -386,7 +386,10 @@ class TestQualityGateProfileForType:
         profile = QualityGateProfile.for_type(TaskType.TESTING)
         assert profile.arch_review_required is False
         assert profile.coverage_required is False
-        assert profile.tests_required is False
+        # TASK-ABFIX-012: a TESTING task's deliverable IS passing tests, so the
+        # Coach runs them independently and blocks a real code failure.
+        assert profile.tests_required is True
+        assert profile.zero_test_blocking is True
         assert profile.plan_audit_required is True
 
     def test_for_type_returns_refactor_profile(self):
@@ -460,7 +463,10 @@ class TestDefaultProfiles:
         assert profile.arch_review_threshold == 0
         assert profile.coverage_required is False
         assert profile.coverage_threshold == 0.0
-        assert profile.tests_required is False
+        # TASK-ABFIX-012: tests are now required for TESTING tasks (deliverable IS
+        # passing tests) and a zero-test TESTING task is blocking-suspect.
+        assert profile.tests_required is True
+        assert profile.zero_test_blocking is True
         assert profile.plan_audit_required is True
 
     def test_default_profiles_refactor_configuration(self):
@@ -518,7 +524,8 @@ class TestGetProfile:
         """Test get_profile with TESTING type."""
         profile = get_profile(TaskType.TESTING)
         assert profile.arch_review_required is False
-        assert profile.tests_required is False
+        # TASK-ABFIX-012: a TESTING task's deliverable IS passing tests.
+        assert profile.tests_required is True
         assert profile.plan_audit_required is True
 
     def test_get_profile_with_refactor(self):
@@ -645,7 +652,8 @@ class TestIntegration:
         # Verify minimal gates for test-writing tasks
         assert profile.arch_review_required is False
         assert profile.coverage_required is False
-        assert profile.tests_required is False
+        # TASK-ABFIX-012: tests ARE required (the deliverable IS passing tests).
+        assert profile.tests_required is True
         # But plan audit is still required
         assert profile.plan_audit_required is True
 

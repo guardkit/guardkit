@@ -1,9 +1,14 @@
 ---
 id: TASK-ABFIX-012
 title: "Widen substrate-vs-code failure classifier, then make the test gate required for TESTING-type tasks (kills the FMDR-004 false-approval without re-opening a false-red)"
-status: backlog
+status: completed
 task_type: fix
 created: 2026-06-24T00:00:00Z
+updated: 2026-06-25T00:00:00Z
+completed: 2026-06-25T00:00:00Z
+completed_location: tasks/completed/TASK-ABFIX-012/
+previous_state: in_review
+state_transition_reason: "Completed: all quality gates passed (578 passed / 0 failed; adversarial diff review CLOSED)"
 priority: medium
 complexity: 7
 related:
@@ -79,22 +84,53 @@ produce an explicit blocking False.
 
 ## Acceptance Criteria
 
-- [ ] `_classify_test_failure` maps host-substrate gaps (`command not found`,
+- [x] `_classify_test_failure` maps host-substrate gaps (`command not found`,
       `executable not found`, missing-file-on-exec) to `('infrastructure', high)` →
-      `signal_absent=True`, stack-agnostically.
-- [ ] A real code-class failure (wrong method name, assertion) for a TESTING task is
-      rejected (`must_fix`) in a **single-task** wave.
-- [ ] The same code-class failure is rejected in a **parallel** wave (the
+      `signal_absent=True`, stack-agnostically. *(`_HOST_SUBSTRATE_MISSING_PATTERNS`
+      + `_is_host_substrate_gap` rc-126/127; routed to `signal_absent` in all 3
+      `run_independent_tests` paths.)*
+- [x] A real code-class failure (wrong method name, assertion) for a TESTING task is
+      rejected (`must_fix`) in a **single-task** wave. *(`('code','n/a')` →
+      `_apply_independent_test_code_failure_guard` blocks on any `code` confidence.)*
+- [x] The same code-class failure is rejected in a **parallel** wave (the
       `parallel_contention` amnesty does not cover the task's own assertion failures
-      for TESTING).
-- [ ] A substrate-blocked TESTING task (e.g. `psql` missing) does NOT
+      for TESTING). *(Token override → `('code','high')`; plus peer-overlap-aware
+      reclassification in `gather_evidence` closes the non-token residual the
+      adversarial review found, while keeping the amnesty for genuine shared-file
+      contention.)*
+- [x] A substrate-blocked TESTING task (e.g. `psql` missing) does NOT
       `unrecoverable_stall` — it surfaces as absent/feedback (and would pass once the
       substrate is present), exactly the false-red ABFIX-010 prevents.
-- [ ] TESTING profile `tests_required=True` only AFTER the classifier widening lands;
+- [x] TESTING profile `tests_required=True` only AFTER the classifier widening lands;
       `zero_test_blocking` set with explicit rationale.
-- [ ] Reproducer mirrors FMDR-004: a 5/9-red testing task with real test-code bugs is
+- [x] Reproducer mirrors FMDR-004: a 5/9-red testing task with real test-code bugs is
       NOT approved; a 9/9 (or substrate-only-red) testing task is handled correctly.
-- [ ] CI: harness-touching tests pin `GUARDKIT_HARNESS=sdk` or `skipif`.
+- [x] CI: harness-touching tests pin `GUARDKIT_HARNESS=sdk` or `skipif`.
+
+## Implementation summary (2026-06-25)
+
+Key finding that reshaped the naive plan: the **live** Coach path is
+`gather_evidence()` → `CoachEvidenceBundle` → deterministic guards in
+`agent_invoker` (NOT the legacy `validate()` where the cited line numbers live).
+So `tests_required=True` alone was necessary-but-insufficient — a new deterministic
+`_apply_independent_test_code_failure_guard` (mirroring `_apply_runtime_parity_guard`)
+was required to make the rejection deterministic in the live path.
+
+Files: `coach_validator.py` (classifier widening + substrate→signal_absent + the
+`IndependentTestClassification` computation in `gather_evidence`, incl. the
+peer-overlap parallel-wave closure), `coach_evidence.py`
+(`IndependentTestClassification` dataclass + bundle field), `agent_invoker.py`
+(the new guard + call-site), `task_types.py` (TESTING `tests_required`/
+`zero_test_blocking` → True). Tests:
+`tests/unit/test_abfix012_testing_test_gate.py` (36) +
+`tests/orchestrator/test_abfix012_gather_evidence_classification.py`.
+
+Verification: 578 passed / 49 harness-skipped / 0 failed across the related Coach,
+guard, ABFIX-010, checkpoint-absence, and parallel-isolation suites; zero
+regressions (the only red tests fail identically on clean `main` — they need the
+real SDK/langchain harness). Adversarial 3-lens diff review: false-red + scope
+SOUND; the one false-green residual it found (parallel non-token failure) was
+closed and re-verified CLOSED. Plan: `docs/state/TASK-ABFIX-012/implementation_plan.md`.
 
 ## Risks
 

@@ -2778,12 +2778,18 @@ class TestZeroTestBlockingConfiguration:
         profile = get_profile(TaskType.DOCUMENTATION)
         assert profile.zero_test_blocking is False
 
-    def test_testing_profile_has_zero_test_blocking_false(self):
-        """AC3: Testing profile has zero_test_blocking=False (unaffected)."""
+    def test_testing_profile_has_zero_test_blocking_true(self):
+        """TASK-ABFIX-012: Testing profile now blocks on zero tests.
+
+        Supersedes the original AC3 (zero_test_blocking=False). A TESTING task's
+        deliverable IS passing tests, so tests are required and a zero-test
+        TESTING task is itself suspect (blocking, not a silent UNKNOWN-pass).
+        """
         from guardkit.models.task_types import get_profile, TaskType
 
         profile = get_profile(TaskType.TESTING)
-        assert profile.zero_test_blocking is False
+        assert profile.tests_required is True
+        assert profile.zero_test_blocking is True
 
     def test_scaffolding_profile_has_zero_test_blocking_false(self):
         """AC4: Scaffolding profile keeps default zero_test_blocking=False."""
