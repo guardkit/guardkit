@@ -107,6 +107,32 @@ substrates were dropping. No consumer change needed.
   SDK path produce real markers, so a no-marker absent capture is rare. Left
   as a follow-up, not a harvest blocker.
 
+## Validation — FEAT-HARV `--fresh` end-to-end (2026-06-26)
+
+Validated by running the full feature autobuild three times, each run surfacing
+one real defect the prior fix exposed (monotonic wave progress throughout):
+
+| Run | Reached | Defect | Fix |
+|---|---|---|---|
+| 1 | wave 1 (004 ✓, 002 ✗) | the new `ToolResultEvent` lacked `.raw` → the **direct-mode Player** consumer (`agent_invoker.py:3950`) `AttributeError`'d → 0 files → correct gate block | `e0183822`: uniform `raw: object \| None = None` on `ToolUseEvent` + `ToolResultEvent` (hardens every unconditional `event.raw` read at once); exclude `ToolResultEvent` from the Player `response_messages`; contract test |
+| 2 | **waves 1–3 ✓ + post-wave smoke gate ✓**, wave 4 stall | the SDK pass/fail **substring heuristic** read a genuine `15 passed in 2.75s` as a failure because a passing `test_..._displays_error` and a covered `*_error_messages.py` path matched `"error"` | `3291da51`: `_verdict_from_pytest_summary` parses the pytest summary line (real counts); substring scan kept only as a no-summary-line fallback |
+| 3 | **6/6 COMPLETED** | — | — |
+
+Run 3: `FEATURE RESULT: SUCCESS`, `status=completed, completed=6/6`. 002 (direct
+mode) writes code; 003 (the previously-stalling walker) approves turn 1; the
+post-wave smoke gate fires **only after wave 3** (PARITYWAVE01) and passes
+(`memory harvest --dry-run` → exit 0); 006 approves on the real `15 passed`;
+007 (`operator_handoff`, live GB10 run) is skipped for the operator. Deliverable
+preserved on branch `autobuild/FEAT-HARV` for human review (never auto-merged).
+
+**Lesson:** adding a new `HarnessEvent` variant requires auditing EVERY consumer
+loop (the adapter's own "add variants to the consumer dispatch table" warning) —
+my unit tests covered the Coach consumer but not the direct-Player consumer.
+The run-2 heuristic defect is a fresh instance of the low-fidelity-oracle family
+(`absence-of-failure-is-not-success` et al.): a binary verdict from an oracle
+(substring scan) that cannot distinguish a real failure token from an incidental
+one. Candidate for a `.claude/rules/` seed + Graphiti node (follow-up).
+
 ## Out of scope / follow-ups
 
 - The absent-vs-classified asymmetry (DF44 remainder).
