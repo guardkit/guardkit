@@ -72,6 +72,7 @@ from guardkit.orchestrator.harness import (
     AssistantMessageEvent,
     HarnessEvent,
     ResultMessageEvent,
+    ToolResultEvent,
     ToolUseEvent,
     select_harness,
 )
@@ -3946,7 +3947,16 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                                         # response_messages would mix typed events
                                         # with SDK objects in a list typed
                                         # List[Any].
-                                        if not isinstance(event, ToolUseEvent):
+                                        # TASK-FIX-COACHTRES01: exclude BOTH typed
+                                        # tool events from response_messages. They
+                                        # carry no SDK ``raw`` object (raw=None) and
+                                        # are consumed as typed events elsewhere —
+                                        # appending the bare event would mix typed
+                                        # events with SDK objects in this List[Any]
+                                        # (the same reasoning that already excluded
+                                        # ToolUseEvent). ToolResultEvent is new to
+                                        # the Player stream as of the capture fix.
+                                        if not isinstance(event, (ToolUseEvent, ToolResultEvent)):
                                             raw = event.raw if event.raw is not None else event
                                             response_messages.append(raw)
                                         harness_events.append(event)
