@@ -2,9 +2,9 @@
 id: TASK-HARV-003
 title: Harvest walker (docs to MemoryEpisodeV1 list)
 task_type: feature
-status: backlog
-created: 2026-06-25T00:00:00Z
-updated: 2026-06-25T00:00:00Z
+status: in_review
+created: 2026-06-25 00:00:00+00:00
+updated: 2026-06-25 00:00:00+00:00
 complexity: 5
 parent_review: TASK-REV-HARV
 feature_id: FEAT-HARV
@@ -12,7 +12,23 @@ parent_feature: memory-harvest-publisher
 wave: 2
 implementation_mode: task-work
 depends_on:
-  - TASK-HARV-002
+- TASK-HARV-002
+autobuild_state:
+  current_turn: 1
+  max_turns: 5
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-HARV
+  base_branch: main
+  started_at: '2026-06-26T12:57:15.208727'
+  last_updated: '2026-06-26T13:06:49.280832'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-06-26T12:57:15.208727'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-HARV-003: Harvest walker (docs → MemoryEpisodeV1 list)

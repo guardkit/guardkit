@@ -2,9 +2,9 @@
 id: TASK-HARV-004
 title: NATS publisher integration (connect as guardkit, publish episodes)
 task_type: feature
-status: backlog
-created: 2026-06-25T00:00:00Z
-updated: 2026-06-25T00:00:00Z
+status: in_review
+created: 2026-06-25 00:00:00+00:00
+updated: 2026-06-25 00:00:00+00:00
 complexity: 5
 parent_review: TASK-REV-HARV
 feature_id: FEAT-HARV
@@ -13,11 +13,29 @@ wave: 2
 implementation_mode: task-work
 depends_on: []
 consumer_context:
-  - task: TASK-HARV-003
-    consumes: MemoryEpisodeV1
-    framework: "nats_core.NATSClient.publish_episode"
-    driver: "nats-core (pydantic MemoryEpisodeV1 envelope)"
-    format_note: "project_id='guardkit' (underscores only, no hyphens or relay DLQs); episode_type matches ^[a-zA-Z0-9][a-zA-Z0-9\\-_]*$; content_format in {markdown,text,json}; body non-empty and <=900KB; episode_id deterministic ep-<sha256[:16]>"
+- task: TASK-HARV-003
+  consumes: MemoryEpisodeV1
+  framework: nats_core.NATSClient.publish_episode
+  driver: nats-core (pydantic MemoryEpisodeV1 envelope)
+  format_note: project_id='guardkit' (underscores only, no hyphens or relay DLQs);
+    episode_type matches ^[a-zA-Z0-9][a-zA-Z0-9\-_]*$; content_format in {markdown,text,json};
+    body non-empty and <=900KB; episode_id deterministic ep-<sha256[:16]>
+autobuild_state:
+  current_turn: 1
+  max_turns: 5
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-HARV
+  base_branch: main
+  started_at: '2026-06-26T12:45:26.351965'
+  last_updated: '2026-06-26T12:56:57.665050'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-06-26T12:45:26.351965'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-HARV-004: NATS publisher integration
