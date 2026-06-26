@@ -21,6 +21,17 @@ test_results:
 
 # TASK-REV-COSE — Diagnose Coach SDK-test-execution opaque-stderr fallback
 
+> **RESOLVED 2026-06-26 — option (a) chosen and implemented.** The diagnosis
+> is confirmed: both harnesses dropped the tool result (SDK dropped the
+> `UserMessage`/`ToolResultBlock`; LangGraph never walked `ToolMessage`
+> history), so `_run_tests_via_sdk` captured the Coach agent's *narration*
+> not the pytest stdout. The operator chose the **capture fix (a)** over the
+> subprocess-default (b) to keep the SDK path a real oracle. Implemented as
+> **TASK-FIX-COACHTRES01** (`tasks/in_review/`): emit `ToolResultEvent` on
+> both substrates; the consumer's pre-existing branch already prefers the real
+> `bash_output`. The absent-vs-classified asymmetry is handed to TASK-FIX-DF44.
+> This review can be closed referencing COACHTRES01.
+
 ## Context
 
 Filed as a sidequest from [TASK-REV-9D13 v2 §4 R7](../../.claude/reviews/TASK-REV-9D13-report.md#r7--coach-sdk-test-execution-opaque-stderr-sidequest-separate-review). Originating evidence at jarvis run-2 history lines 2989-2995:

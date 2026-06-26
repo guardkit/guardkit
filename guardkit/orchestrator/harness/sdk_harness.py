@@ -88,6 +88,7 @@ from guardkit.orchestrator.harness.adapter import (
     HarnessAdapter,
     HarnessEvent,
     ResultMessageEvent,
+    ToolResultEvent,
     ToolUseEvent,
 )
 
@@ -412,7 +413,49 @@ class ClaudeSDKHarness(HarnessAdapter):
                             raw=message,
                         )
                         break
-                    # Other (non-Assistant, non-Result) messages are
+                    elif type(message).__name__ == "UserMessage":
+                        # TASK-FIX-COACHTRES01 (capture fix): surface tool RESULTS
+                        # as ToolResultEvent. The SDK delivers a tool's output
+                        # (e.g. the Bash `pytest` run the Coach's independent-
+                        # test path executes) as a ``UserMessage`` whose
+                        # ``content`` carries one or more ``ToolResultBlock``
+                        # entries (``tool_use_id`` / ``content`` / ``is_error``).
+                        # Pre-fix this message was DROPPED (the "other messages"
+                        # case below), so
+                        # ``coach_validator._run_tests_via_sdk`` only ever saw
+                        # the Coach agent's *narration* (collected_text) and
+                        # never the real pytest stdout — the FEAT-HARV
+                        # narration-capture defect where a no-marker capture
+                        # masquerades as an absent/failed signal even though
+                        # the deterministic subprocess pytest passed. The
+                        # consumer's pre-existing (formerly dead)
+                        # ``ToolResultEvent`` branch already prefers
+                        # ``bash_output`` over ``collected_text``, so emitting
+                        # the event here routes the real output into the
+                        # pass/fail determination with no consumer change.
+                        #
+                        # Duck-typed by class name (matching the ToolUseBlock
+                        # scan above) so MagicMock-shaped test fixtures stay
+                        # importable. ``content`` is passed through verbatim —
+                        # it is ``str`` for the common case and ``list`` for
+                        # structured blocks; the consumer handles both.
+                        for block in getattr(message, "content", None) or []:
+                            if type(block).__name__ != "ToolResultBlock":
+                                continue
+                            block_content = getattr(block, "content", "")
+                            yield ToolResultEvent(
+                                tool_use_id=getattr(block, "tool_use_id", "")
+                                or "",
+                                content=(
+                                    block_content
+                                    if block_content is not None
+                                    else ""
+                                ),
+                                is_error=bool(
+                                    getattr(block, "is_error", False)
+                                ),
+                            )
+                    # Other (non-Assistant, non-Result, non-User) messages are
                     # appended to response_messages for the post-stream
                     # bookkeeping but yield no HarnessEvent — they were
                     # never surfaced as events in the pre-refactor path

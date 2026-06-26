@@ -4,9 +4,11 @@ title: Gate per-task runtime parity on the smoke gate's after_wave scope
 task_type: feature
 parent_task: TASK-AB-COACHRUNPARITY01
 feature_id: FEAT-HARV
-status: backlog
+status: in_review
 created: 2026-06-26T00:00:00+00:00
 updated: 2026-06-26T00:00:00+00:00
+previous_state: backlog
+state_transition_reason: "Implemented + unit-tested 2026-06-26 (helper _per_task_smoke_command, 6 regression tests green)"
 priority: high
 tags:
   - autobuild

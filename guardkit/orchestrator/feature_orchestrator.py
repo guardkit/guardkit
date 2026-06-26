@@ -33,7 +33,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Literal, Optional
+from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple
 
 from rich.console import Console
 from rich.panel import Panel
@@ -3279,6 +3279,35 @@ The detailed specifications are in the task markdown file.
 
         return results
 
+    @staticmethod
+    def _per_task_smoke_command(
+        feature: Feature, wave_number: int
+    ) -> Tuple[Optional[str], int]:
+        """Per-task runtime-parity command for ``wave_number``, gated on scope.
+
+        TASK-FIX-PARITYWAVE01. The per-task runtime-parity check (arm b of
+        TASK-AB-COACHRUNPARITY01) is a *preview* of the post-wave smoke gate:
+        before the per-task Coach approves a single-task wave it runs the
+        feature's ``smoke_gates.command`` (the deliverable's real runtime
+        entry point) and overrides approve->feedback on a ran-and-failed
+        result. That preview must only run for waves where the post-wave gate
+        itself fires — otherwise a *later* wave's smoke command (whose CLI
+        subcommand does not exist until that wave's deliverable lands) is run
+        against an *earlier* wave's deliverable, producing an exit-2
+        ``No such command`` the task cannot fix.
+
+        Returns ``(None, 0)`` — an absent signal / no-op per arm b's
+        ``ran=False`` safety — when no smoke gate is configured OR the gate
+        does not fire for this wave (``should_fire_for_wave``). Delegates to
+        ``should_fire_for_wave`` for ALL ``after_wave`` forms (int / list /
+        ``"all"`` / unset), matching the post-wave gate's scope exactly.
+        """
+        if feature.smoke_gates is None or not should_fire_for_wave(
+            feature.smoke_gates, wave_number
+        ):
+            return None, 0
+        return feature.smoke_gates.command, feature.smoke_gates.expected_exit
+
     def _execute_wave(
         self,
         wave_number: int,
@@ -3336,19 +3365,19 @@ The detailed specifications are in the task markdown file.
         feature.execution.last_updated = datetime.now().isoformat()
         FeatureLoader.save_feature(feature, self.repo_root)
 
-        # TASK-AB-COACHRUNPARITY01 (arm b): the deliverable's runtime entry
-        # point, derived once here (this method already holds `feature`) and
-        # threaded to the per-task Coach as a plain string. `_execute_task`
-        # stays ignorant of the smoke-gate config object.
-        smoke_command = (
-            feature.smoke_gates.command
-            if feature.smoke_gates is not None
-            else None
-        )
-        smoke_expected_exit = (
-            feature.smoke_gates.expected_exit
-            if feature.smoke_gates is not None
-            else 0
+        # TASK-AB-COACHRUNPARITY01 (arm b) + TASK-FIX-PARITYWAVE01: the
+        # deliverable's runtime entry point, derived once here (this method
+        # already holds `feature`) and threaded to the per-task Coach as a
+        # plain string. `_execute_task` stays ignorant of the smoke-gate
+        # config object. The derivation is gated on the smoke gate's
+        # `after_wave` scope so a *later* wave's smoke command is never run as
+        # a per-task parity preview against an *earlier* wave's deliverable
+        # (which would exit-2 `No such command` and block the task to
+        # max_turns — FEAT-HARV wave-2 walker vs the wave-3 `memory harvest`
+        # CLI). `should_fire_for_wave` already gates the post-wave gate at the
+        # wave-loop site; the per-task preview reuses the same scope.
+        smoke_command, smoke_expected_exit = self._per_task_smoke_command(
+            feature, wave_number
         )
 
         # Execute tasks in parallel
