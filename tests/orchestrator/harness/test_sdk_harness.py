@@ -35,6 +35,8 @@ from claude_agent_sdk import (
     ResultMessage,
     TextBlock,
     ThinkingBlock,
+    ToolResultBlock,
+    UserMessage,
 )
 from claude_agent_sdk._errors import MessageParseError
 
@@ -43,6 +45,7 @@ from guardkit.orchestrator.harness import (
     AssistantMessageEvent,
     ClaudeSDKHarness,
     ResultMessageEvent,
+    ToolResultEvent,
 )
 
 
@@ -134,6 +137,29 @@ def _result_msg(session_id: str = "sess-1") -> ResultMessage:
         num_turns=1,
         session_id=session_id,
         total_cost_usd=0.0,
+    )
+
+
+def _user_msg_with_tool_result(
+    content="45 passed in 0.13s",
+    is_error: bool = False,
+    tool_use_id: str = "tu-1",
+) -> UserMessage:
+    """Build a UserMessage carrying a Bash ToolResultBlock.
+
+    Mirrors how the SDK delivers a tool's output back to the model — the
+    shape the harness must surface as a ToolResultEvent (TASK-FIX-COACHTRES01).
+    ``content`` is ``str`` for the common case; pass a list for the structured
+    block form.
+    """
+    return UserMessage(
+        content=[
+            ToolResultBlock(
+                tool_use_id=tool_use_id,
+                content=content,
+                is_error=is_error,
+            )
+        ]
     )
 
 
@@ -946,3 +972,116 @@ class TestCancelSDKHarness:
             "cancel() called after invoke() has finished should be a "
             "no-op — instance handle was cleared, so no second aclose."
         )
+
+
+# ----------------------------------------------------------------------
+# TASK-FIX-COACHTRES01: UserMessage/ToolResultBlock → ToolResultEvent
+# ----------------------------------------------------------------------
+
+
+class TestToolResultTranslation:
+    """The harness surfaces a Bash tool result (delivered as a UserMessage
+    carrying ToolResultBlock content) as a ToolResultEvent.
+
+    Pre-fix the UserMessage was dropped and the Coach independent-test path
+    only ever saw the agent's narration (the FEAT-HARV narration-capture
+    defect). These tests pin the emission contract the consumer
+    (coach_validator._run_tests_via_sdk) depends on to capture real pytest
+    stdout.
+    """
+
+    @pytest.mark.asyncio
+    async def test_tool_result_block_yields_tool_result_event(self, tmp_path):
+        harness = _make_harness(allowed_tools=["Bash"])
+        # Realistic stream order: assistant (tool use narration) → user
+        # (tool result = pytest stdout) → result.
+        narrate = _assistant_msg("I'll run the test command.")
+        tool_result = _user_msg_with_tool_result(
+            content="45 passed in 0.13s", is_error=False, tool_use_id="tu-9"
+        )
+        done = _result_msg()
+        fake_gen = RecordingAsyncGen([
+            ("yield", narrate),
+            ("yield", tool_result),
+            ("yield", done),
+        ])
+
+        with patch.object(claude_agent_sdk, "query", return_value=fake_gen):
+            events = await _drain(harness, tmp_path)
+
+        results = [e for e in events if isinstance(e, ToolResultEvent)]
+        assert len(results) == 1
+        assert results[0].content == "45 passed in 0.13s"
+        assert results[0].is_error is False
+        assert results[0].tool_use_id == "tu-9"
+        # The ToolResultEvent precedes the terminal ResultMessageEvent so the
+        # consumer (which breaks on ResultMessageEvent) sees it.
+        idx_result = next(
+            i for i, e in enumerate(events) if isinstance(e, ToolResultEvent)
+        )
+        idx_terminal = next(
+            i for i, e in enumerate(events) if isinstance(e, ResultMessageEvent)
+        )
+        assert idx_result < idx_terminal
+
+    @pytest.mark.asyncio
+    async def test_tool_result_error_flag_is_preserved(self, tmp_path):
+        harness = _make_harness(allowed_tools=["Bash"])
+        tool_result = _user_msg_with_tool_result(
+            content="pytest: command not found", is_error=True, tool_use_id="t2"
+        )
+        done = _result_msg()
+        fake_gen = RecordingAsyncGen([
+            ("yield", tool_result),
+            ("yield", done),
+        ])
+
+        with patch.object(claude_agent_sdk, "query", return_value=fake_gen):
+            events = await _drain(harness, tmp_path)
+
+        results = [e for e in events if isinstance(e, ToolResultEvent)]
+        assert len(results) == 1
+        assert results[0].is_error is True
+        assert results[0].content == "pytest: command not found"
+
+    @pytest.mark.asyncio
+    async def test_tool_result_list_content_passed_through(self, tmp_path):
+        """Structured (list) ToolResultBlock content is forwarded verbatim —
+        the consumer's _extract_content_text handles the list form."""
+        harness = _make_harness(allowed_tools=["Bash"])
+        list_content = [{"type": "text", "text": "44 passed, 1 failed"}]
+        tool_result = _user_msg_with_tool_result(
+            content=list_content, is_error=False, tool_use_id="t3"
+        )
+        done = _result_msg()
+        fake_gen = RecordingAsyncGen([
+            ("yield", tool_result),
+            ("yield", done),
+        ])
+
+        with patch.object(claude_agent_sdk, "query", return_value=fake_gen):
+            events = await _drain(harness, tmp_path)
+
+        results = [e for e in events if isinstance(e, ToolResultEvent)]
+        assert len(results) == 1
+        assert results[0].content == list_content
+
+    @pytest.mark.asyncio
+    async def test_user_message_without_tool_result_yields_nothing(
+        self, tmp_path
+    ):
+        """A UserMessage with no ToolResultBlock content emits no event —
+        only ToolResultBlock entries are surfaced."""
+        harness = _make_harness(allowed_tools=["Bash"])
+        plain_user = UserMessage(content="just text, no tool result")
+        done = _result_msg()
+        fake_gen = RecordingAsyncGen([
+            ("yield", plain_user),
+            ("yield", done),
+        ])
+
+        with patch.object(claude_agent_sdk, "query", return_value=fake_gen):
+            events = await _drain(harness, tmp_path)
+
+        assert not [e for e in events if isinstance(e, ToolResultEvent)]
+        assert any(isinstance(e, ResultMessageEvent) for e in events)

@@ -21,6 +21,23 @@ dependencies: []
 
 # Task: Add collection_error Classification to Coach Test Failure Classifier
 
+> **STATUS 2026-06-26 — original core ALREADY ON MAIN; only the addendum
+> remains.** The `collection_error` classification (`coach_validator.py:6838`,
+> checked before the `ModuleNotFoundError` path) AND its conditional-approval
+> branch (`coach_validator.py:2230`) were landed by **TASK-FIX-1D70**
+> (commit `dd9b3d83`) — the FEAT-CTD sibling this task file predates. So the
+> ACs in the original "Description" / first "Acceptance Criteria" block are
+> **satisfied**; do not re-implement them.
+>
+> The remaining work is the **2026-06-26 addendum**: the no-marker/narration
+> SDK capture handling + the **absent-vs-classified asymmetry** (Guard #6
+> treating an absent independent signal as *stricter* than a classified
+> failure). Note this is now **dormant for the default flow**: the capture fix
+> (TASK-FIX-COACHTRES01, option a of COSE) makes the SDK path emit real pytest
+> markers, so a no-marker absent capture is rare. The asymmetry remains worth
+> resolving for robustness but is **not a FEAT-HARV harvest blocker**. Scope
+> this task down to the asymmetry resolution only.
+
 ## Description
 
 The Coach's `_classify_test_failure()` method has no category for pytest collection errors — cases where pytest cannot even import a test file (exit code 2). Currently, a `ModuleNotFoundError` during collection falls through to `("infrastructure", "ambiguous")` because the missing module name (e.g., `"tests"`) doesn't match `_KNOWN_SERVICE_CLIENT_LIBS`.

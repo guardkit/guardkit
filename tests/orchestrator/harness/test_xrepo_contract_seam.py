@@ -447,3 +447,143 @@ class TestSignaturePin:
                 f"the orchestrator calls invoke(prompt=, role=, tools=, cwd=, "
                 f"timeout_seconds=)."
             )
+
+
+# ----------------------------------------------------------------------
+# AC: tool-RESULT emission contract (TASK-FIX-COACHTRES01)
+# ----------------------------------------------------------------------
+
+
+class TestToolResultEmissionContract:
+    """Both substrates surface tool RESULTS as ``ToolResultEvent``.
+
+    The Coach independent-test path (``coach_validator._run_tests_via_sdk``)
+    depends on capturing the *real* command output (pytest stdout) — delivered
+    by the substrate as a tool result — rather than the agent's narration.
+    Pre-fix neither harness surfaced the tool result: the SDK harness dropped
+    the ``UserMessage``/``ToolResultBlock``, and the LangGraph harness never
+    walked ``ToolMessage`` history. That was the FEAT-HARV narration-capture
+    defect (the captured ``output_text`` was ``"I'll run the test command..."``
+    with no pytest marker, while the deterministic subprocess pytest passed
+    8601/8601).
+
+    This is the cross-repo guard: a guardkitfactory version skew that drops the
+    ``ToolMessage``→``ToolResultEvent`` mapping silently reintroduces the
+    defect. The SDK side is in-repo and additionally covered by
+    ``tests/orchestrator/harness/test_sdk_harness.py::TestToolResultTranslation``.
+    """
+
+    def test_langgraph_invoke_emits_tool_result_event_from_toolmessage(
+        self,
+    ) -> None:
+        """The installed LangGraphHarness yields a ToolResultEvent for a
+        ToolMessage in the agent result history — driven through the real
+        ``invoke`` async generator, not a private helper."""
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+        harness = LangGraphHarness(model="ignored")
+        fake_agent = MagicMock()
+        fake_agent.ainvoke = AsyncMock(
+            return_value={
+                "messages": [
+                    HumanMessage(content="run the tests"),
+                    AIMessage(
+                        content="I'll run pytest.",
+                        tool_calls=[
+                            {
+                                "name": "execute",
+                                "args": {"cmd": "pytest"},
+                                "id": "tc-seam",
+                            }
+                        ],
+                    ),
+                    ToolMessage(
+                        content="45 passed in 0.13s",
+                        tool_call_id="tc-seam",
+                        status="success",
+                    ),
+                    AIMessage(content="done"),
+                ]
+            }
+        )
+
+        async def _collect() -> list[Any]:
+            events: list[Any] = []
+            async for event in harness.invoke(
+                prompt="run tests",
+                role="coach_test",
+                tools=["Bash"],
+                cwd=Path("."),
+                timeout_seconds=30,
+            ):
+                events.append(event)
+            return events
+
+        with patch(
+            "guardkitfactory.harness.langgraph_harness.create_deep_agent",
+            return_value=fake_agent,
+        ):
+            events = asyncio.run(_collect())
+
+        results = [e for e in events if isinstance(e, ToolResultEvent)]
+        assert len(results) == 1, (
+            "Installed guardkitfactory LangGraphHarness did not surface the "
+            "ToolMessage as a ToolResultEvent — the FEAT-HARV narration-capture "
+            "defect would regress (TASK-FIX-COACHTRES01)."
+        )
+        assert results[0].content == "45 passed in 0.13s"
+        assert results[0].is_error is False
+        assert results[0].tool_use_id == "tc-seam"
+
+    def test_langgraph_tool_result_precedes_terminal_event(self) -> None:
+        """The ToolResultEvent must precede the terminal ResultMessageEvent.
+
+        The consumer loop breaks on ResultMessageEvent, so a tool result
+        yielded after it would never be captured.
+        """
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from langchain_core.messages import AIMessage, ToolMessage
+
+        harness = LangGraphHarness(model="ignored")
+        fake_agent = MagicMock()
+        fake_agent.ainvoke = AsyncMock(
+            return_value={
+                "messages": [
+                    ToolMessage(
+                        content="ok", tool_call_id="t1", status="success"
+                    ),
+                    AIMessage(content="done"),
+                ]
+            }
+        )
+
+        async def _collect() -> list[Any]:
+            events: list[Any] = []
+            async for event in harness.invoke(
+                prompt="x",
+                role="coach_test",
+                tools=[],
+                cwd=Path("."),
+                timeout_seconds=30,
+            ):
+                events.append(event)
+            return events
+
+        with patch(
+            "guardkitfactory.harness.langgraph_harness.create_deep_agent",
+            return_value=fake_agent,
+        ):
+            events = asyncio.run(_collect())
+
+        idx_result = next(
+            i for i, e in enumerate(events) if isinstance(e, ToolResultEvent)
+        )
+        idx_terminal = next(
+            i for i, e in enumerate(events) if isinstance(e, ResultMessageEvent)
+        )
+        assert idx_result < idx_terminal
