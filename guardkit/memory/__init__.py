@@ -1,0 +1,1 @@
+"""Memory harvest publisher module."""
