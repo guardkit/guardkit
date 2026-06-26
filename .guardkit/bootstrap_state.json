@@ -1,5 +1,6 @@
 {
-  "content_hash": "d405c3b470fc293881fa12ac81321cba24d37817ca71686a5b7123ebb02b716b",
+  "content_hash": "7935d1a5a0199df3c18dd9ca9b3b5c2b85191761cbd203c6e5f42c39f6cfde79",
   "success": false,
-  "timestamp": "2026-04-11T17:15:17.497095"
+  "timestamp": "2026-06-26T12:45:25.059978",
+  "venv_python": "/home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-HARV/.venv/bin/python"
 }
