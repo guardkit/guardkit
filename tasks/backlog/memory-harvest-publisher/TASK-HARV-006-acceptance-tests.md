@@ -2,9 +2,9 @@
 id: TASK-HARV-006
 title: Acceptance tests for the harvest contract
 task_type: testing
-status: backlog
-created: 2026-06-25T00:00:00Z
-updated: 2026-06-25T00:00:00Z
+status: in_progress
+created: 2026-06-25 00:00:00+00:00
+updated: 2026-06-25 00:00:00+00:00
 complexity: 3
 parent_review: TASK-REV-HARV
 feature_id: FEAT-HARV
@@ -12,7 +12,37 @@ parent_feature: memory-harvest-publisher
 wave: 4
 implementation_mode: direct
 depends_on:
-  - TASK-HARV-005
+- TASK-HARV-005
+autobuild_state:
+  current_turn: 1
+  max_turns: 5
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-HARV
+  base_branch: main
+  started_at: '2026-06-26T12:22:18.237966'
+  last_updated: '2026-06-26T12:28:38.762806'
+  turns:
+  - turn: 1
+    decision: feedback
+    feedback: "- Independent test verification FAILED for a TESTING task: the Coach's\
+      \ own run of the task's tests reported failures classified as a CODE defect\
+      \ (confidence=n/a), not an environment/substrate gap and not parallel-wave contention.\
+      \ A TESTING task's deliverable is passing tests \u2014 fix the failing test\
+      \ code. Independent-test output (tail): 0     0%   2-97\ninstaller/core/lib/utils/path_resolver.py\
+      \                                          28     28      6      0     0%  \
+      \ 2-81\n---------------------------------------------------------------------------------------------------------------------------\n\
+      TOTAL                                                                      \
+      \     12178  12162   4186      0     1%\nCoverage JSON written to file coverage.json\n\
+      ============================== 15 passed in 4.44s =============================="
+    timestamp: '2026-06-26T12:22:18.237966'
+    player_summary: 'Created comprehensive acceptance test suite for the harvest contract
+      that validates all four explicit contract points end-to-end against the assembled
+      CLI. The test suite includes 15 tests organized into 5 groups covering: (1)
+      Subject resolution for all 4 episode_types, (2) episode_id stability/idempotency,
+      (3) Oversized rejection handling, (4) Dry-run isolation, and (5) No live broker/password
+      requirements. All tests use mocked NATSClient to ensure no GB10 access is required.
+      Tests create tempo'
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-HARV-006: Acceptance tests for the harvest contract
