@@ -3682,6 +3682,55 @@ class CoachValidator:
             return "\n".join(parts)
         return str(content)
 
+    # TASK-FIX-COACHTRES01 (heuristic precision): the pytest result summary
+    # line, e.g. ``==== 15 passed in 2.75s ====`` /
+    # ``==== 1 failed, 14 passed in 0.3s ====`` / ``==== 2 errors in 1.0s ====``.
+    # Wrapped in ``=`` runs and ending in ``in <float>s``; the body carries the
+    # real per-outcome counts.
+    _PYTEST_SUMMARY_RE = re.compile(
+        r"^=+\s+(?P<body>.*?\b(?:passed|failed|error|errors|skipped|xfailed|"
+        r"xpassed|no tests ran)\b.*?)\s+in\s+[\d.]+\s*s\b.*?=*\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    )
+
+    @classmethod
+    def _verdict_from_pytest_summary(cls, output_text: str) -> Optional[bool]:
+        """Derive pass/fail from the pytest summary line, not substring scan.
+
+        TASK-FIX-COACHTRES01. The capture fix surfaces the *real* pytest output
+        to the SDK-path determination — but the legacy heuristic scanned the
+        WHOLE output for the substrings ``"error"`` / ``"failed"`` /
+        ``"failure"``, which false-positives on a *passing* run whose verbose
+        test names or ``--cov`` file paths contain those words (e.g. a passing
+        ``test_..._displays_error`` or a covered ``*_error_messages.py``). That
+        is the FEAT-HARV TASK-HARV-006 false-block: ``15 passed in 2.75s`` read
+        as a failure because two unrelated ``"error"`` substrings appeared.
+
+        The pytest *summary line* carries only the real counts, so parse that.
+
+        Returns
+        -------
+        Optional[bool]
+            ``True``  — a passing summary (>=1 passed, zero failed/errored).
+            ``False`` — a failing summary (>=1 failed or errored).
+            ``None``  — no pytest summary line found (e.g. narration-only or a
+                        truncated capture), so the caller falls back to the
+                        legacy substring heuristic / absent handling.
+        """
+        if not output_text:
+            return None
+        matches = list(cls._PYTEST_SUMMARY_RE.finditer(output_text))
+        if not matches:
+            return None
+        body = matches[-1].group("body").lower()
+        # Any non-zero failed/errored count is a fail, regardless of passes.
+        if re.search(r"\b[1-9]\d*\s+(?:failed|error|errors)\b", body):
+            return False
+        if re.search(r"\b[1-9]\d*\s+passed\b", body):
+            return True
+        # Only skipped / xfailed / "no tests ran" — not a clear pass; defer.
+        return None
+
     async def _run_tests_via_sdk(self, test_cmd: str) -> IndependentTestResult:
         """Run tests via the harness substrate seam (TASK-HMIG-006.3).
 
@@ -4011,7 +4060,24 @@ class CoachValidator:
                         raw_output=output_text,
                         signal_absent=True,
                     )
-                # Heuristic: check for failure indicators in output
+                # TASK-FIX-COACHTRES01: prefer the pytest summary line (real
+                # counts) over the substring scan, which false-positives on a
+                # passing run whose verbose test names / --cov file paths
+                # contain "error"/"failed" (the FEAT-HARV TASK-HARV-006
+                # false-block: "15 passed" mis-read as a failure because a
+                # passing test_..._displays_error and a covered
+                # *_error_messages.py path matched). Only fall back to the
+                # legacy substring heuristic when no summary line is present.
+                summary_verdict = self._verdict_from_pytest_summary(output_text)
+                if summary_verdict is not None:
+                    return IndependentTestResult(
+                        tests_passed=summary_verdict,
+                        test_command=test_cmd,
+                        test_output_summary=summary,
+                        duration_seconds=duration,
+                        raw_output=output_text,
+                    )
+                # Heuristic fallback: check for failure indicators in output
                 lower = output_text.lower()
                 has_failure = any(
                     indicator in lower
