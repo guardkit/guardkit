@@ -71,6 +71,14 @@ class ToolUseEvent:
     tool_use_id: str
     name: str
     input: dict[str, object] = field(default_factory=dict)
+    # TASK-FIX-COACHTRES01: uniform ``raw`` slot across EVERY HarnessEvent
+    # variant. Several orchestrator consumer loops read ``event.raw``
+    # unconditionally (e.g. agent_invoker.py:3950 in the direct-Player path,
+    # task_work_interface.py:517 in the design path) — i.e. without first
+    # narrowing on ``isinstance(event, AssistantMessageEvent)``. Tool events
+    # carry no SDK ``raw`` object, but they MUST still expose the attribute or
+    # those loops ``AttributeError``. Default ``None`` keeps the field inert.
+    raw: object | None = None
     type: Literal["tool_use"] = "tool_use"
 
 
@@ -86,6 +94,13 @@ class ToolResultEvent:
     tool_use_id: str
     content: str | list[object]
     is_error: bool = False
+    # TASK-FIX-COACHTRES01: uniform ``raw`` slot — see ToolUseEvent above. The
+    # direct-Player consumer loop (agent_invoker.py:3950) does
+    # ``event.raw if event.raw is not None else event`` for every non-ToolUse
+    # event; without this field a yielded ToolResultEvent crashes that loop
+    # with ``'ToolResultEvent' object has no attribute 'raw'`` (the FEAT-HARV
+    # run-1 regression). Default ``None``.
+    raw: object | None = None
     type: Literal["tool_result"] = "tool_result"
 
 

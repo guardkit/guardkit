@@ -1085,3 +1085,45 @@ class TestToolResultTranslation:
 
         assert not [e for e in events if isinstance(e, ToolResultEvent)]
         assert any(isinstance(e, ResultMessageEvent) for e in events)
+
+
+# ----------------------------------------------------------------------
+# TASK-FIX-COACHTRES01 regression: uniform .raw across the event union
+# ----------------------------------------------------------------------
+
+
+def test_all_harness_events_expose_raw_attribute():
+    """Every HarnessEvent variant MUST expose a ``.raw`` attribute.
+
+    Several orchestrator consumer loops read ``event.raw`` *unconditionally*
+    (without first narrowing on isinstance) — e.g. the direct-Player loop at
+    agent_invoker.py:3950 (``raw = event.raw if event.raw is not None else
+    event``) and the design loop at task_work_interface.py:517. A HarnessEvent
+    variant that omits ``.raw`` AttributeErrors those loops. This is exactly
+    the FEAT-HARV run-1 regression: emitting ``ToolResultEvent`` (which lacked
+    ``.raw``) crashed the direct-mode Player with ``'ToolResultEvent' object
+    has no attribute 'raw'`` → 0 files → the task blocked.
+
+    This pins the invariant so a future event type cannot reintroduce it.
+    """
+    from guardkit.orchestrator.harness.adapter import (
+        AssistantMessageEvent as _AME,
+        ResultMessageEvent as _RME,
+        ToolResultEvent as _TRE,
+        ToolUseEvent as _TUE,
+    )
+
+    samples = [
+        _AME(text="x"),
+        _TUE(tool_use_id="t", name="Bash", input={"command": "pytest"}),
+        _TRE(tool_use_id="t", content="45 passed", is_error=False),
+        _RME(session_id=None),
+    ]
+    for ev in samples:
+        assert hasattr(ev, "raw"), f"{type(ev).__name__} is missing the .raw slot"
+        # The exact unconditional access pattern from agent_invoker.py:3950
+        # must not raise for any variant:
+        _ = ev.raw if ev.raw is not None else ev
+    # The two tool events carry no SDK object — their raw must default to None.
+    assert samples[1].raw is None
+    assert samples[2].raw is None
