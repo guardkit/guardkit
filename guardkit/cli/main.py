@@ -20,6 +20,7 @@ from guardkit.cli.autobuild import autobuild
 from guardkit.cli.feature import feature
 from guardkit.cli.graphiti import graphiti
 from guardkit.cli.init import init
+from guardkit.cli.memory import memory
 from guardkit.cli.review import review
 from guardkit.cli.system_plan import system_plan
 from guardkit.cli.system_context import (
@@ -116,6 +117,9 @@ cli.add_command(graphiti)
 
 # Add Init command
 cli.add_command(init)
+
+# Add Memory command group
+cli.add_command(memory)
 
 # Add Review command
 cli.add_command(review)
