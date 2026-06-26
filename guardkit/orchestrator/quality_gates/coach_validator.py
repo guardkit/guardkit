@@ -3682,6 +3682,46 @@ class CoachValidator:
             return "\n".join(parts)
         return str(content)
 
+    @staticmethod
+    def _classify_sdk_heuristic_output(output_text: str) -> Tuple[bool, bool]:
+        """Classify SDK independent-test output text by pytest markers.
+
+        Returns ``(tests_passed, signal_absent)``:
+
+        * a success marker and no failure marker -> ``(True, False)`` (passed)
+        * any failure marker -> ``(False, False)`` (real ran-and-failed)
+        * NEITHER marker -> ``(False, True)`` ABSENT (TASK-FIX-COACHNARR01)
+
+        The absent case is the load-bearing one. On the SDK path the harness
+        does not surface Bash stdout as a ToolResultEvent (see the
+        ToolResultEvent note in ``_run_tests_via_sdk``), so ``output_text`` is
+        the AGENT's assistant text, not the pytest stdout. When that text carries
+        no pytest success/failure marker at all, the oracle captured no real test
+        output — typically the agent's narration ("I'll run the test command and
+        show you the full output.") with the actual result stranded in an
+        unsurfaced tool result. Treating that as ``tests_passed=False``
+        false-reds a green deliverable and overrides the deterministic subprocess
+        oracle — the FEAT-HARV TASK-HARV-003 stall, where the subprocess pytest
+        passed (8601/8601) every turn while this path reported 'failed' on the
+        narration, blocking an otherwise-complete walker to ``max_turns_exceeded``.
+        Per ``absence-of-failure-is-not-success.md`` it is an ABSENT signal: it
+        must never block and never count as a pass, so the Coach falls back to
+        the deterministic subprocess result. (The deeper remedy — surfacing Bash
+        stdout as a ToolResultEvent so real pytest output reaches this path — is
+        a harness change tracked separately.)
+        """
+        lower = (output_text or "").lower()
+        has_failure = any(
+            indicator in lower
+            for indicator in ["failed", "error", "errors", "failure"]
+        )
+        has_success = any(
+            indicator in lower for indicator in ["passed", "ok", "success"]
+        )
+        if not has_success and not has_failure:
+            return False, True  # absent: no real test output captured
+        return (has_success and not has_failure), False
+
     async def _run_tests_via_sdk(self, test_cmd: str) -> IndependentTestResult:
         """Run tests via the harness substrate seam (TASK-HMIG-006.3).
 
@@ -4011,23 +4051,31 @@ class CoachValidator:
                         raw_output=output_text,
                         signal_absent=True,
                     )
-                # Heuristic: check for failure indicators in output
-                lower = output_text.lower()
-                has_failure = any(
-                    indicator in lower
-                    for indicator in ["failed", "error", "errors", "failure"]
+                # Heuristic classification by pytest markers. TASK-FIX-COACHNARR01:
+                # NEITHER a success NOR a failure marker == no real test output
+                # captured (the SDK harness does not surface Bash stdout as a
+                # ToolResultEvent — see the ToolResultEvent note above — so
+                # output_text is the agent's narration). That is an ABSENT signal,
+                # never a ran-and-failed verdict. See _classify_sdk_heuristic_output.
+                tests_passed, marker_absent = self._classify_sdk_heuristic_output(
+                    output_text
                 )
-                has_success = any(
-                    indicator in lower
-                    for indicator in ["passed", "ok", "success"]
-                )
-                tests_passed = has_success and not has_failure
+                if marker_absent:
+                    logger.warning(
+                        "[TASK-FIX-COACHNARR01] SDK independent test oracle "
+                        "captured no pytest success/failure marker (agent "
+                        "narration, not tool stdout) — absent signal, not a test "
+                        "failure. cmd=%s output=%r",
+                        test_cmd,
+                        output_text[:200],
+                    )
                 return IndependentTestResult(
                     tests_passed=tests_passed,
                     test_command=test_cmd,
                     test_output_summary=summary,
                     duration_seconds=duration,
                     raw_output=output_text,
+                    signal_absent=marker_absent,
                 )
 
         except asyncio.TimeoutError:
