@@ -60,6 +60,66 @@ This is Seam Failure 2 from the TASK-REV-0E44 review. Adding a specific `"collec
 
 [Space for implementation details]
 
+## Addendum (2026-06-26) — extend to the SDK "no-marker / narration" capture
+
+> Added from the FEAT-HARV autobuild session (see the handoff at
+> `docs/handoff/autobuild-coach-test-gathering-handoff-2026-06-26.md`). Pair with
+> `TASK-REV-COSE` (which diagnoses the *capture* root cause); this task owns the
+> *classification + approval* side.
+
+A second class of "independent test failed for non-deliverable reasons" was hit
+in FEAT-HARV that this classifier should also cover. On the **SDK** independent
+test path (`_run_tests_via_sdk`, the default `coach_test_execution=sdk`), the
+harness does **not** surface the Bash tool's stdout as a `ToolResultEvent`, so the
+captured `output_text` is the Coach **agent's narration** (e.g. `"I'll run the
+test command and show you the full output."`), not pytest output. The heuristic
+classifier then finds **no success marker and no failure marker**.
+
+There is a load-bearing asymmetry that must be resolved deliberately:
+
+- A **classified failure** (`infrastructure` / `collection_error` /
+  `parallel_contention` / `code`-in-parallel-wave) + all gates pass →
+  **conditional approval** ([coach_validator.py:2223](../../../guardkit/orchestrator/quality_gates/coach_validator.py#L2223),
+  TASK-ABFIX-005 / TASK-FIX-1D70). This is why FEAT-HARV's wave-1 002/004 passed
+  despite "SDK independent tests failed".
+- An **absent** signal (`signal_absent=True`) → **hard block** via Guard #6
+  (INDEPENDENT-TEST ABSENT GUARD). Absent is treated as *stricter* than a
+  classified failure — which is backwards.
+
+A naïve "reclassify the no-marker narration as `signal_absent=True`" (attempted
+and reverted this session, commit `437ebd8a`→`c649e069`) therefore caused a
+**regression**: it moved the tolerated case into the hard-blocking absent path,
+and 002/004 (green before) hit `max_turns_exceeded`.
+
+### Additional Acceptance Criteria (this addendum)
+
+- [ ] A no-marker SDK capture (the agent narrated but no pytest success/failure
+      string was captured) is classified as a **conditional-approvable** class
+      when all Player quality gates pass — NOT routed to the absent hard-block,
+      and NOT left as a bare `tests_passed=False`. Treat it like
+      `collection_error`: a non-deliverable verification artifact.
+- [ ] The decision is reconciled against the **deterministic subprocess** result
+      when available (the subprocess pytest is the reliable oracle; the SDK path
+      is known-flaky). If the deterministic run passed, the SDK no-marker capture
+      must not block.
+- [ ] The absent-vs-classified asymmetry is resolved or explicitly documented:
+      either an absent independent signal becomes conditional-approvable on
+      all-gates-pass (consistent with classified failures), or Guard #6's
+      stricter-than-fail behaviour is justified in a comment with the rationale.
+- [ ] Genuine `code` failures (real assertion/exception output) are still
+      ran-and-failed and still block — no masking of real failures.
+- [ ] Unit tests cover: narration-only capture, empty/`No output` capture,
+      `collected 0 items`, genuine pass, genuine failure, mixed output.
+
+### Evidence
+
+- FEAT-HARV TASK-HARV-003 `coach_evidence_turn_*.json`:
+  `independent_tests.raw_output` = `"\nI'll run the test command and show you the
+  full output.\n"`, `signal_absent=true`, while the deterministic subprocess
+  pytest reported `status=passed tests_run=8601 tests_failed=0` every turn.
+- The known harness limitation is documented in `coach_validator.py`
+  `_run_tests_via_sdk` (the `ToolResultEvent` note) — origin TASK-HMIG-006.3.
+
 ## Test Execution Log
 
 [Automatically populated by /task-work]

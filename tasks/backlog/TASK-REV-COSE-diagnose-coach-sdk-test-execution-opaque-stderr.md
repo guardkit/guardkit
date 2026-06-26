@@ -73,3 +73,80 @@ Produce a diagnostic report identifying:
 ```
 
 Read `coach_validator.py` first; then trace through `claude_agent_sdk._internal.query` to understand how the `Fatal error in message reader` is constructed. Cross-check against the bundled `claude` CLI's output convention (does it write structured JSON to stdout and free-form errors to stderr, or interleave?).
+
+---
+
+## Addendum (2026-06-26) — the SDK path captures agent narration, not pytest stdout
+
+> Added from the FEAT-HARV autobuild session (handoff:
+> `docs/handoff/autobuild-coach-test-gathering-handoff-2026-06-26.md`). This
+> widens COSE's scope from "opaque *stderr* on failure" to the deeper structural
+> defect: on the **success** path the SDK independent runner can capture the
+> Coach agent's **narration** instead of the actual pytest output. Pair with
+> `TASK-FIX-DF44` (which owns the *classification + approval* response); this task
+> owns the *capture* root cause.
+
+### Finding
+
+`_run_tests_via_sdk` (`guardkit/orchestrator/quality_gates/coach_validator.py`)
+runs `pytest` via the harness substrate. **The SDK harness does not yield a
+`ToolResultEvent`** (documented in the method's own `ToolResultEvent` note,
+origin TASK-HMIG-006.3) — `sdk_harness.py` only surfaces
+`AssistantMessage` / `ResultMessage` / `ToolUseEvent`. So `bash_output` stays
+`None`, and the only captured text is the agent's assistant message
+(`collected_text`). When the Coach agent narrates ("I'll run the test command and
+show you the full output.") without echoing the pytest output in its final text,
+`output_text` is that narration. The pass/fail heuristic then finds no
+`passed`/`failed` marker.
+
+This is the structural cause of BOTH symptoms:
+- COSE's original "opaque stderr" (the agent's error narration replaces the real
+  stderr), and
+- The FEAT-HARV TASK-HARV-003 stall (narration with no marker, while the
+  deterministic subprocess pytest passed **8601/8601** every turn).
+
+### Why it is intermittent / high-impact
+
+The capture depends on the Coach LLM's response shape, so it varies run-to-run
+(FEAT-HARV wave-1 002/004 passed in one run, the same tasks went absent in the
+next). Its impact is normally *masked* by the conditional-approval mechanism
+(TASK-ABFIX-005) — a classified SDK failure + all gates pass → approve — which is
+why this has lurked. It surfaces hard whenever the narration is routed to an
+*absent* signal (Guard #6 hard-blocks) rather than a classified failure.
+
+### Expanded diagnosis goals
+
+1. Confirm the no-`ToolResultEvent` mechanism in `sdk_harness.py` and whether the
+   Bash tool result is available in the SDK message stream at all (e.g. in a
+   `UserMessage` with a `ToolResultBlock` the harness currently drops).
+2. Decide between the two real fixes (with regression analysis):
+   - **(a) Capture fix** — surface the Bash tool stdout as a `ToolResultEvent`
+     (or walk `UserMessage` content) so real pytest output reaches the heuristic.
+     Highest-fidelity; touches the harness (and the langgraph substrate in
+     guardkitfactory).
+   - **(b) Substrate fix** — default `coach_test_execution` to `subprocess`
+     (the deterministic path that runs real pytest and is already the reliable
+     fallback). Lowest-risk; removes the flaky LLM-mediated capture entirely.
+     Confirm the subprocess path's env/interpreter parity (it already resolves
+     the worktree venv — see the `Test execution environment` log line).
+3. Hand the *classification/approval* response to `TASK-FIX-DF44` (a no-marker
+   capture should be conditional-approvable when gates pass, reconciled against
+   the deterministic subprocess result — not a hard absent block).
+
+### Additional Acceptance Criteria (this addendum)
+
+- [ ] Mechanism confirmed with file:line: where the Bash tool result is (or is
+      not) available on the SDK substrate, and where `bash_output` is left `None`.
+- [ ] Recommendation (a) vs (b) with regression analysis. Strong prior toward
+      (b) `coach_test_execution=subprocess` as the default for reliability,
+      unless (a) is cheap and the langgraph substrate already yields tool results.
+- [ ] The absent-vs-classified asymmetry (Guard #6 stricter than a classified
+      failure) is flagged to TASK-FIX-DF44 for resolution.
+
+### Evidence
+
+- FEAT-HARV TASK-HARV-003 `coach_evidence_turn_*.json`:
+  `independent_tests.raw_output` = the literal narration; `signal_absent=true`;
+  deterministic `Phase-4 executed deterministically (subprocess pytest):
+  status=passed tests_run=8601 tests_failed=0`.
+- Run logs under `.guardkit/autobuild/_runs/FEAT-HARV-sdk-fresh-*.log`.
