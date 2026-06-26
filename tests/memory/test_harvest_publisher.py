@@ -6,16 +6,13 @@ using a fake NATSClient to avoid requiring a live NATS broker.
 
 from __future__ import annotations
 
-import os
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from nats_core.events import MemoryEpisodeV1
 from pydantic import SecretStr
 
 from guardkit.memory.harvest_publisher import (
-    PublishSummary,
     build_nats_client,
     publish_episodes,
     read_nats_password,
@@ -25,7 +22,9 @@ from guardkit.memory.harvest_publisher import (
 class TestReadNatsPassword:
     """Test password reading from environment."""
 
-    def test_reads_password_from_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_reads_password_from_environment(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Read GUARDKIT_NATS_PASSWORD from environment."""
         monkeypatch.setenv("GUARDKIT_NATS_PASSWORD", "test-password-123")
         password = read_nats_password()
@@ -36,7 +35,7 @@ class TestReadNatsPassword:
     ) -> None:
         """Raise ValueError with actionable message when password is missing."""
         monkeypatch.delenv("GUARDKIT_NATS_PASSWORD", raising=False)
-        with pytest.raises(ValueError, match="GUARDKIT_NATS_PASSWORD.*environment"):
+        with pytest.raises(ValueError, match=r"GUARDKIT_NATS_PASSWORD.*environment"):
             read_nats_password()
 
     def test_raises_actionable_error_when_blank(
@@ -44,7 +43,7 @@ class TestReadNatsPassword:
     ) -> None:
         """Raise ValueError when password is blank/whitespace."""
         monkeypatch.setenv("GUARDKIT_NATS_PASSWORD", "   ")
-        with pytest.raises(ValueError, match="GUARDKIT_NATS_PASSWORD.*blank"):
+        with pytest.raises(ValueError, match=r"GUARDKIT_NATS_PASSWORD.*blank"):
             read_nats_password()
 
 
@@ -102,7 +101,7 @@ class TestPublishEpisodes:
     async def test_publish_lifecycle_ordering(
         self, fake_client: MagicMock, sample_episodes: list[MemoryEpisodeV1]
     ) -> None:
-        """Verify connect → publish × N → disconnect ordering."""
+        """Verify connect → publish x N → disconnect ordering."""
         summary = await publish_episodes(sample_episodes, fake_client)
 
         # Verify lifecycle ordering
@@ -111,7 +110,7 @@ class TestPublishEpisodes:
         fake_client.disconnect.assert_awaited_once()
 
         # Verify disconnect was called (not close) - check method_calls
-        method_names = [call[0] for call in fake_client.method_calls]
+        method_names = [mc[0] for mc in fake_client.method_calls]
         assert "disconnect" in method_names
         assert "close" not in method_names
 
@@ -151,10 +150,12 @@ class TestPublishEpisodes:
         # Make publish_episode raise ValueError for the huge episode
         async def publish_side_effect(ep: MemoryEpisodeV1) -> None:
             if ep.episode_id == "ep-huge":
-                raise ValueError(
+                msg = (
                     f"memory episode body is {len(ep.body.encode())} bytes, "
-                    f"exceeding the 921600 byte (900KB) limit; chunk the content upstream"
+                    f"exceeding the 921600 byte (900KB) limit; "
+                    f"chunk the content upstream"
                 )
+                raise ValueError(msg)
 
         fake_client.publish_episode.side_effect = publish_side_effect
 

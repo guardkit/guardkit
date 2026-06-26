@@ -11,11 +11,14 @@ import logging
 import os
 from collections import Counter
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from nats_core.client import NATSClient
 from nats_core.config import NATSConfig
-from nats_core.events import MemoryEpisodeV1
 from pydantic import SecretStr
+
+if TYPE_CHECKING:
+    from nats_core.events import MemoryEpisodeV1
 
 logger = logging.getLogger(__name__)
 
@@ -35,11 +38,8 @@ class PublishSummary:
     counts_per_type: dict[str, int]
 
 
-def read_nats_password(env_file: str | None = None) -> str:
+def read_nats_password() -> str:
     """Read GUARDKIT_NATS_PASSWORD from environment.
-
-    Args:
-        env_file: Optional path to .env file (currently unused, kept for future extension).
 
     Returns:
         The NATS password string.
@@ -60,7 +60,8 @@ def read_nats_password(env_file: str | None = None) -> str:
     if not password.strip():
         msg = (
             "GUARDKIT_NATS_PASSWORD environment variable is blank. "
-            "Provide a valid password in nats-infrastructure/.env or your shell environment"
+            "Provide a valid password in nats-infrastructure/.env or your "
+            "shell environment"
         )
         raise ValueError(msg)
 
