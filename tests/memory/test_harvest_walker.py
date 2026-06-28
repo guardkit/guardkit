@@ -29,11 +29,11 @@ class TestHarvestWalker:
         """Episode types are correctly mapped from directory structure."""
         # Create sample docs in different taxonomy dirs
         (tmp_path / "docs/adr").mkdir(parents=True)
-        (tmp_path / "docs/reviews").mkdir(parents=True)
+        (tmp_path / "docs/code-review").mkdir(parents=True)
         (tmp_path / "docs/guides").mkdir(parents=True)
 
         (tmp_path / "docs/adr/001-decision.md").write_text("# ADR 001\nContent")
-        (tmp_path / "docs/reviews/review-x.md").write_text("# Review X\nContent")
+        (tmp_path / "docs/code-review/review-x.md").write_text("# Review X\nContent")
         (tmp_path / "docs/guides/guide-y.md").write_text("# Guide Y\nContent")
 
         result = walk_harvest_dirs(tmp_path)
@@ -102,14 +102,14 @@ class TestHarvestWalker:
     def test_counts_per_type(self, tmp_path: Path) -> None:
         """counts_per_type accurately reflects episode distribution."""
         (tmp_path / "docs/adr").mkdir(parents=True)
-        (tmp_path / "docs/reviews").mkdir(parents=True)
+        (tmp_path / "docs/code-review").mkdir(parents=True)
 
         # Create multiple docs per type
         (tmp_path / "docs/adr/001.md").write_text("# ADR 001")
         (tmp_path / "docs/adr/002.md").write_text("# ADR 002")
         (tmp_path / "docs/adr/003.md").write_text("# ADR 003")
-        (tmp_path / "docs/reviews/review-a.md").write_text("# Review A")
-        (tmp_path / "docs/reviews/review-b.md").write_text("# Review B")
+        (tmp_path / "docs/code-review/review-a.md").write_text("# Review A")
+        (tmp_path / "docs/code-review/review-b.md").write_text("# Review B")
 
         result = walk_harvest_dirs(tmp_path)
 
@@ -216,12 +216,12 @@ class TestHarvestWalker:
 
     def test_nested_directories(self, tmp_path: Path) -> None:
         """Files in nested subdirectories are harvested correctly."""
-        (tmp_path / "docs/reviews/2024").mkdir(parents=True)
-        (tmp_path / "docs/reviews/2024/q1").mkdir(parents=True)
+        (tmp_path / "docs/code-review/2024").mkdir(parents=True)
+        (tmp_path / "docs/code-review/2024/q1").mkdir(parents=True)
 
-        (tmp_path / "docs/reviews/top.md").write_text("# Top level")
-        (tmp_path / "docs/reviews/2024/nested.md").write_text("# Nested")
-        (tmp_path / "docs/reviews/2024/q1/deep.md").write_text("# Deep")
+        (tmp_path / "docs/code-review/top.md").write_text("# Top level")
+        (tmp_path / "docs/code-review/2024/nested.md").write_text("# Nested")
+        (tmp_path / "docs/code-review/2024/q1/deep.md").write_text("# Deep")
 
         result = walk_harvest_dirs(tmp_path)
 
@@ -232,11 +232,11 @@ class TestHarvestWalker:
     def test_content_format_always_markdown(self, tmp_path: Path) -> None:
         """All harvested episodes have content_format='markdown'."""
         (tmp_path / "docs/adr").mkdir(parents=True)
-        (tmp_path / "docs/reviews").mkdir(parents=True)
+        (tmp_path / "docs/code-review").mkdir(parents=True)
         (tmp_path / "docs/guides").mkdir(parents=True)
 
         (tmp_path / "docs/adr/test1.md").write_text("# Test 1")
-        (tmp_path / "docs/reviews/test2.md").write_text("# Test 2")
+        (tmp_path / "docs/code-review/test2.md").write_text("# Test 2")
         (tmp_path / "docs/guides/test3.md").write_text("# Test 3")
 
         result = walk_harvest_dirs(tmp_path)

@@ -34,14 +34,14 @@ def temp_docs_root(tmp_path: Path) -> Path:
 
     Creates:
     - docs/adr/001-test-decision.md (adr)
-    - docs/reviews/feature-x-review.md (review_report)
+    - docs/code-review/feature-x-review.md (review_report)
     - docs/retro/feat-x-outcome.md (feature_outcome)
     - docs/guides/user-guide.md (document)
     """
     # Create directory structure
     dirs = {
         "adr": tmp_path / "docs" / "adr",
-        "reviews": tmp_path / "docs" / "reviews",
+        "reviews": tmp_path / "docs" / "code-review",
         "retro": tmp_path / "docs" / "retro",
         "guides": tmp_path / "docs" / "guides",
     }
