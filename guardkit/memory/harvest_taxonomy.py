@@ -41,7 +41,13 @@ HARVEST_MAP: dict[str, HarvestEntry] = {
     ),
     "review_report": HarvestEntry(
         episode_type="review_report",
-        directories=["docs/reviews", "docs/code-review"],
+        # docs/reviews is EXCLUDED: it holds autobuild/seeding/profiling RUN CAPTURES
+        # (run_N.md, vllm_run_*.md, *seed*.md, phase_N_build.md), not knowledge — 83%
+        # noise and ~78% of the whole harvested corpus's noise (see
+        # fleet-memory/docs/evals/FEAT-MEM-05-parity-eval-2026-06-27.md). The LLM-free
+        # store ingests raw, so noisy logs out-rank real content in retrieval. Legitimate
+        # hand-written reviews live in docs/code-review.
+        directories=["docs/code-review"],
         content_format="markdown",
     ),
     "feature_outcome": HarvestEntry(

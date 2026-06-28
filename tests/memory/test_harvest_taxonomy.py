@@ -49,7 +49,7 @@ class TestHarvestMap:
         """Review report entry maps to correct directories and format."""
         entry = HARVEST_MAP["review_report"]
         assert entry.episode_type == "review_report"
-        assert set(entry.directories) == {"docs/reviews", "docs/code-review"}
+        assert set(entry.directories) == {"docs/code-review"}
         assert entry.content_format == "markdown"
 
     def test_feature_outcome_entry_configuration(self):
@@ -210,7 +210,7 @@ class TestEpisodeTypeFor:
     def test_episode_type_for_review_report_paths(self):
         """Review report paths resolve to 'review_report' episode type."""
         review_paths = [
-            "docs/reviews/feature-x-review.md",
+            "docs/code-review/feature-x-review.md",
             "docs/code-review/pr-123-review.md",
         ]
 
@@ -273,7 +273,7 @@ class TestEpisodeTypeFor:
         """Handles exact directory path (no filename)."""
         # Should work for directory paths themselves
         assert episode_type_for("docs/adr") == "adr"
-        assert episode_type_for("docs/reviews") == "review_report"
+        assert episode_type_for("docs/code-review") == "review_report"
 
 
 class TestNatsSubjectSegmentValidation:
@@ -336,7 +336,7 @@ class TestDeterminism:
 
     def test_full_pipeline_determinism(self):
         """Full pipeline from path to episode_id is deterministic."""
-        path = "docs/reviews/feature-x-review.md"
+        path = "docs/code-review/feature-x-review.md"
 
         # Run full pipeline twice
         episode_type_1 = episode_type_for(path)
