@@ -29,7 +29,7 @@ import uuid
 from datetime import datetime
 from typing import Optional, List
 
-from guardkit.knowledge.graphiti_client import get_graphiti
+from guardkit.knowledge.fleet_memory_client import get_memory_client
 from guardkit.knowledge.entities.outcome import OutcomeType, TaskOutcome
 
 logger = logging.getLogger(__name__)
@@ -138,15 +138,16 @@ async def capture_task_outcome(
     # Create episode name
     episode_name = f"{outcome_id}: {task_id} - {task_title}"
 
-    # Attempt to store in Graphiti (graceful degradation)
-    client = get_graphiti()
+    # Attempt to store via memory client (graceful degradation)
+    # Routes through factory: graphiti | fleet_memory | dual (TASK-MEM08-004)
+    client = get_memory_client()
 
     if client is None:
-        logger.debug("[Graphiti] Client unavailable, skipping outcome capture")
+        logger.debug("[Memory] Client unavailable, skipping outcome capture")
         return outcome_id
 
     if not client.enabled:
-        logger.debug("[Graphiti] Client disabled, skipping outcome capture")
+        logger.debug("[Memory] Client disabled, skipping outcome capture")
         return outcome_id
 
     try:
@@ -157,9 +158,9 @@ async def capture_task_outcome(
             source="auto_captured",
             entity_type="task_outcome"
         )
-        logger.info(f"[Graphiti] Captured task outcome {outcome_id} for {task_id}")
+        logger.info(f"[Memory] Captured task outcome {outcome_id} for {task_id}")
     except Exception as e:
-        logger.warning(f"[Graphiti] Failed to store outcome {outcome_id}: {e}")
+        logger.warning(f"[Memory] Failed to store outcome {outcome_id}: {e}")
 
     return outcome_id
 

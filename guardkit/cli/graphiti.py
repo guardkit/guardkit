@@ -2227,16 +2227,24 @@ async def _cmd_capture_outcome(
     #
     # IMPORTANT: must NOT call _get_client_and_config() here. That helper
     # builds a fresh GraphitiClient outside the factory's thread-local
-    # store. capture_task_outcome() internally calls get_graphiti() which
+    # store. capture_task_outcome() internally calls get_memory_client() which
     # always goes through the factory — so the inner write would land on
     # a *different* (uninitialised) client instance and silently no-op,
     # while this CLI happily prints "captured" because the Python API
     # returns the generated outcome_id even when degraded. Sharing the
     # factory client closes that gap.
-    client = get_graphiti()
+    #
+    # TASK-MEM08-004: Routes through memory client factory (graphiti | dual)
+    from guardkit.knowledge.fleet_memory_client import get_memory_client
+
+    client = get_memory_client()
+    if client is None:
+        # Fall back to get_graphiti for backward compatibility
+        client = get_graphiti()
+
     if client is None:
         msg = (
-            "Graphiti unavailable (config missing or disabled) — outcome NOT "
+            "Memory client unavailable (config missing or disabled) — outcome NOT "
             "captured (no write to task_outcomes group)"
         )
         if strict:

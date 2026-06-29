@@ -50,6 +50,148 @@ class FleetMemoryConfig:
     nats_url: str = "nats://localhost:4222"
 
 
+class DualWriteClient:
+    """Dual-write client that writes to both Graphiti and fleet-memory.
+
+    Under `backend=dual`, writes go to both Graphiti (authoritative) and
+    fleet-memory. Graphiti failures propagate; fleet-memory failures are
+    logged but do not fail the operation (graceful degradation).
+
+    Args:
+        graphiti_client: GraphitiClient instance
+        fleet_client: FleetMemoryClient instance
+
+    Example:
+        >>> from guardkit.knowledge.graphiti_client import get_graphiti
+        >>> dual = DualWriteClient(get_graphiti(), FleetMemoryClient(config))
+        >>> await dual.add_episode(name="...", episode_body="...", group_id="task_outcomes")
+    """
+
+    def __init__(self, graphiti_client: Any, fleet_client: "FleetMemoryClient"):
+        """Initialize dual-write client.
+
+        Args:
+            graphiti_client: GraphitiClient instance (authoritative)
+            fleet_client: FleetMemoryClient instance (secondary)
+        """
+        self.graphiti_client = graphiti_client
+        self.fleet_client = fleet_client
+
+    @property
+    def enabled(self) -> bool:
+        """Check if client is enabled (delegates to Graphiti)."""
+        return self.graphiti_client.enabled if self.graphiti_client else False
+
+    async def search(
+        self,
+        query: str,
+        group_ids: Optional[list[str]] = None,
+        num_results: int = 10,
+        scope: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        """Search for knowledge (delegates to Graphiti for now).
+
+        Reads are not yet migrated to fleet-memory, so this delegates
+        to Graphiti.
+
+        Args:
+            query: Search query string
+            group_ids: Optional list of group IDs to search
+            num_results: Maximum number of results
+            scope: Optional scope filter
+
+        Returns:
+            List of search results from Graphiti
+        """
+        if self.graphiti_client is None:
+            return []
+        return await self.graphiti_client.search(
+            query=query,
+            group_ids=group_ids,
+            num_results=num_results,
+            scope=scope,
+        )
+
+    async def add_episode(
+        self,
+        name: str,
+        episode_body: str,
+        group_id: str,
+        source: str = "user_added",
+        entity_type: str = "generic",
+        scope: Optional[str] = None,
+        metadata: Optional[Any] = None,
+        timeout_override: Optional[float] = None,
+    ) -> Optional[str]:
+        """Add episode to both Graphiti and fleet-memory.
+
+        Writes to Graphiti first (authoritative). If successful, also
+        writes to fleet-memory (fail-open). Retired groups skip
+        fleet-memory write.
+
+        Args:
+            name: Episode name
+            episode_body: Episode content
+            group_id: Graphiti group identifier
+            source: Episode source
+            entity_type: Entity type
+            scope: Optional scope
+            metadata: Optional metadata
+            timeout_override: Optional timeout
+
+        Returns:
+            Graphiti UUID if successful, None if Graphiti write failed
+
+        Raises:
+            Exception: If Graphiti write fails (it's authoritative)
+        """
+        # Write to Graphiti first (authoritative)
+        graphiti_uuid = await self.graphiti_client.add_episode(
+            name=name,
+            episode_body=episode_body,
+            group_id=group_id,
+            source=source,
+            entity_type=entity_type,
+            scope=scope,
+            metadata=metadata,
+            timeout_override=timeout_override,
+        )
+
+        # Check if group should be written to fleet-memory
+        from guardkit.knowledge.fleet_memory_mapping import resolve
+
+        mapping = resolve(group_id)
+
+        # Skip fleet-memory for retired or unmapped groups
+        if mapping is None or mapping.disposition == "retire":
+            logger.debug(
+                f"Group {group_id!r} retired/unmapped, skipping fleet-memory write"
+            )
+            return graphiti_uuid
+
+        # Write to fleet-memory (fail-open - don't propagate errors)
+        try:
+            await self.fleet_client.add_episode(
+                name=name,
+                episode_body=episode_body,
+                group_id=group_id,
+                source=source,
+                entity_type=entity_type,
+                scope=scope,
+                metadata=metadata,
+                timeout_override=timeout_override,
+            )
+            logger.info(f"Dual-write to fleet-memory succeeded for {group_id!r}")
+        except Exception as e:
+            # Log but don't fail - Graphiti is authoritative
+            logger.warning(
+                f"Fleet-memory write failed for {group_id!r}: {e} "
+                "(Graphiti write succeeded, continuing)"
+            )
+
+        return graphiti_uuid
+
+
 class FleetMemoryClient:
     """Fleet-memory client with graphiti-client-shaped interface.
 
@@ -361,10 +503,21 @@ def init_memory_client(
             return True
 
         elif backend == "dual":
-            # Initialize both clients
-            # Would create a DualWriteClient wrapper
-            logger.warning("Dual-write mode not yet implemented")
-            return False
+            # Initialize both clients (dual-write mode)
+            from guardkit.knowledge.graphiti_client import get_graphiti
+
+            graphiti_client = get_graphiti()
+            if graphiti_client is None:
+                logger.error("Cannot initialize dual mode: Graphiti client unavailable")
+                return False
+
+            if fleet_config is None:
+                fleet_config = _load_fleet_config_from_env()
+
+            fleet_client = FleetMemoryClient(fleet_config)
+            _memory_client = DualWriteClient(graphiti_client, fleet_client)
+            logger.info("Dual-write mode initialized (Graphiti + fleet-memory)")
+            return True
 
         else:
             logger.error(f"Unknown backend: {backend!r}")
