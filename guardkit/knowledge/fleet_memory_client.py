@@ -215,18 +215,105 @@ class FleetMemoryClient:
             config: Fleet-memory configuration
         """
         self.config = config
-        self._mcp_available = self._check_mcp_available()
+        # Read path reuses fleet_memory.retrieval directly (the exact functions
+        # the memory_search MCP tool wraps — single source of truth, no drift).
+        # Installed via the guardkit `memory` extra. TASK-MEM08-011.
+        self._read_available = self._check_read_backend_available()
+        self._mcp_available = self._read_available  # back-compat alias
         self._nats_available = self._check_nats_available()
+        self._store: Any = None
+        self._store_cm: Any = None
+        self._initialized = False
 
-    def _check_mcp_available(self) -> bool:
-        """Check if memory_search MCP tool is available.
+    @property
+    def enabled(self) -> bool:
+        """Whether reads are enabled (FLEET_MEMORY_ENABLED)."""
+        return bool(self.config.enabled)
+
+    def _check_read_backend_available(self) -> bool:
+        """Check the READ dependency: fleet_memory.retrieval importable.
+
+        Reads reuse fleet-memory's retrieval surface (search + assemble_context),
+        installed via the guardkit `memory` extra (editable ../fleet-memory
+        sibling) — NOT nats_core, which is the write path. TASK-MEM08-011 / AC-3.
 
         Returns:
-            True if MCP tool is available, False otherwise
+            True if fleet_memory.retrieval is importable, False otherwise.
         """
-        # In real implementation, would check if .mcp.json declares fleet-memory server
-        # For now, return False to gracefully degrade
-        return False
+        try:
+            import fleet_memory.retrieval  # noqa: F401
+
+            return True
+        except Exception:
+            return False
+
+    async def initialize(self) -> bool:
+        """Open the fleet-memory store connection for reads.
+
+        Builds a fleet_memory ``Settings`` from this client's config and enters
+        ``async_store_context`` (connects to Postgres + configures embed-on-read).
+        Idempotent; returns False (graceful) when disabled or the read backend is
+        unavailable/unreachable.
+
+        Returns:
+            True if the store is ready, False otherwise.
+        """
+        if not self.config.enabled:
+            return False
+        if self._store is not None:
+            return True
+        if not self._read_available:
+            logger.warning(
+                "fleet_memory.retrieval not importable; install the guardkit "
+                "`memory` extra (editable ../fleet-memory). Reads disabled."
+            )
+            return False
+        try:
+            from fleet_memory.settings import Settings
+            from fleet_memory.store import async_store_context
+
+            settings = Settings(
+                pg_dsn=self.config.postgres_dsn,
+                embed_url=self.config.embed_url,
+                embed_model=self.config.embed_model,
+                embed_dims=self.config.embed_dims,
+                nats_url=self.config.nats_url,
+            )
+            self._store_cm = async_store_context(settings)
+            self._store = await self._store_cm.__aenter__()
+            self._initialized = True
+            return True
+        except Exception as e:
+            logger.warning(f"Fleet-memory initialize failed: {e}", exc_info=True)
+            self._store = None
+            self._store_cm = None
+            return False
+
+    async def health_check(self) -> bool:
+        """Confirm the live store is reachable via a trivial real read.
+
+        Returns:
+            True if a store read completes (connection healthy), False otherwise.
+        """
+        if self._store is None and not await self.initialize():
+            return False
+        try:
+            await self._store.aget(("fleet_memory", "guardkit", "chunk"), "__healthcheck__")
+            return True
+        except Exception as e:
+            logger.debug(f"Fleet-memory health check failed: {e}")
+            return False
+
+    async def close(self) -> None:
+        """Close the fleet-memory store connection (idempotent)."""
+        if self._store_cm is not None:
+            try:
+                await self._store_cm.__aexit__(None, None, None)
+            except Exception:
+                pass
+        self._store_cm = None
+        self._store = None
+        self._initialized = False
 
     def _check_nats_available(self) -> bool:
         """Check if nats_core module is available for writes.
@@ -271,52 +358,60 @@ class FleetMemoryClient:
             >>> hits[0]["fact"]
             "TASK-X completed with 80% coverage..."
         """
-        if not self._mcp_available:
-            logger.debug("memory_search MCP tool not available, returning empty")
+        if not self.config.enabled:
+            return []
+        if not self._read_available:
+            logger.debug("fleet_memory.retrieval unavailable, returning empty")
+            return []
+
+        # Lazy-open the store on first read (GROI readers do not call initialize()).
+        if self._store is None and not await self.initialize():
             return []
 
         try:
-            # Resolve group_ids to payload_types and domain_tags
+            from fleet_memory.retrieval import (
+                SearchRequest,
+                assemble_context,
+                search as fm_search,
+            )
             from guardkit.knowledge.fleet_memory_mapping import resolve
 
-            payload_types = set()
-            domain_tags = set()
+            # Resolve group_ids -> payload_types / domain_tags (migrate only).
+            # Unmapped / retired group_ids leave the filters empty, which searches
+            # ALL payload types (e.g. the harvested `chunk` corpus).
+            payload_types: set[str] = set()
+            domain_tags: set[str] = set()
+            for gid in group_ids or []:
+                mapping = resolve(gid)
+                if mapping and mapping.disposition == "migrate":
+                    payload_types.add(mapping.payload_type)
+                    domain_tags.update(mapping.domain_tags)
 
-            if group_ids:
-                for gid in group_ids:
-                    mapping = resolve(gid)
-                    if mapping and mapping.disposition == "migrate":
-                        payload_types.add(mapping.payload_type)
-                        domain_tags.update(mapping.domain_tags)
-
-            # Build generous token budget based on num_results
-            # Assume ~200 tokens per result for context blocks
             token_budget = max(2000, num_results * 200)
 
-            # Call memory_search MCP tool
-            # Note: In real implementation, would use MCP client to call the tool
-            # For now, return empty list to gracefully degrade
-            logger.debug(
-                f"memory_search call: query={query!r}, "
-                f"payload_types={sorted(payload_types)}, "
-                f"domain_tags={sorted(domain_tags)}, "
-                f"token_budget={token_budget}"
+            # Reuse fleet-memory's REAL retrieval surface — the exact functions the
+            # memory_search MCP tool wraps (single source of truth, no drift).
+            request = SearchRequest(
+                project="guardkit",
+                query=query,
+                payload_types=sorted(payload_types),
+                domain_tags=sorted(domain_tags),
+                token_budget=token_budget,
+                include_superseded=False,
             )
+            results = await fm_search(request, self._store)
+            assembly = assemble_context(results, token_budget)
 
-            # Simulate MCP response structure
-            context_block = ""  # Would come from actual MCP call
-
-            if not context_block:
+            if not assembly.context_block:
                 return []
 
-            # Adapt context_block to graphiti-shaped hits
-            # Strategy: create one synthetic hit carrying the context block
-            # Alternative: could split on headings if context_block is structured
+            # Adapt the assembled context block to the graphiti-shaped hit the GROI
+            # readers expect: [{fact, uuid, score}].
             return [
                 {
-                    "fact": context_block,
+                    "fact": assembly.context_block,
                     "uuid": str(uuid4()),
-                    "score": 0.95,  # High score since it's the primary result
+                    "score": float(assembly.coverage_score),
                 }
             ]
 
@@ -577,9 +672,12 @@ def _load_fleet_config_from_env() -> FleetMemoryConfig:
         ),
         embed_url=os.getenv(
             "FLEET_MEMORY_EMBED_URL",
-            "http://promaxgb10-41b1:9000/v1",
+            "http://promaxgb10-41b1:9000",
         ),
-        embed_model=os.getenv("FLEET_MEMORY_EMBED_MODEL", "nomic-embed"),
-        embed_dims=int(os.getenv("FLEET_MEMORY_EMBED_DIMS", "768")),
+        # Defaults match the live deployment (Qwen3-Embedding-0.6B @ 1024 dims).
+        # A wrong default silently mis-embeds against the rebuilt corpus and
+        # corrupts retrieval (TASK-MEM08-011 / AC-4).
+        embed_model=os.getenv("FLEET_MEMORY_EMBED_MODEL", "embed"),
+        embed_dims=int(os.getenv("FLEET_MEMORY_EMBED_DIMS", "1024")),
         nats_url=os.getenv("FLEET_MEMORY_NATS_URL", "nats://localhost:4222"),
     )

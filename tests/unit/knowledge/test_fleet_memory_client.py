@@ -44,69 +44,112 @@ def fleet_client(fleet_config):
     return FleetMemoryClient(fleet_config)
 
 
+def _disabled_config():
+    """A FleetMemoryConfig with reads disabled (avoids mutating a fixture)."""
+    return FleetMemoryConfig(
+        enabled=False,
+        postgres_dsn="postgresql://test:test@localhost:5433/test",
+        embed_url="http://localhost:9000",
+        embed_model="embed",
+        embed_dims=1024,
+        nats_url="nats://localhost:4222",
+    )
+
+
+def _install_fake_fleet_memory_retrieval(monkeypatch, *, context_block, coverage, captured):
+    """Inject a fake fleet_memory.retrieval so search() wiring runs without the
+    real dependency or a live store (TASK-MEM08-011)."""
+    import sys
+    import types
+
+    class _FakeSearchRequest:
+        def __init__(self, **kw):
+            captured["request"] = kw
+
+    async def _fake_search(request, store):
+        captured["store"] = store
+        return ["result-1", "result-2"]
+
+    class _FakeAssembly:
+        pass
+
+    def _fake_assemble(results, token_budget):
+        captured["assembled_n"] = len(results)
+        a = _FakeAssembly()
+        a.context_block = context_block
+        a.coverage_score = coverage
+        return a
+
+    retrieval = types.ModuleType("fleet_memory.retrieval")
+    retrieval.SearchRequest = _FakeSearchRequest
+    retrieval.search = _fake_search
+    retrieval.assemble_context = _fake_assemble
+    fm = types.ModuleType("fleet_memory")
+    fm.retrieval = retrieval
+    monkeypatch.setitem(sys.modules, "fleet_memory", fm)
+    monkeypatch.setitem(sys.modules, "fleet_memory.retrieval", retrieval)
+
+
 class TestFleetMemoryClientSearch:
-    """Test search() method returns graphiti-shaped contract."""
+    """Test search() — graphiti-shaped contract + real retrieval adaptation."""
 
-    async def test_search_returns_fact_dict_shape(self, fleet_client):
-        """search() must return list[dict] with fact/uuid/score keys.
+    async def test_search_disabled_returns_empty(self):
+        """search() returns [] when reads are disabled (FLEET_MEMORY_ENABLED=false)."""
+        client = FleetMemoryClient(_disabled_config())
+        assert await client.search(query="x", group_ids=["task_outcomes"]) == []
 
-        AC-001: FleetMemoryClient.search returns same list[dict] shape
-        (fact, uuid, score) the existing readers consume.
+    async def test_search_degrades_when_read_backend_unavailable(self, fleet_client):
+        """search() returns [] (graceful) when fleet_memory.retrieval is unimportable."""
+        fleet_client._read_available = False
+        assert await fleet_client.search(query="x", group_ids=["task_outcomes"]) == []
+
+    async def test_search_adapts_context_block_to_hit(self, fleet_client, monkeypatch):
+        """search() calls fleet_memory.retrieval.search + assemble_context and adapts
+        the assembled context_block into one graphiti-shaped hit (AC-1).
+
+        The real dependency + live store are covered by the TASK-MEM08-007 read-proof
+        run; here a fake retrieval module exercises the wiring deterministically.
         """
-        # Given: search with mocked MCP boundary
-        fleet_client._mcp_available = True
-
-        with patch.object(
-            fleet_client, "search", new_callable=AsyncMock
-        ) as mock_search:
-            # Mock returns one hit with correct shape
-            mock_search.return_value = [
-                {
-                    "fact": "TASK-X completed successfully",
-                    "uuid": str(uuid4()),
-                    "score": 0.92,
-                }
-            ]
-
-            # When: searching
-            hits = await fleet_client.search(
-                query="task outcomes",
-                group_ids=["task_outcomes"],
-            )
-
-            # Then: returns list[dict] with required keys
-            assert isinstance(hits, list)
-            assert len(hits) >= 1
-
-            for hit in hits:
-                assert isinstance(hit, dict)
-                assert "fact" in hit, "each hit must have 'fact' key"
-                assert "uuid" in hit, "each hit must have 'uuid' key"
-                assert "score" in hit, "each hit must have 'score' key"
-                assert isinstance(hit["fact"], str)
-                assert hit["fact"], "fact must be non-empty"
-
-    async def test_search_gracefully_degrades_when_mcp_unavailable(self, fleet_client):
-        """search() returns empty list when MCP not available.
-
-        Ensures graceful degradation per graphiti_client pattern.
-        """
-        # Given: MCP not available
-        fleet_client._mcp_available = False
-
-        # When: searching
-        hits = await fleet_client.search(
-            query="test",
-            group_ids=["task_outcomes"],
+        captured: dict = {}
+        _install_fake_fleet_memory_retrieval(
+            monkeypatch,
+            context_block="## Recommended Patterns\n\n- Use the X pattern",
+            coverage=0.9,
+            captured=captured,
         )
+        # read backend available; store already open so initialize() is skipped
+        fleet_client._read_available = True
+        fleet_client._store = object()
 
-        # Then: returns empty list (graceful degradation)
-        assert hits == []
+        hits = await fleet_client.search(query="patterns for X", group_ids=["patterns"])
 
-    async def test_search_maps_group_ids_to_payload_types(self, fleet_client):
-        """search() resolves group_ids via fleet_memory_mapping."""
-        # Given: mapped group_id
-        fleet_client._mcp_available = True
+        assert len(hits) == 1
+        assert hits[0]["fact"] == "## Recommended Patterns\n\n- Use the X pattern"
+        assert hits[0]["score"] == 0.9
+        assert isinstance(hits[0]["uuid"], str)
+        # the real retrieval surface was actually invoked
+        assert captured["assembled_n"] == 2
+        assert captured["request"]["project"] == "guardkit"
+        assert captured["request"]["query"] == "patterns for X"
+
+    async def test_search_empty_context_block_returns_empty(self, fleet_client, monkeypatch):
+        """An empty assembled block (no matches) yields [] (result_count 0)."""
+        captured: dict = {}
+        _install_fake_fleet_memory_retrieval(
+            monkeypatch, context_block="", coverage=0.0, captured=captured
+        )
+        fleet_client._read_available = True
+        fleet_client._store = object()
+        assert await fleet_client.search(query="nothing", group_ids=["patterns"]) == []
+
+    async def test_search_maps_group_ids_to_payload_types(self, fleet_client, monkeypatch):
+        """search() resolves group_ids via fleet_memory_mapping (migrate -> payload_types)."""
+        captured: dict = {}
+        _install_fake_fleet_memory_retrieval(
+            monkeypatch, context_block="block", coverage=0.5, captured=captured
+        )
+        fleet_client._read_available = True
+        fleet_client._store = object()
 
         with patch("guardkit.knowledge.fleet_memory_mapping.resolve") as mock_resolve:
             mock_resolve.return_value = GroupMapping(
@@ -115,15 +158,30 @@ class TestFleetMemoryClientSearch:
                 domain_tags=["task"],
                 disposition="migrate",
             )
+            await fleet_client.search(query="test", group_ids=["task_outcomes"])
 
-            # When: searching (will degrade since MCP mock not fully wired)
-            hits = await fleet_client.search(
-                query="test",
-                group_ids=["task_outcomes"],
-            )
+        mock_resolve.assert_called_once_with("task_outcomes")
+        assert captured["request"]["payload_types"] == ["build_outcome"]
+        assert captured["request"]["domain_tags"] == ["task"]
 
-            # Then: resolve was called
-            mock_resolve.assert_called_once_with("task_outcomes")
+
+class TestFleetMemoryClientInterface:
+    """The read lifecycle interface consumed by build_context + the memory CLI."""
+
+    def test_enabled_reflects_config(self, fleet_client):
+        assert fleet_client.enabled is True
+        assert FleetMemoryClient(_disabled_config()).enabled is False
+
+    async def test_initialize_returns_false_when_disabled(self):
+        assert await FleetMemoryClient(_disabled_config()).initialize() is False
+
+    async def test_initialize_returns_false_when_read_backend_unavailable(self, fleet_client):
+        fleet_client._read_available = False
+        assert await fleet_client.initialize() is False
+
+    async def test_close_is_safe_when_not_initialized(self, fleet_client):
+        await fleet_client.close()  # must not raise
+        assert fleet_client._store is None
 
 
 class TestFleetMemoryClientAddEpisode:
