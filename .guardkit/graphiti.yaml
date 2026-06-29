@@ -121,11 +121,13 @@ group_ids:
 # Fleet Memory Configuration (TASK-MEM08-009)
 # Pure-embeddings backend without graph extraction overhead
 fleet_memory:
-  postgres_dsn: postgresql://postgres:test@localhost:5433/memory
-  embed_url: http://promaxgb10-41b1:9000/v1
+  # Connection SECRETS (postgres_dsn, nats_url) are NOT stored here — set
+  # FLEET_MEMORY_PG_DSN / FLEET_MEMORY_NATS_URL in a gitignored .env at the project
+  # root (see .env.example). The fleet-memory MCP server (python -m fleet_memory.mcp)
+  # and the `guardkit memory` CLI both load that .env automatically.
+  embed_url: http://promaxgb10-41b1:9000
   embed_model: embed  # llama-swap alias for Qwen3-Embedding-0.6B (1024-dim) at :9000
   embed_dims: 1024  # Verified against live :9000 /v1/embeddings (2026-06-29); must match the rebuilt corpus
-  nats_url: nats://localhost:4222
 
 # Deprecated fields (kept for backwards compatibility)
 host: localhost
