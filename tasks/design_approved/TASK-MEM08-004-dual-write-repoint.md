@@ -1,26 +1,29 @@
 ---
-id: TASK-MEM08-004
-title: Repoint writes to dual-write Graphiti + fleet-memory behind a flag
-task_type: feature
-parent_review: TASK-REV-MEM08
-feature_id: FEAT-MEM-08
-wave: 3
-implementation_mode: task-work
 complexity: 7
-dependencies:
-  - TASK-MEM08-002
-  - TASK-MEM08-003
 consumer_context:
-  - task: TASK-MEM08-002
-    consumes: get_memory_client
-    framework: "guardkit.knowledge.fleet_memory_client factory + add_episode"
-    driver: "in-process import"
-    format_note: "factory returns fleet_memory|graphiti|dual client from config.backend; dual mode writes both"
-  - task: TASK-MEM08-003
-    consumes: BuildOutcomePayload
-    framework: "fleet_memory.payloads.models (pydantic typed payload)"
-    driver: "MCP memory_write_payload OR nats_core.publish_episode"
-    format_note: "build_outcome payload now carries task_id/lessons/approach; ADR -> adr payload (decision,status)"
+- consumes: get_memory_client
+  driver: in-process import
+  format_note: factory returns fleet_memory|graphiti|dual client from config.backend;
+    dual mode writes both
+  framework: guardkit.knowledge.fleet_memory_client factory + add_episode
+  task: TASK-MEM08-002
+- consumes: BuildOutcomePayload
+  driver: MCP memory_write_payload OR nats_core.publish_episode
+  format_note: build_outcome payload now carries task_id/lessons/approach; ADR ->
+    adr payload (decision,status)
+  framework: fleet_memory.payloads.models (pydantic typed payload)
+  task: TASK-MEM08-003
+dependencies:
+- TASK-MEM08-002
+- TASK-MEM08-003
+feature_id: FEAT-MEM-08
+id: TASK-MEM08-004
+implementation_mode: task-work
+parent_review: TASK-REV-MEM08
+status: design_approved
+task_type: feature
+title: Repoint writes to dual-write Graphiti + fleet-memory behind a flag
+wave: 3
 ---
 
 # TASK-MEM08-004 — Dual-write repoint (task-complete / outcome_manager / adr_service)
