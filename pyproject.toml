@@ -85,18 +85,23 @@ dev = [
     "pytest-bdd>=8.1,<9",
     "httpx>=0.25.1",
 ]
-# Memory write-path harvest publisher (FEAT-HARV / P4). nats-core is the
-# canonical NATS publisher helper (NATSClient.publish_episode + MemoryEpisodeV1),
-# resolved as an editable sibling via [tool.uv.sources] below. Threaded into the
-# autobuild worktree venv via the FEAT-HARV feature YAML's
-# `bootstrap_extras: [dev, memory]` (a bare extra is never installed otherwise).
+# Memory path: FEAT-HARV writes + FEAT-MEM-08 reads. nats-core is the NATS
+# publisher helper (NATSClient.publish_episode + MemoryEpisodeV1, writes);
+# fleet-memory provides the retrieval surface (fleet_memory.retrieval.search +
+# assemble_context) reused by FleetMemoryClient for reads (TASK-MEM08-011 — the
+# single source of truth the memory_search MCP tool also wraps). Both resolved as
+# editable siblings via [tool.uv.sources] below and threaded into the autobuild
+# worktree venv via `bootstrap_extras: [dev, memory]` (a bare extra is never
+# installed otherwise).
 memory = [
     "nats-core>=0.4,<1",
+    "fleet-memory>=0.1,<1",
 ]
 all = [
     "claude-agent-sdk>=0.1.49,<0.2",
     "guardkitfactory>=0.1,<1",
     "nats-core>=0.4,<1",
+    "fleet-memory>=0.1,<1",
     "graphiti-core[falkordb] @ git+https://github.com/guardkit/graphiti.git@v0.29.5-guardkit.1",
     "graphiti-core[google-genai] @ git+https://github.com/guardkit/graphiti.git@v0.29.5-guardkit.1",
     "pytest>=7.4.3",
@@ -125,6 +130,12 @@ guardkitfactory = { path = "../guardkitfactory", editable = true }
 # venv only when an extra naming it is threaded — FEAT-HARV.yaml sets
 # `bootstrap_extras: [dev, memory]`. Requires ../nats-core checked out alongside.
 nats-core = { path = "../nats-core", editable = true }
+# FEAT-MEM-08 / TASK-MEM08-011: fleet-memory (read retrieval surface) resolved as
+# an editable sibling, same convention as nats-core. Installed into a worktree venv
+# only when the `memory` extra is threaded. Requires ../fleet-memory checked out
+# alongside; the autobuild orchestrator bridges the relative path from the nested
+# worktree (env_bootstrap uv-sources symlink).
+fleet-memory = { path = "../fleet-memory", editable = true }
 
 [project.scripts]
 guardkit-py = "guardkit.cli.main:main"
