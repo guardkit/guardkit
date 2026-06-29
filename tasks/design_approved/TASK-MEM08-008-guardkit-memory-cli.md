@@ -1,20 +1,21 @@
 ---
-id: TASK-MEM08-008
-title: Add guardkit memory search/status/capture-outcome; deprecate guardkit graphiti
-task_type: feature
-parent_review: TASK-REV-MEM08
-feature_id: FEAT-MEM-08
-wave: 7
-implementation_mode: task-work
 complexity: 5
-dependencies:
-  - TASK-MEM08-006
 consumer_context:
-  - task: TASK-MEM08-002
-    consumes: get_memory_client
-    framework: "guardkit.knowledge.fleet_memory_client factory (search + add_episode)"
-    driver: "in-process import"
-    format_note: "CLI search uses adapter.search; capture-outcome uses adapter.add_episode/build_outcome"
+- consumes: get_memory_client
+  driver: in-process import
+  format_note: CLI search uses adapter.search; capture-outcome uses adapter.add_episode/build_outcome
+  framework: guardkit.knowledge.fleet_memory_client factory (search + add_episode)
+  task: TASK-MEM08-002
+dependencies:
+- TASK-MEM08-006
+feature_id: FEAT-MEM-08
+id: TASK-MEM08-008
+implementation_mode: task-work
+parent_review: TASK-REV-MEM08
+status: design_approved
+task_type: feature
+title: Add guardkit memory search/status/capture-outcome; deprecate guardkit graphiti
+wave: 7
 ---
 
 # TASK-MEM08-008 — `guardkit memory` CLI + deprecate `guardkit graphiti`

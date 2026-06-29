@@ -277,7 +277,12 @@ async def _cmd_status(verbose: bool = False) -> None:
     Args:
         verbose: Show all groups even if empty
     """
+    # Emit deprecation warning
     console.print()
+    console.print("[yellow]⚠️  DEPRECATED: 'guardkit graphiti status' is deprecated.[/yellow]")
+    console.print("[yellow]   Use 'guardkit memory status' instead.[/yellow]")
+    console.print()
+
     console.print("[bold cyan]╔════════════════════════════════════════╗[/bold cyan]")
     console.print("[bold cyan]║       Graphiti Knowledge Status        ║[/bold cyan]")
     console.print("[bold cyan]╚════════════════════════════════════════╝[/bold cyan]")
@@ -1715,6 +1720,11 @@ def _format_show_output(results: list[dict], knowledge_id: str) -> None:
 
 async def _cmd_search(query: str, group: Optional[str], limit: int) -> None:
     """Async implementation of search command."""
+    # Emit deprecation warning
+    console.print("[yellow]⚠️  DEPRECATED: 'guardkit graphiti search' is deprecated.[/yellow]")
+    console.print("[yellow]   Use 'guardkit memory search' instead.[/yellow]")
+    console.print()
+
     # Create client
     client, settings = _get_client_and_config()
 
@@ -2140,6 +2150,12 @@ async def _cmd_capture_outcome(
     verbose: bool,
 ) -> None:
     """Async implementation of capture-outcome command."""
+    # Emit deprecation warning
+    console.print()
+    console.print("[yellow]⚠️  DEPRECATED: 'guardkit graphiti capture-outcome' is deprecated.[/yellow]")
+    console.print("[yellow]   Use 'guardkit memory capture-outcome' instead.[/yellow]")
+    console.print()
+
     from datetime import datetime
     from guardkit.knowledge.outcome_manager import capture_task_outcome
     from guardkit.knowledge.entities.outcome import OutcomeType
