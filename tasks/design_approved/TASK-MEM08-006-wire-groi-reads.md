@@ -1,20 +1,22 @@
 ---
-id: TASK-MEM08-006
-title: Wire memory_search into coach-context + feature-plan-context readers
-task_type: feature
-parent_review: TASK-REV-MEM08
-feature_id: FEAT-MEM-08
-wave: 5
-implementation_mode: task-work
 complexity: 6
-dependencies:
-  - TASK-MEM08-005
 consumer_context:
-  - task: TASK-MEM08-002
-    consumes: get_memory_client
-    framework: "guardkit.knowledge.fleet_memory_client factory + search"
-    driver: "in-process import"
-    format_note: "search(query, group_ids) -> list[{fact,uuid,score}] adapted from memory_search context_block; token_budget generous"
+- consumes: get_memory_client
+  driver: in-process import
+  format_note: search(query, group_ids) -> list[{fact,uuid,score}] adapted from memory_search
+    context_block; token_budget generous
+  framework: guardkit.knowledge.fleet_memory_client factory + search
+  task: TASK-MEM08-002
+dependencies:
+- TASK-MEM08-005
+feature_id: FEAT-MEM-08
+id: TASK-MEM08-006
+implementation_mode: task-work
+parent_review: TASK-REV-MEM08
+status: design_approved
+task_type: feature
+title: Wire memory_search into coach-context + feature-plan-context readers
+wave: 5
 ---
 
 # TASK-MEM08-006 — Wire the GROI reads through fleet-memory
