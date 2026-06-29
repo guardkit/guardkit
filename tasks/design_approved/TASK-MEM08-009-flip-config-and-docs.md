@@ -1,14 +1,15 @@
 ---
-id: TASK-MEM08-009
-title: Flip .mcp.json + task-complete tool renames + graphiti.yaml config + docs/rules
-task_type: feature
-parent_review: TASK-REV-MEM08
-feature_id: FEAT-MEM-08
-wave: 7
-implementation_mode: task-work
 complexity: 4
 dependencies:
-  - TASK-MEM08-007
+- TASK-MEM08-007
+feature_id: FEAT-MEM-08
+id: TASK-MEM08-009
+implementation_mode: task-work
+parent_review: TASK-REV-MEM08
+status: design_approved
+task_type: feature
+title: Flip .mcp.json + task-complete tool renames + graphiti.yaml config + docs/rules
+wave: 7
 ---
 
 # TASK-MEM08-009 — Flip integration-point config + docs (rollback-guarded)
