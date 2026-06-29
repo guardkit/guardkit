@@ -2,8 +2,8 @@
   "mcpServers": {
     "fleet_memory": {
       "type": "stdio",
-      "command": "python",
-      "args": ["-m", "fleet_memory.mcp"],
+      "command": "uv",
+      "args": ["run", "--project", "../fleet-memory", "python", "-m", "fleet_memory.mcp"],
       "env": {
         "FLEET_MEMORY_EMBED_URL": "http://promaxgb10-41b1:9000",
         "FLEET_MEMORY_EMBED_MODEL": "embed",
