@@ -224,60 +224,68 @@ episode_name = "Task Completion: TASK-042"
 episode_body = "TASK-042: Implement user authentication API. Complexity: 7/10. Approach: Used JWT with bcrypt password hashing, FastAPI dependency injection for auth middleware. Result: All acceptance criteria met, 92% test coverage, architectural review 85/100. Lessons: Redis session storage required careful connection pooling configuration for test isolation."
 ```
 
-### Step 2: Check Graphiti Availability and Write
+### Step 2: Check Fleet Memory Availability and Write
 
 **Tier 0 — MCP Tools (Preferred)**:
 
-Check whether `mcp__graphiti__add_memory` is available in the current session's tool list.
+Check whether `mcp__fleet_memory__memory_write_payload` is available in the current session's tool list.
 
 **IMPORTANT — Deferred tools**: In Claude Code sessions, MCP tools are often listed
 in the system reminder as "deferred" (loadable via `ToolSearch`) rather than appearing
 directly in the immediate tool list. Treat deferred tools as **available**.
 
-If `mcp__graphiti__add_memory` is **not** in the immediate tool list, scan the
-session's deferred-tool list (system reminder block) for `mcp__graphiti__add_memory`.
+If `mcp__fleet_memory__memory_write_payload` is **not** in the immediate tool list, scan the
+session's deferred-tool list (system reminder block) for `mcp__fleet_memory__memory_write_payload`.
 If present, load it via:
 
 ```
-ToolSearch(query: "select:mcp__graphiti__add_memory")
+ToolSearch(query: "select:mcp__fleet_memory__memory_write_payload")
 ```
 
 Only fall through to Tier 1/2 if the tool is absent from BOTH the immediate tool
-list AND the deferred-tool list (i.e., the graphiti MCP server is not configured
+list AND the deferred-tool list (i.e., the fleet_memory MCP server is not configured
 for this session at all).
 
 **IF** MCP tool is available (either immediately or after ToolSearch load):
 
 **Write 1 — Task Outcome** (always):
 ```
-mcp__graphiti__add_memory(
-  name: "Task Completion: {task_id}",
-  episode_body: "{task_id}: {title}. Complexity: {complexity}/10. Approach: {approach}. Result: {outcome}. Lessons: {lessons}.",
-  group_id: "guardkit__task_outcomes",
-  source: "text",
-  source_description: "GuardKit task completion"
+mcp__fleet_memory__memory_write_payload(
+  payload: {
+    "project": "guardkit",
+    "payload_type": "task_outcome",
+    "domain_tags": ["task_outcomes"],
+    "name": "Task Completion: {task_id}",
+    "content": "{task_id}: {title}. Complexity: {complexity}/10. Approach: {approach}. Result: {outcome}. Lessons: {lessons}.",
+    "source_type": "text",
+    "source_description": "GuardKit task completion"
+  }
 )
 ```
 
 **Write 2 — Architectural Decisions** (only if task content contains architectural decisions):
 ```
-mcp__graphiti__add_memory(
-  name: "Decision: {task_id} - {decision_summary}",
-  episode_body: "{decision_description}. Context: {task_id} ({title}). Rationale: {rationale}.",
-  group_id: "guardkit__project_decisions",
-  source: "text",
-  source_description: "GuardKit task architectural decision"
+mcp__fleet_memory__memory_write_payload(
+  payload: {
+    "project": "guardkit",
+    "payload_type": "project_decision",
+    "domain_tags": ["project_decisions"],
+    "name": "Decision: {task_id} - {decision_summary}",
+    "content": "{decision_description}. Context: {task_id} ({title}). Rationale: {rationale}.",
+    "source_type": "text",
+    "source_description": "GuardKit task architectural decision"
+  }
 )
 ```
 
 **IF** MCP writes succeed:
 ```
-DISPLAY: "[Graphiti] Task outcome captured to knowledge graph"
+DISPLAY: "[Fleet Memory] Task outcome captured to knowledge graph"
 ```
 
 **IF** MCP writes fail (error from tool call):
 ```
-DISPLAY: "[Graphiti] Warning: Could not capture task outcome ({error})"
+DISPLAY: "[Fleet Memory] Warning: Could not capture task outcome ({error})"
          "  (Non-critical — task completion continues)"
 ```
 
@@ -285,17 +293,23 @@ DISPLAY: "[Graphiti] Warning: Could not capture task outcome ({error})"
 
 ---
 
-### Step 2a: Detect group_id Override and Fall Back to CLI (TASK-FIX-B1F7, scope-revised by TASK-INF-5053)
+### Step 2a: Detect group_id Override and Fall Back to CLI (DEPRECATED for fleet_memory)
 
-> **Status (TASK-INF-5053, 2026-05-02):** the override that motivated
-> this step was investigated against the running server and **could not
-> be reproduced** — the source at `/app/mcp/src/graphiti_mcp_server.py:
-> 374-375` correctly honours client-supplied `group_id`, and live
-> probes confirm. The detection + fallback below is retained as cheap
-> defence-in-depth (one parser module + a non-blocking re-issue) so
-> that any future regression would be caught and mitigated
-> automatically. It is not addressing a known live bug. See
-> `docs/state/TASK-INF-5053/audit.md` for the audit trail.
+> **Status (TASK-MEM08-009, 2026-06-29):** This step was specific to the
+> legacy Graphiti HTTP MCP server's group_id override behavior (TASK-FIX-B1F7).
+> The fleet_memory stdio MCP server uses payload-based routing and does not
+> have this issue. **This step is skipped when using `mcp__fleet_memory__*` tools.**
+>
+> For rollback scenarios where `.mcp.json` is reverted to graphiti, this
+> fallback logic remains available but is not invoked under normal fleet_memory
+> operation.
+
+> **Historical context (TASK-INF-5053, 2026-05-02):** the override that motivated
+> this step was investigated against the graphiti server and **could not
+> be reproduced** — the source correctly honours client-supplied `group_id`.
+> See `docs/state/TASK-INF-5053/audit.md` for the audit trail.
+
+**This step only applies when using the legacy `mcp__graphiti__add_memory` tools.**
 
 The Graphiti MCP HTTP server reports the actual group used in the
 response message: `Episode '...' queued for processing in group
@@ -383,37 +397,40 @@ TASK-FIX-B1F7 (original mitigation), and TASK-INF-5053
 
 **Tier 1/2 — CLI Fallback** (when MCP not available):
 
-**IF** `mcp__graphiti__add_memory` is NOT available:
+**IF** `mcp__fleet_memory__memory_write_payload` is NOT available:
 
-Check Graphiti availability via Read tool (Tier 1 from `docs/internals/commands-lib/graphiti-preamble.md`):
+Check memory backend availability via Read tool (Tier 1):
 Read `.guardkit/graphiti.yaml` — if file exists and `enabled: true`, proceed to CLI write.
+The CLI uses the configured `backend` flag (graphiti/fleet_memory/dual) from `graphiti.yaml`.
 
-**IF** Graphiti is enabled:
+**IF** memory backend is enabled:
 
 Use the dedicated `capture-outcome` subcommand which wraps the
-`capture_task_outcome` Python API and writes to the `task_outcomes` group
-with structured fields (TASK-FIX-CLI7). The subcommand parses the just-
-moved task file directly — no temp files needed:
+`capture_task_outcome` Python API and writes to the configured backend
+(fleet_memory/graphiti/dual) with structured fields (TASK-FIX-CLI7, TASK-MEM08-009).
+The subcommand parses the just-moved task file directly — no temp files needed:
 
 ```bash
 # Frontmatter-driven (preferred): pulls task_id, title, requirements,
 # summary, lessons, related ADRs from the task file's frontmatter +
 # `## Implementation Summary` / `## Implementation Notes` / `## Notes`
 # sections. CLI flags override anything that's parsed.
-guardkit graphiti capture-outcome \
+guardkit memory capture-outcome \
   --from-task-file tasks/completed/{YYYY-MM}/{task_id}-{slug}.md \
   --timeout 300
 ```
 
+**Note**: `guardkit graphiti capture-outcome` is deprecated but remains as an
+alias for backward compatibility. Use `guardkit memory capture-outcome`.
+
 The `--timeout 300` sizes the per-episode timeout for local-LLM entity
-extraction (60-300 s typical on local LLMs; the default 120 s is the
-GraphitiClient internal default, which is too tight for vLLM/ollama).
+extraction (60-300 s typical on local LLMs).
 
 **IF** the task file lacks an `## Implementation Summary` section, fall
 back to the explicit-flag form:
 
 ```bash
-guardkit graphiti capture-outcome \
+guardkit memory capture-outcome \
   --task-id {task_id} \
   --task-title "{title}" \
   --summary "{one-paragraph outcome summary}" \
@@ -433,16 +450,16 @@ plus the inner client's `Episode profile [...]: nodes=N, edges=M,
 invalidated=K` log line. A non-zero `nodes`/`edges` count confirms the
 LLM extraction actually ran (not just a queued raw episode).
 
-**IF** Graphiti is unavailable or disabled (default non-blocking
+**IF** memory backend is unavailable or disabled (default non-blocking
 behaviour):
 ```
-DISPLAY (yellow): "Graphiti unavailable or disabled — outcome NOT captured (no write to task_outcomes group)"
+DISPLAY (yellow): "Memory backend unavailable or disabled — outcome NOT captured"
                    "  (use --strict to exit non-zero in this case)"
 ```
 Task completion proceeds. To make this case fail-fast (e.g. in CI), pass
 `--strict` to the subcommand.
 
-**IF** Graphiti is not enabled (config missing or `enabled: false`):
+**IF** memory backend is not enabled (config missing or `enabled: false`):
 The subcommand reaches the same "unavailable or disabled" branch above
 and emits the same warning. Task completion proceeds.
 
