@@ -1,8 +1,16 @@
 {
   "mcpServers": {
-    "graphiti": {
-      "type": "http",
-      "url": "http://promaxgb10-41b1:8004/mcp"
+    "fleet_memory": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "fleet_memory.mcp"],
+      "env": {
+        "FLEET_MEMORY_PG_DSN": "postgresql://postgres:test@localhost:5433/memory",
+        "FLEET_MEMORY_EMBED_URL": "http://promaxgb10-41b1:9000/v1",
+        "FLEET_MEMORY_EMBED_MODEL": "nomic-embed",
+        "FLEET_MEMORY_EMBED_DIMS": "768",
+        "FLEET_MEMORY_NATS_URL": "nats://localhost:4222"
+      }
     }
   }
 }

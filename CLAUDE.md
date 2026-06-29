@@ -211,13 +211,23 @@ For agentic systems requiring formal behavior specs: `/task-work TASK-XXX --mode
 Requires: [require-kit](https://github.com/requirekit/require-kit)
 See: [BDD Workflow Guide](docs/guides/bdd-workflow-for-agentic-systems.md)
 
-## Graphiti Knowledge Capture
+## Knowledge Capture (fleet-memory; Graphiti deprecated)
+
+> **Cutover in progress (FEAT-MEM-08, 2026-06-29):** knowledge capture is moving from
+> Graphiti/FalkorDB to the **fleet-memory** pure-embeddings backend. The backend is
+> selected by `.guardkit/graphiti.yaml` `backend:` (`fleet_memory` | `graphiti` | `dual`);
+> the soak keeps `enabled: false` until operator sign-off (TASK-MEM08-010).
 
 Persistent knowledge capture across sessions. Two access methods coexist:
-- **MCP server** (Claude Code sessions): `mcp__graphiti__*` tools — see `.claude/rules/graphiti-knowledge-graph.md`
-- **Python client** (CLI / AutoBuild): `guardkit graphiti *` — see `.claude/rules/graphiti-knowledge.md`
+- **MCP server** (Claude Code sessions): `mcp__fleet_memory__*` tools
+  (`memory_write_payload`, `memory_search`) — see `.claude/rules/graphiti-knowledge-graph.md`.
+  Legacy: `mcp__graphiti__*`.
+- **Python client / CLI** (CLI / AutoBuild): `guardkit memory *` — see
+  `.claude/rules/graphiti-knowledge.md`. Legacy: `guardkit graphiti *` (**deprecated**).
 
-Both connect to the same FalkorDB instance. See: `docs/guides/graphiti-claude-code-integration.md` for architecture, setup, and troubleshooting.
+**Rollback:** set `backend: graphiti` + `enabled: true` in `.guardkit/graphiti.yaml` and
+restore the `graphiti` server in `.mcp.json`. See
+`docs/guides/graphiti-claude-code-integration.md` for architecture and troubleshooting.
 
 ## MCP Integration
 
