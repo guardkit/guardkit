@@ -123,8 +123,8 @@ group_ids:
 fleet_memory:
   postgres_dsn: postgresql://postgres:test@localhost:5433/memory
   embed_url: http://promaxgb10-41b1:9000/v1
-  embed_model: nomic-embed
-  embed_dims: 768  # Must match the actual model dimensions
+  embed_model: embed  # llama-swap alias for Qwen3-Embedding-0.6B (1024-dim) at :9000
+  embed_dims: 1024  # Verified against live :9000 /v1/embeddings (2026-06-29); must match the rebuilt corpus
   nats_url: nats://localhost:4222
 
 # Deprecated fields (kept for backwards compatibility)
