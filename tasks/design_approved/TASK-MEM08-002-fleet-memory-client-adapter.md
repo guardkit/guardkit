@@ -1,20 +1,22 @@
 ---
-id: TASK-MEM08-002
-title: Add fleet_memory_client.py adapter (graphiti-client-shaped, flag-switched)
-task_type: feature
-parent_review: TASK-REV-MEM08
-feature_id: FEAT-MEM-08
-wave: 2
-implementation_mode: task-work
 complexity: 6
-dependencies:
-  - TASK-MEM08-001
 consumer_context:
-  - task: TASK-MEM08-001
-    consumes: GROUP_ID_MAP
-    framework: "guardkit.knowledge.fleet_memory_mapping (dict[str, GroupMapping] + resolve())"
-    driver: "in-process import"
-    format_note: "resolve(group_id) -> GroupMapping(project, payload_type, domain_tags, disposition); None = retired/unmapped → fail-open skip"
+- consumes: GROUP_ID_MAP
+  driver: in-process import
+  format_note: resolve(group_id) -> GroupMapping(project, payload_type, domain_tags,
+    disposition); None = retired/unmapped → fail-open skip
+  framework: guardkit.knowledge.fleet_memory_mapping (dict[str, GroupMapping] + resolve())
+  task: TASK-MEM08-001
+dependencies:
+- TASK-MEM08-001
+feature_id: FEAT-MEM-08
+id: TASK-MEM08-002
+implementation_mode: task-work
+parent_review: TASK-REV-MEM08
+status: design_approved
+task_type: feature
+title: Add fleet_memory_client.py adapter (graphiti-client-shaped, flag-switched)
+wave: 2
 ---
 
 # TASK-MEM08-002 — fleet_memory_client.py adapter + config
