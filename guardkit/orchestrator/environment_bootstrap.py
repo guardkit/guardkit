@@ -570,7 +570,16 @@ def _uv_python_request(requires_python: Optional[str]) -> Optional[str]:
     ``None`` / ``""`` -> ``None``
 
     See TASK-AB-BOOTPY01 (FEAT-MEM-01 Error 1: Python 3.10 bootstrap trap).
+
+    Override: ``GUARDKIT_BOOTSTRAP_PYTHON`` (e.g. ``"3.12"``) takes precedence over
+    the derived value. Needed when an installed extra transitively requires a newer
+    Python than the base project — e.g. the ``memory`` extra pulls fleet-memory
+    (``>=3.12``) while guardkit is ``>=3.11``, so the requires-python floor (3.11)
+    would build a venv that cannot host fleet-memory. See FEAT-MEM-08 / TASK-MEM08-011.
     """
+    override = os.environ.get("GUARDKIT_BOOTSTRAP_PYTHON", "").strip()
+    if override:
+        return override
     if not requires_python:
         return None
     candidates: List[tuple] = []
