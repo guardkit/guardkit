@@ -1,0 +1,241 @@
+id: FEAT-MEM-08
+name: Guardkit Graphiti to fleet-memory cutover
+description: Cut guardkit knowledge writes (task outcomes, decisions, ADRs) and reads
+  (coach-context, feature-plan-context, CLI) over from Graphiti to fleet-memory; dual-write
+  soak then prove reads fire in a real run. Unblocks FEAT-MEM-09 decommission.
+created: '2026-06-28T21:14:37.537854'
+status: failed
+complexity: 7
+estimated_tasks: 10
+tasks:
+- id: TASK-MEM08-001
+  name: group_id to fleet-memory mapping table
+  file_path: tasks/backlog/memory-cutover/TASK-MEM08-001-groupid-payload-mapping-table.md
+  complexity: 4
+  dependencies: []
+  status: completed
+  implementation_mode: task-work
+  estimated_minutes: 50
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-06-29T06:53:06.520783'
+  completed_at: '2026-06-29T07:01:37.506200'
+- id: TASK-MEM08-002
+  name: fleet_memory_client adapter and config
+  file_path: tasks/backlog/memory-cutover/TASK-MEM08-002-fleet-memory-client-adapter.md
+  complexity: 6
+  dependencies:
+  - TASK-MEM08-001
+  status: completed
+  implementation_mode: task-work
+  estimated_minutes: 113
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-06-29T07:01:47.605093'
+  completed_at: '2026-06-29T07:13:36.647832'
+- id: TASK-MEM08-003
+  name: extend fleet-memory BuildOutcomePayload
+  file_path: tasks/backlog/memory-cutover/TASK-MEM08-003-extend-build-outcome-payload.md
+  complexity: 3
+  dependencies:
+  - TASK-MEM08-001
+  status: completed
+  implementation_mode: direct
+  estimated_minutes: 33
+  requires_infrastructure: []
+  result:
+    total_turns: 2
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 2
+  current_turn: 0
+  started_at: '2026-06-29T07:01:47.609392'
+  completed_at: '2026-06-29T07:13:36.653944'
+- id: TASK-MEM08-004
+  name: dual-write repoint behind flag
+  file_path: tasks/backlog/memory-cutover/TASK-MEM08-004-dual-write-repoint.md
+  complexity: 7
+  dependencies:
+  - TASK-MEM08-002
+  - TASK-MEM08-003
+  status: completed
+  implementation_mode: task-work
+  estimated_minutes: 170
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-06-29T07:13:45.035114'
+  completed_at: '2026-06-29T07:23:11.860294'
+- id: TASK-MEM08-005
+  name: dual-write soak audit published equals stored
+  file_path: tasks/backlog/memory-cutover/TASK-MEM08-005-dual-write-soak-audit.md
+  complexity: 3
+  dependencies:
+  - TASK-MEM08-004
+  status: deferred
+  implementation_mode: direct
+  estimated_minutes: 33
+  requires_infrastructure: []
+  result:
+    total_turns: 0
+    final_decision: deferred
+    error: null
+    deferred_reason: "operator follow-up \u2014 runtime verification required"
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: '2026-06-29T07:23:22.274192'
+- id: TASK-MEM08-006
+  name: wire memory_search into GROI readers
+  file_path: tasks/backlog/memory-cutover/TASK-MEM08-006-wire-groi-reads.md
+  complexity: 6
+  dependencies:
+  - TASK-MEM08-005
+  status: completed
+  implementation_mode: task-work
+  estimated_minutes: 113
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-06-29T07:23:22.288429'
+  completed_at: '2026-06-29T07:35:46.906061'
+- id: TASK-MEM08-007
+  name: prove a real run reads from fleet-memory
+  file_path: tasks/backlog/memory-cutover/TASK-MEM08-007-prove-real-run-reads.md
+  complexity: 3
+  dependencies:
+  - TASK-MEM08-006
+  status: deferred
+  implementation_mode: direct
+  estimated_minutes: 33
+  requires_infrastructure: []
+  result:
+    total_turns: 0
+    final_decision: deferred
+    error: null
+    deferred_reason: "operator follow-up \u2014 runtime verification required"
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: '2026-06-29T07:35:56.563297'
+- id: TASK-MEM08-008
+  name: guardkit memory CLI and deprecate graphiti
+  file_path: tasks/backlog/memory-cutover/TASK-MEM08-008-guardkit-memory-cli.md
+  complexity: 5
+  dependencies:
+  - TASK-MEM08-006
+  status: completed
+  implementation_mode: task-work
+  estimated_minutes: 75
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-06-29T07:35:56.567063'
+  completed_at: '2026-06-29T07:45:08.584800'
+- id: TASK-MEM08-009
+  name: flip mcp.json tool renames config and docs
+  file_path: tasks/backlog/memory-cutover/TASK-MEM08-009-flip-config-and-docs.md
+  complexity: 4
+  dependencies:
+  - TASK-MEM08-007
+  status: failed
+  implementation_mode: task-work
+  estimated_minutes: 50
+  requires_infrastructure: []
+  result:
+    total_turns: 5
+    final_decision: max_turns_exceeded
+    error: Maximum turns (5) exceeded without approval
+    deferred_reason: null
+  turns_completed: 5
+  current_turn: 0
+  started_at: '2026-06-29T07:45:17.883209'
+  completed_at: '2026-06-29T08:22:35.112510'
+- id: TASK-MEM08-010
+  name: cutover verification and signoff
+  file_path: tasks/backlog/memory-cutover/TASK-MEM08-010-cutover-verification-signoff.md
+  complexity: 3
+  dependencies:
+  - TASK-MEM08-008
+  - TASK-MEM08-009
+  status: pending
+  implementation_mode: direct
+  estimated_minutes: 33
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
+orchestration:
+  parallel_groups:
+  - - TASK-MEM08-001
+  - - TASK-MEM08-002
+    - TASK-MEM08-003
+  - - TASK-MEM08-004
+  - - TASK-MEM08-005
+  - - TASK-MEM08-006
+  - - TASK-MEM08-007
+    - TASK-MEM08-008
+  - - TASK-MEM08-009
+  - - TASK-MEM08-010
+  estimated_duration_minutes: 703
+  recommended_parallel: 2
+# The `memory` extra pulls fleet-memory (reads, TASK-MEM08-011) which requires
+# Python >=3.12, but guardkit is >=3.11 so the bootstrap would build a 3.11 venv
+# that cannot host fleet-memory. Pin the worktree interpreter to 3.12 when
+# (re-)running autobuild for this feature:
+#   GUARDKIT_BOOTSTRAP_PYTHON=3.12 guardkit autobuild feature FEAT-MEM-08 [--resume]
+# (env_bootstrap honours GUARDKIT_BOOTSTRAP_PYTHON over the requires-python floor).
+bootstrap_extras:
+- dev
+- memory
+preflight_strict: false
+evidence_repos:
+- ../fleet-memory
+execution:
+  started_at: '2026-06-29T06:53:05.381875'
+  completed_at: '2026-06-29T08:22:35.117404'
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-MEM-08
+  total_turns: 12
+  tasks_completed: 8
+  tasks_failed: 1
+  current_wave: 7
+  completed_waves:
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  - 6
+  last_updated: '2026-06-29T08:22:35.112516'
+  archived_at: null
+  archived_to: null
