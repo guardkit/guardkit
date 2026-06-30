@@ -16,8 +16,11 @@
 #   including every new or newly-fixed test — is gated. The quarantine is
 #   burned down by a follow-up task; removing a line re-arms the gate for it.
 #
-# Floor is 3.11 (TASK-INFRA-CIGREEN): the orchestrator uses asyncio.timeout()
-# (3.11+). The matrix pins 3.11 (floor) and 3.12 (primary).
+# Floor is 3.12 (TASK-MEM08-012, raised from 3.11): the `memory`/`all` extras depend
+# on fleet-memory (requires-python>=3.12), so a 3.11 floor made `uv sync --extra memory`
+# unsatisfiable. The orchestrator's asyncio.timeout() (3.11+) requirement is subsumed.
+# Matrix pins 3.12 (floor/primary); 3.13 is claimed via classifier — add it here once
+# verified green (do not speculatively arm a red merge gate).
 
 name: Tests
 
@@ -42,7 +45,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.11', '3.12']
+        python-version: ['3.12']
     steps:
       - name: Checkout
         uses: actions/checkout@v4
