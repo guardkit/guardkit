@@ -430,31 +430,39 @@ class FleetMemoryClient:
         metadata: Optional[Any] = None,
         timeout_override: Optional[float] = None,
     ) -> Optional[str]:
-        """Add episode to fleet-memory.
+        """Publish an episode to fleet-memory via NATS (typed payload, fail-open).
 
-        Resolves group_id via fleet_memory_mapping, builds typed payload
-        matching fleet-memory schema, and publishes via NATS.
+        Resolves ``group_id`` via ``fleet_memory_mapping``, builds a typed
+        ``MemoryEpisodeV1`` whose JSON body matches the relay's payload registry
+        (``fleet_memory_payloads.build_memory_episode``), and publishes it as the
+        provisioned ``guardkit`` NATS user — reusing the harvest publisher's
+        connect + 900KB-guard + idempotent path (single source of truth for guardkit's
+        NATS writes).
+
+        Graceful degradation: returns ``None`` (never raises into the caller's task flow)
+        when the group is unmapped/retired, ``nats_core`` is unavailable, the episode
+        cannot be built, or the publish fails (e.g. ``GUARDKIT_NATS_PASSWORD`` unset).
 
         Args:
-            name: Episode name/identifier
-            episode_body: Episode content (markdown/text)
-            group_id: Graphiti group identifier to resolve
-            source: Episode source (default: "user_added")
-            entity_type: Entity type (not used by fleet-memory)
-            scope: Optional scope (not used by fleet-memory)
-            metadata: Optional metadata (not used by fleet-memory)
-            timeout_override: Optional timeout (not used by fleet-memory)
+            name: Episode name (carries the task/ADR id, e.g. "OUT-..: TASK-1234 - title").
+            episode_body: Episode content — a ``json.dumps(dict)`` string from the call sites.
+            group_id: Graphiti group identifier to resolve to a fleet-memory payload type.
+            source: Episode source label (default: "user_added").
+            entity_type: Accepted for interface parity (unused by fleet-memory).
+            scope: Accepted for interface parity (unused).
+            metadata: Accepted for interface parity (unused).
+            timeout_override: Accepted for interface parity (unused).
 
         Returns:
-            Natural key identifier if successful, None if group unmapped
-            or write failed (fail-open behavior).
+            The natural key (``"{payload_type}:{project}:{identifier}"``) on a successful
+            publish, else ``None``.
 
         Example:
             >>> key = await client.add_episode(
-            ...     name="TASK-X outcome",
-            ...     episode_body="Task completed with...",
-            ...     group_id="task_outcomes"
-            ... )
+            ...     name="OUT-1A2B: TASK-1234 - Implement OAuth2",
+            ...     episode_body=json.dumps(outcome.to_episode_body()),
+            ...     group_id="task_outcomes",
+            ... )  # -> "build_outcome:guardkit:TASK_1234"
         """
         try:
             # Resolve group_id to fleet-memory identity
@@ -473,83 +481,99 @@ class FleetMemoryClient:
                 )
                 return None
 
-            # Build natural key (payload-type specific)
-            # For build_outcome: task_id from name
-            # For adr: decision_id from name
-            # For document: sanitized name as doc_path
-            natural_key = self._build_natural_key(name, mapping.payload_type)
+            # Build the typed MemoryEpisodeV1 (body shaped for the relay's registry).
+            from guardkit.knowledge.fleet_memory_payloads import build_memory_episode
 
-            # Build typed payload matching fleet-memory schema
-            # Note: Fleet-memory payload schemas are defined in TASK-MEM08-003
-            # For now, build generic structure
-            payload = {
-                "project": mapping.project,
-                "payload_type": mapping.payload_type,
-                "domain_tags": mapping.domain_tags,
-                "identifier": natural_key,
-                "content": episode_body,
-                "source": source,
-            }
-
-            # Publish via NATS
-            # Note: nats_core.publish_episode signature TBD
-            # For now, log what would be published
-            logger.info(
-                f"Would publish to fleet-memory: "
-                f"type={mapping.payload_type}, key={natural_key}"
+            episode = build_memory_episode(
+                mapping, name=name, episode_body=episode_body, source=source
             )
+            if episode is None:
+                logger.warning(
+                    f"Could not build fleet-memory episode for {group_id!r} ({name!r})"
+                )
+                return None
 
-            return natural_key
+            # Publish as the guardkit NATS user (reuses the harvest connect + guard path).
+            from guardkit.memory.harvest_publisher import publish_episodes
 
-        except Exception as e:
-            logger.error(
-                f"Fleet-memory add_episode failed for {group_id!r}: {e}", exc_info=True
+            summary = await publish_episodes([episode])
+            if summary.published >= 1:
+                logger.info(
+                    "[Memory] Published %s episode %s to fleet-memory",
+                    mapping.payload_type,
+                    episode.episode_id,
+                )
+                return episode.episode_id
+
+            logger.warning(
+                "[Memory] Episode %s not published "
+                "(published=%d, skipped_oversized=%d)",
+                episode.episode_id,
+                summary.published,
+                summary.skipped_oversized,
             )
             return None
 
-    def _build_natural_key(self, name: str, payload_type: str) -> str:
-        """Build natural key from episode name and payload type.
-
-        Args:
-            name: Episode name
-            payload_type: Fleet-memory payload type
-
-        Returns:
-            Natural key identifier
-        """
-        # For build_outcome: extract TASK-XXX from name
-        if payload_type == "build_outcome":
-            import re
-
-            match = re.search(r"TASK-[\w-]+", name)
-            if match:
-                return match.group(0)
-
-        # For adr: extract decision ID or use name
-        if payload_type == "adr":
-            import re
-
-            match = re.search(r"(ADR-\d+|DECISION-[\w-]+)", name)
-            if match:
-                return match.group(0)
-
-        # For document: sanitize name as path
-        if payload_type == "document":
-            # Replace spaces with hyphens, lowercase
-            sanitized = name.lower().replace(" ", "-")
-            # Remove non-alphanumeric except hyphens
-            import re
-
-            sanitized = re.sub(r"[^a-z0-9\-]", "", sanitized)
-            return sanitized
-
-        # Fallback: use name as-is
-        return name
+        except Exception as e:
+            # Fail-open: a memory write must never break the caller's task flow.
+            logger.warning(
+                f"Fleet-memory add_episode failed for {group_id!r}: {e}", exc_info=True
+            )
+            return None
 
 
 # Module-level factory state
 _memory_client: Optional[FleetMemoryClient | Any] = None
 _backend: Literal["graphiti", "fleet_memory", "dual"] = "graphiti"
+# Whether the backend has been initialized (explicitly via init_memory_client, or
+# lazily from config on first get_memory_client). Guards the one-time auto-init so an
+# explicit init always wins and tests that set _backend directly are not disrupted.
+_backend_initialized: bool = False
+
+
+def _resolve_backend_from_config() -> Literal["graphiti", "fleet_memory", "dual"]:
+    """Resolve the memory backend from configuration.
+
+    Precedence: ``GUARDKIT_MEMORY_BACKEND`` env var → ``.guardkit/graphiti.yaml``
+    ``backend:`` key → ``"graphiti"`` (back-compat default). This is the producer the
+    FEAT-MEM-08 cutover needs: 009 flipped ``backend: fleet_memory`` in the YAML, but
+    without something reading it the flag is inert and every call routes to graphiti.
+    """
+    env = os.getenv("GUARDKIT_MEMORY_BACKEND")
+    if env:
+        env = env.strip().lower()
+        if env in ("graphiti", "fleet_memory", "dual"):
+            return env  # type: ignore[return-value]
+        logger.warning("Ignoring invalid GUARDKIT_MEMORY_BACKEND=%r", env)
+    try:
+        from guardkit.knowledge.config import get_config_path
+        import yaml
+
+        config_path = get_config_path()
+        if config_path.exists():
+            with open(config_path, "r") as f:
+                data = yaml.safe_load(f) or {}
+            backend = str(data.get("backend", "graphiti")).strip().lower()
+            if backend in ("graphiti", "fleet_memory", "dual"):
+                return backend  # type: ignore[return-value]
+            logger.warning("Ignoring invalid backend %r in %s", backend, config_path)
+    except Exception as e:  # pragma: no cover - config read is best-effort
+        logger.debug("Could not resolve backend from config: %s", e)
+    return "graphiti"
+
+
+def _ensure_backend_initialized() -> None:
+    """Lazily initialize the backend from config on first use (idempotent).
+
+    Called by ``get_memory_client`` so every call site (readers and writers) honours the
+    configured backend without each needing to call ``init_memory_client`` explicitly.
+    A prior explicit ``init_memory_client`` sets ``_backend_initialized`` and short-circuits.
+    """
+    global _backend_initialized
+    if _backend_initialized:
+        return
+    backend = _resolve_backend_from_config()
+    init_memory_client(backend=backend)  # sets _backend_initialized = True
 
 
 def init_memory_client(
@@ -575,9 +599,11 @@ def init_memory_client(
         ...                    fleet_config=FleetMemoryConfig())
         True
     """
-    global _memory_client, _backend
+    global _memory_client, _backend, _backend_initialized
 
     _backend = backend
+    # An explicit init wins over (and disables) lazy config-driven auto-init.
+    _backend_initialized = True
 
     try:
         if backend == "graphiti":
@@ -640,6 +666,9 @@ def get_memory_client() -> Optional[FleetMemoryClient | Any]:
         ...     hits = await client.search("query")
     """
     global _memory_client, _backend
+
+    # First call (no explicit init): select the backend from config (the cutover flag).
+    _ensure_backend_initialized()
 
     if _backend == "graphiti":
         # Lazy init graphiti if needed

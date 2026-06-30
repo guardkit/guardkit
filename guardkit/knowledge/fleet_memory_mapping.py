@@ -21,6 +21,7 @@ Usage:
 | **Project Groups (9)** |
 | task_outcomes | guardkit | build_outcome | [task] | migrate | task_id | Primary home for task completion data |
 | project_decisions | guardkit | adr | [project] | migrate | decision_id | Project-level ADRs |
+| adrs | guardkit | adr | [decision] | migrate | decision_id | ADRService.create_adr runtime group_id |
 | project_architecture | guardkit | document | [architecture] | migrate | doc_path | System architecture docs |
 | project_overview | guardkit | document | [overview] | migrate | doc_path | High-level project context |
 | feature_specs | guardkit | document | [feature, spec] | migrate | feature_id | Feature specifications |
@@ -95,6 +96,15 @@ GROUP_ID_MAP: dict[str, GroupMapping] = {
         project="guardkit",
         payload_type="adr",
         domain_tags=["project"],
+        disposition="migrate",
+    ),
+    # ADRService.create_adr writes the literal group_id "adrs" (adr_service.py). Without
+    # this entry resolve("adrs") returned None and every ADR dual-write silently no-op'd
+    # (DualWriteClient skips unmapped groups). Map it to the adr payload so ADRs migrate.
+    "adrs": GroupMapping(
+        project="guardkit",
+        payload_type="adr",
+        domain_tags=["decision"],
         disposition="migrate",
     ),
     "project_architecture": GroupMapping(
