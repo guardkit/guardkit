@@ -78,24 +78,40 @@ Postgres) directly. Rollback during the window is unaffected (set `backend: grap
 (JetStream `stream_info` subjects_filter), no poison rejections logged.
 **AC-005-3 (audit recorded):** ✅ this note.
 
-## Known follow-up (read-enrichment) — NOT blocking the write cutover
+## Read-enrichment (TASK-MEM08-012) — RESOLVED 2026-06-30
 
-Writes land and are auditable, but two fleet-memory-side gaps limit *retrieval* of the new
-typed records. Both require editing `../fleet-memory` + **rebuilding the relay image**
-(the relay is a baked image; reads run in-process via the editable `fleet_memory`):
+The two fleet-memory-side gaps that limited *retrieval* of the new typed records are now
+closed; the full write→read round-trip is proven.
 
-1. **`domain_tags` top-level filter.** Retrieval's `_matches_domain_tags` reads a top-level
-   `domain_tags`, but `DeterministicWriter` nests it inside `content`. So a GROI read for
-   `task_outcomes` sends `domain_tags=["task"]` and filters out every build_outcome →
-   0 hits. Fix options: writer stores top-level `domain_tags` (rebuild), retrieval reads it
-   from `content` (no rebuild — editable), or guardkit GROI sends `domain_tags=[]` for
-   migrated groups (no rebuild).
-2. **TASK-MEM08-003 payload extension.** `BuildOutcomePayload` is still `status` +
-   `duration_seconds`; `extra="ignore"` drops the `task_id`/`lessons`/`approach` guardkit
-   already sends (forward-compat). Storing them (so lessons are retrievable) needs the model
-   change + relay rebuild.
+1. **`domain_tags` filter mismatch — FIXED (no rebuild).** Retrieval's `_matches_domain_tags`
+   read only a top-level `domain_tags`, but `DeterministicWriter` nests it inside `content`,
+   so a GROI read for `task_outcomes` (`domain_tags=["task"]`) filtered out every
+   build_outcome → 0 hits. Fixed in `../fleet-memory` (`fix(retrieval): domain_tags filter
+   reads tags nested in content JSON`, commit `ca3f817`): new `_item_domain_tags` resolves
+   tags top-level-first then from the embedded `content` JSON; chunks (prose content) yield
+   `[]`. Pure retrieval-side (runs in-process via the editable install) — no relay rebuild.
+   18 search-core tests pass.
+2. **TASK-MEM08-003 payload extension — already in source; relay REBUILT.**
+   `BuildOutcomePayload` already declared `task_id`/`lessons`/`approach` in `../fleet-memory`
+   source (committed `e5a134c`, tested `test_payloads.py:349`), but the *running* relay was a
+   stale baked image that dropped them (`extra="ignore"`). Rebuilt + redeployed via
+   `deploy/relay/docker-compose.yml` (`docker compose up -d --build`, new image
+   `4fe44bfb`); `.env.deploy` (ack_wait=1200/max_deliver=5/embed) preserved; corpus intact
+   (684 rows, NAS-external); "FastStream app started successfully".
 
-These are tracked as the next increment; the write path itself is complete and proven.
+**Round-trip evidence (re-soak, AC-012-1/2/4):** a real `capture_task_outcome`
+(`TASK-MEM08-RESOAK1`, `OUT-4DB24CAE`) landed with `task_id`/`lessons`/`approach` in the
+stored `content`; a GROI read for `task_outcomes` (`domain_tags=["task"]`) returned it (was
+0 pre-fix); and a prose query (`"pomegranate-sentinel …"`) retrieved the embedded `lessons`
+text — proving the enrichment fields are embedded and searchable. ADR GROI read
+(`adrs` → `adr` + `domain_tags=["decision"]`) also returns its record.
+
+**010 CLI sign-off (unblocked by the requires-python bump, commit `5cca36f8`):**
+`uv sync --extra memory --python 3.12` resolves; `guardkit memory status` → REACHABLE
+(fleet-memory); `guardkit memory search` returns hits. The `mcp__fleet_memory__memory_search`
+MCP-tool check remains a fresh-session step (MCP servers load at session start).
+
+The write path AND read-enrichment are now both complete and proven end-to-end.
 
 ## Repro / verify
 
