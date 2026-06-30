@@ -26,6 +26,9 @@ from rich.table import Table
 
 from guardkit.memory.harvest_walker import walk_harvest_dirs
 from guardkit.memory.harvest_publisher import publish_episodes
+from guardkit.knowledge.fleet_memory_client import get_memory_client
+from guardkit.knowledge.outcome_manager import capture_task_outcome
+from guardkit.knowledge.entities.outcome import OutcomeType
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -262,3 +265,311 @@ def harvest(dry_run: bool, docs_root: Path | None, env_file: Path | None):
 
     # Exit 0 on success (including when oversized docs were skipped)
     sys.exit(0)
+
+
+# ============================================================================
+# Search Command
+# ============================================================================
+
+
+@memory.command()
+@click.argument("query")
+@click.option(
+    "--token-budget",
+    type=int,
+    default=None,
+    help="Maximum tokens for context block (default: server-determined)",
+)
+@click.option(
+    "--payload-types",
+    multiple=True,
+    help="Filter by payload types (e.g., build_outcome, feature_spec)",
+)
+@click.option(
+    "--domain-tags",
+    multiple=True,
+    help="Filter by domain tags",
+)
+def search(
+    query: str,
+    token_budget: Optional[int],
+    payload_types: tuple[str, ...],
+    domain_tags: tuple[str, ...],
+):
+    """Search fleet memory for knowledge.
+
+    Queries the fleet-memory backend and returns a context block with
+    coverage score. Supports filtering by payload types and domain tags.
+
+    Examples:
+        guardkit memory search "authentication"
+        guardkit memory search "error handling" --payload-types build_outcome
+        guardkit memory search "JWT" --token-budget 500
+    """
+    asyncio.run(_cmd_search(query, token_budget, payload_types, domain_tags))
+
+
+async def _cmd_search(
+    query: str,
+    token_budget: Optional[int],
+    payload_types: tuple[str, ...],
+    domain_tags: tuple[str, ...],
+) -> None:
+    """Async implementation of search command."""
+    client = get_memory_client()
+
+    if client is None:
+        console.print("[yellow]Memory client unavailable (config missing or disabled)[/yellow]")
+        return
+
+    try:
+        initialized = await client.initialize()
+    except Exception as e:
+        console.print(f"[red]Error connecting to memory store: {e}[/red]")
+        return
+
+    try:
+        if not initialized or not client.enabled:
+            console.print("[yellow]Memory store unavailable or disabled[/yellow]")
+            return
+
+        # Convert payload_types and domain_tags to lists
+        payload_types_list = list(payload_types) if payload_types else None
+        domain_tags_list = list(domain_tags) if domain_tags else None
+
+        # Execute search
+        try:
+            results = await client.search(
+                query=query,
+                num_results=10,
+            )
+        except Exception as e:
+            console.print(f"[red]Search error: {e}[/red]")
+            return
+
+        # Display results
+        if not results:
+            console.print(f"No results found for: {query}")
+            return
+
+        console.print(f"\n[bold cyan]Search Results[/bold cyan] for '{query}':\n")
+
+        for i, result in enumerate(results, 1):
+            fact = result.get("fact", str(result))
+            score = result.get("score", 0.0)
+
+            # Truncate long facts
+            max_fact_length = 100
+            if len(fact) > max_fact_length:
+                fact = fact[:max_fact_length] + "..."
+
+            # Color code by score
+            if score > 0.8:
+                score_color = "green"
+            elif score > 0.5:
+                score_color = "yellow"
+            else:
+                score_color = "white"
+
+            console.print(
+                f"[cyan]{i}.[/cyan] "
+                f"[{score_color}][{score:.2f}][/{score_color}] "
+                f"{fact}"
+            )
+
+    finally:
+        await client.close()
+
+
+# ============================================================================
+# Status Command
+# ============================================================================
+
+
+@memory.command()
+def status():
+    """Show memory store reachability and statistics.
+
+    Displays connection status and per-payload_type counts.
+
+    Example:
+        guardkit memory status
+    """
+    asyncio.run(_cmd_status())
+
+
+async def _cmd_status() -> None:
+    """Async implementation of status command."""
+    console.print("\n[bold cyan]Memory Store Status[/bold cyan]\n")
+
+    client = get_memory_client()
+
+    if client is None:
+        console.print("  [yellow]Status:[/yellow] [red]UNAVAILABLE[/red]")
+        console.print("  [dim]Memory client not configured[/dim]")
+        return
+
+    try:
+        initialized = await client.initialize()
+    except Exception as e:
+        console.print("  [yellow]Status:[/yellow] [red]ERROR[/red]")
+        console.print(f"  [red]Error: {e}[/red]")
+        return
+
+    try:
+        if not initialized or not client.enabled:
+            console.print("  [yellow]Status:[/yellow] [red]DISABLED[/red]")
+            console.print("  [dim]Enable in configuration[/dim]")
+            return
+
+        # Check health
+        try:
+            healthy = await client.health_check()
+            if healthy:
+                console.print("  [bold]Status:[/bold] [green bold]REACHABLE[/green bold]")
+            else:
+                console.print("  [yellow]Status:[/yellow] [yellow]DEGRADED[/yellow]")
+        except Exception as e:
+            console.print("  [yellow]Status:[/yellow] [yellow]UNKNOWN[/yellow]")
+            console.print(f"  [dim]Health check error: {e}[/dim]")
+            return
+
+        # Show basic info - no graph_stats in fleet-memory
+        console.print("\n  [bold]Backend:[/bold] fleet-memory")
+        console.print("  [dim]Note: Per-payload_type counts coming soon[/dim]\n")
+
+    finally:
+        await client.close()
+
+
+# ============================================================================
+# Capture Outcome Command
+# ============================================================================
+
+
+@memory.command("capture-outcome")
+@click.option(
+    "--from-task-file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="Parse a task .md file to populate fields (CLI flags override)",
+)
+@click.option("--task-id", default=None, help="Task ID (e.g. TASK-XXX)")
+@click.option("--task-title", default=None, help="Task title")
+@click.option("--summary", default=None, help="Brief summary of the outcome")
+@click.option(
+    "--success/--failure",
+    default=True,
+    help="Whether the task was successful",
+)
+def capture_outcome(
+    from_task_file: Optional[Path],
+    task_id: Optional[str],
+    task_title: Optional[str],
+    summary: Optional[str],
+    success: bool,
+):
+    """Capture a task completion outcome to memory.
+
+    Writes a build_outcome payload via the fleet-memory adapter.
+
+    Examples:
+        guardkit memory capture-outcome --from-task-file tasks/completed/TASK-XXX.md
+        guardkit memory capture-outcome --task-id TASK-XXX --task-title "Fix bug" --summary "Fixed the bug"
+    """
+    asyncio.run(_cmd_capture_outcome(from_task_file, task_id, task_title, summary, success))
+
+
+async def _cmd_capture_outcome(
+    from_task_file: Optional[Path],
+    task_id: Optional[str],
+    task_title: Optional[str],
+    summary: Optional[str],
+    success: bool,
+) -> None:
+    """Async implementation of capture-outcome command."""
+    import yaml
+    from datetime import datetime
+
+    # Parse task file if provided
+    if from_task_file:
+        try:
+            raw = from_task_file.read_text(encoding="utf-8")
+            parts = raw.split("---", 2)
+            if len(parts) >= 3:
+                front = yaml.safe_load(parts[1]) or {}
+                task_id = task_id or front.get("id")
+                task_title = task_title or front.get("title")
+
+                # Extract summary from body sections
+                if not summary:
+                    body = parts[2]
+                    sections = {}
+                    current_heading = None
+                    current_lines = []
+                    for line in body.splitlines():
+                        if line.startswith("## "):
+                            if current_heading:
+                                sections[current_heading] = "\n".join(current_lines).strip()
+                            current_heading = line[3:].strip()
+                            current_lines = []
+                        elif current_heading:
+                            current_lines.append(line)
+                    if current_heading:
+                        sections[current_heading] = "\n".join(current_lines).strip()
+
+                    desc_text = sections.get("Description") or sections.get("Why") or ""
+                    if desc_text:
+                        paragraphs = [p.strip() for p in desc_text.split("\n\n") if p.strip()]
+                        if paragraphs:
+                            summary = " ".join(paragraphs[0].split())[:2000]
+        except Exception as e:
+            console.print(f"[red]Error reading task file: {e}[/red]")
+            sys.exit(1)
+
+    # Validate required fields
+    missing = []
+    if not task_id:
+        missing.append("--task-id")
+    if not task_title:
+        missing.append("--task-title")
+    if not summary:
+        missing.append("--summary")
+
+    if missing:
+        console.print(f"[red]Error: missing required fields: {', '.join(missing)}[/red]")
+        sys.exit(1)
+
+    # Get memory client
+    client = get_memory_client()
+
+    if client is None:
+        console.print("[yellow]Memory client unavailable - outcome NOT captured[/yellow]")
+        return
+
+    try:
+        initialized = await client.initialize()
+    except Exception as e:
+        console.print(f"[red]Error connecting to memory store: {e}[/red]")
+        sys.exit(1)
+
+    try:
+        if not initialized or not client.enabled:
+            console.print("[yellow]Memory store unavailable - outcome NOT captured[/yellow]")
+            return
+
+        # Capture the outcome
+        outcome_id = await capture_task_outcome(
+            outcome_type=OutcomeType.TASK_COMPLETED if success else OutcomeType.TASK_FAILED,
+            task_id=task_id,
+            task_title=task_title,
+            task_requirements=task_title,  # Fallback
+            success=success,
+            summary=summary,
+            completed_at=datetime.now(),
+        )
+
+        console.print(f"[green]✅ Outcome captured: {outcome_id}[/green]")
+
+    finally:
+        await client.close()

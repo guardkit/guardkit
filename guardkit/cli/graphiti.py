@@ -277,7 +277,12 @@ async def _cmd_status(verbose: bool = False) -> None:
     Args:
         verbose: Show all groups even if empty
     """
+    # Emit deprecation warning
     console.print()
+    console.print("[yellow]⚠️  DEPRECATED: 'guardkit graphiti status' is deprecated.[/yellow]")
+    console.print("[yellow]   Use 'guardkit memory status' instead.[/yellow]")
+    console.print()
+
     console.print("[bold cyan]╔════════════════════════════════════════╗[/bold cyan]")
     console.print("[bold cyan]║       Graphiti Knowledge Status        ║[/bold cyan]")
     console.print("[bold cyan]╚════════════════════════════════════════╝[/bold cyan]")
@@ -1715,6 +1720,11 @@ def _format_show_output(results: list[dict], knowledge_id: str) -> None:
 
 async def _cmd_search(query: str, group: Optional[str], limit: int) -> None:
     """Async implementation of search command."""
+    # Emit deprecation warning
+    console.print("[yellow]⚠️  DEPRECATED: 'guardkit graphiti search' is deprecated.[/yellow]")
+    console.print("[yellow]   Use 'guardkit memory search' instead.[/yellow]")
+    console.print()
+
     # Create client
     client, settings = _get_client_and_config()
 
@@ -2140,6 +2150,12 @@ async def _cmd_capture_outcome(
     verbose: bool,
 ) -> None:
     """Async implementation of capture-outcome command."""
+    # Emit deprecation warning
+    console.print()
+    console.print("[yellow]⚠️  DEPRECATED: 'guardkit graphiti capture-outcome' is deprecated.[/yellow]")
+    console.print("[yellow]   Use 'guardkit memory capture-outcome' instead.[/yellow]")
+    console.print()
+
     from datetime import datetime
     from guardkit.knowledge.outcome_manager import capture_task_outcome
     from guardkit.knowledge.entities.outcome import OutcomeType
@@ -2227,16 +2243,24 @@ async def _cmd_capture_outcome(
     #
     # IMPORTANT: must NOT call _get_client_and_config() here. That helper
     # builds a fresh GraphitiClient outside the factory's thread-local
-    # store. capture_task_outcome() internally calls get_graphiti() which
+    # store. capture_task_outcome() internally calls get_memory_client() which
     # always goes through the factory — so the inner write would land on
     # a *different* (uninitialised) client instance and silently no-op,
     # while this CLI happily prints "captured" because the Python API
     # returns the generated outcome_id even when degraded. Sharing the
     # factory client closes that gap.
-    client = get_graphiti()
+    #
+    # TASK-MEM08-004: Routes through memory client factory (graphiti | dual)
+    from guardkit.knowledge.fleet_memory_client import get_memory_client
+
+    client = get_memory_client()
+    if client is None:
+        # Fall back to get_graphiti for backward compatibility
+        client = get_graphiti()
+
     if client is None:
         msg = (
-            "Graphiti unavailable (config missing or disabled) — outcome NOT "
+            "Memory client unavailable (config missing or disabled) — outcome NOT "
             "captured (no write to task_outcomes group)"
         )
         if strict:

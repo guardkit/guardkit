@@ -26,8 +26,18 @@
 # This ensures knowledge persists across directory moves/renames
 project_id: guardkit
 
-# Enable Graphiti integration (set to false to disable)
-enabled: true
+# Enable knowledge graph integration (set to false to disable)
+# When enabled, backend flag controls which system is used
+enabled: false
+
+# Backend selection (TASK-MEM08-009)
+# Options:
+#   - graphiti: Legacy Graphiti/FalkorDB backend (deprecated, rollback only)
+#   - fleet_memory: Pure-embeddings fleet-memory backend (default)
+#   - dual: Write to both backends (fleet_memory authoritative, graphiti secondary)
+#
+# Rollback procedure: set backend=graphiti and enabled=true to restore legacy behavior
+backend: fleet_memory
 
 # Graph database backend
 graph_store: falkordb
@@ -101,12 +111,23 @@ embedding_model: nomic-embed
 # based on embedding_model above. Set explicitly only to override
 # (e.g., for Matryoshka truncation).
 
-# Group IDs for organizing knowledge
+# Group IDs for organizing knowledge (Graphiti backend only)
 # These create separate namespaces in the knowledge graph
 group_ids:
   - product_knowledge      # Domain concepts, entities, relationships
   - command_workflows      # GuardKit command patterns and usage
   - architecture_decisions # ADRs and design rationale
+
+# Fleet Memory Configuration (TASK-MEM08-009)
+# Pure-embeddings backend without graph extraction overhead
+fleet_memory:
+  # Connection SECRETS (postgres_dsn, nats_url) are NOT stored here — set
+  # FLEET_MEMORY_PG_DSN / FLEET_MEMORY_NATS_URL in a gitignored .env at the project
+  # root (see .env.example). The fleet-memory MCP server (python -m fleet_memory.mcp)
+  # and the `guardkit memory` CLI both load that .env automatically.
+  embed_url: http://promaxgb10-41b1:9000
+  embed_model: embed  # llama-swap alias for Qwen3-Embedding-0.6B (1024-dim) at :9000
+  embed_dims: 1024  # Verified against live :9000 /v1/embeddings (2026-06-29); must match the rebuilt corpus
 
 # Deprecated fields (kept for backwards compatibility)
 host: localhost

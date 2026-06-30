@@ -10,6 +10,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from guardkit.knowledge.query_logger import log_query
+
 logger = logging.getLogger(__name__)
 
 
@@ -306,10 +308,16 @@ class FeaturePlanContextBuilder:
 
     @property
     def graphiti_client(self):
-        """Lazy-resolve Graphiti client on first access."""
+        """Lazy-resolve memory client on first access.
+
+        Returns the appropriate client based on configured backend:
+        - graphiti: GraphitiClient (default)
+        - fleet_memory: FleetMemoryClient
+        - dual: DualWriteClient
+        """
         if not self._graphiti_client_resolved:
-            from .graphiti_client import get_graphiti
-            self._graphiti_client_cache = get_graphiti()
+            from .fleet_memory_client import get_memory_client
+            self._graphiti_client_cache = get_memory_client()
             self._graphiti_client_resolved = True
         return self._graphiti_client_cache
 
@@ -460,9 +468,10 @@ class FeaturePlanContextBuilder:
         group_ids: List[str],
         num_results: int = 10
     ) -> List[Dict[str, Any]]:
-        """Safely search Graphiti with error handling.
+        """Safely search memory backend with error handling.
 
-        Wraps Graphiti search with try/except to ensure graceful degradation.
+        Wraps memory client search with try/except to ensure graceful degradation.
+        Logs queries when using fleet-memory backend.
 
         Args:
             query: Search query string
@@ -481,9 +490,20 @@ class FeaturePlanContextBuilder:
                 group_ids=group_ids,
                 num_results=num_results
             )
+
+            # Log query if using fleet-memory backend
+            backend_type = self._get_backend_type(self.graphiti_client)
+            if backend_type in ["fleet_memory", "dual"]:
+                self._log_fleet_memory_query(
+                    query=query,
+                    group_ids=group_ids,
+                    result_count=len(results) if results else 0,
+                    first_result=results[0].get("fact") if results else None
+                )
+
             return results if results else []
-        except Exception:
-            # Log would go here in production
+        except Exception as e:
+            logger.debug(f"Search failed for query '{query}': {e}")
             return []
 
     def _parse_feature_spec(self, spec_path: Path) -> Dict[str, Any]:
@@ -525,6 +545,50 @@ class FeaturePlanContextBuilder:
             return spec
         except Exception:
             return {}
+
+    def _get_backend_type(self, client: Any) -> str:
+        """Determine backend type from client class name.
+
+        Args:
+            client: Memory client instance
+
+        Returns:
+            Backend type string: "graphiti", "fleet_memory", or "dual"
+        """
+        class_name = client.__class__.__name__
+        if "Fleet" in class_name:
+            return "fleet_memory"
+        elif "Dual" in class_name:
+            return "dual"
+        else:
+            return "graphiti"
+
+    def _log_fleet_memory_query(
+        self,
+        query: str,
+        group_ids: List[str],
+        result_count: int,
+        first_result: Optional[str] = None
+    ) -> None:
+        """Log a fleet-memory query for evidence tracking.
+
+        Args:
+            query: Query text
+            group_ids: Group IDs searched
+            result_count: Number of results returned
+            first_result: Preview of first result (optional)
+        """
+        try:
+            log_query(
+                operation="search",
+                query=query,
+                group_ids=group_ids,
+                result_count=result_count,
+                first_result_preview=first_result,
+                source="fleet_memory_client"
+            )
+        except Exception as e:
+            logger.debug(f"Failed to log fleet-memory query: {e}")
 
     async def seed_feature_spec(
         self,

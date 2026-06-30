@@ -4,6 +4,21 @@ paths: config/graphiti.yaml, guardkit/graphiti/**/*.py, docs/**/graphiti*
 
 # Graphiti Knowledge Capture
 
+> ## ⚠️ Cutover in progress: Graphiti → fleet-memory (FEAT-MEM-08, 2026-06-29)
+>
+> GuardKit knowledge capture is being cut over from **Graphiti/FalkorDB** to the
+> **fleet-memory** pure-embeddings backend. The Graphiti path documented below is
+> **legacy** — retained for the dual-write soak and as the rollback target.
+>
+> - **Backend flag** — `.guardkit/graphiti.yaml` → `backend: fleet_memory`. The soak
+>   keeps `enabled: false`; the flag-controlled code path stays dual until the
+>   operator signs off (TASK-MEM08-010).
+> - **CLI** — `guardkit graphiti *` is **deprecated**; use `guardkit memory *`.
+> - **MCP tools** — `mcp__graphiti__add_memory` → `mcp__fleet_memory__memory_write_payload`;
+>   `mcp__graphiti__search_*` → `mcp__fleet_memory__memory_search` (payload-shaped args).
+> - **Rollback** — set `backend: graphiti` + `enabled: true` in `.guardkit/graphiti.yaml`
+>   and restore the `graphiti` HTTP server in `.mcp.json`.
+
 ## ⚠️ Access Method
 
 This file covers **Python client** access. For **MCP access** (when `mcp__graphiti__*`
