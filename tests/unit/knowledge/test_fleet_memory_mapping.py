@@ -93,8 +93,9 @@ class TestGroupIDMap:
             assert group_id in GROUP_ID_MAP, f"Missing system group: {group_id}"
 
     def test_total_group_count(self):
-        """Exactly 29 groups (9 project + 20 system) must be mapped."""
-        assert len(GROUP_ID_MAP) == 29
+        """Exactly 30 groups must be mapped: 9 project + 20 system + the 'adrs'
+        alias (ADRService.create_adr's runtime group_id, added in TASK-MEM08-004)."""
+        assert len(GROUP_ID_MAP) == 30
 
     def test_payload_types_are_valid(self):
         """All payload_type values must be from the 7 registered fleet-memory types."""
