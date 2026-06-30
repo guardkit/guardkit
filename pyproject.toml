@@ -16,17 +16,19 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
-# Floor is 3.11, not 3.10 (TASK-INFRA-CIGREEN, 2026-06-11): the orchestrator
-# uses asyncio.timeout() (PEP 654, 3.11+) throughout — see
-# guardkit/orchestrator/{agent_invoker,autobuild}.py and the harness package.
-# Under 3.10 this produced ~26 failures + 4 collection-error modules. Backporting
-# async_timeout for genuine 3.10 support is a much larger scope and not worth it;
-# we pick the floor that matches the syntax already in use. CI gates on 3.11+3.12.
-requires-python = ">=3.11"
+# Floor is 3.12 (TASK-MEM08-012, 2026-06-30): raised from 3.11. The `memory`
+# extra (and `all`) depend on fleet-memory, which declares requires-python>=3.12,
+# so a >=3.11 floor made `uv sync --extra memory` an unsatisfiable resolution
+# ("requested Python >=3.11 does not satisfy fleet-memory's >=3.12"). Per
+# docs/guides/portfolio-python-pinning.md §"When a Tighter Pin is Genuinely
+# Required" item 1 (a direct dependency caps interpreters tighter than your
+# code → bump the floor), we raise the floor rather than mask it with a per-dep
+# marker. The prior 3.11 floor (asyncio.timeout(), PEP 654, TASK-INFRA-CIGREEN)
+# is subsumed by 3.12. No upper bound (guide §Rationale). CI gates on 3.12.
+requires-python = ">=3.12"
 dependencies = [
     "click>=8.0.0",
     "rich>=13.0.0",
@@ -42,7 +44,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # Claude Agent SDK for AutoBuild Player/Coach adversarial workflow
-# Requires Python 3.11+ (same as guardkit)
+# Requires Python 3.12+ (same as guardkit)
 # Docs: https://platform.claude.com/docs/en/agent-sdk/python
 autobuild = [
     # Lower bound 0.1.49 = first release with typed RateLimitEvent parsing
