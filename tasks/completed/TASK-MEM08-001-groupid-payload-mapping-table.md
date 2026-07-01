@@ -5,7 +5,7 @@ feature_id: FEAT-MEM-08
 id: TASK-MEM08-001
 implementation_mode: task-work
 parent_review: TASK-REV-MEM08
-status: design_approved
+status: completed
 task_type: declarative
 title: Produce the group_id → fleet-memory identity mapping table
 wave: 1

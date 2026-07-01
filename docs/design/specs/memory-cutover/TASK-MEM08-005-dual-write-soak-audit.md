@@ -48,7 +48,9 @@ bodies validated against the real fleet-memory models), rewritten
 
 **Mode:** `backend=fleet_memory` (single-write), **not** `dual`.
 **Rationale (operator decision):** a genuine dual-write soak requires Graphiti **enabled**,
-but FalkorDB (`whitestocks:6379`) is **down** and Graphiti is being decommissioned
+but FalkorDB (`whitestocks:6379`) is **unreachable from the build host** on :6379
+(the same host's Postgres on :5433 works fine — likely a port/binding/firewall detail after
+the operator's post-power-cut restart, not necessarily "down") and Graphiti is being decommissioned
 (FEAT-MEM-09); reads are already cut to fleet-memory (011). Re-animating a
 decommissioning-bound, extraction-broken backend to exercise a leg that no longer matters
 was rejected. The soak therefore proves the load-bearing path (guardkit → NATS → relay →

@@ -13,7 +13,7 @@ feature_id: FEAT-MEM-08
 id: TASK-MEM08-002
 implementation_mode: task-work
 parent_review: TASK-REV-MEM08
-status: design_approved
+status: completed
 task_type: feature
 title: Add fleet_memory_client.py adapter (graphiti-client-shaped, flag-switched)
 wave: 2

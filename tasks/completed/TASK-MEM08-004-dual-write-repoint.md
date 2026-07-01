@@ -20,7 +20,7 @@ feature_id: FEAT-MEM-08
 id: TASK-MEM08-004
 implementation_mode: task-work
 parent_review: TASK-REV-MEM08
-status: design_approved
+status: completed
 task_type: feature
 title: Repoint writes to dual-write Graphiti + fleet-memory behind a flag
 wave: 3
