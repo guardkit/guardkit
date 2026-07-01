@@ -53,7 +53,7 @@ class TestKnowledgeGapAnalyzer:
         analyzer = KnowledgeGapAnalyzer()
 
         # Mock Graphiti to return empty knowledge
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get_graphiti:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get_graphiti:
             mock_client = MagicMock()
             mock_client.enabled = True
             mock_client.search = AsyncMock(return_value=[])
@@ -71,7 +71,7 @@ class TestKnowledgeGapAnalyzer:
         """Should only return gaps for focused category."""
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get_graphiti:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get_graphiti:
             mock_client = MagicMock()
             mock_client.enabled = True
             mock_client.search = AsyncMock(return_value=[])
@@ -90,7 +90,7 @@ class TestKnowledgeGapAnalyzer:
         """Should limit number of questions returned."""
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get_graphiti:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get_graphiti:
             mock_client = MagicMock()
             mock_client.enabled = True
             mock_client.search = AsyncMock(return_value=[])
@@ -124,7 +124,7 @@ class TestKnowledgeGapAnalyzer:
         """Should sort gaps by importance (high > medium > low)."""
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get_graphiti:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get_graphiti:
             mock_client = MagicMock()
             mock_client.enabled = True
             mock_client.search = AsyncMock(return_value=[])
@@ -146,7 +146,7 @@ class TestKnowledgeGapAnalyzer:
         """Should gracefully handle disabled Graphiti."""
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get_graphiti:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get_graphiti:
             mock_client = MagicMock()
             mock_client.enabled = False
             mock_get_graphiti.return_value = mock_client
@@ -162,7 +162,7 @@ class TestKnowledgeGapAnalyzer:
         """Should gracefully handle None Graphiti client."""
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get_graphiti:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get_graphiti:
             mock_get_graphiti.return_value = None
 
             # Should not raise exception
@@ -176,7 +176,7 @@ class TestKnowledgeGapAnalyzer:
         """Should include role_customization, quality_gates, workflow_preferences."""
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get_graphiti:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get_graphiti:
             mock_client = MagicMock()
             mock_client.enabled = True
             mock_client.search = AsyncMock(return_value=[])
@@ -197,7 +197,7 @@ class TestKnowledgeGapAnalyzer:
         """Should support all 9 KnowledgeCategory values."""
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get_graphiti:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get_graphiti:
             mock_client = MagicMock()
             mock_client.enabled = True
             mock_client.search = AsyncMock(return_value=[])

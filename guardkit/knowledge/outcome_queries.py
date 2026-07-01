@@ -21,11 +21,11 @@ Example:
 import logging
 from typing import List, Dict, Any
 
-from guardkit.knowledge.graphiti_client import get_graphiti
+from guardkit.knowledge.fleet_memory_client import get_memory_client
 
 logger = logging.getLogger(__name__)
 
-# Group ID for task outcomes in Graphiti
+# Group ID for task outcomes (fleet-memory: task_outcomes → build_outcome + migrated docs)
 TASK_OUTCOMES_GROUP_ID = "task_outcomes"
 
 
@@ -60,15 +60,15 @@ async def find_similar_task_outcomes(
     if limit <= 0:
         return []
 
-    # Get client (graceful degradation)
-    client = get_graphiti()
+    # Get client (graceful degradation) — fleet-memory backend post-FEAT-MEM-09.
+    client = get_memory_client()
 
     if client is None:
-        logger.debug("Graphiti client not initialized, returning empty results")
+        logger.debug("Memory client not initialized, returning empty results")
         return []
 
     if not client.enabled:
-        logger.debug("Graphiti client disabled, returning empty results")
+        logger.debug("Memory client disabled, returning empty results")
         return []
 
     try:

@@ -62,7 +62,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 import logging
 
-from guardkit.knowledge.graphiti_client import get_graphiti
+from guardkit.knowledge.fleet_memory_client import get_memory_client
 
 if TYPE_CHECKING:
     from guardkit.orchestrator.instrumentation.emitter import EventEmitter
@@ -269,7 +269,7 @@ async def load_critical_context(
     # Resolve effective task_id for events (parameter shadows outer name intentionally)
     effective_task_id = task_id or ""
 
-    graphiti = get_graphiti()
+    graphiti = get_memory_client()
 
     # Graceful degradation: return empty context if Graphiti unavailable
     if graphiti is None:
@@ -513,7 +513,7 @@ async def load_feature_overview(feature_name: str) -> Optional["FeatureOverviewE
     from guardkit.knowledge.entities.feature_overview import FeatureOverviewEntity
     from datetime import datetime
 
-    graphiti = get_graphiti()
+    graphiti = get_memory_client()
 
     # Graceful degradation: return None if Graphiti unavailable
     if graphiti is None:
@@ -628,7 +628,7 @@ async def load_critical_adrs(
         for adr in adrs:
             print(f"ADR {adr['id']}: {adr['title']}")
     """
-    graphiti = get_graphiti()
+    graphiti = get_memory_client()
 
     # Graceful degradation: return empty list if Graphiti unavailable
     if graphiti is None:
@@ -760,7 +760,7 @@ async def load_role_context(role: str, context: str = "feature-build") -> Option
         if context:
             print(context)  # Formatted markdown with MUST DO and MUST NOT DO
     """
-    graphiti = get_graphiti()
+    graphiti = get_memory_client()
 
     # Graceful degradation: return None if Graphiti unavailable
     if graphiti is None:
