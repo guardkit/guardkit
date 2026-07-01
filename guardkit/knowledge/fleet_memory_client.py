@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 from dataclasses import dataclass
 from typing import Any, Literal, Optional
 from uuid import uuid4
@@ -229,11 +230,38 @@ class FleetMemoryClient:
         self._store: Any = None
         self._store_cm: Any = None
         self._initialized = False
+        # TASK-FIX-GTP2/GLF-003 parity: the per-thread FleetMemoryClientFactory sets
+        # this True when it creates a client inside a running loop, deferring the
+        # asyncpg store connection to the consumer's event loop (loop-affinity). The
+        # autobuild per-thread block (autobuild.py:5265-5267) initializes it there.
+        self._pending_init: bool = False
 
     @property
     def enabled(self) -> bool:
         """Whether reads are enabled (FLEET_MEMORY_ENABLED)."""
         return bool(self.config.enabled)
+
+    @property
+    def is_initialized(self) -> bool:
+        """Whether the store connection is open (graphiti-client parity).
+
+        Mirrors ``GraphitiClient.is_initialized`` (``_connected and not
+        _pending_init``) so the autobuild per-thread factory machinery
+        (``autobuild.py:5265-5278``) can treat a FleetMemoryClient
+        interchangeably with a GraphitiClient.
+        """
+        return self._initialized and not self._pending_init
+
+    def reset_circuit_breaker(self) -> None:
+        """No-op circuit-breaker reset (graphiti-client interface parity).
+
+        GraphitiClient wraps FalkorDB access in a circuit breaker;
+        fleet-memory reads hit Postgres directly with no breaker, so this is
+        a documented no-op. ``JobContextRetriever`` calls this (hasattr-guarded)
+        between queries; providing it explicitly future-proofs any non-guarded
+        caller.
+        """
+        return None
 
     def _check_read_backend_available(self) -> bool:
         """Check the READ dependency: fleet_memory.retrieval importable.
@@ -287,6 +315,7 @@ class FleetMemoryClient:
             self._store_cm = async_store_context(settings)
             self._store = await self._store_cm.__aenter__()
             self._initialized = True
+            self._pending_init = False  # store now affine to the calling loop
             return True
         except Exception as e:
             logger.warning(f"Fleet-memory initialize failed: {e}", exc_info=True)
@@ -539,8 +568,86 @@ class FleetMemoryClient:
             return None
 
 
+class FleetMemoryClientFactory:
+    """Thread-safe factory for per-thread FleetMemoryClient instances.
+
+    Mirrors ``graphiti_client.GraphitiClientFactory``: stores one shared config
+    and hands out a distinct client per thread via ``threading.local()``. This
+    is REQUIRED (not merely convenient) for parallel autobuild waves — the
+    fleet-memory store is a Postgres/asyncpg connection opened by
+    ``FleetMemoryClient.initialize()`` and is bound to the event loop that opens
+    it, exactly like the FalkorDB locks the graphiti factory was built for
+    (TASK-FIX-GTP2 / TASK-GLF-003). A single shared client cannot be reused
+    across the per-thread loops that ``FeatureOrchestrator`` creates.
+
+    The client's store connection is always deferred (``_pending_init = True``)
+    so the consumer initializes it on its own event loop
+    (``autobuild.py:5265-5278``), keeping the asyncpg connection loop-affine.
+
+    Attributes:
+        config: FleetMemoryConfig instance (shared across threads).
+    """
+
+    def __init__(self, config: FleetMemoryConfig):
+        self._config = config
+        self._thread_local = threading.local()
+
+    @property
+    def config(self) -> FleetMemoryConfig:
+        """Get the shared configuration."""
+        return self._config
+
+    def create_client(self) -> FleetMemoryClient:
+        """Create a new uninitialized FleetMemoryClient.
+
+        The caller is responsible for calling ``await client.initialize()`` in
+        the appropriate async context.
+        """
+        return FleetMemoryClient(self._config)
+
+    def get_thread_client(self) -> Optional[FleetMemoryClient]:
+        """Get or lazily create a client for the current thread.
+
+        Uses ``threading.local()`` for automatic per-thread storage. On first
+        access in a thread, creates a client with a deferred store connection
+        (``_pending_init = True``) so the consumer initializes it on its own
+        event loop. Returns None when the backend is disabled.
+        """
+        client = getattr(self._thread_local, "client", None)
+        if client is not None:
+            return client
+
+        if getattr(self._thread_local, "init_attempted", False):
+            return None
+        self._thread_local.init_attempted = True
+
+        if not self._config.enabled:
+            logger.info(
+                "Fleet-memory disabled in configuration, thread client not created"
+            )
+            return None
+
+        client = self.create_client()
+        # Always defer the asyncpg store connection to the consumer's event loop
+        # (the store is loop-affine — TASK-GLF-003). Never connect on the
+        # factory-calling thread's loop.
+        client._pending_init = True
+        self._thread_local.client = client
+        logger.info(
+            "Fleet-memory factory: thread client created (pending init — will "
+            "initialize lazily on the consumer's event loop)"
+        )
+        return client
+
+    def set_thread_client(self, client: Optional[FleetMemoryClient]) -> None:
+        """Explicitly set the client for the current thread (testing / DI parity)."""
+        self._thread_local.client = client
+        self._thread_local.init_attempted = True
+
+
 # Module-level factory state
 _memory_client: Optional[FleetMemoryClient | Any] = None
+_memory_factory: Optional[FleetMemoryClientFactory] = None
 _backend: Literal["graphiti", "fleet_memory", "dual"] = "graphiti"
 # Whether the backend has been initialized (explicitly via init_memory_client, or
 # lazily from config on first get_memory_client). Guards the one-time auto-init so an
@@ -616,11 +723,13 @@ def init_memory_client(
         ...                    fleet_config=FleetMemoryConfig())
         True
     """
-    global _memory_client, _backend, _backend_initialized
+    global _memory_client, _memory_factory, _backend, _backend_initialized
 
     _backend = backend
     # An explicit init wins over (and disables) lazy config-driven auto-init.
     _backend_initialized = True
+    # Drop any per-thread factory built for a prior backend/config.
+    _memory_factory = None
 
     try:
         if backend == "graphiti":
@@ -702,6 +811,40 @@ def get_memory_client() -> Optional[FleetMemoryClient | Any]:
         return _memory_client
 
     return None
+
+
+def get_memory_factory() -> Optional[FleetMemoryClientFactory]:
+    """Get a per-thread fleet-memory client factory when the backend selects it.
+
+    Returns a ``FleetMemoryClientFactory`` only when the configured backend is
+    ``fleet_memory``; otherwise ``None``, so callers (autobuild) fall back to the
+    graphiti factory (``graphiti_client.get_factory``) for the rollback /
+    ``backend=graphiti`` path.
+
+    Analogue of ``graphiti_client.get_factory()``: hands out per-thread clients so
+    parallel autobuild waves don't share a loop-affine store. Encapsulates the
+    backend decision (via ``_ensure_backend_initialized``) so autobuild does not
+    duplicate the flag read.
+
+    Returns:
+        FleetMemoryClientFactory when ``backend == "fleet_memory"``, else None.
+    """
+    global _memory_factory
+
+    # Honour the configured backend (reads .guardkit/graphiti.yaml `backend:` on
+    # first use, same producer get_memory_client relies on).
+    _ensure_backend_initialized()
+    if _backend != "fleet_memory":
+        return None
+
+    if _memory_factory is None:
+        # Reuse the singleton client's config (single source of truth) when the
+        # fleet backend is active; else load from env.
+        config = getattr(_memory_client, "config", None)
+        if config is None:
+            config = _load_fleet_config_from_env()
+        _memory_factory = FleetMemoryClientFactory(config)
+    return _memory_factory
 
 
 def _load_fleet_config_from_env() -> FleetMemoryConfig:
