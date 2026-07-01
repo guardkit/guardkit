@@ -38,13 +38,18 @@ tasks:
   complexity: 5
   dependencies:
   - TASK-MEM09-001
-  status: backlog
+  status: in_review
   implementation_mode: task-work
   wave: 1
   note: >-
-    New guardkit/memory/graph_export.py + `guardkit memory migrate-graph` CLI. FalkorDB
-    Episodic reader + graph→group_id normalizer; reuse publish_episodes / resolve() /
-    derive_episode_id; skip retire-disposition groups.
+    CODE-COMPLETE. WS-1a fleet-memory (68218dd): DocumentPayload.content prose field so
+    migrated docs are embedded AND carry domain_tags (scoped-retrievable). WS-1b guardkit
+    (a027fec0): guardkit/memory/graph_export.py + `guardkit memory migrate-graph` CLI —
+    FalkorDB Episodic → typed DocumentPayload episodes (prose+tags), skip retire groups,
+    fail-open document for unmapped group names, idempotent. Live dry-run: 499 doc
+    episodes from 27 guardkit graphs. 15+2 tests. REMAINING before live run: (1) rebuild
+    the fleet-memory relay image (WS-1a content field); (2) WS-2 read-side — add "document"
+    to the payload_types the client resolves for group-scoped reads so migrated docs match.
 - id: TASK-MEM09-003
   name: WS-2 — guardkit cutover (run export; optional distillation enrichment)
   file_path: tasks/backlog/feat-mem-09/TASK-MEM09-003-guardkit-cutover.md
