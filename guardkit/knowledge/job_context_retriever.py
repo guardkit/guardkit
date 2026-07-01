@@ -310,12 +310,12 @@ class JobContextRetriever:
         cache_ttl: Cache time-to-live in seconds (default: 300)
 
     Example:
-        from guardkit.knowledge import get_graphiti
+        from guardkit.knowledge.fleet_memory_client import get_memory_client
         from guardkit.knowledge.job_context_retriever import JobContextRetriever
         from guardkit.knowledge.task_analyzer import TaskPhase
         from guardkit.knowledge.relevance_tuning import RelevanceConfig
 
-        graphiti = get_graphiti()
+        client = get_memory_client()
 
         # Default thresholds
         retriever = JobContextRetriever(graphiti)

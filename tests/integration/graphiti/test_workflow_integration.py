@@ -219,7 +219,7 @@ class TestContextLoadingWorkflow:
     @pytest.mark.asyncio
     async def test_load_critical_context_structure(self):
         """Verify load_critical_context returns proper structure."""
-        with patch("guardkit.knowledge.context_loader.get_graphiti") as mock_get:
+        with patch("guardkit.knowledge.context_loader.get_memory_client") as mock_get:
             mock_client = MagicMock()
             mock_client.enabled = True
             mock_client.search = AsyncMock(return_value=[
@@ -238,7 +238,7 @@ class TestContextLoadingWorkflow:
     @pytest.mark.asyncio
     async def test_load_context_graceful_degradation(self):
         """Verify context loading returns empty context when Graphiti unavailable."""
-        with patch("guardkit.knowledge.context_loader.get_graphiti") as mock_get:
+        with patch("guardkit.knowledge.context_loader.get_memory_client") as mock_get:
             mock_get.return_value = None
 
             context = await load_critical_context(command="task-work")
@@ -250,7 +250,7 @@ class TestContextLoadingWorkflow:
     @pytest.mark.asyncio
     async def test_load_context_handles_disabled_client(self):
         """Verify context loading handles disabled client gracefully."""
-        with patch("guardkit.knowledge.context_loader.get_graphiti") as mock_get:
+        with patch("guardkit.knowledge.context_loader.get_memory_client") as mock_get:
             mock_client = MagicMock()
             mock_client.enabled = False
             mock_get.return_value = mock_client
@@ -263,7 +263,7 @@ class TestContextLoadingWorkflow:
     @pytest.mark.asyncio
     async def test_load_context_for_feature_build_includes_extra(self):
         """Verify feature-build command loads additional context."""
-        with patch("guardkit.knowledge.context_loader.get_graphiti") as mock_get:
+        with patch("guardkit.knowledge.context_loader.get_memory_client") as mock_get:
             mock_client = MagicMock()
             mock_client.enabled = True
             mock_client.search = AsyncMock(return_value=[
@@ -290,7 +290,7 @@ class TestContextLoadingWorkflow:
             await seed_all_system_context(live_graphiti_client, force=True)
 
         # Load context using the live client
-        with patch("guardkit.knowledge.context_loader.get_graphiti") as mock_get:
+        with patch("guardkit.knowledge.context_loader.get_memory_client") as mock_get:
             mock_get.return_value = live_graphiti_client
 
             context = await load_critical_context(command="task-work")
@@ -380,7 +380,7 @@ class TestGracefulDegradation:
     @pytest.mark.asyncio
     async def test_context_loading_without_graphiti(self):
         """Verify commands work when Graphiti client is None."""
-        with patch("guardkit.knowledge.context_loader.get_graphiti") as mock_get:
+        with patch("guardkit.knowledge.context_loader.get_memory_client") as mock_get:
             mock_get.return_value = None
 
             context = await load_critical_context(
@@ -432,7 +432,7 @@ class TestWorkflowSequence:
     @pytest.mark.asyncio
     async def test_task_work_context_injection_sequence(self):
         """Verify context is loaded at task-work start."""
-        with patch("guardkit.knowledge.context_loader.get_graphiti") as mock_get:
+        with patch("guardkit.knowledge.context_loader.get_memory_client") as mock_get:
             mock_client = MagicMock()
             mock_client.enabled = True
             mock_client.search = AsyncMock(return_value=[
@@ -487,7 +487,7 @@ class TestWorkflowSequence:
         assert is_seeded()
 
         # Step 4: Load context
-        with patch("guardkit.knowledge.context_loader.get_graphiti") as mock_get:
+        with patch("guardkit.knowledge.context_loader.get_memory_client") as mock_get:
             mock_get.return_value = live_graphiti_client
 
             context = await load_critical_context(command="task-work")

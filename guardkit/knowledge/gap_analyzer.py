@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import List, Dict, Optional, Any
 
-from .graphiti_client import get_graphiti
+from .fleet_memory_client import get_memory_client
 
 
 class KnowledgeCategory(str, Enum):
@@ -328,10 +328,10 @@ class KnowledgeGapAnalyzer:
             Dictionary mapping check_fields to knowledge presence.
             Empty dict if Graphiti is unavailable or query fails.
         """
-        # Get Graphiti instance
-        graphiti = get_graphiti()
+        # Get memory client (fleet-memory backend post-FEAT-MEM-09)
+        graphiti = get_memory_client()
 
-        # Handle Graphiti being None or disabled
+        # Handle client being None or disabled
         if graphiti is None:
             return {}
 

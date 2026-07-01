@@ -662,7 +662,7 @@ class TestLoadFeatureOverview:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[{"body": mock_result}])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_client):
             result = await load_feature_overview("feature-build")
 
             assert result is not None
@@ -676,7 +676,7 @@ class TestLoadFeatureOverview:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_client):
             result = await load_feature_overview("non-existent-feature")
 
             assert result is None
@@ -687,7 +687,7 @@ class TestLoadFeatureOverview:
         mock_client = AsyncMock()
         mock_client.enabled = False
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_client):
             result = await load_feature_overview("feature-build")
 
             assert result is None
@@ -696,7 +696,7 @@ class TestLoadFeatureOverview:
     @pytest.mark.asyncio
     async def test_load_feature_overview_graphiti_none(self):
         """Test graceful degradation when Graphiti client is None."""
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=None):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=None):
             result = await load_feature_overview("feature-build")
 
             assert result is None
@@ -708,7 +708,7 @@ class TestLoadFeatureOverview:
         mock_client.enabled = True
         mock_client.search = AsyncMock(side_effect=Exception("Search error"))
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_client):
             result = await load_feature_overview("feature-build")
 
             assert result is None
@@ -720,7 +720,7 @@ class TestLoadFeatureOverview:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_client):
             await load_feature_overview("feature-build")
 
             call_args = mock_client.search.call_args
@@ -768,7 +768,7 @@ class TestLoadFeatureOverview:
             {"body": mock_result2}
         ])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_client):
             result = await load_feature_overview("feature-build")
 
             assert result is not None
@@ -807,7 +807,7 @@ class TestContextLoaderIntegration:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[{"body": mock_overview_result}])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_client):
             context = await load_critical_context(command="feature-build")
 
             # Context should include feature overview in some form
@@ -896,7 +896,7 @@ class TestEdgeCases:
         # Return malformed data
         mock_client.search = AsyncMock(return_value=[{"bad_key": "bad_value"}])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_client):
             # Should handle gracefully
             result = await load_feature_overview("feature-build")
 

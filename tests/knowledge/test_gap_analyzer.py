@@ -218,7 +218,7 @@ class TestAnalyzeGapsReturnType:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -234,7 +234,7 @@ class TestAnalyzeGapsReturnType:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -252,7 +252,7 @@ class TestAnalyzeGapsReturnType:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -276,7 +276,7 @@ class TestAnalyzeGapsFocusFiltering:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -294,7 +294,7 @@ class TestAnalyzeGapsFocusFiltering:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -311,7 +311,7 @@ class TestAnalyzeGapsFocusFiltering:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -328,7 +328,7 @@ class TestAnalyzeGapsFocusFiltering:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -345,7 +345,7 @@ class TestAnalyzeGapsFocusFiltering:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -362,7 +362,7 @@ class TestAnalyzeGapsFocusFiltering:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -390,7 +390,7 @@ class TestAnalyzeGapsMaxQuestions:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -406,7 +406,7 @@ class TestAnalyzeGapsMaxQuestions:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -422,7 +422,7 @@ class TestAnalyzeGapsMaxQuestions:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -438,7 +438,7 @@ class TestAnalyzeGapsMaxQuestions:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -456,7 +456,7 @@ class TestAnalyzeGapsMaxQuestions:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -480,7 +480,7 @@ class TestAnalyzeGapsSorting:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -507,7 +507,7 @@ class TestAnalyzeGapsSorting:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -524,7 +524,7 @@ class TestAnalyzeGapsSorting:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -547,7 +547,7 @@ class TestAnalyzeGapsSorting:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -573,7 +573,7 @@ class TestAnalyzeGapsGraphitiIntegration:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -589,7 +589,7 @@ class TestAnalyzeGapsGraphitiIntegration:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -606,7 +606,7 @@ class TestAnalyzeGapsGraphitiIntegration:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(side_effect=Exception("Connection failed"))
             mock_get.return_value = mock_graphiti
@@ -623,7 +623,7 @@ class TestAnalyzeGapsGraphitiIntegration:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_get.return_value = None
 
             result = await analyzer.analyze_gaps()
@@ -637,7 +637,7 @@ class TestAnalyzeGapsGraphitiIntegration:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -662,7 +662,7 @@ class TestQuestionTemplateComparison:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -685,7 +685,7 @@ class TestQuestionTemplateComparison:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -709,7 +709,7 @@ class TestQuestionTemplateComparison:
             {"uuid": "2", "fact": "Key components are A, B, C"},
         ]
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=mock_search_result)
             mock_get.return_value = mock_graphiti
@@ -727,7 +727,7 @@ class TestQuestionTemplateComparison:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -753,7 +753,7 @@ class TestEdgeCasesAndErrorHandling:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -769,7 +769,7 @@ class TestEdgeCasesAndErrorHandling:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -787,7 +787,7 @@ class TestEdgeCasesAndErrorHandling:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -804,7 +804,7 @@ class TestEdgeCasesAndErrorHandling:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -829,7 +829,7 @@ class TestEdgeCasesAndErrorHandling:
             KnowledgeCategory.WORKFLOW_PREFERENCES,
         }
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -848,7 +848,7 @@ class TestEdgeCasesAndErrorHandling:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -866,7 +866,7 @@ class TestEdgeCasesAndErrorHandling:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti
@@ -890,7 +890,7 @@ class TestEdgeCasesAndErrorHandling:
 
         analyzer = KnowledgeGapAnalyzer()
 
-        with patch('guardkit.knowledge.gap_analyzer.get_graphiti') as mock_get:
+        with patch('guardkit.knowledge.gap_analyzer.get_memory_client') as mock_get:
             mock_graphiti = AsyncMock()
             mock_graphiti.search = AsyncMock(return_value=[])
             mock_get.return_value = mock_graphiti

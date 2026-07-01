@@ -395,7 +395,7 @@ class TestContextLoading:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_client):
             result = await load_critical_adrs()
             assert isinstance(result, list)
 
@@ -406,7 +406,7 @@ class TestContextLoading:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_client):
             await load_critical_adrs()
 
             # Verify search was called with architecture_decisions group
@@ -420,7 +420,7 @@ class TestContextLoading:
         mock_client = AsyncMock()
         mock_client.enabled = False
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_client):
             result = await load_critical_adrs()
             assert result == []
             mock_client.search.assert_not_called()
@@ -444,7 +444,7 @@ class TestContextLoading:
         ]
         mock_client.search = AsyncMock(return_value=mock_results)
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_client):
             result = await load_critical_adrs()
 
             assert len(result) == 1

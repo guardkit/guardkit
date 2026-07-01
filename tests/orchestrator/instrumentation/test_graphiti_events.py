@@ -106,7 +106,7 @@ class TestGraphitiQueryEventEmission:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             asyncio.run(
@@ -130,7 +130,7 @@ class TestGraphitiQueryEventEmission:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             asyncio.run(
@@ -162,7 +162,7 @@ class TestQueryTypeIdentification:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             asyncio.run(
@@ -186,7 +186,7 @@ class TestQueryTypeIdentification:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             asyncio.run(load_critical_adrs(emitter=capture_emitter))
@@ -215,7 +215,7 @@ class TestTokensInjected:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             asyncio.run(
@@ -237,7 +237,7 @@ class TestTokensInjected:
         fake_graphiti = _make_fake_graphiti(search_results=[])
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             asyncio.run(
@@ -269,7 +269,7 @@ class TestGraphitiUnavailability:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(
@@ -295,7 +295,7 @@ class TestGraphitiUnavailability:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(
@@ -316,7 +316,7 @@ class TestGraphitiUnavailability:
         from guardkit.knowledge.context_loader import load_critical_context
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=None,
         ):
             result = asyncio.run(
@@ -349,7 +349,7 @@ class TestWarningLogging:
 
         with caplog.at_level(logging.WARNING, logger="guardkit.knowledge.context_loader"):
             with patch(
-                "guardkit.knowledge.context_loader.get_graphiti",
+                "guardkit.knowledge.context_loader.get_memory_client",
                 return_value=fake_graphiti,
             ):
                 asyncio.run(
@@ -381,7 +381,7 @@ class TestDigestOnlyFallback:
         fake_graphiti = _make_fake_graphiti(enabled=False)
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(
@@ -403,7 +403,7 @@ class TestDigestOnlyFallback:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(
@@ -437,7 +437,7 @@ class TestLatencyTracking:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             asyncio.run(
@@ -467,7 +467,7 @@ class TestItemsReturnedCount:
         fake_graphiti = _make_fake_graphiti(search_results=results)
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             asyncio.run(
@@ -495,7 +495,7 @@ class TestEventFieldsComplete:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             asyncio.run(
@@ -666,7 +666,7 @@ class TestFeatureBuildCommandBranch:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(
@@ -693,7 +693,7 @@ class TestFeatureBuildCommandBranch:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(
@@ -720,7 +720,7 @@ class TestLoadCriticalAdrs:
         from guardkit.knowledge.context_loader import load_critical_adrs
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=None,
         ):
             result = asyncio.run(load_critical_adrs(emitter=capture_emitter))
@@ -735,7 +735,7 @@ class TestLoadCriticalAdrs:
         fake_graphiti = _make_fake_graphiti(enabled=False)
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(load_critical_adrs(emitter=capture_emitter))
@@ -750,7 +750,7 @@ class TestLoadCriticalAdrs:
         fake_graphiti = _make_fake_graphiti(search_results=[])
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(load_critical_adrs(emitter=capture_emitter))
@@ -772,7 +772,7 @@ class TestLoadCriticalAdrs:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(
@@ -803,7 +803,7 @@ class TestLoadCriticalAdrs:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(load_critical_adrs(emitter=capture_emitter))
@@ -827,7 +827,7 @@ class TestLoadCriticalAdrs:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(load_critical_adrs(emitter=capture_emitter))
@@ -846,7 +846,7 @@ class TestLoadCriticalAdrs:
 
         with caplog.at_level(logging.WARNING, logger="guardkit.knowledge.context_loader"):
             with patch(
-                "guardkit.knowledge.context_loader.get_graphiti",
+                "guardkit.knowledge.context_loader.get_memory_client",
                 return_value=fake_graphiti,
             ):
                 asyncio.run(load_critical_adrs(emitter=capture_emitter))
@@ -868,7 +868,7 @@ class TestLoadFeatureOverview:
         from guardkit.knowledge.context_loader import load_feature_overview
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=None,
         ):
             result = asyncio.run(load_feature_overview("feature-build"))
@@ -882,7 +882,7 @@ class TestLoadFeatureOverview:
         fake_graphiti = _make_fake_graphiti(enabled=False)
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(load_feature_overview("feature-build"))
@@ -896,7 +896,7 @@ class TestLoadFeatureOverview:
         fake_graphiti = _make_fake_graphiti(search_results=[])
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(load_feature_overview("feature-build"))
@@ -912,7 +912,7 @@ class TestLoadFeatureOverview:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(load_feature_overview("feature-build"))
@@ -934,7 +934,7 @@ class TestLoadFeatureOverview:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(load_feature_overview("feature-build"))
@@ -964,7 +964,7 @@ class TestLoadFeatureOverview:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(load_feature_overview("feature-build"))
@@ -996,7 +996,7 @@ class TestLoadFeatureOverview:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(load_feature_overview("feature-build"))
@@ -1028,7 +1028,7 @@ class TestLoadFeatureOverview:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(load_feature_overview("feature-build"))
@@ -1045,7 +1045,7 @@ class TestLoadFeatureOverview:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(load_feature_overview("feature-build"))
@@ -1095,7 +1095,7 @@ class TestLoadRoleContext:
         from guardkit.knowledge.context_loader import load_role_context
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=None,
         ):
             result = asyncio.run(load_role_context("player"))
@@ -1109,7 +1109,7 @@ class TestLoadRoleContext:
         fake_graphiti = _make_fake_graphiti(enabled=False)
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(load_role_context("player"))
@@ -1123,7 +1123,7 @@ class TestLoadRoleContext:
         fake_graphiti = _make_fake_graphiti(search_results=[])
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(load_role_context("player"))
@@ -1139,7 +1139,7 @@ class TestLoadRoleContext:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(load_role_context("player"))
@@ -1161,7 +1161,7 @@ class TestLoadRoleContext:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(load_role_context("player"))
@@ -1190,7 +1190,7 @@ class TestLoadRoleContext:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(load_role_context("player", context="autobuild"))
@@ -1208,7 +1208,7 @@ class TestLoadRoleContext:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(load_role_context("coach"))
@@ -1225,7 +1225,7 @@ class TestLoadRoleContext:
         )
 
         with patch(
-            "guardkit.knowledge.context_loader.get_graphiti",
+            "guardkit.knowledge.context_loader.get_memory_client",
             return_value=fake_graphiti,
         ):
             result = asyncio.run(load_role_context("player"))
