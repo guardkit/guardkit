@@ -40,6 +40,10 @@ class FleetMemoryConfig:
         embed_model: Embedding model identifier
         embed_dims: Embedding vector dimensions
         nats_url: NATS server URL for episode writes
+        project: Fleet-memory project namespace for reads/writes. The middle segment
+            of the store prefix ``fleet_memory.{project}.{payload_type}`` and the
+            ``project`` component of every natural key. Defaults to ``"guardkit"``
+            (single-project back-compat); FEAT-MEM-09 WS-0 makes it per-project.
     """
 
     enabled: bool = False
@@ -48,6 +52,7 @@ class FleetMemoryConfig:
     embed_model: str = "nomic-embed"
     embed_dims: int = 768
     nats_url: str = "nats://localhost:4222"
+    project: str = "guardkit"
 
 
 class DualWriteClient:
@@ -298,7 +303,9 @@ class FleetMemoryClient:
         if self._store is None and not await self.initialize():
             return False
         try:
-            await self._store.aget(("fleet_memory", "guardkit", "chunk"), "__healthcheck__")
+            await self._store.aget(
+                ("fleet_memory", self.config.project, "chunk"), "__healthcheck__"
+            )
             return True
         except Exception as e:
             logger.debug(f"Fleet-memory health check failed: {e}")
@@ -392,7 +399,7 @@ class FleetMemoryClient:
             # Reuse fleet-memory's REAL retrieval surface — the exact functions the
             # memory_search MCP tool wraps (single source of truth, no drift).
             request = SearchRequest(
-                project="guardkit",
+                project=self.config.project,
                 query=query,
                 payload_types=sorted(payload_types),
                 domain_tags=sorted(domain_tags),
@@ -485,7 +492,11 @@ class FleetMemoryClient:
             from guardkit.knowledge.fleet_memory_payloads import build_memory_episode
 
             episode = build_memory_episode(
-                mapping, name=name, episode_body=episode_body, source=source
+                mapping,
+                name=name,
+                episode_body=episode_body,
+                source=source,
+                project=self.config.project,
             )
             if episode is None:
                 logger.warning(
@@ -709,4 +720,7 @@ def _load_fleet_config_from_env() -> FleetMemoryConfig:
         embed_model=os.getenv("FLEET_MEMORY_EMBED_MODEL", "embed"),
         embed_dims=int(os.getenv("FLEET_MEMORY_EMBED_DIMS", "1024")),
         nats_url=os.getenv("FLEET_MEMORY_NATS_URL", "nats://localhost:4222"),
+        # Per-project scoping (FEAT-MEM-09 WS-0): the fleet-memory namespace this
+        # guardkit instance reads/writes. Defaults to "guardkit" (back-compat).
+        project=os.getenv("GUARDKIT_MEMORY_PROJECT", "guardkit"),
     )
