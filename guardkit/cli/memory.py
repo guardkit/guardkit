@@ -26,6 +26,10 @@ from rich.table import Table
 
 from guardkit.memory.harvest_walker import walk_harvest_dirs
 from guardkit.memory.harvest_publisher import publish_episodes
+from guardkit.memory.graph_export import (
+    build_export_episodes,
+    read_falkordb_episodics,
+)
 from guardkit.knowledge.fleet_memory_client import get_memory_client
 from guardkit.knowledge.outcome_manager import capture_task_outcome
 from guardkit.knowledge.entities.outcome import OutcomeType
@@ -264,6 +268,154 @@ def harvest(dry_run: bool, docs_root: Path | None, env_file: Path | None):
     console.print("\n[bold green]Harvest complete[/bold green]\n")
 
     # Exit 0 on success (including when oversized docs were skipped)
+    sys.exit(0)
+
+
+# ============================================================================
+# Migrate-Graph Command (FEAT-MEM-09 WS-1b)
+# ============================================================================
+
+
+@memory.command("migrate-graph")
+@click.option(
+    "--project",
+    default="guardkit",
+    help="Only migrate this project's graphs (sanitised). Default: guardkit.",
+)
+@click.option(
+    "--all-projects",
+    is_flag=True,
+    help="Migrate ALL projects' graphs (fleet-wide), ignoring --project.",
+)
+@click.option(
+    "--host",
+    default=None,
+    help="FalkorDB host (default: $FALKORDB_HOST or 'whitestocks').",
+)
+@click.option(
+    "--port",
+    default=None,
+    type=int,
+    help="FalkorDB port (default: $FALKORDB_PORT or 6379).",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Read + build episodes and report counts; do NOT connect to NATS.",
+)
+@click.option(
+    "--limit",
+    default=None,
+    type=int,
+    help="Max Episodic nodes per graph (for dry-run sampling).",
+)
+@click.option(
+    "--env-file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="Path to .env file for NATS + FalkorDB credentials (optional).",
+)
+def migrate_graph(
+    project: str,
+    all_projects: bool,
+    host: str | None,
+    port: int | None,
+    dry_run: bool,
+    limit: int | None,
+    env_file: Path | None,
+):
+    """Migrate FalkorDB (Graphiti) Episodic prose to fleet-memory as scoped documents.
+
+    Reads each project graph's raw ``Episodic`` nodes and publishes them as typed
+    ``DocumentPayload`` episodes (prose in ``content`` + the source group's
+    ``domain_tags``), skipping retire-disposition groups (covered by the harvest corpus).
+    The Qwen2.5-extracted Entity/edge layer is NOT migrated (fleet-memory is
+    pure-embeddings). Idempotent: re-runs dedup server-side on the natural key.
+
+    With --dry-run, only reads + builds (reports counts); no NATS. Without it, publishes
+    (requires GUARDKIT_NATS_PASSWORD).
+
+    RELAY REBUILD REQUIRED first: DocumentPayload.content (FEAT-MEM-09 WS-1a) is only
+    stored by a rebuilt relay image; an older relay SILENTLY DROPS content.
+
+    Examples:
+        guardkit memory migrate-graph --dry-run --limit 5
+        guardkit memory migrate-graph                     # guardkit only
+        guardkit memory migrate-graph --all-projects      # fleet-wide
+    """
+    if env_file:
+        load_dotenv(env_file)
+        logger.info("Loaded environment from %s", env_file)
+
+    fdb_host = host or os.getenv("FALKORDB_HOST", "whitestocks")
+    fdb_port = port if port is not None else int(os.getenv("FALKORDB_PORT", "6379"))
+    project_filter = None if all_projects else project
+
+    scope = "ALL projects" if all_projects else f"project={project!r}"
+    console.print(
+        f"\n[bold cyan]Reading FalkorDB[/bold cyan] {fdb_host}:{fdb_port} ({scope})...\n"
+    )
+
+    try:
+        graphs = list(
+            read_falkordb_episodics(
+                fdb_host, fdb_port, project_filter=project_filter, limit_per_graph=limit
+            )
+        )
+    except Exception as e:
+        console.print(f"[red]FalkorDB read error:[/red] {e}")
+        logger.exception("FalkorDB read failed")
+        sys.exit(1)
+
+    result = build_export_episodes(graphs)
+
+    console.print(
+        f"[green]✓[/green] Built {len(result.episodes)} document episodes "
+        f"from {result.graphs_scanned} graph(s)"
+    )
+    console.print(
+        f"    skipped: {result.skipped_retired} retired, "
+        f"{result.skipped_empty} empty, {result.skipped_no_group} non-project graphs"
+    )
+    if result.counts_per_project:
+        console.print()
+        counts_table = _format_counts_table(result.counts_per_project)
+        console.print(counts_table)
+
+    if dry_run:
+        console.print("\n[bold green]Dry run complete[/bold green] (no NATS publish)\n")
+        sys.exit(0)
+
+    if not result.episodes:
+        console.print("\n[yellow]No episodes to publish.[/yellow]\n")
+        sys.exit(0)
+
+    console.print(
+        "\n[yellow]⚠ Ensure the fleet-memory relay was rebuilt with "
+        "DocumentPayload.content (WS-1a), else content is silently dropped.[/yellow]"
+    )
+    console.print("\n[bold cyan]Publishing episodes to NATS...[/bold cyan]\n")
+
+    try:
+        publish_summary = asyncio.run(publish_episodes(result.episodes, client=None))
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        console.print(
+            "\n[yellow]Tip:[/yellow] Set GUARDKIT_NATS_PASSWORD or use --env-file"
+        )
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Publisher error:[/red] {e}")
+        logger.exception("Publisher failed")
+        sys.exit(1)
+
+    console.print(f"[green]✓[/green] Published {publish_summary.published} episodes")
+    if publish_summary.skipped_oversized > 0:
+        console.print(
+            f"[yellow]⚠[/yellow] Skipped {publish_summary.skipped_oversized} "
+            f"oversized episodes during publish"
+        )
+    console.print("\n[bold green]Graph migration complete[/bold green]\n")
     sys.exit(0)
 
 
