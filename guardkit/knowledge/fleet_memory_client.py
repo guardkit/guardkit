@@ -392,6 +392,12 @@ class FleetMemoryClient:
                 mapping = resolve(gid)
                 if mapping and mapping.disposition == "migrate":
                     payload_types.add(mapping.payload_type)
+                    # Migrated Graphiti prose (FEAT-MEM-09 graph_export) lands as typed
+                    # `document` records carrying the group's domain_tags. Include
+                    # "document" so a group-scoped read matches BOTH the live typed
+                    # records (build_outcome/adr/warning) AND the migrated documents;
+                    # the domain_tags filter below does the precise per-group scoping.
+                    payload_types.add("document")
                     domain_tags.update(mapping.domain_tags)
 
             token_budget = max(2000, num_results * 200)

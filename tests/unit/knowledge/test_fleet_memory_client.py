@@ -169,8 +169,34 @@ class TestFleetMemoryClientSearch:
             await fleet_client.search(query="test", group_ids=["task_outcomes"])
 
         mock_resolve.assert_called_once_with("task_outcomes")
-        assert captured["request"]["payload_types"] == ["build_outcome"]
+        # "document" is included alongside the mapped type so a group-scoped read also
+        # matches migrated Graphiti prose (payload_type=document); domain_tags scope it.
+        assert captured["request"]["payload_types"] == ["build_outcome", "document"]
         assert captured["request"]["domain_tags"] == ["task"]
+
+    async def test_search_includes_document_for_document_mapped_group(
+        self, fleet_client, monkeypatch
+    ):
+        """A group that already maps to `document` yields just ["document"] (no dup),
+        so migrated docs for that group are matched by domain_tags (FEAT-MEM-09 WS-2)."""
+        captured: dict = {}
+        _install_fake_fleet_memory_retrieval(
+            monkeypatch, context_block="block", coverage=0.5, captured=captured
+        )
+        fleet_client._read_available = True
+        fleet_client._store = object()
+
+        with patch("guardkit.knowledge.fleet_memory_mapping.resolve") as mock_resolve:
+            mock_resolve.return_value = GroupMapping(
+                project="guardkit",
+                payload_type="document",
+                domain_tags=["architecture"],
+                disposition="migrate",
+            )
+            await fleet_client.search(query="arch", group_ids=["project_architecture"])
+
+        assert captured["request"]["payload_types"] == ["document"]
+        assert captured["request"]["domain_tags"] == ["architecture"]
 
 
 class TestFleetMemoryClientInterface:
