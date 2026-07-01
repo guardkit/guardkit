@@ -1,10 +1,10 @@
 ---
 id: TASK-PERF-COACHGATHER01
 title: Resolve B-full Phase-A always-degrades — raise recursion_limit so the gather converges, or formally retire B-full
-status: backlog
+status: in_review
 task_type: fix
 created: 2026-06-11T10:05:00Z
-updated: 2026-06-11T10:05:00Z
+updated: 2026-07-01T00:00:00Z
 priority: medium
 complexity: 5
 parent_task: TASK-ARCH-COACHBFULL
@@ -96,10 +96,10 @@ the runtime default), and:
 
 ## Acceptance criteria
 
-- [ ] AC-1: A written root-cause for the 100%-degrade, classified (i) truncated-but-
+- [x] AC-1: A written root-cause for the 100%-degrade, classified (i) truncated-but-
   productive vs (ii) unproductive-loop, with transcript evidence from the COACHMOE01
   artifacts (or a fresh `GATHER=1` probe run).
-- [ ] AC-2: A decision (Option A or B) justified by AC-1.
+- [x] AC-2: A decision (Option A or B) justified by AC-1.
 - [ ] AC-3 (if Option A): the new recursion limit (and any prompt/truncation change)
   is implemented, re-checked against the 98 K-window budget, and a live validation
   run shows Phase-A **converges** (two distinct Coach LLM calls per turn observed in
@@ -133,3 +133,50 @@ the runtime default), and:
 - Surfaced in [`docs/retro/player-coach-why-so-hard-verdict.md`](../../../docs/retro/player-coach-why-so-hard-verdict.md)
   (Update 2026-06-11, "What is genuinely still open") and recommended directly by
   TASK-OPS-COACHMOE01 §Decision follow-up (b).
+
+---
+
+## Decision (recorded 2026-07-01) — Option B: retire/defer B-full, ship B-min-only
+
+**AC-1 (root-cause classification).** The Phase-A gather hit `recursion_limit=12` and
+degraded to B-min on **6/6 Coach turns, on both substrates** (26B-A4B MoE + dense g31) — a
+uniform, cross-substrate degrade that points to a **structural** recursion-budget-vs-gather-
+shape mismatch, not a model weakness. A strict transcript-level (i)/(ii) classification
+cannot be reconstructed from the surviving artifacts: the raw per-round-trip gather trace
+(`run-moe-stdout.log`, the `COACHMOE01-AB` autobuild dir) has been cleaned up; only the
+verdict dumps in `docs/state/TASK-OPS-COACHMOE01/run-AB-artifacts/` remain. **But the
+decision does not hinge on (i) vs (ii):** the run proves **B-min alone produces the correct
+verdict** — 3/3 approved, all schema-valid, honest, `criteria_verification` fully populated
+(IA03 5/5, GD02 7/7, TP05 6/6), and the Coach caught a *real* Player honesty discrepancy on
+IA03 (claimed `tests/unit/test_agent_invoker.py` + specific test functions absent on disk)
+via the **deterministic honesty check**, not the gather. So the LLM gather is **redundant**:
+whether truncated-but-productive or unproductive-looping, it adds nothing the deterministic
+evidence bundle does not already carry, at 124–293s/turn of overhead vs 24–40s B-min
+synthesis.
+
+**AC-2 (decision).** **Option B.** Do not pursue B-full promotion; make B-min-only
+(`GATHER=0`) the permanent shipped default. The wiring-detection value B-full was meant to
+add is routed instead to **directed deterministic gather-probes** (reachability probe, glue
+mock-scan, scenario↔test mapping — findings §3.1), a separate feature, not the undirected LLM
+gather.
+
+**AC-3 (Option B items):**
+- (a) `GATHER=0` confirmed as the **permanent** documented default (already the runtime
+  default). ✅
+- (b) TASK-ARCH-COACHBFULL promotion track (P-1…P-5) marked **closed — not pursued**, citing
+  COACHMOE01. ✅ (done 2026-07-01)
+- (c) B-min-only end-to-end per-turn speedup — **one confirmatory `GATHER=0` leg on the GB10
+  still to run** to record the clean number (the grammar gate measured ~24–40s synthesis; the
+  full end-to-end B-min-only figure is the remaining item). ⏳ non-blocking.
+
+**AC-4 / AC-5:** no code change under Option B (the flag stays default-off, code stays behind
+it), so `GATHER=0` runs are byte-for-byte unaffected and existing harness/Coach tests stay
+green. ✅
+
+**Downstream:** commits the QA-Verifier training contract to the B-min synthesis shape
+(deterministic evidence bundle in → reasoning + grammar-fenced verdict out), stable now. The
+B-full path stays behind the flag, dormant and reversible.
+
+**Status → `in_review`:** decision recorded; the one open item is the confirmatory `GATHER=0`
+speedup leg (AC-3c). Analysis by Claude Desktop from the COACHMOE01 artifacts; operator to run
+the confirmatory leg and `/task-complete`.
