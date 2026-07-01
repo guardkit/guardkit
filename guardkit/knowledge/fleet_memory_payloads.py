@@ -169,6 +169,7 @@ def build_memory_episode(
     name: str,
     episode_body: str,
     source: str = "user_added",
+    project: str | None = None,
 ) -> Any:
     """Build a typed ``MemoryEpisodeV1`` for the fleet-memory relay.
 
@@ -184,12 +185,15 @@ def build_memory_episode(
     from nats_core.events import MemoryEpisodeV1  # write-path dep (guardkit `memory` extra)
 
     data = _parse_episode_body(episode_body)
-    project = mapping.project
+    # Per-project scoping (WS-0 / FEAT-MEM-09): the active project is a runtime
+    # property (which repo is emitting the episode), not a per-group static. An
+    # explicit ``project`` wins; ``mapping.project`` remains the back-compat default.
+    project = project or mapping.project
     payload_type = mapping.payload_type
     builder = _BODY_BUILDERS.get(payload_type)
 
     if builder is None:
-        return _build_prose_episode(mapping, name, episode_body, source, data)
+        return _build_prose_episode(mapping, name, episode_body, source, data, project)
 
     try:
         type_fields, raw_identifier, source_ref, occurred_at = builder(data, name)
@@ -227,20 +231,22 @@ def _build_prose_episode(
     episode_body: str,
     source: str,
     data: dict,
+    project: str | None = None,
 ) -> Any:
     """Fallback for non-structured migrate types (document, seed_module, …): publish the
     text on the markdown/chunk path so it is embedded and retrievable (no natural_key)."""
     from nats_core.events import MemoryEpisodeV1
 
+    project = project or mapping.project
     content = data.get("content") if isinstance(data, dict) else None
     body_text = content if isinstance(content, str) and content.strip() else episode_body
     identifier = sanitize_identifier(name)
     payload_type = mapping.payload_type or "document"
-    natural_key = f"{payload_type}:{mapping.project}:{identifier}"
+    natural_key = f"{payload_type}:{project}:{identifier}"
 
     return MemoryEpisodeV1(
         episode_id=natural_key,
-        project_id=mapping.project,
+        project_id=project,
         episode_type=payload_type,  # NATS-safe subject segment
         content_format="markdown",  # → relay prose/chunk path (_ingest_prose)
         payload_type=None,

@@ -1,0 +1,123 @@
+id: FEAT-MEM-09
+name: Decommission Graphiti / drop Qwen2.5 — fleet-wide migration + FalkorDB teardown
+description: >-
+  Migrate all Graphiti/FalkorDB knowledge (11.8k nodes / 92 graphs / ~18 projects) to the
+  fleet-memory pure-embeddings backend, migrate the 5 real code consumers, then drop the
+  Qwen2.5 extraction LLM and decommission FalkorDB. Operator chose the full fleet teardown,
+  gated on an investigation (DONE). Design + evidence:
+  docs/design/specs/memory-cutover/FEAT-MEM-09-fleet-migration-investigation.md;
+  consumer disposition: docs/design/specs/memory-cutover/FEAT-MEM-09-consumer-disposition-map.md.
+  Locked decisions: (fact fidelity) hybrid = chunk-level everywhere + one-time offline
+  cloud-LLM distillation of the ~274 high-value guardkit nodes (NO runtime LLM);
+  (teardown safety) raw FalkorDB dump + keep dormant N months before the one-way door;
+  (unique nodes) promote the valuable doc-less runtime lessons into git-versioned
+  .claude/rules//docs/decisions/ + distill; (per-project) fleet-memory already scopes by
+  project at the SQL level — guardkit just unhardcodes "guardkit".
+created: '2026-07-01'
+status: in_progress
+complexity: 8
+estimated_tasks: 8
+tasks:
+- id: TASK-MEM09-001
+  name: WS-0 — per-project + per-group scoping foundation
+  file_path: tasks/backlog/feat-mem-09/TASK-MEM09-001-per-project-scoping-foundation.md
+  complexity: 3
+  dependencies: []
+  status: in_progress
+  implementation_mode: task-work
+  wave: 0
+  note: >-
+    guardkit-side DONE (project threaded through fleet_memory_payloads.build_memory_episode +
+    FleetMemoryConfig.project + env factory + unhardcoded search/healthcheck; 9 tests green).
+    REMAINING: fleet-memory retrieval/core.py LIKE-prefix trailing-delimiter guard;
+    optional removal of the static GroupMapping.project field once callers thread project.
+- id: TASK-MEM09-002
+  name: WS-1 — graph_export one-shot pipeline (FalkorDB Episodic → fleet-memory)
+  file_path: tasks/backlog/feat-mem-09/TASK-MEM09-002-graph-export-pipeline.md
+  complexity: 5
+  dependencies:
+  - TASK-MEM09-001
+  status: backlog
+  implementation_mode: task-work
+  wave: 1
+  note: >-
+    New guardkit/memory/graph_export.py + `guardkit memory migrate-graph` CLI. FalkorDB
+    Episodic reader + graph→group_id normalizer; reuse publish_episodes / resolve() /
+    derive_episode_id; skip retire-disposition groups.
+- id: TASK-MEM09-003
+  name: WS-2 — guardkit cutover (run export; optional distillation enrichment)
+  file_path: tasks/backlog/feat-mem-09/TASK-MEM09-003-guardkit-cutover.md
+  complexity: 5
+  dependencies:
+  - TASK-MEM09-002
+  status: backlog
+  implementation_mode: task-work
+  wave: 2
+  note: >-
+    Run WS-1 for guardkit's 5 graphs (chunk-level). WS-2b: one-time offline cloud-LLM
+    distillation of project_decisions + task_outcomes (~274 nodes) → DocumentPayload.
+    Build-time exact diff of the ~10-15 unique-at-risk nodes; promote valuable ones to disk.
+- id: TASK-MEM09-004
+  name: WS-3 — fleet consumer migration (forge, study-tutor, specialist-agent, jarvis, fleet-gateway)
+  file_path: tasks/backlog/feat-mem-09/TASK-MEM09-004-fleet-consumer-migration.md
+  complexity: 8
+  dependencies:
+  - TASK-MEM09-001
+  status: backlog
+  implementation_mode: task-work
+  wave: 3
+  note: >-
+    Cross-repo, parallelizable per consumer. study-tutor before fleet-gateway (shared
+    student-* groups). Drop graphiti-core git-fork pins. .mcp.json reconfig is MANUAL.
+- id: TASK-MEM09-005
+  name: WS-4 — remote-graph inventory (agentic_dataset_factory, architect_agent, etc.)
+  file_path: tasks/backlog/feat-mem-09/TASK-MEM09-005-remote-graph-inventory.md
+  complexity: 3
+  dependencies: []
+  status: backlog
+  implementation_mode: direct
+  wave: 4
+  note: Manual per-deployment inventory of graphs with no local code coupling.
+- id: TASK-MEM09-006
+  name: WS-2c — remove residual guardkit graphiti code + graphiti-core dep
+  file_path: tasks/backlog/feat-mem-09/TASK-MEM09-006-remove-graphiti-code.md
+  complexity: 5
+  dependencies:
+  - TASK-MEM09-003
+  status: backlog
+  implementation_mode: task-work
+  wave: 2
+  note: >-
+    After guardkit reads/writes are all on fleet-memory: simplify the factory (drop
+    graphiti/dual/DualWriteClient), delete graphiti_client + integrations/graphiti/** +
+    graphiti CLI + seeders + config.py, drop graphiti-core + falkordb/gemini extras.
+    See the disposition map for the full module list + safe deletion order.
+- id: TASK-MEM09-007
+  name: WS-5 — verified fleet-memory backup + read-parity sign-off (⛔ precursor)
+  file_path: tasks/backlog/feat-mem-09/TASK-MEM09-007-backup-and-parity.md
+  complexity: 3
+  dependencies:
+  - TASK-MEM09-003
+  - TASK-MEM09-004
+  status: backlog
+  implementation_mode: direct
+  wave: 5
+  note: >-
+    Postgres public.store dump to durable storage + raw FalkorDB graph dump (Episodic AND
+    the 5,735 extracted facts). Per-project read-parity check. Last checkpoint before the
+    one-way door.
+- id: TASK-MEM09-008
+  name: WS-6 — FalkorDB teardown + drop Qwen2.5 LLM (⛔ ONE-WAY, LAST)
+  file_path: tasks/backlog/feat-mem-09/TASK-MEM09-008-falkordb-teardown.md
+  complexity: 3
+  dependencies:
+  - TASK-MEM09-004
+  - TASK-MEM09-005
+  - TASK-MEM09-007
+  status: backlog
+  implementation_mode: direct
+  wave: 6
+  note: >-
+    ONLY after all consumers migrated + remote graphs inventoried + verified backup +
+    FalkorDB kept dormant N months. Drop qwen-graphiti LLM from the personal llama-swap
+    config (KEEP the embedder). Manual/infra. Irreversible.
