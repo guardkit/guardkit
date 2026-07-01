@@ -7,7 +7,7 @@ feature_id: FEAT-MEM-08
 wave: 6
 implementation_mode: task-work
 complexity: 6
-status: in_review
+status: completed
 resolved_by: commit 422d8b1e (autobuild/FEAT-MEM-08), 2026-06-29
 dependencies:
   - TASK-MEM08-002

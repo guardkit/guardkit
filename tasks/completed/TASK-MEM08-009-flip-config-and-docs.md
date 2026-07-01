@@ -6,7 +6,7 @@ feature_id: FEAT-MEM-08
 id: TASK-MEM08-009
 implementation_mode: task-work
 parent_review: TASK-REV-MEM08
-status: design_approved
+status: completed
 task_type: feature
 title: Flip .mcp.json + task-complete tool renames + graphiti.yaml config + docs/rules
 wave: 7

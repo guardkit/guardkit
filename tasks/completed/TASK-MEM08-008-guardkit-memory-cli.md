@@ -12,7 +12,7 @@ feature_id: FEAT-MEM-08
 id: TASK-MEM08-008
 implementation_mode: task-work
 parent_review: TASK-REV-MEM08
-status: design_approved
+status: completed
 task_type: feature
 title: Add guardkit memory search/status/capture-outcome; deprecate guardkit graphiti
 wave: 7

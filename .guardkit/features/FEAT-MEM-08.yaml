@@ -4,7 +4,7 @@ description: Cut guardkit knowledge writes (task outcomes, decisions, ADRs) and 
   (coach-context, feature-plan-context, CLI) over from Graphiti to fleet-memory; dual-write
   soak then prove reads fire in a real run. Unblocks FEAT-MEM-09 decommission.
 created: '2026-06-28T21:14:37.537854'
-status: failed
+status: completed
 complexity: 7
 estimated_tasks: 10
 tasks:
@@ -90,7 +90,7 @@ tasks:
   complexity: 3
   dependencies:
   - TASK-MEM08-004
-  status: deferred
+  status: completed
   implementation_mode: direct
   estimated_minutes: 33
   requires_infrastructure: []
@@ -128,7 +128,7 @@ tasks:
   complexity: 3
   dependencies:
   - TASK-MEM08-006
-  status: deferred
+  status: completed
   implementation_mode: direct
   estimated_minutes: 33
   requires_infrastructure: []
@@ -166,7 +166,7 @@ tasks:
   complexity: 4
   dependencies:
   - TASK-MEM08-007
-  status: failed
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 50
   requires_infrastructure: []
@@ -186,7 +186,7 @@ tasks:
   dependencies:
   - TASK-MEM08-008
   - TASK-MEM08-009
-  status: pending
+  status: completed
   implementation_mode: direct
   estimated_minutes: 33
   requires_infrastructure: []
@@ -226,9 +226,9 @@ execution:
   completed_at: '2026-06-29T08:22:35.117404'
   worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-MEM-08
   total_turns: 12
-  tasks_completed: 8
-  tasks_failed: 1
-  current_wave: 7
+  tasks_completed: 10
+  tasks_failed: 0
+  current_wave: 8
   completed_waves:
   - 1
   - 2
@@ -236,6 +236,8 @@ execution:
   - 4
   - 5
   - 6
+  - 7
+  - 8
   last_updated: '2026-06-29T08:22:35.112516'
   archived_at: null
   archived_to: null
